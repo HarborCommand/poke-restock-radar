@@ -414,6 +414,21 @@ Deployment separation:
 
 Use [docs/production-deployment-checklist.md](docs/production-deployment-checklist.md) for the full Vercel + Neon deployment checklist.
 
+## Phase 13 Weekly Comp Workflow
+
+Use the Card Investment Tracker as a weekly assisted workflow. Enter comps manually from public sold listings or trusted pricing references; do not aggressively scrape eBay or any pricing site.
+
+Recommended weekly flow:
+
+1. Add fresh raw comps, then PSA 9, PSA 10, BGS 9.5, BGS 10, and BGS Black Label comps with the quick grade buttons.
+2. Set source quality for each comp: `eBay sold`, `PriceCharting`, `TCGPlayer`, or `manual estimate`.
+3. Add condition notes when a raw listing has whitening, centering issues, dents, print lines, or unusually clean photos.
+4. Review the card confidence score. It increases with more comps, fresher comps, higher-quality sources, and a realistic spread between raw and graded values.
+5. Click `Generate Weekly Report Now` to archive a report with Top 10 raw-to-grade, safest PSA 9 flips, highest PSA 10 upside, Beckett candidates, and avoid/overpriced cards.
+6. Use `Print Report` on the generated poster for a mobile/printable snapshot.
+
+The app creates an in-app alert when a new comp makes a card PSA 9 profitable against the current grading, shipping, selling-fee, and minimum-profit settings.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.

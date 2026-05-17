@@ -975,6 +975,86 @@ textarea {
   padding: 11px 12px;
 }
 
+.comp-quick-grid,
+.report-note-grid,
+.report-category-grid,
+.report-archive-list {
+  display: grid;
+  gap: 10px;
+}
+
+.comp-quick-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-step {
+  display: grid;
+  gap: 3px;
+  border-left: 2px solid rgba(90, 169, 255, 0.6);
+  padding: 4px 0 4px 10px;
+}
+
+.form-step span,
+.report-highlight span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.report-archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  padding: 11px 12px;
+  text-align: left;
+}
+
+.report-archive-row.active {
+  border-color: rgba(56, 215, 125, 0.42);
+  background: rgba(56, 215, 125, 0.08);
+}
+
+.report-archive-row div,
+.report-highlight {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.report-archive-row span,
+.report-highlight small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.report-note-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.report-highlight {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 11px;
+}
+
+.report-category {
+  display: grid;
+  gap: 8px;
+}
+
+.report-category h3 {
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+}
+
 .poster-panel {
   display: grid;
   gap: 14px;
@@ -1020,6 +1100,15 @@ textarea {
   border-radius: var(--radius);
   background: rgba(7, 8, 8, 0.42);
   padding: 10px;
+}
+
+.report-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.report-row .reason-text {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .poster-rank {
@@ -1338,6 +1427,14 @@ textarea {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
+  .comp-quick-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .report-note-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .inline-update {
     grid-template-columns: minmax(180px, 1.4fr) repeat(4, minmax(108px, 1fr)) minmax(180px, 1.2fr) minmax(160px, 1.2fr) auto;
     align-items: end;
@@ -1356,13 +1453,18 @@ textarea {
   }
 
   .comp-table .table-row {
-    grid-template-columns: auto minmax(150px, 0.9fr) minmax(180px, 1fr) minmax(90px, 0.5fr) auto;
+    grid-template-columns: auto auto minmax(150px, 0.9fr) minmax(180px, 1fr) minmax(90px, 0.5fr) auto;
   }
 
   .poster-row {
     grid-template-columns:
       auto minmax(210px, 1.5fr) minmax(90px, 0.55fr) minmax(140px, 0.9fr) minmax(150px, 0.95fr)
       minmax(90px, 0.6fr) auto;
+  }
+
+  .report-row {
+    grid-template-columns:
+      auto minmax(210px, 1.5fr) repeat(6, minmax(88px, 0.7fr)) minmax(92px, auto);
   }
 }
 

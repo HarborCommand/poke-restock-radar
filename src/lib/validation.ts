@@ -3,6 +3,7 @@ import { z } from "zod";
 export const prioritySchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
 export const ratingSchema = z.enum(["BUY", "WATCH", "SKIP", "AVOID"]);
 export const gradeTypeSchema = z.enum(["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"]);
+export const compSourceQualitySchema = z.enum(["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE"]);
 export const eraSchema = z.enum(["MODERN", "VINTAGE"]);
 export const productStatusSchema = z.enum([
   "UNAVAILABLE",
@@ -316,6 +317,7 @@ export const cardCompCreateSchema = z.object({
   setName: z.string().trim().min(2),
   cardNumber,
   gradeType: gradeTypeSchema,
+  sourceQuality: compSourceQualitySchema.default("EBAY_SOLD"),
   salePrice: requiredMoney,
   soldAt: boundedDate,
   sourceUrl: optionalHttpUrl,
@@ -333,6 +335,10 @@ export const investmentSettingsSchema = z.object({
   ebaySellingFee: z.coerce.number().min(0).max(0.5).default(0.1325),
   shippingCost: requiredMoney.default(5),
   minimumProfitTarget: requiredMoney.default(20)
+});
+
+export const weeklyInvestmentReportSchema = z.object({
+  notes: optionalTrimmed
 });
 
 export const bulkImportSchema = z.object({

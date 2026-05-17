@@ -15,6 +15,7 @@ export type Probability = "LOW" | "MEDIUM" | "HIGH";
 export type MonitorLogStatus = "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR";
 export type MonitorLogStatusExtended = MonitorLogStatus | "BLOCKED" | "PENDING_CONFIRMATION" | "FALSE_POSITIVE" | "FORCED_ALERT";
 export type GradeType = "RAW" | "PSA_9" | "PSA_10" | "BGS_9_5" | "BGS_10" | "BGS_BLACK_LABEL";
+export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "MANUAL_ESTIMATE";
 export type Era = "MODERN" | "VINTAGE";
 export type StoreVisitResult = "stock_seen" | "empty_shelf" | "vendor_spotted" | "bought_product" | "no_visit";
 
@@ -188,6 +189,7 @@ export type CardDTO = {
   maxRawBuyPricePsa9: number;
   maxRawBuyPrice: number;
   top10Score: number;
+  compConfidenceScore: number;
   rating: Rating;
   dataSource: string;
   lastRefreshed: string;
@@ -373,8 +375,47 @@ export type CardCompSaleDTO = {
   salePrice: number;
   soldAt: string;
   source: string;
+  sourceQuality: CompSourceQuality;
   sourceUrl: string | null;
   conditionNotes: string | null;
+};
+
+export type InvestmentReportItemDTO = {
+  cardId: string;
+  cardName: string;
+  setName: string;
+  cardNumber: string;
+  rawAveragePrice: number;
+  psa9AverageSalePrice: number;
+  psa10AverageSalePrice: number;
+  bgs10AverageSalePrice: number;
+  psa9EstimatedProfit: number;
+  psa10EstimatedProfit: number;
+  bgs10EstimatedProfit: number;
+  blackLabelEstimatedProfit: number;
+  maxRawBuyPrice: number;
+  rating: Rating;
+  top10Score: number;
+  compConfidenceScore: number;
+  reason: string;
+};
+
+export type InvestmentReportDTO = {
+  id: string;
+  title: string;
+  generatedAt: string;
+  periodStart: string;
+  periodEnd: string;
+  top10RawToGrade: InvestmentReportItemDTO[];
+  safestPsa9Flips: InvestmentReportItemDTO[];
+  highestPsa10Upside: InvestmentReportItemDTO[];
+  beckettCandidates: InvestmentReportItemDTO[];
+  avoidOverpriced: InvestmentReportItemDTO[];
+  bestBuy: InvestmentReportItemDTO | null;
+  riskiestBuy: InvestmentReportItemDTO | null;
+  bestUnder25Raw: InvestmentReportItemDTO | null;
+  bestPremiumCard: InvestmentReportItemDTO | null;
+  notes: string | null;
 };
 
 export type DashboardDTO = {
@@ -391,6 +432,7 @@ export type DashboardDTO = {
   cards: CardDTO[];
   top10Watchlist: CardDTO[];
   cardCompSales: CardCompSaleDTO[];
+  investmentReports: InvestmentReportDTO[];
   alerts: AlertDTO[];
   monitorLogs: MonitorLogDTO[];
   monitorAccuracyStats: MonitorAccuracyStatsDTO;

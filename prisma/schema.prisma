@@ -20,6 +20,7 @@ model User {
   notificationSettings NotificationSettings?
   investmentSettings   InvestmentSettings?
   browserPushSubscriptions BrowserPushSubscription[]
+  investmentReports    InvestmentReport[]
 }
 
 model Retailer {
@@ -240,6 +241,7 @@ model Card {
   maxRawBuyPricePsa9       Float
   maxRawBuyPrice           Float               @default(0)
   top10Score               Int                 @default(0)
+  compConfidenceScore      Int                 @default(0)
   rating                   String              @default("WATCH")
   dataSource               String
   lastRefreshed            DateTime
@@ -296,12 +298,38 @@ model CardCompSale {
   sourceUrl String?
   notes     String?
   conditionNotes String?
+  sourceQuality String @default("EBAY_SOLD")
   createdAt DateTime @default(now())
   card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId])
   @@index([gradeType])
+  @@index([sourceQuality])
   @@index([soldAt])
+}
+
+model InvestmentReport {
+  id                      String   @id @default(cuid())
+  userId                  String?
+  title                   String
+  generatedAt             DateTime @default(now())
+  periodStart             DateTime
+  periodEnd               DateTime
+  top10RawToGrade         String
+  safestPsa9Flips         String
+  highestPsa10Upside      String
+  beckettCandidates       String
+  avoidOverpriced         String
+  bestBuy                 String?
+  riskiestBuy             String?
+  bestUnder25Raw          String?
+  bestPremiumCard         String?
+  notes                   String?
+  createdAt               DateTime @default(now())
+  user                    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([generatedAt])
+  @@index([userId])
 }
 
 model InvestmentSettings {

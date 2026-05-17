@@ -59,6 +59,7 @@ test("required data models exist", () => {
     "Card",
     "CardPriceSnapshot",
     "CardCompSale",
+    "InvestmentReport",
     "ProductPriorityScore",
     "NotificationSettings",
     "InvestmentSettings",
@@ -67,6 +68,46 @@ test("required data models exist", () => {
   for (const model of models) {
     assert.match(schema, new RegExp(`model\\s+${model}\\s+\\{`), `missing model ${model}`);
   }
+});
+
+test("Phase 13 weekly card comp workflow and reports exist", () => {
+  const route = join(root, "src", "app", "api", "radar", "cards", "reports", "route.ts");
+  assert.ok(statSync(route).isFile(), `missing ${route}`);
+
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const field of [
+    "compConfidenceScore",
+    "sourceQuality",
+    "top10RawToGrade",
+    "safestPsa9Flips",
+    "highestPsa10Upside",
+    "beckettCandidates",
+    "avoidOverpriced"
+  ]) {
+    assert.match(schema, new RegExp(field), `missing Phase 13 schema field ${field}`);
+  }
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of [
+    "Guided Card Comp Entry",
+    "Generate Weekly Report Now",
+    "Weekly Investment Report Archive",
+    "Top 5 safest PSA 9 flips",
+    "Top 5 Beckett candidates",
+    "eBay sold",
+    "PriceCharting",
+    "TCGPlayer",
+    "Manual estimate"
+  ]) {
+    assert.match(app, new RegExp(phrase), `missing Phase 13 UI phrase ${phrase}`);
+  }
+
+  const service = readFileSync(join(root, "src", "lib", "radar-service.ts"), "utf8");
+  assert.match(service, /generateWeeklyInvestmentReport/);
+  assert.match(service, /became PSA 9 profitable/);
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /Weekly Comp Workflow/);
 });
 
 test("project is standalone and does not reference Harbor Command files", () => {

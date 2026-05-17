@@ -15,10 +15,13 @@ import type {
   AlertDTO,
   CardDTO,
   CardCompSaleDTO,
+  CompSourceQuality,
   DataQualityWarningDTO,
   DashboardDTO,
   GradeType,
   InvestmentSettingsDTO,
+  InvestmentReportDTO,
+  InvestmentReportItemDTO,
   MonitorAccuracyStatsDTO,
   MonitorLogDTO,
   NotificationSettingsDTO,
@@ -64,7 +67,7 @@ const monitorLogInclude = {
 
 const cardInclude = {
   release: { select: { id: true, setName: true } },
-  compSales: { select: { soldAt: true } }
+  compSales: { select: { soldAt: true, sourceQuality: true, gradeType: true, salePrice: true } }
 } satisfies Prisma.CardInclude;
 
 const compSaleInclude = {
@@ -106,6 +109,41 @@ function computeTop10Score(input: {
   if (input.lowNumberedSerialized) score += 8;
   if (input.newRelease) score += 4;
   return Math.max(0, Math.min(100, score));
+}
+
+function sourceQualityWeight(sourceQuality: string | null | undefined) {
+  if (sourceQuality === "EBAY_SOLD") return 1;
+  if (sourceQuality === "TCGPLAYER") return 0.85;
+  if (sourceQuality === "PRICECHARTING") return 0.75;
+  return 0.45;
+}
+
+function computeCardConfidence(input: {
+  rawAveragePrice: number;
+  psa9AverageSalePrice: number;
+  psa10AverageSalePrice: number;
+  bgs10AverageSalePrice: number;
+  bgsBlackLabelAverageSalePrice: number;
+  compSales: Array<{ soldAt: Date; sourceQuality?: string | null }>;
+}) {
+  const compCount = input.compSales.length;
+  const countScore = Math.min(35, compCount * 5);
+  const recentCount = recentCompCount(input.compSales);
+  const freshnessScore = Math.min(25, recentCount * 6 + (compCount > 0 ? 4 : 0));
+  const qualityAverage = compCount
+    ? input.compSales.reduce((sum, sale) => sum + sourceQualityWeight(sale.sourceQuality), 0) / compCount
+    : 0.45;
+  const sourceScore = Math.round(25 * qualityAverage);
+  const gradedValues = [
+    input.psa9AverageSalePrice,
+    input.psa10AverageSalePrice,
+    input.bgs10AverageSalePrice,
+    input.bgsBlackLabelAverageSalePrice
+  ].filter((value) => value > 0);
+  const gradedAverage = average(gradedValues) ?? 0;
+  const spreadRatio = input.rawAveragePrice > 0 && gradedAverage > 0 ? gradedAverage / input.rawAveragePrice : 0;
+  const spreadScore = spreadRatio >= 1.2 && spreadRatio <= 8 ? 15 : spreadRatio > 8 && spreadRatio <= 15 ? 10 : spreadRatio > 15 ? 5 : 6;
+  return Math.max(0, Math.min(100, countScore + freshnessScore + sourceScore + spreadScore));
 }
 
 function scoreFromPriority(priority: string | null | undefined, high: number, medium: number, low = 2) {
@@ -368,6 +406,7 @@ function cardToDTO(card: Prisma.CardGetPayload<{ include: typeof cardInclude }>)
     maxRawBuyPricePsa9: card.maxRawBuyPricePsa9,
     maxRawBuyPrice: card.maxRawBuyPrice,
     top10Score: card.top10Score,
+    compConfidenceScore: card.compConfidenceScore,
     rating: card.rating as Rating,
     dataSource: card.dataSource,
     lastRefreshed: card.lastRefreshed.toISOString(),
@@ -599,6 +638,7 @@ function cardCompSaleToDTO(sale: Prisma.CardCompSaleGetPayload<{ include: typeof
     salePrice: sale.salePrice,
     soldAt: sale.soldAt.toISOString(),
     source: sale.source,
+    sourceQuality: (sale.sourceQuality || "EBAY_SOLD") as CompSourceQuality,
     sourceUrl: sale.sourceUrl || sale.url,
     conditionNotes: sale.conditionNotes || sale.notes
   };
@@ -611,6 +651,79 @@ function average(values: number[]) {
 
 function gradeLabel(gradeType: GradeType) {
   return gradeType.replaceAll("_", " ");
+}
+
+function sourceQualityLabel(sourceQuality: CompSourceQuality) {
+  if (sourceQuality === "PRICECHARTING") return "PriceCharting";
+  if (sourceQuality === "TCGPLAYER") return "TCGPlayer";
+  if (sourceQuality === "MANUAL_ESTIMATE") return "Manual estimate";
+  return "eBay sold";
+}
+
+function reportItemFromCard(card: CardDTO, reason: string): InvestmentReportItemDTO {
+  return {
+    cardId: card.id,
+    cardName: card.cardName,
+    setName: card.setName,
+    cardNumber: card.cardNumber,
+    rawAveragePrice: card.rawAveragePrice,
+    psa9AverageSalePrice: card.psa9AverageSalePrice,
+    psa10AverageSalePrice: card.psa10AverageSalePrice,
+    bgs10AverageSalePrice: card.bgs10AverageSalePrice,
+    psa9EstimatedProfit: card.psa9EstimatedProfit,
+    psa10EstimatedProfit: card.psa10EstimatedProfit,
+    bgs10EstimatedProfit: card.bgs10EstimatedProfit,
+    blackLabelEstimatedProfit: card.blackLabelEstimatedProfit,
+    maxRawBuyPrice: card.maxRawBuyPrice,
+    rating: card.rating,
+    top10Score: card.top10Score,
+    compConfidenceScore: card.compConfidenceScore,
+    reason
+  };
+}
+
+function parseReportItems(value: string): InvestmentReportItemDTO[] {
+  try {
+    const parsed = JSON.parse(value) as InvestmentReportItemDTO[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseReportItem(value: string | null): InvestmentReportItemDTO | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as InvestmentReportItemDTO;
+  } catch {
+    return null;
+  }
+}
+
+function investmentReportToDTO(
+  report: Prisma.InvestmentReportGetPayload<Record<string, never>>
+): InvestmentReportDTO {
+  return {
+    id: report.id,
+    title: report.title,
+    generatedAt: report.generatedAt.toISOString(),
+    periodStart: report.periodStart.toISOString(),
+    periodEnd: report.periodEnd.toISOString(),
+    top10RawToGrade: parseReportItems(report.top10RawToGrade),
+    safestPsa9Flips: parseReportItems(report.safestPsa9Flips),
+    highestPsa10Upside: parseReportItems(report.highestPsa10Upside),
+    beckettCandidates: parseReportItems(report.beckettCandidates),
+    avoidOverpriced: parseReportItems(report.avoidOverpriced),
+    bestBuy: parseReportItem(report.bestBuy),
+    riskiestBuy: parseReportItem(report.riskiestBuy),
+    bestUnder25Raw: parseReportItem(report.bestUnder25Raw),
+    bestPremiumCard: parseReportItem(report.bestPremiumCard),
+    notes: report.notes
+  };
+}
+
+function toReportJson(value: InvestmentReportItemDTO[] | InvestmentReportItemDTO | null) {
+  return JSON.stringify(value);
 }
 
 export async function ensureNotificationSettings(currentUser: SessionUser) {
@@ -804,7 +917,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     cardCompSales,
     monitorLogs,
     notificationSettings,
-    investmentSettings
+    investmentSettings,
+    investmentReports
   ] =
     await Promise.all([
     prisma.retailer.findMany({ orderBy: { name: "asc" } }),
@@ -823,7 +937,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     prisma.cardCompSale.findMany({ include: compSaleInclude, orderBy: { soldAt: "desc" }, take: 60 }),
     prisma.monitorLog.findMany({ include: monitorLogInclude, orderBy: { startedAt: "desc" }, take: 50 }),
     ensureNotificationSettings(currentUser),
-    ensureInvestmentSettings(currentUser)
+    ensureInvestmentSettings(currentUser),
+    prisma.investmentReport.findMany({ orderBy: { generatedAt: "desc" }, take: 12 })
   ]);
 
   await refreshReleaseAlerts(releases);
@@ -881,6 +996,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     cards: cardDTOs,
     top10Watchlist: cardDTOs.slice(0, 10),
     cardCompSales: cardCompSales.map(cardCompSaleToDTO),
+    investmentReports: investmentReports.map(investmentReportToDTO),
     alerts: alertDTOs,
     monitorLogs: monitorLogs.map(monitorLogToDTO),
     monitorAccuracyStats: accuracyStats,
@@ -1693,7 +1809,7 @@ async function recomputeCardFromComps(
     include: {
       compSales: {
         orderBy: { soldAt: "desc" },
-        select: { gradeType: true, salePrice: true, soldAt: true }
+        select: { gradeType: true, salePrice: true, soldAt: true, sourceQuality: true }
       }
     }
   });
@@ -1731,6 +1847,14 @@ async function recomputeCardFromComps(
     compCount,
     recentCompCount: recentCompCount(card.compSales)
   });
+  const compConfidenceScore = computeCardConfidence({
+    rawAveragePrice,
+    psa9AverageSalePrice,
+    psa10AverageSalePrice,
+    bgs10AverageSalePrice,
+    bgsBlackLabelAverageSalePrice,
+    compSales: card.compSales
+  });
 
   const updated = await prisma.card.update({
     where: { id: cardId },
@@ -1746,6 +1870,7 @@ async function recomputeCardFromComps(
       estimatedShippingCost,
       minimumProfitTarget,
       ...computed,
+      compConfidenceScore,
       rating: computed.rating,
       dataSource: compCount ? "Manual sold comps" : card.dataSource,
       lastCompAt: card.compSales[0]?.soldAt ?? card.lastCompAt,
@@ -1801,12 +1926,21 @@ export async function createCard(input: {
     strongCharacterDemand: input.strongCharacterDemand ?? false
   };
   const computed = computedCardValues(normalized);
+  const compConfidenceScore = computeCardConfidence({
+    rawAveragePrice: normalized.rawAveragePrice,
+    psa9AverageSalePrice: normalized.psa9AverageSalePrice,
+    psa10AverageSalePrice: normalized.psa10AverageSalePrice,
+    bgs10AverageSalePrice: normalized.bgs10AverageSalePrice,
+    bgsBlackLabelAverageSalePrice: normalized.bgsBlackLabelAverageSalePrice,
+    compSales: []
+  });
   const rating = input.rating || computed.rating;
 
   const card = await prisma.card.create({
     data: {
       ...normalized,
       ...computed,
+      compConfidenceScore,
       rating
     },
     include: cardInclude
@@ -1878,11 +2012,19 @@ export async function updateCard(
     lowNumberedSerialized: input.lowNumberedSerialized ?? existing.lowNumberedSerialized,
     strongCharacterDemand: input.strongCharacterDemand ?? existing.strongCharacterDemand
   };
-  const compSales = await prisma.cardCompSale.findMany({ where: { cardId }, select: { soldAt: true } });
+  const compSales = await prisma.cardCompSale.findMany({ where: { cardId }, select: { soldAt: true, sourceQuality: true } });
   const computed = computedCardValues({
     ...normalized,
     compCount: compSales.length,
     recentCompCount: recentCompCount(compSales)
+  });
+  const compConfidenceScore = computeCardConfidence({
+    rawAveragePrice: normalized.rawAveragePrice,
+    psa9AverageSalePrice: normalized.psa9AverageSalePrice,
+    psa10AverageSalePrice: normalized.psa10AverageSalePrice,
+    bgs10AverageSalePrice: normalized.bgs10AverageSalePrice,
+    bgsBlackLabelAverageSalePrice: normalized.bgsBlackLabelAverageSalePrice,
+    compSales
   });
   const rating = input.rating || computed.rating;
 
@@ -1891,6 +2033,7 @@ export async function updateCard(
     data: {
       ...normalized,
       ...computed,
+      compConfidenceScore,
       rating
     },
     include: cardInclude
@@ -1908,6 +2051,7 @@ export async function createCardCompSale(
     setName: string;
     cardNumber: string;
     gradeType: GradeType;
+    sourceQuality: CompSourceQuality;
     salePrice: number;
     soldAt: Date;
     sourceUrl?: string;
@@ -1928,6 +2072,8 @@ export async function createCardCompSale(
     }
   });
   const matchedRelease = await prisma.release.findFirst({ where: { setName: input.setName }, select: { id: true } });
+  const wasPsa9Profitable =
+    existing !== null && existing.psa9EstimatedProfit >= (existing.minimumProfitTarget || settings.minimumProfitTarget);
   const gradeSeed = {
     rawAveragePrice: input.gradeType === "RAW" ? input.salePrice : 0,
     psa9AverageSalePrice: input.gradeType === "PSA_9" ? input.salePrice : 0,
@@ -1958,6 +2104,7 @@ export async function createCardCompSale(
         maxRawBuyPricePsa9: 0,
         maxRawBuyPrice: 0,
         top10Score: 0,
+        compConfidenceScore: 0,
         rating: "WATCH",
         dataSource: "Manual sold comps",
         lastRefreshed: new Date(),
@@ -1991,7 +2138,8 @@ export async function createCardCompSale(
   const sale = await prisma.cardCompSale.create({
     data: {
       cardId: card.id,
-      source: "Manual eBay sold comp",
+      source: sourceQualityLabel(input.sourceQuality),
+      sourceQuality: input.sourceQuality,
       salePrice: input.salePrice,
       grade: gradeLabel(input.gradeType),
       gradeType: input.gradeType,
@@ -2015,7 +2163,27 @@ export async function createCardCompSale(
     await prisma.alert.create({
       data: {
         title: `${updatedCard.cardName} entered Top 10 range`,
-        reason: `Manual ${gradeLabel(input.gradeType)} comp pushed the raw-to-grade score to ${updatedCard.top10Score}.`,
+        reason: `${sourceQualityLabel(input.sourceQuality)} ${gradeLabel(
+          input.gradeType
+        )} comp pushed the raw-to-grade score to ${updatedCard.top10Score}.`,
+        priority: "HIGH",
+        entityType: "CARD",
+        entityId: updatedCard.id,
+        userId: currentUser.id
+      }
+    });
+  }
+
+  const isPsa9Profitable = updatedCard.psa9EstimatedProfit >= updatedCard.minimumProfitTarget;
+  if (!wasPsa9Profitable && isPsa9Profitable) {
+    await prisma.alert.create({
+      data: {
+        title: `${updatedCard.cardName} became PSA 9 profitable`,
+        reason: `New ${sourceQualityLabel(input.sourceQuality)} ${gradeLabel(
+          input.gradeType
+        )} comp moved PSA 9 estimated profit to $${updatedCard.psa9EstimatedProfit.toFixed(2)}, above the $${updatedCard.minimumProfitTarget.toFixed(
+          2
+        )} target.`,
         priority: "HIGH",
         entityType: "CARD",
         entityId: updatedCard.id,
@@ -2025,6 +2193,148 @@ export async function createCardCompSale(
   }
 
   return { compSale: cardCompSaleToDTO(sale), card: cardToDTO(updatedCard) };
+}
+
+export async function generateWeeklyInvestmentReport(
+  currentUser: SessionUser,
+  input: { notes?: string | null } = {}
+) {
+  const cards = (await prisma.card.findMany({
+    include: cardInclude,
+    orderBy: [{ top10Score: "desc" }, { psa10EstimatedProfit: "desc" }]
+  })).map(cardToDTO);
+
+  const now = new Date();
+  const periodStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const top10RawToGrade = cards
+    .filter((card) => card.rawAveragePrice > 0)
+    .sort(
+      (a, b) =>
+        b.top10Score - a.top10Score ||
+        b.compConfidenceScore - a.compConfidenceScore ||
+        b.psa10EstimatedProfit - a.psa10EstimatedProfit
+    )
+    .slice(0, 10)
+    .map((card) =>
+      reportItemFromCard(
+        card,
+        `Score ${card.top10Score} with ${card.compCount} comps, PSA 9 profit ${card.psa9EstimatedProfit.toFixed(
+          2
+        )}, and PSA 10 upside ${card.psa10EstimatedProfit.toFixed(2)}.`
+      )
+    );
+  const safestPsa9Flips = cards
+    .filter((card) => card.psa9EstimatedProfit >= card.minimumProfitTarget)
+    .sort(
+      (a, b) =>
+        b.compConfidenceScore - a.compConfidenceScore ||
+        b.psa9EstimatedProfit - a.psa9EstimatedProfit ||
+        a.rawAveragePrice - b.rawAveragePrice
+    )
+    .slice(0, 5)
+    .map((card) =>
+      reportItemFromCard(
+        card,
+        `PSA 9 profit clears the ${card.minimumProfitTarget.toFixed(2)} target with ${card.compConfidenceScore}% confidence.`
+      )
+    );
+  const highestPsa10Upside = cards
+    .filter((card) => card.psa10EstimatedProfit > 0)
+    .sort((a, b) => b.psa10EstimatedProfit - a.psa10EstimatedProfit || b.compConfidenceScore - a.compConfidenceScore)
+    .slice(0, 5)
+    .map((card) =>
+      reportItemFromCard(
+        card,
+        `PSA 10 estimated profit is ${card.psa10EstimatedProfit.toFixed(2)} against raw entry ${card.rawAveragePrice.toFixed(2)}.`
+      )
+    );
+  const beckettCandidates = cards
+    .filter((card) => card.bgs10EstimatedProfit > 0 || card.blackLabelEstimatedProfit > 0 || card.lowPop || card.lowNumberedSerialized)
+    .sort(
+      (a, b) =>
+        b.blackLabelEstimatedProfit +
+          b.bgs10EstimatedProfit +
+          (b.lowPop ? 25 : 0) +
+          (b.lowNumberedSerialized ? 25 : 0) -
+        (a.blackLabelEstimatedProfit + a.bgs10EstimatedProfit + (a.lowPop ? 25 : 0) + (a.lowNumberedSerialized ? 25 : 0))
+    )
+    .slice(0, 5)
+    .map((card) =>
+      reportItemFromCard(
+        card,
+        `Beckett upside is led by BGS 10 profit ${card.bgs10EstimatedProfit.toFixed(2)} and Black Label profit ${card.blackLabelEstimatedProfit.toFixed(
+          2
+        )}.`
+      )
+    );
+  const avoidOverpriced = cards
+    .filter(
+      (card) =>
+        card.rating === "AVOID" ||
+        (card.rawAveragePrice > 0 &&
+          card.psa9EstimatedProfit < card.minimumProfitTarget &&
+          card.psa10EstimatedProfit < card.minimumProfitTarget)
+    )
+    .sort(
+      (a, b) =>
+        a.psa9EstimatedProfit + a.psa10EstimatedProfit - (b.psa9EstimatedProfit + b.psa10EstimatedProfit) ||
+        b.rawAveragePrice - a.rawAveragePrice
+    )
+    .slice(0, 5)
+    .map((card) =>
+      reportItemFromCard(
+        card,
+        `Avoid unless entry drops; PSA 9 profit is ${card.psa9EstimatedProfit.toFixed(2)} and PSA 10 profit is ${card.psa10EstimatedProfit.toFixed(2)}.`
+      )
+    );
+
+  const bestBuy = top10RawToGrade[0] ?? null;
+  const riskiestBuy =
+    cards
+      .filter((card) => card.psa10EstimatedProfit > card.minimumProfitTarget && (card.compConfidenceScore < 60 || card.rawAveragePrice >= 75))
+      .sort((a, b) => b.psa10EstimatedProfit - a.psa10EstimatedProfit)
+      .map((card) =>
+        reportItemFromCard(
+          card,
+          `High upside but riskier because confidence is ${card.compConfidenceScore}% and raw entry is ${card.rawAveragePrice.toFixed(2)}.`
+        )
+      )[0] ?? null;
+  const bestUnder25Raw =
+    cards
+      .filter((card) => card.rawAveragePrice > 0 && card.rawAveragePrice <= 25)
+      .sort((a, b) => b.top10Score - a.top10Score || b.psa10EstimatedProfit - a.psa10EstimatedProfit)
+      .map((card) => reportItemFromCard(card, `Best sub-$25 raw entry with score ${card.top10Score}.`))[0] ?? null;
+  const bestPremiumCard =
+    cards
+      .filter((card) => card.rawAveragePrice >= 75)
+      .sort((a, b) => b.top10Score - a.top10Score || b.psa10EstimatedProfit - a.psa10EstimatedProfit)
+      .map((card) => reportItemFromCard(card, `Best premium entry with score ${card.top10Score}.`))[0] ?? null;
+
+  const report = await prisma.investmentReport.create({
+    data: {
+      userId: currentUser.id,
+      title: `Weekly Investment Report - ${now.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      })}`,
+      generatedAt: now,
+      periodStart,
+      periodEnd: now,
+      top10RawToGrade: toReportJson(top10RawToGrade),
+      safestPsa9Flips: toReportJson(safestPsa9Flips),
+      highestPsa10Upside: toReportJson(highestPsa10Upside),
+      beckettCandidates: toReportJson(beckettCandidates),
+      avoidOverpriced: toReportJson(avoidOverpriced),
+      bestBuy: toReportJson(bestBuy),
+      riskiestBuy: toReportJson(riskiestBuy),
+      bestUnder25Raw: toReportJson(bestUnder25Raw),
+      bestPremiumCard: toReportJson(bestPremiumCard),
+      notes: input.notes || null
+    }
+  });
+
+  return investmentReportToDTO(report);
 }
 
 export async function updateInvestmentSettings(
@@ -2113,6 +2423,7 @@ export async function updateNotificationSettings(
 async function clearRadarData(includeUsers: boolean) {
   await prisma.productPriorityScore.deleteMany();
   await prisma.monitorLog.deleteMany();
+  await prisma.investmentReport.deleteMany();
   await prisma.cardCompSale.deleteMany();
   await prisma.cardPriceSnapshot.deleteMany();
   await prisma.restockHistory.deleteMany();
@@ -2365,6 +2676,7 @@ export async function exportBackup() {
       cards: await prisma.card.findMany(),
       cardPriceSnapshots: await prisma.cardPriceSnapshot.findMany(),
       cardCompSales: await prisma.cardCompSale.findMany(),
+      investmentReports: await prisma.investmentReport.findMany(),
       productPriorityScores: await prisma.productPriorityScore.findMany(),
       notificationSettings: await prisma.notificationSettings.findMany(),
       investmentSettings: await prisma.investmentSettings.findMany(),
@@ -2379,6 +2691,12 @@ function toDate(value: unknown) {
 
 function toNullableDate(value: unknown) {
   return value ? new Date(String(value)) : null;
+}
+
+function toJsonText(value: unknown, fallback: "[]" | "null") {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return fallback;
+  return JSON.stringify(value);
 }
 
 function rows<T extends Record<string, unknown>>(tables: Record<string, unknown[]>, key: string) {
@@ -2537,6 +2855,7 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       maxRawBuyPrice:
         row.maxRawBuyPrice === undefined ? Number(row.maxRawBuyPricePsa9 ?? 0) : Number(row.maxRawBuyPrice),
       top10Score: row.top10Score === undefined ? 0 : Number(row.top10Score),
+      compConfidenceScore: row.compConfidenceScore === undefined ? 0 : Number(row.compConfidenceScore),
       rating: String(row.rating),
       dataSource: String(row.dataSource),
       lastRefreshed: toDate(row.lastRefreshed),
@@ -2632,6 +2951,7 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       id: String(row.id),
       cardId: String(row.cardId),
       source: String(row.source),
+      sourceQuality: row.sourceQuality ? String(row.sourceQuality) : "EBAY_SOLD",
       salePrice: Number(row.salePrice),
       grade: String(row.grade),
       gradeType: row.gradeType ? String(row.gradeType) : String(row.grade ?? "RAW"),
@@ -2705,6 +3025,27 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       minimumProfitTarget: row.minimumProfitTarget === undefined ? 20 : Number(row.minimumProfitTarget),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.investmentReport.createMany({
+    data: rows(tables, "investmentReports").map((row) => ({
+      id: String(row.id),
+      userId: row.userId ? String(row.userId) : null,
+      title: String(row.title),
+      generatedAt: toDate(row.generatedAt),
+      periodStart: toDate(row.periodStart),
+      periodEnd: toDate(row.periodEnd),
+      top10RawToGrade: toJsonText(row.top10RawToGrade, "[]"),
+      safestPsa9Flips: toJsonText(row.safestPsa9Flips, "[]"),
+      highestPsa10Upside: toJsonText(row.highestPsa10Upside, "[]"),
+      beckettCandidates: toJsonText(row.beckettCandidates, "[]"),
+      avoidOverpriced: toJsonText(row.avoidOverpriced, "[]"),
+      bestBuy: toJsonText(row.bestBuy, "null"),
+      riskiestBuy: toJsonText(row.riskiestBuy, "null"),
+      bestUnder25Raw: toJsonText(row.bestUnder25Raw, "null"),
+      bestPremiumCard: toJsonText(row.bestPremiumCard, "null"),
+      notes: row.notes ? String(row.notes) : null,
+      createdAt: toDate(row.createdAt)
     }))
   });
 

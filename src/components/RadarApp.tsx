@@ -52,9 +52,12 @@ import type {
   AppHealthDTO,
   CardDTO,
   CardCompSaleDTO,
+  CompSourceQuality,
   DashboardDTO,
   Era,
   GradeType,
+  InvestmentReportDTO,
+  InvestmentReportItemDTO,
   Priority,
   ProductDTO,
   ProductStatus,
@@ -105,6 +108,7 @@ const priorities: Priority[] = ["LOW", "MEDIUM", "HIGH"];
 const productRatings: Array<Exclude<Rating, "AVOID">> = ["BUY", "WATCH", "SKIP"];
 const cardRatings: Rating[] = ["BUY", "WATCH", "SKIP", "AVOID"];
 const gradeTypes: GradeType[] = ["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"];
+const compSourceQualities: CompSourceQuality[] = ["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE"];
 const eras: Array<"ALL" | Era> = ["ALL", "MODERN", "VINTAGE"];
 const productTypeOptions = ["ETB", "Booster Bundle", "Sleeved Booster", "Collection Box", "Booster Box", "Premium Collection"];
 const storeVisitResults: StoreVisitResult[] = ["stock_seen", "empty_shelf", "vendor_spotted", "bought_product", "no_visit"];
@@ -120,6 +124,13 @@ function formatStatus(value: string) {
 
 function formatGradeType(value: string) {
   return value === "BGS_BLACK_LABEL" ? "BGS Black Label" : formatStatus(value);
+}
+
+function formatSourceQuality(value: string) {
+  if (value === "PRICECHARTING") return "PriceCharting";
+  if (value === "TCGPLAYER") return "TCGPlayer";
+  if (value === "MANUAL_ESTIMATE") return "Manual estimate";
+  return "eBay sold";
 }
 
 function money(value: number | null | undefined) {
@@ -1068,6 +1079,7 @@ function CardStack({ cards }: { cards: CardDTO[] }) {
           <div className="card-actions">
             <span className={`chip ${statusTone(card.rating)}`}>{card.rating}</span>
             <span className="chip muted">Score {card.top10Score}</span>
+            <span className="chip muted">Confidence {card.compConfidenceScore}%</span>
             <span className="chip muted">Buy limit {money(card.maxRawBuyPrice)}</span>
           </div>
           <div className="monitor-meta">
@@ -2775,6 +2787,7 @@ function CardsPanel({
         <span className="chip watch">New releases</span>
       </div>
       <Top10Poster cards={dashboard.top10Watchlist} generatedAt={new Date().toISOString()} />
+      <WeeklyReportPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
       <section className="form-panel">
         <div className="edit-card-heading">
           <div>
@@ -3081,9 +3094,28 @@ function InvestmentSettingsForm({
 }
 
 function ManualCompForm({ busy, busyLabel, submit }: { busy: boolean; busyLabel: string | null; submit: SubmitHandler }) {
+  const [selectedGrade, setSelectedGrade] = useState<GradeType>("RAW");
   return (
     <section className="form-panel">
-      <h2>Add Sold Comp</h2>
+      <div className="edit-card-heading">
+        <div>
+          <h2>Guided Card Comp Entry</h2>
+          <span>Add one verified sold comp at a time, then let the app recalculate averages and report rankings.</span>
+        </div>
+        <span className="chip muted">Manual assisted workflow</span>
+      </div>
+      <div className="comp-quick-grid" aria-label="Quick comp grade buttons">
+        {gradeTypes.map((gradeType) => (
+          <button
+            className={selectedGrade === gradeType ? "mini-action solid" : "mini-action"}
+            key={gradeType}
+            type="button"
+            onClick={() => setSelectedGrade(gradeType)}
+          >
+            {formatGradeType(gradeType)}
+          </button>
+        ))}
+      </div>
       <form
         className="form-grid"
         onSubmit={(event) =>
@@ -3095,17 +3127,40 @@ function ManualCompForm({ busy, busyLabel, submit }: { busy: boolean; busyLabel:
           )
         }
       >
+        <div className="form-step wide-field">
+          <span>Step 1</span>
+          <strong>Identify the card</strong>
+        </div>
         <TextInput name="cardName" label="Card name" required />
         <TextInput name="setName" label="Set" required />
         <TextInput name="cardNumber" label="Card number" placeholder="025/198" required />
+        <div className="form-step wide-field">
+          <span>Step 2</span>
+          <strong>Enter the sold comp</strong>
+        </div>
         <SelectInput
           name="gradeType"
           label="Grade type"
+          value={selectedGrade}
+          onChange={(event) => setSelectedGrade(event.currentTarget.value as GradeType)}
           options={gradeTypes.map((gradeType) => ({ value: gradeType, label: formatGradeType(gradeType) }))}
+        />
+        <SelectInput
+          name="sourceQuality"
+          label="Source quality"
+          defaultValue="EBAY_SOLD"
+          options={compSourceQualities.map((sourceQuality) => ({
+            value: sourceQuality,
+            label: formatSourceQuality(sourceQuality)
+          }))}
         />
         <TextInput name="salePrice" label="Sale price" type="number" min="0" max="100000" step="0.01" required />
         <TextInput name="soldAt" label="Sale date" type="date" min="2020-01-01" defaultValue={toDateInput(new Date().toISOString())} required />
         <TextInput name="sourceUrl" label="Source URL" type="url" placeholder="https://www.ebay.com/itm/..." />
+        <div className="form-step wide-field">
+          <span>Step 3</span>
+          <strong>Quality flags for ranking</strong>
+        </div>
         <TextInput name="characterName" label="Character" />
         <SelectInput name="era" label="Era" options={eras.filter((era) => era !== "ALL").map(optionFromString)} />
         <label className="checkbox-label">
@@ -3143,6 +3198,7 @@ function RecentCompsTable({ comps }: { comps: CardCompSaleDTO[] }) {
           comps.slice(0, 12).map((comp) => (
             <div className="table-row" key={comp.id}>
               <span className="chip muted">{formatGradeType(comp.gradeType)}</span>
+              <span className="chip muted">{formatSourceQuality(comp.sourceQuality)}</span>
               <strong>{comp.cardName}</strong>
               <span>
                 {comp.setName} #{comp.cardNumber}
@@ -3210,6 +3266,183 @@ function Top10Poster({ cards, generatedAt }: { cards: CardDTO[]; generatedAt: st
         <EmptyState icon={Trophy} title="No Top 10 yet" detail="Add raw and graded comps to generate the watchlist." />
       )}
     </section>
+  );
+}
+
+function WeeklyReportPanel({
+  dashboard,
+  isAdmin,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  isAdmin: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const latestReport = dashboard.investmentReports[0] ?? null;
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const selectedReport =
+    dashboard.investmentReports.find((report) => report.id === selectedReportId) ?? latestReport;
+  return (
+    <>
+      <section className="form-panel">
+        <div className="edit-card-heading">
+          <div>
+            <h2>Weekly Investment Report Archive</h2>
+            <span>
+              {dashboard.investmentReports.length
+                ? `${dashboard.investmentReports.length} saved report${dashboard.investmentReports.length === 1 ? "" : "s"}`
+                : "No weekly reports generated yet"}
+            </span>
+          </div>
+          {isAdmin ? (
+            <button
+              className="mini-action solid"
+              disabled={busy}
+              type="button"
+              onClick={() =>
+                runAction(
+                  "Generating weekly investment report",
+                  () =>
+                    requestJson("/api/radar/cards/reports", {
+                      method: "POST",
+                      body: JSON.stringify({ notes: "Generated from current manual comp data." })
+                    }),
+                  { success: "Weekly investment report generated" }
+                )
+              }
+            >
+              <Trophy size={14} />
+              {busyLabel === "Generating weekly investment report" ? "Generating" : "Generate Weekly Report Now"}
+            </button>
+          ) : null}
+        </div>
+        {latestReport ? (
+          <div className="report-archive-list">
+            {dashboard.investmentReports.slice(0, 6).map((report) => (
+              <button
+                className={selectedReport?.id === report.id ? "report-archive-row active" : "report-archive-row"}
+                key={report.id}
+                type="button"
+                onClick={() => setSelectedReportId(report.id)}
+              >
+                <div>
+                  <strong>{report.title}</strong>
+                  <span>
+                    Generated {dateTime(report.generatedAt)} - {report.top10RawToGrade.length} Top 10 cards
+                  </span>
+                </div>
+                <ChevronRight size={16} />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Trophy}
+            title="No weekly investment reports"
+            detail="Generate a report after entering raw and graded sold comps."
+          />
+        )}
+      </section>
+      {selectedReport ? <InvestmentReportPoster report={selectedReport} /> : null}
+    </>
+  );
+}
+
+function InvestmentReportPoster({ report }: { report: InvestmentReportDTO }) {
+  return (
+    <section className="poster-panel investment-report-poster" id={`investment-report-${report.id}`}>
+      <div className="poster-header">
+        <div>
+          <p className="eyeline">Weekly Investment Report</p>
+          <h2>{report.title}</h2>
+          <span>
+            {shortDate(report.periodStart)} to {shortDate(report.periodEnd)}
+          </span>
+        </div>
+        <button className="mini-action solid print-control" type="button" onClick={() => window.print()}>
+          <Printer size={14} />
+          Print Report
+        </button>
+      </div>
+      <div className="report-note-grid">
+        <ReportHighlight label="Best buy" item={report.bestBuy} />
+        <ReportHighlight label="Riskiest buy" item={report.riskiestBuy} />
+        <ReportHighlight label="Best under $25 raw" item={report.bestUnder25Raw} />
+        <ReportHighlight label="Best premium card" item={report.bestPremiumCard} />
+      </div>
+      {report.notes ? <p className="reason-text">{report.notes}</p> : null}
+      <div className="report-category-grid">
+        <ReportCategory title="Top 10 raw-to-grade" items={report.top10RawToGrade} />
+        <ReportCategory title="Top 5 safest PSA 9 flips" items={report.safestPsa9Flips} />
+        <ReportCategory title="Top 5 highest PSA 10 upside" items={report.highestPsa10Upside} />
+        <ReportCategory title="Top 5 Beckett candidates" items={report.beckettCandidates} />
+        <ReportCategory title="Top 5 avoid / overpriced" items={report.avoidOverpriced} />
+      </div>
+    </section>
+  );
+}
+
+function ReportHighlight({ label, item }: { label: string; item: InvestmentReportItemDTO | null }) {
+  return (
+    <div className="report-highlight">
+      <span>{label}</span>
+      {item ? (
+        <>
+          <strong>{item.cardName}</strong>
+          <small>
+            {item.setName} #{item.cardNumber} - Raw {money(item.rawAveragePrice)}
+          </small>
+        </>
+      ) : (
+        <small>Not enough comp data</small>
+      )}
+    </div>
+  );
+}
+
+function ReportCategory({ title, items }: { title: string; items: InvestmentReportItemDTO[] }) {
+  return (
+    <div className="report-category">
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="poster-grid">
+          {items.map((item, index) => (
+            <ReportCardLine item={item} key={`${title}-${item.cardId}`} rank={index + 1} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState icon={FileText} title="No qualifying cards" detail="Add more recent comps for this report section." />
+      )}
+    </div>
+  );
+}
+
+function ReportCardLine({ item, rank }: { item: InvestmentReportItemDTO; rank: number }) {
+  return (
+    <article className="poster-row report-row">
+      <div className="poster-rank">
+        <Trophy size={16} />
+        {rank}
+      </div>
+      <div className="poster-card-name">
+        <strong>{item.cardName}</strong>
+        <span>
+          {item.setName} #{item.cardNumber}
+        </span>
+      </div>
+      <span>Raw {money(item.rawAveragePrice)}</span>
+      <span>PSA 9 {money(item.psa9EstimatedProfit)}</span>
+      <span>PSA 10 {money(item.psa10EstimatedProfit)}</span>
+      <span>BGS 10 {money(item.bgs10EstimatedProfit)}</span>
+      <span>Limit {money(item.maxRawBuyPrice)}</span>
+      <span>Confidence {item.compConfidenceScore}%</span>
+      <span className={`chip ${statusTone(item.rating)}`}>{item.rating}</span>
+      <p className="reason-text">{item.reason}</p>
+    </article>
   );
 }
 
