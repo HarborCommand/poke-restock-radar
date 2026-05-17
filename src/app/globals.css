@@ -717,6 +717,30 @@ textarea {
   gap: 10px;
 }
 
+.launch-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(56, 215, 125, 0.055);
+  padding: 12px;
+}
+
+.launch-summary strong {
+  display: block;
+  color: var(--text);
+  font-size: 1.55rem;
+  line-height: 1;
+}
+
+.launch-summary span:not(.chip) {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .setup-row,
 .quality-row,
 .template-card,
@@ -756,6 +780,10 @@ textarea {
 
 .quality-row svg {
   color: var(--yellow);
+}
+
+.calibration-row svg {
+  color: var(--blue);
 }
 
 .template-card {

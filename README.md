@@ -533,6 +533,31 @@ npm run smoke:prod
 - Store predictions are based on logged sightings and visits, so confidence is low until enough local history exists.
 - The app is standalone and not connected to Harbor Command; it must stay on its own Vercel project and Neon database.
 
+## Phase 18 Owner Launch And Alert Calibration
+
+The launch dashboard is meant for the first real week of use. Admins should use `Owner Launch Checklist` to confirm:
+
+- Real products are loaded.
+- Local store routes are ready for Field Mode.
+- Release and card context exists for priority scoring.
+- Vercel cron and monitor checks have run recently.
+- Browser push is enabled on the phone.
+- SMTP or Twilio is configured if you want a backup channel.
+- Friend access has been tested.
+- Daily recaps, inventory logging, and backup routines are part of the launch rhythm.
+
+Use `Alert Calibration Queue` every morning during launch. It surfaces stale checks, low-confidence monitor results, blocked/captcha pages, pending confirmation alerts, suppressed duplicate alerts, and repeated false positives. For each item, tune the product with stricter required words, ignore misleading words, lower check frequency, pause monitoring, or manually verify the official retailer page.
+
+Weekly owner rhythm:
+
+```bash
+npm run backup:json
+npm run backup:postgres
+npm run smoke:prod
+```
+
+Keep the first week conservative: confirm restocks manually, mark false positives, and only turn on SMS/email after the push and in-app alert flow is behaving correctly.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.

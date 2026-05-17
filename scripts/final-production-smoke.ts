@@ -125,11 +125,15 @@ async function main() {
   const dashboard = await authedGet("/api/radar/dashboard");
   const dashboardBody = await json(dashboard);
   if (!dashboardBody.health?.auth?.currentSessionValid) throw new Error("Dashboard health did not see the current session.");
+  if (!Array.isArray(dashboardBody.ownerLaunchChecklist)) throw new Error("Dashboard is missing owner launch checklist data.");
+  if (!Array.isArray(dashboardBody.alertCalibrationItems)) throw new Error("Dashboard is missing alert calibration data.");
   checks.dashboard = {
     products: dashboardBody.products?.length ?? 0,
     stores: dashboardBody.stores?.length ?? 0,
     alerts: dashboardBody.alerts?.length ?? 0,
-    systemStatus: dashboardBody.health?.status
+    systemStatus: dashboardBody.health?.status,
+    launchChecklist: dashboardBody.ownerLaunchChecklist.length,
+    alertCalibrationItems: dashboardBody.alertCalibrationItems.length
   };
 
   for (const path of ["/api/radar/products", "/api/radar/stores", "/api/radar/releases", "/api/radar/cards", "/api/radar/alerts"]) {

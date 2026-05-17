@@ -573,7 +573,14 @@ export function RadarApp() {
           />
         ) : null}
         {activeTab === "alerts" ? (
-          <AlertsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+          <AlertsPanel
+            dashboard={dashboard}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+            setActiveTab={setActiveTab}
+          />
         ) : null}
       </section>
 
@@ -946,6 +953,8 @@ function DashboardPanel({
       />
       {dashboard.currentUser.role === "ADMIN" ? (
         <>
+          <OwnerLaunchChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+          <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
           <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
           <DataQualityPanel dashboard={dashboard} setActiveTab={setActiveTab} />
         </>
@@ -1272,6 +1281,83 @@ function DataQualityPanel({
         </div>
       ) : (
         <EmptyState icon={ShieldCheck} title="Core data looks clean" detail="No setup or product data quality warnings right now." />
+      )}
+    </section>
+  );
+}
+
+function OwnerLaunchChecklistPanel({
+  dashboard,
+  setActiveTab
+}: {
+  dashboard: DashboardDTO;
+  setActiveTab: (tab: Tab) => void;
+}) {
+  const completeCount = dashboard.ownerLaunchChecklist.filter((item) => item.complete).length;
+  return (
+    <section className="split-grid launch-checklist-panel">
+      <PanelHeader title="Owner Launch Checklist" />
+      <div className="launch-summary">
+        <div>
+          <strong>
+            {completeCount}/{dashboard.ownerLaunchChecklist.length}
+          </strong>
+          <span>launch items ready</span>
+        </div>
+        <span className={`chip ${completeCount === dashboard.ownerLaunchChecklist.length ? "good" : "watch"}`}>
+          {completeCount === dashboard.ownerLaunchChecklist.length ? "Launch Ready" : "Needs Setup"}
+        </span>
+      </div>
+      <div className="setup-list">
+        {dashboard.ownerLaunchChecklist.map((item) => (
+          <button className="setup-row" key={item.id} type="button" onClick={() => setActiveTab(item.tab)}>
+            <span className={`chip ${item.complete ? "good" : statusTone(item.severity)}`}>
+              {item.complete ? "Done" : item.severity}
+            </span>
+            <div>
+              <strong>{item.label}</strong>
+              <small>{item.detail}</small>
+            </div>
+            <ChevronRight size={15} />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AlertCalibrationPanel({
+  dashboard,
+  setActiveTab
+}: {
+  dashboard: DashboardDTO;
+  setActiveTab: (tab: Tab) => void;
+}) {
+  return (
+    <section className="split-grid calibration-panel">
+      <PanelHeader title="Alert Calibration Queue" />
+      {dashboard.alertCalibrationItems.length ? (
+        <div className="table-list">
+          {dashboard.alertCalibrationItems.slice(0, 8).map((item) => (
+            <button className="quality-row calibration-row" key={item.id} type="button" onClick={() => setActiveTab(item.tab)}>
+              <Radar size={16} />
+              <div>
+                <strong>{item.title}</strong>
+                <span>
+                  {item.category}
+                  {item.retailerName ? ` - ${item.retailerName}` : ""}. {item.detail} {item.recommendation}
+                </span>
+              </div>
+              <span className={`chip ${statusTone(item.severity)}`}>{item.severity}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={ShieldCheck}
+          title="No calibration issues"
+          detail="No stale checks, blocked pages, low-confidence results, or repeated false positives need attention."
+        />
       )}
     </section>
   );
@@ -4116,13 +4202,15 @@ function AlertsPanel({
   busy,
   busyLabel,
   submit,
-  runAction
+  runAction,
+  setActiveTab
 }: {
   dashboard: DashboardDTO;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
   runAction: ActionHandler;
+  setActiveTab: (tab: Tab) => void;
 }) {
   return (
     <>
@@ -4137,6 +4225,7 @@ function AlertsPanel({
           <StatCard label="Avg score" value={dashboard.alertAnalytics.averageScore} detail="0-100 priority" />
         </div>
       </section>
+      <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
       <div className="table-list alerts-table">
         {dashboard.alerts.length ? (
           dashboard.alerts.map((alert) => {

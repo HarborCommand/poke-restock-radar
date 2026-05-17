@@ -480,6 +480,29 @@ export type DataQualityWarningDTO = {
   entityId?: string;
 };
 
+export type OwnerLaunchChecklistItemDTO = {
+  id: string;
+  label: string;
+  detail: string;
+  complete: boolean;
+  severity: Priority;
+  tab: "dashboard" | "products" | "stores" | "releases" | "cards" | "alerts";
+};
+
+export type AlertCalibrationItemDTO = {
+  id: string;
+  severity: Priority;
+  category: string;
+  title: string;
+  detail: string;
+  recommendation: string;
+  productId: string | null;
+  productName: string | null;
+  retailerName: string | null;
+  lastSeenAt: string | null;
+  tab: "products" | "alerts";
+};
+
 export type InvestmentSettingsDTO = {
   id: string;
   gradingCost: number;
@@ -572,6 +595,8 @@ export type DashboardDTO = {
   health: AppHealthDTO | null;
   setupChecklist: SetupChecklistItemDTO[];
   dataQualityWarnings: DataQualityWarningDTO[];
+  ownerLaunchChecklist: OwnerLaunchChecklistItemDTO[];
+  alertCalibrationItems: AlertCalibrationItemDTO[];
   stats: {
     actionableProducts: number;
     unreadAlerts: number;

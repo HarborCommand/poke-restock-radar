@@ -219,6 +219,47 @@ test("Phase 17 production hardening and owner QA pieces exist", () => {
   assert.match(readme, /npm run smoke:prod/);
 });
 
+test("Phase 18 owner launch and alert calibration pieces exist", () => {
+  const types = readFileSync(join(root, "src", "types", "radar.ts"), "utf8");
+  for (const phrase of [
+    "OwnerLaunchChecklistItemDTO",
+    "AlertCalibrationItemDTO",
+    "ownerLaunchChecklist",
+    "alertCalibrationItems"
+  ]) {
+    assert.match(types, new RegExp(phrase), `missing Phase 18 type phrase ${phrase}`);
+  }
+
+  const service = readFileSync(join(root, "src", "lib", "radar-service.ts"), "utf8");
+  for (const phrase of [
+    "ownerLaunchChecklist",
+    "alertCalibrationItems",
+    "Pending confirmation",
+    "Repeated false positives",
+    "Backup routine ready"
+  ]) {
+    assert.match(service, new RegExp(phrase), `missing Phase 18 service phrase ${phrase}`);
+  }
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of [
+    "Owner Launch Checklist",
+    "Alert Calibration Queue",
+    "launch items ready",
+    "No calibration issues"
+  ]) {
+    assert.match(app, new RegExp(phrase), `missing Phase 18 UI phrase ${phrase}`);
+  }
+
+  const smoke = readFileSync(join(root, "scripts", "final-production-smoke.ts"), "utf8");
+  assert.match(smoke, /ownerLaunchChecklist/);
+  assert.match(smoke, /alertCalibrationItems/);
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /Phase 18 Owner Launch And Alert Calibration/);
+  assert.match(readme, /Alert Calibration Queue/);
+});
+
 test("Auth hardening and password reset flow pieces exist", () => {
   const files = [
     join(root, "src", "app", "api", "auth", "forgot-password", "route.ts"),

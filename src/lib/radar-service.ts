@@ -29,6 +29,7 @@ import type {
   MonitorAccuracyStatsDTO,
   MonitorLogDTO,
   NotificationSettingsDTO,
+  OwnerLaunchChecklistItemDTO,
   Priority,
   ProductDTO,
   ProductPriorityScoreDTO,
@@ -40,6 +41,7 @@ import type {
   SetupChecklistItemDTO,
   SessionUser,
   SightingDTO,
+  AlertCalibrationItemDTO,
   StoreDTO,
   StoreVisitResult
 } from "@/types/radar";
@@ -572,6 +574,256 @@ function dataQualityWarnings(input: {
   return warnings.slice(0, 30);
 }
 
+function ownerLaunchChecklist(input: {
+  products: ProductDTO[];
+  stores: StoreDTO[];
+  releases: ReleaseDTO[];
+  cards: CardDTO[];
+  alerts: AlertDTO[];
+  monitorLogs: MonitorLogDTO[];
+  notificationSettings: NotificationSettingsDTO;
+  health: DashboardDTO["health"];
+  dailyRecaps: DailyRecapDTO[];
+  inventory: InventoryItemDTO[];
+  users: DashboardDTO["users"];
+}): OwnerLaunchChecklistItemDTO[] {
+  const now = Date.now();
+  const recentMonitorRun = input.monitorLogs.some((log) => new Date(log.startedAt).getTime() > now - 24 * 60 * 60 * 1000);
+  const externalProviderConfigured = Boolean(input.health?.providers.email.configured || input.health?.providers.sms.configured);
+  const externalChannelEnabled =
+    (input.notificationSettings.email && Boolean(input.notificationSettings.emailTo)) ||
+    (input.notificationSettings.sms && Boolean(input.notificationSettings.phone));
+  const pushReady = Boolean(input.health?.providers.push.configured && input.notificationSettings.browserPush);
+  const friendCount = input.users.filter((user) => user.role === "FRIEND" && !user.disabledAt).length;
+  const actionableAlerts = input.alerts.filter((alert) => !alert.read && !alert.suppressedAt).length;
+  const calibratedProducts = input.products.filter(
+    (product) => product.monitorEnabled && (product.requiredWords || product.ignoreWords || product.lastSuccessfulCheckedAt)
+  ).length;
+
+  return [
+    {
+      id: "real-products",
+      label: "Real watchlist loaded",
+      detail: `${input.products.length}/6 products tracked; target your live ETBs, boosters, and bundles first`,
+      complete: input.products.length >= 6,
+      severity: input.products.length >= 3 ? "MEDIUM" : "HIGH",
+      tab: "products"
+    },
+    {
+      id: "real-stores",
+      label: "Local store route ready",
+      detail: `${input.stores.length}/3 stores saved for morning Field Mode decisions`,
+      complete: input.stores.length >= 3,
+      severity: input.stores.length >= 1 ? "MEDIUM" : "HIGH",
+      tab: "stores"
+    },
+    {
+      id: "release-card-context",
+      label: "Release and card context linked",
+      detail: `${input.releases.length} releases and ${input.cards.length} cards available for priority scoring`,
+      complete: input.releases.length >= 1 && input.cards.length >= 5,
+      severity: input.releases.length >= 1 ? "MEDIUM" : "HIGH",
+      tab: input.releases.length >= 1 ? "cards" : "releases"
+    },
+    {
+      id: "monitor-cron",
+      label: "Cron and monitor checks active",
+      detail: recentMonitorRun
+        ? `Recent monitor run logged; ${input.health?.monitor.dueProductCount ?? 0} products currently due`
+        : "Run due checks and verify Vercel cron logs within the last 24 hours",
+      complete: Boolean(input.health?.monitor.monitorJobSecretConfigured && input.health?.monitor.vercelCronSecretConfigured && recentMonitorRun),
+      severity: recentMonitorRun ? "MEDIUM" : "HIGH",
+      tab: "products"
+    },
+    {
+      id: "push-alerts",
+      label: "Fast push alerts ready",
+      detail: pushReady ? "VAPID is configured and browser push is enabled for this Admin" : "Enable browser push and allow permission on your phone",
+      complete: pushReady,
+      severity: pushReady ? "LOW" : "HIGH",
+      tab: "alerts"
+    },
+    {
+      id: "sms-email",
+      label: "Backup alert channel configured",
+      detail: externalProviderConfigured
+        ? externalChannelEnabled
+          ? "Email or SMS provider is configured and enabled for this user"
+          : "Provider exists; enable email or SMS in notification settings"
+        : "Add SMTP or Twilio env vars if you want non-browser backup alerts",
+      complete: externalProviderConfigured && externalChannelEnabled,
+      severity: externalProviderConfigured ? "MEDIUM" : "LOW",
+      tab: "alerts"
+    },
+    {
+      id: "calibration",
+      label: "Detection tuning started",
+      detail: `${calibratedProducts}/${input.products.filter((product) => product.monitorEnabled).length} monitored products have checks or tuning words`,
+      complete: calibratedProducts >= Math.min(3, input.products.filter((product) => product.monitorEnabled).length),
+      severity: calibratedProducts ? "MEDIUM" : "HIGH",
+      tab: "products"
+    },
+    {
+      id: "friend-access",
+      label: "Friend access tested",
+      detail: friendCount ? `${friendCount} active friend account${friendCount === 1 ? "" : "s"}` : "Create one invite and verify Friend permissions",
+      complete: friendCount > 0,
+      severity: "LOW",
+      tab: "alerts"
+    },
+    {
+      id: "daily-rhythm",
+      label: "Daily workflow started",
+      detail: `${input.dailyRecaps.length} recaps and ${input.inventory.length} inventory entries logged`,
+      complete: input.dailyRecaps.length > 0 || input.inventory.length > 0,
+      severity: "LOW",
+      tab: "dashboard"
+    },
+    {
+      id: "backup-routine",
+      label: "Backup routine ready",
+      detail: "JSON and Postgres backup commands are documented; run before resets and weekly during launch",
+      complete: true,
+      severity: "LOW",
+      tab: "dashboard"
+    },
+    {
+      id: "alert-inbox",
+      label: "Alert inbox reviewed",
+      detail: actionableAlerts ? `${actionableAlerts} unread actionable alerts need review` : "No unread actionable alerts",
+      complete: actionableAlerts === 0,
+      severity: actionableAlerts ? "MEDIUM" : "LOW",
+      tab: "alerts"
+    }
+  ];
+}
+
+function addCalibrationItem(
+  items: AlertCalibrationItemDTO[],
+  item: Omit<AlertCalibrationItemDTO, "id">
+) {
+  const key = `${item.category}:${item.productId || item.title}`.toLowerCase();
+  if (items.some((existing) => existing.id === key)) return;
+  items.push({ id: key, ...item });
+}
+
+function alertCalibrationItems(input: {
+  products: ProductDTO[];
+  monitorLogs: MonitorLogDTO[];
+  alerts: AlertDTO[];
+}): AlertCalibrationItemDTO[] {
+  const items: AlertCalibrationItemDTO[] = [];
+  const productsById = new Map(input.products.map((product) => [product.id, product]));
+  const staleCutoff = Date.now() - 24 * 60 * 60 * 1000;
+
+  for (const product of input.products) {
+    if (product.monitorEnabled && (!product.lastSuccessfulCheckedAt || new Date(product.lastSuccessfulCheckedAt).getTime() < staleCutoff)) {
+      addCalibrationItem(items, {
+        severity: product.lastMonitorError ? "HIGH" : "MEDIUM",
+        category: "Stale check",
+        title: `${product.name} needs a fresh successful check`,
+        detail: product.lastSuccessfulCheckedAt
+          ? `Last successful check was ${product.lastSuccessfulCheckedAt.slice(0, 10)}.`
+          : "No successful public-page check has been logged yet.",
+        recommendation: "Run Check Now, then add required/ignore words if the page text is noisy.",
+        productId: product.id,
+        productName: product.name,
+        retailerName: product.retailerName,
+        lastSeenAt: product.lastCheckedAt,
+        tab: "products"
+      });
+    }
+    if (product.pendingAlertStatus && product.pendingAlertCount > 0) {
+      addCalibrationItem(items, {
+        severity: "HIGH",
+        category: "Pending confirmation",
+        title: `${product.name} is waiting for a second matching check`,
+        detail: `${product.pendingAlertStatus} held at confidence ${product.pendingAlertConfidence ?? 0}.`,
+        recommendation: "Run another manual check or force alert only after visually confirming the public page.",
+        productId: product.id,
+        productName: product.name,
+        retailerName: product.retailerName,
+        lastSeenAt: product.pendingAlertAt,
+        tab: "products"
+      });
+    }
+  }
+
+  for (const log of input.monitorLogs) {
+    const product = log.productId ? productsById.get(log.productId) : null;
+    if (log.status === "BLOCKED" || log.blockedType) {
+      addCalibrationItem(items, {
+        severity: "HIGH",
+        category: log.blockedType === "CAPTCHA_ROBOT_PAGE" ? "Captcha/robot page" : "Blocked page",
+        title: `${log.productName || "A monitored product"} returned a blocked page`,
+        detail: `${log.blockedType || "Blocked"} at HTTP ${log.httpStatus ?? "unknown"} with confidence ${log.confidenceScore ?? 0}.`,
+        recommendation: "Do not alert from blocked pages. Pause monitoring or check less often for this product.",
+        productId: log.productId,
+        productName: log.productName,
+        retailerName: product?.retailerName ?? null,
+        lastSeenAt: log.startedAt,
+        tab: "products"
+      });
+    } else if ((log.confidenceScore ?? 100) < 60) {
+      addCalibrationItem(items, {
+        severity: log.alertSent ? "HIGH" : "MEDIUM",
+        category: "Low confidence",
+        title: `${log.productName || "A monitored product"} has low-confidence detection`,
+        detail: `${log.detectedStatus || log.status} scored ${log.confidenceScore ?? 0}; detected words: ${log.detectedWords || "none"}.`,
+        recommendation: "Add required words for real buy signals and ignore words for promos, ads, or recommendations.",
+        productId: log.productId,
+        productName: log.productName,
+        retailerName: product?.retailerName ?? null,
+        lastSeenAt: log.startedAt,
+        tab: "products"
+      });
+    }
+  }
+
+  const falsePositiveCounts = new Map<string, number>();
+  for (const alert of input.alerts) {
+    if (alert.falsePositiveAt && alert.entityId) {
+      falsePositiveCounts.set(alert.entityId, (falsePositiveCounts.get(alert.entityId) ?? 0) + 1);
+    }
+    if (alert.suppressedAt && alert.entityId) {
+      const product = productsById.get(alert.entityId);
+      addCalibrationItem(items, {
+        severity: "LOW",
+        category: "Suppressed duplicate",
+        title: `${alert.title} was suppressed`,
+        detail: alert.explanation || alert.reason,
+        recommendation: "If this was useful, shorten the cooldown or disable digest/urgent-only mode for this product.",
+        productId: alert.entityId,
+        productName: product?.name ?? null,
+        retailerName: product?.retailerName ?? null,
+        lastSeenAt: alert.suppressedAt,
+        tab: "alerts"
+      });
+    }
+  }
+
+  for (const [productId, count] of falsePositiveCounts) {
+    if (count < 2) continue;
+    const product = productsById.get(productId);
+    addCalibrationItem(items, {
+      severity: "HIGH",
+      category: "Repeated false positives",
+      title: `${product?.name || "A product"} has ${count} false-positive alerts`,
+      detail: "The current detector is too broad for this page.",
+      recommendation: "Add stricter required words, ignore misleading page text, or pause the monitor until tuned.",
+      productId,
+      productName: product?.name ?? null,
+      retailerName: product?.retailerName ?? null,
+      lastSeenAt: null,
+      tab: "alerts"
+    });
+  }
+
+  return items
+    .sort((a, b) => scoreFromPriority(b.severity, 3, 2, 1) - scoreFromPriority(a.severity, 3, 2, 1))
+    .slice(0, 20);
+}
+
 function monitorLogToDTO(log: Prisma.MonitorLogGetPayload<{ include: typeof monitorLogInclude }>): MonitorLogDTO {
   return {
     id: log.id,
@@ -1081,6 +1333,25 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     monitorRunCount: monitorLogs.length
   });
   const qualityWarnings = dataQualityWarnings({ products: productDTOs, notificationSettings: notificationSettingsDTO });
+  const monitorLogDTOs = monitorLogs.map(monitorLogToDTO);
+  const launchChecklist = ownerLaunchChecklist({
+    products: productDTOs,
+    stores: storeDTOs,
+    releases: releaseDTOs,
+    cards: cardDTOs,
+    alerts: alertDTOs,
+    monitorLogs: monitorLogDTOs,
+    notificationSettings: notificationSettingsDTO,
+    health,
+    dailyRecaps: dailyRecaps.map(dailyRecapToDTO),
+    inventory: inventory.map(inventoryItemToDTO),
+    users: accessOverview.users
+  });
+  const calibrationQueue = alertCalibrationItems({
+    products: productDTOs,
+    monitorLogs: monitorLogDTOs,
+    alerts: alertDTOs
+  });
 
   return {
     currentUser,
@@ -1113,7 +1384,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     cardCompSales: cardCompSales.map(cardCompSaleToDTO),
     investmentReports: investmentReports.map(investmentReportToDTO),
     alerts: alertDTOs,
-    monitorLogs: monitorLogs.map(monitorLogToDTO),
+    monitorLogs: monitorLogDTOs,
     monitorAccuracyStats: accuracyStats,
     alertAnalytics: alertStats,
     notificationSettings: notificationSettingsDTO,
@@ -1121,6 +1392,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     health,
     setupChecklist: setup,
     dataQualityWarnings: qualityWarnings,
+    ownerLaunchChecklist: launchChecklist,
+    alertCalibrationItems: calibrationQueue,
     stats: {
       actionableProducts: productDTOs.filter((product) =>
         ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)
