@@ -33,6 +33,9 @@ model User {
   createdInvites       FriendInvite[]        @relation("InviteCreatedBy")
   acceptedInvites      FriendInvite[]        @relation("InviteAcceptedBy")
   auditLogs            AuditLog[]
+  inventoryItems       InventoryItem[]
+  dailyRecaps          DailyRecap[]
+  savedFilterPresets   SavedFilterPreset[]
 }
 
 model PasswordResetToken {
@@ -152,6 +155,7 @@ model Product {
   history        RestockHistory[]
   monitorLogs    MonitorLog[]
   priorityScores ProductPriorityScore[]
+  inventoryItems InventoryItem[]
 
   @@index([retailerId])
   @@index([releaseId])
@@ -329,6 +333,7 @@ model Card {
   release                  Release?            @relation(fields: [releaseId], references: [id], onDelete: SetNull)
   snapshots                CardPriceSnapshot[]
   compSales                CardCompSale[]
+  inventoryItems           InventoryItem[]
 
   @@index([releaseId])
   @@index([setName])
@@ -413,6 +418,60 @@ model InvestmentSettings {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InventoryItem {
+  id           String   @id @default(cuid())
+  userId       String?
+  itemType     String
+  itemName     String
+  productId    String?
+  cardId       String?
+  cost         Float
+  quantity     Int      @default(1)
+  source       String
+  purchasedAt  DateTime
+  expectedPlan String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  card         Card?    @relation(fields: [cardId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([productId])
+  @@index([cardId])
+  @@index([purchasedAt])
+}
+
+model DailyRecap {
+  id            String   @id @default(cuid())
+  userId        String?
+  recapDate     DateTime
+  summary       String
+  productChecks Int      @default(0)
+  storeVisits   Int      @default(0)
+  purchases     Int      @default(0)
+  alertsCreated Int      @default(0)
+  createdAt     DateTime @default(now())
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([recapDate])
+  @@index([createdAt])
+}
+
+model SavedFilterPreset {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  section   String
+  filters   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([section])
 }
 
 model ProductPriorityScore {

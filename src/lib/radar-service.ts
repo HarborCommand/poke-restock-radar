@@ -23,6 +23,8 @@ import type {
   InvestmentSettingsDTO,
   InvestmentReportDTO,
   InvestmentReportItemDTO,
+  InventoryItemDTO,
+  DailyRecapDTO,
   MonitorAccuracyStatsDTO,
   MonitorLogDTO,
   NotificationSettingsDTO,
@@ -33,6 +35,7 @@ import type {
   Rating,
   ReleaseDTO,
   RetailerDTO,
+  SavedFilterPresetDTO,
   SetupChecklistItemDTO,
   SessionUser,
   SightingDTO,
@@ -628,6 +631,46 @@ function investmentSettingsToDTO(settings: Prisma.InvestmentSettingsGetPayload<R
   };
 }
 
+function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<Record<string, never>>): InventoryItemDTO {
+  return {
+    id: item.id,
+    itemType: item.itemType,
+    itemName: item.itemName,
+    productId: item.productId,
+    cardId: item.cardId,
+    cost: item.cost,
+    quantity: item.quantity,
+    source: item.source,
+    purchasedAt: item.purchasedAt.toISOString(),
+    expectedPlan: item.expectedPlan,
+    notes: item.notes,
+    createdAt: item.createdAt.toISOString()
+  };
+}
+
+function dailyRecapToDTO(recap: Prisma.DailyRecapGetPayload<Record<string, never>>): DailyRecapDTO {
+  return {
+    id: recap.id,
+    recapDate: recap.recapDate.toISOString(),
+    summary: recap.summary,
+    productChecks: recap.productChecks,
+    storeVisits: recap.storeVisits,
+    purchases: recap.purchases,
+    alertsCreated: recap.alertsCreated,
+    createdAt: recap.createdAt.toISOString()
+  };
+}
+
+function savedFilterPresetToDTO(preset: Prisma.SavedFilterPresetGetPayload<Record<string, never>>): SavedFilterPresetDTO {
+  return {
+    id: preset.id,
+    name: preset.name,
+    section: preset.section,
+    filters: preset.filters,
+    createdAt: preset.createdAt.toISOString()
+  };
+}
+
 function cardCompSaleToDTO(sale: Prisma.CardCompSaleGetPayload<{ include: typeof compSaleInclude }>): CardCompSaleDTO {
   return {
     id: sale.id,
@@ -919,7 +962,10 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     monitorLogs,
     notificationSettings,
     investmentSettings,
-    investmentReports
+    investmentReports,
+    inventory,
+    dailyRecaps,
+    savedFilterPresets
   ] =
     await Promise.all([
     prisma.retailer.findMany({ orderBy: { name: "asc" } }),
@@ -939,7 +985,22 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     prisma.monitorLog.findMany({ include: monitorLogInclude, orderBy: { startedAt: "desc" }, take: 50 }),
     ensureNotificationSettings(currentUser),
     ensureInvestmentSettings(currentUser),
-    prisma.investmentReport.findMany({ orderBy: { generatedAt: "desc" }, take: 12 })
+    prisma.investmentReport.findMany({ orderBy: { generatedAt: "desc" }, take: 12 }),
+    prisma.inventoryItem.findMany({
+      where: { OR: [{ userId: null }, { userId: currentUser.id }] },
+      orderBy: { purchasedAt: "desc" },
+      take: 40
+    }),
+    prisma.dailyRecap.findMany({
+      where: { OR: [{ userId: null }, { userId: currentUser.id }] },
+      orderBy: { recapDate: "desc" },
+      take: 14
+    }),
+    prisma.savedFilterPreset.findMany({
+      where: { userId: currentUser.id },
+      orderBy: { createdAt: "desc" },
+      take: 40
+    })
   ]);
   const accessOverview =
     currentUser.role === "ADMIN"
@@ -997,9 +1058,9 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       newestReleases: releaseDTOs.slice(0, 5),
       bestCards: cardDTOs.slice(0, 5)
     },
-    inventory: [],
-    dailyRecaps: [],
-    savedFilterPresets: [],
+    inventory: inventory.map(inventoryItemToDTO),
+    dailyRecaps: dailyRecaps.map(dailyRecapToDTO),
+    savedFilterPresets: savedFilterPresets.map(savedFilterPresetToDTO),
     retailers: retailers.map(retailerToDTO),
     retailerTemplates,
     products: productDTOs,
@@ -1196,6 +1257,103 @@ export async function deleteProduct(productId: string) {
   await prisma.alert.deleteMany({ where: { productId } });
   await prisma.product.delete({ where: { id: productId } });
   return { ok: true };
+}
+
+export async function markProductCheckedToday(
+  currentUser: SessionUser,
+  productId: string,
+  input: { note?: string | null } = {}
+) {
+  const product = await prisma.product.findUnique({ where: { id: productId }, include: productInclude });
+  if (!product) throw new Error("Product not found");
+  const now = new Date();
+  const updated = await prisma.product.update({
+    where: { id: productId },
+    data: {
+      lastCheckedAt: now,
+      lastSuccessfulCheckedAt: now,
+      lastMonitorResult: input.note || "Marked checked today from daily workflow.",
+      nextCheckAt: new Date(now.getTime() + product.checkFrequencyMinutes * 60 * 1000)
+    },
+    include: productInclude
+  });
+  await prisma.monitorLog.create({
+    data: {
+      productId,
+      runType: "MANUAL_DAILY",
+      status: "SUCCESS",
+      previousStatus: product.stockStatus,
+      detectedStatus: product.stockStatus,
+      previousPrice: product.retailPrice,
+      detectedPrice: product.retailPrice,
+      startedAt: now,
+      finishedAt: now,
+      durationMs: 0,
+      changeSummary: input.note || `${currentUser.email} marked product checked today.`,
+      finalUrl: product.url,
+      alertSent: false
+    }
+  });
+  return productToDTO(updated);
+}
+
+export async function createInventoryItem(
+  currentUser: SessionUser,
+  input: {
+    itemType: string;
+    itemName: string;
+    productId?: string;
+    cardId?: string;
+    cost: number;
+    quantity: number;
+    source: string;
+    purchasedAt: Date;
+    expectedPlan?: string;
+    notes?: string;
+  }
+) {
+  const item = await prisma.inventoryItem.create({
+    data: {
+      userId: currentUser.id,
+      itemType: input.itemType,
+      itemName: input.itemName,
+      productId: input.productId,
+      cardId: input.cardId,
+      cost: input.cost,
+      quantity: input.quantity,
+      source: input.source,
+      purchasedAt: input.purchasedAt,
+      expectedPlan: input.expectedPlan,
+      notes: input.notes
+    }
+  });
+  return inventoryItemToDTO(item);
+}
+
+export async function logProductPurchase(
+  currentUser: SessionUser,
+  productId: string,
+  input: {
+    cost?: number;
+    quantity: number;
+    source?: string;
+    expectedPlan?: string;
+    notes?: string;
+  }
+) {
+  const product = await prisma.product.findUnique({ where: { id: productId }, include: productInclude });
+  if (!product) throw new Error("Product not found");
+  return createInventoryItem(currentUser, {
+    itemType: "product",
+    itemName: product.name,
+    productId: product.id,
+    cost: input.cost ?? product.retailPrice ?? 0,
+    quantity: input.quantity,
+    source: input.source || product.retailer.name,
+    purchasedAt: new Date(),
+    expectedPlan: input.expectedPlan || "Hold sealed, review comps before resale.",
+    notes: input.notes
+  });
 }
 
 export async function controlProductMonitor(
@@ -2395,6 +2553,64 @@ export async function markAlertRead(alertId: string) {
   return alertToDTO(alert);
 }
 
+export async function createSavedFilterPreset(
+  currentUser: SessionUser,
+  input: { name: string; section: string; filters: string }
+) {
+  const preset = await prisma.savedFilterPreset.create({
+    data: {
+      userId: currentUser.id,
+      name: input.name,
+      section: input.section,
+      filters: input.filters
+    }
+  });
+  return savedFilterPresetToDTO(preset);
+}
+
+export async function deleteSavedFilterPreset(currentUser: SessionUser, presetId: string) {
+  await prisma.savedFilterPreset.deleteMany({ where: { id: presetId, userId: currentUser.id } });
+  return { ok: true };
+}
+
+function dayRange(date = new Date()) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+export async function createDailyRecap(currentUser: SessionUser, input: { recapDate?: Date | null } = {}) {
+  const { start, end } = dayRange(input.recapDate ?? new Date());
+  const [productChecks, storeVisits, purchases, alertsCreated] = await Promise.all([
+    prisma.monitorLog.count({ where: { startedAt: { gte: start, lt: end } } }),
+    prisma.storeSighting.count({ where: { userId: currentUser.id, seenAt: { gte: start, lt: end } } }),
+    prisma.inventoryItem.count({ where: { userId: currentUser.id, purchasedAt: { gte: start, lt: end } } }),
+    prisma.alert.count({
+      where: {
+        timestamp: { gte: start, lt: end },
+        OR: [{ userId: null }, { userId: currentUser.id }]
+      }
+    })
+  ]);
+  const summary = `${productChecks} product check${productChecks === 1 ? "" : "s"}, ${storeVisits} store visit${
+    storeVisits === 1 ? "" : "s"
+  }, ${purchases} purchase${purchases === 1 ? "" : "s"}, and ${alertsCreated} alert${alertsCreated === 1 ? "" : "s"}.`;
+  const recap = await prisma.dailyRecap.create({
+    data: {
+      userId: currentUser.id,
+      recapDate: start,
+      summary,
+      productChecks,
+      storeVisits,
+      purchases,
+      alertsCreated
+    }
+  });
+  return dailyRecapToDTO(recap);
+}
+
 export async function updateNotificationSettings(
   currentUser: SessionUser,
   input: {
@@ -2443,6 +2659,11 @@ async function clearRadarData(includeUsers: boolean) {
   await prisma.monitorLog.deleteMany();
   await prisma.investmentReport.deleteMany();
   await prisma.passwordResetToken.deleteMany();
+  await prisma.friendInvite.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.savedFilterPreset.deleteMany();
+  await prisma.dailyRecap.deleteMany();
+  await prisma.inventoryItem.deleteMany();
   await prisma.cardCompSale.deleteMany();
   await prisma.cardPriceSnapshot.deleteMany();
   await prisma.restockHistory.deleteMany();
@@ -2699,7 +2920,12 @@ export async function exportBackup() {
       productPriorityScores: await prisma.productPriorityScore.findMany(),
       notificationSettings: await prisma.notificationSettings.findMany(),
       investmentSettings: await prisma.investmentSettings.findMany(),
-      browserPushSubscriptions: await prisma.browserPushSubscription.findMany()
+      browserPushSubscriptions: await prisma.browserPushSubscription.findMany(),
+      friendInvites: await prisma.friendInvite.findMany(),
+      auditLogs: await prisma.auditLog.findMany(),
+      inventoryItems: await prisma.inventoryItem.findMany(),
+      dailyRecaps: await prisma.dailyRecap.findMany(),
+      savedFilterPresets: await prisma.savedFilterPreset.findMany()
     }
   };
 }
@@ -2733,11 +2959,48 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       name: String(row.name),
       role: String(row.role),
       passwordHash: String(row.passwordHash),
+      canAddSightings: row.canAddSightings === undefined ? true : Boolean(row.canAddSightings),
+      canAddComps: row.canAddComps === undefined ? false : Boolean(row.canAddComps),
+      canRunChecks: row.canRunChecks === undefined ? false : Boolean(row.canRunChecks),
+      canReceivePushAlerts: row.canReceivePushAlerts === undefined ? true : Boolean(row.canReceivePushAlerts),
+      disabledAt: toNullableDate(row.disabledAt),
       sessionVersion: row.sessionVersion === undefined ? 0 : Number(row.sessionVersion),
       lastLoginAt: toNullableDate(row.lastLoginAt),
       passwordChangedAt: toNullableDate(row.passwordChangedAt),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.friendInvite.createMany({
+    data: rows(tables, "friendInvites").map((row) => ({
+      id: String(row.id),
+      email: String(row.email),
+      name: row.name ? String(row.name) : null,
+      tokenHash: String(row.tokenHash),
+      role: row.role ? String(row.role) : "FRIEND",
+      canAddSightings: row.canAddSightings === undefined ? true : Boolean(row.canAddSightings),
+      canAddComps: row.canAddComps === undefined ? false : Boolean(row.canAddComps),
+      canRunChecks: row.canRunChecks === undefined ? false : Boolean(row.canRunChecks),
+      canReceivePushAlerts: row.canReceivePushAlerts === undefined ? true : Boolean(row.canReceivePushAlerts),
+      expiresAt: toDate(row.expiresAt),
+      acceptedAt: toNullableDate(row.acceptedAt),
+      revokedAt: toNullableDate(row.revokedAt),
+      createdAt: toDate(row.createdAt),
+      createdById: row.createdById ? String(row.createdById) : null,
+      acceptedById: row.acceptedById ? String(row.acceptedById) : null
+    }))
+  });
+  await prisma.auditLog.createMany({
+    data: rows(tables, "auditLogs").map((row) => ({
+      id: String(row.id),
+      userId: row.userId ? String(row.userId) : null,
+      actorEmail: row.actorEmail ? String(row.actorEmail) : null,
+      action: String(row.action),
+      entityType: String(row.entityType),
+      entityId: row.entityId ? String(row.entityId) : null,
+      summary: String(row.summary),
+      metadata: row.metadata ? String(row.metadata) : null,
+      createdAt: toDate(row.createdAt)
     }))
   });
   await prisma.retailer.createMany({
@@ -2982,6 +3245,46 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       sourceUrl: row.sourceUrl ? String(row.sourceUrl) : row.url ? String(row.url) : null,
       notes: row.notes ? String(row.notes) : null,
       conditionNotes: row.conditionNotes ? String(row.conditionNotes) : row.notes ? String(row.notes) : null,
+      createdAt: toDate(row.createdAt)
+    }))
+  });
+  await prisma.inventoryItem.createMany({
+    data: rows(tables, "inventoryItems").map((row) => ({
+      id: String(row.id),
+      userId: row.userId ? String(row.userId) : null,
+      itemType: String(row.itemType),
+      itemName: String(row.itemName),
+      productId: row.productId ? String(row.productId) : null,
+      cardId: row.cardId ? String(row.cardId) : null,
+      cost: Number(row.cost),
+      quantity: row.quantity === undefined ? 1 : Number(row.quantity),
+      source: String(row.source),
+      purchasedAt: toDate(row.purchasedAt),
+      expectedPlan: row.expectedPlan ? String(row.expectedPlan) : null,
+      notes: row.notes ? String(row.notes) : null,
+      createdAt: toDate(row.createdAt)
+    }))
+  });
+  await prisma.dailyRecap.createMany({
+    data: rows(tables, "dailyRecaps").map((row) => ({
+      id: String(row.id),
+      userId: row.userId ? String(row.userId) : null,
+      recapDate: toDate(row.recapDate),
+      summary: String(row.summary),
+      productChecks: row.productChecks === undefined ? 0 : Number(row.productChecks),
+      storeVisits: row.storeVisits === undefined ? 0 : Number(row.storeVisits),
+      purchases: row.purchases === undefined ? 0 : Number(row.purchases),
+      alertsCreated: row.alertsCreated === undefined ? 0 : Number(row.alertsCreated),
+      createdAt: toDate(row.createdAt)
+    }))
+  });
+  await prisma.savedFilterPreset.createMany({
+    data: rows(tables, "savedFilterPresets").map((row) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      name: String(row.name),
+      section: String(row.section),
+      filters: String(row.filters),
       createdAt: toDate(row.createdAt)
     }))
   });

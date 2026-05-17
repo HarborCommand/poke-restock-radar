@@ -1201,6 +1201,31 @@ textarea {
   gap: 10px;
 }
 
+.today-plan-panel,
+.plan-list,
+.inventory-list {
+  display: grid;
+  gap: 12px;
+}
+
+.today-plan-panel {
+  border: 1px solid rgba(56, 215, 125, 0.22);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(56, 215, 125, 0.08), rgba(90, 169, 255, 0.05)),
+    rgba(255, 255, 255, 0.025);
+  padding: 14px;
+}
+
+.daily-plan-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .access-form {
   display: grid;
   gap: 9px;
@@ -1503,6 +1528,10 @@ textarea {
 
   .split-grid,
   .invite-url-box {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .daily-plan-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

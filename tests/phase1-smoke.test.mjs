@@ -112,6 +112,40 @@ test("Phase 14 invite-only friend access controls exist", () => {
   assert.match(readme, /invite-only/);
 });
 
+test("Phase 15 daily workflow inventory and recap features exist", () => {
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const model of ["InventoryItem", "DailyRecap", "SavedFilterPreset"]) {
+    assert.match(schema, new RegExp(`model\\s+${model}\\s+\\{`), `missing Phase 15 model ${model}`);
+  }
+
+  const files = [
+    join(root, "src", "app", "api", "radar", "inventory", "route.ts"),
+    join(root, "src", "app", "api", "radar", "daily-recaps", "route.ts"),
+    join(root, "src", "app", "api", "radar", "filter-presets", "route.ts"),
+    join(root, "src", "app", "api", "radar", "products", "[productId]", "checked", "route.ts"),
+    join(root, "src", "app", "api", "radar", "products", "[productId]", "bought", "route.ts")
+  ];
+  for (const file of files) {
+    assert.ok(statSync(file).isFile(), `missing ${file}`);
+  }
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of [
+    "Today.*s Plan",
+    "Quick Add Product",
+    "Mark Checked Today",
+    "I Bought This",
+    "Inventory Log",
+    "Saved Filter Presets",
+    "Daily Recap Archive"
+  ]) {
+    assert.match(app, new RegExp(phrase), `missing Phase 15 UI phrase ${phrase}`);
+  }
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /Phase 15 Daily Workflow/);
+});
+
 test("Auth hardening and password reset flow pieces exist", () => {
   const files = [
     join(root, "src", "app", "api", "auth", "forgot-password", "route.ts"),

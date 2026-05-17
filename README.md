@@ -460,6 +460,20 @@ Friend permissions are enforced server-side:
 
 Audit logs are stored for invite creation/acceptance/revocation, login attempts, sightings, card comps, monitor checks, and access changes. Admins can disable a friend account without deleting historical sightings or comps.
 
+## Phase 15 Daily Workflow
+
+The dashboard includes `Today's Plan` for the morning flow:
+
+- Top online products to monitor
+- Local stores to check today
+- Latest alerts
+- Newest releases
+- Best card opportunities
+
+Use `Mark Checked Today` on a product after a manual review, and `I Bought This` to log a purchase into inventory. The inventory log stores product/card purchased, cost, quantity, source, purchase date, and the expected resale or grading plan.
+
+Saved filter presets are personal notes for recurring product/store/card views. `Generate Recap` archives a daily recap with product checks, store visits, purchases, and alerts created that day.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.

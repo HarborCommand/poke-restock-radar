@@ -42,6 +42,7 @@ import {
   type FormEvent,
   type InputHTMLAttributes,
   type ChangeEvent,
+  type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
   useEffect,
@@ -519,7 +520,15 @@ export function RadarApp() {
       ) : null}
 
       <section className="content-grid">
-        {activeTab === "dashboard" ? <DashboardPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
+        {activeTab === "dashboard" ? (
+          <DashboardPanel
+            dashboard={dashboard}
+            setActiveTab={setActiveTab}
+            busy={busy}
+            busyLabel={busyLabel}
+            runAction={runAction}
+          />
+        ) : null}
         {activeTab === "field" ? (
           <FieldModePanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
         ) : null}
@@ -869,7 +878,19 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
   };
 }
 
-function DashboardPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
+function DashboardPanel({
+  dashboard,
+  setActiveTab,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  setActiveTab: (tab: Tab) => void;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
   const sections = [
     {
       title: "Today's Chase",
@@ -916,6 +937,13 @@ function DashboardPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; 
           );
         })}
       </div>
+      <TodayPlanPanel
+        dashboard={dashboard}
+        setActiveTab={setActiveTab}
+        busy={busy}
+        busyLabel={busyLabel}
+        runAction={runAction}
+      />
       {dashboard.currentUser.role === "ADMIN" ? (
         <>
           <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
@@ -943,6 +971,238 @@ function DashboardPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; 
         <CardStack cards={dashboard.cards.slice(0, 4)} />
       </div>
     </>
+  );
+}
+
+function TodayPlanPanel({
+  dashboard,
+  setActiveTab,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  setActiveTab: (tab: Tab) => void;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  function inventorySubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    runAction(
+      "Logging inventory",
+      async () => {
+        await requestJson("/api/radar/inventory", { method: "POST", body: JSON.stringify(formJson(form)) });
+        form.reset();
+      },
+      { success: "Inventory item logged" }
+    );
+  }
+
+  function presetSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    runAction(
+      "Saving filter preset",
+      async () => {
+        await requestJson("/api/radar/filter-presets", { method: "POST", body: JSON.stringify(formJson(form)) });
+        form.reset();
+      },
+      { success: "Filter preset saved" }
+    );
+  }
+
+  return (
+    <section className="today-plan-panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyeline">Morning workflow</p>
+          <h2>Today&apos;s Plan</h2>
+        </div>
+        <button
+          className="mini-action solid"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Generating daily recap",
+              () => requestJson("/api/radar/daily-recaps", { method: "POST", body: JSON.stringify({}) }),
+              { success: "Daily recap archived" }
+            )
+          }
+        >
+          <FileText size={14} />
+          {busyLabel === "Generating daily recap" ? "Generating" : "Generate Recap"}
+        </button>
+      </div>
+      <div className="quick-action-grid">
+        <button className="mini-action solid" type="button" onClick={() => setActiveTab("products")}>
+          <Plus size={14} />
+          Quick Add Product
+        </button>
+        <button className="mini-action solid" type="button" onClick={() => setActiveTab("stores")}>
+          <Plus size={14} />
+          Quick Add Store
+        </button>
+        <button className="mini-action solid" type="button" onClick={() => setActiveTab("cards")}>
+          <Plus size={14} />
+          Quick Add Card
+        </button>
+        <button className="mini-action" type="button" onClick={() => setActiveTab("field")}>
+          <Navigation size={14} />
+          Field Mode
+        </button>
+      </div>
+      <div className="daily-plan-grid">
+        <PlanList title="Top online products" tab="products" setActiveTab={setActiveTab}>
+          <ProductStack products={dashboard.dailyPlan.topProducts.slice(0, 3)} compact />
+        </PlanList>
+        <PlanList title="Stores to check today" tab="field" setActiveTab={setActiveTab}>
+          <StoreStack stores={dashboard.dailyPlan.storesToCheck.slice(0, 3)} />
+        </PlanList>
+        <PlanList title="Latest alerts" tab="alerts" setActiveTab={setActiveTab}>
+          <div className="stack compact">
+            {dashboard.dailyPlan.latestAlerts.length ? (
+              dashboard.dailyPlan.latestAlerts.slice(0, 4).map((alert) => (
+                <article className="data-card compact-card" key={alert.id}>
+                  <div className="card-main">
+                    <div className="avatar">
+                      <Bell size={15} />
+                    </div>
+                    <div>
+                      <h3>{alert.title}</h3>
+                      <p>{alert.reason}</p>
+                    </div>
+                  </div>
+                  <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
+                </article>
+              ))
+            ) : (
+              <EmptyState icon={Bell} title="No alerts yet" detail="Restock, store, release, and card alerts will appear here." />
+            )}
+          </div>
+        </PlanList>
+        <PlanList title="Newest releases" tab="releases" setActiveTab={setActiveTab}>
+          <ReleaseStack releases={dashboard.dailyPlan.newestReleases.slice(0, 3)} />
+        </PlanList>
+        <PlanList title="Best card opportunities" tab="cards" setActiveTab={setActiveTab}>
+          <CardStack cards={dashboard.dailyPlan.bestCards.slice(0, 3)} />
+        </PlanList>
+      </div>
+      <div className="split-grid">
+        <section className="push-panel">
+          <h3>Inventory Log</h3>
+          <form className="form-grid" onSubmit={inventorySubmit}>
+            <SelectInput
+              name="itemType"
+              label="Type"
+              defaultValue="product"
+              options={["product", "card", "sealed", "other"].map((value) => ({ value, label: formatStatus(value) }))}
+            />
+            <TextInput name="itemName" label="Product/card purchased" required />
+            <TextInput name="cost" label="Cost" type="number" min="0" step="0.01" required />
+            <TextInput name="quantity" label="Quantity" type="number" min="1" defaultValue="1" required />
+            <TextInput name="source" label="Source" placeholder="Target, Pokemon Center, eBay" required />
+            <TextInput name="purchasedAt" label="Date" type="date" defaultValue={toDateInput(new Date().toISOString())} required />
+            <TextareaInput name="expectedPlan" label="Expected resale/grading plan" wide />
+            <button className="primary-action" disabled={busy} type="submit">
+              <Save size={16} />
+              {busyLabel === "Logging inventory" ? "Saving" : "Log Purchase"}
+            </button>
+          </form>
+          {dashboard.inventory.length ? (
+            <div className="inventory-list">
+              {dashboard.inventory.slice(0, 5).map((item) => (
+                <div className="access-row" key={item.id}>
+                  <div>
+                    <strong>{item.itemName}</strong>
+                    <span>
+                      {item.quantity} @ {money(item.cost)} from {item.source} - {shortDate(item.purchasedAt)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={PackageSearch} title="No inventory logged" detail="Log purchases as you buy sealed products or raw cards." />
+          )}
+        </section>
+        <section className="push-panel">
+          <h3>Saved Filter Presets</h3>
+          <form className="form-grid" onSubmit={presetSubmit}>
+            <TextInput name="name" label="Preset name" placeholder="High-priority Target ETBs" required />
+            <SelectInput name="section" label="Section" defaultValue="products" options={tabs.map((tab) => ({ value: tab.id, label: tab.label }))} />
+            <TextareaInput name="filters" label="Filter JSON / notes" defaultValue='{"priority":"HIGH"}' wide required />
+            <button className="mini-action solid" disabled={busy} type="submit">
+              <Save size={14} />
+              {busyLabel === "Saving filter preset" ? "Saving" : "Save Preset"}
+            </button>
+          </form>
+          {dashboard.savedFilterPresets.length ? (
+            dashboard.savedFilterPresets.slice(0, 6).map((preset) => (
+              <div className="access-row" key={preset.id}>
+                <div>
+                  <strong>{preset.name}</strong>
+                  <span>
+                    {formatStatus(preset.section)} - {preset.filters}
+                  </span>
+                </div>
+                <button
+                  className="mini-action"
+                  disabled={busy}
+                  type="button"
+                  onClick={() =>
+                    runAction(
+                      "Deleting filter preset",
+                      () => requestJson(`/api/radar/filter-presets/${preset.id}`, { method: "DELETE" }),
+                      { confirm: `Delete preset ${preset.name}?`, success: "Preset deleted" }
+                    )
+                  }
+                >
+                  <Trash2 size={14} />
+                  Delete
+                </button>
+              </div>
+            ))
+          ) : (
+            <EmptyState icon={FileText} title="No saved presets" detail="Save filter notes you use every morning." />
+          )}
+          <h3>Daily Recap Archive</h3>
+          {dashboard.dailyRecaps.length ? (
+            dashboard.dailyRecaps.slice(0, 5).map((recap) => (
+              <div className="access-row" key={recap.id}>
+                <div>
+                  <strong>{shortDate(recap.recapDate)}</strong>
+                  <span>{recap.summary}</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <EmptyState icon={History} title="No recaps yet" detail="Generate a recap after morning checks or store runs." />
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function PlanList({
+  title,
+  tab,
+  setActiveTab,
+  children
+}: {
+  title: string;
+  tab: Tab;
+  setActiveTab: (tab: Tab) => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="plan-list">
+      <PanelHeader title={title} action="Open" onAction={() => setActiveTab(tab)} />
+      {children}
+    </section>
   );
 }
 
@@ -2070,6 +2330,50 @@ function EditableProduct({
         </p>
       ) : null}
       <div className="form-actions">
+        <button
+          className="mini-action solid"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Mark checked ${product.id}`,
+              () =>
+                requestJson(`/api/radar/products/${product.id}/checked`, {
+                  method: "POST",
+                  body: JSON.stringify({ note: "Marked checked today from product workflow." })
+                }),
+              { success: "Product marked checked today" }
+            )
+          }
+        >
+          <Check size={14} />
+          {busyLabel === `Mark checked ${product.id}` ? "Saving" : "Mark Checked Today"}
+        </button>
+        <button
+          className="mini-action solid"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Bought product ${product.id}`,
+              () =>
+                requestJson(`/api/radar/products/${product.id}/bought`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    cost: product.retailPrice ?? 0,
+                    quantity: 1,
+                    source: product.retailerName,
+                    expectedPlan: "Hold sealed or review card comps before resale.",
+                    notes: "Logged from I bought this workflow."
+                  })
+                }),
+              { confirm: `Log one purchase of ${product.name}?`, success: "Purchase logged to inventory" }
+            )
+          }
+        >
+          <Trophy size={14} />
+          {busyLabel === `Bought product ${product.id}` ? "Logging" : "I Bought This"}
+        </button>
         <button
           className="mini-action"
           disabled={busy}

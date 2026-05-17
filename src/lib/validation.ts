@@ -410,3 +410,38 @@ export const bulkImportSchema = z.object({
   format: z.enum(["csv", "json"]),
   data: z.string().trim().min(2)
 });
+
+export const markCheckedTodaySchema = z.object({
+  note: optionalTrimmed
+});
+
+export const inventoryCreateSchema = z.object({
+  itemType: z.enum(["product", "card", "sealed", "other"]).default("product"),
+  itemName: z.string().trim().min(2).max(160),
+  productId: optionalTrimmed,
+  cardId: optionalTrimmed,
+  cost: requiredMoney,
+  quantity: z.coerce.number().int().min(1).max(1000).default(1),
+  source: z.string().trim().min(2).max(120),
+  purchasedAt: boundedDate.default(() => new Date()),
+  expectedPlan: optionalTrimmed,
+  notes: optionalTrimmed
+});
+
+export const productBoughtSchema = z.object({
+  cost: optionalMoney,
+  quantity: z.coerce.number().int().min(1).max(1000).default(1),
+  source: optionalTrimmed,
+  expectedPlan: optionalTrimmed,
+  notes: optionalTrimmed
+});
+
+export const savedFilterPresetSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  section: z.enum(["dashboard", "products", "stores", "releases", "cards", "alerts", "field"]),
+  filters: z.string().trim().min(2).max(2000)
+});
+
+export const dailyRecapCreateSchema = z.object({
+  recapDate: optionalDate
+});
