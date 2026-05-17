@@ -83,6 +83,75 @@ function isInQuietHours(start: string | null, end: string | null, now = new Date
   return current >= startMinutes || current < endMinutes;
 }
 
+function alertDedupeKey(payload: AlertPayload) {
+  return `${payload.entityType}:${payload.entityId || payload.productId || "system"}:${payload.title}`.toLowerCase();
+}
+
+function alertScore(payload: AlertPayload, product?: { priority: string; stockStatus: string } | null) {
+  let score = payload.priority === "HIGH" ? 70 : payload.priority === "MEDIUM" ? 45 : 25;
+  if (["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product?.stockStatus || "")) score += 18;
+  if (product?.priority === "HIGH") score += 10;
+  if (payload.entityType === "PRODUCT") score += 6;
+  if (payload.entityType === "CARD" && payload.priority === "HIGH") score += 8;
+  return Math.max(0, Math.min(100, score));
+}
+
+function listMatches(list: string | null, value: string | null | undefined) {
+  const terms = (list || "")
+    .split(/[\n,]/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  if (!terms.length) return true;
+  const normalized = (value || "").toLowerCase();
+  return terms.some((term) => normalized.includes(term));
+}
+
+function explanationFor(input: {
+  payload: AlertPayload;
+  score: number;
+  quiet: boolean;
+  digest: boolean;
+  cooldownMinutes: number;
+  productName?: string | null;
+  retailerName?: string | null;
+}) {
+  const parts = [
+    `Score ${input.score}/100 from ${input.payload.priority.toLowerCase()} priority`,
+    input.productName ? `product ${input.productName}` : `${input.payload.entityType.toLowerCase()} alert`,
+    input.retailerName ? `retailer ${input.retailerName}` : null,
+    input.quiet ? "quiet hours were active" : null,
+    input.digest ? "digest mode kept external channels quiet" : null,
+    input.cooldownMinutes ? `${input.cooldownMinutes} minute cooldown checked` : "no cooldown"
+  ].filter(Boolean);
+  return `${parts.join("; ")}. Reason: ${input.payload.reason}`;
+}
+
+async function createSuppressedAlert(input: {
+  userId: string;
+  payload: AlertPayload;
+  score: number;
+  dedupeKey: string;
+  explanation: string;
+}) {
+  await prisma.alert.create({
+    data: {
+      title: `Suppressed: ${input.payload.title}`,
+      reason: input.explanation,
+      priority: input.payload.priority,
+      entityType: input.payload.entityType,
+      entityId: input.payload.entityId,
+      productId: input.payload.productId,
+      actionUrl: input.payload.actionUrl,
+      userId: input.userId,
+      read: true,
+      score: input.score,
+      dedupeKey: input.dedupeKey,
+      explanation: input.explanation,
+      suppressedAt: new Date()
+    }
+  });
+}
+
 function smtpReady() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
 }
@@ -151,17 +220,95 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
     pushFailed: 0
   };
 
+  const product = payload.productId
+    ? await prisma.product.findUnique({
+        where: { id: payload.productId },
+        select: {
+          id: true,
+          name: true,
+          priority: true,
+          stockStatus: true,
+          lastAlertSentAt: true,
+          retailer: { select: { name: true } }
+        }
+      })
+    : null;
+  const dedupeKey = alertDedupeKey(payload);
+  const score = alertScore(payload, product);
   const recipients = await settingsForAllUsers();
   for (const { user, settings } of recipients) {
     const priorityAllowed = isPriorityAllowed(payload.priority, settings.minimumPriority);
     const quiet = isInQuietHours(settings.quietHoursStart, settings.quietHoursEnd);
+    const highPriorityOverride = payload.priority === "HIGH" && settings.highPriorityOverride;
     const pushAllowed = user.role === "ADMIN" || user.canReceivePushAlerts;
+    const digestMode = settings.alertDigestMode && payload.priority !== "HIGH";
+    const cooldownMinutes = Math.max(0, settings.alertCooldownMinutes ?? 30);
+    const explanation = explanationFor({
+      payload,
+      score,
+      quiet,
+      digest: digestMode,
+      cooldownMinutes,
+      productName: product?.name,
+      retailerName: product?.retailer.name
+    });
 
-    if (!priorityAllowed || quiet) {
+    if (settings.urgentOnlyMode && payload.priority !== "HIGH") {
+      await createSuppressedAlert({
+        userId: user.id,
+        payload,
+        score,
+        dedupeKey,
+        explanation: `${explanation} Urgent-only mode suppressed it.`
+      });
+      continue;
+    }
+
+    if (
+      product &&
+      (!listMatches(settings.watchedRetailers, product.retailer.name) || !listMatches(settings.watchedProducts, product.name))
+    ) {
+      await createSuppressedAlert({
+        userId: user.id,
+        payload,
+        score,
+        dedupeKey,
+        explanation: `${explanation} Watch-only filters suppressed it.`
+      });
+      continue;
+    }
+
+    if (!priorityAllowed || (quiet && !highPriorityOverride)) {
       if (settings.email) result.emailSkipped += 1;
       if (settings.sms) result.smsSkipped += 1;
       if (settings.browserPush) result.pushSkipped += 1;
+      await createSuppressedAlert({ userId: user.id, payload, score, dedupeKey, explanation });
       continue;
+    }
+
+    if (cooldownMinutes > 0) {
+      const duplicateSince = new Date(Date.now() - cooldownMinutes * 60 * 1000);
+      const duplicate = await prisma.alert.findFirst({
+        where: {
+          userId: user.id,
+          dedupeKey,
+          timestamp: { gte: duplicateSince },
+          suppressedAt: null,
+          falsePositiveAt: null
+        }
+      });
+      const productCooldown =
+        product?.lastAlertSentAt && product.lastAlertSentAt.getTime() >= duplicateSince.getTime() && !highPriorityOverride;
+      if (duplicate || productCooldown) {
+        await createSuppressedAlert({
+          userId: user.id,
+          payload,
+          score,
+          dedupeKey,
+          explanation: `${explanation} Duplicate/cooldown suppression applied.`
+        });
+        continue;
+      }
     }
 
     if (settings.inApp) {
@@ -174,10 +321,21 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
           entityId: payload.entityId,
           productId: payload.productId,
           actionUrl: payload.actionUrl,
-          userId: user.id
+          userId: user.id,
+          score,
+          dedupeKey,
+          explanation,
+          cooldownUntil: cooldownMinutes ? new Date(Date.now() + cooldownMinutes * 60 * 1000) : null
         }
       });
       result.inAppCreated += 1;
+    }
+
+    if (digestMode) {
+      if (settings.email) result.emailSkipped += 1;
+      if (settings.sms) result.smsSkipped += 1;
+      if (settings.browserPush) result.pushSkipped += 1;
+      continue;
     }
 
     if (settings.email && settings.emailTo) {
@@ -208,6 +366,10 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
     } else if (settings.browserPush) {
       result.pushSkipped += 1;
     }
+  }
+
+  if (payload.productId && result.inAppCreated + result.emailSent + result.smsSent + result.pushSent > 0) {
+    await prisma.product.updateMany({ where: { id: payload.productId }, data: { lastAlertSentAt: new Date() } });
   }
 
   return result;

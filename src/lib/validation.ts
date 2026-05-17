@@ -358,7 +358,13 @@ export const notificationSettingsSchema = z.object({
   ),
   quietHoursStart: optionalTime,
   quietHoursEnd: optionalTime,
-  minimumPriority: prioritySchema.default("LOW")
+  minimumPriority: prioritySchema.default("LOW"),
+  alertDigestMode: checkboxBoolean.default(false),
+  urgentOnlyMode: checkboxBoolean.default(false),
+  highPriorityOverride: checkboxBoolean.default(true),
+  watchedRetailers: optionalTrimmed,
+  watchedProducts: optionalTrimmed,
+  alertCooldownMinutes: z.coerce.number().int().min(0).max(1440).default(30)
 });
 
 export const testAlertSchema = z.object({

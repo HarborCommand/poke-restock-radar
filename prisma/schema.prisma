@@ -237,6 +237,12 @@ model Alert {
   entityId   String?
   actionUrl  String?
   read       Boolean   @default(false)
+  score      Int       @default(50)
+  dedupeKey  String?
+  explanation String?
+  falsePositiveAt DateTime?
+  suppressedAt DateTime?
+  cooldownUntil DateTime?
   productId  String?
   userId     String?
   product    Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -246,6 +252,9 @@ model Alert {
   @@index([read])
   @@index([priority])
   @@index([userId])
+  @@index([score])
+  @@index([dedupeKey])
+  @@index([falsePositiveAt])
 }
 
 model RestockHistory {
@@ -511,6 +520,12 @@ model NotificationSettings {
   quietHoursStart String?
   quietHoursEnd   String?
   minimumPriority String   @default("LOW")
+  alertDigestMode Boolean  @default(false)
+  urgentOnlyMode  Boolean  @default(false)
+  highPriorityOverride Boolean @default(true)
+  watchedRetailers String?
+  watchedProducts  String?
+  alertCooldownMinutes Int @default(30)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)

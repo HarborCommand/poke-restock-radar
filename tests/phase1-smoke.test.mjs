@@ -146,6 +146,39 @@ test("Phase 15 daily workflow inventory and recap features exist", () => {
   assert.match(readme, /Phase 15 Daily Workflow/);
 });
 
+test("Phase 16 alert intelligence and noise controls exist", () => {
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const field of [
+    "score",
+    "dedupeKey",
+    "explanation",
+    "falsePositiveAt",
+    "suppressedAt",
+    "alertDigestMode",
+    "urgentOnlyMode",
+    "highPriorityOverride",
+    "watchedRetailers",
+    "watchedProducts",
+    "alertCooldownMinutes"
+  ]) {
+    assert.match(schema, new RegExp(field), `missing Phase 16 schema field ${field}`);
+  }
+
+  const notifications = readFileSync(join(root, "src", "lib", "notifications.ts"), "utf8");
+  for (const phrase of ["alertScore", "alertDedupeKey", "Duplicate/cooldown suppression", "Urgent-only mode", "Watch-only filters"]) {
+    assert.match(notifications, new RegExp(phrase), `missing Phase 16 notification phrase ${phrase}`);
+  }
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of ["Alert History Analytics", "Why:", "False Positive", "Alert digest mode", "Urgent-only mode", "Watch only retailers"]) {
+    assert.match(app, new RegExp(phrase), `missing Phase 16 UI phrase ${phrase}`);
+  }
+
+  assert.ok(statSync(join(root, "scripts", "alert-smoke.ts")).isFile(), "missing alert smoke script");
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.ok(pkg.scripts["alert:smoke"], "missing alert:smoke script");
+});
+
 test("Auth hardening and password reset flow pieces exist", () => {
   const files = [
     join(root, "src", "app", "api", "auth", "forgot-password", "route.ts"),

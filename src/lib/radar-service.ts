@@ -14,6 +14,7 @@ import {
 } from "@/lib/calculations";
 import type {
   AlertDTO,
+  AlertAnalyticsDTO,
   CardDTO,
   CardCompSaleDTO,
   CompSourceQuality,
@@ -437,7 +438,13 @@ function alertToDTO(alert: Prisma.AlertGetPayload<Record<string, never>>): Alert
     entityType: alert.entityType,
     entityId: alert.entityId,
     actionUrl: alert.actionUrl,
-    read: alert.read
+    read: alert.read,
+    score: alert.score,
+    dedupeKey: alert.dedupeKey,
+    explanation: alert.explanation,
+    falsePositiveAt: alert.falsePositiveAt?.toISOString() ?? null,
+    suppressedAt: alert.suppressedAt?.toISOString() ?? null,
+    cooldownUntil: alert.cooldownUntil?.toISOString() ?? null
   };
 }
 
@@ -617,7 +624,33 @@ function notificationSettingsToDTO(
     emailTo: settings.emailTo,
     quietHoursStart: settings.quietHoursStart,
     quietHoursEnd: settings.quietHoursEnd,
-    minimumPriority: settings.minimumPriority as Priority
+    minimumPriority: settings.minimumPriority as Priority,
+    alertDigestMode: settings.alertDigestMode,
+    urgentOnlyMode: settings.urgentOnlyMode,
+    highPriorityOverride: settings.highPriorityOverride,
+    watchedRetailers: settings.watchedRetailers,
+    watchedProducts: settings.watchedProducts,
+    alertCooldownMinutes: settings.alertCooldownMinutes
+  };
+}
+
+async function alertAnalytics(): Promise<AlertAnalyticsDTO> {
+  const [totalAlerts, unreadAlerts, highPriorityAlerts, falsePositiveAlerts, suppressedAlerts, aggregate] =
+    await Promise.all([
+      prisma.alert.count(),
+      prisma.alert.count({ where: { read: false } }),
+      prisma.alert.count({ where: { priority: "HIGH" } }),
+      prisma.alert.count({ where: { falsePositiveAt: { not: null } } }),
+      prisma.alert.count({ where: { suppressedAt: { not: null } } }),
+      prisma.alert.aggregate({ _avg: { score: true } })
+    ]);
+  return {
+    totalAlerts,
+    unreadAlerts,
+    highPriorityAlerts,
+    falsePositiveAlerts,
+    suppressedAlerts,
+    averageScore: Math.round(aggregate._avg.score ?? 0)
   };
 }
 
@@ -838,11 +871,10 @@ async function createAlertOnce(input: {
   actionUrl?: string | null;
   productId?: string | null;
 }) {
+  const dedupeKey = `${input.entityType}:${input.entityId}:${input.title}`.toLowerCase();
   const existing = await prisma.alert.findFirst({
     where: {
-      title: input.title,
-      entityType: input.entityType,
-      entityId: input.entityId,
+      dedupeKey,
       read: false
     }
   });
@@ -855,7 +887,10 @@ async function createAlertOnce(input: {
       entityType: input.entityType,
       entityId: input.entityId,
       actionUrl: input.actionUrl,
-      productId: input.productId
+      productId: input.productId,
+      dedupeKey,
+      score: input.priority === "HIGH" ? 85 : input.priority === "MEDIUM" ? 60 : 35,
+      explanation: `Created because ${input.reason}`
     }
   });
 }
@@ -1035,6 +1070,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const releaseDTOs = releases.map((release) => releaseToDTO(release, releaseMetrics(release, products, cards)));
   const health = currentUser.role === "ADMIN" ? await getAppHealth(currentUser) : null;
   const accuracyStats = await monitorAccuracyStats();
+  const alertStats = await alertAnalytics();
   const notificationSettingsDTO = notificationSettingsToDTO(notificationSettings);
   const setup = setupChecklist({
     productCount: productDTOs.length,
@@ -1079,6 +1115,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     alerts: alertDTOs,
     monitorLogs: monitorLogs.map(monitorLogToDTO),
     monitorAccuracyStats: accuracyStats,
+    alertAnalytics: alertStats,
     notificationSettings: notificationSettingsDTO,
     investmentSettings: investmentSettingsToDTO(investmentSettings),
     health,
@@ -2553,6 +2590,40 @@ export async function markAlertRead(alertId: string) {
   return alertToDTO(alert);
 }
 
+export async function markAlertFalsePositive(currentUser: SessionUser, alertId: string) {
+  const alert = await prisma.alert.findFirst({
+    where: {
+      id: alertId,
+      OR: [{ userId: null }, { userId: currentUser.id }]
+    }
+  });
+  if (!alert) throw new Error("Alert not found");
+  const updated = await prisma.alert.update({
+    where: { id: alertId },
+    data: {
+      falsePositiveAt: new Date(),
+      read: true,
+      explanation: `${alert.explanation || alert.reason} User marked this alert as a false positive.`
+    }
+  });
+  if (alert.productId) {
+    await prisma.monitorLog.create({
+      data: {
+        productId: alert.productId,
+        runType: "ALERT_FEEDBACK",
+        status: "FALSE_POSITIVE",
+        startedAt: new Date(),
+        finishedAt: new Date(),
+        durationMs: 0,
+        changeSummary: "Alert marked false positive from alert history.",
+        reason: alert.reason,
+        alertSent: false
+      }
+    });
+  }
+  return alertToDTO(updated);
+}
+
 export async function createSavedFilterPreset(
   currentUser: SessionUser,
   input: { name: string; section: string; filters: string }
@@ -2623,6 +2694,12 @@ export async function updateNotificationSettings(
     quietHoursStart?: string;
     quietHoursEnd?: string;
     minimumPriority: Priority;
+    alertDigestMode: boolean;
+    urgentOnlyMode: boolean;
+    highPriorityOverride: boolean;
+    watchedRetailers?: string;
+    watchedProducts?: string;
+    alertCooldownMinutes: number;
   }
 ) {
   const settings = await prisma.notificationSettings.upsert({
@@ -2636,7 +2713,13 @@ export async function updateNotificationSettings(
       emailTo: input.emailTo || currentUser.email,
       quietHoursStart: input.quietHoursStart,
       quietHoursEnd: input.quietHoursEnd,
-      minimumPriority: input.minimumPriority
+      minimumPriority: input.minimumPriority,
+      alertDigestMode: input.alertDigestMode,
+      urgentOnlyMode: input.urgentOnlyMode,
+      highPriorityOverride: input.highPriorityOverride,
+      watchedRetailers: input.watchedRetailers,
+      watchedProducts: input.watchedProducts,
+      alertCooldownMinutes: input.alertCooldownMinutes
     },
     create: {
       userId: currentUser.id,
@@ -2648,7 +2731,13 @@ export async function updateNotificationSettings(
       emailTo: input.emailTo || currentUser.email,
       quietHoursStart: input.quietHoursStart,
       quietHoursEnd: input.quietHoursEnd,
-      minimumPriority: input.minimumPriority
+      minimumPriority: input.minimumPriority,
+      alertDigestMode: input.alertDigestMode,
+      urgentOnlyMode: input.urgentOnlyMode,
+      highPriorityOverride: input.highPriorityOverride,
+      watchedRetailers: input.watchedRetailers,
+      watchedProducts: input.watchedProducts,
+      alertCooldownMinutes: input.alertCooldownMinutes
     }
   });
   return notificationSettingsToDTO(settings);
@@ -3167,6 +3256,12 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       entityId: row.entityId ? String(row.entityId) : null,
       actionUrl: row.actionUrl ? String(row.actionUrl) : null,
       read: Boolean(row.read),
+      score: row.score === undefined ? 50 : Number(row.score),
+      dedupeKey: row.dedupeKey ? String(row.dedupeKey) : null,
+      explanation: row.explanation ? String(row.explanation) : null,
+      falsePositiveAt: toNullableDate(row.falsePositiveAt),
+      suppressedAt: toNullableDate(row.suppressedAt),
+      cooldownUntil: toNullableDate(row.cooldownUntil),
       productId: row.productId ? String(row.productId) : null,
       userId: row.userId ? String(row.userId) : null,
       createdAt: toDate(row.createdAt)
@@ -3323,6 +3418,12 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       quietHoursStart: row.quietHoursStart ? String(row.quietHoursStart) : null,
       quietHoursEnd: row.quietHoursEnd ? String(row.quietHoursEnd) : null,
       minimumPriority: row.minimumPriority ? String(row.minimumPriority) : "LOW",
+      alertDigestMode: row.alertDigestMode === undefined ? false : Boolean(row.alertDigestMode),
+      urgentOnlyMode: row.urgentOnlyMode === undefined ? false : Boolean(row.urgentOnlyMode),
+      highPriorityOverride: row.highPriorityOverride === undefined ? true : Boolean(row.highPriorityOverride),
+      watchedRetailers: row.watchedRetailers ? String(row.watchedRetailers) : null,
+      watchedProducts: row.watchedProducts ? String(row.watchedProducts) : null,
+      alertCooldownMinutes: row.alertCooldownMinutes === undefined ? 30 : Number(row.alertCooldownMinutes),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
     }))

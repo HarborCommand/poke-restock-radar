@@ -317,6 +317,21 @@ export type AlertDTO = {
   entityId: string | null;
   actionUrl: string | null;
   read: boolean;
+  score: number;
+  dedupeKey: string | null;
+  explanation: string | null;
+  falsePositiveAt: string | null;
+  suppressedAt: string | null;
+  cooldownUntil: string | null;
+};
+
+export type AlertAnalyticsDTO = {
+  totalAlerts: number;
+  unreadAlerts: number;
+  highPriorityAlerts: number;
+  falsePositiveAlerts: number;
+  suppressedAlerts: number;
+  averageScore: number;
 };
 
 export type MonitorLogDTO = {
@@ -364,6 +379,12 @@ export type NotificationSettingsDTO = {
   quietHoursStart: string | null;
   quietHoursEnd: string | null;
   minimumPriority: Priority;
+  alertDigestMode: boolean;
+  urgentOnlyMode: boolean;
+  highPriorityOverride: boolean;
+  watchedRetailers: string | null;
+  watchedProducts: string | null;
+  alertCooldownMinutes: number;
 };
 
 export type AppHealthDTO = {
@@ -545,6 +566,7 @@ export type DashboardDTO = {
   alerts: AlertDTO[];
   monitorLogs: MonitorLogDTO[];
   monitorAccuracyStats: MonitorAccuracyStatsDTO;
+  alertAnalytics: AlertAnalyticsDTO;
   notificationSettings: NotificationSettingsDTO;
   investmentSettings: InvestmentSettingsDTO;
   health: AppHealthDTO | null;

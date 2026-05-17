@@ -573,7 +573,7 @@ export function RadarApp() {
           />
         ) : null}
         {activeTab === "alerts" ? (
-          <AlertsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+          <AlertsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
       </section>
 
@@ -4115,16 +4115,28 @@ function AlertsPanel({
   dashboard,
   busy,
   busyLabel,
-  submit
+  submit,
+  runAction
 }: {
   dashboard: DashboardDTO;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  runAction: ActionHandler;
 }) {
   return (
     <>
       <PanelHeader title="Alerts Table" />
+      <section className="form-panel">
+        <PanelHeader title="Alert History Analytics" />
+        <div className="accuracy-grid">
+          <StatCard label="Total alerts" value={dashboard.alertAnalytics.totalAlerts} detail="All history" />
+          <StatCard label="Unread" value={dashboard.alertAnalytics.unreadAlerts} detail="Need review" />
+          <StatCard label="High priority" value={dashboard.alertAnalytics.highPriorityAlerts} detail="Urgent signals" />
+          <StatCard label="False positives" value={dashboard.alertAnalytics.falsePositiveAlerts} detail="Feedback loop" />
+          <StatCard label="Avg score" value={dashboard.alertAnalytics.averageScore} detail="0-100 priority" />
+        </div>
+      </section>
       <div className="table-list alerts-table">
         {dashboard.alerts.length ? (
           dashboard.alerts.map((alert) => {
@@ -4148,13 +4160,42 @@ function AlertsPanel({
               >
                 <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
                 <strong>{alert.title}</strong>
-                <span>{alert.reason}</span>
+                <span>
+                  {alert.reason}
+                  {alert.explanation ? ` Why: ${alert.explanation}` : ""}
+                </span>
                 <span>{dateTime(alert.timestamp)}</span>
                 <div className="row-actions">
+                  <span className={`chip ${alert.score >= 75 ? "good" : alert.score >= 45 ? "watch" : "muted"}`}>
+                    Score {alert.score}
+                  </span>
+                  {alert.suppressedAt ? <span className="chip muted">Suppressed</span> : null}
+                  {alert.falsePositiveAt ? <span className="chip bad">False positive</span> : null}
                   {alert.actionUrl ? (
                     <a className="mini-action" href={alert.actionUrl} target="_blank" rel="noreferrer">
                       Go <ExternalLink size={14} />
                     </a>
+                  ) : null}
+                  {!alert.falsePositiveAt ? (
+                    <button
+                      className="mini-action"
+                      disabled={busy}
+                      type="button"
+                      onClick={() =>
+                        runAction(
+                          `False positive alert ${alert.id}`,
+                          () =>
+                            requestJson("/api/radar/alerts", {
+                              method: "PATCH",
+                              body: JSON.stringify({ alertId: alert.id, action: "false_positive" })
+                            }),
+                          { confirm: `Mark ${alert.title} as a false positive?`, success: "False-positive feedback saved" }
+                        )
+                      }
+                    >
+                      <X size={14} />
+                      False Positive
+                    </button>
                   ) : null}
                   {!alert.read ? (
                     <button className="icon-button compact" disabled={busy} aria-label="Mark alert read" type="submit">
@@ -4551,6 +4592,43 @@ function NotificationSettingsPanel({
           label="Minimum priority"
           defaultValue={settings.minimumPriority}
           options={priorities.map(optionFromString)}
+        />
+        <label className="checkbox-label">
+          <input name="alertDigestMode" type="hidden" value="false" />
+          <input name="alertDigestMode" type="checkbox" value="true" defaultChecked={settings.alertDigestMode} />
+          Alert digest mode
+        </label>
+        <label className="checkbox-label">
+          <input name="urgentOnlyMode" type="hidden" value="false" />
+          <input name="urgentOnlyMode" type="checkbox" value="true" defaultChecked={settings.urgentOnlyMode} />
+          Urgent-only mode
+        </label>
+        <label className="checkbox-label">
+          <input name="highPriorityOverride" type="hidden" value="false" />
+          <input name="highPriorityOverride" type="checkbox" value="true" defaultChecked={settings.highPriorityOverride} />
+          High-priority override
+        </label>
+        <TextInput
+          name="alertCooldownMinutes"
+          label="Cooldown minutes"
+          type="number"
+          min="0"
+          max="1440"
+          defaultValue={settings.alertCooldownMinutes}
+        />
+        <TextareaInput
+          name="watchedRetailers"
+          label="Watch only retailers"
+          defaultValue={settings.watchedRetailers ?? ""}
+          placeholder="Target, Pokemon Center"
+          wide
+        />
+        <TextareaInput
+          name="watchedProducts"
+          label="Watch only products"
+          defaultValue={settings.watchedProducts ?? ""}
+          placeholder="ETB, Booster Bundle, Pokemon Center"
+          wide
         />
         <TextInput name="quietHoursStart" label="Quiet start" type="time" defaultValue={settings.quietHoursStart ?? ""} />
         <TextInput name="quietHoursEnd" label="Quiet end" type="time" defaultValue={settings.quietHoursEnd ?? ""} />

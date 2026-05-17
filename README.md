@@ -474,6 +474,20 @@ Use `Mark Checked Today` on a product after a manual review, and `I Bought This`
 
 Saved filter presets are personal notes for recurring product/store/card views. `Generate Recap` archives a daily recap with product checks, store visits, purchases, and alerts created that day.
 
+## Phase 16 Alert Intelligence
+
+Alerts now carry a 0-100 score, dedupe key, cooldown window, and `Why did I get this alert?` explanation. Duplicate/cooldown suppression creates read-only suppressed history rows so Admin can see what was filtered out.
+
+Noise controls live in notification settings:
+
+- Alert digest mode keeps non-high alerts in-app and suppresses external channels.
+- Urgent-only mode suppresses anything below `HIGH`.
+- High-priority override can bypass quiet hours for urgent alerts.
+- Watch-only retailer/product filters restrict alerts to terms you care about.
+- Per-user cooldown minutes suppress repeated product alerts.
+
+Use `npm run alert:smoke` with production credentials to verify login, in-app alert creation, route test alerts, and the alerts endpoint.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.
