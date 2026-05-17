@@ -130,6 +130,9 @@ export async function currentUser(): Promise<SessionUser | null> {
       preferredZone: true,
       customZoneName: true,
       hideDistantStores: true,
+      currentLatitude: true,
+      currentLongitude: true,
+      locationUpdatedAt: true,
       disabledAt: true,
       sessionVersion: true
     }
@@ -150,6 +153,9 @@ export async function currentUser(): Promise<SessionUser | null> {
     preferredZone: user.preferredZone as SessionUser["preferredZone"],
     customZoneName: user.customZoneName,
     hideDistantStores: user.hideDistantStores,
+    currentLatitude: user.currentLatitude,
+    currentLongitude: user.currentLongitude,
+    locationUpdatedAt: user.locationUpdatedAt?.toISOString() ?? null,
     sessionVersion: user.sessionVersion
   };
 }

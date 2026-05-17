@@ -20,6 +20,9 @@ model User {
   preferredZone            String                    @default("MIAMI")
   customZoneName           String?
   hideDistantStores        Boolean                   @default(false)
+  currentLatitude          Float?
+  currentLongitude         Float?
+  locationUpdatedAt        DateTime?
   disabledAt               DateTime?
   sessionVersion           Int                       @default(0)
   lastLoginAt              DateTime?

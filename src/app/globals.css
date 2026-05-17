@@ -214,6 +214,7 @@ textarea {
 .mini-action,
 .text-button,
 .icon-button,
+.admin-button,
 .tab-item,
 .stat-card {
   cursor: pointer;
@@ -292,6 +293,22 @@ textarea {
 .icon-button.compact {
   width: 34px;
   height: 34px;
+}
+
+.admin-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  border: 1px solid rgba(90, 169, 255, 0.28);
+  border-radius: var(--radius);
+  background: var(--blue-bg);
+  color: var(--text);
+  padding: 0 12px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .text-button {
@@ -462,6 +479,109 @@ textarea {
   display: grid;
   gap: 12px;
   padding: 14px;
+}
+
+.admin-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.54);
+  backdrop-filter: blur(10px);
+}
+
+.admin-drawer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(760px, 100vw);
+  height: 100dvh;
+  border-left: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top left, rgba(90, 169, 255, 0.08), transparent 24rem),
+    #080a09;
+  box-shadow: -28px 0 60px rgba(0, 0, 0, 0.5);
+}
+
+.admin-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding: 16px;
+}
+
+.admin-drawer-header h2 {
+  margin: 3px 0;
+  color: var(--text);
+  font-size: 1.08rem;
+}
+
+.admin-drawer-header span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.admin-fold-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.admin-fold {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(18, 21, 20, 0.84);
+  overflow: hidden;
+}
+
+.admin-fold > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  padding: 13px 14px;
+}
+
+.admin-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-fold > summary span {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.admin-fold > summary small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.admin-fold-body {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  padding: 12px;
+}
+
+.admin-fold-body > .admin-tools,
+.admin-fold-body > .form-panel,
+.admin-fold-body > .split-grid,
+.admin-fold-body > .today-plan-panel,
+.admin-fold-body > .zone-panel {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.018);
+  box-shadow: none;
 }
 
 .panel-header {
@@ -1283,6 +1403,53 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.location-strip,
+.location-save-row,
+.field-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.location-strip {
+  justify-content: space-between;
+  border: 1px solid rgba(90, 169, 255, 0.22);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(90, 169, 255, 0.08), rgba(56, 215, 125, 0.04)),
+    rgba(255, 255, 255, 0.025);
+  padding: 10px 12px;
+}
+
+.location-strip > div,
+.location-save-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.location-strip strong,
+.location-save-row strong {
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.location-strip span,
+.location-save-row span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.location-save-row {
+  justify-content: space-between;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius);
+  background: rgba(5, 7, 7, 0.55);
+  padding: 10px;
+}
+
 .quick-action-button {
   display: inline-flex;
   align-items: center;
@@ -1914,6 +2081,7 @@ textarea {
 
   .stat-grid,
   .quick-actions-row,
+  .location-strip,
   .chase-now-grid,
   .dashboard-section,
   .today-plan-panel,
@@ -1947,6 +2115,16 @@ textarea {
 
   .brand-lockup h1 {
     font-size: 0.94rem;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .admin-button {
+    min-height: 38px;
+    padding: 0 9px;
+    font-size: 0.72rem;
   }
 
   .app-shell {
@@ -2001,6 +2179,39 @@ textarea {
 
   .stat-card strong {
     font-size: 1.55rem;
+  }
+
+  .location-strip,
+  .location-save-row,
+  .field-heading-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .location-strip .mini-action,
+  .location-save-row .mini-action,
+  .field-heading-actions .mini-action {
+    width: 100%;
+  }
+
+  .admin-drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+
+  .admin-drawer-header,
+  .admin-fold-list,
+  .admin-fold-body {
+    padding: 12px;
+  }
+
+  .admin-fold > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-fold > summary small {
+    text-align: left;
   }
 
   .data-card,

@@ -37,6 +37,9 @@ export type SessionUser = {
   preferredZone?: Zone;
   customZoneName?: string | null;
   hideDistantStores?: boolean;
+  currentLatitude?: number | null;
+  currentLongitude?: number | null;
+  locationUpdatedAt?: string | null;
 } & UserPermissions;
 
 export type FriendUserDTO = SessionUser & {
@@ -218,6 +221,7 @@ export type StoreDTO = {
   zoneLabel: string;
   latitude: number | null;
   longitude: number | null;
+  distanceMiles: number | null;
   isFavorite: boolean;
   hiddenByUser: boolean;
   distanceRank: number;
@@ -252,6 +256,9 @@ export type UserAreaPreferencesDTO = {
   preferredZone: Zone;
   customZoneName: string | null;
   hideDistantStores: boolean;
+  currentLatitude: number | null;
+  currentLongitude: number | null;
+  locationUpdatedAt: string | null;
   favoriteStoreIds: string[];
   hiddenStoreIds: string[];
 };

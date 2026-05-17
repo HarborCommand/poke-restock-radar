@@ -660,13 +660,19 @@ test("UI real retail flow improvements exist", () => {
     "verificationStatus",
     "UserStorePreference",
     "latitude",
-    "longitude"
+    "longitude",
+    "currentLatitude",
+    "currentLongitude",
+    "locationUpdatedAt"
   ]) {
     assert.match(schema, new RegExp(field), `missing location/product field ${field}`);
   }
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   for (const phrase of [
+    "Admin Controls",
+    "Use My Location",
+    "Browser location",
     "My Area setup",
     "Quick actions",
     "Verify Product Link",
@@ -683,8 +689,10 @@ test("UI real retail flow improvements exist", () => {
   assert.match(service, /Target Midtown Miami/);
   assert.match(service, /Walmart Fort Lauderdale/);
   assert.match(service, /verifyProductLink/);
+  assert.match(service, /distanceMilesBetween/);
 
   const readme = readFileSync(join(root, "README.md"), "utf8");
   assert.match(readme, /Product Link Verification/);
   assert.match(readme, /Zone And Field Mode Setup/);
+  assert.match(readme, /Admin.*button/);
 });

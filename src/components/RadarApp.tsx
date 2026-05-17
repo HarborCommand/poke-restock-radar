@@ -239,6 +239,44 @@ function monitorStale(product: ProductDTO) {
   return Date.now() - new Date(product.lastSuccessfulCheckedAt).getTime() > 24 * 60 * 60 * 1000;
 }
 
+function storeDistanceLabel(store: StoreDTO) {
+  return store.distanceMiles === null ? store.zoneLabel : `${store.distanceMiles} mi away`;
+}
+
+function browserPosition(): Promise<GeolocationPosition> {
+  if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+    return Promise.reject(new Error("This browser does not support location sharing."));
+  }
+
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      maximumAge: 5 * 60 * 1000,
+      timeout: 10000
+    });
+  });
+}
+
+function saveBrowserLocation(dashboard: DashboardDTO, runAction: ActionHandler) {
+  return runAction(
+    "Saving browser location",
+    async () => {
+      const position = await browserPosition();
+      await requestJson("/api/radar/area-preferences", {
+        method: "PATCH",
+        body: JSON.stringify({
+          preferredZone: dashboard.userAreaPreferences.preferredZone,
+          customZoneName: dashboard.userAreaPreferences.customZoneName ?? "",
+          hideDistantStores: dashboard.userAreaPreferences.hideDistantStores,
+          currentLatitude: position.coords.latitude,
+          currentLongitude: position.coords.longitude
+        })
+      });
+    },
+    { success: "Location saved. Nearby and favorite stores are now ranked first." }
+  );
+}
+
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
@@ -302,6 +340,7 @@ export function RadarApp() {
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
 
   const busy = busyLabel !== null;
   const isAdmin = user?.role === "ADMIN";
@@ -483,6 +522,17 @@ export function RadarApp() {
           >
             <RefreshCw size={18} />
           </button>
+          {isAdmin ? (
+            <button
+              className="admin-button"
+              type="button"
+              aria-expanded={adminPanelOpen}
+              onClick={() => setAdminPanelOpen((open) => !open)}
+            >
+              <ShieldCheck size={16} />
+              Admin
+            </button>
+          ) : null}
           <button className="icon-button" disabled={busy} onClick={logout} aria-label="Log out" type="button">
             <LogOut size={18} />
           </button>
@@ -541,7 +591,6 @@ export function RadarApp() {
             setActiveTab={setActiveTab}
             busy={busy}
             busyLabel={busyLabel}
-            submit={submit}
             runAction={runAction}
           />
         ) : null}
@@ -600,17 +649,17 @@ export function RadarApp() {
         ) : null}
       </section>
 
-      <NotificationSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
-
-      {isAdmin && dashboard.health ? (
-        <AdminHealthPanel health={dashboard.health} busy={busy} busyLabel={busyLabel} submit={submit} />
+      {isAdmin && adminPanelOpen ? (
+        <AdminControlPanel
+          dashboard={dashboard}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          runAction={runAction}
+          setActiveTab={setActiveTab}
+          onClose={() => setAdminPanelOpen(false)}
+        />
       ) : null}
-
-      {isAdmin ? (
-        <AccessManagementPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
-      ) : null}
-
-      {isAdmin ? <AdminTools busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} /> : null}
 
       <footer className="app-footer">
         <ShieldCheck size={16} />
@@ -622,6 +671,121 @@ export function RadarApp() {
 
       <ToastViewport toast={toast} onClose={() => setToast(null)} />
     </main>
+  );
+}
+
+function AdminControlPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit,
+  runAction,
+  setActiveTab,
+  onClose
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+  setActiveTab: (tab: Tab) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="admin-drawer-backdrop" role="presentation">
+      <aside className="admin-drawer" role="dialog" aria-modal="true" aria-label="Admin controls">
+        <div className="admin-drawer-header">
+          <div>
+            <p className="eyeline">Admin</p>
+            <h2>Admin Controls</h2>
+            <span>Setup, health, users, backups, and alert configuration are kept out of the daily dashboard.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close admin controls" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="admin-fold-list">
+          <AdminFold title="My Area And Location" detail="Zone, saved browser location, favorite stores" defaultOpen>
+            <AreaSetupPanel
+              dashboard={dashboard}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={submit}
+              runAction={runAction}
+            />
+          </AdminFold>
+
+          <AdminFold title="Notifications And Alert Tests" detail="Push, email, SMS, quiet hours">
+            <NotificationSettingsPanel
+              dashboard={dashboard}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={submit}
+              runAction={runAction}
+            />
+          </AdminFold>
+
+          {dashboard.health ? (
+            <AdminFold title="Production Health" detail="Auth, database, cron, deployment warnings">
+              <AdminHealthPanel health={dashboard.health} busy={busy} busyLabel={busyLabel} submit={submit} />
+            </AdminFold>
+          ) : null}
+
+          <AdminFold title="Owner QA And Data Quality" detail="Launch checklist, warnings, calibration">
+            <OwnerLaunchChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+            <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+            <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+            <DataQualityPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+          </AdminFold>
+
+          <AdminFold title="Monitor Logs And Accuracy" detail="Run history, blocked pages, false positives">
+            <MonitorAccuracyPanel dashboard={dashboard} />
+            <MonitorLogsPanel dashboard={dashboard} />
+          </AdminFold>
+
+          <AdminFold title="Friend Access" detail="Invite links, roles, audit log">
+            <AccessManagementPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+          </AdminFold>
+
+          <AdminFold title="Backups And Demo Tools" detail="JSON import/export and admin-only reset">
+            <AdminTools busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+          </AdminFold>
+
+          <AdminFold title="Morning Workflow Archive" detail="Recaps, inventory log, saved filters">
+            <TodayPlanPanel
+              dashboard={dashboard}
+              setActiveTab={setActiveTab}
+              busy={busy}
+              busyLabel={busyLabel}
+              runAction={runAction}
+            />
+          </AdminFold>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function AdminFold({
+  title,
+  detail,
+  defaultOpen = false,
+  children
+}: {
+  title: string;
+  detail: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details className="admin-fold" open={defaultOpen}>
+      <summary>
+        <span>{title}</span>
+        <small>{detail}</small>
+      </summary>
+      <div className="admin-fold-body">{children}</div>
+    </details>
   );
 }
 
@@ -906,14 +1070,12 @@ function DashboardPanel({
   setActiveTab,
   busy,
   busyLabel,
-  submit,
   runAction
 }: {
   dashboard: DashboardDTO;
   setActiveTab: (tab: Tab) => void;
   busy: boolean;
   busyLabel: string | null;
-  submit: SubmitHandler;
   runAction: ActionHandler;
 }) {
   const sections = [
@@ -969,6 +1131,7 @@ function DashboardPanel({
           );
         })}
       </div>
+      <DashboardLocationStrip dashboard={dashboard} busy={busy} runAction={runAction} />
       <section className="chase-now-grid" aria-label="What to chase right now">
         <section className="action-panel">
           <PanelHeader title="High-Priority Online Drops" action="Products" onAction={() => setActiveTab("products")} />
@@ -994,58 +1157,40 @@ function DashboardPanel({
           <AlertMiniStack dashboard={dashboard} />
         </section>
       </section>
-      <details className="dashboard-section" open={!dashboard.userAreaPreferences.favoriteStoreIds.length}>
-        <summary>
-          <span>My Area</span>
-          <small>
-            {zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)} -{" "}
-            {dashboard.userAreaPreferences.favoriteStoreIds.length} favorites
-          </small>
-        </summary>
-        <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
-      </details>
-      <details className="dashboard-section">
-        <summary>
-          <span>Morning Workflow</span>
-          <small>Inventory, saved filters, recaps, and quick adds</small>
-        </summary>
-        <TodayPlanPanel
-          dashboard={dashboard}
-          setActiveTab={setActiveTab}
-          busy={busy}
-          busyLabel={busyLabel}
-          runAction={runAction}
-        />
-      </details>
-      {dashboard.currentUser.role === "ADMIN" ? (
-        <details className="dashboard-section">
-          <summary>
-            <span>Admin Setup And Data Quality</span>
-            <small>Checklist, warnings, calibration, and setup tasks</small>
-          </summary>
-          <OwnerLaunchChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-          <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-          <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-          <DataQualityPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-        </details>
-      ) : null}
-      <details className="dashboard-section">
-        <summary>
-          <span>Release Timing</span>
-          <small>Countdowns and upcoming product windows</small>
-        </summary>
-        <div className="compact-two-column">
-          <section className="action-panel">
-            <PanelHeader title="Release Countdown" action="Calendar" onAction={() => setActiveTab("releases")} />
-            <ReleaseStack releases={dashboard.releaseCountdowns.slice(0, 4)} />
-          </section>
-          <section className="action-panel">
-            <PanelHeader title="Upcoming Releases" action="Calendar" onAction={() => setActiveTab("releases")} />
-            <ReleaseStack releases={dashboard.releases.slice(0, 3)} />
-          </section>
-        </div>
-      </details>
     </>
+  );
+}
+
+function DashboardLocationStrip({
+  dashboard,
+  busy,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  runAction: ActionHandler;
+}) {
+  const locationSaved = dashboard.userAreaPreferences.currentLatitude !== null && dashboard.userAreaPreferences.currentLongitude !== null;
+  return (
+    <section className="location-strip">
+      <div>
+        <strong>{locationSaved ? "Nearby stores active" : "Add your location"}</strong>
+        <span>
+          {locationSaved
+            ? `Ranking stores from your location, saved ${relativeTime(dashboard.userAreaPreferences.locationUpdatedAt)}.`
+            : `Using ${zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)} until you save browser location.`}
+        </span>
+      </div>
+      <button
+        className="mini-action solid"
+        disabled={busy}
+        type="button"
+        onClick={() => saveBrowserLocation(dashboard, runAction)}
+      >
+        <MapPin size={14} />
+        Use My Location
+      </button>
+    </section>
   );
 }
 
@@ -1160,13 +1305,17 @@ function AreaSetupPanel({
   dashboard,
   busy,
   busyLabel,
-  submit
+  submit,
+  runAction
 }: {
   dashboard: DashboardDTO;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  runAction: ActionHandler;
 }) {
+  const locationSaved = dashboard.userAreaPreferences.currentLatitude !== null && dashboard.userAreaPreferences.currentLongitude !== null;
+
   return (
     <section className="zone-panel">
       <div>
@@ -1176,6 +1325,25 @@ function AreaSetupPanel({
           Field Mode and dashboard store lists prioritize nearby and favorite stores first. Hide distant stores when you only want
           the route you actually check.
         </p>
+      </div>
+      <div className="location-save-row">
+        <div>
+          <strong>{locationSaved ? "Browser location saved" : "Browser location not saved"}</strong>
+          <span>
+            {locationSaved
+              ? `Nearby sorting updated ${relativeTime(dashboard.userAreaPreferences.locationUpdatedAt)}.`
+              : "Save location once on your phone so dashboard and Field Mode stores start closest to you."}
+          </span>
+        </div>
+        <button
+          className="mini-action solid"
+          disabled={busy}
+          type="button"
+          onClick={() => saveBrowserLocation(dashboard, runAction)}
+        >
+          <MapPin size={14} />
+          {busyLabel === "Saving browser location" ? "Saving" : "Use My Location"}
+        </button>
       </div>
       <form
         className="form-grid"
@@ -1738,7 +1906,7 @@ function StoreStack({
             <span className="store-row-main">
               <strong>{store.storeName}</strong>
               <span>
-                {store.retailerName} - {store.zoneLabel} - {store.prediction.nextLikelyRestockWindow}
+                {store.retailerName} - {storeDistanceLabel(store)} - {store.prediction.nextLikelyRestockWindow}
               </span>
             </span>
             <span className="store-row-score">
@@ -1758,6 +1926,7 @@ function StoreStack({
               </span>
               <span>Avg interval {store.prediction.averageRestockIntervalDays ?? "TBD"}d</span>
               <span>Overdue {store.prediction.overdueScore}</span>
+              <span>{storeDistanceLabel(store)}</span>
               <span>{store.city}, {store.state}</span>
               <span>{store.prediction.mostCommonRestockDays.join(", ") || store.typicalRestockDays}</span>
               <span>{store.prediction.mostCommonRestockTimeWindows.join(", ") || store.typicalRestockTimeWindow}</span>
@@ -1905,7 +2074,13 @@ type StoreFilterState = {
 function storeMatchesFilters(store: StoreDTO, filters: StoreFilterState, preferredZone: Zone) {
   if (filters.highOnly && store.prediction.probability !== "HIGH") return false;
   if (filters.todayOnly && !store.prediction.isLikelyToday) return false;
-  if (filters.nearMe && store.zone !== preferredZone && !store.isFavorite) return false;
+  if (filters.nearMe && !store.isFavorite) {
+    if (store.distanceMiles !== null) {
+      if (store.distanceMiles > 50) return false;
+    } else if (store.zone !== preferredZone) {
+      return false;
+    }
+  }
   if (filters.favoritesOnly && !store.isFavorite) return false;
   if (filters.retailer !== "ALL" && store.retailerName !== filters.retailer) return false;
   return true;
@@ -1972,9 +2147,21 @@ function FieldModePanel({
             <h2>Check Today</h2>
             <p>Closest and favorite stores first, with big one-tap field logs.</p>
           </div>
-          <span className="chip muted">
-            {zoneDisplay(preferredZone, dashboard)} - {filteredStores.length} stops
-          </span>
+          <div className="field-heading-actions">
+            <span className="chip muted">
+              {dashboard.userAreaPreferences.currentLatitude !== null ? "Nearby" : zoneDisplay(preferredZone, dashboard)} -{" "}
+              {filteredStores.length} stops
+            </span>
+            <button
+              className="mini-action solid"
+              disabled={busy}
+              type="button"
+              onClick={() => saveBrowserLocation(dashboard, runAction)}
+            >
+              <MapPin size={14} />
+              {busyLabel === "Saving browser location" ? "Saving" : "Use My Location"}
+            </button>
+          </div>
         </div>
         <div className="field-targets">
           <strong>Look for</strong>
@@ -2114,7 +2301,7 @@ function FieldStoreCard({
           <p className="eyeline">{store.retailerName}</p>
           <h3>{store.storeName}</h3>
           <span>
-            {store.address} - {store.city}, {store.state}
+            {store.address} - {store.city}, {store.state} - {storeDistanceLabel(store)}
           </span>
         </div>
         <div className="field-score">
@@ -2130,6 +2317,7 @@ function FieldStoreCard({
         <span>Last {store.prediction.daysSinceLastConfirmedRestock ?? "?"}d</span>
         <span>Avg {store.prediction.averageRestockIntervalDays ?? "TBD"}d</span>
         <span>Overdue {store.prediction.overdueScore}</span>
+        <span>{storeDistanceLabel(store)}</span>
       </div>
       <p className="reason-text">{store.prediction.reason}</p>
       <div className="target-strip">
@@ -2990,7 +3178,7 @@ function StoresPanel({
   const [filters, setFilters] = useState<StoreFilterState>({
     highOnly: false,
     todayOnly: false,
-    nearMe: false,
+    nearMe: true,
     favoritesOnly: false,
     retailer: "ALL"
   });
@@ -3020,7 +3208,7 @@ function StoresPanel({
   return (
     <>
       <PanelHeader title="Local Store Predictions" />
-      <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+      <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
       <section className="form-panel">
         <div className="edit-card-heading">
           <div>
@@ -3447,7 +3635,7 @@ function ReleasesPanel({
 
   return (
     <>
-      <PanelHeader title="Release Calendar" />
+      <PanelHeader title="Release Countdown" />
       <section className="form-panel">
         <div className="form-grid">
           <label className="checkbox-label">

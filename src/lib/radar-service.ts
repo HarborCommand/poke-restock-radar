@@ -86,6 +86,33 @@ function zoneLabel(zone: string | null | undefined, customZoneName?: string | nu
   return zoneOptions.find((option) => option.value === zone)?.label ?? "Miami";
 }
 
+function distanceMilesBetween(
+  from: { latitude?: number | null; longitude?: number | null },
+  to: { latitude?: number | null; longitude?: number | null }
+) {
+  if (
+    from.latitude === null ||
+    from.latitude === undefined ||
+    from.longitude === null ||
+    from.longitude === undefined ||
+    to.latitude === null ||
+    to.latitude === undefined ||
+    to.longitude === null ||
+    to.longitude === undefined
+  ) {
+    return null;
+  }
+  const radians = Math.PI / 180;
+  const earthRadiusMiles = 3958.8;
+  const dLat = (to.latitude - from.latitude) * radians;
+  const dLon = (to.longitude - from.longitude) * radians;
+  const lat1 = from.latitude * radians;
+  const lat2 = to.latitude * radians;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return earthRadiusMiles * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 const monitorLogInclude = {
   product: { select: { name: true } }
 } satisfies Prisma.MonitorLogInclude;
@@ -335,8 +362,12 @@ function storeToDTO(
   store: Prisma.StoreGetPayload<{ include: typeof storeInclude }>,
   preference?: { favorite: boolean; hidden: boolean } | null,
   preferredZone: Zone = "MIAMI",
-  customZoneName?: string | null
+  customZoneName?: string | null,
+  userLocation?: { latitude?: number | null; longitude?: number | null }
 ): StoreDTO {
+  const distanceMiles = userLocation
+    ? distanceMilesBetween(userLocation, { latitude: store.latitude, longitude: store.longitude })
+    : null;
   const prediction = predictStoreRestock({
     typicalRestockDays: store.typicalRestockDays,
     typicalRestockTimeWindow: store.typicalRestockTimeWindow,
@@ -359,9 +390,10 @@ function storeToDTO(
     zoneLabel: zoneLabel(store.zone, customZoneName),
     latitude: store.latitude,
     longitude: store.longitude,
+    distanceMiles: distanceMiles === null ? null : Math.round(distanceMiles * 10) / 10,
     isFavorite: Boolean(preference?.favorite),
     hiddenByUser: Boolean(preference?.hidden),
-    distanceRank: store.zone === preferredZone ? 0 : preference?.favorite ? 1 : 2,
+    distanceRank: distanceMiles === null ? (store.zone === preferredZone ? 0 : preference?.favorite ? 1 : 999) : distanceMiles,
     notes: store.notes,
     typicalRestockDays: store.typicalRestockDays,
     typicalRestockTimeWindow: store.typicalRestockTimeWindow,
@@ -1132,25 +1164,45 @@ export async function ensureInvestmentSettings(currentUser: SessionUser) {
 
 export async function updateUserAreaPreferences(
   currentUser: SessionUser,
-  input: { preferredZone: Zone; customZoneName?: string; hideDistantStores: boolean }
+  input: {
+    preferredZone: Zone;
+    customZoneName?: string;
+    hideDistantStores: boolean;
+    currentLatitude?: number;
+    currentLongitude?: number;
+  }
 ) {
+  const hasLocation = input.currentLatitude !== undefined && input.currentLongitude !== undefined;
   const user = await prisma.user.update({
     where: { id: currentUser.id },
     data: {
       preferredZone: input.preferredZone,
       customZoneName: input.preferredZone === "CUSTOM" ? input.customZoneName || "My Area" : null,
-      hideDistantStores: input.hideDistantStores
+      hideDistantStores: input.hideDistantStores,
+      ...(hasLocation
+        ? {
+            currentLatitude: input.currentLatitude,
+            currentLongitude: input.currentLongitude,
+            locationUpdatedAt: new Date()
+          }
+        : {})
     },
     select: {
       preferredZone: true,
       customZoneName: true,
-      hideDistantStores: true
+      hideDistantStores: true,
+      currentLatitude: true,
+      currentLongitude: true,
+      locationUpdatedAt: true
     }
   });
   return {
     preferredZone: user.preferredZone as Zone,
     customZoneName: user.customZoneName,
-    hideDistantStores: user.hideDistantStores
+    hideDistantStores: user.hideDistantStores,
+    currentLatitude: user.currentLatitude,
+    currentLongitude: user.currentLongitude,
+    locationUpdatedAt: user.locationUpdatedAt?.toISOString() ?? null
   };
 }
 
@@ -1401,12 +1453,25 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     preferredZone,
     customZoneName: currentUser.customZoneName ?? null,
     hideDistantStores: Boolean(currentUser.hideDistantStores),
+    currentLatitude: currentUser.currentLatitude ?? null,
+    currentLongitude: currentUser.currentLongitude ?? null,
+    locationUpdatedAt: currentUser.locationUpdatedAt ?? null,
     favoriteStoreIds: storePreferences.filter((preference) => preference.favorite).map((preference) => preference.storeId),
     hiddenStoreIds: storePreferences.filter((preference) => preference.hidden).map((preference) => preference.storeId)
   };
+  const userLocation =
+    areaPreferences.currentLatitude !== null && areaPreferences.currentLongitude !== null
+      ? { latitude: areaPreferences.currentLatitude, longitude: areaPreferences.currentLongitude }
+      : undefined;
   const storeDTOs = stores
-    .map((store) => storeToDTO(store, preferenceMap.get(store.id), preferredZone, currentUser.customZoneName))
-    .filter((store) => !store.hiddenByUser && (!areaPreferences.hideDistantStores || store.zone === preferredZone || store.isFavorite))
+    .map((store) => storeToDTO(store, preferenceMap.get(store.id), preferredZone, currentUser.customZoneName, userLocation))
+    .filter(
+      (store) =>
+        !store.hiddenByUser &&
+        (!areaPreferences.hideDistantStores ||
+          store.isFavorite ||
+          (store.distanceMiles !== null ? store.distanceMiles <= 50 : store.zone === preferredZone))
+    )
     .sort(
       (a, b) =>
         Number(b.isFavorite) - Number(a.isFavorite) ||
@@ -1418,6 +1483,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     .filter((store) => store.prediction.isLikelyToday || store.prediction.probability === "HIGH")
     .sort(
       (a, b) =>
+        Number(b.isFavorite) - Number(a.isFavorite) ||
+        a.distanceRank - b.distanceRank ||
         Number(b.prediction.isLikelyToday) - Number(a.prediction.isLikelyToday) ||
         b.prediction.confidenceScore - a.prediction.confidenceScore ||
         b.prediction.overdueScore - a.prediction.overdueScore ||
@@ -3565,6 +3632,9 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       preferredZone: row.preferredZone ? String(row.preferredZone) : "MIAMI",
       customZoneName: row.customZoneName ? String(row.customZoneName) : null,
       hideDistantStores: row.hideDistantStores === undefined ? false : Boolean(row.hideDistantStores),
+      currentLatitude: row.currentLatitude === null || row.currentLatitude === undefined ? null : Number(row.currentLatitude),
+      currentLongitude: row.currentLongitude === null || row.currentLongitude === undefined ? null : Number(row.currentLongitude),
+      locationUpdatedAt: toNullableDate(row.locationUpdatedAt),
       disabledAt: toNullableDate(row.disabledAt),
       sessionVersion: row.sessionVersion === undefined ? 0 : Number(row.sessionVersion),
       lastLoginAt: toNullableDate(row.lastLoginAt),

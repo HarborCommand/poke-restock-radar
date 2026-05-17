@@ -395,15 +395,15 @@ JSON uses the same field names in an array or `{ "stores": [...] }`.
 
 ### Zone And Field Mode Setup
 
-Each user can set a default zone from Miami, Fort Lauderdale, Orlando, Tampa, Jacksonville, or Custom. Store lists and Field Mode prioritize favorite stores and stores in the selected zone first. Users can hide distant stores, favorite saved stores, and use filters for Near Me, Favorites, High Probability, and Today.
+Each user can set a default zone from Miami, Fort Lauderdale, Orlando, Tampa, Jacksonville, or Custom. They can also save browser location from the dashboard, Field Mode, or the Admin panel. When location is saved, dashboard store lists and Field Mode rank favorite stores first, then closest stores by miles. Without browser location, the app falls back to the selected zone. Users can hide distant stores, favorite saved stores, and use filters for Near Me, Favorites, High Probability, and Today.
 
 The Admin demo reset now seeds Miami and Fort Lauderdale examples instead of Orlando stores.
 
 ### Dashboard And Store UI
 
-The dashboard is organized around the first question: what should I chase right now? The first viewport shows quick actions, high-priority online drops, stores to check today, biggest card opportunities, and latest alerts. Setup, recaps, releases, and admin calibration tools are collapsed below that.
+The dashboard is organized around the first question: what should I chase right now? The first viewport shows quick actions, location status, high-priority online drops, stores to check today, biggest card opportunities, and latest alerts. Production health, notifications, user management, backups, setup checklists, owner QA, and other admin-heavy cards live behind the `Admin` button so daily use does not require scrolling through setup data.
 
-Store predictions use compact expandable rows with confidence, next likely window, retailer, zone, and quick favorite/hide controls. Field Mode keeps product targets at the top and uses large one-tap buttons for I'm Here, Found Product, Seen Stock, Empty Shelf, Vendor Spotted, Bought Product, No Visit, and Add Note.
+Store predictions use compact expandable rows with confidence, next likely window, retailer, distance or zone, and quick favorite/hide controls. Field Mode keeps product targets at the top and uses large one-tap buttons for I'm Here, Found Product, Seen Stock, Empty Shelf, Vendor Spotted, Bought Product, No Visit, and Add Note.
 
 ### Bulk Release Import
 

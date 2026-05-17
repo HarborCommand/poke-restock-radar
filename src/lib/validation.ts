@@ -289,7 +289,9 @@ export const storeCreateSchema = z.object({
 export const userAreaPreferencesSchema = z.object({
   preferredZone: zoneSchema.default("MIAMI"),
   customZoneName: optionalTrimmed,
-  hideDistantStores: checkboxBoolean.default(false)
+  hideDistantStores: checkboxBoolean.default(false),
+  currentLatitude: optionalLatitude,
+  currentLongitude: optionalLongitude
 });
 
 export const storePreferenceSchema = z.object({
