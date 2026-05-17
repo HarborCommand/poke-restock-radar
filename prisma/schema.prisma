@@ -123,6 +123,7 @@ model Product {
   url                       String
   setName                   String?
   productType               String?
+  imageUrl                  String?
   sku                       String?
   upc                       String?
   dpci                      String?

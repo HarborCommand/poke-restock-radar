@@ -335,25 +335,25 @@ Retailer URL validation is enforced when products are created or edited. Example
 - Walmart: `https://www.walmart.com/ip/Pokemon-TCG-Example-Collection-Box/99900003`
 - GameStop: `https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-example/999005`
 
-Use exact product pages whenever possible. The add wizard requires retailer, product URL, and product name, with UPC, SKU, DPCI, and retailer product ID available as optional matching fields. `Go / Buy Now` opens the exact URL saved on the product, and checkout stays manual on the official retailer site.
+Use exact product pages whenever possible. The add wizard requires retailer, product URL, and product name, with UPC, SKU, DPCI, retailer product ID, and product image URL available as optional matching fields. `Go / Buy Now` opens the exact URL saved on the product, and checkout stays manual on the official retailer site.
 
 ### Product Link Verification
 
-Admin products include `Verify Product Link`. The check safely fetches the public URL, follows normal redirects, and records final URL, public product title text, visible price cue, stock cue, identifier matches, and mismatch warnings:
+Admin products include `Verify Product Link`. The check safely fetches the public URL, follows normal redirects, and records final URL, public product title text, product image metadata, visible price cue, stock cue, identifier matches, and mismatch warnings:
 
 - `Verified URL`
 - `UPC Matched`
 - `Possible Mismatch`
 
-The verifier compares the final URL host, UPC, SKU, DPCI, retailer product ID, public title words, and whether the URL looks like a search/category page. Verified links receive a `Verified Product` badge. A possible mismatch warning means the saved link may redirect to an unrelated product or no longer prove the identifiers. It never adds to cart, checks out, logs in, bypasses queues, or bypasses bot protection.
+The verifier compares the final URL host, UPC, SKU, DPCI, retailer product ID, public title words, and whether the URL looks like a search/category page. Verified links receive a `Verified Product` badge and can save the page's product image for the dashboard. A possible mismatch warning means the saved link may redirect to an unrelated product or no longer prove the identifiers; in that case the verifier does not overwrite the product image. It never adds to cart, checks out, logs in, bypasses queues, or bypasses bot protection.
 
 ### Bulk Product Import
 
 CSV headers:
 
 ```csv
-retailer,name,url,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes
-Target,Pokemon TCG Booster Bundle,https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650990002,087-12-1234,99900002,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only
+retailer,name,url,imageUrl,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes
+Target,Pokemon TCG Booster Bundle,https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002,https://example.com/exact-product-image.jpg,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650990002,087-12-1234,99900002,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only
 ```
 
 JSON format:
@@ -364,6 +364,7 @@ JSON format:
     "retailer": "Target",
     "name": "Pokemon TCG Booster Bundle",
     "url": "https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002",
+    "imageUrl": "https://example.com/exact-product-image.jpg",
     "setName": "Mega Evolution-Chaos Rising",
     "productType": "Booster Bundle",
     "upc": "0820650990002",

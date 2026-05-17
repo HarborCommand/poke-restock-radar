@@ -262,7 +262,9 @@ test("Phase 18 owner launch and alert calibration pieces exist", () => {
 
 test("dashboard compact cards stay readable instead of narrow columns", () => {
   const css = readFileSync(join(root, "src", "app", "globals.css"), "utf8");
-  assert.match(css, /\.stack\.compact \.data-card\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(css, /\.chase-now-grid\.apple-chase-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(css, /\.product-card\s*\{[^}]*grid-template-columns:\s*minmax\(150px,\s*210px\)\s*minmax\(0,\s*1fr\)/s);
+  assert.match(css, /\.product-image-frame\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3/s);
   assert.match(css, /\.today-plan-panel,\s*\n\s*\.form-panel/s);
   assert.match(css, /\.daily-plan-grid\s*\{[^}]*minmax\(320px,\s*1fr\)/s);
   assert.match(css, /font-size:\s*clamp\(1\.45rem,\s*6vw,\s*2\.75rem\)/);
@@ -695,10 +697,12 @@ test("UI real retail flow improvements exist", () => {
   assert.match(service, /GameStop Westland Mall Hialeah/);
   assert.match(service, /verifyProductLink/);
   assert.match(service, /Product title text/);
+  assert.match(service, /Product image found from exact page/);
   assert.match(service, /distanceMilesBetween/);
 
   const readme = readFileSync(join(root, "README.md"), "utf8");
   assert.match(readme, /Product Link Verification/);
+  assert.match(readme, /imageUrl/);
   assert.match(readme, /Zone And Field Mode Setup/);
   assert.match(readme, /Admin.*button/);
 });

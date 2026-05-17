@@ -155,6 +155,7 @@ export type ProductDTO = {
   releaseName: string | null;
   setName: string | null;
   productType: string | null;
+  imageUrl: string | null;
   url: string;
   sku: string | null;
   upc: string | null;

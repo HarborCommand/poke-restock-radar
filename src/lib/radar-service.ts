@@ -318,6 +318,7 @@ function productToDTO(
     releaseName: product.release?.setName ?? null,
     setName: product.setName,
     productType: product.productType,
+    imageUrl: product.imageUrl,
     url: product.url,
     sku: product.sku,
     upc: product.upc,
@@ -1590,6 +1591,7 @@ export async function createProduct(input: {
   releaseId?: string;
   setName?: string;
   productType?: string;
+  imageUrl?: string;
   url: string;
   sku?: string;
   upc?: string;
@@ -1646,6 +1648,7 @@ export async function updateProductManualStatus(
     releaseId?: string;
     setName?: string;
     productType?: string;
+    imageUrl?: string;
     url: string;
     sku?: string;
     upc?: string;
@@ -1680,6 +1683,7 @@ export async function updateProductManualStatus(
       releaseId: input.releaseId ?? null,
       setName: input.setName,
       productType: input.productType,
+      imageUrl: input.imageUrl,
       url: input.url,
       sku: input.sku,
       upc: input.upc,
@@ -1769,6 +1773,54 @@ function extractVisiblePrice(html: string) {
   return match?.[0].replace(/\s+/g, "") ?? null;
 }
 
+function decodeHtmlAttribute(value: string) {
+  return value
+    .replace(/\\u002F/gi, "/")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'")
+    .trim();
+}
+
+function absoluteProductImageUrl(value: string | null | undefined, baseUrl: string) {
+  if (!value) return null;
+  try {
+    const decoded = decodeHtmlAttribute(value);
+    if (!/^https?:\/\//i.test(decoded) && !decoded.startsWith("/")) return null;
+    const parsed = new URL(decoded, baseUrl);
+    if (!["http:", "https:"].includes(parsed.protocol)) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractProductImage(html: string, finalUrl: string) {
+  const metaPatterns = [
+    /<meta[^>]+property=["']og:image:secure_url["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i
+  ];
+  for (const pattern of metaPatterns) {
+    const imageUrl = absoluteProductImageUrl(html.match(pattern)?.[1], finalUrl);
+    if (imageUrl) return imageUrl;
+  }
+
+  const jsonLdImage =
+    html.match(/"image"\s*:\s*"([^"]+)"/i)?.[1] ||
+    html.match(/"image"\s*:\s*\[\s*"([^"]+)"/i)?.[1];
+  const structuredImage = absoluteProductImageUrl(jsonLdImage, finalUrl);
+  if (structuredImage) return structuredImage;
+
+  const publicCdnImage = html
+    .match(/https?:\\?\/\\?\/[^"'\s<>]+(?:jpg|jpeg|png|webp)[^"'\s<>]*/i)?.[0]
+    ?.replace(/\\\//g, "/");
+  return absoluteProductImageUrl(publicCdnImage, finalUrl);
+}
+
 function detectStockCue(html: string, retailerName: string) {
   const template = retailerTemplates.find((item) => item.retailerName === retailerName);
   const normalized = html.toLowerCase();
@@ -1825,6 +1877,7 @@ export async function verifyProductLink(productId: string) {
     const sameRetailerHost = normalizeUrlHost(finalUrl) === normalizeUrlHost(product.url);
     const titleText = extractHtmlTitle(html);
     const visiblePrice = extractVisiblePrice(html);
+    const productImageUrl = extractProductImage(html, finalUrl);
     const stockCue = detectStockCue(html, product.retailer.name);
     const upcMatched = htmlIncludesIdentifier(html, product.upc);
     const skuMatched = htmlIncludesIdentifier(html, product.sku);
@@ -1854,6 +1907,7 @@ export async function verifyProductLink(productId: string) {
       `HTTP ${response.status}`,
       `Final URL ${finalUrl}`,
       titleText ? `Product title text: ${titleText}` : "Product title text not found",
+      productImageUrl ? `Product image found from exact page` : "Product image not found",
       visiblePrice ? `Visible price cue: ${visiblePrice}` : "Visible price cue not found",
       stockCue ? `Stock cue: ${stockCue}` : "Stock cue not found",
       `Response ${Date.now() - started}ms`,
@@ -1875,6 +1929,7 @@ export async function verifyProductLink(productId: string) {
         verifiedAt: new Date(),
         verifiedFinalUrl: finalUrl,
         verificationNotes: notes,
+        imageUrl: likelyMismatch ? product.imageUrl : productImageUrl || product.imageUrl,
         lastCheckedAt: new Date(),
         lastMonitorResult: `Product link verification: ${verificationStatus}. ${notes}`
       },
@@ -2433,6 +2488,7 @@ export async function importProducts(format: "csv" | "json", data: string) {
         releaseId: await releaseIdFromRow(row),
         setName: textFromRow(row, "setName", "set"),
         productType: textFromRow(row, "productType", "type"),
+        imageUrl: textFromRow(row, "imageUrl", "image", "productImageUrl"),
         url: textFromRow(row, "url", "productUrl"),
         sku: textFromRow(row, "sku", "asin", "tcin"),
         upc: textFromRow(row, "upc"),
@@ -3478,12 +3534,13 @@ export async function resetDemoData() {
       setName: chaosRelease.setName,
       productType: "Booster Bundle",
       name: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle",
-      url: "https://www.target.com/p/pokemon-trading-card-game-mega-evolution-chaos-rising-booster-bundle/-/A-99900001",
-      sku: "TARGET-BUNDLE",
-      upc: "0820650990001",
-      dpci: "087-12-0001",
-      retailerProductId: "99900001",
-      retailPrice: 26.99,
+      url: "https://www.target.com/p/-/A-95298172",
+      imageUrl: "https://target.scene7.com/is/image/Target/GUEST_de896676-8332-46bd-b36f-d863b43df7ad",
+      sku: "TARGET-95298172",
+      upc: "196214154162",
+      dpci: "361-00-0031",
+      retailerProductId: "95298172",
+      retailPrice: 29.99,
       stockStatus: "IN_STOCK" as ProductStatus,
       priority: "HIGH" as Priority,
       rating: "BUY" as Exclude<Rating, "AVOID">,
@@ -3519,6 +3576,7 @@ export async function resetDemoData() {
       releaseId: product.releaseId,
       setName: product.setName,
       productType: product.productType,
+      imageUrl: "imageUrl" in product ? product.imageUrl : undefined,
       name: product.name,
       url: product.url,
       sku: product.sku,
@@ -3864,6 +3922,7 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       url: String(row.url),
       setName: row.setName ? String(row.setName) : null,
       productType: row.productType ? String(row.productType) : null,
+      imageUrl: row.imageUrl ? String(row.imageUrl) : null,
       sku: row.sku ? String(row.sku) : null,
       upc: row.upc ? String(row.upc) : null,
       dpci: row.dpci ? String(row.dpci) : null,

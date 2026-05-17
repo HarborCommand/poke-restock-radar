@@ -322,9 +322,9 @@ textarea {
 }
 
 .app-shell {
-  width: min(100%, 1080px);
+  width: min(100%, 1720px);
   margin: 0 auto;
-  padding: 18px 16px 112px;
+  padding: 18px clamp(12px, 2vw, 28px) 112px;
 }
 
 .topbar {
@@ -391,6 +391,10 @@ textarea {
   padding: 22px;
   box-shadow: var(--shadow);
   background: rgba(18, 21, 20, 0.72);
+}
+
+.hero-product-media {
+  width: min(100%, 240px);
 }
 
 .hero-panel h2 {
@@ -607,7 +611,6 @@ textarea {
 }
 
 .stack.compact .data-card {
-  grid-template-columns: 1fr;
   align-items: start;
 }
 
@@ -626,6 +629,85 @@ textarea {
   padding: 12px;
   background: rgba(255, 255, 255, 0.025);
   min-width: 0;
+}
+
+.product-card {
+  grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+  padding: 14px;
+}
+
+.compact-product-card {
+  grid-template-columns: minmax(132px, 190px) minmax(0, 1fr);
+}
+
+.product-card-body {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.product-image-frame {
+  position: relative;
+  display: grid;
+  min-height: 132px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(145deg, rgba(135, 187, 255, 0.1), rgba(79, 224, 139, 0.05)),
+    #090b0a;
+  aspect-ratio: 4 / 3;
+}
+
+.product-image-frame img,
+.product-image-empty {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+}
+
+.product-image-frame img {
+  object-fit: contain;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.product-image-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  color: var(--blue);
+  font-size: 0.84rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.product-image-empty[hidden] {
+  display: none;
+}
+
+.product-image-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(5, 7, 7, 0.82);
+  color: var(--muted);
+  padding: 4px 7px;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.product-image-badge.good {
+  color: var(--green);
+  border-color: rgba(79, 224, 139, 0.28);
 }
 
 .card-main {
@@ -1546,7 +1628,7 @@ textarea {
 
 .action-panel.apple-card {
   gap: 14px;
-  min-height: 270px;
+  min-height: 0;
   border-color: rgba(255, 255, 255, 0.075);
   background: rgba(255, 255, 255, 0.035);
   box-shadow: 0 14px 44px rgba(0, 0, 0, 0.18);
@@ -2053,6 +2135,11 @@ textarea {
     padding: 24px;
   }
 
+  .hero-panel.hero-with-product {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto;
+    align-items: center;
+  }
+
   .stat-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -2068,6 +2155,19 @@ textarea {
   .action-panel .data-card {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .product-card,
+  .stack.compact .product-card,
+  .action-panel .product-card {
+    grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .compact-product-card,
+  .stack.compact .compact-product-card,
+  .action-panel .compact-product-card {
+    grid-template-columns: minmax(132px, 190px) minmax(0, 1fr);
   }
 
   .form-grid {
@@ -2195,7 +2295,7 @@ textarea {
   }
 
   .chase-now-grid.apple-chase-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 }
 
@@ -2204,6 +2304,13 @@ textarea {
     background:
       radial-gradient(circle at top left, rgba(56, 215, 125, 0.07), transparent 22rem),
       linear-gradient(180deg, #090b0a 0%, #070808 52%, #050606 100%);
+  }
+
+  .topbar {
+    margin-right: -12px;
+    margin-left: -12px;
+    padding-right: 12px;
+    padding-left: 12px;
   }
 
   .topbar .eyeline {
@@ -2288,6 +2395,15 @@ textarea {
   .dashboard-command-row,
   .chase-now-grid.apple-chase-grid {
     grid-template-columns: 1fr;
+  }
+
+  .product-card,
+  .compact-product-card {
+    grid-template-columns: 1fr;
+  }
+
+  .product-image-frame {
+    min-height: 190px;
   }
 
   .location-strip .mini-action,

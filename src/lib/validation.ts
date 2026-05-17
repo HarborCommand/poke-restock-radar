@@ -247,6 +247,7 @@ export const productCreateSchema = z.object({
   releaseId: optionalTrimmed,
   setName: optionalTrimmed,
   productType: optionalTrimmed,
+  imageUrl: optionalHttpUrl,
   url: httpUrl,
   sku: optionalSkuLike,
   upc: optionalUpc,

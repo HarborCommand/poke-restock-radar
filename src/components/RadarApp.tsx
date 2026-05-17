@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   AlertTriangle,
   Activity,
@@ -245,6 +246,11 @@ function storeDistanceLabel(store: StoreDTO) {
 
 function storeNeedsCoordinates(store: StoreDTO) {
   return store.latitude === null || store.longitude === null;
+}
+
+function productImageRank(product: ProductDTO) {
+  const verified = product.verificationStatus === "VERIFIED_URL" || product.verificationStatus === "UPC_MATCHED";
+  return (product.imageUrl ? 100 : 0) + (verified ? 40 : 0) + (product.priorityScore?.score ?? 0);
 }
 
 function browserPosition(): Promise<GeolocationPosition> {
@@ -543,12 +549,20 @@ export function RadarApp() {
         </div>
       </header>
 
-      <section className="hero-panel">
+      <section className={chase.product ? "hero-panel hero-with-product" : "hero-panel"}>
         <div>
           <p className="eyeline">What should I chase right now?</p>
           <h2>{chase.title}</h2>
           <p>{chase.reason}</p>
         </div>
+        {chase.product ? (
+          <div className="hero-product-media">
+            <ProductImage
+              product={chase.product}
+              verified={chase.product.verificationStatus === "VERIFIED_URL" || chase.product.verificationStatus === "UPC_MATCHED"}
+            />
+          </div>
+        ) : null}
         <div className="hero-actions">
           {chase.url ? (
             <a className="primary-action" href={chase.url} target="_blank" rel="noreferrer">
@@ -1013,6 +1027,7 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
   priority: Priority;
   url?: string;
   tab: Tab;
+  product: ProductDTO | null;
 } {
   const actionable = dashboard?.products.find((product) =>
     ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)
@@ -1024,7 +1039,8 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
       reason: chaseProduct.priorityScore.reason,
       priority: chaseProduct.priorityScore.buyWatchSkip === "BUY" ? "HIGH" : "MEDIUM",
       url: chaseProduct.url,
-      tab: "products"
+      tab: "products",
+      product: chaseProduct
     };
   }
   if (actionable) {
@@ -1035,7 +1051,8 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
       )}. Open the official page and check out manually.`,
       priority: actionable.priority,
       url: actionable.url,
-      tab: "products"
+      tab: "products",
+      product: actionable
     };
   }
 
@@ -1045,7 +1062,8 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
       title: store.storeName,
       reason: `${store.prediction.reason}. Window: ${store.prediction.likelyRestockWindow}.`,
       priority: "HIGH",
-      tab: "field"
+      tab: "field",
+      product: null
     };
   }
 
@@ -1057,7 +1075,8 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
         card.maxRawBuyPricePsa9
       )}.`,
       priority: card.rating === "BUY" ? "HIGH" : "MEDIUM",
-      tab: "cards"
+      tab: "cards",
+      product: null
     };
   }
 
@@ -1065,7 +1084,8 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
     title: "Add your first target",
     reason: "Start with a product URL, local store, upcoming release, or manual card comp.",
     priority: "MEDIUM",
-    tab: "products"
+    tab: "products",
+    product: null
   };
 }
 
@@ -1083,6 +1103,7 @@ function DashboardPanel({
   runAction: ActionHandler;
 }) {
   const storesToShow = dashboard.checkTodayStores.length ? dashboard.checkTodayStores : dashboard.stores;
+  const onlineDrops = [...dashboard.todaysChaseList].sort((left, right) => productImageRank(right) - productImageRank(left));
   return (
     <>
       <section className="dashboard-command-row">
@@ -1098,7 +1119,7 @@ function DashboardPanel({
       <section className="chase-now-grid apple-chase-grid" aria-label="What should I chase right now">
         <section className="action-panel apple-card">
           <PanelHeader title="Online Drops" action="Open" onAction={() => setActiveTab("products")} />
-          <ProductStack products={dashboard.todaysChaseList.slice(0, 2)} compact />
+          <ProductStack products={onlineDrops.slice(0, 2)} compact />
         </section>
         <section className="action-panel apple-card">
           <PanelHeader title="Stores To Check" action="Open" onAction={() => setActiveTab("field")} />
@@ -1744,67 +1765,101 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
       {products.map((product) => {
         const verified = product.verificationStatus === "VERIFIED_URL" || product.verificationStatus === "UPC_MATCHED";
         return (
-          <article className="data-card" id={`product-${product.id}`} key={product.id}>
-            <div className="card-main">
-              <div className="avatar">{product.retailerName.slice(0, 2)}</div>
-              <div>
-                <h3>{product.name}</h3>
-                <p>
-                  {product.retailerName} - {product.releaseName || product.setName || "Unlinked set"} - {money(product.retailPrice)}
+          <article className={compact ? "data-card product-card compact-product-card" : "data-card product-card"} id={`product-${product.id}`} key={product.id}>
+            <ProductImage product={product} verified={verified} />
+            <div className="product-card-body">
+              <div className="card-main">
+                <div>
+                  <h3>{product.name}</h3>
+                  <p>
+                    {product.retailerName} - {product.releaseName || product.setName || "Unlinked set"} - {money(product.retailPrice)}
+                  </p>
+                </div>
+              </div>
+              <div className="card-actions">
+                <span className={`chip ${statusTone(product.stockStatus)}`}>{formatStatus(product.stockStatus)}</span>
+                <span className={`chip ${statusTone(product.priorityScore?.buyWatchSkip || product.rating)}`}>
+                  {product.priorityScore?.buyWatchSkip || product.rating}
+                </span>
+                {verified ? (
+                  <span className="chip good">Verified Product</span>
+                ) : (
+                  <span className={`chip ${verificationTone(product.verificationStatus)}`}>{formatStatus(product.verificationStatus)}</span>
+                )}
+                <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
+                {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
+                {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
+                <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
+                  Go / Buy Now <ExternalLink size={14} />
+                </a>
+              </div>
+              {!compact && product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
+              {!compact && product.pendingAlertStatus ? (
+                <p className="reason-text">
+                  Pending confirmation: {formatStatus(product.pendingAlertStatus)} after {product.pendingAlertCount} low-confidence
+                  check{product.pendingAlertCount === 1 ? "" : "s"}.
                 </p>
-              </div>
+              ) : null}
+              {!compact ? (
+                <div className="monitor-meta">
+                  <span>
+                    <Clock size={13} />
+                    Last {relativeTime(product.lastCheckedAt)}
+                  </span>
+                  <span>Last good {relativeTime(product.lastSuccessfulCheckedAt)}</span>
+                  <span>
+                    <Activity size={13} />
+                    Next {relativeTime(product.nextCheckAt)}
+                  </span>
+                  {product.productType ? <span>{product.productType}</span> : null}
+                  {product.sku ? <span>SKU {product.sku}</span> : null}
+                  {product.upc ? <span>UPC {product.upc}</span> : null}
+                  {product.dpci ? <span>DPCI {product.dpci}</span> : null}
+                  {product.retailerProductId ? <span>Retailer ID {product.retailerProductId}</span> : null}
+                  {product.verifiedAt ? <span>Verified {relativeTime(product.verifiedAt)}</span> : null}
+                  {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
+                  {product.requiredWords ? <span>Required: {product.requiredWords}</span> : null}
+                  {product.ignoreWords ? <span>Ignore: {product.ignoreWords}</span> : null}
+                  {product.verificationNotes ? <span>{product.verificationNotes}</span> : null}
+                  <span>{product.lastMonitorError || product.lastMonitorResult || "No monitor result yet"}</span>
+                </div>
+              ) : null}
             </div>
-            <div className="card-actions">
-              <span className={`chip ${statusTone(product.stockStatus)}`}>{formatStatus(product.stockStatus)}</span>
-              <span className={`chip ${statusTone(product.priorityScore?.buyWatchSkip || product.rating)}`}>
-                {product.priorityScore?.buyWatchSkip || product.rating}
-              </span>
-              {verified ? (
-                <span className="chip good">Verified Product</span>
-              ) : (
-                <span className={`chip ${verificationTone(product.verificationStatus)}`}>{formatStatus(product.verificationStatus)}</span>
-              )}
-              <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
-              {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
-              {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
-              <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
-                Go / Buy Now <ExternalLink size={14} />
-              </a>
-            </div>
-            {!compact && product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
-            {!compact && product.pendingAlertStatus ? (
-              <p className="reason-text">
-                Pending confirmation: {formatStatus(product.pendingAlertStatus)} after {product.pendingAlertCount} low-confidence
-                check{product.pendingAlertCount === 1 ? "" : "s"}.
-              </p>
-            ) : null}
-            {!compact ? (
-              <div className="monitor-meta">
-                <span>
-                  <Clock size={13} />
-                  Last {relativeTime(product.lastCheckedAt)}
-                </span>
-                <span>Last good {relativeTime(product.lastSuccessfulCheckedAt)}</span>
-                <span>
-                  <Activity size={13} />
-                  Next {relativeTime(product.nextCheckAt)}
-                </span>
-                {product.productType ? <span>{product.productType}</span> : null}
-                {product.sku ? <span>SKU {product.sku}</span> : null}
-                {product.upc ? <span>UPC {product.upc}</span> : null}
-                {product.dpci ? <span>DPCI {product.dpci}</span> : null}
-                {product.retailerProductId ? <span>Retailer ID {product.retailerProductId}</span> : null}
-                {product.verifiedAt ? <span>Verified {relativeTime(product.verifiedAt)}</span> : null}
-                {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
-                {product.requiredWords ? <span>Required: {product.requiredWords}</span> : null}
-                {product.ignoreWords ? <span>Ignore: {product.ignoreWords}</span> : null}
-                {product.verificationNotes ? <span>{product.verificationNotes}</span> : null}
-                <span>{product.lastMonitorError || product.lastMonitorResult || "No monitor result yet"}</span>
-              </div>
-            ) : null}
           </article>
         );
       })}
+    </div>
+  );
+}
+
+function ProductImage({ product, verified }: { product: ProductDTO; verified: boolean }) {
+  const imageLabel = product.imageUrl
+    ? verified
+      ? "Image from verified product page"
+      : "Image saved; verify exact link"
+    : "Verify link to load matching image";
+  return (
+    <div className="product-image-frame">
+      {product.imageUrl ? (
+        <Image
+          alt={`${product.name} product image`}
+          fill
+          loading="lazy"
+          sizes="(max-width: 560px) 100vw, 210px"
+          unoptimized
+          referrerPolicy="no-referrer"
+          src={product.imageUrl}
+          onError={(event) => {
+            event.currentTarget.hidden = true;
+            event.currentTarget.nextElementSibling?.removeAttribute("hidden");
+          }}
+        />
+      ) : null}
+      <div className="product-image-empty" hidden={Boolean(product.imageUrl)}>
+        <PackageSearch size={22} />
+        <span>{product.retailerName.slice(0, 2)}</span>
+      </div>
+      <small className={verified ? "product-image-badge good" : "product-image-badge"}>{imageLabel}</small>
     </div>
   );
 }
@@ -2446,7 +2501,7 @@ function ProductsPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
-          sample={`retailer,name,url,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/p/example-product/-/A-12345678,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650123456,087-12-1234,12345678,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
+          sample={`retailer,name,url,imageUrl,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/p/example-product/-/A-12345678,https://example.com/exact-product-image.jpg,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650123456,087-12-1234,12345678,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
         />
       ) : null}
       {isAdmin ? (
@@ -2603,6 +2658,7 @@ function ProductAddWizard({
               options={productTypeOptions.map((value) => ({ value, label: value }))}
             />
             <TextInput name="setName" label="Set name" placeholder="Mega Evolution-Chaos Rising" />
+            <TextInput name="imageUrl" label="Product image URL" type="url" placeholder="Auto-filled by Verify Link when possible" />
             <TextInput name="sku" label="SKU / ASIN / TCIN" />
             <TextInput name="upc" label="UPC" inputMode="numeric" placeholder="8 to 14 digits" />
             <TextInput name="dpci" label="DPCI" placeholder="087-12-1234" />
@@ -2803,6 +2859,7 @@ function EditableProduct({
         />
         <TextInput name="setName" label="Set name" defaultValue={product.setName ?? ""} />
         <TextInput name="url" label="Official URL" type="url" defaultValue={product.url} required />
+        <TextInput name="imageUrl" label="Product image URL" type="url" defaultValue={product.imageUrl ?? ""} />
         <TextInput name="sku" label="SKU" defaultValue={product.sku ?? ""} />
         <TextInput name="upc" label="UPC" inputMode="numeric" defaultValue={product.upc ?? ""} />
         <TextInput name="dpci" label="DPCI" defaultValue={product.dpci ?? ""} />
