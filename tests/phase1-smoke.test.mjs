@@ -260,6 +260,14 @@ test("Phase 18 owner launch and alert calibration pieces exist", () => {
   assert.match(readme, /Alert Calibration Queue/);
 });
 
+test("dashboard compact cards stay readable instead of narrow columns", () => {
+  const css = readFileSync(join(root, "src", "app", "globals.css"), "utf8");
+  assert.match(css, /\.stack\.compact \.data-card\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(css, /\.today-plan-panel,\s*\n\s*\.form-panel/s);
+  assert.match(css, /\.daily-plan-grid\s*\{[^}]*minmax\(320px,\s*1fr\)/s);
+  assert.match(css, /font-size:\s*clamp\(1\.45rem,\s*6vw,\s*2\.75rem\)/);
+});
+
 test("Auth hardening and password reset flow pieces exist", () => {
   const files = [
     join(root, "src", "app", "api", "auth", "forgot-password", "route.ts"),

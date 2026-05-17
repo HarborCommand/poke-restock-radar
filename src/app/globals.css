@@ -377,8 +377,8 @@ textarea {
 
 .hero-panel h2 {
   margin-top: 6px;
-  font-size: clamp(1.45rem, 8vw, 3.4rem);
-  line-height: 1.02;
+  font-size: clamp(1.45rem, 6vw, 2.75rem);
+  line-height: 1.08;
   max-width: 760px;
 }
 
@@ -483,6 +483,20 @@ textarea {
 
 .stack.compact {
   gap: 8px;
+}
+
+.stack.compact .data-card {
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+.stack.compact .card-main {
+  align-items: flex-start;
+}
+
+.stack.compact .card-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
 }
 
 .data-card {
@@ -1251,7 +1265,7 @@ textarea {
 }
 
 .compact-card {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr;
 }
 
 .access-form {
@@ -1625,10 +1639,6 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .daily-plan-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .alert-setup-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1684,10 +1694,15 @@ textarea {
   }
 
   .stat-grid,
+  .today-plan-panel,
   .form-panel,
   .split-grid,
   .error-bar {
     grid-column: 1 / -1;
+  }
+
+  .daily-plan-grid {
+    grid-template-columns: repeat(2, minmax(320px, 1fr));
   }
 
   .form-panel,
