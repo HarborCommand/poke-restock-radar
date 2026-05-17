@@ -36,8 +36,8 @@ export const retailerTemplates: RetailerTemplate[] = [
   },
   {
     retailerName: "Target",
-    urlPattern: "^https://(?:www\\.)?target\\.com/(?:p|s)/",
-    urlPatternLabel: "target.com /p/ or /s/ URL",
+    urlPattern: "^https://(?:www\\.)?target\\.com/(?:p/|s(?:/|\\?))",
+    urlPatternLabel: "target.com /p/ product URL or /s search URL",
     statusWords: {
       inStock: ["in stock", "available to ship", "available at"],
       soldOut: ["sold out", "out of stock", "not available"],
