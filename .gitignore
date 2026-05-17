@@ -1,6 +1,8 @@
 .env
 .env*.local
 .next
+.vercel
+.prisma-postgres
 node_modules
 dist
 coverage

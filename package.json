@@ -19,9 +19,11 @@
     "vapid:generate": "tsx scripts/generate-vapid.ts",
     "db:push": "prisma generate && tsx prisma/init-sqlite.ts",
     "db:seed": "prisma db seed",
-    "db:migrate:prod": "prisma migrate deploy",
-    "db:seed:prod": "prisma db seed",
-    "vercel-build": "prisma generate && next build",
+    "prisma:postgres": "tsx scripts/prepare-postgres-schema.ts",
+    "db:push:prod": "npm run prisma:postgres && prisma db push --schema .prisma-postgres/schema.prisma",
+    "db:migrate:prod": "npm run prisma:postgres && prisma migrate deploy --schema .prisma-postgres/schema.prisma",
+    "db:seed:prod": "npm run prisma:postgres && prisma db seed --schema .prisma-postgres/schema.prisma",
+    "vercel-build": "npm run prisma:postgres && prisma generate --schema .prisma-postgres/schema.prisma && next build",
     "postinstall": "prisma generate"
   },
   "dependencies": {

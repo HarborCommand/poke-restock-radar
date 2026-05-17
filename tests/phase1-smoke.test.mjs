@@ -32,7 +32,9 @@ test("Phase 1 package scripts are present", () => {
     "restore:postgres",
     "secrets:generate",
     "vapid:generate",
+    "prisma:postgres",
     "db:push",
+    "db:push:prod",
     "db:seed",
     "db:migrate:prod",
     "db:seed:prod",
@@ -307,6 +309,7 @@ test("Phase 9 deployment operations scripts and checklist exist", () => {
     join(root, "scripts", "restore-postgres.ts"),
     join(root, "scripts", "generate-secrets.ts"),
     join(root, "scripts", "generate-vapid.ts"),
+    join(root, "scripts", "prepare-postgres-schema.ts"),
     join(root, "docs", "production-deployment-checklist.md")
   ];
   for (const file of files) {
@@ -318,6 +321,7 @@ test("Phase 9 deployment operations scripts and checklist exist", () => {
     "Vercel project name: `poke-restock-radar`",
     "Neon production database name: `poke_restock_radar_prod`",
     "DATABASE_URL_UNPOOLED",
+    "npm run db:push:prod",
     "npm run backup:json",
     "npm run backup:postgres",
     "npm run secrets:generate",

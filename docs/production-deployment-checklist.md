@@ -93,9 +93,11 @@ Production must use Postgres. Local SQLite is development-only.
 Before the first live deployment, convert and review the Prisma production migration for Postgres, then run:
 
 ```bash
-npm run db:migrate:prod
+npm run db:push:prod
 npm run db:seed:prod
 ```
+
+Production scripts run `npm run prisma:postgres` first. That generates `.prisma-postgres/schema.prisma` from the local SQLite development schema and switches only the datasource provider to Postgres for Vercel/Neon use.
 
 Keep production seed data limited to the private admin account and any intentional starter records.
 
