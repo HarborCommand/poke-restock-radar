@@ -4267,6 +4267,66 @@ function AdminHealthPanel({
   const authWarningCount =
     Number(!health.auth.authReady) + Number(health.auth.adminUserCount === 0) + Number(!health.auth.configuredAdminEmailExists);
   const warningCount = health.environment.coreMissing.length + health.environment.warnings.length + authWarningCount;
+  const systemChecklist = [
+    {
+      label: "Postgres database",
+      detail: health.database.ok
+        ? `${health.database.provider} is responding${health.database.productionSafe ? "" : " but is not production-safe"}`
+        : health.database.error || "Database check failed",
+      status: health.database.ok && health.database.productionSafe ? "Ready" : "Check",
+      tone: health.database.ok && health.database.productionSafe ? "OK" : "ERROR"
+    },
+    {
+      label: "Auth and session cookies",
+      detail: `${health.auth.sessionCookieName} uses ${health.auth.secureCookie ? "secure" : "local"} ${health.auth.sameSite} cookies`,
+      status: health.auth.authReady && health.auth.currentSessionValid ? "Ready" : "Check",
+      tone: health.auth.authReady && health.auth.currentSessionValid ? "OK" : "ERROR"
+    },
+    {
+      label: "Admin login",
+      detail: `${health.auth.adminUserCount} admin user${health.auth.adminUserCount === 1 ? "" : "s"}; configured email ${
+        health.auth.configuredAdminEmailExists ? "matches" : "needs review"
+      }`,
+      status: health.auth.adminUserCount > 0 && health.auth.configuredAdminEmailExists ? "Ready" : "Check",
+      tone: health.auth.adminUserCount > 0 && health.auth.configuredAdminEmailExists ? "OK" : "ERROR"
+    },
+    {
+      label: "Monitor cron protection",
+      detail: `Job secret ${configuredText(health.monitor.monitorJobSecretConfigured).toLowerCase()}; Vercel bearer ${configuredText(
+        health.monitor.vercelCronSecretConfigured
+      ).toLowerCase()}`,
+      status: health.monitor.monitorJobSecretConfigured && health.monitor.vercelCronSecretConfigured ? "Ready" : "Check",
+      tone: health.monitor.monitorJobSecretConfigured && health.monitor.vercelCronSecretConfigured ? "OK" : "ERROR"
+    },
+    {
+      label: "Monitor run history",
+      detail: health.monitor.lastRunAt
+        ? `Last run ${relativeTime(health.monitor.lastRunAt)} with ${health.monitor.lastStatus || "unknown"} result`
+        : "No production monitor run logged yet",
+      status: health.monitor.lastRunAt ? "Ready" : "Review",
+      tone: health.monitor.lastRunAt ? "OK" : "WARN"
+    },
+    {
+      label: "Push configuration",
+      detail: `Public key ${configuredText(health.providers.push.publicKeyConfigured).toLowerCase()}; private key ${configuredText(
+        health.providers.push.privateKeyConfigured
+      ).toLowerCase()}`,
+      status: health.providers.push.configured ? "Ready" : "Optional",
+      tone: health.providers.push.configured ? "OK" : "WARN"
+    },
+    {
+      label: "Backup and restore path",
+      detail: "JSON export is available; production restore should be dry-run reviewed before import",
+      status: "Ready",
+      tone: "OK"
+    },
+    {
+      label: "Manual checkout safety",
+      detail: "Go / Buy Now opens official retailer pages only",
+      status: "Ready",
+      tone: "OK"
+    }
+  ];
 
   return (
     <section className="admin-tools deployment-health">
@@ -4359,6 +4419,28 @@ function AdminHealthPanel({
         <span>Vercel Cron bearer {configuredText(health.monitor.vercelCronSecretConfigured)}</span>
         <span>Password reset email {configuredText(health.auth.passwordResetEmailConfigured)}</span>
         <span>Delay {health.monitor.requestDelayMs}ms</span>
+      </div>
+      <div className="system-checklist" aria-label="System Status Checklist">
+        <div className="panel-header">
+          <div>
+            <p className="eyeline">Owner QA</p>
+            <h2>System Status Checklist</h2>
+          </div>
+        </div>
+        <div className="checklist-grid">
+          {systemChecklist.map((item) => (
+            <article className="system-check-row" key={item.label}>
+              <div className="avatar">
+                <Check size={15} />
+              </div>
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.detail}</span>
+              </div>
+              <span className={`chip ${statusTone(item.tone)}`}>{item.status}</span>
+            </article>
+          ))}
+        </div>
       </div>
       <form
         className="auth-reset-panel"

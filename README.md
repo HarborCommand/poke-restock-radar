@@ -488,6 +488,51 @@ Noise controls live in notification settings:
 
 Use `npm run alert:smoke` with production credentials to verify login, in-app alert creation, route test alerts, and the alerts endpoint.
 
+## Phase 17 Owner Guide
+
+Daily owner workflow:
+
+1. Sign in with the private Admin account.
+2. Review `Today's Plan` for online products, local stores, newest releases, latest alerts, and card opportunities.
+3. Use `Go / Buy Now` only to open the official retailer page and complete checkout manually.
+4. Use `Field Mode` while store hunting, then log `Seen Stock`, `Empty Shelf`, `Vendor Spotted`, `Bought Product`, or notes.
+5. Enter card comps manually, then generate the weekly investment report when the comp set looks current.
+6. Check `App Health` and the `System Status Checklist` after deploys, cron changes, or notification changes.
+7. Export a JSON backup before any destructive data reset or restore.
+
+Friend invite flow:
+
+1. Admin opens `User Management`.
+2. Create an invite for the friend's email and choose permissions.
+3. Share the single-use invite link.
+4. Friend opens the link, confirms the invited email, and creates a password.
+5. Admin can revoke unused invites or disable friend access later.
+
+Production QA commands:
+
+```bash
+npm run build
+npm run check
+npm run lint
+npm test
+npm audit --omit=dev
+npm run auth:smoke
+npm run alert:smoke
+npm run smoke:prod
+```
+
+`npm run smoke:prod` checks the production shell, mobile/PWA shell, `/api/health`, login/logout/session persistence, main authenticated API routes, admin route protection, cron protection, PWA manifest, service worker push handlers, backup export shape, a non-destructive restore dry run, invite create/revoke, and in-app notification routing.
+
+## Known Limitations
+
+- eBay sold comps remain manual/assisted. The app does not aggressively scrape eBay or other pricing sites.
+- Retailer monitor accuracy depends on public page content. Blocked, captcha, robot, queue, login, and private/internal pages are logged and do not trigger checkout automation.
+- Browser push requires a supported browser, permission approval, a saved subscription, and valid VAPID environment variables.
+- Email and SMS alerts are inactive until SMTP and Twilio environment variables are configured.
+- JSON restore is destructive by design. Production smoke validates backup shape only and does not import data.
+- Store predictions are based on logged sightings and visits, so confidence is low until enough local history exists.
+- The app is standalone and not connected to Harbor Command; it must stay on its own Vercel project and Neon database.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.

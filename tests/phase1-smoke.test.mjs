@@ -179,6 +179,46 @@ test("Phase 16 alert intelligence and noise controls exist", () => {
   assert.ok(pkg.scripts["alert:smoke"], "missing alert:smoke script");
 });
 
+test("Phase 17 production hardening and owner QA pieces exist", () => {
+  const files = [
+    join(root, "src", "app", "error.tsx"),
+    join(root, "src", "app", "not-found.tsx"),
+    join(root, "scripts", "final-production-smoke.ts")
+  ];
+  for (const file of files) {
+    assert.ok(statSync(file).isFile(), `missing ${file}`);
+  }
+
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.ok(pkg.scripts["smoke:prod"], "missing smoke:prod script");
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of ["System Status Checklist", "Backup and restore path", "Manual checkout safety", "Owner QA"]) {
+    assert.match(app, new RegExp(phrase), `missing Phase 17 UI phrase ${phrase}`);
+  }
+
+  const errorBoundary = readFileSync(join(root, "src", "app", "error.tsx"), "utf8");
+  assert.match(errorBoundary, /Something went wrong/);
+  assert.match(errorBoundary, /Retry/);
+
+  const smoke = readFileSync(join(root, "scripts", "final-production-smoke.ts"), "utf8");
+  for (const phrase of [
+    "cronProtection",
+    "backupExport",
+    "restoreDryRun",
+    "inviteFlow",
+    "serviceWorker",
+    "mobileShell"
+  ]) {
+    assert.match(smoke, new RegExp(phrase), `missing final smoke check ${phrase}`);
+  }
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /Phase 17 Owner Guide/);
+  assert.match(readme, /Known Limitations/);
+  assert.match(readme, /npm run smoke:prod/);
+});
+
 test("Auth hardening and password reset flow pieces exist", () => {
   const files = [
     join(root, "src", "app", "api", "auth", "forgot-password", "route.ts"),

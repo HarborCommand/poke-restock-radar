@@ -1353,6 +1353,45 @@ textarea {
   line-height: 1.45;
 }
 
+.system-checklist {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 12px;
+}
+
+.checklist-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.system-check-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(8, 10, 10, 0.38);
+}
+
+.system-check-row strong,
+.route-state-card h1 {
+  color: var(--text);
+}
+
+.system-check-row span:not(.chip),
+.route-state-card p {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .backup-form p {
   margin: 0;
   line-height: 1.45;
@@ -1434,6 +1473,33 @@ textarea {
   color: var(--red);
   font-size: 0.85rem;
   font-weight: 800;
+}
+
+.route-state-page {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.route-state-card {
+  width: min(100%, 440px);
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(18, 21, 20, 0.9);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.route-state-card h1 {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.route-state-card .primary-action {
+  justify-content: center;
 }
 
 .form-error {
