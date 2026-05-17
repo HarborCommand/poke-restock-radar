@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
+import { exactProductActionUrl, matchProductIdentity, type ProductIdentityMatch } from "@/lib/product-identity";
 import { templateForRetailerName, type RetailerTemplate } from "@/lib/retailer-templates";
 import type { Priority, ProductStatus } from "@/types/radar";
 
@@ -19,6 +20,7 @@ type Detection = {
   reason: string;
   detectedWords: string[];
   blockedType: BlockedType | null;
+  identityMatch: ProductIdentityMatch;
 };
 
 const actionableStatuses: ProductStatus[] = [
@@ -121,6 +123,12 @@ function detectPrice(html: string) {
   }
 
   return null;
+}
+
+function extractHtmlTitle(html: string) {
+  const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1];
+  const title = ogTitle || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || "";
+  return title.replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
 function withRequirementPenalty<T extends {
@@ -290,13 +298,22 @@ function detectPublicStatus(input: {
 }
 
 async function fetchPublicProductPage(input: {
-  url: string;
+  product: {
+    name: string;
+    url: string;
+    expectedTitleKeywords: string | null;
+    upc: string | null;
+    sku: string | null;
+    dpci: string | null;
+    retailerProductId: string | null;
+    retailPrice: number | null;
+  };
   retailerName: string;
   requiredWords?: string | null;
   ignoreWords?: string | null;
 }): Promise<Detection> {
   const started = Date.now();
-  const response = await fetch(input.url, {
+  const response = await fetch(input.product.url, {
     method: "GET",
     redirect: "follow",
     signal: AbortSignal.timeout(12000),
@@ -308,6 +325,7 @@ async function fetchPublicProductPage(input: {
 
   const body = await response.text();
   const responseTimeMs = Date.now() - started;
+  const finalUrl = response.url || input.product.url;
   const status = detectPublicStatus({
     html: body,
     retailerName: input.retailerName,
@@ -319,14 +337,33 @@ async function fetchPublicProductPage(input: {
   if (!response.ok && !status.blockedType && status.status !== "UNAVAILABLE") {
     throw new Error(`Public page returned HTTP ${response.status}`);
   }
+  const titleText = extractHtmlTitle(body);
+  const identityMatch = matchProductIdentity({
+    product: {
+      retailerName: input.retailerName,
+      name: input.product.name,
+      url: input.product.url,
+      expectedTitleKeywords: input.product.expectedTitleKeywords,
+      upc: input.product.upc,
+      sku: input.product.sku,
+      dpci: input.product.dpci,
+      retailerProductId: input.product.retailerProductId,
+      retailPrice: input.product.retailPrice
+    },
+    finalUrl,
+    html: body,
+    titleText,
+    httpStatus: response.status
+  });
 
   return {
     ...status,
     price: detectPrice(body),
     pageHash: hashPage(body),
     httpStatus: response.status,
-    finalUrl: response.url || input.url,
-    responseTimeMs
+    finalUrl,
+    responseTimeMs,
+    identityMatch
   };
 }
 
@@ -486,7 +523,16 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
 
   try {
     const detection = await fetchPublicProductPage({
-      url: product.url,
+      product: {
+        name: product.name,
+        url: product.url,
+        expectedTitleKeywords: product.expectedTitleKeywords,
+        upc: product.upc,
+        sku: product.sku,
+        dpci: product.dpci,
+        retailerProductId: product.retailerProductId,
+        retailPrice: product.retailPrice
+      },
       retailerName: product.retailer.name,
       requiredWords: product.requiredWords,
       ignoreWords: product.ignoreWords
@@ -526,6 +572,52 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         productName: product.name,
         status: "BLOCKED",
         blockedType: detection.blockedType,
+        logId: log.id
+      };
+    }
+
+    if (!detection.identityMatch.readyForAlert) {
+      const identityReason = detection.identityMatch.notes.join(". ");
+      await prisma.product.update({
+        where: { id: productId },
+        data: {
+          verificationStatus: detection.identityMatch.verificationStatus,
+          verifiedAt: now,
+          verifiedFinalUrl: detection.finalUrl,
+          verificationNotes: identityReason,
+          lastCheckedAt: now,
+          nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
+          lastMonitorError: null,
+          lastMonitorResult: `Exact product verification failed: ${detection.identityMatch.verificationStatus}. ${identityReason}`,
+          alertStatus: false,
+          ...pendingClear()
+        }
+      });
+      const log = await createMonitorLog({
+        productId,
+        runType,
+        status: "SKIPPED",
+        previousStatus: product.stockStatus,
+        detectedStatus: detection.identityMatch.verificationStatus,
+        previousPrice: product.retailPrice,
+        detectedPrice: detection.price,
+        changeSummary: "Monitor skipped because the tracked page is not verified as the exact product.",
+        httpStatus: detection.httpStatus,
+        finalUrl: detection.finalUrl,
+        responseTimeMs: detection.responseTimeMs,
+        detectedWords: detection.detectedWords,
+        confidenceScore: Math.min(detection.confidenceScore, 20),
+        reason: identityReason,
+        pageHash: detection.pageHash,
+        startedAt,
+        alertSent: false
+      });
+      return {
+        productId,
+        productName: product.name,
+        status: "SKIPPED",
+        detectedStatus: detection.identityMatch.verificationStatus,
+        alertSent: false,
         logId: log.id
       };
     }
@@ -610,6 +702,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         }
       });
 
+      const actionUrl = detection.identityMatch.actionUrl || exactProductActionUrl(product);
       const delivery = await deliverAlert({
         title: `${product.name}: ${change.nextStatus.replaceAll("_", " ").toLowerCase()}`,
         reason: `${change.summary} Confidence ${detection.confidenceScore}%. Source: public ${product.retailer.name} product page. Manual checkout only.`,
@@ -617,7 +710,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         entityType: "PRODUCT",
         entityId: product.id,
         productId: product.id,
-        actionUrl: product.url
+        actionUrl: actionUrl ?? undefined
       });
       deliverySummary = notificationSummary(delivery);
       alertSent = delivery.inAppCreated + delivery.emailSent + delivery.smsSent + delivery.pushSent > 0;
@@ -628,6 +721,10 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
       data: {
         stockStatus: change.nextStatus,
         retailPrice: detection.price ?? product.retailPrice,
+        verificationStatus: detection.identityMatch.verificationStatus,
+        verifiedAt: now,
+        verifiedFinalUrl: detection.finalUrl,
+        verificationNotes: detection.identityMatch.notes.join(". "),
         lastCheckedAt: now,
         lastSuccessfulCheckedAt: now,
         nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),

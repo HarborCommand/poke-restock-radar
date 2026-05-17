@@ -335,25 +335,34 @@ Retailer URL validation is enforced when products are created or edited. Example
 - Walmart: `https://www.walmart.com/ip/Pokemon-TCG-Example-Collection-Box/99900003`
 - GameStop: `https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-example/999005`
 
-Use exact product pages whenever possible. The add wizard requires retailer, product URL, and product name, with UPC, SKU, DPCI, retailer product ID, and product image URL available as optional matching fields. `Go / Buy Now` opens the exact URL saved on the product, and checkout stays manual on the official retailer site.
+Use exact product pages, not search or category links. The add wizard requires retailer, product URL, and product name, with expected title keywords, UPC, SKU, DPCI, TCIN/ASIN/item ID, retailer product ID, and product image URL available as matching fields. `Go / Buy Now` opens only a verified exact product URL, and checkout stays manual on the official retailer site.
 
 ### Product Link Verification
 
-Admin products include `Verify Product Link`. The check safely fetches the public URL, follows normal redirects, and records final URL, public product title text, product image metadata, visible price cue, stock cue, identifier matches, and mismatch warnings:
+Admin products include `Verify Exact Product`. The check safely fetches the public URL, follows normal redirects, and records final URL, public product title text, product image metadata, visible price cue, stock cue, identifier matches, and mismatch warnings. It answers: "Is this exact UPC/SKU/DPCI/TCIN/item-ID product available to buy right now?"
 
-- `Verified URL`
-- `UPC Matched`
+- `Verified Exact Product`
+- `Search/Category Link`
 - `Possible Mismatch`
+- `Needs UPC/SKU`
+- `Ready for Alert`
 
-The verifier compares the final URL host, UPC, SKU, DPCI, retailer product ID, public title words, and whether the URL looks like a search/category page. Verified links receive a `Verified Product` badge and can save the page's product image for the dashboard. A possible mismatch warning means the saved link may redirect to an unrelated product or no longer prove the identifiers; in that case the verifier does not overwrite the product image. It never adds to cart, checks out, logs in, bypasses queues, or bypasses bot protection.
+The verifier compares the final URL shape, expected title keywords, UPC, SKU, DPCI, Target TCIN, Walmart item ID, Best Buy SKU, GameStop SKU/product ID, Pokemon Center SKU/product ID, or Amazon ASIN. Search/category links are marked `Search/Category Link` with the warning `Search link only — replace with exact product URL.` A product cannot send high-priority Buy alerts or enable `Go / Buy Now` until it is a verified exact product. A possible mismatch warning means the saved link may redirect to an unrelated product or no longer prove the identifiers; in that case the verifier does not overwrite the product image. It never adds to cart, checks out, logs in, bypasses queues, or bypasses bot protection.
+
+Target-specific setup:
+
+- Prefer exact `target.com/p/.../-/A-TCIN` product pages over `/s` search pages.
+- Store DPCI when available.
+- Store TCIN in `retailerProductId` or SKU when available.
+- Use the product page link, not the search results page.
 
 ### Bulk Product Import
 
 CSV headers:
 
 ```csv
-retailer,name,url,imageUrl,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes
-Target,Pokemon TCG Booster Bundle,https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002,https://example.com/exact-product-image.jpg,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650990002,087-12-1234,99900002,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only
+retailer,name,url,imageUrl,expectedTitleKeywords,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes
+Target,Pokemon TCG Booster Bundle,https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002,https://example.com/exact-product-image.jpg,"Mega Evolution,Booster Bundle",Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650990002,087-12-1234,99900002,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only
 ```
 
 JSON format:
@@ -365,6 +374,7 @@ JSON format:
     "name": "Pokemon TCG Booster Bundle",
     "url": "https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002",
     "imageUrl": "https://example.com/exact-product-image.jpg",
+    "expectedTitleKeywords": "Mega Evolution,Booster Bundle",
     "setName": "Mega Evolution-Chaos Rising",
     "productType": "Booster Bundle",
     "upc": "0820650990002",

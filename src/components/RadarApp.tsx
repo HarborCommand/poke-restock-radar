@@ -215,9 +215,27 @@ function statusTone(value: string) {
 }
 
 function verificationTone(value: string) {
-  if (value === "UPC_MATCHED" || value === "VERIFIED_URL") return "good";
-  if (value === "UNVERIFIED") return "watch";
+  if (value === "VERIFIED_EXACT" || value === "UPC_MATCHED") return "good";
+  if (value === "UNVERIFIED" || value === "NEEDS_IDENTIFIERS") return "watch";
+  if (value === "SEARCH_OR_CATEGORY_LINK") return "watch";
   return "bad";
+}
+
+function productVerificationLabel(value: string) {
+  if (value === "VERIFIED_EXACT" || value === "UPC_MATCHED") return "Verified Exact Product";
+  if (value === "SEARCH_OR_CATEGORY_LINK") return "Search/Category Link";
+  if (value === "NEEDS_IDENTIFIERS") return "Needs UPC/SKU";
+  if (value === "POSSIBLE_MISMATCH") return "Possible Mismatch";
+  if (value === "VERIFIED_URL") return "Reverify Exact Product";
+  return formatStatus(value);
+}
+
+function productReadyForAlert(product: ProductDTO) {
+  return product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED";
+}
+
+function exactProductUrl(product: ProductDTO) {
+  return productReadyForAlert(product) ? product.verifiedFinalUrl || product.url : null;
 }
 
 function zoneDisplay(value: Zone, dashboard: DashboardDTO) {
@@ -249,7 +267,7 @@ function storeNeedsCoordinates(store: StoreDTO) {
 }
 
 function productImageRank(product: ProductDTO) {
-  const verified = product.verificationStatus === "VERIFIED_URL" || product.verificationStatus === "UPC_MATCHED";
+  const verified = productReadyForAlert(product);
   return (product.imageUrl ? 100 : 0) + (verified ? 40 : 0) + (product.priorityScore?.score ?? 0);
 }
 
@@ -557,10 +575,10 @@ export function RadarApp() {
         </div>
         {chase.product ? (
           <div className="hero-product-media">
-            <ProductImage
-              product={chase.product}
-              verified={chase.product.verificationStatus === "VERIFIED_URL" || chase.product.verificationStatus === "UPC_MATCHED"}
-            />
+          <ProductImage
+            product={chase.product}
+            verified={productReadyForAlert(chase.product)}
+          />
           </div>
         ) : null}
         <div className="hero-actions">
@@ -1763,7 +1781,8 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
   return (
     <div className={compact ? "stack compact" : "stack"}>
       {products.map((product) => {
-        const verified = product.verificationStatus === "VERIFIED_URL" || product.verificationStatus === "UPC_MATCHED";
+        const verified = productReadyForAlert(product);
+        const goUrl = exactProductUrl(product);
         return (
           <article className={compact ? "data-card product-card compact-product-card" : "data-card product-card"} id={`product-${product.id}`} key={product.id}>
             <ProductImage product={product} verified={verified} />
@@ -1781,17 +1800,20 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
                 <span className={`chip ${statusTone(product.priorityScore?.buyWatchSkip || product.rating)}`}>
                   {product.priorityScore?.buyWatchSkip || product.rating}
                 </span>
-                {verified ? (
-                  <span className="chip good">Verified Product</span>
-                ) : (
-                  <span className={`chip ${verificationTone(product.verificationStatus)}`}>{formatStatus(product.verificationStatus)}</span>
-                )}
+                <span className={`chip ${verificationTone(product.verificationStatus)}`}>
+                  {productVerificationLabel(product.verificationStatus)}
+                </span>
+                {verified ? <span className="chip good">Ready for Alert</span> : null}
                 <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
                 {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
                 {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
-                <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
-                  Go / Buy Now <ExternalLink size={14} />
-                </a>
+                {goUrl ? (
+                  <a className="mini-action" href={goUrl} target="_blank" rel="noreferrer">
+                    Go / Buy Now <ExternalLink size={14} />
+                  </a>
+                ) : (
+                  <span className="mini-action disabled">Verify exact link first</span>
+                )}
               </div>
               {!compact && product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
               {!compact && product.pendingAlertStatus ? (
@@ -1812,6 +1834,7 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
                     Next {relativeTime(product.nextCheckAt)}
                   </span>
                   {product.productType ? <span>{product.productType}</span> : null}
+                  {product.expectedTitleKeywords ? <span>Title keys: {product.expectedTitleKeywords}</span> : null}
                   {product.sku ? <span>SKU {product.sku}</span> : null}
                   {product.upc ? <span>UPC {product.upc}</span> : null}
                   {product.dpci ? <span>DPCI {product.dpci}</span> : null}
@@ -1835,7 +1858,7 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
 function ProductImage({ product, verified }: { product: ProductDTO; verified: boolean }) {
   const imageLabel = product.imageUrl
     ? verified
-      ? "Image from verified product page"
+      ? "Image from verified exact page"
       : "Image saved; verify exact link"
     : "Verify link to load matching image";
   return (
@@ -2489,7 +2512,7 @@ function ProductsPanel({
           />
         </div>
       </section>
-      {isAdmin ? <RetailerTemplatesPanel dashboard={dashboard} /> : null}
+      {isAdmin ? <ProductSetupGuidancePanel dashboard={dashboard} /> : null}
       <ProductStack products={filteredProducts} />
       {isAdmin ? (
         <ProductAddWizard dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
@@ -2501,7 +2524,7 @@ function ProductsPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
-          sample={`retailer,name,url,imageUrl,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/p/example-product/-/A-12345678,https://example.com/exact-product-image.jpg,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650123456,087-12-1234,12345678,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
+          sample={`retailer,name,url,imageUrl,expectedTitleKeywords,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/p/example-product/-/A-12345678,https://example.com/exact-product-image.jpg,"Mega Evolution,Booster Bundle",Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650123456,087-12-1234,12345678,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
         />
       ) : null}
       {isAdmin ? (
@@ -2533,29 +2556,33 @@ function ProductsPanel({
   );
 }
 
-function RetailerTemplatesPanel({ dashboard }: { dashboard: DashboardDTO }) {
+function ProductSetupGuidancePanel({ dashboard }: { dashboard: DashboardDTO }) {
   return (
-    <section className="form-panel">
-      <PanelHeader title="Retailer Templates" />
-      <div className="template-grid">
+    <section className="form-panel setup-guidance-panel">
+      <PanelHeader title="Exact Product Setup" />
+      <div className="setup-steps">
+        <div>
+          <strong>1. Paste exact product link</strong>
+          <span>Use the retailer product page, not search results or category pages.</span>
+        </div>
+        <div>
+          <strong>2. Add identifiers</strong>
+          <span>Add UPC, SKU, DPCI, TCIN, ASIN, Walmart item ID, or retailer product ID when available.</span>
+        </div>
+        <div>
+          <strong>3. Click Verify Exact Product</strong>
+          <span>The app compares live title keywords, final URL, and stored identifiers.</span>
+        </div>
+        <div>
+          <strong>4. Alert only when ready</strong>
+          <span>Only verified exact products can send high-priority Buy alerts or enable Go / Buy Now.</span>
+        </div>
+      </div>
+      <div className="monitor-meta">
         {dashboard.retailerTemplates.map((template) => (
-          <article className="template-card" key={template.retailerName}>
-            <div className="edit-card-heading">
-              <div>
-                <strong>{template.retailerName}</strong>
-                <span>{template.urlPatternLabel}</span>
-              </div>
-              <span className={`chip ${statusTone(template.alertPriorityDefault)}`}>{template.alertPriorityDefault}</span>
-            </div>
-            <p className="reason-text">{template.monitorNotes}</p>
-            <div className="monitor-meta">
-              <span>IDs: {template.identifierFields.join(", ")}</span>
-              <span>Stock words: {template.statusWords.inStock.slice(0, 2).join(", ")}</span>
-              <span>Blocked words: {template.statusWords.pageBlocked.slice(0, 2).join(", ")}</span>
-              <span>Captcha words: {template.statusWords.captcha.slice(0, 2).join(", ")}</span>
-              <span>Selectors: {template.safeSelectors.slice(0, 2).join(", ")}</span>
-            </div>
-          </article>
+          <span key={template.retailerName}>
+            <strong>{template.retailerName}:</strong> {template.urlPatternLabel}. IDs: {template.identifierFields.join(", ")}
+          </span>
         ))}
       </div>
     </section>
@@ -2638,6 +2665,13 @@ function ProductAddWizard({
             <strong>Exact product links give better alerts than search/category links.</strong>
             <span>Use the retailer product page that contains the SKU, UPC, DPCI, TCIN, ASIN, or item ID when available.</span>
           </div>
+          {template?.retailerName === "Target" ? (
+            <div className="template-hint">
+              <strong>Target tip</strong>
+              <span>Use the product page link, not the search results page.</span>
+              <span>Target exact links usually look like target.com/p/.../-/A-TCIN.</span>
+            </div>
+          ) : null}
           {template ? (
             <div className="template-hint">
               <strong>Public cues monitored</strong>
@@ -2659,6 +2693,12 @@ function ProductAddWizard({
             />
             <TextInput name="setName" label="Set name" placeholder="Mega Evolution-Chaos Rising" />
             <TextInput name="imageUrl" label="Product image URL" type="url" placeholder="Auto-filled by Verify Link when possible" />
+            <TextareaInput
+              name="expectedTitleKeywords"
+              label="Expected title keywords"
+              placeholder="Mega Evolution, Chaos Rising, Booster Bundle"
+              wide
+            />
             <TextInput name="sku" label="SKU / ASIN / TCIN" />
             <TextInput name="upc" label="UPC" inputMode="numeric" placeholder="8 to 14 digits" />
             <TextInput name="dpci" label="DPCI" placeholder="087-12-1234" />
@@ -2807,6 +2847,8 @@ function EditableProduct({
   runAction: ActionHandler;
 }) {
   const saveLabel = `Saving product ${product.id}`;
+  const goUrl = exactProductUrl(product);
+  const readyForAlert = productReadyForAlert(product);
   return (
     <form
       className="edit-card"
@@ -2831,10 +2873,17 @@ function EditableProduct({
           </span>
         </div>
         <div className="row-actions">
-          <span className={`chip ${verificationTone(product.verificationStatus)}`}>{formatStatus(product.verificationStatus)}</span>
-          <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
-            Go <ExternalLink size={14} />
-          </a>
+          <span className={`chip ${verificationTone(product.verificationStatus)}`}>
+            {productVerificationLabel(product.verificationStatus)}
+          </span>
+          {readyForAlert ? <span className="chip good">Ready for Alert</span> : null}
+          {goUrl ? (
+            <a className="mini-action" href={goUrl} target="_blank" rel="noreferrer">
+              Go <ExternalLink size={14} />
+            </a>
+          ) : (
+            <span className="mini-action disabled">Verify exact link first</span>
+          )}
         </div>
       </div>
       <div className="form-grid">
@@ -2858,12 +2907,19 @@ function EditableProduct({
           options={productTypeOptions.map((value) => ({ value, label: value }))}
         />
         <TextInput name="setName" label="Set name" defaultValue={product.setName ?? ""} />
-        <TextInput name="url" label="Official URL" type="url" defaultValue={product.url} required />
+        <TextInput name="url" label="Exact product URL" type="url" defaultValue={product.url} required />
         <TextInput name="imageUrl" label="Product image URL" type="url" defaultValue={product.imageUrl ?? ""} />
-        <TextInput name="sku" label="SKU" defaultValue={product.sku ?? ""} />
+        <TextareaInput
+          name="expectedTitleKeywords"
+          label="Expected title keywords"
+          defaultValue={product.expectedTitleKeywords ?? ""}
+          placeholder="Mega Evolution, Chaos Rising, Booster Bundle"
+          wide
+        />
+        <TextInput name="sku" label="SKU / ASIN / TCIN" defaultValue={product.sku ?? ""} />
         <TextInput name="upc" label="UPC" inputMode="numeric" defaultValue={product.upc ?? ""} />
         <TextInput name="dpci" label="DPCI" defaultValue={product.dpci ?? ""} />
-        <TextInput name="retailerProductId" label="Retailer product ID" defaultValue={product.retailerProductId ?? ""} />
+        <TextInput name="retailerProductId" label="Retailer product ID / TCIN / item ID" defaultValue={product.retailerProductId ?? ""} />
         <TextInput
           name="retailPrice"
           label="Retail price"
@@ -2926,7 +2982,8 @@ function EditableProduct({
       </div>
       {product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
       <div className="monitor-status">
-        <span>Verification: {formatStatus(product.verificationStatus)}</span>
+        <span>Verification: {productVerificationLabel(product.verificationStatus)}</span>
+        <span>Ready for alert: {readyForAlert ? "Yes" : "No"}</span>
         <span>Verified: {dateTime(product.verifiedAt)}</span>
         <span>Final URL: {product.verifiedFinalUrl || "Not verified"}</span>
         <span>Verification notes: {product.verificationNotes || "None"}</span>
@@ -3002,7 +3059,7 @@ function EditableProduct({
           }
         >
           <ShieldCheck size={14} />
-          {busyLabel === `Verifying product ${product.id}` ? "Verifying" : "Verify Product Link"}
+          {busyLabel === `Verifying product ${product.id}` ? "Verifying" : "Verify Exact Product"}
         </button>
         <button
           className="mini-action"
@@ -3021,7 +3078,7 @@ function EditableProduct({
         </button>
         <button
           className="mini-action"
-          disabled={busy}
+          disabled={busy || !readyForAlert}
           type="button"
           onClick={() =>
             runAction(

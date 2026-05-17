@@ -124,6 +124,7 @@ model Product {
   setName                   String?
   productType               String?
   imageUrl                  String?
+  expectedTitleKeywords     String?
   sku                       String?
   upc                       String?
   dpci                      String?

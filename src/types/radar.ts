@@ -19,7 +19,14 @@ export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "M
 export type Era = "MODERN" | "VINTAGE";
 export type StoreVisitResult = "stock_seen" | "empty_shelf" | "vendor_spotted" | "bought_product" | "no_visit";
 export type Zone = "MIAMI" | "FORT_LAUDERDALE" | "ORLANDO" | "TAMPA" | "JACKSONVILLE" | "CUSTOM";
-export type ProductVerificationStatus = "UNVERIFIED" | "VERIFIED_URL" | "UPC_MATCHED" | "POSSIBLE_MISMATCH";
+export type ProductVerificationStatus =
+  | "UNVERIFIED"
+  | "VERIFIED_URL"
+  | "UPC_MATCHED"
+  | "VERIFIED_EXACT"
+  | "SEARCH_OR_CATEGORY_LINK"
+  | "POSSIBLE_MISMATCH"
+  | "NEEDS_IDENTIFIERS";
 
 export type UserPermissions = {
   canAddSightings: boolean;
@@ -156,6 +163,7 @@ export type ProductDTO = {
   setName: string | null;
   productType: string | null;
   imageUrl: string | null;
+  expectedTitleKeywords: string | null;
   url: string;
   sku: string | null;
   upc: string | null;

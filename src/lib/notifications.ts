@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { exactProductActionUrl } from "@/lib/product-identity";
 import { browserNotificationPayload, notificationRouteForAlert, sendPushAlertToUser, sendTestBrowserPush } from "@/lib/push";
 import type { Priority, SessionUser } from "@/types/radar";
 
@@ -454,7 +455,7 @@ export async function sendTestAllAlerts(user: SessionUser) {
       entityType: "PRODUCT",
       entityId: product.id,
       productId: product.id,
-      actionUrl: product.url
+      actionUrl: exactProductActionUrl(product) ?? undefined
     });
   }
   if (store) {

@@ -665,7 +665,8 @@ test("UI real retail flow improvements exist", () => {
     "longitude",
     "currentLatitude",
     "currentLongitude",
-    "locationUpdatedAt"
+    "locationUpdatedAt",
+    "expectedTitleKeywords"
   ]) {
     assert.match(schema, new RegExp(field), `missing location/product field ${field}`);
   }
@@ -678,8 +679,11 @@ test("UI real retail flow improvements exist", () => {
     "My Area setup",
     "More Actions",
     "Exact product links give better alerts",
-    "Verified Product",
-    "Verify Product Link",
+    "Verified Exact Product",
+    "Search/Category Link",
+    "Needs UPC/SKU",
+    "Ready for Alert",
+    "Verify Exact Product",
     "Found Product",
     "I'm Here",
     "Near Me",
@@ -698,11 +702,13 @@ test("UI real retail flow improvements exist", () => {
   assert.match(service, /verifyProductLink/);
   assert.match(service, /Product title text/);
   assert.match(service, /Product image found from exact page/);
+  assert.match(service, /matchProductIdentity/);
   assert.match(service, /distanceMilesBetween/);
 
   const readme = readFileSync(join(root, "README.md"), "utf8");
   assert.match(readme, /Product Link Verification/);
   assert.match(readme, /imageUrl/);
+  assert.match(readme, /Search link only/);
   assert.match(readme, /Zone And Field Mode Setup/);
   assert.match(readme, /Admin.*button/);
 });

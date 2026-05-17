@@ -25,7 +25,7 @@ export const retailerTemplates: RetailerTemplate[] = [
   {
     retailerName: "Pokemon Center",
     urlPattern: "^https://(?:www\\.)?pokemoncenter\\.com/",
-    urlPatternLabel: "pokemoncenter.com product URL",
+    urlPatternLabel: "pokemoncenter.com /product/ exact product URL",
     statusWords: {
       inStock: ["in stock", "available now"],
       soldOut: ["sold out", "unavailable", "out of stock"],
@@ -38,14 +38,14 @@ export const retailerTemplates: RetailerTemplate[] = [
       price: ["price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", "[itemprop='availability']", "button, [role='button']"],
-    identifierFields: ["SKU", "UPC"],
+    identifierFields: ["SKU/product ID", "UPC", "title keywords"],
     alertPriorityDefault: "HIGH",
     monitorNotes: "Public product pages only. Respect Pokemon Center queues, captcha, account checks, and purchase limits."
   },
   {
     retailerName: "Target",
-    urlPattern: "^https://(?:www\\.)?target\\.com/(?:p/|s(?:/|\\?))",
-    urlPatternLabel: "target.com /p/ product URL or /s search URL",
+    urlPattern: "^https://(?:www\\.)?target\\.com/(?:p/|s(?:/|\\?)|c/|b/)",
+    urlPatternLabel: "target.com /p/ exact product URL preferred; /s search links stay unverified",
     statusWords: {
       inStock: ["in stock", "available to ship", "available at"],
       soldOut: ["sold out", "out of stock", "not available"],
@@ -58,14 +58,14 @@ export const retailerTemplates: RetailerTemplate[] = [
       price: ["current_retail", "price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", "[data-test*='fulfillment']", "button, [role='button']"],
-    identifierFields: ["DPCI", "UPC", "TCIN", "SKU"],
+    identifierFields: ["DPCI", "UPC", "TCIN", "SKU", "title keywords"],
     alertPriorityDefault: "HIGH",
-    monitorNotes: "Use official product/search pages only. DPCI is useful for store matching and manual shelf checks."
+    monitorNotes: "Use the product page link, not the search results page. Target exact product pages usually include /p/ and A-TCIN."
   },
   {
     retailerName: "Walmart",
     urlPattern: "^https://(?:www\\.)?walmart\\.com/(?:ip|search)",
-    urlPatternLabel: "walmart.com /ip/ or search URL",
+    urlPatternLabel: "walmart.com /ip/ exact product URL preferred; search links stay unverified",
     statusWords: {
       inStock: ["in stock", "available", "pickup", "delivery"],
       soldOut: ["out of stock", "sold out", "currently unavailable"],
@@ -78,14 +78,14 @@ export const retailerTemplates: RetailerTemplate[] = [
       price: ["price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", "[data-testid*='add-to-cart']", "button, [role='button']"],
-    identifierFields: ["SKU", "UPC", "Walmart item ID"],
+    identifierFields: ["Walmart item ID", "UPC", "SKU", "title keywords"],
     alertPriorityDefault: "MEDIUM",
     monitorNotes: "Walmart pages can vary by location. Treat page checks as advisory and complete all checkout manually."
   },
   {
     retailerName: "Best Buy",
-    urlPattern: "^https://(?:www\\.)?bestbuy\\.com/site/",
-    urlPatternLabel: "bestbuy.com /site/ product URL",
+    urlPattern: "^https://(?:www\\.)?bestbuy\\.com/(?:site|product)/",
+    urlPatternLabel: "bestbuy.com exact product URL with SKU",
     statusWords: {
       inStock: ["add to cart", "available", "ready for pickup"],
       soldOut: ["sold out", "unavailable", "coming soon"],
@@ -98,7 +98,7 @@ export const retailerTemplates: RetailerTemplate[] = [
       price: ["price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", ".add-to-cart-button", "button, [role='button']"],
-    identifierFields: ["SKU", "UPC"],
+    identifierFields: ["SKU", "UPC", "title keywords"],
     alertPriorityDefault: "MEDIUM",
     monitorNotes: "Best Buy inventory can be local. Monitor public product pages and manually verify pickup/shipping."
   },
@@ -118,7 +118,7 @@ export const retailerTemplates: RetailerTemplate[] = [
       price: ["price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", "button, [role='button']", "[data-availability]"],
-    identifierFields: ["SKU", "UPC"],
+    identifierFields: ["SKU/product ID", "UPC", "title keywords"],
     alertPriorityDefault: "HIGH",
     monitorNotes: "Use public product pages only. Do not automate account, cart, Pro-only, queue, or checkout actions."
   },
@@ -138,7 +138,7 @@ export const retailerTemplates: RetailerTemplate[] = [
       price: ["priceblock", "$"]
     },
     safeSelectors: ["#availability", "#priceblock_ourprice", "#corePrice_feature_div", "script[type='application/ld+json']"],
-    identifierFields: ["ASIN", "UPC"],
+    identifierFields: ["ASIN", "UPC", "title keywords"],
     alertPriorityDefault: "MEDIUM",
     monitorNotes: "Amazon pages change heavily by seller/location. Use alerts as a manual prompt; never automate buying."
   }

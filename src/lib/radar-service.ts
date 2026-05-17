@@ -3,6 +3,7 @@ import { listAccessOverview } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
+import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
 import {
@@ -319,6 +320,7 @@ function productToDTO(
     setName: product.setName,
     productType: product.productType,
     imageUrl: product.imageUrl,
+    expectedTitleKeywords: product.expectedTitleKeywords,
     url: product.url,
     sku: product.sku,
     upc: product.upc,
@@ -610,6 +612,36 @@ function dataQualityWarnings(input: {
         severity: "MEDIUM",
         title: `${product.name} is missing SKU/UPC/DPCI/product ID`,
         detail: "Add an identifier to make restocks, store hunts, and imports easier to reconcile.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+    if (product.verificationStatus === "SEARCH_OR_CATEGORY_LINK") {
+      warnings.push({
+        id: `product-search-link-${product.id}`,
+        severity: "HIGH",
+        title: `${product.name} is using a search/category link`,
+        detail: "Search link only — replace with exact product URL.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+    if (product.verificationStatus === "NEEDS_IDENTIFIERS") {
+      warnings.push({
+        id: `product-needs-identifiers-${product.id}`,
+        severity: "MEDIUM",
+        title: `${product.name} needs UPC/SKU/DPCI/TCIN before alerts`,
+        detail: "Add an identifier and run Verify Exact Product before enabling Buy alerts.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+    if (product.verificationStatus === "VERIFIED_URL") {
+      warnings.push({
+        id: `product-reverify-${product.id}`,
+        severity: "MEDIUM",
+        title: `${product.name} needs exact-product reverification`,
+        detail: "Older URL-only verification is not enough for Buy alerts. Run Verify Exact Product.",
         tab: "products",
         entityId: product.id
       });
@@ -1365,9 +1397,15 @@ async function refreshProductPriorityScores(
 
   for (const product of products) {
     const score = scores.get(product.id);
-    if (!score || score.score < 70 || !["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)) {
+    if (
+      !score ||
+      score.score < 70 ||
+      !["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus) ||
+      !productReadyForBuyAlerts(product)
+    ) {
       continue;
     }
+    const actionUrl = exactProductActionUrl(product);
     await createAlertOnce({
       title: `High-priority chase live: ${product.name}`,
       reason: score.reason,
@@ -1375,7 +1413,7 @@ async function refreshProductPriorityScores(
       entityType: "PRODUCT",
       entityId: product.id,
       productId: product.id,
-      actionUrl: product.url
+      actionUrl: actionUrl ?? undefined
     });
   }
   return scores;
@@ -1592,6 +1630,7 @@ export async function createProduct(input: {
   setName?: string;
   productType?: string;
   imageUrl?: string;
+  expectedTitleKeywords?: string;
   url: string;
   sku?: string;
   upc?: string;
@@ -1649,6 +1688,7 @@ export async function updateProductManualStatus(
     setName?: string;
     productType?: string;
     imageUrl?: string;
+    expectedTitleKeywords?: string;
     url: string;
     sku?: string;
     upc?: string;
@@ -1674,6 +1714,14 @@ export async function updateProductManualStatus(
   const retailer = await prisma.retailer.findUnique({ where: { id: input.retailerId }, select: { name: true } });
   if (!retailer) throw new Error("Retailer not found");
   validateRetailerUrl(retailer.name, input.url);
+  const identityChanged =
+    before.url !== input.url ||
+    before.name !== input.name ||
+    before.expectedTitleKeywords !== (input.expectedTitleKeywords ?? null) ||
+    before.sku !== (input.sku ?? null) ||
+    before.upc !== (input.upc ?? null) ||
+    before.dpci !== (input.dpci ?? null) ||
+    before.retailerProductId !== (input.retailerProductId ?? null);
 
   const product = await prisma.product.update({
     where: { id: productId },
@@ -1684,11 +1732,16 @@ export async function updateProductManualStatus(
       setName: input.setName,
       productType: input.productType,
       imageUrl: input.imageUrl,
+      expectedTitleKeywords: input.expectedTitleKeywords,
       url: input.url,
       sku: input.sku,
       upc: input.upc,
       dpci: input.dpci,
       retailerProductId: input.retailerProductId,
+      verificationStatus: identityChanged ? "UNVERIFIED" : before.verificationStatus,
+      verifiedAt: identityChanged ? null : before.verifiedAt,
+      verifiedFinalUrl: identityChanged ? null : before.verifiedFinalUrl,
+      verificationNotes: identityChanged ? "Product identity changed. Run Verify Exact Product before alerts." : before.verificationNotes,
       stockStatus: input.stockStatus,
       retailPrice: input.retailPrice,
       priority: input.priority,
@@ -1714,7 +1767,7 @@ export async function updateProductManualStatus(
       pendingAlertAt: null,
       alertStatus: ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE", "PRICE_CHANGE", "PAGE_UPDATED"].includes(
         input.stockStatus
-      )
+      ) && !identityChanged && productReadyForBuyAlerts(before)
     },
     include: productInclude
   });
@@ -1730,9 +1783,11 @@ export async function updateProductManualStatus(
 
   const alertWorthy =
     before.stockStatus !== input.stockStatus &&
-    ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE", "PRICE_CHANGE", "PAGE_UPDATED"].includes(input.stockStatus);
+    ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE", "PRICE_CHANGE", "PAGE_UPDATED"].includes(input.stockStatus) &&
+    productReadyForBuyAlerts(product);
 
   if (alertWorthy) {
+    const actionUrl = exactProductActionUrl(product);
     await prisma.alert.create({
       data: {
         title: `${product.name}: ${input.stockStatus.replaceAll("_", " ").toLowerCase()}`,
@@ -1741,7 +1796,7 @@ export async function updateProductManualStatus(
         entityType: "PRODUCT",
         entityId: product.id,
         productId: product.id,
-        actionUrl: product.url
+        actionUrl
       }
     });
   }
@@ -1755,11 +1810,6 @@ function normalizeUrlHost(value: string) {
   } catch {
     return "";
   }
-}
-
-function htmlIncludesIdentifier(html: string, value: string | null | undefined) {
-  if (!value) return false;
-  return html.toLowerCase().includes(value.trim().toLowerCase());
 }
 
 function extractHtmlTitle(html: string) {
@@ -1836,24 +1886,6 @@ function detectStockCue(html: string, retailerName: string) {
   return cues.find((cue) => normalized.includes(cue.toLowerCase())) ?? null;
 }
 
-function genericProductUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    const path = parsed.pathname.toLowerCase();
-    return (
-      parsed.searchParams.has("searchTerm") ||
-      parsed.searchParams.has("q") ||
-      path.includes("/search") ||
-      path.includes("/browse") ||
-      path.includes("/category") ||
-      path === "/" ||
-      path === ""
-    );
-  } catch {
-    return true;
-  }
-}
-
 export async function verifyProductLink(productId: string) {
   const product = await prisma.product.findUnique({
     where: { id: productId },
@@ -1879,30 +1911,25 @@ export async function verifyProductLink(productId: string) {
     const visiblePrice = extractVisiblePrice(html);
     const productImageUrl = extractProductImage(html, finalUrl);
     const stockCue = detectStockCue(html, product.retailer.name);
-    const upcMatched = htmlIncludesIdentifier(html, product.upc);
-    const skuMatched = htmlIncludesIdentifier(html, product.sku);
-    const dpciMatched = htmlIncludesIdentifier(html, product.dpci);
-    const retailerProductMatched = htmlIncludesIdentifier(html, product.retailerProductId) || finalUrl.includes(product.retailerProductId || "\u0000");
-    const titleMatched = product.name
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((part) => part.length > 4)
-      .slice(0, 4)
-      .filter((part) => `${html} ${titleText}`.toLowerCase().includes(part)).length;
     const redirectedAway = !sameRetailerHost;
-    const genericUrl = genericProductUrl(product.url) || genericProductUrl(finalUrl);
-    const hasExpectedIdentifier = Boolean(product.upc || product.sku || product.dpci || product.retailerProductId);
-    const likelyMismatch =
-      redirectedAway ||
-      genericUrl ||
-      (hasExpectedIdentifier && !upcMatched && !skuMatched && !dpciMatched && !retailerProductMatched && titleMatched < 2) ||
-      (!hasExpectedIdentifier && titleMatched < 2) ||
-      [404, 410].includes(response.status);
-    const verificationStatus: ProductVerificationStatus = likelyMismatch
-      ? "POSSIBLE_MISMATCH"
-      : upcMatched
-        ? "UPC_MATCHED"
-        : "VERIFIED_URL";
+    const identity = matchProductIdentity({
+      product: {
+        retailerName: product.retailer.name,
+        name: product.name,
+        url: product.url,
+        expectedTitleKeywords: product.expectedTitleKeywords,
+        upc: product.upc,
+        sku: product.sku,
+        dpci: product.dpci,
+        retailerProductId: product.retailerProductId,
+        retailPrice: product.retailPrice
+      },
+      finalUrl,
+      html,
+      titleText,
+      httpStatus: response.status
+    });
+    const verificationStatus = redirectedAway ? "POSSIBLE_MISMATCH" : identity.verificationStatus;
     const notes = [
       `HTTP ${response.status}`,
       `Final URL ${finalUrl}`,
@@ -1911,13 +1938,11 @@ export async function verifyProductLink(productId: string) {
       visiblePrice ? `Visible price cue: ${visiblePrice}` : "Visible price cue not found",
       stockCue ? `Stock cue: ${stockCue}` : "Stock cue not found",
       `Response ${Date.now() - started}ms`,
-      upcMatched ? "UPC matched in public page content" : "UPC not found",
-      skuMatched ? "SKU matched" : null,
-      dpciMatched ? "DPCI matched" : null,
-      retailerProductMatched ? "Retailer product ID matched" : null,
+      `Expected title keywords: ${identity.titleKeywords.join(", ") || "none"}`,
+      identity.matchedIdentifiers.length ? `Matched identifiers: ${identity.matchedIdentifiers.join(", ")}` : "No stored identifier matched",
+      identity.missingIdentifiers.length ? `Missing identifiers: ${identity.missingIdentifiers.join(", ")}` : null,
       redirectedAway ? "Warning: final URL host differs from tracked URL host" : null,
-      genericUrl ? "Warning: URL looks like a search, category, or generic page" : null,
-      likelyMismatch ? "Review this link before trusting alerts." : "Exact product page looks usable for manual checkout."
+      ...identity.notes
     ]
       .filter(Boolean)
       .join(". ");
@@ -1929,7 +1954,7 @@ export async function verifyProductLink(productId: string) {
         verifiedAt: new Date(),
         verifiedFinalUrl: finalUrl,
         verificationNotes: notes,
-        imageUrl: likelyMismatch ? product.imageUrl : productImageUrl || product.imageUrl,
+        imageUrl: identity.readyForAlert && !redirectedAway ? productImageUrl || product.imageUrl : product.imageUrl,
         lastCheckedAt: new Date(),
         lastMonitorResult: `Product link verification: ${verificationStatus}. ${notes}`
       },
@@ -2099,6 +2124,25 @@ export async function controlProductMonitor(
   }
 
   if (input.action === "force_alert") {
+    if (!productReadyForBuyAlerts(product)) {
+      await prisma.monitorLog.create({
+        data: {
+          productId,
+          runType: "MANUAL_PRODUCT",
+          status: "SKIPPED",
+          previousStatus: product.stockStatus,
+          detectedStatus: product.verificationStatus,
+          startedAt: now,
+          finishedAt: now,
+          durationMs: 0,
+          changeSummary: "Forced alert blocked because this is not a verified exact product.",
+          reason: "Click Verify Exact Product and add UPC/SKU/DPCI/TCIN before sending Buy alerts.",
+          alertSent: false
+        }
+      });
+      throw new Error("Forced alert blocked: verify the exact product link and identifiers before sending Buy alerts.");
+    }
+    const actionUrl = exactProductActionUrl(product);
     const delivery = await deliverAlert({
       title: `Forced alert: ${product.name}`,
       reason:
@@ -2108,7 +2152,7 @@ export async function controlProductMonitor(
       entityType: "PRODUCT",
       entityId: product.id,
       productId: product.id,
-      actionUrl: product.url
+      actionUrl: actionUrl ?? undefined
     });
     const summary = notificationSummary(delivery);
     const alertSent = delivery.inAppCreated + delivery.emailSent + delivery.smsSent + delivery.pushSent > 0;
@@ -2132,7 +2176,7 @@ export async function controlProductMonitor(
         finishedAt: now,
         durationMs: 0,
         changeSummary: input.reason || "Admin forced a product alert.",
-        finalUrl: product.url,
+        finalUrl: actionUrl || product.verifiedFinalUrl || product.url,
         alertSent,
         notificationSummary: summary
       }
@@ -2489,6 +2533,7 @@ export async function importProducts(format: "csv" | "json", data: string) {
         setName: textFromRow(row, "setName", "set"),
         productType: textFromRow(row, "productType", "type"),
         imageUrl: textFromRow(row, "imageUrl", "image", "productImageUrl"),
+        expectedTitleKeywords: textFromRow(row, "expectedTitleKeywords", "titleKeywords", "keywords"),
         url: textFromRow(row, "url", "productUrl"),
         sku: textFromRow(row, "sku", "asin", "tcin"),
         upc: textFromRow(row, "upc"),
@@ -3517,6 +3562,7 @@ export async function resetDemoData() {
       productType: "Premium Collection",
       name: "Pokemon TCG Mega Evolution Chaos Rising Premium Collection",
       url: "https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-mega-evolution-chaos-rising-premium-collection/999000",
+      expectedTitleKeywords: "Mega Evolution, Chaos Rising, Premium Collection",
       sku: "GS-PREMIUM",
       retailerProductId: "999000",
       retailPrice: 49.99,
@@ -3536,6 +3582,7 @@ export async function resetDemoData() {
       name: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle",
       url: "https://www.target.com/p/-/A-95298172",
       imageUrl: "https://target.scene7.com/is/image/Target/GUEST_de896676-8332-46bd-b36f-d863b43df7ad",
+      expectedTitleKeywords: "Mega Evolution, Chaos Rising, Booster Bundle",
       sku: "TARGET-95298172",
       upc: "196214154162",
       dpci: "361-00-0031",
@@ -3556,6 +3603,7 @@ export async function resetDemoData() {
       productType: "ETB",
       name: "Pokemon TCG Mega Evolution Ascended Heroes ETB",
       url: "https://www.pokemoncenter.com/product/999-00002/pokemon-tcg-mega-evolution-ascended-heroes-pokemon-center-elite-trainer-box",
+      expectedTitleKeywords: "Mega Evolution, Ascended Heroes, Elite Trainer Box",
       sku: "PC-AH-ETB",
       upc: "0820650990002",
       retailerProductId: "999-00002",
@@ -3577,6 +3625,7 @@ export async function resetDemoData() {
       setName: product.setName,
       productType: product.productType,
       imageUrl: "imageUrl" in product ? product.imageUrl : undefined,
+      expectedTitleKeywords: product.expectedTitleKeywords,
       name: product.name,
       url: product.url,
       sku: product.sku,
@@ -3923,6 +3972,7 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       setName: row.setName ? String(row.setName) : null,
       productType: row.productType ? String(row.productType) : null,
       imageUrl: row.imageUrl ? String(row.imageUrl) : null,
+      expectedTitleKeywords: row.expectedTitleKeywords ? String(row.expectedTitleKeywords) : null,
       sku: row.sku ? String(row.sku) : null,
       upc: row.upc ? String(row.upc) : null,
       dpci: row.dpci ? String(row.dpci) : null,

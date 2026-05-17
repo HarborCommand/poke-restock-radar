@@ -6,7 +6,15 @@ export const gradeTypeSchema = z.enum(["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS
 export const compSourceQualitySchema = z.enum(["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE"]);
 export const eraSchema = z.enum(["MODERN", "VINTAGE"]);
 export const zoneSchema = z.enum(["MIAMI", "FORT_LAUDERDALE", "ORLANDO", "TAMPA", "JACKSONVILLE", "CUSTOM"]);
-export const productVerificationStatusSchema = z.enum(["UNVERIFIED", "VERIFIED_URL", "UPC_MATCHED", "POSSIBLE_MISMATCH"]);
+export const productVerificationStatusSchema = z.enum([
+  "UNVERIFIED",
+  "VERIFIED_URL",
+  "UPC_MATCHED",
+  "VERIFIED_EXACT",
+  "SEARCH_OR_CATEGORY_LINK",
+  "POSSIBLE_MISMATCH",
+  "NEEDS_IDENTIFIERS"
+]);
 export const productStatusSchema = z.enum([
   "UNAVAILABLE",
   "SOLD_OUT",
@@ -248,6 +256,7 @@ export const productCreateSchema = z.object({
   setName: optionalTrimmed,
   productType: optionalTrimmed,
   imageUrl: optionalHttpUrl,
+  expectedTitleKeywords: optionalDetectionWords,
   url: httpUrl,
   sku: optionalSkuLike,
   upc: optionalUpc,
