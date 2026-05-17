@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { sendPushAlertToUser, sendTestBrowserPush } from "@/lib/push";
+import { browserNotificationPayload, notificationRouteForAlert, sendPushAlertToUser, sendTestBrowserPush } from "@/lib/push";
 import type { Priority, SessionUser } from "@/types/radar";
 
 type AlertPayload = {
@@ -255,4 +255,129 @@ export async function sendTestAlert(user: SessionUser, channel: "inApp" | "email
   const sent = await sendSms(settings.phone, `${title}: ${reason}`);
   if (!sent) throw new Error("Twilio env vars are not configured.");
   return { ok: true, channel, result: "SMS test alert sent" };
+}
+
+export async function sendTestAllAlerts(user: SessionUser) {
+  const settings = await prisma.notificationSettings.upsert({
+    where: { userId: user.id },
+    update: {},
+    create: {
+      userId: user.id,
+      inApp: true,
+      email: false,
+      sms: false,
+      browserPush: false,
+      emailTo: user.email,
+      minimumPriority: "LOW"
+    }
+  });
+
+  const [product, store, release, card] = await Promise.all([
+    prisma.product.findFirst({ orderBy: { updatedAt: "desc" } }),
+    prisma.store.findFirst({ orderBy: { updatedAt: "desc" } }),
+    prisma.release.findFirst({ orderBy: { officialReleaseDate: "asc" } }),
+    prisma.card.findFirst({ orderBy: { top10Score: "desc" } })
+  ]);
+
+  const routePayloads: AlertPayload[] = [];
+  if (product) {
+    routePayloads.push({
+      title: "Route test: product restock",
+      reason: "Product restock alerts should open Products and Go should open only the official retailer page.",
+      priority: "LOW",
+      entityType: "PRODUCT",
+      entityId: product.id,
+      productId: product.id,
+      actionUrl: product.url
+    });
+  }
+  if (store) {
+    routePayloads.push({
+      title: "Route test: store window",
+      reason: "Store prediction alerts should open Field Mode.",
+      priority: "LOW",
+      entityType: "STORE",
+      entityId: store.id
+    });
+  }
+  if (release) {
+    routePayloads.push({
+      title: "Route test: release calendar",
+      reason: "Release alerts should open the Release Calendar.",
+      priority: "LOW",
+      entityType: "RELEASE",
+      entityId: release.id
+    });
+  }
+  if (card) {
+    routePayloads.push({
+      title: "Route test: card opportunity",
+      reason: "Card opportunity alerts should open the Card Tracker.",
+      priority: "LOW",
+      entityType: "CARD",
+      entityId: card.id
+    });
+  }
+
+  for (const payload of routePayloads) {
+    await prisma.alert.create({
+      data: {
+        title: payload.title,
+        reason: payload.reason,
+        priority: payload.priority,
+        entityType: payload.entityType,
+        entityId: payload.entityId,
+        productId: payload.productId,
+        actionUrl: payload.actionUrl,
+        userId: user.id
+      }
+    });
+  }
+
+  const result = {
+    ok: true,
+    inApp: { created: routePayloads.length },
+    email: { status: "skipped", detail: "Email alerts are disabled for this user or SMTP is not configured." },
+    sms: { status: "skipped", detail: "SMS alerts are disabled for this user or Twilio is not configured." },
+    browserPush: { status: "skipped", detail: "Browser push is disabled or no active subscription exists." },
+    routes: routePayloads.map((payload) => ({
+      entityType: payload.entityType,
+      appRoute: notificationRouteForAlert(payload),
+      actionUrl: payload.actionUrl ?? null,
+      notification: browserNotificationPayload(payload)
+    }))
+  };
+
+  if (settings.email && settings.emailTo && smtpReady()) {
+    await sendEmail(
+      settings.emailTo,
+      "Poke Restock Radar all-alert test",
+      "All-alert test created in-app route checks and confirms email delivery is active."
+    );
+    result.email = { status: "sent", detail: `Sent to ${settings.emailTo}` };
+  } else if (settings.email) {
+    result.email = { status: "skipped", detail: "Email is enabled but SMTP or destination is missing." };
+  }
+
+  if (settings.sms && settings.phone && twilioReady()) {
+    await sendSms(settings.phone, "Poke Restock Radar all-alert test: SMS delivery is active.");
+    result.sms = { status: "sent", detail: `Sent to ${settings.phone}` };
+  } else if (settings.sms) {
+    result.sms = { status: "skipped", detail: "SMS is enabled but Twilio or phone is missing." };
+  }
+
+  if (settings.browserPush) {
+    const push = await sendPushAlertToUser(user.id, {
+      title: "Poke Restock Radar all-alert test",
+      reason: "Browser push delivery is active for this private radar.",
+      priority: "LOW",
+      entityType: "SYSTEM"
+    });
+    result.browserPush =
+      push.sent > 0
+        ? { status: "sent", detail: `Sent ${push.sent} browser push notification${push.sent === 1 ? "" : "s"}.` }
+        : { status: "skipped", detail: `Push sent ${push.sent}, skipped ${push.skipped}, failed ${push.failed}.` };
+  }
+
+  return result;
 }

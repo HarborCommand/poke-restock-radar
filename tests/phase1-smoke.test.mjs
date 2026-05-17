@@ -120,6 +120,7 @@ test("Phase 2 monitor and notification routes exist", () => {
     join(root, "src", "app", "api", "radar", "monitor", "cron", "route.ts"),
     join(root, "src", "app", "api", "radar", "notifications", "route.ts"),
     join(root, "src", "app", "api", "radar", "notifications", "test", "route.ts"),
+    join(root, "src", "app", "api", "radar", "notifications", "test-all", "route.ts"),
     join(root, "scripts", "run-monitor.ts")
   ];
 
@@ -226,7 +227,7 @@ test("Phase 6 PWA and push notification pieces exist", () => {
   }
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  for (const phrase of ["Enable Browser Push", "Disable Browser Push", "Test Browser Push"]) {
+  for (const phrase of ["Browser Push Setup", "Enable Browser Push", "Disable Browser Push", "Test Browser Push", "Test All Alerts"]) {
     assert.match(app, new RegExp(phrase), `missing Phase 6 UI phrase ${phrase}`);
   }
 

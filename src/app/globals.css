@@ -1098,6 +1098,13 @@ textarea {
   gap: 10px;
 }
 
+.alert-setup-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
 .health-card {
   display: grid;
   gap: 10px;
@@ -1287,6 +1294,10 @@ textarea {
   }
 
   .health-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .alert-setup-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 

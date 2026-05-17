@@ -1861,7 +1861,10 @@ function EditableProduct({
 function MonitorLogsPanel({ dashboard }: { dashboard: DashboardDTO }) {
   return (
     <section className="form-panel">
-      <PanelHeader title="Monitor Logs" />
+      <PanelHeader title="Production Monitor Run Logs" />
+      <p className="push-copy">
+        Last cron signal {relativeTime(dashboard.health?.monitor.lastRunAt)}; unauthenticated cron requests must return 401.
+      </p>
       <div className="table-list monitor-logs">
         {dashboard.monitorLogs.length ? (
           dashboard.monitorLogs.map((log) => (
@@ -3300,6 +3303,10 @@ function configuredText(value: boolean) {
   return value ? "Configured" : "Missing";
 }
 
+function activeText(value: boolean) {
+  return value ? "Active" : "Inactive";
+}
+
 function HealthCard({
   icon: Icon,
   title,
@@ -3444,6 +3451,10 @@ function NotificationSettingsPanel({
   );
   const [hasPushSubscription, setHasPushSubscription] = useState(false);
   const pushReady = pushPermission === "granted" && hasPushSubscription;
+  const health = dashboard.health;
+  const browserPushActive = Boolean(health?.providers.push.configured && settings.browserPush && pushReady);
+  const emailActive = Boolean(health?.providers.email.configured && settings.email && settings.emailTo);
+  const smsActive = Boolean(health?.providers.sms.configured && settings.sms && settings.phone);
 
   useEffect(() => {
     let mounted = true;
@@ -3526,6 +3537,35 @@ function NotificationSettingsPanel({
   return (
     <section className="admin-tools">
       <PanelHeader title="Notification Settings" />
+      <div className="alert-setup-grid" aria-label="Alert provider setup status">
+        <HealthCard
+          icon={Wifi}
+          title="Browser Push Setup"
+          value={activeText(browserPushActive)}
+          tone={browserPushActive ? "OK" : health?.providers.push.configured ? "WARN" : "ERROR"}
+          detail={`VAPID ${configuredText(Boolean(health?.providers.push.configured)).toLowerCase()}, user ${
+            settings.browserPush ? "enabled" : "disabled"
+          }, permission ${pushPermission}, subscription ${hasPushSubscription ? "saved" : "missing"}`}
+        />
+        <HealthCard
+          icon={Mail}
+          title="Email Setup"
+          value={activeText(emailActive)}
+          tone={emailActive ? "OK" : health?.providers.email.configured ? "WARN" : "ERROR"}
+          detail={`SMTP ${configuredText(Boolean(health?.providers.email.configured)).toLowerCase()}, user ${
+            settings.email ? "enabled" : "disabled"
+          }, destination ${settings.emailTo || "missing"}`}
+        />
+        <HealthCard
+          icon={Smartphone}
+          title="SMS Setup"
+          value={activeText(smsActive)}
+          tone={smsActive ? "OK" : health?.providers.sms.configured ? "WARN" : "ERROR"}
+          detail={`Twilio ${configuredText(Boolean(health?.providers.sms.configured)).toLowerCase()}, user ${
+            settings.sms ? "enabled" : "disabled"
+          }, phone ${settings.phone || "missing"}`}
+        />
+      </div>
       <form
         className="form-grid"
         onSubmit={(event) =>
@@ -3618,6 +3658,21 @@ function NotificationSettingsPanel({
         </div>
       </div>
       <div className="admin-actions">
+        <button
+          className="mini-action solid"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Testing all alerts",
+              () => requestJson("/api/radar/notifications/test-all", { method: "POST" }),
+              { success: "All-alert test completed" }
+            )
+          }
+        >
+          <Bell size={14} />
+          {busyLabel === "Testing all alerts" ? "Testing" : "Test All Alerts"}
+        </button>
         <button
           className="mini-action"
           disabled={busy}
