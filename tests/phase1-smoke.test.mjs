@@ -440,7 +440,7 @@ test("Phase 4 release priority engine fields exist", () => {
   }
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  assert.match(app, /Today's Chase List/);
+  assert.match(app, /Online Drops/);
   assert.match(app, /Release Countdown/);
   assert.match(app, /High priority only/);
 });
@@ -674,7 +674,9 @@ test("UI real retail flow improvements exist", () => {
     "Use My Location",
     "Browser location",
     "My Area setup",
-    "Quick actions",
+    "More Actions",
+    "Exact product links give better alerts",
+    "Verified Product",
     "Verify Product Link",
     "Found Product",
     "I'm Here",
@@ -686,9 +688,13 @@ test("UI real retail flow improvements exist", () => {
   }
 
   const service = readFileSync(join(root, "src", "lib", "radar-service.ts"), "utf8");
+  assert.match(service, /Target Hialeah/);
   assert.match(service, /Target Midtown Miami/);
-  assert.match(service, /Walmart Fort Lauderdale/);
+  assert.match(service, /Walmart Doral/);
+  assert.match(service, /Best Buy Dadeland/);
+  assert.match(service, /GameStop Westland Mall Hialeah/);
   assert.match(service, /verifyProductLink/);
+  assert.match(service, /Product title text/);
   assert.match(service, /distanceMilesBetween/);
 
   const readme = readFileSync(join(root, "README.md"), "utf8");

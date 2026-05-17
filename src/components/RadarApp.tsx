@@ -32,7 +32,6 @@ import {
   Star,
   Store,
   Trash2,
-  TrendingUp,
   Trophy,
   Upload,
   Wifi,
@@ -240,7 +239,12 @@ function monitorStale(product: ProductDTO) {
 }
 
 function storeDistanceLabel(store: StoreDTO) {
-  return store.distanceMiles === null ? store.zoneLabel : `${store.distanceMiles} mi away`;
+  if (store.distanceMiles !== null) return `${store.distanceMiles} mi away`;
+  return store.latitude === null || store.longitude === null ? "Needs coordinates" : store.zoneLabel;
+}
+
+function storeNeedsCoordinates(store: StoreDTO) {
+  return store.latitude === null || store.longitude === null;
 }
 
 function browserPosition(): Promise<GeolocationPosition> {
@@ -541,7 +545,7 @@ export function RadarApp() {
 
       <section className="hero-panel">
         <div>
-          <p className="eyeline">What should I chase today?</p>
+          <p className="eyeline">What should I chase right now?</p>
           <h2>{chase.title}</h2>
           <p>{chase.reason}</p>
         </div>
@@ -1078,69 +1082,28 @@ function DashboardPanel({
   busyLabel: string | null;
   runAction: ActionHandler;
 }) {
-  const sections = [
-    {
-      title: "Today's Chase",
-      icon: PackageSearch,
-      value: dashboard.todaysChaseList.length,
-      label: "ranked targets",
-      tab: "products" as Tab
-    },
-    {
-      title: "Local Stores",
-      icon: MapPin,
-      value: dashboard.checkTodayStores.length,
-      label: "check today",
-      tab: "field" as Tab
-    },
-    {
-      title: "Alerts",
-      icon: Bell,
-      value: dashboard.stats.unreadAlerts,
-      label: "unread",
-      tab: "alerts" as Tab
-    },
-    {
-      title: "Card Upside",
-      icon: TrendingUp,
-      value: dashboard.stats.profitablePsa10Cards,
-      label: "PSA 10 profitable",
-      tab: "cards" as Tab
-    }
-  ];
-
+  const storesToShow = dashboard.checkTodayStores.length ? dashboard.checkTodayStores : dashboard.stores;
   return (
     <>
-      <QuickActionsRow
-        dashboard={dashboard}
-        setActiveTab={setActiveTab}
-        busy={busy}
-        busyLabel={busyLabel}
-        runAction={runAction}
-      />
-      <div className="stat-grid">
-        {sections.map((section) => {
-          const Icon = section.icon;
-          return (
-            <button className="stat-card" key={section.title} onClick={() => setActiveTab(section.tab)} type="button">
-              <Icon size={19} />
-              <strong>{section.value}</strong>
-              <span>{section.label}</span>
-              <small>{section.title}</small>
-            </button>
-          );
-        })}
-      </div>
-      <DashboardLocationStrip dashboard={dashboard} busy={busy} runAction={runAction} />
-      <section className="chase-now-grid" aria-label="What to chase right now">
-        <section className="action-panel">
-          <PanelHeader title="High-Priority Online Drops" action="Products" onAction={() => setActiveTab("products")} />
-          <ProductStack products={dashboard.todaysChaseList.slice(0, 4)} compact />
+      <section className="dashboard-command-row">
+        <DashboardLocationStrip dashboard={dashboard} busy={busy} runAction={runAction} />
+        <MoreActionsMenu
+          dashboard={dashboard}
+          setActiveTab={setActiveTab}
+          busy={busy}
+          busyLabel={busyLabel}
+          runAction={runAction}
+        />
+      </section>
+      <section className="chase-now-grid apple-chase-grid" aria-label="What should I chase right now">
+        <section className="action-panel apple-card">
+          <PanelHeader title="Online Drops" action="Open" onAction={() => setActiveTab("products")} />
+          <ProductStack products={dashboard.todaysChaseList.slice(0, 2)} compact />
         </section>
-        <section className="action-panel">
-          <PanelHeader title="Stores To Check Today" action="Field Mode" onAction={() => setActiveTab("field")} />
+        <section className="action-panel apple-card">
+          <PanelHeader title="Stores To Check" action="Open" onAction={() => setActiveTab("field")} />
           <StoreStack
-            stores={dashboard.checkTodayStores.slice(0, 5)}
+            stores={storesToShow.slice(0, 3)}
             compact
             busy={busy}
             busyLabel={busyLabel}
@@ -1148,13 +1111,9 @@ function DashboardPanel({
             showPreferenceActions
           />
         </section>
-        <section className="action-panel">
-          <PanelHeader title="Biggest Card Opportunities" action="Cards" onAction={() => setActiveTab("cards")} />
-          <CardStack cards={dashboard.cards.slice(0, 4)} />
-        </section>
-        <section className="action-panel">
-          <PanelHeader title="Latest Alerts" action="Alerts" onAction={() => setActiveTab("alerts")} />
-          <AlertMiniStack dashboard={dashboard} />
+        <section className="action-panel apple-card">
+          <PanelHeader title="Card Opportunities" action="Open" onAction={() => setActiveTab("cards")} />
+          <CardStack cards={dashboard.cards.slice(0, 2)} compact />
         </section>
       </section>
     </>
@@ -1171,12 +1130,15 @@ function DashboardLocationStrip({
   runAction: ActionHandler;
 }) {
   const locationSaved = dashboard.userAreaPreferences.currentLatitude !== null && dashboard.userAreaPreferences.currentLongitude !== null;
+  const missingCoordinateCount = dashboard.stores.filter(storeNeedsCoordinates).length;
   return (
     <section className="location-strip">
       <div>
         <strong>{locationSaved ? "Nearby stores active" : "Add your location"}</strong>
         <span>
-          {locationSaved
+          {locationSaved && missingCoordinateCount > 0
+            ? `${missingCoordinateCount} store${missingCoordinateCount === 1 ? "" : "s"} need address/coordinates before distance sorting.`
+            : locationSaved
             ? `Ranking stores from your location, saved ${relativeTime(dashboard.userAreaPreferences.locationUpdatedAt)}.`
             : `Using ${zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)} until you save browser location.`}
         </span>
@@ -1194,7 +1156,7 @@ function DashboardLocationStrip({
   );
 }
 
-function QuickActionsRow({
+function MoreActionsMenu({
   dashboard,
   setActiveTab,
   busy,
@@ -1209,95 +1171,60 @@ function QuickActionsRow({
 }) {
   const canRunChecks = dashboard.currentUser.role === "ADMIN" || dashboard.currentUser.canRunChecks;
   return (
-    <section className="quick-actions-row" aria-label="Quick actions">
-      <button
-        className="quick-action-button"
-        disabled={busy || !canRunChecks}
-        type="button"
-        onClick={() =>
-          runAction(
-            "Running all checks",
-            () =>
-              requestJson("/api/radar/monitor/run", {
-                method: "POST",
-                body: JSON.stringify({ mode: "all" })
-              }),
-            { success: "Product checks finished" }
-          )
-        }
-      >
-        <RefreshCw size={16} />
-        {busyLabel === "Running all checks" ? "Running" : "Run Checks"}
-      </button>
-      <button className="quick-action-button" type="button" onClick={() => setActiveTab("field")}>
-        <Navigation size={16} />
-        Field Mode
-      </button>
-      <button
-        className="quick-action-button"
-        type="button"
-        aria-label="Today's Chase List"
-        onClick={() => setActiveTab("products")}
-      >
-        <PackageSearch size={16} />
-        Today&apos;s Chase List
-      </button>
-      <button className="quick-action-button" type="button" onClick={() => setActiveTab("alerts")}>
-        <Bell size={16} />
-        Alerts
-      </button>
-      <button className="quick-action-button" type="button" onClick={() => setActiveTab("stores")}>
-        <MapPin size={16} />
-        Add Sighting
-      </button>
-      <button
-        className="quick-action-button"
-        disabled={busy || dashboard.currentUser.role !== "ADMIN"}
-        type="button"
-        onClick={() =>
-          runAction(
-            "Generating weekly investment report",
-            () =>
-              requestJson("/api/radar/cards/reports", {
-                method: "POST",
-                body: JSON.stringify({ notes: "Generated from dashboard quick action." })
-              }),
-            { success: "Weekly report generated" }
-          )
-        }
-      >
-        <FileText size={16} />
-        Generate Report
-      </button>
-    </section>
-  );
-}
-
-function AlertMiniStack({ dashboard }: { dashboard: DashboardDTO }) {
-  const alerts = dashboard.alerts.slice(0, 5);
-  if (!alerts.length) {
-    return <EmptyState icon={Bell} title="No alerts yet" detail="Restock, store, release, and card alerts will appear here." />;
-  }
-  return (
-    <div className="stack compact">
-      {alerts.map((alert) => (
-        <article className="data-card compact-card" key={alert.id}>
-          <div className="card-main">
-            <div className="avatar">
-              <Bell size={15} />
-            </div>
-            <div>
-              <h3>{alert.title}</h3>
-              <p>{alert.reason}</p>
-            </div>
-          </div>
-          <div className="card-actions">
-            <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
-            <span className="chip muted">{relativeTime(alert.timestamp)}</span>
-          </div>
-        </article>
-      ))}
-    </div>
+    <details className="more-actions-menu">
+      <summary>
+        <span>More Actions</span>
+        <ChevronRight size={15} />
+      </summary>
+      <div>
+        <button
+          className="quick-action-button"
+          disabled={busy || !canRunChecks}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Running all checks",
+              () =>
+                requestJson("/api/radar/monitor/run", {
+                  method: "POST",
+                  body: JSON.stringify({ mode: "all" })
+                }),
+              { success: "Product checks finished" }
+            )
+          }
+        >
+          <RefreshCw size={16} />
+          {busyLabel === "Running all checks" ? "Running" : "Run Checks"}
+        </button>
+        <button className="quick-action-button" type="button" onClick={() => setActiveTab("stores")}>
+          <MapPin size={16} />
+          Add Sighting
+        </button>
+        <button className="quick-action-button" type="button" onClick={() => setActiveTab("alerts")}>
+          <Bell size={16} />
+          Alerts
+        </button>
+        <button
+          className="quick-action-button"
+          disabled={busy || dashboard.currentUser.role !== "ADMIN"}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Generating weekly investment report",
+              () =>
+                requestJson("/api/radar/cards/reports", {
+                  method: "POST",
+                  body: JSON.stringify({ notes: "Generated from dashboard more actions." })
+                }),
+              { success: "Weekly report generated" }
+            )
+          }
+        >
+          <FileText size={16} />
+          Generate Report
+        </button>
+      </div>
+    </details>
   );
 }
 
@@ -1322,9 +1249,10 @@ function AreaSetupPanel({
         <p className="eyeline">My Area setup</p>
         <h2>{zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)}</h2>
         <p>
-          Field Mode and dashboard store lists prioritize nearby and favorite stores first. Hide distant stores when you only want
-          the route you actually check.
+          Field Mode and dashboard store lists prioritize nearby and favorite stores first. Hide non-zone stores when you only
+          want the route you actually check.
         </p>
+        <p>Admin default zone = Miami. Switch zones only when you are intentionally planning a different route.</p>
       </div>
       <div className="location-save-row">
         <div>
@@ -1375,7 +1303,7 @@ function AreaSetupPanel({
             value="true"
             defaultChecked={dashboard.userAreaPreferences.hideDistantStores}
           />
-          Hide distant stores unless favorited
+          Hide non-zone stores unless favorited
         </label>
         <button className="primary-action" disabled={busy} type="submit">
           <Save size={16} />
@@ -1813,61 +1741,70 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
 
   return (
     <div className={compact ? "stack compact" : "stack"}>
-      {products.map((product) => (
-        <article className="data-card" id={`product-${product.id}`} key={product.id}>
-          <div className="card-main">
-            <div className="avatar">{product.retailerName.slice(0, 2)}</div>
-            <div>
-              <h3>{product.name}</h3>
-              <p>
-                {product.retailerName} - {product.releaseName || product.setName || "Unlinked set"} - {money(product.retailPrice)}
-              </p>
+      {products.map((product) => {
+        const verified = product.verificationStatus === "VERIFIED_URL" || product.verificationStatus === "UPC_MATCHED";
+        return (
+          <article className="data-card" id={`product-${product.id}`} key={product.id}>
+            <div className="card-main">
+              <div className="avatar">{product.retailerName.slice(0, 2)}</div>
+              <div>
+                <h3>{product.name}</h3>
+                <p>
+                  {product.retailerName} - {product.releaseName || product.setName || "Unlinked set"} - {money(product.retailPrice)}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="card-actions">
-            <span className={`chip ${statusTone(product.stockStatus)}`}>{formatStatus(product.stockStatus)}</span>
-            <span className={`chip ${statusTone(product.priorityScore?.buyWatchSkip || product.rating)}`}>
-              {product.priorityScore?.buyWatchSkip || product.rating}
-            </span>
-            <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
-            <span className={`chip ${verificationTone(product.verificationStatus)}`}>{formatStatus(product.verificationStatus)}</span>
-            {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
-            {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
-            <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
-              Go <ExternalLink size={14} />
-            </a>
-          </div>
-          {product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
-          {product.pendingAlertStatus ? (
-            <p className="reason-text">
-              Pending confirmation: {formatStatus(product.pendingAlertStatus)} after {product.pendingAlertCount} low-confidence
-              check{product.pendingAlertCount === 1 ? "" : "s"}.
-            </p>
-          ) : null}
-          <div className="monitor-meta">
-            <span>
-              <Clock size={13} />
-              Last {relativeTime(product.lastCheckedAt)}
-            </span>
-            <span>Last good {relativeTime(product.lastSuccessfulCheckedAt)}</span>
-            <span>
-              <Activity size={13} />
-              Next {relativeTime(product.nextCheckAt)}
-            </span>
-            {product.productType ? <span>{product.productType}</span> : null}
-            {product.sku ? <span>SKU {product.sku}</span> : null}
-            {product.upc ? <span>UPC {product.upc}</span> : null}
-            {product.dpci ? <span>DPCI {product.dpci}</span> : null}
-            {product.retailerProductId ? <span>Retailer ID {product.retailerProductId}</span> : null}
-            {product.verifiedAt ? <span>Verified {relativeTime(product.verifiedAt)}</span> : null}
-            {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
-            {product.requiredWords ? <span>Required: {product.requiredWords}</span> : null}
-            {product.ignoreWords ? <span>Ignore: {product.ignoreWords}</span> : null}
-            {product.verificationNotes ? <span>{product.verificationNotes}</span> : null}
-            <span>{product.lastMonitorError || product.lastMonitorResult || "No monitor result yet"}</span>
-          </div>
-        </article>
-      ))}
+            <div className="card-actions">
+              <span className={`chip ${statusTone(product.stockStatus)}`}>{formatStatus(product.stockStatus)}</span>
+              <span className={`chip ${statusTone(product.priorityScore?.buyWatchSkip || product.rating)}`}>
+                {product.priorityScore?.buyWatchSkip || product.rating}
+              </span>
+              {verified ? (
+                <span className="chip good">Verified Product</span>
+              ) : (
+                <span className={`chip ${verificationTone(product.verificationStatus)}`}>{formatStatus(product.verificationStatus)}</span>
+              )}
+              <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
+              {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
+              {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
+              <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
+                Go / Buy Now <ExternalLink size={14} />
+              </a>
+            </div>
+            {!compact && product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
+            {!compact && product.pendingAlertStatus ? (
+              <p className="reason-text">
+                Pending confirmation: {formatStatus(product.pendingAlertStatus)} after {product.pendingAlertCount} low-confidence
+                check{product.pendingAlertCount === 1 ? "" : "s"}.
+              </p>
+            ) : null}
+            {!compact ? (
+              <div className="monitor-meta">
+                <span>
+                  <Clock size={13} />
+                  Last {relativeTime(product.lastCheckedAt)}
+                </span>
+                <span>Last good {relativeTime(product.lastSuccessfulCheckedAt)}</span>
+                <span>
+                  <Activity size={13} />
+                  Next {relativeTime(product.nextCheckAt)}
+                </span>
+                {product.productType ? <span>{product.productType}</span> : null}
+                {product.sku ? <span>SKU {product.sku}</span> : null}
+                {product.upc ? <span>UPC {product.upc}</span> : null}
+                {product.dpci ? <span>DPCI {product.dpci}</span> : null}
+                {product.retailerProductId ? <span>Retailer ID {product.retailerProductId}</span> : null}
+                {product.verifiedAt ? <span>Verified {relativeTime(product.verifiedAt)}</span> : null}
+                {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
+                {product.requiredWords ? <span>Required: {product.requiredWords}</span> : null}
+                {product.ignoreWords ? <span>Ignore: {product.ignoreWords}</span> : null}
+                {product.verificationNotes ? <span>{product.verificationNotes}</span> : null}
+                <span>{product.lastMonitorError || product.lastMonitorResult || "No monitor result yet"}</span>
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -1899,23 +1836,58 @@ function StoreStack({
 
   return (
     <div className={compact ? "store-row-list compact" : "store-row-list"}>
-      {stores.map((store) => (
-        <details className="store-row" id={`store-${store.id}`} key={store.id}>
-          <summary className="store-row-summary">
-            <span className={`store-color-bar ${statusTone(store.prediction.probability)}`} aria-hidden="true" />
-            <span className="store-row-main">
-              <strong>{store.storeName}</strong>
-              <span>
-                {store.retailerName} - {storeDistanceLabel(store)} - {store.prediction.nextLikelyRestockWindow}
+      {stores.map((store) => {
+        const favoriteLabel = `${store.isFavorite ? "Removing favorite" : "Adding favorite"} ${store.id}`;
+        const favoriteButton =
+          showPreferenceActions && runAction ? (
+            <button
+              className={store.isFavorite ? "store-favorite-button active" : "store-favorite-button"}
+              disabled={busy}
+              type="button"
+              aria-label={store.isFavorite ? `Remove ${store.storeName} from favorites` : `Favorite ${store.storeName}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void runAction(
+                  favoriteLabel,
+                  () =>
+                    requestJson("/api/radar/area-preferences", {
+                      method: "POST",
+                      body: JSON.stringify({ storeId: store.id, favorite: !store.isFavorite })
+                    }),
+                  { success: store.isFavorite ? "Favorite removed" : "Store favorited" }
+                );
+              }}
+            >
+              <Star size={14} />
+            </button>
+          ) : (
+            <span className={store.isFavorite ? "store-favorite-static active" : "store-favorite-static"}>
+              <Star size={14} />
+            </span>
+          );
+
+        return (
+          <details className="store-row" id={`store-${store.id}`} key={store.id}>
+            <summary className="store-row-summary">
+              <span className={`store-color-bar ${statusTone(store.prediction.probability)}`} aria-hidden="true" />
+              <span className="store-row-main">
+                <strong>{store.storeName}</strong>
+                <span>
+                  {store.city} - {storeDistanceLabel(store)} - {store.retailerName}
+                </span>
               </span>
-            </span>
-            <span className="store-row-score">
-              <strong>{store.prediction.confidenceScore}%</strong>
-              <small>{store.prediction.probability}</small>
-            </span>
-          </summary>
+              <span className="store-row-score">
+                <strong>{store.prediction.confidenceScore}%</strong>
+                <small>{store.prediction.nextLikelyRestockWindow}</small>
+              </span>
+              {favoriteButton}
+            </summary>
           <div className="store-row-detail">
             <p className="reason-text">{store.prediction.reason}</p>
+            {storeNeedsCoordinates(store) ? (
+              <p className="form-error">Store needs address/coordinates before distance sorting.</p>
+            ) : null}
             <div className="monitor-meta">
               <span>
                 <Clock size={13} />
@@ -1932,36 +1904,11 @@ function StoreStack({
               <span>{store.prediction.mostCommonRestockTimeWindows.join(", ") || store.typicalRestockTimeWindow}</span>
               {store.isFavorite ? <span>Favorite</span> : null}
             </div>
-            {showPreferenceActions && runAction ? (
-              <div className="row-actions">
-                <button
-                  className={store.isFavorite ? "mini-action solid" : "mini-action"}
-                  disabled={busy}
-                  type="button"
-                  onClick={() =>
-                    runAction(
-                      `${store.isFavorite ? "Removing favorite" : "Adding favorite"} ${store.id}`,
-                      () =>
-                        requestJson("/api/radar/area-preferences", {
-                          method: "POST",
-                          body: JSON.stringify({ storeId: store.id, favorite: !store.isFavorite })
-                        }),
-                      { success: store.isFavorite ? "Favorite removed" : "Store favorited" }
-                    )
-                  }
-                >
-                  <Star size={14} />
-                  {busyLabel === `${store.isFavorite ? "Removing favorite" : "Adding favorite"} ${store.id}`
-                    ? "Saving"
-                    : store.isFavorite
-                      ? "Favorited"
-                      : "Favorite"}
-                </button>
-              </div>
-            ) : null}
+            {busyLabel === favoriteLabel ? <span className="chip muted">Saving favorite</span> : null}
           </div>
         </details>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -2018,7 +1965,7 @@ function ReleaseStack({ releases }: { releases: ReleaseDTO[] }) {
   );
 }
 
-function CardStack({ cards }: { cards: CardDTO[] }) {
+function CardStack({ cards, compact = false }: { cards: CardDTO[]; compact?: boolean }) {
   if (!cards.length) {
     return (
       <EmptyState
@@ -2030,7 +1977,7 @@ function CardStack({ cards }: { cards: CardDTO[] }) {
   }
 
   return (
-    <div className="stack">
+    <div className={compact ? "stack compact" : "stack"}>
       {cards.map((card) => (
         <article className="data-card" id={`card-${card.id}`} key={card.id}>
           <div className="card-main">
@@ -2051,12 +1998,14 @@ function CardStack({ cards }: { cards: CardDTO[] }) {
             <span className="chip muted">Confidence {card.compConfidenceScore}%</span>
             <span className="chip muted">Buy limit {money(card.maxRawBuyPrice)}</span>
           </div>
-          <div className="monitor-meta">
-            <span>{card.setName} #{card.cardNumber}</span>
-            <span>{card.compCount} comps</span>
-            <span>BGS 10 profit {money(card.bgs10EstimatedProfit)}</span>
-            <span>Black Label profit {money(card.blackLabelEstimatedProfit)}</span>
-          </div>
+          {!compact ? (
+            <div className="monitor-meta">
+              <span>{card.setName} #{card.cardNumber}</span>
+              <span>{card.compCount} comps</span>
+              <span>BGS 10 profit {money(card.bgs10EstimatedProfit)}</span>
+              <span>Black Label profit {money(card.blackLabelEstimatedProfit)}</span>
+            </div>
+          ) : null}
         </article>
       ))}
     </div>
@@ -2617,6 +2566,7 @@ function ProductAddWizard({
             value={retailerId}
             onChange={updateRetailer}
             options={dashboard.retailers.map(optionFromRetailer)}
+            required
           />
           {template ? (
             <div className="template-hint">
@@ -2628,7 +2578,11 @@ function ProductAddWizard({
           ) : null}
         </fieldset>
         <fieldset className={step === 2 ? "wizard-step active" : "wizard-step"}>
-          <TextInput name="url" label="Official product URL" type="url" placeholder="https://..." />
+          <TextInput name="url" label="Exact retailer product URL" type="url" placeholder="https://..." required />
+          <div className="template-hint warning">
+            <strong>Exact product links give better alerts than search/category links.</strong>
+            <span>Use the retailer product page that contains the SKU, UPC, DPCI, TCIN, ASIN, or item ID when available.</span>
+          </div>
           {template ? (
             <div className="template-hint">
               <strong>Public cues monitored</strong>
@@ -2641,7 +2595,7 @@ function ProductAddWizard({
         </fieldset>
         <fieldset className={step === 3 ? "wizard-step active" : "wizard-step"}>
           <div className="form-grid">
-            <TextInput name="name" label="Product name" placeholder="Pokemon TCG Booster Bundle" />
+            <TextInput name="name" label="Product name" placeholder="Pokemon TCG Booster Bundle" required />
             <SelectInput name="releaseId" label="Release / set" options={releaseOptions(dashboard.releases)} />
             <SelectInput
               name="productType"

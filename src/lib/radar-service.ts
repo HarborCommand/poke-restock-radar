@@ -1470,7 +1470,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
         !store.hiddenByUser &&
         (!areaPreferences.hideDistantStores ||
           store.isFavorite ||
-          (store.distanceMiles !== null ? store.distanceMiles <= 50 : store.zone === preferredZone))
+          areaPreferences.preferredZone === "CUSTOM" ||
+          store.zone === preferredZone)
     )
     .sort(
       (a, b) =>
@@ -1757,6 +1758,50 @@ function htmlIncludesIdentifier(html: string, value: string | null | undefined) 
   return html.toLowerCase().includes(value.trim().toLowerCase());
 }
 
+function extractHtmlTitle(html: string) {
+  const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1];
+  const title = ogTitle || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || "";
+  return title.replace(/\s+/g, " ").trim().slice(0, 180);
+}
+
+function extractVisiblePrice(html: string) {
+  const match = html.match(/\$\s?\d{1,4}(?:,\d{3})*(?:\.\d{2})?/);
+  return match?.[0].replace(/\s+/g, "") ?? null;
+}
+
+function detectStockCue(html: string, retailerName: string) {
+  const template = retailerTemplates.find((item) => item.retailerName === retailerName);
+  const normalized = html.toLowerCase();
+  const cues = template
+    ? [
+        ...template.statusWords.inStock,
+        ...template.statusWords.addToCart,
+        ...template.statusWords.preorder,
+        ...template.statusWords.soldOut,
+        ...template.statusWords.unavailable
+      ]
+    : ["in stock", "add to cart", "sold out", "out of stock", "preorder"];
+  return cues.find((cue) => normalized.includes(cue.toLowerCase())) ?? null;
+}
+
+function genericProductUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    const path = parsed.pathname.toLowerCase();
+    return (
+      parsed.searchParams.has("searchTerm") ||
+      parsed.searchParams.has("q") ||
+      path.includes("/search") ||
+      path.includes("/browse") ||
+      path.includes("/category") ||
+      path === "/" ||
+      path === ""
+    );
+  } catch {
+    return true;
+  }
+}
+
 export async function verifyProductLink(productId: string) {
   const product = await prisma.product.findUnique({
     where: { id: productId },
@@ -1778,6 +1823,9 @@ export async function verifyProductLink(productId: string) {
     const html = await response.text();
     const finalUrl = response.url || product.url;
     const sameRetailerHost = normalizeUrlHost(finalUrl) === normalizeUrlHost(product.url);
+    const titleText = extractHtmlTitle(html);
+    const visiblePrice = extractVisiblePrice(html);
+    const stockCue = detectStockCue(html, product.retailer.name);
     const upcMatched = htmlIncludesIdentifier(html, product.upc);
     const skuMatched = htmlIncludesIdentifier(html, product.sku);
     const dpciMatched = htmlIncludesIdentifier(html, product.dpci);
@@ -1787,11 +1835,15 @@ export async function verifyProductLink(productId: string) {
       .split(/\s+/)
       .filter((part) => part.length > 4)
       .slice(0, 4)
-      .filter((part) => html.toLowerCase().includes(part)).length;
+      .filter((part) => `${html} ${titleText}`.toLowerCase().includes(part)).length;
     const redirectedAway = !sameRetailerHost;
+    const genericUrl = genericProductUrl(product.url) || genericProductUrl(finalUrl);
+    const hasExpectedIdentifier = Boolean(product.upc || product.sku || product.dpci || product.retailerProductId);
     const likelyMismatch =
       redirectedAway ||
-      (!upcMatched && !skuMatched && !dpciMatched && !retailerProductMatched && titleMatched < 2) ||
+      genericUrl ||
+      (hasExpectedIdentifier && !upcMatched && !skuMatched && !dpciMatched && !retailerProductMatched && titleMatched < 2) ||
+      (!hasExpectedIdentifier && titleMatched < 2) ||
       [404, 410].includes(response.status);
     const verificationStatus: ProductVerificationStatus = likelyMismatch
       ? "POSSIBLE_MISMATCH"
@@ -1801,12 +1853,16 @@ export async function verifyProductLink(productId: string) {
     const notes = [
       `HTTP ${response.status}`,
       `Final URL ${finalUrl}`,
+      titleText ? `Product title text: ${titleText}` : "Product title text not found",
+      visiblePrice ? `Visible price cue: ${visiblePrice}` : "Visible price cue not found",
+      stockCue ? `Stock cue: ${stockCue}` : "Stock cue not found",
       `Response ${Date.now() - started}ms`,
       upcMatched ? "UPC matched in public page content" : "UPC not found",
       skuMatched ? "SKU matched" : null,
       dpciMatched ? "DPCI matched" : null,
       retailerProductMatched ? "Retailer product ID matched" : null,
       redirectedAway ? "Warning: final URL host differs from tracked URL host" : null,
+      genericUrl ? "Warning: URL looks like a search, category, or generic page" : null,
       likelyMismatch ? "Review this link before trusting alerts." : "Exact product page looks usable for manual checkout."
     ]
       .filter(Boolean)
@@ -3361,6 +3417,10 @@ export async function resetDemoData() {
   const retailers = await ensureRetailers();
   const admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, orderBy: { createdAt: "asc" } });
   if (!admin) throw new Error("Create an admin user before resetting demo data");
+  await prisma.user.update({
+    where: { id: admin.id },
+    data: { preferredZone: "MIAMI", customZoneName: null, hideDistantStores: false }
+  });
 
   const chaosRelease = await createRelease({
     setName: "Mega Evolution-Chaos Rising",
@@ -3476,39 +3536,121 @@ export async function resetDemoData() {
     });
   }
 
-  const target = await createStore({
-    retailerId: retailers.get("Target")!,
-    storeName: "Target Midtown Miami",
-    address: "3401 N Miami Ave",
-    city: "Miami",
-    state: "FL",
-    zone: "MIAMI",
-    latitude: 25.8072,
-    longitude: -80.1937,
-    typicalRestockDays: "Tuesday,Friday",
-    typicalRestockTimeWindow: "8:00 AM - 11:00 AM",
-    vendorNotes: "Card aisle usually touched after front lanes.",
-    confidenceScore: 72,
-    notes: "Demo store."
-  });
-  const walmart = await createStore({
-    retailerId: retailers.get("Walmart")!,
-    storeName: "Walmart Fort Lauderdale",
-    address: "2500 W Broward Blvd",
-    city: "Fort Lauderdale",
-    state: "FL",
-    zone: "FORT_LAUDERDALE",
-    latitude: 26.1213,
-    longitude: -80.1722,
-    typicalRestockDays: "Wednesday,Saturday",
-    typicalRestockTimeWindow: "10:00 AM - 1:00 PM",
-    vendorNotes: "Vendor timing varies; sightings drive confidence.",
-    confidenceScore: 58,
-    notes: "Demo store."
-  });
+  const storeSeeds = [
+    {
+      retailer: "Target",
+      storeName: "Target Hialeah",
+      address: "1750 W 37th St",
+      city: "Hialeah",
+      zone: "MIAMI" as Zone,
+      latitude: 25.8559,
+      longitude: -80.3174,
+      days: "Tuesday,Friday",
+      window: "8:00 AM - 11:00 AM",
+      confidence: 68,
+      vendorNotes: "Check front card wall and toy aisle endcap."
+    },
+    {
+      retailer: "Target",
+      storeName: "Target Dadeland",
+      address: "8350 S Dixie Hwy",
+      city: "Miami",
+      zone: "MIAMI" as Zone,
+      latitude: 25.6915,
+      longitude: -80.3054,
+      days: "Tuesday,Friday",
+      window: "8:30 AM - 11:30 AM",
+      confidence: 66,
+      vendorNotes: "Dadeland runs can sell through quickly after school/work hours."
+    },
+    {
+      retailer: "Target",
+      storeName: "Target Midtown Miami",
+      address: "3401 N Miami Ave",
+      city: "Miami",
+      zone: "MIAMI" as Zone,
+      latitude: 25.8072,
+      longitude: -80.1937,
+      days: "Tuesday,Friday",
+      window: "8:00 AM - 11:00 AM",
+      confidence: 72,
+      vendorNotes: "Card aisle usually touched after front lanes."
+    },
+    {
+      retailer: "Walmart",
+      storeName: "Walmart Hialeah Gardens",
+      address: "9300 NW 77th Ave",
+      city: "Hialeah Gardens",
+      zone: "MIAMI" as Zone,
+      latitude: 25.8586,
+      longitude: -80.3225,
+      days: "Wednesday,Saturday",
+      window: "9:30 AM - 12:30 PM",
+      confidence: 60,
+      vendorNotes: "Check trading cards near registers and toys."
+    },
+    {
+      retailer: "Walmart",
+      storeName: "Walmart Doral",
+      address: "8651 NW 13th Ter",
+      city: "Doral",
+      zone: "MIAMI" as Zone,
+      latitude: 25.7855,
+      longitude: -80.337,
+      days: "Wednesday,Saturday",
+      window: "10:00 AM - 1:00 PM",
+      confidence: 58,
+      vendorNotes: "Vendor timing varies; sightings drive confidence."
+    },
+    {
+      retailer: "Best Buy",
+      storeName: "Best Buy Dadeland",
+      address: "8450 S Dixie Hwy",
+      city: "Miami",
+      zone: "MIAMI" as Zone,
+      latitude: 25.6904,
+      longitude: -80.3064,
+      days: "Thursday,Friday",
+      window: "11:00 AM - 2:00 PM",
+      confidence: 54,
+      vendorNotes: "Ask only about public shelf availability; no backroom pressure."
+    },
+    {
+      retailer: "GameStop",
+      storeName: "GameStop Westland Mall Hialeah",
+      address: "1675 W 49th St",
+      city: "Hialeah",
+      zone: "MIAMI" as Zone,
+      latitude: 25.8667,
+      longitude: -80.3169,
+      days: "Friday,Saturday",
+      window: "12:00 PM - 3:00 PM",
+      confidence: 52,
+      vendorNotes: "ETB and collection-box timing depends on allocation."
+    }
+  ];
+  const createdStores = new Map<string, StoreDTO>();
+  for (const seed of storeSeeds) {
+    const store = await createStore({
+      retailerId: retailers.get(seed.retailer)!,
+      storeName: seed.storeName,
+      address: seed.address,
+      city: seed.city,
+      state: "FL",
+      zone: seed.zone,
+      latitude: seed.latitude,
+      longitude: seed.longitude,
+      typicalRestockDays: seed.days,
+      typicalRestockTimeWindow: seed.window,
+      vendorNotes: seed.vendorNotes,
+      confidenceScore: seed.confidence,
+      notes: "Miami-area demo store. Coordinates are manually entered and geocoding-ready."
+    });
+    createdStores.set(seed.storeName, store);
+  }
 
   await createSighting(admin.id, {
-    storeId: target.id,
+    storeId: createdStores.get("Target Midtown Miami")!.id,
     productSeen: "Booster Bundle",
     resultType: "stock_seen",
     seenAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
@@ -3516,7 +3658,15 @@ export async function resetDemoData() {
     notes: "Demo shelf sighting."
   });
   await createSighting(admin.id, {
-    storeId: walmart.id,
+    storeId: createdStores.get("Target Hialeah")!.id,
+    productSeen: "ETB",
+    resultType: "stock_seen",
+    seenAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
+    quantityEstimate: "4-6",
+    notes: "Demo local route sighting."
+  });
+  await createSighting(admin.id, {
+    storeId: createdStores.get("Walmart Doral")!.id,
     productSeen: "Collection Box",
     resultType: "stock_seen",
     seenAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),

@@ -29,12 +29,21 @@ async function main() {
 
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { name: "Radar Admin", role: "ADMIN", passwordHash: adminPasswordHash },
+    update: {
+      name: "Radar Admin",
+      role: "ADMIN",
+      passwordHash: adminPasswordHash,
+      preferredZone: "MIAMI",
+      customZoneName: null,
+      hideDistantStores: false
+    },
     create: {
       email: adminEmail,
       name: "Radar Admin",
       role: "ADMIN",
       passwordHash: adminPasswordHash,
+      preferredZone: "MIAMI",
+      hideDistantStores: false,
       notificationSettings: {
         create: {
           inApp: true,
@@ -49,12 +58,14 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: "friend@poke.local" },
-    update: { name: "Trusted Friend", role: "FRIEND" },
+    update: { name: "Trusted Friend", role: "FRIEND", preferredZone: "MIAMI", hideDistantStores: false },
     create: {
       email: "friend@poke.local",
       name: "Trusted Friend",
       role: "FRIEND",
       passwordHash: await bcrypt.hash("radar-friend", 12),
+      preferredZone: "MIAMI",
+      hideDistantStores: false,
       notificationSettings: {
         create: {
           inApp: true,
@@ -292,47 +303,157 @@ async function main() {
     }
   }
 
-  if ((await prisma.store.count()) === 0) {
-    const target = await prisma.store.create({
-      data: {
-        retailerId: retailers.get("Target")!,
+  const legacyOrlandoSeedStores = [
+    "Target Northside",
+    "Walmart Lakeview",
+    "Target Orlando Millenia",
+    "Walmart Orlando Turkey Lake Rd Supercenter",
+    "GameStop Florida Mall",
+    "Best Buy Florida Mall"
+  ];
+  const storeSeeds = [
+      {
+        retailer: "Target",
+        storeName: "Target Hialeah",
+        address: "1750 W 37th St",
+        city: "Hialeah",
+        zone: "MIAMI",
+        latitude: 25.8559,
+        longitude: -80.3174,
+        days: "Tuesday,Friday",
+        window: "8:00 AM - 11:00 AM",
+        confidence: 68,
+        vendorNotes: "Check front card wall and toy aisle endcap."
+      },
+      {
+        retailer: "Target",
+        storeName: "Target Dadeland",
+        address: "8350 S Dixie Hwy",
+        city: "Miami",
+        zone: "MIAMI",
+        latitude: 25.6915,
+        longitude: -80.3054,
+        days: "Tuesday,Friday",
+        window: "8:30 AM - 11:30 AM",
+        confidence: 66,
+        vendorNotes: "Dadeland runs can sell through quickly after school/work hours."
+      },
+      {
+        retailer: "Target",
         storeName: "Target Midtown Miami",
         address: "3401 N Miami Ave",
         city: "Miami",
-        state: "FL",
         zone: "MIAMI",
         latitude: 25.8072,
         longitude: -80.1937,
-        typicalRestockDays: "Tuesday,Friday",
-        typicalRestockTimeWindow: "8:00 AM - 11:00 AM",
-        vendorNotes: "Card aisle usually touched after front lanes.",
-        confidenceScore: 72,
-        notes: "Check only public shelves and posted product limits."
+        days: "Tuesday,Friday",
+        window: "8:00 AM - 11:00 AM",
+        confidence: 72,
+        vendorNotes: "Card aisle usually touched after front lanes."
+      },
+      {
+        retailer: "Walmart",
+        storeName: "Walmart Hialeah Gardens",
+        address: "9300 NW 77th Ave",
+        city: "Hialeah Gardens",
+        zone: "MIAMI",
+        latitude: 25.8586,
+        longitude: -80.3225,
+        days: "Wednesday,Saturday",
+        window: "9:30 AM - 12:30 PM",
+        confidence: 60,
+        vendorNotes: "Check trading cards near registers and toys."
+      },
+      {
+        retailer: "Walmart",
+        storeName: "Walmart Doral",
+        address: "8651 NW 13th Ter",
+        city: "Doral",
+        zone: "MIAMI",
+        latitude: 25.7855,
+        longitude: -80.337,
+        days: "Wednesday,Saturday",
+        window: "10:00 AM - 1:00 PM",
+        confidence: 58,
+        vendorNotes: "Vendor timing varies; sightings drive confidence."
+      },
+      {
+        retailer: "Best Buy",
+        storeName: "Best Buy Dadeland",
+        address: "8450 S Dixie Hwy",
+        city: "Miami",
+        zone: "MIAMI",
+        latitude: 25.6904,
+        longitude: -80.3064,
+        days: "Thursday,Friday",
+        window: "11:00 AM - 2:00 PM",
+        confidence: 54,
+        vendorNotes: "Ask only about public shelf availability; no backroom pressure."
+      },
+      {
+        retailer: "GameStop",
+        storeName: "GameStop Westland Mall Hialeah",
+        address: "1675 W 49th St",
+        city: "Hialeah",
+        zone: "MIAMI",
+        latitude: 25.8667,
+        longitude: -80.3169,
+        days: "Friday,Saturday",
+        window: "12:00 PM - 3:00 PM",
+        confidence: 52,
+        vendorNotes: "ETB and collection-box timing depends on allocation."
       }
-    });
+    ];
+  await prisma.store.deleteMany({ where: { storeName: { in: legacyOrlandoSeedStores } } });
 
-    const walmart = await prisma.store.create({
-      data: {
-        retailerId: retailers.get("Walmart")!,
-        storeName: "Walmart Fort Lauderdale",
-        address: "2500 W Broward Blvd",
-        city: "Fort Lauderdale",
-        state: "FL",
-        zone: "FORT_LAUDERDALE",
-        latitude: 26.1213,
-        longitude: -80.1722,
-        typicalRestockDays: "Wednesday,Saturday",
-        typicalRestockTimeWindow: "10:00 AM - 1:00 PM",
-        vendorNotes: "Vendor timing varies; sightings drive confidence.",
-        confidenceScore: 58,
-        notes: "Keep sightings manual and photo optional."
-      }
-    });
+  const createdStores = new Map<string, string>();
+  for (const seed of storeSeeds) {
+    const existing = await prisma.store.findFirst({ where: { storeName: seed.storeName } });
+    const store = existing
+      ? await prisma.store.update({
+          where: { id: existing.id },
+          data: {
+            retailerId: retailers.get(seed.retailer)!,
+            address: seed.address,
+            city: seed.city,
+            state: "FL",
+            zone: seed.zone,
+            latitude: seed.latitude,
+            longitude: seed.longitude,
+            typicalRestockDays: seed.days,
+            typicalRestockTimeWindow: seed.window,
+            vendorNotes: seed.vendorNotes,
+            confidenceScore: seed.confidence,
+            notes: "Miami-area seed store. Coordinates are manually entered and geocoding-ready."
+          }
+        })
+      : await prisma.store.create({
+        data: {
+          retailerId: retailers.get(seed.retailer)!,
+          storeName: seed.storeName,
+          address: seed.address,
+          city: seed.city,
+          state: "FL",
+          zone: seed.zone,
+          latitude: seed.latitude,
+          longitude: seed.longitude,
+          typicalRestockDays: seed.days,
+          typicalRestockTimeWindow: seed.window,
+          vendorNotes: seed.vendorNotes,
+          confidenceScore: seed.confidence,
+          notes: "Miami-area seed store. Coordinates are manually entered and geocoding-ready."
+        }
+      });
+    createdStores.set(seed.storeName, store.id);
+  }
 
+  const seededStoreIds = Array.from(createdStores.values());
+  const existingSeedSightings = await prisma.storeSighting.count({ where: { storeId: { in: seededStoreIds } } });
+  if (existingSeedSightings === 0) {
     await prisma.storeSighting.createMany({
       data: [
         {
-          storeId: target.id,
+          storeId: createdStores.get("Target Midtown Miami")!,
           userId: admin.id,
           productSeen: "Booster Bundle",
           resultType: "stock_seen",
@@ -341,7 +462,7 @@ async function main() {
           notes: "Middle shelf, two rows."
         },
         {
-          storeId: target.id,
+          storeId: createdStores.get("Target Hialeah")!,
           userId: admin.id,
           productSeen: "ETB",
           resultType: "stock_seen",
@@ -350,7 +471,7 @@ async function main() {
           notes: "Front card aisle endcap."
         },
         {
-          storeId: target.id,
+          storeId: createdStores.get("Target Dadeland")!,
           userId: admin.id,
           productSeen: "Sleeved Booster",
           resultType: "stock_seen",
@@ -359,7 +480,7 @@ async function main() {
           notes: "Vendor stocked before lunch."
         },
         {
-          storeId: target.id,
+          storeId: createdStores.get("Best Buy Dadeland")!,
           userId: admin.id,
           productSeen: "Pokemon TCG shelf",
           resultType: "empty_shelf",
@@ -368,7 +489,7 @@ async function main() {
           notes: "No fresh stock left after work."
         },
         {
-          storeId: walmart.id,
+          storeId: createdStores.get("Walmart Doral")!,
           userId: admin.id,
           productSeen: "Collection Box",
           resultType: "stock_seen",
@@ -377,7 +498,7 @@ async function main() {
           notes: "Low quantity, mixed with older stock."
         },
         {
-          storeId: walmart.id,
+          storeId: createdStores.get("Walmart Hialeah Gardens")!,
           userId: admin.id,
           productSeen: "Vendor",
           resultType: "vendor_spotted",

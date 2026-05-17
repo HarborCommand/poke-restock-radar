@@ -335,17 +335,17 @@ Retailer URL validation is enforced when products are created or edited. Example
 - Walmart: `https://www.walmart.com/ip/Pokemon-TCG-Example-Collection-Box/99900003`
 - GameStop: `https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-example/999005`
 
-Use exact product pages whenever possible. The `Go / Buy Now` button opens the exact URL saved on the product, and checkout stays manual on the official retailer site.
+Use exact product pages whenever possible. The add wizard requires retailer, product URL, and product name, with UPC, SKU, DPCI, and retailer product ID available as optional matching fields. `Go / Buy Now` opens the exact URL saved on the product, and checkout stays manual on the official retailer site.
 
 ### Product Link Verification
 
-Admin products include `Verify Product Link`. The check safely fetches the public URL, follows normal redirects, and records:
+Admin products include `Verify Product Link`. The check safely fetches the public URL, follows normal redirects, and records final URL, public product title text, visible price cue, stock cue, identifier matches, and mismatch warnings:
 
 - `Verified URL`
 - `UPC Matched`
 - `Possible Mismatch`
 
-The verifier compares the final URL host, UPC, SKU, DPCI, retailer product ID, and public title words. A possible mismatch warning means the saved link may redirect to an unrelated product or no longer prove the identifiers. It never adds to cart, checks out, logs in, bypasses queues, or bypasses bot protection.
+The verifier compares the final URL host, UPC, SKU, DPCI, retailer product ID, public title words, and whether the URL looks like a search/category page. Verified links receive a `Verified Product` badge. A possible mismatch warning means the saved link may redirect to an unrelated product or no longer prove the identifiers. It never adds to cart, checks out, logs in, bypasses queues, or bypasses bot protection.
 
 ### Bulk Product Import
 
@@ -395,7 +395,7 @@ JSON uses the same field names in an array or `{ "stores": [...] }`.
 
 ### Zone And Field Mode Setup
 
-Each user can set a default zone from Miami, Fort Lauderdale, Orlando, Tampa, Jacksonville, or Custom. They can also save browser location from the dashboard, Field Mode, or the Admin panel. When location is saved, dashboard store lists and Field Mode rank favorite stores first, then closest stores by miles. Without browser location, the app falls back to the selected zone. Users can hide distant stores, favorite saved stores, and use filters for Near Me, Favorites, High Probability, and Today.
+Each user can set a default zone from Miami, Fort Lauderdale, Orlando, Tampa, Jacksonville, or Custom. Admin defaults to Miami. Users can also save browser location from the dashboard, Field Mode, or the Admin panel. When location is saved, dashboard store lists and Field Mode rank favorite stores first, then closest stores by miles. Without browser location, the app falls back to the selected zone. The `Hide non-zone stores` toggle keeps the list to the selected zone unless a store is favorited. Stores without latitude/longitude show a warning that address/coordinates are needed before distance sorting.
 
 The Admin demo reset now seeds Miami and Fort Lauderdale examples instead of Orlando stores.
 
@@ -403,7 +403,7 @@ The Admin demo reset now seeds Miami and Fort Lauderdale examples instead of Orl
 
 The dashboard is organized around the first question: what should I chase right now? The first viewport shows quick actions, location status, high-priority online drops, stores to check today, biggest card opportunities, and latest alerts. Production health, notifications, user management, backups, setup checklists, owner QA, and other admin-heavy cards live behind the `Admin` button so daily use does not require scrolling through setup data.
 
-Store predictions use compact expandable rows with confidence, next likely window, retailer, distance or zone, and quick favorite/hide controls. Field Mode keeps product targets at the top and uses large one-tap buttons for I'm Here, Found Product, Seen Stock, Empty Shelf, Vendor Spotted, Bought Product, No Visit, and Add Note.
+Store predictions use compact expandable rows with store name, city, confidence, next likely window, retailer, distance or zone, and a favorite toggle. Field Mode keeps product targets at the top and uses large one-tap buttons for I'm Here, Found Product, Seen Stock, Empty Shelf, Vendor Spotted, Bought Product, No Visit, and Add Note. Miami seed stores include Target Hialeah, Target Dadeland, Target Midtown Miami, Walmart Hialeah Gardens, Walmart Doral, Best Buy Dadeland, and GameStop Westland Mall Hialeah.
 
 ### Bulk Release Import
 
