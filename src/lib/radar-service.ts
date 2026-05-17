@@ -33,6 +33,7 @@ import type {
   Priority,
   ProductDTO,
   ProductPriorityScoreDTO,
+  ProductVerificationStatus,
   ProductStatus,
   Rating,
   ReleaseDTO,
@@ -43,7 +44,10 @@ import type {
   SightingDTO,
   AlertCalibrationItemDTO,
   StoreDTO,
-  StoreVisitResult
+  StoreVisitResult,
+  UserAreaPreferencesDTO,
+  Zone,
+  ZoneOptionDTO
 } from "@/types/radar";
 
 const productInclude = {
@@ -67,6 +71,20 @@ const storeInclude = {
     take: 40
   }
 } satisfies Prisma.StoreInclude;
+
+export const zoneOptions: ZoneOptionDTO[] = [
+  { value: "MIAMI", label: "Miami" },
+  { value: "FORT_LAUDERDALE", label: "Fort Lauderdale" },
+  { value: "ORLANDO", label: "Orlando" },
+  { value: "TAMPA", label: "Tampa" },
+  { value: "JACKSONVILLE", label: "Jacksonville" },
+  { value: "CUSTOM", label: "Custom" }
+];
+
+function zoneLabel(zone: string | null | undefined, customZoneName?: string | null) {
+  if (zone === "CUSTOM" && customZoneName) return customZoneName;
+  return zoneOptions.find((option) => option.value === zone)?.label ?? "Miami";
+}
 
 const monitorLogInclude = {
   product: { select: { name: true } }
@@ -277,6 +295,11 @@ function productToDTO(
     sku: product.sku,
     upc: product.upc,
     dpci: product.dpci,
+    retailerProductId: product.retailerProductId,
+    verificationStatus: product.verificationStatus as ProductVerificationStatus,
+    verifiedAt: product.verifiedAt?.toISOString() ?? null,
+    verifiedFinalUrl: product.verifiedFinalUrl,
+    verificationNotes: product.verificationNotes,
     retailPrice: product.retailPrice,
     stockStatus: product.stockStatus as ProductStatus,
     alertStatus: product.alertStatus,
@@ -308,7 +331,12 @@ function productToDTO(
   };
 }
 
-function storeToDTO(store: Prisma.StoreGetPayload<{ include: typeof storeInclude }>): StoreDTO {
+function storeToDTO(
+  store: Prisma.StoreGetPayload<{ include: typeof storeInclude }>,
+  preference?: { favorite: boolean; hidden: boolean } | null,
+  preferredZone: Zone = "MIAMI",
+  customZoneName?: string | null
+): StoreDTO {
   const prediction = predictStoreRestock({
     typicalRestockDays: store.typicalRestockDays,
     typicalRestockTimeWindow: store.typicalRestockTimeWindow,
@@ -327,6 +355,13 @@ function storeToDTO(store: Prisma.StoreGetPayload<{ include: typeof storeInclude
     address: store.address,
     city: store.city,
     state: store.state,
+    zone: store.zone as Zone,
+    zoneLabel: zoneLabel(store.zone, customZoneName),
+    latitude: store.latitude,
+    longitude: store.longitude,
+    isFavorite: Boolean(preference?.favorite),
+    hiddenByUser: Boolean(preference?.hidden),
+    distanceRank: store.zone === preferredZone ? 0 : preference?.favorite ? 1 : 2,
     notes: store.notes,
     typicalRestockDays: store.typicalRestockDays,
     typicalRestockTimeWindow: store.typicalRestockTimeWindow,
@@ -536,12 +571,22 @@ function dataQualityWarnings(input: {
         entityId: product.id
       });
     }
-    if (!product.sku && !product.upc && !product.dpci) {
+    if (!product.sku && !product.upc && !product.dpci && !product.retailerProductId) {
       warnings.push({
         id: `product-id-${product.id}`,
         severity: "MEDIUM",
-        title: `${product.name} is missing SKU/UPC/DPCI`,
+        title: `${product.name} is missing SKU/UPC/DPCI/product ID`,
         detail: "Add an identifier to make restocks, store hunts, and imports easier to reconcile.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+    if (product.verificationStatus === "POSSIBLE_MISMATCH") {
+      warnings.push({
+        id: `product-verify-${product.id}`,
+        severity: "HIGH",
+        title: `${product.name} may not match its tracked URL`,
+        detail: product.verificationNotes || "Verify this product link before trusting monitor alerts.",
         tab: "products",
         entityId: product.id
       });
@@ -1085,6 +1130,52 @@ export async function ensureInvestmentSettings(currentUser: SessionUser) {
   });
 }
 
+export async function updateUserAreaPreferences(
+  currentUser: SessionUser,
+  input: { preferredZone: Zone; customZoneName?: string; hideDistantStores: boolean }
+) {
+  const user = await prisma.user.update({
+    where: { id: currentUser.id },
+    data: {
+      preferredZone: input.preferredZone,
+      customZoneName: input.preferredZone === "CUSTOM" ? input.customZoneName || "My Area" : null,
+      hideDistantStores: input.hideDistantStores
+    },
+    select: {
+      preferredZone: true,
+      customZoneName: true,
+      hideDistantStores: true
+    }
+  });
+  return {
+    preferredZone: user.preferredZone as Zone,
+    customZoneName: user.customZoneName,
+    hideDistantStores: user.hideDistantStores
+  };
+}
+
+export async function updateStorePreference(
+  currentUser: SessionUser,
+  input: { storeId: string; favorite?: boolean; hidden?: boolean }
+) {
+  const store = await prisma.store.findUnique({ where: { id: input.storeId }, select: { id: true } });
+  if (!store) throw new Error("Store not found");
+  const preference = await prisma.userStorePreference.upsert({
+    where: { userId_storeId: { userId: currentUser.id, storeId: input.storeId } },
+    update: {
+      ...(input.favorite === undefined ? {} : { favorite: input.favorite }),
+      ...(input.hidden === undefined ? {} : { hidden: input.hidden })
+    },
+    create: {
+      userId: currentUser.id,
+      storeId: input.storeId,
+      favorite: input.favorite ?? false,
+      hidden: input.hidden ?? false
+    }
+  });
+  return preference;
+}
+
 function releaseForProduct(product: ProductScoreInput, releases: ReleaseScoreInput[]) {
   if (product.releaseId) {
     const explicit = releases.find((release) => release.id === product.releaseId);
@@ -1252,7 +1343,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     investmentReports,
     inventory,
     dailyRecaps,
-    savedFilterPresets
+    savedFilterPresets,
+    storePreferences
   ] =
     await Promise.all([
     prisma.retailer.findMany({ orderBy: { name: "asc" } }),
@@ -1287,7 +1379,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       where: { userId: currentUser.id },
       orderBy: { createdAt: "desc" },
       take: 40
-    })
+    }),
+    prisma.userStorePreference.findMany({ where: { userId: currentUser.id } })
   ]);
   const accessOverview =
     currentUser.role === "ADMIN"
@@ -1302,9 +1395,25 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     take: 50
   });
 
+  const preferenceMap = new Map(storePreferences.map((preference) => [preference.storeId, preference]));
+  const preferredZone = (currentUser.preferredZone || "MIAMI") as Zone;
+  const areaPreferences: UserAreaPreferencesDTO = {
+    preferredZone,
+    customZoneName: currentUser.customZoneName ?? null,
+    hideDistantStores: Boolean(currentUser.hideDistantStores),
+    favoriteStoreIds: storePreferences.filter((preference) => preference.favorite).map((preference) => preference.storeId),
+    hiddenStoreIds: storePreferences.filter((preference) => preference.hidden).map((preference) => preference.storeId)
+  };
   const storeDTOs = stores
-    .map(storeToDTO)
-    .sort((a, b) => b.prediction.confidenceScore - a.prediction.confidenceScore || a.storeName.localeCompare(b.storeName));
+    .map((store) => storeToDTO(store, preferenceMap.get(store.id), preferredZone, currentUser.customZoneName))
+    .filter((store) => !store.hiddenByUser && (!areaPreferences.hideDistantStores || store.zone === preferredZone || store.isFavorite))
+    .sort(
+      (a, b) =>
+        Number(b.isFavorite) - Number(a.isFavorite) ||
+        a.distanceRank - b.distanceRank ||
+        b.prediction.confidenceScore - a.prediction.confidenceScore ||
+        a.storeName.localeCompare(b.storeName)
+    );
   const checkTodayStores = storeDTOs
     .filter((store) => store.prediction.isLikelyToday || store.prediction.probability === "HIGH")
     .sort(
@@ -1355,6 +1464,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
 
   return {
     currentUser,
+    zoneOptions,
+    userAreaPreferences: areaPreferences,
     users: accessOverview.users,
     friendInvites: accessOverview.friendInvites,
     auditLogs: accessOverview.auditLogs,
@@ -1415,6 +1526,7 @@ export async function createProduct(input: {
   sku?: string;
   upc?: string;
   dpci?: string;
+  retailerProductId?: string;
   retailPrice?: number;
   stockStatus: ProductStatus;
   priority: Priority;
@@ -1470,6 +1582,7 @@ export async function updateProductManualStatus(
     sku?: string;
     upc?: string;
     dpci?: string;
+    retailerProductId?: string;
     stockStatus: ProductStatus;
     retailPrice?: number;
     priority: Priority;
@@ -1503,6 +1616,7 @@ export async function updateProductManualStatus(
       sku: input.sku,
       upc: input.upc,
       dpci: input.dpci,
+      retailerProductId: input.retailerProductId,
       stockStatus: input.stockStatus,
       retailPrice: input.retailPrice,
       priority: input.priority,
@@ -1561,6 +1675,104 @@ export async function updateProductManualStatus(
   }
 
   return productToDTO(product);
+}
+
+function normalizeUrlHost(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function htmlIncludesIdentifier(html: string, value: string | null | undefined) {
+  if (!value) return false;
+  return html.toLowerCase().includes(value.trim().toLowerCase());
+}
+
+export async function verifyProductLink(productId: string) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: productInclude
+  });
+  if (!product) throw new Error("Product not found");
+
+  const started = Date.now();
+  try {
+    const response = await fetch(product.url, {
+      method: "GET",
+      redirect: "follow",
+      signal: AbortSignal.timeout(12000),
+      headers: {
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": "PokeRestockRadar/0.4 product-link-verifier (+manual-checkout-only)"
+      }
+    });
+    const html = await response.text();
+    const finalUrl = response.url || product.url;
+    const sameRetailerHost = normalizeUrlHost(finalUrl) === normalizeUrlHost(product.url);
+    const upcMatched = htmlIncludesIdentifier(html, product.upc);
+    const skuMatched = htmlIncludesIdentifier(html, product.sku);
+    const dpciMatched = htmlIncludesIdentifier(html, product.dpci);
+    const retailerProductMatched = htmlIncludesIdentifier(html, product.retailerProductId) || finalUrl.includes(product.retailerProductId || "\u0000");
+    const titleMatched = product.name
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((part) => part.length > 4)
+      .slice(0, 4)
+      .filter((part) => html.toLowerCase().includes(part)).length;
+    const redirectedAway = !sameRetailerHost;
+    const likelyMismatch =
+      redirectedAway ||
+      (!upcMatched && !skuMatched && !dpciMatched && !retailerProductMatched && titleMatched < 2) ||
+      [404, 410].includes(response.status);
+    const verificationStatus: ProductVerificationStatus = likelyMismatch
+      ? "POSSIBLE_MISMATCH"
+      : upcMatched
+        ? "UPC_MATCHED"
+        : "VERIFIED_URL";
+    const notes = [
+      `HTTP ${response.status}`,
+      `Final URL ${finalUrl}`,
+      `Response ${Date.now() - started}ms`,
+      upcMatched ? "UPC matched in public page content" : "UPC not found",
+      skuMatched ? "SKU matched" : null,
+      dpciMatched ? "DPCI matched" : null,
+      retailerProductMatched ? "Retailer product ID matched" : null,
+      redirectedAway ? "Warning: final URL host differs from tracked URL host" : null,
+      likelyMismatch ? "Review this link before trusting alerts." : "Exact product page looks usable for manual checkout."
+    ]
+      .filter(Boolean)
+      .join(". ");
+
+    const updated = await prisma.product.update({
+      where: { id: productId },
+      data: {
+        verificationStatus,
+        verifiedAt: new Date(),
+        verifiedFinalUrl: finalUrl,
+        verificationNotes: notes,
+        lastCheckedAt: new Date(),
+        lastMonitorResult: `Product link verification: ${verificationStatus}. ${notes}`
+      },
+      include: productInclude
+    });
+    return productToDTO(updated);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Product link verification failed.";
+    const updated = await prisma.product.update({
+      where: { id: productId },
+      data: {
+        verificationStatus: "POSSIBLE_MISMATCH",
+        verifiedAt: new Date(),
+        verificationNotes: message,
+        lastCheckedAt: new Date(),
+        lastMonitorError: message
+      },
+      include: productInclude
+    });
+    return productToDTO(updated);
+  }
 }
 
 export async function deleteProduct(productId: string) {
@@ -1803,6 +2015,9 @@ export async function createStore(input: {
   address: string;
   city: string;
   state: string;
+  zone?: Zone;
+  latitude?: number;
+  longitude?: number;
   typicalRestockDays: string;
   typicalRestockTimeWindow: string;
   vendorNotes?: string;
@@ -1824,6 +2039,9 @@ export async function updateStore(
     address: string;
     city: string;
     state: string;
+    zone?: Zone;
+    latitude?: number;
+    longitude?: number;
     typicalRestockDays: string;
     typicalRestockTimeWindow: string;
     vendorNotes?: string;
@@ -2096,6 +2314,7 @@ export async function importProducts(format: "csv" | "json", data: string) {
         sku: textFromRow(row, "sku", "asin", "tcin"),
         upc: textFromRow(row, "upc"),
         dpci: textFromRow(row, "dpci"),
+        retailerProductId: textFromRow(row, "retailerProductId", "productId", "itemId", "offerId"),
         retailPrice: numberFromRow(row, "retailPrice", "price"),
         stockStatus: (textFromRow(row, "stockStatus", "status") || "UNAVAILABLE").toUpperCase(),
         priority: (textFromRow(row, "priority") || template?.alertPriorityDefault || "MEDIUM").toUpperCase(),
@@ -2133,6 +2352,9 @@ export async function importStores(format: "csv" | "json", data: string) {
         address: textFromRow(row, "address"),
         city: textFromRow(row, "city"),
         state: textFromRow(row, "state"),
+        zone: (textFromRow(row, "zone", "region") || "MIAMI").toUpperCase(),
+        latitude: numberFromRow(row, "latitude", "lat"),
+        longitude: numberFromRow(row, "longitude", "lng", "lon"),
         typicalRestockDays: textFromRow(row, "typicalRestockDays", "restockDays"),
         typicalRestockTimeWindow: textFromRow(row, "typicalRestockTimeWindow", "restockWindow"),
         vendorNotes: textFromRow(row, "vendorNotes"),
@@ -3031,6 +3253,7 @@ async function clearRadarData(includeUsers: boolean) {
   await prisma.restockHistory.deleteMany();
   await prisma.alert.deleteMany();
   await prisma.storeSighting.deleteMany();
+  await prisma.userStorePreference.deleteMany();
   await prisma.card.deleteMany();
   await prisma.release.deleteMany();
   await prisma.product.deleteMany();
@@ -3110,8 +3333,9 @@ export async function resetDemoData() {
       setName: chaosRelease.setName,
       productType: "Premium Collection",
       name: "Pokemon TCG Mega Evolution Chaos Rising Premium Collection",
-      url: "https://www.gamestop.com/toys-games/trading-cards",
+      url: "https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-mega-evolution-chaos-rising-premium-collection/999000",
       sku: "GS-PREMIUM",
+      retailerProductId: "999000",
       retailPrice: 49.99,
       stockStatus: "PREORDER_LIVE" as ProductStatus,
       priority: "HIGH" as Priority,
@@ -3127,9 +3351,11 @@ export async function resetDemoData() {
       setName: chaosRelease.setName,
       productType: "Booster Bundle",
       name: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle",
-      url: "https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle",
+      url: "https://www.target.com/p/pokemon-trading-card-game-mega-evolution-chaos-rising-booster-bundle/-/A-99900001",
       sku: "TARGET-BUNDLE",
+      upc: "0820650990001",
       dpci: "087-12-0001",
+      retailerProductId: "99900001",
       retailPrice: 26.99,
       stockStatus: "IN_STOCK" as ProductStatus,
       priority: "HIGH" as Priority,
@@ -3145,8 +3371,10 @@ export async function resetDemoData() {
       setName: ascendedRelease.setName,
       productType: "ETB",
       name: "Pokemon TCG Mega Evolution Ascended Heroes ETB",
-      url: "https://www.pokemoncenter.com/category/trading-card-game",
+      url: "https://www.pokemoncenter.com/product/999-00002/pokemon-tcg-mega-evolution-ascended-heroes-pokemon-center-elite-trainer-box",
       sku: "PC-AH-ETB",
+      upc: "0820650990002",
+      retailerProductId: "999-00002",
       retailPrice: 59.99,
       stockStatus: "SOLD_OUT" as ProductStatus,
       priority: "MEDIUM" as Priority,
@@ -3167,7 +3395,9 @@ export async function resetDemoData() {
       name: product.name,
       url: product.url,
       sku: product.sku,
+      upc: "upc" in product ? product.upc : undefined,
       dpci: "dpci" in product ? product.dpci : undefined,
+      retailerProductId: product.retailerProductId,
       retailPrice: product.retailPrice,
       stockStatus: product.stockStatus,
       priority: product.priority,
@@ -3181,10 +3411,13 @@ export async function resetDemoData() {
 
   const target = await createStore({
     retailerId: retailers.get("Target")!,
-    storeName: "Target Northside",
-    address: "100 Market Plaza",
-    city: "Orlando",
+    storeName: "Target Midtown Miami",
+    address: "3401 N Miami Ave",
+    city: "Miami",
     state: "FL",
+    zone: "MIAMI",
+    latitude: 25.8072,
+    longitude: -80.1937,
     typicalRestockDays: "Tuesday,Friday",
     typicalRestockTimeWindow: "8:00 AM - 11:00 AM",
     vendorNotes: "Card aisle usually touched after front lanes.",
@@ -3193,10 +3426,13 @@ export async function resetDemoData() {
   });
   const walmart = await createStore({
     retailerId: retailers.get("Walmart")!,
-    storeName: "Walmart Lakeview",
-    address: "2200 Lakeview Rd",
-    city: "Orlando",
+    storeName: "Walmart Fort Lauderdale",
+    address: "2500 W Broward Blvd",
+    city: "Fort Lauderdale",
     state: "FL",
+    zone: "FORT_LAUDERDALE",
+    latitude: 26.1213,
+    longitude: -80.1722,
     typicalRestockDays: "Wednesday,Saturday",
     typicalRestockTimeWindow: "10:00 AM - 1:00 PM",
     vendorNotes: "Vendor timing varies; sightings drive confidence.",
@@ -3285,6 +3521,7 @@ export async function exportBackup() {
       browserPushSubscriptions: await prisma.browserPushSubscription.findMany(),
       friendInvites: await prisma.friendInvite.findMany(),
       auditLogs: await prisma.auditLog.findMany(),
+      storePreferences: await prisma.userStorePreference.findMany(),
       inventoryItems: await prisma.inventoryItem.findMany(),
       dailyRecaps: await prisma.dailyRecap.findMany(),
       savedFilterPresets: await prisma.savedFilterPreset.findMany()
@@ -3325,6 +3562,9 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       canAddComps: row.canAddComps === undefined ? false : Boolean(row.canAddComps),
       canRunChecks: row.canRunChecks === undefined ? false : Boolean(row.canRunChecks),
       canReceivePushAlerts: row.canReceivePushAlerts === undefined ? true : Boolean(row.canReceivePushAlerts),
+      preferredZone: row.preferredZone ? String(row.preferredZone) : "MIAMI",
+      customZoneName: row.customZoneName ? String(row.customZoneName) : null,
+      hideDistantStores: row.hideDistantStores === undefined ? false : Boolean(row.hideDistantStores),
       disabledAt: toNullableDate(row.disabledAt),
       sessionVersion: row.sessionVersion === undefined ? 0 : Number(row.sessionVersion),
       lastLoginAt: toNullableDate(row.lastLoginAt),
@@ -3407,6 +3647,11 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       sku: row.sku ? String(row.sku) : null,
       upc: row.upc ? String(row.upc) : null,
       dpci: row.dpci ? String(row.dpci) : null,
+      retailerProductId: row.retailerProductId ? String(row.retailerProductId) : null,
+      verificationStatus: row.verificationStatus ? String(row.verificationStatus) : "UNVERIFIED",
+      verifiedAt: toNullableDate(row.verifiedAt),
+      verifiedFinalUrl: row.verifiedFinalUrl ? String(row.verifiedFinalUrl) : null,
+      verificationNotes: row.verificationNotes ? String(row.verificationNotes) : null,
       retailPrice: row.retailPrice === null || row.retailPrice === undefined ? null : Number(row.retailPrice),
       stockStatus: String(row.stockStatus),
       alertStatus: Boolean(row.alertStatus),
@@ -3451,11 +3696,25 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       address: String(row.address),
       city: String(row.city),
       state: String(row.state),
+      zone: row.zone ? String(row.zone) : "MIAMI",
+      latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
+      longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
       notes: row.notes ? String(row.notes) : null,
       typicalRestockDays: String(row.typicalRestockDays),
       typicalRestockTimeWindow: String(row.typicalRestockTimeWindow),
       vendorNotes: row.vendorNotes ? String(row.vendorNotes) : null,
       confidenceScore: Number(row.confidenceScore),
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.userStorePreference.createMany({
+    data: rows(tables, "storePreferences").map((row) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      storeId: String(row.storeId),
+      favorite: row.favorite === undefined ? false : Boolean(row.favorite),
+      hidden: row.hidden === undefined ? false : Boolean(row.hidden),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
     }))

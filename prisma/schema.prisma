@@ -8,34 +8,38 @@ datasource db {
 }
 
 model User {
-  id                   String                @id @default(cuid())
-  email                String                @unique
-  name                 String
-  role                 String                @default("FRIEND")
-  passwordHash         String
-  canAddSightings      Boolean               @default(true)
-  canAddComps          Boolean               @default(false)
-  canRunChecks         Boolean               @default(false)
-  canReceivePushAlerts Boolean               @default(true)
-  disabledAt           DateTime?
-  sessionVersion       Int                   @default(0)
-  lastLoginAt          DateTime?
-  passwordChangedAt    DateTime?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  sightings            StoreSighting[]
-  alerts               Alert[]
-  notificationSettings NotificationSettings?
-  investmentSettings   InvestmentSettings?
+  id                       String                    @id @default(cuid())
+  email                    String                    @unique
+  name                     String
+  role                     String                    @default("FRIEND")
+  passwordHash             String
+  canAddSightings          Boolean                   @default(true)
+  canAddComps              Boolean                   @default(false)
+  canRunChecks             Boolean                   @default(false)
+  canReceivePushAlerts     Boolean                   @default(true)
+  preferredZone            String                    @default("MIAMI")
+  customZoneName           String?
+  hideDistantStores        Boolean                   @default(false)
+  disabledAt               DateTime?
+  sessionVersion           Int                       @default(0)
+  lastLoginAt              DateTime?
+  passwordChangedAt        DateTime?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  sightings                StoreSighting[]
+  alerts                   Alert[]
+  notificationSettings     NotificationSettings?
+  investmentSettings       InvestmentSettings?
   browserPushSubscriptions BrowserPushSubscription[]
-  investmentReports    InvestmentReport[]
-  passwordResetTokens  PasswordResetToken[]
-  createdInvites       FriendInvite[]        @relation("InviteCreatedBy")
-  acceptedInvites      FriendInvite[]        @relation("InviteAcceptedBy")
-  auditLogs            AuditLog[]
-  inventoryItems       InventoryItem[]
-  dailyRecaps          DailyRecap[]
-  savedFilterPresets   SavedFilterPreset[]
+  investmentReports        InvestmentReport[]
+  passwordResetTokens      PasswordResetToken[]
+  createdInvites           FriendInvite[]            @relation("InviteCreatedBy")
+  acceptedInvites          FriendInvite[]            @relation("InviteAcceptedBy")
+  auditLogs                AuditLog[]
+  inventoryItems           InventoryItem[]
+  dailyRecaps              DailyRecap[]
+  savedFilterPresets       SavedFilterPreset[]
+  storePreferences         UserStorePreference[]
 }
 
 model PasswordResetToken {
@@ -109,81 +113,112 @@ model Retailer {
 }
 
 model Product {
-  id             String                 @id @default(cuid())
-  retailerId     String
-  releaseId      String?
-  name           String
-  url            String
-  setName        String?
-  productType    String?
-  sku            String?
-  upc            String?
-  dpci           String?
-  retailPrice    Float?
-  stockStatus    String                 @default("UNAVAILABLE")
-  alertStatus    Boolean                @default(false)
-  priority       String                 @default("MEDIUM")
-  rating         String                 @default("WATCH")
-  notes          String?
-  lastCheckedAt  DateTime?
-  lastSuccessfulCheckedAt DateTime?
-  monitorEnabled Boolean                @default(true)
-  checkFrequencyMinutes Int             @default(60)
-  nextCheckAt    DateTime?
-  lastMonitorResult String?
-  lastMonitorError  String?
-  lastPageHash   String?
-  lastAlertSentAt DateTime?
-  requiredWords  String?
-  ignoreWords    String?
-  pendingAlertStatus String?
-  pendingAlertPrice  Float?
-  pendingAlertPageHash String?
-  pendingAlertCount Int                    @default(0)
-  pendingAlertReason String?
-  pendingAlertConfidence Int?
+  id                        String                 @id @default(cuid())
+  retailerId                String
+  releaseId                 String?
+  name                      String
+  url                       String
+  setName                   String?
+  productType               String?
+  sku                       String?
+  upc                       String?
+  dpci                      String?
+  retailerProductId         String?
+  verificationStatus        String                 @default("UNVERIFIED")
+  verifiedAt                DateTime?
+  verifiedFinalUrl          String?
+  verificationNotes         String?
+  retailPrice               Float?
+  stockStatus               String                 @default("UNAVAILABLE")
+  alertStatus               Boolean                @default(false)
+  priority                  String                 @default("MEDIUM")
+  rating                    String                 @default("WATCH")
+  notes                     String?
+  lastCheckedAt             DateTime?
+  lastSuccessfulCheckedAt   DateTime?
+  monitorEnabled            Boolean                @default(true)
+  checkFrequencyMinutes     Int                    @default(60)
+  nextCheckAt               DateTime?
+  lastMonitorResult         String?
+  lastMonitorError          String?
+  lastPageHash              String?
+  lastAlertSentAt           DateTime?
+  requiredWords             String?
+  ignoreWords               String?
+  pendingAlertStatus        String?
+  pendingAlertPrice         Float?
+  pendingAlertPageHash      String?
+  pendingAlertCount         Int                    @default(0)
+  pendingAlertReason        String?
+  pendingAlertConfidence    Int?
   pendingAlertDetectedWords String?
-  pendingAlertAt DateTime?
-  sealedResaleNotes String?
-  scarcityNotes  String?
-  manualPriorityOverride String?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  retailer       Retailer               @relation(fields: [retailerId], references: [id], onDelete: Cascade)
-  release        Release?               @relation(fields: [releaseId], references: [id], onDelete: SetNull)
-  alerts         Alert[]
-  history        RestockHistory[]
-  monitorLogs    MonitorLog[]
-  priorityScores ProductPriorityScore[]
-  inventoryItems InventoryItem[]
+  pendingAlertAt            DateTime?
+  sealedResaleNotes         String?
+  scarcityNotes             String?
+  manualPriorityOverride    String?
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  retailer                  Retailer               @relation(fields: [retailerId], references: [id], onDelete: Cascade)
+  release                   Release?               @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  alerts                    Alert[]
+  history                   RestockHistory[]
+  monitorLogs               MonitorLog[]
+  priorityScores            ProductPriorityScore[]
+  inventoryItems            InventoryItem[]
 
   @@index([retailerId])
   @@index([releaseId])
   @@index([setName])
   @@index([productType])
+  @@index([upc])
+  @@index([retailerProductId])
+  @@index([verificationStatus])
   @@index([stockStatus])
   @@index([nextCheckAt])
   @@index([monitorEnabled])
 }
 
 model Store {
-  id                         String          @id @default(cuid())
-  retailerId                 String
-  storeName                  String
-  address                    String
-  city                       String
-  state                      String
-  notes                      String?
-  typicalRestockDays         String
-  typicalRestockTimeWindow   String
-  vendorNotes                String?
-  confidenceScore            Int             @default(50)
-  createdAt                  DateTime        @default(now())
-  updatedAt                  DateTime        @updatedAt
-  retailer                   Retailer        @relation(fields: [retailerId], references: [id], onDelete: Cascade)
-  sightings                  StoreSighting[]
+  id                       String                @id @default(cuid())
+  retailerId               String
+  storeName                String
+  address                  String
+  city                     String
+  state                    String
+  zone                     String                @default("MIAMI")
+  latitude                 Float?
+  longitude                Float?
+  notes                    String?
+  typicalRestockDays       String
+  typicalRestockTimeWindow String
+  vendorNotes              String?
+  confidenceScore          Int                   @default(50)
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+  retailer                 Retailer              @relation(fields: [retailerId], references: [id], onDelete: Cascade)
+  sightings                StoreSighting[]
+  userPreferences          UserStorePreference[]
 
   @@index([retailerId])
+  @@index([zone])
+}
+
+model UserStorePreference {
+  id        String   @id @default(cuid())
+  userId    String
+  storeId   String
+  favorite  Boolean  @default(false)
+  hidden    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storeId])
+  @@index([userId])
+  @@index([storeId])
+  @@index([favorite])
+  @@index([hidden])
 }
 
 model StoreSighting {
@@ -207,47 +242,47 @@ model StoreSighting {
 }
 
 model Release {
-  id                            String   @id @default(cuid())
+  id                            String    @id @default(cuid())
   setName                       String
   productType                   String?
   officialReleaseDate           DateTime
   preorderDate                  DateTime?
   productTypes                  String
-  pokemonCenterExclusiveVersion Boolean  @default(false)
+  pokemonCenterExclusiveVersion Boolean   @default(false)
   chaseCards                    String?
-  demandRating                  String   @default("MEDIUM")
-  estimatedDemand               String   @default("MEDIUM")
-  priority                      String   @default("MEDIUM")
-  sealedProductPriority         String   @default("MEDIUM")
+  demandRating                  String    @default("MEDIUM")
+  estimatedDemand               String    @default("MEDIUM")
+  priority                      String    @default("MEDIUM")
+  sealedProductPriority         String    @default("MEDIUM")
   notes                         String?
   productLinks                  String?
-  createdAt                     DateTime @default(now())
-  updatedAt                     DateTime @updatedAt
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
   products                      Product[]
   cards                         Card[]
 }
 
 model Alert {
-  id         String    @id @default(cuid())
-  title      String
-  reason     String
-  priority   String    @default("MEDIUM")
-  timestamp  DateTime  @default(now())
-  entityType String
-  entityId   String?
-  actionUrl  String?
-  read       Boolean   @default(false)
-  score      Int       @default(50)
-  dedupeKey  String?
-  explanation String?
+  id              String    @id @default(cuid())
+  title           String
+  reason          String
+  priority        String    @default("MEDIUM")
+  timestamp       DateTime  @default(now())
+  entityType      String
+  entityId        String?
+  actionUrl       String?
+  read            Boolean   @default(false)
+  score           Int       @default(50)
+  dedupeKey       String?
+  explanation     String?
   falsePositiveAt DateTime?
-  suppressedAt DateTime?
-  cooldownUntil DateTime?
-  productId  String?
-  userId     String?
-  product    Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
-  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt  DateTime  @default(now())
+  suppressedAt    DateTime?
+  cooldownUntil   DateTime?
+  productId       String?
+  userId          String?
+  product         Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  user            User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
 
   @@index([read])
   @@index([priority])
@@ -302,90 +337,90 @@ model MonitorLog {
 }
 
 model Card {
-  id                       String              @id @default(cuid())
-  releaseId                String?
-  cardName                 String
-  setName                  String
-  cardNumber               String
-  rarity                   String
-  rawAveragePrice          Float
-  psa9AverageSalePrice     Float
-  psa10AverageSalePrice    Float
-  bgs95AverageSalePrice    Float               @default(0)
-  bgs10AverageSalePrice    Float               @default(0)
-  bgsBlackLabelAverageSalePrice Float           @default(0)
-  estimatedEbayFee         Float               @default(0.1325)
-  estimatedGradingCost     Float
-  estimatedShippingCost    Float               @default(5)
-  minimumProfitTarget      Float               @default(20)
-  psa9EstimatedProfit      Float
-  psa10EstimatedProfit     Float
-  bgs10EstimatedProfit     Float               @default(0)
-  blackLabelEstimatedProfit Float              @default(0)
-  maxRawBuyPricePsa9       Float
-  maxRawBuyPrice           Float               @default(0)
-  top10Score               Int                 @default(0)
-  compConfidenceScore      Int                 @default(0)
-  rating                   String              @default("WATCH")
-  dataSource               String
-  lastRefreshed            DateTime
-  notes                    String?
-  characterName            String?
-  era                      String              @default("MODERN")
-  lowPop                   Boolean             @default(false)
-  newRelease               Boolean             @default(false)
-  lowNumberedSerialized    Boolean             @default(false)
-  strongCharacterDemand    Boolean             @default(false)
-  lastCompAt               DateTime?
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
-  release                  Release?            @relation(fields: [releaseId], references: [id], onDelete: SetNull)
-  snapshots                CardPriceSnapshot[]
-  compSales                CardCompSale[]
-  inventoryItems           InventoryItem[]
+  id                            String              @id @default(cuid())
+  releaseId                     String?
+  cardName                      String
+  setName                       String
+  cardNumber                    String
+  rarity                        String
+  rawAveragePrice               Float
+  psa9AverageSalePrice          Float
+  psa10AverageSalePrice         Float
+  bgs95AverageSalePrice         Float               @default(0)
+  bgs10AverageSalePrice         Float               @default(0)
+  bgsBlackLabelAverageSalePrice Float               @default(0)
+  estimatedEbayFee              Float               @default(0.1325)
+  estimatedGradingCost          Float
+  estimatedShippingCost         Float               @default(5)
+  minimumProfitTarget           Float               @default(20)
+  psa9EstimatedProfit           Float
+  psa10EstimatedProfit          Float
+  bgs10EstimatedProfit          Float               @default(0)
+  blackLabelEstimatedProfit     Float               @default(0)
+  maxRawBuyPricePsa9            Float
+  maxRawBuyPrice                Float               @default(0)
+  top10Score                    Int                 @default(0)
+  compConfidenceScore           Int                 @default(0)
+  rating                        String              @default("WATCH")
+  dataSource                    String
+  lastRefreshed                 DateTime
+  notes                         String?
+  characterName                 String?
+  era                           String              @default("MODERN")
+  lowPop                        Boolean             @default(false)
+  newRelease                    Boolean             @default(false)
+  lowNumberedSerialized         Boolean             @default(false)
+  strongCharacterDemand         Boolean             @default(false)
+  lastCompAt                    DateTime?
+  createdAt                     DateTime            @default(now())
+  updatedAt                     DateTime            @updatedAt
+  release                       Release?            @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  snapshots                     CardPriceSnapshot[]
+  compSales                     CardCompSale[]
+  inventoryItems                InventoryItem[]
 
   @@index([releaseId])
   @@index([setName])
 }
 
 model CardPriceSnapshot {
-  id                    String   @id @default(cuid())
-  cardId                String
-  rawAveragePrice       Float
-  psa9AverageSalePrice  Float
-  psa10AverageSalePrice Float
-  bgs95AverageSalePrice Float   @default(0)
-  bgs10AverageSalePrice Float   @default(0)
-  bgsBlackLabelAverageSalePrice Float @default(0)
-  psa9EstimatedProfit   Float
-  psa10EstimatedProfit  Float
-  bgs10EstimatedProfit  Float   @default(0)
-  blackLabelEstimatedProfit Float @default(0)
-  maxRawBuyPrice        Float   @default(0)
-  top10Score            Int     @default(0)
-  rating                String
-  snapshotAt            DateTime @default(now())
-  card                  Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  id                            String   @id @default(cuid())
+  cardId                        String
+  rawAveragePrice               Float
+  psa9AverageSalePrice          Float
+  psa10AverageSalePrice         Float
+  bgs95AverageSalePrice         Float    @default(0)
+  bgs10AverageSalePrice         Float    @default(0)
+  bgsBlackLabelAverageSalePrice Float    @default(0)
+  psa9EstimatedProfit           Float
+  psa10EstimatedProfit          Float
+  bgs10EstimatedProfit          Float    @default(0)
+  blackLabelEstimatedProfit     Float    @default(0)
+  maxRawBuyPrice                Float    @default(0)
+  top10Score                    Int      @default(0)
+  rating                        String
+  snapshotAt                    DateTime @default(now())
+  card                          Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId])
   @@index([snapshotAt])
 }
 
 model CardCompSale {
-  id        String   @id @default(cuid())
-  cardId    String
-  source    String
-  salePrice Float
-  grade     String
-  gradeType String   @default("RAW")
-  soldAt    DateTime
-  url       String?
-  sourceUrl String?
-  notes     String?
+  id             String   @id @default(cuid())
+  cardId         String
+  source         String
+  salePrice      Float
+  grade          String
+  gradeType      String   @default("RAW")
+  soldAt         DateTime
+  url            String?
+  sourceUrl      String?
+  notes          String?
   conditionNotes String?
-  sourceQuality String @default("EBAY_SOLD")
-  createdAt DateTime @default(now())
-  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  sourceQuality  String   @default("EBAY_SOLD")
+  createdAt      DateTime @default(now())
+  card           Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId])
   @@index([gradeType])
@@ -394,24 +429,24 @@ model CardCompSale {
 }
 
 model InvestmentReport {
-  id                      String   @id @default(cuid())
-  userId                  String?
-  title                   String
-  generatedAt             DateTime @default(now())
-  periodStart             DateTime
-  periodEnd               DateTime
-  top10RawToGrade         String
-  safestPsa9Flips         String
-  highestPsa10Upside      String
-  beckettCandidates       String
-  avoidOverpriced         String
-  bestBuy                 String?
-  riskiestBuy             String?
-  bestUnder25Raw          String?
-  bestPremiumCard         String?
-  notes                   String?
-  createdAt               DateTime @default(now())
-  user                    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id                 String   @id @default(cuid())
+  userId             String?
+  title              String
+  generatedAt        DateTime @default(now())
+  periodStart        DateTime
+  periodEnd          DateTime
+  top10RawToGrade    String
+  safestPsa9Flips    String
+  highestPsa10Upside String
+  beckettCandidates  String
+  avoidOverpriced    String
+  bestBuy            String?
+  riskiestBuy        String?
+  bestUnder25Raw     String?
+  bestPremiumCard    String?
+  notes              String?
+  createdAt          DateTime @default(now())
+  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([generatedAt])
   @@index([userId])
@@ -484,51 +519,51 @@ model SavedFilterPreset {
 }
 
 model ProductPriorityScore {
-  id                    String   @id @default(cuid())
-  productId             String
-  releaseId             String?
-  buyWatchSkip          String
-  score                 Int
-  retailPriceScore      Int      @default(0)
-  resaleDemandScore     Int      @default(0)
-  setPopularityScore    Int      @default(0)
-  scarcityScore         Int      @default(0)
-  chaseCardScore        Int      @default(0)
-  sealedValueScore      Int      @default(0)
-  cardInvestmentScore   Int      @default(0)
-  profitablePsa9Count   Int      @default(0)
-  psa10Upside           Float    @default(0)
-  manualOverride        String?
-  reason                String?
-  userNotes             String?
-  computedAt            DateTime @default(now())
-  product               Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id                  String   @id @default(cuid())
+  productId           String
+  releaseId           String?
+  buyWatchSkip        String
+  score               Int
+  retailPriceScore    Int      @default(0)
+  resaleDemandScore   Int      @default(0)
+  setPopularityScore  Int      @default(0)
+  scarcityScore       Int      @default(0)
+  chaseCardScore      Int      @default(0)
+  sealedValueScore    Int      @default(0)
+  cardInvestmentScore Int      @default(0)
+  profitablePsa9Count Int      @default(0)
+  psa10Upside         Float    @default(0)
+  manualOverride      String?
+  reason              String?
+  userNotes           String?
+  computedAt          DateTime @default(now())
+  product             Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@index([releaseId])
 }
 
 model NotificationSettings {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  inApp       Boolean  @default(true)
-  sms         Boolean  @default(false)
-  email       Boolean  @default(false)
-  browserPush Boolean  @default(false)
-  phone       String?
-  emailTo     String?
-  quietHoursStart String?
-  quietHoursEnd   String?
-  minimumPriority String   @default("LOW")
-  alertDigestMode Boolean  @default(false)
-  urgentOnlyMode  Boolean  @default(false)
-  highPriorityOverride Boolean @default(true)
-  watchedRetailers String?
-  watchedProducts  String?
-  alertCooldownMinutes Int @default(30)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  inApp                Boolean  @default(true)
+  sms                  Boolean  @default(false)
+  email                Boolean  @default(false)
+  browserPush          Boolean  @default(false)
+  phone                String?
+  emailTo              String?
+  quietHoursStart      String?
+  quietHoursEnd        String?
+  minimumPriority      String   @default("LOW")
+  alertDigestMode      Boolean  @default(false)
+  urgentOnlyMode       Boolean  @default(false)
+  highPriorityOverride Boolean  @default(true)
+  watchedRetailers     String?
+  watchedProducts      String?
+  alertCooldownMinutes Int      @default(30)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model BrowserPushSubscription {

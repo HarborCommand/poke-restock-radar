@@ -5,6 +5,8 @@ export const ratingSchema = z.enum(["BUY", "WATCH", "SKIP", "AVOID"]);
 export const gradeTypeSchema = z.enum(["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"]);
 export const compSourceQualitySchema = z.enum(["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE"]);
 export const eraSchema = z.enum(["MODERN", "VINTAGE"]);
+export const zoneSchema = z.enum(["MIAMI", "FORT_LAUDERDALE", "ORLANDO", "TAMPA", "JACKSONVILLE", "CUSTOM"]);
+export const productVerificationStatusSchema = z.enum(["UNVERIFIED", "VERIFIED_URL", "UPC_MATCHED", "POSSIBLE_MISMATCH"]);
 export const productStatusSchema = z.enum([
   "UNAVAILABLE",
   "SOLD_OUT",
@@ -63,6 +65,16 @@ const httpUrl = z
 const optionalHttpUrl = z.preprocess(
   (value) => (value === "" || value === null || value === undefined ? undefined : value),
   httpUrl.optional()
+);
+
+const optionalLatitude = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().min(-90).max(90).optional()
+);
+
+const optionalLongitude = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().min(-180).max(180).optional()
 );
 
 const optionalUrlList = z.preprocess(
@@ -239,6 +251,7 @@ export const productCreateSchema = z.object({
   sku: optionalSkuLike,
   upc: optionalUpc,
   dpci: optionalDpci,
+  retailerProductId: optionalTrimmed,
   retailPrice: optionalMoney,
   stockStatus: productStatusSchema.default("UNAVAILABLE"),
   priority: prioritySchema.default("MEDIUM"),
@@ -263,11 +276,26 @@ export const storeCreateSchema = z.object({
   address: z.string().trim().min(2),
   city: z.string().trim().min(2),
   state: z.string().trim().min(2).max(24),
+  zone: zoneSchema.default("MIAMI"),
+  latitude: optionalLatitude,
+  longitude: optionalLongitude,
   typicalRestockDays: z.string().trim().min(2),
   typicalRestockTimeWindow: z.string().trim().min(2),
   vendorNotes: optionalTrimmed,
   confidenceScore: z.coerce.number().int().min(0).max(100).default(50),
   notes: optionalTrimmed
+});
+
+export const userAreaPreferencesSchema = z.object({
+  preferredZone: zoneSchema.default("MIAMI"),
+  customZoneName: optionalTrimmed,
+  hideDistantStores: checkboxBoolean.default(false)
+});
+
+export const storePreferenceSchema = z.object({
+  storeId: z.string().min(1),
+  favorite: checkboxBoolean.optional(),
+  hidden: checkboxBoolean.optional()
 });
 
 export const sightingCreateSchema = z.object({

@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Star,
   Store,
   Trash2,
   TrendingUp,
@@ -69,7 +70,8 @@ import type {
   SessionUser,
   SightingDTO,
   StoreDTO,
-  StoreVisitResult
+  StoreVisitResult,
+  Zone
 } from "@/types/radar";
 
 type Tab = "dashboard" | "field" | "products" | "stores" | "releases" | "cards" | "alerts";
@@ -210,6 +212,19 @@ function statusTone(value: string) {
   }
   if (["no_visit", "SKIPPED", "FALSE_POSITIVE"].includes(value)) return "muted";
   return "bad";
+}
+
+function verificationTone(value: string) {
+  if (value === "UPC_MATCHED" || value === "VERIFIED_URL") return "good";
+  if (value === "UNVERIFIED") return "watch";
+  return "bad";
+}
+
+function zoneDisplay(value: Zone, dashboard: DashboardDTO) {
+  if (value === "CUSTOM" && dashboard.userAreaPreferences.customZoneName) {
+    return dashboard.userAreaPreferences.customZoneName;
+  }
+  return dashboard.zoneOptions.find((option) => option.value === value)?.label ?? "Miami";
 }
 
 function firstUrl(value: string | null | undefined) {
@@ -526,6 +541,7 @@ export function RadarApp() {
             setActiveTab={setActiveTab}
             busy={busy}
             busyLabel={busyLabel}
+            submit={submit}
             runAction={runAction}
           />
         ) : null}
@@ -890,12 +906,14 @@ function DashboardPanel({
   setActiveTab,
   busy,
   busyLabel,
+  submit,
   runAction
 }: {
   dashboard: DashboardDTO;
   setActiveTab: (tab: Tab) => void;
   busy: boolean;
   busyLabel: string | null;
+  submit: SubmitHandler;
   runAction: ActionHandler;
 }) {
   const sections = [
@@ -931,6 +949,13 @@ function DashboardPanel({
 
   return (
     <>
+      <QuickActionsRow
+        dashboard={dashboard}
+        setActiveTab={setActiveTab}
+        busy={busy}
+        busyLabel={busyLabel}
+        runAction={runAction}
+      />
       <div className="stat-grid">
         {sections.map((section) => {
           const Icon = section.icon;
@@ -944,42 +969,252 @@ function DashboardPanel({
           );
         })}
       </div>
-      <TodayPlanPanel
-        dashboard={dashboard}
-        setActiveTab={setActiveTab}
-        busy={busy}
-        busyLabel={busyLabel}
-        runAction={runAction}
-      />
+      <section className="chase-now-grid" aria-label="What to chase right now">
+        <section className="action-panel">
+          <PanelHeader title="High-Priority Online Drops" action="Products" onAction={() => setActiveTab("products")} />
+          <ProductStack products={dashboard.todaysChaseList.slice(0, 4)} compact />
+        </section>
+        <section className="action-panel">
+          <PanelHeader title="Stores To Check Today" action="Field Mode" onAction={() => setActiveTab("field")} />
+          <StoreStack
+            stores={dashboard.checkTodayStores.slice(0, 5)}
+            compact
+            busy={busy}
+            busyLabel={busyLabel}
+            runAction={runAction}
+            showPreferenceActions
+          />
+        </section>
+        <section className="action-panel">
+          <PanelHeader title="Biggest Card Opportunities" action="Cards" onAction={() => setActiveTab("cards")} />
+          <CardStack cards={dashboard.cards.slice(0, 4)} />
+        </section>
+        <section className="action-panel">
+          <PanelHeader title="Latest Alerts" action="Alerts" onAction={() => setActiveTab("alerts")} />
+          <AlertMiniStack dashboard={dashboard} />
+        </section>
+      </section>
+      <details className="dashboard-section" open={!dashboard.userAreaPreferences.favoriteStoreIds.length}>
+        <summary>
+          <span>My Area</span>
+          <small>
+            {zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)} -{" "}
+            {dashboard.userAreaPreferences.favoriteStoreIds.length} favorites
+          </small>
+        </summary>
+        <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+      </details>
+      <details className="dashboard-section">
+        <summary>
+          <span>Morning Workflow</span>
+          <small>Inventory, saved filters, recaps, and quick adds</small>
+        </summary>
+        <TodayPlanPanel
+          dashboard={dashboard}
+          setActiveTab={setActiveTab}
+          busy={busy}
+          busyLabel={busyLabel}
+          runAction={runAction}
+        />
+      </details>
       {dashboard.currentUser.role === "ADMIN" ? (
-        <>
+        <details className="dashboard-section">
+          <summary>
+            <span>Admin Setup And Data Quality</span>
+            <small>Checklist, warnings, calibration, and setup tasks</small>
+          </summary>
           <OwnerLaunchChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
           <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
           <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
           <DataQualityPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-        </>
+        </details>
       ) : null}
-      <div className="split-grid">
-        <PanelHeader title="Today's Chase List" action="Products" onAction={() => setActiveTab("products")} />
-        <ProductStack products={dashboard.todaysChaseList.slice(0, 5)} compact />
-      </div>
-      <div className="split-grid">
-        <PanelHeader title="Release Countdown" action="Calendar" onAction={() => setActiveTab("releases")} />
-        <ReleaseStack releases={dashboard.releaseCountdowns.slice(0, 4)} />
-      </div>
-      <div className="split-grid">
-        <PanelHeader title="Check Today" action="Field Mode" onAction={() => setActiveTab("field")} />
-        <StoreStack stores={dashboard.checkTodayStores.slice(0, 4)} />
-      </div>
-      <div className="split-grid">
-        <PanelHeader title="Upcoming Releases" action="Calendar" onAction={() => setActiveTab("releases")} />
-        <ReleaseStack releases={dashboard.releases.slice(0, 3)} />
-      </div>
-      <div className="split-grid">
-        <PanelHeader title="Raw-to-Grade Watchlist" action="Cards" onAction={() => setActiveTab("cards")} />
-        <CardStack cards={dashboard.cards.slice(0, 4)} />
-      </div>
+      <details className="dashboard-section">
+        <summary>
+          <span>Release Timing</span>
+          <small>Countdowns and upcoming product windows</small>
+        </summary>
+        <div className="compact-two-column">
+          <section className="action-panel">
+            <PanelHeader title="Release Countdown" action="Calendar" onAction={() => setActiveTab("releases")} />
+            <ReleaseStack releases={dashboard.releaseCountdowns.slice(0, 4)} />
+          </section>
+          <section className="action-panel">
+            <PanelHeader title="Upcoming Releases" action="Calendar" onAction={() => setActiveTab("releases")} />
+            <ReleaseStack releases={dashboard.releases.slice(0, 3)} />
+          </section>
+        </div>
+      </details>
     </>
+  );
+}
+
+function QuickActionsRow({
+  dashboard,
+  setActiveTab,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  setActiveTab: (tab: Tab) => void;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const canRunChecks = dashboard.currentUser.role === "ADMIN" || dashboard.currentUser.canRunChecks;
+  return (
+    <section className="quick-actions-row" aria-label="Quick actions">
+      <button
+        className="quick-action-button"
+        disabled={busy || !canRunChecks}
+        type="button"
+        onClick={() =>
+          runAction(
+            "Running all checks",
+            () =>
+              requestJson("/api/radar/monitor/run", {
+                method: "POST",
+                body: JSON.stringify({ mode: "all" })
+              }),
+            { success: "Product checks finished" }
+          )
+        }
+      >
+        <RefreshCw size={16} />
+        {busyLabel === "Running all checks" ? "Running" : "Run Checks"}
+      </button>
+      <button className="quick-action-button" type="button" onClick={() => setActiveTab("field")}>
+        <Navigation size={16} />
+        Field Mode
+      </button>
+      <button
+        className="quick-action-button"
+        type="button"
+        aria-label="Today's Chase List"
+        onClick={() => setActiveTab("products")}
+      >
+        <PackageSearch size={16} />
+        Today&apos;s Chase List
+      </button>
+      <button className="quick-action-button" type="button" onClick={() => setActiveTab("alerts")}>
+        <Bell size={16} />
+        Alerts
+      </button>
+      <button className="quick-action-button" type="button" onClick={() => setActiveTab("stores")}>
+        <MapPin size={16} />
+        Add Sighting
+      </button>
+      <button
+        className="quick-action-button"
+        disabled={busy || dashboard.currentUser.role !== "ADMIN"}
+        type="button"
+        onClick={() =>
+          runAction(
+            "Generating weekly investment report",
+            () =>
+              requestJson("/api/radar/cards/reports", {
+                method: "POST",
+                body: JSON.stringify({ notes: "Generated from dashboard quick action." })
+              }),
+            { success: "Weekly report generated" }
+          )
+        }
+      >
+        <FileText size={16} />
+        Generate Report
+      </button>
+    </section>
+  );
+}
+
+function AlertMiniStack({ dashboard }: { dashboard: DashboardDTO }) {
+  const alerts = dashboard.alerts.slice(0, 5);
+  if (!alerts.length) {
+    return <EmptyState icon={Bell} title="No alerts yet" detail="Restock, store, release, and card alerts will appear here." />;
+  }
+  return (
+    <div className="stack compact">
+      {alerts.map((alert) => (
+        <article className="data-card compact-card" key={alert.id}>
+          <div className="card-main">
+            <div className="avatar">
+              <Bell size={15} />
+            </div>
+            <div>
+              <h3>{alert.title}</h3>
+              <p>{alert.reason}</p>
+            </div>
+          </div>
+          <div className="card-actions">
+            <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
+            <span className="chip muted">{relativeTime(alert.timestamp)}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function AreaSetupPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  return (
+    <section className="zone-panel">
+      <div>
+        <p className="eyeline">My Area setup</p>
+        <h2>{zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)}</h2>
+        <p>
+          Field Mode and dashboard store lists prioritize nearby and favorite stores first. Hide distant stores when you only want
+          the route you actually check.
+        </p>
+      </div>
+      <form
+        className="form-grid"
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Saving area preferences",
+            (form) =>
+              requestJson("/api/radar/area-preferences", {
+                method: "PATCH",
+                body: JSON.stringify(formJson(form))
+              }),
+            { reset: false, success: "Area preferences saved" }
+          )
+        }
+      >
+        <SelectInput
+          name="preferredZone"
+          label="Default zone"
+          defaultValue={dashboard.userAreaPreferences.preferredZone}
+          options={dashboard.zoneOptions}
+        />
+        <TextInput name="customZoneName" label="Custom zone name" defaultValue={dashboard.userAreaPreferences.customZoneName ?? ""} />
+        <label className="checkbox-label">
+          <input name="hideDistantStores" type="hidden" value="false" />
+          <input
+            name="hideDistantStores"
+            type="checkbox"
+            value="true"
+            defaultChecked={dashboard.userAreaPreferences.hideDistantStores}
+          />
+          Hide distant stores unless favorited
+        </label>
+        <button className="primary-action" disabled={busy} type="submit">
+          <Save size={16} />
+          {busyLabel === "Saving area preferences" ? "Saving" : "Save Area"}
+        </button>
+      </form>
+    </section>
   );
 }
 
@@ -1427,6 +1662,7 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
               {product.priorityScore?.buyWatchSkip || product.rating}
             </span>
             <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
+            <span className={`chip ${verificationTone(product.verificationStatus)}`}>{formatStatus(product.verificationStatus)}</span>
             {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
             {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
             <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
@@ -1451,9 +1687,15 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
               Next {relativeTime(product.nextCheckAt)}
             </span>
             {product.productType ? <span>{product.productType}</span> : null}
+            {product.sku ? <span>SKU {product.sku}</span> : null}
+            {product.upc ? <span>UPC {product.upc}</span> : null}
+            {product.dpci ? <span>DPCI {product.dpci}</span> : null}
+            {product.retailerProductId ? <span>Retailer ID {product.retailerProductId}</span> : null}
+            {product.verifiedAt ? <span>Verified {relativeTime(product.verifiedAt)}</span> : null}
             {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
             {product.requiredWords ? <span>Required: {product.requiredWords}</span> : null}
             {product.ignoreWords ? <span>Ignore: {product.ignoreWords}</span> : null}
+            {product.verificationNotes ? <span>{product.verificationNotes}</span> : null}
             <span>{product.lastMonitorError || product.lastMonitorResult || "No monitor result yet"}</span>
           </div>
         </article>
@@ -1462,7 +1704,21 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
   );
 }
 
-function StoreStack({ stores }: { stores: StoreDTO[] }) {
+function StoreStack({
+  stores,
+  compact = false,
+  busy = false,
+  busyLabel = null,
+  runAction,
+  showPreferenceActions = false
+}: {
+  stores: StoreDTO[];
+  compact?: boolean;
+  busy?: boolean;
+  busyLabel?: string | null;
+  runAction?: ActionHandler;
+  showPreferenceActions?: boolean;
+}) {
   if (!stores.length) {
     return (
       <EmptyState
@@ -1474,39 +1730,68 @@ function StoreStack({ stores }: { stores: StoreDTO[] }) {
   }
 
   return (
-    <div className="stack">
+    <div className={compact ? "store-row-list compact" : "store-row-list"}>
       {stores.map((store) => (
-        <article className="data-card" id={`store-${store.id}`} key={store.id}>
-          <div className="card-main">
-            <div className="avatar">
-              <MapPin size={16} />
-            </div>
-            <div>
-              <h3>{store.storeName}</h3>
-              <p>
-                {store.city}, {store.state} - {store.prediction.likelyRestockWindow}
-              </p>
-            </div>
-          </div>
-          <div className="card-actions">
-            <span className={`chip ${statusTone(store.prediction.probability)}`}>{store.prediction.probability}</span>
-            <span className="chip muted">{store.prediction.confidenceScore}%</span>
-          </div>
-          <p className="reason-text">{store.prediction.reason}</p>
-          <div className="monitor-meta">
-            <span>
-              <Clock size={13} />
-              Last restock{" "}
-              {store.prediction.daysSinceLastConfirmedRestock === null
-                ? "unknown"
-                : `${store.prediction.daysSinceLastConfirmedRestock}d ago`}
+        <details className="store-row" id={`store-${store.id}`} key={store.id}>
+          <summary className="store-row-summary">
+            <span className={`store-color-bar ${statusTone(store.prediction.probability)}`} aria-hidden="true" />
+            <span className="store-row-main">
+              <strong>{store.storeName}</strong>
+              <span>
+                {store.retailerName} - {store.zoneLabel} - {store.prediction.nextLikelyRestockWindow}
+              </span>
             </span>
-            <span>Avg interval {store.prediction.averageRestockIntervalDays ?? "TBD"}d</span>
-            <span>Overdue {store.prediction.overdueScore}</span>
-            <span>{store.prediction.mostCommonRestockDays.join(", ") || store.typicalRestockDays}</span>
-            <span>{store.prediction.mostCommonRestockTimeWindows.join(", ") || store.typicalRestockTimeWindow}</span>
+            <span className="store-row-score">
+              <strong>{store.prediction.confidenceScore}%</strong>
+              <small>{store.prediction.probability}</small>
+            </span>
+          </summary>
+          <div className="store-row-detail">
+            <p className="reason-text">{store.prediction.reason}</p>
+            <div className="monitor-meta">
+              <span>
+                <Clock size={13} />
+                Last restock{" "}
+                {store.prediction.daysSinceLastConfirmedRestock === null
+                  ? "unknown"
+                  : `${store.prediction.daysSinceLastConfirmedRestock}d ago`}
+              </span>
+              <span>Avg interval {store.prediction.averageRestockIntervalDays ?? "TBD"}d</span>
+              <span>Overdue {store.prediction.overdueScore}</span>
+              <span>{store.city}, {store.state}</span>
+              <span>{store.prediction.mostCommonRestockDays.join(", ") || store.typicalRestockDays}</span>
+              <span>{store.prediction.mostCommonRestockTimeWindows.join(", ") || store.typicalRestockTimeWindow}</span>
+              {store.isFavorite ? <span>Favorite</span> : null}
+            </div>
+            {showPreferenceActions && runAction ? (
+              <div className="row-actions">
+                <button
+                  className={store.isFavorite ? "mini-action solid" : "mini-action"}
+                  disabled={busy}
+                  type="button"
+                  onClick={() =>
+                    runAction(
+                      `${store.isFavorite ? "Removing favorite" : "Adding favorite"} ${store.id}`,
+                      () =>
+                        requestJson("/api/radar/area-preferences", {
+                          method: "POST",
+                          body: JSON.stringify({ storeId: store.id, favorite: !store.isFavorite })
+                        }),
+                      { success: store.isFavorite ? "Favorite removed" : "Store favorited" }
+                    )
+                  }
+                >
+                  <Star size={14} />
+                  {busyLabel === `${store.isFavorite ? "Removing favorite" : "Adding favorite"} ${store.id}`
+                    ? "Saving"
+                    : store.isFavorite
+                      ? "Favorited"
+                      : "Favorite"}
+                </button>
+              </div>
+            ) : null}
           </div>
-        </article>
+        </details>
       ))}
     </div>
   );
@@ -1612,12 +1897,16 @@ function CardStack({ cards }: { cards: CardDTO[] }) {
 type StoreFilterState = {
   highOnly: boolean;
   todayOnly: boolean;
+  nearMe: boolean;
+  favoritesOnly: boolean;
   retailer: string;
 };
 
-function storeMatchesFilters(store: StoreDTO, filters: StoreFilterState) {
+function storeMatchesFilters(store: StoreDTO, filters: StoreFilterState, preferredZone: Zone) {
   if (filters.highOnly && store.prediction.probability !== "HIGH") return false;
   if (filters.todayOnly && !store.prediction.isLikelyToday) return false;
+  if (filters.nearMe && store.zone !== preferredZone && !store.isFavorite) return false;
+  if (filters.favoritesOnly && !store.isFavorite) return false;
   if (filters.retailer !== "ALL" && store.retailerName !== filters.retailer) return false;
   return true;
 }
@@ -1643,21 +1932,27 @@ function FieldModePanel({
 }) {
   const [filters, setFilters] = useState<StoreFilterState>({
     highOnly: false,
-    todayOnly: true,
+    todayOnly: false,
+    nearMe: true,
+    favoritesOnly: false,
     retailer: "ALL"
   });
+  const preferredZone = dashboard.userAreaPreferences.preferredZone;
+  const targetProducts = dashboard.todaysChaseList.filter((product) => product.priorityScore?.buyWatchSkip !== "SKIP").slice(0, 4);
   const filteredStores = useMemo(
     () =>
       (dashboard.checkTodayStores.length ? dashboard.checkTodayStores : dashboard.stores)
-        .filter((store) => storeMatchesFilters(store, filters))
+        .filter((store) => storeMatchesFilters(store, filters, preferredZone))
         .sort(
           (a, b) =>
+            Number(b.isFavorite) - Number(a.isFavorite) ||
+            a.distanceRank - b.distanceRank ||
             Number(b.prediction.isLikelyToday) - Number(a.prediction.isLikelyToday) ||
             b.prediction.confidenceScore - a.prediction.confidenceScore ||
             b.prediction.overdueScore - a.prediction.overdueScore ||
             a.storeName.localeCompare(b.storeName)
         ),
-    [dashboard.checkTodayStores, dashboard.stores, filters]
+    [dashboard.checkTodayStores, dashboard.stores, filters, preferredZone]
   );
 
   function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
@@ -1675,9 +1970,25 @@ function FieldModePanel({
           <div>
             <p className="eyeline">Field Mode</p>
             <h2>Check Today</h2>
-            <p>Fast store decisions, likely windows, target products, and one-tap field logs.</p>
+            <p>Closest and favorite stores first, with big one-tap field logs.</p>
           </div>
-          <span className="chip muted">{filteredStores.length} stops</span>
+          <span className="chip muted">
+            {zoneDisplay(preferredZone, dashboard)} - {filteredStores.length} stops
+          </span>
+        </div>
+        <div className="field-targets">
+          <strong>Look for</strong>
+          <div className="target-strip">
+            {targetProducts.length ? (
+              targetProducts.map((product) => (
+                <span className="chip muted" key={product.id}>
+                  {product.name}
+                </span>
+              ))
+            ) : (
+              <span className="chip muted">ETBs, booster bundles, sleeved boosters, and collection boxes</span>
+            )}
+          </div>
         </div>
         <div className="field-filter-grid">
           <label className="checkbox-label">
@@ -1687,6 +1998,14 @@ function FieldModePanel({
           <label className="checkbox-label">
             <input name="todayOnly" type="checkbox" checked={filters.todayOnly} onChange={updateFilter} />
             Today only
+          </label>
+          <label className="checkbox-label">
+            <input name="nearMe" type="checkbox" checked={filters.nearMe} onChange={updateFilter} />
+            Near Me
+          </label>
+          <label className="checkbox-label">
+            <input name="favoritesOnly" type="checkbox" checked={filters.favoritesOnly} onChange={updateFilter} />
+            Favorites
           </label>
           <SelectInput
             name="retailer"
@@ -1739,6 +2058,8 @@ function FieldStoreCard({
     productSeen: string;
     icon: typeof Check;
   }> = [
+    { resultType: "no_visit", label: "I'm Here", quantityEstimate: "Arrived", productSeen: "Store arrival", icon: MapPin },
+    { resultType: "stock_seen", label: "Found Product", quantityEstimate: "1+", productSeen: fallbackProduct, icon: Sparkles },
     { resultType: "stock_seen", label: "Seen Stock", quantityEstimate: "1+", productSeen: fallbackProduct, icon: Check },
     { resultType: "empty_shelf", label: "Empty Shelf", quantityEstimate: "0", productSeen: "Pokemon TCG shelf", icon: X },
     { resultType: "vendor_spotted", label: "Vendor Spotted", quantityEstimate: "Vendor present", productSeen: "Vendor", icon: Activity },
@@ -1830,7 +2151,7 @@ function FieldStoreCard({
             <button
               className={`quick-action ${statusTone(action.resultType)}`}
               disabled={busy}
-              key={action.resultType}
+              key={action.label}
               onClick={() => logQuickAction(action)}
               type="button"
             >
@@ -1988,7 +2309,7 @@ function ProductsPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
-          sample={`retailer,name,url,setName,productType,sku,upc,dpci,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,,087-12-1234,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
+          sample={`retailer,name,url,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/p/example-product/-/A-12345678,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650123456,087-12-1234,12345678,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
         />
       ) : null}
       {isAdmin ? (
@@ -2143,6 +2464,7 @@ function ProductAddWizard({
             <TextInput name="sku" label="SKU / ASIN / TCIN" />
             <TextInput name="upc" label="UPC" inputMode="numeric" placeholder="8 to 14 digits" />
             <TextInput name="dpci" label="DPCI" placeholder="087-12-1234" />
+            <TextInput name="retailerProductId" label="Retailer product ID" placeholder="TCIN, offer ID, item ID" />
             <TextInput name="retailPrice" label="Retail price" type="number" min="0" max="100000" step="0.01" />
           </div>
         </fieldset>
@@ -2310,9 +2632,12 @@ function EditableProduct({
             {product.retailerName} - Score {product.priorityScore?.score ?? 0}
           </span>
         </div>
-        <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
-          Go <ExternalLink size={14} />
-        </a>
+        <div className="row-actions">
+          <span className={`chip ${verificationTone(product.verificationStatus)}`}>{formatStatus(product.verificationStatus)}</span>
+          <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
+            Go <ExternalLink size={14} />
+          </a>
+        </div>
       </div>
       <div className="form-grid">
         <TextInput name="name" label="Product name" defaultValue={product.name} required />
@@ -2339,6 +2664,7 @@ function EditableProduct({
         <TextInput name="sku" label="SKU" defaultValue={product.sku ?? ""} />
         <TextInput name="upc" label="UPC" inputMode="numeric" defaultValue={product.upc ?? ""} />
         <TextInput name="dpci" label="DPCI" defaultValue={product.dpci ?? ""} />
+        <TextInput name="retailerProductId" label="Retailer product ID" defaultValue={product.retailerProductId ?? ""} />
         <TextInput
           name="retailPrice"
           label="Retail price"
@@ -2401,6 +2727,10 @@ function EditableProduct({
       </div>
       {product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
       <div className="monitor-status">
+        <span>Verification: {formatStatus(product.verificationStatus)}</span>
+        <span>Verified: {dateTime(product.verifiedAt)}</span>
+        <span>Final URL: {product.verifiedFinalUrl || "Not verified"}</span>
+        <span>Verification notes: {product.verificationNotes || "None"}</span>
         <span>Last checked: {dateTime(product.lastCheckedAt)}</span>
         <span>Last successful: {dateTime(product.lastSuccessfulCheckedAt)}</span>
         <span>Next estimate: {dateTime(product.nextCheckAt)}</span>
@@ -2459,6 +2789,21 @@ function EditableProduct({
         >
           <Trophy size={14} />
           {busyLabel === `Bought product ${product.id}` ? "Logging" : "I Bought This"}
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Verifying product ${product.id}`,
+              () => requestJson(`/api/radar/products/${product.id}/verify`, { method: "POST" }),
+              { success: "Product link verification finished" }
+            )
+          }
+        >
+          <ShieldCheck size={14} />
+          {busyLabel === `Verifying product ${product.id}` ? "Verifying" : "Verify Product Link"}
         </button>
         <button
           className="mini-action"
@@ -2645,11 +2990,23 @@ function StoresPanel({
   const [filters, setFilters] = useState<StoreFilterState>({
     highOnly: false,
     todayOnly: false,
+    nearMe: false,
+    favoritesOnly: false,
     retailer: "ALL"
   });
+  const preferredZone = dashboard.userAreaPreferences.preferredZone;
   const filteredStores = useMemo(
-    () => dashboard.stores.filter((store) => storeMatchesFilters(store, filters)),
-    [dashboard.stores, filters]
+    () =>
+      dashboard.stores
+        .filter((store) => storeMatchesFilters(store, filters, preferredZone))
+        .sort(
+          (a, b) =>
+            Number(b.isFavorite) - Number(a.isFavorite) ||
+            a.distanceRank - b.distanceRank ||
+            b.prediction.confidenceScore - a.prediction.confidenceScore ||
+            a.storeName.localeCompare(b.storeName)
+        ),
+    [dashboard.stores, filters, preferredZone]
   );
 
   function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
@@ -2663,6 +3020,7 @@ function StoresPanel({
   return (
     <>
       <PanelHeader title="Local Store Predictions" />
+      <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
       <section className="form-panel">
         <div className="edit-card-heading">
           <div>
@@ -2679,6 +3037,14 @@ function StoresPanel({
             <input name="todayOnly" type="checkbox" checked={filters.todayOnly} onChange={updateFilter} />
             Today only
           </label>
+          <label className="checkbox-label">
+            <input name="nearMe" type="checkbox" checked={filters.nearMe} onChange={updateFilter} />
+            Near Me
+          </label>
+          <label className="checkbox-label">
+            <input name="favoritesOnly" type="checkbox" checked={filters.favoritesOnly} onChange={updateFilter} />
+            Favorites
+          </label>
           <SelectInput
             name="retailer"
             label="Retailer"
@@ -2688,7 +3054,14 @@ function StoresPanel({
           />
         </div>
       </section>
-      <StoreStack stores={filteredStores} />
+      <StoreStack
+        stores={filteredStores}
+        compact
+        busy={busy}
+        busyLabel={busyLabel}
+        runAction={runAction}
+        showPreferenceActions
+      />
       <section className="form-panel">
         <h2>Log Manual Sighting</h2>
         <form
@@ -2759,6 +3132,9 @@ function StoresPanel({
             <TextInput name="address" label="Address" required />
             <TextInput name="city" label="City" required />
             <TextInput name="state" label="State" maxLength={24} required />
+            <SelectInput name="zone" label="Zone" defaultValue={dashboard.userAreaPreferences.preferredZone} options={dashboard.zoneOptions} />
+            <TextInput name="latitude" label="Latitude" type="number" min="-90" max="90" step="0.000001" />
+            <TextInput name="longitude" label="Longitude" type="number" min="-180" max="180" step="0.000001" />
             <TextInput name="typicalRestockDays" label="Restock days" placeholder="Tuesday,Friday" required />
             <TextInput name="typicalRestockTimeWindow" label="Restock window" placeholder="8:00 AM - 11:00 AM" required />
             <TextInput name="confidenceScore" label="Confidence" type="number" min="0" max="100" defaultValue="60" />
@@ -2778,7 +3154,7 @@ function StoresPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
-          sample={`retailer,storeName,address,city,state,typicalRestockDays,typicalRestockTimeWindow,vendorNotes,confidenceScore,notes\nTarget,Target Northside,100 Market Plaza,Orlando,FL,\"Tuesday,Friday\",8:00 AM - 11:00 AM,Card aisle after front lanes,70,Manual visit log only`}
+          sample={`retailer,storeName,address,city,state,zone,latitude,longitude,typicalRestockDays,typicalRestockTimeWindow,vendorNotes,confidenceScore,notes\nTarget,Target Midtown Miami,3401 N Miami Ave,Miami,FL,MIAMI,25.8072,-80.1937,"Tuesday,Friday",8:00 AM - 11:00 AM,Card aisle after front lanes,70,Manual visit log only`}
         />
       ) : null}
       {isAdmin ? (
@@ -2791,6 +3167,7 @@ function StoresPanel({
                   key={store.id}
                   store={store}
                   retailers={dashboard.retailers}
+                  zoneOptions={dashboard.zoneOptions}
                   busy={busy}
                   busyLabel={busyLabel}
                   submit={submit}
@@ -2810,6 +3187,7 @@ function StoresPanel({
 function EditableStore({
   store,
   retailers,
+  zoneOptions,
   busy,
   busyLabel,
   submit,
@@ -2817,6 +3195,7 @@ function EditableStore({
 }: {
   store: StoreDTO;
   retailers: RetailerDTO[];
+  zoneOptions: DashboardDTO["zoneOptions"];
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
@@ -2859,6 +3238,17 @@ function EditableStore({
         <TextInput name="address" label="Address" defaultValue={store.address} required />
         <TextInput name="city" label="City" defaultValue={store.city} required />
         <TextInput name="state" label="State" maxLength={24} defaultValue={store.state} required />
+        <SelectInput name="zone" label="Zone" defaultValue={store.zone} options={zoneOptions} />
+        <TextInput name="latitude" label="Latitude" type="number" min="-90" max="90" step="0.000001" defaultValue={store.latitude ?? ""} />
+        <TextInput
+          name="longitude"
+          label="Longitude"
+          type="number"
+          min="-180"
+          max="180"
+          step="0.000001"
+          defaultValue={store.longitude ?? ""}
+        />
         <TextInput name="typicalRestockDays" label="Restock days" defaultValue={store.typicalRestockDays} required />
         <TextInput
           name="typicalRestockTimeWindow"

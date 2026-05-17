@@ -18,6 +18,8 @@ export type GradeType = "RAW" | "PSA_9" | "PSA_10" | "BGS_9_5" | "BGS_10" | "BGS
 export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "MANUAL_ESTIMATE";
 export type Era = "MODERN" | "VINTAGE";
 export type StoreVisitResult = "stock_seen" | "empty_shelf" | "vendor_spotted" | "bought_product" | "no_visit";
+export type Zone = "MIAMI" | "FORT_LAUDERDALE" | "ORLANDO" | "TAMPA" | "JACKSONVILLE" | "CUSTOM";
+export type ProductVerificationStatus = "UNVERIFIED" | "VERIFIED_URL" | "UPC_MATCHED" | "POSSIBLE_MISMATCH";
 
 export type UserPermissions = {
   canAddSightings: boolean;
@@ -32,6 +34,9 @@ export type SessionUser = {
   name: string;
   role: Role;
   sessionVersion?: number;
+  preferredZone?: Zone;
+  customZoneName?: string | null;
+  hideDistantStores?: boolean;
 } & UserPermissions;
 
 export type FriendUserDTO = SessionUser & {
@@ -151,6 +156,11 @@ export type ProductDTO = {
   sku: string | null;
   upc: string | null;
   dpci: string | null;
+  retailerProductId: string | null;
+  verificationStatus: ProductVerificationStatus;
+  verifiedAt: string | null;
+  verifiedFinalUrl: string | null;
+  verificationNotes: string | null;
   retailPrice: number | null;
   stockStatus: ProductStatus;
   alertStatus: boolean;
@@ -204,6 +214,13 @@ export type StoreDTO = {
   address: string;
   city: string;
   state: string;
+  zone: Zone;
+  zoneLabel: string;
+  latitude: number | null;
+  longitude: number | null;
+  isFavorite: boolean;
+  hiddenByUser: boolean;
+  distanceRank: number;
   notes: string | null;
   typicalRestockDays: string;
   typicalRestockTimeWindow: string;
@@ -224,6 +241,19 @@ export type SightingDTO = {
   shelfPhotoUrl: string | null;
   notes: string | null;
   userName: string;
+};
+
+export type ZoneOptionDTO = {
+  value: Zone;
+  label: string;
+};
+
+export type UserAreaPreferencesDTO = {
+  preferredZone: Zone;
+  customZoneName: string | null;
+  hideDistantStores: boolean;
+  favoriteStoreIds: string[];
+  hiddenStoreIds: string[];
 };
 
 export type ReleaseDTO = {
@@ -566,6 +596,8 @@ export type InvestmentReportDTO = {
 
 export type DashboardDTO = {
   currentUser: SessionUser;
+  zoneOptions: ZoneOptionDTO[];
+  userAreaPreferences: UserAreaPreferencesDTO;
   users: FriendUserDTO[];
   friendInvites: FriendInviteDTO[];
   auditLogs: AuditLogDTO[];

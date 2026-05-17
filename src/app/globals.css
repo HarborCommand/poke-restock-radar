@@ -1268,6 +1268,208 @@ textarea {
   grid-template-columns: 1fr;
 }
 
+.quick-actions-row,
+.chase-now-grid,
+.compact-two-column,
+.store-row-list,
+.dashboard-section,
+.zone-panel,
+.action-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-actions-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.quick-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  padding: 0 10px;
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.quick-action-button:first-child {
+  border-color: rgba(56, 215, 125, 0.32);
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.quick-action-button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.chase-now-grid {
+  grid-template-columns: 1fr;
+}
+
+.action-panel,
+.dashboard-section,
+.zone-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(18, 21, 20, 0.84);
+  padding: 12px;
+}
+
+.dashboard-section {
+  padding: 0;
+  overflow: hidden;
+}
+
+.dashboard-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  padding: 13px 14px;
+}
+
+.dashboard-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dashboard-section > summary span {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.dashboard-section > summary small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.dashboard-section > :not(summary) {
+  margin: 0 12px 12px;
+}
+
+.zone-panel {
+  background:
+    linear-gradient(135deg, rgba(90, 169, 255, 0.08), rgba(56, 215, 125, 0.04)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.zone-panel h2 {
+  margin: 4px 0 6px;
+  font-size: 1.15rem;
+}
+
+.zone-panel p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.store-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+  overflow: hidden;
+}
+
+.store-row-summary {
+  display: grid;
+  grid-template-columns: 5px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  min-height: 58px;
+  padding: 9px 10px 9px 0;
+}
+
+.store-row-summary::-webkit-details-marker {
+  display: none;
+}
+
+.store-color-bar {
+  align-self: stretch;
+  border-radius: 0 6px 6px 0;
+  background: var(--red);
+}
+
+.store-color-bar.good {
+  background: var(--green);
+}
+
+.store-color-bar.watch {
+  background: var(--yellow);
+}
+
+.store-color-bar.muted {
+  background: var(--subtle);
+}
+
+.store-row-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.store-row-main strong {
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.store-row-main span,
+.store-row-score small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.store-row-score {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  color: var(--text);
+}
+
+.store-row-score strong {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.store-row-detail {
+  display: grid;
+  gap: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  padding: 10px;
+}
+
+.field-targets {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 10px;
+}
+
+.field-targets strong {
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
 .access-form {
   display: grid;
   gap: 9px;
@@ -1606,16 +1808,33 @@ textarea {
     align-items: center;
   }
 
+  .stack.compact .data-card,
+  .today-plan-panel .data-card,
+  .plan-list .data-card,
+  .action-panel .data-card {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
   .form-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .field-filter-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .quick-action-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .quick-actions-row {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .chase-now-grid,
+  .compact-two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .template-grid {
@@ -1694,6 +1913,9 @@ textarea {
   }
 
   .stat-grid,
+  .quick-actions-row,
+  .chase-now-grid,
+  .dashboard-section,
   .today-plan-panel,
   .form-panel,
   .split-grid,
@@ -1784,8 +2006,10 @@ textarea {
   .data-card,
   .edit-card,
   .field-mode-panel,
-  .field-card,
-  .split-grid,
+    .field-card,
+    .action-panel,
+    .zone-panel,
+    .split-grid,
   .form-panel,
   .admin-tools {
     padding: 12px;

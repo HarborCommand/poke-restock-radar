@@ -330,20 +330,30 @@ The product wizard steps are:
 
 Retailer URL validation is enforced when products are created or edited. Examples:
 
-- Pokemon Center: `https://www.pokemoncenter.com/category/trading-card-game`
-- Target: `https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle`
-- Walmart: `https://www.walmart.com/search?q=pokemon%20tcg`
-- GameStop: `https://www.gamestop.com/toys-games/trading-cards`
+- Pokemon Center: `https://www.pokemoncenter.com/product/999-00001/pokemon-tcg-example-elite-trainer-box`
+- Target: `https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002`
+- Walmart: `https://www.walmart.com/ip/Pokemon-TCG-Example-Collection-Box/99900003`
+- GameStop: `https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-example/999005`
 
-Use exact product pages when available. Search/category URLs are acceptable for setup notes but less precise for monitor checks.
+Use exact product pages whenever possible. The `Go / Buy Now` button opens the exact URL saved on the product, and checkout stays manual on the official retailer site.
+
+### Product Link Verification
+
+Admin products include `Verify Product Link`. The check safely fetches the public URL, follows normal redirects, and records:
+
+- `Verified URL`
+- `UPC Matched`
+- `Possible Mismatch`
+
+The verifier compares the final URL host, UPC, SKU, DPCI, retailer product ID, and public title words. A possible mismatch warning means the saved link may redirect to an unrelated product or no longer prove the identifiers. It never adds to cart, checks out, logs in, bypasses queues, or bypasses bot protection.
 
 ### Bulk Product Import
 
 CSV headers:
 
 ```csv
-retailer,name,url,setName,productType,sku,upc,dpci,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes
-Target,Pokemon TCG Booster Bundle,https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,,087-12-1234,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only
+retailer,name,url,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes
+Target,Pokemon TCG Booster Bundle,https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650990002,087-12-1234,99900002,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only
 ```
 
 JSON format:
@@ -353,10 +363,12 @@ JSON format:
   {
     "retailer": "Target",
     "name": "Pokemon TCG Booster Bundle",
-    "url": "https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle",
+    "url": "https://www.target.com/p/pokemon-trading-card-game-example-booster-bundle/-/A-99900002",
     "setName": "Mega Evolution-Chaos Rising",
     "productType": "Booster Bundle",
+    "upc": "0820650990002",
     "dpci": "087-12-1234",
+    "retailerProductId": "99900002",
     "retailPrice": 26.99,
     "stockStatus": "UNAVAILABLE",
     "priority": "HIGH",
@@ -375,11 +387,23 @@ JSON format:
 CSV headers:
 
 ```csv
-retailer,storeName,address,city,state,typicalRestockDays,typicalRestockTimeWindow,vendorNotes,confidenceScore,notes
-Target,Target Northside,100 Market Plaza,Orlando,FL,"Tuesday,Friday",8:00 AM - 11:00 AM,Card aisle after front lanes,70,Manual visit log only
+retailer,storeName,address,city,state,zone,latitude,longitude,typicalRestockDays,typicalRestockTimeWindow,vendorNotes,confidenceScore,notes
+Target,Target Midtown Miami,3401 N Miami Ave,Miami,FL,MIAMI,25.8072,-80.1937,"Tuesday,Friday",8:00 AM - 11:00 AM,Card aisle after front lanes,70,Manual visit log only
 ```
 
 JSON uses the same field names in an array or `{ "stores": [...] }`.
+
+### Zone And Field Mode Setup
+
+Each user can set a default zone from Miami, Fort Lauderdale, Orlando, Tampa, Jacksonville, or Custom. Store lists and Field Mode prioritize favorite stores and stores in the selected zone first. Users can hide distant stores, favorite saved stores, and use filters for Near Me, Favorites, High Probability, and Today.
+
+The Admin demo reset now seeds Miami and Fort Lauderdale examples instead of Orlando stores.
+
+### Dashboard And Store UI
+
+The dashboard is organized around the first question: what should I chase right now? The first viewport shows quick actions, high-priority online drops, stores to check today, biggest card opportunities, and latest alerts. Setup, recaps, releases, and admin calibration tools are collapsed below that.
+
+Store predictions use compact expandable rows with confidence, next likely window, retailer, zone, and quick favorite/hide controls. Field Mode keeps product targets at the top and uses large one-tap buttons for I'm Here, Found Product, Seen Stock, Empty Shelf, Vendor Spotted, Bought Product, No Visit, and Add Note.
 
 ### Bulk Release Import
 
@@ -399,7 +423,8 @@ Real release seed examples currently include public Pokemon.com examples for `Me
 The dashboard flags:
 
 - Missing product URL
-- Missing SKU/UPC/DPCI
+- Missing SKU/UPC/DPCI/retailer product ID
+- Possible product URL mismatch
 - Missing release/set link
 - No alert channel enabled
 - Monitored product not checked in 24 hours

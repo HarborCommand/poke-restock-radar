@@ -127,6 +127,9 @@ export async function currentUser(): Promise<SessionUser | null> {
       canAddComps: true,
       canRunChecks: true,
       canReceivePushAlerts: true,
+      preferredZone: true,
+      customZoneName: true,
+      hideDistantStores: true,
       disabledAt: true,
       sessionVersion: true
     }
@@ -144,6 +147,9 @@ export async function currentUser(): Promise<SessionUser | null> {
     canAddComps: user.canAddComps ?? defaultFriendPermissions.canAddComps,
     canRunChecks: user.canRunChecks ?? defaultFriendPermissions.canRunChecks,
     canReceivePushAlerts: user.canReceivePushAlerts ?? defaultFriendPermissions.canReceivePushAlerts,
+    preferredZone: user.preferredZone as SessionUser["preferredZone"],
+    customZoneName: user.customZoneName,
+    hideDistantStores: user.hideDistantStores,
     sessionVersion: user.sessionVersion
   };
 }
