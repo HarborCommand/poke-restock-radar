@@ -13,6 +13,7 @@
     "auth:smoke": "tsx scripts/auth-smoke.ts",
     "alert:smoke": "tsx scripts/alert-smoke.ts",
     "smoke:prod": "tsx scripts/final-production-smoke.ts",
+    "qa:viewport": "tsx scripts/viewport-qa.ts",
     "monitor": "tsx scripts/run-monitor.ts",
     "backup:json": "tsx scripts/backup-data.ts",
     "restore:json": "tsx scripts/restore-data.ts",

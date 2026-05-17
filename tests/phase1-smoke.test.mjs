@@ -25,6 +25,7 @@ test("Phase 1 package scripts are present", () => {
     "check",
     "lint",
     "test",
+    "qa:viewport",
     "monitor",
     "backup:json",
     "restore:json",
@@ -262,12 +263,21 @@ test("Phase 18 owner launch and alert calibration pieces exist", () => {
 
 test("dashboard compact cards stay readable instead of narrow columns", () => {
   const css = readFileSync(join(root, "src", "app", "globals.css"), "utf8");
-  assert.match(css, /\.chase-now-grid\.apple-chase-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
-  assert.match(css, /\.product-card\s*\{[^}]*grid-template-columns:\s*minmax\(150px,\s*210px\)\s*minmax\(0,\s*1fr\)/s);
-  assert.match(css, /\.product-image-frame\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3/s);
+  assert.match(css, /box-sizing:\s*border-box/);
+  assert.match(css, /overflow-wrap:\s*anywhere/);
+  assert.match(css, /body\s*\{[^}]*overflow-x:\s*hidden/s);
+  assert.match(css, /\.product-card\s*\{[^}]*grid-template-columns:\s*minmax\(128px,\s*176px\)\s*minmax\(0,\s*1fr\)/s);
+  assert.match(css, /\.product-image-frame\s*\{[^}]*height:\s*148px/s);
+  assert.match(css, /\.product-image-frame img\s*\{[^}]*object-fit:\s*contain !important/s);
+  assert.match(css, /\.field-filter-grid\s*\{[^}]*display:\s*flex/s);
   assert.match(css, /\.today-plan-panel,\s*\n\s*\.form-panel/s);
   assert.match(css, /\.daily-plan-grid\s*\{[^}]*minmax\(320px,\s*1fr\)/s);
   assert.match(css, /font-size:\s*clamp\(1\.45rem,\s*6vw,\s*2\.75rem\)/);
+
+  const viewportQa = readFileSync(join(root, "scripts", "viewport-qa.ts"), "utf8");
+  for (const phrase of ["mobile-390", "tablet-768", "desktop-1440", "bodyScrollWidth", "overflowingElements", "imageLeaks"]) {
+    assert.match(viewportQa, new RegExp(phrase), `missing viewport QA phrase ${phrase}`);
+  }
 });
 
 test("Auth hardening and password reset flow pieces exist", () => {
