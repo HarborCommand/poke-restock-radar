@@ -5,18 +5,54 @@ import { prisma } from "@/lib/db";
 import type { Role, SessionUser } from "@/types/radar";
 
 const COOKIE_NAME = "poke_radar_session";
+const HOST_COOKIE_NAME = "__Host-poke_radar_session";
 const SESSION_DAYS = 14;
+const FALLBACK_SECRET = "local-dev-secret-change-before-sharing-poke-restock-radar";
 
 type TokenPayload = {
   userId: string;
   email: string;
   role: Role;
+  sessionVersion?: number;
   exp: number;
 };
 
+export function sessionCookieName() {
+  return process.env.NODE_ENV === "production" ? HOST_COOKIE_NAME : COOKIE_NAME;
+}
+
+export function sessionCookieNames() {
+  const names = [sessionCookieName(), COOKIE_NAME];
+  return Array.from(new Set(names));
+}
+
+export function authRuntimeConfig() {
+  const configuredSecret = process.env.AUTH_SECRET?.trim() || null;
+  const isProduction = process.env.NODE_ENV === "production";
+  const authSecretConfigured = Boolean(configuredSecret);
+  const authSecretStrong =
+    Boolean(configuredSecret) &&
+    configuredSecret!.length >= 32 &&
+    configuredSecret !== FALLBACK_SECRET &&
+    !configuredSecret!.toLowerCase().includes("replace-with");
+  return {
+    authSecretConfigured,
+    authSecretStrong,
+    authReady: !isProduction || authSecretStrong,
+    sessionCookieName: sessionCookieName(),
+    legacyCookieName: COOKIE_NAME,
+    secureCookie: isProduction,
+    sameSite: "lax" as const,
+    sessionDays: SESSION_DAYS
+  };
+}
+
 function authSecret() {
-  const secret = process.env.AUTH_SECRET;
-  return secret || "local-dev-secret-change-before-sharing-poke-restock-radar";
+  const secret = process.env.AUTH_SECRET?.trim();
+  if (process.env.NODE_ENV === "production" && (!secret || !authRuntimeConfig().authSecretStrong)) {
+    throw new Error("AUTH_SECRET is not configured with a strong production value.");
+  }
+  return secret || FALLBACK_SECRET;
 }
 
 function encode(input: string) {
@@ -36,6 +72,7 @@ export function createSessionToken(user: SessionUser) {
     userId: user.id,
     email: user.email,
     role: user.role,
+    sessionVersion: user.sessionVersion ?? 0,
     exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000
   };
   const body = encode(JSON.stringify(payload));
@@ -45,7 +82,12 @@ export function createSessionToken(user: SessionUser) {
 export function verifySessionToken(token: string): TokenPayload | null {
   const [body, signature] = token.split(".");
   if (!body || !signature) return null;
-  const expected = sign(body);
+  let expected: string;
+  try {
+    expected = sign(body);
+  } catch {
+    return null;
+  }
   const actualBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);
   if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
@@ -61,22 +103,26 @@ export function verifySessionToken(token: string): TokenPayload | null {
 
 export async function currentUser(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
-  const token = cookieStore.get(COOKIE_NAME)?.value;
+  const token = sessionCookieNames()
+    .map((name) => cookieStore.get(name)?.value)
+    .find(Boolean);
   if (!token) return null;
   const payload = verifySessionToken(token);
   if (!payload) return null;
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, name: true, role: true }
+    select: { id: true, email: true, name: true, role: true, sessionVersion: true }
   });
 
   if (!user) return null;
+  if ((payload.sessionVersion ?? 0) !== user.sessionVersion) return null;
   return {
     id: user.id,
     email: user.email,
     name: user.name,
-    role: user.role as Role
+    role: user.role as Role,
+    sessionVersion: user.sessionVersion
   };
 }
 
@@ -96,7 +142,7 @@ export function requireAdmin(user: SessionUser) {
 }
 
 export function setSessionCookie(response: NextResponse, token: string) {
-  response.cookies.set(COOKIE_NAME, token, {
+  response.cookies.set(sessionCookieName(), token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -106,11 +152,13 @@ export function setSessionCookie(response: NextResponse, token: string) {
 }
 
 export function clearSessionCookie(response: NextResponse) {
-  response.cookies.set(COOKIE_NAME, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0
-  });
+  for (const name of sessionCookieNames()) {
+    response.cookies.set(name, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 0
+    });
+  }
 }

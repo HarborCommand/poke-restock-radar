@@ -159,10 +159,44 @@ const cardNumber = z
   .max(24)
   .regex(/^[A-Za-z0-9-]{1,8}(\/[A-Za-z0-9-]{1,8})?$/, "Use a card number like 025/198, SV001, or 123");
 
+const securePassword = z
+  .string()
+  .min(12, "Use at least 12 characters")
+  .max(128, "Password must stay under 128 characters")
+  .regex(/[A-Z]/, "Include at least one uppercase letter")
+  .regex(/[a-z]/, "Include at least one lowercase letter")
+  .regex(/[0-9]/, "Include at least one number");
+
 export const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(1)
 });
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email()
+});
+
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(24).max(256),
+    password: securePassword,
+    confirmPassword: z.string()
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords must match"
+  });
+
+export const adminPasswordResetSchema = z
+  .object({
+    currentPassword: z.string().min(1),
+    password: securePassword,
+    confirmPassword: z.string()
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords must match"
+  });
 
 export const productCreateSchema = z.object({
   name: z.string().trim().min(2),

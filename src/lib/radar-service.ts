@@ -967,7 +967,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const cardDTOs = cards.map(cardToDTO);
   const alertDTOs = alerts.map(alertToDTO);
   const releaseDTOs = releases.map((release) => releaseToDTO(release, releaseMetrics(release, products, cards)));
-  const health = currentUser.role === "ADMIN" ? await getAppHealth() : null;
+  const health = currentUser.role === "ADMIN" ? await getAppHealth(currentUser) : null;
   const accuracyStats = await monitorAccuracyStats();
   const notificationSettingsDTO = notificationSettingsToDTO(notificationSettings);
   const setup = setupChecklist({
@@ -2424,6 +2424,7 @@ async function clearRadarData(includeUsers: boolean) {
   await prisma.productPriorityScore.deleteMany();
   await prisma.monitorLog.deleteMany();
   await prisma.investmentReport.deleteMany();
+  await prisma.passwordResetToken.deleteMany();
   await prisma.cardCompSale.deleteMany();
   await prisma.cardPriceSnapshot.deleteMany();
   await prisma.restockHistory.deleteMany();
@@ -2714,6 +2715,9 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       name: String(row.name),
       role: String(row.role),
       passwordHash: String(row.passwordHash),
+      sessionVersion: row.sessionVersion === undefined ? 0 : Number(row.sessionVersion),
+      lastLoginAt: toNullableDate(row.lastLoginAt),
+      passwordChangedAt: toNullableDate(row.passwordChangedAt),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
     }))

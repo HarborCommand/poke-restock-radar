@@ -562,7 +562,9 @@ export function RadarApp() {
 
       <NotificationSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
 
-      {isAdmin && dashboard.health ? <AdminHealthPanel health={dashboard.health} /> : null}
+      {isAdmin && dashboard.health ? (
+        <AdminHealthPanel health={dashboard.health} busy={busy} busyLabel={busyLabel} submit={submit} />
+      ) : null}
 
       {isAdmin ? <AdminTools busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} /> : null}
 
@@ -588,6 +590,55 @@ function LoginShell({
   error: string | null;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const resetTokenFromUrl =
+    typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("resetToken") || "";
+  const [mode, setMode] = useState<"login" | "forgot" | "reset">(resetTokenFromUrl ? "reset" : "login");
+  const [localBusy, setLocalBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [localMessage, setLocalMessage] = useState<string | null>(null);
+  const formBusy = busy || localBusy;
+
+  async function handleForgotPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLocalBusy(true);
+    setLocalError(null);
+    setLocalMessage(null);
+    try {
+      const result = await requestJson<{ message: string; expiresInMinutes: number }>("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify(formJson(event.currentTarget))
+      });
+      event.currentTarget.reset();
+      setLocalMessage(`${result.message} Reset links expire in ${result.expiresInMinutes} minutes.`);
+    } catch (forgotError) {
+      setLocalError(forgotError instanceof Error ? forgotError.message : "Password reset request failed");
+    } finally {
+      setLocalBusy(false);
+    }
+  }
+
+  async function handleResetPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLocalBusy(true);
+    setLocalError(null);
+    setLocalMessage(null);
+    try {
+      const form = event.currentTarget;
+      await requestJson("/api/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify(formJson(form))
+      });
+      form.reset();
+      if (typeof window !== "undefined") window.history.replaceState(null, "", window.location.pathname);
+      setMode("login");
+      setLocalMessage("Password reset. Sign in with the new password.");
+    } catch (resetError) {
+      setLocalError(resetError instanceof Error ? resetError.message : "Password reset failed");
+    } finally {
+      setLocalBusy(false);
+    }
+  }
+
   return (
     <main className="screen login-screen">
       <section className="login-panel">
@@ -599,21 +650,69 @@ function LoginShell({
           <h1>Poke Restock Radar</h1>
           <p>Manual restock, store, release, alert, and card grading radar for a small trusted group.</p>
         </div>
-        <form className="form-stack" onSubmit={onSubmit}>
-          <label>
-            Email
-            <input name="email" type="email" autoComplete="email" defaultValue="admin@poke.local" required />
-          </label>
-          <label>
-            Password
-            <input name="password" type="password" autoComplete="current-password" defaultValue="radar-admin" required />
-          </label>
-          {error ? <p className="form-error">{error}</p> : null}
-          <button className="primary-action full" disabled={busy} type="submit">
-            <Lock size={16} />
-            {busy ? "Signing In" : "Sign In"}
-          </button>
-        </form>
+        {mode === "login" ? (
+          <form className="form-stack" onSubmit={onSubmit}>
+            <label>
+              Email
+              <input name="email" type="email" autoComplete="email" autoCapitalize="none" inputMode="email" required />
+            </label>
+            <label>
+              Password
+              <input name="password" type="password" autoComplete="current-password" required />
+            </label>
+            {error ? <p className="form-error">{error}</p> : null}
+            {localMessage ? <p className="form-success">{localMessage}</p> : null}
+            <button className="primary-action full" disabled={formBusy} type="submit">
+              <Lock size={16} />
+              {busy ? "Signing In" : "Sign In"}
+            </button>
+            <button className="mini-action full" type="button" disabled={formBusy} onClick={() => setMode("forgot")}>
+              Forgot Password
+            </button>
+          </form>
+        ) : null}
+        {mode === "forgot" ? (
+          <form className="form-stack" onSubmit={handleForgotPassword}>
+            <label>
+              Account email
+              <input name="email" type="email" autoComplete="email" autoCapitalize="none" inputMode="email" required />
+            </label>
+            {localError ? <p className="form-error">{localError}</p> : null}
+            {localMessage ? <p className="form-success">{localMessage}</p> : null}
+            <button className="primary-action full" disabled={formBusy} type="submit">
+              <Mail size={16} />
+              {localBusy ? "Sending" : "Send Reset Link"}
+            </button>
+            <button className="mini-action full" type="button" disabled={formBusy} onClick={() => setMode("login")}>
+              Back to Sign In
+            </button>
+          </form>
+        ) : null}
+        {mode === "reset" ? (
+          <form className="form-stack" onSubmit={handleResetPassword}>
+            <label>
+              Reset token
+              <input name="token" defaultValue={resetTokenFromUrl} autoComplete="one-time-code" required />
+            </label>
+            <label>
+              New password
+              <input name="password" type="password" autoComplete="new-password" required />
+            </label>
+            <label>
+              Confirm new password
+              <input name="confirmPassword" type="password" autoComplete="new-password" required />
+            </label>
+            {localError ? <p className="form-error">{localError}</p> : null}
+            {localMessage ? <p className="form-success">{localMessage}</p> : null}
+            <button className="primary-action full" disabled={formBusy} type="submit">
+              <Save size={16} />
+              {localBusy ? "Resetting" : "Reset Password"}
+            </button>
+            <button className="mini-action full" type="button" disabled={formBusy} onClick={() => setMode("login")}>
+              Back to Sign In
+            </button>
+          </form>
+        ) : null}
         <div className="safety-strip">
           <ShieldCheck size={16} />
           <span>Official retailer pages only. Checkout stays manual.</span>
@@ -3739,8 +3838,20 @@ function HealthCard({
   );
 }
 
-function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
-  const warningCount = health.environment.coreMissing.length + health.environment.warnings.length;
+function AdminHealthPanel({
+  health,
+  busy,
+  busyLabel,
+  submit
+}: {
+  health: AppHealthDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const authWarningCount =
+    Number(!health.auth.authReady) + Number(health.auth.adminUserCount === 0) + Number(!health.auth.configuredAdminEmailExists);
+  const warningCount = health.environment.coreMissing.length + health.environment.warnings.length + authWarningCount;
 
   return (
     <section className="admin-tools deployment-health">
@@ -3752,6 +3863,29 @@ function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
         <span className={`chip ${statusTone(health.status)}`}>{health.status}</span>
       </div>
       <div className="health-grid">
+        <HealthCard
+          icon={Lock}
+          title="Auth Session"
+          value={health.auth.currentSessionValid ? "Active" : "Missing"}
+          tone={health.auth.currentSessionValid && health.auth.authReady ? "OK" : "ERROR"}
+          detail={`${health.auth.currentSessionRole || "No role"} - ${health.auth.secureCookie ? "secure" : "local"} ${health.auth.sameSite} cookie`}
+        />
+        <HealthCard
+          icon={ShieldCheck}
+          title="Auth Secret"
+          value={health.auth.authSecretStrong ? "Strong" : health.auth.authSecretConfigured ? "Weak" : "Missing"}
+          tone={health.auth.authReady ? "OK" : "ERROR"}
+          detail={`${health.auth.sessionCookieName} - ${health.auth.sessionDays} day session`}
+        />
+        <HealthCard
+          icon={Lock}
+          title="Admin Access"
+          value={health.auth.configuredAdminEmailExists ? "Ready" : "Check Env"}
+          tone={health.auth.configuredAdminEmailExists && health.auth.adminUserCount > 0 ? "OK" : "ERROR"}
+          detail={`${health.auth.adminUserCount} admin user${health.auth.adminUserCount === 1 ? "" : "s"} - last login ${relativeTime(
+            health.auth.lastAdminLoginAt
+          )}`}
+        />
         <HealthCard
           icon={Activity}
           title="Database"
@@ -3808,8 +3942,35 @@ function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
         <span>Env {health.environment.nodeEnv}</span>
         <span>App URL {health.environment.appUrl || "missing"}</span>
         <span>Vercel Cron bearer {configuredText(health.monitor.vercelCronSecretConfigured)}</span>
+        <span>Password reset email {configuredText(health.auth.passwordResetEmailConfigured)}</span>
         <span>Delay {health.monitor.requestDelayMs}ms</span>
       </div>
+      <form
+        className="auth-reset-panel"
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Resetting admin password",
+            (form) =>
+              requestJson("/api/auth/admin/password", {
+                method: "POST",
+                body: JSON.stringify(formJson(form))
+              }),
+            { success: "Admin password reset. Current session refreshed." }
+          )
+        }
+      >
+        <h2>Reset Admin Password</h2>
+        <div className="form-grid">
+          <TextInput name="currentPassword" label="Current password" type="password" autoComplete="current-password" required />
+          <TextInput name="password" label="New password" type="password" autoComplete="new-password" required />
+          <TextInput name="confirmPassword" label="Confirm new password" type="password" autoComplete="new-password" required />
+        </div>
+        <button className="mini-action solid" disabled={busy} type="submit">
+          <Save size={14} />
+          {busyLabel === "Resetting admin password" ? "Saving" : "Reset Password"}
+        </button>
+      </form>
       {warningCount > 0 ? (
         <div className="health-warning">
           <AlertTriangle size={16} />
@@ -3825,6 +3986,11 @@ function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
               {health.environment.warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
               ))}
+              {!health.auth.authReady ? <li>AUTH_SECRET must be configured with a strong production value.</li> : null}
+              {health.auth.adminUserCount === 0 ? <li>No admin users exist in the database.</li> : null}
+              {!health.auth.configuredAdminEmailExists ? (
+                <li>ADMIN_EMAIL does not match an Admin user in the production database.</li>
+              ) : null}
               {health.monitor.lastError ? <li>Last monitor error: {health.monitor.lastError}</li> : null}
               {health.database.error ? <li>Database error: {health.database.error}</li> : null}
             </ul>

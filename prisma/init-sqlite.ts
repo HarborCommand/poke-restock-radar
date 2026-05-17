@@ -16,8 +16,20 @@ const statements = [
     "name" TEXT NOT NULL,
     "role" TEXT NOT NULL DEFAULT 'FRIEND',
     "passwordHash" TEXT NOT NULL,
+    "sessionVersion" INTEGER NOT NULL DEFAULT 0,
+    "lastLoginAt" DATETIME,
+    "passwordChangedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS "PasswordResetToken" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "userId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL UNIQUE,
+    "expiresAt" DATETIME NOT NULL,
+    "usedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "PasswordResetToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
   `CREATE TABLE IF NOT EXISTS "Retailer" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -326,6 +338,9 @@ const statements = [
     CONSTRAINT "BrowserPushSubscription_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
   `ALTER TABLE "Product" ADD COLUMN "monitorEnabled" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "User" ADD COLUMN "sessionVersion" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME`,
+  `ALTER TABLE "User" ADD COLUMN "passwordChangedAt" DATETIME`,
   `ALTER TABLE "Product" ADD COLUMN "lastSuccessfulCheckedAt" DATETIME`,
   `ALTER TABLE "Product" ADD COLUMN "checkFrequencyMinutes" INTEGER NOT NULL DEFAULT 60`,
   `ALTER TABLE "Product" ADD COLUMN "nextCheckAt" DATETIME`,
@@ -399,6 +414,9 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS "Product_releaseId_idx" ON "Product"("releaseId")`,
   `CREATE INDEX IF NOT EXISTS "Product_setName_idx" ON "Product"("setName")`,
   `CREATE INDEX IF NOT EXISTS "Product_productType_idx" ON "Product"("productType")`,
+  `CREATE INDEX IF NOT EXISTS "PasswordResetToken_userId_idx" ON "PasswordResetToken"("userId")`,
+  `CREATE INDEX IF NOT EXISTS "PasswordResetToken_expiresAt_idx" ON "PasswordResetToken"("expiresAt")`,
+  `CREATE INDEX IF NOT EXISTS "PasswordResetToken_usedAt_idx" ON "PasswordResetToken"("usedAt")`,
   `CREATE INDEX IF NOT EXISTS "Product_stockStatus_idx" ON "Product"("stockStatus")`,
   `CREATE INDEX IF NOT EXISTS "Product_nextCheckAt_idx" ON "Product"("nextCheckAt")`,
   `CREATE INDEX IF NOT EXISTS "Product_monitorEnabled_idx" ON "Product"("monitorEnabled")`,

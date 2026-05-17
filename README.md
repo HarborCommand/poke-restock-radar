@@ -278,6 +278,24 @@ First admin login is controlled by:
 
 Use `ADMIN_PASSWORD` only for local development. Shared or production deployments should use a bcrypt `ADMIN_PASSWORD_HASH`.
 
+### Production Auth Checks
+
+Auth uses a signed, http-only session cookie. In production the cookie is secure and uses the `__Host-poke_radar_session` name so it stays host-only and path-scoped to `/`.
+
+Run the production auth smoke test after every auth/env change:
+
+```bash
+npm run auth:smoke
+```
+
+The smoke test verifies invalid login rejection, admin login, session persistence, dashboard access, logout, logged-out session state, and a mobile/PWA-style login user agent. It reads `AUTH_SMOKE_URL`, `AUTH_SMOKE_EMAIL`, and `AUTH_SMOKE_PASSWORD`, or the local `POKE_RESTOCK_RADAR_PRODUCTION_URL`, `POKE_RESTOCK_RADAR_ADMIN_EMAIL`, and `POKE_RESTOCK_RADAR_ADMIN_PASSWORD` values if present.
+
+Password recovery:
+
+- Admins can reset their own password from the Admin Health panel after signing in.
+- `Forgot Password` creates a 30-minute secure reset token and emails a reset link when SMTP is configured.
+- Resetting a password increments the user session version so older session cookies stop working.
+
 Health endpoint:
 
 ```bash

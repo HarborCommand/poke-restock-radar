@@ -24,6 +24,7 @@ export type SessionUser = {
   email: string;
   name: string;
   role: Role;
+  sessionVersion?: number;
 };
 
 export type RetailerDTO = {
@@ -298,6 +299,23 @@ export type AppHealthDTO = {
     urlConfigured: boolean;
     productionSafe: boolean;
     error?: string;
+  };
+  auth: {
+    authSecretConfigured: boolean;
+    authSecretStrong: boolean;
+    authReady: boolean;
+    sessionCookieName: string;
+    secureCookie: boolean;
+    sameSite: string;
+    sessionDays: number;
+    currentSessionValid: boolean;
+    currentSessionEmail: string | null;
+    currentSessionRole: Role | null;
+    adminUserCount: number;
+    configuredAdminEmailPresent: boolean;
+    configuredAdminEmailExists: boolean;
+    lastAdminLoginAt: string | null;
+    passwordResetEmailConfigured: boolean;
   };
   monitor: {
     lastRunAt: string | null;

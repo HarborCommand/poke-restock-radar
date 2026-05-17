@@ -239,6 +239,10 @@ textarea {
   width: 100%;
 }
 
+.mini-action.full {
+  width: 100%;
+}
+
 .primary-action:disabled,
 .mini-action:disabled,
 .icon-button:disabled {
@@ -1357,6 +1361,25 @@ textarea {
   color: var(--red);
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+.form-success {
+  margin: 0;
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.auth-reset-panel {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 14px;
+}
+
+.auth-reset-panel h2 {
+  margin: 0;
+  font-size: 1rem;
 }
 
 .spin-slow {

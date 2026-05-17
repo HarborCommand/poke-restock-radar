@@ -48,6 +48,7 @@ test("required data models exist", () => {
   const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
   const models = [
     "User",
+    "PasswordResetToken",
     "Product",
     "Retailer",
     "Store",
@@ -68,6 +69,37 @@ test("required data models exist", () => {
   for (const model of models) {
     assert.match(schema, new RegExp(`model\\s+${model}\\s+\\{`), `missing model ${model}`);
   }
+});
+
+test("Auth hardening and password reset flow pieces exist", () => {
+  const files = [
+    join(root, "src", "app", "api", "auth", "forgot-password", "route.ts"),
+    join(root, "src", "app", "api", "auth", "reset-password", "route.ts"),
+    join(root, "src", "app", "api", "auth", "admin", "password", "route.ts"),
+    join(root, "src", "lib", "password-reset.ts"),
+    join(root, "scripts", "auth-smoke.ts")
+  ];
+  for (const file of files) {
+    assert.ok(statSync(file).isFile(), `missing ${file}`);
+  }
+
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const field of ["sessionVersion", "lastLoginAt", "passwordChangedAt", "tokenHash", "expiresAt", "usedAt"]) {
+    assert.match(schema, new RegExp(field), `missing auth schema field ${field}`);
+  }
+
+  const auth = readFileSync(join(root, "src", "lib", "auth.ts"), "utf8");
+  for (const phrase of ["__Host-poke_radar_session", "authRuntimeConfig", "sessionVersion", "AUTH_SECRET"]) {
+    assert.match(auth, new RegExp(phrase), `missing auth phrase ${phrase}`);
+  }
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of ["Forgot Password", "Reset Password", "Auth Session", "Auth Secret", "Reset Admin Password"]) {
+    assert.match(app, new RegExp(phrase), `missing auth UI phrase ${phrase}`);
+  }
+
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.ok(pkg.scripts["auth:smoke"], "missing auth:smoke script");
 });
 
 test("Phase 13 weekly card comp workflow and reports exist", () => {

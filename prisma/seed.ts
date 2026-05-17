@@ -20,7 +20,7 @@ function previousWeekday(dayIndex: number, weeksAgo: number, hour: number, minut
 }
 
 async function main() {
-  const adminEmail = process.env.ADMIN_EMAIL || "admin@poke.local";
+  const adminEmail = (process.env.ADMIN_EMAIL || "admin@poke.local").trim().toLowerCase();
   const adminPassword = process.env.ADMIN_PASSWORD || "radar-admin";
   const adminPasswordHash =
     process.env.ADMIN_PASSWORD_HASH && process.env.ADMIN_PASSWORD_HASH.length > 0

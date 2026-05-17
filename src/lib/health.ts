@@ -1,13 +1,15 @@
 import { prisma } from "@/lib/db";
 import { getEnvironmentReport } from "@/lib/env";
-import type { AppHealthDTO } from "@/types/radar";
+import { authRuntimeConfig } from "@/lib/auth";
+import type { AppHealthDTO, SessionUser } from "@/types/radar";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
-export async function getAppHealth(): Promise<AppHealthDTO> {
+export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealthDTO> {
   const env = getEnvironmentReport();
+  const authConfig = authRuntimeConfig();
   const checkedAt = new Date().toISOString();
   const database: AppHealthDTO["database"] = {
     ok: false,
@@ -39,17 +41,46 @@ export async function getAppHealth(): Promise<AppHealthDTO> {
     lastAlertPriority: null,
     unreadCount: 0
   };
+  let auth: AppHealthDTO["auth"] = {
+    authSecretConfigured: authConfig.authSecretConfigured,
+    authSecretStrong: authConfig.authSecretStrong,
+    authReady: authConfig.authReady,
+    sessionCookieName: authConfig.sessionCookieName,
+    secureCookie: authConfig.secureCookie,
+    sameSite: authConfig.sameSite,
+    sessionDays: authConfig.sessionDays,
+    currentSessionValid: Boolean(currentUser),
+    currentSessionEmail: currentUser?.email ?? null,
+    currentSessionRole: currentUser?.role ?? null,
+    adminUserCount: 0,
+    configuredAdminEmailPresent: Boolean(process.env.ADMIN_EMAIL?.trim()),
+    configuredAdminEmailExists: false,
+    lastAdminLoginAt: null,
+    passwordResetEmailConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM)
+  };
 
   if (database.ok) {
     try {
       const now = new Date();
-      const [lastMonitorRun, dueProductCount, lastAlert, unreadCount] = await Promise.all([
+      const configuredAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+      const [lastMonitorRun, dueProductCount, lastAlert, unreadCount, adminUserCount, configuredAdminRows, lastAdminLogin] = await Promise.all([
         prisma.monitorLog.findFirst({ orderBy: { startedAt: "desc" } }),
         prisma.product.count({
           where: { monitorEnabled: true, OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: now } }] }
         }),
         prisma.alert.findFirst({ orderBy: { timestamp: "desc" } }),
-        prisma.alert.count({ where: { read: false } })
+        prisma.alert.count({ where: { read: false } }),
+        prisma.user.count({ where: { role: "ADMIN" } }),
+        configuredAdminEmail
+          ? prisma.$queryRaw<Array<{ id: string }>>`
+              SELECT "id" FROM "User" WHERE lower("email") = ${configuredAdminEmail} AND "role" = 'ADMIN' LIMIT 1
+            `
+          : Promise.resolve([]),
+        prisma.user.findFirst({
+          where: { role: "ADMIN", lastLoginAt: { not: null } },
+          orderBy: { lastLoginAt: "desc" },
+          select: { lastLoginAt: true }
+        })
       ]);
 
       monitor = {
@@ -66,6 +97,12 @@ export async function getAppHealth(): Promise<AppHealthDTO> {
         lastAlertPriority: lastAlert?.priority ?? null,
         unreadCount
       };
+      auth = {
+        ...auth,
+        adminUserCount,
+        configuredAdminEmailExists: configuredAdminRows.length > 0,
+        lastAdminLoginAt: lastAdminLogin?.lastLoginAt?.toISOString() ?? null
+      };
     } catch (error) {
       monitor = {
         ...monitor,
@@ -75,7 +112,11 @@ export async function getAppHealth(): Promise<AppHealthDTO> {
   }
 
   const status: AppHealthDTO["status"] =
-    !database.ok || env.coreMissing.length > 0 ? "ERROR" : env.warnings.length > 0 ? "WARN" : "OK";
+    !database.ok || env.coreMissing.length > 0 || !auth.authReady || auth.adminUserCount === 0
+      ? "ERROR"
+      : env.warnings.length > 0 || !auth.configuredAdminEmailExists
+        ? "WARN"
+        : "OK";
 
   return {
     status,
@@ -89,6 +130,7 @@ export async function getAppHealth(): Promise<AppHealthDTO> {
       warnings: env.warnings
     },
     database,
+    auth,
     monitor,
     alerts,
     providers: env.providers
