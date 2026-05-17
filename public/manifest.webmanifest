@@ -1,0 +1,25 @@
+{
+  "name": "Poke Restock Radar",
+  "short_name": "Poke Radar",
+  "description": "Private Pokemon TCG restock, release, store, and card grading radar.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070808",
+  "theme_color": "#070808",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

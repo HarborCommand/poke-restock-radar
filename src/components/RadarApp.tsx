@@ -1,0 +1,3894 @@
+"use client";
+
+import {
+  AlertTriangle,
+  Activity,
+  Bell,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  CircleDollarSign,
+  Clock,
+  Download,
+  ExternalLink,
+  FileText,
+  History,
+  Lock,
+  LogOut,
+  Mail,
+  MapPin,
+  Navigation,
+  PackageSearch,
+  Play,
+  Plus,
+  Printer,
+  Radar,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  ShieldCheck,
+  Smartphone,
+  Sparkles,
+  Store,
+  Trash2,
+  TrendingUp,
+  Trophy,
+  Upload,
+  Wifi,
+  WifiOff,
+  X
+} from "lucide-react";
+import {
+  type FormEvent,
+  type InputHTMLAttributes,
+  type ChangeEvent,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+  useEffect,
+  useMemo,
+  useState
+} from "react";
+import type {
+  AppHealthDTO,
+  CardDTO,
+  CardCompSaleDTO,
+  DashboardDTO,
+  Era,
+  GradeType,
+  Priority,
+  ProductDTO,
+  ProductStatus,
+  Rating,
+  ReleaseDTO,
+  RetailerDTO,
+  RetailerTemplateDTO,
+  SessionUser,
+  SightingDTO,
+  StoreDTO,
+  StoreVisitResult
+} from "@/types/radar";
+
+type Tab = "dashboard" | "field" | "products" | "stores" | "releases" | "cards" | "alerts";
+type Toast = { type: "error" | "success"; message: string };
+type SubmitHandler = <T>(
+  event: FormEvent<HTMLFormElement>,
+  label: string,
+  run: (form: HTMLFormElement) => Promise<T>,
+  options?: { reset?: boolean; success?: string }
+) => Promise<void>;
+type ActionHandler = <T>(
+  label: string,
+  run: () => Promise<T>,
+  options?: { confirm?: string; reload?: boolean; success?: string }
+) => Promise<void>;
+
+const tabs: Array<{ id: Tab; label: string; icon: typeof Radar }> = [
+  { id: "dashboard", label: "Dashboard", icon: Radar },
+  { id: "field", label: "Field", icon: Navigation },
+  { id: "products", label: "Products", icon: PackageSearch },
+  { id: "stores", label: "Stores", icon: Store },
+  { id: "releases", label: "Releases", icon: CalendarDays },
+  { id: "cards", label: "Cards", icon: CircleDollarSign },
+  { id: "alerts", label: "Alerts", icon: Bell }
+];
+
+const productStatuses: ProductStatus[] = [
+  "UNAVAILABLE",
+  "SOLD_OUT",
+  "PREORDER_LIVE",
+  "ADD_TO_CART_AVAILABLE",
+  "IN_STOCK",
+  "PRICE_CHANGE",
+  "PAGE_UPDATED"
+];
+const priorities: Priority[] = ["LOW", "MEDIUM", "HIGH"];
+const productRatings: Array<Exclude<Rating, "AVOID">> = ["BUY", "WATCH", "SKIP"];
+const cardRatings: Rating[] = ["BUY", "WATCH", "SKIP", "AVOID"];
+const gradeTypes: GradeType[] = ["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"];
+const eras: Array<"ALL" | Era> = ["ALL", "MODERN", "VINTAGE"];
+const productTypeOptions = ["ETB", "Booster Bundle", "Sleeved Booster", "Collection Box", "Booster Box", "Premium Collection"];
+const storeVisitResults: StoreVisitResult[] = ["stock_seen", "empty_shelf", "vendor_spotted", "bought_product", "no_visit"];
+const fieldRetailerFilters = ["ALL", "Target", "Walmart", "GameStop", "Best Buy"];
+
+function formatStatus(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatGradeType(value: string) {
+  return value === "BGS_BLACK_LABEL" ? "BGS Black Label" : formatStatus(value);
+}
+
+function money(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "TBD";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+}
+
+function shortDate(value: string | null | undefined) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
+}
+
+function dateTime(value: string | null | undefined) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function relativeTime(value: string | null | undefined) {
+  if (!value) return "Not scheduled";
+  const delta = new Date(value).getTime() - Date.now();
+  const abs = Math.abs(delta);
+  const minutes = Math.round(abs / 60000);
+  if (minutes < 1) return delta >= 0 ? "now" : "just now";
+  if (minutes < 60) return delta >= 0 ? `in ${minutes}m` : `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return delta >= 0 ? `in ${hours}h` : `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return delta >= 0 ? `in ${days}d` : `${days}d ago`;
+}
+
+function toDateInput(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+}
+
+function toDateTimeInput(value: string | null | undefined) {
+  if (!value) return todayLocalInput();
+  const date = new Date(value);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+function todayLocalInput() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 16);
+}
+
+function statusTone(value: string) {
+  if (
+    ["OK", "BUY", "IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE", "HIGH", "stock_seen", "bought_product"].includes(value)
+  ) {
+    return "good";
+  }
+  if (["WARN", "WATCH", "PRICE_CHANGE", "PAGE_UPDATED", "MEDIUM", "vendor_spotted"].includes(value)) return "watch";
+  if (["no_visit"].includes(value)) return "muted";
+  return "bad";
+}
+
+function firstUrl(value: string | null | undefined) {
+  return value
+    ?.split(/[\n,]/)
+    .map((item) => item.trim())
+    .find(Boolean);
+}
+
+async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options?.headers || {})
+    }
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    const issue = Array.isArray(data.issues) && data.issues[0] ? `${data.issues[0].path}: ${data.issues[0].message}` : "";
+    throw new Error(issue || data.error || "Request failed");
+  }
+  return data as T;
+}
+
+function formJson(form: HTMLFormElement) {
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+function isTab(value: string | null): value is Tab {
+  return tabs.some((tab) => tab.id === value);
+}
+
+function pushSupported() {
+  return (
+    typeof window !== "undefined" &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window
+  );
+}
+
+async function ensureServiceWorkerRegistration() {
+  if (!pushSupported()) throw new Error("This browser does not support service worker push notifications.");
+  await navigator.serviceWorker.register("/sw.js");
+  return navigator.serviceWorker.ready;
+}
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = `${base64String}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export function RadarApp() {
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "dashboard";
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return isTab(tab) ? tab : "dashboard";
+  });
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardDTO | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+
+  const busy = busyLabel !== null;
+  const isAdmin = user?.role === "ADMIN";
+
+  function showToast(nextToast: Toast) {
+    setToast(nextToast);
+  }
+
+  async function loadDashboard() {
+    setError(null);
+    const data = await requestJson<DashboardDTO>("/api/radar/dashboard");
+    setDashboard(data);
+    setUser(data.currentUser);
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function boot() {
+      try {
+        const session = await requestJson<{ user: SessionUser | null }>("/api/auth/session");
+        if (!mounted) return;
+        setUser(session.user);
+        if (session.user) {
+          const data = await requestJson<DashboardDTO>("/api/radar/dashboard");
+          if (!mounted) return;
+          setDashboard(data);
+        }
+      } catch (bootError) {
+        if (mounted) {
+          const message = bootError instanceof Error ? bootError.message : "Could not load app";
+          setError(message);
+          showToast({ type: "error", message });
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+    boot();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user || !pushSupported()) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  }, [user]);
+
+  useEffect(() => {
+    if (!dashboard) return;
+    const focus = new URLSearchParams(window.location.search).get("focus");
+    if (!focus) return;
+    const timer = window.setTimeout(() => document.getElementById(focus)?.scrollIntoView({ block: "center" }), 120);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, dashboard]);
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusyLabel("Signing in");
+    setError(null);
+    try {
+      const form = event.currentTarget;
+      const data = formJson(form);
+      const result = await requestJson<{ user: SessionUser }>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+      setUser(result.user);
+      await loadDashboard();
+    } catch (loginError) {
+      const message = loginError instanceof Error ? loginError.message : "Login failed";
+      setError(message);
+      showToast({ type: "error", message });
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setDashboard(null);
+    setUser(null);
+    setActiveTab("dashboard");
+  }
+
+  const submit: SubmitHandler = async (event, label, run, options = {}) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setBusyLabel(label);
+    setError(null);
+    try {
+      await run(form);
+      if (options.reset !== false) form.reset();
+      await loadDashboard();
+      if (options.success) showToast({ type: "success", message: options.success });
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : "Action failed";
+      setError(message);
+      showToast({ type: "error", message });
+    } finally {
+      setBusyLabel(null);
+    }
+  };
+
+  const runAction: ActionHandler = async (label, run, options = {}) => {
+    if (options.confirm && !window.confirm(options.confirm)) return;
+    setBusyLabel(label);
+    setError(null);
+    try {
+      await run();
+      if (options.reload !== false) await loadDashboard();
+      if (options.success) showToast({ type: "success", message: options.success });
+    } catch (actionError) {
+      const message = actionError instanceof Error ? actionError.message : "Action failed";
+      setError(message);
+      showToast({ type: "error", message });
+    } finally {
+      setBusyLabel(null);
+    }
+  };
+
+  const chase = useMemo(() => getChaseSummary(dashboard), [dashboard]);
+
+  if (loading) {
+    return (
+      <main className="screen center-screen">
+        <div className="loader-panel">
+          <Radar className="spin-slow" size={30} />
+          <span>Loading private radar</span>
+        </div>
+      </main>
+    );
+  }
+
+  if (!user || !dashboard) {
+    return (
+      <>
+        <LoginShell busy={busy} error={error} onSubmit={handleLogin} />
+        <ToastViewport toast={toast} onClose={() => setToast(null)} />
+      </>
+    );
+  }
+
+  return (
+    <main className="screen app-shell">
+      <header className="topbar">
+        <div className="brand-lockup">
+          <div className="brand-mark">
+            <Radar size={22} />
+          </div>
+          <div>
+            <p className="eyeline">Private radar</p>
+            <h1>Poke Restock Radar</h1>
+          </div>
+        </div>
+        <div className="topbar-actions">
+          <button
+            className="icon-button"
+            disabled={busy}
+            onClick={() =>
+              runAction("Refresh dashboard", loadDashboard, { reload: false, success: "Dashboard refreshed" })
+            }
+            aria-label="Refresh dashboard"
+            type="button"
+          >
+            <RefreshCw size={18} />
+          </button>
+          <button className="icon-button" disabled={busy} onClick={logout} aria-label="Log out" type="button">
+            <LogOut size={18} />
+          </button>
+        </div>
+      </header>
+
+      <section className="hero-panel">
+        <div>
+          <p className="eyeline">What should I chase today?</p>
+          <h2>{chase.title}</h2>
+          <p>{chase.reason}</p>
+        </div>
+        <div className="hero-actions">
+          {chase.url ? (
+            <a className="primary-action" href={chase.url} target="_blank" rel="noreferrer">
+              Buy Now <ExternalLink size={16} />
+            </a>
+          ) : (
+            <button className="primary-action" onClick={() => setActiveTab(chase.tab)} type="button">
+              Open {tabs.find((tab) => tab.id === chase.tab)?.label} <ChevronRight size={16} />
+            </button>
+          )}
+          <span className={`chip ${statusTone(chase.priority)}`}>{formatStatus(chase.priority)}</span>
+        </div>
+      </section>
+
+      <nav className="tab-rail" aria-label="Primary sections">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              className={activeTab === tab.id ? "tab-item active" : "tab-item"}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              aria-label={tab.label}
+              type="button"
+            >
+              <Icon size={17} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {error ? (
+        <div className="error-bar" role="alert">
+          <AlertTriangle size={16} />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      <section className="content-grid">
+        {activeTab === "dashboard" ? <DashboardPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
+        {activeTab === "field" ? (
+          <FieldModePanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+        ) : null}
+        {activeTab === "products" ? (
+          <ProductsPanel
+            dashboard={dashboard}
+            isAdmin={isAdmin}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+          />
+        ) : null}
+        {activeTab === "stores" ? (
+          <StoresPanel
+            dashboard={dashboard}
+            isAdmin={isAdmin}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+          />
+        ) : null}
+        {activeTab === "releases" ? (
+          <ReleasesPanel
+            dashboard={dashboard}
+            isAdmin={isAdmin}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+          />
+        ) : null}
+        {activeTab === "cards" ? (
+          <CardsPanel
+            dashboard={dashboard}
+            isAdmin={isAdmin}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+          />
+        ) : null}
+        {activeTab === "alerts" ? (
+          <AlertsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+        ) : null}
+      </section>
+
+      <NotificationSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+
+      {isAdmin && dashboard.health ? <AdminHealthPanel health={dashboard.health} /> : null}
+
+      {isAdmin ? <AdminTools busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} /> : null}
+
+      <footer className="app-footer">
+        <ShieldCheck size={16} />
+        <span>
+          Manual checkout only. Alerts and Go buttons open official retailer pages; you complete every cart, payment,
+          queue, login, captcha, and purchase-limit step yourself.
+        </span>
+      </footer>
+
+      <ToastViewport toast={toast} onClose={() => setToast(null)} />
+    </main>
+  );
+}
+
+function LoginShell({
+  busy,
+  error,
+  onSubmit
+}: {
+  busy: boolean;
+  error: string | null;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <main className="screen login-screen">
+      <section className="login-panel">
+        <div className="brand-mark large">
+          <Radar size={30} />
+        </div>
+        <div className="login-copy">
+          <p className="eyeline">Private access only</p>
+          <h1>Poke Restock Radar</h1>
+          <p>Manual restock, store, release, alert, and card grading radar for a small trusted group.</p>
+        </div>
+        <form className="form-stack" onSubmit={onSubmit}>
+          <label>
+            Email
+            <input name="email" type="email" autoComplete="email" defaultValue="admin@poke.local" required />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" autoComplete="current-password" defaultValue="radar-admin" required />
+          </label>
+          {error ? <p className="form-error">{error}</p> : null}
+          <button className="primary-action full" disabled={busy} type="submit">
+            <Lock size={16} />
+            {busy ? "Signing In" : "Sign In"}
+          </button>
+        </form>
+        <div className="safety-strip">
+          <ShieldCheck size={16} />
+          <span>Official retailer pages only. Checkout stays manual.</span>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ToastViewport({ toast, onClose }: { toast: Toast | null; onClose: () => void }) {
+  if (!toast) return null;
+  return (
+    <div className="toast-stack" role="status" aria-live="polite">
+      <div className={`toast ${toast.type}`}>
+        {toast.type === "error" ? <AlertTriangle size={16} /> : <Check size={16} />}
+        <span>{toast.message}</span>
+        <button className="icon-button compact" type="button" aria-label="Dismiss toast" onClick={onClose}>
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function getChaseSummary(dashboard: DashboardDTO | null): {
+  title: string;
+  reason: string;
+  priority: Priority;
+  url?: string;
+  tab: Tab;
+} {
+  const actionable = dashboard?.products.find((product) =>
+    ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)
+  );
+  const chaseProduct = dashboard?.todaysChaseList[0];
+  if (chaseProduct?.priorityScore) {
+    return {
+      title: chaseProduct.name,
+      reason: chaseProduct.priorityScore.reason,
+      priority: chaseProduct.priorityScore.buyWatchSkip === "BUY" ? "HIGH" : "MEDIUM",
+      url: chaseProduct.url,
+      tab: "products"
+    };
+  }
+  if (actionable) {
+    return {
+      title: actionable.name,
+      reason: `${actionable.retailerName} is ${formatStatus(actionable.stockStatus).toLowerCase()} at ${money(
+        actionable.retailPrice
+      )}. Open the official page and check out manually.`,
+      priority: actionable.priority,
+      url: actionable.url,
+      tab: "products"
+    };
+  }
+
+  const store = dashboard?.checkTodayStores[0] || dashboard?.stores.find((item) => item.prediction.probability === "HIGH");
+  if (store) {
+    return {
+      title: store.storeName,
+      reason: `${store.prediction.reason}. Window: ${store.prediction.likelyRestockWindow}.`,
+      priority: "HIGH",
+      tab: "field"
+    };
+  }
+
+  const card = dashboard?.cards.find((item) => item.rating === "BUY") || dashboard?.cards[0];
+  if (card) {
+    return {
+      title: `${card.cardName} raw-to-grade`,
+      reason: `PSA 10 upside is ${money(card.psa10EstimatedProfit)} with max PSA 9 raw buy near ${money(
+        card.maxRawBuyPricePsa9
+      )}.`,
+      priority: card.rating === "BUY" ? "HIGH" : "MEDIUM",
+      tab: "cards"
+    };
+  }
+
+  return {
+    title: "Add your first target",
+    reason: "Start with a product URL, local store, upcoming release, or manual card comp.",
+    priority: "MEDIUM",
+    tab: "products"
+  };
+}
+
+function DashboardPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
+  const sections = [
+    {
+      title: "Today's Chase",
+      icon: PackageSearch,
+      value: dashboard.todaysChaseList.length,
+      label: "ranked targets",
+      tab: "products" as Tab
+    },
+    {
+      title: "Local Stores",
+      icon: MapPin,
+      value: dashboard.checkTodayStores.length,
+      label: "check today",
+      tab: "field" as Tab
+    },
+    {
+      title: "Alerts",
+      icon: Bell,
+      value: dashboard.stats.unreadAlerts,
+      label: "unread",
+      tab: "alerts" as Tab
+    },
+    {
+      title: "Card Upside",
+      icon: TrendingUp,
+      value: dashboard.stats.profitablePsa10Cards,
+      label: "PSA 10 profitable",
+      tab: "cards" as Tab
+    }
+  ];
+
+  return (
+    <>
+      <div className="stat-grid">
+        {sections.map((section) => {
+          const Icon = section.icon;
+          return (
+            <button className="stat-card" key={section.title} onClick={() => setActiveTab(section.tab)} type="button">
+              <Icon size={19} />
+              <strong>{section.value}</strong>
+              <span>{section.label}</span>
+              <small>{section.title}</small>
+            </button>
+          );
+        })}
+      </div>
+      {dashboard.currentUser.role === "ADMIN" ? (
+        <>
+          <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+          <DataQualityPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+        </>
+      ) : null}
+      <div className="split-grid">
+        <PanelHeader title="Today's Chase List" action="Products" onAction={() => setActiveTab("products")} />
+        <ProductStack products={dashboard.todaysChaseList.slice(0, 5)} compact />
+      </div>
+      <div className="split-grid">
+        <PanelHeader title="Release Countdown" action="Calendar" onAction={() => setActiveTab("releases")} />
+        <ReleaseStack releases={dashboard.releaseCountdowns.slice(0, 4)} />
+      </div>
+      <div className="split-grid">
+        <PanelHeader title="Check Today" action="Field Mode" onAction={() => setActiveTab("field")} />
+        <StoreStack stores={dashboard.checkTodayStores.slice(0, 4)} />
+      </div>
+      <div className="split-grid">
+        <PanelHeader title="Upcoming Releases" action="Calendar" onAction={() => setActiveTab("releases")} />
+        <ReleaseStack releases={dashboard.releases.slice(0, 3)} />
+      </div>
+      <div className="split-grid">
+        <PanelHeader title="Raw-to-Grade Watchlist" action="Cards" onAction={() => setActiveTab("cards")} />
+        <CardStack cards={dashboard.cards.slice(0, 4)} />
+      </div>
+    </>
+  );
+}
+
+function SetupChecklistPanel({
+  dashboard,
+  setActiveTab
+}: {
+  dashboard: DashboardDTO;
+  setActiveTab: (tab: Tab) => void;
+}) {
+  return (
+    <section className="split-grid">
+      <PanelHeader title="First Setup Checklist" />
+      <div className="setup-list">
+        {dashboard.setupChecklist.map((item) => (
+          <button className="setup-row" key={item.id} type="button" onClick={() => setActiveTab(item.tab)}>
+            <span className={`chip ${item.complete ? "good" : "watch"}`}>{item.complete ? "Done" : "Todo"}</span>
+            <div>
+              <strong>{item.label}</strong>
+              <small>{item.detail}</small>
+            </div>
+            <ChevronRight size={15} />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DataQualityPanel({
+  dashboard,
+  setActiveTab
+}: {
+  dashboard: DashboardDTO;
+  setActiveTab: (tab: Tab) => void;
+}) {
+  return (
+    <section className="split-grid">
+      <PanelHeader title="Data Quality" />
+      {dashboard.dataQualityWarnings.length ? (
+        <div className="table-list">
+          {dashboard.dataQualityWarnings.slice(0, 8).map((warning) => (
+            <button
+              className="quality-row"
+              key={warning.id}
+              type="button"
+              onClick={() => setActiveTab(warning.tab)}
+            >
+              <AlertTriangle size={16} />
+              <div>
+                <strong>{warning.title}</strong>
+                <span>{warning.detail}</span>
+              </div>
+              <span className={`chip ${statusTone(warning.severity)}`}>{warning.severity}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <EmptyState icon={ShieldCheck} title="Core data looks clean" detail="No setup or product data quality warnings right now." />
+      )}
+    </section>
+  );
+}
+
+function PanelHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
+  return (
+    <div className="panel-header">
+      <h2>{title}</h2>
+      {action && onAction ? (
+        <button className="text-button" onClick={onAction} type="button">
+          {action}
+          <ChevronRight size={15} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function EmptyState({
+  icon: Icon,
+  title,
+  detail
+}: {
+  icon: typeof Radar;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="empty-state">
+      <Icon size={20} />
+      <div>
+        <strong>{title}</strong>
+        <span>{detail}</span>
+      </div>
+    </div>
+  );
+}
+
+function ProductStack({ products, compact = false }: { products: ProductDTO[]; compact?: boolean }) {
+  if (!products.length) {
+    return (
+      <EmptyState
+        icon={PackageSearch}
+        title="No tracked products"
+        detail="Add official retailer product URLs to start the watchlist."
+      />
+    );
+  }
+
+  return (
+    <div className={compact ? "stack compact" : "stack"}>
+      {products.map((product) => (
+        <article className="data-card" id={`product-${product.id}`} key={product.id}>
+          <div className="card-main">
+            <div className="avatar">{product.retailerName.slice(0, 2)}</div>
+            <div>
+              <h3>{product.name}</h3>
+              <p>
+                {product.retailerName} - {product.releaseName || product.setName || "Unlinked set"} - {money(product.retailPrice)}
+              </p>
+            </div>
+          </div>
+          <div className="card-actions">
+            <span className={`chip ${statusTone(product.stockStatus)}`}>{formatStatus(product.stockStatus)}</span>
+            <span className={`chip ${statusTone(product.priorityScore?.buyWatchSkip || product.rating)}`}>
+              {product.priorityScore?.buyWatchSkip || product.rating}
+            </span>
+            <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
+            <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
+              Go <ExternalLink size={14} />
+            </a>
+          </div>
+          {product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
+          <div className="monitor-meta">
+            <span>
+              <Clock size={13} />
+              Last {relativeTime(product.lastCheckedAt)}
+            </span>
+            <span>
+              <Activity size={13} />
+              Next {relativeTime(product.nextCheckAt)}
+            </span>
+            {product.productType ? <span>{product.productType}</span> : null}
+            {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
+            <span>{product.lastMonitorError || product.lastMonitorResult || "No monitor result yet"}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function StoreStack({ stores }: { stores: StoreDTO[] }) {
+  if (!stores.length) {
+    return (
+      <EmptyState
+        icon={Store}
+        title="No local stores"
+        detail="Admin can add stores, then friends can log sightings."
+      />
+    );
+  }
+
+  return (
+    <div className="stack">
+      {stores.map((store) => (
+        <article className="data-card" id={`store-${store.id}`} key={store.id}>
+          <div className="card-main">
+            <div className="avatar">
+              <MapPin size={16} />
+            </div>
+            <div>
+              <h3>{store.storeName}</h3>
+              <p>
+                {store.city}, {store.state} - {store.prediction.likelyRestockWindow}
+              </p>
+            </div>
+          </div>
+          <div className="card-actions">
+            <span className={`chip ${statusTone(store.prediction.probability)}`}>{store.prediction.probability}</span>
+            <span className="chip muted">{store.prediction.confidenceScore}%</span>
+          </div>
+          <p className="reason-text">{store.prediction.reason}</p>
+          <div className="monitor-meta">
+            <span>
+              <Clock size={13} />
+              Last restock{" "}
+              {store.prediction.daysSinceLastConfirmedRestock === null
+                ? "unknown"
+                : `${store.prediction.daysSinceLastConfirmedRestock}d ago`}
+            </span>
+            <span>Avg interval {store.prediction.averageRestockIntervalDays ?? "TBD"}d</span>
+            <span>Overdue {store.prediction.overdueScore}</span>
+            <span>{store.prediction.mostCommonRestockDays.join(", ") || store.typicalRestockDays}</span>
+            <span>{store.prediction.mostCommonRestockTimeWindows.join(", ") || store.typicalRestockTimeWindow}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ReleaseStack({ releases }: { releases: ReleaseDTO[] }) {
+  if (!releases.length) {
+    return (
+      <EmptyState
+        icon={CalendarDays}
+        title="No releases tracked"
+        detail="Add upcoming sets and products when dates are verified."
+      />
+    );
+  }
+
+  return (
+    <div className="stack">
+      {releases.map((release) => {
+        const actionUrl = firstUrl(release.productLinks);
+        return (
+          <article className="data-card" id={`release-${release.id}`} key={release.id}>
+            <div className="card-main">
+              <div className="avatar">
+                <CalendarDays size={16} />
+              </div>
+              <div>
+                <h3>{release.setName}</h3>
+                <p>
+                  {shortDate(release.officialReleaseDate)} - {Math.max(0, release.daysUntilRelease)} days to release
+                </p>
+              </div>
+            </div>
+            <div className="card-actions">
+              <span className={`chip ${statusTone(release.sealedProductPriority)}`}>
+                {release.sealedProductPriority}
+              </span>
+              <span className="chip muted">{release.productType || release.productTypes.split(",")[0]}</span>
+              {actionUrl ? (
+                <a className="mini-action" href={actionUrl} target="_blank" rel="noreferrer">
+                  Go <ExternalLink size={14} />
+                </a>
+              ) : null}
+            </div>
+            <div className="monitor-meta">
+              <span>Preorder {release.daysUntilPreorder === null ? "TBD" : `${Math.max(0, release.daysUntilPreorder)}d`}</span>
+              <span>{release.profitablePsa9Count} PSA 9 targets</span>
+              <span>PSA 10 upside {money(release.psa10Upside)}</span>
+              {release.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function CardStack({ cards }: { cards: CardDTO[] }) {
+  if (!cards.length) {
+    return (
+      <EmptyState
+        icon={CircleDollarSign}
+        title="No card comps"
+        detail="Enter raw and graded sales manually to build the watchlist."
+      />
+    );
+  }
+
+  return (
+    <div className="stack">
+      {cards.map((card) => (
+        <article className="data-card" id={`card-${card.id}`} key={card.id}>
+          <div className="card-main">
+            <div className="avatar">
+              <Sparkles size={16} />
+            </div>
+            <div>
+              <h3>{card.cardName}</h3>
+              <p>
+                Raw {money(card.rawAveragePrice)} - PSA 9 profit {money(card.psa9EstimatedProfit)} - PSA 10 upside{" "}
+                {money(card.psa10EstimatedProfit)}
+              </p>
+            </div>
+          </div>
+          <div className="card-actions">
+            <span className={`chip ${statusTone(card.rating)}`}>{card.rating}</span>
+            <span className="chip muted">Score {card.top10Score}</span>
+            <span className="chip muted">Buy limit {money(card.maxRawBuyPrice)}</span>
+          </div>
+          <div className="monitor-meta">
+            <span>{card.setName} #{card.cardNumber}</span>
+            <span>{card.compCount} comps</span>
+            <span>BGS 10 profit {money(card.bgs10EstimatedProfit)}</span>
+            <span>Black Label profit {money(card.blackLabelEstimatedProfit)}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+type StoreFilterState = {
+  highOnly: boolean;
+  todayOnly: boolean;
+  retailer: string;
+};
+
+function storeMatchesFilters(store: StoreDTO, filters: StoreFilterState) {
+  if (filters.highOnly && store.prediction.probability !== "HIGH") return false;
+  if (filters.todayOnly && !store.prediction.isLikelyToday) return false;
+  if (filters.retailer !== "ALL" && store.retailerName !== filters.retailer) return false;
+  return true;
+}
+
+function productsForStore(store: StoreDTO, dashboard: DashboardDTO) {
+  const retailerProducts = dashboard.todaysChaseList.filter(
+    (product) => product.retailerName === store.retailerName && product.priorityScore?.buyWatchSkip !== "SKIP"
+  );
+  const fallbackProducts = dashboard.todaysChaseList.filter((product) => product.priorityScore?.buyWatchSkip !== "SKIP");
+  return (retailerProducts.length ? retailerProducts : fallbackProducts).slice(0, 3);
+}
+
+function FieldModePanel({
+  dashboard,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const [filters, setFilters] = useState<StoreFilterState>({
+    highOnly: false,
+    todayOnly: true,
+    retailer: "ALL"
+  });
+  const filteredStores = useMemo(
+    () =>
+      (dashboard.checkTodayStores.length ? dashboard.checkTodayStores : dashboard.stores)
+        .filter((store) => storeMatchesFilters(store, filters))
+        .sort(
+          (a, b) =>
+            Number(b.prediction.isLikelyToday) - Number(a.prediction.isLikelyToday) ||
+            b.prediction.confidenceScore - a.prediction.confidenceScore ||
+            b.prediction.overdueScore - a.prediction.overdueScore ||
+            a.storeName.localeCompare(b.storeName)
+        ),
+    [dashboard.checkTodayStores, dashboard.stores, filters]
+  );
+
+  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, type, value } = event.currentTarget;
+    setFilters((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? (event.currentTarget as HTMLInputElement).checked : value
+    }));
+  }
+
+  return (
+    <>
+      <section className="field-mode-panel">
+        <div className="field-mode-heading">
+          <div>
+            <p className="eyeline">Field Mode</p>
+            <h2>Check Today</h2>
+            <p>Fast store decisions, likely windows, target products, and one-tap field logs.</p>
+          </div>
+          <span className="chip muted">{filteredStores.length} stops</span>
+        </div>
+        <div className="field-filter-grid">
+          <label className="checkbox-label">
+            <input name="highOnly" type="checkbox" checked={filters.highOnly} onChange={updateFilter} />
+            High probability only
+          </label>
+          <label className="checkbox-label">
+            <input name="todayOnly" type="checkbox" checked={filters.todayOnly} onChange={updateFilter} />
+            Today only
+          </label>
+          <SelectInput
+            name="retailer"
+            label="Retailer"
+            value={filters.retailer}
+            onChange={updateFilter}
+            options={fieldRetailerFilters.map((value) => ({ value, label: value === "ALL" ? "All retailers" : value }))}
+          />
+        </div>
+      </section>
+      <div className="field-store-list">
+        {filteredStores.length ? (
+          filteredStores.map((store) => (
+            <FieldStoreCard
+              key={store.id}
+              store={store}
+              products={productsForStore(store, dashboard)}
+              busy={busy}
+              busyLabel={busyLabel}
+              runAction={runAction}
+            />
+          ))
+        ) : (
+          <EmptyState icon={Navigation} title="No stores match these filters" detail="Relax filters or add more store history." />
+        )}
+      </div>
+    </>
+  );
+}
+
+function FieldStoreCard({
+  store,
+  products,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  store: StoreDTO;
+  products: ProductDTO[];
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const targetNames = products.map((product) => product.name);
+  const fallbackProduct = targetNames[0] || "Pokemon TCG shelf";
+  const quickActions: Array<{
+    resultType: StoreVisitResult;
+    label: string;
+    quantityEstimate: string;
+    productSeen: string;
+    icon: typeof Check;
+  }> = [
+    { resultType: "stock_seen", label: "Seen Stock", quantityEstimate: "1+", productSeen: fallbackProduct, icon: Check },
+    { resultType: "empty_shelf", label: "Empty Shelf", quantityEstimate: "0", productSeen: "Pokemon TCG shelf", icon: X },
+    { resultType: "vendor_spotted", label: "Vendor Spotted", quantityEstimate: "Vendor present", productSeen: "Vendor", icon: Activity },
+    { resultType: "bought_product", label: "Bought Product", quantityEstimate: "Bought one", productSeen: fallbackProduct, icon: Trophy },
+    { resultType: "no_visit", label: "No Visit", quantityEstimate: "No visit", productSeen: "Store visit", icon: Clock }
+  ];
+
+  function logQuickAction(action: (typeof quickActions)[number]) {
+    return runAction(
+      `${action.label} ${store.id}`,
+      () =>
+        requestJson("/api/radar/sightings", {
+          method: "POST",
+          body: JSON.stringify({
+            storeId: store.id,
+            productSeen: action.productSeen,
+            resultType: action.resultType,
+            seenAt: new Date().toISOString(),
+            quantityEstimate: action.quantityEstimate,
+            notes: `Field Mode quick log: ${action.label}.`
+          })
+        }),
+      { success: `${action.label} logged` }
+    );
+  }
+
+  function saveNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = formJson(form);
+    void runAction(
+      `Adding field note ${store.id}`,
+      () =>
+        requestJson("/api/radar/sightings", {
+          method: "POST",
+          body: JSON.stringify({
+            ...data,
+            storeId: store.id,
+            resultType: "no_visit",
+            seenAt: new Date().toISOString(),
+            quantityEstimate: "Field note"
+          })
+        }),
+      { success: "Field note saved" }
+    ).then(() => form.reset());
+  }
+
+  return (
+    <article className="field-card" id={`store-${store.id}`}>
+      <div className="field-card-top">
+        <div>
+          <p className="eyeline">{store.retailerName}</p>
+          <h3>{store.storeName}</h3>
+          <span>
+            {store.address} - {store.city}, {store.state}
+          </span>
+        </div>
+        <div className="field-score">
+          <strong>{store.prediction.confidenceScore}%</strong>
+          <span className={`chip ${statusTone(store.prediction.probability)}`}>{store.prediction.probability}</span>
+        </div>
+      </div>
+      <div className="field-metrics">
+        <span>
+          <Clock size={13} />
+          {store.prediction.nextLikelyRestockWindow}
+        </span>
+        <span>Last {store.prediction.daysSinceLastConfirmedRestock ?? "?"}d</span>
+        <span>Avg {store.prediction.averageRestockIntervalDays ?? "TBD"}d</span>
+        <span>Overdue {store.prediction.overdueScore}</span>
+      </div>
+      <p className="reason-text">{store.prediction.reason}</p>
+      <div className="target-strip">
+        {targetNames.length ? (
+          targetNames.map((name) => (
+            <span className="chip muted" key={name}>
+              {name}
+            </span>
+          ))
+        ) : (
+          <span className="chip muted">Look for ETBs, booster bundles, sleeved boosters, and collection boxes</span>
+        )}
+      </div>
+      <div className="quick-action-grid">
+        {quickActions.map((action) => {
+          const Icon = action.icon;
+          const label = `${action.label} ${store.id}`;
+          return (
+            <button
+              className={`quick-action ${statusTone(action.resultType)}`}
+              disabled={busy}
+              key={action.resultType}
+              onClick={() => logQuickAction(action)}
+              type="button"
+            >
+              <Icon size={15} />
+              {busyLabel === label ? "Saving" : action.label}
+            </button>
+          );
+        })}
+      </div>
+      <form className="field-note-form" onSubmit={saveNote}>
+        <TextInput name="productSeen" label="Product / note target" defaultValue={fallbackProduct} required />
+        <TextInput name="notes" label="Add note" placeholder="Aisle note, limit sign, shelf location" required />
+        <button className="mini-action solid" disabled={busy} type="submit">
+          <Plus size={14} />
+          {busyLabel === `Adding field note ${store.id}` ? "Saving" : "Add Note"}
+        </button>
+      </form>
+    </article>
+  );
+}
+
+function ProductsPanel({
+  dashboard,
+  isAdmin,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  isAdmin: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const [filters, setFilters] = useState({
+    highOnly: false,
+    pokemonCenterExclusive: false,
+    productType: "ALL"
+  });
+  const filteredProducts = useMemo(
+    () =>
+      dashboard.products.filter((product) => {
+        if (filters.highOnly && (product.priorityScore?.score ?? 0) < 70) return false;
+        if (filters.pokemonCenterExclusive && !product.pokemonCenterExclusiveVersion) return false;
+        if (filters.productType !== "ALL" && product.productType !== filters.productType) return false;
+        return true;
+      }),
+    [dashboard.products, filters]
+  );
+
+  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, type, value } = event.currentTarget;
+    setFilters((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? (event.currentTarget as HTMLInputElement).checked : value
+    }));
+  }
+
+  return (
+    <>
+      <PanelHeader title="Product Watchlist" />
+      {isAdmin ? (
+        <section className="form-panel">
+          <div className="edit-card-heading">
+            <div>
+              <h2>Monitor Controls</h2>
+              <span>Checks are sequential and rate-limited against public product pages.</span>
+            </div>
+            <div className="admin-actions">
+              <button
+                className="mini-action solid"
+                disabled={busy}
+                type="button"
+                onClick={() =>
+                  runAction(
+                    "Running due checks",
+                    () =>
+                      requestJson("/api/radar/monitor/run", {
+                        method: "POST",
+                        body: JSON.stringify({ mode: "due" })
+                      }),
+                    { success: "Due checks finished" }
+                  )
+                }
+              >
+                <Play size={14} />
+                {busyLabel === "Running due checks" ? "Running" : "Run Due Checks"}
+              </button>
+              <button
+                className="mini-action"
+                disabled={busy}
+                type="button"
+                onClick={() =>
+                  runAction(
+                    "Running all checks",
+                    () =>
+                      requestJson("/api/radar/monitor/run", {
+                        method: "POST",
+                        body: JSON.stringify({ mode: "all" })
+                      }),
+                    { success: "All checks finished" }
+                  )
+                }
+              >
+                <RefreshCw size={14} />
+                {busyLabel === "Running all checks" ? "Running" : "Run All Checks"}
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+      <section className="form-panel">
+        <div className="edit-card-heading">
+          <div>
+            <h2>Chase Filters</h2>
+            <span>{filteredProducts.length} products shown</span>
+          </div>
+        </div>
+        <div className="form-grid">
+          <label className="checkbox-label">
+            <input name="highOnly" type="checkbox" checked={filters.highOnly} onChange={updateFilter} />
+            High priority only
+          </label>
+          <label className="checkbox-label">
+            <input
+              name="pokemonCenterExclusive"
+              type="checkbox"
+              checked={filters.pokemonCenterExclusive}
+              onChange={updateFilter}
+            />
+            Pokemon Center exclusive
+          </label>
+          <SelectInput
+            name="productType"
+            label="Product type"
+            value={filters.productType}
+            onChange={updateFilter}
+            options={[{ value: "ALL", label: "All Product Types" }].concat(
+              productTypeOptions.map((value) => ({ value, label: value }))
+            )}
+          />
+        </div>
+      </section>
+      {isAdmin ? <RetailerTemplatesPanel dashboard={dashboard} /> : null}
+      <ProductStack products={filteredProducts} />
+      {isAdmin ? (
+        <ProductAddWizard dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+      ) : null}
+      {isAdmin ? (
+        <BulkImportPanel
+          title="Bulk Product Import"
+          endpoint="/api/radar/products/import"
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          sample={`retailer,name,url,setName,productType,sku,upc,dpci,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,,087-12-1234,26.99,UNAVAILABLE,HIGH,WATCH,true,60,Mega Evolution-Chaos Rising,Manual checkout only`}
+        />
+      ) : null}
+      {isAdmin ? (
+        <section className="form-panel">
+          <h2>Edit Products</h2>
+          <div className="edit-stack">
+            {dashboard.products.length ? (
+              dashboard.products.map((product) => (
+                <EditableProduct
+                  key={product.id}
+                  product={product}
+                  retailers={dashboard.retailers}
+                  releases={dashboard.releases}
+                  busy={busy}
+                  busyLabel={busyLabel}
+                  submit={submit}
+                  runAction={runAction}
+                />
+              ))
+            ) : (
+              <EmptyState icon={PackageSearch} title="No products to edit" detail="Add a product URL first." />
+            )}
+          </div>
+        </section>
+      ) : null}
+      <MonitorLogsPanel dashboard={dashboard} />
+    </>
+  );
+}
+
+function RetailerTemplatesPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  return (
+    <section className="form-panel">
+      <PanelHeader title="Retailer Templates" />
+      <div className="template-grid">
+        {dashboard.retailerTemplates.map((template) => (
+          <article className="template-card" key={template.retailerName}>
+            <div className="edit-card-heading">
+              <div>
+                <strong>{template.retailerName}</strong>
+                <span>{template.urlPatternLabel}</span>
+              </div>
+              <span className={`chip ${statusTone(template.alertPriorityDefault)}`}>{template.alertPriorityDefault}</span>
+            </div>
+            <p className="reason-text">{template.monitorNotes}</p>
+            <div className="monitor-meta">
+              <span>IDs: {template.identifierFields.join(", ")}</span>
+              <span>Stock words: {template.statusWords.inStock.slice(0, 2).join(", ")}</span>
+              <span>Selectors: {template.safeSelectors.slice(0, 2).join(", ")}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProductAddWizard({
+  dashboard,
+  busy,
+  busyLabel,
+  submit
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const [step, setStep] = useState(1);
+  const [retailerId, setRetailerId] = useState(dashboard.retailers[0]?.id ?? "");
+  const template = templateForRetailer(retailerId, dashboard.retailers, dashboard.retailerTemplates);
+
+  function updateRetailer(event: ChangeEvent<HTMLSelectElement>) {
+    setRetailerId(event.currentTarget.value);
+  }
+
+  return (
+    <section className="form-panel">
+      <div className="edit-card-heading">
+        <div>
+          <h2>Add Product Wizard</h2>
+          <span>Step {step} of 4: retailer, URL, details, then monitor settings.</span>
+        </div>
+        <div className="wizard-steps" aria-label="Product wizard steps">
+          {[1, 2, 3, 4].map((item) => (
+            <button
+              className={step === item ? "wizard-dot active" : "wizard-dot"}
+              key={item}
+              type="button"
+              onClick={() => setStep(item)}
+              aria-label={`Step ${item}`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+      <form
+        className="wizard-form"
+        noValidate
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Adding product",
+            (form) => requestJson("/api/radar/products", { method: "POST", body: JSON.stringify(formJson(form)) }),
+            { success: "Product added" }
+          )
+        }
+      >
+        <fieldset className={step === 1 ? "wizard-step active" : "wizard-step"}>
+          <SelectInput
+            name="retailerId"
+            label="Retailer"
+            value={retailerId}
+            onChange={updateRetailer}
+            options={dashboard.retailers.map(optionFromRetailer)}
+          />
+          {template ? (
+            <div className="template-hint">
+              <strong>{template.retailerName} template</strong>
+              <span>{template.monitorNotes}</span>
+              <span>Expected URL: {template.urlPatternLabel}</span>
+              <span>Useful IDs: {template.identifierFields.join(", ")}</span>
+            </div>
+          ) : null}
+        </fieldset>
+        <fieldset className={step === 2 ? "wizard-step active" : "wizard-step"}>
+          <TextInput name="url" label="Official product URL" type="url" placeholder="https://..." />
+          {template ? (
+            <div className="template-hint">
+              <strong>Public cues monitored</strong>
+              <span>Sold out: {template.statusWords.soldOut.join(", ")}</span>
+              <span>In stock: {template.statusWords.inStock.join(", ")}</span>
+              <span>Add-to-cart: {template.statusWords.addToCart.join(", ")}</span>
+            </div>
+          ) : null}
+        </fieldset>
+        <fieldset className={step === 3 ? "wizard-step active" : "wizard-step"}>
+          <div className="form-grid">
+            <TextInput name="name" label="Product name" placeholder="Pokemon TCG Booster Bundle" />
+            <SelectInput name="releaseId" label="Release / set" options={releaseOptions(dashboard.releases)} />
+            <SelectInput
+              name="productType"
+              label="Product type"
+              options={productTypeOptions.map((value) => ({ value, label: value }))}
+            />
+            <TextInput name="setName" label="Set name" placeholder="Mega Evolution-Chaos Rising" />
+            <TextInput name="sku" label="SKU / ASIN / TCIN" />
+            <TextInput name="upc" label="UPC" inputMode="numeric" placeholder="8 to 14 digits" />
+            <TextInput name="dpci" label="DPCI" placeholder="087-12-1234" />
+            <TextInput name="retailPrice" label="Retail price" type="number" min="0" max="100000" step="0.01" />
+          </div>
+        </fieldset>
+        <fieldset className={step === 4 ? "wizard-step active" : "wizard-step"}>
+          <div className="form-grid">
+            <SelectInput name="stockStatus" label="Starting status" options={productStatuses.map(optionFromString)} />
+            <SelectInput
+              key={`priority-${retailerId}`}
+              name="priority"
+              label="Alert priority"
+              defaultValue={template?.alertPriorityDefault ?? "MEDIUM"}
+              options={priorities.map(optionFromString)}
+            />
+            <SelectInput name="rating" label="Manual override" options={productRatings.map(optionFromString)} />
+            <SelectInput name="manualPriorityOverride" label="Priority override" options={productRatings.map(optionFromString)} />
+            <TextInput
+              name="checkFrequencyMinutes"
+              label="Check frequency minutes"
+              type="number"
+              min="15"
+              max="10080"
+              defaultValue="60"
+            />
+            <label className="checkbox-label">
+              <input name="monitorEnabled" type="hidden" value="false" />
+              <input name="monitorEnabled" type="checkbox" value="true" defaultChecked />
+              Monitor this product
+            </label>
+            <TextareaInput name="notes" label="Notes" wide />
+            <TextareaInput name="sealedResaleNotes" label="Sealed resale notes" wide />
+            <TextareaInput name="scarcityNotes" label="Scarcity notes" wide />
+          </div>
+        </fieldset>
+        <div className="form-actions">
+          <button className="mini-action" type="button" disabled={busy || step === 1} onClick={() => setStep((value) => value - 1)}>
+            Back
+          </button>
+          {step < 4 ? (
+            <button className="mini-action solid" type="button" disabled={busy} onClick={() => setStep((value) => value + 1)}>
+              Next
+            </button>
+          ) : (
+            <button className="primary-action" disabled={busy} type="submit">
+              <Plus size={16} />
+              {busyLabel === "Adding product" ? "Adding" : "Add Product"}
+            </button>
+          )}
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function BulkImportPanel({
+  title,
+  endpoint,
+  sample,
+  busy,
+  busyLabel,
+  submit
+}: {
+  title: string;
+  endpoint: string;
+  sample: string;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const label = `Importing ${title}`;
+  return (
+    <section className="form-panel">
+      <div className="edit-card-heading">
+        <div>
+          <h2>{title}</h2>
+          <span>Paste CSV with headers or a JSON array using the same field names.</span>
+        </div>
+      </div>
+      <form
+        className="backup-form"
+        onSubmit={(event) =>
+          submit(
+            event,
+            label,
+            async (form) => {
+              const result = await requestJson<{ created: number; failed: number; errors: string[] }>(endpoint, {
+                method: "POST",
+                body: JSON.stringify(formJson(form))
+              });
+              if (result.failed > 0) {
+                throw new Error(`Imported ${result.created}; ${result.failed} failed. ${result.errors.slice(0, 2).join(" ")}`);
+              }
+              return result;
+            },
+            { success: `${title} complete` }
+          )
+        }
+      >
+        <SelectInput
+          name="format"
+          label="Import format"
+          defaultValue="csv"
+          options={[
+            { value: "csv", label: "CSV" },
+            { value: "json", label: "JSON" }
+          ]}
+        />
+        <label>
+          Import data
+          <textarea name="data" rows={7} defaultValue={sample} />
+        </label>
+        <button className="primary-action" disabled={busy} type="submit">
+          <Upload size={16} />
+          {busyLabel === label ? "Importing" : "Import"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function EditableProduct({
+  product,
+  retailers,
+  releases,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  product: ProductDTO;
+  retailers: RetailerDTO[];
+  releases: ReleaseDTO[];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const saveLabel = `Saving product ${product.id}`;
+  return (
+    <form
+      className="edit-card"
+      onSubmit={(event) =>
+        submit(
+          event,
+          saveLabel,
+          (form) =>
+            requestJson(`/api/radar/products/${product.id}`, {
+              method: "PATCH",
+              body: JSON.stringify(formJson(form))
+            }),
+          { reset: false, success: "Product saved" }
+        )
+      }
+    >
+      <div className="edit-card-heading">
+        <div>
+          <strong>{product.name}</strong>
+          <span>
+            {product.retailerName} - Score {product.priorityScore?.score ?? 0}
+          </span>
+        </div>
+        <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
+          Go <ExternalLink size={14} />
+        </a>
+      </div>
+      <div className="form-grid">
+        <TextInput name="name" label="Product name" defaultValue={product.name} required />
+        <SelectInput
+          name="retailerId"
+          label="Retailer"
+          defaultValue={product.retailerId}
+          options={retailers.map(optionFromRetailer)}
+        />
+        <SelectInput
+          name="releaseId"
+          label="Release / set"
+          defaultValue={product.releaseId ?? ""}
+          options={releaseOptions(releases)}
+        />
+        <SelectInput
+          name="productType"
+          label="Product type"
+          defaultValue={product.productType ?? productTypeOptions[0]}
+          options={productTypeOptions.map((value) => ({ value, label: value }))}
+        />
+        <TextInput name="setName" label="Set name" defaultValue={product.setName ?? ""} />
+        <TextInput name="url" label="Official URL" type="url" defaultValue={product.url} required />
+        <TextInput name="sku" label="SKU" defaultValue={product.sku ?? ""} />
+        <TextInput name="upc" label="UPC" inputMode="numeric" defaultValue={product.upc ?? ""} />
+        <TextInput name="dpci" label="DPCI" defaultValue={product.dpci ?? ""} />
+        <TextInput
+          name="retailPrice"
+          label="Retail price"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={product.retailPrice ?? ""}
+        />
+        <SelectInput
+          name="stockStatus"
+          label="Status"
+          defaultValue={product.stockStatus}
+          options={productStatuses.map(optionFromString)}
+        />
+        <SelectInput name="priority" label="Priority" defaultValue={product.priority} options={priorities.map(optionFromString)} />
+        <SelectInput
+          name="rating"
+          label="Manual override"
+          defaultValue={product.rating === "AVOID" ? "WATCH" : product.rating}
+          options={productRatings.map(optionFromString)}
+        />
+        <SelectInput
+          name="manualPriorityOverride"
+          label="Priority override"
+          defaultValue={product.manualPriorityOverride ?? (product.rating === "AVOID" ? "WATCH" : product.rating)}
+          options={productRatings.map(optionFromString)}
+        />
+        <TextInput
+          name="checkFrequencyMinutes"
+          label="Check frequency minutes"
+          type="number"
+          min="15"
+          max="10080"
+          defaultValue={product.checkFrequencyMinutes}
+        />
+        <label className="checkbox-label">
+          <input name="monitorEnabled" type="hidden" value="false" />
+          <input name="monitorEnabled" type="checkbox" value="true" defaultChecked={product.monitorEnabled} />
+          Monitor this product
+        </label>
+        <TextareaInput name="reason" label="Reason for alert/history" placeholder="Optional" wide />
+        <TextareaInput name="notes" label="Notes" defaultValue={product.notes ?? ""} wide />
+        <TextareaInput name="sealedResaleNotes" label="Sealed resale notes" defaultValue={product.sealedResaleNotes ?? ""} wide />
+        <TextareaInput name="scarcityNotes" label="Scarcity notes" defaultValue={product.scarcityNotes ?? ""} wide />
+      </div>
+      {product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
+      <div className="monitor-status">
+        <span>Last checked: {dateTime(product.lastCheckedAt)}</span>
+        <span>Next estimate: {dateTime(product.nextCheckAt)}</span>
+        <span>Last result: {product.lastMonitorResult || "Not checked by monitor yet"}</span>
+        <span>Last error: {product.lastMonitorError || "None"}</span>
+        <span>Alert sent: {product.lastAlertSentAt ? dateTime(product.lastAlertSentAt) : "No"}</span>
+      </div>
+      <div className="form-actions">
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Checking product ${product.id}`,
+              () => requestJson(`/api/radar/products/${product.id}/check`, { method: "POST" }),
+              { success: "Product check finished" }
+            )
+          }
+        >
+          <Play size={14} />
+          {busyLabel === `Checking product ${product.id}` ? "Checking" : "Run Check Now"}
+        </button>
+        <button className="mini-action solid" disabled={busy} type="submit">
+          <Save size={14} />
+          {busyLabel === saveLabel ? "Saving" : "Save"}
+        </button>
+        <button
+          className="mini-action danger"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Deleting product ${product.id}`,
+              () => requestJson(`/api/radar/products/${product.id}`, { method: "DELETE" }),
+              {
+                confirm: `Delete ${product.name}? This also removes its restock snapshots.`,
+                success: "Product deleted"
+              }
+            )
+          }
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function MonitorLogsPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  return (
+    <section className="form-panel">
+      <PanelHeader title="Monitor Logs" />
+      <div className="table-list monitor-logs">
+        {dashboard.monitorLogs.length ? (
+          dashboard.monitorLogs.map((log) => (
+            <article className="table-row" key={log.id}>
+              <span className={`chip ${log.status === "CHANGED" ? "good" : log.status === "ERROR" ? "bad" : "muted"}`}>
+                {formatStatus(log.status)}
+              </span>
+              <strong>{log.productName || "Batch job"}</strong>
+              <span>{log.changeSummary || log.error || "No detail"}</span>
+              <span>{dateTime(log.startedAt)}</span>
+              <span>{log.alertSent ? "Alert sent" : "No alert"}</span>
+            </article>
+          ))
+        ) : (
+          <EmptyState icon={History} title="No monitor logs" detail="Run a product check to create the first log entry." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function StoresPanel({
+  dashboard,
+  isAdmin,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  isAdmin: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const [filters, setFilters] = useState<StoreFilterState>({
+    highOnly: false,
+    todayOnly: false,
+    retailer: "ALL"
+  });
+  const filteredStores = useMemo(
+    () => dashboard.stores.filter((store) => storeMatchesFilters(store, filters)),
+    [dashboard.stores, filters]
+  );
+
+  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, type, value } = event.currentTarget;
+    setFilters((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? (event.currentTarget as HTMLInputElement).checked : value
+    }));
+  }
+
+  return (
+    <>
+      <PanelHeader title="Local Store Predictions" />
+      <section className="form-panel">
+        <div className="edit-card-heading">
+          <div>
+            <h2>Store Filters</h2>
+            <span>{filteredStores.length} stores shown</span>
+          </div>
+        </div>
+        <div className="field-filter-grid">
+          <label className="checkbox-label">
+            <input name="highOnly" type="checkbox" checked={filters.highOnly} onChange={updateFilter} />
+            High probability only
+          </label>
+          <label className="checkbox-label">
+            <input name="todayOnly" type="checkbox" checked={filters.todayOnly} onChange={updateFilter} />
+            Today only
+          </label>
+          <SelectInput
+            name="retailer"
+            label="Retailer"
+            value={filters.retailer}
+            onChange={updateFilter}
+            options={fieldRetailerFilters.map((value) => ({ value, label: value === "ALL" ? "All retailers" : value }))}
+          />
+        </div>
+      </section>
+      <StoreStack stores={filteredStores} />
+      <section className="form-panel">
+        <h2>Log Manual Sighting</h2>
+        <form
+          className="form-grid"
+          onSubmit={(event) =>
+            submit(
+              event,
+              "Logging sighting",
+              (form) => requestJson("/api/radar/sightings", { method: "POST", body: JSON.stringify(formJson(form)) }),
+              { success: "Sighting logged" }
+            )
+          }
+        >
+          <SelectInput
+            name="storeId"
+            label="Store"
+            options={dashboard.stores.map((store) => ({ value: store.id, label: store.storeName }))}
+          />
+          <TextInput name="productSeen" label="Product seen" placeholder="Booster Bundle" required />
+          <SelectInput name="resultType" label="Result" options={storeVisitResults.map(optionFromString)} />
+          <TextInput name="seenAt" label="Date/time" type="datetime-local" defaultValue={todayLocalInput()} required />
+          <TextInput name="quantityEstimate" label="Quantity estimate" placeholder="6-10" required />
+          <TextInput name="shelfPhotoUrl" label="Shelf photo URL" type="url" placeholder="Optional" />
+          <TextareaInput name="notes" label="Notes" wide />
+          <button className="primary-action" disabled={busy || dashboard.stores.length === 0} type="submit">
+            <Plus size={16} />
+            {busyLabel === "Logging sighting" ? "Logging" : "Log Sighting"}
+          </button>
+        </form>
+      </section>
+      <section className="form-panel">
+        <h2>Store Visit History</h2>
+        <div className="edit-stack">
+          {dashboard.sightings.length ? (
+            dashboard.sightings.map((sighting) => (
+              <EditableSighting
+                key={sighting.id}
+                sighting={sighting}
+                stores={dashboard.stores}
+                canEdit={isAdmin || sighting.userId === dashboard.currentUser.id}
+                busy={busy}
+                busyLabel={busyLabel}
+                submit={submit}
+                runAction={runAction}
+              />
+            ))
+          ) : (
+            <EmptyState icon={MapPin} title="No sightings yet" detail="Log the first confirmed shelf sighting." />
+          )}
+        </div>
+      </section>
+      {isAdmin ? (
+        <section className="form-panel">
+          <h2>Add Local Store</h2>
+          <form
+            className="form-grid"
+            onSubmit={(event) =>
+              submit(
+                event,
+                "Adding store",
+                (form) => requestJson("/api/radar/stores", { method: "POST", body: JSON.stringify(formJson(form)) }),
+                { success: "Store added" }
+              )
+            }
+          >
+            <SelectInput name="retailerId" label="Retailer" options={dashboard.retailers.map(optionFromRetailer)} />
+            <TextInput name="storeName" label="Store name" required />
+            <TextInput name="address" label="Address" required />
+            <TextInput name="city" label="City" required />
+            <TextInput name="state" label="State" maxLength={24} required />
+            <TextInput name="typicalRestockDays" label="Restock days" placeholder="Tuesday,Friday" required />
+            <TextInput name="typicalRestockTimeWindow" label="Restock window" placeholder="8:00 AM - 11:00 AM" required />
+            <TextInput name="confidenceScore" label="Confidence" type="number" min="0" max="100" defaultValue="60" />
+            <TextareaInput name="vendorNotes" label="Vendor notes" wide />
+            <TextareaInput name="notes" label="Notes" wide />
+            <button className="primary-action" disabled={busy} type="submit">
+              <Plus size={16} />
+              {busyLabel === "Adding store" ? "Adding" : "Add Store"}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {isAdmin ? (
+        <BulkImportPanel
+          title="Bulk Store Import"
+          endpoint="/api/radar/stores/import"
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          sample={`retailer,storeName,address,city,state,typicalRestockDays,typicalRestockTimeWindow,vendorNotes,confidenceScore,notes\nTarget,Target Northside,100 Market Plaza,Orlando,FL,\"Tuesday,Friday\",8:00 AM - 11:00 AM,Card aisle after front lanes,70,Manual visit log only`}
+        />
+      ) : null}
+      {isAdmin ? (
+        <section className="form-panel">
+          <h2>Edit Stores</h2>
+          <div className="edit-stack">
+            {dashboard.stores.length ? (
+              dashboard.stores.map((store) => (
+                <EditableStore
+                  key={store.id}
+                  store={store}
+                  retailers={dashboard.retailers}
+                  busy={busy}
+                  busyLabel={busyLabel}
+                  submit={submit}
+                  runAction={runAction}
+                />
+              ))
+            ) : (
+              <EmptyState icon={Store} title="No stores to edit" detail="Add a local store first." />
+            )}
+          </div>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function EditableStore({
+  store,
+  retailers,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  store: StoreDTO;
+  retailers: RetailerDTO[];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const saveLabel = `Saving store ${store.id}`;
+  return (
+    <form
+      className="edit-card"
+      onSubmit={(event) =>
+        submit(
+          event,
+          saveLabel,
+          (form) =>
+            requestJson(`/api/radar/stores/${store.id}`, {
+              method: "PATCH",
+              body: JSON.stringify(formJson(form))
+            }),
+          { reset: false, success: "Store saved" }
+        )
+      }
+    >
+      <div className="edit-card-heading">
+        <div>
+          <strong>{store.storeName}</strong>
+          <span>
+            {store.city}, {store.state} - {store.prediction.probability}
+          </span>
+        </div>
+        <span className={`chip ${statusTone(store.prediction.probability)}`}>{store.prediction.confidenceScore}%</span>
+      </div>
+      <div className="form-grid">
+        <SelectInput
+          name="retailerId"
+          label="Retailer"
+          defaultValue={store.retailerId}
+          options={retailers.map(optionFromRetailer)}
+        />
+        <TextInput name="storeName" label="Store name" defaultValue={store.storeName} required />
+        <TextInput name="address" label="Address" defaultValue={store.address} required />
+        <TextInput name="city" label="City" defaultValue={store.city} required />
+        <TextInput name="state" label="State" maxLength={24} defaultValue={store.state} required />
+        <TextInput name="typicalRestockDays" label="Restock days" defaultValue={store.typicalRestockDays} required />
+        <TextInput
+          name="typicalRestockTimeWindow"
+          label="Restock window"
+          defaultValue={store.typicalRestockTimeWindow}
+          required
+        />
+        <TextInput
+          name="confidenceScore"
+          label="Confidence"
+          type="number"
+          min="0"
+          max="100"
+          defaultValue={store.confidenceScore}
+        />
+        <TextareaInput name="vendorNotes" label="Vendor notes" defaultValue={store.vendorNotes ?? ""} wide />
+        <TextareaInput name="notes" label="Notes" defaultValue={store.notes ?? ""} wide />
+      </div>
+      <div className="form-actions">
+        <button className="mini-action solid" disabled={busy} type="submit">
+          <Save size={14} />
+          {busyLabel === saveLabel ? "Saving" : "Save"}
+        </button>
+        <button
+          className="mini-action danger"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(`Deleting store ${store.id}`, () => requestJson(`/api/radar/stores/${store.id}`, { method: "DELETE" }), {
+              confirm: `Delete ${store.storeName}? This also removes its sightings.`,
+              success: "Store deleted"
+            })
+          }
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function EditableSighting({
+  sighting,
+  stores,
+  canEdit,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  sighting: SightingDTO;
+  stores: StoreDTO[];
+  canEdit: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  if (!canEdit) {
+    return (
+      <article className="data-card">
+        <div className="card-main">
+          <div className="avatar">
+            <MapPin size={16} />
+          </div>
+          <div>
+            <h3>{sighting.productSeen}</h3>
+            <p>
+              {sighting.storeName} - {formatStatus(sighting.resultType)} - {dateTime(sighting.seenAt)} -{" "}
+              {sighting.quantityEstimate}
+            </p>
+          </div>
+        </div>
+        <span className={`chip ${statusTone(sighting.resultType)}`}>{formatStatus(sighting.resultType)}</span>
+      </article>
+    );
+  }
+
+  const saveLabel = `Saving sighting ${sighting.id}`;
+  return (
+    <form
+      className="edit-card"
+      onSubmit={(event) =>
+        submit(
+          event,
+          saveLabel,
+          (form) =>
+            requestJson(`/api/radar/sightings/${sighting.id}`, {
+              method: "PATCH",
+              body: JSON.stringify(formJson(form))
+            }),
+          { reset: false, success: "Sighting saved" }
+        )
+      }
+    >
+      <div className="edit-card-heading">
+        <div>
+          <strong>{sighting.productSeen}</strong>
+          <span>
+            {sighting.storeName} - {formatStatus(sighting.resultType)} - logged by {sighting.userName}
+          </span>
+        </div>
+        <span className="chip muted">{dateTime(sighting.seenAt)}</span>
+      </div>
+      <div className="form-grid">
+        <SelectInput
+          name="storeId"
+          label="Store"
+          defaultValue={sighting.storeId}
+          options={stores.map((store) => ({ value: store.id, label: store.storeName }))}
+        />
+        <TextInput name="productSeen" label="Product seen" defaultValue={sighting.productSeen} required />
+        <SelectInput
+          name="resultType"
+          label="Result"
+          defaultValue={sighting.resultType}
+          options={storeVisitResults.map(optionFromString)}
+        />
+        <TextInput name="seenAt" label="Date/time" type="datetime-local" defaultValue={toDateTimeInput(sighting.seenAt)} required />
+        <TextInput name="quantityEstimate" label="Quantity estimate" defaultValue={sighting.quantityEstimate} required />
+        <TextInput name="shelfPhotoUrl" label="Shelf photo URL" type="url" defaultValue={sighting.shelfPhotoUrl ?? ""} />
+        <TextareaInput name="notes" label="Notes" defaultValue={sighting.notes ?? ""} wide />
+      </div>
+      <div className="form-actions">
+        <button className="mini-action solid" disabled={busy} type="submit">
+          <Save size={14} />
+          {busyLabel === saveLabel ? "Saving" : "Save"}
+        </button>
+        <button
+          className="mini-action danger"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Deleting sighting ${sighting.id}`,
+              () => requestJson(`/api/radar/sightings/${sighting.id}`, { method: "DELETE" }),
+              {
+                confirm: `Delete sighting for ${sighting.productSeen}?`,
+                success: "Sighting deleted"
+              }
+            )
+          }
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ReleasesPanel({
+  dashboard,
+  isAdmin,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  isAdmin: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const [filters, setFilters] = useState({
+    highOnly: false,
+    pokemonCenterExclusive: false,
+    productType: "ALL"
+  });
+  const filteredReleases = useMemo(
+    () =>
+      dashboard.releases.filter((release) => {
+        if (filters.highOnly && release.sealedProductPriority !== "HIGH" && release.estimatedDemand !== "HIGH") return false;
+        if (filters.pokemonCenterExclusive && !release.pokemonCenterExclusiveVersion) return false;
+        if (
+          filters.productType !== "ALL" &&
+          !`${release.productType ?? ""} ${release.productTypes}`.toLowerCase().includes(filters.productType.toLowerCase())
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [dashboard.releases, filters]
+  );
+
+  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, type, value } = event.currentTarget;
+    setFilters((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? (event.currentTarget as HTMLInputElement).checked : value
+    }));
+  }
+
+  return (
+    <>
+      <PanelHeader title="Release Calendar" />
+      <section className="form-panel">
+        <div className="form-grid">
+          <label className="checkbox-label">
+            <input name="highOnly" type="checkbox" checked={filters.highOnly} onChange={updateFilter} />
+            High priority only
+          </label>
+          <label className="checkbox-label">
+            <input
+              name="pokemonCenterExclusive"
+              type="checkbox"
+              checked={filters.pokemonCenterExclusive}
+              onChange={updateFilter}
+            />
+            Pokemon Center exclusive
+          </label>
+          <SelectInput
+            name="productType"
+            label="Product type"
+            value={filters.productType}
+            onChange={updateFilter}
+            options={[{ value: "ALL", label: "All Product Types" }].concat(
+              productTypeOptions.map((value) => ({ value, label: value }))
+            )}
+          />
+        </div>
+      </section>
+      <ReleaseStack releases={filteredReleases} />
+      {isAdmin ? (
+        <section className="form-panel">
+          <h2>Add Release</h2>
+          <form
+            className="form-grid"
+            onSubmit={(event) =>
+              submit(
+                event,
+                "Adding release",
+                (form) => requestJson("/api/radar/releases", { method: "POST", body: JSON.stringify(formJson(form)) }),
+                { success: "Release added" }
+              )
+            }
+          >
+            <TextInput name="setName" label="Set name" required />
+            <SelectInput
+              name="productType"
+              label="Primary product type"
+              options={productTypeOptions.map((value) => ({ value, label: value }))}
+            />
+            <TextInput name="officialReleaseDate" label="Release date" type="date" min="2020-01-01" required />
+            <TextInput name="preorderDate" label="Preorder date" type="date" min="2020-01-01" />
+            <TextareaInput name="productTypes" label="Product types" placeholder="ETB, Booster Bundle" wide required />
+            <SelectInput name="demandRating" label="Demand" options={priorities.map(optionFromString)} />
+            <SelectInput name="estimatedDemand" label="Estimated demand" options={priorities.map(optionFromString)} />
+            <SelectInput name="priority" label="Priority" options={priorities.map(optionFromString)} />
+            <SelectInput name="sealedProductPriority" label="Sealed product priority" options={priorities.map(optionFromString)} />
+            <label className="checkbox-label">
+              <input name="pokemonCenterExclusiveVersion" type="checkbox" value="true" />
+              Pokemon Center exclusive version
+            </label>
+            <TextareaInput name="chaseCards" label="Chase cards" wide />
+            <TextareaInput name="productLinks" label="Product links" placeholder="https://..." wide />
+            <TextareaInput name="notes" label="Notes" wide />
+            <button className="primary-action" disabled={busy} type="submit">
+              <Plus size={16} />
+              {busyLabel === "Adding release" ? "Adding" : "Add Release"}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {isAdmin ? (
+        <BulkImportPanel
+          title="Bulk Release Import"
+          endpoint="/api/radar/releases/import"
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          sample={`setName,productType,officialReleaseDate,preorderDate,productTypes,pokemonCenterExclusiveVersion,chaseCards,demandRating,estimatedDemand,priority,sealedProductPriority,productLinks,notes\nMega Evolution-Chaos Rising,Build & Battle Box,2026-05-22,2026-05-08,\"Build & Battle Box, Booster Bundle, ETB\",true,Verify final chase card list,HIGH,HIGH,HIGH,HIGH,https://www.pokemon.com/uk/pokemon-news/get-a-pokemon-tcg-mega-evolution-chaos-rising-build-battle-box-early,Verify dates by region`}
+        />
+      ) : null}
+      {isAdmin ? (
+        <section className="form-panel">
+          <h2>Edit Releases</h2>
+          <div className="edit-stack">
+            {dashboard.releases.length ? (
+              dashboard.releases.map((release) => (
+                <EditableRelease
+                  key={release.id}
+                  release={release}
+                  busy={busy}
+                  busyLabel={busyLabel}
+                  submit={submit}
+                  runAction={runAction}
+                />
+              ))
+            ) : (
+              <EmptyState icon={CalendarDays} title="No releases to edit" detail="Add a release first." />
+            )}
+          </div>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function EditableRelease({
+  release,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  release: ReleaseDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const saveLabel = `Saving release ${release.id}`;
+  return (
+    <form
+      className="edit-card"
+      onSubmit={(event) =>
+        submit(
+          event,
+          saveLabel,
+          (form) =>
+            requestJson(`/api/radar/releases/${release.id}`, {
+              method: "PATCH",
+              body: JSON.stringify(formJson(form))
+            }),
+          { reset: false, success: "Release saved" }
+        )
+      }
+    >
+      <div className="edit-card-heading">
+        <div>
+          <strong>{release.setName}</strong>
+          <span>
+            {shortDate(release.officialReleaseDate)} - {Math.max(0, release.daysUntilRelease)} days
+          </span>
+        </div>
+        <span className={`chip ${statusTone(release.priority)}`}>{release.priority}</span>
+      </div>
+      <div className="form-grid">
+        <TextInput name="setName" label="Set name" defaultValue={release.setName} required />
+        <SelectInput
+          name="productType"
+          label="Primary product type"
+          defaultValue={release.productType ?? productTypeOptions[0]}
+          options={productTypeOptions.map((value) => ({ value, label: value }))}
+        />
+        <TextInput
+          name="officialReleaseDate"
+          label="Release date"
+          type="date"
+          min="2020-01-01"
+          defaultValue={toDateInput(release.officialReleaseDate)}
+          required
+        />
+        <TextInput
+          name="preorderDate"
+          label="Preorder date"
+          type="date"
+          min="2020-01-01"
+          defaultValue={toDateInput(release.preorderDate)}
+        />
+        <TextareaInput name="productTypes" label="Product types" defaultValue={release.productTypes} wide required />
+        <SelectInput name="demandRating" label="Demand" defaultValue={release.demandRating} options={priorities.map(optionFromString)} />
+        <SelectInput
+          name="estimatedDemand"
+          label="Estimated demand"
+          defaultValue={release.estimatedDemand}
+          options={priorities.map(optionFromString)}
+        />
+        <SelectInput name="priority" label="Priority" defaultValue={release.priority} options={priorities.map(optionFromString)} />
+        <SelectInput
+          name="sealedProductPriority"
+          label="Sealed product priority"
+          defaultValue={release.sealedProductPriority}
+          options={priorities.map(optionFromString)}
+        />
+        <label className="checkbox-label">
+          <input
+            name="pokemonCenterExclusiveVersion"
+            type="checkbox"
+            value="true"
+            defaultChecked={release.pokemonCenterExclusiveVersion}
+          />
+          Pokemon Center exclusive version
+        </label>
+        <TextareaInput name="chaseCards" label="Chase cards" defaultValue={release.chaseCards ?? ""} wide />
+        <TextareaInput name="productLinks" label="Product links" defaultValue={release.productLinks ?? ""} wide />
+        <TextareaInput name="notes" label="Notes" defaultValue={release.notes ?? ""} wide />
+      </div>
+      <div className="form-actions">
+        <button className="mini-action solid" disabled={busy} type="submit">
+          <Save size={14} />
+          {busyLabel === saveLabel ? "Saving" : "Save"}
+        </button>
+        <button
+          className="mini-action danger"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Deleting release ${release.id}`,
+              () => requestJson(`/api/radar/releases/${release.id}`, { method: "DELETE" }),
+              {
+                confirm: `Delete ${release.setName}?`,
+                success: "Release deleted"
+              }
+            )
+          }
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function CardsPanel({
+  dashboard,
+  isAdmin,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  isAdmin: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const [filters, setFilters] = useState({
+    setName: "",
+    character: "",
+    rawMin: "",
+    rawMax: "",
+    psa9Only: false,
+    psa10Upside: false,
+    era: "ALL" as "ALL" | Era,
+    lowNumbered: false
+  });
+
+  const filteredCards = useMemo(() => {
+    const setQuery = filters.setName.trim().toLowerCase();
+    const characterQuery = filters.character.trim().toLowerCase();
+    const minRaw = filters.rawMin ? Number(filters.rawMin) : null;
+    const maxRaw = filters.rawMax ? Number(filters.rawMax) : null;
+    return dashboard.cards.filter((card) => {
+      if (setQuery && !card.setName.toLowerCase().includes(setQuery)) return false;
+      if (
+        characterQuery &&
+        !`${card.characterName ?? ""} ${card.cardName}`.toLowerCase().includes(characterQuery)
+      ) {
+        return false;
+      }
+      if (minRaw !== null && card.rawAveragePrice < minRaw) return false;
+      if (maxRaw !== null && card.rawAveragePrice > maxRaw) return false;
+      if (filters.psa9Only && card.psa9EstimatedProfit < dashboard.investmentSettings.minimumProfitTarget) return false;
+      if (filters.psa10Upside && card.psa10EstimatedProfit < dashboard.investmentSettings.minimumProfitTarget) return false;
+      if (filters.era !== "ALL" && card.era !== filters.era) return false;
+      if (filters.lowNumbered && !card.lowNumberedSerialized) return false;
+      return true;
+    });
+  }, [dashboard.cards, dashboard.investmentSettings.minimumProfitTarget, filters]);
+
+  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, type, value } = event.currentTarget;
+    setFilters((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? (event.currentTarget as HTMLInputElement).checked : value
+    }));
+  }
+
+  return (
+    <>
+      <PanelHeader title="Card Investment Tracker" />
+      <div className="filter-strip">
+        <span className="chip muted">Manual eBay sold comps</span>
+        <span className="chip good">PSA 10 upside</span>
+        <span className="chip watch">Low pop</span>
+        <span className="chip watch">New releases</span>
+      </div>
+      <Top10Poster cards={dashboard.top10Watchlist} generatedAt={new Date().toISOString()} />
+      <section className="form-panel">
+        <div className="edit-card-heading">
+          <div>
+            <h2>Card Filters</h2>
+            <span>{filteredCards.length} cards matching current filters</span>
+          </div>
+          <button
+            className="mini-action"
+            type="button"
+            onClick={() =>
+              setFilters({
+                setName: "",
+                character: "",
+                rawMin: "",
+                rawMax: "",
+                psa9Only: false,
+                psa10Upside: false,
+                era: "ALL",
+                lowNumbered: false
+              })
+            }
+          >
+            <X size={14} />
+            Clear
+          </button>
+        </div>
+        <div className="form-grid">
+          <TextInput name="setName" label="Set" value={filters.setName} onChange={updateFilter} />
+          <TextInput name="character" label="Character" value={filters.character} onChange={updateFilter} />
+          <TextInput
+            name="rawMin"
+            label="Raw min"
+            type="number"
+            min="0"
+            step="0.01"
+            value={filters.rawMin}
+            onChange={updateFilter}
+          />
+          <TextInput
+            name="rawMax"
+            label="Raw max"
+            type="number"
+            min="0"
+            step="0.01"
+            value={filters.rawMax}
+            onChange={updateFilter}
+          />
+          <SelectInput
+            name="era"
+            label="Era"
+            value={filters.era}
+            options={eras.map((era) => ({ value: era, label: era === "ALL" ? "All Eras" : formatStatus(era) }))}
+            onChange={updateFilter}
+          />
+          <label className="checkbox-label">
+            <input name="psa9Only" type="checkbox" checked={filters.psa9Only} onChange={updateFilter} />
+            PSA 9 profitable only
+          </label>
+          <label className="checkbox-label">
+            <input name="psa10Upside" type="checkbox" checked={filters.psa10Upside} onChange={updateFilter} />
+            PSA 10 upside
+          </label>
+          <label className="checkbox-label">
+            <input name="lowNumbered" type="checkbox" checked={filters.lowNumbered} onChange={updateFilter} />
+            Low-numbered / serialized
+          </label>
+        </div>
+      </section>
+      <CardStack cards={filteredCards} />
+      <RecentCompsTable comps={dashboard.cardCompSales} />
+      {isAdmin ? (
+        <InvestmentSettingsForm dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+      ) : null}
+      {isAdmin ? (
+        <ManualCompForm busy={busy} busyLabel={busyLabel} submit={submit} />
+      ) : null}
+      {isAdmin ? (
+        <section className="form-panel">
+          <h2>Add Manual Card Data</h2>
+          <form
+            className="form-grid"
+            onSubmit={(event) =>
+              submit(
+                event,
+                "Adding card",
+                (form) => requestJson("/api/radar/cards", { method: "POST", body: JSON.stringify(formJson(form)) }),
+                { success: "Card data added" }
+              )
+            }
+          >
+            <TextInput name="cardName" label="Card name" required />
+            <SelectInput name="releaseId" label="Release / set" options={releaseOptions(dashboard.releases)} />
+            <TextInput name="setName" label="Set" required />
+            <TextInput name="cardNumber" label="Card number" placeholder="025/198" required />
+            <TextInput name="rarity" label="Rarity" required />
+            <TextInput name="characterName" label="Character" />
+            <TextInput name="rawAveragePrice" label="Raw avg" type="number" min="0" max="100000" step="0.01" required />
+            <TextInput
+              name="psa9AverageSalePrice"
+              label="PSA 9 avg"
+              type="number"
+              min="0"
+              max="100000"
+              step="0.01"
+              required
+            />
+            <TextInput
+              name="psa10AverageSalePrice"
+              label="PSA 10 avg"
+              type="number"
+              min="0"
+              max="100000"
+              step="0.01"
+              required
+            />
+            <TextInput
+              name="bgs95AverageSalePrice"
+              label="BGS 9.5 avg"
+              type="number"
+              min="0"
+              max="100000"
+              step="0.01"
+              defaultValue="0"
+            />
+            <TextInput
+              name="bgs10AverageSalePrice"
+              label="BGS 10 avg"
+              type="number"
+              min="0"
+              max="100000"
+              step="0.01"
+              defaultValue="0"
+            />
+            <TextInput
+              name="bgsBlackLabelAverageSalePrice"
+              label="BGS Black Label avg"
+              type="number"
+              min="0"
+              max="100000"
+              step="0.01"
+              defaultValue="0"
+            />
+            <TextInput
+              name="estimatedEbayFee"
+              label="eBay fee rate"
+              type="number"
+              min="0"
+              max="0.5"
+              step="0.001"
+              defaultValue="0.1325"
+            />
+            <TextInput
+              name="estimatedGradingCost"
+              label="Grading cost"
+              type="number"
+              min="0"
+              max="100000"
+              step="0.01"
+              defaultValue="20"
+            />
+            <TextInput
+              name="estimatedShippingCost"
+              label="Shipping cost"
+              type="number"
+              min="0"
+              max="100000"
+              step="0.01"
+              defaultValue="5"
+            />
+            <TextInput
+              name="minimumProfitTarget"
+              label="Minimum profit target"
+              type="number"
+              min="0"
+              max="100000"
+              step="0.01"
+              defaultValue="20"
+            />
+            <SelectInput name="era" label="Era" options={eras.filter((era) => era !== "ALL").map(optionFromString)} />
+            <TextInput name="dataSource" label="Data source" defaultValue="Manual eBay sold comps" wide />
+            <label className="checkbox-label">
+              <input name="lowPop" type="checkbox" value="true" />
+              Low pop
+            </label>
+            <label className="checkbox-label">
+              <input name="newRelease" type="checkbox" value="true" />
+              New release
+            </label>
+            <label className="checkbox-label">
+              <input name="strongCharacterDemand" type="checkbox" value="true" />
+              Strong character demand
+            </label>
+            <label className="checkbox-label">
+              <input name="lowNumberedSerialized" type="checkbox" value="true" />
+              Low-numbered / serialized
+            </label>
+            <TextareaInput name="notes" label="Notes" wide />
+            <button className="primary-action" disabled={busy} type="submit">
+              <Plus size={16} />
+              {busyLabel === "Adding card" ? "Adding" : "Add Card"}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {isAdmin ? (
+        <section className="form-panel">
+          <h2>Edit Cards</h2>
+          <div className="edit-stack">
+            {dashboard.cards.length ? (
+              dashboard.cards.map((card) => (
+                <EditableCard
+                  key={card.id}
+                  card={card}
+                  releases={dashboard.releases}
+                  busy={busy}
+                  busyLabel={busyLabel}
+                  submit={submit}
+                  runAction={runAction}
+                />
+              ))
+            ) : (
+              <EmptyState icon={CircleDollarSign} title="No cards to edit" detail="Add manual card data first." />
+            )}
+          </div>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function InvestmentSettingsForm({
+  dashboard,
+  busy,
+  busyLabel,
+  submit
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const settings = dashboard.investmentSettings;
+  return (
+    <section className="form-panel">
+      <h2>Investment Settings</h2>
+      <form
+        className="form-grid"
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Saving investment settings",
+            (form) =>
+              requestJson("/api/radar/investment-settings", {
+                method: "PATCH",
+                body: JSON.stringify(formJson(form))
+              }),
+            { reset: false, success: "Investment settings saved" }
+          )
+        }
+      >
+        <TextInput
+          name="gradingCost"
+          label="Grading cost"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={settings.gradingCost}
+        />
+        <TextInput
+          name="ebaySellingFee"
+          label="eBay selling fee"
+          type="number"
+          min="0"
+          max="0.5"
+          step="0.001"
+          defaultValue={settings.ebaySellingFee}
+        />
+        <TextInput
+          name="shippingCost"
+          label="Shipping cost"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={settings.shippingCost}
+        />
+        <TextInput
+          name="minimumProfitTarget"
+          label="Minimum profit target"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={settings.minimumProfitTarget}
+        />
+        <button className="primary-action" disabled={busy} type="submit">
+          <Save size={16} />
+          {busyLabel === "Saving investment settings" ? "Saving" : "Save Settings"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function ManualCompForm({ busy, busyLabel, submit }: { busy: boolean; busyLabel: string | null; submit: SubmitHandler }) {
+  return (
+    <section className="form-panel">
+      <h2>Add Sold Comp</h2>
+      <form
+        className="form-grid"
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Adding comp",
+            (form) => requestJson("/api/radar/cards/comps", { method: "POST", body: JSON.stringify(formJson(form)) }),
+            { success: "Comp saved" }
+          )
+        }
+      >
+        <TextInput name="cardName" label="Card name" required />
+        <TextInput name="setName" label="Set" required />
+        <TextInput name="cardNumber" label="Card number" placeholder="025/198" required />
+        <SelectInput
+          name="gradeType"
+          label="Grade type"
+          options={gradeTypes.map((gradeType) => ({ value: gradeType, label: formatGradeType(gradeType) }))}
+        />
+        <TextInput name="salePrice" label="Sale price" type="number" min="0" max="100000" step="0.01" required />
+        <TextInput name="soldAt" label="Sale date" type="date" min="2020-01-01" defaultValue={toDateInput(new Date().toISOString())} required />
+        <TextInput name="sourceUrl" label="Source URL" type="url" placeholder="https://www.ebay.com/itm/..." />
+        <TextInput name="characterName" label="Character" />
+        <SelectInput name="era" label="Era" options={eras.filter((era) => era !== "ALL").map(optionFromString)} />
+        <label className="checkbox-label">
+          <input name="lowPop" type="checkbox" value="true" />
+          Low pop
+        </label>
+        <label className="checkbox-label">
+          <input name="newRelease" type="checkbox" value="true" />
+          New release
+        </label>
+        <label className="checkbox-label">
+          <input name="strongCharacterDemand" type="checkbox" value="true" />
+          Strong character demand
+        </label>
+        <label className="checkbox-label">
+          <input name="lowNumberedSerialized" type="checkbox" value="true" />
+          Low-numbered / serialized
+        </label>
+        <TextareaInput name="conditionNotes" label="Condition notes" wide />
+        <button className="primary-action" disabled={busy} type="submit">
+          <Plus size={16} />
+          {busyLabel === "Adding comp" ? "Adding" : "Add Comp"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function RecentCompsTable({ comps }: { comps: CardCompSaleDTO[] }) {
+  return (
+    <section className="form-panel">
+      <PanelHeader title="Recent Comp Sales" />
+      <div className="table-list comp-table">
+        {comps.length ? (
+          comps.slice(0, 12).map((comp) => (
+            <div className="table-row" key={comp.id}>
+              <span className="chip muted">{formatGradeType(comp.gradeType)}</span>
+              <strong>{comp.cardName}</strong>
+              <span>
+                {comp.setName} #{comp.cardNumber}
+              </span>
+              <span>{money(comp.salePrice)}</span>
+              <div className="row-actions">
+                <span>{shortDate(comp.soldAt)}</span>
+                {comp.sourceUrl ? (
+                  <a className="mini-action" href={comp.sourceUrl} target="_blank" rel="noreferrer">
+                    Source <ExternalLink size={14} />
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ))
+        ) : (
+          <EmptyState icon={FileText} title="No comp sales" detail="Add manual sold comps to calculate averages." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Top10Poster({ cards, generatedAt }: { cards: CardDTO[]; generatedAt: string }) {
+  return (
+    <section className="poster-panel" id="top10-poster">
+      <div className="poster-header">
+        <div>
+          <p className="eyeline">Weekly Top 10</p>
+          <h2>Raw-to-Grade Watchlist</h2>
+          <span>Generated {shortDate(generatedAt)}</span>
+        </div>
+        <button className="mini-action solid print-control" type="button" onClick={() => window.print()}>
+          <Printer size={14} />
+          Print Poster
+        </button>
+      </div>
+      {cards.length ? (
+        <div className="poster-grid">
+          {cards.map((card, index) => (
+            <article className="poster-row" key={card.id}>
+              <div className="poster-rank">
+                <Trophy size={16} />
+                {index + 1}
+              </div>
+              <div className="poster-card-name">
+                <strong>{card.cardName}</strong>
+                <span>
+                  {card.setName} #{card.cardNumber}
+                </span>
+              </div>
+              <span>Raw {money(card.rawAveragePrice)}</span>
+              <span>
+                PSA 9 {money(card.psa9AverageSalePrice)} / {money(card.psa9EstimatedProfit)}
+              </span>
+              <span>
+                PSA 10 {money(card.psa10AverageSalePrice)} / {money(card.psa10EstimatedProfit)}
+              </span>
+              <span>Limit {money(card.maxRawBuyPrice)}</span>
+              <span className={`chip ${statusTone(card.rating)}`}>{card.rating}</span>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState icon={Trophy} title="No Top 10 yet" detail="Add raw and graded comps to generate the watchlist." />
+      )}
+    </section>
+  );
+}
+
+function EditableCard({
+  card,
+  releases,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  card: CardDTO;
+  releases: ReleaseDTO[];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const saveLabel = `Saving card ${card.id}`;
+  return (
+    <form
+      className="edit-card"
+      onSubmit={(event) =>
+        submit(
+          event,
+          saveLabel,
+          (form) =>
+            requestJson(`/api/radar/cards/${card.id}`, {
+              method: "PATCH",
+              body: JSON.stringify(formJson(form))
+            }),
+          { reset: false, success: "Card saved" }
+        )
+      }
+    >
+      <div className="edit-card-heading">
+        <div>
+          <strong>{card.cardName}</strong>
+          <span>
+            {card.setName} #{card.cardNumber} - Score {card.top10Score} - PSA 10 profit {money(card.psa10EstimatedProfit)}
+          </span>
+        </div>
+        <span className={`chip ${statusTone(card.rating)}`}>{card.rating}</span>
+      </div>
+      <div className="form-grid">
+        <TextInput name="cardName" label="Card name" defaultValue={card.cardName} required />
+        <SelectInput
+          name="releaseId"
+          label="Release / set"
+          defaultValue={card.releaseId ?? ""}
+          options={releaseOptions(releases)}
+        />
+        <TextInput name="setName" label="Set" defaultValue={card.setName} required />
+        <TextInput name="cardNumber" label="Card number" defaultValue={card.cardNumber} required />
+        <TextInput name="rarity" label="Rarity" defaultValue={card.rarity} required />
+        <TextInput name="characterName" label="Character" defaultValue={card.characterName ?? ""} />
+        <TextInput
+          name="rawAveragePrice"
+          label="Raw avg"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.rawAveragePrice}
+          required
+        />
+        <TextInput
+          name="psa9AverageSalePrice"
+          label="PSA 9 avg"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.psa9AverageSalePrice}
+          required
+        />
+        <TextInput
+          name="psa10AverageSalePrice"
+          label="PSA 10 avg"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.psa10AverageSalePrice}
+          required
+        />
+        <TextInput
+          name="bgs95AverageSalePrice"
+          label="BGS 9.5 avg"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.bgs95AverageSalePrice}
+        />
+        <TextInput
+          name="bgs10AverageSalePrice"
+          label="BGS 10 avg"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.bgs10AverageSalePrice}
+        />
+        <TextInput
+          name="bgsBlackLabelAverageSalePrice"
+          label="BGS Black Label avg"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.bgsBlackLabelAverageSalePrice}
+        />
+        <TextInput
+          name="estimatedEbayFee"
+          label="eBay fee rate"
+          type="number"
+          min="0"
+          max="0.5"
+          step="0.001"
+          defaultValue={card.estimatedEbayFee}
+        />
+        <TextInput
+          name="estimatedGradingCost"
+          label="Grading cost"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.estimatedGradingCost}
+        />
+        <TextInput
+          name="estimatedShippingCost"
+          label="Shipping cost"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.estimatedShippingCost}
+        />
+        <TextInput
+          name="minimumProfitTarget"
+          label="Minimum profit target"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          defaultValue={card.minimumProfitTarget}
+        />
+        <SelectInput name="era" label="Era" defaultValue={card.era} options={eras.filter((era) => era !== "ALL").map(optionFromString)} />
+        <SelectInput name="rating" label="Rating" defaultValue={card.rating} options={cardRatings.map(optionFromString)} />
+        <TextInput name="lastRefreshed" label="Last refreshed" type="date" min="2020-01-01" defaultValue={toDateInput(card.lastRefreshed)} />
+        <TextInput name="dataSource" label="Data source" defaultValue={card.dataSource} wide required />
+        <label className="checkbox-label">
+          <input name="lowPop" type="checkbox" value="true" defaultChecked={card.lowPop} />
+          Low pop
+        </label>
+        <label className="checkbox-label">
+          <input name="newRelease" type="checkbox" value="true" defaultChecked={card.newRelease} />
+          New release
+        </label>
+        <label className="checkbox-label">
+          <input name="strongCharacterDemand" type="checkbox" value="true" defaultChecked={card.strongCharacterDemand} />
+          Strong character demand
+        </label>
+        <label className="checkbox-label">
+          <input name="lowNumberedSerialized" type="checkbox" value="true" defaultChecked={card.lowNumberedSerialized} />
+          Low-numbered / serialized
+        </label>
+        <TextareaInput name="notes" label="Notes" defaultValue={card.notes ?? ""} wide />
+      </div>
+      <div className="form-actions">
+        <button className="mini-action solid" disabled={busy} type="submit">
+          <Save size={14} />
+          {busyLabel === saveLabel ? "Saving" : "Save"}
+        </button>
+        <button
+          className="mini-action danger"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(`Deleting card ${card.id}`, () => requestJson(`/api/radar/cards/${card.id}`, { method: "DELETE" }), {
+              confirm: `Delete ${card.cardName}? This also removes price snapshots and comp sales.`,
+              success: "Card deleted"
+            })
+          }
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AlertsPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  return (
+    <>
+      <PanelHeader title="Alerts Table" />
+      <div className="table-list alerts-table">
+        {dashboard.alerts.length ? (
+          dashboard.alerts.map((alert) => {
+            const saveLabel = `Reading alert ${alert.id}`;
+            return (
+              <form
+                className={alert.read ? "table-row read" : "table-row"}
+                key={alert.id}
+                onSubmit={(event) =>
+                  submit(
+                    event,
+                    saveLabel,
+                    () =>
+                      requestJson("/api/radar/alerts", {
+                        method: "PATCH",
+                        body: JSON.stringify({ alertId: alert.id })
+                      }),
+                    { reset: false }
+                  )
+                }
+              >
+                <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
+                <strong>{alert.title}</strong>
+                <span>{alert.reason}</span>
+                <span>{dateTime(alert.timestamp)}</span>
+                <div className="row-actions">
+                  {alert.actionUrl ? (
+                    <a className="mini-action" href={alert.actionUrl} target="_blank" rel="noreferrer">
+                      Go <ExternalLink size={14} />
+                    </a>
+                  ) : null}
+                  {!alert.read ? (
+                    <button className="icon-button compact" disabled={busy} aria-label="Mark alert read" type="submit">
+                      {busyLabel === saveLabel ? <RefreshCw className="spin-slow" size={15} /> : <Check size={15} />}
+                    </button>
+                  ) : (
+                    <span className="chip muted">Read</span>
+                  )}
+                </div>
+              </form>
+            );
+          })
+        ) : (
+          <EmptyState icon={Bell} title="No alerts yet" detail="Alerts will appear after manual updates and sightings." />
+        )}
+      </div>
+    </>
+  );
+}
+
+function configuredText(value: boolean) {
+  return value ? "Configured" : "Missing";
+}
+
+function HealthCard({
+  icon: Icon,
+  title,
+  value,
+  tone,
+  detail
+}: {
+  icon: typeof Radar;
+  title: string;
+  value: string;
+  tone: string;
+  detail: string;
+}) {
+  return (
+    <article className="health-card">
+      <div className="card-main">
+        <div className="avatar">
+          <Icon size={16} />
+        </div>
+        <div>
+          <h3>{title}</h3>
+          <p>{detail}</p>
+        </div>
+      </div>
+      <span className={`chip ${statusTone(tone)}`}>{value}</span>
+    </article>
+  );
+}
+
+function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
+  const warningCount = health.environment.coreMissing.length + health.environment.warnings.length;
+
+  return (
+    <section className="admin-tools deployment-health">
+      <div className="panel-header">
+        <div>
+          <p className="eyeline">Production readiness</p>
+          <h2>App Health</h2>
+        </div>
+        <span className={`chip ${statusTone(health.status)}`}>{health.status}</span>
+      </div>
+      <div className="health-grid">
+        <HealthCard
+          icon={Activity}
+          title="Database"
+          value={health.database.ok ? "Online" : "Error"}
+          tone={health.database.ok ? "OK" : "ERROR"}
+          detail={`${health.database.provider} - ${
+            health.database.provider === "postgres" ? "production safe" : "dev-only local database"
+          }`}
+        />
+        <HealthCard
+          icon={Radar}
+          title="Monitor Cron"
+          value={health.monitor.monitorJobSecretConfigured ? "Protected" : "Secret Missing"}
+          tone={health.monitor.monitorJobSecretConfigured ? "OK" : "ERROR"}
+          detail={`Last run ${relativeTime(health.monitor.lastRunAt)} - ${health.monitor.dueProductCount} due`}
+        />
+        <HealthCard
+          icon={Bell}
+          title="Last Alert"
+          value={health.alerts.lastAlertPriority || "None"}
+          tone={health.alerts.lastAlertPriority || "no_visit"}
+          detail={health.alerts.lastAlertTitle ? `${health.alerts.lastAlertTitle} - ${relativeTime(health.alerts.lastAlertAt)}` : "No alerts sent yet"}
+        />
+        <HealthCard
+          icon={Wifi}
+          title="Browser Push"
+          value={configuredText(health.providers.push.configured)}
+          tone={health.providers.push.configured ? "OK" : "WARN"}
+          detail={`Public ${configuredText(health.providers.push.publicKeyConfigured).toLowerCase()}, private ${configuredText(
+            health.providers.push.privateKeyConfigured
+          ).toLowerCase()}`}
+        />
+        <HealthCard
+          icon={Mail}
+          title="Email Alerts"
+          value={configuredText(health.providers.email.configured)}
+          tone={health.providers.email.configured ? "OK" : "WARN"}
+          detail={`SMTP host ${configuredText(health.providers.email.smtpHostConfigured).toLowerCase()}, from ${configuredText(
+            health.providers.email.smtpFromConfigured
+          ).toLowerCase()}`}
+        />
+        <HealthCard
+          icon={Smartphone}
+          title="SMS Alerts"
+          value={configuredText(health.providers.sms.configured)}
+          tone={health.providers.sms.configured ? "OK" : "WARN"}
+          detail={`Twilio SID ${configuredText(health.providers.sms.accountSidConfigured).toLowerCase()}, from ${configuredText(
+            health.providers.sms.fromNumberConfigured
+          ).toLowerCase()}`}
+        />
+      </div>
+      <div className="monitor-status">
+        <span>Checked {dateTime(health.checkedAt)}</span>
+        <span>Env {health.environment.nodeEnv}</span>
+        <span>App URL {health.environment.appUrl || "missing"}</span>
+        <span>Vercel Cron bearer {configuredText(health.monitor.vercelCronSecretConfigured)}</span>
+        <span>Delay {health.monitor.requestDelayMs}ms</span>
+      </div>
+      {warningCount > 0 ? (
+        <div className="health-warning">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>Admin deployment warning</strong>
+            <ul>
+              {health.environment.coreMissing.length ? (
+                <li>Missing required env vars: {health.environment.coreMissing.join(", ")}</li>
+              ) : null}
+              {health.environment.featureMissing.length ? (
+                <li>Missing push env vars: {health.environment.featureMissing.join(", ")}</li>
+              ) : null}
+              {health.environment.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+              {health.monitor.lastError ? <li>Last monitor error: {health.monitor.lastError}</li> : null}
+              {health.database.error ? <li>Database error: {health.database.error}</li> : null}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function NotificationSettingsPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const settings = dashboard.notificationSettings;
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(() =>
+    pushSupported() ? Notification.permission : "unsupported"
+  );
+  const [hasPushSubscription, setHasPushSubscription] = useState(false);
+  const pushReady = pushPermission === "granted" && hasPushSubscription;
+
+  useEffect(() => {
+    let mounted = true;
+    if (!pushSupported()) return;
+    ensureServiceWorkerRegistration()
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((subscription) => {
+        if (mounted) setHasPushSubscription(Boolean(subscription));
+      })
+      .catch(() => {
+        if (mounted) setHasPushSubscription(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function enableBrowserPush() {
+    if (!pushSupported()) throw new Error("This browser does not support browser push notifications.");
+    const permission = await Notification.requestPermission();
+    setPushPermission(permission);
+    if (permission !== "granted") throw new Error("Browser push permission was not granted.");
+
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+    if (!publicKey) throw new Error("Add NEXT_PUBLIC_VAPID_PUBLIC_KEY before creating a push subscription.");
+
+    const registration = await ensureServiceWorkerRegistration();
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
+      });
+    }
+
+    await requestJson("/api/radar/push/subscription", {
+      method: "POST",
+      body: JSON.stringify(subscription.toJSON())
+    });
+    setHasPushSubscription(true);
+  }
+
+  async function disableBrowserPush() {
+    if (!pushSupported()) throw new Error("This browser does not support browser push notifications.");
+    const registration = await ensureServiceWorkerRegistration();
+    const subscription = await registration.pushManager.getSubscription();
+    const endpoint = subscription?.endpoint;
+    if (subscription) await subscription.unsubscribe();
+    await requestJson("/api/radar/push/subscription", {
+      method: "DELETE",
+      body: JSON.stringify({ endpoint })
+    });
+    setHasPushSubscription(false);
+  }
+
+  async function showBrowserNotificationFallback(response: {
+    notification?: {
+      title: string;
+      body: string;
+      icon?: string;
+      badge?: string;
+      tag?: string;
+      data?: { url?: string };
+    };
+  }) {
+    if (!response.notification || !pushSupported()) return;
+    const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    setPushPermission(permission);
+    if (permission !== "granted") return;
+    const registration = await ensureServiceWorkerRegistration();
+    await registration.showNotification(response.notification.title, {
+      body: response.notification.body,
+      icon: response.notification.icon,
+      badge: response.notification.badge,
+      tag: response.notification.tag,
+      data: response.notification.data
+    });
+  }
+
+  return (
+    <section className="admin-tools">
+      <PanelHeader title="Notification Settings" />
+      <form
+        className="form-grid"
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Saving notifications",
+            (form) =>
+              requestJson("/api/radar/notifications", {
+                method: "PATCH",
+                body: JSON.stringify(formJson(form))
+              }),
+            { reset: false, success: "Notification settings saved" }
+          )
+        }
+      >
+        <label className="checkbox-label">
+          <input name="inApp" type="hidden" value="false" />
+          <input name="inApp" type="checkbox" value="true" defaultChecked={settings.inApp} />
+          In-app alerts
+        </label>
+        <label className="checkbox-label">
+          <input name="email" type="hidden" value="false" />
+          <input name="email" type="checkbox" value="true" defaultChecked={settings.email} />
+          Email alerts
+        </label>
+        <label className="checkbox-label">
+          <input name="sms" type="hidden" value="false" />
+          <input name="sms" type="checkbox" value="true" defaultChecked={settings.sms} />
+          SMS alerts
+        </label>
+        <label className="checkbox-label">
+          <input name="browserPush" type="hidden" value="false" />
+          <input name="browserPush" type="checkbox" value="true" defaultChecked={settings.browserPush} />
+          Browser push
+        </label>
+        <TextInput name="emailTo" label="Email destination" type="email" defaultValue={settings.emailTo ?? ""} />
+        <TextInput name="phone" label="SMS phone" placeholder="+14075551212" defaultValue={settings.phone ?? ""} />
+        <SelectInput
+          name="minimumPriority"
+          label="Minimum priority"
+          defaultValue={settings.minimumPriority}
+          options={priorities.map(optionFromString)}
+        />
+        <TextInput name="quietHoursStart" label="Quiet start" type="time" defaultValue={settings.quietHoursStart ?? ""} />
+        <TextInput name="quietHoursEnd" label="Quiet end" type="time" defaultValue={settings.quietHoursEnd ?? ""} />
+        <button className="primary-action" disabled={busy} type="submit">
+          <Save size={16} />
+          {busyLabel === "Saving notifications" ? "Saving" : "Save Notifications"}
+        </button>
+      </form>
+      <div className="push-panel">
+        <div className="push-status-grid">
+          <div>
+            <strong>Browser Push</strong>
+            <span>
+              Permission {pushPermission}; subscription {hasPushSubscription ? "saved" : "not saved"}.
+            </span>
+          </div>
+          <span className={`chip ${pushReady ? "good" : pushPermission === "denied" ? "bad" : "watch"}`}>
+            {pushReady ? "Ready" : pushPermission === "unsupported" ? "Unsupported" : "Setup needed"}
+          </span>
+        </div>
+        <p className="push-copy">
+          Push alerts route product restocks to Products, store windows to Field Mode, release alerts to Releases, and
+          card opportunities to Cards.
+        </p>
+        <div className="admin-actions">
+          <button
+            className="mini-action solid"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction("Enabling browser push", enableBrowserPush, { success: "Browser push enabled" })
+            }
+          >
+            <Wifi size={14} />
+            {busyLabel === "Enabling browser push" ? "Enabling" : "Enable Browser Push"}
+          </button>
+          <button
+            className="mini-action"
+            disabled={busy || !hasPushSubscription}
+            type="button"
+            onClick={() =>
+              runAction("Disabling browser push", disableBrowserPush, { success: "Browser push disabled" })
+            }
+          >
+            <WifiOff size={14} />
+            {busyLabel === "Disabling browser push" ? "Disabling" : "Disable Browser Push"}
+          </button>
+        </div>
+      </div>
+      <div className="admin-actions">
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Testing in-app alert",
+              () =>
+                requestJson("/api/radar/notifications/test", {
+                  method: "POST",
+                  body: JSON.stringify({ channel: "inApp" })
+                }),
+              { success: "In-app test created" }
+            )
+          }
+        >
+          <Bell size={14} />
+          {busyLabel === "Testing in-app alert" ? "Testing" : "Test In-App"}
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Testing email alert",
+              () =>
+                requestJson("/api/radar/notifications/test", {
+                  method: "POST",
+                  body: JSON.stringify({ channel: "email" })
+                }),
+              { success: "Email test sent" }
+            )
+          }
+        >
+          <Mail size={14} />
+          {busyLabel === "Testing email alert" ? "Testing" : "Test Email"}
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Testing SMS alert",
+              () =>
+                requestJson("/api/radar/notifications/test", {
+                  method: "POST",
+                  body: JSON.stringify({ channel: "sms" })
+                }),
+              { success: "SMS test sent" }
+            )
+          }
+        >
+          <Smartphone size={14} />
+          {busyLabel === "Testing SMS alert" ? "Testing" : "Test SMS"}
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Testing browser push",
+              async () => {
+                const response = await requestJson<{
+                  ok: boolean;
+                  fallback?: boolean;
+                  result?: string;
+                  notification?: {
+                    title: string;
+                    body: string;
+                    icon?: string;
+                    badge?: string;
+                    tag?: string;
+                    data?: { url?: string };
+                  };
+                }>("/api/radar/push/test", { method: "POST" });
+                await showBrowserNotificationFallback(response);
+              },
+              { success: "Browser push test handled" }
+            )
+          }
+        >
+          <Wifi size={14} />
+          {busyLabel === "Testing browser push" ? "Testing" : "Test Browser Push"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function AdminTools({
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  async function exportBackup() {
+    const payload = await requestJson<unknown>("/api/radar/backup");
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `poke-restock-radar-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <section className="admin-tools">
+      <PanelHeader title="Admin Settings" />
+      <div className="safety-strip manual-safety">
+        <ShieldCheck size={16} />
+        <span>
+          This private radar tracks public pages and manual sightings only. Every checkout action stays manual on the
+          official retailer site.
+        </span>
+      </div>
+      <div className="admin-actions">
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction("Exporting backup", exportBackup, { reload: false, success: "Backup exported" })
+          }
+        >
+          <Download size={14} />
+          {busyLabel === "Exporting backup" ? "Exporting" : "Export JSON Backup"}
+        </button>
+        <button
+          className="mini-action danger"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction("Resetting demo data", () => requestJson("/api/radar/admin/reset", { method: "POST" }), {
+              confirm: "Reset demo data? This clears current products, stores, sightings, releases, cards, and alerts.",
+              success: "Demo data reset"
+            })
+          }
+        >
+          <RotateCcw size={14} />
+          {busyLabel === "Resetting demo data" ? "Resetting" : "Reset Demo Data"}
+        </button>
+      </div>
+      <form
+        className="backup-form"
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Importing backup",
+            (form) => {
+              const raw = String(new FormData(form).get("backupJson") || "").trim();
+              if (!raw) throw new Error("Paste a JSON backup before importing.");
+              let payload: unknown;
+              try {
+                payload = JSON.parse(raw);
+              } catch {
+                throw new Error("Backup JSON is invalid.");
+              }
+              return requestJson("/api/radar/backup", { method: "POST", body: JSON.stringify(payload) });
+            },
+            { success: "Backup imported" }
+          )
+        }
+      >
+        <label className="wide-field">
+          Import JSON backup
+          <textarea name="backupJson" rows={5} placeholder="{ &quot;version&quot;: 1, &quot;tables&quot;: { ... } }" />
+        </label>
+        <button className="primary-action" disabled={busy} type="submit">
+          <Upload size={16} />
+          {busyLabel === "Importing backup" ? "Importing" : "Import Backup"}
+        </button>
+        <p>
+          Import replaces all app data with the backup payload. Use export first if you need a point-in-time restore.
+        </p>
+      </form>
+    </section>
+  );
+}
+
+function TextInput({
+  name,
+  label,
+  wide,
+  ...props
+}: {
+  name: string;
+  label: string;
+  wide?: boolean;
+} & InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <label className={wide ? "wide-field" : undefined}>
+      {label}
+      <input name={name} {...props} />
+    </label>
+  );
+}
+
+function TextareaInput({
+  name,
+  label,
+  wide,
+  ...props
+}: {
+  name: string;
+  label: string;
+  wide?: boolean;
+} & TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <label className={wide ? "wide-field" : undefined}>
+      {label}
+      <textarea name={name} rows={3} {...props} />
+    </label>
+  );
+}
+
+function SelectInput({
+  name,
+  label,
+  options,
+  defaultValue,
+  ...props
+}: {
+  name: string;
+  label: string;
+  options: Array<{ value: string; label: string }>;
+  defaultValue?: string;
+} & SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <label>
+      {label}
+      <select name={name} defaultValue={defaultValue} {...props}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function optionFromRetailer(retailer: RetailerDTO) {
+  return { value: retailer.id, label: retailer.name };
+}
+
+function templateForRetailer(
+  retailerId: string,
+  retailers: RetailerDTO[],
+  templates: RetailerTemplateDTO[]
+) {
+  const retailer = retailers.find((item) => item.id === retailerId);
+  return templates.find((template) => template.retailerName === retailer?.name) ?? null;
+}
+
+function releaseOptions(releases: ReleaseDTO[]) {
+  return [{ value: "", label: "No Release Link" }].concat(
+    releases.map((release) => ({ value: release.id, label: release.setName }))
+  );
+}
+
+function optionFromString(value: string) {
+  return { value, label: formatStatus(value) };
+}

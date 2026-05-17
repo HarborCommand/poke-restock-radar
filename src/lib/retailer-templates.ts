@@ -1,0 +1,130 @@
+import type { Priority } from "@/types/radar";
+
+export type RetailerTemplate = {
+  retailerName: string;
+  urlPattern: string;
+  urlPatternLabel: string;
+  statusWords: {
+    inStock: string[];
+    soldOut: string[];
+    preorder: string[];
+    addToCart: string[];
+    price: string[];
+  };
+  safeSelectors: string[];
+  identifierFields: string[];
+  alertPriorityDefault: Priority;
+  monitorNotes: string;
+};
+
+export const retailerTemplates: RetailerTemplate[] = [
+  {
+    retailerName: "Pokemon Center",
+    urlPattern: "^https://(?:www\\.)?pokemoncenter\\.com/",
+    urlPatternLabel: "pokemoncenter.com product URL",
+    statusWords: {
+      inStock: ["in stock", "available now"],
+      soldOut: ["sold out", "unavailable", "out of stock"],
+      preorder: ["preorder", "pre-order"],
+      addToCart: ["add to cart", "add to bag"],
+      price: ["price", "$"]
+    },
+    safeSelectors: ["script[type='application/ld+json']", "[itemprop='availability']", "button, [role='button']"],
+    identifierFields: ["SKU", "UPC"],
+    alertPriorityDefault: "HIGH",
+    monitorNotes: "Public product pages only. Respect Pokemon Center queues, captcha, account checks, and purchase limits."
+  },
+  {
+    retailerName: "Target",
+    urlPattern: "^https://(?:www\\.)?target\\.com/(?:p|s)/",
+    urlPatternLabel: "target.com /p/ or /s/ URL",
+    statusWords: {
+      inStock: ["in stock", "available to ship", "available at"],
+      soldOut: ["sold out", "out of stock", "not available"],
+      preorder: ["preorder", "pre-order"],
+      addToCart: ["add to cart", "add for shipping", "ship it"],
+      price: ["current_retail", "price", "$"]
+    },
+    safeSelectors: ["script[type='application/ld+json']", "[data-test*='fulfillment']", "button, [role='button']"],
+    identifierFields: ["DPCI", "UPC", "TCIN", "SKU"],
+    alertPriorityDefault: "HIGH",
+    monitorNotes: "Use official product/search pages only. DPCI is useful for store matching and manual shelf checks."
+  },
+  {
+    retailerName: "Walmart",
+    urlPattern: "^https://(?:www\\.)?walmart\\.com/(?:ip|search)",
+    urlPatternLabel: "walmart.com /ip/ or search URL",
+    statusWords: {
+      inStock: ["in stock", "available", "pickup", "delivery"],
+      soldOut: ["out of stock", "sold out", "currently unavailable"],
+      preorder: ["preorder", "pre-order"],
+      addToCart: ["add to cart"],
+      price: ["price", "$"]
+    },
+    safeSelectors: ["script[type='application/ld+json']", "[data-testid*='add-to-cart']", "button, [role='button']"],
+    identifierFields: ["SKU", "UPC", "Walmart item ID"],
+    alertPriorityDefault: "MEDIUM",
+    monitorNotes: "Walmart pages can vary by location. Treat page checks as advisory and complete all checkout manually."
+  },
+  {
+    retailerName: "Best Buy",
+    urlPattern: "^https://(?:www\\.)?bestbuy\\.com/site/",
+    urlPatternLabel: "bestbuy.com /site/ product URL",
+    statusWords: {
+      inStock: ["add to cart", "available", "ready for pickup"],
+      soldOut: ["sold out", "unavailable", "coming soon"],
+      preorder: ["pre-order", "preorder"],
+      addToCart: ["add to cart"],
+      price: ["price", "$"]
+    },
+    safeSelectors: ["script[type='application/ld+json']", ".add-to-cart-button", "button, [role='button']"],
+    identifierFields: ["SKU", "UPC"],
+    alertPriorityDefault: "MEDIUM",
+    monitorNotes: "Best Buy inventory can be local. Monitor public product pages and manually verify pickup/shipping."
+  },
+  {
+    retailerName: "GameStop",
+    urlPattern: "^https://(?:www\\.)?gamestop\\.com/",
+    urlPatternLabel: "gamestop.com product URL",
+    statusWords: {
+      inStock: ["add to cart", "available", "ship to home"],
+      soldOut: ["not available", "out of stock", "unavailable"],
+      preorder: ["pre-order", "preorder"],
+      addToCart: ["add to cart"],
+      price: ["price", "$"]
+    },
+    safeSelectors: ["script[type='application/ld+json']", "button, [role='button']", "[data-availability]"],
+    identifierFields: ["SKU", "UPC"],
+    alertPriorityDefault: "HIGH",
+    monitorNotes: "Use public product pages only. Do not automate account, cart, Pro-only, queue, or checkout actions."
+  },
+  {
+    retailerName: "Amazon",
+    urlPattern: "^https://(?:www\\.)?amazon\\.com/(?:dp|gp/product|[^?]+/dp)/",
+    urlPatternLabel: "amazon.com /dp/ or /gp/product/ URL",
+    statusWords: {
+      inStock: ["in stock", "available from", "ships from"],
+      soldOut: ["currently unavailable", "temporarily out of stock", "unavailable"],
+      preorder: ["pre-order", "preorder"],
+      addToCart: ["add to cart", "buy now"],
+      price: ["priceblock", "$"]
+    },
+    safeSelectors: ["#availability", "#priceblock_ourprice", "#corePrice_feature_div", "script[type='application/ld+json']"],
+    identifierFields: ["ASIN", "UPC"],
+    alertPriorityDefault: "MEDIUM",
+    monitorNotes: "Amazon pages change heavily by seller/location. Use alerts as a manual prompt; never automate buying."
+  }
+];
+
+export function templateForRetailerName(retailerName: string | null | undefined) {
+  if (!retailerName) return null;
+  return retailerTemplates.find((template) => template.retailerName.toLowerCase() === retailerName.toLowerCase()) ?? null;
+}
+
+export function validateRetailerUrl(retailerName: string, url: string) {
+  const template = templateForRetailerName(retailerName);
+  if (!template) return;
+  if (!new RegExp(template.urlPattern, "i").test(url)) {
+    throw new Error(`${retailerName} URL must match ${template.urlPatternLabel}.`);
+  }
+}

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#070808" />
+    <title>Poke Restock Radar Offline</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #070808;
+        --panel: #121514;
+        --line: #252b28;
+        --text: #f5f7f4;
+        --muted: #9aa49e;
+        --green: #38d77d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top left, rgba(56, 215, 125, 0.08), transparent 24rem),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(100% - 32px, 420px);
+        display: grid;
+        gap: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(18, 21, 20, 0.9);
+        padding: 22px;
+      }
+
+      h1,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        line-height: 1.1;
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .mark {
+        width: 46px;
+        height: 46px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(56, 215, 125, 0.36);
+        border-radius: 8px;
+        color: var(--green);
+        font-weight: 900;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark">PR</div>
+      <h1>Radar is offline</h1>
+      <p>
+        The app shell is installed, but live dashboard data needs a network connection. Manual checkout remains on the
+        official retailer site.
+      </p>
+    </main>
+  </body>
+</html>

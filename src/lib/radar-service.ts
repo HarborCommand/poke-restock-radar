@@ -1,0 +1,2509 @@
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/db";
+import { getAppHealth } from "@/lib/health";
+import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
+import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
+import {
+  calculateCardProfit,
+  calculateMaxRawBuyPrice,
+  daysUntil,
+  predictStoreRestock,
+  rateCard
+} from "@/lib/calculations";
+import type {
+  AlertDTO,
+  CardDTO,
+  CardCompSaleDTO,
+  DataQualityWarningDTO,
+  DashboardDTO,
+  GradeType,
+  InvestmentSettingsDTO,
+  MonitorLogDTO,
+  NotificationSettingsDTO,
+  Priority,
+  ProductDTO,
+  ProductPriorityScoreDTO,
+  ProductStatus,
+  Rating,
+  ReleaseDTO,
+  RetailerDTO,
+  SetupChecklistItemDTO,
+  SessionUser,
+  SightingDTO,
+  StoreDTO,
+  StoreVisitResult
+} from "@/types/radar";
+
+const productInclude = {
+  retailer: { select: { id: true, name: true, website: true } },
+  release: {
+    select: {
+      id: true,
+      setName: true,
+      pokemonCenterExclusiveVersion: true,
+      demandRating: true,
+      estimatedDemand: true,
+      sealedProductPriority: true
+    }
+  }
+} satisfies Prisma.ProductInclude;
+
+const storeInclude = {
+  retailer: { select: { id: true, name: true, website: true } },
+  sightings: {
+    orderBy: { seenAt: "desc" as const },
+    take: 40
+  }
+} satisfies Prisma.StoreInclude;
+
+const monitorLogInclude = {
+  product: { select: { name: true } }
+} satisfies Prisma.MonitorLogInclude;
+
+const cardInclude = {
+  release: { select: { id: true, setName: true } },
+  compSales: { select: { soldAt: true } }
+} satisfies Prisma.CardInclude;
+
+const compSaleInclude = {
+  card: { select: { cardName: true, setName: true, cardNumber: true } }
+} satisfies Prisma.CardCompSaleInclude;
+
+function recentCompCount(compSales: Array<{ soldAt: Date }>) {
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  return compSales.filter((sale) => sale.soldAt.getTime() >= cutoff).length;
+}
+
+function computeTop10Score(input: {
+  rawAveragePrice: number;
+  psa9EstimatedProfit: number;
+  psa10EstimatedProfit: number;
+  minimumProfitTarget: number;
+  compCount: number;
+  recentCompCount: number;
+  strongCharacterDemand: boolean;
+  lowPop: boolean;
+  lowNumberedSerialized: boolean;
+  newRelease: boolean;
+}) {
+  let score = 0;
+  if (input.psa9EstimatedProfit >= input.minimumProfitTarget) score += 40;
+  else if (input.psa9EstimatedProfit > 0) score += 18;
+
+  score += Math.min(30, Math.max(0, Math.round(input.psa10EstimatedProfit / 4)));
+  if (input.rawAveragePrice > 0 && input.rawAveragePrice <= 25) score += 15;
+  else if (input.rawAveragePrice <= 75) score += 9;
+  else if (input.rawAveragePrice <= 150) score += 4;
+
+  if (input.recentCompCount >= 4) score += 12;
+  else if (input.recentCompCount >= 2) score += 8;
+  else if (input.compCount > 0) score += 4;
+
+  if (input.strongCharacterDemand) score += 10;
+  if (input.lowPop) score += 8;
+  if (input.lowNumberedSerialized) score += 8;
+  if (input.newRelease) score += 4;
+  return Math.max(0, Math.min(100, score));
+}
+
+function scoreFromPriority(priority: string | null | undefined, high: number, medium: number, low = 2) {
+  if (priority === "HIGH") return high;
+  if (priority === "MEDIUM") return medium;
+  return low;
+}
+
+function includesAny(text: string | null | undefined, terms: string[]) {
+  const normalized = (text || "").toLowerCase();
+  return terms.some((term) => normalized.includes(term));
+}
+
+type ProductScoreInput = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
+type ReleaseScoreInput = Prisma.ReleaseGetPayload<Record<string, never>>;
+type CardScoreInput = Prisma.CardGetPayload<{ include: typeof cardInclude }>;
+
+function computeProductPriorityScore(
+  product: ProductScoreInput,
+  release: ReleaseScoreInput | null,
+  cardsInSet: CardScoreInput[]
+): ProductPriorityScoreDTO {
+  const retailPriceScore =
+    product.retailPrice === null
+      ? 2
+      : product.retailPrice <= 30
+        ? 12
+        : product.retailPrice <= 60
+          ? 9
+          : product.retailPrice <= 120
+            ? 5
+            : 2;
+  const statusScore = ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)
+    ? 25
+    : ["PRICE_CHANGE", "PAGE_UPDATED"].includes(product.stockStatus)
+      ? 10
+      : product.stockStatus === "SOLD_OUT"
+        ? 2
+        : 0;
+  const demand = release?.estimatedDemand || release?.demandRating || product.priority;
+  const resaleDemandScore = scoreFromPriority(demand, 15, 8);
+  const setPopularityScore = scoreFromPriority(release?.sealedProductPriority || release?.priority || product.priority, 10, 6);
+  const chaseCardScore = Math.min(
+    12,
+    (release?.chaseCards ? 4 : 0) +
+      cardsInSet.filter((card) => card.strongCharacterDemand || card.top10Score >= 70).length * 3
+  );
+  const profitablePsa9Count = cardsInSet.filter((card) => card.psa9EstimatedProfit >= card.minimumProfitTarget).length;
+  const psa10Upside = Number(
+    cardsInSet.reduce((best, card) => Math.max(best, card.psa10EstimatedProfit), 0).toFixed(2)
+  );
+  const cardInvestmentScore = Math.min(24, profitablePsa9Count * 5 + Math.max(0, Math.round(psa10Upside / 35)));
+  const sealedValueScore =
+    scoreFromPriority(release?.sealedProductPriority || product.priority, 8, 4, 1) +
+    (includesAny(product.sealedResaleNotes, ["premium", "exclusive", "resale", "sealed", "allocation"]) ? 4 : 0);
+  const scarcityScore =
+    (product.release?.pokemonCenterExclusiveVersion || release?.pokemonCenterExclusiveVersion ? 5 : 0) +
+    (includesAny(product.scarcityNotes, ["scarce", "limited", "allocation", "exclusive", "short print"]) ? 5 : 0);
+  const manualOverride = (product.manualPriorityOverride || product.rating || null) as ProductPriorityScoreDTO["manualOverride"];
+  const manualScore = manualOverride === "BUY" ? 14 : manualOverride === "SKIP" ? -35 : 0;
+  const score = Math.max(
+    0,
+    Math.min(
+      100,
+      retailPriceScore +
+        statusScore +
+        resaleDemandScore +
+        setPopularityScore +
+        chaseCardScore +
+        cardInvestmentScore +
+        sealedValueScore +
+        scarcityScore +
+        manualScore
+    )
+  );
+  const buyWatchSkip: Rating =
+    manualOverride === "SKIP" ? "SKIP" : score >= 70 ? "BUY" : score >= 40 ? "WATCH" : "SKIP";
+  const setName = release?.setName || product.setName || product.name;
+  const reasons = [
+    `${setName} has ${profitablePsa9Count} profitable PSA 9 target${profitablePsa9Count === 1 ? "" : "s"}`,
+    psa10Upside > 0 ? `best PSA 10 upside is $${psa10Upside}` : "PSA 10 upside is not established",
+    `product is ${product.stockStatus.replaceAll("_", " ").toLowerCase()}`,
+    `${demand.toLowerCase()} estimated demand`
+  ];
+  if (release?.pokemonCenterExclusiveVersion || product.release?.pokemonCenterExclusiveVersion) {
+    reasons.push("Pokemon Center exclusive version tracked");
+  }
+  if (manualOverride && manualOverride !== "WATCH") reasons.push(`manual override is ${manualOverride.toLowerCase()}`);
+
+  return {
+    buyWatchSkip,
+    score,
+    retailPriceScore,
+    resaleDemandScore,
+    setPopularityScore,
+    scarcityScore,
+    chaseCardScore,
+    sealedValueScore,
+    cardInvestmentScore,
+    profitablePsa9Count,
+    psa10Upside,
+    manualOverride,
+    reason: `${buyWatchSkip === "BUY" ? "High" : buyWatchSkip === "WATCH" ? "Medium" : "Low"} priority because ${reasons.join(
+      " and "
+    )}.`,
+    computedAt: new Date().toISOString()
+  };
+}
+
+function productToDTO(
+  product: Prisma.ProductGetPayload<{ include: typeof productInclude }>,
+  priorityScore: ProductPriorityScoreDTO | null = null
+): ProductDTO {
+  return {
+    id: product.id,
+    name: product.name,
+    retailerId: product.retailerId,
+    retailerName: product.retailer.name,
+    releaseId: product.releaseId,
+    releaseName: product.release?.setName ?? null,
+    setName: product.setName,
+    productType: product.productType,
+    url: product.url,
+    sku: product.sku,
+    upc: product.upc,
+    dpci: product.dpci,
+    retailPrice: product.retailPrice,
+    stockStatus: product.stockStatus as ProductStatus,
+    alertStatus: product.alertStatus,
+    priority: product.priority as Priority,
+    rating: product.rating as Rating,
+    notes: product.notes,
+    lastCheckedAt: product.lastCheckedAt?.toISOString() ?? null,
+    monitorEnabled: product.monitorEnabled,
+    checkFrequencyMinutes: product.checkFrequencyMinutes,
+    nextCheckAt: product.nextCheckAt?.toISOString() ?? null,
+    lastMonitorResult: product.lastMonitorResult,
+    lastMonitorError: product.lastMonitorError,
+    lastAlertSentAt: product.lastAlertSentAt?.toISOString() ?? null,
+    sealedResaleNotes: product.sealedResaleNotes,
+    scarcityNotes: product.scarcityNotes,
+    manualPriorityOverride: product.manualPriorityOverride as Rating | null,
+    pokemonCenterExclusiveVersion: product.release?.pokemonCenterExclusiveVersion ?? false,
+    priorityScore,
+    updatedAt: product.updatedAt.toISOString()
+  };
+}
+
+function storeToDTO(store: Prisma.StoreGetPayload<{ include: typeof storeInclude }>): StoreDTO {
+  const prediction = predictStoreRestock({
+    typicalRestockDays: store.typicalRestockDays,
+    typicalRestockTimeWindow: store.typicalRestockTimeWindow,
+    confidenceScore: store.confidenceScore,
+    sightings: store.sightings.map((sighting) => ({
+      seenAt: sighting.seenAt,
+      resultType: sighting.resultType as StoreVisitResult
+    }))
+  });
+
+  return {
+    id: store.id,
+    retailerId: store.retailerId,
+    retailerName: store.retailer.name,
+    storeName: store.storeName,
+    address: store.address,
+    city: store.city,
+    state: store.state,
+    notes: store.notes,
+    typicalRestockDays: store.typicalRestockDays,
+    typicalRestockTimeWindow: store.typicalRestockTimeWindow,
+    vendorNotes: store.vendorNotes,
+    confidenceScore: store.confidenceScore,
+    prediction
+  };
+}
+
+function sightingToDTO(
+  sighting: Prisma.StoreSightingGetPayload<{
+    include: { store: { select: { storeName: true } }; user: { select: { name: true } } };
+  }>
+): SightingDTO {
+  return {
+    id: sighting.id,
+    storeId: sighting.storeId,
+    userId: sighting.userId,
+    storeName: sighting.store.storeName,
+    productSeen: sighting.productSeen,
+    resultType: sighting.resultType as StoreVisitResult,
+    seenAt: sighting.seenAt.toISOString(),
+    quantityEstimate: sighting.quantityEstimate,
+    shelfPhotoUrl: sighting.shelfPhotoUrl,
+    notes: sighting.notes,
+    userName: sighting.user.name
+  };
+}
+
+function releaseToDTO(
+  release: Prisma.ReleaseGetPayload<Record<string, never>>,
+  metrics: { productCount: number; cardCount: number; profitablePsa9Count: number; psa10Upside: number } = {
+    productCount: 0,
+    cardCount: 0,
+    profitablePsa9Count: 0,
+    psa10Upside: 0
+  }
+): ReleaseDTO {
+  return {
+    id: release.id,
+    setName: release.setName,
+    productType: release.productType,
+    officialReleaseDate: release.officialReleaseDate.toISOString(),
+    preorderDate: release.preorderDate?.toISOString() ?? null,
+    productTypes: release.productTypes,
+    pokemonCenterExclusiveVersion: release.pokemonCenterExclusiveVersion,
+    chaseCards: release.chaseCards,
+    demandRating: release.demandRating as Priority,
+    estimatedDemand: release.estimatedDemand as Priority,
+    priority: release.priority as Priority,
+    sealedProductPriority: release.sealedProductPriority as Priority,
+    notes: release.notes,
+    productLinks: release.productLinks,
+    daysUntilRelease: daysUntil(release.officialReleaseDate),
+    daysUntilPreorder: release.preorderDate ? daysUntil(release.preorderDate) : null,
+    ...metrics
+  };
+}
+
+function cardToDTO(card: Prisma.CardGetPayload<{ include: typeof cardInclude }>): CardDTO {
+  const compCount = card.compSales.length;
+  return {
+    id: card.id,
+    releaseId: card.releaseId,
+    releaseName: card.release?.setName ?? null,
+    cardName: card.cardName,
+    setName: card.setName,
+    cardNumber: card.cardNumber,
+    rarity: card.rarity,
+    rawAveragePrice: card.rawAveragePrice,
+    psa9AverageSalePrice: card.psa9AverageSalePrice,
+    psa10AverageSalePrice: card.psa10AverageSalePrice,
+    bgs95AverageSalePrice: card.bgs95AverageSalePrice,
+    bgs10AverageSalePrice: card.bgs10AverageSalePrice,
+    bgsBlackLabelAverageSalePrice: card.bgsBlackLabelAverageSalePrice,
+    estimatedEbayFee: card.estimatedEbayFee,
+    estimatedGradingCost: card.estimatedGradingCost,
+    estimatedShippingCost: card.estimatedShippingCost,
+    minimumProfitTarget: card.minimumProfitTarget,
+    psa9EstimatedProfit: card.psa9EstimatedProfit,
+    psa10EstimatedProfit: card.psa10EstimatedProfit,
+    bgs10EstimatedProfit: card.bgs10EstimatedProfit,
+    blackLabelEstimatedProfit: card.blackLabelEstimatedProfit,
+    maxRawBuyPricePsa9: card.maxRawBuyPricePsa9,
+    maxRawBuyPrice: card.maxRawBuyPrice,
+    top10Score: card.top10Score,
+    rating: card.rating as Rating,
+    dataSource: card.dataSource,
+    lastRefreshed: card.lastRefreshed.toISOString(),
+    notes: card.notes,
+    characterName: card.characterName,
+    era: card.era as CardDTO["era"],
+    lowPop: card.lowPop,
+    newRelease: card.newRelease,
+    lowNumberedSerialized: card.lowNumberedSerialized,
+    strongCharacterDemand: card.strongCharacterDemand,
+    lastCompAt: card.lastCompAt?.toISOString() ?? null,
+    compCount,
+    recentCompCount: recentCompCount(card.compSales)
+  };
+}
+
+function alertToDTO(alert: Prisma.AlertGetPayload<Record<string, never>>): AlertDTO {
+  return {
+    id: alert.id,
+    title: alert.title,
+    reason: alert.reason,
+    priority: alert.priority as Priority,
+    timestamp: alert.timestamp.toISOString(),
+    entityType: alert.entityType,
+    entityId: alert.entityId,
+    actionUrl: alert.actionUrl,
+    read: alert.read
+  };
+}
+
+function retailerToDTO(retailer: Prisma.RetailerGetPayload<Record<string, never>>): RetailerDTO {
+  return {
+    id: retailer.id,
+    name: retailer.name,
+    website: retailer.website
+  };
+}
+
+function setupChecklist(input: {
+  productCount: number;
+  storeCount: number;
+  releaseCount: number;
+  externalAlertsConfigured: boolean;
+  monitorRunCount: number;
+}): SetupChecklistItemDTO[] {
+  return [
+    {
+      id: "products",
+      label: "Add 3 products",
+      detail: `${input.productCount}/3 official product URLs tracked`,
+      complete: input.productCount >= 3,
+      tab: "products"
+    },
+    {
+      id: "stores",
+      label: "Add 3 stores",
+      detail: `${input.storeCount}/3 local stores saved`,
+      complete: input.storeCount >= 3,
+      tab: "stores"
+    },
+    {
+      id: "release",
+      label: "Add 1 release",
+      detail: `${input.releaseCount}/1 release calendar item saved`,
+      complete: input.releaseCount >= 1,
+      tab: "releases"
+    },
+    {
+      id: "notifications",
+      label: "Configure push/SMS/email",
+      detail: input.externalAlertsConfigured ? "External alert channel enabled" : "Enable browser push, SMS, or email",
+      complete: input.externalAlertsConfigured,
+      tab: "alerts"
+    },
+    {
+      id: "monitor",
+      label: "Run first monitor check",
+      detail: input.monitorRunCount ? `${input.monitorRunCount} monitor run logged` : "Run Due Checks or Run Check Now",
+      complete: input.monitorRunCount > 0,
+      tab: "products"
+    }
+  ];
+}
+
+function dataQualityWarnings(input: {
+  products: ProductDTO[];
+  notificationSettings: NotificationSettingsDTO;
+}): DataQualityWarningDTO[] {
+  const warnings: DataQualityWarningDTO[] = [];
+  const alertsConfigured =
+    input.notificationSettings.inApp ||
+    input.notificationSettings.browserPush ||
+    input.notificationSettings.email ||
+    input.notificationSettings.sms;
+  if (!alertsConfigured) {
+    warnings.push({
+      id: "alerts-none",
+      severity: "HIGH",
+      title: "No alert settings enabled",
+      detail: "Enable at least one alert channel so restock changes are visible.",
+      tab: "alerts"
+    });
+  }
+
+  const staleCutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const product of input.products) {
+    if (!product.url) {
+      warnings.push({
+        id: `product-url-${product.id}`,
+        severity: "HIGH",
+        title: `${product.name} is missing a URL`,
+        detail: "Every monitored product needs an official public retailer URL.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+    if (!product.sku && !product.upc && !product.dpci) {
+      warnings.push({
+        id: `product-id-${product.id}`,
+        severity: "MEDIUM",
+        title: `${product.name} is missing SKU/UPC/DPCI`,
+        detail: "Add an identifier to make restocks, store hunts, and imports easier to reconcile.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+    if (!product.releaseId && !product.setName) {
+      warnings.push({
+        id: `product-release-${product.id}`,
+        severity: "MEDIUM",
+        title: `${product.name} is not linked to a release`,
+        detail: "Link products to a release or set so priority scoring can use chase-card and demand data.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+    if (product.monitorEnabled && (!product.lastCheckedAt || new Date(product.lastCheckedAt).getTime() < staleCutoff)) {
+      warnings.push({
+        id: `product-stale-${product.id}`,
+        severity: "LOW",
+        title: `${product.name} has not checked in 24h`,
+        detail: "Run a manual check or verify cron is configured.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+  }
+
+  return warnings.slice(0, 30);
+}
+
+function monitorLogToDTO(log: Prisma.MonitorLogGetPayload<{ include: typeof monitorLogInclude }>): MonitorLogDTO {
+  return {
+    id: log.id,
+    productId: log.productId,
+    productName: log.product?.name ?? null,
+    runType: log.runType,
+    status: log.status as MonitorLogDTO["status"],
+    previousStatus: log.previousStatus,
+    detectedStatus: log.detectedStatus,
+    previousPrice: log.previousPrice,
+    detectedPrice: log.detectedPrice,
+    changeSummary: log.changeSummary,
+    httpStatus: log.httpStatus,
+    startedAt: log.startedAt.toISOString(),
+    finishedAt: log.finishedAt?.toISOString() ?? null,
+    durationMs: log.durationMs,
+    error: log.error,
+    alertSent: log.alertSent,
+    notificationSummary: log.notificationSummary
+  };
+}
+
+function notificationSettingsToDTO(
+  settings: Prisma.NotificationSettingsGetPayload<Record<string, never>>
+): NotificationSettingsDTO {
+  return {
+    id: settings.id,
+    inApp: settings.inApp,
+    email: settings.email,
+    sms: settings.sms,
+    browserPush: settings.browserPush,
+    phone: settings.phone,
+    emailTo: settings.emailTo,
+    quietHoursStart: settings.quietHoursStart,
+    quietHoursEnd: settings.quietHoursEnd,
+    minimumPriority: settings.minimumPriority as Priority
+  };
+}
+
+function investmentSettingsToDTO(settings: Prisma.InvestmentSettingsGetPayload<Record<string, never>>): InvestmentSettingsDTO {
+  return {
+    id: settings.id,
+    gradingCost: settings.gradingCost,
+    ebaySellingFee: settings.ebaySellingFee,
+    shippingCost: settings.shippingCost,
+    minimumProfitTarget: settings.minimumProfitTarget
+  };
+}
+
+function cardCompSaleToDTO(sale: Prisma.CardCompSaleGetPayload<{ include: typeof compSaleInclude }>): CardCompSaleDTO {
+  return {
+    id: sale.id,
+    cardId: sale.cardId,
+    cardName: sale.card.cardName,
+    setName: sale.card.setName,
+    cardNumber: sale.card.cardNumber,
+    gradeType: (sale.gradeType || sale.grade) as GradeType,
+    salePrice: sale.salePrice,
+    soldAt: sale.soldAt.toISOString(),
+    source: sale.source,
+    sourceUrl: sale.sourceUrl || sale.url,
+    conditionNotes: sale.conditionNotes || sale.notes
+  };
+}
+
+function average(values: number[]) {
+  if (!values.length) return null;
+  return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
+}
+
+function gradeLabel(gradeType: GradeType) {
+  return gradeType.replaceAll("_", " ");
+}
+
+export async function ensureNotificationSettings(currentUser: SessionUser) {
+  return prisma.notificationSettings.upsert({
+    where: { userId: currentUser.id },
+    update: {},
+    create: {
+      userId: currentUser.id,
+      inApp: true,
+      email: false,
+      sms: false,
+      browserPush: false,
+      emailTo: currentUser.email,
+      minimumPriority: "LOW"
+    }
+  });
+}
+
+export async function ensureInvestmentSettings(currentUser: SessionUser) {
+  return prisma.investmentSettings.upsert({
+    where: { userId: currentUser.id },
+    update: {},
+    create: {
+      userId: currentUser.id,
+      gradingCost: 20,
+      ebaySellingFee: 0.1325,
+      shippingCost: 5,
+      minimumProfitTarget: 20
+    }
+  });
+}
+
+function releaseForProduct(product: ProductScoreInput, releases: ReleaseScoreInput[]) {
+  if (product.releaseId) {
+    const explicit = releases.find((release) => release.id === product.releaseId);
+    if (explicit) return explicit;
+  }
+  if (product.setName) {
+    const bySet = releases.find((release) => release.setName.toLowerCase() === product.setName?.toLowerCase());
+    if (bySet) return bySet;
+  }
+  return releases.find((release) => product.name.toLowerCase().includes(release.setName.toLowerCase())) ?? null;
+}
+
+function releaseMetrics(
+  release: ReleaseScoreInput,
+  products: ProductScoreInput[],
+  cards: CardScoreInput[]
+) {
+  const releaseProducts = products.filter((product) => releaseForProduct(product, [release])?.id === release.id);
+  const releaseCards = cards.filter(
+    (card) => card.releaseId === release.id || card.setName.toLowerCase() === release.setName.toLowerCase()
+  );
+  return {
+    productCount: releaseProducts.length,
+    cardCount: releaseCards.length,
+    profitablePsa9Count: releaseCards.filter((card) => card.psa9EstimatedProfit >= card.minimumProfitTarget).length,
+    psa10Upside: Number(releaseCards.reduce((best, card) => Math.max(best, card.psa10EstimatedProfit), 0).toFixed(2))
+  };
+}
+
+async function createAlertOnce(input: {
+  title: string;
+  reason: string;
+  priority: Priority;
+  entityType: string;
+  entityId: string;
+  actionUrl?: string | null;
+  productId?: string | null;
+}) {
+  const existing = await prisma.alert.findFirst({
+    where: {
+      title: input.title,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      read: false
+    }
+  });
+  if (existing) return;
+  await prisma.alert.create({
+    data: {
+      title: input.title,
+      reason: input.reason,
+      priority: input.priority,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      actionUrl: input.actionUrl,
+      productId: input.productId
+    }
+  });
+}
+
+async function refreshReleaseAlerts(releases: ReleaseScoreInput[]) {
+  for (const release of releases) {
+    const releaseDays = daysUntil(release.officialReleaseDate);
+    const preorderDays = release.preorderDate ? daysUntil(release.preorderDate) : null;
+    const actionUrl = release.productLinks
+      ?.split(/[\n,]/)
+      .map((item) => item.trim())
+      .find(Boolean);
+    if (releaseDays >= 0 && releaseDays <= 7) {
+      await createAlertOnce({
+        title: `${release.setName} releases within 7 days`,
+        reason: `${release.setName} releases on ${release.officialReleaseDate.toISOString().slice(0, 10)}.`,
+        priority: release.priority as Priority,
+        entityType: "RELEASE",
+        entityId: release.id,
+        actionUrl
+      });
+    }
+    if (preorderDays !== null && preorderDays >= 0 && preorderDays <= 1) {
+      await createAlertOnce({
+        title: `${release.setName} preorder window ${preorderDays === 0 ? "today" : "tomorrow"}`,
+        reason: `${release.setName} preorder date is ${release.preorderDate!.toISOString().slice(0, 10)}.`,
+        priority: "HIGH",
+        entityType: "RELEASE",
+        entityId: release.id,
+        actionUrl
+      });
+    }
+  }
+}
+
+async function refreshProductPriorityScores(
+  products: ProductScoreInput[],
+  releases: ReleaseScoreInput[],
+  cards: CardScoreInput[]
+) {
+  const scores = new Map<string, ProductPriorityScoreDTO>();
+  if (!products.length) return scores;
+  const data = products.map((product) => {
+    const release = releaseForProduct(product, releases);
+    const cardsInSet = cards.filter((card) => {
+      if (release && (card.releaseId === release.id || card.setName.toLowerCase() === release.setName.toLowerCase())) {
+        return true;
+      }
+      return product.setName ? card.setName.toLowerCase() === product.setName.toLowerCase() : false;
+    });
+    const score = computeProductPriorityScore(product, release, cardsInSet);
+    scores.set(product.id, score);
+    return {
+      productId: product.id,
+      releaseId: release?.id ?? product.releaseId ?? null,
+      buyWatchSkip: score.buyWatchSkip,
+      score: score.score,
+      retailPriceScore: score.retailPriceScore,
+      resaleDemandScore: score.resaleDemandScore,
+      setPopularityScore: score.setPopularityScore,
+      scarcityScore: score.scarcityScore,
+      chaseCardScore: score.chaseCardScore,
+      sealedValueScore: score.sealedValueScore,
+      cardInvestmentScore: score.cardInvestmentScore,
+      profitablePsa9Count: score.profitablePsa9Count,
+      psa10Upside: score.psa10Upside,
+      manualOverride: score.manualOverride,
+      reason: score.reason,
+      userNotes: product.notes,
+      computedAt: new Date()
+    };
+  });
+
+  await prisma.productPriorityScore.deleteMany({ where: { productId: { in: products.map((product) => product.id) } } });
+  await prisma.productPriorityScore.createMany({ data });
+
+  for (const product of products) {
+    const score = scores.get(product.id);
+    if (!score || score.score < 70 || !["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)) {
+      continue;
+    }
+    await createAlertOnce({
+      title: `High-priority chase live: ${product.name}`,
+      reason: score.reason,
+      priority: "HIGH",
+      entityType: "PRODUCT",
+      entityId: product.id,
+      productId: product.id,
+      actionUrl: product.url
+    });
+  }
+  return scores;
+}
+
+export async function listDashboard(currentUser: SessionUser): Promise<DashboardDTO> {
+  const [
+    retailers,
+    products,
+    stores,
+    sightings,
+    releases,
+    cards,
+    cardCompSales,
+    monitorLogs,
+    notificationSettings,
+    investmentSettings
+  ] =
+    await Promise.all([
+    prisma.retailer.findMany({ orderBy: { name: "asc" } }),
+    prisma.product.findMany({ include: productInclude, orderBy: [{ priority: "asc" }, { updatedAt: "desc" }] }),
+    prisma.store.findMany({ include: storeInclude, orderBy: { storeName: "asc" } }),
+    prisma.storeSighting.findMany({
+      include: {
+        store: { select: { storeName: true } },
+        user: { select: { name: true } }
+      },
+      orderBy: { seenAt: "desc" },
+      take: 20
+    }),
+    prisma.release.findMany({ orderBy: { officialReleaseDate: "asc" } }),
+    prisma.card.findMany({ include: cardInclude, orderBy: [{ top10Score: "desc" }, { psa10EstimatedProfit: "desc" }] }),
+    prisma.cardCompSale.findMany({ include: compSaleInclude, orderBy: { soldAt: "desc" }, take: 60 }),
+    prisma.monitorLog.findMany({ include: monitorLogInclude, orderBy: { startedAt: "desc" }, take: 50 }),
+    ensureNotificationSettings(currentUser),
+    ensureInvestmentSettings(currentUser)
+  ]);
+
+  await refreshReleaseAlerts(releases);
+  const priorityScoreMap = await refreshProductPriorityScores(products, releases, cards);
+  const alerts = await prisma.alert.findMany({
+    where: { OR: [{ userId: null }, { userId: currentUser.id }] },
+    orderBy: { timestamp: "desc" },
+    take: 50
+  });
+
+  const storeDTOs = stores
+    .map(storeToDTO)
+    .sort((a, b) => b.prediction.confidenceScore - a.prediction.confidenceScore || a.storeName.localeCompare(b.storeName));
+  const checkTodayStores = storeDTOs
+    .filter((store) => store.prediction.isLikelyToday || store.prediction.probability === "HIGH")
+    .sort(
+      (a, b) =>
+        Number(b.prediction.isLikelyToday) - Number(a.prediction.isLikelyToday) ||
+        b.prediction.confidenceScore - a.prediction.confidenceScore ||
+        b.prediction.overdueScore - a.prediction.overdueScore ||
+        a.storeName.localeCompare(b.storeName)
+    );
+  const productDTOs = products
+    .map((product) => productToDTO(product, priorityScoreMap.get(product.id) ?? null))
+    .sort((a, b) => (b.priorityScore?.score ?? 0) - (a.priorityScore?.score ?? 0));
+  const cardDTOs = cards.map(cardToDTO);
+  const alertDTOs = alerts.map(alertToDTO);
+  const releaseDTOs = releases.map((release) => releaseToDTO(release, releaseMetrics(release, products, cards)));
+  const health = currentUser.role === "ADMIN" ? await getAppHealth() : null;
+  const notificationSettingsDTO = notificationSettingsToDTO(notificationSettings);
+  const setup = setupChecklist({
+    productCount: productDTOs.length,
+    storeCount: storeDTOs.length,
+    releaseCount: releaseDTOs.length,
+    externalAlertsConfigured:
+      notificationSettingsDTO.browserPush || notificationSettingsDTO.email || notificationSettingsDTO.sms,
+    monitorRunCount: monitorLogs.length
+  });
+  const qualityWarnings = dataQualityWarnings({ products: productDTOs, notificationSettings: notificationSettingsDTO });
+
+  return {
+    currentUser,
+    retailers: retailers.map(retailerToDTO),
+    retailerTemplates,
+    products: productDTOs,
+    todaysChaseList: productDTOs.filter((product) => (product.priorityScore?.score ?? 0) >= 40).slice(0, 8),
+    stores: storeDTOs,
+    checkTodayStores,
+    sightings: sightings.map(sightingToDTO),
+    releases: releaseDTOs,
+    releaseCountdowns: releaseDTOs
+      .filter((release) => release.daysUntilRelease >= 0 || (release.daysUntilPreorder ?? 9999) >= 0)
+      .slice(0, 6),
+    cards: cardDTOs,
+    top10Watchlist: cardDTOs.slice(0, 10),
+    cardCompSales: cardCompSales.map(cardCompSaleToDTO),
+    alerts: alertDTOs,
+    monitorLogs: monitorLogs.map(monitorLogToDTO),
+    notificationSettings: notificationSettingsDTO,
+    investmentSettings: investmentSettingsToDTO(investmentSettings),
+    health,
+    setupChecklist: setup,
+    dataQualityWarnings: qualityWarnings,
+    stats: {
+      actionableProducts: productDTOs.filter((product) =>
+        ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)
+      ).length,
+      unreadAlerts: alertDTOs.filter((alert) => !alert.read).length,
+      highProbabilityStores: storeDTOs.filter((store) => store.prediction.probability === "HIGH").length,
+      profitablePsa10Cards: cardDTOs.filter((card) => card.psa10EstimatedProfit > 0).length
+    }
+  };
+}
+
+export async function createProduct(input: {
+  name: string;
+  retailerId: string;
+  releaseId?: string;
+  setName?: string;
+  productType?: string;
+  url: string;
+  sku?: string;
+  upc?: string;
+  dpci?: string;
+  retailPrice?: number;
+  stockStatus: ProductStatus;
+  priority: Priority;
+  rating: Exclude<Rating, "AVOID">;
+  monitorEnabled?: boolean;
+  checkFrequencyMinutes?: number;
+  sealedResaleNotes?: string;
+  scarcityNotes?: string;
+  manualPriorityOverride?: Exclude<Rating, "AVOID">;
+  notes?: string;
+}) {
+  const retailer = await prisma.retailer.findUnique({ where: { id: input.retailerId }, select: { name: true } });
+  if (!retailer) throw new Error("Retailer not found");
+  validateRetailerUrl(retailer.name, input.url);
+  const checkFrequencyMinutes = input.checkFrequencyMinutes ?? 60;
+  const product = await prisma.product.create({
+    data: {
+      ...input,
+      releaseId: input.releaseId,
+      manualPriorityOverride: input.manualPriorityOverride ?? input.rating,
+      monitorEnabled: input.monitorEnabled ?? true,
+      checkFrequencyMinutes,
+      lastCheckedAt: new Date(),
+      nextCheckAt: new Date(Date.now() + checkFrequencyMinutes * 60 * 1000)
+    },
+    include: productInclude
+  });
+
+  await prisma.restockHistory.create({
+    data: {
+      productId: product.id,
+      status: product.stockStatus,
+      price: product.retailPrice,
+      snapshotReason: "Manual product created"
+    }
+  });
+
+  return productToDTO(product);
+}
+
+export async function updateProductManualStatus(
+  productId: string,
+  input: {
+    name: string;
+    retailerId: string;
+    releaseId?: string;
+    setName?: string;
+    productType?: string;
+    url: string;
+    sku?: string;
+    upc?: string;
+    dpci?: string;
+    stockStatus: ProductStatus;
+    retailPrice?: number;
+    priority: Priority;
+    rating: Exclude<Rating, "AVOID">;
+    monitorEnabled: boolean;
+    checkFrequencyMinutes: number;
+    sealedResaleNotes?: string;
+    scarcityNotes?: string;
+    manualPriorityOverride?: Exclude<Rating, "AVOID">;
+    notes?: string;
+    reason?: string;
+  }
+) {
+  const before = await prisma.product.findUnique({ where: { id: productId } });
+  if (!before) throw new Error("Product not found");
+  const retailer = await prisma.retailer.findUnique({ where: { id: input.retailerId }, select: { name: true } });
+  if (!retailer) throw new Error("Retailer not found");
+  validateRetailerUrl(retailer.name, input.url);
+
+  const product = await prisma.product.update({
+    where: { id: productId },
+    data: {
+      name: input.name,
+      retailerId: input.retailerId,
+      releaseId: input.releaseId ?? null,
+      setName: input.setName,
+      productType: input.productType,
+      url: input.url,
+      sku: input.sku,
+      upc: input.upc,
+      dpci: input.dpci,
+      stockStatus: input.stockStatus,
+      retailPrice: input.retailPrice,
+      priority: input.priority,
+      rating: input.rating,
+      manualPriorityOverride: input.manualPriorityOverride ?? input.rating,
+      monitorEnabled: input.monitorEnabled,
+      checkFrequencyMinutes: input.checkFrequencyMinutes,
+      nextCheckAt: new Date(Date.now() + input.checkFrequencyMinutes * 60 * 1000),
+      notes: input.notes,
+      sealedResaleNotes: input.sealedResaleNotes,
+      scarcityNotes: input.scarcityNotes,
+      lastCheckedAt: new Date(),
+      alertStatus: ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE", "PRICE_CHANGE", "PAGE_UPDATED"].includes(
+        input.stockStatus
+      )
+    },
+    include: productInclude
+  });
+
+  await prisma.restockHistory.create({
+    data: {
+      productId,
+      status: input.stockStatus,
+      price: product.retailPrice,
+      snapshotReason: input.reason || "Manual Phase 1 status update"
+    }
+  });
+
+  const alertWorthy =
+    before.stockStatus !== input.stockStatus &&
+    ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE", "PRICE_CHANGE", "PAGE_UPDATED"].includes(input.stockStatus);
+
+  if (alertWorthy) {
+    await prisma.alert.create({
+      data: {
+        title: `${product.name}: ${input.stockStatus.replaceAll("_", " ").toLowerCase()}`,
+        reason: input.reason || `Manual status changed from ${before.stockStatus} to ${input.stockStatus}.`,
+        priority: input.priority,
+        entityType: "PRODUCT",
+        entityId: product.id,
+        productId: product.id,
+        actionUrl: product.url
+      }
+    });
+  }
+
+  return productToDTO(product);
+}
+
+export async function deleteProduct(productId: string) {
+  await prisma.alert.deleteMany({ where: { productId } });
+  await prisma.product.delete({ where: { id: productId } });
+  return { ok: true };
+}
+
+export async function createStore(input: {
+  retailerId: string;
+  storeName: string;
+  address: string;
+  city: string;
+  state: string;
+  typicalRestockDays: string;
+  typicalRestockTimeWindow: string;
+  vendorNotes?: string;
+  confidenceScore: number;
+  notes?: string;
+}) {
+  const store = await prisma.store.create({
+    data: input,
+    include: storeInclude
+  });
+  return storeToDTO(store);
+}
+
+export async function updateStore(
+  storeId: string,
+  input: {
+    retailerId: string;
+    storeName: string;
+    address: string;
+    city: string;
+    state: string;
+    typicalRestockDays: string;
+    typicalRestockTimeWindow: string;
+    vendorNotes?: string;
+    confidenceScore: number;
+    notes?: string;
+  }
+) {
+  const store = await prisma.store.update({
+    where: { id: storeId },
+    data: input,
+    include: storeInclude
+  });
+  return storeToDTO(store);
+}
+
+export async function deleteStore(storeId: string) {
+  await prisma.alert.deleteMany({ where: { entityType: "STORE", entityId: storeId } });
+  await prisma.store.delete({ where: { id: storeId } });
+  return { ok: true };
+}
+
+export async function createSighting(userId: string, input: {
+  storeId: string;
+  productSeen: string;
+  resultType: StoreVisitResult;
+  seenAt: Date;
+  quantityEstimate: string;
+  shelfPhotoUrl?: string;
+  notes?: string;
+}) {
+  const sighting = await prisma.storeSighting.create({
+    data: {
+      ...input,
+      userId
+    },
+    include: {
+      store: { select: { storeName: true } },
+      user: { select: { name: true } }
+    }
+  });
+
+  const store = await prisma.store.findUnique({ where: { id: input.storeId } });
+  if (store) {
+    await prisma.alert.create({
+      data: {
+        title: `${store.storeName} field result logged`,
+        reason: `${input.productSeen} logged as ${input.resultType.replaceAll("_", " ")} with quantity ${input.quantityEstimate}.`,
+        priority: store.confidenceScore >= 70 ? "HIGH" : "MEDIUM",
+        entityType: "STORE",
+        entityId: store.id
+      }
+    });
+  }
+
+  return sightingToDTO(sighting);
+}
+
+export async function updateSighting(
+  currentUser: SessionUser,
+  sightingId: string,
+  input: {
+    storeId?: string;
+    productSeen: string;
+    resultType: StoreVisitResult;
+    seenAt: Date;
+    quantityEstimate: string;
+    shelfPhotoUrl?: string;
+    notes?: string;
+  }
+) {
+  const existing = await prisma.storeSighting.findUnique({ where: { id: sightingId } });
+  if (!existing) throw new Error("Sighting not found");
+  if (currentUser.role !== "ADMIN" && existing.userId !== currentUser.id) {
+    throw new Error("You can only edit your own sightings");
+  }
+
+  const sighting = await prisma.storeSighting.update({
+    where: { id: sightingId },
+    data: {
+      storeId: input.storeId ?? existing.storeId,
+      productSeen: input.productSeen,
+      resultType: input.resultType,
+      seenAt: input.seenAt,
+      quantityEstimate: input.quantityEstimate,
+      shelfPhotoUrl: input.shelfPhotoUrl,
+      notes: input.notes
+    },
+    include: {
+      store: { select: { storeName: true } },
+      user: { select: { name: true } }
+    }
+  });
+
+  return sightingToDTO(sighting);
+}
+
+export async function deleteSighting(currentUser: SessionUser, sightingId: string) {
+  const existing = await prisma.storeSighting.findUnique({ where: { id: sightingId } });
+  if (!existing) throw new Error("Sighting not found");
+  if (currentUser.role !== "ADMIN" && existing.userId !== currentUser.id) {
+    throw new Error("You can only delete your own sightings");
+  }
+  await prisma.storeSighting.delete({ where: { id: sightingId } });
+  return { ok: true };
+}
+
+export async function createRelease(input: {
+  setName: string;
+  productType?: string;
+  officialReleaseDate: Date;
+  preorderDate?: Date | null;
+  productTypes: string;
+  pokemonCenterExclusiveVersion: boolean;
+  chaseCards?: string;
+  demandRating: Priority;
+  estimatedDemand: Priority;
+  priority: Priority;
+  sealedProductPriority: Priority;
+  notes?: string;
+  productLinks?: string;
+}) {
+  const release = await prisma.release.create({ data: input });
+  return releaseToDTO(release);
+}
+
+export async function updateRelease(
+  releaseId: string,
+  input: {
+    setName: string;
+    productType?: string;
+    officialReleaseDate: Date;
+    preorderDate?: Date | null;
+    productTypes: string;
+    pokemonCenterExclusiveVersion: boolean;
+    chaseCards?: string;
+    demandRating: Priority;
+    estimatedDemand: Priority;
+    priority: Priority;
+    sealedProductPriority: Priority;
+    notes?: string;
+    productLinks?: string;
+  }
+) {
+  const release = await prisma.release.update({ where: { id: releaseId }, data: input });
+  return releaseToDTO(release);
+}
+
+export async function deleteRelease(releaseId: string) {
+  await prisma.alert.deleteMany({ where: { entityType: "RELEASE", entityId: releaseId } });
+  await prisma.release.delete({ where: { id: releaseId } });
+  return { ok: true };
+}
+
+function parseCsvRows(input: string) {
+  const rows: string[][] = [];
+  let field = "";
+  let row: string[] = [];
+  let quoted = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    const next = input[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      field += '"';
+      index += 1;
+      continue;
+    }
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (char === "," && !quoted) {
+      row.push(field.trim());
+      field = "";
+      continue;
+    }
+    if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(field.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      field = "";
+      continue;
+    }
+    field += char;
+  }
+
+  row.push(field.trim());
+  if (row.some(Boolean)) rows.push(row);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((header) => header.trim());
+  return rows.slice(1).map((values) =>
+    Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])) as Record<string, unknown>
+  );
+}
+
+function parseImportRows(format: "csv" | "json", data: string, collectionKey: string) {
+  if (format === "csv") return parseCsvRows(data);
+  const parsed = JSON.parse(data) as unknown;
+  if (Array.isArray(parsed)) return parsed as Record<string, unknown>[];
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    collectionKey in parsed &&
+    Array.isArray((parsed as Record<string, unknown>)[collectionKey])
+  ) {
+    return (parsed as Record<string, unknown>)[collectionKey] as Record<string, unknown>[];
+  }
+  throw new Error(`JSON import must be an array or an object with a ${collectionKey} array.`);
+}
+
+function textFromRow(row: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && String(value).trim().length > 0) return String(value).trim();
+  }
+  return undefined;
+}
+
+function numberFromRow(row: Record<string, unknown>, ...keys: string[]) {
+  const value = textFromRow(row, ...keys);
+  return value === undefined ? undefined : Number(value);
+}
+
+function boolFromRow(row: Record<string, unknown>, ...keys: string[]) {
+  const value = textFromRow(row, ...keys);
+  if (value === undefined) return undefined;
+  return ["true", "1", "yes", "y", "on"].includes(value.toLowerCase());
+}
+
+async function retailerIdFromRow(row: Record<string, unknown>, retailers: Array<{ id: string; name: string }>) {
+  const retailerId = textFromRow(row, "retailerId");
+  if (retailerId && retailers.some((retailer) => retailer.id === retailerId)) return retailerId;
+  const retailerName = textFromRow(row, "retailer", "retailerName");
+  const retailer = retailers.find((item) => item.name.toLowerCase() === retailerName?.toLowerCase());
+  if (!retailer) throw new Error(`Retailer not found: ${retailerName || retailerId || "missing"}`);
+  return retailer.id;
+}
+
+async function releaseIdFromRow(row: Record<string, unknown>) {
+  const releaseId = textFromRow(row, "releaseId");
+  if (releaseId) return releaseId;
+  const releaseSetName = textFromRow(row, "releaseSetName", "release", "linkedRelease");
+  if (!releaseSetName) return undefined;
+  const release = await prisma.release.findFirst({
+    where: { setName: releaseSetName },
+    select: { id: true }
+  });
+  return release?.id;
+}
+
+export async function importProducts(format: "csv" | "json", data: string) {
+  const rows = parseImportRows(format, data, "products");
+  const retailers = await prisma.retailer.findMany({ select: { id: true, name: true } });
+  const result = { ok: true, created: 0, failed: 0, errors: [] as string[] };
+
+  for (const [index, row] of rows.entries()) {
+    try {
+      const retailerId = await retailerIdFromRow(row, retailers);
+      const retailer = retailers.find((item) => item.id === retailerId);
+      const template = retailer ? retailerTemplates.find((item) => item.retailerName === retailer.name) : null;
+      const rating = (textFromRow(row, "rating", "manualPriorityOverride") || "WATCH").toUpperCase();
+      const input = productCreateSchema.parse({
+        name: textFromRow(row, "name", "productName"),
+        retailerId,
+        releaseId: await releaseIdFromRow(row),
+        setName: textFromRow(row, "setName", "set"),
+        productType: textFromRow(row, "productType", "type"),
+        url: textFromRow(row, "url", "productUrl"),
+        sku: textFromRow(row, "sku", "asin", "tcin"),
+        upc: textFromRow(row, "upc"),
+        dpci: textFromRow(row, "dpci"),
+        retailPrice: numberFromRow(row, "retailPrice", "price"),
+        stockStatus: (textFromRow(row, "stockStatus", "status") || "UNAVAILABLE").toUpperCase(),
+        priority: (textFromRow(row, "priority") || template?.alertPriorityDefault || "MEDIUM").toUpperCase(),
+        rating,
+        manualPriorityOverride: (textFromRow(row, "manualPriorityOverride") || rating).toUpperCase(),
+        monitorEnabled: boolFromRow(row, "monitorEnabled") ?? true,
+        checkFrequencyMinutes: numberFromRow(row, "checkFrequencyMinutes", "frequencyMinutes") ?? 60,
+        sealedResaleNotes: textFromRow(row, "sealedResaleNotes"),
+        scarcityNotes: textFromRow(row, "scarcityNotes"),
+        notes: textFromRow(row, "notes")
+      });
+      await createProduct(input);
+      result.created += 1;
+    } catch (error) {
+      result.failed += 1;
+      result.errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : "Import failed"}`);
+    }
+  }
+
+  return result;
+}
+
+export async function importStores(format: "csv" | "json", data: string) {
+  const rows = parseImportRows(format, data, "stores");
+  const retailers = await prisma.retailer.findMany({ select: { id: true, name: true } });
+  const result = { ok: true, created: 0, failed: 0, errors: [] as string[] };
+
+  for (const [index, row] of rows.entries()) {
+    try {
+      const input = storeCreateSchema.parse({
+        retailerId: await retailerIdFromRow(row, retailers),
+        storeName: textFromRow(row, "storeName", "name"),
+        address: textFromRow(row, "address"),
+        city: textFromRow(row, "city"),
+        state: textFromRow(row, "state"),
+        typicalRestockDays: textFromRow(row, "typicalRestockDays", "restockDays"),
+        typicalRestockTimeWindow: textFromRow(row, "typicalRestockTimeWindow", "restockWindow"),
+        vendorNotes: textFromRow(row, "vendorNotes"),
+        confidenceScore: numberFromRow(row, "confidenceScore", "confidence") ?? 50,
+        notes: textFromRow(row, "notes")
+      });
+      await createStore(input);
+      result.created += 1;
+    } catch (error) {
+      result.failed += 1;
+      result.errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : "Import failed"}`);
+    }
+  }
+
+  return result;
+}
+
+export async function importReleases(format: "csv" | "json", data: string) {
+  const rows = parseImportRows(format, data, "releases");
+  const result = { ok: true, created: 0, failed: 0, errors: [] as string[] };
+
+  for (const [index, row] of rows.entries()) {
+    try {
+      const input = releaseCreateSchema.parse({
+        setName: textFromRow(row, "setName", "name"),
+        productType: textFromRow(row, "productType", "type"),
+        officialReleaseDate: textFromRow(row, "officialReleaseDate", "releaseDate"),
+        preorderDate: textFromRow(row, "preorderDate"),
+        productTypes: textFromRow(row, "productTypes"),
+        pokemonCenterExclusiveVersion: boolFromRow(row, "pokemonCenterExclusiveVersion", "pokemonCenterExclusive") ?? false,
+        chaseCards: textFromRow(row, "chaseCards"),
+        demandRating: (textFromRow(row, "demandRating", "demand") || "MEDIUM").toUpperCase(),
+        estimatedDemand: (textFromRow(row, "estimatedDemand") || textFromRow(row, "demandRating", "demand") || "MEDIUM").toUpperCase(),
+        priority: (textFromRow(row, "priority") || "MEDIUM").toUpperCase(),
+        sealedProductPriority: (textFromRow(row, "sealedProductPriority") || "MEDIUM").toUpperCase(),
+        notes: textFromRow(row, "notes"),
+        productLinks: textFromRow(row, "productLinks")
+      });
+      await createRelease(input);
+      result.created += 1;
+    } catch (error) {
+      result.failed += 1;
+      result.errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : "Import failed"}`);
+    }
+  }
+
+  return result;
+}
+
+function computedCardValues(input: {
+  rawAveragePrice: number;
+  psa9AverageSalePrice: number;
+  psa10AverageSalePrice: number;
+  bgs10AverageSalePrice: number;
+  bgsBlackLabelAverageSalePrice: number;
+  estimatedEbayFee: number;
+  estimatedGradingCost: number;
+  estimatedShippingCost: number;
+  minimumProfitTarget: number;
+  lowPop: boolean;
+  newRelease: boolean;
+  lowNumberedSerialized: boolean;
+  strongCharacterDemand: boolean;
+  compCount?: number;
+  recentCompCount?: number;
+}) {
+  const psa9EstimatedProfit = calculateCardProfit(
+    input.rawAveragePrice,
+    input.psa9AverageSalePrice,
+    input.estimatedEbayFee,
+    input.estimatedGradingCost,
+    input.estimatedShippingCost
+  );
+  const psa10EstimatedProfit = calculateCardProfit(
+    input.rawAveragePrice,
+    input.psa10AverageSalePrice,
+    input.estimatedEbayFee,
+    input.estimatedGradingCost,
+    input.estimatedShippingCost
+  );
+  const bgs10EstimatedProfit = calculateCardProfit(
+    input.rawAveragePrice,
+    input.bgs10AverageSalePrice,
+    input.estimatedEbayFee,
+    input.estimatedGradingCost,
+    input.estimatedShippingCost
+  );
+  const blackLabelEstimatedProfit = calculateCardProfit(
+    input.rawAveragePrice,
+    input.bgsBlackLabelAverageSalePrice,
+    input.estimatedEbayFee,
+    input.estimatedGradingCost,
+    input.estimatedShippingCost
+  );
+  const maxRawBuyPricePsa9 = calculateMaxRawBuyPrice(
+    input.psa9AverageSalePrice,
+    input.estimatedEbayFee,
+    input.estimatedGradingCost,
+    input.estimatedShippingCost,
+    input.minimumProfitTarget
+  );
+  const maxRawBuyPrice = Math.max(0, maxRawBuyPricePsa9);
+  const top10Score = computeTop10Score({
+    rawAveragePrice: input.rawAveragePrice,
+    psa9EstimatedProfit,
+    psa10EstimatedProfit,
+    minimumProfitTarget: input.minimumProfitTarget,
+    compCount: input.compCount ?? 0,
+    recentCompCount: input.recentCompCount ?? 0,
+    strongCharacterDemand: input.strongCharacterDemand,
+    lowPop: input.lowPop,
+    lowNumberedSerialized: input.lowNumberedSerialized,
+    newRelease: input.newRelease
+  });
+
+  return {
+    psa9EstimatedProfit,
+    psa10EstimatedProfit,
+    bgs10EstimatedProfit,
+    blackLabelEstimatedProfit,
+    maxRawBuyPricePsa9,
+    maxRawBuyPrice,
+    top10Score,
+    rating: rateCard(psa9EstimatedProfit, psa10EstimatedProfit, input.minimumProfitTarget)
+  };
+}
+
+async function createCardSnapshot(card: Prisma.CardGetPayload<{ include: typeof cardInclude }>) {
+  await prisma.cardPriceSnapshot.create({
+    data: {
+      cardId: card.id,
+      rawAveragePrice: card.rawAveragePrice,
+      psa9AverageSalePrice: card.psa9AverageSalePrice,
+      psa10AverageSalePrice: card.psa10AverageSalePrice,
+      bgs95AverageSalePrice: card.bgs95AverageSalePrice,
+      bgs10AverageSalePrice: card.bgs10AverageSalePrice,
+      bgsBlackLabelAverageSalePrice: card.bgsBlackLabelAverageSalePrice,
+      psa9EstimatedProfit: card.psa9EstimatedProfit,
+      psa10EstimatedProfit: card.psa10EstimatedProfit,
+      bgs10EstimatedProfit: card.bgs10EstimatedProfit,
+      blackLabelEstimatedProfit: card.blackLabelEstimatedProfit,
+      maxRawBuyPrice: card.maxRawBuyPrice,
+      top10Score: card.top10Score,
+      rating: card.rating
+    }
+  });
+}
+
+async function recomputeCardFromComps(
+  cardId: string,
+  settings?: {
+    gradingCost: number;
+    ebaySellingFee: number;
+    shippingCost: number;
+    minimumProfitTarget: number;
+  }
+) {
+  const card = await prisma.card.findUnique({
+    where: { id: cardId },
+    include: {
+      compSales: {
+        orderBy: { soldAt: "desc" },
+        select: { gradeType: true, salePrice: true, soldAt: true }
+      }
+    }
+  });
+  if (!card) throw new Error("Card not found");
+
+  const compsByGrade = (gradeType: GradeType) =>
+    card.compSales.filter((sale) => ((sale.gradeType || "RAW") as GradeType) === gradeType).map((sale) => sale.salePrice);
+
+  const rawAveragePrice = average(compsByGrade("RAW")) ?? card.rawAveragePrice;
+  const psa9AverageSalePrice = average(compsByGrade("PSA_9")) ?? card.psa9AverageSalePrice;
+  const psa10AverageSalePrice = average(compsByGrade("PSA_10")) ?? card.psa10AverageSalePrice;
+  const bgs95AverageSalePrice = average(compsByGrade("BGS_9_5")) ?? card.bgs95AverageSalePrice;
+  const bgs10AverageSalePrice = average(compsByGrade("BGS_10")) ?? card.bgs10AverageSalePrice;
+  const bgsBlackLabelAverageSalePrice =
+    average(compsByGrade("BGS_BLACK_LABEL")) ?? card.bgsBlackLabelAverageSalePrice;
+  const estimatedEbayFee = settings?.ebaySellingFee ?? card.estimatedEbayFee;
+  const estimatedGradingCost = settings?.gradingCost ?? card.estimatedGradingCost;
+  const estimatedShippingCost = settings?.shippingCost ?? card.estimatedShippingCost;
+  const minimumProfitTarget = settings?.minimumProfitTarget ?? card.minimumProfitTarget;
+  const compCount = card.compSales.length;
+  const computed = computedCardValues({
+    rawAveragePrice,
+    psa9AverageSalePrice,
+    psa10AverageSalePrice,
+    bgs10AverageSalePrice,
+    bgsBlackLabelAverageSalePrice,
+    estimatedEbayFee,
+    estimatedGradingCost,
+    estimatedShippingCost,
+    minimumProfitTarget,
+    lowPop: card.lowPop,
+    newRelease: card.newRelease,
+    lowNumberedSerialized: card.lowNumberedSerialized,
+    strongCharacterDemand: card.strongCharacterDemand,
+    compCount,
+    recentCompCount: recentCompCount(card.compSales)
+  });
+
+  const updated = await prisma.card.update({
+    where: { id: cardId },
+    data: {
+      rawAveragePrice,
+      psa9AverageSalePrice,
+      psa10AverageSalePrice,
+      bgs95AverageSalePrice,
+      bgs10AverageSalePrice,
+      bgsBlackLabelAverageSalePrice,
+      estimatedEbayFee,
+      estimatedGradingCost,
+      estimatedShippingCost,
+      minimumProfitTarget,
+      ...computed,
+      rating: computed.rating,
+      dataSource: compCount ? "Manual sold comps" : card.dataSource,
+      lastCompAt: card.compSales[0]?.soldAt ?? card.lastCompAt,
+      lastRefreshed: new Date()
+    },
+    include: cardInclude
+  });
+
+  await createCardSnapshot(updated);
+  return updated;
+}
+
+export async function createCard(input: {
+  releaseId?: string;
+  cardName: string;
+  setName: string;
+  cardNumber: string;
+  rarity: string;
+  rawAveragePrice: number;
+  psa9AverageSalePrice: number;
+  psa10AverageSalePrice: number;
+  bgs95AverageSalePrice?: number;
+  bgs10AverageSalePrice?: number;
+  bgsBlackLabelAverageSalePrice?: number;
+  estimatedEbayFee: number;
+  estimatedGradingCost: number;
+  estimatedShippingCost?: number;
+  minimumProfitTarget?: number;
+  rating?: Rating;
+  dataSource: string;
+  lastRefreshed: Date;
+  notes?: string;
+  characterName?: string;
+  era?: "MODERN" | "VINTAGE";
+  lowPop: boolean;
+  newRelease: boolean;
+  lowNumberedSerialized?: boolean;
+  strongCharacterDemand?: boolean;
+}) {
+  const matchedRelease = input.releaseId
+    ? null
+    : await prisma.release.findFirst({ where: { setName: input.setName }, select: { id: true } });
+  const normalized = {
+    ...input,
+    releaseId: input.releaseId ?? matchedRelease?.id,
+    bgs95AverageSalePrice: input.bgs95AverageSalePrice ?? 0,
+    bgs10AverageSalePrice: input.bgs10AverageSalePrice ?? 0,
+    bgsBlackLabelAverageSalePrice: input.bgsBlackLabelAverageSalePrice ?? 0,
+    estimatedShippingCost: input.estimatedShippingCost ?? 5,
+    minimumProfitTarget: input.minimumProfitTarget ?? 20,
+    era: input.era ?? "MODERN",
+    lowNumberedSerialized: input.lowNumberedSerialized ?? false,
+    strongCharacterDemand: input.strongCharacterDemand ?? false
+  };
+  const computed = computedCardValues(normalized);
+  const rating = input.rating || computed.rating;
+
+  const card = await prisma.card.create({
+    data: {
+      ...normalized,
+      ...computed,
+      rating
+    },
+    include: cardInclude
+  });
+
+  await createCardSnapshot(card);
+
+  if (card.psa10EstimatedProfit > 35 || card.psa9EstimatedProfit > 8) {
+    await prisma.alert.create({
+      data: {
+        title: `${card.cardName} grading opportunity`,
+        reason: `Manual data shows PSA 9 profit $${card.psa9EstimatedProfit} and PSA 10 profit $${card.psa10EstimatedProfit}.`,
+        priority: rating === "BUY" ? "HIGH" : "MEDIUM",
+        entityType: "CARD",
+        entityId: card.id
+      }
+    });
+  }
+
+  return cardToDTO(card);
+}
+
+export async function updateCard(
+  cardId: string,
+  input: {
+    releaseId?: string;
+    cardName: string;
+    setName: string;
+    cardNumber: string;
+    rarity: string;
+    rawAveragePrice: number;
+    psa9AverageSalePrice: number;
+    psa10AverageSalePrice: number;
+    bgs95AverageSalePrice?: number;
+    bgs10AverageSalePrice?: number;
+    bgsBlackLabelAverageSalePrice?: number;
+    estimatedEbayFee: number;
+    estimatedGradingCost: number;
+    estimatedShippingCost?: number;
+    minimumProfitTarget?: number;
+    rating?: Rating;
+    dataSource: string;
+    lastRefreshed: Date;
+    notes?: string;
+    characterName?: string;
+    era?: "MODERN" | "VINTAGE";
+    lowPop: boolean;
+    newRelease: boolean;
+    lowNumberedSerialized?: boolean;
+    strongCharacterDemand?: boolean;
+  }
+) {
+  const existing = await prisma.card.findUnique({ where: { id: cardId } });
+  if (!existing) throw new Error("Card not found");
+  const matchedRelease = input.releaseId
+    ? null
+    : await prisma.release.findFirst({ where: { setName: input.setName }, select: { id: true } });
+
+  const normalized = {
+    ...input,
+    releaseId: input.releaseId ?? matchedRelease?.id ?? existing.releaseId,
+    bgs95AverageSalePrice: input.bgs95AverageSalePrice ?? existing.bgs95AverageSalePrice,
+    bgs10AverageSalePrice: input.bgs10AverageSalePrice ?? existing.bgs10AverageSalePrice,
+    bgsBlackLabelAverageSalePrice:
+      input.bgsBlackLabelAverageSalePrice ?? existing.bgsBlackLabelAverageSalePrice,
+    estimatedShippingCost: input.estimatedShippingCost ?? existing.estimatedShippingCost,
+    minimumProfitTarget: input.minimumProfitTarget ?? existing.minimumProfitTarget,
+    era: input.era ?? (existing.era as "MODERN" | "VINTAGE"),
+    lowNumberedSerialized: input.lowNumberedSerialized ?? existing.lowNumberedSerialized,
+    strongCharacterDemand: input.strongCharacterDemand ?? existing.strongCharacterDemand
+  };
+  const compSales = await prisma.cardCompSale.findMany({ where: { cardId }, select: { soldAt: true } });
+  const computed = computedCardValues({
+    ...normalized,
+    compCount: compSales.length,
+    recentCompCount: recentCompCount(compSales)
+  });
+  const rating = input.rating || computed.rating;
+
+  const card = await prisma.card.update({
+    where: { id: cardId },
+    data: {
+      ...normalized,
+      ...computed,
+      rating
+    },
+    include: cardInclude
+  });
+
+  await createCardSnapshot(card);
+
+  return cardToDTO(card);
+}
+
+export async function createCardCompSale(
+  currentUser: SessionUser,
+  input: {
+    cardName: string;
+    setName: string;
+    cardNumber: string;
+    gradeType: GradeType;
+    salePrice: number;
+    soldAt: Date;
+    sourceUrl?: string;
+    conditionNotes?: string;
+    characterName?: string;
+    era?: "MODERN" | "VINTAGE";
+    lowNumberedSerialized: boolean;
+    strongCharacterDemand: boolean;
+    lowPop: boolean;
+    newRelease: boolean;
+  }
+) {
+  const settings = await ensureInvestmentSettings(currentUser);
+  const existing = await prisma.card.findFirst({
+    where: {
+      setName: input.setName,
+      cardNumber: input.cardNumber
+    }
+  });
+  const matchedRelease = await prisma.release.findFirst({ where: { setName: input.setName }, select: { id: true } });
+  const gradeSeed = {
+    rawAveragePrice: input.gradeType === "RAW" ? input.salePrice : 0,
+    psa9AverageSalePrice: input.gradeType === "PSA_9" ? input.salePrice : 0,
+    psa10AverageSalePrice: input.gradeType === "PSA_10" ? input.salePrice : 0,
+    bgs95AverageSalePrice: input.gradeType === "BGS_9_5" ? input.salePrice : 0,
+    bgs10AverageSalePrice: input.gradeType === "BGS_10" ? input.salePrice : 0,
+    bgsBlackLabelAverageSalePrice: input.gradeType === "BGS_BLACK_LABEL" ? input.salePrice : 0
+  };
+
+  const card =
+    existing ??
+    (await prisma.card.create({
+      data: {
+        cardName: input.cardName,
+        releaseId: matchedRelease?.id,
+        setName: input.setName,
+        cardNumber: input.cardNumber,
+        rarity: "Manual comp",
+        ...gradeSeed,
+        estimatedEbayFee: settings.ebaySellingFee,
+        estimatedGradingCost: settings.gradingCost,
+        estimatedShippingCost: settings.shippingCost,
+        minimumProfitTarget: settings.minimumProfitTarget,
+        psa9EstimatedProfit: 0,
+        psa10EstimatedProfit: 0,
+        bgs10EstimatedProfit: 0,
+        blackLabelEstimatedProfit: 0,
+        maxRawBuyPricePsa9: 0,
+        maxRawBuyPrice: 0,
+        top10Score: 0,
+        rating: "WATCH",
+        dataSource: "Manual sold comps",
+        lastRefreshed: new Date(),
+        notes: input.conditionNotes,
+        characterName: input.characterName,
+        era: input.era ?? "MODERN",
+        lowPop: input.lowPop,
+        newRelease: input.newRelease,
+        lowNumberedSerialized: input.lowNumberedSerialized,
+        strongCharacterDemand: input.strongCharacterDemand,
+        lastCompAt: input.soldAt
+      }
+    }));
+
+  if (existing) {
+    await prisma.card.update({
+      where: { id: existing.id },
+      data: {
+        cardName: input.cardName,
+        releaseId: existing.releaseId ?? matchedRelease?.id,
+        characterName: input.characterName ?? existing.characterName,
+        era: input.era ?? existing.era,
+        lowPop: input.lowPop || existing.lowPop,
+        newRelease: input.newRelease || existing.newRelease,
+        lowNumberedSerialized: input.lowNumberedSerialized || existing.lowNumberedSerialized,
+        strongCharacterDemand: input.strongCharacterDemand || existing.strongCharacterDemand
+      }
+    });
+  }
+
+  const sale = await prisma.cardCompSale.create({
+    data: {
+      cardId: card.id,
+      source: "Manual eBay sold comp",
+      salePrice: input.salePrice,
+      grade: gradeLabel(input.gradeType),
+      gradeType: input.gradeType,
+      soldAt: input.soldAt,
+      url: input.sourceUrl,
+      sourceUrl: input.sourceUrl,
+      notes: input.conditionNotes,
+      conditionNotes: input.conditionNotes
+    },
+    include: compSaleInclude
+  });
+
+  const updatedCard = await recomputeCardFromComps(card.id, {
+    gradingCost: settings.gradingCost,
+    ebaySellingFee: settings.ebaySellingFee,
+    shippingCost: settings.shippingCost,
+    minimumProfitTarget: settings.minimumProfitTarget
+  });
+
+  if (updatedCard.rating === "BUY") {
+    await prisma.alert.create({
+      data: {
+        title: `${updatedCard.cardName} entered Top 10 range`,
+        reason: `Manual ${gradeLabel(input.gradeType)} comp pushed the raw-to-grade score to ${updatedCard.top10Score}.`,
+        priority: "HIGH",
+        entityType: "CARD",
+        entityId: updatedCard.id,
+        userId: currentUser.id
+      }
+    });
+  }
+
+  return { compSale: cardCompSaleToDTO(sale), card: cardToDTO(updatedCard) };
+}
+
+export async function updateInvestmentSettings(
+  currentUser: SessionUser,
+  input: {
+    gradingCost: number;
+    ebaySellingFee: number;
+    shippingCost: number;
+    minimumProfitTarget: number;
+  }
+) {
+  const settings = await prisma.investmentSettings.upsert({
+    where: { userId: currentUser.id },
+    update: input,
+    create: {
+      userId: currentUser.id,
+      ...input
+    }
+  });
+
+  const cards = await prisma.card.findMany({ select: { id: true } });
+  for (const card of cards) {
+    await recomputeCardFromComps(card.id, settings);
+  }
+
+  return investmentSettingsToDTO(settings);
+}
+
+export async function deleteCard(cardId: string) {
+  await prisma.alert.deleteMany({ where: { entityType: "CARD", entityId: cardId } });
+  await prisma.card.delete({ where: { id: cardId } });
+  return { ok: true };
+}
+
+export async function markAlertRead(alertId: string) {
+  const alert = await prisma.alert.update({
+    where: { id: alertId },
+    data: { read: true }
+  });
+  return alertToDTO(alert);
+}
+
+export async function updateNotificationSettings(
+  currentUser: SessionUser,
+  input: {
+    inApp: boolean;
+    email: boolean;
+    sms: boolean;
+    browserPush: boolean;
+    phone?: string;
+    emailTo?: string;
+    quietHoursStart?: string;
+    quietHoursEnd?: string;
+    minimumPriority: Priority;
+  }
+) {
+  const settings = await prisma.notificationSettings.upsert({
+    where: { userId: currentUser.id },
+    update: {
+      inApp: input.inApp,
+      email: input.email,
+      sms: input.sms,
+      browserPush: input.browserPush,
+      phone: input.phone,
+      emailTo: input.emailTo || currentUser.email,
+      quietHoursStart: input.quietHoursStart,
+      quietHoursEnd: input.quietHoursEnd,
+      minimumPriority: input.minimumPriority
+    },
+    create: {
+      userId: currentUser.id,
+      inApp: input.inApp,
+      email: input.email,
+      sms: input.sms,
+      browserPush: input.browserPush,
+      phone: input.phone,
+      emailTo: input.emailTo || currentUser.email,
+      quietHoursStart: input.quietHoursStart,
+      quietHoursEnd: input.quietHoursEnd,
+      minimumPriority: input.minimumPriority
+    }
+  });
+  return notificationSettingsToDTO(settings);
+}
+
+async function clearRadarData(includeUsers: boolean) {
+  await prisma.productPriorityScore.deleteMany();
+  await prisma.monitorLog.deleteMany();
+  await prisma.cardCompSale.deleteMany();
+  await prisma.cardPriceSnapshot.deleteMany();
+  await prisma.restockHistory.deleteMany();
+  await prisma.alert.deleteMany();
+  await prisma.storeSighting.deleteMany();
+  await prisma.card.deleteMany();
+  await prisma.release.deleteMany();
+  await prisma.product.deleteMany();
+  await prisma.store.deleteMany();
+  if (includeUsers) {
+    await prisma.browserPushSubscription.deleteMany();
+    await prisma.investmentSettings.deleteMany();
+    await prisma.notificationSettings.deleteMany();
+    await prisma.user.deleteMany();
+  }
+  await prisma.retailer.deleteMany();
+}
+
+async function ensureRetailers() {
+  const retailerSeeds = [
+    ["Pokemon Center", "https://www.pokemoncenter.com"],
+    ["Target", "https://www.target.com"],
+    ["Walmart", "https://www.walmart.com"],
+    ["Best Buy", "https://www.bestbuy.com"],
+    ["GameStop", "https://www.gamestop.com"],
+    ["Amazon", "https://www.amazon.com"]
+  ] as const;
+
+  const retailers = new Map<string, string>();
+  for (const [name, website] of retailerSeeds) {
+    const retailer = await prisma.retailer.upsert({
+      where: { name },
+      update: { website },
+      create: { name, website }
+    });
+    retailers.set(name, retailer.id);
+  }
+  return retailers;
+}
+
+export async function resetDemoData() {
+  await clearRadarData(false);
+  const retailers = await ensureRetailers();
+  const admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, orderBy: { createdAt: "asc" } });
+  if (!admin) throw new Error("Create an admin user before resetting demo data");
+
+  const chaosRelease = await createRelease({
+    setName: "Mega Evolution-Chaos Rising",
+    productType: "Build & Battle Box",
+    officialReleaseDate: new Date("2026-05-22T14:00:00.000Z"),
+    preorderDate: new Date("2026-05-08T14:00:00.000Z"),
+    productTypes: "Build & Battle Box, Booster Bundle, ETB, Booster Display",
+    pokemonCenterExclusiveVersion: true,
+    chaseCards: "Mega Evolution chase cards; verify final card list before buying.",
+    demandRating: "HIGH",
+    estimatedDemand: "HIGH",
+    priority: "HIGH",
+    sealedProductPriority: "HIGH",
+    notes: "Real release calendar example from public Pokemon.com coverage. Verify regional product dates before live use.",
+    productLinks: "https://www.pokemon.com/uk/pokemon-news/get-a-pokemon-tcg-mega-evolution-chaos-rising-build-battle-box-early"
+  });
+  const ascendedRelease = await createRelease({
+    setName: "Mega Evolution-Ascended Heroes",
+    productType: "Booster Bundle",
+    officialReleaseDate: new Date("2026-01-30T14:00:00.000Z"),
+    preorderDate: null,
+    productTypes: "Booster Bundle, ETB, Booster Display, Sleeved Booster",
+    pokemonCenterExclusiveVersion: true,
+    chaseCards: "Mega Dragonite ex and other Mega Evolution targets; verify final card list.",
+    demandRating: "MEDIUM",
+    estimatedDemand: "MEDIUM",
+    priority: "MEDIUM",
+    sealedProductPriority: "MEDIUM",
+    notes: "Real release calendar example from public Pokemon.com pages. Dates can vary by product and region.",
+    productLinks: "https://www.pokemon.com/uk/pokemon-news/get-the-new-pokemon-tcg-expansion-mega-evolution-ascended-heroes-on-january-30-2026"
+  });
+
+  const demoProducts = [
+    {
+      retailer: "GameStop",
+      releaseId: chaosRelease.id,
+      setName: chaosRelease.setName,
+      productType: "Premium Collection",
+      name: "Pokemon TCG Mega Evolution Chaos Rising Premium Collection",
+      url: "https://www.gamestop.com/toys-games/trading-cards",
+      sku: "GS-PREMIUM",
+      retailPrice: 49.99,
+      stockStatus: "PREORDER_LIVE" as ProductStatus,
+      priority: "HIGH" as Priority,
+      rating: "BUY" as Exclude<Rating, "AVOID">,
+      manualPriorityOverride: "BUY" as Exclude<Rating, "AVOID">,
+      sealedResaleNotes: "Demo premium sealed target with preorder interest.",
+      scarcityNotes: "Watch allocations and local limits.",
+      notes: "Demo preorder target. Checkout remains manual."
+    },
+    {
+      retailer: "Target",
+      releaseId: chaosRelease.id,
+      setName: chaosRelease.setName,
+      productType: "Booster Bundle",
+      name: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle",
+      url: "https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle",
+      sku: "TARGET-BUNDLE",
+      dpci: "087-12-0001",
+      retailPrice: 26.99,
+      stockStatus: "IN_STOCK" as ProductStatus,
+      priority: "HIGH" as Priority,
+      rating: "BUY" as Exclude<Rating, "AVOID">,
+      manualPriorityOverride: "BUY" as Exclude<Rating, "AVOID">,
+      sealedResaleNotes: "Booster bundles move quickly when set demand is high.",
+      scarcityNotes: "Demo target; verify local limits.",
+      notes: "Demo in-stock target."
+    },
+    {
+      retailer: "Pokemon Center",
+      releaseId: ascendedRelease.id,
+      setName: ascendedRelease.setName,
+      productType: "ETB",
+      name: "Pokemon TCG Mega Evolution Ascended Heroes ETB",
+      url: "https://www.pokemoncenter.com/category/trading-card-game",
+      sku: "PC-AH-ETB",
+      retailPrice: 59.99,
+      stockStatus: "SOLD_OUT" as ProductStatus,
+      priority: "MEDIUM" as Priority,
+      rating: "WATCH" as Exclude<Rating, "AVOID">,
+      manualPriorityOverride: "WATCH" as Exclude<Rating, "AVOID">,
+      sealedResaleNotes: "ETB value depends on promos and set popularity.",
+      scarcityNotes: "Pokemon Center version may deserve higher priority.",
+      notes: "Demo watch target."
+    }
+  ];
+
+  for (const product of demoProducts) {
+    await createProduct({
+      retailerId: retailers.get(product.retailer)!,
+      releaseId: product.releaseId,
+      setName: product.setName,
+      productType: product.productType,
+      name: product.name,
+      url: product.url,
+      sku: product.sku,
+      dpci: "dpci" in product ? product.dpci : undefined,
+      retailPrice: product.retailPrice,
+      stockStatus: product.stockStatus,
+      priority: product.priority,
+      rating: product.rating,
+      manualPriorityOverride: product.manualPriorityOverride,
+      sealedResaleNotes: product.sealedResaleNotes,
+      scarcityNotes: product.scarcityNotes,
+      notes: product.notes
+    });
+  }
+
+  const target = await createStore({
+    retailerId: retailers.get("Target")!,
+    storeName: "Target Northside",
+    address: "100 Market Plaza",
+    city: "Orlando",
+    state: "FL",
+    typicalRestockDays: "Tuesday,Friday",
+    typicalRestockTimeWindow: "8:00 AM - 11:00 AM",
+    vendorNotes: "Card aisle usually touched after front lanes.",
+    confidenceScore: 72,
+    notes: "Demo store."
+  });
+  const walmart = await createStore({
+    retailerId: retailers.get("Walmart")!,
+    storeName: "Walmart Lakeview",
+    address: "2200 Lakeview Rd",
+    city: "Orlando",
+    state: "FL",
+    typicalRestockDays: "Wednesday,Saturday",
+    typicalRestockTimeWindow: "10:00 AM - 1:00 PM",
+    vendorNotes: "Vendor timing varies; sightings drive confidence.",
+    confidenceScore: 58,
+    notes: "Demo store."
+  });
+
+  await createSighting(admin.id, {
+    storeId: target.id,
+    productSeen: "Booster Bundle",
+    resultType: "stock_seen",
+    seenAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    quantityEstimate: "6-10",
+    notes: "Demo shelf sighting."
+  });
+  await createSighting(admin.id, {
+    storeId: walmart.id,
+    productSeen: "Collection Box",
+    resultType: "stock_seen",
+    seenAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    quantityEstimate: "1-3",
+    notes: "Demo low-quantity sighting."
+  });
+
+  await createCard({
+    releaseId: chaosRelease.id,
+    cardName: "Pikachu ex",
+    setName: chaosRelease.setName,
+    cardNumber: "025/198",
+    rarity: "Ultra Rare",
+    rawAveragePrice: 18,
+    psa9AverageSalePrice: 45,
+    psa10AverageSalePrice: 128,
+    estimatedEbayFee: 0.1325,
+    estimatedGradingCost: 18,
+    rating: "BUY",
+    dataSource: "Manual demo sample",
+    lastRefreshed: new Date(),
+    lowPop: false,
+    newRelease: true,
+    notes: "Verify real comps before buying."
+  });
+  await createCard({
+    releaseId: chaosRelease.id,
+    cardName: "Charizard Illustration Rare",
+    setName: chaosRelease.setName,
+    cardNumber: "199/198",
+    rarity: "Special Illustration Rare",
+    rawAveragePrice: 92,
+    psa9AverageSalePrice: 145,
+    psa10AverageSalePrice: 340,
+    estimatedEbayFee: 0.1325,
+    estimatedGradingCost: 22,
+    rating: "WATCH",
+    dataSource: "Manual demo sample",
+    lastRefreshed: new Date(),
+    lowPop: true,
+    newRelease: false,
+    notes: "Condition discipline required."
+  });
+
+  return { ok: true };
+}
+
+export async function exportBackup() {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    tables: {
+      users: await prisma.user.findMany(),
+      retailers: await prisma.retailer.findMany(),
+      products: await prisma.product.findMany(),
+      stores: await prisma.store.findMany(),
+      storeSightings: await prisma.storeSighting.findMany(),
+      releases: await prisma.release.findMany(),
+      alerts: await prisma.alert.findMany(),
+      monitorLogs: await prisma.monitorLog.findMany(),
+      restockHistory: await prisma.restockHistory.findMany(),
+      cards: await prisma.card.findMany(),
+      cardPriceSnapshots: await prisma.cardPriceSnapshot.findMany(),
+      cardCompSales: await prisma.cardCompSale.findMany(),
+      productPriorityScores: await prisma.productPriorityScore.findMany(),
+      notificationSettings: await prisma.notificationSettings.findMany(),
+      investmentSettings: await prisma.investmentSettings.findMany(),
+      browserPushSubscriptions: await prisma.browserPushSubscription.findMany()
+    }
+  };
+}
+
+function toDate(value: unknown) {
+  return value ? new Date(String(value)) : new Date();
+}
+
+function toNullableDate(value: unknown) {
+  return value ? new Date(String(value)) : null;
+}
+
+function rows<T extends Record<string, unknown>>(tables: Record<string, unknown[]>, key: string) {
+  return (tables[key] ?? []) as T[];
+}
+
+export async function importBackup(payload: { tables: Record<string, unknown[]> }) {
+  const tables = payload.tables;
+  await clearRadarData(true);
+
+  await prisma.user.createMany({
+    data: rows(tables, "users").map((row) => ({
+      id: String(row.id),
+      email: String(row.email),
+      name: String(row.name),
+      role: String(row.role),
+      passwordHash: String(row.passwordHash),
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.retailer.createMany({
+    data: rows(tables, "retailers").map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      website: row.website ? String(row.website) : null,
+      notes: row.notes ? String(row.notes) : null,
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.release.createMany({
+    data: rows(tables, "releases").map((row) => ({
+      id: String(row.id),
+      setName: String(row.setName),
+      productType: row.productType ? String(row.productType) : null,
+      officialReleaseDate: toDate(row.officialReleaseDate),
+      preorderDate: toNullableDate(row.preorderDate),
+      productTypes: String(row.productTypes),
+      pokemonCenterExclusiveVersion: Boolean(row.pokemonCenterExclusiveVersion),
+      chaseCards: row.chaseCards ? String(row.chaseCards) : null,
+      demandRating: String(row.demandRating),
+      estimatedDemand: row.estimatedDemand ? String(row.estimatedDemand) : String(row.demandRating ?? "MEDIUM"),
+      priority: String(row.priority),
+      sealedProductPriority: row.sealedProductPriority ? String(row.sealedProductPriority) : String(row.priority ?? "MEDIUM"),
+      notes: row.notes ? String(row.notes) : null,
+      productLinks: row.productLinks ? String(row.productLinks) : null,
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.product.createMany({
+    data: rows(tables, "products").map((row) => ({
+      id: String(row.id),
+      retailerId: String(row.retailerId),
+      releaseId: row.releaseId ? String(row.releaseId) : null,
+      name: String(row.name),
+      url: String(row.url),
+      setName: row.setName ? String(row.setName) : null,
+      productType: row.productType ? String(row.productType) : null,
+      sku: row.sku ? String(row.sku) : null,
+      upc: row.upc ? String(row.upc) : null,
+      dpci: row.dpci ? String(row.dpci) : null,
+      retailPrice: row.retailPrice === null || row.retailPrice === undefined ? null : Number(row.retailPrice),
+      stockStatus: String(row.stockStatus),
+      alertStatus: Boolean(row.alertStatus),
+      priority: String(row.priority),
+      rating: String(row.rating),
+      notes: row.notes ? String(row.notes) : null,
+      lastCheckedAt: toNullableDate(row.lastCheckedAt),
+      monitorEnabled: row.monitorEnabled === undefined ? true : Boolean(row.monitorEnabled),
+      checkFrequencyMinutes: row.checkFrequencyMinutes === undefined ? 60 : Number(row.checkFrequencyMinutes),
+      nextCheckAt: toNullableDate(row.nextCheckAt),
+      lastMonitorResult: row.lastMonitorResult ? String(row.lastMonitorResult) : null,
+      lastMonitorError: row.lastMonitorError ? String(row.lastMonitorError) : null,
+      lastPageHash: row.lastPageHash ? String(row.lastPageHash) : null,
+      lastAlertSentAt: toNullableDate(row.lastAlertSentAt),
+      sealedResaleNotes: row.sealedResaleNotes ? String(row.sealedResaleNotes) : null,
+      scarcityNotes: row.scarcityNotes ? String(row.scarcityNotes) : null,
+      manualPriorityOverride: row.manualPriorityOverride ? String(row.manualPriorityOverride) : null,
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.store.createMany({
+    data: rows(tables, "stores").map((row) => ({
+      id: String(row.id),
+      retailerId: String(row.retailerId),
+      storeName: String(row.storeName),
+      address: String(row.address),
+      city: String(row.city),
+      state: String(row.state),
+      notes: row.notes ? String(row.notes) : null,
+      typicalRestockDays: String(row.typicalRestockDays),
+      typicalRestockTimeWindow: String(row.typicalRestockTimeWindow),
+      vendorNotes: row.vendorNotes ? String(row.vendorNotes) : null,
+      confidenceScore: Number(row.confidenceScore),
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.storeSighting.createMany({
+    data: rows(tables, "storeSightings").map((row) => ({
+      id: String(row.id),
+      storeId: String(row.storeId),
+      userId: String(row.userId),
+      productSeen: String(row.productSeen),
+      resultType: row.resultType ? String(row.resultType) : "stock_seen",
+      seenAt: toDate(row.seenAt),
+      quantityEstimate: String(row.quantityEstimate),
+      shelfPhotoUrl: row.shelfPhotoUrl ? String(row.shelfPhotoUrl) : null,
+      notes: row.notes ? String(row.notes) : null,
+      createdAt: toDate(row.createdAt)
+    }))
+  });
+  await prisma.card.createMany({
+    data: rows(tables, "cards").map((row) => ({
+      id: String(row.id),
+      releaseId: row.releaseId ? String(row.releaseId) : null,
+      cardName: String(row.cardName),
+      setName: String(row.setName),
+      cardNumber: String(row.cardNumber),
+      rarity: String(row.rarity),
+      rawAveragePrice: Number(row.rawAveragePrice),
+      psa9AverageSalePrice: Number(row.psa9AverageSalePrice),
+      psa10AverageSalePrice: Number(row.psa10AverageSalePrice),
+      bgs95AverageSalePrice: row.bgs95AverageSalePrice === undefined ? 0 : Number(row.bgs95AverageSalePrice),
+      bgs10AverageSalePrice: row.bgs10AverageSalePrice === undefined ? 0 : Number(row.bgs10AverageSalePrice),
+      bgsBlackLabelAverageSalePrice:
+        row.bgsBlackLabelAverageSalePrice === undefined ? 0 : Number(row.bgsBlackLabelAverageSalePrice),
+      estimatedEbayFee: Number(row.estimatedEbayFee),
+      estimatedGradingCost: Number(row.estimatedGradingCost),
+      estimatedShippingCost: row.estimatedShippingCost === undefined ? 5 : Number(row.estimatedShippingCost),
+      minimumProfitTarget: row.minimumProfitTarget === undefined ? 20 : Number(row.minimumProfitTarget),
+      psa9EstimatedProfit: Number(row.psa9EstimatedProfit),
+      psa10EstimatedProfit: Number(row.psa10EstimatedProfit),
+      bgs10EstimatedProfit: row.bgs10EstimatedProfit === undefined ? 0 : Number(row.bgs10EstimatedProfit),
+      blackLabelEstimatedProfit:
+        row.blackLabelEstimatedProfit === undefined ? 0 : Number(row.blackLabelEstimatedProfit),
+      maxRawBuyPricePsa9: Number(row.maxRawBuyPricePsa9),
+      maxRawBuyPrice:
+        row.maxRawBuyPrice === undefined ? Number(row.maxRawBuyPricePsa9 ?? 0) : Number(row.maxRawBuyPrice),
+      top10Score: row.top10Score === undefined ? 0 : Number(row.top10Score),
+      rating: String(row.rating),
+      dataSource: String(row.dataSource),
+      lastRefreshed: toDate(row.lastRefreshed),
+      notes: row.notes ? String(row.notes) : null,
+      characterName: row.characterName ? String(row.characterName) : null,
+      era: row.era ? String(row.era) : "MODERN",
+      lowPop: Boolean(row.lowPop),
+      newRelease: Boolean(row.newRelease),
+      lowNumberedSerialized: Boolean(row.lowNumberedSerialized),
+      strongCharacterDemand: Boolean(row.strongCharacterDemand),
+      lastCompAt: toNullableDate(row.lastCompAt),
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.alert.createMany({
+    data: rows(tables, "alerts").map((row) => ({
+      id: String(row.id),
+      title: String(row.title),
+      reason: String(row.reason),
+      priority: String(row.priority),
+      timestamp: toDate(row.timestamp),
+      entityType: String(row.entityType),
+      entityId: row.entityId ? String(row.entityId) : null,
+      actionUrl: row.actionUrl ? String(row.actionUrl) : null,
+      read: Boolean(row.read),
+      productId: row.productId ? String(row.productId) : null,
+      userId: row.userId ? String(row.userId) : null,
+      createdAt: toDate(row.createdAt)
+    }))
+  });
+  await prisma.monitorLog.createMany({
+    data: rows(tables, "monitorLogs").map((row) => ({
+      id: String(row.id),
+      productId: row.productId ? String(row.productId) : null,
+      runType: String(row.runType),
+      status: String(row.status),
+      previousStatus: row.previousStatus ? String(row.previousStatus) : null,
+      detectedStatus: row.detectedStatus ? String(row.detectedStatus) : null,
+      previousPrice: row.previousPrice === null || row.previousPrice === undefined ? null : Number(row.previousPrice),
+      detectedPrice: row.detectedPrice === null || row.detectedPrice === undefined ? null : Number(row.detectedPrice),
+      changeSummary: row.changeSummary ? String(row.changeSummary) : null,
+      httpStatus: row.httpStatus === null || row.httpStatus === undefined ? null : Number(row.httpStatus),
+      pageHash: row.pageHash ? String(row.pageHash) : null,
+      startedAt: toDate(row.startedAt),
+      finishedAt: toNullableDate(row.finishedAt),
+      durationMs: row.durationMs === null || row.durationMs === undefined ? null : Number(row.durationMs),
+      error: row.error ? String(row.error) : null,
+      alertSent: Boolean(row.alertSent),
+      notificationSummary: row.notificationSummary ? String(row.notificationSummary) : null
+    }))
+  });
+  await prisma.restockHistory.createMany({
+    data: rows(tables, "restockHistory").map((row) => ({
+      id: String(row.id),
+      productId: String(row.productId),
+      status: String(row.status),
+      price: row.price === null || row.price === undefined ? null : Number(row.price),
+      snapshotReason: String(row.snapshotReason),
+      checkedAt: toDate(row.checkedAt)
+    }))
+  });
+  await prisma.cardPriceSnapshot.createMany({
+    data: rows(tables, "cardPriceSnapshots").map((row) => ({
+      id: String(row.id),
+      cardId: String(row.cardId),
+      rawAveragePrice: Number(row.rawAveragePrice),
+      psa9AverageSalePrice: Number(row.psa9AverageSalePrice),
+      psa10AverageSalePrice: Number(row.psa10AverageSalePrice),
+      bgs95AverageSalePrice: row.bgs95AverageSalePrice === undefined ? 0 : Number(row.bgs95AverageSalePrice),
+      bgs10AverageSalePrice: row.bgs10AverageSalePrice === undefined ? 0 : Number(row.bgs10AverageSalePrice),
+      bgsBlackLabelAverageSalePrice:
+        row.bgsBlackLabelAverageSalePrice === undefined ? 0 : Number(row.bgsBlackLabelAverageSalePrice),
+      psa9EstimatedProfit: Number(row.psa9EstimatedProfit),
+      psa10EstimatedProfit: Number(row.psa10EstimatedProfit),
+      bgs10EstimatedProfit: row.bgs10EstimatedProfit === undefined ? 0 : Number(row.bgs10EstimatedProfit),
+      blackLabelEstimatedProfit:
+        row.blackLabelEstimatedProfit === undefined ? 0 : Number(row.blackLabelEstimatedProfit),
+      maxRawBuyPrice: row.maxRawBuyPrice === undefined ? 0 : Number(row.maxRawBuyPrice),
+      top10Score: row.top10Score === undefined ? 0 : Number(row.top10Score),
+      rating: String(row.rating),
+      snapshotAt: toDate(row.snapshotAt)
+    }))
+  });
+  await prisma.cardCompSale.createMany({
+    data: rows(tables, "cardCompSales").map((row) => ({
+      id: String(row.id),
+      cardId: String(row.cardId),
+      source: String(row.source),
+      salePrice: Number(row.salePrice),
+      grade: String(row.grade),
+      gradeType: row.gradeType ? String(row.gradeType) : String(row.grade ?? "RAW"),
+      soldAt: toDate(row.soldAt),
+      url: row.url ? String(row.url) : null,
+      sourceUrl: row.sourceUrl ? String(row.sourceUrl) : row.url ? String(row.url) : null,
+      notes: row.notes ? String(row.notes) : null,
+      conditionNotes: row.conditionNotes ? String(row.conditionNotes) : row.notes ? String(row.notes) : null,
+      createdAt: toDate(row.createdAt)
+    }))
+  });
+  await prisma.productPriorityScore.createMany({
+    data: rows(tables, "productPriorityScores").map((row) => ({
+      id: String(row.id),
+      productId: String(row.productId),
+      releaseId: row.releaseId ? String(row.releaseId) : null,
+      buyWatchSkip: String(row.buyWatchSkip),
+      score: Number(row.score),
+      retailPriceScore: Number(row.retailPriceScore),
+      resaleDemandScore: Number(row.resaleDemandScore),
+      setPopularityScore: Number(row.setPopularityScore),
+      scarcityScore: Number(row.scarcityScore),
+      chaseCardScore: Number(row.chaseCardScore),
+      sealedValueScore: Number(row.sealedValueScore),
+      cardInvestmentScore: Number(row.cardInvestmentScore),
+      profitablePsa9Count: row.profitablePsa9Count === undefined ? 0 : Number(row.profitablePsa9Count),
+      psa10Upside: row.psa10Upside === undefined ? 0 : Number(row.psa10Upside),
+      manualOverride: row.manualOverride ? String(row.manualOverride) : null,
+      reason: row.reason ? String(row.reason) : null,
+      userNotes: row.userNotes ? String(row.userNotes) : null,
+      computedAt: toDate(row.computedAt)
+    }))
+  });
+  await prisma.notificationSettings.createMany({
+    data: rows(tables, "notificationSettings").map((row) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      inApp: Boolean(row.inApp),
+      sms: Boolean(row.sms),
+      email: Boolean(row.email),
+      browserPush: Boolean(row.browserPush),
+      phone: row.phone ? String(row.phone) : null,
+      emailTo: row.emailTo ? String(row.emailTo) : null,
+      quietHoursStart: row.quietHoursStart ? String(row.quietHoursStart) : null,
+      quietHoursEnd: row.quietHoursEnd ? String(row.quietHoursEnd) : null,
+      minimumPriority: row.minimumPriority ? String(row.minimumPriority) : "LOW",
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.browserPushSubscription.createMany({
+    data: rows(tables, "browserPushSubscriptions").map((row) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      endpoint: String(row.endpoint),
+      p256dh: String(row.p256dh),
+      auth: String(row.auth),
+      userAgent: row.userAgent ? String(row.userAgent) : null,
+      disabledAt: toNullableDate(row.disabledAt),
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.investmentSettings.createMany({
+    data: rows(tables, "investmentSettings").map((row) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      gradingCost: row.gradingCost === undefined ? 20 : Number(row.gradingCost),
+      ebaySellingFee: row.ebaySellingFee === undefined ? 0.1325 : Number(row.ebaySellingFee),
+      shippingCost: row.shippingCost === undefined ? 5 : Number(row.shippingCost),
+      minimumProfitTarget: row.minimumProfitTarget === undefined ? 20 : Number(row.minimumProfitTarget),
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+
+  return { ok: true };
+}
