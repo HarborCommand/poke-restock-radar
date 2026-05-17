@@ -97,8 +97,26 @@ Monitor tuning:
 
 - `MONITOR_JOB_SECRET` protects the cron endpoint.
 - `MONITOR_REQUEST_DELAY_MS` controls delay between product checks. The app enforces a minimum delay of 500 ms.
+- Retailer templates include public status words for in stock, sold out, preorder, unavailable, blocked pages, captcha/robot pages, price changes, and page changes.
+- Product-level `Required words` make the monitor prove it is looking at the right product before trusting a positive signal.
+- Product-level `Ignore words` suppress ambiguous matches such as sponsored results, marketplace modules, unrelated sets, or page furniture.
+- Low-confidence high-priority changes are held as pending and must appear in two matching checks before an alert is sent.
+- Blocked, captcha, robot, and rate-limit pages are logged as blocked monitor results and never send restock alerts.
+- Use `Pause Monitor` for noisy products, `Resume Monitor` after tuning, `Force Alert` only for an intentional manual admin notification, and `Mark False Positive` to improve accuracy stats.
 
 Each user can configure in-app, email, SMS, quiet hours, and minimum priority from the app settings panel.
+
+### Tuning Retailer Detection
+
+Start with exact product URLs whenever possible. Search pages work for setup, but exact product pages give cleaner detected words, prices, and final URLs. After a noisy check, open the monitor result details and review HTTP status, final URL, response time, confidence, reason, and detected words.
+
+Recommended tuning loop:
+
+1. Add a product with a retailer template and run `Run Check Now`.
+2. If the result is blocked or captcha, wait and let the normal cron cadence retry. Do not bypass it.
+3. If the monitor matches the wrong product, add required words from the actual product title.
+4. If the monitor matches unrelated page text, add those words to ignore words.
+5. Mark confirmed bad alerts as false positives so the admin accuracy stats stay honest.
 
 ## Phase 3 Card Investment Engine
 
@@ -306,8 +324,8 @@ Use exact product pages when available. Search/category URLs are acceptable for 
 CSV headers:
 
 ```csv
-retailer,name,url,setName,productType,sku,upc,dpci,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,releaseSetName,notes
-Target,Pokemon TCG Booster Bundle,https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,,087-12-1234,26.99,UNAVAILABLE,HIGH,WATCH,true,60,Mega Evolution-Chaos Rising,Manual checkout only
+retailer,name,url,setName,productType,sku,upc,dpci,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes
+Target,Pokemon TCG Booster Bundle,https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,,087-12-1234,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only
 ```
 
 JSON format:
@@ -327,6 +345,8 @@ JSON format:
     "rating": "WATCH",
     "monitorEnabled": true,
     "checkFrequencyMinutes": 60,
+    "requiredWords": "Pokemon,Booster",
+    "ignoreWords": "sponsored,marketplace",
     "releaseSetName": "Mega Evolution-Chaos Rising"
   }
 ]

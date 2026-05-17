@@ -331,3 +331,51 @@ test("Phase 9 deployment operations scripts and checklist exist", () => {
     assert.match(checklist, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing checklist phrase ${phrase}`);
   }
 });
+
+test("Phase 12 retailer detection accuracy controls exist", () => {
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const field of [
+    "requiredWords",
+    "ignoreWords",
+    "lastSuccessfulCheckedAt",
+    "pendingAlertStatus",
+    "pendingAlertCount",
+    "confidenceScore",
+    "detectedWords",
+    "finalUrl",
+    "responseTimeMs",
+    "blockedType"
+  ]) {
+    assert.match(schema, new RegExp(field), `missing Phase 12 field ${field}`);
+  }
+
+  const templates = readFileSync(join(root, "src", "lib", "retailer-templates.ts"), "utf8");
+  for (const phrase of ["pageBlocked", "captcha", "unavailable", "pageChanged"]) {
+    assert.match(templates, new RegExp(phrase), `missing Phase 12 template phrase ${phrase}`);
+  }
+
+  const monitor = readFileSync(join(root, "src", "lib", "monitor.ts"), "utf8");
+  for (const phrase of ["PENDING_CONFIRMATION", "CAPTCHA_ROBOT_PAGE", "PAGE_BLOCKED", "shouldHoldForConfirmation"]) {
+    assert.match(monitor, new RegExp(phrase), `missing Phase 12 monitor phrase ${phrase}`);
+  }
+
+  const actionRoute = join(root, "src", "app", "api", "radar", "products", "[productId]", "monitor", "route.ts");
+  assert.ok(statSync(actionRoute).isFile(), `missing ${actionRoute}`);
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of [
+    "Monitor Accuracy Stats",
+    "Required words",
+    "Ignore words",
+    "Pause Monitor",
+    "Force Alert",
+    "Mark False Positive",
+    "Details"
+  ]) {
+    assert.match(app, new RegExp(phrase), `missing Phase 12 UI phrase ${phrase}`);
+  }
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /Tuning Retailer Detection/);
+  assert.match(readme, /Low-confidence high-priority changes/);
+});

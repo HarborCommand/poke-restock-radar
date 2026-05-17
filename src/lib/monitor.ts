@@ -1,16 +1,24 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
+import { templateForRetailerName, type RetailerTemplate } from "@/lib/retailer-templates";
 import type { Priority, ProductStatus } from "@/types/radar";
 
 type RunType = "MANUAL_PRODUCT" | "MANUAL_ALL" | "DUE_JOB";
+type MonitorLogStatus = "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR" | "BLOCKED" | "PENDING_CONFIRMATION";
+type BlockedType = "PAGE_BLOCKED" | "CAPTCHA_ROBOT_PAGE";
 
 type Detection = {
   status: ProductStatus | null;
   price: number | null;
   pageHash: string;
   httpStatus: number;
+  finalUrl: string;
+  responseTimeMs: number;
+  confidenceScore: number;
   reason: string;
+  detectedWords: string[];
+  blockedType: BlockedType | null;
 };
 
 const actionableStatuses: ProductStatus[] = [
@@ -21,18 +29,23 @@ const actionableStatuses: ProductStatus[] = [
   "PAGE_UPDATED"
 ];
 
-const soldOutSignals = [
-  "sold out",
-  "out of stock",
-  "currently unavailable",
-  "temporarily unavailable",
-  "not available",
-  "unavailable online"
-];
-
-const cartSignals = ["add to cart", "add for shipping", "add to bag", "buy now"];
-const inStockSignals = ["in stock", "available to ship", "available now"];
-const preorderSignals = ["preorder", "pre-order", "pre order"];
+const genericSignals = {
+  soldOut: [
+    "sold out",
+    "out of stock",
+    "currently unavailable",
+    "temporarily unavailable",
+    "not available",
+    "unavailable online"
+  ],
+  unavailable: ["unavailable", "not found", "page not found", "no longer available"],
+  addToCart: ["add to cart", "add for shipping", "add to bag", "buy now"],
+  inStock: ["in stock", "available to ship", "available now"],
+  preorder: ["preorder", "pre-order", "pre order"],
+  pageBlocked: ["access denied", "request blocked", "temporarily blocked", "waiting room"],
+  captcha: ["captcha", "verify you are human", "robot check", "automated access"],
+  pageChanged: ["product details", "shipping", "pickup"]
+};
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,14 +74,42 @@ function normalizedText(html: string) {
     .toLowerCase();
 }
 
-function includesAny(text: string, signals: string[]) {
-  return signals.some((signal) => text.includes(signal));
+function uniqueWords(words: string[]) {
+  return [...new Set(words.map((word) => word.trim()).filter(Boolean))];
+}
+
+function splitWords(value: string | null | undefined) {
+  if (!value) return [];
+  return uniqueWords(
+    value
+      .split(/[\n,]/)
+      .map((word) => word.trim().toLowerCase())
+      .filter((word) => word.length >= 2)
+  );
+}
+
+function mergeSignals(template: RetailerTemplate | null) {
+  return {
+    soldOut: uniqueWords([...(template?.statusWords.soldOut ?? []), ...genericSignals.soldOut]),
+    unavailable: uniqueWords([...(template?.statusWords.unavailable ?? []), ...genericSignals.unavailable]),
+    addToCart: uniqueWords([...(template?.statusWords.addToCart ?? []), ...genericSignals.addToCart]),
+    inStock: uniqueWords([...(template?.statusWords.inStock ?? []), ...genericSignals.inStock]),
+    preorder: uniqueWords([...(template?.statusWords.preorder ?? []), ...genericSignals.preorder]),
+    pageBlocked: uniqueWords([...(template?.statusWords.pageBlocked ?? []), ...genericSignals.pageBlocked]),
+    captcha: uniqueWords([...(template?.statusWords.captcha ?? []), ...genericSignals.captcha]),
+    pageChanged: uniqueWords([...(template?.statusWords.pageChanged ?? []), ...genericSignals.pageChanged])
+  };
+}
+
+function wordHits(text: string, words: string[]) {
+  return words.filter((word) => text.includes(word.toLowerCase()));
 }
 
 function detectPrice(html: string) {
   const candidates = [
     /"price"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
     /"salePrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"current_retail"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
     /\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/
   ];
 
@@ -82,51 +123,210 @@ function detectPrice(html: string) {
   return null;
 }
 
-function detectPublicStatus(html: string): Pick<Detection, "status" | "reason"> {
-  const text = normalizedText(html);
-  const hasSoldOut = includesAny(text, soldOutSignals);
-  const hasCart = includesAny(text, cartSignals);
-  const hasInStock = includesAny(text, inStockSignals);
-  const hasPreorder = includesAny(text, preorderSignals);
-
-  if (hasPreorder && (hasCart || !hasSoldOut)) {
-    return { status: "PREORDER_LIVE", reason: "Public page contains preorder availability language." };
-  }
-  if (hasCart && !hasSoldOut) {
-    return { status: "ADD_TO_CART_AVAILABLE", reason: "Public page contains add-to-cart language." };
-  }
-  if (hasInStock && !hasSoldOut) {
-    return { status: "IN_STOCK", reason: "Public page contains in-stock language." };
-  }
-  if (hasSoldOut) {
-    return { status: "SOLD_OUT", reason: "Public page contains sold-out or unavailable language." };
-  }
-
-  return { status: null, reason: "No clear stock signal found on the public page." };
+function withRequirementPenalty<T extends {
+  status: ProductStatus | null;
+  confidenceScore: number;
+  reason: string;
+  requiredMissing: string[];
+}>(input: T) {
+  if (!input.requiredMissing.length || !input.status) return input;
+  return {
+    ...input,
+    confidenceScore: Math.min(input.confidenceScore, 45),
+    reason: `${input.reason} Required words missing: ${input.requiredMissing.join(", ")}.`
+  };
 }
 
-async function fetchPublicProductPage(url: string): Promise<Detection> {
-  const response = await fetch(url, {
+function detectPublicStatus(input: {
+  html: string;
+  retailerName: string;
+  httpStatus: number;
+  requiredWords?: string | null;
+  ignoreWords?: string | null;
+}): Pick<Detection, "status" | "confidenceScore" | "reason" | "detectedWords" | "blockedType"> {
+  const text = normalizedText(input.html);
+  const template = templateForRetailerName(input.retailerName);
+  const signals = mergeSignals(template);
+  const requiredWords = splitWords(input.requiredWords);
+  const ignoreWords = splitWords(input.ignoreWords);
+
+  const matches = {
+    captcha: wordHits(text, signals.captcha),
+    pageBlocked: wordHits(text, signals.pageBlocked),
+    preorder: wordHits(text, signals.preorder),
+    addToCart: wordHits(text, signals.addToCart),
+    inStock: wordHits(text, signals.inStock),
+    soldOut: wordHits(text, signals.soldOut),
+    unavailable: wordHits(text, signals.unavailable),
+    pageChanged: wordHits(text, signals.pageChanged),
+    required: wordHits(text, requiredWords),
+    ignored: wordHits(text, ignoreWords)
+  };
+  const requiredMissing = requiredWords.filter((word) => !matches.required.includes(word));
+  const detectedWords = uniqueWords([
+    ...matches.captcha,
+    ...matches.pageBlocked,
+    ...matches.preorder,
+    ...matches.addToCart,
+    ...matches.inStock,
+    ...matches.soldOut,
+    ...matches.unavailable,
+    ...matches.pageChanged,
+    ...matches.required,
+    ...matches.ignored
+  ]);
+
+  if ([401, 403, 429, 503].includes(input.httpStatus) || matches.captcha.length || matches.pageBlocked.length) {
+    const captcha = matches.captcha.length > 0;
+    return {
+      status: null,
+      confidenceScore: 0,
+      reason: captcha
+        ? "Public page appears to be a captcha or robot verification page. No alert will be sent."
+        : `Public page appears blocked or rate limited with HTTP ${input.httpStatus}. No alert will be sent.`,
+      detectedWords,
+      blockedType: captcha ? "CAPTCHA_ROBOT_PAGE" : "PAGE_BLOCKED"
+    };
+  }
+
+  if ([404, 410].includes(input.httpStatus)) {
+    return {
+      status: "UNAVAILABLE",
+      confidenceScore: 85,
+      reason: `Public page returned HTTP ${input.httpStatus}; treating product as unavailable.`,
+      detectedWords: uniqueWords([...detectedWords, `http ${input.httpStatus}`]),
+      blockedType: null
+    };
+  }
+
+  if (matches.ignored.length) {
+    return {
+      status: null,
+      confidenceScore: 15,
+      reason: `Ignored product words matched: ${matches.ignored.join(", ")}. No restock status will be inferred.`,
+      detectedWords,
+      blockedType: null
+    };
+  }
+
+  const hasSoldOut = matches.soldOut.length > 0;
+  const hasUnavailable = matches.unavailable.length > 0;
+  const hasCart = matches.addToCart.length > 0;
+  const hasInStock = matches.inStock.length > 0;
+  const hasPreorder = matches.preorder.length > 0;
+
+  if (hasPreorder && (hasCart || !hasSoldOut)) {
+    return withRequirementPenalty({
+      status: "PREORDER_LIVE",
+      confidenceScore: hasCart ? 92 : 78,
+      reason: hasCart
+        ? "Retailer-specific preorder and add-to-cart words matched."
+        : "Retailer-specific preorder words matched.",
+      detectedWords,
+      blockedType: null,
+      requiredMissing
+    });
+  }
+  if (hasCart && !hasSoldOut) {
+    return withRequirementPenalty({
+      status: "ADD_TO_CART_AVAILABLE",
+      confidenceScore: 88,
+      reason: "Retailer-specific add-to-cart words matched without sold-out words.",
+      detectedWords,
+      blockedType: null,
+      requiredMissing
+    });
+  }
+  if (hasInStock && !hasSoldOut) {
+    return withRequirementPenalty({
+      status: "IN_STOCK",
+      confidenceScore: 82,
+      reason: "Retailer-specific in-stock words matched without sold-out words.",
+      detectedWords,
+      blockedType: null,
+      requiredMissing
+    });
+  }
+  if ((hasCart || hasInStock) && hasSoldOut) {
+    return withRequirementPenalty({
+      status: "SOLD_OUT",
+      confidenceScore: 55,
+      reason: "Conflicting available and sold-out words matched; treating as sold out with low confidence.",
+      detectedWords,
+      blockedType: null,
+      requiredMissing
+    });
+  }
+  if (hasSoldOut) {
+    return withRequirementPenalty({
+      status: "SOLD_OUT",
+      confidenceScore: 80,
+      reason: "Retailer-specific sold-out words matched.",
+      detectedWords,
+      blockedType: null,
+      requiredMissing
+    });
+  }
+  if (hasUnavailable) {
+    return withRequirementPenalty({
+      status: "UNAVAILABLE",
+      confidenceScore: 76,
+      reason: "Retailer-specific unavailable words matched.",
+      detectedWords,
+      blockedType: null,
+      requiredMissing
+    });
+  }
+
+  return {
+    status: null,
+    confidenceScore: matches.pageChanged.length ? 50 : 35,
+    reason: matches.pageChanged.length
+      ? "Page changed cues were present, but no clear stock signal was found."
+      : "No clear stock signal found on the public page.",
+    detectedWords,
+    blockedType: null
+  };
+}
+
+async function fetchPublicProductPage(input: {
+  url: string;
+  retailerName: string;
+  requiredWords?: string | null;
+  ignoreWords?: string | null;
+}): Promise<Detection> {
+  const started = Date.now();
+  const response = await fetch(input.url, {
     method: "GET",
     redirect: "follow",
     signal: AbortSignal.timeout(12000),
     headers: {
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "User-Agent": "PokeRestockRadar/0.2 private-safe-monitor (+manual-checkout-only)"
+      "User-Agent": "PokeRestockRadar/0.3 private-safe-monitor (+manual-checkout-only)"
     }
   });
 
   const body = await response.text();
-  if (!response.ok) {
+  const responseTimeMs = Date.now() - started;
+  const status = detectPublicStatus({
+    html: body,
+    retailerName: input.retailerName,
+    httpStatus: response.status,
+    requiredWords: input.requiredWords,
+    ignoreWords: input.ignoreWords
+  });
+
+  if (!response.ok && !status.blockedType && status.status !== "UNAVAILABLE") {
     throw new Error(`Public page returned HTTP ${response.status}`);
   }
 
-  const status = detectPublicStatus(body);
   return {
     ...status,
     price: detectPrice(body),
     pageHash: hashPage(body),
-    httpStatus: response.status
+    httpStatus: response.status,
+    finalUrl: response.url || input.url,
+    responseTimeMs
   };
 }
 
@@ -173,13 +373,19 @@ function changedStatus(
 async function createMonitorLog(input: {
   productId?: string;
   runType: RunType;
-  status: "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR";
+  status: MonitorLogStatus | "FALSE_POSITIVE" | "FORCED_ALERT";
   previousStatus?: string;
   detectedStatus?: string;
   previousPrice?: number | null;
   detectedPrice?: number | null;
   changeSummary?: string;
   httpStatus?: number;
+  finalUrl?: string;
+  responseTimeMs?: number;
+  detectedWords?: string[];
+  confidenceScore?: number;
+  reason?: string;
+  blockedType?: string | null;
   pageHash?: string;
   startedAt: Date;
   error?: string;
@@ -198,6 +404,12 @@ async function createMonitorLog(input: {
       detectedPrice: input.detectedPrice,
       changeSummary: input.changeSummary,
       httpStatus: input.httpStatus,
+      finalUrl: input.finalUrl,
+      responseTimeMs: input.responseTimeMs,
+      detectedWords: input.detectedWords?.join(", "),
+      confidenceScore: input.confidenceScore,
+      reason: input.reason,
+      blockedType: input.blockedType ?? undefined,
       pageHash: input.pageHash,
       startedAt: input.startedAt,
       finishedAt,
@@ -207,6 +419,47 @@ async function createMonitorLog(input: {
       notificationSummary: input.notificationSummary
     }
   });
+}
+
+function shouldHoldForConfirmation(input: {
+  priority: string;
+  nextStatus: ProductStatus;
+  confidenceScore: number;
+}) {
+  return input.priority === "HIGH" && actionableStatuses.includes(input.nextStatus) && input.confidenceScore < 70;
+}
+
+function pendingMatches(
+  product: {
+    pendingAlertStatus: string | null;
+    pendingAlertPrice: number | null;
+    pendingAlertPageHash: string | null;
+  },
+  nextStatus: ProductStatus,
+  detection: Detection
+) {
+  if (product.pendingAlertStatus !== nextStatus) return false;
+  if (nextStatus === "PRICE_CHANGE") {
+    if (product.pendingAlertPrice === null || detection.price === null) return false;
+    return Math.abs(product.pendingAlertPrice - detection.price) < 0.01;
+  }
+  if (nextStatus === "PAGE_UPDATED") {
+    return product.pendingAlertPageHash === detection.pageHash;
+  }
+  return true;
+}
+
+function pendingClear() {
+  return {
+    pendingAlertStatus: null,
+    pendingAlertPrice: null,
+    pendingAlertPageHash: null,
+    pendingAlertCount: 0,
+    pendingAlertReason: null,
+    pendingAlertConfidence: null,
+    pendingAlertDetectedWords: null,
+    pendingAlertAt: null
+  };
 }
 
 export async function runProductMonitorCheck(productId: string, runType: RunType = "MANUAL_PRODUCT", force = true) {
@@ -232,14 +485,117 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
   }
 
   try {
-    const detection = await fetchPublicProductPage(product.url);
+    const detection = await fetchPublicProductPage({
+      url: product.url,
+      retailerName: product.retailer.name,
+      requiredWords: product.requiredWords,
+      ignoreWords: product.ignoreWords
+    });
+
+    if (detection.blockedType) {
+      await prisma.product.update({
+        where: { id: productId },
+        data: {
+          lastCheckedAt: now,
+          nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
+          lastMonitorError: detection.reason,
+          lastMonitorResult: `Blocked: ${detection.blockedType}`
+        }
+      });
+      const log = await createMonitorLog({
+        productId,
+        runType,
+        status: "BLOCKED",
+        previousStatus: product.stockStatus,
+        detectedStatus: detection.blockedType,
+        previousPrice: product.retailPrice,
+        detectedPrice: detection.price,
+        changeSummary: detection.reason,
+        httpStatus: detection.httpStatus,
+        finalUrl: detection.finalUrl,
+        responseTimeMs: detection.responseTimeMs,
+        detectedWords: detection.detectedWords,
+        confidenceScore: detection.confidenceScore,
+        reason: detection.reason,
+        blockedType: detection.blockedType,
+        pageHash: detection.pageHash,
+        startedAt
+      });
+      return {
+        productId,
+        productName: product.name,
+        status: "BLOCKED",
+        blockedType: detection.blockedType,
+        logId: log.id
+      };
+    }
+
     const change = changedStatus(
       product.stockStatus as ProductStatus,
       product.retailPrice,
       product.lastPageHash,
       detection
     );
-    const monitorResult = change.changed ? change.summary : `Checked public page. ${detection.reason}`;
+    const monitorResult = change.changed
+      ? `${change.summary} Confidence ${detection.confidenceScore}%.`
+      : `Checked public page. ${detection.reason} Confidence ${detection.confidenceScore}%.`;
+    const holdForConfirmation = change.changed
+      ? shouldHoldForConfirmation({
+          priority: product.priority,
+          nextStatus: change.nextStatus,
+          confidenceScore: detection.confidenceScore
+        })
+      : false;
+    const matchingPending = holdForConfirmation && pendingMatches(product, change.nextStatus, detection);
+    const nextPendingCount = holdForConfirmation ? (matchingPending ? product.pendingAlertCount + 1 : 1) : 0;
+
+    if (holdForConfirmation && nextPendingCount < 2) {
+      const pendingReason = `${change.summary} Low confidence (${detection.confidenceScore}%). Waiting for one more matching check before alerting.`;
+      await prisma.product.update({
+        where: { id: productId },
+        data: {
+          lastCheckedAt: now,
+          lastSuccessfulCheckedAt: now,
+          nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
+          lastMonitorResult: pendingReason,
+          lastMonitorError: null,
+          pendingAlertStatus: change.nextStatus,
+          pendingAlertPrice: detection.price,
+          pendingAlertPageHash: detection.pageHash,
+          pendingAlertCount: nextPendingCount,
+          pendingAlertReason: pendingReason,
+          pendingAlertConfidence: detection.confidenceScore,
+          pendingAlertDetectedWords: detection.detectedWords.join(", "),
+          pendingAlertAt: now
+        }
+      });
+      const log = await createMonitorLog({
+        productId,
+        runType,
+        status: "PENDING_CONFIRMATION",
+        previousStatus: product.stockStatus,
+        detectedStatus: change.nextStatus,
+        previousPrice: product.retailPrice,
+        detectedPrice: detection.price,
+        changeSummary: pendingReason,
+        httpStatus: detection.httpStatus,
+        finalUrl: detection.finalUrl,
+        responseTimeMs: detection.responseTimeMs,
+        detectedWords: detection.detectedWords,
+        confidenceScore: detection.confidenceScore,
+        reason: detection.reason,
+        pageHash: detection.pageHash,
+        startedAt
+      });
+      return {
+        productId,
+        productName: product.name,
+        status: "PENDING_CONFIRMATION",
+        detectedStatus: change.nextStatus,
+        alertSent: false,
+        logId: log.id
+      };
+    }
 
     let alertSent = false;
     let deliverySummary: string | undefined;
@@ -250,13 +606,13 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
           productId,
           status: change.nextStatus,
           price: detection.price ?? product.retailPrice,
-          snapshotReason: `Monitor: ${change.summary}`
+          snapshotReason: `Monitor: ${change.summary} Confidence ${detection.confidenceScore}%.`
         }
       });
 
       const delivery = await deliverAlert({
         title: `${product.name}: ${change.nextStatus.replaceAll("_", " ").toLowerCase()}`,
-        reason: `${change.summary} Source: public ${product.retailer.name} product page. Manual checkout only.`,
+        reason: `${change.summary} Confidence ${detection.confidenceScore}%. Source: public ${product.retailer.name} product page. Manual checkout only.`,
         priority: product.priority as Priority,
         entityType: "PRODUCT",
         entityId: product.id,
@@ -273,12 +629,14 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         stockStatus: change.nextStatus,
         retailPrice: detection.price ?? product.retailPrice,
         lastCheckedAt: now,
+        lastSuccessfulCheckedAt: now,
         nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
         lastMonitorResult: monitorResult,
         lastMonitorError: null,
         lastPageHash: detection.pageHash,
         lastAlertSentAt: alertSent ? now : product.lastAlertSentAt,
-        alertStatus: actionableStatuses.includes(change.nextStatus)
+        alertStatus: actionableStatuses.includes(change.nextStatus),
+        ...pendingClear()
       }
     });
 
@@ -292,6 +650,11 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
       detectedPrice: detection.price,
       changeSummary: monitorResult,
       httpStatus: detection.httpStatus,
+      finalUrl: detection.finalUrl,
+      responseTimeMs: detection.responseTimeMs,
+      detectedWords: detection.detectedWords,
+      confidenceScore: detection.confidenceScore,
+      reason: detection.reason,
       pageHash: detection.pageHash,
       startedAt,
       alertSent,
@@ -304,6 +667,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
       status: log.status,
       detectedStatus: change.nextStatus,
       alertSent,
+      confidenceScore: detection.confidenceScore,
       logId: log.id
     };
   } catch (error) {
@@ -354,13 +718,15 @@ export async function runProductMonitorBatch(mode: "due" | "all", runType: RunTy
       startedAt: now,
       changeSummary: "No products were due for monitoring."
     });
-    return { checked: 0, changed: 0, errors: 0, results, logId: log.id };
+    return { checked: 0, changed: 0, errors: 0, blocked: 0, pending: 0, results, logId: log.id };
   }
 
   return {
     checked: results.length,
     changed: results.filter((result) => result.status === "CHANGED").length,
     errors: results.filter((result) => result.status === "ERROR").length,
+    blocked: results.filter((result) => result.status === "BLOCKED").length,
+    pending: results.filter((result) => result.status === "PENDING_CONFIRMATION").length,
     results
   };
 }

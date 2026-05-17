@@ -13,6 +13,7 @@ export type Priority = "LOW" | "MEDIUM" | "HIGH";
 export type Rating = "BUY" | "WATCH" | "SKIP" | "AVOID";
 export type Probability = "LOW" | "MEDIUM" | "HIGH";
 export type MonitorLogStatus = "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR";
+export type MonitorLogStatusExtended = MonitorLogStatus | "BLOCKED" | "PENDING_CONFIRMATION" | "FALSE_POSITIVE" | "FORCED_ALERT";
 export type GradeType = "RAW" | "PSA_9" | "PSA_10" | "BGS_9_5" | "BGS_10" | "BGS_BLACK_LABEL";
 export type Era = "MODERN" | "VINTAGE";
 export type StoreVisitResult = "stock_seen" | "empty_shelf" | "vendor_spotted" | "bought_product" | "no_visit";
@@ -39,6 +40,10 @@ export type RetailerTemplateDTO = {
     soldOut: string[];
     preorder: string[];
     addToCart: string[];
+    unavailable: string[];
+    pageBlocked: string[];
+    captcha: string[];
+    pageChanged: string[];
     price: string[];
   };
   safeSelectors: string[];
@@ -67,12 +72,21 @@ export type ProductDTO = {
   rating: Rating;
   notes: string | null;
   lastCheckedAt: string | null;
+  lastSuccessfulCheckedAt: string | null;
   monitorEnabled: boolean;
   checkFrequencyMinutes: number;
   nextCheckAt: string | null;
   lastMonitorResult: string | null;
   lastMonitorError: string | null;
   lastAlertSentAt: string | null;
+  requiredWords: string | null;
+  ignoreWords: string | null;
+  pendingAlertStatus: string | null;
+  pendingAlertCount: number;
+  pendingAlertReason: string | null;
+  pendingAlertConfidence: number | null;
+  pendingAlertDetectedWords: string | null;
+  pendingAlertAt: string | null;
   sealedResaleNotes: string | null;
   scarcityNotes: string | null;
   manualPriorityOverride: Rating | null;
@@ -223,7 +237,7 @@ export type MonitorLogDTO = {
   productId: string | null;
   productName: string | null;
   runType: string;
-  status: MonitorLogStatus;
+  status: MonitorLogStatusExtended;
   previousStatus: string | null;
   detectedStatus: string | null;
   previousPrice: number | null;
@@ -236,6 +250,20 @@ export type MonitorLogDTO = {
   error: string | null;
   alertSent: boolean;
   notificationSummary: string | null;
+  finalUrl: string | null;
+  responseTimeMs: number | null;
+  detectedWords: string | null;
+  confidenceScore: number | null;
+  reason: string | null;
+  blockedType: string | null;
+};
+
+export type MonitorAccuracyStatsDTO = {
+  totalChecks: number;
+  successfulChecks: number;
+  blockedChecks: number;
+  falsePositives: number;
+  confirmedRestocks: number;
 };
 
 export type NotificationSettingsDTO = {
@@ -365,6 +393,7 @@ export type DashboardDTO = {
   cardCompSales: CardCompSaleDTO[];
   alerts: AlertDTO[];
   monitorLogs: MonitorLogDTO[];
+  monitorAccuracyStats: MonitorAccuracyStatsDTO;
   notificationSettings: NotificationSettingsDTO;
   investmentSettings: InvestmentSettingsDTO;
   health: AppHealthDTO | null;

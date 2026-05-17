@@ -9,6 +9,10 @@ export type RetailerTemplate = {
     soldOut: string[];
     preorder: string[];
     addToCart: string[];
+    unavailable: string[];
+    pageBlocked: string[];
+    captcha: string[];
+    pageChanged: string[];
     price: string[];
   };
   safeSelectors: string[];
@@ -27,6 +31,10 @@ export const retailerTemplates: RetailerTemplate[] = [
       soldOut: ["sold out", "unavailable", "out of stock"],
       preorder: ["preorder", "pre-order"],
       addToCart: ["add to cart", "add to bag"],
+      unavailable: ["unavailable", "not available", "temporarily unavailable"],
+      pageBlocked: ["access denied", "queue-it", "waiting room", "temporarily blocked"],
+      captcha: ["captcha", "verify you are human", "robot check"],
+      pageChanged: ["product details", "notify me", "coming soon"],
       price: ["price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", "[itemprop='availability']", "button, [role='button']"],
@@ -43,6 +51,10 @@ export const retailerTemplates: RetailerTemplate[] = [
       soldOut: ["sold out", "out of stock", "not available"],
       preorder: ["preorder", "pre-order"],
       addToCart: ["add to cart", "add for shipping", "ship it"],
+      unavailable: ["not available", "currently unavailable", "out of stock"],
+      pageBlocked: ["access denied", "request blocked", "security check", "akamai"],
+      captcha: ["captcha", "robot", "verify you are human"],
+      pageChanged: ["shipping", "pickup", "returns", "highlights"],
       price: ["current_retail", "price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", "[data-test*='fulfillment']", "button, [role='button']"],
@@ -59,6 +71,10 @@ export const retailerTemplates: RetailerTemplate[] = [
       soldOut: ["out of stock", "sold out", "currently unavailable"],
       preorder: ["preorder", "pre-order"],
       addToCart: ["add to cart"],
+      unavailable: ["currently unavailable", "not available", "out of stock"],
+      pageBlocked: ["blocked", "access denied", "press and hold", "validate your request"],
+      captcha: ["captcha", "robot or human", "verify your identity"],
+      pageChanged: ["seller", "shipping", "pickup", "delivery"],
       price: ["price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", "[data-testid*='add-to-cart']", "button, [role='button']"],
@@ -75,6 +91,10 @@ export const retailerTemplates: RetailerTemplate[] = [
       soldOut: ["sold out", "unavailable", "coming soon"],
       preorder: ["pre-order", "preorder"],
       addToCart: ["add to cart"],
+      unavailable: ["unavailable nearby", "not available", "coming soon"],
+      pageBlocked: ["access denied", "request blocked", "temporarily unavailable"],
+      captcha: ["captcha", "verify you are human", "robot"],
+      pageChanged: ["pickup", "shipping", "customer reviews"],
       price: ["price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", ".add-to-cart-button", "button, [role='button']"],
@@ -91,6 +111,10 @@ export const retailerTemplates: RetailerTemplate[] = [
       soldOut: ["not available", "out of stock", "unavailable"],
       preorder: ["pre-order", "preorder"],
       addToCart: ["add to cart"],
+      unavailable: ["not available", "unavailable", "out of stock"],
+      pageBlocked: ["access denied", "blocked", "queue", "waiting room"],
+      captcha: ["captcha", "robot", "verify you are human"],
+      pageChanged: ["ship to home", "pick up", "pro"],
       price: ["price", "$"]
     },
     safeSelectors: ["script[type='application/ld+json']", "button, [role='button']", "[data-availability]"],
@@ -107,6 +131,10 @@ export const retailerTemplates: RetailerTemplate[] = [
       soldOut: ["currently unavailable", "temporarily out of stock", "unavailable"],
       preorder: ["pre-order", "preorder"],
       addToCart: ["add to cart", "buy now"],
+      unavailable: ["currently unavailable", "temporarily out of stock", "not available"],
+      pageBlocked: ["sorry, we just need to make sure", "automated access", "access denied"],
+      captcha: ["enter the characters you see below", "captcha", "robot check"],
+      pageChanged: ["ships from", "sold by", "buy box", "other sellers"],
       price: ["priceblock", "$"]
     },
     safeSelectors: ["#availability", "#priceblock_ourprice", "#corePrice_feature_div", "script[type='application/ld+json']"],

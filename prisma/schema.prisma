@@ -51,6 +51,7 @@ model Product {
   rating         String                 @default("WATCH")
   notes          String?
   lastCheckedAt  DateTime?
+  lastSuccessfulCheckedAt DateTime?
   monitorEnabled Boolean                @default(true)
   checkFrequencyMinutes Int             @default(60)
   nextCheckAt    DateTime?
@@ -58,6 +59,16 @@ model Product {
   lastMonitorError  String?
   lastPageHash   String?
   lastAlertSentAt DateTime?
+  requiredWords  String?
+  ignoreWords    String?
+  pendingAlertStatus String?
+  pendingAlertPrice  Float?
+  pendingAlertPageHash String?
+  pendingAlertCount Int                    @default(0)
+  pendingAlertReason String?
+  pendingAlertConfidence Int?
+  pendingAlertDetectedWords String?
+  pendingAlertAt DateTime?
   sealedResaleNotes String?
   scarcityNotes  String?
   manualPriorityOverride String?
@@ -185,6 +196,12 @@ model MonitorLog {
   detectedPrice       Float?
   changeSummary       String?
   httpStatus          Int?
+  finalUrl            String?
+  responseTimeMs      Int?
+  detectedWords       String?
+  confidenceScore     Int?
+  reason              String?
+  blockedType         String?
   pageHash            String?
   startedAt           DateTime  @default(now())
   finishedAt          DateTime?

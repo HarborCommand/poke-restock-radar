@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
+import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
 import {
@@ -18,6 +19,7 @@ import type {
   DashboardDTO,
   GradeType,
   InvestmentSettingsDTO,
+  MonitorAccuracyStatsDTO,
   MonitorLogDTO,
   NotificationSettingsDTO,
   Priority,
@@ -237,12 +239,21 @@ function productToDTO(
     rating: product.rating as Rating,
     notes: product.notes,
     lastCheckedAt: product.lastCheckedAt?.toISOString() ?? null,
+    lastSuccessfulCheckedAt: product.lastSuccessfulCheckedAt?.toISOString() ?? null,
     monitorEnabled: product.monitorEnabled,
     checkFrequencyMinutes: product.checkFrequencyMinutes,
     nextCheckAt: product.nextCheckAt?.toISOString() ?? null,
     lastMonitorResult: product.lastMonitorResult,
     lastMonitorError: product.lastMonitorError,
     lastAlertSentAt: product.lastAlertSentAt?.toISOString() ?? null,
+    requiredWords: product.requiredWords,
+    ignoreWords: product.ignoreWords,
+    pendingAlertStatus: product.pendingAlertStatus,
+    pendingAlertCount: product.pendingAlertCount,
+    pendingAlertReason: product.pendingAlertReason,
+    pendingAlertConfidence: product.pendingAlertConfidence,
+    pendingAlertDetectedWords: product.pendingAlertDetectedWords,
+    pendingAlertAt: product.pendingAlertAt?.toISOString() ?? null,
     sealedResaleNotes: product.sealedResaleNotes,
     scarcityNotes: product.scarcityNotes,
     manualPriorityOverride: product.manualPriorityOverride as Rating | null,
@@ -493,12 +504,15 @@ function dataQualityWarnings(input: {
         entityId: product.id
       });
     }
-    if (product.monitorEnabled && (!product.lastCheckedAt || new Date(product.lastCheckedAt).getTime() < staleCutoff)) {
+    if (
+      product.monitorEnabled &&
+      (!product.lastSuccessfulCheckedAt || new Date(product.lastSuccessfulCheckedAt).getTime() < staleCutoff)
+    ) {
       warnings.push({
         id: `product-stale-${product.id}`,
         severity: "LOW",
-        title: `${product.name} has not checked in 24h`,
-        detail: "Run a manual check or verify cron is configured.",
+        title: `${product.name} has no successful check in 24h`,
+        detail: "Run a manual check, tune required/ignore words, or verify cron is reaching the public page.",
         tab: "products",
         entityId: product.id
       });
@@ -526,8 +540,25 @@ function monitorLogToDTO(log: Prisma.MonitorLogGetPayload<{ include: typeof moni
     durationMs: log.durationMs,
     error: log.error,
     alertSent: log.alertSent,
-    notificationSummary: log.notificationSummary
+    notificationSummary: log.notificationSummary,
+    finalUrl: log.finalUrl,
+    responseTimeMs: log.responseTimeMs,
+    detectedWords: log.detectedWords,
+    confidenceScore: log.confidenceScore,
+    reason: log.reason,
+    blockedType: log.blockedType
   };
+}
+
+async function monitorAccuracyStats(): Promise<MonitorAccuracyStatsDTO> {
+  const [totalChecks, successfulChecks, blockedChecks, falsePositives, confirmedRestocks] = await Promise.all([
+    prisma.monitorLog.count(),
+    prisma.monitorLog.count({ where: { status: { in: ["SUCCESS", "CHANGED", "FORCED_ALERT"] } } }),
+    prisma.monitorLog.count({ where: { status: "BLOCKED" } }),
+    prisma.monitorLog.count({ where: { status: "FALSE_POSITIVE" } }),
+    prisma.restockHistory.count({ where: { status: { in: ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"] } } })
+  ]);
+  return { totalChecks, successfulChecks, blockedChecks, falsePositives, confirmedRestocks };
 }
 
 function notificationSettingsToDTO(
@@ -822,6 +853,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const alertDTOs = alerts.map(alertToDTO);
   const releaseDTOs = releases.map((release) => releaseToDTO(release, releaseMetrics(release, products, cards)));
   const health = currentUser.role === "ADMIN" ? await getAppHealth() : null;
+  const accuracyStats = await monitorAccuracyStats();
   const notificationSettingsDTO = notificationSettingsToDTO(notificationSettings);
   const setup = setupChecklist({
     productCount: productDTOs.length,
@@ -851,6 +883,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     cardCompSales: cardCompSales.map(cardCompSaleToDTO),
     alerts: alertDTOs,
     monitorLogs: monitorLogs.map(monitorLogToDTO),
+    monitorAccuracyStats: accuracyStats,
     notificationSettings: notificationSettingsDTO,
     investmentSettings: investmentSettingsToDTO(investmentSettings),
     health,
@@ -883,6 +916,8 @@ export async function createProduct(input: {
   rating: Exclude<Rating, "AVOID">;
   monitorEnabled?: boolean;
   checkFrequencyMinutes?: number;
+  requiredWords?: string;
+  ignoreWords?: string;
   sealedResaleNotes?: string;
   scarcityNotes?: string;
   manualPriorityOverride?: Exclude<Rating, "AVOID">;
@@ -899,6 +934,7 @@ export async function createProduct(input: {
       manualPriorityOverride: input.manualPriorityOverride ?? input.rating,
       monitorEnabled: input.monitorEnabled ?? true,
       checkFrequencyMinutes,
+      lastSuccessfulCheckedAt: new Date(),
       lastCheckedAt: new Date(),
       nextCheckAt: new Date(Date.now() + checkFrequencyMinutes * 60 * 1000)
     },
@@ -935,6 +971,8 @@ export async function updateProductManualStatus(
     rating: Exclude<Rating, "AVOID">;
     monitorEnabled: boolean;
     checkFrequencyMinutes: number;
+    requiredWords?: string;
+    ignoreWords?: string;
     sealedResaleNotes?: string;
     scarcityNotes?: string;
     manualPriorityOverride?: Exclude<Rating, "AVOID">;
@@ -967,11 +1005,22 @@ export async function updateProductManualStatus(
       manualPriorityOverride: input.manualPriorityOverride ?? input.rating,
       monitorEnabled: input.monitorEnabled,
       checkFrequencyMinutes: input.checkFrequencyMinutes,
+      requiredWords: input.requiredWords,
+      ignoreWords: input.ignoreWords,
       nextCheckAt: new Date(Date.now() + input.checkFrequencyMinutes * 60 * 1000),
       notes: input.notes,
       sealedResaleNotes: input.sealedResaleNotes,
       scarcityNotes: input.scarcityNotes,
       lastCheckedAt: new Date(),
+      lastSuccessfulCheckedAt: new Date(),
+      pendingAlertStatus: null,
+      pendingAlertPrice: null,
+      pendingAlertPageHash: null,
+      pendingAlertCount: 0,
+      pendingAlertReason: null,
+      pendingAlertConfidence: null,
+      pendingAlertDetectedWords: null,
+      pendingAlertAt: null,
       alertStatus: ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE", "PRICE_CHANGE", "PAGE_UPDATED"].includes(
         input.stockStatus
       )
@@ -1013,6 +1062,137 @@ export async function deleteProduct(productId: string) {
   await prisma.alert.deleteMany({ where: { productId } });
   await prisma.product.delete({ where: { id: productId } });
   return { ok: true };
+}
+
+export async function controlProductMonitor(
+  productId: string,
+  input: {
+    action: "pause" | "resume" | "force_alert" | "mark_false_positive";
+    monitorLogId?: string;
+    reason?: string;
+  }
+) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: { retailer: { select: { name: true } } }
+  });
+  if (!product) throw new Error("Product not found");
+
+  const now = new Date();
+  if (input.action === "pause" || input.action === "resume") {
+    const enabled = input.action === "resume";
+    await prisma.product.update({
+      where: { id: productId },
+      data: {
+        monitorEnabled: enabled,
+        lastMonitorResult: enabled ? "Monitor resumed by admin." : "Monitor paused by admin.",
+        nextCheckAt: enabled ? new Date(Date.now() + product.checkFrequencyMinutes * 60 * 1000) : product.nextCheckAt
+      }
+    });
+    await prisma.monitorLog.create({
+      data: {
+        productId,
+        runType: "MANUAL_PRODUCT",
+        status: "SKIPPED",
+        previousStatus: product.stockStatus,
+        detectedStatus: product.stockStatus,
+        startedAt: now,
+        finishedAt: now,
+        durationMs: 0,
+        changeSummary: enabled ? "Admin resumed product monitor." : "Admin paused product monitor.",
+        reason: input.reason
+      }
+    });
+    return { ok: true, action: input.action };
+  }
+
+  if (input.action === "force_alert") {
+    const delivery = await deliverAlert({
+      title: `Forced alert: ${product.name}`,
+      reason:
+        input.reason ||
+        `Admin forced a manual alert for ${product.name}. Go opens only the official ${product.retailer.name} page.`,
+      priority: product.priority as Priority,
+      entityType: "PRODUCT",
+      entityId: product.id,
+      productId: product.id,
+      actionUrl: product.url
+    });
+    const summary = notificationSummary(delivery);
+    const alertSent = delivery.inAppCreated + delivery.emailSent + delivery.smsSent + delivery.pushSent > 0;
+    await prisma.product.update({
+      where: { id: productId },
+      data: {
+        lastAlertSentAt: alertSent ? now : product.lastAlertSentAt,
+        lastMonitorResult: "Admin forced a manual alert."
+      }
+    });
+    const log = await prisma.monitorLog.create({
+      data: {
+        productId,
+        runType: "MANUAL_PRODUCT",
+        status: "FORCED_ALERT",
+        previousStatus: product.stockStatus,
+        detectedStatus: product.stockStatus,
+        previousPrice: product.retailPrice,
+        detectedPrice: product.retailPrice,
+        startedAt: now,
+        finishedAt: now,
+        durationMs: 0,
+        changeSummary: input.reason || "Admin forced a product alert.",
+        finalUrl: product.url,
+        alertSent,
+        notificationSummary: summary
+      }
+    });
+    return { ok: true, action: input.action, alertSent, logId: log.id };
+  }
+
+  if (input.monitorLogId) {
+    await prisma.monitorLog.updateMany({
+      where: { id: input.monitorLogId, productId },
+      data: {
+        status: "FALSE_POSITIVE",
+        changeSummary: input.reason || "Admin marked this monitor result as a false positive.",
+        reason: input.reason || "False positive marked by admin.",
+        alertSent: false
+      }
+    });
+  }
+
+  const log = await prisma.monitorLog.create({
+    data: {
+      productId,
+      runType: "MANUAL_PRODUCT",
+      status: "FALSE_POSITIVE",
+      previousStatus: product.stockStatus,
+      detectedStatus: product.stockStatus,
+      previousPrice: product.retailPrice,
+      detectedPrice: product.retailPrice,
+      startedAt: now,
+      finishedAt: now,
+      durationMs: 0,
+      changeSummary: input.reason || "Admin marked a product monitor result as a false positive.",
+      reason: input.reason || "False positive marked by admin.",
+      alertSent: false
+    }
+  });
+  await prisma.product.update({
+    where: { id: productId },
+    data: {
+      alertStatus: false,
+      lastMonitorResult: "Marked false positive by admin.",
+      pendingAlertStatus: null,
+      pendingAlertPrice: null,
+      pendingAlertPageHash: null,
+      pendingAlertCount: 0,
+      pendingAlertReason: null,
+      pendingAlertConfidence: null,
+      pendingAlertDetectedWords: null,
+      pendingAlertAt: null
+    }
+  });
+  return { ok: true, action: input.action, logId: log.id };
 }
 
 export async function createStore(input: {
@@ -1321,6 +1501,8 @@ export async function importProducts(format: "csv" | "json", data: string) {
         manualPriorityOverride: (textFromRow(row, "manualPriorityOverride") || rating).toUpperCase(),
         monitorEnabled: boolFromRow(row, "monitorEnabled") ?? true,
         checkFrequencyMinutes: numberFromRow(row, "checkFrequencyMinutes", "frequencyMinutes") ?? 60,
+        requiredWords: textFromRow(row, "requiredWords", "requiredDetectionWords"),
+        ignoreWords: textFromRow(row, "ignoreWords", "ignoredDetectionWords"),
         sealedResaleNotes: textFromRow(row, "sealedResaleNotes"),
         scarcityNotes: textFromRow(row, "scarcityNotes"),
         notes: textFromRow(row, "notes")
@@ -2267,6 +2449,7 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       rating: String(row.rating),
       notes: row.notes ? String(row.notes) : null,
       lastCheckedAt: toNullableDate(row.lastCheckedAt),
+      lastSuccessfulCheckedAt: toNullableDate(row.lastSuccessfulCheckedAt),
       monitorEnabled: row.monitorEnabled === undefined ? true : Boolean(row.monitorEnabled),
       checkFrequencyMinutes: row.checkFrequencyMinutes === undefined ? 60 : Number(row.checkFrequencyMinutes),
       nextCheckAt: toNullableDate(row.nextCheckAt),
@@ -2274,6 +2457,20 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       lastMonitorError: row.lastMonitorError ? String(row.lastMonitorError) : null,
       lastPageHash: row.lastPageHash ? String(row.lastPageHash) : null,
       lastAlertSentAt: toNullableDate(row.lastAlertSentAt),
+      requiredWords: row.requiredWords ? String(row.requiredWords) : null,
+      ignoreWords: row.ignoreWords ? String(row.ignoreWords) : null,
+      pendingAlertStatus: row.pendingAlertStatus ? String(row.pendingAlertStatus) : null,
+      pendingAlertPrice:
+        row.pendingAlertPrice === null || row.pendingAlertPrice === undefined ? null : Number(row.pendingAlertPrice),
+      pendingAlertPageHash: row.pendingAlertPageHash ? String(row.pendingAlertPageHash) : null,
+      pendingAlertCount: row.pendingAlertCount === undefined ? 0 : Number(row.pendingAlertCount),
+      pendingAlertReason: row.pendingAlertReason ? String(row.pendingAlertReason) : null,
+      pendingAlertConfidence:
+        row.pendingAlertConfidence === null || row.pendingAlertConfidence === undefined
+          ? null
+          : Number(row.pendingAlertConfidence),
+      pendingAlertDetectedWords: row.pendingAlertDetectedWords ? String(row.pendingAlertDetectedWords) : null,
+      pendingAlertAt: toNullableDate(row.pendingAlertAt),
       sealedResaleNotes: row.sealedResaleNotes ? String(row.sealedResaleNotes) : null,
       scarcityNotes: row.scarcityNotes ? String(row.scarcityNotes) : null,
       manualPriorityOverride: row.manualPriorityOverride ? String(row.manualPriorityOverride) : null,
@@ -2383,6 +2580,12 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       detectedPrice: row.detectedPrice === null || row.detectedPrice === undefined ? null : Number(row.detectedPrice),
       changeSummary: row.changeSummary ? String(row.changeSummary) : null,
       httpStatus: row.httpStatus === null || row.httpStatus === undefined ? null : Number(row.httpStatus),
+      finalUrl: row.finalUrl ? String(row.finalUrl) : null,
+      responseTimeMs: row.responseTimeMs === null || row.responseTimeMs === undefined ? null : Number(row.responseTimeMs),
+      detectedWords: row.detectedWords ? String(row.detectedWords) : null,
+      confidenceScore: row.confidenceScore === null || row.confidenceScore === undefined ? null : Number(row.confidenceScore),
+      reason: row.reason ? String(row.reason) : null,
+      blockedType: row.blockedType ? String(row.blockedType) : null,
       pageHash: row.pageHash ? String(row.pageHash) : null,
       startedAt: toDate(row.startedAt),
       finishedAt: toNullableDate(row.finishedAt),

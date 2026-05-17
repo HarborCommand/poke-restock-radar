@@ -177,12 +177,26 @@ function todayLocalInput() {
 
 function statusTone(value: string) {
   if (
-    ["OK", "BUY", "IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE", "HIGH", "stock_seen", "bought_product"].includes(value)
+    [
+      "OK",
+      "BUY",
+      "IN_STOCK",
+      "ADD_TO_CART_AVAILABLE",
+      "PREORDER_LIVE",
+      "HIGH",
+      "SUCCESS",
+      "CHANGED",
+      "FORCED_ALERT",
+      "stock_seen",
+      "bought_product"
+    ].includes(value)
   ) {
     return "good";
   }
-  if (["WARN", "WATCH", "PRICE_CHANGE", "PAGE_UPDATED", "MEDIUM", "vendor_spotted"].includes(value)) return "watch";
-  if (["no_visit"].includes(value)) return "muted";
+  if (["WARN", "WATCH", "PRICE_CHANGE", "PAGE_UPDATED", "MEDIUM", "PENDING_CONFIRMATION", "vendor_spotted"].includes(value)) {
+    return "watch";
+  }
+  if (["no_visit", "SKIPPED", "FALSE_POSITIVE"].includes(value)) return "muted";
   return "bad";
 }
 
@@ -191,6 +205,11 @@ function firstUrl(value: string | null | undefined) {
     ?.split(/[\n,]/)
     .map((item) => item.trim())
     .find(Boolean);
+}
+
+function monitorStale(product: ProductDTO) {
+  if (!product.monitorEnabled || !product.lastSuccessfulCheckedAt) return product.monitorEnabled;
+  return Date.now() - new Date(product.lastSuccessfulCheckedAt).getTime() > 24 * 60 * 60 * 1000;
 }
 
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -747,6 +766,16 @@ function DashboardPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; 
   );
 }
 
+function StatCard({ label, value, detail }: { label: string; value: number; detail: string }) {
+  return (
+    <article className="stat-card static">
+      <strong>{value}</strong>
+      <span>{detail}</span>
+      <small>{label}</small>
+    </article>
+  );
+}
+
 function SetupChecklistPanel({
   dashboard,
   setActiveTab
@@ -872,22 +901,33 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
               {product.priorityScore?.buyWatchSkip || product.rating}
             </span>
             <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
+            {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
+            {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
             <a className="mini-action" href={product.url} target="_blank" rel="noreferrer">
               Go <ExternalLink size={14} />
             </a>
           </div>
           {product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
+          {product.pendingAlertStatus ? (
+            <p className="reason-text">
+              Pending confirmation: {formatStatus(product.pendingAlertStatus)} after {product.pendingAlertCount} low-confidence
+              check{product.pendingAlertCount === 1 ? "" : "s"}.
+            </p>
+          ) : null}
           <div className="monitor-meta">
             <span>
               <Clock size={13} />
               Last {relativeTime(product.lastCheckedAt)}
             </span>
+            <span>Last good {relativeTime(product.lastSuccessfulCheckedAt)}</span>
             <span>
               <Activity size={13} />
               Next {relativeTime(product.nextCheckAt)}
             </span>
             {product.productType ? <span>{product.productType}</span> : null}
             {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
+            {product.requiredWords ? <span>Required: {product.requiredWords}</span> : null}
+            {product.ignoreWords ? <span>Ignore: {product.ignoreWords}</span> : null}
             <span>{product.lastMonitorError || product.lastMonitorResult || "No monitor result yet"}</span>
           </div>
         </article>
@@ -1421,7 +1461,7 @@ function ProductsPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
-          sample={`retailer,name,url,setName,productType,sku,upc,dpci,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,,087-12-1234,26.99,UNAVAILABLE,HIGH,WATCH,true,60,Mega Evolution-Chaos Rising,Manual checkout only`}
+          sample={`retailer,name,url,setName,productType,sku,upc,dpci,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/s?searchTerm=pokemon+tcg+booster+bundle,Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,,087-12-1234,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
         />
       ) : null}
       {isAdmin ? (
@@ -1447,6 +1487,7 @@ function ProductsPanel({
           </div>
         </section>
       ) : null}
+      <MonitorAccuracyPanel dashboard={dashboard} />
       <MonitorLogsPanel dashboard={dashboard} />
     </>
   );
@@ -1470,6 +1511,8 @@ function RetailerTemplatesPanel({ dashboard }: { dashboard: DashboardDTO }) {
             <div className="monitor-meta">
               <span>IDs: {template.identifierFields.join(", ")}</span>
               <span>Stock words: {template.statusWords.inStock.slice(0, 2).join(", ")}</span>
+              <span>Blocked words: {template.statusWords.pageBlocked.slice(0, 2).join(", ")}</span>
+              <span>Captcha words: {template.statusWords.captcha.slice(0, 2).join(", ")}</span>
               <span>Selectors: {template.safeSelectors.slice(0, 2).join(", ")}</span>
             </div>
           </article>
@@ -1556,6 +1599,7 @@ function ProductAddWizard({
               <span>Sold out: {template.statusWords.soldOut.join(", ")}</span>
               <span>In stock: {template.statusWords.inStock.join(", ")}</span>
               <span>Add-to-cart: {template.statusWords.addToCart.join(", ")}</span>
+              <span>Blocked/captcha: {template.statusWords.pageBlocked.concat(template.statusWords.captcha).slice(0, 4).join(", ")}</span>
             </div>
           ) : null}
         </fieldset>
@@ -1601,6 +1645,13 @@ function ProductAddWizard({
               Monitor this product
             </label>
             <TextareaInput name="notes" label="Notes" wide />
+            <TextareaInput
+              name="requiredWords"
+              label="Required words"
+              placeholder="Pokemon, Elite Trainer Box"
+              wide
+            />
+            <TextareaInput name="ignoreWords" label="Ignore words" placeholder="sponsored, marketplace" wide />
             <TextareaInput name="sealedResaleNotes" label="Sealed resale notes" wide />
             <TextareaInput name="scarcityNotes" label="Scarcity notes" wide />
           </div>
@@ -1804,17 +1855,39 @@ function EditableProduct({
         </label>
         <TextareaInput name="reason" label="Reason for alert/history" placeholder="Optional" wide />
         <TextareaInput name="notes" label="Notes" defaultValue={product.notes ?? ""} wide />
+        <TextareaInput
+          name="requiredWords"
+          label="Required words"
+          defaultValue={product.requiredWords ?? ""}
+          placeholder="Pokemon, Elite Trainer Box"
+          wide
+        />
+        <TextareaInput
+          name="ignoreWords"
+          label="Ignore words"
+          defaultValue={product.ignoreWords ?? ""}
+          placeholder="sponsored, marketplace, unrelated set"
+          wide
+        />
         <TextareaInput name="sealedResaleNotes" label="Sealed resale notes" defaultValue={product.sealedResaleNotes ?? ""} wide />
         <TextareaInput name="scarcityNotes" label="Scarcity notes" defaultValue={product.scarcityNotes ?? ""} wide />
       </div>
       {product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
       <div className="monitor-status">
         <span>Last checked: {dateTime(product.lastCheckedAt)}</span>
+        <span>Last successful: {dateTime(product.lastSuccessfulCheckedAt)}</span>
         <span>Next estimate: {dateTime(product.nextCheckAt)}</span>
         <span>Last result: {product.lastMonitorResult || "Not checked by monitor yet"}</span>
         <span>Last error: {product.lastMonitorError || "None"}</span>
         <span>Alert sent: {product.lastAlertSentAt ? dateTime(product.lastAlertSentAt) : "No"}</span>
+        <span>Confidence pending: {product.pendingAlertConfidence === null ? "None" : `${product.pendingAlertConfidence}%`}</span>
       </div>
+      {product.pendingAlertStatus ? (
+        <p className="reason-text">
+          Low-confidence alert protection is waiting for a second matching {formatStatus(product.pendingAlertStatus)} check.
+          Evidence: {product.pendingAlertDetectedWords || "No detected words captured"}.
+        </p>
+      ) : null}
       <div className="form-actions">
         <button
           className="mini-action"
@@ -1830,6 +1903,73 @@ function EditableProduct({
         >
           <Play size={14} />
           {busyLabel === `Checking product ${product.id}` ? "Checking" : "Run Check Now"}
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `${product.monitorEnabled ? "Pausing" : "Resuming"} product ${product.id}`,
+              () =>
+                requestJson(`/api/radar/products/${product.id}/monitor`, {
+                  method: "POST",
+                  body: JSON.stringify({ action: product.monitorEnabled ? "pause" : "resume" })
+                }),
+              { success: product.monitorEnabled ? "Monitor paused" : "Monitor resumed" }
+            )
+          }
+        >
+          {product.monitorEnabled ? <WifiOff size={14} /> : <Wifi size={14} />}
+          {busyLabel === `${product.monitorEnabled ? "Pausing" : "Resuming"} product ${product.id}`
+            ? "Saving"
+            : product.monitorEnabled
+              ? "Pause Monitor"
+              : "Resume Monitor"}
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Force alert ${product.id}`,
+              () =>
+                requestJson(`/api/radar/products/${product.id}/monitor`, {
+                  method: "POST",
+                  body: JSON.stringify({ action: "force_alert", reason: "Admin forced alert from product controls." })
+                }),
+              {
+                confirm: `Send a manual forced alert for ${product.name}?`,
+                success: "Forced alert sent"
+              }
+            )
+          }
+        >
+          <Bell size={14} />
+          Force Alert
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `False positive ${product.id}`,
+              () =>
+                requestJson(`/api/radar/products/${product.id}/monitor`, {
+                  method: "POST",
+                  body: JSON.stringify({ action: "mark_false_positive", reason: "Admin marked false positive from product controls." })
+                }),
+              {
+                confirm: `Mark the latest monitor signal for ${product.name} as a false positive?`,
+                success: "False positive logged"
+              }
+            )
+          }
+        >
+          <X size={14} />
+          Mark False Positive
         </button>
         <button className="mini-action solid" disabled={busy} type="submit">
           <Save size={14} />
@@ -1858,6 +1998,23 @@ function EditableProduct({
   );
 }
 
+function MonitorAccuracyPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  const stats = dashboard.monitorAccuracyStats;
+  const successRate = stats.totalChecks ? Math.round((stats.successfulChecks / stats.totalChecks) * 100) : 0;
+  return (
+    <section className="form-panel">
+      <PanelHeader title="Monitor Accuracy Stats" />
+      <div className="accuracy-grid">
+        <StatCard label="Total checks" value={stats.totalChecks} detail={`${successRate}% successful`} />
+        <StatCard label="Successful checks" value={stats.successfulChecks} detail="Parsed public pages" />
+        <StatCard label="Blocked checks" value={stats.blockedChecks} detail="No alerts sent" />
+        <StatCard label="False positives" value={stats.falsePositives} detail="Admin-marked" />
+        <StatCard label="Confirmed restocks" value={stats.confirmedRestocks} detail="History snapshots" />
+      </div>
+    </section>
+  );
+}
+
 function MonitorLogsPanel({ dashboard }: { dashboard: DashboardDTO }) {
   return (
     <section className="form-panel">
@@ -1868,14 +2025,27 @@ function MonitorLogsPanel({ dashboard }: { dashboard: DashboardDTO }) {
       <div className="table-list monitor-logs">
         {dashboard.monitorLogs.length ? (
           dashboard.monitorLogs.map((log) => (
-            <article className="table-row" key={log.id}>
-              <span className={`chip ${log.status === "CHANGED" ? "good" : log.status === "ERROR" ? "bad" : "muted"}`}>
+            <article className="table-row monitor-log-row" key={log.id}>
+              <span className={`chip ${statusTone(log.status)}`}>
                 {formatStatus(log.status)}
               </span>
               <strong>{log.productName || "Batch job"}</strong>
-              <span>{log.changeSummary || log.error || "No detail"}</span>
+              <span>{log.changeSummary || log.error || log.reason || "No detail"}</span>
               <span>{dateTime(log.startedAt)}</span>
               <span>{log.alertSent ? "Alert sent" : "No alert"}</span>
+              <details className="monitor-details">
+                <summary>Details</summary>
+                <div>
+                  <span>Detected: {log.detectedStatus || "None"}</span>
+                  <span>HTTP: {log.httpStatus ?? "N/A"}</span>
+                  <span>Final URL: {log.finalUrl || "N/A"}</span>
+                  <span>Response: {log.responseTimeMs === null ? "N/A" : `${log.responseTimeMs}ms`}</span>
+                  <span>Confidence: {log.confidenceScore === null ? "N/A" : `${log.confidenceScore}%`}</span>
+                  <span>Words: {log.detectedWords || "None"}</span>
+                  <span>Reason: {log.reason || log.error || "None"}</span>
+                  <span>Blocked: {log.blockedType || "No"}</span>
+                </div>
+              </details>
             </article>
           ))
         ) : (

@@ -29,6 +29,23 @@ const optionalTrimmed = z
   .optional()
   .transform((value) => (value && value.length > 0 ? value : undefined));
 
+const optionalDetectionWords = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z
+    .string()
+    .trim()
+    .max(800, "Detection words must stay under 800 characters")
+    .refine((value) => {
+      if (!value) return true;
+      return value
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .every((item) => item.length >= 2 && item.length <= 80);
+    }, "Use comma-separated or newline-separated words between 2 and 80 characters")
+    .optional()
+);
+
 const checkboxBoolean = z.preprocess((value) => value === true || value === "true" || value === "on" || value === "1", z.boolean());
 
 const checkboxBooleanDefaultTrue = z.preprocess(
@@ -162,6 +179,8 @@ export const productCreateSchema = z.object({
   rating: z.enum(["BUY", "WATCH", "SKIP"]).default("WATCH"),
   monitorEnabled: checkboxBooleanDefaultTrue,
   checkFrequencyMinutes: z.coerce.number().int().min(15).max(10080).default(60),
+  requiredWords: optionalDetectionWords,
+  ignoreWords: optionalDetectionWords,
   sealedResaleNotes: optionalTrimmed,
   scarcityNotes: optionalTrimmed,
   manualPriorityOverride: z.enum(["BUY", "WATCH", "SKIP"]).optional(),
@@ -253,6 +272,12 @@ export const backupImportSchema = z.object({
 
 export const monitorRunSchema = z.object({
   mode: z.enum(["due", "all"]).default("due")
+});
+
+export const productMonitorActionSchema = z.object({
+  action: z.enum(["pause", "resume", "force_alert", "mark_false_positive"]),
+  monitorLogId: optionalTrimmed,
+  reason: optionalTrimmed
 });
 
 export const notificationSettingsSchema = z.object({

@@ -565,6 +565,17 @@ textarea {
   padding: 9px;
 }
 
+.accuracy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat-card.static {
+  cursor: default;
+  text-align: left;
+}
+
 .field-mode-panel,
 .field-card {
   display: grid;
@@ -922,6 +933,28 @@ textarea {
 
 .table-row.read {
   opacity: 0.66;
+}
+
+.monitor-log-row {
+  align-items: start;
+}
+
+.monitor-details {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.monitor-details summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.monitor-details div {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
 }
 
 .alerts-table .table-row {
@@ -1299,6 +1332,10 @@ textarea {
 
   .alert-setup-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .accuracy-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .inline-update {
