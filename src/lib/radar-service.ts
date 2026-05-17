@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { listAccessOverview } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
@@ -940,6 +941,10 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     ensureInvestmentSettings(currentUser),
     prisma.investmentReport.findMany({ orderBy: { generatedAt: "desc" }, take: 12 })
   ]);
+  const accessOverview =
+    currentUser.role === "ADMIN"
+      ? await listAccessOverview()
+      : { users: [], friendInvites: [], auditLogs: [] };
 
   await refreshReleaseAlerts(releases);
   const priorityScoreMap = await refreshProductPriorityScores(products, releases, cards);
@@ -982,6 +987,19 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
 
   return {
     currentUser,
+    users: accessOverview.users,
+    friendInvites: accessOverview.friendInvites,
+    auditLogs: accessOverview.auditLogs,
+    dailyPlan: {
+      topProducts: productDTOs.filter((product) => (product.priorityScore?.score ?? 0) >= 40).slice(0, 5),
+      storesToCheck: checkTodayStores.slice(0, 5),
+      latestAlerts: alertDTOs.slice(0, 5),
+      newestReleases: releaseDTOs.slice(0, 5),
+      bestCards: cardDTOs.slice(0, 5)
+    },
+    inventory: [],
+    dailyRecaps: [],
+    savedFilterPresets: [],
     retailers: retailers.map(retailerToDTO),
     retailerTemplates,
     products: productDTOs,

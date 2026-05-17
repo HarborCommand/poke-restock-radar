@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requirePermission, requireUser } from "@/lib/auth";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { deleteSighting, updateSighting } from "@/lib/radar-service";
 import { sightingUpdateSchema } from "@/lib/validation";
@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 export async function PATCH(request: Request, { params }: { params: Promise<{ sightingId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const permissionResponse = requirePermission(user, "canAddSightings", "Add sightings");
+  if (permissionResponse) return permissionResponse;
 
   try {
     const { sightingId } = await params;
@@ -22,6 +24,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ si
 export async function DELETE(_request: Request, { params }: { params: Promise<{ sightingId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const permissionResponse = requirePermission(user, "canAddSightings", "Add sightings");
+  if (permissionResponse) return permissionResponse;
 
   try {
     const { sightingId } = await params;

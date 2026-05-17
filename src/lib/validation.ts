@@ -198,6 +198,37 @@ export const adminPasswordResetSchema = z
     message: "Passwords must match"
   });
 
+export const friendInviteCreateSchema = z.object({
+  email: z.string().trim().email(),
+  name: optionalTrimmed,
+  canAddSightings: checkboxBoolean.default(true),
+  canAddComps: checkboxBoolean.default(false),
+  canRunChecks: checkboxBoolean.default(false),
+  canReceivePushAlerts: checkboxBoolean.default(true)
+});
+
+export const friendInviteAcceptSchema = z
+  .object({
+    token: z.string().trim().min(24).max(256),
+    email: z.string().trim().email(),
+    name: z.string().trim().min(2).max(80),
+    password: securePassword,
+    confirmPassword: z.string()
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords must match"
+  });
+
+export const userAccessUpdateSchema = z.object({
+  role: z.enum(["ADMIN", "FRIEND"]).optional(),
+  canAddSightings: checkboxBoolean.optional(),
+  canAddComps: checkboxBoolean.optional(),
+  canRunChecks: checkboxBoolean.optional(),
+  canReceivePushAlerts: checkboxBoolean.optional(),
+  disabled: checkboxBoolean.optional()
+});
+
 export const productCreateSchema = z.object({
   name: z.string().trim().min(2),
   retailerId: z.string().min(1),

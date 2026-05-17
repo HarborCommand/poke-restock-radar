@@ -49,6 +49,8 @@ test("required data models exist", () => {
   const models = [
     "User",
     "PasswordResetToken",
+    "FriendInvite",
+    "AuditLog",
     "Product",
     "Retailer",
     "Store",
@@ -69,6 +71,45 @@ test("required data models exist", () => {
   for (const model of models) {
     assert.match(schema, new RegExp(`model\\s+${model}\\s+\\{`), `missing model ${model}`);
   }
+});
+
+test("Phase 14 invite-only friend access controls exist", () => {
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const field of [
+    "canAddSightings",
+    "canAddComps",
+    "canRunChecks",
+    "canReceivePushAlerts",
+    "disabledAt",
+    "FriendInvite",
+    "AuditLog"
+  ]) {
+    assert.match(schema, new RegExp(field), `missing Phase 14 schema field ${field}`);
+  }
+
+  const files = [
+    join(root, "src", "app", "api", "auth", "invite", "accept", "route.ts"),
+    join(root, "src", "app", "api", "radar", "invites", "route.ts"),
+    join(root, "src", "app", "api", "radar", "users", "[userId]", "route.ts"),
+    join(root, "src", "lib", "access.ts"),
+    join(root, "src", "lib", "audit.ts")
+  ];
+  for (const file of files) {
+    assert.ok(statSync(file).isFile(), `missing ${file}`);
+  }
+
+  const auth = readFileSync(join(root, "src", "lib", "auth.ts"), "utf8");
+  assert.match(auth, /requirePermission/);
+  assert.match(auth, /disabledAt/);
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of ["User Management", "No public signup", "Single-use invite link", "Accept Friend Invite", "Audit Log"]) {
+    assert.match(app, new RegExp(phrase), `missing Phase 14 UI phrase ${phrase}`);
+  }
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /Phase 14 Friend Access/);
+  assert.match(readme, /invite-only/);
 });
 
 test("Auth hardening and password reset flow pieces exist", () => {

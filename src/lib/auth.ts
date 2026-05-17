@@ -2,12 +2,18 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import type { Role, SessionUser } from "@/types/radar";
+import type { Role, SessionUser, UserPermissions } from "@/types/radar";
 
 const COOKIE_NAME = "poke_radar_session";
 const HOST_COOKIE_NAME = "__Host-poke_radar_session";
 const SESSION_DAYS = 14;
 const FALLBACK_SECRET = "local-dev-secret-change-before-sharing-poke-restock-radar";
+const defaultFriendPermissions: UserPermissions = {
+  canAddSightings: true,
+  canAddComps: false,
+  canRunChecks: false,
+  canReceivePushAlerts: true
+};
 
 type TokenPayload = {
   userId: string;
@@ -112,16 +118,32 @@ export async function currentUser(): Promise<SessionUser | null> {
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, name: true, role: true, sessionVersion: true }
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      canAddSightings: true,
+      canAddComps: true,
+      canRunChecks: true,
+      canReceivePushAlerts: true,
+      disabledAt: true,
+      sessionVersion: true
+    }
   });
 
   if (!user) return null;
+  if (user.disabledAt) return null;
   if ((payload.sessionVersion ?? 0) !== user.sessionVersion) return null;
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     role: user.role as Role,
+    canAddSightings: user.canAddSightings ?? defaultFriendPermissions.canAddSightings,
+    canAddComps: user.canAddComps ?? defaultFriendPermissions.canAddComps,
+    canRunChecks: user.canRunChecks ?? defaultFriendPermissions.canRunChecks,
+    canReceivePushAlerts: user.canReceivePushAlerts ?? defaultFriendPermissions.canReceivePushAlerts,
     sessionVersion: user.sessionVersion
   };
 }
@@ -137,6 +159,19 @@ export async function requireUser() {
 export function requireAdmin(user: SessionUser) {
   if (user.role !== "ADMIN") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  }
+  return null;
+}
+
+export type PermissionKey = keyof UserPermissions;
+
+export function hasPermission(user: SessionUser, permission: PermissionKey) {
+  return user.role === "ADMIN" || Boolean(user[permission]);
+}
+
+export function requirePermission(user: SessionUser, permission: PermissionKey, label: string) {
+  if (!hasPermission(user, permission)) {
+    return NextResponse.json({ error: `${label} permission required` }, { status: 403 });
   }
   return null;
 }

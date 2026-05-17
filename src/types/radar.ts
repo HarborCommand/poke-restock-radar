@@ -19,12 +19,96 @@ export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "M
 export type Era = "MODERN" | "VINTAGE";
 export type StoreVisitResult = "stock_seen" | "empty_shelf" | "vendor_spotted" | "bought_product" | "no_visit";
 
+export type UserPermissions = {
+  canAddSightings: boolean;
+  canAddComps: boolean;
+  canRunChecks: boolean;
+  canReceivePushAlerts: boolean;
+};
+
 export type SessionUser = {
   id: string;
   email: string;
   name: string;
   role: Role;
   sessionVersion?: number;
+} & UserPermissions;
+
+export type FriendUserDTO = SessionUser & {
+  disabledAt: string | null;
+  lastLoginAt: string | null;
+  createdAt: string;
+};
+
+export type FriendInviteDTO = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: Role;
+  canAddSightings: boolean;
+  canAddComps: boolean;
+  canRunChecks: boolean;
+  canReceivePushAlerts: boolean;
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  createdByName: string | null;
+  inviteUrl?: string;
+};
+
+export type AuditLogDTO = {
+  id: string;
+  userId: string | null;
+  actorEmail: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  summary: string;
+  metadata: string | null;
+  createdAt: string;
+};
+
+export type DailyPlanDTO = {
+  topProducts: ProductDTO[];
+  storesToCheck: StoreDTO[];
+  latestAlerts: AlertDTO[];
+  newestReleases: ReleaseDTO[];
+  bestCards: CardDTO[];
+};
+
+export type InventoryItemDTO = {
+  id: string;
+  itemType: string;
+  itemName: string;
+  productId: string | null;
+  cardId: string | null;
+  cost: number;
+  quantity: number;
+  source: string;
+  purchasedAt: string;
+  expectedPlan: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type DailyRecapDTO = {
+  id: string;
+  recapDate: string;
+  summary: string;
+  productChecks: number;
+  storeVisits: number;
+  purchases: number;
+  alertsCreated: number;
+  createdAt: string;
+};
+
+export type SavedFilterPresetDTO = {
+  id: string;
+  name: string;
+  section: string;
+  filters: string;
+  createdAt: string;
 };
 
 export type RetailerDTO = {
@@ -438,6 +522,13 @@ export type InvestmentReportDTO = {
 
 export type DashboardDTO = {
   currentUser: SessionUser;
+  users: FriendUserDTO[];
+  friendInvites: FriendInviteDTO[];
+  auditLogs: AuditLogDTO[];
+  dailyPlan: DailyPlanDTO;
+  inventory: InventoryItemDTO[];
+  dailyRecaps: DailyRecapDTO[];
+  savedFilterPresets: SavedFilterPresetDTO[];
   retailers: RetailerDTO[];
   retailerTemplates: RetailerTemplateDTO[];
   products: ProductDTO[];

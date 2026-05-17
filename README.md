@@ -447,6 +447,19 @@ Recommended weekly flow:
 
 The app creates an in-app alert when a new comp makes a card PSA 9 profitable against the current grading, shipping, selling-fee, and minimum-profit settings.
 
+## Phase 14 Friend Access
+
+Access is invite-only. There is no public signup route. Admins create single-use friend invite links from `User Management`; invite links expire after 7 days and the friend creates their own password from the invite screen.
+
+Friend permissions are enforced server-side:
+
+- `canAddSightings`: add and edit store sightings
+- `canAddComps`: add manual card comps
+- `canRunChecks`: run manual product checks or due monitor batches
+- `canReceivePushAlerts`: create browser push subscriptions
+
+Audit logs are stored for invite creation/acceptance/revocation, login attempts, sightings, card comps, monitor checks, and access changes. Admins can disable a friend account without deleting historical sightings or comps.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.

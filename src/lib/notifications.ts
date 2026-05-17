@@ -35,6 +35,7 @@ export function notificationSummary(result: DeliveryResult) {
 
 async function settingsForAllUsers() {
   const users = await prisma.user.findMany({
+    where: { disabledAt: null },
     include: { notificationSettings: true },
     orderBy: { createdAt: "asc" }
   });
@@ -154,6 +155,7 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
   for (const { user, settings } of recipients) {
     const priorityAllowed = isPriorityAllowed(payload.priority, settings.minimumPriority);
     const quiet = isInQuietHours(settings.quietHoursStart, settings.quietHoursEnd);
+    const pushAllowed = user.role === "ADMIN" || user.canReceivePushAlerts;
 
     if (!priorityAllowed || quiet) {
       if (settings.email) result.emailSkipped += 1;
@@ -198,11 +200,13 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
       result.smsSkipped += 1;
     }
 
-    if (settings.browserPush) {
+    if (settings.browserPush && pushAllowed) {
       const push = await sendPushAlertToUser(user.id, payload);
       result.pushSent += push.sent;
       result.pushSkipped += push.skipped;
       result.pushFailed += push.failed;
+    } else if (settings.browserPush) {
+      result.pushSkipped += 1;
     }
   }
 

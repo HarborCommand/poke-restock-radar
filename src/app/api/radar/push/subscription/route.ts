@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requirePermission, requireUser } from "@/lib/auth";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { disableBrowserPushSubscription, saveBrowserPushSubscription } from "@/lib/push";
 import { pushSubscriptionSchema, pushUnsubscribeSchema } from "@/lib/validation";
@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const permissionResponse = requirePermission(user, "canReceivePushAlerts", "Browser push");
+  if (permissionResponse) return permissionResponse;
 
   try {
     const input = pushSubscriptionSchema.parse(await readJson(request));

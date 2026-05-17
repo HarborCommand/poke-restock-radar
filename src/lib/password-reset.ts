@@ -129,7 +129,17 @@ export async function resetAdminPassword(currentUser: SessionUser, currentPasswo
       passwordChangedAt: new Date(),
       sessionVersion: { increment: 1 }
     },
-    select: { id: true, email: true, name: true, role: true, sessionVersion: true }
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      canAddSightings: true,
+      canAddComps: true,
+      canRunChecks: true,
+      canReceivePushAlerts: true,
+      sessionVersion: true
+    }
   });
   await prisma.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } });
 
@@ -138,6 +148,10 @@ export async function resetAdminPassword(currentUser: SessionUser, currentPasswo
     email: updated.email,
     name: updated.name,
     role: updated.role as SessionUser["role"],
+    canAddSightings: updated.canAddSightings,
+    canAddComps: updated.canAddComps,
+    canRunChecks: updated.canRunChecks,
+    canReceivePushAlerts: updated.canReceivePushAlerts,
     sessionVersion: updated.sessionVersion
   };
 }

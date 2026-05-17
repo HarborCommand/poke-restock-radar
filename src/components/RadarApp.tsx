@@ -429,7 +429,15 @@ export function RadarApp() {
   if (!user || !dashboard) {
     return (
       <>
-        <LoginShell busy={busy} error={error} onSubmit={handleLogin} />
+        <LoginShell
+          busy={busy}
+          error={error}
+          onSubmit={handleLogin}
+          onInviteAccepted={async (acceptedUser) => {
+            setUser(acceptedUser);
+            await loadDashboard();
+          }}
+        />
         <ToastViewport toast={toast} onClose={() => setToast(null)} />
       </>
     );
@@ -566,6 +574,10 @@ export function RadarApp() {
         <AdminHealthPanel health={dashboard.health} busy={busy} busyLabel={busyLabel} submit={submit} />
       ) : null}
 
+      {isAdmin ? (
+        <AccessManagementPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+      ) : null}
+
       {isAdmin ? <AdminTools busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} /> : null}
 
       <footer className="app-footer">
@@ -584,15 +596,21 @@ export function RadarApp() {
 function LoginShell({
   busy,
   error,
-  onSubmit
+  onSubmit,
+  onInviteAccepted
 }: {
   busy: boolean;
   error: string | null;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onInviteAccepted: (user: SessionUser) => Promise<void>;
 }) {
   const resetTokenFromUrl =
     typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("resetToken") || "";
-  const [mode, setMode] = useState<"login" | "forgot" | "reset">(resetTokenFromUrl ? "reset" : "login");
+  const inviteTokenFromUrl =
+    typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("inviteToken") || "";
+  const [mode, setMode] = useState<"login" | "forgot" | "reset" | "invite">(
+    inviteTokenFromUrl ? "invite" : resetTokenFromUrl ? "reset" : "login"
+  );
   const [localBusy, setLocalBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
@@ -634,6 +652,26 @@ function LoginShell({
       setLocalMessage("Password reset. Sign in with the new password.");
     } catch (resetError) {
       setLocalError(resetError instanceof Error ? resetError.message : "Password reset failed");
+    } finally {
+      setLocalBusy(false);
+    }
+  }
+
+  async function handleAcceptInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLocalBusy(true);
+    setLocalError(null);
+    setLocalMessage(null);
+    try {
+      const form = event.currentTarget;
+      const result = await requestJson<{ user: SessionUser }>("/api/auth/invite/accept", {
+        method: "POST",
+        body: JSON.stringify(formJson(form))
+      });
+      if (typeof window !== "undefined") window.history.replaceState(null, "", window.location.pathname);
+      await onInviteAccepted(result.user);
+    } catch (inviteError) {
+      setLocalError(inviteError instanceof Error ? inviteError.message : "Invite acceptance failed");
     } finally {
       setLocalBusy(false);
     }
@@ -707,6 +745,38 @@ function LoginShell({
             <button className="primary-action full" disabled={formBusy} type="submit">
               <Save size={16} />
               {localBusy ? "Resetting" : "Reset Password"}
+            </button>
+            <button className="mini-action full" type="button" disabled={formBusy} onClick={() => setMode("login")}>
+              Back to Sign In
+            </button>
+          </form>
+        ) : null}
+        {mode === "invite" ? (
+          <form className="form-stack" onSubmit={handleAcceptInvite}>
+            <label>
+              Invite token
+              <input name="token" defaultValue={inviteTokenFromUrl} autoComplete="one-time-code" required />
+            </label>
+            <label>
+              Invited email
+              <input name="email" type="email" autoComplete="email" autoCapitalize="none" inputMode="email" required />
+            </label>
+            <label>
+              Name
+              <input name="name" autoComplete="name" required />
+            </label>
+            <label>
+              Password
+              <input name="password" type="password" autoComplete="new-password" required />
+            </label>
+            <label>
+              Confirm password
+              <input name="confirmPassword" type="password" autoComplete="new-password" required />
+            </label>
+            {localError ? <p className="form-error">{localError}</p> : null}
+            <button className="primary-action full" disabled={formBusy} type="submit">
+              <Lock size={16} />
+              {localBusy ? "Creating Account" : "Accept Friend Invite"}
             </button>
             <button className="mini-action full" type="button" disabled={formBusy} onClick={() => setMode("login")}>
               Back to Sign In
@@ -4329,6 +4399,233 @@ function NotificationSettingsPanel({
           <Wifi size={14} />
           {busyLabel === "Testing browser push" ? "Testing" : "Test Browser Push"}
         </button>
+      </div>
+    </section>
+  );
+}
+
+function AccessManagementPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
+
+  function inviteSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    runAction(
+      "Creating friend invite",
+      async () => {
+        const result = await requestJson<{ invite: { inviteUrl?: string } }>("/api/radar/invites", {
+          method: "POST",
+          body: JSON.stringify(formJson(form))
+        });
+        setLastInviteUrl(result.invite.inviteUrl ?? null);
+        form.reset();
+      },
+      { success: "Friend invite created" }
+    );
+  }
+
+  function userAccessSubmit(event: FormEvent<HTMLFormElement>, userId: string) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    runAction(
+      "Saving user access",
+      () =>
+        requestJson(`/api/radar/users/${userId}`, {
+          method: "PATCH",
+          body: JSON.stringify(formJson(form))
+        }),
+      { success: "User access saved" }
+    );
+  }
+
+  return (
+    <section className="admin-tools access-panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyeline">Invite-only access</p>
+          <h2>User Management</h2>
+        </div>
+        <span className="chip good">No public signup</span>
+      </div>
+      <form className="form-grid" onSubmit={inviteSubmit}>
+        <TextInput name="email" label="Friend email" type="email" autoComplete="email" required />
+        <TextInput name="name" label="Friend name" autoComplete="name" />
+        <label className="checkbox-label">
+          <input name="canAddSightings" type="hidden" value="false" />
+          <input name="canAddSightings" type="checkbox" value="true" defaultChecked />
+          Add sightings
+        </label>
+        <label className="checkbox-label">
+          <input name="canAddComps" type="hidden" value="false" />
+          <input name="canAddComps" type="checkbox" value="true" />
+          Add comps
+        </label>
+        <label className="checkbox-label">
+          <input name="canRunChecks" type="hidden" value="false" />
+          <input name="canRunChecks" type="checkbox" value="true" />
+          Run checks
+        </label>
+        <label className="checkbox-label">
+          <input name="canReceivePushAlerts" type="hidden" value="false" />
+          <input name="canReceivePushAlerts" type="checkbox" value="true" defaultChecked />
+          Push alerts
+        </label>
+        <button className="primary-action" disabled={busy} type="submit">
+          <Plus size={16} />
+          {busyLabel === "Creating friend invite" ? "Creating" : "Create Invite"}
+        </button>
+      </form>
+      {lastInviteUrl ? (
+        <div className="invite-url-box">
+          <div>
+            <strong>Single-use invite link</strong>
+            <span>Expires in 7 days. Share only with the invited friend.</span>
+          </div>
+          <input value={lastInviteUrl} readOnly />
+          <button
+            className="mini-action solid"
+            type="button"
+            onClick={() => navigator.clipboard?.writeText(lastInviteUrl)}
+          >
+            <FileText size={14} />
+            Copy Link
+          </button>
+        </div>
+      ) : null}
+      <div className="access-grid">
+        {dashboard.users.map((friend) => {
+          const isSelf = friend.id === dashboard.currentUser.id;
+          return (
+            <article className="data-card" key={friend.id}>
+              <div className="card-main">
+                <div className="avatar">
+                  <ShieldCheck size={16} />
+                </div>
+                <div>
+                  <h3>{friend.name}</h3>
+                  <p>
+                    {friend.email} - {friend.role} - {friend.disabledAt ? "disabled" : "active"} - last login{" "}
+                    {relativeTime(friend.lastLoginAt)}
+                  </p>
+                </div>
+              </div>
+              <form className="access-form" onSubmit={(event) => userAccessSubmit(event, friend.id)}>
+                <SelectInput
+                  name="role"
+                  label="Role"
+                  defaultValue={friend.role}
+                  options={[
+                    { value: "ADMIN", label: "Admin" },
+                    { value: "FRIEND", label: "Friend" }
+                  ]}
+                  disabled={isSelf}
+                />
+                <label className="checkbox-label">
+                  <input name="canAddSightings" type="hidden" value="false" />
+                  <input name="canAddSightings" type="checkbox" value="true" defaultChecked={friend.canAddSightings} />
+                  Add sightings
+                </label>
+                <label className="checkbox-label">
+                  <input name="canAddComps" type="hidden" value="false" />
+                  <input name="canAddComps" type="checkbox" value="true" defaultChecked={friend.canAddComps} />
+                  Add comps
+                </label>
+                <label className="checkbox-label">
+                  <input name="canRunChecks" type="hidden" value="false" />
+                  <input name="canRunChecks" type="checkbox" value="true" defaultChecked={friend.canRunChecks} />
+                  Run checks
+                </label>
+                <label className="checkbox-label">
+                  <input name="canReceivePushAlerts" type="hidden" value="false" />
+                  <input
+                    name="canReceivePushAlerts"
+                    type="checkbox"
+                    value="true"
+                    defaultChecked={friend.canReceivePushAlerts}
+                  />
+                  Push alerts
+                </label>
+                <label className="checkbox-label">
+                  <input name="disabled" type="hidden" value="false" />
+                  <input name="disabled" type="checkbox" value="true" defaultChecked={Boolean(friend.disabledAt)} disabled={isSelf} />
+                  Disabled
+                </label>
+                <button className="mini-action solid" disabled={busy} type="submit">
+                  <Save size={14} />
+                  {busyLabel === "Saving user access" ? "Saving" : "Save Access"}
+                </button>
+              </form>
+            </article>
+          );
+        })}
+      </div>
+      <div className="split-grid">
+        <section className="push-panel">
+          <h3>Pending Invites</h3>
+          {dashboard.friendInvites.length ? (
+            dashboard.friendInvites.slice(0, 8).map((invite) => (
+              <div className="access-row" key={invite.id}>
+                <div>
+                  <strong>{invite.email}</strong>
+                  <span>
+                    {invite.acceptedAt ? "accepted" : invite.revokedAt ? "revoked" : "pending"} - expires{" "}
+                    {relativeTime(invite.expiresAt)}
+                  </span>
+                </div>
+                {!invite.acceptedAt && !invite.revokedAt ? (
+                  <button
+                    className="mini-action"
+                    disabled={busy}
+                    type="button"
+                    onClick={() =>
+                      runAction(
+                        "Revoking invite",
+                        () => requestJson(`/api/radar/invites/${invite.id}`, { method: "DELETE" }),
+                        { confirm: `Revoke invite for ${invite.email}?`, success: "Invite revoked" }
+                      )
+                    }
+                  >
+                    <X size={14} />
+                    Revoke
+                  </button>
+                ) : null}
+              </div>
+            ))
+          ) : (
+            <EmptyState icon={Lock} title="No invites yet" detail="Create a single-use invite when a friend needs access." />
+          )}
+        </section>
+        <section className="push-panel">
+          <h3>Audit Log</h3>
+          {dashboard.auditLogs.length ? (
+            dashboard.auditLogs.slice(0, 10).map((log) => (
+              <div className="access-row" key={log.id}>
+                <div>
+                  <strong>{log.action}</strong>
+                  <span>
+                    {log.summary} - {relativeTime(log.createdAt)}
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <EmptyState
+              icon={History}
+              title="No audit events"
+              detail="Invites, logins, sightings, comps, checks, reports, and settings changes will appear here."
+            />
+          )}
+        </section>
       </div>
     </section>
   );

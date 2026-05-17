@@ -13,6 +13,11 @@ model User {
   name                 String
   role                 String                @default("FRIEND")
   passwordHash         String
+  canAddSightings      Boolean               @default(true)
+  canAddComps          Boolean               @default(false)
+  canRunChecks         Boolean               @default(false)
+  canReceivePushAlerts Boolean               @default(true)
+  disabledAt           DateTime?
   sessionVersion       Int                   @default(0)
   lastLoginAt          DateTime?
   passwordChangedAt    DateTime?
@@ -25,6 +30,9 @@ model User {
   browserPushSubscriptions BrowserPushSubscription[]
   investmentReports    InvestmentReport[]
   passwordResetTokens  PasswordResetToken[]
+  createdInvites       FriendInvite[]        @relation("InviteCreatedBy")
+  acceptedInvites      FriendInvite[]        @relation("InviteAcceptedBy")
+  auditLogs            AuditLog[]
 }
 
 model PasswordResetToken {
@@ -39,6 +47,51 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
   @@index([usedAt])
+}
+
+model FriendInvite {
+  id                   String    @id @default(cuid())
+  email                String
+  name                 String?
+  tokenHash            String    @unique
+  role                 String    @default("FRIEND")
+  canAddSightings      Boolean   @default(true)
+  canAddComps          Boolean   @default(false)
+  canRunChecks         Boolean   @default(false)
+  canReceivePushAlerts Boolean   @default(true)
+  expiresAt            DateTime
+  acceptedAt           DateTime?
+  revokedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  createdById          String?
+  acceptedById         String?
+  createdBy            User?     @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  acceptedBy           User?     @relation("InviteAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([expiresAt])
+  @@index([acceptedAt])
+  @@index([revokedAt])
+  @@index([createdById])
+  @@index([acceptedById])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  actorEmail String?
+  action     String
+  entityType String
+  entityId   String?
+  summary    String
+  metadata   String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
 }
 
 model Retailer {
