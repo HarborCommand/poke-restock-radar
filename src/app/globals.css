@@ -987,6 +987,91 @@ textarea {
   word-break: normal;
 }
 
+.ebay-setup-panel {
+  gap: 12px;
+}
+
+.ebay-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.compact-status-tile {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 10px;
+}
+
+.compact-status-tile strong,
+.compact-status-tile small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.compact-status-tile small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.grade-comp-list {
+  gap: 8px;
+}
+
+.grade-comp-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 9px;
+  background: rgba(7, 8, 8, 0.28);
+  padding: 8px;
+}
+
+.grade-comp-heading,
+.comp-review-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.grade-comp-heading {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.comp-review-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+  padding-top: 7px;
+}
+
+.comp-review-row > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.comp-review-row strong {
+  color: var(--text);
+}
+
+.comp-review-row span,
+.comp-review-row small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.comp-review-row .row-actions {
+  justify-content: flex-end;
+}
+
 .monitor-meta,
 .monitor-status {
   display: flex;
@@ -2911,6 +2996,20 @@ textarea {
   .dashboard-command-row,
   .chase-now-grid.apple-chase-grid {
     grid-template-columns: 1fr;
+  }
+
+  .ebay-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .grade-comp-heading,
+  .comp-review-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .comp-review-row .row-actions {
+    justify-content: flex-start;
   }
 
   .product-card,

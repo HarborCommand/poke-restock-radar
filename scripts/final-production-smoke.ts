@@ -141,6 +141,18 @@ async function main() {
     checks[path] = response.status;
   }
 
+  const ebayStatus = await authedGet("/api/radar/ebay/status");
+  const ebayStatusBody = await json(ebayStatus);
+  if (!Array.isArray(ebayStatusBody.status?.variables)) throw new Error("eBay status endpoint did not return masked variable status.");
+  if (JSON.stringify(ebayStatusBody).includes(process.env.EBAY_CLIENT_SECRET || "never-match-this")) {
+    throw new Error("eBay status endpoint exposed EBAY_CLIENT_SECRET.");
+  }
+  checks.ebayStatus = {
+    mode: ebayStatusBody.status.mode,
+    ready: ebayStatusBody.status.ready,
+    variables: ebayStatusBody.status.variables.length
+  };
+
   const backup = await authedGet("/api/radar/backup");
   const backupBody = await json(backup);
   const tables = backupBody.tables || {};

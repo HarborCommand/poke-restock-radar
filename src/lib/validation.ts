@@ -368,7 +368,15 @@ export const cardCreateSchema = z.object({
   lowPop: checkboxBoolean,
   newRelease: checkboxBoolean,
   lowNumberedSerialized: checkboxBoolean,
-  strongCharacterDemand: checkboxBoolean
+  strongCharacterDemand: checkboxBoolean,
+  ebayIncludeWords: optionalDetectionWords,
+  ebayExcludeWords: optionalDetectionWords,
+  ebayExactSetName: checkboxBooleanDefaultTrue,
+  ebayCardNumberRequired: checkboxBooleanDefaultTrue,
+  ebayRawKeywords: optionalDetectionWords,
+  ebayPsa9Keywords: optionalDetectionWords,
+  ebayPsa10Keywords: optionalDetectionWords,
+  ebayAllowNonEnglish: checkboxBoolean.default(false)
 });
 
 export const backupImportSchema = z.object({
@@ -441,6 +449,10 @@ export const cardCompCreateSchema = z.object({
   strongCharacterDemand: checkboxBoolean,
   lowPop: checkboxBoolean,
   newRelease: checkboxBoolean
+});
+
+export const cardCompReviewSchema = z.object({
+  action: z.enum(["accept", "reject"])
 });
 
 export const investmentSettingsSchema = z.object({

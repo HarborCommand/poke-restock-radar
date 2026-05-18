@@ -341,6 +341,14 @@ export type CardDTO = {
   newRelease: boolean;
   lowNumberedSerialized: boolean;
   strongCharacterDemand: boolean;
+  ebayIncludeWords: string | null;
+  ebayExcludeWords: string | null;
+  ebayExactSetName: boolean;
+  ebayCardNumberRequired: boolean;
+  ebayRawKeywords: string | null;
+  ebayPsa9Keywords: string | null;
+  ebayPsa10Keywords: string | null;
+  ebayAllowNonEnglish: boolean;
   lastCompAt: string | null;
   compCount: number;
   recentCompCount: number;
@@ -586,6 +594,23 @@ export type CardCompSaleDTO = {
   saleTitle: string | null;
   matchScore: number;
   conditionNotes: string | null;
+  reviewStatus: "ACCEPTED" | "REJECTED";
+  rejectedAt: string | null;
+};
+
+export type EbayEnvironmentStatusDTO = {
+  name: "EBAY_CLIENT_ID" | "EBAY_CLIENT_SECRET" | "EBAY_ENVIRONMENT" | "EBAY_MARKETPLACE_ID";
+  configured: boolean;
+  masked: string;
+};
+
+export type EbayConnectionStatusDTO = {
+  mode: "api" | "manual";
+  ready: boolean;
+  environment: "production" | "sandbox";
+  marketplaceId: string;
+  variables: EbayEnvironmentStatusDTO[];
+  message: string;
 };
 
 export type InvestmentReportItemDTO = {
@@ -650,6 +675,7 @@ export type DashboardDTO = {
   top10Watchlist: CardDTO[];
   cardCompSales: CardCompSaleDTO[];
   investmentReports: InvestmentReportDTO[];
+  ebayStatus: EbayConnectionStatusDTO;
   alerts: AlertDTO[];
   monitorLogs: MonitorLogDTO[];
   monitorAccuracyStats: MonitorAccuracyStatsDTO;

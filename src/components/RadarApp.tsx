@@ -367,6 +367,27 @@ function cardConfidenceTone(card: CardDTO) {
   return "muted";
 }
 
+function cardCompConfidenceLabel(card: CardDTO) {
+  const coreGrades: GradeType[] = ["RAW", "PSA_9", "PSA_10"];
+  const counts = coreGrades.map(
+    (gradeType) => card.lastThreeComps.filter((comp) => comp.gradeType === gradeType && comp.matchScore >= 70).length
+  );
+  if (counts.every((count) => count >= 3)) return "High";
+  if (counts.some((count) => count >= 2)) return "Medium";
+  return "Low";
+}
+
+function cardCompConfidenceTone(card: CardDTO) {
+  const label = cardCompConfidenceLabel(card);
+  if (label === "High") return "good";
+  if (label === "Medium") return "watch";
+  return "bad";
+}
+
+function compsForGrade(card: CardDTO, gradeType: GradeType) {
+  return card.lastThreeComps.filter((comp) => comp.gradeType === gradeType).slice(0, 3);
+}
+
 function browserPosition(): Promise<GeolocationPosition> {
   if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
     return Promise.reject(new Error("This browser does not support location sharing."));
@@ -2168,6 +2189,65 @@ function ReleaseStack({ releases }: { releases: ReleaseDTO[] }) {
   );
 }
 
+function CompReviewButtons({
+  comp,
+  busy,
+  runAction
+}: {
+  comp: CardCompSaleDTO;
+  busy: boolean;
+  runAction: ActionHandler;
+}) {
+  return (
+    <>
+      {comp.reviewStatus === "REJECTED" ? (
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Accepting comp ${comp.id}`,
+              () =>
+                requestJson(`/api/radar/cards/comps/${comp.id}/review`, {
+                  method: "POST",
+                  body: JSON.stringify({ action: "accept" })
+                }),
+              { success: "Comp accepted" }
+            )
+          }
+        >
+          <Check size={14} />
+          Accept this comp
+        </button>
+      ) : (
+        <button
+          className="mini-action danger"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Rejecting comp ${comp.id}`,
+              () =>
+                requestJson(`/api/radar/cards/comps/${comp.id}/review`, {
+                  method: "POST",
+                  body: JSON.stringify({ action: "reject" })
+                }),
+              {
+                confirm: "Reject this comp and remove it from card averages?",
+                success: "Comp rejected"
+              }
+            )
+          }
+        >
+          <X size={14} />
+          Reject this comp
+        </button>
+      )}
+    </>
+  );
+}
+
 function CardStack({
   cards,
   compact = false,
@@ -2197,6 +2277,7 @@ function CardStack({
     <div className={compact ? "card-opportunity-list compact" : "card-opportunity-list"}>
       {cards.map((card) => {
         const hasRealComps = card.compCount > 0;
+        const confidenceLabel = cardCompConfidenceLabel(card);
         return (
         <article className="card-opportunity-row" id={`card-${card.id}`} key={card.id}>
           <div className="card-opportunity-main">
@@ -2227,7 +2308,8 @@ function CardStack({
             ) : (
               <span className="chip muted">Profit not verified</span>
             )}
-            <span className={`chip ${cardConfidenceTone(card)}`}>Confidence {card.compConfidenceScore}%</span>
+            <span className={`chip ${cardCompConfidenceTone(card)}`}>Comp confidence {confidenceLabel}</span>
+            <span className={`chip ${cardConfidenceTone(card)}`}>Score {card.compConfidenceScore}%</span>
             <span className="chip muted">Buy limit {money(card.maxRawBuyPrice)}</span>
             {allowRefresh && runAction ? (
               <button
@@ -2259,15 +2341,44 @@ function CardStack({
                 <span>BGS 10 profit {money(card.bgs10EstimatedProfit)}</span>
                 <span>Black Label profit {money(card.blackLabelEstimatedProfit)}</span>
               </div>
-              <div className="last-comp-list">
-                <strong>Last 3 completed sales</strong>
+              <div className="last-comp-list grade-comp-list">
+                <strong>Exact 3 sold comps used</strong>
                 {card.lastThreeComps.length ? (
-                  card.lastThreeComps.slice(0, 3).map((comp) => (
-                    <span key={comp.id}>
-                      {formatGradeType(comp.gradeType)} - {money(comp.salePrice)} - {shortDate(comp.soldAt)} - match {comp.matchScore}% -{" "}
-                      {comp.saleTitle || "Untitled comp"}
-                    </span>
-                  ))
+                  gradeTypes.map((gradeType) => {
+                    const comps = compsForGrade(card, gradeType);
+                    return (
+                      <div className="grade-comp-group" key={gradeType}>
+                        <div className="grade-comp-heading">
+                          <span className="chip muted">{formatGradeType(gradeType)}</span>
+                          <span>{comps.length ? `${comps.length}/3 used` : "No accepted comps"}</span>
+                        </div>
+                        {comps.map((comp) => (
+                          <div className="comp-review-row" key={comp.id}>
+                            <div>
+                              <strong>{money(comp.salePrice)}</strong>
+                              <span>
+                                {shortDate(comp.soldAt)} - match {comp.matchScore}% - {comp.saleTitle || "Untitled sold comp"}
+                              </span>
+                              {comp.conditionNotes ? <small>{comp.conditionNotes}</small> : null}
+                            </div>
+                            <div className="row-actions">
+                              <span className={`chip ${comp.reviewStatus === "REJECTED" ? "bad" : "good"}`}>
+                                {comp.reviewStatus === "REJECTED" ? "Rejected" : "Accepted"}
+                              </span>
+                              {comp.sourceUrl ? (
+                                <a className="mini-action" href={comp.sourceUrl} target="_blank" rel="noreferrer">
+                                  Source <ExternalLink size={14} />
+                                </a>
+                              ) : null}
+                              {allowRefresh && runAction ? (
+                                <CompReviewButtons comp={comp} busy={busy} runAction={runAction} />
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })
                 ) : (
                   <span>No completed sales collected yet. Use Refresh eBay Comps or add manual sold comps.</span>
                 )}
@@ -4142,6 +4253,63 @@ function EditableRelease({
   );
 }
 
+function EbaySetupPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const status = dashboard.ebayStatus;
+  return (
+    <section className="form-panel ebay-setup-panel">
+      <div className="edit-card-heading">
+        <div>
+          <p className="eyeline">Admin Setup</p>
+          <h2>eBay API Status</h2>
+          <span>{status.message}</span>
+        </div>
+        <span className={`chip ${status.ready ? "good" : "watch"}`}>
+          {status.ready ? "API configured" : "Manual comp mode"}
+        </span>
+      </div>
+      <div className="ebay-status-grid">
+        {status.variables.map((variable) => (
+          <div className="status-tile compact-status-tile" key={variable.name}>
+            <span className="chip muted">{variable.name}</span>
+            <strong>{variable.configured ? "Configured" : "Missing"}</strong>
+            <small>{variable.masked}</small>
+          </div>
+        ))}
+      </div>
+      <div className="monitor-meta">
+        <span>Mode {status.mode === "api" ? "eBay API" : "Manual"}</span>
+        <span>Environment {status.environment}</span>
+        <span>Marketplace {status.marketplaceId}</span>
+      </div>
+      <div className="form-actions">
+        <button
+          className="mini-action solid"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction("Testing eBay connection", () => requestJson("/api/radar/ebay/test", { method: "POST" }), {
+              success: "eBay connection test finished"
+            })
+          }
+        >
+          <Wifi size={14} />
+          {busyLabel === "Testing eBay connection" ? "Testing" : "Test eBay Connection"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function CardsPanel({
   dashboard,
   isAdmin,
@@ -4202,8 +4370,11 @@ function CardsPanel({
   return (
     <>
       <PanelHeader title="Card Investment Tracker" />
+      {isAdmin ? <EbaySetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} /> : null}
       <div className="filter-strip">
-        <span className="chip muted">Manual eBay sold comps</span>
+        <span className={`chip ${dashboard.ebayStatus.ready ? "good" : "watch"}`}>
+          {dashboard.ebayStatus.ready ? "eBay API live comps" : "Manual comp mode"}
+        </span>
         <span className="chip good">PSA 10 upside</span>
         <span className="chip watch">Low pop</span>
         <span className="chip watch">New releases</span>
@@ -4291,7 +4462,7 @@ function CardsPanel({
             }
           >
             <RefreshCw size={14} />
-            {busyLabel === "Refreshing all comps" ? "Refreshing" : "Refresh All Comps"}
+            {busyLabel === "Refreshing all comps" ? "Refreshing" : "Refresh All Cards"}
           </button>
         </div>
       ) : null}
@@ -4302,7 +4473,7 @@ function CardsPanel({
         runAction={runAction}
         allowRefresh={isAdmin || dashboard.currentUser.canAddComps}
       />
-      <RecentCompsTable comps={dashboard.cardCompSales} />
+      <RecentCompsTable comps={dashboard.cardCompSales} busy={busy} runAction={runAction} canReview={isAdmin || dashboard.currentUser.canAddComps} />
       {isAdmin ? (
         <InvestmentSettingsForm dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
       ) : null}
@@ -4430,6 +4601,7 @@ function CardsPanel({
               <input name="lowNumberedSerialized" type="checkbox" value="true" />
               Low-numbered / serialized
             </label>
+            <CardSearchTuningFields />
             <TextareaInput name="notes" label="Notes" wide />
             <button className="primary-action" disabled={busy} type="submit">
               <Plus size={16} />
@@ -4539,6 +4711,69 @@ function InvestmentSettingsForm({
   );
 }
 
+function CardSearchTuningFields({ card }: { card?: CardDTO }) {
+  return (
+    <>
+      <div className="form-step wide-field">
+        <span>eBay QA</span>
+        <strong>Search tuning and wrong-comp protection</strong>
+      </div>
+      <TextareaInput
+        name="ebayIncludeWords"
+        label="Include words"
+        defaultValue={card?.ebayIncludeWords ?? ""}
+        placeholder="Optional words that must appear, one per line or comma separated"
+        wide
+      />
+      <TextareaInput
+        name="ebayExcludeWords"
+        label="Exclude words"
+        defaultValue={card?.ebayExcludeWords ?? ""}
+        placeholder="lot, proxy, digital, jumbo"
+        wide
+      />
+      <TextInput
+        name="ebayRawKeywords"
+        label="Raw-only keywords"
+        defaultValue={card?.ebayRawKeywords ?? "raw, ungraded"}
+        placeholder="raw, ungraded"
+      />
+      <TextInput
+        name="ebayPsa9Keywords"
+        label="PSA 9 keywords"
+        defaultValue={card?.ebayPsa9Keywords ?? "PSA 9, PSA Mint 9"}
+        placeholder="PSA 9, PSA Mint 9"
+      />
+      <TextInput
+        name="ebayPsa10Keywords"
+        label="PSA 10 keywords"
+        defaultValue={card?.ebayPsa10Keywords ?? "PSA 10, PSA Gem Mint 10"}
+        placeholder="PSA 10, PSA Gem Mint 10"
+      />
+      <label className="checkbox-label">
+        <input name="ebayExactSetName" type="hidden" value="false" />
+        <input name="ebayExactSetName" type="checkbox" value="true" defaultChecked={card?.ebayExactSetName ?? true} />
+        Require exact set name
+      </label>
+      <label className="checkbox-label">
+        <input name="ebayCardNumberRequired" type="hidden" value="false" />
+        <input
+          name="ebayCardNumberRequired"
+          type="checkbox"
+          value="true"
+          defaultChecked={card?.ebayCardNumberRequired ?? true}
+        />
+        Require card number
+      </label>
+      <label className="checkbox-label">
+        <input name="ebayAllowNonEnglish" type="hidden" value="false" />
+        <input name="ebayAllowNonEnglish" type="checkbox" value="true" defaultChecked={card?.ebayAllowNonEnglish ?? false} />
+        Allow non-English comps
+      </label>
+    </>
+  );
+}
+
 function ManualCompForm({ busy, busyLabel, submit }: { busy: boolean; busyLabel: string | null; submit: SubmitHandler }) {
   const [selectedGrade, setSelectedGrade] = useState<GradeType>("RAW");
   return (
@@ -4637,7 +4872,17 @@ function ManualCompForm({ busy, busyLabel, submit }: { busy: boolean; busyLabel:
   );
 }
 
-function RecentCompsTable({ comps }: { comps: CardCompSaleDTO[] }) {
+function RecentCompsTable({
+  comps,
+  busy,
+  runAction,
+  canReview
+}: {
+  comps: CardCompSaleDTO[];
+  busy: boolean;
+  runAction: ActionHandler;
+  canReview: boolean;
+}) {
   return (
     <section className="form-panel">
       <PanelHeader title="Recent Comp Sales" />
@@ -4647,6 +4892,9 @@ function RecentCompsTable({ comps }: { comps: CardCompSaleDTO[] }) {
             <div className="table-row" key={comp.id}>
               <span className="chip muted">{formatGradeType(comp.gradeType)}</span>
               <span className="chip muted">{formatSourceQuality(comp.sourceQuality)}</span>
+              <span className={`chip ${comp.reviewStatus === "REJECTED" ? "bad" : "good"}`}>
+                {comp.reviewStatus === "REJECTED" ? "Rejected" : "Accepted"}
+              </span>
               <strong>{comp.cardName}</strong>
               <span>
                 {comp.setName} #{comp.cardNumber}
@@ -4660,6 +4908,7 @@ function RecentCompsTable({ comps }: { comps: CardCompSaleDTO[] }) {
                     Source <ExternalLink size={14} />
                   </a>
                 ) : null}
+                {canReview ? <CompReviewButtons comp={comp} busy={busy} runAction={runAction} /> : null}
               </div>
               {comp.saleTitle ? <span className="monitor-details">{comp.saleTitle}</span> : null}
             </div>
@@ -5068,6 +5317,7 @@ function EditableCard({
           <input name="lowNumberedSerialized" type="checkbox" value="true" defaultChecked={card.lowNumberedSerialized} />
           Low-numbered / serialized
         </label>
+        <CardSearchTuningFields card={card} />
         <TextareaInput name="notes" label="Notes" defaultValue={card.notes ?? ""} wide />
       </div>
       <div className="form-actions">

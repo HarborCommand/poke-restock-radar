@@ -388,6 +388,14 @@ model Card {
   newRelease                    Boolean             @default(false)
   lowNumberedSerialized         Boolean             @default(false)
   strongCharacterDemand         Boolean             @default(false)
+  ebayIncludeWords              String?
+  ebayExcludeWords              String?
+  ebayExactSetName              Boolean             @default(true)
+  ebayCardNumberRequired        Boolean             @default(true)
+  ebayRawKeywords               String?
+  ebayPsa9Keywords              String?
+  ebayPsa10Keywords             String?
+  ebayAllowNonEnglish           Boolean             @default(false)
   lastCompAt                    DateTime?
   createdAt                     DateTime            @default(now())
   updatedAt                     DateTime            @updatedAt
@@ -438,12 +446,15 @@ model CardCompSale {
   notes          String?
   conditionNotes String?
   sourceQuality  String   @default("EBAY_SOLD")
+  reviewStatus   String   @default("ACCEPTED")
+  rejectedAt     DateTime?
   createdAt      DateTime @default(now())
   card           Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId])
   @@index([gradeType])
   @@index([sourceQuality])
+  @@index([reviewStatus])
   @@index([soldAt])
   @@index([matchScore])
 }

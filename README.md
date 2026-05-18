@@ -515,6 +515,36 @@ Recommended weekly flow:
 
 The app creates an in-app alert when a new comp makes a card PSA 9 profitable against the current grading, shipping, selling-fee, and minimum-profit settings.
 
+## eBay API Setup
+
+Card Opportunities can run in either manual comp mode or live eBay last-3-completed-sales mode. The app never exposes secret values in the UI; Admin only sees configured/missing status and masked identifiers.
+
+Add these variables to the separate `poke-restock-radar` Vercel project:
+
+```bash
+vercel env add EBAY_CLIENT_ID production
+vercel env add EBAY_CLIENT_SECRET production
+vercel env add EBAY_ENVIRONMENT production
+vercel env add EBAY_MARKETPLACE_ID production
+```
+
+Recommended values:
+
+- `EBAY_ENVIRONMENT=production` for live use, or `sandbox` for eBay sandbox testing.
+- `EBAY_MARKETPLACE_ID=EBAY_US` for United States sold comps.
+
+After setting the variables, redeploy the app and open `Cards -> eBay API Status`. Click `Test eBay Connection`; a successful test only confirms OAuth/API access, not that every card search is trustworthy.
+
+Comp QA workflow:
+
+1. For each card, set include/exclude words and keep `Require exact set name` plus `Require card number` enabled unless there is a real reason not to.
+2. Click `Refresh eBay Comps` on a card, or `Refresh All Cards` as Admin.
+3. The app only imports completed/sold results from eBay Marketplace Insights.
+4. It rejects lots, proxies, digital/code listings, jumbo/oversized cards, non-English listings unless allowed, wrong set names, wrong card numbers, wrong grades, and weak title matches.
+5. Review the exact three accepted sold comps per grade. Use `Reject this comp` to remove a bad match from averages, or `Accept this comp` to restore it.
+
+If eBay credentials are not configured, the app clearly shows `Manual comp mode` and no API pricing is invented.
+
 ## Phase 14 Friend Access
 
 Access is invite-only. There is no public signup route. Admins create single-use friend invite links from `User Management`; invite links expire after 7 days and the friend creates their own password from the invite screen.
@@ -593,7 +623,7 @@ npm run smoke:prod
 
 ## Known Limitations
 
-- eBay sold comps remain manual/assisted. The app does not aggressively scrape eBay or other pricing sites.
+- eBay sold comps require eBay developer credentials for live last-3-completed-sales refreshes; without credentials the app stays in manual comp mode. The app does not aggressively scrape eBay or other pricing sites.
 - Retailer monitor accuracy depends on public page content. Blocked, captcha, robot, queue, login, and private/internal pages are logged and do not trigger checkout automation.
 - Browser push requires a supported browser, permission approval, a saved subscription, and valid VAPID environment variables.
 - Email and SMS alerts are inactive until SMTP and Twilio environment variables are configured.

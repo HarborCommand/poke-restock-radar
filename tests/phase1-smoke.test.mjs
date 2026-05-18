@@ -373,6 +373,58 @@ test("Phase 13 weekly card comp workflow and reports exist", () => {
   assert.match(readme, /Weekly Comp Workflow/);
 });
 
+test("eBay API activation and comp QA workflow exists", () => {
+  const routes = [
+    join(root, "src", "app", "api", "radar", "ebay", "status", "route.ts"),
+    join(root, "src", "app", "api", "radar", "ebay", "test", "route.ts"),
+    join(root, "src", "app", "api", "radar", "cards", "comps", "[compId]", "review", "route.ts")
+  ];
+  for (const route of routes) {
+    assert.ok(statSync(route).isFile(), `missing ${route}`);
+  }
+
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const field of [
+    "ebayIncludeWords",
+    "ebayExcludeWords",
+    "ebayExactSetName",
+    "ebayCardNumberRequired",
+    "ebayRawKeywords",
+    "ebayPsa9Keywords",
+    "ebayPsa10Keywords",
+    "reviewStatus",
+    "rejectedAt"
+  ]) {
+    assert.match(schema, new RegExp(field), `missing eBay QA schema field ${field}`);
+  }
+
+  const ebay = readFileSync(join(root, "src", "lib", "ebay.ts"), "utf8");
+  for (const phrase of ["EBAY_CLIENT_ID", "testEbayConnection", "hardRejectWords", "Wrong or missing card number", "item_sales/search"]) {
+    assert.match(ebay, new RegExp(phrase), `missing eBay API safeguard phrase ${phrase}`);
+  }
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of [
+    "eBay API Status",
+    "Test eBay Connection",
+    "Refresh All Cards",
+    "Search tuning and wrong-comp protection",
+    "Accept this comp",
+    "Reject this comp",
+    "Exact 3 sold comps used"
+  ]) {
+    assert.match(app, new RegExp(phrase), `missing eBay comp QA UI phrase ${phrase}`);
+  }
+
+  const smoke = readFileSync(join(root, "scripts", "final-production-smoke.ts"), "utf8");
+  assert.match(smoke, /\/api\/radar\/ebay\/status/);
+  assert.match(smoke, /EBAY_CLIENT_SECRET/);
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /eBay API Setup/);
+  assert.match(readme, /EBAY_CLIENT_ID/);
+});
+
 test("project is standalone and does not reference Harbor Command files", () => {
   const readme = readFileSync(join(root, "README.md"), "utf8");
   assert.match(readme, /not connected to Harbor Command/);

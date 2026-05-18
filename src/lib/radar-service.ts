@@ -6,7 +6,7 @@ import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
-import { ebayMode, fetchLastThreeEbayComps } from "@/lib/ebay";
+import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, testEbayConnection } from "@/lib/ebay";
 import {
   calculateCardProfit,
   calculateMaxRawBuyPrice,
@@ -83,6 +83,8 @@ export const zoneOptions: ZoneOptionDTO[] = [
   { value: "CUSTOM", label: "Custom" }
 ];
 
+const gradeTypes: GradeType[] = ["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"];
+
 function zoneLabel(zone: string | null | undefined, customZoneName?: string | null) {
   if (zone === "CUSTOM" && customZoneName) return customZoneName;
   return zoneOptions.find((option) => option.value === zone)?.label ?? "Miami";
@@ -134,7 +136,9 @@ const cardInclude = {
       sourceUrl: true,
       saleTitle: true,
       matchScore: true,
-      conditionNotes: true
+      conditionNotes: true,
+      reviewStatus: true,
+      rejectedAt: true
     }
   }
 } satisfies Prisma.CardInclude;
@@ -483,25 +487,30 @@ function releaseToDTO(
 }
 
 function cardToDTO(card: Prisma.CardGetPayload<{ include: typeof cardInclude }>): CardDTO {
-  const compCount = card.compSales.length;
+  const acceptedCompSales = card.compSales.filter((sale) => sale.reviewStatus !== "REJECTED");
+  const compCount = acceptedCompSales.length;
   const compsForGrade = (gradeType: GradeType) =>
-    card.compSales.filter((sale) => ((sale.gradeType || "RAW") as GradeType) === gradeType);
-  const lastThreeComps = card.compSales.slice(0, 18).map((sale) => ({
-    id: sale.id,
-    cardId: card.id,
-    cardName: card.cardName,
-    setName: card.setName,
-    cardNumber: card.cardNumber,
-    gradeType: (sale.gradeType || "RAW") as GradeType,
-    salePrice: sale.salePrice,
-    soldAt: sale.soldAt.toISOString(),
-    source: sale.source,
-    sourceQuality: (sale.sourceQuality || "EBAY_SOLD") as CompSourceQuality,
-    sourceUrl: sale.sourceUrl,
-    saleTitle: sale.saleTitle,
-    matchScore: sale.matchScore,
-    conditionNotes: sale.conditionNotes
-  }));
+    acceptedCompSales.filter((sale) => ((sale.gradeType || "RAW") as GradeType) === gradeType);
+  const lastThreeComps = gradeTypes
+    .flatMap((gradeType) => compsForGrade(gradeType).slice(0, 3))
+    .map((sale) => ({
+      id: sale.id,
+      cardId: card.id,
+      cardName: card.cardName,
+      setName: card.setName,
+      cardNumber: card.cardNumber,
+      gradeType: (sale.gradeType || "RAW") as GradeType,
+      salePrice: sale.salePrice,
+      soldAt: sale.soldAt.toISOString(),
+      source: sale.source,
+      sourceQuality: (sale.sourceQuality || "EBAY_SOLD") as CompSourceQuality,
+      sourceUrl: sale.sourceUrl,
+      saleTitle: sale.saleTitle,
+      matchScore: sale.matchScore,
+      conditionNotes: sale.conditionNotes,
+      reviewStatus: (sale.reviewStatus || "ACCEPTED") as "ACCEPTED" | "REJECTED",
+      rejectedAt: sale.rejectedAt?.toISOString() ?? null
+    }));
   return {
     id: card.id,
     releaseId: card.releaseId,
@@ -538,9 +547,17 @@ function cardToDTO(card: Prisma.CardGetPayload<{ include: typeof cardInclude }>)
     newRelease: card.newRelease,
     lowNumberedSerialized: card.lowNumberedSerialized,
     strongCharacterDemand: card.strongCharacterDemand,
+    ebayIncludeWords: card.ebayIncludeWords,
+    ebayExcludeWords: card.ebayExcludeWords,
+    ebayExactSetName: card.ebayExactSetName,
+    ebayCardNumberRequired: card.ebayCardNumberRequired,
+    ebayRawKeywords: card.ebayRawKeywords,
+    ebayPsa9Keywords: card.ebayPsa9Keywords,
+    ebayPsa10Keywords: card.ebayPsa10Keywords,
+    ebayAllowNonEnglish: card.ebayAllowNonEnglish,
     lastCompAt: card.lastCompAt?.toISOString() ?? null,
     compCount,
-    recentCompCount: recentCompCount(card.compSales),
+    recentCompCount: recentCompCount(acceptedCompSales),
     rawCompCount: compsForGrade("RAW").length,
     psa9CompCount: compsForGrade("PSA_9").length,
     psa10CompCount: compsForGrade("PSA_10").length,
@@ -1185,7 +1202,9 @@ function cardCompSaleToDTO(sale: Prisma.CardCompSaleGetPayload<{ include: typeof
     sourceUrl: sale.sourceUrl || sale.url,
     saleTitle: sale.saleTitle,
     matchScore: sale.matchScore,
-    conditionNotes: sale.conditionNotes || sale.notes
+    conditionNotes: sale.conditionNotes || sale.notes,
+    reviewStatus: (sale.reviewStatus || "ACCEPTED") as "ACCEPTED" | "REJECTED",
+    rejectedAt: sale.rejectedAt?.toISOString() ?? null
   };
 }
 
@@ -1707,6 +1726,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     top10Watchlist: cardDTOs.slice(0, 10),
     cardCompSales: cardCompSales.map(cardCompSaleToDTO),
     investmentReports: investmentReports.map(investmentReportToDTO),
+    ebayStatus: ebayConnectionStatus(),
     alerts: alertDTOs,
     monitorLogs: monitorLogDTOs,
     monitorAccuracyStats: accuracyStats,
@@ -2949,6 +2969,7 @@ async function recomputeCardFromComps(
     where: { id: cardId },
     include: {
       compSales: {
+        where: { reviewStatus: { not: "REJECTED" } },
         orderBy: { soldAt: "desc" },
         select: { gradeType: true, salePrice: true, soldAt: true, sourceQuality: true }
       }
@@ -3057,6 +3078,14 @@ export async function createCard(input: {
   newRelease: boolean;
   lowNumberedSerialized?: boolean;
   strongCharacterDemand?: boolean;
+  ebayIncludeWords?: string;
+  ebayExcludeWords?: string;
+  ebayExactSetName?: boolean;
+  ebayCardNumberRequired?: boolean;
+  ebayRawKeywords?: string;
+  ebayPsa9Keywords?: string;
+  ebayPsa10Keywords?: string;
+  ebayAllowNonEnglish?: boolean;
 }) {
   const matchedRelease = input.releaseId
     ? null
@@ -3071,7 +3100,15 @@ export async function createCard(input: {
     minimumProfitTarget: input.minimumProfitTarget ?? 20,
     era: input.era ?? "MODERN",
     lowNumberedSerialized: input.lowNumberedSerialized ?? false,
-    strongCharacterDemand: input.strongCharacterDemand ?? false
+    strongCharacterDemand: input.strongCharacterDemand ?? false,
+    ebayIncludeWords: input.ebayIncludeWords ?? null,
+    ebayExcludeWords: input.ebayExcludeWords ?? null,
+    ebayExactSetName: input.ebayExactSetName ?? true,
+    ebayCardNumberRequired: input.ebayCardNumberRequired ?? true,
+    ebayRawKeywords: input.ebayRawKeywords ?? null,
+    ebayPsa9Keywords: input.ebayPsa9Keywords ?? null,
+    ebayPsa10Keywords: input.ebayPsa10Keywords ?? null,
+    ebayAllowNonEnglish: input.ebayAllowNonEnglish ?? false
   };
   const computed = computedCardValues(normalized);
   const compConfidenceScore = computeCardConfidence({
@@ -3139,6 +3176,14 @@ export async function updateCard(
     newRelease: boolean;
     lowNumberedSerialized?: boolean;
     strongCharacterDemand?: boolean;
+    ebayIncludeWords?: string;
+    ebayExcludeWords?: string;
+    ebayExactSetName?: boolean;
+    ebayCardNumberRequired?: boolean;
+    ebayRawKeywords?: string;
+    ebayPsa9Keywords?: string;
+    ebayPsa10Keywords?: string;
+    ebayAllowNonEnglish?: boolean;
   }
 ) {
   const existing = await prisma.card.findUnique({ where: { id: cardId } });
@@ -3158,9 +3203,20 @@ export async function updateCard(
     minimumProfitTarget: input.minimumProfitTarget ?? existing.minimumProfitTarget,
     era: input.era ?? (existing.era as "MODERN" | "VINTAGE"),
     lowNumberedSerialized: input.lowNumberedSerialized ?? existing.lowNumberedSerialized,
-    strongCharacterDemand: input.strongCharacterDemand ?? existing.strongCharacterDemand
+    strongCharacterDemand: input.strongCharacterDemand ?? existing.strongCharacterDemand,
+    ebayIncludeWords: input.ebayIncludeWords ?? null,
+    ebayExcludeWords: input.ebayExcludeWords ?? null,
+    ebayExactSetName: input.ebayExactSetName ?? existing.ebayExactSetName,
+    ebayCardNumberRequired: input.ebayCardNumberRequired ?? existing.ebayCardNumberRequired,
+    ebayRawKeywords: input.ebayRawKeywords ?? null,
+    ebayPsa9Keywords: input.ebayPsa9Keywords ?? null,
+    ebayPsa10Keywords: input.ebayPsa10Keywords ?? null,
+    ebayAllowNonEnglish: input.ebayAllowNonEnglish ?? existing.ebayAllowNonEnglish
   };
-  const compSales = await prisma.cardCompSale.findMany({ where: { cardId }, select: { soldAt: true, sourceQuality: true } });
+  const compSales = await prisma.cardCompSale.findMany({
+    where: { cardId, reviewStatus: { not: "REJECTED" } },
+    select: { soldAt: true, sourceQuality: true }
+  });
   const computed = computedCardValues({
     ...normalized,
     compCount: compSales.length,
@@ -3355,6 +3411,15 @@ export async function refreshCardEbayComps(currentUser: SessionUser, cardId: str
     cardName: card.cardName,
     setName: card.setName,
     cardNumber: card.cardNumber
+  }, {
+    includeWords: card.ebayIncludeWords,
+    excludeWords: card.ebayExcludeWords,
+    exactSetName: card.ebayExactSetName,
+    cardNumberRequired: card.ebayCardNumberRequired,
+    rawKeywords: card.ebayRawKeywords,
+    psa9Keywords: card.ebayPsa9Keywords,
+    psa10Keywords: card.ebayPsa10Keywords,
+    allowNonEnglish: card.ebayAllowNonEnglish
   });
   if (result.mode === "manual") {
     return {
@@ -3398,7 +3463,7 @@ export async function refreshCardEbayComps(currentUser: SessionUser, cardId: str
         saleTitle: sale.saleTitle,
         matchScore: sale.matchScore,
         notes: "Imported by eBay last-3 completed sales refresh.",
-        conditionNotes: `Match score ${sale.matchScore}%.`
+        conditionNotes: sale.conditionNotes
       }
     });
     added += 1;
@@ -3442,6 +3507,53 @@ export async function refreshAllCardEbayComps(currentUser: SessionUser) {
     refreshed: results.length,
     added: results.reduce((sum, result) => sum + result.added, 0),
     results
+  };
+}
+
+export function getEbayApiStatus() {
+  return ebayConnectionStatus();
+}
+
+export async function testEbayApiConnection() {
+  return testEbayConnection();
+}
+
+export async function reviewCardCompSale(
+  currentUser: SessionUser,
+  compId: string,
+  input: { action: "accept" | "reject" }
+) {
+  const existing = await prisma.cardCompSale.findUnique({
+    where: { id: compId },
+    select: { id: true, cardId: true, saleTitle: true, gradeType: true, reviewStatus: true }
+  });
+  if (!existing) throw new Error("Comp sale not found");
+
+  const reviewStatus = input.action === "reject" ? "REJECTED" : "ACCEPTED";
+  const sale = await prisma.cardCompSale.update({
+    where: { id: compId },
+    data: {
+      reviewStatus,
+      rejectedAt: reviewStatus === "REJECTED" ? new Date() : null,
+      notes:
+        reviewStatus === "REJECTED"
+          ? `Rejected by ${currentUser.email}; excluded from averages.`
+          : `Accepted by ${currentUser.email}; included in averages.`
+    },
+    include: compSaleInclude
+  });
+
+  const settings = await ensureInvestmentSettings(currentUser);
+  const card = await recomputeCardFromComps(existing.cardId, {
+    gradingCost: settings.gradingCost,
+    ebaySellingFee: settings.ebaySellingFee,
+    shippingCost: settings.shippingCost,
+    minimumProfitTarget: settings.minimumProfitTarget
+  });
+
+  return {
+    compSale: cardCompSaleToDTO(sale),
+    card: cardToDTO(card)
   };
 }
 
@@ -4419,6 +4531,14 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       newRelease: Boolean(row.newRelease),
       lowNumberedSerialized: Boolean(row.lowNumberedSerialized),
       strongCharacterDemand: Boolean(row.strongCharacterDemand),
+      ebayIncludeWords: row.ebayIncludeWords ? String(row.ebayIncludeWords) : null,
+      ebayExcludeWords: row.ebayExcludeWords ? String(row.ebayExcludeWords) : null,
+      ebayExactSetName: row.ebayExactSetName === undefined ? true : Boolean(row.ebayExactSetName),
+      ebayCardNumberRequired: row.ebayCardNumberRequired === undefined ? true : Boolean(row.ebayCardNumberRequired),
+      ebayRawKeywords: row.ebayRawKeywords ? String(row.ebayRawKeywords) : null,
+      ebayPsa9Keywords: row.ebayPsa9Keywords ? String(row.ebayPsa9Keywords) : null,
+      ebayPsa10Keywords: row.ebayPsa10Keywords ? String(row.ebayPsa10Keywords) : null,
+      ebayAllowNonEnglish: row.ebayAllowNonEnglish === undefined ? false : Boolean(row.ebayAllowNonEnglish),
       lastCompAt: toNullableDate(row.lastCompAt),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
@@ -4517,8 +4637,12 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       soldAt: toDate(row.soldAt),
       url: row.url ? String(row.url) : null,
       sourceUrl: row.sourceUrl ? String(row.sourceUrl) : row.url ? String(row.url) : null,
+      saleTitle: row.saleTitle ? String(row.saleTitle) : null,
+      matchScore: row.matchScore === undefined ? 0 : Number(row.matchScore),
       notes: row.notes ? String(row.notes) : null,
       conditionNotes: row.conditionNotes ? String(row.conditionNotes) : row.notes ? String(row.notes) : null,
+      reviewStatus: row.reviewStatus ? String(row.reviewStatus) : "ACCEPTED",
+      rejectedAt: toNullableDate(row.rejectedAt),
       createdAt: toDate(row.createdAt)
     }))
   });
