@@ -1304,6 +1304,127 @@ textarea {
   min-height: 36px;
 }
 
+.store-coverage-panel,
+.store-discovery-panel {
+  gap: 12px;
+}
+
+.coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: 8px;
+}
+
+.coverage-tile {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 11px;
+}
+
+.coverage-tile strong {
+  color: var(--text);
+  font-size: 1.55rem;
+  line-height: 1;
+}
+
+.coverage-tile span,
+.coverage-tile small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.store-discovery-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(130px, 0.45fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.retailer-chip-grid {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.retailer-chip-grid .checkbox-label {
+  width: auto;
+  min-height: 36px;
+  padding: 0 11px;
+}
+
+.store-discovery-form .form-actions {
+  grid-column: 1 / -1;
+}
+
+.discovery-results {
+  display: grid;
+  gap: 10px;
+}
+
+.candidate-store-list {
+  display: grid;
+  gap: 8px;
+}
+
+.candidate-store-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 10px;
+}
+
+.candidate-store-row.duplicate {
+  opacity: 0.68;
+}
+
+.candidate-store-row input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.candidate-store-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.candidate-store-row strong {
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.2;
+}
+
+.candidate-store-row span,
+.candidate-store-row small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.store-select-field {
+  gap: 7px;
+}
+
+.store-select-field small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .field-store-list {
   display: grid;
   gap: 8px;
@@ -3150,6 +3271,15 @@ textarea {
 
   .quick-action-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .store-discovery-form,
+  .candidate-store-row {
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-store-row > .chip {
+    justify-self: start;
   }
 
   .form-actions,

@@ -2505,6 +2505,7 @@ export async function createStore(input: {
   confidenceScore: number;
   notes?: string;
 }) {
+  await assertStoreIsNotDuplicate(input);
   const store = await prisma.store.create({
     data: input,
     include: storeInclude
@@ -2530,6 +2531,7 @@ export async function updateStore(
     notes?: string;
   }
 ) {
+  await assertStoreIsNotDuplicate(input, storeId);
   const store = await prisma.store.update({
     where: { id: storeId },
     data: input,
@@ -2542,6 +2544,52 @@ export async function deleteStore(storeId: string) {
   await prisma.alert.deleteMany({ where: { entityType: "STORE", entityId: storeId } });
   await prisma.store.delete({ where: { id: storeId } });
   return { ok: true };
+}
+
+function normalizedStoreKey(value: string | null | undefined) {
+  return (value || "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function googlePlaceIdFromText(value: string | null | undefined) {
+  return /(?:google\s*)?place[_\s-]?id:\s*([A-Za-z0-9_-]+)/i.exec(value || "")?.[1] ?? null;
+}
+
+async function assertStoreIsNotDuplicate(
+  input: {
+    retailerId: string;
+    storeName: string;
+    address: string;
+    city: string;
+    notes?: string;
+    vendorNotes?: string;
+  },
+  excludeStoreId?: string
+) {
+  const existingStores = await prisma.store.findMany({
+    where: { retailerId: input.retailerId },
+    select: { id: true, storeName: true, address: true, city: true, notes: true, vendorNotes: true }
+  });
+  const addressKey = normalizedStoreKey(input.address);
+  const nameCityKey = `${normalizedStoreKey(input.storeName)}|${normalizedStoreKey(input.city)}`;
+  const placeId = googlePlaceIdFromText(`${input.notes || ""}\n${input.vendorNotes || ""}`);
+
+  for (const store of existingStores) {
+    if (store.id === excludeStoreId) continue;
+    if (placeId && googlePlaceIdFromText(`${store.notes || ""}\n${store.vendorNotes || ""}`) === placeId) {
+      throw new Error(`Duplicate store: ${store.storeName} already uses Google place_id ${placeId}.`);
+    }
+    if (normalizedStoreKey(store.address) === addressKey) {
+      throw new Error(`Duplicate store: ${store.storeName} already uses this retailer/address.`);
+    }
+    if (`${normalizedStoreKey(store.storeName)}|${normalizedStoreKey(store.city)}` === nameCityKey) {
+      throw new Error(`Duplicate store: ${store.storeName} already exists in ${store.city}.`);
+    }
+  }
 }
 
 export async function createSighting(userId: string, input: {
@@ -2829,6 +2877,12 @@ export async function importStores(format: "csv" | "json", data: string) {
 
   for (const [index, row] of rows.entries()) {
     try {
+      const phone = textFromRow(row, "phone", "phoneNumber");
+      const zip = textFromRow(row, "zip", "postalCode");
+      const placeId = textFromRow(row, "place_id", "placeId", "googlePlaceId");
+      const notes = [textFromRow(row, "notes"), phone ? `Phone: ${phone}` : null, zip ? `ZIP: ${zip}` : null, placeId ? `Google place_id: ${placeId}` : null]
+        .filter(Boolean)
+        .join("\n");
       const input = storeCreateSchema.parse({
         retailerId: await retailerIdFromRow(row, retailers),
         storeName: textFromRow(row, "storeName", "name"),
@@ -2838,11 +2892,11 @@ export async function importStores(format: "csv" | "json", data: string) {
         zone: (textFromRow(row, "zone", "region") || "MIAMI").toUpperCase(),
         latitude: numberFromRow(row, "latitude", "lat"),
         longitude: numberFromRow(row, "longitude", "lng", "lon"),
-        typicalRestockDays: textFromRow(row, "typicalRestockDays", "restockDays"),
-        typicalRestockTimeWindow: textFromRow(row, "typicalRestockTimeWindow", "restockWindow"),
-        vendorNotes: textFromRow(row, "vendorNotes"),
+        typicalRestockDays: textFromRow(row, "typicalRestockDays", "restockDays") || "Unknown",
+        typicalRestockTimeWindow: textFromRow(row, "typicalRestockTimeWindow", "restockWindow") || "Unknown",
+        vendorNotes: textFromRow(row, "vendorNotes") || (placeId ? `Google place_id: ${placeId}` : undefined),
         confidenceScore: numberFromRow(row, "confidenceScore", "confidence") ?? 50,
-        notes: textFromRow(row, "notes")
+        notes: notes || undefined
       });
       await createStore(input);
       result.created += 1;

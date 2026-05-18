@@ -310,6 +310,46 @@ export const storePreferenceSchema = z.object({
   hidden: checkboxBoolean.optional()
 });
 
+export const storeDiscoverySearchSchema = z
+  .object({
+    locationQuery: optionalTrimmed,
+    latitude: optionalLatitude,
+    longitude: optionalLongitude,
+    radiusMiles: z.coerce.number().int().refine((value) => [5, 10, 25, 50].includes(value), "Use 5, 10, 25, or 50 miles"),
+    retailers: z
+      .array(z.enum(["Target", "Walmart", "GameStop", "Best Buy"]))
+      .min(1, "Select at least one retailer")
+      .max(4)
+  })
+  .refine((value) => value.locationQuery || (value.latitude !== undefined && value.longitude !== undefined), {
+    message: "Enter a ZIP/city or use browser location",
+    path: ["locationQuery"]
+  });
+
+const storeDiscoveryCandidateSchema = z.object({
+  id: z.string().trim().min(1),
+  retailerId: z.string().trim().min(1),
+  retailerName: z.enum(["Target", "Walmart", "GameStop", "Best Buy"]),
+  storeName: z.string().trim().min(2).max(160),
+  address: z.string().trim().min(2).max(240),
+  city: z.string().trim().min(2).max(120),
+  state: z.string().trim().min(2).max(24),
+  zip: optionalTrimmed,
+  latitude: optionalLatitude.nullable(),
+  longitude: optionalLongitude.nullable(),
+  phone: optionalTrimmed,
+  placeId: optionalTrimmed.nullable(),
+  googleMapsUrl: optionalHttpUrl.nullable(),
+  distanceMiles: z.coerce.number().nonnegative().max(1000).nullable().optional(),
+  duplicate: checkboxBoolean.default(false),
+  duplicateReason: optionalTrimmed.nullable(),
+  source: z.enum(["google_places", "manual"]).default("google_places")
+});
+
+export const storeDiscoveryAddSchema = z.object({
+  candidates: z.array(storeDiscoveryCandidateSchema).min(1, "Select at least one store").max(80)
+});
+
 export const sightingCreateSchema = z.object({
   storeId: z.string().min(1),
   productSeen: z.string().trim().min(2),

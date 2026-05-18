@@ -276,6 +276,7 @@ Optional provider env vars:
 - SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 - Twilio: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
 - eBay API comp refresh: `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_ENVIRONMENT`, `EBAY_MARKETPLACE_ID`
+- Store discovery: `GOOGLE_PLACES_API_KEY`
 
 ### Database Setup
 
@@ -430,11 +431,25 @@ JSON format:
 CSV headers:
 
 ```csv
-retailer,storeName,address,city,state,zone,latitude,longitude,typicalRestockDays,typicalRestockTimeWindow,vendorNotes,confidenceScore,notes
-Target,Target Midtown Miami,3401 N Miami Ave,Miami,FL,MIAMI,25.8072,-80.1937,"Tuesday,Friday",8:00 AM - 11:00 AM,Card aisle after front lanes,70,Manual visit log only
+retailer,storeName,address,city,state,zip,latitude,longitude,phone,notes
+Target,Target Midtown Miami,3401 N Miami Ave,Miami,FL,33127,25.8072,-80.1937,+13055551212,Manual visit log only
+Walmart,Walmart Doral,8651 NW 13th Ter,Doral,FL,33126,25.7855,-80.337,+13055551213,Check card aisle and front collectibles shelf
 ```
 
-JSON uses the same field names in an array or `{ "stores": [...] }`.
+JSON uses the same field names in an array or `{ "stores": [...] }`. Optional operational fields such as `zone`, `typicalRestockDays`, `typicalRestockTimeWindow`, `vendorNotes`, `confidenceScore`, and `place_id` are accepted. If restock days/window are missing, the import marks them `Unknown` so they can be tuned after visits.
+
+### Store Discovery
+
+The Stores tab includes a Store Coverage panel and a Find Nearby Stores flow. Enter a ZIP/city or use browser location, choose a 5, 10, 25, or 50 mile radius, select Target/Walmart/GameStop/Best Buy, then review candidate stores before adding them. Saved store dropdowns are searchable and sort favorites first, then closest stores when browser location is saved.
+
+Store discovery uses safe public/manual sources only:
+
+- Manual store entry
+- CSV/JSON import
+- Public Google Maps details pasted into notes
+- Optional Google Places API when `GOOGLE_PLACES_API_KEY` is configured
+
+When Google Places is configured, the server uses Google's Geocoding API and Places Nearby Search/Place Details endpoints to collect public name, address, latitude/longitude, phone when available, and `place_id`. Secrets are never exposed to the browser. If the key is missing, the UI stays in manual mode and shows "Add store manually or import CSV." Duplicate prevention checks retailer + address, Google `place_id` preserved in notes/vendor notes, and normalized store name + city. Google Places limits nearby radius to 50,000 meters, so a 50 mile search is best-effort and wider coverage should use import/manual entry.
 
 ### Zone And Field Mode Setup
 

@@ -69,6 +69,7 @@ import type {
   RetailerTemplateDTO,
   SessionUser,
   SightingDTO,
+  StoreDiscoveryResponseDTO,
   StoreDTO,
   StoreVisitResult,
   Zone
@@ -361,6 +362,36 @@ function storeDistanceLabel(store: StoreDTO) {
 
 function storeNeedsCoordinates(store: StoreDTO) {
   return store.latitude === null || store.longitude === null;
+}
+
+function storeOptionLabel(store: StoreDTO) {
+  const favorite = store.isFavorite ? "Favorite - " : "";
+  const distance = store.distanceMiles === null ? store.zoneLabel : `${store.distanceMiles} mi`;
+  return `${favorite}${store.storeName} - ${store.city} - ${distance} - ${store.retailerName}`;
+}
+
+function storeSearchText(store: StoreDTO) {
+  return [
+    store.storeName,
+    store.retailerName,
+    store.address,
+    store.city,
+    store.state,
+    store.zoneLabel,
+    store.distanceMiles === null ? "" : `${store.distanceMiles}`
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function sortedStoreOptions(stores: StoreDTO[]) {
+  return [...stores].sort(
+    (a, b) =>
+      Number(b.isFavorite) - Number(a.isFavorite) ||
+      a.distanceRank - b.distanceRank ||
+      b.prediction.confidenceScore - a.prediction.confidenceScore ||
+      a.storeName.localeCompare(b.storeName)
+  );
 }
 
 function productImageRank(product: ProductDTO) {
@@ -1482,6 +1513,250 @@ function AreaSetupPanel({
           {busyLabel === "Saving area preferences" ? "Saving" : "Save Area"}
         </button>
       </form>
+    </section>
+  );
+}
+
+function StoreCoveragePanel({ dashboard }: { dashboard: DashboardDTO }) {
+  const storesWithDistance = dashboard.stores.filter((store) => store.distanceMiles !== null);
+  const stats = [
+    { label: "Saved stores", value: dashboard.stores.length, detail: "total coverage" },
+    { label: "Within 5 miles", value: storesWithDistance.filter((store) => (store.distanceMiles ?? 999) <= 5).length, detail: "near route" },
+    { label: "Within 10 miles", value: storesWithDistance.filter((store) => (store.distanceMiles ?? 999) <= 10).length, detail: "local loop" },
+    { label: "Favorites", value: dashboard.stores.filter((store) => store.isFavorite).length, detail: "top priority" },
+    { label: "Sightings logged", value: dashboard.sightings.length, detail: "manual reports" }
+  ];
+
+  return (
+    <section className="form-panel store-coverage-panel">
+      <div className="edit-card-heading">
+        <div>
+          <p className="eyeline">Store Coverage</p>
+          <h2>Nearby Store Network</h2>
+          <span>Coverage uses saved browser location when available, with favorites sorted first.</span>
+        </div>
+      </div>
+      <div className="coverage-grid">
+        {stats.map((item) => (
+          <div className="coverage-tile" key={item.label}>
+            <strong>{item.value}</strong>
+            <span>{item.label}</span>
+            <small>{item.detail}</small>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StoreDiscoveryPanel({
+  dashboard,
+  isAdmin,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  isAdmin: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const [discoveryResult, setDiscoveryResult] = useState<StoreDiscoveryResponseDTO | null>(null);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(
+    dashboard.userAreaPreferences.currentLatitude !== null && dashboard.userAreaPreferences.currentLongitude !== null
+      ? {
+          latitude: dashboard.userAreaPreferences.currentLatitude,
+          longitude: dashboard.userAreaPreferences.currentLongitude
+        }
+      : null
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const addableCandidates = discoveryResult?.candidates.filter((candidate) => !candidate.duplicate) ?? [];
+  const selectedCandidates = addableCandidates.filter((candidate) => selectedIds.has(candidate.id));
+
+  async function useBrowserLocationForDiscovery() {
+    setLocating(true);
+    setDiscoveryError(null);
+    try {
+      const position = await browserPosition();
+      setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+    } catch (error) {
+      setDiscoveryError(error instanceof Error ? error.message : "Could not read browser location");
+    } finally {
+      setLocating(false);
+    }
+  }
+
+  async function searchStores(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const retailers = data.getAll("retailers").map(String);
+    setSearching(true);
+    setDiscoveryError(null);
+    try {
+      const result = await requestJson<StoreDiscoveryResponseDTO>("/api/radar/stores/discovery", {
+        method: "POST",
+        body: JSON.stringify({
+          locationQuery: String(data.get("locationQuery") || "").trim(),
+          latitude: coords?.latitude,
+          longitude: coords?.longitude,
+          radiusMiles: data.get("radiusMiles"),
+          retailers
+        })
+      });
+      setDiscoveryResult(result);
+      setSelectedIds(new Set(result.candidates.filter((candidate) => !candidate.duplicate).map((candidate) => candidate.id)));
+    } catch (error) {
+      setDiscoveryError(error instanceof Error ? error.message : "Store discovery failed");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function toggleCandidate(candidateId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(candidateId)) next.delete(candidateId);
+      else next.add(candidateId);
+      return next;
+    });
+  }
+
+  return (
+    <section className="form-panel store-discovery-panel">
+      <div className="edit-card-heading">
+        <div>
+          <p className="eyeline">Find Nearby Stores</p>
+          <h2>Expand Store Coverage</h2>
+          <span>Use public Google Places when configured, or stay in manual CSV/JSON import mode.</span>
+        </div>
+        <span className="chip muted">{coords ? "Location ready" : "ZIP/city or browser location"}</span>
+      </div>
+      <form className="store-discovery-form" onSubmit={searchStores}>
+        <TextInput
+          name="locationQuery"
+          label="ZIP code or city"
+          placeholder="33126 or Miami, FL"
+          defaultValue={dashboard.userAreaPreferences.currentLatitude !== null ? "" : zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)}
+        />
+        <SelectInput
+          name="radiusMiles"
+          label="Radius"
+          defaultValue="10"
+          options={[5, 10, 25, 50].map((value) => ({ value: String(value), label: `${value} miles` }))}
+        />
+        <div className="retailer-chip-grid" aria-label="Retailers">
+          {["Target", "Walmart", "GameStop", "Best Buy"].map((retailer) => (
+            <label className="checkbox-label" key={retailer}>
+              <input name="retailers" type="checkbox" value={retailer} defaultChecked />
+              {retailer}
+            </label>
+          ))}
+        </div>
+        <div className="form-actions">
+          <button className="mini-action" disabled={searching || locating || busy} type="button" onClick={useBrowserLocationForDiscovery}>
+            <MapPin size={14} />
+            {locating ? "Locating" : "Use Browser Location"}
+          </button>
+          <button className="primary-action" disabled={searching || busy} type="submit">
+            <Store size={16} />
+            {searching ? "Searching" : "Find Stores"}
+          </button>
+        </div>
+      </form>
+      {discoveryError ? <p className="form-error">{discoveryError}</p> : null}
+      {discoveryResult ? (
+        <div className="discovery-results">
+          <div className="edit-card-heading">
+            <div>
+              <strong>{discoveryResult.message}</strong>
+              <span>
+                Origin: {discoveryResult.origin.label} - Radius {discoveryResult.radiusMiles} miles
+              </span>
+            </div>
+            <span className={`chip ${discoveryResult.configured ? "good" : "watch"}`}>
+              {discoveryResult.configured ? "Google Places" : "Manual mode"}
+            </span>
+          </div>
+          {!discoveryResult.configured ? (
+            <div className="template-hint warning">
+              <strong>Manual mode</strong>
+              <span>Add stores manually below, import CSV/JSON, or paste details from public Google Maps/store locator pages.</span>
+            </div>
+          ) : null}
+          {discoveryResult.candidates.length ? (
+            <div className="candidate-store-list">
+              {discoveryResult.candidates.map((candidate) => (
+                <label className={candidate.duplicate ? "candidate-store-row duplicate" : "candidate-store-row"} key={candidate.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(candidate.id)}
+                    disabled={candidate.duplicate}
+                    onChange={() => toggleCandidate(candidate.id)}
+                  />
+                  <div>
+                    <strong>{candidate.storeName}</strong>
+                    <span>
+                      {candidate.retailerName} - {candidate.address}, {candidate.city}, {candidate.state}
+                      {candidate.distanceMiles !== null ? ` - ${candidate.distanceMiles} mi` : ""}
+                    </span>
+                    <small>
+                      {candidate.phone || "Phone unavailable"}
+                      {candidate.placeId ? ` - place_id ${candidate.placeId}` : ""}
+                    </small>
+                  </div>
+                  <span className={`chip ${candidate.duplicate ? "muted" : "good"}`}>
+                    {candidate.duplicate ? "Already saved" : "Addable"}
+                  </span>
+                  {candidate.duplicateReason ? <small>{candidate.duplicateReason}</small> : null}
+                </label>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={Store}
+              title={discoveryResult.configured ? "No candidates found" : "Manual store setup ready"}
+              detail="Try a wider radius, different city/ZIP, manual entry, or bulk import."
+            />
+          )}
+          {isAdmin ? (
+            <button
+              className="primary-action"
+              aria-label="Add To My Stores"
+              disabled={busy || selectedCandidates.length === 0}
+              type="button"
+              onClick={() =>
+                runAction(
+                  "Adding discovered stores",
+                  async () => {
+                    const result = await requestJson<{ created: number; skipped: number; errors: string[] }>(
+                      "/api/radar/stores/discovery/add",
+                      {
+                        method: "POST",
+                        body: JSON.stringify({ candidates: selectedCandidates })
+                      }
+                    );
+                    if (result.created === 0 && result.skipped > 0) {
+                      throw new Error(result.errors.slice(0, 2).join(" ") || "All selected stores were duplicates.");
+                    }
+                  },
+                  { success: `${selectedCandidates.length} selected store${selectedCandidates.length === 1 ? "" : "s"} processed` }
+                )
+              }
+            >
+              <Plus size={16} />
+              {busyLabel === "Adding discovered stores" ? "Adding" : `Add ${selectedCandidates.length} To My Stores`}
+            </button>
+          ) : (
+            <p className="push-copy">Ask an Admin to add discovered stores to the shared private store list.</p>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -3609,7 +3884,9 @@ function StoresPanel({
   return (
     <>
       <PanelHeader title="Local Store Predictions" />
+      <StoreCoveragePanel dashboard={dashboard} />
       <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+      <StoreDiscoveryPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
       <section className="form-panel">
         <div className="edit-card-heading">
           <div>
@@ -3664,11 +3941,7 @@ function StoresPanel({
             )
           }
         >
-          <SelectInput
-            name="storeId"
-            label="Store"
-            options={dashboard.stores.map((store) => ({ value: store.id, label: store.storeName }))}
-          />
+          <StoreSelectInput name="storeId" label="Store" stores={dashboard.stores} />
           <TextInput name="productSeen" label="Product seen" placeholder="Booster Bundle" required />
           <SelectInput name="resultType" label="Result" options={storeVisitResults.map(optionFromString)} />
           <TextInput name="seenAt" label="Date/time" type="datetime-local" defaultValue={todayLocalInput()} required />
@@ -3743,7 +4016,7 @@ function StoresPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
-          sample={`retailer,storeName,address,city,state,zone,latitude,longitude,typicalRestockDays,typicalRestockTimeWindow,vendorNotes,confidenceScore,notes\nTarget,Target Midtown Miami,3401 N Miami Ave,Miami,FL,MIAMI,25.8072,-80.1937,"Tuesday,Friday",8:00 AM - 11:00 AM,Card aisle after front lanes,70,Manual visit log only`}
+          sample={`retailer,storeName,address,city,state,zip,latitude,longitude,phone,notes\nTarget,Target Midtown Miami,3401 N Miami Ave,Miami,FL,33127,25.8072,-80.1937,+13055551212,Manual visit log only\nWalmart,Walmart Doral,8651 NW 13th Ter,Doral,FL,33126,25.7855,-80.337,+13055551213,Check card aisle and front collectibles shelf`}
         />
       ) : null}
       {isAdmin ? (
@@ -3944,12 +4217,7 @@ function EditableSighting({
         <span className="chip muted">{dateTime(sighting.seenAt)}</span>
       </div>
       <div className="form-grid">
-        <SelectInput
-          name="storeId"
-          label="Store"
-          defaultValue={sighting.storeId}
-          options={stores.map((store) => ({ value: store.id, label: store.storeName }))}
-        />
+        <StoreSelectInput name="storeId" label="Store" stores={stores} defaultValue={sighting.storeId} />
         <TextInput name="productSeen" label="Product seen" defaultValue={sighting.productSeen} required />
         <SelectInput
           name="resultType"
@@ -6505,6 +6773,52 @@ function SelectInput({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function StoreSelectInput({
+  name,
+  label,
+  stores,
+  defaultValue
+}: {
+  name: string;
+  label: string;
+  stores: StoreDTO[];
+  defaultValue?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const sortedStores = useMemo(() => sortedStoreOptions(stores), [stores]);
+  const filteredStores = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return sortedStores;
+    return sortedStores.filter((store) => storeSearchText(store).includes(normalized));
+  }, [query, sortedStores]);
+  const selectedStore = defaultValue ? sortedStores.find((store) => store.id === defaultValue) : null;
+  const visibleStores =
+    selectedStore && !filteredStores.some((store) => store.id === selectedStore.id)
+      ? [selectedStore].concat(filteredStores)
+      : filteredStores;
+
+  return (
+    <label className="store-select-field">
+      {label}
+      <input
+        aria-label={`${label} search`}
+        placeholder="Search saved stores by name, city, retailer, or distance"
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.currentTarget.value)}
+      />
+      <select name={name} defaultValue={defaultValue}>
+        {visibleStores.map((store) => (
+          <option key={store.id} value={store.id}>
+            {storeOptionLabel(store)}
+          </option>
+        ))}
+      </select>
+      <small>{visibleStores.length} saved store{visibleStores.length === 1 ? "" : "s"} shown, favorites and closest first.</small>
     </label>
   );
 }

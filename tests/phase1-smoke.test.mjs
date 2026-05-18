@@ -797,3 +797,38 @@ test("UI real retail flow improvements exist", () => {
   assert.match(readme, /Zone And Field Mode Setup/);
   assert.match(readme, /Admin.*button/);
 });
+
+test("store discovery and coverage expansion exists", () => {
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of [
+    "Store Coverage",
+    "Find Nearby Stores",
+    "Expand Store Coverage",
+    "Add To My Stores",
+    "Use Browser Location",
+    "Search saved stores by name",
+    "Manual mode",
+    "Google Places"
+  ]) {
+    assert.match(app, new RegExp(phrase), `missing store discovery UI phrase ${phrase}`);
+  }
+
+  const discoveryRoute = readFileSync(join(root, "src", "app", "api", "radar", "stores", "discovery", "route.ts"), "utf8");
+  const addRoute = readFileSync(join(root, "src", "app", "api", "radar", "stores", "discovery", "add", "route.ts"), "utf8");
+  const discoveryService = readFileSync(join(root, "src", "lib", "store-discovery.ts"), "utf8");
+  const validation = readFileSync(join(root, "src", "lib", "validation.ts"), "utf8");
+
+  assert.match(discoveryRoute, /storeDiscoverySearchSchema/);
+  assert.match(addRoute, /storeDiscoveryAddSchema/);
+  assert.match(discoveryService, /GOOGLE_PLACES_API_KEY/);
+  assert.match(discoveryService, /nearbysearch\/json/);
+  assert.match(discoveryService, /place\/details\/json/);
+  assert.match(discoveryService, /duplicateReason/);
+  assert.match(validation, /storeDiscoverySearchSchema/);
+  assert.match(validation, /storeDiscoveryAddSchema/);
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /Store Discovery/);
+  assert.match(readme, /GOOGLE_PLACES_API_KEY/);
+  assert.match(readme, /retailer,storeName,address,city,state,zip,latitude,longitude,phone,notes/);
+});

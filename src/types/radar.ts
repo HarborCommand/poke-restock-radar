@@ -252,6 +252,39 @@ export type StoreDTO = {
   prediction: StorePredictionDTO;
 };
 
+export type StoreDiscoveryCandidateDTO = {
+  id: string;
+  retailerId: string;
+  retailerName: string;
+  storeName: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  phone: string | null;
+  placeId: string | null;
+  googleMapsUrl: string | null;
+  distanceMiles: number | null;
+  duplicate: boolean;
+  duplicateReason: string | null;
+  source: "google_places" | "manual";
+};
+
+export type StoreDiscoveryResponseDTO = {
+  mode: "google_places" | "manual";
+  configured: boolean;
+  origin: {
+    label: string;
+    latitude: number | null;
+    longitude: number | null;
+  };
+  radiusMiles: number;
+  message: string;
+  candidates: StoreDiscoveryCandidateDTO[];
+};
+
 export type SightingDTO = {
   id: string;
   storeId: string;
