@@ -136,6 +136,16 @@ function formatSourceQuality(value: string) {
   return "eBay sold";
 }
 
+function dataSourceLabel(value: string | null | undefined) {
+  const normalized = (value || "").toLowerCase();
+  if (normalized.includes("ebay")) return "eBay";
+  if (normalized.includes("pricecharting")) return "PriceCharting";
+  if (normalized.includes("tcgplayer")) return "TCGPlayer";
+  if (normalized.includes("retail")) return "Retail Monitor";
+  if (normalized.includes("manual")) return "Manual";
+  return "Unknown";
+}
+
 function money(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "TBD";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -143,22 +153,28 @@ function money(value: number | null | undefined) {
 
 function shortDate(value: string | null | undefined) {
   if (!value) return "Not set";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
 }
 
 function dateTime(value: string | null | undefined) {
   if (!value) return "Not set";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit"
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function relativeTime(value: string | null | undefined) {
   if (!value) return "Not scheduled";
-  const delta = new Date(value).getTime() - Date.now();
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return "Unknown";
+  const delta = time - Date.now();
   const abs = Math.abs(delta);
   const minutes = Math.round(abs / 60000);
   if (minutes < 1) return delta >= 0 ? "now" : "just now";
@@ -269,6 +285,18 @@ function storeNeedsCoordinates(store: StoreDTO) {
 function productImageRank(product: ProductDTO) {
   const verified = productReadyForAlert(product);
   return (product.imageUrl ? 100 : 0) + (verified ? 40 : 0) + (product.priorityScore?.score ?? 0);
+}
+
+function cardFreshnessLabel(card: CardDTO) {
+  if (!card.compCount) return "Not collected yet";
+  if (!card.lastCompAt) return "Comp date unknown";
+  return `Last comp ${shortDate(card.lastCompAt)}`;
+}
+
+function cardConfidenceTone(card: CardDTO) {
+  if (card.compConfidenceScore >= 70) return "good";
+  if (card.compConfidenceScore >= 35) return "watch";
+  return "muted";
 }
 
 function browserPosition(): Promise<GeolocationPosition> {
@@ -1483,7 +1511,7 @@ function TodayPlanPanel({
             <TextInput name="cost" label="Cost" type="number" min="0" step="0.01" required />
             <TextInput name="quantity" label="Quantity" type="number" min="1" defaultValue="1" required />
             <TextInput name="source" label="Source" placeholder="Target, Pokemon Center, eBay" required />
-            <TextInput name="purchasedAt" label="Date" type="date" defaultValue={toDateInput(new Date().toISOString())} required />
+            <TextInput name="purchasedAt" label="Purchase date" type="date" required />
             <TextareaInput name="expectedPlan" label="Expected resale/grading plan" wide />
             <button className="primary-action" disabled={busy} type="submit">
               <Save size={16} />
@@ -1826,9 +1854,9 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
                 <div className="monitor-meta">
                   <span>
                     <Clock size={13} />
-                    Last {relativeTime(product.lastCheckedAt)}
+                    Last monitor {product.lastSuccessfulCheckedAt ? relativeTime(product.lastSuccessfulCheckedAt) : "Not collected yet"}
                   </span>
-                  <span>Last good {relativeTime(product.lastSuccessfulCheckedAt)}</span>
+                  <span>Last verified by monitor {product.lastSuccessfulCheckedAt ? dateTime(product.lastSuccessfulCheckedAt) : "Not collected yet"}</span>
                   <span>
                     <Activity size={13} />
                     Next {relativeTime(product.nextCheckAt)}
@@ -1839,7 +1867,7 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
                   {product.upc ? <span>UPC {product.upc}</span> : null}
                   {product.dpci ? <span>DPCI {product.dpci}</span> : null}
                   {product.retailerProductId ? <span>Retailer ID {product.retailerProductId}</span> : null}
-                  {product.verifiedAt ? <span>Verified {relativeTime(product.verifiedAt)}</span> : null}
+                  {product.verifiedAt ? <span>Exact link verified {relativeTime(product.verifiedAt)}</span> : null}
                   {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
                   {product.requiredWords ? <span>Required: {product.requiredWords}</span> : null}
                   {product.ignoreWords ? <span>Ignore: {product.ignoreWords}</span> : null}
@@ -1856,14 +1884,20 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
 }
 
 function ProductImage({ product, verified }: { product: ProductDTO; verified: boolean }) {
-  const imageLabel = product.imageUrl
-    ? verified
-      ? "Image from verified exact page"
-      : "Image saved; verify exact link"
-    : "Verify link to load matching image";
+  const [imageFailure, setImageFailure] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
+
+  const imageFailed = imageFailure.failed && imageFailure.url === product.imageUrl;
+  const showVerifiedImage = verified && Boolean(product.imageUrl) && !imageFailed;
+  const retailerInitials = product.retailerName
+    .split(/\s+/)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 3)
+    .toUpperCase();
+
   return (
-    <div className="product-image-frame">
-      {product.imageUrl ? (
+    <div className={showVerifiedImage ? "product-image-frame has-image" : "product-image-frame"}>
+      {showVerifiedImage && product.imageUrl ? (
         <Image
           alt={`${product.name} product image`}
           fill
@@ -1871,18 +1905,26 @@ function ProductImage({ product, verified }: { product: ProductDTO; verified: bo
           sizes="(max-width: 560px) 100vw, 210px"
           unoptimized
           referrerPolicy="no-referrer"
+          data-verified-product-image="true"
           src={product.imageUrl}
           onError={(event) => {
             event.currentTarget.hidden = true;
-            event.currentTarget.nextElementSibling?.removeAttribute("hidden");
+            setImageFailure({ url: product.imageUrl, failed: true });
+          }}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (image.naturalWidth < 32 || image.naturalHeight < 32) {
+              image.hidden = true;
+              setImageFailure({ url: product.imageUrl, failed: true });
+            }
           }}
         />
       ) : null}
-      <div className="product-image-empty" hidden={Boolean(product.imageUrl)}>
+      <div className="product-image-empty" hidden={showVerifiedImage}>
         <PackageSearch size={22} />
-        <span>{product.retailerName.slice(0, 2)}</span>
+        <span>{retailerInitials || "TCG"}</span>
+        <small>Image unavailable</small>
       </div>
-      <small className={verified ? "product-image-badge good" : "product-image-badge"}>{imageLabel}</small>
     </div>
   );
 }
@@ -2055,10 +2097,10 @@ function CardStack({ cards, compact = false }: { cards: CardDTO[]; compact?: boo
   }
 
   return (
-    <div className={compact ? "stack compact" : "stack"}>
+    <div className={compact ? "card-opportunity-list compact" : "card-opportunity-list"}>
       {cards.map((card) => (
-        <article className="data-card" id={`card-${card.id}`} key={card.id}>
-          <div className="card-main">
+        <article className="card-opportunity-row" id={`card-${card.id}`} key={card.id}>
+          <div className="card-opportunity-main">
             <div className="avatar">
               <Sparkles size={16} />
             </div>
@@ -2068,18 +2110,23 @@ function CardStack({ cards, compact = false }: { cards: CardDTO[]; compact?: boo
                 Raw {money(card.rawAveragePrice)} - PSA 9 profit {money(card.psa9EstimatedProfit)} - PSA 10 upside{" "}
                 {money(card.psa10EstimatedProfit)}
               </p>
+              <small>
+                {dataSourceLabel(card.dataSource)} - {cardFreshnessLabel(card)}
+              </small>
             </div>
           </div>
-          <div className="card-actions">
+          <div className="card-opportunity-actions">
             <span className={`chip ${statusTone(card.rating)}`}>{card.rating}</span>
             <span className="chip muted">Score {card.top10Score}</span>
-            <span className="chip muted">Confidence {card.compConfidenceScore}%</span>
+            <span className={`chip ${cardConfidenceTone(card)}`}>Confidence {card.compConfidenceScore}%</span>
             <span className="chip muted">Buy limit {money(card.maxRawBuyPrice)}</span>
           </div>
           {!compact ? (
             <div className="monitor-meta">
               <span>{card.setName} #{card.cardNumber}</span>
               <span>{card.compCount} comps</span>
+              <span>Source {dataSourceLabel(card.dataSource)}</span>
+              <span>{cardFreshnessLabel(card)}</span>
               <span>BGS 10 profit {money(card.bgs10EstimatedProfit)}</span>
               <span>Black Label profit {money(card.blackLabelEstimatedProfit)}</span>
             </div>
@@ -3991,7 +4038,7 @@ function CardsPanel({
         <span className="chip watch">Low pop</span>
         <span className="chip watch">New releases</span>
       </div>
-      <Top10Poster cards={dashboard.top10Watchlist} generatedAt={new Date().toISOString()} />
+      <Top10Poster cards={dashboard.top10Watchlist} generatedAt={dashboard.investmentReports[0]?.generatedAt ?? null} />
       <WeeklyReportPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
       <section className="form-panel">
         <div className="edit-card-heading">
@@ -4173,6 +4220,7 @@ function CardsPanel({
             />
             <SelectInput name="era" label="Era" options={eras.filter((era) => era !== "ALL").map(optionFromString)} />
             <TextInput name="dataSource" label="Data source" defaultValue="Manual eBay sold comps" wide />
+            <TextInput name="lastRefreshed" label="Data collected date" type="date" min="2020-01-01" required />
             <label className="checkbox-label">
               <input name="lowPop" type="checkbox" value="true" />
               Low pop
@@ -4360,7 +4408,7 @@ function ManualCompForm({ busy, busyLabel, submit }: { busy: boolean; busyLabel:
           }))}
         />
         <TextInput name="salePrice" label="Sale price" type="number" min="0" max="100000" step="0.01" required />
-        <TextInput name="soldAt" label="Sale date" type="date" min="2020-01-01" defaultValue={toDateInput(new Date().toISOString())} required />
+        <TextInput name="soldAt" label="Sale date" type="date" min="2020-01-01" required />
         <TextInput name="sourceUrl" label="Source URL" type="url" placeholder="https://www.ebay.com/itm/..." />
         <div className="form-step wide-field">
           <span>Step 3</span>
@@ -4427,14 +4475,14 @@ function RecentCompsTable({ comps }: { comps: CardCompSaleDTO[] }) {
   );
 }
 
-function Top10Poster({ cards, generatedAt }: { cards: CardDTO[]; generatedAt: string }) {
+function Top10Poster({ cards, generatedAt }: { cards: CardDTO[]; generatedAt: string | null }) {
   return (
     <section className="poster-panel" id="top10-poster">
       <div className="poster-header">
         <div>
           <p className="eyeline">Weekly Top 10</p>
           <h2>Raw-to-Grade Watchlist</h2>
-          <span>Generated {shortDate(generatedAt)}</span>
+          <span>{generatedAt ? `Last report generated ${shortDate(generatedAt)}` : "Live manual data - report not generated yet"}</span>
         </div>
         <button className="mini-action solid print-control" type="button" onClick={() => window.print()}>
           <Printer size={14} />
@@ -4442,28 +4490,37 @@ function Top10Poster({ cards, generatedAt }: { cards: CardDTO[]; generatedAt: st
         </button>
       </div>
       {cards.length ? (
-        <div className="poster-grid">
+        <div className="top10-table" role="table" aria-label="Top 10 raw-to-grade cards">
+          <div className="top10-row top10-head" role="row">
+            <span>Card</span>
+            <span>Raw</span>
+            <span>PSA 9</span>
+            <span>PSA 10</span>
+            <span>Limit</span>
+            <span>Rating</span>
+          </div>
           {cards.map((card, index) => (
-            <article className="poster-row" key={card.id}>
-              <div className="poster-rank">
-                <Trophy size={16} />
-                {index + 1}
+            <article className="top10-row" key={card.id} role="row">
+              <div className="top10-card-cell" role="cell">
+                <span className="top10-rank">{index + 1}</span>
+                <div>
+                  <strong>{card.cardName}</strong>
+                  <small>
+                    {card.setName} #{card.cardNumber} - {dataSourceLabel(card.dataSource)} - {cardFreshnessLabel(card)}
+                  </small>
+                </div>
               </div>
-              <div className="poster-card-name">
-                <strong>{card.cardName}</strong>
-                <span>
-                  {card.setName} #{card.cardNumber}
-                </span>
-              </div>
-              <span>Raw {money(card.rawAveragePrice)}</span>
-              <span>
-                PSA 9 {money(card.psa9AverageSalePrice)} / {money(card.psa9EstimatedProfit)}
+              <span className="top10-metric" role="cell" data-label="Raw">{money(card.rawAveragePrice)}</span>
+              <span className="top10-metric" role="cell" data-label="PSA 9">
+                {money(card.psa9AverageSalePrice)}
+                <small>{money(card.psa9EstimatedProfit)} profit</small>
               </span>
-              <span>
-                PSA 10 {money(card.psa10AverageSalePrice)} / {money(card.psa10EstimatedProfit)}
+              <span className="top10-metric" role="cell" data-label="PSA 10">
+                {money(card.psa10AverageSalePrice)}
+                <small>{money(card.psa10EstimatedProfit)} upside</small>
               </span>
-              <span>Limit {money(card.maxRawBuyPrice)}</span>
-              <span className={`chip ${statusTone(card.rating)}`}>{card.rating}</span>
+              <span className="top10-metric" role="cell" data-label="Limit">{money(card.maxRawBuyPrice)}</span>
+              <span className={`chip compact-chip ${statusTone(card.rating)}`} role="cell">{card.rating}</span>
             </article>
           ))}
         </div>
@@ -4628,24 +4685,21 @@ function ReportCategory({ title, items }: { title: string; items: InvestmentRepo
 
 function ReportCardLine({ item, rank }: { item: InvestmentReportItemDTO; rank: number }) {
   return (
-    <article className="poster-row report-row">
-      <div className="poster-rank">
-        <Trophy size={16} />
-        {rank}
+    <article className="top10-row report-row">
+      <div className="top10-card-cell">
+        <span className="top10-rank">{rank}</span>
+        <div>
+          <strong>{item.cardName}</strong>
+          <small>
+            {item.setName} #{item.cardNumber} - Confidence {item.compConfidenceScore}%
+          </small>
+        </div>
       </div>
-      <div className="poster-card-name">
-        <strong>{item.cardName}</strong>
-        <span>
-          {item.setName} #{item.cardNumber}
-        </span>
-      </div>
-      <span>Raw {money(item.rawAveragePrice)}</span>
-      <span>PSA 9 {money(item.psa9EstimatedProfit)}</span>
-      <span>PSA 10 {money(item.psa10EstimatedProfit)}</span>
-      <span>BGS 10 {money(item.bgs10EstimatedProfit)}</span>
-      <span>Limit {money(item.maxRawBuyPrice)}</span>
-      <span>Confidence {item.compConfidenceScore}%</span>
-      <span className={`chip ${statusTone(item.rating)}`}>{item.rating}</span>
+      <span className="top10-metric" data-label="Raw">{money(item.rawAveragePrice)}</span>
+      <span className="top10-metric" data-label="PSA 9">{money(item.psa9EstimatedProfit)}</span>
+      <span className="top10-metric" data-label="PSA 10">{money(item.psa10EstimatedProfit)}</span>
+      <span className="top10-metric" data-label="Limit">{money(item.maxRawBuyPrice)}</span>
+      <span className={`chip compact-chip ${statusTone(item.rating)}`}>{item.rating}</span>
       <p className="reason-text">{item.reason}</p>
     </article>
   );
@@ -4799,7 +4853,7 @@ function EditableCard({
         />
         <SelectInput name="era" label="Era" defaultValue={card.era} options={eras.filter((era) => era !== "ALL").map(optionFromString)} />
         <SelectInput name="rating" label="Rating" defaultValue={card.rating} options={cardRatings.map(optionFromString)} />
-        <TextInput name="lastRefreshed" label="Last refreshed" type="date" min="2020-01-01" defaultValue={toDateInput(card.lastRefreshed)} />
+        <TextInput name="lastRefreshed" label="Data collected date" type="date" min="2020-01-01" defaultValue={toDateInput(card.lastRefreshed)} required />
         <TextInput name="dataSource" label="Data source" defaultValue={card.dataSource} wide required />
         <label className="checkbox-label">
           <input name="lowPop" type="checkbox" value="true" defaultChecked={card.lowPop} />

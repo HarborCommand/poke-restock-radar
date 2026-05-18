@@ -1871,6 +1871,45 @@ function extractProductImage(html: string, finalUrl: string) {
   return absoluteProductImageUrl(publicCdnImage, finalUrl);
 }
 
+async function validateProductImageUrl(value: string | null) {
+  if (!value) return null;
+  try {
+    const response = await fetch(value, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(6000),
+      headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.6" }
+    });
+    const type = response.headers.get("content-type") || "";
+    const length = Number(response.headers.get("content-length") || "0");
+    if (response.ok && type.toLowerCase().startsWith("image/") && (!length || length > 128)) {
+      return response.url || value;
+    }
+  } catch {
+    // Some retail CDNs reject HEAD; fall back to a small GET below.
+  }
+
+  try {
+    const response = await fetch(value, {
+      method: "GET",
+      redirect: "follow",
+      signal: AbortSignal.timeout(6000),
+      headers: {
+        Accept: "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.6",
+        Range: "bytes=0-2047"
+      }
+    });
+    const type = response.headers.get("content-type") || "";
+    if ((response.ok || response.status === 206) && type.toLowerCase().startsWith("image/")) {
+      return response.url || value;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 function detectStockCue(html: string, retailerName: string) {
   const template = retailerTemplates.find((item) => item.retailerName === retailerName);
   const normalized = html.toLowerCase();
@@ -1929,12 +1968,14 @@ export async function verifyProductLink(productId: string) {
       titleText,
       httpStatus: response.status
     });
+    const verifiedProductImageUrl =
+      identity.readyForAlert && !redirectedAway ? await validateProductImageUrl(productImageUrl) : null;
     const verificationStatus = redirectedAway ? "POSSIBLE_MISMATCH" : identity.verificationStatus;
     const notes = [
       `HTTP ${response.status}`,
       `Final URL ${finalUrl}`,
       titleText ? `Product title text: ${titleText}` : "Product title text not found",
-      productImageUrl ? `Product image found from exact page` : "Product image not found",
+      verifiedProductImageUrl ? `Product image validated from exact page` : "Product image unavailable or not valid",
       visiblePrice ? `Visible price cue: ${visiblePrice}` : "Visible price cue not found",
       stockCue ? `Stock cue: ${stockCue}` : "Stock cue not found",
       `Response ${Date.now() - started}ms`,
@@ -1954,7 +1995,7 @@ export async function verifyProductLink(productId: string) {
         verifiedAt: new Date(),
         verifiedFinalUrl: finalUrl,
         verificationNotes: notes,
-        imageUrl: identity.readyForAlert && !redirectedAway ? productImageUrl || product.imageUrl : product.imageUrl,
+        imageUrl: identity.readyForAlert && !redirectedAway ? verifiedProductImageUrl : product.imageUrl,
         lastCheckedAt: new Date(),
         lastMonitorResult: `Product link verification: ${verificationStatus}. ${notes}`
       },
@@ -2806,7 +2847,7 @@ async function recomputeCardFromComps(
       rating: computed.rating,
       dataSource: compCount ? "Manual sold comps" : card.dataSource,
       lastCompAt: card.compSales[0]?.soldAt ?? card.lastCompAt,
-      lastRefreshed: new Date()
+      lastRefreshed: card.compSales[0]?.soldAt ?? card.lastRefreshed
     },
     include: cardInclude
   });
@@ -3039,7 +3080,7 @@ export async function createCardCompSale(
         compConfidenceScore: 0,
         rating: "WATCH",
         dataSource: "Manual sold comps",
-        lastRefreshed: new Date(),
+        lastRefreshed: input.soldAt,
         notes: input.conditionNotes,
         characterName: input.characterName,
         era: input.era ?? "MODERN",

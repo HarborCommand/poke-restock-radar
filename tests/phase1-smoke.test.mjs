@@ -275,9 +275,29 @@ test("dashboard compact cards stay readable instead of narrow columns", () => {
   assert.match(css, /font-size:\s*clamp\(1\.45rem,\s*6vw,\s*2\.75rem\)/);
 
   const viewportQa = readFileSync(join(root, "scripts", "viewport-qa.ts"), "utf8");
-  for (const phrase of ["mobile-390", "tablet-768", "desktop-1440", "bodyScrollWidth", "overflowingElements", "imageLeaks"]) {
+  for (const phrase of ["mobile-390", "tablet-768", "desktop-1440", "Cards", "bodyScrollWidth", "overflowingElements", "imageLeaks", "brokenImages"]) {
     assert.match(viewportQa, new RegExp(phrase), `missing viewport QA phrase ${phrase}`);
   }
+});
+
+test("card report and product image UI avoids fake dates and broken placeholders", () => {
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  const css = readFileSync(join(root, "src", "app", "globals.css"), "utf8");
+  const service = readFileSync(join(root, "src", "lib", "radar-service.ts"), "utf8");
+  const validation = readFileSync(join(root, "src", "lib", "validation.ts"), "utf8");
+
+  assert.match(app, /top10-table/);
+  assert.match(app, /Live manual data - report not generated yet/);
+  assert.equal(app.includes("generatedAt={new Date().toISOString()}"), false);
+  assert.equal(app.includes('defaultValue={toDateInput(new Date().toISOString())}'), false);
+  assert.match(app, /Image unavailable/);
+  assert.equal(app.includes("Image from verified exact page"), false);
+  assert.match(css, /\.top10-row\s*\{[^}]*grid-template-columns:\s*minmax\(220px,\s*1\.6fr\)/s);
+  assert.match(css, /\.top10-metric::before/s);
+  assert.match(css, /\.card-opportunity-row/s);
+  assert.match(service, /validateProductImageUrl/);
+  assert.match(service, /lastRefreshed:\s*card\.compSales\[0\]\?\.soldAt/);
+  assert.match(validation, /lastRefreshed:\s*boundedDate,/);
 });
 
 test("Auth hardening and password reset flow pieces exist", () => {
@@ -711,7 +731,7 @@ test("UI real retail flow improvements exist", () => {
   assert.match(service, /GameStop Westland Mall Hialeah/);
   assert.match(service, /verifyProductLink/);
   assert.match(service, /Product title text/);
-  assert.match(service, /Product image found from exact page/);
+  assert.match(service, /Product image validated from exact page/);
   assert.match(service, /matchProductIdentity/);
   assert.match(service, /distanceMilesBetween/);
 

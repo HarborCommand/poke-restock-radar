@@ -361,7 +361,7 @@ export const cardCreateSchema = z.object({
   minimumProfitTarget: requiredMoney.default(20),
   rating: ratingSchema.optional(),
   dataSource: z.string().trim().min(2).default("Manual entry"),
-  lastRefreshed: boundedDate.default(() => new Date()),
+  lastRefreshed: boundedDate,
   notes: optionalTrimmed,
   characterName: optionalTrimmed,
   era: eraSchema.default("MODERN"),

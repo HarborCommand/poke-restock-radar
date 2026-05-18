@@ -44,7 +44,7 @@ const viewports = [
   { label: "tablet-768", width: 768, height: 1024 },
   { label: "desktop-1440", width: 1440, height: 960 }
 ];
-const tabs = ["Dashboard", "Products", "Stores", "Field"] as const;
+const tabs = ["Dashboard", "Products", "Stores", "Field", "Cards"] as const;
 
 if (!email || !password) {
   throw new Error("Set VIEWPORT_QA_EMAIL/VIEWPORT_QA_PASSWORD or FINAL_SMOKE_EMAIL/FINAL_SMOKE_PASSWORD.");
@@ -170,13 +170,25 @@ async function measure(page: Page) {
           : null;
       })
       .filter(Boolean);
+    const brokenImages = Array.from(document.images)
+      .filter((image) => {
+        const box = image.getBoundingClientRect();
+        const style = window.getComputedStyle(image);
+        return style.display !== "none" && box.width > 0 && box.height > 0 && image.complete && image.naturalWidth === 0;
+      })
+      .map((image) => image.currentSrc || image.src)
+      .slice(0, 8);
+    const pageText = document.body.textContent || "";
     return {
       viewportWidth,
       bodyScrollWidth,
       documentScrollWidth,
       overflowingElements,
       imageLeaks,
-      productImageFrames: document.querySelectorAll(".product-image-frame").length
+      brokenImages,
+      productImageFrames: document.querySelectorAll(".product-image-frame").length,
+      oldPlaceholderImageText: pageText.includes("Image from verified exact page") || pageText.includes("Image saved; verify exact link"),
+      fabricatedTop10Date: pageText.includes("Generated Invalid Date")
     };
   });
 }
@@ -192,7 +204,13 @@ async function runViewport(browser: Browser, viewport: (typeof viewports)[number
       await page.screenshot({ path: screenshot, fullPage: false });
       const horizontalOverflow =
         result.bodyScrollWidth > result.viewportWidth || result.documentScrollWidth > result.viewportWidth;
-      const passed = !horizontalOverflow && result.overflowingElements.length === 0 && result.imageLeaks.length === 0;
+      const passed =
+        !horizontalOverflow &&
+        result.overflowingElements.length === 0 &&
+        result.imageLeaks.length === 0 &&
+        result.brokenImages.length === 0 &&
+        !result.oldPlaceholderImageText &&
+        !result.fabricatedTop10Date;
       checks.push({ tab, passed, screenshot, ...result });
       if (!passed) {
         throw new Error(`${viewport.label} ${tab} layout overflow: ${JSON.stringify(result)}`);
