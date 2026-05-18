@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
+import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, testEbayConnection } from "@/lib/ebay";
@@ -1953,13 +1954,6 @@ function extractVisiblePrice(html: string) {
   return match?.[0].replace(/\s+/g, "") ?? null;
 }
 
-function extractVisiblePriceValue(html: string) {
-  const value = extractVisiblePrice(html);
-  if (!value) return null;
-  const parsed = Number(value.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function stockStatusFromCue(cue: string | null): ProductStatus | null {
   if (!cue) return null;
   const normalized = cue.toLowerCase();
@@ -2107,11 +2101,28 @@ export async function verifyProductLink(productId: string) {
     const finalUrl = response.url || product.url;
     const sameRetailerHost = normalizeUrlHost(finalUrl) === normalizeUrlHost(product.url);
     const titleText = extractHtmlTitle(html);
-    const visiblePrice = extractVisiblePrice(html);
-    const visiblePriceValue = extractVisiblePriceValue(html);
-    const productImageUrl = extractProductImage(html, finalUrl);
+    const targetAvailability = product.retailer.name.toLowerCase().includes("target") ? detectTargetAvailability(html) : null;
+    const targetApiSignal = product.retailer.name.toLowerCase().includes("target")
+      ? await fetchTargetRedskyLiveSignal({
+          html,
+          finalUrl,
+          retailerProductId: product.retailerProductId,
+          userAgent: "PokeRestockRadar/0.4 product-link-verifier (+manual-checkout-only)",
+          fallbackAvailability: targetAvailability ?? {
+            status: null,
+            stockText: null,
+            addToCartEnabled: null,
+            confidenceScore: 0,
+            reason: "Target page availability was not parsed.",
+            detectedWords: []
+          }
+        }).catch(() => null)
+      : null;
+    const visiblePriceValue = targetApiSignal?.price ?? detectRetailerPrice(html, product.retailer.name);
+    const visiblePrice = visiblePriceValue === null ? extractVisiblePrice(html) : `$${visiblePriceValue.toFixed(2)}`;
+    const productImageUrl = targetApiSignal?.imageUrl || extractProductImage(html, finalUrl);
     const stockCue = detectStockCue(html, product.retailer.name);
-    const liveStockStatus = stockStatusFromCue(stockCue);
+    const liveStockStatus = targetApiSignal?.availability.status ?? targetAvailability?.status ?? stockStatusFromCue(stockCue);
     const redirectedAway = !sameRetailerHost;
     const blockedType = isBlockedRetailPage(html, response.status);
     const identity = matchProductIdentity({
@@ -2150,7 +2161,26 @@ export async function verifyProductLink(productId: string) {
       titleText ? `Product title text: ${titleText}` : "Product title text not found",
       verifiedProductImageUrl ? `Product image validated from exact page` : "Product image unavailable or not valid",
       visiblePrice ? `Visible price cue: ${visiblePrice}` : "Visible price cue not found",
-      stockCue ? `Stock cue: ${stockCue}` : "Stock cue not found",
+      targetApiSignal?.availability.stockText
+        ? `Stock cue: ${targetApiSignal.availability.stockText}`
+        : targetAvailability?.stockText
+        ? `Stock cue: ${targetAvailability.stockText}`
+        : stockCue
+        ? `Stock cue: ${stockCue}`
+        : "Stock cue not found",
+      targetApiSignal || targetAvailability
+        ? `Add-to-cart enabled: ${
+            (targetApiSignal?.availability.addToCartEnabled ?? targetAvailability?.addToCartEnabled) === null
+              ? "unknown"
+              : targetApiSignal?.availability.addToCartEnabled ?? targetAvailability?.addToCartEnabled
+          }`
+        : null,
+      targetApiSignal?.availability.reason
+        ? `Availability reason: ${targetApiSignal.availability.reason}`
+        : targetAvailability?.reason
+        ? `Availability reason: ${targetAvailability.reason}`
+        : null,
+      targetApiSignal?.source ? `Live data source: ${targetApiSignal.source}` : null,
       `Response ${Date.now() - started}ms`,
       blockedType ? `Blocked page signal: ${blockedType}` : null,
       `Expected title keywords: ${identity.titleKeywords.join(", ") || "none"}`,

@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { exactProductActionUrl, matchProductIdentity, type ProductIdentityMatch } from "@/lib/product-identity";
+import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { templateForRetailerName, type RetailerTemplate } from "@/lib/retailer-templates";
 import type { Priority, ProductStatus } from "@/types/radar";
 
 type RunType = "MANUAL_PRODUCT" | "MANUAL_ALL" | "DUE_JOB";
 type MonitorLogStatus = "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR" | "BLOCKED" | "PENDING_CONFIRMATION";
 type BlockedType = "PAGE_BLOCKED" | "CAPTCHA_ROBOT_PAGE";
+const MONITOR_USER_AGENT = "PokeRestockRadar/0.3 private-safe-monitor (+manual-checkout-only)";
 
 type Detection = {
   status: ProductStatus | null;
@@ -21,6 +23,8 @@ type Detection = {
   confidenceScore: number;
   reason: string;
   detectedWords: string[];
+  parsedStockText: string | null;
+  addToCartEnabled: boolean | null;
   blockedType: BlockedType | null;
   identityMatch: ProductIdentityMatch;
 };
@@ -109,24 +113,6 @@ function wordHits(text: string, words: string[]) {
   return words.filter((word) => text.includes(word.toLowerCase()));
 }
 
-function detectPrice(html: string) {
-  const candidates = [
-    /"price"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
-    /"salePrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
-    /"current_retail"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
-    /\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/
-  ];
-
-  for (const regex of candidates) {
-    const match = html.match(regex);
-    if (!match?.[1]) continue;
-    const value = Number(match[1].replaceAll(",", ""));
-    if (Number.isFinite(value) && value >= 0 && value <= 100000) return value;
-  }
-
-  return null;
-}
-
 function extractHtmlTitle(html: string) {
   const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1];
   const title = ogTitle || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || "";
@@ -186,7 +172,7 @@ function detectPublicStatus(input: {
   httpStatus: number;
   requiredWords?: string | null;
   ignoreWords?: string | null;
-}): Pick<Detection, "status" | "confidenceScore" | "reason" | "detectedWords" | "blockedType"> {
+}): Pick<Detection, "status" | "confidenceScore" | "reason" | "detectedWords" | "parsedStockText" | "addToCartEnabled" | "blockedType"> {
   const text = normalizedText(input.html);
   const template = templateForRetailerName(input.retailerName);
   const signals = mergeSignals(template);
@@ -228,6 +214,8 @@ function detectPublicStatus(input: {
         ? "Public page appears to be a captcha or robot verification page. No alert will be sent."
         : `Public page appears blocked or rate limited with HTTP ${input.httpStatus}. No alert will be sent.`,
       detectedWords,
+      parsedStockText: null,
+      addToCartEnabled: null,
       blockedType: captcha ? "CAPTCHA_ROBOT_PAGE" : "PAGE_BLOCKED"
     };
   }
@@ -238,6 +226,8 @@ function detectPublicStatus(input: {
       confidenceScore: 85,
       reason: `Public page returned HTTP ${input.httpStatus}; treating product as unavailable.`,
       detectedWords: uniqueWords([...detectedWords, `http ${input.httpStatus}`]),
+      parsedStockText: `HTTP ${input.httpStatus}`,
+      addToCartEnabled: false,
       blockedType: null
     };
   }
@@ -248,6 +238,8 @@ function detectPublicStatus(input: {
       confidenceScore: 15,
       reason: `Ignored product words matched: ${matches.ignored.join(", ")}. No restock status will be inferred.`,
       detectedWords,
+      parsedStockText: null,
+      addToCartEnabled: null,
       blockedType: null
     };
   }
@@ -257,6 +249,27 @@ function detectPublicStatus(input: {
   const hasCart = matches.addToCart.length > 0;
   const hasInStock = matches.inStock.length > 0;
   const hasPreorder = matches.preorder.length > 0;
+  const parsedStockText =
+    matches.soldOut[0] ||
+    matches.unavailable[0] ||
+    matches.preorder[0] ||
+    matches.inStock[0] ||
+    matches.addToCart[0] ||
+    null;
+
+  if (input.retailerName.toLowerCase().includes("target")) {
+    const target = detectTargetAvailability(input.html);
+    return withRequirementPenalty({
+      status: target.status,
+      confidenceScore: target.confidenceScore,
+      reason: target.reason,
+      detectedWords: uniqueWords([...detectedWords, ...target.detectedWords]),
+      parsedStockText: target.stockText,
+      addToCartEnabled: target.addToCartEnabled,
+      blockedType: null,
+      requiredMissing
+    });
+  }
 
   if (hasPreorder && (hasCart || !hasSoldOut)) {
     return withRequirementPenalty({
@@ -266,6 +279,8 @@ function detectPublicStatus(input: {
         ? "Retailer-specific preorder and add-to-cart words matched."
         : "Retailer-specific preorder words matched.",
       detectedWords,
+      parsedStockText: parsedStockText || "preorder",
+      addToCartEnabled: hasCart ? true : null,
       blockedType: null,
       requiredMissing
     });
@@ -276,6 +291,8 @@ function detectPublicStatus(input: {
       confidenceScore: 88,
       reason: "Retailer-specific add-to-cart words matched without sold-out words.",
       detectedWords,
+      parsedStockText: parsedStockText || "add to cart",
+      addToCartEnabled: true,
       blockedType: null,
       requiredMissing
     });
@@ -286,6 +303,8 @@ function detectPublicStatus(input: {
       confidenceScore: 82,
       reason: "Retailer-specific in-stock words matched without sold-out words.",
       detectedWords,
+      parsedStockText: parsedStockText || "in stock",
+      addToCartEnabled: null,
       blockedType: null,
       requiredMissing
     });
@@ -296,6 +315,8 @@ function detectPublicStatus(input: {
       confidenceScore: 55,
       reason: "Conflicting available and sold-out words matched; treating as sold out with low confidence.",
       detectedWords,
+      parsedStockText: parsedStockText || "sold out",
+      addToCartEnabled: false,
       blockedType: null,
       requiredMissing
     });
@@ -306,6 +327,8 @@ function detectPublicStatus(input: {
       confidenceScore: 80,
       reason: "Retailer-specific sold-out words matched.",
       detectedWords,
+      parsedStockText: parsedStockText || "sold out",
+      addToCartEnabled: false,
       blockedType: null,
       requiredMissing
     });
@@ -316,6 +339,8 @@ function detectPublicStatus(input: {
       confidenceScore: 76,
       reason: "Retailer-specific unavailable words matched.",
       detectedWords,
+      parsedStockText: parsedStockText || "unavailable",
+      addToCartEnabled: false,
       blockedType: null,
       requiredMissing
     });
@@ -328,6 +353,8 @@ function detectPublicStatus(input: {
       ? "Page changed cues were present, but no clear stock signal was found."
       : "No clear stock signal found on the public page.",
     detectedWords,
+    parsedStockText: null,
+    addToCartEnabled: null,
     blockedType: null
   };
 }
@@ -354,14 +381,14 @@ async function fetchPublicProductPage(input: {
     signal: AbortSignal.timeout(12000),
     headers: {
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "User-Agent": "PokeRestockRadar/0.3 private-safe-monitor (+manual-checkout-only)"
+      "User-Agent": MONITOR_USER_AGENT
     }
   });
 
   const body = await response.text();
   const responseTimeMs = Date.now() - started;
   const finalUrl = response.url || input.product.url;
-  const status = detectPublicStatus({
+  const pageStatus = detectPublicStatus({
     html: body,
     retailerName: input.retailerName,
     httpStatus: response.status,
@@ -369,10 +396,37 @@ async function fetchPublicProductPage(input: {
     ignoreWords: input.ignoreWords
   });
 
-  if (!response.ok && !status.blockedType && status.status !== "UNAVAILABLE") {
+  if (!response.ok && !pageStatus.blockedType && pageStatus.status !== "UNAVAILABLE") {
     throw new Error(`Public page returned HTTP ${response.status}`);
   }
   const titleText = extractHtmlTitle(body);
+  const targetApiSignal = input.retailerName.toLowerCase().includes("target")
+    ? await fetchTargetRedskyLiveSignal({
+        html: body,
+        finalUrl,
+        retailerProductId: input.product.retailerProductId,
+        userAgent: MONITOR_USER_AGENT,
+        fallbackAvailability: {
+          status: pageStatus.status,
+          stockText: pageStatus.parsedStockText,
+          addToCartEnabled: pageStatus.addToCartEnabled,
+          confidenceScore: pageStatus.confidenceScore,
+          reason: pageStatus.reason,
+          detectedWords: pageStatus.detectedWords
+        }
+      }).catch(() => null)
+    : null;
+  const status = targetApiSignal
+    ? {
+        ...pageStatus,
+        status: targetApiSignal.availability.status,
+        confidenceScore: targetApiSignal.availability.confidenceScore,
+        reason: targetApiSignal.availability.reason,
+        detectedWords: uniqueWords([...pageStatus.detectedWords, ...targetApiSignal.availability.detectedWords]),
+        parsedStockText: targetApiSignal.availability.stockText,
+        addToCartEnabled: targetApiSignal.availability.addToCartEnabled
+      }
+    : pageStatus;
   const identityMatch = matchProductIdentity({
     product: {
       retailerName: input.retailerName,
@@ -393,9 +447,9 @@ async function fetchPublicProductPage(input: {
 
   return {
     ...status,
-    price: detectPrice(body),
-    title: titleText || null,
-    imageUrl: extractProductImageUrl(body, finalUrl),
+    price: targetApiSignal?.price ?? detectRetailerPrice(body, input.retailerName),
+    title: targetApiSignal?.title || titleText || null,
+    imageUrl: targetApiSignal?.imageUrl || extractProductImageUrl(body, finalUrl),
     pageHash: hashPage(body),
     httpStatus: response.status,
     finalUrl,
@@ -413,19 +467,29 @@ function changedStatus(
   const detectedPriceChanged =
     detection.price !== null && currentPrice !== null && Math.abs(detection.price - currentPrice) >= 0.01;
 
-  if (detectedPriceChanged) {
-    return {
-      nextStatus: "PRICE_CHANGE",
-      changed: true,
-      summary: `Price changed from ${currentPrice} to ${detection.price}.`
-    };
-  }
-
   if (detection.status && detection.status !== currentStatus) {
     return {
       nextStatus: detection.status,
       changed: true,
       summary: `Status changed from ${currentStatus} to ${detection.status}.`
+    };
+  }
+
+  if (detection.status) {
+    return {
+      nextStatus: detection.status,
+      changed: false,
+      summary: detectedPriceChanged
+        ? `Status remains ${detection.status}; live price updated from ${currentPrice} to ${detection.price}.`
+        : detection.reason
+    };
+  }
+
+  if (detectedPriceChanged) {
+    return {
+      nextStatus: "PRICE_CHANGE",
+      changed: true,
+      summary: `Price changed from ${currentPrice} to ${detection.price}.`
     };
   }
 
@@ -460,6 +524,8 @@ async function createMonitorLog(input: {
   confidenceScore?: number;
   reason?: string;
   blockedType?: string | null;
+  parsedStockText?: string | null;
+  addToCartEnabled?: boolean | null;
   pageHash?: string;
   startedAt: Date;
   error?: string;
@@ -467,6 +533,16 @@ async function createMonitorLog(input: {
   notificationSummary?: string;
 }) {
   const finishedAt = new Date();
+  const hasParsedDetails =
+    input.detectedPrice !== undefined || input.parsedStockText !== undefined || input.addToCartEnabled !== undefined;
+  const detectedWords = hasParsedDetails
+    ? detectionDetailWords({
+        detectedWords: input.detectedWords,
+        detectedPrice: input.detectedPrice,
+        parsedStockText: input.parsedStockText,
+        addToCartEnabled: input.addToCartEnabled
+      })
+    : input.detectedWords ?? [];
   return prisma.monitorLog.create({
     data: {
       productId: input.productId,
@@ -480,9 +556,16 @@ async function createMonitorLog(input: {
       httpStatus: input.httpStatus,
       finalUrl: input.finalUrl,
       responseTimeMs: input.responseTimeMs,
-      detectedWords: input.detectedWords?.join(", "),
+      detectedWords: detectedWords.length ? detectedWords.join(", ") : undefined,
       confidenceScore: input.confidenceScore,
-      reason: input.reason,
+      reason: hasParsedDetails
+        ? reasonWithDetectionDetails({
+            reason: input.reason,
+            detectedPrice: input.detectedPrice,
+            parsedStockText: input.parsedStockText,
+            addToCartEnabled: input.addToCartEnabled
+          })
+        : input.reason,
       blockedType: input.blockedType ?? undefined,
       pageHash: input.pageHash,
       startedAt: input.startedAt,
@@ -534,6 +617,34 @@ function pendingClear() {
     pendingAlertDetectedWords: null,
     pendingAlertAt: null
   };
+}
+
+function detectionDetailWords(input: {
+  detectedWords?: string[];
+  detectedPrice?: number | null;
+  parsedStockText?: string | null;
+  addToCartEnabled?: boolean | null;
+}) {
+  return uniqueWords([
+    ...(input.detectedWords ?? []),
+    input.detectedPrice === null || input.detectedPrice === undefined ? "parsed live price: not verified" : `parsed live price: ${input.detectedPrice}`,
+    `parsed stock text: ${input.parsedStockText || "not found"}`,
+    `add-to-cart enabled: ${input.addToCartEnabled === null || input.addToCartEnabled === undefined ? "unknown" : input.addToCartEnabled}`
+  ]);
+}
+
+function reasonWithDetectionDetails(input: {
+  reason?: string;
+  detectedPrice?: number | null;
+  parsedStockText?: string | null;
+  addToCartEnabled?: boolean | null;
+}) {
+  const details = `Parsed live price: ${
+    input.detectedPrice === null || input.detectedPrice === undefined ? "not verified" : input.detectedPrice
+  }. Parsed stock text: ${input.parsedStockText || "not found"}. Add-to-cart enabled: ${
+    input.addToCartEnabled === null || input.addToCartEnabled === undefined ? "unknown" : input.addToCartEnabled
+  }.`;
+  return input.reason ? `${input.reason} ${details}` : details;
 }
 
 export async function runProductMonitorCheck(productId: string, runType: RunType = "MANUAL_PRODUCT", force = true) {
@@ -610,6 +721,8 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         confidenceScore: detection.confidenceScore,
         reason: detection.reason,
         blockedType: detection.blockedType,
+        parsedStockText: detection.parsedStockText,
+        addToCartEnabled: detection.addToCartEnabled,
         pageHash: detection.pageHash,
         startedAt
       });
@@ -663,6 +776,8 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         detectedWords: detection.detectedWords,
         confidenceScore: Math.min(detection.confidenceScore, 20),
         reason: identityReason,
+        parsedStockText: detection.parsedStockText,
+        addToCartEnabled: detection.addToCartEnabled,
         pageHash: detection.pageHash,
         startedAt,
         alertSent: false
@@ -740,6 +855,8 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         detectedWords: detection.detectedWords,
         confidenceScore: detection.confidenceScore,
         reason: detection.reason,
+        parsedStockText: detection.parsedStockText,
+        addToCartEnabled: detection.addToCartEnabled,
         pageHash: detection.pageHash,
         startedAt
       });
@@ -766,18 +883,20 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         }
       });
 
-      const actionUrl = detection.identityMatch.actionUrl || exactProductActionUrl(product);
-      const delivery = await deliverAlert({
-        title: `${product.name}: ${change.nextStatus.replaceAll("_", " ").toLowerCase()}`,
-        reason: `${change.summary} Confidence ${detection.confidenceScore}%. Source: public ${product.retailer.name} product page. Manual checkout only.`,
-        priority: product.priority as Priority,
-        entityType: "PRODUCT",
-        entityId: product.id,
-        productId: product.id,
-        actionUrl: actionUrl ?? undefined
-      });
-      deliverySummary = notificationSummary(delivery);
-      alertSent = delivery.inAppCreated + delivery.emailSent + delivery.smsSent + delivery.pushSent > 0;
+      if (actionableStatuses.includes(change.nextStatus)) {
+        const actionUrl = detection.identityMatch.actionUrl || exactProductActionUrl(product);
+        const delivery = await deliverAlert({
+          title: `${product.name}: ${change.nextStatus.replaceAll("_", " ").toLowerCase()}`,
+          reason: `${change.summary} Confidence ${detection.confidenceScore}%. Source: public ${product.retailer.name} product page. Manual checkout only.`,
+          priority: product.priority as Priority,
+          entityType: "PRODUCT",
+          entityId: product.id,
+          productId: product.id,
+          actionUrl: actionUrl ?? undefined
+        });
+        deliverySummary = notificationSummary(delivery);
+        alertSent = delivery.inAppCreated + delivery.emailSent + delivery.smsSent + delivery.pushSent > 0;
+      }
     }
 
     const updated = await prisma.product.update({
@@ -799,6 +918,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         liveImageUrl: detection.imageUrl,
         liveConfidenceScore: detection.confidenceScore,
         liveBlockedType: null,
+        isDemoData: detection.price !== null || detection.status !== null ? false : product.isDemoData,
         lastCheckedAt: now,
         lastSuccessfulCheckedAt: now,
         nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
@@ -826,6 +946,8 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
       detectedWords: detection.detectedWords,
       confidenceScore: detection.confidenceScore,
       reason: detection.reason,
+      parsedStockText: detection.parsedStockText,
+      addToCartEnabled: detection.addToCartEnabled,
       pageHash: detection.pageHash,
       startedAt,
       alertSent,

@@ -152,6 +152,19 @@ function money(value: number | null | undefined) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
+function monitorDetail(words: string | null | undefined, label: string) {
+  if (!words) return null;
+  const prefix = `${label.toLowerCase()}:`;
+  return (
+    words
+      .split(",")
+      .map((word) => word.trim())
+      .find((word) => word.toLowerCase().startsWith(prefix))
+      ?.slice(prefix.length)
+      .trim() || null
+  );
+}
+
 function shortDate(value: string | null | undefined) {
   if (!value) return "Not set";
   const date = new Date(value);
@@ -3511,30 +3524,35 @@ function MonitorLogsPanel({ dashboard }: { dashboard: DashboardDTO }) {
       </p>
       <div className="table-list monitor-logs">
         {dashboard.monitorLogs.length ? (
-          dashboard.monitorLogs.map((log) => (
-            <article className="table-row monitor-log-row" key={log.id}>
-              <span className={`chip ${statusTone(log.status)}`}>
-                {formatStatus(log.status)}
-              </span>
-              <strong>{log.productName || "Batch job"}</strong>
-              <span>{log.changeSummary || log.error || log.reason || "No detail"}</span>
-              <span>{dateTime(log.startedAt)}</span>
-              <span>{log.alertSent ? "Alert sent" : "No alert"}</span>
-              <details className="monitor-details">
-                <summary>Details</summary>
-                <div>
-                  <span>Detected: {log.detectedStatus || "None"}</span>
-                  <span>HTTP: {log.httpStatus ?? "N/A"}</span>
-                  <span>Final URL: {log.finalUrl || "N/A"}</span>
-                  <span>Response: {log.responseTimeMs === null ? "N/A" : `${log.responseTimeMs}ms`}</span>
-                  <span>Confidence: {log.confidenceScore === null ? "N/A" : `${log.confidenceScore}%`}</span>
-                  <span>Words: {log.detectedWords || "None"}</span>
-                  <span>Reason: {log.reason || log.error || "None"}</span>
-                  <span>Blocked: {log.blockedType || "No"}</span>
-                </div>
-              </details>
-            </article>
-          ))
+          dashboard.monitorLogs.map((log) => {
+            const parsedStockText = monitorDetail(log.detectedWords, "parsed stock text");
+            const addToCartEnabled = monitorDetail(log.detectedWords, "add-to-cart enabled");
+            return (
+              <article className="table-row monitor-log-row" key={log.id}>
+                <span className={`chip ${statusTone(log.status)}`}>{formatStatus(log.status)}</span>
+                <strong>{log.productName || "Batch job"}</strong>
+                <span>{log.changeSummary || log.error || log.reason || "No detail"}</span>
+                <span>{dateTime(log.startedAt)}</span>
+                <span>{log.alertSent ? "Alert sent" : "No alert"}</span>
+                <details className="monitor-details">
+                  <summary>Details</summary>
+                  <div>
+                    <span>Detected: {log.detectedStatus || "None"}</span>
+                    <span>Parsed live price: {log.detectedPrice === null ? "Not verified" : money(log.detectedPrice)}</span>
+                    <span>Parsed stock text: {parsedStockText || "Not found"}</span>
+                    <span>Add-to-cart enabled: {addToCartEnabled || "Unknown"}</span>
+                    <span>HTTP: {log.httpStatus ?? "N/A"}</span>
+                    <span>Final URL: {log.finalUrl || "N/A"}</span>
+                    <span>Response: {log.responseTimeMs === null ? "N/A" : `${log.responseTimeMs}ms`}</span>
+                    <span>Confidence: {log.confidenceScore === null ? "N/A" : `${log.confidenceScore}%`}</span>
+                    <span>Words: {log.detectedWords || "None"}</span>
+                    <span>Reason: {log.reason || log.error || "None"}</span>
+                    <span>Blocked: {log.blockedType || "No"}</span>
+                  </div>
+                </details>
+              </article>
+            );
+          })
         ) : (
           <EmptyState icon={History} title="No monitor logs" detail="Run a product check to create the first log entry." />
         )}

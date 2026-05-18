@@ -1,0 +1,68 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
+
+const targetOutOfStockEtbPage = `
+<!doctype html>
+<html>
+  <head>
+    <title>Pokemon Trading Card Game: Mega Evolution Chaos Rising Elite Trainer Box : Target</title>
+    <meta property="og:title" content="Pokemon Trading Card Game: Mega Evolution Chaos Rising Elite Trainer Box" />
+    <script id="__NEXT_DATA__" type="application/json">
+      {
+        "props": {
+          "pageProps": {
+            "product": {
+              "title": "Pokemon Trading Card Game: Mega Evolution Chaos Rising Elite Trainer Box",
+              "price": {
+                "current_retail": 59.99,
+                "formatted_current_price": "$59.99"
+              },
+              "tcin": "123456789",
+              "availability_status": "OUT_OF_STOCK",
+              "isOutOfStock": true
+            }
+          }
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>Pokemon Trading Card Game: Mega Evolution Chaos Rising Elite Trainer Box</h1>
+      <div data-test="product-price">$59.99</div>
+      <div data-test="fulfillment-cell">Out of stock</div>
+      <button data-test="shippingButton" aria-disabled="true" disabled>Add to cart</button>
+    </main>
+  </body>
+</html>`;
+
+test("Target parser treats disabled add-to-cart and out-of-stock as not buyable", () => {
+  const availability = detectTargetAvailability(targetOutOfStockEtbPage);
+
+  assert.equal(detectRetailerPrice(targetOutOfStockEtbPage, "Target"), 59.99);
+  assert.equal(availability.status, "SOLD_OUT");
+  assert.equal(availability.stockText, "Out of stock");
+  assert.equal(availability.addToCartEnabled, false);
+  assert.ok(availability.confidenceScore >= 90);
+  assert.match(availability.reason, /out of stock/i);
+  assert.match(availability.reason, /disabled/i);
+});
+
+test("Target parser does not infer availability from page text without an enabled cart button", () => {
+  const pageWithLooseCartText = `
+    <html>
+      <head><title>Pokemon TCG Product : Target</title></head>
+      <body>
+        <h1>Pokemon TCG Product</h1>
+        <p>Shipping, pickup, returns, highlights, add to cart instructions.</p>
+      </body>
+    </html>
+  `;
+  const availability = detectTargetAvailability(pageWithLooseCartText);
+
+  assert.equal(availability.status, "UNAVAILABLE");
+  assert.equal(availability.addToCartEnabled, null);
+  assert.match(availability.reason, /could not prove an enabled Add to cart button/i);
+});
+
