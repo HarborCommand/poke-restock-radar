@@ -432,6 +432,8 @@ export const cardCompCreateSchema = z.object({
   salePrice: requiredMoney,
   soldAt: boundedDate,
   sourceUrl: optionalHttpUrl,
+  saleTitle: optionalTrimmed,
+  matchScore: z.coerce.number().int().min(0).max(100).default(100),
   conditionNotes: optionalTrimmed,
   characterName: optionalTrimmed,
   era: eraSchema.default("MODERN"),

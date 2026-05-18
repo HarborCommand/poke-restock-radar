@@ -6,6 +6,7 @@ import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
+import { ebayMode, fetchLastThreeEbayComps } from "@/lib/ebay";
 import {
   calculateCardProfit,
   calculateMaxRawBuyPrice,
@@ -120,7 +121,22 @@ const monitorLogInclude = {
 
 const cardInclude = {
   release: { select: { id: true, setName: true } },
-  compSales: { select: { soldAt: true, sourceQuality: true, gradeType: true, salePrice: true } }
+  compSales: {
+    orderBy: { soldAt: "desc" as const },
+    select: {
+      id: true,
+      cardId: true,
+      soldAt: true,
+      source: true,
+      sourceQuality: true,
+      gradeType: true,
+      salePrice: true,
+      sourceUrl: true,
+      saleTitle: true,
+      matchScore: true,
+      conditionNotes: true
+    }
+  }
 } satisfies Prisma.CardInclude;
 
 const compSaleInclude = {
@@ -331,6 +347,16 @@ function productToDTO(
     verifiedFinalUrl: product.verifiedFinalUrl,
     verificationNotes: product.verificationNotes,
     retailPrice: product.retailPrice,
+    liveTitle: product.liveTitle,
+    livePrice: product.livePrice,
+    livePriceSource: product.livePriceSource,
+    livePriceVerifiedAt: product.livePriceVerifiedAt?.toISOString() ?? null,
+    liveStockStatus: product.liveStockStatus as ProductStatus | null,
+    liveStockVerifiedAt: product.liveStockVerifiedAt?.toISOString() ?? null,
+    liveImageUrl: product.liveImageUrl,
+    liveConfidenceScore: product.liveConfidenceScore,
+    liveBlockedType: product.liveBlockedType,
+    isDemoData: product.isDemoData,
     stockStatus: product.stockStatus as ProductStatus,
     alertStatus: product.alertStatus,
     priority: product.priority as Priority,
@@ -458,6 +484,24 @@ function releaseToDTO(
 
 function cardToDTO(card: Prisma.CardGetPayload<{ include: typeof cardInclude }>): CardDTO {
   const compCount = card.compSales.length;
+  const compsForGrade = (gradeType: GradeType) =>
+    card.compSales.filter((sale) => ((sale.gradeType || "RAW") as GradeType) === gradeType);
+  const lastThreeComps = card.compSales.slice(0, 18).map((sale) => ({
+    id: sale.id,
+    cardId: card.id,
+    cardName: card.cardName,
+    setName: card.setName,
+    cardNumber: card.cardNumber,
+    gradeType: (sale.gradeType || "RAW") as GradeType,
+    salePrice: sale.salePrice,
+    soldAt: sale.soldAt.toISOString(),
+    source: sale.source,
+    sourceQuality: (sale.sourceQuality || "EBAY_SOLD") as CompSourceQuality,
+    sourceUrl: sale.sourceUrl,
+    saleTitle: sale.saleTitle,
+    matchScore: sale.matchScore,
+    conditionNotes: sale.conditionNotes
+  }));
   return {
     id: card.id,
     releaseId: card.releaseId,
@@ -496,7 +540,11 @@ function cardToDTO(card: Prisma.CardGetPayload<{ include: typeof cardInclude }>)
     strongCharacterDemand: card.strongCharacterDemand,
     lastCompAt: card.lastCompAt?.toISOString() ?? null,
     compCount,
-    recentCompCount: recentCompCount(card.compSales)
+    recentCompCount: recentCompCount(card.compSales),
+    rawCompCount: compsForGrade("RAW").length,
+    psa9CompCount: compsForGrade("PSA_9").length,
+    psa10CompCount: compsForGrade("PSA_10").length,
+    lastThreeComps
   };
 }
 
@@ -576,6 +624,7 @@ function setupChecklist(input: {
 
 function dataQualityWarnings(input: {
   products: ProductDTO[];
+  cards: CardDTO[];
   notificationSettings: NotificationSettingsDTO;
 }): DataQualityWarningDTO[] {
   const warnings: DataQualityWarningDTO[] = [];
@@ -656,6 +705,28 @@ function dataQualityWarnings(input: {
         entityId: product.id
       });
     }
+    if (product.livePrice === null) {
+      warnings.push({
+        id: `product-live-price-${product.id}`,
+        severity: "MEDIUM",
+        title: `${product.name} price is not verified`,
+        detail: product.isDemoData
+          ? "Seed/demo price is labeled as demo data until a retailer page confirms a live price."
+          : "Run Verify Exact Product or Run Check Now to collect the live retailer price.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
+    if (!product.liveStockStatus) {
+      warnings.push({
+        id: `product-live-stock-${product.id}`,
+        severity: "MEDIUM",
+        title: `${product.name} stock is not verified`,
+        detail: "Buy alerts require exact product match plus live stock/preorder/add-to-cart evidence from the retailer page.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
     if (!product.releaseId && !product.setName) {
       warnings.push({
         id: `product-release-${product.id}`,
@@ -677,6 +748,39 @@ function dataQualityWarnings(input: {
         detail: "Run a manual check, tune required/ignore words, or verify cron is reaching the public page.",
         tab: "products",
         entityId: product.id
+      });
+    }
+  }
+
+  for (const card of input.cards) {
+    if (card.rawCompCount < 3) {
+      warnings.push({
+        id: `card-raw-comps-${card.id}`,
+        severity: "MEDIUM",
+        title: `${card.cardName} has fewer than 3 raw comps`,
+        detail: `Only ${card.rawCompCount} raw completed sale${card.rawCompCount === 1 ? "" : "s"} found. Refresh eBay comps or add manual sold URLs.`,
+        tab: "cards",
+        entityId: card.id
+      });
+    }
+    if (card.psa9CompCount < 3) {
+      warnings.push({
+        id: `card-psa9-comps-${card.id}`,
+        severity: "MEDIUM",
+        title: `${card.cardName} has fewer than 3 PSA 9 comps`,
+        detail: `Only ${card.psa9CompCount} PSA 9 completed sale${card.psa9CompCount === 1 ? "" : "s"} found. Profit confidence is limited.`,
+        tab: "cards",
+        entityId: card.id
+      });
+    }
+    if (card.psa10CompCount < 3) {
+      warnings.push({
+        id: `card-psa10-comps-${card.id}`,
+        severity: "MEDIUM",
+        title: `${card.cardName} has fewer than 3 PSA 10 comps`,
+        detail: `Only ${card.psa10CompCount} PSA 10 completed sale${card.psa10CompCount === 1 ? "" : "s"} found. Upside confidence is limited.`,
+        tab: "cards",
+        entityId: card.id
       });
     }
   }
@@ -1079,6 +1183,8 @@ function cardCompSaleToDTO(sale: Prisma.CardCompSaleGetPayload<{ include: typeof
     source: sale.source,
     sourceQuality: (sale.sourceQuality || "EBAY_SOLD") as CompSourceQuality,
     sourceUrl: sale.sourceUrl || sale.url,
+    saleTitle: sale.saleTitle,
+    matchScore: sale.matchScore,
     conditionNotes: sale.conditionNotes || sale.notes
   };
 }
@@ -1548,7 +1654,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       notificationSettingsDTO.browserPush || notificationSettingsDTO.email || notificationSettingsDTO.sms,
     monitorRunCount: monitorLogs.length
   });
-  const qualityWarnings = dataQualityWarnings({ products: productDTOs, notificationSettings: notificationSettingsDTO });
+  const qualityWarnings = dataQualityWarnings({ products: productDTOs, cards: cardDTOs, notificationSettings: notificationSettingsDTO });
   const monitorLogDTOs = monitorLogs.map(monitorLogToDTO);
   const launchChecklist = ownerLaunchChecklist({
     products: productDTOs,
@@ -1812,6 +1918,10 @@ function normalizeUrlHost(value: string) {
   }
 }
 
+function nextProductCheckAt(minutes: number) {
+  return new Date(Date.now() + Math.max(minutes, 5) * 60 * 1000);
+}
+
 function extractHtmlTitle(html: string) {
   const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1];
   const title = ogTitle || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || "";
@@ -1821,6 +1931,36 @@ function extractHtmlTitle(html: string) {
 function extractVisiblePrice(html: string) {
   const match = html.match(/\$\s?\d{1,4}(?:,\d{3})*(?:\.\d{2})?/);
   return match?.[0].replace(/\s+/g, "") ?? null;
+}
+
+function extractVisiblePriceValue(html: string) {
+  const value = extractVisiblePrice(html);
+  if (!value) return null;
+  const parsed = Number(value.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stockStatusFromCue(cue: string | null): ProductStatus | null {
+  if (!cue) return null;
+  const normalized = cue.toLowerCase();
+  if (normalized.includes("preorder") || normalized.includes("pre-order")) return "PREORDER_LIVE";
+  if (normalized.includes("add to cart") || normalized.includes("add-to-cart") || normalized.includes("ship it")) {
+    return "ADD_TO_CART_AVAILABLE";
+  }
+  if (normalized.includes("in stock") || normalized.includes("available now")) return "IN_STOCK";
+  if (normalized.includes("sold out") || normalized.includes("out of stock")) return "SOLD_OUT";
+  if (normalized.includes("unavailable") || normalized.includes("currently unavailable")) return "UNAVAILABLE";
+  return null;
+}
+
+function isBlockedRetailPage(html: string, status: number) {
+  const normalized = html.toLowerCase();
+  if (status === 403 || status === 429) return "HTTP_BLOCKED";
+  if (normalized.includes("captcha") || normalized.includes("robot check") || normalized.includes("are you a human")) {
+    return "CAPTCHA_OR_ROBOT";
+  }
+  if (normalized.includes("queue") && normalized.includes("wait")) return "QUEUE";
+  return null;
 }
 
 function decodeHtmlAttribute(value: string) {
@@ -1948,9 +2088,12 @@ export async function verifyProductLink(productId: string) {
     const sameRetailerHost = normalizeUrlHost(finalUrl) === normalizeUrlHost(product.url);
     const titleText = extractHtmlTitle(html);
     const visiblePrice = extractVisiblePrice(html);
+    const visiblePriceValue = extractVisiblePriceValue(html);
     const productImageUrl = extractProductImage(html, finalUrl);
     const stockCue = detectStockCue(html, product.retailer.name);
+    const liveStockStatus = stockStatusFromCue(stockCue);
     const redirectedAway = !sameRetailerHost;
+    const blockedType = isBlockedRetailPage(html, response.status);
     const identity = matchProductIdentity({
       product: {
         retailerName: product.retailer.name,
@@ -1969,8 +2112,18 @@ export async function verifyProductLink(productId: string) {
       httpStatus: response.status
     });
     const verifiedProductImageUrl =
-      identity.readyForAlert && !redirectedAway ? await validateProductImageUrl(productImageUrl) : null;
-    const verificationStatus = redirectedAway ? "POSSIBLE_MISMATCH" : identity.verificationStatus;
+      identity.readyForAlert && !redirectedAway && !blockedType ? await validateProductImageUrl(productImageUrl) : null;
+    const verificationStatus = blockedType
+      ? "POSSIBLE_MISMATCH"
+      : redirectedAway
+      ? "POSSIBLE_MISMATCH"
+      : identity.verificationStatus;
+    const liveConfidenceScore = blockedType
+      ? 0
+      : identity.readyForAlert && !redirectedAway
+      ? visiblePriceValue !== null || liveStockStatus ? 88 : 72
+      : Math.min(25, identity.matchedTitleKeywords.length * 5 + identity.matchedIdentifiers.length * 10);
+    const now = new Date();
     const notes = [
       `HTTP ${response.status}`,
       `Final URL ${finalUrl}`,
@@ -1979,6 +2132,7 @@ export async function verifyProductLink(productId: string) {
       visiblePrice ? `Visible price cue: ${visiblePrice}` : "Visible price cue not found",
       stockCue ? `Stock cue: ${stockCue}` : "Stock cue not found",
       `Response ${Date.now() - started}ms`,
+      blockedType ? `Blocked page signal: ${blockedType}` : null,
       `Expected title keywords: ${identity.titleKeywords.join(", ") || "none"}`,
       identity.matchedIdentifiers.length ? `Matched identifiers: ${identity.matchedIdentifiers.join(", ")}` : "No stored identifier matched",
       identity.missingIdentifiers.length ? `Missing identifiers: ${identity.missingIdentifiers.join(", ")}` : null,
@@ -1992,11 +2146,25 @@ export async function verifyProductLink(productId: string) {
       where: { id: productId },
       data: {
         verificationStatus,
-        verifiedAt: new Date(),
+        verifiedAt: now,
         verifiedFinalUrl: finalUrl,
         verificationNotes: notes,
-        imageUrl: identity.readyForAlert && !redirectedAway ? verifiedProductImageUrl : product.imageUrl,
-        lastCheckedAt: new Date(),
+        imageUrl: identity.readyForAlert && !redirectedAway && verifiedProductImageUrl ? verifiedProductImageUrl : product.imageUrl,
+        retailPrice: visiblePriceValue !== null && liveConfidenceScore >= 70 ? visiblePriceValue : product.retailPrice,
+        liveTitle: titleText || null,
+        livePrice: visiblePriceValue,
+        livePriceSource: visiblePriceValue === null ? null : "Retailer page",
+        livePriceVerifiedAt: visiblePriceValue === null ? undefined : now,
+        liveStockStatus,
+        liveStockVerifiedAt: liveStockStatus === null ? undefined : now,
+        liveImageUrl: verifiedProductImageUrl,
+        liveConfidenceScore,
+        liveBlockedType: blockedType,
+        isDemoData: visiblePriceValue !== null || liveStockStatus !== null ? false : product.isDemoData,
+        lastCheckedAt: now,
+        lastSuccessfulCheckedAt: blockedType ? product.lastSuccessfulCheckedAt : now,
+        nextCheckAt: nextProductCheckAt(product.checkFrequencyMinutes),
+        lastMonitorError: blockedType ? `Blocked during verification: ${blockedType}` : null,
         lastMonitorResult: `Product link verification: ${verificationStatus}. ${notes}`
       },
       include: productInclude
@@ -2789,7 +2957,10 @@ async function recomputeCardFromComps(
   if (!card) throw new Error("Card not found");
 
   const compsByGrade = (gradeType: GradeType) =>
-    card.compSales.filter((sale) => ((sale.gradeType || "RAW") as GradeType) === gradeType).map((sale) => sale.salePrice);
+    card.compSales
+      .filter((sale) => ((sale.gradeType || "RAW") as GradeType) === gradeType)
+      .slice(0, 3)
+      .map((sale) => sale.salePrice);
 
   const rawAveragePrice = average(compsByGrade("RAW")) ?? card.rawAveragePrice;
   const psa9AverageSalePrice = average(compsByGrade("PSA_9")) ?? card.psa9AverageSalePrice;
@@ -2845,7 +3016,11 @@ async function recomputeCardFromComps(
       ...computed,
       compConfidenceScore,
       rating: computed.rating,
-      dataSource: compCount ? "Manual sold comps" : card.dataSource,
+      dataSource: compCount
+        ? card.compSales.some((sale) => sale.sourceQuality === "EBAY_SOLD")
+          ? "eBay sold comps"
+          : "Manual sold comps"
+        : card.dataSource,
       lastCompAt: card.compSales[0]?.soldAt ?? card.lastCompAt,
       lastRefreshed: card.compSales[0]?.soldAt ?? card.lastRefreshed
     },
@@ -3028,6 +3203,8 @@ export async function createCardCompSale(
     salePrice: number;
     soldAt: Date;
     sourceUrl?: string;
+    saleTitle?: string;
+    matchScore?: number;
     conditionNotes?: string;
     characterName?: string;
     era?: "MODERN" | "VINTAGE";
@@ -3119,6 +3296,8 @@ export async function createCardCompSale(
       soldAt: input.soldAt,
       url: input.sourceUrl,
       sourceUrl: input.sourceUrl,
+      saleTitle: input.saleTitle,
+      matchScore: input.matchScore ?? 100,
       notes: input.conditionNotes,
       conditionNotes: input.conditionNotes
     },
@@ -3166,6 +3345,104 @@ export async function createCardCompSale(
   }
 
   return { compSale: cardCompSaleToDTO(sale), card: cardToDTO(updatedCard) };
+}
+
+export async function refreshCardEbayComps(currentUser: SessionUser, cardId: string) {
+  const card = await prisma.card.findUnique({ where: { id: cardId } });
+  if (!card) throw new Error("Card not found");
+
+  const result = await fetchLastThreeEbayComps({
+    cardName: card.cardName,
+    setName: card.setName,
+    cardNumber: card.cardNumber
+  });
+  if (result.mode === "manual") {
+    return {
+      mode: result.mode,
+      message: result.message,
+      added: 0,
+      card: cardToDTO(await prisma.card.findUniqueOrThrow({ where: { id: cardId }, include: cardInclude }))
+    };
+  }
+
+  const settings = await ensureInvestmentSettings(currentUser);
+  const wasPsa9Profitable = card.psa9EstimatedProfit >= (card.minimumProfitTarget || settings.minimumProfitTarget);
+  let added = 0;
+  for (const sale of result.sales) {
+    const existingByUrl = sale.sourceUrl
+      ? await prisma.cardCompSale.findFirst({ where: { cardId, gradeType: sale.gradeType, sourceUrl: sale.sourceUrl } })
+      : null;
+    const existing =
+      existingByUrl ??
+      (await prisma.cardCompSale.findFirst({
+        where: {
+          cardId,
+          gradeType: sale.gradeType,
+          saleTitle: sale.saleTitle,
+          salePrice: sale.salePrice,
+          soldAt: sale.soldAt
+        }
+      }));
+    if (existing) continue;
+    await prisma.cardCompSale.create({
+      data: {
+        cardId,
+        source: "eBay sold",
+        sourceQuality: "EBAY_SOLD",
+        salePrice: sale.salePrice,
+        grade: gradeLabel(sale.gradeType),
+        gradeType: sale.gradeType,
+        soldAt: sale.soldAt,
+        url: sale.sourceUrl,
+        sourceUrl: sale.sourceUrl,
+        saleTitle: sale.saleTitle,
+        matchScore: sale.matchScore,
+        notes: "Imported by eBay last-3 completed sales refresh.",
+        conditionNotes: `Match score ${sale.matchScore}%.`
+      }
+    });
+    added += 1;
+  }
+
+  const updatedCard = await recomputeCardFromComps(cardId, {
+    gradingCost: settings.gradingCost,
+    ebaySellingFee: settings.ebaySellingFee,
+    shippingCost: settings.shippingCost,
+    minimumProfitTarget: settings.minimumProfitTarget
+  });
+
+  if (added > 0 && !wasPsa9Profitable && updatedCard.psa9EstimatedProfit >= updatedCard.minimumProfitTarget) {
+    await deliverAlert({
+      title: `${updatedCard.cardName} became PSA 9 profitable`,
+      reason: `New eBay sold comps moved PSA 9 estimated profit to $${updatedCard.psa9EstimatedProfit.toFixed(
+        2
+      )}, above the $${updatedCard.minimumProfitTarget.toFixed(2)} target.`,
+      priority: "HIGH",
+      entityType: "CARD",
+      entityId: updatedCard.id
+    });
+  }
+
+  return {
+    mode: result.mode,
+    message: `${result.message} Added ${added} new comps; averages use the last 3 sales per grade.`,
+    added,
+    card: cardToDTO(updatedCard)
+  };
+}
+
+export async function refreshAllCardEbayComps(currentUser: SessionUser) {
+  const cards = await prisma.card.findMany({ select: { id: true }, orderBy: [{ top10Score: "desc" }, { updatedAt: "desc" }] });
+  const results = [];
+  for (const card of cards) {
+    results.push(await refreshCardEbayComps(currentUser, card.id));
+  }
+  return {
+    mode: ebayMode(),
+    refreshed: results.length,
+    added: results.reduce((sum, result) => sum + result.added, 0),
+    results
+  };
 }
 
 export async function generateWeeklyInvestmentReport(

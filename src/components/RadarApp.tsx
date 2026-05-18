@@ -138,6 +138,7 @@ function formatSourceQuality(value: string) {
 
 function dataSourceLabel(value: string | null | undefined) {
   const normalized = (value || "").toLowerCase();
+  if (normalized.includes("demo") || normalized.includes("seed")) return "Demo data";
   if (normalized.includes("ebay")) return "eBay";
   if (normalized.includes("pricecharting")) return "PriceCharting";
   if (normalized.includes("tcgplayer")) return "TCGPlayer";
@@ -300,6 +301,23 @@ function productReadyForAlert(product: ProductDTO) {
   return product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED";
 }
 
+function productLiveVerified(product: ProductDTO) {
+  return productReadyForAlert(product) && product.livePrice !== null && product.liveStockStatus !== null && !product.liveBlockedType;
+}
+
+function productLiveBadge(product: ProductDTO) {
+  if (product.liveBlockedType) return "Blocked";
+  if (product.verificationStatus === "SEARCH_OR_CATEGORY_LINK") return "Search Link";
+  if (product.verificationStatus === "POSSIBLE_MISMATCH") return "Possible Mismatch";
+  if (productLiveVerified(product)) return "Live Verified";
+  return "Not Verified";
+}
+
+function productPriceLabel(product: ProductDTO) {
+  if (product.livePrice !== null && productLiveVerified(product)) return money(product.livePrice);
+  return "Price not verified";
+}
+
 function exactProductUrl(product: ProductDTO) {
   return productReadyForAlert(product) ? product.verifiedFinalUrl || product.url : null;
 }
@@ -334,7 +352,7 @@ function storeNeedsCoordinates(store: StoreDTO) {
 
 function productImageRank(product: ProductDTO) {
   const verified = productReadyForAlert(product);
-  return (product.imageUrl ? 100 : 0) + (verified ? 40 : 0) + (product.priorityScore?.score ?? 0);
+  return (product.liveImageUrl || product.imageUrl ? 100 : 0) + (verified ? 40 : 0) + (product.priorityScore?.score ?? 0);
 }
 
 function cardFreshnessLabel(card: CardDTO) {
@@ -1872,7 +1890,8 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
                 <div>
                   <h3>{product.name}</h3>
                   <p>
-                    {product.retailerName} - {product.releaseName || product.setName || "Unlinked set"} - {money(product.retailPrice)}
+                    {product.retailerName} - {product.releaseName || product.setName || "Unlinked set"} - Live{" "}
+                    {productPriceLabel(product)}
                   </p>
                 </div>
               </div>
@@ -1884,6 +1903,10 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
                 <span className={`chip ${verificationTone(product.verificationStatus)}`}>
                   {productVerificationLabel(product.verificationStatus)}
                 </span>
+                <span className={`chip ${productLiveVerified(product) ? "good" : product.liveBlockedType ? "bad" : "watch"}`}>
+                  {productLiveBadge(product)}
+                </span>
+                {product.isDemoData ? <span className="chip muted">Demo data</span> : null}
                 {verified ? <span className="chip good">Ready for Alert</span> : null}
                 <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
                 {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
@@ -1909,6 +1932,12 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
                     <Clock size={13} />
                     Last monitor {product.lastSuccessfulCheckedAt ? relativeTime(product.lastSuccessfulCheckedAt) : "Not collected yet"}
                   </span>
+                  <span>Live title: {product.liveTitle || "Unknown"}</span>
+                  <span>Live retailer price: {product.livePrice !== null ? money(product.livePrice) : "Price not verified"}</span>
+                  <span>Stored/manual price: {product.retailPrice !== null ? money(product.retailPrice) : "Unknown"}</span>
+                  <span>Price source: {product.livePriceSource || (product.isDemoData ? "Demo data" : "Unknown")}</span>
+                  <span>Live stock: {product.liveStockStatus ? formatStatus(product.liveStockStatus) : "Not verified"}</span>
+                  <span>Live confidence: {product.liveConfidenceScore === null ? "Unknown" : `${product.liveConfidenceScore}%`}</span>
                   <span>Last verified by monitor {product.lastSuccessfulCheckedAt ? dateTime(product.lastSuccessfulCheckedAt) : "Not collected yet"}</span>
                   <span>
                     <Activity size={13} />
@@ -1938,9 +1967,10 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
 
 function ProductImage({ product, verified }: { product: ProductDTO; verified: boolean }) {
   const [imageFailure, setImageFailure] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
+  const verifiedImageUrl = product.liveImageUrl || product.imageUrl;
 
-  const imageFailed = imageFailure.failed && imageFailure.url === product.imageUrl;
-  const showVerifiedImage = verified && Boolean(product.imageUrl) && !imageFailed;
+  const imageFailed = imageFailure.failed && imageFailure.url === verifiedImageUrl;
+  const showVerifiedImage = verified && Boolean(verifiedImageUrl) && !imageFailed;
   const retailerInitials = product.retailerName
     .split(/\s+/)
     .map((word) => word[0])
@@ -1950,7 +1980,7 @@ function ProductImage({ product, verified }: { product: ProductDTO; verified: bo
 
   return (
     <div className={showVerifiedImage ? "product-image-frame has-image" : "product-image-frame"}>
-      {showVerifiedImage && product.imageUrl ? (
+      {showVerifiedImage && verifiedImageUrl ? (
         <Image
           alt={`${product.name} product image`}
           fill
@@ -1959,16 +1989,16 @@ function ProductImage({ product, verified }: { product: ProductDTO; verified: bo
           unoptimized
           referrerPolicy="no-referrer"
           data-verified-product-image="true"
-          src={product.imageUrl}
+          src={verifiedImageUrl}
           onError={(event) => {
             event.currentTarget.hidden = true;
-            setImageFailure({ url: product.imageUrl, failed: true });
+            setImageFailure({ url: verifiedImageUrl, failed: true });
           }}
           onLoad={(event) => {
             const image = event.currentTarget;
             if (image.naturalWidth < 32 || image.naturalHeight < 32) {
               image.hidden = true;
-              setImageFailure({ url: product.imageUrl, failed: true });
+              setImageFailure({ url: verifiedImageUrl, failed: true });
             }
           }}
         />
@@ -2138,7 +2168,21 @@ function ReleaseStack({ releases }: { releases: ReleaseDTO[] }) {
   );
 }
 
-function CardStack({ cards, compact = false }: { cards: CardDTO[]; compact?: boolean }) {
+function CardStack({
+  cards,
+  compact = false,
+  busy = false,
+  busyLabel = null,
+  runAction,
+  allowRefresh = false
+}: {
+  cards: CardDTO[];
+  compact?: boolean;
+  busy?: boolean;
+  busyLabel?: string | null;
+  runAction?: ActionHandler;
+  allowRefresh?: boolean;
+}) {
   if (!cards.length) {
     return (
       <EmptyState
@@ -2151,7 +2195,9 @@ function CardStack({ cards, compact = false }: { cards: CardDTO[]; compact?: boo
 
   return (
     <div className={compact ? "card-opportunity-list compact" : "card-opportunity-list"}>
-      {cards.map((card) => (
+      {cards.map((card) => {
+        const hasRealComps = card.compCount > 0;
+        return (
         <article className="card-opportunity-row" id={`card-${card.id}`} key={card.id}>
           <div className="card-opportunity-main">
             <div className="avatar">
@@ -2160,32 +2206,80 @@ function CardStack({ cards, compact = false }: { cards: CardDTO[]; compact?: boo
             <div>
               <h3>{card.cardName}</h3>
               <p>
-                Raw {money(card.rawAveragePrice)} - PSA 9 profit {money(card.psa9EstimatedProfit)} - PSA 10 upside{" "}
-                {money(card.psa10EstimatedProfit)}
+                {hasRealComps
+                  ? `Raw avg last 3 ${money(card.rawAveragePrice)} - PSA 9 avg last 3 ${money(
+                      card.psa9AverageSalePrice
+                    )} - PSA 10 avg last 3 ${money(card.psa10AverageSalePrice)}`
+                  : "Real sold comps not collected yet"}
               </p>
               <small>
-                {dataSourceLabel(card.dataSource)} - {cardFreshnessLabel(card)}
+                {dataSourceLabel(card.dataSource)} - {cardFreshnessLabel(card)} - {card.compCount} comps used
               </small>
             </div>
           </div>
           <div className="card-opportunity-actions">
             <span className={`chip ${statusTone(card.rating)}`}>{card.rating}</span>
-            <span className="chip muted">Score {card.top10Score}</span>
+            {hasRealComps ? (
+              <>
+                <span className="chip muted">PSA 9 profit {money(card.psa9EstimatedProfit)}</span>
+                <span className="chip muted">PSA 10 profit {money(card.psa10EstimatedProfit)}</span>
+              </>
+            ) : (
+              <span className="chip muted">Profit not verified</span>
+            )}
             <span className={`chip ${cardConfidenceTone(card)}`}>Confidence {card.compConfidenceScore}%</span>
             <span className="chip muted">Buy limit {money(card.maxRawBuyPrice)}</span>
+            {allowRefresh && runAction ? (
+              <button
+                className="mini-action"
+                disabled={busy}
+                type="button"
+                onClick={() =>
+                  runAction(
+                    `Refreshing comps ${card.id}`,
+                    () => requestJson(`/api/radar/cards/${card.id}/refresh-comps`, { method: "POST" }),
+                    { success: "Comp refresh finished" }
+                  )
+                }
+              >
+                <RefreshCw size={14} />
+                {busyLabel === `Refreshing comps ${card.id}` ? "Refreshing" : "Refresh eBay Comps"}
+              </button>
+            ) : null}
           </div>
           {!compact ? (
-            <div className="monitor-meta">
-              <span>{card.setName} #{card.cardNumber}</span>
-              <span>{card.compCount} comps</span>
-              <span>Source {dataSourceLabel(card.dataSource)}</span>
-              <span>{cardFreshnessLabel(card)}</span>
-              <span>BGS 10 profit {money(card.bgs10EstimatedProfit)}</span>
-              <span>Black Label profit {money(card.blackLabelEstimatedProfit)}</span>
-            </div>
+            <>
+              <div className="monitor-meta">
+                <span>{card.setName} #{card.cardNumber}</span>
+                <span>Raw comps {card.rawCompCount}</span>
+                <span>PSA 9 comps {card.psa9CompCount}</span>
+                <span>PSA 10 comps {card.psa10CompCount}</span>
+                <span>Source {dataSourceLabel(card.dataSource)}</span>
+                <span>{cardFreshnessLabel(card)}</span>
+                <span>BGS 10 profit {money(card.bgs10EstimatedProfit)}</span>
+                <span>Black Label profit {money(card.blackLabelEstimatedProfit)}</span>
+              </div>
+              <div className="last-comp-list">
+                <strong>Last 3 completed sales</strong>
+                {card.lastThreeComps.length ? (
+                  card.lastThreeComps.slice(0, 3).map((comp) => (
+                    <span key={comp.id}>
+                      {formatGradeType(comp.gradeType)} - {money(comp.salePrice)} - {shortDate(comp.soldAt)} - match {comp.matchScore}% -{" "}
+                      {comp.saleTitle || "Untitled comp"}
+                    </span>
+                  ))
+                ) : (
+                  <span>No completed sales collected yet. Use Refresh eBay Comps or add manual sold comps.</span>
+                )}
+                {card.rawCompCount < 3 ? <span>Only {card.rawCompCount} raw comps found - low confidence.</span> : null}
+                {card.psa9CompCount < 3 ? <span>Only {card.psa9CompCount} PSA 9 comps found - low confidence.</span> : null}
+                {card.psa10CompCount < 3 ? <span>Only {card.psa10CompCount} PSA 10 comps found - low confidence.</span> : null}
+              </div>
+            </>
           ) : null}
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -2976,6 +3070,10 @@ function EditableProduct({
           <span className={`chip ${verificationTone(product.verificationStatus)}`}>
             {productVerificationLabel(product.verificationStatus)}
           </span>
+          <span className={`chip ${productLiveVerified(product) ? "good" : product.liveBlockedType ? "bad" : "watch"}`}>
+            {productLiveBadge(product)}
+          </span>
+          {product.isDemoData ? <span className="chip muted">Demo data</span> : null}
           {readyForAlert ? <span className="chip good">Ready for Alert</span> : null}
           {goUrl ? (
             <a className="mini-action" href={goUrl} target="_blank" rel="noreferrer">
@@ -3084,6 +3182,12 @@ function EditableProduct({
       <div className="monitor-status">
         <span>Verification: {productVerificationLabel(product.verificationStatus)}</span>
         <span>Ready for alert: {readyForAlert ? "Yes" : "No"}</span>
+        <span>Live retailer price: {product.livePrice !== null ? money(product.livePrice) : "Price not verified"}</span>
+        <span>Stored/manual price: {product.retailPrice !== null ? money(product.retailPrice) : "Unknown"}</span>
+        <span>Live stock: {product.liveStockStatus ? formatStatus(product.liveStockStatus) : "Not verified"}</span>
+        <span>Live source: {product.livePriceSource || "Unknown"}</span>
+        <span>Live confidence: {product.liveConfidenceScore === null ? "Unknown" : `${product.liveConfidenceScore}%`}</span>
+        <span>Live title: {product.liveTitle || "Unknown"}</span>
         <span>Verified: {dateTime(product.verifiedAt)}</span>
         <span>Final URL: {product.verifiedFinalUrl || "Not verified"}</span>
         <span>Verification notes: {product.verificationNotes || "None"}</span>
@@ -4174,7 +4278,30 @@ function CardsPanel({
           </label>
         </div>
       </section>
-      <CardStack cards={filteredCards} />
+      {isAdmin ? (
+        <div className="form-actions">
+          <button
+            className="mini-action solid"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction("Refreshing all comps", () => requestJson("/api/radar/cards/refresh-comps", { method: "POST" }), {
+                success: "All comp refreshes finished"
+              })
+            }
+          >
+            <RefreshCw size={14} />
+            {busyLabel === "Refreshing all comps" ? "Refreshing" : "Refresh All Comps"}
+          </button>
+        </div>
+      ) : null}
+      <CardStack
+        cards={filteredCards}
+        busy={busy}
+        busyLabel={busyLabel}
+        runAction={runAction}
+        allowRefresh={isAdmin || dashboard.currentUser.canAddComps}
+      />
       <RecentCompsTable comps={dashboard.cardCompSales} />
       {isAdmin ? (
         <InvestmentSettingsForm dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
@@ -4476,6 +4603,8 @@ function ManualCompForm({ busy, busyLabel, submit }: { busy: boolean; busyLabel:
         <TextInput name="salePrice" label="Sale price" type="number" min="0" max="100000" step="0.01" required />
         <TextInput name="soldAt" label="Sale date" type="date" min="2020-01-01" required />
         <TextInput name="sourceUrl" label="Source URL" type="url" placeholder="https://www.ebay.com/itm/..." />
+        <TextInput name="saleTitle" label="Sale title" placeholder="Paste the completed listing title" />
+        <TextInput name="matchScore" label="Match confidence" type="number" min="0" max="100" defaultValue="100" />
         <div className="form-step wide-field">
           <span>Step 3</span>
           <strong>Quality flags for ranking</strong>
@@ -4525,12 +4654,14 @@ function RecentCompsTable({ comps }: { comps: CardCompSaleDTO[] }) {
               <span>{money(comp.salePrice)}</span>
               <div className="row-actions">
                 <span>{shortDate(comp.soldAt)}</span>
+                <span className="chip muted">Match {comp.matchScore}%</span>
                 {comp.sourceUrl ? (
                   <a className="mini-action" href={comp.sourceUrl} target="_blank" rel="noreferrer">
                     Source <ExternalLink size={14} />
                   </a>
                 ) : null}
               </div>
+              {comp.saleTitle ? <span className="monitor-details">{comp.saleTitle}</span> : null}
             </div>
           ))
         ) : (

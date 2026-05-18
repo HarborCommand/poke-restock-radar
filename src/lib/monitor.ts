@@ -12,6 +12,8 @@ type BlockedType = "PAGE_BLOCKED" | "CAPTCHA_ROBOT_PAGE";
 type Detection = {
   status: ProductStatus | null;
   price: number | null;
+  title: string | null;
+  imageUrl: string | null;
   pageHash: string;
   httpStatus: number;
   finalUrl: string;
@@ -129,6 +131,39 @@ function extractHtmlTitle(html: string) {
   const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1];
   const title = ogTitle || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || "";
   return title.replace(/\s+/g, " ").trim().slice(0, 180);
+}
+
+function cleanHtmlAttribute(value: string | undefined) {
+  return (value || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'")
+    .trim();
+}
+
+function absoluteImageUrl(value: string | null, finalUrl: string) {
+  if (!value) return null;
+  try {
+    return new URL(value, finalUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractProductImageUrl(html: string, finalUrl: string) {
+  const candidates = [
+    html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1],
+    html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1],
+    html.match(/"image"\s*:\s*"([^"]+)"/i)?.[1],
+    html.match(/"imageUrl"\s*:\s*"([^"]+)"/i)?.[1],
+    html.match(/"primaryImage"\s*:\s*"([^"]+)"/i)?.[1]
+  ];
+  for (const candidate of candidates) {
+    const imageUrl = absoluteImageUrl(cleanHtmlAttribute(candidate), finalUrl);
+    if (imageUrl && /^https?:\/\//i.test(imageUrl)) return imageUrl;
+  }
+  return null;
 }
 
 function withRequirementPenalty<T extends {
@@ -359,6 +394,8 @@ async function fetchPublicProductPage(input: {
   return {
     ...status,
     price: detectPrice(body),
+    title: titleText || null,
+    imageUrl: extractProductImageUrl(body, finalUrl),
     pageHash: hashPage(body),
     httpStatus: response.status,
     finalUrl,
@@ -545,7 +582,16 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
           lastCheckedAt: now,
           nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
           lastMonitorError: detection.reason,
-          lastMonitorResult: `Blocked: ${detection.blockedType}`
+          lastMonitorResult: `Blocked: ${detection.blockedType}`,
+          liveTitle: detection.title,
+          livePrice: detection.price,
+          livePriceSource: detection.price === null ? null : "Retailer page",
+          livePriceVerifiedAt: detection.price === null ? undefined : now,
+          liveStockStatus: null,
+          liveStockVerifiedAt: undefined,
+          liveImageUrl: detection.imageUrl,
+          liveConfidenceScore: detection.confidenceScore,
+          liveBlockedType: detection.blockedType
         }
       });
       const log = await createMonitorLog({
@@ -585,6 +631,15 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
           verifiedAt: now,
           verifiedFinalUrl: detection.finalUrl,
           verificationNotes: identityReason,
+          liveTitle: detection.title,
+          livePrice: detection.price,
+          livePriceSource: detection.price === null ? null : "Retailer page",
+          livePriceVerifiedAt: detection.price === null ? undefined : now,
+          liveStockStatus: detection.status,
+          liveStockVerifiedAt: detection.status === null ? undefined : now,
+          liveImageUrl: detection.imageUrl,
+          liveConfidenceScore: detection.confidenceScore,
+          liveBlockedType: null,
           lastCheckedAt: now,
           nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
           lastMonitorError: null,
@@ -624,7 +679,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
 
     const change = changedStatus(
       product.stockStatus as ProductStatus,
-      product.retailPrice,
+      product.livePrice ?? product.retailPrice,
       product.lastPageHash,
       detection
     );
@@ -651,6 +706,15 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
           nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
           lastMonitorResult: pendingReason,
           lastMonitorError: null,
+          liveTitle: detection.title,
+          livePrice: detection.price,
+          livePriceSource: detection.price === null ? null : "Retailer page",
+          livePriceVerifiedAt: detection.price === null ? undefined : now,
+          liveStockStatus: change.nextStatus,
+          liveStockVerifiedAt: now,
+          liveImageUrl: detection.imageUrl,
+          liveConfidenceScore: detection.confidenceScore,
+          liveBlockedType: null,
           pendingAlertStatus: change.nextStatus,
           pendingAlertPrice: detection.price,
           pendingAlertPageHash: detection.pageHash,
@@ -697,7 +761,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         data: {
           productId,
           status: change.nextStatus,
-          price: detection.price ?? product.retailPrice,
+          price: detection.price ?? product.livePrice ?? product.retailPrice,
           snapshotReason: `Monitor: ${change.summary} Confidence ${detection.confidenceScore}%.`
         }
       });
@@ -720,11 +784,21 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
       where: { id: productId },
       data: {
         stockStatus: change.nextStatus,
-        retailPrice: detection.price ?? product.retailPrice,
+        retailPrice: detection.price !== null && detection.confidenceScore >= 70 ? detection.price : product.retailPrice,
         verificationStatus: detection.identityMatch.verificationStatus,
         verifiedAt: now,
         verifiedFinalUrl: detection.finalUrl,
         verificationNotes: detection.identityMatch.notes.join(". "),
+        imageUrl: detection.imageUrl ?? product.imageUrl,
+        liveTitle: detection.title,
+        livePrice: detection.price,
+        livePriceSource: detection.price === null ? null : "Retailer page",
+        livePriceVerifiedAt: detection.price === null ? undefined : now,
+        liveStockStatus: change.nextStatus,
+        liveStockVerifiedAt: now,
+        liveImageUrl: detection.imageUrl,
+        liveConfidenceScore: detection.confidenceScore,
+        liveBlockedType: null,
         lastCheckedAt: now,
         lastSuccessfulCheckedAt: now,
         nextCheckAt: nextCheckAt(product.checkFrequencyMinutes),
@@ -743,7 +817,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
       status: change.changed ? "CHANGED" : "SUCCESS",
       previousStatus: product.stockStatus,
       detectedStatus: change.nextStatus,
-      previousPrice: product.retailPrice,
+      previousPrice: product.livePrice ?? product.retailPrice,
       detectedPrice: detection.price,
       changeSummary: monitorResult,
       httpStatus: detection.httpStatus,

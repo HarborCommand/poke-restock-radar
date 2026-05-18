@@ -291,6 +291,11 @@ async function main() {
           dpci: product.dpci,
           retailerProductId: product.retailerProductId,
           retailPrice: product.retailPrice,
+          livePrice: null,
+          livePriceSource: null,
+          liveStockStatus: null,
+          liveConfidenceScore: null,
+          isDemoData: true,
           stockStatus: product.stockStatus,
           priority: product.priority,
           rating: product.rating,
@@ -307,7 +312,7 @@ async function main() {
           productId: created.id,
           status: created.stockStatus,
           price: created.retailPrice,
-          snapshotReason: "Seeded Phase 1 manual status"
+          snapshotReason: "Seeded demo manual status"
         }
       });
     }
@@ -618,7 +623,7 @@ async function main() {
           psa10EstimatedProfit: profit(card.raw, card.psa10, fee, card.grading),
           maxRawBuyPricePsa9: maxRawBuy(card.psa9, fee, card.grading),
           rating: card.rating,
-          dataSource: "Manual seed sample; verify eBay sold comps",
+          dataSource: "Demo data - manual sample; verify eBay sold comps",
           lastRefreshed: new Date(),
           notes: card.notes,
           lowPop: card.lowPop,

@@ -49,9 +49,22 @@ Set `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD_HASH` before any shared or
 
 ## Phase 2 Monitoring
 
-Phase 2 adds safe public-page product monitoring. Checks are sequential and rate-limited, store monitor logs, create restock history on detected changes, and can trigger in-app, SMTP email, or Twilio SMS alerts.
+Phase 2 adds safe public-page product monitoring. Checks are sequential and rate-limited, store monitor logs, create restock history on detected changes, and can trigger in-app, SMTP email, Twilio SMS, or browser push alerts.
 
 The monitor only fetches public product pages. It does not perform cart, payment, account, queue, captcha, purchase-limit, or retailer-private actions.
+
+Live product fields are collected only from the exact tracked retailer page:
+
+- live product title
+- live price
+- live stock or preorder/add-to-cart cue
+- product image URL
+- final resolved URL
+- source label `Retailer page`
+- last verified timestamp
+- confidence score
+
+If price or stock cannot be verified, the UI shows `Price not verified` or `Not verified`. Seed/demo prices are labeled as demo data and are not treated as live retailer prices.
 
 Run due checks locally:
 
@@ -108,15 +121,17 @@ Each user can configure in-app, email, SMS, quiet hours, and minimum priority fr
 
 ### Tuning Retailer Detection
 
-Start with exact product URLs whenever possible. Search pages work for setup, but exact product pages give cleaner detected words, prices, and final URLs. After a noisy check, open the monitor result details and review HTTP status, final URL, response time, confidence, reason, and detected words.
+Start with exact product URLs. Search/category links are marked unverified and cannot send Buy alerts. After a noisy check, open the monitor result details and review HTTP status, final URL, response time, confidence, reason, and detected words.
 
 Recommended tuning loop:
 
-1. Add a product with a retailer template and run `Run Check Now`.
+1. Add a product with an exact retailer product URL, UPC/SKU/DPCI/TCIN/item ID where available, and expected title keywords.
 2. If the result is blocked or captcha, wait and let the normal cron cadence retry. Do not bypass it.
 3. If the monitor matches the wrong product, add required words from the actual product title.
 4. If the monitor matches unrelated page text, add those words to ignore words.
 5. Mark confirmed bad alerts as false positives so the admin accuracy stats stay honest.
+
+Buy alerts are sent only when the monitor confirms exact product identity and detects an in-stock, preorder, or add-to-cart state. Blocked/captcha/queue pages and possible mismatches are logged but do not create Buy alerts.
 
 ## Phase 3 Card Investment Engine
 
@@ -134,7 +149,23 @@ Use Investment Settings to adjust grading cost, eBay selling fee, shipping cost,
 
 The poster/export view is printable HTML from the Top 10 panel. Use Print Poster to print or save as PDF from the browser print dialog.
 
-eBay integration is manual/assisted for now. Do not use aggressive scraping; enter sold comps from public eBay sold results or another source you can verify.
+### eBay Last-3 Comp Workflow
+
+The app supports two comp modes:
+
+- `API mode`: when eBay API credentials are configured, Refresh eBay Comps uses eBay completed/sold sales APIs to look up the last 3 matching sales per grade.
+- `Manual comp mode`: when credentials are missing, the app clearly says Manual comp mode and you enter verified sold listing data yourself.
+
+The app stores sale title, sale price, sale date, source URL, grade type, and match score. Averages and profit estimates use the last 3 sales per grade. If fewer than 3 raw, PSA 9, or PSA 10 comps exist, the UI shows low confidence. The app never invents sold prices, sold dates, or comp freshness.
+
+Optional eBay API env vars:
+
+- `EBAY_CLIENT_ID`
+- `EBAY_CLIENT_SECRET`
+- `EBAY_ENVIRONMENT` (`production` or `sandbox`)
+- `EBAY_MARKETPLACE_ID` (`EBAY_US` by default)
+
+Do not aggressively scrape eBay or pricing sites. Use API mode when configured, or assisted manual entry from completed/sold listing URLs.
 
 ## Phase 4 Release And Product Priority Logic
 
@@ -244,6 +275,7 @@ Optional provider env vars:
 
 - SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 - Twilio: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
+- eBay API comp refresh: `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_ENVIRONMENT`, `EBAY_MARKETPLACE_ID`
 
 ### Database Setup
 

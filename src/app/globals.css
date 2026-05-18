@@ -965,6 +965,28 @@ textarea {
   min-width: 0;
 }
 
+.last-comp-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  padding-top: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.last-comp-list strong {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.last-comp-list span {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
 .monitor-meta,
 .monitor-status {
   display: flex;

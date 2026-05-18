@@ -134,6 +134,16 @@ model Product {
   verifiedFinalUrl          String?
   verificationNotes         String?
   retailPrice               Float?
+  liveTitle                 String?
+  livePrice                 Float?
+  livePriceSource           String?
+  livePriceVerifiedAt       DateTime?
+  liveStockStatus           String?
+  liveStockVerifiedAt       DateTime?
+  liveImageUrl              String?
+  liveConfidenceScore       Int?
+  liveBlockedType           String?
+  isDemoData                Boolean                @default(false)
   stockStatus               String                 @default("UNAVAILABLE")
   alertStatus               Boolean                @default(false)
   priority                  String                 @default("MEDIUM")
@@ -179,6 +189,8 @@ model Product {
   @@index([retailerProductId])
   @@index([verificationStatus])
   @@index([stockStatus])
+  @@index([liveStockStatus])
+  @@index([isDemoData])
   @@index([nextCheckAt])
   @@index([monitorEnabled])
 }
@@ -421,6 +433,8 @@ model CardCompSale {
   soldAt         DateTime
   url            String?
   sourceUrl      String?
+  saleTitle      String?
+  matchScore     Int      @default(0)
   notes          String?
   conditionNotes String?
   sourceQuality  String   @default("EBAY_SOLD")
@@ -431,6 +445,7 @@ model CardCompSale {
   @@index([gradeType])
   @@index([sourceQuality])
   @@index([soldAt])
+  @@index([matchScore])
 }
 
 model InvestmentReport {

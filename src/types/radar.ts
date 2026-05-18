@@ -174,6 +174,16 @@ export type ProductDTO = {
   verifiedFinalUrl: string | null;
   verificationNotes: string | null;
   retailPrice: number | null;
+  liveTitle: string | null;
+  livePrice: number | null;
+  livePriceSource: string | null;
+  livePriceVerifiedAt: string | null;
+  liveStockStatus: ProductStatus | null;
+  liveStockVerifiedAt: string | null;
+  liveImageUrl: string | null;
+  liveConfidenceScore: number | null;
+  liveBlockedType: string | null;
+  isDemoData: boolean;
   stockStatus: ProductStatus;
   alertStatus: boolean;
   priority: Priority;
@@ -334,6 +344,10 @@ export type CardDTO = {
   lastCompAt: string | null;
   compCount: number;
   recentCompCount: number;
+  rawCompCount: number;
+  psa9CompCount: number;
+  psa10CompCount: number;
+  lastThreeComps: CardCompSaleDTO[];
 };
 
 export type ProductPriorityScoreDTO = {
@@ -522,7 +536,7 @@ export type DataQualityWarningDTO = {
   severity: Priority;
   title: string;
   detail: string;
-  tab: "products" | "stores" | "releases" | "alerts";
+  tab: "products" | "stores" | "releases" | "alerts" | "cards";
   entityId?: string;
 };
 
@@ -569,6 +583,8 @@ export type CardCompSaleDTO = {
   source: string;
   sourceQuality: CompSourceQuality;
   sourceUrl: string | null;
+  saleTitle: string | null;
+  matchScore: number;
   conditionNotes: string | null;
 };
 
