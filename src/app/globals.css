@@ -317,6 +317,11 @@ textarea {
   line-height: 1.15;
 }
 
+.mini-action.icon-only {
+  width: 32px;
+  padding: 0;
+}
+
 .mini-action.solid {
   border-color: rgba(56, 215, 125, 0.42);
   background: var(--green-bg);
@@ -396,7 +401,7 @@ textarea {
 }
 
 .app-shell {
-  width: min(100%, 1240px);
+  width: min(100%, 1480px);
   max-width: 100%;
   margin: 0 auto;
   padding: 18px clamp(12px, 2vw, 28px) 112px;
@@ -528,6 +533,14 @@ textarea {
   gap: 12px;
   width: 100%;
   max-width: 100%;
+}
+
+.content-grid > .stack,
+.content-grid > .store-row-list,
+.content-grid > .field-store-list,
+.content-grid > .card-opportunity-list,
+.content-grid > .release-calendar-panel {
+  grid-column: 1 / -1;
 }
 
 .stat-grid {
@@ -853,11 +866,13 @@ textarea {
   line-height: 1.2;
   overflow-wrap: break-word;
   word-break: normal;
+  hyphens: none;
 }
 
 .card-main p {
   font-size: 0.79rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .reason-text {
@@ -888,6 +903,8 @@ textarea {
   gap: 7px;
   min-width: 0;
   max-width: 100%;
+  justify-content: flex-start;
+  align-content: flex-start;
 }
 
 .card-opportunity-list {
@@ -926,6 +943,9 @@ textarea {
   color: var(--text);
   font-size: 0.93rem;
   line-height: 1.18;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
 }
 
 .card-opportunity-main p,
@@ -934,6 +954,8 @@ textarea {
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.35;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .card-opportunity-actions {
@@ -973,6 +995,137 @@ textarea {
   padding: 9px;
 }
 
+.release-calendar-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(18, 21, 20, 0.72);
+  padding: 14px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.release-year {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.release-year-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.release-year-heading h2 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: clamp(1.75rem, 3vw, 2.6rem);
+  line-height: 1;
+}
+
+.release-month-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 10px;
+}
+
+.release-month-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.026);
+  padding: 11px;
+}
+
+.release-month-card h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.release-day-list {
+  display: grid;
+  gap: 7px;
+}
+
+.release-day-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 9px;
+  background: rgba(7, 8, 8, 0.42);
+  padding: 8px;
+}
+
+.release-day-number {
+  display: grid;
+  place-items: center;
+  gap: 1px;
+  min-width: 0;
+  border-radius: 8px;
+  background: rgba(135, 187, 255, 0.08);
+  color: var(--blue);
+  padding: 5px 3px;
+}
+
+.release-day-number strong {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1;
+  overflow-wrap: normal;
+}
+
+.release-day-number span {
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  overflow-wrap: normal;
+}
+
+.release-day-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.release-day-main strong {
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.release-day-main span,
+.release-day-main small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.release-day-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+}
+
 .accuracy-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -987,11 +1140,11 @@ textarea {
 .field-mode-panel,
 .field-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(18, 21, 20, 0.88);
-  padding: 14px;
+  padding: 12px;
 }
 
 .field-mode-heading,
@@ -999,12 +1152,14 @@ textarea {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .field-mode-heading h2,
 .field-card h3 {
-  margin: 3px 0 5px;
+  margin: 2px 0 4px;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .field-mode-heading p,
@@ -1019,7 +1174,7 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px;
+  gap: 7px;
   max-width: 100%;
 }
 
@@ -1044,7 +1199,7 @@ textarea {
 
 .field-store-list {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .field-card {
@@ -1080,8 +1235,8 @@ textarea {
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
-  padding: 6px 8px;
-  font-size: 0.74rem;
+  padding: 5px 7px;
+  font-size: 0.72rem;
   font-weight: 800;
 }
 
@@ -1096,13 +1251,13 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 48px;
+  min-height: 42px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.035);
   color: var(--text);
   padding: 0 8px;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 900;
 }
 
@@ -2459,16 +2614,12 @@ textarea {
     align-items: center;
   }
 
-  .card-opportunity-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
   .card-opportunity-row .monitor-meta {
     grid-column: 1 / -1;
   }
 
   .card-opportunity-actions {
-    justify-content: flex-end;
+    justify-content: flex-start;
   }
 
   .stack.compact .data-card,
@@ -2487,12 +2638,12 @@ textarea {
   }
 
   .product-card:not(.compact-product-card) .product-card-body {
-    grid-template-columns: minmax(0, 1fr) minmax(170px, auto);
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
   }
 
   .product-card:not(.compact-product-card) .card-actions {
-    justify-content: flex-end;
+    justify-content: flex-start;
   }
 
   .product-card:not(.compact-product-card) .reason-text,
@@ -2633,8 +2784,12 @@ textarea {
 
 @media (min-width: 1180px) {
   .chase-now-grid.apple-chase-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: start;
+  }
+
+  .chase-now-grid.apple-chase-grid > .action-panel:nth-child(3) {
+    grid-column: 1 / -1;
   }
 }
 

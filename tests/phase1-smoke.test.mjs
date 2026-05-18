@@ -269,6 +269,8 @@ test("dashboard compact cards stay readable instead of narrow columns", () => {
   assert.match(css, /\.product-card\s*\{[^}]*grid-template-columns:\s*minmax\(128px,\s*176px\)\s*minmax\(0,\s*1fr\)/s);
   assert.match(css, /\.product-image-frame\s*\{[^}]*height:\s*148px/s);
   assert.match(css, /\.product-image-frame img\s*\{[^}]*object-fit:\s*contain !important/s);
+  assert.match(css, /\.content-grid\s*>\s*\.stack/s);
+  assert.match(css, /\.product-card:not\(\.compact-product-card\)\s*\.product-card-body\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(css, /\.field-filter-grid\s*\{[^}]*display:\s*flex/s);
   assert.match(css, /\.today-plan-panel,\s*\n\s*\.form-panel/s);
   assert.match(css, /\.daily-plan-grid\s*\{[^}]*minmax\(320px,\s*1fr\)/s);
@@ -473,7 +475,8 @@ test("Phase 4 release priority engine fields exist", () => {
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   assert.match(app, /Online Drops/);
-  assert.match(app, /Release Countdown/);
+  assert.match(app, /Yearly Release Calendar/);
+  assert.match(app, /release-month-grid/);
   assert.match(app, /High priority only/);
 });
 

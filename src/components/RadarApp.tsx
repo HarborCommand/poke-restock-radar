@@ -170,6 +170,56 @@ function dateTime(value: string | null | undefined) {
   }).format(date);
 }
 
+function calendarDate(value: string | null | undefined) {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function calendarDateParts(value: string | null | undefined) {
+  const date = calendarDate(value);
+  if (!date) return null;
+  return {
+    day: String(date.getDate()),
+    weekday: new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date)
+  };
+}
+
+function groupReleasesByYear(releases: ReleaseDTO[]) {
+  const byYear = new Map<number, Map<number, ReleaseDTO[]>>();
+  for (const release of releases) {
+    const date = calendarDate(release.officialReleaseDate);
+    if (!date) continue;
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const months = byYear.get(year) ?? new Map<number, ReleaseDTO[]>();
+    const monthReleases = months.get(month) ?? [];
+    monthReleases.push(release);
+    months.set(month, monthReleases);
+    byYear.set(year, months);
+  }
+
+  return Array.from(byYear.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([year, months]) => ({
+      year,
+      months: Array.from(months.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([month, monthReleases]) => ({
+          month,
+          label: new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date(year, month, 1)),
+          releases: monthReleases.sort((a, b) => {
+            const dateA = calendarDate(a.officialReleaseDate)?.getTime() ?? 0;
+            const dateB = calendarDate(b.officialReleaseDate)?.getTime() ?? 0;
+            return dateA - dateB || a.setName.localeCompare(b.setName);
+          })
+        }))
+    }));
+}
+
 function relativeTime(value: string | null | undefined) {
   if (!value) return "Not scheduled";
   const time = new Date(value).getTime();
@@ -682,14 +732,7 @@ export function RadarApp() {
           />
         ) : null}
         {activeTab === "releases" ? (
-          <ReleasesPanel
-            dashboard={dashboard}
-            isAdmin={isAdmin}
-            busy={busy}
-            busyLabel={busyLabel}
-            submit={submit}
-            runAction={runAction}
-          />
+          <ReleasesPanel dashboard={dashboard} />
         ) : null}
         {activeTab === "cards" ? (
           <CardsPanel
@@ -801,6 +844,16 @@ function AdminControlPanel({
             <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
             <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
             <DataQualityPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+          </AdminFold>
+
+          <AdminFold title="Release Management" detail="Add, import, and edit yearly drop data">
+            <ReleaseManagementPanel
+              dashboard={dashboard}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={submit}
+              runAction={runAction}
+            />
           </AdminFold>
 
           <AdminFold title="Monitor Logs And Accuracy" detail="Run history, blocked pages, false positives">
@@ -3704,152 +3757,165 @@ function EditableSighting({
   );
 }
 
-function ReleasesPanel({
+function ReleasesPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  return (
+    <>
+      <PanelHeader title="Yearly Release Calendar" />
+      <ReleaseCalendar releases={dashboard.releases} />
+    </>
+  );
+}
+
+function ReleaseCalendar({ releases }: { releases: ReleaseDTO[] }) {
+  const yearlyDrops = useMemo(() => groupReleasesByYear(releases), [releases]);
+
+  if (!releases.length) {
+    return (
+      <section className="release-calendar-panel">
+        <EmptyState
+          icon={CalendarDays}
+          title="No yearly drops tracked"
+          detail="Admin can add verified release dates from Release Management."
+        />
+      </section>
+    );
+  }
+
+  return (
+    <section className="release-calendar-panel" aria-label="Pokemon TCG yearly release calendar">
+      {yearlyDrops.map(({ year, months }) => (
+        <div className="release-year" key={year}>
+          <div className="release-year-heading">
+            <div>
+              <p className="eyeline">Pokemon TCG Drops</p>
+              <h2>{year}</h2>
+            </div>
+            <span className="chip muted">{months.reduce((total, month) => total + month.releases.length, 0)} tracked drops</span>
+          </div>
+          <div className="release-month-grid">
+            {months.map((month) => (
+              <article className="release-month-card" key={`${year}-${month.month}`}>
+                <h3>{month.label}</h3>
+                <div className="release-day-list">
+                  {month.releases.map((release) => {
+                    const actionUrl = firstUrl(release.productLinks);
+                    const releaseDate = calendarDateParts(release.officialReleaseDate);
+                    return (
+                      <div className="release-day-row" id={`release-${release.id}`} key={release.id}>
+                        <div className="release-day-number">
+                          <strong>{releaseDate ? releaseDate.day : "?"}</strong>
+                          <span>{releaseDate ? releaseDate.weekday : "TBD"}</span>
+                        </div>
+                        <div className="release-day-main">
+                          <strong>{release.setName}</strong>
+                          <span>
+                            {release.productType || release.productTypes.split(",")[0]} - Release {shortDate(release.officialReleaseDate)}
+                          </span>
+                          {release.preorderDate ? <small>Preorder {shortDate(release.preorderDate)}</small> : <small>Preorder TBD</small>}
+                        </div>
+                        <div className="release-day-actions">
+                          <span className={`chip compact-chip ${statusTone(release.priority)}`}>{release.priority}</span>
+                          {release.pokemonCenterExclusiveVersion ? <span className="chip compact-chip watch">PC</span> : null}
+                          {actionUrl ? (
+                            <a className="mini-action icon-only" href={actionUrl} target="_blank" rel="noreferrer" aria-label={`Open ${release.setName}`}>
+                              <ExternalLink size={14} />
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function ReleaseManagementPanel({
   dashboard,
-  isAdmin,
   busy,
   busyLabel,
   submit,
   runAction
 }: {
   dashboard: DashboardDTO;
-  isAdmin: boolean;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
   runAction: ActionHandler;
 }) {
-  const [filters, setFilters] = useState({
-    highOnly: false,
-    pokemonCenterExclusive: false,
-    productType: "ALL"
-  });
-  const filteredReleases = useMemo(
-    () =>
-      dashboard.releases.filter((release) => {
-        if (filters.highOnly && release.sealedProductPriority !== "HIGH" && release.estimatedDemand !== "HIGH") return false;
-        if (filters.pokemonCenterExclusive && !release.pokemonCenterExclusiveVersion) return false;
-        if (
-          filters.productType !== "ALL" &&
-          !`${release.productType ?? ""} ${release.productTypes}`.toLowerCase().includes(filters.productType.toLowerCase())
-        ) {
-          return false;
-        }
-        return true;
-      }),
-    [dashboard.releases, filters]
-  );
-
-  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
-    const { name, type, value } = event.currentTarget;
-    setFilters((current) => ({
-      ...current,
-      [name]: type === "checkbox" ? (event.currentTarget as HTMLInputElement).checked : value
-    }));
-  }
-
   return (
     <>
-      <PanelHeader title="Release Countdown" />
       <section className="form-panel">
-        <div className="form-grid">
-          <label className="checkbox-label">
-            <input name="highOnly" type="checkbox" checked={filters.highOnly} onChange={updateFilter} />
-            High priority only
-          </label>
-          <label className="checkbox-label">
-            <input
-              name="pokemonCenterExclusive"
-              type="checkbox"
-              checked={filters.pokemonCenterExclusive}
-              onChange={updateFilter}
-            />
-            Pokemon Center exclusive
-          </label>
+        <h2>Add Release</h2>
+        <form
+          className="form-grid"
+          onSubmit={(event) =>
+            submit(
+              event,
+              "Adding release",
+              (form) => requestJson("/api/radar/releases", { method: "POST", body: JSON.stringify(formJson(form)) }),
+              { success: "Release added" }
+            )
+          }
+        >
+          <TextInput name="setName" label="Set name" required />
           <SelectInput
             name="productType"
-            label="Product type"
-            value={filters.productType}
-            onChange={updateFilter}
-            options={[{ value: "ALL", label: "All Product Types" }].concat(
-              productTypeOptions.map((value) => ({ value, label: value }))
-            )}
+            label="Primary product type"
+            options={productTypeOptions.map((value) => ({ value, label: value }))}
           />
+          <TextInput name="officialReleaseDate" label="Release date" type="date" min="2020-01-01" required />
+          <TextInput name="preorderDate" label="Preorder date" type="date" min="2020-01-01" />
+          <TextareaInput name="productTypes" label="Product types" placeholder="ETB, Booster Bundle" wide required />
+          <SelectInput name="demandRating" label="Demand" options={priorities.map(optionFromString)} />
+          <SelectInput name="estimatedDemand" label="Estimated demand" options={priorities.map(optionFromString)} />
+          <SelectInput name="priority" label="Priority" options={priorities.map(optionFromString)} />
+          <SelectInput name="sealedProductPriority" label="Sealed product priority" options={priorities.map(optionFromString)} />
+          <label className="checkbox-label">
+            <input name="pokemonCenterExclusiveVersion" type="checkbox" value="true" />
+            Pokemon Center exclusive version
+          </label>
+          <TextareaInput name="chaseCards" label="Chase cards" wide />
+          <TextareaInput name="productLinks" label="Product links" placeholder="https://..." wide />
+          <TextareaInput name="notes" label="Notes" wide />
+          <button className="primary-action" disabled={busy} type="submit">
+            <Plus size={16} />
+            {busyLabel === "Adding release" ? "Adding" : "Add Release"}
+          </button>
+        </form>
+      </section>
+      <BulkImportPanel
+        title="Bulk Release Import"
+        endpoint="/api/radar/releases/import"
+        busy={busy}
+        busyLabel={busyLabel}
+        submit={submit}
+        sample={`setName,productType,officialReleaseDate,preorderDate,productTypes,pokemonCenterExclusiveVersion,chaseCards,demandRating,estimatedDemand,priority,sealedProductPriority,productLinks,notes\nMega Evolution-Chaos Rising,Build & Battle Box,2026-05-22,2026-05-08,\"Build & Battle Box, Booster Bundle, ETB\",true,Verify final chase card list,HIGH,HIGH,HIGH,HIGH,https://www.pokemon.com/uk/pokemon-news/get-a-pokemon-tcg-mega-evolution-chaos-rising-build-battle-box-early,Verify dates by region`}
+      />
+      <section className="form-panel">
+        <h2>Edit Releases</h2>
+        <div className="edit-stack">
+          {dashboard.releases.length ? (
+            dashboard.releases.map((release) => (
+              <EditableRelease
+                key={release.id}
+                release={release}
+                busy={busy}
+                busyLabel={busyLabel}
+                submit={submit}
+                runAction={runAction}
+              />
+            ))
+          ) : (
+            <EmptyState icon={CalendarDays} title="No releases to edit" detail="Add a release first." />
+          )}
         </div>
       </section>
-      <ReleaseStack releases={filteredReleases} />
-      {isAdmin ? (
-        <section className="form-panel">
-          <h2>Add Release</h2>
-          <form
-            className="form-grid"
-            onSubmit={(event) =>
-              submit(
-                event,
-                "Adding release",
-                (form) => requestJson("/api/radar/releases", { method: "POST", body: JSON.stringify(formJson(form)) }),
-                { success: "Release added" }
-              )
-            }
-          >
-            <TextInput name="setName" label="Set name" required />
-            <SelectInput
-              name="productType"
-              label="Primary product type"
-              options={productTypeOptions.map((value) => ({ value, label: value }))}
-            />
-            <TextInput name="officialReleaseDate" label="Release date" type="date" min="2020-01-01" required />
-            <TextInput name="preorderDate" label="Preorder date" type="date" min="2020-01-01" />
-            <TextareaInput name="productTypes" label="Product types" placeholder="ETB, Booster Bundle" wide required />
-            <SelectInput name="demandRating" label="Demand" options={priorities.map(optionFromString)} />
-            <SelectInput name="estimatedDemand" label="Estimated demand" options={priorities.map(optionFromString)} />
-            <SelectInput name="priority" label="Priority" options={priorities.map(optionFromString)} />
-            <SelectInput name="sealedProductPriority" label="Sealed product priority" options={priorities.map(optionFromString)} />
-            <label className="checkbox-label">
-              <input name="pokemonCenterExclusiveVersion" type="checkbox" value="true" />
-              Pokemon Center exclusive version
-            </label>
-            <TextareaInput name="chaseCards" label="Chase cards" wide />
-            <TextareaInput name="productLinks" label="Product links" placeholder="https://..." wide />
-            <TextareaInput name="notes" label="Notes" wide />
-            <button className="primary-action" disabled={busy} type="submit">
-              <Plus size={16} />
-              {busyLabel === "Adding release" ? "Adding" : "Add Release"}
-            </button>
-          </form>
-        </section>
-      ) : null}
-      {isAdmin ? (
-        <BulkImportPanel
-          title="Bulk Release Import"
-          endpoint="/api/radar/releases/import"
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={submit}
-          sample={`setName,productType,officialReleaseDate,preorderDate,productTypes,pokemonCenterExclusiveVersion,chaseCards,demandRating,estimatedDemand,priority,sealedProductPriority,productLinks,notes\nMega Evolution-Chaos Rising,Build & Battle Box,2026-05-22,2026-05-08,\"Build & Battle Box, Booster Bundle, ETB\",true,Verify final chase card list,HIGH,HIGH,HIGH,HIGH,https://www.pokemon.com/uk/pokemon-news/get-a-pokemon-tcg-mega-evolution-chaos-rising-build-battle-box-early,Verify dates by region`}
-        />
-      ) : null}
-      {isAdmin ? (
-        <section className="form-panel">
-          <h2>Edit Releases</h2>
-          <div className="edit-stack">
-            {dashboard.releases.length ? (
-              dashboard.releases.map((release) => (
-                <EditableRelease
-                  key={release.id}
-                  release={release}
-                  busy={busy}
-                  busyLabel={busyLabel}
-                  submit={submit}
-                  runAction={runAction}
-                />
-              ))
-            ) : (
-              <EmptyState icon={CalendarDays} title="No releases to edit" detail="Add a release first." />
-            )}
-          </div>
-        </section>
-      ) : null}
     </>
   );
 }
