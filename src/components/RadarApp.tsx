@@ -2175,6 +2175,59 @@ function EmptyState({
   );
 }
 
+function SectionIntro({
+  title,
+  detail,
+  stats
+}: {
+  title: string;
+  detail: string;
+  stats?: Array<{ label: string; value: string | number; tone?: string }>;
+}) {
+  return (
+    <section className="section-intro">
+      <div>
+        <h2>{title}</h2>
+        <p>{detail}</p>
+      </div>
+      {stats?.length ? (
+        <div className="section-intro-stats">
+          {stats.map((stat) => (
+            <span className={`chip ${stat.tone || "muted"}`} key={stat.label}>
+              {stat.value} {stat.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function UtilityFold({
+  title,
+  detail,
+  defaultOpen = false,
+  children
+}: {
+  title: string;
+  detail: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details className="utility-fold" open={defaultOpen}>
+      <summary>
+        <div>
+          <strong>{title}</strong>
+          <span>{detail}</span>
+        </div>
+        <ChevronRight size={16} />
+      </summary>
+      <div className="utility-fold-body">{children}</div>
+    </details>
+  );
+}
+
 function ProductStack({ products, compact = false }: { products: ProductDTO[]; compact?: boolean }) {
   if (!products.length) {
     return (
@@ -3022,65 +3075,65 @@ function ProductsPanel({
 
   return (
     <>
-      <PanelHeader title="Product Watchlist" />
+      <SectionIntro
+        title="Products"
+        detail="Your online watchlist. Work from the cards below; setup, imports, and logs are tucked away."
+        stats={[
+          { label: "tracked", value: dashboard.products.length },
+          { label: "shown", value: filteredProducts.length },
+          { label: "ready", value: dashboard.products.filter(productReadyForAlert).length, tone: "good" }
+        ]}
+      />
       {isAdmin ? (
-        <section className="form-panel">
-          <div className="edit-card-heading">
-            <div>
-              <h2>Monitor Controls</h2>
-              <span>Checks are sequential and rate-limited against public product pages.</span>
-            </div>
-            <div className="admin-actions">
-              <button
-                className="mini-action solid"
-                disabled={busy}
-                type="button"
-                onClick={() =>
-                  runAction(
-                    "Running due checks",
-                    () =>
-                      requestJson("/api/radar/monitor/run", {
-                        method: "POST",
-                        body: JSON.stringify({ mode: "due" })
-                      }),
-                    { success: "Due checks finished" }
-                  )
-                }
-              >
-                <Play size={14} />
-                {busyLabel === "Running due checks" ? "Running" : "Run Due Checks"}
-              </button>
-              <button
-                className="mini-action"
-                disabled={busy}
-                type="button"
-                onClick={() =>
-                  runAction(
-                    "Running all checks",
-                    () =>
-                      requestJson("/api/radar/monitor/run", {
-                        method: "POST",
-                        body: JSON.stringify({ mode: "all" })
-                      }),
-                    { success: "All checks finished" }
-                  )
-                }
-              >
-                <RefreshCw size={14} />
-                {busyLabel === "Running all checks" ? "Running" : "Run All Checks"}
-              </button>
-            </div>
-          </div>
-        </section>
+        <div className="simple-action-row">
+          <button
+            className="primary-action compact-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                "Running due checks",
+                () =>
+                  requestJson("/api/radar/monitor/run", {
+                    method: "POST",
+                    body: JSON.stringify({ mode: "due" })
+                  }),
+                { success: "Due checks finished" }
+              )
+            }
+          >
+            <Play size={15} />
+            {busyLabel === "Running due checks" ? "Running" : "Run Checks"}
+          </button>
+          <button
+            className="mini-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                "Running all checks",
+                () =>
+                  requestJson("/api/radar/monitor/run", {
+                    method: "POST",
+                    body: JSON.stringify({ mode: "all" })
+                  }),
+                { success: "All checks finished" }
+              )
+            }
+          >
+            <RefreshCw size={14} />
+            {busyLabel === "Running all checks" ? "Running" : "Run All"}
+          </button>
+        </div>
       ) : null}
       <section className="form-panel">
         <div className="edit-card-heading">
           <div>
-            <h2>Chase Filters</h2>
+            <h2>Filters</h2>
             <span>{filteredProducts.length} products shown</span>
           </div>
         </div>
-        <div className="form-grid">
+        <div className="field-filter-grid">
           <label className="checkbox-label">
             <input name="highOnly" type="checkbox" checked={filters.highOnly} onChange={updateFilter} />
             High priority only
@@ -3105,46 +3158,44 @@ function ProductsPanel({
           />
         </div>
       </section>
-      {isAdmin ? <ProductSetupGuidancePanel dashboard={dashboard} /> : null}
       <ProductStack products={filteredProducts} />
       {isAdmin ? (
-        <ProductAddWizard dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+        <UtilityFold title="Product Admin" detail="Add products, verify exact links, import, edit, and review monitor logs">
+          <ProductSetupGuidancePanel dashboard={dashboard} />
+          <ProductAddWizard dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+          <BulkImportPanel
+            title="Bulk Product Import"
+            endpoint="/api/radar/products/import"
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            sample={`retailer,name,url,imageUrl,expectedTitleKeywords,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/p/example-product/-/A-12345678,https://example.com/exact-product-image.jpg,"Mega Evolution,Booster Bundle",Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650123456,087-12-1234,12345678,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
+          />
+          <section className="form-panel">
+            <h2>Edit Products</h2>
+            <div className="edit-stack">
+              {dashboard.products.length ? (
+                dashboard.products.map((product) => (
+                  <EditableProduct
+                    key={product.id}
+                    product={product}
+                    retailers={dashboard.retailers}
+                    releases={dashboard.releases}
+                    busy={busy}
+                    busyLabel={busyLabel}
+                    submit={submit}
+                    runAction={runAction}
+                  />
+                ))
+              ) : (
+                <EmptyState icon={PackageSearch} title="No products to edit" detail="Add a product URL first." />
+              )}
+            </div>
+          </section>
+          <MonitorAccuracyPanel dashboard={dashboard} />
+          <MonitorLogsPanel dashboard={dashboard} />
+        </UtilityFold>
       ) : null}
-      {isAdmin ? (
-        <BulkImportPanel
-          title="Bulk Product Import"
-          endpoint="/api/radar/products/import"
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={submit}
-          sample={`retailer,name,url,imageUrl,expectedTitleKeywords,setName,productType,sku,upc,dpci,retailerProductId,retailPrice,stockStatus,priority,rating,monitorEnabled,checkFrequencyMinutes,requiredWords,ignoreWords,releaseSetName,notes\nTarget,Pokemon TCG Booster Bundle,https://www.target.com/p/example-product/-/A-12345678,https://example.com/exact-product-image.jpg,"Mega Evolution,Booster Bundle",Mega Evolution-Chaos Rising,Booster Bundle,TARGET-123,0820650123456,087-12-1234,12345678,26.99,UNAVAILABLE,HIGH,WATCH,true,60,"Pokemon,Booster","sponsored,marketplace",Mega Evolution-Chaos Rising,Manual checkout only`}
-        />
-      ) : null}
-      {isAdmin ? (
-        <section className="form-panel">
-          <h2>Edit Products</h2>
-          <div className="edit-stack">
-            {dashboard.products.length ? (
-              dashboard.products.map((product) => (
-                <EditableProduct
-                  key={product.id}
-                  product={product}
-                  retailers={dashboard.retailers}
-                  releases={dashboard.releases}
-                  busy={busy}
-                  busyLabel={busyLabel}
-                  submit={submit}
-                  runAction={runAction}
-                />
-              ))
-            ) : (
-              <EmptyState icon={PackageSearch} title="No products to edit" detail="Add a product URL first." />
-            )}
-          </div>
-        </section>
-      ) : null}
-      <MonitorAccuracyPanel dashboard={dashboard} />
-      <MonitorLogsPanel dashboard={dashboard} />
     </>
   );
 }
@@ -3883,14 +3934,20 @@ function StoresPanel({
 
   return (
     <>
-      <PanelHeader title="Local Store Predictions" />
+      <SectionIntro
+        title="Stores"
+        detail="Closest and favorite stores first. Use this list to decide where to go, then log what you saw."
+        stats={[
+          { label: "saved", value: dashboard.stores.length },
+          { label: "shown", value: filteredStores.length },
+          { label: "favorites", value: dashboard.stores.filter((store) => store.isFavorite).length, tone: "watch" }
+        ]}
+      />
       <StoreCoveragePanel dashboard={dashboard} />
-      <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
-      <StoreDiscoveryPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
       <section className="form-panel">
         <div className="edit-card-heading">
           <div>
-            <h2>Store Filters</h2>
+            <h2>Filters</h2>
             <span>{filteredStores.length} stores shown</span>
           </div>
         </div>
@@ -3929,7 +3986,7 @@ function StoresPanel({
         showPreferenceActions
       />
       <section className="form-panel">
-        <h2>Log Manual Sighting</h2>
+        <h2>Quick Sighting</h2>
         <form
           className="form-grid"
           onSubmit={(event) =>
@@ -3954,82 +4011,19 @@ function StoresPanel({
           </button>
         </form>
       </section>
-      <section className="form-panel">
-        <h2>Store Visit History</h2>
-        <div className="edit-stack">
-          {dashboard.sightings.length ? (
-            dashboard.sightings.map((sighting) => (
-              <EditableSighting
-                key={sighting.id}
-                sighting={sighting}
-                stores={dashboard.stores}
-                canEdit={isAdmin || sighting.userId === dashboard.currentUser.id}
-                busy={busy}
-                busyLabel={busyLabel}
-                submit={submit}
-                runAction={runAction}
-              />
-            ))
-          ) : (
-            <EmptyState icon={MapPin} title="No sightings yet" detail="Log the first confirmed shelf sighting." />
-          )}
-        </div>
-      </section>
-      {isAdmin ? (
+      <UtilityFold title="Area And Discovery" detail="Location, zones, find nearby stores, and store visit history">
+        <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+        <StoreDiscoveryPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
         <section className="form-panel">
-          <h2>Add Local Store</h2>
-          <form
-            className="form-grid"
-            onSubmit={(event) =>
-              submit(
-                event,
-                "Adding store",
-                (form) => requestJson("/api/radar/stores", { method: "POST", body: JSON.stringify(formJson(form)) }),
-                { success: "Store added" }
-              )
-            }
-          >
-            <SelectInput name="retailerId" label="Retailer" options={dashboard.retailers.map(optionFromRetailer)} />
-            <TextInput name="storeName" label="Store name" required />
-            <TextInput name="address" label="Address" required />
-            <TextInput name="city" label="City" required />
-            <TextInput name="state" label="State" maxLength={24} required />
-            <SelectInput name="zone" label="Zone" defaultValue={dashboard.userAreaPreferences.preferredZone} options={dashboard.zoneOptions} />
-            <TextInput name="latitude" label="Latitude" type="number" min="-90" max="90" step="0.000001" />
-            <TextInput name="longitude" label="Longitude" type="number" min="-180" max="180" step="0.000001" />
-            <TextInput name="typicalRestockDays" label="Restock days" placeholder="Tuesday,Friday" required />
-            <TextInput name="typicalRestockTimeWindow" label="Restock window" placeholder="8:00 AM - 11:00 AM" required />
-            <TextInput name="confidenceScore" label="Confidence" type="number" min="0" max="100" defaultValue="60" />
-            <TextareaInput name="vendorNotes" label="Vendor notes" wide />
-            <TextareaInput name="notes" label="Notes" wide />
-            <button className="primary-action" disabled={busy} type="submit">
-              <Plus size={16} />
-              {busyLabel === "Adding store" ? "Adding" : "Add Store"}
-            </button>
-          </form>
-        </section>
-      ) : null}
-      {isAdmin ? (
-        <BulkImportPanel
-          title="Bulk Store Import"
-          endpoint="/api/radar/stores/import"
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={submit}
-          sample={`retailer,storeName,address,city,state,zip,latitude,longitude,phone,notes\nTarget,Target Midtown Miami,3401 N Miami Ave,Miami,FL,33127,25.8072,-80.1937,+13055551212,Manual visit log only\nWalmart,Walmart Doral,8651 NW 13th Ter,Doral,FL,33126,25.7855,-80.337,+13055551213,Check card aisle and front collectibles shelf`}
-        />
-      ) : null}
-      {isAdmin ? (
-        <section className="form-panel">
-          <h2>Edit Stores</h2>
+          <h2>Store Visit History</h2>
           <div className="edit-stack">
-            {dashboard.stores.length ? (
-              dashboard.stores.map((store) => (
-                <EditableStore
-                  key={store.id}
-                  store={store}
-                  retailers={dashboard.retailers}
-                  zoneOptions={dashboard.zoneOptions}
+            {dashboard.sightings.length ? (
+              dashboard.sightings.map((sighting) => (
+                <EditableSighting
+                  key={sighting.id}
+                  sighting={sighting}
+                  stores={dashboard.stores}
+                  canEdit={isAdmin || sighting.userId === dashboard.currentUser.id}
                   busy={busy}
                   busyLabel={busyLabel}
                   submit={submit}
@@ -4037,10 +4031,75 @@ function StoresPanel({
                 />
               ))
             ) : (
-              <EmptyState icon={Store} title="No stores to edit" detail="Add a local store first." />
+              <EmptyState icon={MapPin} title="No sightings yet" detail="Log the first confirmed shelf sighting." />
             )}
           </div>
         </section>
+      </UtilityFold>
+      {isAdmin ? (
+        <UtilityFold title="Store Admin" detail="Add, import, edit, and tune local store records">
+          <section className="form-panel">
+            <h2>Add Local Store</h2>
+            <form
+              className="form-grid"
+              onSubmit={(event) =>
+                submit(
+                  event,
+                  "Adding store",
+                  (form) => requestJson("/api/radar/stores", { method: "POST", body: JSON.stringify(formJson(form)) }),
+                  { success: "Store added" }
+                )
+              }
+            >
+              <SelectInput name="retailerId" label="Retailer" options={dashboard.retailers.map(optionFromRetailer)} />
+              <TextInput name="storeName" label="Store name" required />
+              <TextInput name="address" label="Address" required />
+              <TextInput name="city" label="City" required />
+              <TextInput name="state" label="State" maxLength={24} required />
+              <SelectInput name="zone" label="Zone" defaultValue={dashboard.userAreaPreferences.preferredZone} options={dashboard.zoneOptions} />
+              <TextInput name="latitude" label="Latitude" type="number" min="-90" max="90" step="0.000001" />
+              <TextInput name="longitude" label="Longitude" type="number" min="-180" max="180" step="0.000001" />
+              <TextInput name="typicalRestockDays" label="Restock days" placeholder="Tuesday,Friday" required />
+              <TextInput name="typicalRestockTimeWindow" label="Restock window" placeholder="8:00 AM - 11:00 AM" required />
+              <TextInput name="confidenceScore" label="Confidence" type="number" min="0" max="100" defaultValue="60" />
+              <TextareaInput name="vendorNotes" label="Vendor notes" wide />
+              <TextareaInput name="notes" label="Notes" wide />
+              <button className="primary-action" disabled={busy} type="submit">
+                <Plus size={16} />
+                {busyLabel === "Adding store" ? "Adding" : "Add Store"}
+              </button>
+            </form>
+          </section>
+          <BulkImportPanel
+            title="Bulk Store Import"
+            endpoint="/api/radar/stores/import"
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            sample={`retailer,storeName,address,city,state,zip,latitude,longitude,phone,notes\nTarget,Target Midtown Miami,3401 N Miami Ave,Miami,FL,33127,25.8072,-80.1937,+13055551212,Manual visit log only\nWalmart,Walmart Doral,8651 NW 13th Ter,Doral,FL,33126,25.7855,-80.337,+13055551213,Check card aisle and front collectibles shelf`}
+          />
+          <section className="form-panel">
+            <h2>Edit Stores</h2>
+            <div className="edit-stack">
+              {dashboard.stores.length ? (
+                dashboard.stores.map((store) => (
+                  <EditableStore
+                    key={store.id}
+                    store={store}
+                    retailers={dashboard.retailers}
+                    zoneOptions={dashboard.zoneOptions}
+                    busy={busy}
+                    busyLabel={busyLabel}
+                    submit={submit}
+                    runAction={runAction}
+                  />
+                ))
+              ) : (
+                <EmptyState icon={Store} title="No stores to edit" detail="Add a local store first." />
+              )}
+            </div>
+          </section>
+        </UtilityFold>
       ) : null}
     </>
   );
@@ -4655,18 +4714,16 @@ function CardsPanel({
 
   return (
     <>
-      <PanelHeader title="Card Investment Tracker" />
-      {isAdmin ? <EbaySetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} /> : null}
-      <div className="filter-strip">
-        <span className={`chip ${dashboard.ebayStatus.ready ? "good" : "watch"}`}>
-          {dashboard.ebayStatus.ready ? "eBay API live comps" : "Manual comp mode"}
-        </span>
-        <span className="chip good">PSA 10 upside</span>
-        <span className="chip watch">Low pop</span>
-        <span className="chip watch">New releases</span>
-      </div>
+      <SectionIntro
+        title="Cards"
+        detail="Raw-to-grade opportunities first. Reports, comp review, API setup, and manual data tools stay tucked away."
+        stats={[
+          { label: "cards", value: dashboard.cards.length },
+          { label: "shown", value: filteredCards.length },
+          { label: dashboard.ebayStatus.ready ? "eBay live" : "manual comps", value: dashboard.ebayStatus.ready ? "On" : "Mode", tone: dashboard.ebayStatus.ready ? "good" : "watch" }
+        ]}
+      />
       <Top10Poster cards={dashboard.top10Watchlist} generatedAt={dashboard.investmentReports[0]?.generatedAt ?? null} />
-      <WeeklyReportPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
       <section className="form-panel">
         <div className="edit-card-heading">
           <div>
@@ -4736,7 +4793,7 @@ function CardsPanel({
         </div>
       </section>
       {isAdmin ? (
-        <div className="form-actions">
+        <div className="simple-action-row">
           <button
             className="mini-action solid"
             disabled={busy}
@@ -4759,14 +4816,15 @@ function CardsPanel({
         runAction={runAction}
         allowRefresh={isAdmin || dashboard.currentUser.canAddComps}
       />
-      <RecentCompsTable comps={dashboard.cardCompSales} busy={busy} runAction={runAction} canReview={isAdmin || dashboard.currentUser.canAddComps} />
+      <UtilityFold title="Card Reports And Comps" detail="Weekly reports, exact sold comps, and accepted/rejected comp review">
+        <WeeklyReportPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+        <RecentCompsTable comps={dashboard.cardCompSales} busy={busy} runAction={runAction} canReview={isAdmin || dashboard.currentUser.canAddComps} />
+      </UtilityFold>
       {isAdmin ? (
-        <InvestmentSettingsForm dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
-      ) : null}
-      {isAdmin ? (
-        <ManualCompForm busy={busy} busyLabel={busyLabel} submit={submit} />
-      ) : null}
-      {isAdmin ? (
+        <UtilityFold title="Card Admin" detail="eBay setup, comp entry, card data, and investment settings">
+          <EbaySetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+          <InvestmentSettingsForm dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+          <ManualCompForm busy={busy} busyLabel={busyLabel} submit={submit} />
         <section className="form-panel">
           <h2>Add Manual Card Data</h2>
           <form
@@ -4895,8 +4953,6 @@ function CardsPanel({
             </button>
           </form>
         </section>
-      ) : null}
-      {isAdmin ? (
         <section className="form-panel">
           <h2>Edit Cards</h2>
           <div className="edit-stack">
@@ -4917,6 +4973,7 @@ function CardsPanel({
             )}
           </div>
         </section>
+        </UtilityFold>
       ) : null}
     </>
   );
