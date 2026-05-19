@@ -311,18 +311,42 @@ function productVerificationLabel(value: string) {
   return formatStatus(value);
 }
 
+function productVerificationStages(product: ProductDTO) {
+  const exactIdentity = product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED";
+  return [
+    {
+      label: "URL",
+      complete: exactIdentity && Boolean(product.verifiedFinalUrl || product.url) && product.verificationStatus !== "SEARCH_OR_CATEGORY_LINK"
+    },
+    { label: "Title", complete: exactIdentity && Boolean(product.liveTitle) },
+    { label: "ID", complete: exactIdentity && Boolean(product.retailerProductId) },
+    { label: "Image", complete: exactIdentity && Boolean(product.liveImageUrl) },
+    { label: "Stock", complete: exactIdentity && Boolean(product.liveStockStatus) },
+    { label: "Price", complete: exactIdentity && product.livePrice !== null }
+  ];
+}
+
 function productReadyForAlert(product: ProductDTO) {
-  return product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED";
+  return (
+    productVerificationStages(product).every((stage) => stage.complete) &&
+    !product.liveBlockedType &&
+    (product.liveConfidenceScore ?? 0) >= 70
+  );
 }
 
 function productLiveVerified(product: ProductDTO) {
-  return productReadyForAlert(product) && product.livePrice !== null && product.liveStockStatus !== null && !product.liveBlockedType;
+  return productReadyForAlert(product);
+}
+
+function productActionable(product: ProductDTO) {
+  return productReadyForAlert(product) && ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.liveStockStatus || product.stockStatus);
 }
 
 function productLiveBadge(product: ProductDTO) {
   if (product.liveBlockedType) return "Blocked";
   if (product.verificationStatus === "SEARCH_OR_CATEGORY_LINK") return "Search Link";
   if (product.verificationStatus === "POSSIBLE_MISMATCH") return "Possible Mismatch";
+  if (product.verificationStatus === "UNVERIFIED" || product.verificationStatus === "NEEDS_IDENTIFIERS") return "Needs Verification";
   if (productLiveVerified(product)) return "Live Verified";
   return "Not Verified";
 }
@@ -334,6 +358,10 @@ function productPriceLabel(product: ProductDTO) {
 
 function exactProductUrl(product: ProductDTO) {
   return productReadyForAlert(product) ? product.verifiedFinalUrl || product.url : null;
+}
+
+function productDisplayStatus(product: ProductDTO) {
+  return product.liveStockStatus || product.stockStatus;
 }
 
 function zoneDisplay(value: Zone, dashboard: DashboardDTO) {
@@ -396,7 +424,7 @@ function sortedStoreOptions(stores: StoreDTO[]) {
 
 function productImageRank(product: ProductDTO) {
   const verified = productReadyForAlert(product);
-  return (product.liveImageUrl || product.imageUrl ? 100 : 0) + (verified ? 40 : 0) + (product.priorityScore?.score ?? 0);
+  return (product.liveImageUrl ? 100 : 0) + (verified ? 40 : 0) + (product.priorityScore?.score ?? 0);
 }
 
 function cardFreshnessLabel(card: CardDTO) {
@@ -736,10 +764,7 @@ export function RadarApp() {
         </div>
         {chase.product ? (
           <div className="hero-product-media">
-          <ProductImage
-            product={chase.product}
-            verified={productReadyForAlert(chase.product)}
-          />
+            <ProductImage product={chase.product} />
           </div>
         ) : null}
         <div className="hero-actions">
@@ -1211,16 +1236,14 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
   tab: Tab;
   product: ProductDTO | null;
 } {
-  const actionable = dashboard?.products.find((product) =>
-    ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)
-  );
-  const chaseProduct = dashboard?.todaysChaseList[0];
+  const actionable = dashboard?.products.find((product) => productActionable(product));
+  const chaseProduct = dashboard?.todaysChaseList.find((product) => productReadyForAlert(product));
   if (chaseProduct?.priorityScore) {
     return {
       title: chaseProduct.name,
       reason: chaseProduct.priorityScore.reason,
       priority: chaseProduct.priorityScore.buyWatchSkip === "BUY" ? "HIGH" : "MEDIUM",
-      url: chaseProduct.url,
+      url: exactProductUrl(chaseProduct) ?? undefined,
       tab: "products",
       product: chaseProduct
     };
@@ -1228,11 +1251,11 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
   if (actionable) {
     return {
       title: actionable.name,
-      reason: `${actionable.retailerName} is ${formatStatus(actionable.stockStatus).toLowerCase()} at ${money(
-        actionable.retailPrice
-      )}. Open the official page and check out manually.`,
+      reason: `${actionable.retailerName} is ${formatStatus(productDisplayStatus(actionable)).toLowerCase()} at ${productPriceLabel(
+        actionable
+      )}. Open the verified product page and check out manually.`,
       priority: actionable.priority,
-      url: actionable.url,
+      url: exactProductUrl(actionable) ?? undefined,
       tab: "products",
       product: actionable
     };
@@ -1286,6 +1309,9 @@ function DashboardPanel({
 }) {
   const storesToShow = dashboard.checkTodayStores.length ? dashboard.checkTodayStores : dashboard.stores;
   const onlineDrops = [...dashboard.todaysChaseList].sort((left, right) => productImageRank(right) - productImageRank(left));
+  const [showWeakProducts, setShowWeakProducts] = useState(false);
+  const verifiedOnlineDrops = onlineDrops.filter((product) => productReadyForAlert(product));
+  const visibleOnlineDrops = showWeakProducts ? onlineDrops : verifiedOnlineDrops;
   return (
     <>
       <section className="dashboard-command-row">
@@ -1300,8 +1326,24 @@ function DashboardPanel({
       </section>
       <section className="chase-now-grid apple-chase-grid" aria-label="What should I chase right now">
         <section className="action-panel apple-card">
-          <PanelHeader title="Online Drops" action="Open" onAction={() => setActiveTab("products")} />
-          <ProductStack products={onlineDrops.slice(0, 2)} compact />
+          <div className="panel-header product-panel-header">
+            <div>
+              <h2>Online Drops</h2>
+              <span>{showWeakProducts ? "Including weak/unverified products" : "Verified/high-confidence only"}</span>
+            </div>
+            <button className="link-button" type="button" onClick={() => setActiveTab("products")}>
+              Open <ChevronRight size={14} />
+            </button>
+          </div>
+          <label className="checkbox-label dashboard-product-toggle">
+            <input
+              type="checkbox"
+              checked={showWeakProducts}
+              onChange={(event) => setShowWeakProducts(event.target.checked)}
+            />
+            Show weak/unverified products
+          </label>
+          <ProductStack products={visibleOnlineDrops.slice(0, 2)} compact />
         </section>
         <section className="action-panel apple-card">
           <PanelHeader title="Stores To Check" action="Open" onAction={() => setActiveTab("field")} />
@@ -2228,7 +2270,15 @@ function UtilityFold({
   );
 }
 
-function ProductStack({ products, compact = false }: { products: ProductDTO[]; compact?: boolean }) {
+function ProductStack({
+  products,
+  compact = false,
+  showDiagnostics = false
+}: {
+  products: ProductDTO[];
+  compact?: boolean;
+  showDiagnostics?: boolean;
+}) {
   if (!products.length) {
     return (
       <EmptyState
@@ -2242,83 +2292,88 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
   return (
     <div className={compact ? "stack compact" : "stack"}>
       {products.map((product) => {
-        const verified = productReadyForAlert(product);
+        const readyForAlert = productReadyForAlert(product);
+        const actionable = productActionable(product);
         const goUrl = exactProductUrl(product);
+        const displayStatus = productDisplayStatus(product);
+        const score = product.priorityScore?.score ?? 0;
         return (
-          <article className={compact ? "data-card product-card compact-product-card" : "data-card product-card"} id={`product-${product.id}`} key={product.id}>
-            <ProductImage product={product} verified={verified} />
-            <div className="product-card-body">
-              <div className="card-main">
-                <div>
-                  <h3>{product.name}</h3>
-                  <p>
-                    {product.retailerName} - {product.releaseName || product.setName || "Unlinked set"} - Live{" "}
-                    {productPriceLabel(product)}
-                  </p>
-                </div>
+          <article
+            className={compact ? "data-card product-card compact-product-card" : "data-card product-card"}
+            id={`product-${product.id}`}
+            key={product.id}
+          >
+            <ProductImage product={product} />
+            <div className="product-card-center">
+              <div className="product-title-line">
+                <h3>{product.name}</h3>
+                {product.isDemoData ? <span className="chip muted">Demo data</span> : null}
               </div>
-              <div className="card-actions">
-                <span className={`chip ${statusTone(product.stockStatus)}`}>{formatStatus(product.stockStatus)}</span>
-                <span className={`chip ${statusTone(product.priorityScore?.buyWatchSkip || product.rating)}`}>
-                  {product.priorityScore?.buyWatchSkip || product.rating}
+              <p>
+                {product.retailerName}
+                {product.releaseName || product.setName ? ` - ${product.releaseName || product.setName}` : ""}
+              </p>
+              <div className="product-main-facts">
+                <span>{productPriceLabel(product)}</span>
+                <span className={statusTone(displayStatus)}>{formatStatus(displayStatus)}</span>
+                <span className={productLiveVerified(product) ? "good" : product.liveBlockedType ? "bad" : "watch"}>
+                  {productLiveBadge(product)}
                 </span>
+              </div>
+              <VerificationProgress stages={productVerificationStages(product)} />
+              {!compact ? (
+                <details className="product-details-drawer">
+                  <summary>View Details</summary>
+                  <div className="product-detail-grid">
+                    <span>Verified title: {product.liveTitle || "Not verified"}</span>
+                    <span>Retailer product ID: {product.retailerProductId || "Missing"}</span>
+                    <span>UPC: {product.upc || "Not entered"}</span>
+                    <span>SKU/ASIN/TCIN: {product.sku || "Not entered"}</span>
+                    <span>DPCI: {product.dpci || "Not entered"}</span>
+                    <span>Last verified: {product.lastSuccessfulCheckedAt ? relativeTime(product.lastSuccessfulCheckedAt) : "Not collected yet"}</span>
+                  </div>
+                  {product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
+                  {showDiagnostics ? (
+                    <details className="monitor-details product-monitor-details">
+                      <summary>Monitor Details</summary>
+                      <div>
+                        <span>Verification: {productVerificationLabel(product.verificationStatus)}</span>
+                        <span>Final URL: {product.verifiedFinalUrl || "Not verified"}</span>
+                        <span>Live retailer price: {product.livePrice !== null ? money(product.livePrice) : "Price not verified"}</span>
+                        <span>Stored/manual price: {product.retailPrice !== null ? money(product.retailPrice) : "Unknown"}</span>
+                        <span>Live stock: {product.liveStockStatus ? formatStatus(product.liveStockStatus) : "Not verified"}</span>
+                        <span>Live confidence: {product.liveConfidenceScore === null ? "Unknown" : `${product.liveConfidenceScore}%`}</span>
+                        <span>Image: {product.liveImageUrl ? "Verified retailer image" : "Retailer logo fallback"}</span>
+                        <span>Next check: {relativeTime(product.nextCheckAt)}</span>
+                        <span>Last result: {product.lastMonitorResult || "No monitor result yet"}</span>
+                        {product.lastMonitorError ? <span>Last error: {product.lastMonitorError}</span> : null}
+                        {product.requiredWords ? <span>Required words: {product.requiredWords}</span> : null}
+                        {product.ignoreWords ? <span>Ignore words: {product.ignoreWords}</span> : null}
+                        {product.verificationNotes ? <span>{product.verificationNotes}</span> : null}
+                      </div>
+                    </details>
+                  ) : null}
+                </details>
+              ) : null}
+            </div>
+            <div className="product-card-side">
+              <strong>{score}</strong>
+              <span>Score</span>
+              <div className="product-side-badges">
                 <span className={`chip ${verificationTone(product.verificationStatus)}`}>
                   {productVerificationLabel(product.verificationStatus)}
                 </span>
-                <span className={`chip ${productLiveVerified(product) ? "good" : product.liveBlockedType ? "bad" : "watch"}`}>
-                  {productLiveBadge(product)}
-                </span>
-                {product.isDemoData ? <span className="chip muted">Demo data</span> : null}
-                {verified ? <span className="chip good">Ready for Alert</span> : null}
-                <span className="chip muted">Score {product.priorityScore?.score ?? 0}</span>
+                {readyForAlert ? <span className="chip good">Ready for Alert</span> : null}
                 {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
                 {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
-                {goUrl ? (
-                  <a className="mini-action" href={goUrl} target="_blank" rel="noreferrer">
-                    Go / Buy Now <ExternalLink size={14} />
-                  </a>
-                ) : (
-                  <span className="mini-action disabled">Verify exact link first</span>
-                )}
               </div>
-              {!compact && product.priorityScore ? <p className="reason-text">{product.priorityScore.reason}</p> : null}
-              {!compact && product.pendingAlertStatus ? (
-                <p className="reason-text">
-                  Pending confirmation: {formatStatus(product.pendingAlertStatus)} after {product.pendingAlertCount} low-confidence
-                  check{product.pendingAlertCount === 1 ? "" : "s"}.
-                </p>
-              ) : null}
-              {!compact ? (
-                <div className="monitor-meta">
-                  <span>
-                    <Clock size={13} />
-                    Last monitor {product.lastSuccessfulCheckedAt ? relativeTime(product.lastSuccessfulCheckedAt) : "Not collected yet"}
-                  </span>
-                  <span>Live title: {product.liveTitle || "Unknown"}</span>
-                  <span>Live retailer price: {product.livePrice !== null ? money(product.livePrice) : "Price not verified"}</span>
-                  <span>Stored/manual price: {product.retailPrice !== null ? money(product.retailPrice) : "Unknown"}</span>
-                  <span>Price source: {product.livePriceSource || (product.isDemoData ? "Demo data" : "Unknown")}</span>
-                  <span>Live stock: {product.liveStockStatus ? formatStatus(product.liveStockStatus) : "Not verified"}</span>
-                  <span>Live confidence: {product.liveConfidenceScore === null ? "Unknown" : `${product.liveConfidenceScore}%`}</span>
-                  <span>Last verified by monitor {product.lastSuccessfulCheckedAt ? dateTime(product.lastSuccessfulCheckedAt) : "Not collected yet"}</span>
-                  <span>
-                    <Activity size={13} />
-                    Next {relativeTime(product.nextCheckAt)}
-                  </span>
-                  {product.productType ? <span>{product.productType}</span> : null}
-                  {product.expectedTitleKeywords ? <span>Title keys: {product.expectedTitleKeywords}</span> : null}
-                  {product.sku ? <span>SKU {product.sku}</span> : null}
-                  {product.upc ? <span>UPC {product.upc}</span> : null}
-                  {product.dpci ? <span>DPCI {product.dpci}</span> : null}
-                  {product.retailerProductId ? <span>Retailer ID {product.retailerProductId}</span> : null}
-                  {product.verifiedAt ? <span>Exact link verified {relativeTime(product.verifiedAt)}</span> : null}
-                  {product.pokemonCenterExclusiveVersion ? <span>Pokemon Center exclusive</span> : null}
-                  {product.requiredWords ? <span>Required: {product.requiredWords}</span> : null}
-                  {product.ignoreWords ? <span>Ignore: {product.ignoreWords}</span> : null}
-                  {product.verificationNotes ? <span>{product.verificationNotes}</span> : null}
-                  <span>{product.lastMonitorError || product.lastMonitorResult || "No monitor result yet"}</span>
-                </div>
-              ) : null}
+              {goUrl ? (
+                <a className={actionable ? "primary-action product-buy-action" : "mini-action product-buy-action"} href={goUrl} target="_blank" rel="noreferrer">
+                  {actionable ? "Buy Now" : "View Product"} <ExternalLink size={14} />
+                </a>
+              ) : (
+                <span className="mini-action disabled product-buy-action">Verify first</span>
+              )}
             </div>
           </article>
         );
@@ -2327,12 +2382,25 @@ function ProductStack({ products, compact = false }: { products: ProductDTO[]; c
   );
 }
 
-function ProductImage({ product, verified }: { product: ProductDTO; verified: boolean }) {
+function VerificationProgress({ stages }: { stages: Array<{ label: string; complete: boolean }> }) {
+  return (
+    <div className="verification-progress" aria-label="Exact product verification progress">
+      {stages.map((stage) => (
+        <span className={stage.complete ? "complete" : ""} key={stage.label}>
+          <Check size={11} />
+          {stage.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ProductImage({ product }: { product: ProductDTO }) {
   const [imageFailure, setImageFailure] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
-  const verifiedImageUrl = product.liveImageUrl || product.imageUrl;
+  const verifiedImageUrl = product.liveImageUrl;
 
   const imageFailed = imageFailure.failed && imageFailure.url === verifiedImageUrl;
-  const showVerifiedImage = verified && Boolean(verifiedImageUrl) && !imageFailed;
+  const showVerifiedImage = Boolean(verifiedImageUrl) && !imageFailed;
   const retailerInitials = product.retailerName
     .split(/\s+/)
     .map((word) => word[0])
@@ -2341,7 +2409,7 @@ function ProductImage({ product, verified }: { product: ProductDTO; verified: bo
     .toUpperCase();
 
   return (
-    <div className={showVerifiedImage ? "product-image-frame has-image" : "product-image-frame"}>
+    <div className={showVerifiedImage ? "product-image-frame has-image" : "product-image-frame retailer-fallback-frame"}>
       {showVerifiedImage && verifiedImageUrl ? (
         <Image
           alt={`${product.name} product image`}
@@ -2365,10 +2433,8 @@ function ProductImage({ product, verified }: { product: ProductDTO; verified: bo
           }}
         />
       ) : null}
-      <div className="product-image-empty" hidden={showVerifiedImage}>
-        <PackageSearch size={22} />
+      <div className="product-image-empty retailer-logo-fallback" hidden={showVerifiedImage} aria-label="Image unavailable">
         <span>{retailerInitials || "TCG"}</span>
-        <small>Image unavailable</small>
       </div>
     </div>
   );
@@ -3158,7 +3224,7 @@ function ProductsPanel({
           />
         </div>
       </section>
-      <ProductStack products={filteredProducts} />
+      <ProductStack products={filteredProducts} showDiagnostics={isAdmin} />
       {isAdmin ? (
         <UtilityFold title="Product Admin" detail="Add products, verify exact links, import, edit, and review monitor logs">
           <ProductSetupGuidancePanel dashboard={dashboard} />

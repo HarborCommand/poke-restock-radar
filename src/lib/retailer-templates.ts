@@ -1,4 +1,5 @@
 import type { Priority } from "@/types/radar";
+import { classifyRetailerProductUrl } from "@/lib/product-identity";
 
 export type RetailerTemplate = {
   retailerName: string;
@@ -154,5 +155,9 @@ export function validateRetailerUrl(retailerName: string, url: string) {
   if (!template) return;
   if (!new RegExp(template.urlPattern, "i").test(url)) {
     throw new Error(`${retailerName} URL must match ${template.urlPatternLabel}.`);
+  }
+  const classification = classifyRetailerProductUrl(url, retailerName);
+  if (classification.searchOrCategory || !classification.exactProductUrl) {
+    throw new Error(`${retailerName} requires an exact product page. ${classification.reason}`);
   }
 }

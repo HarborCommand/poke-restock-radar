@@ -27,6 +27,7 @@ export type ProductIdentityMatch = {
   searchOrCategory: boolean;
   possibleMismatch: boolean;
   needsIdentifiers: boolean;
+  productIdVerified: boolean;
   titleMatched: boolean;
   titleKeywords: string[];
   matchedTitleKeywords: string[];
@@ -271,18 +272,27 @@ export function matchProductIdentity(input: {
     if (!retailerProductIdFromUrl) return false;
     return compactIdentifier(identifier) === compactIdentifier(retailerProductIdFromUrl);
   });
+  if (!input.product.retailerProductId && retailerProductIdFromUrl && exactProductUrl) {
+    matchedIdentifiers.push(retailerProductIdFromUrl);
+  }
   const missingIdentifiers = expectedIdentifiers.filter((identifier) => !matchedIdentifiers.includes(identifier));
   const urlIdConflict =
     Boolean(retailerProductIdFromUrl && input.product.retailerProductId) &&
     compactIdentifier(retailerProductIdFromUrl) !== compactIdentifier(input.product.retailerProductId) &&
     !matchedIdentifiers.some((identifier) => compactIdentifier(identifier) === compactIdentifier(retailerProductIdFromUrl));
-  const needsIdentifiers = expectedIdentifiers.length === 0;
+  const productIdVerified =
+    Boolean(retailerProductIdFromUrl) &&
+    !urlIdConflict &&
+    (!input.product.retailerProductId ||
+      compactIdentifier(input.product.retailerProductId) === compactIdentifier(retailerProductIdFromUrl) ||
+      textIncludesIdentifier(evidenceText, input.product.retailerProductId));
+  const needsIdentifiers = !productIdVerified && expectedIdentifiers.length === 0;
   const notFound = input.httpStatus === 404 || input.httpStatus === 410;
 
   let verificationStatus: ProductVerificationStatus = "VERIFIED_EXACT";
   if (searchOrCategory) verificationStatus = "SEARCH_OR_CATEGORY_LINK";
   else if (needsIdentifiers) verificationStatus = "NEEDS_IDENTIFIERS";
-  else if (!exactProductUrl || notFound || urlIdConflict || !titleMatched || matchedIdentifiers.length === 0) {
+  else if (!exactProductUrl || notFound || urlIdConflict || !productIdVerified || !titleMatched || matchedIdentifiers.length === 0) {
     verificationStatus = "POSSIBLE_MISMATCH";
   }
 
@@ -293,6 +303,7 @@ export function matchProductIdentity(input: {
     finalUrl.reason,
     exactProductUrl ? "Exact retailer product URL shape matched." : "URL is not recognized as an exact product page.",
     needsIdentifiers ? "Needs UPC/SKU/DPCI/TCIN/item ID before alerts are trusted." : null,
+    productIdVerified ? "Retailer product ID verified from exact product URL." : "Retailer product ID is not verified.",
     titleMatched
       ? `Title keywords matched: ${matchedTitleKeywords.join(", ") || "not required"}`
       : `Title keywords did not match: ${keywords.join(", ")}`,
@@ -312,6 +323,7 @@ export function matchProductIdentity(input: {
     searchOrCategory,
     possibleMismatch: verificationStatus === "POSSIBLE_MISMATCH",
     needsIdentifiers,
+    productIdVerified,
     titleMatched,
     titleKeywords: keywords,
     matchedTitleKeywords,
@@ -327,8 +339,28 @@ export function productReadyForBuyAlerts(product: {
   verificationStatus?: string | null;
   verifiedFinalUrl?: string | null;
   url?: string | null;
+  retailerProductId?: string | null;
+  liveTitle?: string | null;
+  livePrice?: number | null;
+  liveStockStatus?: string | null;
+  liveImageUrl?: string | null;
+  imageUrl?: string | null;
+  liveConfidenceScore?: number | null;
+  liveBlockedType?: string | null;
 }) {
-  return product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED";
+  const exactIdentity = product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED";
+  return (
+    exactIdentity &&
+    Boolean(product.verifiedFinalUrl || product.url) &&
+    Boolean(product.retailerProductId) &&
+    Boolean(product.liveTitle) &&
+    product.livePrice !== null &&
+    product.livePrice !== undefined &&
+    Boolean(product.liveStockStatus) &&
+    Boolean(product.liveImageUrl) &&
+    !product.liveBlockedType &&
+    (product.liveConfidenceScore ?? 0) >= 70
+  );
 }
 
 export function exactProductActionUrl(product: {

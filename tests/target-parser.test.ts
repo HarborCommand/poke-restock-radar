@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { classifyRetailerProductUrl, productReadyForBuyAlerts } from "../src/lib/product-identity";
 import { detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
 
 const targetOutOfStockEtbPage = `
@@ -66,3 +67,23 @@ test("Target parser does not infer availability from page text without an enable
   assert.match(availability.reason, /could not prove an enabled Add to cart button/i);
 });
 
+test("exact product gates reject search links and require verified live image data", () => {
+  const searchLink = classifyRetailerProductUrl("https://www.target.com/s?searchTerm=pokemon+etb", "Target");
+  assert.equal(searchLink.searchOrCategory, true);
+  assert.equal(searchLink.exactProductUrl, false);
+
+  const baseProduct = {
+    verificationStatus: "VERIFIED_EXACT",
+    verifiedFinalUrl: "https://www.target.com/p/pokemon-etb/-/A-12345678",
+    url: "https://www.target.com/p/pokemon-etb/-/A-12345678",
+    retailerProductId: "12345678",
+    liveTitle: "Pokemon Trading Card Game Elite Trainer Box",
+    livePrice: 59.99,
+    liveStockStatus: "SOLD_OUT",
+    liveConfidenceScore: 94,
+    liveBlockedType: null
+  };
+
+  assert.equal(productReadyForBuyAlerts({ ...baseProduct, imageUrl: "https://example.com/manual.jpg" }), false);
+  assert.equal(productReadyForBuyAlerts({ ...baseProduct, liveImageUrl: "https://target.scene7.com/image.jpg" }), true);
+});

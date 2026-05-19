@@ -745,6 +745,16 @@ function dataQualityWarnings(input: {
         entityId: product.id
       });
     }
+    if (!product.liveImageUrl) {
+      warnings.push({
+        id: `product-live-image-${product.id}`,
+        severity: "MEDIUM",
+        title: `${product.name} image is not verified`,
+        detail: "Run Verify Exact Product to cache a retailer product image. Cards fall back to the retailer logo until then.",
+        tab: "products",
+        entityId: product.id
+      });
+    }
     if (!product.releaseId && !product.setName) {
       warnings.push({
         id: `product-release-${product.id}`,
@@ -1787,8 +1797,7 @@ export async function createProduct(input: {
       manualPriorityOverride: input.manualPriorityOverride ?? input.rating,
       monitorEnabled: input.monitorEnabled ?? true,
       checkFrequencyMinutes,
-      lastSuccessfulCheckedAt: new Date(),
-      lastCheckedAt: new Date(),
+      alertStatus: false,
       nextCheckAt: new Date(Date.now() + checkFrequencyMinutes * 60 * 1000)
     },
     include: productInclude
@@ -2152,13 +2161,21 @@ export async function verifyProductLink(productId: string) {
     const liveConfidenceScore = blockedType
       ? 0
       : identity.readyForAlert && !redirectedAway
-      ? visiblePriceValue !== null || liveStockStatus ? 88 : 72
+      ? Math.min(
+          98,
+          58 +
+            (identity.productIdVerified ? 10 : 0) +
+            (verifiedProductImageUrl ? 10 : 0) +
+            (visiblePriceValue !== null ? 10 : 0) +
+            (liveStockStatus ? 10 : 0)
+        )
       : Math.min(25, identity.matchedTitleKeywords.length * 5 + identity.matchedIdentifiers.length * 10);
     const now = new Date();
     const notes = [
       `HTTP ${response.status}`,
       `Final URL ${finalUrl}`,
       titleText ? `Product title text: ${titleText}` : "Product title text not found",
+      identity.productIdVerified ? "Retailer product ID verified" : "Retailer product ID not verified",
       verifiedProductImageUrl ? `Product image validated from exact page` : "Product image unavailable or not valid",
       visiblePrice ? `Visible price cue: ${visiblePrice}` : "Visible price cue not found",
       targetApiSignal?.availability.stockText
@@ -2199,6 +2216,7 @@ export async function verifyProductLink(productId: string) {
         verifiedAt: now,
         verifiedFinalUrl: finalUrl,
         verificationNotes: notes,
+        retailerProductId: product.retailerProductId || identity.retailerProductIdFromUrl,
         imageUrl: identity.readyForAlert && !redirectedAway && verifiedProductImageUrl ? verifiedProductImageUrl : product.imageUrl,
         retailPrice: visiblePriceValue !== null && liveConfidenceScore >= 70 ? visiblePriceValue : product.retailPrice,
         liveTitle: titleText || null,

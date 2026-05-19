@@ -37,6 +37,19 @@ const actionableStatuses: ProductStatus[] = [
   "PAGE_UPDATED"
 ];
 
+function detectionReadyForBuyAlerts(detection: Detection) {
+  return (
+    detection.identityMatch.readyForAlert &&
+    detection.identityMatch.productIdVerified &&
+    Boolean(detection.title) &&
+    detection.price !== null &&
+    Boolean(detection.status) &&
+    Boolean(detection.imageUrl) &&
+    !detection.blockedType &&
+    detection.confidenceScore >= 70
+  );
+}
+
 const genericSignals = {
   soldOut: [
     "sold out",
@@ -149,6 +162,45 @@ function extractProductImageUrl(html: string, finalUrl: string) {
     const imageUrl = absoluteImageUrl(cleanHtmlAttribute(candidate), finalUrl);
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) return imageUrl;
   }
+  return null;
+}
+
+async function validateProductImageUrl(value: string | null) {
+  if (!value) return null;
+  try {
+    const response = await fetch(value, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(6000),
+      headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.6" }
+    });
+    const type = response.headers.get("content-type") || "";
+    const length = Number(response.headers.get("content-length") || "0");
+    if (response.ok && type.toLowerCase().startsWith("image/") && (!length || length > 128)) {
+      return response.url || value;
+    }
+  } catch {
+    // Some retailer image CDNs block HEAD. Try a small GET before giving up.
+  }
+
+  try {
+    const response = await fetch(value, {
+      method: "GET",
+      redirect: "follow",
+      signal: AbortSignal.timeout(6000),
+      headers: {
+        Accept: "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.6",
+        Range: "bytes=0-2047"
+      }
+    });
+    const type = response.headers.get("content-type") || "";
+    if ((response.ok || response.status === 206) && type.toLowerCase().startsWith("image/")) {
+      return response.url || value;
+    }
+  } catch {
+    return null;
+  }
+
   return null;
 }
 
@@ -444,12 +496,15 @@ async function fetchPublicProductPage(input: {
     titleText,
     httpStatus: response.status
   });
+  const rawImageUrl = targetApiSignal?.imageUrl || extractProductImageUrl(body, finalUrl);
+  const verifiedImageUrl =
+    identityMatch.readyForAlert && !status.blockedType ? await validateProductImageUrl(rawImageUrl) : null;
 
   return {
     ...status,
     price: targetApiSignal?.price ?? detectRetailerPrice(body, input.retailerName),
     title: targetApiSignal?.title || titleText || null,
-    imageUrl: targetApiSignal?.imageUrl || extractProductImageUrl(body, finalUrl),
+    imageUrl: verifiedImageUrl,
     pageHash: hashPage(body),
     httpStatus: response.status,
     finalUrl,
@@ -883,7 +938,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         }
       });
 
-      if (actionableStatuses.includes(change.nextStatus)) {
+      if (actionableStatuses.includes(change.nextStatus) && detectionReadyForBuyAlerts(detection)) {
         const actionUrl = detection.identityMatch.actionUrl || exactProductActionUrl(product);
         const delivery = await deliverAlert({
           title: `${product.name}: ${change.nextStatus.replaceAll("_", " ").toLowerCase()}`,
@@ -908,6 +963,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         verifiedAt: now,
         verifiedFinalUrl: detection.finalUrl,
         verificationNotes: detection.identityMatch.notes.join(". "),
+        retailerProductId: product.retailerProductId || detection.identityMatch.retailerProductIdFromUrl,
         imageUrl: detection.imageUrl ?? product.imageUrl,
         liveTitle: detection.title,
         livePrice: detection.price,
@@ -926,7 +982,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         lastMonitorError: null,
         lastPageHash: detection.pageHash,
         lastAlertSentAt: alertSent ? now : product.lastAlertSentAt,
-        alertStatus: actionableStatuses.includes(change.nextStatus),
+        alertStatus: actionableStatuses.includes(change.nextStatus) && detectionReadyForBuyAlerts(detection),
         ...pendingClear()
       }
     });
