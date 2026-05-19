@@ -62,6 +62,8 @@ import type {
   InvestmentReportItemDTO,
   Priority,
   ProductDTO,
+  ProductDiscoveryCandidateDTO,
+  ProductDiscoverySourceDTO,
   ProductStatus,
   Rating,
   ReleaseDTO,
@@ -1312,8 +1314,12 @@ function DashboardPanel({
   const [showWeakProducts, setShowWeakProducts] = useState(false);
   const verifiedOnlineDrops = onlineDrops.filter((product) => productReadyForAlert(product));
   const visibleOnlineDrops = showWeakProducts ? onlineDrops : verifiedOnlineDrops;
+  const urgentRestock = dashboard.alerts.find(
+    (alert) => alert.priority === "HIGH" && alert.entityType === "PRODUCT" && !alert.read && alert.actionUrl
+  );
   return (
     <>
+      {urgentRestock ? <UrgentRestockBanner alert={urgentRestock} /> : null}
       <section className="dashboard-command-row">
         <DashboardLocationStrip dashboard={dashboard} busy={busy} runAction={runAction} />
         <MoreActionsMenu
@@ -1362,6 +1368,23 @@ function DashboardPanel({
         </section>
       </section>
     </>
+  );
+}
+
+function UrgentRestockBanner({ alert }: { alert: DashboardDTO["alerts"][number] }) {
+  return (
+    <section className="urgent-restock-banner">
+      <div>
+        <span className="eyeline">Live restock detected</span>
+        <strong>{alert.title}</strong>
+        <p>{alert.reason}</p>
+      </div>
+      {alert.actionUrl ? (
+        <a className="primary-action" href={alert.actionUrl} target="_blank" rel="noreferrer">
+          Go / Buy Now <ExternalLink size={14} />
+        </a>
+      ) : null}
+    </section>
   );
 }
 
@@ -3192,6 +3215,7 @@ function ProductsPanel({
           </button>
         </div>
       ) : null}
+      <ScannerStatusPanel dashboard={dashboard} />
       <section className="form-panel">
         <div className="edit-card-heading">
           <div>
@@ -3227,6 +3251,13 @@ function ProductsPanel({
       <ProductStack products={filteredProducts} showDiagnostics={isAdmin} />
       {isAdmin ? (
         <UtilityFold title="Product Admin" detail="Add products, verify exact links, import, edit, and review monitor logs">
+          <ProductDiscoveryPanel
+            dashboard={dashboard}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+          />
           <ProductSetupGuidancePanel dashboard={dashboard} />
           <ProductAddWizard dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
           <BulkImportPanel
@@ -3263,6 +3294,229 @@ function ProductsPanel({
         </UtilityFold>
       ) : null}
     </>
+  );
+}
+
+function ScannerStatusPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  const status = dashboard.scannerStatus;
+  return (
+    <section className="scanner-status-panel">
+      <div className="scanner-status-header">
+        <div>
+          <span className="eyeline">Restock scanner</span>
+          <h2>Exact products only for BUY alerts</h2>
+        </div>
+        <span className="chip good">
+          <Activity size={12} />
+          Actively scanning
+        </span>
+      </div>
+      <div className="scanner-stat-grid">
+        <div>
+          <strong>{status.activeProductsScanned}</strong>
+          <span>active products</span>
+        </div>
+        <div>
+          <strong>{status.lastScanTime ? relativeTime(status.lastScanTime) : "None"}</strong>
+          <span>last scan</span>
+        </div>
+        <div>
+          <strong>{status.nextScanEstimate ? relativeTime(status.nextScanEstimate) : "None"}</strong>
+          <span>next estimate</span>
+        </div>
+        <div>
+          <strong>{status.newFindsPendingReview}</strong>
+          <span>new finds</span>
+        </div>
+        <div>
+          <strong>{status.liveRestocksDetectedToday}</strong>
+          <span>restocks today</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProductDiscoveryPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const [retailerFilter, setRetailerFilter] = useState("ALL");
+  const pending = dashboard.productDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING");
+  const visibleCandidates = pending.filter((candidate) => retailerFilter === "ALL" || candidate.retailerId === retailerFilter);
+  const sourceLabel = "Adding discovery source";
+
+  return (
+    <section className="form-panel discovery-panel">
+      <div className="edit-card-heading">
+        <div>
+          <h2>Scanner Discovery</h2>
+          <span>Search/category pages can only add review candidates. They never trigger Buy alerts.</span>
+        </div>
+      </div>
+      <form
+        className="discovery-source-form"
+        onSubmit={(event) =>
+          submit(
+            event,
+            sourceLabel,
+            (form) => requestJson("/api/radar/product-discovery/sources", { method: "POST", body: JSON.stringify(formJson(form)) }),
+            { success: "Discovery source added" }
+          )
+        }
+      >
+        <SelectInput name="retailerId" label="Retailer" options={dashboard.retailers.map(optionFromRetailer)} required />
+        <TextInput name="name" label="Source name" placeholder="Target Pokemon search" required />
+        <TextInput name="url" label="Discovery URL" type="url" placeholder="Retailer search or category URL" required />
+        <TextInput name="checkFrequencyMinutes" label="Frequency minutes" type="number" min="30" max="10080" defaultValue="360" />
+        <label className="checkbox-label">
+          <input name="enabled" type="hidden" value="false" />
+          <input name="enabled" type="checkbox" value="true" defaultChecked />
+          Enabled
+        </label>
+        <label className="checkbox-label">
+          <input name="runNow" type="checkbox" value="true" />
+          Scan now
+        </label>
+        <TextareaInput name="notes" label="Notes" placeholder="Public locator/category notes" wide />
+        <button className="primary-action" type="submit" disabled={busy}>
+          <Plus size={15} />
+          {busyLabel === sourceLabel ? "Adding" : "Add Discovery Source"}
+        </button>
+      </form>
+
+      <div className="scanner-source-list">
+        {dashboard.productDiscoverySources.length ? (
+          dashboard.productDiscoverySources.slice(0, 6).map((source) => <DiscoverySourceRow key={source.id} source={source} />)
+        ) : (
+          <EmptyState icon={PackageSearch} title="No discovery sources" detail="Add safe public search/category pages for review-only discovery." />
+        )}
+      </div>
+
+      <div className="edit-card-heading discovery-queue-heading">
+        <div>
+          <h2>Review New Finds</h2>
+          <span>{visibleCandidates.length} pending candidate{visibleCandidates.length === 1 ? "" : "s"}</span>
+        </div>
+        <SelectInput
+          name="retailerFilter"
+          label="Retailer"
+          value={retailerFilter}
+          onChange={(event) => setRetailerFilter(event.currentTarget.value)}
+          options={[{ value: "ALL", label: "All retailers" }].concat(dashboard.retailers.map(optionFromRetailer))}
+        />
+      </div>
+      <div className="candidate-queue">
+        {visibleCandidates.length ? (
+          visibleCandidates.map((candidate) => (
+            <DiscoveryCandidateRow
+              key={candidate.id}
+              candidate={candidate}
+              busy={busy}
+              busyLabel={busyLabel}
+              runAction={runAction}
+            />
+          ))
+        ) : (
+          <EmptyState icon={PackageSearch} title="No pending finds" detail="Approved candidates become exact watched products." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DiscoverySourceRow({ source }: { source: ProductDiscoverySourceDTO }) {
+  return (
+    <article className="scanner-source-row">
+      <div>
+        <strong>{source.name}</strong>
+        <span>{source.retailerName} - every {source.checkFrequencyMinutes} min</span>
+      </div>
+      <span className={`chip ${source.enabled ? "good" : "muted"}`}>{source.enabled ? "Enabled" : "Paused"}</span>
+      <span>{source.lastResult || "Not scanned yet"}</span>
+    </article>
+  );
+}
+
+function DiscoveryCandidateRow({
+  candidate,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  candidate: ProductDiscoveryCandidateDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const approveLabel = `Approving discovery ${candidate.id}`;
+  const ignoreLabel = `Ignoring discovery ${candidate.id}`;
+  const price = candidate.livePrice === null ? "Price unknown" : money(candidate.livePrice);
+  return (
+    <article className="candidate-row">
+      <div className="candidate-main">
+        <strong>{candidate.productName}</strong>
+        <span>
+          {candidate.retailerName} - {candidate.productType || "Product"} - {price}
+        </span>
+        <a href={candidate.url} target="_blank" rel="noreferrer">
+          Exact candidate link <ExternalLink size={12} />
+        </a>
+      </div>
+      <div className="candidate-meta">
+        <span className="chip watch">{candidate.confidenceScore}%</span>
+        {candidate.retailerProductId ? <span className="chip good">ID {candidate.retailerProductId}</span> : <span className="chip muted">ID unknown</span>}
+      </div>
+      <div className="candidate-actions">
+        <button
+          className="mini-action solid"
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            runAction(
+              approveLabel,
+              () =>
+                requestJson(`/api/radar/product-discovery/candidates/${candidate.id}/review`, {
+                  method: "POST",
+                  body: JSON.stringify({ action: "approve", priority: "MEDIUM", rating: "WATCH", checkFrequencyMinutes: 60 })
+                }),
+              { success: "Added to watched products" }
+            )
+          }
+        >
+          <Check size={14} />
+          {busyLabel === approveLabel ? "Approving" : "Approve"}
+        </button>
+        <button
+          className="mini-action"
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            runAction(
+              ignoreLabel,
+              () =>
+                requestJson(`/api/radar/product-discovery/candidates/${candidate.id}/review`, {
+                  method: "POST",
+                  body: JSON.stringify({ action: "ignore", priority: "LOW", rating: "SKIP", checkFrequencyMinutes: 360 })
+                }),
+              { confirm: "Ignore this discovery candidate?", success: "Candidate ignored" }
+            )
+          }
+        >
+          <X size={14} />
+          {busyLabel === ignoreLabel ? "Ignoring" : "Ignore"}
+        </button>
+      </div>
+    </article>
   );
 }
 

@@ -316,6 +316,180 @@ function targetAddToCartEnabled(html: string) {
   return null;
 }
 
+function buttonLabelPattern(retailerName: string) {
+  const retailer = retailerName.toLowerCase();
+  if (retailer.includes("best buy")) return "(?:add to cart|pre-order|preorder|buy now)";
+  if (retailer.includes("gamestop")) return "(?:add to cart|add to bag|pre-order|preorder)";
+  if (retailer.includes("pokemon center")) return "(?:add to cart|add to bag|pre-order|preorder)";
+  if (retailer.includes("walmart")) return "(?:add to cart|add to cart for shipping|preorder|pre-order)";
+  if (retailer.includes("amazon")) return "(?:add to cart|buy now|pre-order|preorder)";
+  return "(?:add to cart|add to bag|buy now|pre-order|preorder)";
+}
+
+function enabledPurchaseAction(html: string, retailerName: string) {
+  const labelPattern = buttonLabelPattern(retailerName);
+  const elementPattern = new RegExp(
+    `<(?:button|a|input)\\b[\\s\\S]{0,900}?${labelPattern}[\\s\\S]{0,500}?(?:>|<\\/(?:button|a)>)`,
+    "gi"
+  );
+  const ariaPattern = new RegExp(
+    `<(?:button|a|input)\\b[^>]+(?:aria-label|title|value)=["'][^"']*${labelPattern}[^"']*["'][^>]*>`,
+    "gi"
+  );
+  const candidates = [...(html.match(elementPattern) ?? []), ...(html.match(ariaPattern) ?? [])];
+  if (candidates.length) {
+    return candidates.some((candidate) => !hasDisabledAttribute(candidate));
+  }
+
+  const explicitEnabled =
+    /"isAddToCartEnabled"\s*:\s*true/i.test(html) ||
+    /"addToCart(?:Enabled|Available|ButtonEnabled)"\s*:\s*true/i.test(html) ||
+    /"availableForSale"\s*:\s*true/i.test(html) ||
+    /"inStock"\s*:\s*true/i.test(html);
+  if (explicitEnabled) return true;
+
+  const explicitDisabled =
+    /"isAddToCartEnabled"\s*:\s*false/i.test(html) ||
+    /"addToCart(?:Enabled|Available|ButtonEnabled)"\s*:\s*false/i.test(html) ||
+    /"availableForSale"\s*:\s*false/i.test(html) ||
+    /"inStock"\s*:\s*false/i.test(html) ||
+    /"availability"\s*:\s*"[^"]*OutOfStock/i.test(html);
+  if (explicitDisabled) return false;
+
+  return null;
+}
+
+export function detectRetailerAvailability(html: string, retailerName: string): RetailerAvailabilitySignal {
+  if (retailerName.toLowerCase().includes("target")) return detectTargetAvailability(html);
+
+  const text = visibleText(html);
+  const compact = compactText(`${html} ${text}`);
+  const addToCartEnabled = enabledPurchaseAction(html, retailerName);
+  const hasCaptcha =
+    text.includes("captcha") ||
+    text.includes("verify you are human") ||
+    text.includes("robot check") ||
+    text.includes("automated access") ||
+    text.includes("press and hold") ||
+    text.includes("sorry, we just need to make sure");
+  const hasBlocked =
+    hasCaptcha ||
+    text.includes("access denied") ||
+    text.includes("request blocked") ||
+    text.includes("temporarily blocked") ||
+    text.includes("waiting room");
+  const hasSoldOut =
+    text.includes("out of stock") ||
+    text.includes("sold out") ||
+    text.includes("currently unavailable") ||
+    text.includes("temporarily out of stock") ||
+    compact.includes("outofstock") ||
+    compact.includes("soldout") ||
+    compact.includes("availabilityoutofstock");
+  const hasUnavailable =
+    text.includes("not available") ||
+    text.includes("no longer available") ||
+    text.includes("unavailable online") ||
+    compact.includes("notavailable") ||
+    compact.includes("unavailableonline");
+  const hasPreorder = text.includes("preorder") || text.includes("pre-order") || compact.includes("preorder");
+  const hasInStock =
+    text.includes("in stock") ||
+    text.includes("available to ship") ||
+    text.includes("ships from") ||
+    text.includes("available for pickup") ||
+    compact.includes("availabilityinstock") ||
+    compact.includes("availabletoship");
+
+  const detectedWords = uniqueWords([
+    hasCaptcha ? "captcha/robot page" : "",
+    hasBlocked ? "blocked page" : "",
+    hasSoldOut ? "out of stock" : "",
+    hasUnavailable ? "unavailable" : "",
+    hasPreorder ? "preorder" : "",
+    hasInStock ? "in stock" : "",
+    addToCartEnabled === true ? "enabled purchase button" : "",
+    addToCartEnabled === false ? "disabled purchase button" : ""
+  ]);
+
+  if (hasBlocked) {
+    return {
+      status: null,
+      stockText: hasCaptcha ? "Captcha or robot page" : "Blocked page",
+      addToCartEnabled: null,
+      confidenceScore: 0,
+      reason: `${retailerName} page appears blocked or shows captcha/robot verification. No buy alert will be sent.`,
+      detectedWords
+    };
+  }
+
+  if (hasSoldOut) {
+    return {
+      status: "SOLD_OUT",
+      stockText: "Out of stock",
+      addToCartEnabled: addToCartEnabled ?? false,
+      confidenceScore: addToCartEnabled === false ? 94 : 86,
+      reason: `${retailerName} public page says sold out/currently unavailable.`,
+      detectedWords
+    };
+  }
+
+  if (hasUnavailable || addToCartEnabled === false) {
+    return {
+      status: "UNAVAILABLE",
+      stockText: addToCartEnabled === false ? "Purchase button disabled" : "Unavailable",
+      addToCartEnabled: addToCartEnabled ?? false,
+      confidenceScore: addToCartEnabled === false ? 88 : 80,
+      reason: addToCartEnabled === false
+        ? `${retailerName} purchase button is disabled; product is not buyable right now.`
+        : `${retailerName} page has unavailable cues.`,
+      detectedWords
+    };
+  }
+
+  if (hasPreorder && addToCartEnabled === true) {
+    return {
+      status: "PREORDER_LIVE",
+      stockText: "Preorder live",
+      addToCartEnabled,
+      confidenceScore: 92,
+      reason: `${retailerName} preorder cues matched and an enabled purchase button was found.`,
+      detectedWords
+    };
+  }
+
+  if (addToCartEnabled === true) {
+    return {
+      status: "ADD_TO_CART_AVAILABLE",
+      stockText: "Add to cart available",
+      addToCartEnabled,
+      confidenceScore: 92,
+      reason: `${retailerName} page has an enabled purchase button.`,
+      detectedWords
+    };
+  }
+
+  if (hasInStock) {
+    return {
+      status: "IN_STOCK",
+      stockText: "In stock cue found",
+      addToCartEnabled: null,
+      confidenceScore: 78,
+      reason: `${retailerName} page has in-stock cues but no proven enabled purchase button.`,
+      detectedWords
+    };
+  }
+
+  return {
+    status: "UNAVAILABLE",
+    stockText: "No enabled purchase proof",
+    addToCartEnabled: null,
+    confidenceScore: 60,
+    reason: `${retailerName} parser could not prove this product is buyable, so it defaults to unavailable.`,
+    detectedWords
+  };
+}
+
 export function detectTargetAvailability(html: string): RetailerAvailabilitySignal {
   const text = visibleText(html);
   const compact = compactText(`${html} ${text}`);

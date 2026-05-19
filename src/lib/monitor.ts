@@ -2,11 +2,17 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { exactProductActionUrl, matchProductIdentity, type ProductIdentityMatch } from "@/lib/product-identity";
-import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
+import { runProductDiscoveryBatch } from "@/lib/product-discovery";
+import {
+  detectRetailerAvailability,
+  detectRetailerPrice,
+  detectTargetAvailability,
+  fetchTargetRedskyLiveSignal
+} from "@/lib/retailer-page-signals";
 import { templateForRetailerName, type RetailerTemplate } from "@/lib/retailer-templates";
 import type { Priority, ProductStatus } from "@/types/radar";
 
-type RunType = "MANUAL_PRODUCT" | "MANUAL_ALL" | "DUE_JOB";
+export type RunType = "MANUAL_PRODUCT" | "MANUAL_ALL" | "DUE_JOB" | "DISCOVERY_DUE" | "DISCOVERY_MANUAL" | "DISCOVERY_ALL";
 type MonitorLogStatus = "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR" | "BLOCKED" | "PENDING_CONFIRMATION";
 type BlockedType = "PAGE_BLOCKED" | "CAPTCHA_ROBOT_PAGE";
 const MONITOR_USER_AGENT = "PokeRestockRadar/0.3 private-safe-monitor (+manual-checkout-only)";
@@ -29,21 +35,17 @@ type Detection = {
   identityMatch: ProductIdentityMatch;
 };
 
-const actionableStatuses: ProductStatus[] = [
-  "IN_STOCK",
-  "ADD_TO_CART_AVAILABLE",
-  "PREORDER_LIVE",
-  "PRICE_CHANGE",
-  "PAGE_UPDATED"
-];
+export const buyAvailableStatuses: ProductStatus[] = ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"];
+export { MONITOR_USER_AGENT, createMonitorLog, delay, hashPage, requestDelayMs };
 
 function detectionReadyForBuyAlerts(detection: Detection) {
   return (
+    detection.status !== null &&
+    buyAvailableStatuses.includes(detection.status) &&
     detection.identityMatch.readyForAlert &&
     detection.identityMatch.productIdVerified &&
     Boolean(detection.title) &&
     detection.price !== null &&
-    Boolean(detection.status) &&
     Boolean(detection.imageUrl) &&
     !detection.blockedType &&
     detection.confidenceScore >= 70
@@ -318,6 +320,24 @@ function detectPublicStatus(input: {
       detectedWords: uniqueWords([...detectedWords, ...target.detectedWords]),
       parsedStockText: target.stockText,
       addToCartEnabled: target.addToCartEnabled,
+      blockedType: null,
+      requiredMissing
+    });
+  }
+
+  const retailerAvailability = detectRetailerAvailability(input.html, input.retailerName);
+  if (
+    retailerAvailability.status ||
+    retailerAvailability.confidenceScore >= 60 ||
+    retailerAvailability.detectedWords.some((word) => /blocked|captcha|robot/i.test(word))
+  ) {
+    return withRequirementPenalty({
+      status: retailerAvailability.status,
+      confidenceScore: retailerAvailability.confidenceScore,
+      reason: retailerAvailability.reason,
+      detectedWords: uniqueWords([...detectedWords, ...retailerAvailability.detectedWords]),
+      parsedStockText: retailerAvailability.stockText,
+      addToCartEnabled: retailerAvailability.addToCartEnabled,
       blockedType: null,
       requiredMissing
     });
@@ -638,7 +658,7 @@ function shouldHoldForConfirmation(input: {
   nextStatus: ProductStatus;
   confidenceScore: number;
 }) {
-  return input.priority === "HIGH" && actionableStatuses.includes(input.nextStatus) && input.confidenceScore < 70;
+  return input.priority === "HIGH" && buyAvailableStatuses.includes(input.nextStatus) && input.confidenceScore < 70;
 }
 
 function pendingMatches(
@@ -938,12 +958,17 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         }
       });
 
-      if (actionableStatuses.includes(change.nextStatus) && detectionReadyForBuyAlerts(detection)) {
+      if (buyAvailableStatuses.includes(change.nextStatus) && detectionReadyForBuyAlerts(detection)) {
         const actionUrl = detection.identityMatch.actionUrl || exactProductActionUrl(product);
+        const detectedTime = now.toISOString();
+        const priceText = detection.price === null ? "Price not verified" : `$${detection.price.toFixed(2)}`;
         const delivery = await deliverAlert({
-          title: `${product.name}: ${change.nextStatus.replaceAll("_", " ").toLowerCase()}`,
-          reason: `${change.summary} Confidence ${detection.confidenceScore}%. Source: public ${product.retailer.name} product page. Manual checkout only.`,
-          priority: product.priority as Priority,
+          title: `URGENT ${product.retailer.name}: ${product.name}`,
+          reason:
+            `${product.retailer.name} ${product.name} is ${change.nextStatus.replaceAll("_", " ").toLowerCase()} at ${priceText}. ` +
+            `Detected ${detectedTime}. Exact product link: ${actionUrl || product.url}. ` +
+            `${change.summary} ${detection.reason} Manual checkout only.`,
+          priority: "HIGH" satisfies Priority,
           entityType: "PRODUCT",
           entityId: product.id,
           productId: product.id,
@@ -982,7 +1007,7 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         lastMonitorError: null,
         lastPageHash: detection.pageHash,
         lastAlertSentAt: alertSent ? now : product.lastAlertSentAt,
-        alertStatus: actionableStatuses.includes(change.nextStatus) && detectionReadyForBuyAlerts(detection),
+        alertStatus: buyAvailableStatuses.includes(change.nextStatus) && detectionReadyForBuyAlerts(detection),
         ...pendingClear()
       }
     });
@@ -1060,14 +1085,16 @@ export async function runProductMonitorBatch(mode: "due" | "all", runType: RunTy
     await delay(requestDelayMs());
   }
 
-  if (results.length === 0) {
+  const discovery = await runProductDiscoveryBatch(mode === "all" ? "all" : "due");
+
+  if (results.length === 0 && discovery.checked === 0) {
     const log = await createMonitorLog({
       runType,
       status: "SKIPPED",
       startedAt: now,
-      changeSummary: "No products were due for monitoring."
+      changeSummary: "No products or discovery sources were due for monitoring."
     });
-    return { checked: 0, changed: 0, errors: 0, blocked: 0, pending: 0, results, logId: log.id };
+    return { checked: 0, changed: 0, errors: 0, blocked: 0, pending: 0, results, discovery, logId: log.id };
   }
 
   return {
@@ -1076,6 +1103,7 @@ export async function runProductMonitorBatch(mode: "due" | "all", runType: RunTy
     errors: results.filter((result) => result.status === "ERROR").length,
     blocked: results.filter((result) => result.status === "BLOCKED").length,
     pending: results.filter((result) => result.status === "PENDING_CONFIRMATION").length,
-    results
+    results,
+    discovery
   };
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyRetailerProductUrl, productReadyForBuyAlerts } from "../src/lib/product-identity";
-import { detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
+import { detectRetailerAvailability, detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
 
 const targetOutOfStockEtbPage = `
 <!doctype html>
@@ -65,6 +65,29 @@ test("Target parser does not infer availability from page text without an enable
   assert.equal(availability.status, "UNAVAILABLE");
   assert.equal(availability.addToCartEnabled, null);
   assert.match(availability.reason, /could not prove an enabled Add to cart button/i);
+});
+
+test("generic retailer parser requires actionable purchase proof", () => {
+  const bestBuySoldOut = `
+    <html>
+      <head><title>Pokemon TCG Product - Best Buy</title></head>
+      <body>
+        <h1>Pokemon TCG Product</h1>
+        <button class="add-to-cart-button" disabled>Add to Cart</button>
+        <p>Sold out</p>
+      </body>
+    </html>
+  `;
+  const unavailable = detectRetailerAvailability(bestBuySoldOut, "Best Buy");
+  assert.equal(unavailable.status, "SOLD_OUT");
+  assert.equal(unavailable.addToCartEnabled, false);
+
+  const amazonCaptcha = `
+    <html><body><h1>Sorry, we just need to make sure you're not a robot</h1><p>Enter the characters you see below</p></body></html>
+  `;
+  const blocked = detectRetailerAvailability(amazonCaptcha, "Amazon");
+  assert.equal(blocked.status, null);
+  assert.match(blocked.reason, /captcha|robot/i);
 });
 
 test("exact product gates reject search links and require verified live image data", () => {

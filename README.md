@@ -133,6 +133,16 @@ Recommended tuning loop:
 
 Buy alerts are sent only when the monitor confirms exact product identity and detects an in-stock, preorder, or add-to-cart state. Blocked/captcha/queue pages and possible mismatches are logged but do not create Buy alerts.
 
+### Core Restock Scanner And Discovery Mode
+
+The scanner supports Amazon, Target, Best Buy, Walmart, GameStop, and Pokemon Center.
+
+Watched products must use exact product URLs such as Amazon `/dp/<ASIN>`, Target `/p/.../-/A-TCIN`, Walmart `/ip/...`, Best Buy `/site/...`, GameStop product pages, and Pokemon Center `/product/...` pages. A BUY alert requires exact URL verification, product ID/title/image verification, and a proven buyable status (`IN_STOCK`, `PREORDER_LIVE`, or `ADD_TO_CART_AVAILABLE`). If the parser cannot prove that the product is buyable, it defaults to unavailable and does not alert.
+
+Discovery mode is separate. Admin can add safe public search/category URLs as discovery sources. Those pages only create candidate links in `Review New Finds`; they never trigger BUY alerts. Admin must approve a candidate before it becomes a watched exact product, and the normal exact-product monitor must verify it before urgent alerts can fire.
+
+Scanner status in the Products tab shows active watched products, last scan time, next scan estimate, pending new finds, and live restocks detected today.
+
 ## Phase 3 Card Investment Engine
 
 Phase 3 ranks Pokemon cards by manual raw-to-grade opportunity. It supports comp records for raw, PSA 9, PSA 10, BGS 9.5, BGS 10, and BGS Black Label sales, then recalculates market averages, estimated profits, max raw buy price, Buy / Watch / Avoid rating, and the weekly Top 10 Raw-to-Grade Watchlist.

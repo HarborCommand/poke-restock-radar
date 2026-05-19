@@ -832,3 +832,30 @@ test("store discovery and coverage expansion exists", () => {
   assert.match(readme, /GOOGLE_PLACES_API_KEY/);
   assert.match(readme, /retailer,storeName,address,city,state,zip,latitude,longitude,phone,notes/);
 });
+
+test("core restock scanner discovery mode exists", () => {
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  const monitor = readFileSync(join(root, "src", "lib", "monitor.ts"), "utf8");
+  const discovery = readFileSync(join(root, "src", "lib", "product-discovery.ts"), "utf8");
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+
+  assert.match(schema, /model ProductDiscoverySource/);
+  assert.match(schema, /model ProductDiscoveryCandidate/);
+  assert.match(monitor, /buyAvailableStatuses/);
+  assert.match(monitor, /runProductDiscoveryBatch/);
+  assert.match(discovery, /review-before-watch/);
+  assert.match(discovery, /Search\/category pages never trigger buy alerts/);
+  for (const phrase of ["Restock scanner", "Review New Finds", "Approve", "Add Discovery Source"]) {
+    assert.match(app, new RegExp(phrase), `missing scanner UI phrase ${phrase}`);
+  }
+  assert.ok(
+    statSync(join(root, "src", "app", "api", "radar", "product-discovery", "sources", "route.ts")).isFile(),
+    "missing product discovery source route"
+  );
+  assert.ok(
+    statSync(
+      join(root, "src", "app", "api", "radar", "product-discovery", "candidates", "[candidateId]", "review", "route.ts")
+    ).isFile(),
+    "missing product discovery review route"
+  );
+});

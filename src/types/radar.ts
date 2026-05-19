@@ -469,6 +469,54 @@ export type MonitorAccuracyStatsDTO = {
   confirmedRestocks: number;
 };
 
+export type ScannerStatusDTO = {
+  activeProductsScanned: number;
+  lastScanTime: string | null;
+  nextScanEstimate: string | null;
+  newFindsPendingReview: number;
+  liveRestocksDetectedToday: number;
+};
+
+export type ProductDiscoverySourceDTO = {
+  id: string;
+  retailerId: string;
+  retailerName: string;
+  name: string;
+  url: string;
+  notes: string | null;
+  enabled: boolean;
+  checkFrequencyMinutes: number;
+  nextCheckAt: string | null;
+  lastCheckedAt: string | null;
+  lastSuccessfulCheckedAt: string | null;
+  lastResult: string | null;
+  lastError: string | null;
+  lastFoundCount: number;
+};
+
+export type ProductDiscoveryCandidateDTO = {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  retailerId: string;
+  retailerName: string;
+  url: string;
+  finalUrl: string | null;
+  productName: string;
+  productType: string | null;
+  retailerProductId: string | null;
+  imageUrl: string | null;
+  livePrice: number | null;
+  stockStatus: ProductStatus | null;
+  confidenceScore: number;
+  reason: string | null;
+  status: "PENDING" | "APPROVED" | "IGNORED";
+  approvedProductId: string | null;
+  reviewedAt: string | null;
+  ignoredAt: string | null;
+  createdAt: string;
+};
+
 export type NotificationSettingsDTO = {
   id: string;
   inApp: boolean;
@@ -712,6 +760,9 @@ export type DashboardDTO = {
   alerts: AlertDTO[];
   monitorLogs: MonitorLogDTO[];
   monitorAccuracyStats: MonitorAccuracyStatsDTO;
+  scannerStatus: ScannerStatusDTO;
+  productDiscoverySources: ProductDiscoverySourceDTO[];
+  productDiscoveryCandidates: ProductDiscoveryCandidateDTO[];
   alertAnalytics: AlertAnalyticsDTO;
   notificationSettings: NotificationSettingsDTO;
   investmentSettings: InvestmentSettingsDTO;

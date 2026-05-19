@@ -280,6 +280,23 @@ export const productUpdateSchema = productCreateSchema.extend({
   reason: optionalTrimmed
 });
 
+export const productDiscoverySourceCreateSchema = z.object({
+  retailerId: z.string().min(1),
+  name: z.string().trim().min(2).max(120),
+  url: httpUrl,
+  notes: optionalTrimmed,
+  enabled: checkboxBooleanDefaultTrue,
+  checkFrequencyMinutes: z.coerce.number().int().min(30).max(10080).default(360)
+});
+
+export const productDiscoveryReviewSchema = z.object({
+  action: z.enum(["approve", "ignore"]),
+  priority: prioritySchema.default("MEDIUM"),
+  rating: z.enum(["BUY", "WATCH", "SKIP"]).default("WATCH"),
+  checkFrequencyMinutes: z.coerce.number().int().min(15).max(10080).default(60),
+  notes: optionalTrimmed
+});
+
 export const storeCreateSchema = z.object({
   retailerId: z.string().min(1),
   storeName: z.string().trim().min(2),

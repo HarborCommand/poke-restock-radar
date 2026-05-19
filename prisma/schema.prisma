@@ -105,14 +105,16 @@ model AuditLog {
 }
 
 model Retailer {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  website   String?
-  notes     String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  products  Product[]
-  stores    Store[]
+  id                  String                      @id @default(cuid())
+  name                String                      @unique
+  website             String?
+  notes               String?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  products            Product[]
+  stores              Store[]
+  discoverySources    ProductDiscoverySource[]
+  discoveryCandidates ProductDiscoveryCandidate[]
 }
 
 model Product {
@@ -353,6 +355,60 @@ model MonitorLog {
   @@index([status])
 }
 
+model ProductDiscoverySource {
+  id                      String                      @id @default(cuid())
+  retailerId              String
+  name                    String
+  url                     String
+  notes                   String?
+  enabled                 Boolean                     @default(true)
+  checkFrequencyMinutes   Int                         @default(360)
+  nextCheckAt             DateTime?
+  lastCheckedAt           DateTime?
+  lastSuccessfulCheckedAt DateTime?
+  lastResult              String?
+  lastError               String?
+  lastFoundCount          Int                         @default(0)
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  retailer                Retailer                    @relation(fields: [retailerId], references: [id], onDelete: Cascade)
+  candidates              ProductDiscoveryCandidate[]
+
+  @@index([retailerId])
+  @@index([enabled])
+  @@index([nextCheckAt])
+}
+
+model ProductDiscoveryCandidate {
+  id                String                 @id @default(cuid())
+  sourceId          String
+  retailerId        String
+  url               String
+  finalUrl          String?
+  productName       String
+  productType       String?
+  retailerProductId String?
+  imageUrl          String?
+  livePrice         Float?
+  stockStatus       String?
+  confidenceScore   Int                    @default(50)
+  reason            String?
+  status            String                 @default("PENDING")
+  approvedProductId String?
+  reviewedAt        DateTime?
+  ignoredAt         DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  source            ProductDiscoverySource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  retailer          Retailer               @relation(fields: [retailerId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+  @@index([retailerId])
+  @@index([status])
+  @@index([retailerProductId])
+  @@index([createdAt])
+}
+
 model Card {
   id                            String              @id @default(cuid())
   releaseId                     String?
@@ -432,24 +488,24 @@ model CardPriceSnapshot {
 }
 
 model CardCompSale {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   cardId         String
   source         String
   salePrice      Float
   grade          String
-  gradeType      String   @default("RAW")
+  gradeType      String    @default("RAW")
   soldAt         DateTime
   url            String?
   sourceUrl      String?
   saleTitle      String?
-  matchScore     Int      @default(0)
+  matchScore     Int       @default(0)
   notes          String?
   conditionNotes String?
-  sourceQuality  String   @default("EBAY_SOLD")
-  reviewStatus   String   @default("ACCEPTED")
+  sourceQuality  String    @default("EBAY_SOLD")
+  reviewStatus   String    @default("ACCEPTED")
   rejectedAt     DateTime?
-  createdAt      DateTime @default(now())
-  card           Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  card           Card      @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId])
   @@index([gradeType])

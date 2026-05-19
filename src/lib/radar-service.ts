@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
+import { runProductDiscoveryCheck, validateDiscoverySourceUrl } from "@/lib/product-discovery";
 import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
@@ -35,6 +36,8 @@ import type {
   OwnerLaunchChecklistItemDTO,
   Priority,
   ProductDTO,
+  ProductDiscoveryCandidateDTO,
+  ProductDiscoverySourceDTO,
   ProductPriorityScoreDTO,
   ProductVerificationStatus,
   ProductStatus,
@@ -44,6 +47,7 @@ import type {
   SavedFilterPresetDTO,
   SetupChecklistItemDTO,
   SessionUser,
+  ScannerStatusDTO,
   SightingDTO,
   AlertCalibrationItemDTO,
   StoreDTO,
@@ -66,6 +70,15 @@ const productInclude = {
     }
   }
 } satisfies Prisma.ProductInclude;
+
+const productDiscoverySourceInclude = {
+  retailer: { select: { name: true } }
+} satisfies Prisma.ProductDiscoverySourceInclude;
+
+const productDiscoveryCandidateInclude = {
+  retailer: { select: { name: true } },
+  source: { select: { name: true } }
+} satisfies Prisma.ProductDiscoveryCandidateInclude;
 
 const storeInclude = {
   retailer: { select: { id: true, name: true, website: true } },
@@ -591,6 +604,54 @@ function retailerToDTO(retailer: Prisma.RetailerGetPayload<Record<string, never>
     id: retailer.id,
     name: retailer.name,
     website: retailer.website
+  };
+}
+
+function productDiscoverySourceToDTO(
+  source: Prisma.ProductDiscoverySourceGetPayload<{ include: typeof productDiscoverySourceInclude }>
+): ProductDiscoverySourceDTO {
+  return {
+    id: source.id,
+    retailerId: source.retailerId,
+    retailerName: source.retailer.name,
+    name: source.name,
+    url: source.url,
+    notes: source.notes,
+    enabled: source.enabled,
+    checkFrequencyMinutes: source.checkFrequencyMinutes,
+    nextCheckAt: source.nextCheckAt?.toISOString() ?? null,
+    lastCheckedAt: source.lastCheckedAt?.toISOString() ?? null,
+    lastSuccessfulCheckedAt: source.lastSuccessfulCheckedAt?.toISOString() ?? null,
+    lastResult: source.lastResult,
+    lastError: source.lastError,
+    lastFoundCount: source.lastFoundCount
+  };
+}
+
+function productDiscoveryCandidateToDTO(
+  candidate: Prisma.ProductDiscoveryCandidateGetPayload<{ include: typeof productDiscoveryCandidateInclude }>
+): ProductDiscoveryCandidateDTO {
+  return {
+    id: candidate.id,
+    sourceId: candidate.sourceId,
+    sourceName: candidate.source.name,
+    retailerId: candidate.retailerId,
+    retailerName: candidate.retailer.name,
+    url: candidate.url,
+    finalUrl: candidate.finalUrl,
+    productName: candidate.productName,
+    productType: candidate.productType,
+    retailerProductId: candidate.retailerProductId,
+    imageUrl: candidate.imageUrl,
+    livePrice: candidate.livePrice,
+    stockStatus: candidate.stockStatus as ProductStatus | null,
+    confidenceScore: candidate.confidenceScore,
+    reason: candidate.reason,
+    status: candidate.status as ProductDiscoveryCandidateDTO["status"],
+    approvedProductId: candidate.approvedProductId,
+    reviewedAt: candidate.reviewedAt?.toISOString() ?? null,
+    ignoredAt: candidate.ignoredAt?.toISOString() ?? null,
+    createdAt: candidate.createdAt.toISOString()
   };
 }
 
@@ -1571,7 +1632,11 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     inventory,
     dailyRecaps,
     savedFilterPresets,
-    storePreferences
+    storePreferences,
+    productDiscoverySources,
+    productDiscoveryCandidates,
+    activeProductsScanned,
+    liveRestocksDetectedToday
   ] =
     await Promise.all([
     prisma.retailer.findMany({ orderBy: { name: "asc" } }),
@@ -1607,7 +1672,23 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       orderBy: { createdAt: "desc" },
       take: 40
     }),
-    prisma.userStorePreference.findMany({ where: { userId: currentUser.id } })
+    prisma.userStorePreference.findMany({ where: { userId: currentUser.id } }),
+    prisma.productDiscoverySource.findMany({
+      include: productDiscoverySourceInclude,
+      orderBy: [{ enabled: "desc" }, { updatedAt: "desc" }]
+    }),
+    prisma.productDiscoveryCandidate.findMany({
+      include: productDiscoveryCandidateInclude,
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      take: 80
+    }),
+    prisma.product.count({ where: { monitorEnabled: true } }),
+    prisma.restockHistory.count({
+      where: {
+        status: { in: ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"] },
+        checkedAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+      }
+    })
   ]);
   const accessOverview =
     currentUser.role === "ADMIN"
@@ -1676,6 +1757,25 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const accuracyStats = await monitorAccuracyStats();
   const alertStats = await alertAnalytics();
   const notificationSettingsDTO = notificationSettingsToDTO(notificationSettings);
+  const pendingDiscoveryCount = productDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING").length;
+  const nextDiscoveryCheck = productDiscoverySources
+    .map((source) => source.nextCheckAt)
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+  const nextProductCheck = products
+    .map((product) => product.nextCheckAt)
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+  const nextScan = [nextProductCheck, nextDiscoveryCheck]
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+  const scannerStatus: ScannerStatusDTO = {
+    activeProductsScanned,
+    lastScanTime: monitorLogs[0]?.startedAt.toISOString() ?? null,
+    nextScanEstimate: nextScan?.toISOString() ?? null,
+    newFindsPendingReview: pendingDiscoveryCount,
+    liveRestocksDetectedToday
+  };
   const setup = setupChecklist({
     productCount: productDTOs.length,
     storeCount: storeDTOs.length,
@@ -1741,6 +1841,9 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     alerts: alertDTOs,
     monitorLogs: monitorLogDTOs,
     monitorAccuracyStats: accuracyStats,
+    scannerStatus,
+    productDiscoverySources: productDiscoverySources.map(productDiscoverySourceToDTO),
+    productDiscoveryCandidates: productDiscoveryCandidates.map(productDiscoveryCandidateToDTO),
     alertAnalytics: alertStats,
     notificationSettings: notificationSettingsDTO,
     investmentSettings: investmentSettingsToDTO(investmentSettings),
@@ -1813,6 +1916,129 @@ export async function createProduct(input: {
   });
 
   return productToDTO(product);
+}
+
+export async function createProductDiscoverySource(input: {
+  retailerId: string;
+  name: string;
+  url: string;
+  notes?: string;
+  enabled: boolean;
+  checkFrequencyMinutes: number;
+}) {
+  const retailer = await prisma.retailer.findUnique({ where: { id: input.retailerId }, select: { name: true } });
+  if (!retailer) throw new Error("Retailer not found");
+  validateDiscoverySourceUrl(retailer.name, input.url);
+  const source = await prisma.productDiscoverySource.create({
+    data: {
+      retailerId: input.retailerId,
+      name: input.name,
+      url: input.url,
+      notes: input.notes,
+      enabled: input.enabled,
+      checkFrequencyMinutes: input.checkFrequencyMinutes,
+      nextCheckAt: new Date()
+    },
+    include: productDiscoverySourceInclude
+  });
+  return productDiscoverySourceToDTO(source);
+}
+
+export async function runProductDiscoverySourceNow(sourceId: string) {
+  return runProductDiscoveryCheck(sourceId, true);
+}
+
+export async function reviewProductDiscoveryCandidate(
+  candidateId: string,
+  input: {
+    action: "approve" | "ignore";
+    priority: Priority;
+    rating: Exclude<Rating, "AVOID">;
+    checkFrequencyMinutes: number;
+    notes?: string;
+  }
+) {
+  const candidate = await prisma.productDiscoveryCandidate.findUnique({
+    where: { id: candidateId },
+    include: productDiscoveryCandidateInclude
+  });
+  if (!candidate) throw new Error("Discovery candidate not found");
+  if (candidate.status !== "PENDING") throw new Error("Discovery candidate has already been reviewed");
+
+  if (input.action === "ignore") {
+    const ignored = await prisma.productDiscoveryCandidate.update({
+      where: { id: candidateId },
+      data: { status: "IGNORED", reviewedAt: new Date(), ignoredAt: new Date() },
+      include: productDiscoveryCandidateInclude
+    });
+    return { candidate: productDiscoveryCandidateToDTO(ignored), product: null };
+  }
+
+  validateRetailerUrl(candidate.retailer.name, candidate.url);
+  const existingProduct = await prisma.product.findFirst({
+    where: {
+      retailerId: candidate.retailerId,
+      OR: [
+        { url: candidate.url },
+        ...(candidate.retailerProductId ? [{ retailerProductId: candidate.retailerProductId }] : [])
+      ]
+    },
+    include: productInclude
+  });
+
+  const product =
+    existingProduct ??
+    (await prisma.product.create({
+      data: {
+        retailerId: candidate.retailerId,
+        name: candidate.productName,
+        url: candidate.url,
+        productType: candidate.productType,
+        imageUrl: candidate.imageUrl,
+        expectedTitleKeywords: candidate.productName
+          .split(/[^a-zA-Z0-9]+/)
+          .filter((part) => part.length >= 4)
+          .slice(0, 8)
+          .join(", "),
+        retailerProductId: candidate.retailerProductId,
+        retailPrice: candidate.livePrice,
+        stockStatus: "UNAVAILABLE",
+        priority: input.priority,
+        rating: input.rating,
+        manualPriorityOverride: input.rating,
+        monitorEnabled: true,
+        checkFrequencyMinutes: input.checkFrequencyMinutes,
+        nextCheckAt: new Date(),
+        notes: input.notes || `Approved from discovery source ${candidate.source.name}. Exact monitor must verify before alerts.`
+      },
+      include: productInclude
+    }));
+
+  const reviewed = await prisma.productDiscoveryCandidate.update({
+    where: { id: candidateId },
+    data: {
+      status: "APPROVED",
+      approvedProductId: product.id,
+      reviewedAt: new Date()
+    },
+    include: productDiscoveryCandidateInclude
+  });
+
+  if (!existingProduct) {
+    await prisma.restockHistory.create({
+      data: {
+        productId: product.id,
+        status: product.stockStatus,
+        price: product.retailPrice,
+        snapshotReason: "Discovery candidate approved as watched product"
+      }
+    });
+  }
+
+  return {
+    candidate: productDiscoveryCandidateToDTO(reviewed),
+    product: productToDTO(product)
+  };
 }
 
 export async function updateProductManualStatus(
@@ -3996,6 +4222,8 @@ export async function updateNotificationSettings(
 
 async function clearRadarData(includeUsers: boolean) {
   await prisma.productPriorityScore.deleteMany();
+  await prisma.productDiscoveryCandidate.deleteMany();
+  await prisma.productDiscoverySource.deleteMany();
   await prisma.monitorLog.deleteMany();
   await prisma.investmentReport.deleteMany();
   await prisma.passwordResetToken.deleteMany();
@@ -4361,6 +4589,8 @@ export async function exportBackup() {
       users: await prisma.user.findMany(),
       retailers: await prisma.retailer.findMany(),
       products: await prisma.product.findMany(),
+      productDiscoverySources: await prisma.productDiscoverySource.findMany(),
+      productDiscoveryCandidates: await prisma.productDiscoveryCandidate.findMany(),
       stores: await prisma.store.findMany(),
       storeSightings: await prisma.storeSighting.findMany(),
       releases: await prisma.release.findMany(),
@@ -4474,6 +4704,25 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       updatedAt: toDate(row.updatedAt)
     }))
   });
+  await prisma.productDiscoverySource.createMany({
+    data: rows(tables, "productDiscoverySources").map((row) => ({
+      id: String(row.id),
+      retailerId: String(row.retailerId),
+      name: String(row.name),
+      url: String(row.url),
+      notes: row.notes ? String(row.notes) : null,
+      enabled: row.enabled === undefined ? true : Boolean(row.enabled),
+      checkFrequencyMinutes: row.checkFrequencyMinutes === undefined ? 360 : Number(row.checkFrequencyMinutes),
+      nextCheckAt: toNullableDate(row.nextCheckAt),
+      lastCheckedAt: toNullableDate(row.lastCheckedAt),
+      lastSuccessfulCheckedAt: toNullableDate(row.lastSuccessfulCheckedAt),
+      lastResult: row.lastResult ? String(row.lastResult) : null,
+      lastError: row.lastError ? String(row.lastError) : null,
+      lastFoundCount: row.lastFoundCount === undefined ? 0 : Number(row.lastFoundCount),
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
   await prisma.release.createMany({
     data: rows(tables, "releases").map((row) => ({
       id: String(row.id),
@@ -4545,6 +4794,29 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       sealedResaleNotes: row.sealedResaleNotes ? String(row.sealedResaleNotes) : null,
       scarcityNotes: row.scarcityNotes ? String(row.scarcityNotes) : null,
       manualPriorityOverride: row.manualPriorityOverride ? String(row.manualPriorityOverride) : null,
+      createdAt: toDate(row.createdAt),
+      updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.productDiscoveryCandidate.createMany({
+    data: rows(tables, "productDiscoveryCandidates").map((row) => ({
+      id: String(row.id),
+      sourceId: String(row.sourceId),
+      retailerId: String(row.retailerId),
+      url: String(row.url),
+      finalUrl: row.finalUrl ? String(row.finalUrl) : null,
+      productName: String(row.productName),
+      productType: row.productType ? String(row.productType) : null,
+      retailerProductId: row.retailerProductId ? String(row.retailerProductId) : null,
+      imageUrl: row.imageUrl ? String(row.imageUrl) : null,
+      livePrice: row.livePrice === null || row.livePrice === undefined ? null : Number(row.livePrice),
+      stockStatus: row.stockStatus ? String(row.stockStatus) : null,
+      confidenceScore: row.confidenceScore === undefined ? 50 : Number(row.confidenceScore),
+      reason: row.reason ? String(row.reason) : null,
+      status: row.status ? String(row.status) : "PENDING",
+      approvedProductId: row.approvedProductId ? String(row.approvedProductId) : null,
+      reviewedAt: toNullableDate(row.reviewedAt),
+      ignoredAt: toNullableDate(row.ignoredAt),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
     }))
