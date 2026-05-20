@@ -266,7 +266,7 @@ test("dashboard compact cards stay readable instead of narrow columns", () => {
   assert.match(css, /box-sizing:\s*border-box/);
   assert.match(css, /overflow-wrap:\s*anywhere/);
   assert.match(css, /body\s*\{[^}]*overflow-x:\s*hidden/s);
-  assert.match(css, /\.product-card\s*\{[^}]*grid-template-columns:\s*minmax\(128px,\s*176px\)\s*minmax\(0,\s*1fr\)/s);
+  assert.match(css, /\.product-card\s*\{[^}]*grid-template-columns:\s*minmax\(112px,\s*148px\)\s*minmax\(0,\s*1fr\)\s*minmax\(118px,\s*auto\)/s);
   assert.match(css, /\.product-image-frame\s*\{[^}]*height:\s*148px/s);
   assert.match(css, /\.product-image-frame img\s*\{[^}]*object-fit:\s*contain !important/s);
   assert.match(css, /\.content-grid\s*>\s*\.stack/s);
@@ -841,11 +841,13 @@ test("core restock scanner discovery mode exists", () => {
 
   assert.match(schema, /model ProductDiscoverySource/);
   assert.match(schema, /model ProductDiscoveryCandidate/);
+  assert.match(schema, /archivedAt\s+DateTime\?/);
   assert.match(monitor, /buyAvailableStatuses/);
   assert.match(monitor, /runProductDiscoveryBatch/);
+  assert.match(monitor, /archivedAt: null/);
   assert.match(discovery, /review-before-watch/);
   assert.match(discovery, /Search\/category pages never trigger buy alerts/);
-  for (const phrase of ["Restock scanner", "Review New Finds", "Approve", "Add Discovery Source"]) {
+  for (const phrase of ["Restock scanner", "Review New Finds", "Approve", "Add Discovery Source", "Product QA", "Real Product Data Cleanup"]) {
     assert.match(app, new RegExp(phrase), `missing scanner UI phrase ${phrase}`);
   }
   assert.ok(
@@ -857,5 +859,9 @@ test("core restock scanner discovery mode exists", () => {
       join(root, "src", "app", "api", "radar", "product-discovery", "candidates", "[candidateId]", "review", "route.ts")
     ).isFile(),
     "missing product discovery review route"
+  );
+  assert.ok(
+    statSync(join(root, "src", "app", "api", "radar", "products", "[productId]", "archive", "route.ts")).isFile(),
+    "missing product archive route"
   );
 });

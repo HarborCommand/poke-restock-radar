@@ -399,6 +399,7 @@ function productToDTO(
     sealedResaleNotes: product.sealedResaleNotes,
     scarcityNotes: product.scarcityNotes,
     manualPriorityOverride: product.manualPriorityOverride as Rating | null,
+    archivedAt: product.archivedAt?.toISOString() ?? null,
     pokemonCenterExclusiveVersion: product.release?.pokemonCenterExclusiveVersion ?? false,
     priorityScore,
     updatedAt: product.updatedAt.toISOString()
@@ -1640,7 +1641,11 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   ] =
     await Promise.all([
     prisma.retailer.findMany({ orderBy: { name: "asc" } }),
-    prisma.product.findMany({ include: productInclude, orderBy: [{ priority: "asc" }, { updatedAt: "desc" }] }),
+    prisma.product.findMany({
+      where: { archivedAt: null },
+      include: productInclude,
+      orderBy: [{ priority: "asc" }, { updatedAt: "desc" }]
+    }),
     prisma.store.findMany({ include: storeInclude, orderBy: { storeName: "asc" } }),
     prisma.storeSighting.findMany({
       include: {
@@ -1682,7 +1687,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       take: 80
     }),
-    prisma.product.count({ where: { monitorEnabled: true } }),
+    prisma.product.count({ where: { monitorEnabled: true, archivedAt: null } }),
     prisma.restockHistory.count({
       where: {
         status: { in: ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"] },
@@ -1758,6 +1763,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const alertStats = await alertAnalytics();
   const notificationSettingsDTO = notificationSettingsToDTO(notificationSettings);
   const pendingDiscoveryCount = productDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING").length;
+  const activeDiscoverySourcesScanned = productDiscoverySources.filter((source) => source.enabled).length;
   const nextDiscoveryCheck = productDiscoverySources
     .map((source) => source.nextCheckAt)
     .filter((value): value is Date => Boolean(value))
@@ -1771,6 +1777,14 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     .sort((a, b) => a.getTime() - b.getTime())[0];
   const scannerStatus: ScannerStatusDTO = {
     activeProductsScanned,
+    activeDiscoverySourcesScanned,
+    cronActive: Boolean(
+      monitorLogs.some(
+        (log) =>
+          log.runType === "DUE_JOB" &&
+          Date.now() - log.startedAt.getTime() <= 15 * 60 * 1000
+      )
+    ),
     lastScanTime: monitorLogs[0]?.startedAt.toISOString() ?? null,
     nextScanEstimate: nextScan?.toISOString() ?? null,
     newFindsPendingReview: pendingDiscoveryCount,
@@ -2485,6 +2499,46 @@ export async function deleteProduct(productId: string) {
   await prisma.alert.deleteMany({ where: { productId } });
   await prisma.product.delete({ where: { id: productId } });
   return { ok: true };
+}
+
+export async function archiveProduct(productId: string) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: productInclude
+  });
+  if (!product) throw new Error("Product not found");
+
+  const now = new Date();
+  const updated = await prisma.product.update({
+    where: { id: productId },
+    data: {
+      archivedAt: now,
+      monitorEnabled: false,
+      alertStatus: false,
+      nextCheckAt: null,
+      lastMonitorResult: "Archived from Product QA cleanup.",
+      updatedAt: now
+    },
+    include: productInclude
+  });
+  await prisma.monitorLog.create({
+    data: {
+      productId,
+      runType: "MANUAL_PRODUCT",
+      status: "SKIPPED",
+      previousStatus: product.stockStatus,
+      detectedStatus: "ARCHIVED",
+      previousPrice: product.livePrice ?? product.retailPrice,
+      detectedPrice: product.livePrice,
+      startedAt: now,
+      finishedAt: now,
+      durationMs: 0,
+      changeSummary: "Product archived from QA cleanup. It will no longer appear in dashboards or monitor batches.",
+      finalUrl: product.verifiedFinalUrl || product.url,
+      alertSent: false
+    }
+  });
+  return productToDTO(updated);
 }
 
 export async function markProductCheckedToday(
@@ -4763,6 +4817,19 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       verifiedFinalUrl: row.verifiedFinalUrl ? String(row.verifiedFinalUrl) : null,
       verificationNotes: row.verificationNotes ? String(row.verificationNotes) : null,
       retailPrice: row.retailPrice === null || row.retailPrice === undefined ? null : Number(row.retailPrice),
+      liveTitle: row.liveTitle ? String(row.liveTitle) : null,
+      livePrice: row.livePrice === null || row.livePrice === undefined ? null : Number(row.livePrice),
+      livePriceSource: row.livePriceSource ? String(row.livePriceSource) : null,
+      livePriceVerifiedAt: toNullableDate(row.livePriceVerifiedAt),
+      liveStockStatus: row.liveStockStatus ? String(row.liveStockStatus) : null,
+      liveStockVerifiedAt: toNullableDate(row.liveStockVerifiedAt),
+      liveImageUrl: row.liveImageUrl ? String(row.liveImageUrl) : null,
+      liveConfidenceScore:
+        row.liveConfidenceScore === null || row.liveConfidenceScore === undefined
+          ? null
+          : Number(row.liveConfidenceScore),
+      liveBlockedType: row.liveBlockedType ? String(row.liveBlockedType) : null,
+      isDemoData: row.isDemoData === undefined ? false : Boolean(row.isDemoData),
       stockStatus: String(row.stockStatus),
       alertStatus: Boolean(row.alertStatus),
       priority: String(row.priority),
@@ -4794,6 +4861,7 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       sealedResaleNotes: row.sealedResaleNotes ? String(row.sealedResaleNotes) : null,
       scarcityNotes: row.scarcityNotes ? String(row.scarcityNotes) : null,
       manualPriorityOverride: row.manualPriorityOverride ? String(row.manualPriorityOverride) : null,
+      archivedAt: toNullableDate(row.archivedAt),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
     }))

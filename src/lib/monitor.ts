@@ -731,6 +731,18 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
 
   if (!product) throw new Error("Product not found");
 
+  if (product.archivedAt) {
+    const log = await createMonitorLog({
+      productId,
+      runType,
+      status: "SKIPPED",
+      previousStatus: product.stockStatus,
+      changeSummary: "Product is archived and no longer monitored.",
+      startedAt
+    });
+    return { productId, productName: product.name, status: "SKIPPED", logId: log.id };
+  }
+
   const now = new Date();
   if (!force && product.nextCheckAt && product.nextCheckAt > now) {
     const log = await createMonitorLog({
@@ -1074,6 +1086,7 @@ export async function runProductMonitorBatch(mode: "due" | "all", runType: RunTy
   const products = await prisma.product.findMany({
     where: {
       monitorEnabled: true,
+      archivedAt: null,
       ...(mode === "due" ? { OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: now } }] } : {})
     },
     orderBy: [{ nextCheckAt: "asc" }, { updatedAt: "asc" }]

@@ -341,7 +341,7 @@ function productLiveVerified(product: ProductDTO) {
 }
 
 function productActionable(product: ProductDTO) {
-  return productReadyForAlert(product) && ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.liveStockStatus || product.stockStatus);
+  return productReadyForAlert(product) && ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.liveStockStatus || "");
 }
 
 function productLiveBadge(product: ProductDTO) {
@@ -354,16 +354,29 @@ function productLiveBadge(product: ProductDTO) {
 }
 
 function productPriceLabel(product: ProductDTO) {
-  if (product.livePrice !== null && productLiveVerified(product)) return money(product.livePrice);
+  if (product.livePrice !== null && product.livePriceVerifiedAt) return money(product.livePrice);
   return "Price not verified";
 }
 
 function exactProductUrl(product: ProductDTO) {
-  return productReadyForAlert(product) ? product.verifiedFinalUrl || product.url : null;
+  if (product.liveBlockedType || product.verificationStatus !== "VERIFIED_EXACT") return null;
+  return product.verifiedFinalUrl || product.url;
 }
 
 function productDisplayStatus(product: ProductDTO) {
-  return product.liveStockStatus || product.stockStatus;
+  return product.liveStockStatus || "UNAVAILABLE";
+}
+
+function productStockLabel(product: ProductDTO) {
+  if (product.liveBlockedType) return "Blocked";
+  if (product.liveStockStatus && product.liveStockVerifiedAt) return formatStatus(product.liveStockStatus);
+  return "Stock not verified";
+}
+
+function productStockTone(product: ProductDTO) {
+  if (product.liveBlockedType) return "bad";
+  if (!product.liveStockStatus || !product.liveStockVerifiedAt) return "watch";
+  return statusTone(product.liveStockStatus);
 }
 
 function zoneDisplay(value: Zone, dashboard: DashboardDTO) {
@@ -378,11 +391,6 @@ function firstUrl(value: string | null | undefined) {
     ?.split(/[\n,]/)
     .map((item) => item.trim())
     .find(Boolean);
-}
-
-function monitorStale(product: ProductDTO) {
-  if (!product.monitorEnabled || !product.lastSuccessfulCheckedAt) return product.monitorEnabled;
-  return Date.now() - new Date(product.lastSuccessfulCheckedAt).getTime() > 24 * 60 * 60 * 1000;
 }
 
 function storeDistanceLabel(store: StoreDTO) {
@@ -1702,6 +1710,10 @@ function StoreDiscoveryPanel({
         </div>
         <span className="chip muted">{coords ? "Location ready" : "ZIP/city or browser location"}</span>
       </div>
+      <div className="template-hint warning">
+        <strong>Store discovery setup</strong>
+        <span>Nearby store discovery requires GOOGLE_PLACES_API_KEY. Without it, import or add stores manually.</span>
+      </div>
       <form className="store-discovery-form" onSubmit={searchStores}>
         <TextInput
           name="locationQuery"
@@ -1751,7 +1763,7 @@ function StoreDiscoveryPanel({
           {!discoveryResult.configured ? (
             <div className="template-hint warning">
               <strong>Manual mode</strong>
-              <span>Add stores manually below, import CSV/JSON, or paste details from public Google Maps/store locator pages.</span>
+              <span>Nearby store discovery requires GOOGLE_PLACES_API_KEY. Without it, import or add stores manually.</span>
             </div>
           ) : null}
           {discoveryResult.candidates.length ? (
@@ -2315,10 +2327,8 @@ function ProductStack({
   return (
     <div className={compact ? "stack compact" : "stack"}>
       {products.map((product) => {
-        const readyForAlert = productReadyForAlert(product);
         const actionable = productActionable(product);
         const goUrl = exactProductUrl(product);
-        const displayStatus = productDisplayStatus(product);
         const score = product.priorityScore?.score ?? 0;
         return (
           <article
@@ -2338,15 +2348,15 @@ function ProductStack({
               </p>
               <div className="product-main-facts">
                 <span>{productPriceLabel(product)}</span>
-                <span className={statusTone(displayStatus)}>{formatStatus(displayStatus)}</span>
+                <span className={productStockTone(product)}>{productStockLabel(product)}</span>
                 <span className={productLiveVerified(product) ? "good" : product.liveBlockedType ? "bad" : "watch"}>
                   {productLiveBadge(product)}
                 </span>
               </div>
-              <VerificationProgress stages={productVerificationStages(product)} />
               {!compact ? (
                 <details className="product-details-drawer">
-                  <summary>View Details</summary>
+                  <summary>{showDiagnostics ? "Admin Details" : "View Details"}</summary>
+                  <VerificationProgress stages={productVerificationStages(product)} />
                   <div className="product-detail-grid">
                     <span>Verified title: {product.liveTitle || "Not verified"}</span>
                     <span>Retailer product ID: {product.retailerProductId || "Missing"}</span>
@@ -2386,9 +2396,7 @@ function ProductStack({
                 <span className={`chip ${verificationTone(product.verificationStatus)}`}>
                   {productVerificationLabel(product.verificationStatus)}
                 </span>
-                {readyForAlert ? <span className="chip good">Ready for Alert</span> : null}
                 {!product.monitorEnabled ? <span className="chip muted">Paused</span> : null}
-                {monitorStale(product) ? <span className="chip watch">Stale check</span> : null}
               </div>
               {goUrl ? (
                 <a className={actionable ? "primary-action product-buy-action" : "mini-action product-buy-action"} href={goUrl} target="_blank" rel="noreferrer">
@@ -3251,6 +3259,7 @@ function ProductsPanel({
       <ProductStack products={filteredProducts} showDiagnostics={isAdmin} />
       {isAdmin ? (
         <UtilityFold title="Product Admin" detail="Add products, verify exact links, import, edit, and review monitor logs">
+          <ProductQualityPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
           <ProductDiscoveryPanel
             dashboard={dashboard}
             busy={busy}
@@ -3313,8 +3322,16 @@ function ScannerStatusPanel({ dashboard }: { dashboard: DashboardDTO }) {
       </div>
       <div className="scanner-stat-grid">
         <div>
+          <strong>{status.cronActive ? "Active" : "Quiet"}</strong>
+          <span>cron status</span>
+        </div>
+        <div>
           <strong>{status.activeProductsScanned}</strong>
-          <span>active products</span>
+          <span>exact products</span>
+        </div>
+        <div>
+          <strong>{status.activeDiscoverySourcesScanned}</strong>
+          <span>discovery sources</span>
         </div>
         <div>
           <strong>{status.lastScanTime ? relativeTime(status.lastScanTime) : "None"}</strong>
@@ -3333,6 +3350,145 @@ function ScannerStatusPanel({ dashboard }: { dashboard: DashboardDTO }) {
           <span>restocks today</span>
         </div>
       </div>
+    </section>
+  );
+}
+
+function productQualityChecks(product: ProductDTO) {
+  return {
+    exactLink: product.verificationStatus === "VERIFIED_EXACT" && Boolean(product.verifiedFinalUrl || product.url),
+    image: Boolean(product.liveImageUrl),
+    livePrice: product.livePrice !== null && Boolean(product.livePriceVerifiedAt),
+    stock: Boolean(product.liveStockStatus && product.liveStockVerifiedAt)
+  };
+}
+
+function QualityChip({ value, label }: { value: boolean; label: string }) {
+  return <span className={`chip ${value ? "good" : "watch"}`}>{value ? "Yes" : `No ${label}`}</span>;
+}
+
+function ProductQualityPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const products = dashboard.products;
+  const needsCleanup = products.filter((product) => {
+    const checks = productQualityChecks(product);
+    return !checks.exactLink || !checks.image || !checks.livePrice || !checks.stock || product.isDemoData;
+  }).length;
+
+  return (
+    <section className="form-panel product-quality-panel">
+      <div className="edit-card-heading">
+        <div>
+          <p className="eyeline">Production product QA</p>
+          <h2>Real Product Data Cleanup</h2>
+          <span>
+            {products.length} active products - {needsCleanup} need review. Main app rows hide manual/sample prices unless live retailer data is verified.
+          </span>
+        </div>
+        <span className={`chip ${needsCleanup ? "watch" : "good"}`}>{needsCleanup ? "Review needed" : "Clean"}</span>
+      </div>
+      {products.length ? (
+        <div className="product-qa-list" role="table" aria-label="Product QA">
+          <div className="product-qa-row product-qa-head" role="row">
+            <span>Product</span>
+            <span>Retailer</span>
+            <span>Exact link</span>
+            <span>Image</span>
+            <span>Live price</span>
+            <span>Stock</span>
+            <span>Last success</span>
+            <span>Status</span>
+            <span>Actions</span>
+          </div>
+          {products.map((product) => {
+            const checks = productQualityChecks(product);
+            return (
+              <div className="product-qa-row" role="row" key={product.id}>
+                <div className="product-qa-product">
+                  <ProductImage product={product} />
+                  <div>
+                    <strong>{product.name}</strong>
+                    <small>{product.liveTitle || "Verified title not collected"}</small>
+                  </div>
+                </div>
+                <span>{product.retailerName}</span>
+                <QualityChip value={checks.exactLink} label="exact" />
+                <QualityChip value={checks.image} label="image" />
+                <QualityChip value={checks.livePrice} label="price" />
+                <QualityChip value={checks.stock} label="stock" />
+                <span>{product.lastSuccessfulCheckedAt ? relativeTime(product.lastSuccessfulCheckedAt) : "Not checked"}</span>
+                <span className={`chip ${verificationTone(product.verificationStatus)}`}>{productLiveBadge(product)}</span>
+                <div className="product-qa-actions">
+                  <button
+                    className="mini-action"
+                    disabled={busy}
+                    type="button"
+                    onClick={() =>
+                      runAction(
+                        `Verifying product ${product.id}`,
+                        () => requestJson(`/api/radar/products/${product.id}/verify`, { method: "POST" }),
+                        { success: "Product verification finished" }
+                      )
+                    }
+                  >
+                    <ShieldCheck size={14} />
+                    {busyLabel === `Verifying product ${product.id}` ? "Verifying" : "Verify now"}
+                  </button>
+                  <button
+                    className="mini-action"
+                    disabled={busy}
+                    type="button"
+                    onClick={() =>
+                      runAction(
+                        `${product.monitorEnabled ? "Pausing" : "Resuming"} product ${product.id}`,
+                        () =>
+                          requestJson(`/api/radar/products/${product.id}/monitor`, {
+                            method: "POST",
+                            body: JSON.stringify({ action: product.monitorEnabled ? "pause" : "resume" })
+                          }),
+                        { success: product.monitorEnabled ? "Monitor paused" : "Monitor resumed" }
+                      )
+                    }
+                  >
+                    {product.monitorEnabled ? "Pause" : "Resume"}
+                  </button>
+                  <a className="mini-action" href={`#edit-product-${product.id}`}>
+                    Edit identifiers
+                  </a>
+                  <button
+                    className="mini-action danger"
+                    disabled={busy}
+                    type="button"
+                    onClick={() =>
+                      runAction(
+                        `Archiving product ${product.id}`,
+                        () => requestJson(`/api/radar/products/${product.id}/archive`, { method: "POST" }),
+                        {
+                          confirm: "Archive this product? It will stop appearing in dashboards and monitor batches.",
+                          success: "Product archived"
+                        }
+                      )
+                    }
+                  >
+                    Archive
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState icon={PackageSearch} title="No active products" detail="Add exact product URLs, then verify them before enabling alerts." />
+      )}
     </section>
   );
 }
@@ -3816,6 +3972,7 @@ function EditableProduct({
   return (
     <form
       className="edit-card"
+      id={`edit-product-${product.id}`}
       onSubmit={(event) =>
         submit(
           event,

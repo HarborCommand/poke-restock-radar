@@ -131,9 +131,39 @@ async function main() {
     products: dashboardBody.products?.length ?? 0,
     stores: dashboardBody.stores?.length ?? 0,
     alerts: dashboardBody.alerts?.length ?? 0,
+    scannerExactProducts: dashboardBody.scannerStatus?.activeProductsScanned,
+    scannerDiscoverySources: dashboardBody.scannerStatus?.activeDiscoverySourcesScanned,
+    scannerCronActive: dashboardBody.scannerStatus?.cronActive,
     systemStatus: dashboardBody.health?.status,
     launchChecklist: dashboardBody.ownerLaunchChecklist.length,
     alertCalibrationItems: dashboardBody.alertCalibrationItems.length
+  };
+
+  const firstProduct = Array.isArray(dashboardBody.products) ? dashboardBody.products[0] : null;
+  if (firstProduct?.id) {
+    const verifyProduct = await fetch(`${baseUrl}/api/radar/products/${firstProduct.id}/verify`, {
+      method: "POST",
+      headers: { cookie }
+    });
+    await expectStatus("product QA verify", verifyProduct, 200);
+    const runProductCheck = await fetch(`${baseUrl}/api/radar/products/${firstProduct.id}/check`, {
+      method: "POST",
+      headers: { cookie }
+    });
+    await expectStatus("manual product monitor check", runProductCheck, 200);
+    checks.productQa = "verify and monitor check endpoints passed";
+  } else {
+    checks.productQa = "skipped; no active products";
+  }
+
+  const discoveryQueue = await authedGet("/api/radar/product-discovery/sources");
+  const discoveryBody = await json(discoveryQueue);
+  if (!Array.isArray(discoveryBody.sources) || !Array.isArray(discoveryBody.candidates)) {
+    throw new Error("Discovery queue endpoint did not return sources and candidates.");
+  }
+  checks.discoveryQueue = {
+    sources: discoveryBody.sources.length,
+    candidates: discoveryBody.candidates.length
   };
 
   for (const path of ["/api/radar/products", "/api/radar/stores", "/api/radar/releases", "/api/radar/cards", "/api/radar/alerts"]) {

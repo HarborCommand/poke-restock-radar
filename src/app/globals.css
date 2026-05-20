@@ -853,17 +853,17 @@ textarea {
 }
 
 .product-card {
-  grid-template-columns: minmax(128px, 176px) minmax(0, 1fr);
-  align-items: stretch;
+  grid-template-columns: minmax(112px, 148px) minmax(0, 1fr) minmax(118px, auto);
+  align-items: center;
   gap: 12px;
-  min-height: 150px;
+  min-height: 132px;
   padding: 12px;
 }
 
 .compact-product-card {
-  grid-template-columns: 84px minmax(0, 1fr);
+  grid-template-columns: 76px minmax(0, 1fr) minmax(88px, auto);
   gap: 10px;
-  min-height: 112px;
+  min-height: 104px;
   padding: 10px;
 }
 
@@ -955,6 +955,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
+  margin-top: 8px;
   min-width: 0;
   max-width: 100%;
 }
@@ -1133,6 +1134,85 @@ textarea {
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.3;
+}
+
+.product-quality-panel {
+  gap: 14px;
+}
+
+.product-qa-list {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.product-qa-row {
+  display: grid;
+  grid-template-columns:
+    minmax(240px, 1.4fr)
+    minmax(92px, 0.6fr)
+    repeat(4, minmax(74px, 0.48fr))
+    minmax(92px, 0.55fr)
+    minmax(96px, 0.58fr)
+    minmax(230px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.024);
+  padding: 9px;
+  overflow: hidden;
+}
+
+.product-qa-head {
+  background: transparent;
+  border-color: transparent;
+  padding-block: 2px;
+  color: var(--subtle);
+  font-size: 0.68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.product-qa-product {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.product-qa-product .product-image-frame {
+  height: 54px;
+  border-radius: 10px;
+}
+
+.product-qa-product strong,
+.product-qa-row > span {
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.product-qa-product small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.product-qa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
 }
 
 .discovery-panel {
@@ -3380,8 +3460,8 @@ textarea {
   .product-card,
   .stack.compact .product-card,
   .action-panel .product-card {
-    grid-template-columns: minmax(128px, 176px) minmax(0, 1fr);
-    align-items: stretch;
+    grid-template-columns: minmax(112px, 148px) minmax(0, 1fr) minmax(118px, auto);
+    align-items: center;
   }
 
   .product-card:not(.compact-product-card) {
@@ -3405,23 +3485,37 @@ textarea {
   .compact-product-card,
   .stack.compact .compact-product-card,
   .action-panel .compact-product-card {
-    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-columns: 84px minmax(0, 1fr) minmax(86px, auto);
   }
 
   .compact-product-card .product-card-side,
   .stack.compact .compact-product-card .product-card-side,
   .action-panel .compact-product-card .product-card-side {
-    grid-column: 2;
-    flex-direction: row;
-    align-items: center;
+    grid-column: auto;
+    flex-direction: column;
+    align-items: flex-end;
     justify-content: flex-start;
     min-width: 0;
-    text-align: left;
+    text-align: right;
   }
 
   .compact-product-card .product-side-badges,
   .stack.compact .compact-product-card .product-side-badges,
   .action-panel .compact-product-card .product-side-badges {
+    display: none;
+  }
+
+  .product-qa-row {
+    grid-template-columns:
+      minmax(220px, 1.5fr)
+      repeat(4, minmax(70px, 0.45fr))
+      minmax(86px, 0.5fr)
+      minmax(86px, 0.5fr)
+      minmax(220px, 1fr);
+  }
+
+  .product-qa-row > span:nth-child(2),
+  .product-qa-head span:nth-child(2) {
     display: none;
   }
 
@@ -3695,6 +3789,19 @@ textarea {
   .compact-product-card {
     grid-template-columns: 1fr;
     min-height: 0;
+  }
+
+  .product-qa-head {
+    display: none;
+  }
+
+  .product-qa-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .product-qa-actions {
+    justify-content: flex-start;
   }
 
   .product-card-side,

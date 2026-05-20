@@ -208,6 +208,7 @@ export type ProductDTO = {
   sealedResaleNotes: string | null;
   scarcityNotes: string | null;
   manualPriorityOverride: Rating | null;
+  archivedAt: string | null;
   pokemonCenterExclusiveVersion: boolean;
   priorityScore: ProductPriorityScoreDTO | null;
   updatedAt: string;
@@ -471,6 +472,8 @@ export type MonitorAccuracyStatsDTO = {
 
 export type ScannerStatusDTO = {
   activeProductsScanned: number;
+  activeDiscoverySourcesScanned: number;
+  cronActive: boolean;
   lastScanTime: string | null;
   nextScanEstimate: string | null;
   newFindsPendingReview: number;
