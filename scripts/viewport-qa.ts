@@ -44,7 +44,7 @@ const viewports = [
   { label: "tablet-768", width: 768, height: 1024 },
   { label: "desktop-1440", width: 1440, height: 960 }
 ];
-const tabs = ["Dashboard", "Products", "Stores", "Field", "Cards"] as const;
+const tabs = ["Dashboard", "Products", "Stores", "Field", "Cards", "Inventory"] as const;
 
 if (!email || !password) {
   throw new Error("Set VIEWPORT_QA_EMAIL/VIEWPORT_QA_PASSWORD or FINAL_SMOKE_EMAIL/FINAL_SMOKE_PASSWORD.");
@@ -141,7 +141,7 @@ async function measure(page: Page) {
       })
       .filter((box) => box.left < -1 || box.right > viewportWidth + 1)
       .slice(0, 8);
-    const imageLeaks = Array.from(document.querySelectorAll<HTMLElement>(".product-image-frame"))
+    const imageLeaks = Array.from(document.querySelectorAll<HTMLElement>(".product-image-frame, .inventory-image-frame"))
       .map((frame) => {
         const image = frame.querySelector("img");
         if (!image) return null;

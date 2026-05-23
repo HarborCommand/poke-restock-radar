@@ -1,11 +1,70 @@
 import { requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
-import { createInventoryItem } from "@/lib/radar-service";
+import { createInventoryItem, listDashboard } from "@/lib/radar-service";
 import { inventoryCreateSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function csvCell(value: unknown) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export async function GET(request: Request) {
+  const { user, response } = await requireUser();
+  if (response) return response;
+  const dashboard = await listDashboard(user);
+  const format = new URL(request.url).searchParams.get("format");
+  if (format === "csv") {
+    const headers = [
+      "itemName",
+      "category",
+      "setName",
+      "quantity",
+      "purchasePricePerUnit",
+      "totalCost",
+      "source",
+      "retailer",
+      "purchaseDate",
+      "targetSellPrice",
+      "currentMarketEstimate",
+      "estimatedNetProfit",
+      "roiPercent",
+      "recommendedAction",
+      "listingStatus"
+    ];
+    const rows = dashboard.inventory.map((item) =>
+      [
+        item.itemName,
+        item.category,
+        item.setName,
+        item.quantity,
+        item.cost,
+        item.totalCost,
+        item.source,
+        item.retailer,
+        item.purchasedAt,
+        item.targetSellPrice,
+        item.currentMarketEstimate,
+        item.estimatedNetProfit,
+        item.roiPercent,
+        item.recommendedAction,
+        item.listingStatus
+      ]
+        .map(csvCell)
+        .join(",")
+    );
+    return new Response([headers.join(","), ...rows].join("\n"), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": "attachment; filename=poke-restock-inventory.csv"
+      }
+    });
+  }
+  return ok({ inventory: dashboard.inventory, summary: dashboard.inventorySummary });
+}
 
 export async function POST(request: Request) {
   const { user, response } = await requireUser();

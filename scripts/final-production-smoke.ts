@@ -166,7 +166,7 @@ async function main() {
     candidates: discoveryBody.candidates.length
   };
 
-  for (const path of ["/api/radar/products", "/api/radar/stores", "/api/radar/releases", "/api/radar/cards", "/api/radar/alerts"]) {
+  for (const path of ["/api/radar/products", "/api/radar/stores", "/api/radar/releases", "/api/radar/cards", "/api/radar/inventory", "/api/radar/alerts"]) {
     const response = await authedGet(path);
     checks[path] = response.status;
   }

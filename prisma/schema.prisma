@@ -554,27 +554,81 @@ model InvestmentSettings {
 }
 
 model InventoryItem {
-  id           String   @id @default(cuid())
-  userId       String?
-  itemType     String
-  itemName     String
-  productId    String?
-  cardId       String?
-  cost         Float
-  quantity     Int      @default(1)
-  source       String
-  purchasedAt  DateTime
-  expectedPlan String?
-  notes        String?
-  createdAt    DateTime @default(now())
-  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
-  card         Card?    @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  id                     String                @id @default(cuid())
+  userId                 String?
+  itemType               String
+  itemName               String
+  category               String                @default("sealed_packs")
+  setName                String?
+  productId              String?
+  cardId                 String?
+  cost                   Float
+  quantity               Int                   @default(1)
+  totalCost              Float?
+  source                 String
+  retailer               String?
+  purchasedAt            DateTime
+  exactProductUrl        String?
+  upc                    String?
+  sku                    String?
+  dpci                   String?
+  asin                   String?
+  imageUrl               String?
+  condition              String?
+  itemStatus             String                @default("sealed")
+  targetSellPrice        Float?
+  minimumAcceptablePrice Float?
+  listingPlatform        String?
+  listingStatus          String                @default("not_listed")
+  soldPrice              Float?
+  soldAt                 DateTime?
+  buyerPlatform          String?
+  currentMarketEstimate  Float?
+  marketAverageSalePrice Float?
+  marketCompCount        Int                   @default(0)
+  marketLastRefreshedAt  DateTime?
+  marketConfidence       String                @default("LOW")
+  estimatedEbayFee       Float?
+  estimatedShippingCost  Float?
+  estimatedNetProfit     Float?
+  roiPercent             Float?
+  recommendedAction      String                @default("HOLD")
+  recommendationReason   String?
+  netProfitAfterFees     Float?
+  expectedPlan           String?
+  notes                  String?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  user                   User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  product                Product?              @relation(fields: [productId], references: [id], onDelete: SetNull)
+  card                   Card?                 @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  marketComps            InventoryMarketComp[]
 
   @@index([userId])
   @@index([productId])
   @@index([cardId])
+  @@index([category])
+  @@index([listingStatus])
+  @@index([recommendedAction])
   @@index([purchasedAt])
+}
+
+model InventoryMarketComp {
+  id              String        @id @default(cuid())
+  inventoryItemId String
+  saleTitle       String
+  salePrice       Float
+  soldAt          DateTime
+  sourceUrl       String?
+  sourceQuality   String        @default("EBAY_SOLD")
+  matchScore      Int           @default(0)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([sourceQuality])
+  @@index([soldAt])
 }
 
 model DailyRecap {

@@ -681,6 +681,35 @@ npm run smoke:prod
 
 Keep the first week conservative: confirm restocks manually, mark false positives, and only turn on SMS/email after the push and in-app alert flow is behaving correctly.
 
+## Inventory Tracker And Market Recommendation
+
+Use the `Inventory` tab to track what you actually bought: sealed packs, sleeved boosters, ETBs, booster bundles, booster boxes, collection boxes, single cards, graded cards, and raw cards.
+
+Each inventory item stores the product/card name, category, set, quantity, purchase price, total cost, purchase date, source/store, retailer, exact product URL, UPC/SKU/DPCI/ASIN when available, image, condition, sealed/opened/graded/raw status, sell targets, listing status, sold price, notes, market estimate, profit, ROI, and recommendation.
+
+Market Recommendation behavior:
+
+- `SELL NOW`: market profit and ROI clear the target.
+- `LIST HIGH`: profit clears the target but margin is less urgent.
+- `GRADE FIRST`: linked card data shows raw-to-grade upside.
+- `HOLD`: market is not strong enough yet, or market data is missing.
+- `RIP / OPEN`: sealed packs or bundles are materially underwater.
+- `AVOID BUYING MORE`: current comps show weak resale economics.
+
+Market data is conservative. If eBay credentials are configured, `Refresh eBay` imports the last 3 completed sold comps for the inventory item. If eBay is not configured, add manual sold comps or a manual market estimate. The app never invents prices or dates; missing data is shown as `Market not collected yet`.
+
+Image behavior:
+
+- Paste a verified product image URL or upload your own item photo.
+- Inventory thumbnails stay inside fixed image frames.
+- If no image exists, the row falls back to a clean retailer/category mark.
+
+Import/export:
+
+- `Inventory -> Export CSV` exports the current inventory table.
+- `Inventory Import And Manual Comps` accepts CSV or JSON.
+- JSON backup/restore includes inventory items and inventory market comps.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.

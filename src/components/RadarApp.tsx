@@ -61,6 +61,7 @@ import type {
   InvestmentReportDTO,
   InvestmentReportItemDTO,
   Priority,
+  InventoryItemDTO,
   ProductDTO,
   ProductDiscoveryCandidateDTO,
   ProductDiscoverySourceDTO,
@@ -77,7 +78,7 @@ import type {
   Zone
 } from "@/types/radar";
 
-type Tab = "dashboard" | "field" | "products" | "stores" | "releases" | "cards" | "alerts";
+type Tab = "dashboard" | "field" | "products" | "stores" | "releases" | "cards" | "inventory" | "alerts";
 type Toast = { type: "error" | "success"; message: string };
 type SubmitHandler = <T>(
   event: FormEvent<HTMLFormElement>,
@@ -98,6 +99,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Radar }> = [
   { id: "stores", label: "Stores", icon: Store },
   { id: "releases", label: "Releases", icon: CalendarDays },
   { id: "cards", label: "Cards", icon: CircleDollarSign },
+  { id: "inventory", label: "Inventory", icon: Trophy },
   { id: "alerts", label: "Alerts", icon: Bell }
 ];
 
@@ -119,6 +121,20 @@ const eras: Array<"ALL" | Era> = ["ALL", "MODERN", "VINTAGE"];
 const productTypeOptions = ["ETB", "Booster Bundle", "Sleeved Booster", "Collection Box", "Booster Box", "Premium Collection"];
 const storeVisitResults: StoreVisitResult[] = ["stock_seen", "empty_shelf", "vendor_spotted", "bought_product", "no_visit"];
 const fieldRetailerFilters = ["ALL", "Target", "Walmart", "GameStop", "Best Buy"];
+const inventoryCategories = [
+  "sealed_packs",
+  "sleeved_boosters",
+  "etbs",
+  "booster_bundles",
+  "booster_boxes",
+  "collection_boxes",
+  "single_cards",
+  "graded_cards",
+  "raw_cards"
+];
+const inventoryStatuses = ["sealed", "opened", "graded", "raw"];
+const listingStatuses = ["not_listed", "listed", "sold", "held"];
+const inventoryRecommendations = ["HOLD", "SELL_NOW", "LIST_HIGH", "GRADE_FIRST", "RIP_OPEN", "AVOID_BUYING_MORE"];
 
 function formatStatus(value: string) {
   return value
@@ -153,6 +169,17 @@ function dataSourceLabel(value: string | null | undefined) {
 function money(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "TBD";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+}
+
+function percent(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "TBD";
+  return `${value.toFixed(1)}%`;
+}
+
+function inventoryRecommendationTone(value: string) {
+  if (["SELL_NOW", "LIST_HIGH"].includes(value)) return "good";
+  if (["AVOID_BUYING_MORE", "RIP_OPEN"].includes(value)) return "bad";
+  return "watch";
 }
 
 function monitorDetail(words: string | null | undefined, label: string) {
@@ -270,6 +297,10 @@ function todayLocalInput() {
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
   return now.toISOString().slice(0, 16);
+}
+
+function todayDateInput() {
+  return todayLocalInput().slice(0, 10);
 }
 
 function statusTone(value: string) {
@@ -861,6 +892,9 @@ export function RadarApp() {
             submit={submit}
             runAction={runAction}
           />
+        ) : null}
+        {activeTab === "inventory" ? (
+          <InventoryPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
         {activeTab === "alerts" ? (
           <AlertsPanel
@@ -2471,6 +2505,55 @@ function ProductImage({ product }: { product: ProductDTO }) {
   );
 }
 
+function InventoryImage({ item }: { item: InventoryItemDTO }) {
+  const initials = item.retailer?.slice(0, 2).toUpperCase() || item.category.slice(0, 2).toUpperCase();
+  return (
+    <div className={item.imageUrl ? "inventory-image-frame has-image" : "inventory-image-frame"}>
+      {item.imageUrl ? (
+        <Image
+          src={item.imageUrl}
+          alt={`${item.itemName} inventory image`}
+          width={76}
+          height={76}
+          loading="lazy"
+          unoptimized
+        />
+      ) : (
+        <span>{initials}</span>
+      )}
+    </div>
+  );
+}
+
+function ImageUploadInput({ defaultValue = "" }: { defaultValue?: string }) {
+  const [value, setValue] = useState(defaultValue);
+  const isUploadedImage = value.startsWith("data:");
+  return (
+    <label className="image-upload-field">
+      Product image
+      <input name="imageUrl" type="hidden" value={value} />
+      <input
+        type="url"
+        value={isUploadedImage ? "" : value}
+        onChange={(event) => setValue(event.currentTarget.value)}
+        placeholder="Paste verified product image URL"
+      />
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => setValue(String(reader.result || ""));
+          reader.readAsDataURL(file);
+        }}
+      />
+      {value ? <span className="chip good">Image attached</span> : <span className="chip muted">Optional URL or upload</span>}
+    </label>
+  );
+}
+
 function StoreStack({
   stores,
   compact = false,
@@ -3128,6 +3211,289 @@ function FieldStoreCard({
         </button>
       </form>
     </article>
+  );
+}
+
+function InventoryPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const [filters, setFilters] = useState({
+    search: "",
+    category: "ALL",
+    source: "",
+    recommendation: "ALL",
+    listingStatus: "ALL",
+    sort: "profit"
+  });
+  const visibleItems = useMemo(() => {
+    const search = filters.search.toLowerCase().trim();
+    return dashboard.inventory
+      .filter((item) => !search || item.itemName.toLowerCase().includes(search) || (item.setName || "").toLowerCase().includes(search))
+      .filter((item) => filters.category === "ALL" || item.category === filters.category)
+      .filter((item) => !filters.source || item.source.toLowerCase().includes(filters.source.toLowerCase()))
+      .filter((item) => filters.recommendation === "ALL" || item.recommendedAction === filters.recommendation)
+      .filter((item) => filters.listingStatus === "ALL" || item.listingStatus === filters.listingStatus)
+      .sort((a, b) => {
+        if (filters.sort === "roi") return (b.roiPercent ?? -999) - (a.roiPercent ?? -999);
+        if (filters.sort === "date") return new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime();
+        if (filters.sort === "quantity") return b.quantity - a.quantity;
+        if (filters.sort === "market") return (b.currentMarketEstimate ?? 0) * b.quantity - (a.currentMarketEstimate ?? 0) * a.quantity;
+        return (b.estimatedNetProfit ?? -999999) - (a.estimatedNetProfit ?? -999999);
+      });
+  }, [dashboard.inventory, filters]);
+
+  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = event.currentTarget;
+    setFilters((current) => ({ ...current, [name]: value }));
+  }
+
+  const summary = dashboard.inventorySummary;
+  return (
+    <>
+      <SectionIntro
+        title="Inventory"
+        detail="Track what you bought, what it cost, market comps, sell targets, and whether to hold, list, grade, or avoid more."
+        stats={[
+          { label: "cost", value: money(summary.totalCost), tone: "watch" },
+          { label: "market", value: money(summary.estimatedMarketValue), tone: "good" },
+          { label: "profit", value: money(summary.estimatedProfit), tone: summary.estimatedProfit >= 0 ? "good" : "bad" },
+          { label: "ROI", value: percent(summary.totalRoiPercent), tone: (summary.totalRoiPercent ?? 0) >= 0 ? "good" : "bad" }
+        ]}
+      />
+      <section className="inventory-summary-grid">
+        <StatCard label="Items to sell" value={summary.sellNowCount} detail="Sell now or list high" />
+        <StatCard label="Hold" value={summary.holdCount} detail="Current margin below target" />
+        <StatCard label="Missing market" value={summary.missingMarketDataCount} detail="Needs comps or estimate" />
+        <StatCard label="Categories" value={summary.quantityByCategory.length} detail={summary.quantityByCategory.map((item) => `${formatStatus(item.category)} ${item.quantity}`).join(" | ") || "None"} />
+      </section>
+      <section className="form-panel inventory-add-panel">
+        <PanelHeader title="Add Inventory Item" />
+        <form
+          className="form-grid"
+          onSubmit={(event) =>
+            submit(
+              event,
+              "Adding inventory item",
+              (form) => requestJson("/api/radar/inventory", { method: "POST", body: JSON.stringify(formJson(form)) }),
+              { reset: true, success: "Inventory item added" }
+            )
+          }
+        >
+          <TextInput name="itemName" label="Product/card name" required />
+          <SelectInput name="category" label="Category" options={inventoryCategories.map(optionFromString)} />
+          <TextInput name="setName" label="Set name" />
+          <TextInput name="quantity" label="Quantity" type="number" min="1" defaultValue="1" required />
+          <TextInput name="cost" label="Purchase price per unit" type="number" min="0" step="0.01" required />
+          <TextInput name="purchasedAt" label="Purchase date" type="date" defaultValue={todayDateInput()} required />
+          <TextInput name="source" label="Source/store purchased from" placeholder="Target Hialeah, eBay, friend" required />
+          <TextInput name="retailer" label="Retailer" />
+          <TextInput name="exactProductUrl" label="Exact product URL" type="url" />
+          <TextInput name="upc" label="UPC" />
+          <TextInput name="sku" label="SKU / TCIN" />
+          <TextInput name="dpci" label="DPCI" />
+          <TextInput name="asin" label="ASIN" />
+          <ImageUploadInput />
+          <TextInput name="condition" label="Condition" placeholder="Mint box, clean corners, raw NM" />
+          <SelectInput name="itemStatus" label="Status" defaultValue="sealed" options={inventoryStatuses.map(optionFromString)} />
+          <TextInput name="targetSellPrice" label="Target sell price" type="number" min="0" step="0.01" />
+          <TextInput name="minimumAcceptablePrice" label="Minimum acceptable price" type="number" min="0" step="0.01" />
+          <TextInput name="currentMarketEstimate" label="Manual market estimate" type="number" min="0" step="0.01" />
+          <SelectInput name="listingStatus" label="Listing status" options={listingStatuses.map(optionFromString)} />
+          <TextInput name="listingPlatform" label="Listing platform" placeholder="eBay, Facebook, TCGPlayer" />
+          <TextareaInput name="notes" label="Notes" wide />
+          <button className="primary-action" disabled={busy} type="submit">
+            <Save size={16} />
+            {busyLabel === "Adding inventory item" ? "Saving" : "Add Inventory"}
+          </button>
+        </form>
+      </section>
+      <section className="form-panel">
+        <div className="edit-card-heading">
+          <div>
+            <h2>Inventory Filters</h2>
+            <span>{visibleItems.length} items shown</span>
+          </div>
+          <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
+            <Download size={14} />
+            Export CSV
+          </a>
+        </div>
+        <div className="field-filter-grid">
+          <TextInput name="search" label="Search" value={filters.search} onChange={updateFilter} />
+          <SelectInput name="category" label="Category" value={filters.category} onChange={updateFilter} options={[{ value: "ALL", label: "All Categories" }, ...inventoryCategories.map(optionFromString)]} />
+          <TextInput name="source" label="Source/store" value={filters.source} onChange={updateFilter} />
+          <SelectInput name="recommendation" label="Recommendation" value={filters.recommendation} onChange={updateFilter} options={[{ value: "ALL", label: "All Recommendations" }, ...inventoryRecommendations.map(optionFromString)]} />
+          <SelectInput name="listingStatus" label="Listing" value={filters.listingStatus} onChange={updateFilter} options={[{ value: "ALL", label: "All Listing Statuses" }, ...listingStatuses.map(optionFromString)]} />
+          <SelectInput
+            name="sort"
+            label="Sort"
+            value={filters.sort}
+            onChange={updateFilter}
+            options={[
+              { value: "profit", label: "Profit" },
+              { value: "roi", label: "ROI" },
+              { value: "date", label: "Date purchased" },
+              { value: "quantity", label: "Quantity" },
+              { value: "market", label: "Market value" }
+            ]}
+          />
+        </div>
+      </section>
+      <InventoryList items={visibleItems} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+      <UtilityFold title="Inventory Import And Manual Comps" detail="CSV/JSON import and last-3 sold comp entry">
+        <BulkImportPanel
+          title="Bulk Inventory Import"
+          endpoint="/api/radar/inventory/import"
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          sample={`itemName,category,setName,quantity,purchasePricePerUnit,purchaseDate,source,retailer,targetSellPrice,currentMarketEstimate,listingStatus\nPokemon TCG ETB,etbs,Mega Evolution-Chaos Rising,1,59.99,2026-05-23,Target Hialeah,Target,89.99,,not_listed`}
+        />
+        <InventoryCompForm items={dashboard.inventory} busy={busy} busyLabel={busyLabel} submit={submit} />
+      </UtilityFold>
+    </>
+  );
+}
+
+function InventoryList({
+  items,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  items: InventoryItemDTO[];
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
+  return (
+    <div className="inventory-table">
+      {items.map((item) => (
+        <article className="inventory-row" key={item.id}>
+          <InventoryImage item={item} />
+          <div className="inventory-main">
+            <h3>{item.itemName}</h3>
+            <p>
+              {formatStatus(item.category)} - {item.setName || "Set unknown"} - {item.quantity} @ {money(item.cost)}
+            </p>
+            <div className="monitor-meta">
+              <span>Cost {money(item.totalCost)}</span>
+              <span>Market {item.currentMarketEstimate === null ? "Market not collected yet" : money(item.currentMarketEstimate)}</span>
+              <span>Profit {item.estimatedNetProfit === null ? "TBD" : money(item.estimatedNetProfit)}</span>
+              <span>ROI {percent(item.roiPercent)}</span>
+              <span>{formatStatus(item.listingStatus)}</span>
+            </div>
+          </div>
+          <div className="inventory-decision">
+            <span className={`chip ${inventoryRecommendationTone(item.recommendedAction)}`}>{formatStatus(item.recommendedAction)}</span>
+            <strong>{item.marketConfidence}</strong>
+            <small>{item.recommendationReason || "Market not collected yet."}</small>
+          </div>
+          <div className="inventory-actions">
+            {item.exactProductUrl ? (
+              <a className="mini-action" href={item.exactProductUrl} target="_blank" rel="noreferrer">
+                Product <ExternalLink size={13} />
+              </a>
+            ) : null}
+            <button
+              className="mini-action"
+              disabled={busy}
+              type="button"
+              onClick={() =>
+                runAction(
+                  `Refreshing inventory comps ${item.id}`,
+                  () => requestJson(`/api/radar/inventory/${item.id}/refresh-comps`, { method: "POST" }),
+                  { success: "Inventory comp refresh finished" }
+                )
+              }
+            >
+              <RefreshCw size={13} />
+              {busyLabel === `Refreshing inventory comps ${item.id}` ? "Refreshing" : "Refresh eBay"}
+            </button>
+            <details className="inventory-detail-drawer">
+              <summary>Details</summary>
+              <div>
+                <span>Purchased {shortDate(item.purchasedAt)} from {item.source}</span>
+                <span>UPC {item.upc || "Missing"} SKU {item.sku || "Missing"} DPCI {item.dpci || "Missing"} ASIN {item.asin || "Missing"}</span>
+                <span>Target {money(item.targetSellPrice)} minimum {money(item.minimumAcceptablePrice)}</span>
+                <span>Sold {item.soldPrice === null ? "Not sold" : `${money(item.soldPrice)} on ${shortDate(item.soldAt)}`}</span>
+                <span>Last refreshed {item.marketLastRefreshedAt ? relativeTime(item.marketLastRefreshedAt) : "Market not collected yet"}</span>
+              </div>
+              {item.lastThreeComps.length ? (
+                <div className="inventory-comp-list">
+                  <strong>Last 3 sold comps</strong>
+                  {item.lastThreeComps.map((comp) => (
+                    <span key={comp.id}>
+                      {money(comp.salePrice)} - {shortDate(comp.soldAt)} - {comp.saleTitle}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="push-copy">Market not collected yet.</p>
+              )}
+            </details>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function InventoryCompForm({
+  items,
+  busy,
+  busyLabel,
+  submit
+}: {
+  items: InventoryItemDTO[];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  return (
+    <section className="form-panel">
+      <PanelHeader title="Manual Inventory Sold Comp" />
+      <form
+        className="form-grid"
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Adding inventory comp",
+            (form) => requestJson("/api/radar/inventory/comps", { method: "POST", body: JSON.stringify(formJson(form)) }),
+            { reset: true, success: "Inventory comp added" }
+          )
+        }
+      >
+        <SelectInput
+          name="inventoryItemId"
+          label="Inventory item"
+          options={items.map((item) => ({ value: item.id, label: item.itemName }))}
+          required
+        />
+        <TextInput name="saleTitle" label="Sale title" required />
+        <TextInput name="salePrice" label="Sold price" type="number" min="0" step="0.01" required />
+        <TextInput name="soldAt" label="Sale date" type="date" required />
+        <TextInput name="sourceUrl" label="Source URL" type="url" />
+        <SelectInput name="sourceQuality" label="Source" options={compSourceQualities.map((value) => ({ value, label: formatSourceQuality(value) }))} />
+        <TextInput name="matchScore" label="Confidence" type="number" min="0" max="100" defaultValue="100" />
+        <TextareaInput name="notes" label="Notes" wide />
+        <button className="primary-action" disabled={busy || !items.length} type="submit">
+          <Plus size={16} />
+          {busyLabel === "Adding inventory comp" ? "Saving" : "Add Comp"}
+        </button>
+      </form>
+    </section>
   );
 }
 

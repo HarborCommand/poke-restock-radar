@@ -96,15 +96,74 @@ export type InventoryItemDTO = {
   id: string;
   itemType: string;
   itemName: string;
+  category: string;
+  setName: string | null;
   productId: string | null;
   cardId: string | null;
   cost: number;
   quantity: number;
+  totalCost: number;
   source: string;
+  retailer: string | null;
   purchasedAt: string;
+  exactProductUrl: string | null;
+  upc: string | null;
+  sku: string | null;
+  dpci: string | null;
+  asin: string | null;
+  imageUrl: string | null;
+  condition: string | null;
+  itemStatus: string;
+  targetSellPrice: number | null;
+  minimumAcceptablePrice: number | null;
+  listingPlatform: string | null;
+  listingStatus: string;
+  soldPrice: number | null;
+  soldAt: string | null;
+  buyerPlatform: string | null;
+  currentMarketEstimate: number | null;
+  marketAverageSalePrice: number | null;
+  marketCompCount: number;
+  marketLastRefreshedAt: string | null;
+  marketConfidence: string;
+  estimatedEbayFee: number | null;
+  estimatedShippingCost: number | null;
+  estimatedNetProfit: number | null;
+  roiPercent: number | null;
+  recommendedAction: string;
+  recommendationReason: string | null;
+  netProfitAfterFees: number | null;
+  lastThreeComps: InventoryMarketCompDTO[];
   expectedPlan: string | null;
   notes: string | null;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type InventoryMarketCompDTO = {
+  id: string;
+  inventoryItemId: string;
+  saleTitle: string;
+  salePrice: number;
+  soldAt: string;
+  sourceUrl: string | null;
+  sourceQuality: CompSourceQuality;
+  matchScore: number;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type InventorySummaryDTO = {
+  totalCost: number;
+  estimatedMarketValue: number;
+  estimatedProfit: number;
+  totalRoiPercent: number | null;
+  quantityByCategory: Array<{ category: string; quantity: number }>;
+  bestItem: InventoryItemDTO | null;
+  worstItem: InventoryItemDTO | null;
+  sellNowCount: number;
+  holdCount: number;
+  missingMarketDataCount: number;
 };
 
 export type DailyRecapDTO = {
@@ -744,6 +803,7 @@ export type DashboardDTO = {
   auditLogs: AuditLogDTO[];
   dailyPlan: DailyPlanDTO;
   inventory: InventoryItemDTO[];
+  inventorySummary: InventorySummaryDTO;
   dailyRecaps: DailyRecapDTO[];
   savedFilterPresets: SavedFilterPresetDTO[];
   retailers: RetailerDTO[];

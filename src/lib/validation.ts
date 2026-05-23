@@ -4,6 +4,20 @@ export const prioritySchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
 export const ratingSchema = z.enum(["BUY", "WATCH", "SKIP", "AVOID"]);
 export const gradeTypeSchema = z.enum(["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"]);
 export const compSourceQualitySchema = z.enum(["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE"]);
+export const inventoryCategorySchema = z.enum([
+  "sealed_packs",
+  "sleeved_boosters",
+  "etbs",
+  "booster_bundles",
+  "booster_boxes",
+  "collection_boxes",
+  "single_cards",
+  "graded_cards",
+  "raw_cards"
+]);
+export const inventoryItemStatusSchema = z.enum(["sealed", "opened", "graded", "raw"]);
+export const inventoryListingStatusSchema = z.enum(["not_listed", "listed", "sold", "held"]);
+export const inventoryRecommendationSchema = z.enum(["HOLD", "SELL_NOW", "LIST_HIGH", "GRADE_FIRST", "RIP_OPEN", "AVOID_BUYING_MORE"]);
 export const eraSchema = z.enum(["MODERN", "VINTAGE"]);
 export const zoneSchema = z.enum(["MIAMI", "FORT_LAUDERDALE", "ORLANDO", "TAMPA", "JACKSONVILLE", "CUSTOM"]);
 export const productVerificationStatusSchema = z.enum([
@@ -535,13 +549,51 @@ export const markCheckedTodaySchema = z.object({
 export const inventoryCreateSchema = z.object({
   itemType: z.enum(["product", "card", "sealed", "other"]).default("product"),
   itemName: z.string().trim().min(2).max(160),
+  category: inventoryCategorySchema.default("sealed_packs"),
+  setName: optionalTrimmed,
   productId: optionalTrimmed,
   cardId: optionalTrimmed,
   cost: requiredMoney,
   quantity: z.coerce.number().int().min(1).max(1000).default(1),
+  totalCost: optionalMoney,
   source: z.string().trim().min(2).max(120),
+  retailer: optionalTrimmed,
   purchasedAt: boundedDate.default(() => new Date()),
+  exactProductUrl: optionalHttpUrl,
+  upc: optionalTrimmed,
+  sku: optionalTrimmed,
+  dpci: optionalTrimmed,
+  asin: optionalTrimmed,
+  imageUrl: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : value),
+    z.string().trim().max(250000).optional()
+  ),
+  condition: optionalTrimmed,
+  itemStatus: inventoryItemStatusSchema.default("sealed"),
+  targetSellPrice: optionalMoney,
+  minimumAcceptablePrice: optionalMoney,
+  listingPlatform: optionalTrimmed,
+  listingStatus: inventoryListingStatusSchema.default("not_listed"),
+  soldPrice: optionalMoney,
+  soldAt: optionalDate,
+  buyerPlatform: optionalTrimmed,
+  currentMarketEstimate: optionalMoney,
+  estimatedEbayFee: optionalMoney,
+  estimatedShippingCost: optionalMoney,
   expectedPlan: optionalTrimmed,
+  notes: optionalTrimmed
+});
+
+export const inventoryUpdateSchema = inventoryCreateSchema.partial();
+
+export const inventoryCompCreateSchema = z.object({
+  inventoryItemId: z.string().trim().min(2),
+  saleTitle: z.string().trim().min(2).max(220),
+  salePrice: requiredMoney,
+  soldAt: boundedDate,
+  sourceUrl: optionalHttpUrl,
+  sourceQuality: compSourceQualitySchema.default("EBAY_SOLD"),
+  matchScore: z.coerce.number().int().min(0).max(100).default(100),
   notes: optionalTrimmed
 });
 

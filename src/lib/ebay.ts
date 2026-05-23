@@ -23,6 +23,15 @@ export type EbayCompletedSale = {
   conditionNotes: string;
 };
 
+export type EbayInventoryCompletedSale = {
+  saleTitle: string;
+  salePrice: number;
+  soldAt: Date;
+  sourceUrl: string | null;
+  matchScore: number;
+  notes: string;
+};
+
 type EbayConfig = {
   clientId: string;
   clientSecret: string;
@@ -436,6 +445,89 @@ export async function fetchLastThreeEbayComps(
   return {
     mode: "api" as const,
     message: `Fetched ${sales.length} accepted eBay sold comps through Marketplace Insights; rejected ${rejected} weak or wrong matches.`,
+    sales,
+    rejected
+  };
+}
+
+function inventoryMatchScore(title: string, input: { itemName: string; setName?: string | null; upc?: string | null; sku?: string | null }) {
+  const titleText = normalize(title);
+  const itemTokens = significantTokens(input.itemName);
+  const setTokens = significantTokens(input.setName || "");
+  const idTokens = [input.upc, input.sku].filter((value): value is string => Boolean(value)).map(compact);
+  const allTokens = [...itemTokens, ...setTokens];
+  const matchedTokens = allTokens.filter((token) => titleText.includes(token)).length;
+  const tokenScore = allTokens.length ? Math.round((matchedTokens / allTokens.length) * 82) : 50;
+  const idBonus = idTokens.some((token) => token && compact(title).includes(token)) ? 18 : 0;
+  return Math.max(0, Math.min(100, tokenScore + idBonus));
+}
+
+function inventoryRejected(title: string) {
+  const reject = ["proxy", "digital", "code card", "empty box", "wrapper only", "damaged", "custom", "orica"];
+  return reject.find((term) => includesTerm(title, term)) || null;
+}
+
+export async function fetchLastThreeInventoryEbayComps(input: {
+  itemName: string;
+  setName?: string | null;
+  category?: string | null;
+  upc?: string | null;
+  sku?: string | null;
+}) {
+  const config = ebayConfig();
+  if (!config) {
+    return {
+      mode: "manual" as const,
+      message: "Manual comp mode. Configure EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_ENVIRONMENT, and EBAY_MARKETPLACE_ID.",
+      sales: [] as EbayInventoryCompletedSale[],
+      rejected: 0
+    };
+  }
+  const token = await ebayAccessToken(config);
+  const query = `${input.itemName} ${input.setName || ""} ${input.upc || ""} ${input.sku || ""} pokemon tcg sold`.trim();
+  const url = new URL(`${apiHost(config)}/buy/marketplace_insights/v1_beta/item_sales/search`);
+  url.searchParams.set("q", query);
+  url.searchParams.set("limit", "50");
+  url.searchParams.set("sort", "-date");
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${token}`,
+      "x-ebay-c-marketplace-id": config.marketplaceId,
+      accept: "application/json"
+    },
+    signal: AbortSignal.timeout(12000)
+  });
+  const data = (await response.json().catch(() => ({}))) as { itemSales?: Array<Record<string, unknown>>; errors?: Array<{ message?: string }> };
+  if (!response.ok) {
+    throw new Error(data.errors?.[0]?.message || `eBay completed sales search failed with HTTP ${response.status}`);
+  }
+  let rejected = 0;
+  const sales = (data.itemSales || [])
+    .map((item) => {
+      const saleTitle = typeof item.title === "string" ? item.title : "";
+      const salePrice = numberFromAmount(item.price || item.itemPrice || item.soldPrice);
+      const soldAt = dateFromSale(item);
+      const rejectReason = saleTitle ? inventoryRejected(saleTitle) : "missing title";
+      const matchScore = saleTitle ? inventoryMatchScore(saleTitle, input) : 0;
+      if (!saleTitle || salePrice === null || !soldAt || rejectReason || matchScore < 58) {
+        rejected += 1;
+        return null;
+      }
+      return {
+        saleTitle,
+        salePrice,
+        soldAt,
+        sourceUrl: itemUrl(item),
+        matchScore,
+        notes: `Accepted by inventory eBay QA: ${matchScore}% match.`
+      };
+    })
+    .filter((sale): sale is EbayInventoryCompletedSale => Boolean(sale))
+    .slice(0, 3);
+
+  return {
+    mode: "api" as const,
+    message: `Fetched ${sales.length} accepted eBay sold comps for inventory; rejected ${rejected} weak or wrong matches.`,
     sales,
     rejected
   };

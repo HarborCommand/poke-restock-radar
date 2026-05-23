@@ -865,3 +865,59 @@ test("core restock scanner discovery mode exists", () => {
     "missing product archive route"
   );
 });
+
+test("inventory tracker and market recommendation engine exists", () => {
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const field of [
+    "InventoryMarketComp",
+    "category",
+    "setName",
+    "targetSellPrice",
+    "currentMarketEstimate",
+    "estimatedNetProfit",
+    "roiPercent",
+    "recommendedAction",
+    "listingStatus"
+  ]) {
+    assert.match(schema, new RegExp(field), `missing inventory schema field ${field}`);
+  }
+
+  const service = readFileSync(join(root, "src", "lib", "radar-service.ts"), "utf8");
+  for (const phrase of [
+    "summarizeInventory",
+    "inventoryMarketRecommendation",
+    "refreshInventoryEbayComps",
+    "Market not collected yet",
+    "GRADE_FIRST",
+    "SELL_NOW"
+  ]) {
+    assert.match(service, new RegExp(phrase), `missing inventory service phrase ${phrase}`);
+  }
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  for (const phrase of [
+    "Inventory",
+    "Add Inventory Item",
+    "Manual Inventory Sold Comp",
+    "Export CSV",
+    "Refresh eBay",
+    "Market not collected yet"
+  ]) {
+    assert.match(app, new RegExp(phrase), `missing inventory UI phrase ${phrase}`);
+  }
+
+  for (const route of [
+    join(root, "src", "app", "api", "radar", "inventory", "route.ts"),
+    join(root, "src", "app", "api", "radar", "inventory", "import", "route.ts"),
+    join(root, "src", "app", "api", "radar", "inventory", "comps", "route.ts"),
+    join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "route.ts"),
+    join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "refresh-comps", "route.ts")
+  ]) {
+    assert.ok(statSync(route).isFile(), `missing inventory route ${route}`);
+  }
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  assert.match(readme, /Inventory Tracker/);
+  assert.match(readme, /Market Recommendation/);
+  assert.match(readme, /Market not collected yet/);
+});
