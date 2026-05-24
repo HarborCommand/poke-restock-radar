@@ -5059,6 +5059,197 @@ textarea {
   padding: 14px;
 }
 
+.inventory-details-modal {
+  display: grid;
+  gap: 14px;
+  width: min(1180px, 100%);
+  max-height: min(920px, 94dvh);
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(63, 220, 135, 0.08), transparent 30%),
+    #0b0e0d;
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.inventory-details-header {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.inventory-details-header h2 {
+  margin: 2px 0;
+  font-size: clamp(1.35rem, 2vw, 2rem);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.inventory-details-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.inventory-details-header .inventory-image-frame {
+  width: 76px;
+  height: 76px;
+}
+
+.market-status-row,
+.inventory-details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.market-status-row {
+  margin-top: 8px;
+}
+
+.inventory-details-actions {
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 10px;
+}
+
+.inventory-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.inventory-detail-section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.028);
+  padding: 14px;
+}
+
+.inventory-detail-section h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.detail-stat-grid,
+.market-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.detail-stat {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 10px;
+}
+
+.detail-stat small {
+  color: var(--subtle);
+  font-size: 0.64rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.detail-stat strong {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.detail-stat.good strong {
+  color: var(--green);
+}
+
+.detail-stat.bad strong {
+  color: var(--red);
+}
+
+.detail-line-list,
+.market-comp-proof-list,
+.compact-ledger-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.detail-line-list span,
+.detail-line-list a,
+.market-mode-warning {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.detail-line-list strong {
+  color: var(--text);
+}
+
+.market-mode-warning {
+  margin: 0;
+  border: 1px solid rgba(241, 194, 80, 0.24);
+  border-radius: 12px;
+  background: rgba(241, 194, 80, 0.08);
+  padding: 10px;
+}
+
+.market-comp-proof-list article,
+.compact-ledger-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.16);
+  padding: 10px;
+}
+
+.compact-ledger-list article {
+  grid-template-columns: 82px minmax(0, 1fr) minmax(0, 1fr) auto minmax(0, 0.9fr);
+}
+
+.market-comp-proof-list strong,
+.compact-ledger-list strong,
+.market-comp-proof-list b,
+.compact-ledger-list b {
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.market-comp-proof-list span,
+.market-comp-proof-list a,
+.compact-ledger-list span,
+.compact-ledger-list small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .barcode-scanner-modal {
   width: min(100%, 780px);
 }
@@ -5303,6 +5494,36 @@ textarea {
   }
 
   .attach-product-form {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-modal-backdrop {
+    padding: 0;
+  }
+
+  .inventory-details-modal {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border-right: 0;
+    border-left: 0;
+    padding: 14px;
+  }
+
+  .inventory-details-header {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .inventory-details-header .inventory-image-frame {
+    width: 56px;
+    height: 56px;
+  }
+
+  .inventory-details-grid,
+  .market-comp-proof-list article,
+  .compact-ledger-list article {
     grid-template-columns: 1fr;
   }
 

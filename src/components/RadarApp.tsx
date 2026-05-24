@@ -243,6 +243,36 @@ function inventoryRecommendationTone(value: string) {
   return "watch";
 }
 
+function inventoryMarketBadges(item: InventoryItemDTO, ebayStatus: DashboardDTO["ebayStatus"]) {
+  const hasEbayComps = item.lastThreeComps.some((comp) => comp.sourceQuality === "EBAY_SOLD");
+  const hasManualComps = item.lastThreeComps.some((comp) => comp.sourceQuality !== "EBAY_SOLD");
+  const badges: Array<{ label: string; tone: "good" | "watch" | "bad" | "muted" }> = [];
+  if (hasEbayComps) badges.push({ label: "Live eBay Data", tone: item.marketCompCount >= 3 ? "good" : "watch" });
+  if (hasManualComps || item.marketConfidence === "MANUAL") badges.push({ label: "Manual Comp Data", tone: "watch" });
+  if (!item.marketCompCount && item.currentMarketEstimate === null) badges.push({ label: "Market Not Collected", tone: "muted" });
+  if (!ebayStatus.ready) badges.push({ label: "eBay Not Configured", tone: "watch" });
+  if ((item.marketCompCount > 0 && item.marketCompCount < 3) || item.marketConfidence === "LOW") badges.push({ label: "Low Confidence", tone: "bad" });
+  const seen = new Set<string>();
+  return badges.filter((badge) => {
+    if (seen.has(badge.label)) return false;
+    seen.add(badge.label);
+    return true;
+  });
+}
+
+function inventoryMarketSource(item: InventoryItemDTO) {
+  if (item.lastThreeComps.some((comp) => comp.sourceQuality === "EBAY_SOLD")) return "eBay sold comps";
+  if (item.lastThreeComps.length) return "Manual sold comps";
+  if (item.currentMarketEstimate !== null) return "Manual estimate only";
+  return "No market source";
+}
+
+function inventoryMarketTableValue(item: InventoryItemDTO) {
+  if (item.marketCompCount > 0) return money(item.netMarketValue ?? item.currentMarketEstimate);
+  if (item.currentMarketEstimate !== null && item.marketConfidence === "MANUAL") return "Manual estimate";
+  return "Not collected";
+}
+
 function monitorDetail(words: string | null | undefined, label: string) {
   if (!words) return null;
   const prefix = `${label.toLowerCase()}:`;
@@ -3341,6 +3371,7 @@ function InventoryPanel({
   const [purchasePrefill, setPurchasePrefill] = useState<InventoryPurchasePrefill | null>(null);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
+  const [detailItemId, setDetailItemId] = useState<string>("");
   const [filters, setFilters] = useState({
     search: "",
     category: "ALL",
@@ -3393,6 +3424,7 @@ function InventoryPanel({
   const summary = dashboard.inventorySummary;
   const allSales = useMemo(() => dashboard.inventory.flatMap((item) => item.sales), [dashboard.inventory]);
   const selectedItem = visibleItems.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? null;
+  const detailItem = dashboard.inventory.find((item) => item.id === detailItemId) ?? null;
   const openPurchaseFlow = useCallback((itemId = "", prefill: InventoryPurchasePrefill | null = null) => {
     setPurchaseDefaultItemId(itemId);
     setPurchasePrefill(prefill);
@@ -3521,16 +3553,15 @@ function InventoryPanel({
               <InventoryList
                 items={visibleItems}
                 selectedId={selectedItem?.id ?? ""}
-                busy={busy}
-                busyLabel={busyLabel}
-                products={dashboard.products}
-                runAction={runAction}
-                submit={submit}
                 onSelect={(item) => setSelectedItemId(item.id)}
                 onAddStock={(item) => {
-                  setPurchaseDefaultItemId(item.id);
-                  setPurchaseFlowOpen(true);
+                  openPurchaseFlow(item.id);
                 }}
+                onRecordSale={(item) => {
+                  setSelectedItemId(item.id);
+                  window.setTimeout(() => document.getElementById("inventory-sales-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                }}
+                onViewDetails={(item) => setDetailItemId(item.id)}
               />
             </div>
             <InventoryQuickActions
@@ -3599,6 +3630,24 @@ function InventoryPanel({
           dashboard={dashboard}
           onUseResult={openBarcodeResult}
           onClose={() => setBarcodeScannerOpen(false)}
+        />
+      ) : null}
+      {detailItem ? (
+        <InventoryDetailsModal
+          item={detailItem}
+          products={dashboard.products}
+          ebayStatus={dashboard.ebayStatus}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          runAction={runAction}
+          onAddStock={(item) => openPurchaseFlow(item.id)}
+          onRecordSale={(item) => {
+            setDetailItemId("");
+            setSelectedItemId(item.id);
+            window.setTimeout(() => document.getElementById("inventory-sales-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+          }}
+          onClose={() => setDetailItemId("")}
         />
       ) : null}
     </>
@@ -4228,23 +4277,17 @@ function InventoryFilters({
 function InventoryList({
   items,
   selectedId,
-  busy,
-  busyLabel,
-  products,
-  runAction,
-  submit,
   onSelect,
-  onAddStock
+  onAddStock,
+  onRecordSale,
+  onViewDetails
 }: {
   items: InventoryItemDTO[];
   selectedId: string;
-  busy: boolean;
-  busyLabel: string | null;
-  products: ProductDTO[];
-  runAction: ActionHandler;
-  submit: SubmitHandler;
   onSelect: (item: InventoryItemDTO) => void;
   onAddStock: (item: InventoryItemDTO) => void;
+  onRecordSale: (item: InventoryItemDTO) => void;
+  onViewDetails: (item: InventoryItemDTO) => void;
 }) {
   if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
   return (
@@ -4273,14 +4316,8 @@ function InventoryList({
           <span className="catalog-cell strong" data-label="Qty">{item.quantityOwned}</span>
           <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
           <span className="catalog-cell" data-label="Market">
-            {item.currentMarketEstimate === null ? (
-              "Not collected"
-            ) : (
-              <>
-                {money(item.netMarketValue ?? item.currentMarketEstimate)}
-                <small>{item.marketConfidence} - {item.marketCompCount}/3 comps</small>
-              </>
-            )}
+            {inventoryMarketTableValue(item)}
+            <small>{item.marketCompCount ? `${item.marketConfidence} - ${item.marketCompCount}/3 comps` : "No sold comps"}</small>
           </span>
           <span className="catalog-cell" data-label="Target">{money(item.targetSellPrice)}</span>
           <span
@@ -4297,56 +4334,243 @@ function InventoryList({
             <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
               Add Stock
             </button>
-            <button className="mini-action" type="button" onClick={() => onSelect(item)}>
+            <button className="mini-action" type="button" onClick={() => onRecordSale(item)}>
               Record Sale
             </button>
-            <details className="inventory-detail-drawer">
-              <summary>View Details</summary>
-              <div>
-                <span>Purchased {shortDate(item.purchasedAt)} from {item.source}</span>
-                <span>Total spent {money(item.totalCost)} - sold {item.quantitySold} for {money(item.totalSalesGross)}</span>
-                <span>Receipt {item.receiptNumber || "Not saved"} - order {item.orderNumber || "Not saved"}</span>
-                <span>Transaction {item.transactionId || "Not saved"} - payment {item.paymentMethod || "Not saved"}</span>
-                <span>Source store {item.sourceStore || item.source || "Not saved"} - receipt image {item.receiptImageUrl ? "attached" : "missing"}</span>
-                <span>Linked product {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
-                <span>UPC {item.upc || "Missing"} SKU {item.sku || "Missing"} DPCI {item.dpci || "Missing"} ASIN {item.asin || "Missing"}</span>
-                <span>Market estimate {item.currentMarketEstimate === null ? "Not collected yet" : money(item.currentMarketEstimate)} - confidence {item.marketConfidence} - {item.marketCompCount}/3 comps</span>
-                <span>Net market value {money(item.netMarketValue)} - market P/L {money(item.marketProfitLoss)} - ROI {percent(item.marketRoiPercent)}</span>
-                <span>Target {money(item.targetSellPrice)} minimum {money(item.minimumAcceptablePrice)}</span>
-                <span>Realized P/L {money(item.realizedProfitLoss)} - ROI {percent(item.realizedRoiPercent)}</span>
-                <span>Market {item.marketLastRefreshedAt ? relativeTime(item.marketLastRefreshedAt) : "Market not collected yet"}</span>
-              </div>
-              <AttachWatchedProductForm item={item} products={products} busy={busy} busyLabel={busyLabel} submit={submit} />
-              <RecordSaleForm item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
-              {item.lastThreeComps.length ? (
-                <div className="inventory-comp-list">
-                  <strong>Last 3 sold comps</strong>
-                  {item.lastThreeComps.map((comp) => (
-                    <span key={comp.id}>
-                      {money(comp.salePrice)} - {shortDate(comp.soldAt)} - {comp.saleTitle}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="push-copy">Market not collected yet.</p>
-              )}
-              <button
-                className="mini-action"
-                disabled={busy}
-                type="button"
-                onClick={() =>
-                  runAction(
-                    `Refreshing inventory comps ${item.id}`,
-                    () => requestJson(`/api/radar/inventory/${item.id}/refresh-comps`, { method: "POST" }),
-                    { success: "Inventory comp refresh finished" }
-                  )
-                }
-              >
-                <RefreshCw size={13} />
-                {busyLabel === `Refreshing inventory comps ${item.id}` ? "Refreshing" : "Refresh eBay"}
-              </button>
-            </details>
+            <button className="mini-action" type="button" onClick={() => onViewDetails(item)}>
+              View Details
+            </button>
           </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function InventoryDetailsModal({
+  item,
+  products,
+  ebayStatus,
+  busy,
+  busyLabel,
+  submit,
+  runAction,
+  onAddStock,
+  onRecordSale,
+  onClose
+}: {
+  item: InventoryItemDTO;
+  products: ProductDTO[];
+  ebayStatus: DashboardDTO["ebayStatus"];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+  onAddStock: (item: InventoryItemDTO) => void;
+  onRecordSale: (item: InventoryItemDTO) => void;
+  onClose: () => void;
+}) {
+  const marketBadges = inventoryMarketBadges(item, ebayStatus);
+  const compCount = item.lastThreeComps.length;
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`${item.itemName} inventory details`}>
+        <header className="inventory-details-header">
+          <InventoryImage item={item} />
+          <div>
+            <span className="eyeline">Inventory Details</span>
+            <h2>{item.itemName}</h2>
+            <p>{item.setName || item.retailer || "Set and retailer not saved"}</p>
+            <div className="market-status-row">
+              {marketBadges.map((badge) => (
+                <span className={`chip ${badge.tone}`} key={badge.label}>{badge.label}</span>
+              ))}
+            </div>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close inventory details" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+
+        <section className="inventory-details-actions">
+          <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
+            <Plus size={14} />
+            Add Stock
+          </button>
+          <button className="mini-action" type="button" onClick={() => onRecordSale(item)}>
+            <CircleDollarSign size={14} />
+            Record Sale
+          </button>
+          <button
+            className="mini-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                `Refreshing inventory comps ${item.id}`,
+                () => requestJson(`/api/radar/inventory/${item.id}/refresh-comps`, { method: "POST" }),
+                { success: "Inventory market refresh finished" }
+              )
+            }
+          >
+            <RefreshCw size={14} />
+            {busyLabel === `Refreshing inventory comps ${item.id}` ? "Refreshing" : "Refresh Market Data"}
+          </button>
+          {item.exactProductUrl ? (
+            <a className="mini-action" href={item.exactProductUrl} target="_blank" rel="noreferrer">
+              <ExternalLink size={14} />
+              Product Page
+            </a>
+          ) : null}
+        </section>
+
+        <div className="inventory-details-grid">
+          <section className="inventory-detail-section">
+            <h3>Overview</h3>
+            <div className="detail-stat-grid">
+              <DetailStat label="Owned" value={String(item.quantityOwned)} />
+              <DetailStat label="Average Cost" value={money(item.averageCost)} />
+              <DetailStat label="Total Cost Basis" value={money(item.averageCost * item.quantityOwned)} />
+              <DetailStat label="Market Value" value={item.marketCompCount ? money(item.netMarketValue) : "Not verified"} />
+              <DetailStat label="Profit / Loss" value={item.marketCompCount ? money(item.marketProfitLoss) : "Needs comps"} tone={(item.marketProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
+              <DetailStat label="ROI" value={item.marketCompCount ? percent(item.marketRoiPercent) : "Needs comps"} />
+            </div>
+            <div className="detail-line-list">
+              <span>Recommendation: <strong>{formatStatus(item.recommendedAction)}</strong></span>
+              <span>{item.recommendationReason || "Add sold comps to generate a stronger recommendation."}</span>
+              <span>Linked product: {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
+              <span>UPC {item.upc || "Missing"} · SKU {item.sku || "Missing"} · DPCI {item.dpci || "Missing"} · ASIN {item.asin || "Missing"}</span>
+            </div>
+            <AttachWatchedProductForm item={item} products={products} busy={busy} busyLabel={busyLabel} submit={submit} />
+          </section>
+
+          <section className="inventory-detail-section">
+            <h3>Market Data</h3>
+            <div className="market-proof-grid">
+              <DetailStat label="Status" value={marketBadges[0]?.label || "Market Not Collected"} />
+              <DetailStat label="Source" value={inventoryMarketSource(item)} />
+              <DetailStat label="Comps Used" value={`${compCount}/3`} />
+              <DetailStat label="Last Refreshed" value={item.marketLastRefreshedAt ? dateTime(item.marketLastRefreshedAt) : "Not collected yet"} />
+              <DetailStat label="Confidence" value={item.marketConfidence || "LOW"} />
+              <DetailStat label="Estimate" value={item.marketCompCount ? money(item.currentMarketEstimate) : "Not verified"} />
+            </div>
+            {!ebayStatus.ready ? (
+              <p className="market-mode-warning">eBay API not configured — manual comp mode only.</p>
+            ) : null}
+            {!item.marketCompCount && item.currentMarketEstimate !== null ? (
+              <p className="market-mode-warning">A manual estimate is saved, but no sold comps are attached. Profit is not treated as verified market data.</p>
+            ) : null}
+            {item.lastThreeComps.length ? (
+              <div className="market-comp-proof-list">
+                {item.lastThreeComps.map((comp) => (
+                  <article key={comp.id}>
+                    <div>
+                      <strong>{comp.saleTitle}</strong>
+                      <span>{formatStatus(comp.sourceQuality)} · confidence {comp.matchScore}%</span>
+                    </div>
+                    <b>{money(comp.salePrice)}</b>
+                    <span>{shortDate(comp.soldAt)}</span>
+                    {comp.sourceUrl ? (
+                      <a href={comp.sourceUrl} target="_blank" rel="noreferrer">
+                        Sold listing
+                      </a>
+                    ) : (
+                      <span>No URL</span>
+                    )}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={CircleDollarSign} title="Market not collected yet" detail="Refresh eBay when credentials are configured, or add manual sold comps below." />
+            )}
+          </section>
+
+          <section className="inventory-detail-section">
+            <h3>Stock Lots</h3>
+            <CompactLotsList item={item} />
+          </section>
+
+          <section className="inventory-detail-section">
+            <h3>Sales History</h3>
+            <CompactSalesList item={item} />
+          </section>
+
+          <section className="inventory-detail-section">
+            <h3>Attachments / Receipts</h3>
+            <div className="detail-line-list">
+              <span>Receipt: {item.receiptNumber || "Not saved"}</span>
+              <span>Order: {item.orderNumber || "Not saved"}</span>
+              <span>Transaction: {item.transactionId || "Not saved"}</span>
+              <span>Payment: {item.paymentMethod || "Not saved"}</span>
+              <span>Source store: {item.sourceStore || item.source || "Not saved"}</span>
+              {item.receiptImageUrl ? (
+                <a href={item.receiptImageUrl} target="_blank" rel="noreferrer">Open receipt image</a>
+              ) : (
+                <span>Receipt image missing</span>
+              )}
+            </div>
+          </section>
+
+          <section className="inventory-detail-section">
+            <h3>Notes</h3>
+            <div className="detail-line-list">
+              <span>Plan: {item.expectedPlan || "Not saved"}</span>
+              <span>Condition: {item.condition || "Not saved"}</span>
+              <span>Target sell: {money(item.targetSellPrice)} · minimum: {money(item.minimumAcceptablePrice)}</span>
+              <span>{item.notes || "No notes saved."}</span>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailStat({
+  label,
+  value,
+  tone = "neutral"
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "good" | "bad";
+}) {
+  return (
+    <span className={`detail-stat ${tone}`}>
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </span>
+  );
+}
+
+function CompactLotsList({ item }: { item: InventoryItemDTO }) {
+  if (!item.stockLots.length) return <EmptyState icon={History} title="No lots yet" detail="Add stock to create purchase batches." />;
+  return (
+    <div className="compact-ledger-list">
+      {item.stockLots.map((lot) => (
+        <article key={lot.id}>
+          <strong>{shortDate(lot.purchasedAt)}</strong>
+          <span>{lot.sourceStore || lot.source}</span>
+          <span>Qty {lot.quantity} · remaining {lot.remainingQuantity}</span>
+          <b>{money(lot.totalCost)}</b>
+          <small>{lot.receiptNumber || lot.orderNumber || "No receipt saved"}</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function CompactSalesList({ item }: { item: InventoryItemDTO }) {
+  if (!item.sales.length) return <EmptyState icon={CircleDollarSign} title="No sales recorded" detail="Use Record Sale from the row actions after you sell." />;
+  return (
+    <div className="compact-ledger-list">
+      {item.sales.map((sale) => (
+        <article key={sale.id}>
+          <strong>{shortDate(sale.soldAt)}</strong>
+          <span>{formatStatus(sale.platform)}</span>
+          <span>Qty {sale.quantitySold} · net {money(sale.netSale)}</span>
+          <b className={sale.profitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.profitLoss)}</b>
+          <small>ROI {percent(sale.roiPercent)}</small>
         </article>
       ))}
     </div>

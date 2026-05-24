@@ -925,6 +925,15 @@ test("inventory tracker and market recommendation engine exists", () => {
     "Stock Lots",
     "Add Purchase",
     "Record Sale",
+    "Inventory Details",
+    "Market Data",
+    "Attachments / Receipts",
+    "Refresh Market Data",
+    "eBay API not configured",
+    "Live eBay Data",
+    "Manual Comp Data",
+    "Market Not Collected",
+    "Low Confidence",
     "Spending Log",
     "Sales Log",
     "What should I sell today?",
@@ -941,7 +950,6 @@ test("inventory tracker and market recommendation engine exists", () => {
     "Sales CSV",
     "P/L CSV",
     "Receipt image",
-    "Refresh eBay",
     "Refresh Market",
     "Market not collected yet"
   ]) {
