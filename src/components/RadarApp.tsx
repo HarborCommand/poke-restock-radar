@@ -56,6 +56,8 @@ import {
   useRef,
   useState
 } from "react";
+import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
   CardDTO,
@@ -114,24 +116,20 @@ type ActionHandler = <T>(
 type InventoryPurchasePrefill = {
   upc?: string;
   itemName?: string;
+  brand?: string | null;
   category?: string | null;
   setName?: string | null;
+  description?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  msrp?: number | null;
+  sku?: string | null;
   productId?: string | null;
   retailer?: string | null;
   exactProductUrl?: string | null;
   imageUrl?: string | null;
   source?: string | null;
 };
-
-type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => {
-  detect(source: CanvasImageSource): Promise<Array<{ rawValue?: string; format?: string }>>;
-};
-
-declare global {
-  interface Window {
-    BarcodeDetector?: BarcodeDetectorConstructor;
-  }
-}
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: "main" | "manage" }> = [
   { id: "dashboard", label: "Dashboard", icon: Radar, section: "main" },
@@ -667,7 +665,8 @@ function pushSupported() {
 
 async function ensureServiceWorkerRegistration() {
   if (!pushSupported()) throw new Error("This browser does not support service worker push notifications.");
-  await navigator.serviceWorker.register("/sw.js");
+  const registration = await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
+  void registration.update();
   return navigator.serviceWorker.ready;
 }
 
@@ -783,7 +782,10 @@ export function RadarApp() {
 
   useEffect(() => {
     if (!user || !pushSupported()) return;
-    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    navigator.serviceWorker
+      .register("/sw.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch(() => undefined);
   }, [user]);
 
   useEffect(() => {
@@ -2937,27 +2939,56 @@ function InventoryImage({ item }: { item: InventoryItemDTO }) {
   );
 }
 
+function ProductImagePreview({ imageUrl, itemName }: { imageUrl: string; itemName: string }) {
+  if (!imageUrl) {
+    return (
+      <div className="product-image-preview empty">
+        <PackageSearch size={18} />
+        <span>No product image yet. Scan or lookup a UPC, paste an image URL, or upload a photo.</span>
+      </div>
+    );
+  }
+  return (
+    <div className="product-image-preview">
+      <Image src={imageUrl} alt={`${itemName} preview`} width={96} height={96} unoptimized />
+      <span>Image preview from UPC lookup or your upload. You can edit or remove it below.</span>
+    </div>
+  );
+}
+
 function ImageUploadInput({
   defaultValue = "",
+  value,
+  onValueChange,
   fieldName = "imageUrl",
   label = "Product image",
   placeholder = "Paste verified product image URL"
 }: {
   defaultValue?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
   fieldName?: string;
   label?: string;
   placeholder?: string;
 }) {
-  const [value, setValue] = useState(defaultValue);
-  const isUploadedImage = value.startsWith("data:");
+  const [localValue, setLocalValue] = useState(defaultValue);
+  const currentValue = value ?? localValue;
+  const setCurrentValue = useCallback(
+    (nextValue: string) => {
+      if (value === undefined) setLocalValue(nextValue);
+      onValueChange?.(nextValue);
+    },
+    [onValueChange, value]
+  );
+  const isUploadedImage = currentValue.startsWith("data:");
   return (
     <label className="image-upload-field">
       {label}
-      <input name={fieldName} type="hidden" value={value} />
+      <input name={fieldName} type="hidden" value={currentValue} />
       <input
         type="url"
-        value={isUploadedImage ? "" : value}
-        onChange={(event) => setValue(event.currentTarget.value)}
+        value={isUploadedImage ? "" : currentValue}
+        onChange={(event) => setCurrentValue(event.currentTarget.value)}
         placeholder={placeholder}
       />
       <input
@@ -2967,11 +2998,18 @@ function ImageUploadInput({
           const file = event.currentTarget.files?.[0];
           if (!file) return;
           const reader = new FileReader();
-          reader.onload = () => setValue(String(reader.result || ""));
+          reader.onload = () => setCurrentValue(String(reader.result || ""));
           reader.readAsDataURL(file);
         }}
       />
-      {value ? <span className="chip good">Image attached</span> : <span className="chip muted">Optional URL or upload</span>}
+      <span className="image-upload-actions">
+        {currentValue ? <span className="chip good">Image attached</span> : <span className="chip muted">Optional URL or upload</span>}
+        {currentValue ? (
+          <button className="mini-action" type="button" onClick={() => setCurrentValue("")}>
+            Remove image
+          </button>
+        ) : null}
+      </span>
     </label>
   );
 }
@@ -3723,8 +3761,14 @@ function InventoryPanel({
         openPurchaseFlow("", {
           upc: result.upc,
           itemName: product?.productName ?? "",
+          brand: product?.brand ?? "",
           category: inventoryCategoryFromLookup(product?.category),
           setName: product?.setName ?? "",
+          description: product?.description ?? "",
+          manufacturer: product?.manufacturer ?? "",
+          model: product?.model ?? "",
+          msrp: product?.msrp ?? null,
+          sku: product?.sku ?? "",
           productId: product?.productId ?? null,
           retailer: product?.retailer ?? "",
           exactProductUrl: product?.exactProductUrl ?? "",
@@ -4021,7 +4065,7 @@ function InventoryDecisionCard({
 }
 
 function normalizeBarcodeValue(value: string) {
-  return value.replace(/\D/g, "").slice(0, 14);
+  return normalizeUPC(value);
 }
 
 function BarcodeScannerModal({
@@ -4034,16 +4078,41 @@ function BarcodeScannerModal({
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerControlsRef = useRef<IScannerControls | null>(null);
+  const scanLockedRef = useRef(false);
   const [manualUpc, setManualUpc] = useState("");
   const [result, setResult] = useState<UpcLookupResultDTO | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
+  const [imageDecodeBusy, setImageDecodeBusy] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
-  const [cameraMessage, setCameraMessage] = useState("Camera runs only after you tap Start Camera. No image or video is saved.");
+  const [cameraMessage, setCameraMessage] = useState("Tap Start Camera to scan a UPC/EAN barcode with ZXing. No image or video is saved.");
   const history = result?.history ?? dashboard.barcodeScans;
   const cameraAvailable = typeof window !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
-  const barcodeDetectionAvailable = typeof window !== "undefined" && Boolean(window.BarcodeDetector);
+
+  const stopCameraStream = useCallback((message?: string) => {
+    scanLockedRef.current = true;
+    try {
+      scannerControlsRef.current?.stop();
+    } catch {
+      // Camera cleanup must continue even if the scanner already stopped itself.
+    }
+    scannerControlsRef.current = null;
+    const videoElement = videoRef.current;
+    const stream = videoElement?.srcObject;
+    if (stream instanceof MediaStream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    if (videoElement) {
+      videoElement.pause();
+      videoElement.srcObject = null;
+    }
+    setCameraActive(false);
+    setCameraStarting(false);
+    setCameraPreviewReady(false);
+    if (message) setCameraMessage(message);
+  }, []);
 
   const lookupUpc = useCallback(async (upc: string, source: "camera" | "manual") => {
     const normalized = normalizeBarcodeValue(upc);
@@ -4060,93 +4129,131 @@ function BarcodeScannerModal({
       });
       setResult(lookup);
       setManualUpc(lookup.upc);
-      setCameraMessage(lookup.message);
-      setCameraActive(false);
-      setCameraStarting(false);
-      setCameraPreviewReady(false);
+      setCameraMessage(source === "camera" ? "Product details filled from UPC." : lookup.message);
+      if (source === "camera") onUseResult(lookup);
     } catch (error) {
       setCameraMessage(error instanceof Error ? error.message : "Lookup failed - fill manually.");
     } finally {
       setLookupBusy(false);
     }
-  }, []);
+  }, [onUseResult]);
 
-  useEffect(() => {
-    if (!cameraActive) return;
-    let stopped = false;
-    let stream: MediaStream | null = null;
-    let timer: number | null = null;
-    const videoElement = videoRef.current;
-    async function startCamera() {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setCameraMessage("Camera access is not available in this browser. Use manual UPC entry.");
-        setCameraActive(false);
+  const handleDecodedBarcode = useCallback(
+    (rawValue: string, source: "camera" | "manual") => {
+      const normalized = normalizeBarcodeValue(rawValue);
+      if (!/^\d{6,14}$/.test(normalized)) {
+        setCameraMessage("Barcode was detected, but it was not a valid 6 to 14 digit UPC/EAN. Try again or type it manually.");
         return;
       }
-      setCameraStarting(true);
-      setCameraPreviewReady(false);
-      setCameraMessage("Starting camera. Approve camera permission if your browser asks.");
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
+      scanLockedRef.current = true;
+      setManualUpc(normalized);
+      setResult(null);
+      stopCameraStream(`Detected ${normalized}. Looking up product...`);
+      void lookupUpc(normalized, source);
+    },
+    [lookupUpc, stopCameraStream]
+  );
+
+  const startCamera = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraMessage("Camera access is not available in this browser. Use manual UPC entry.");
+      return;
+    }
+    stopCameraStream();
+    scanLockedRef.current = false;
+    setResult(null);
+    setCameraActive(true);
+    setCameraStarting(true);
+    setCameraPreviewReady(false);
+    setCameraMessage("Starting camera. Approve camera permission if your browser asks.");
+    try {
+      const videoElement = videoRef.current;
+      if (!videoElement) throw new Error("Camera preview is not ready. Close and reopen the scanner.");
+      videoElement.muted = true;
+      videoElement.playsInline = true;
+      const reader = new BrowserMultiFormatReader(undefined, {
+        delayBetweenScanAttempts: 220,
+        delayBetweenScanSuccess: 600,
+        tryPlayVideoTimeout: 8000
+      });
+      reader.possibleFormats = [BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128];
+      const controls = await reader.decodeFromConstraints(
+        {
           video: {
             facingMode: { ideal: "environment" },
             width: { ideal: 1280 },
             height: { ideal: 720 }
           },
           audio: false
-        });
-        if (stopped) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
+        },
+        videoElement,
+        (scanResult, _error, callbackControls) => {
+          if (scanLockedRef.current || !scanResult) return;
+          const normalized = normalizeBarcodeValue(scanResult.getText());
+          if (!/^\d{6,14}$/.test(normalized)) return;
+          scanLockedRef.current = true;
+          try {
+            callbackControls.stop();
+          } catch {
+            // ZXing may already be stopping if the modal is closing at the same time.
+          }
+          scannerControlsRef.current = null;
+          handleDecodedBarcode(normalized, "camera");
         }
-        if (!videoElement) {
-          setCameraMessage("Camera started, but the preview is not ready. Close and reopen the scanner.");
-          setCameraActive(false);
-          return;
+      );
+      if (scanLockedRef.current) {
+        try {
+          controls.stop();
+        } catch {
+          // The decode callback may have already stopped controls after a successful scan.
         }
-        videoElement.muted = true;
-        videoElement.playsInline = true;
-        videoElement.srcObject = stream;
-        await videoElement.play();
+      } else {
+        scannerControlsRef.current = controls;
+        setCameraActive(true);
         setCameraStarting(false);
         setCameraPreviewReady(true);
-        if (!window.BarcodeDetector) {
-          setCameraMessage("Camera preview active. Automatic barcode detection is not supported in this browser, so type the UPC below.");
-          return;
-        }
-        const detector = new window.BarcodeDetector({ formats: ["upc_a", "upc_e", "ean_13", "ean_8"] });
-        setCameraMessage("Camera preview active. Point your camera at the barcode.");
-        const scanFrame = async () => {
-          if (stopped || !videoElement) return;
-          try {
-            const codes = await detector.detect(videoElement);
-            const rawValue = codes.map((code) => code.rawValue || "").find(Boolean);
-            if (rawValue) {
-              stopped = true;
-              await lookupUpc(rawValue, "camera");
-              return;
-            }
-          } catch {
-            setCameraMessage("Scanning is active. Hold the barcode steady in good light.");
-          }
-          timer = window.setTimeout(scanFrame, 550);
-        };
-        await scanFrame();
-      } catch {
-        setCameraMessage("Camera permission was denied or unavailable. Check browser camera permissions or use manual UPC entry.");
-        setCameraStarting(false);
-        setCameraPreviewReady(false);
-        setCameraActive(false);
+        setCameraMessage("Point camera at barcode. ZXing is scanning UPC-A, UPC-E, EAN-13, EAN-8, and CODE-128.");
       }
+    } catch (error) {
+      stopCameraStream();
+      const message = error instanceof Error ? error.message : "Camera permission was denied or unavailable.";
+      setCameraMessage(`${message} Manual UPC lookup is still available below.`);
     }
-    void startCamera();
-    return () => {
-      stopped = true;
-      if (timer) window.clearTimeout(timer);
-      stream?.getTracks().forEach((track) => track.stop());
-      if (videoElement) videoElement.srcObject = null;
-    };
-  }, [cameraActive, lookupUpc]);
+  }, [handleDecodedBarcode, stopCameraStream]);
+
+  const decodeBarcodeImage = useCallback(
+    async (file: File | undefined) => {
+      if (!file) return;
+      setImageDecodeBusy(true);
+      setCameraMessage("Reading barcode image...");
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        const reader = new BrowserMultiFormatReader(undefined, {
+          delayBetweenScanAttempts: 220,
+          delayBetweenScanSuccess: 600
+        });
+        reader.possibleFormats = [BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128];
+        const image = new window.Image();
+        image.src = objectUrl;
+        await new Promise<void>((resolve, reject) => {
+          image.onload = () => resolve();
+          image.onerror = () => reject(new Error("Could not read that image. Try another photo or type the UPC."));
+        });
+        const decoded = await reader.decodeFromImageElement(image);
+        handleDecodedBarcode(decoded.getText(), "manual");
+      } catch (error) {
+        setCameraMessage(error instanceof Error ? error.message : "Barcode was not detected in that image. Type the UPC manually.");
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+        setImageDecodeBusy(false);
+      }
+    },
+    [handleDecodedBarcode]
+  );
+
+  useEffect(() => {
+    return () => stopCameraStream();
+  }, [stopCameraStream]);
 
   return (
     <div className="inventory-modal-backdrop" role="presentation">
@@ -4154,7 +4261,7 @@ function BarcodeScannerModal({
         <div className="edit-card-heading">
           <div>
             <h2>Scan UPC / Barcode</h2>
-            <span>Scan with your phone camera or enter the UPC manually. Confirm before saving inventory.</span>
+            <span>Start the camera to scan with ZXing, or use manual UPC lookup as a fallback.</span>
           </div>
           <button className="icon-button" type="button" aria-label="Close barcode scanner" onClick={onClose}>
             <X size={18} />
@@ -4189,9 +4296,7 @@ function BarcodeScannerModal({
               ) : !cameraPreviewReady ? (
                 <span className="barcode-camera-placeholder">Starting camera...</span>
               ) : (
-                <span className="barcode-camera-guide">
-                  {barcodeDetectionAvailable ? "Align barcode inside the frame" : "Preview active - enter UPC below"}
-                </span>
+                <span className="barcode-camera-guide">Align barcode inside the frame</span>
               )}
             </div>
             <p>{cameraMessage}</p>
@@ -4200,32 +4305,24 @@ function BarcodeScannerModal({
                 className="primary-action barcode-start-button"
                 disabled={!cameraAvailable || lookupBusy || cameraStarting}
                 type="button"
-                onClick={() => {
-                  setResult(null);
-                  setCameraPreviewReady(false);
-                  setCameraActive(true);
-                }}
+                onClick={startCamera}
               >
                 <PackageSearch size={15} />
-                {cameraStarting ? "Starting Camera" : cameraActive ? "Camera Active" : "Start Camera"}
+                {cameraStarting ? "Starting Camera" : cameraActive ? "Restart Camera" : "Start Camera"}
               </button>
               <button
                 className="mini-action"
+                disabled={!cameraActive && !cameraStarting}
                 type="button"
                 onClick={() => {
-                  setCameraActive(false);
-                  setCameraStarting(false);
-                  setCameraPreviewReady(false);
-                  setCameraMessage("Camera stopped. Tap Start Camera to try again.");
+                  stopCameraStream("Camera stopped. Tap Start Camera to try again.");
                 }}
               >
                 Stop
               </button>
             </div>
             {!cameraAvailable ? <small>Camera access is not available here. Manual UPC lookup still works.</small> : null}
-            {cameraAvailable && !barcodeDetectionAvailable ? (
-              <small>Automatic barcode detection is not available in this browser. You can still start the camera preview and type the UPC manually.</small>
-            ) : null}
+            <small>ZXing decodes the live camera feed after Start Camera. No camera frames are saved.</small>
           </div>
           <form
             className="barcode-manual-panel"
@@ -4246,6 +4343,18 @@ function BarcodeScannerModal({
               <PackageSearch size={15} />
               {lookupBusy ? "Looking up" : "Lookup UPC"}
             </button>
+            <label className="barcode-image-upload">
+              Upload barcode image
+              <input
+                accept="image/*"
+                disabled={imageDecodeBusy || lookupBusy}
+                type="file"
+                onChange={(event) => {
+                  void decodeBarcodeImage(event.currentTarget.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
           </form>
         </section>
         {result ? (
@@ -4257,13 +4366,21 @@ function BarcodeScannerModal({
             </div>
             <div className="barcode-result-meta">
               <span>UPC {result.upc}</span>
+              {result.lookupProduct?.brand ? <span>{result.lookupProduct.brand}</span> : null}
+              {result.lookupProduct?.category ? <span>{formatStatus(result.lookupProduct.category)}</span> : null}
               <span>{result.lookupProduct?.retailer || "Retailer unknown"}</span>
               <span>{result.lookupProduct?.source ? formatStatus(result.lookupProduct.source) : "Manual fallback"}</span>
             </div>
-            <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
-              <Check size={15} />
-              {result.matchedInventoryItem ? "Add Stock To Existing" : "Create Product With UPC"}
-            </button>
+            <div className="barcode-action-row">
+              <button className="mini-action" type="button" onClick={startCamera}>
+                <PackageSearch size={15} />
+                Scan Again
+              </button>
+              <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
+                <Check size={15} />
+                {result.matchedInventoryItem ? "Add Stock To Existing" : "Create Product With UPC"}
+              </button>
+            </div>
           </section>
         ) : null}
         <section className="barcode-history-panel">
@@ -4282,7 +4399,7 @@ function BarcodeScannerModal({
             <p>No barcode scans yet.</p>
           )}
         </section>
-        <small className="manual-safety-note">Privacy: camera access starts only after tapping Start Camera. No image or video is saved; only the decoded UPC is stored.</small>
+        <small className="manual-safety-note">Privacy: camera access starts only after tapping Start Camera. No image or video frame is saved; only the decoded UPC is stored.</small>
       </div>
     </div>
   );
@@ -4383,16 +4500,106 @@ function PurchaseFlow({
   const [quantity, setQuantity] = useState(1);
   const [price, setPrice] = useState(0);
   const [extraCost, setExtraCost] = useState(0);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupMessage, setLookupMessage] = useState<string | null>(prefill?.upc ? "Product details found and filled from UPC." : null);
   const totalCost = quantity * price + extraCost;
   const selectedExisting = items.find((item) => item.id === selectedExistingId) ?? null;
   const flowKey = selectedExisting?.id ?? prefill?.upc ?? "new";
-  const defaultName = selectedExisting?.itemName ?? prefill?.itemName ?? "";
-  const defaultCategory = selectedExisting?.category ?? prefill?.category ?? "sealed_packs";
-  const defaultSetName = selectedExisting?.setName ?? prefill?.setName ?? "";
-  const defaultImageUrl = selectedExisting?.imageUrl ?? prefill?.imageUrl ?? "";
-  const defaultRetailer = selectedExisting?.retailer ?? prefill?.retailer ?? "";
-  const defaultExactUrl = selectedExisting?.exactProductUrl ?? prefill?.exactProductUrl ?? "";
-  const defaultUpc = selectedExisting?.upc ?? prefill?.upc ?? "";
+  const initialDraft = useMemo(
+    () => ({
+      itemName: selectedExisting?.itemName ?? prefill?.itemName ?? "",
+      brand: selectedExisting?.brand ?? prefill?.brand ?? "",
+      category: selectedExisting?.category ?? prefill?.category ?? "sealed_packs",
+      setName: selectedExisting?.setName ?? prefill?.setName ?? "",
+      description: selectedExisting?.description ?? prefill?.description ?? "",
+      manufacturer: selectedExisting?.manufacturer ?? prefill?.manufacturer ?? "",
+      model: selectedExisting?.model ?? prefill?.model ?? "",
+      msrp: selectedExisting?.msrp === null || selectedExisting?.msrp === undefined ? prefill?.msrp?.toString() ?? "" : String(selectedExisting.msrp),
+      imageUrl: selectedExisting?.imageUrl ?? prefill?.imageUrl ?? "",
+      retailer: selectedExisting?.retailer ?? prefill?.retailer ?? "",
+      exactProductUrl: selectedExisting?.exactProductUrl ?? prefill?.exactProductUrl ?? "",
+      upc: selectedExisting?.upc ?? prefill?.upc ?? "",
+      sku: selectedExisting?.sku ?? prefill?.sku ?? "",
+      source: prefill?.source ?? selectedExisting?.source ?? ""
+    }),
+    [prefill, selectedExisting]
+  );
+  const [draft, setDraft] = useState(initialDraft);
+
+  function updateDraft(name: keyof typeof draft, value: string) {
+    setDraft((current) => ({ ...current, [name]: value }));
+  }
+
+  function draftFromItem(item: InventoryItemDTO | null) {
+    if (!item) return initialDraft;
+    return {
+      itemName: item.itemName,
+      brand: item.brand ?? "",
+      category: item.category || "sealed_packs",
+      setName: item.setName ?? "",
+      description: item.description ?? "",
+      manufacturer: item.manufacturer ?? "",
+      model: item.model ?? "",
+      msrp: item.msrp === null || item.msrp === undefined ? "" : String(item.msrp),
+      imageUrl: item.imageUrl ?? "",
+      retailer: item.retailer ?? "",
+      exactProductUrl: item.exactProductUrl ?? "",
+      upc: item.upc ?? "",
+      sku: item.sku ?? "",
+      source: item.source ?? ""
+    };
+  }
+
+  function applyLookupToDraft(lookup: UpcLookupResultDTO) {
+    const product = lookup.lookupProduct;
+    setDraft((current) => ({
+      ...current,
+      upc: lookup.upc,
+      itemName: current.itemName || product?.productName || "",
+      brand: current.brand || product?.brand || "",
+      category: current.category && current.category !== "sealed_packs" ? current.category : inventoryCategoryFromLookup(product?.category),
+      setName: current.setName || product?.setName || "",
+      description: current.description || product?.description || "",
+      manufacturer: current.manufacturer || product?.manufacturer || "",
+      model: current.model || product?.model || "",
+      msrp: current.msrp || (product?.msrp === null || product?.msrp === undefined ? "" : String(product.msrp)),
+      imageUrl: current.imageUrl || product?.imageUrl || "",
+      retailer: current.retailer || product?.retailer || "",
+      exactProductUrl: current.exactProductUrl || product?.exactProductUrl || "",
+      sku: current.sku || product?.sku || "",
+      source: current.source || product?.retailer || ""
+    }));
+  }
+
+  async function lookupDraftUpc() {
+    const normalized = normalizeBarcodeValue(draft.upc);
+    if (!/^\d{6,14}$/.test(normalized)) {
+      setLookupMessage("Enter a valid 6 to 14 digit UPC/EAN.");
+      return;
+    }
+    setLookupBusy(true);
+    setLookupMessage(`Looking up UPC ${normalized}...`);
+    try {
+      const lookup = await requestJson<UpcLookupResultDTO>("/api/radar/inventory/upc/lookup", {
+        method: "POST",
+        body: JSON.stringify({ upc: normalized, source: "manual" })
+      });
+      if (lookup.matchedInventoryItem) {
+        setSelectedExistingId(lookup.matchedInventoryItem.id);
+        setLookupMessage("Product already exists in your catalog. Add stock to the existing item.");
+      } else if (lookup.lookupProduct) {
+        applyLookupToDraft(lookup);
+        setLookupMessage("Product details found and filled from UPC. Existing typed fields were kept.");
+      } else {
+        updateDraft("upc", lookup.upc);
+        setLookupMessage(lookup.message);
+      }
+    } catch (error) {
+      setLookupMessage(error instanceof Error ? error.message : "UPC lookup failed. You can still fill the product manually.");
+    } finally {
+      setLookupBusy(false);
+    }
+  }
 
   return (
     <section className="inventory-flow-panel">
@@ -4423,13 +4630,38 @@ function PurchaseFlow({
           {prefill?.upc ? (
             <p className="scan-prefill-note">UPC {prefill.upc} is prefilled. Confirm the product details before saving.</p>
           ) : null}
+          <div className="upc-lookup-strip">
+            <TextInput
+              name="upc"
+              label="UPC / EAN"
+              inputMode="numeric"
+              value={draft.upc}
+              onChange={(event) => updateDraft("upc", normalizeBarcodeValue(event.currentTarget.value))}
+              placeholder="Scan or type barcode"
+            />
+            <button className="mini-action" disabled={lookupBusy} type="button" onClick={lookupDraftUpc}>
+              <PackageSearch size={14} />
+              {lookupBusy ? "Looking up" : "Lookup UPC"}
+            </button>
+            <button className="mini-action" type="button" onClick={onScanBarcode}>
+              <PackageSearch size={14} />
+              Scan UPC
+            </button>
+          </div>
+          {lookupMessage ? <p className="scan-prefill-note">{lookupMessage}</p> : null}
           <div className="form-grid compact">
             <label>
               Existing product
               <select
                 name="existingInventoryItemId"
                 value={selectedExistingId}
-                onChange={(event) => setSelectedExistingId(event.currentTarget.value)}
+                onChange={(event) => {
+                  const nextId = event.currentTarget.value;
+                  const nextItem = items.find((item) => item.id === nextId) ?? null;
+                  setSelectedExistingId(nextId);
+                  setDraft(draftFromItem(nextItem));
+                  setLookupMessage(nextItem ? "Existing product selected. This will add stock to that catalog item." : null);
+                }}
               >
                 <option value="">Create new product</option>
                 {items.map((item) => (
@@ -4439,14 +4671,22 @@ function PurchaseFlow({
                 ))}
               </select>
             </label>
-            <TextInput name="itemName" label="Product/card name" defaultValue={defaultName} required />
+            <TextInput
+              name="itemName"
+              label="Product/card name"
+              value={draft.itemName}
+              onChange={(event) => updateDraft("itemName", event.currentTarget.value)}
+              required
+            />
+            <TextInput name="brand" label="Brand" value={draft.brand} onChange={(event) => updateDraft("brand", event.currentTarget.value)} />
             <SelectInput
               name="category"
               label="Category"
-              defaultValue={defaultCategory || "sealed_packs"}
+              value={draft.category || "sealed_packs"}
+              onChange={(event) => updateDraft("category", event.currentTarget.value)}
               options={inventoryCategories.map(optionFromString)}
             />
-            <TextInput name="setName" label="Set" defaultValue={defaultSetName} />
+            <TextInput name="setName" label="Set" value={draft.setName} onChange={(event) => updateDraft("setName", event.currentTarget.value)} />
             <TextInput
               name="quantity"
               label="Quantity"
@@ -4481,7 +4721,14 @@ function PurchaseFlow({
               value={String(extraCost)}
               onChange={(event) => setExtraCost(Math.max(0, Number(event.currentTarget.value) || 0))}
             />
-            <TextInput name="source" label="Store/source" placeholder="Target Hialeah, eBay, friend" defaultValue={prefill?.source ?? ""} required />
+            <TextInput
+              name="source"
+              label="Store/source"
+              placeholder="Target Hialeah, eBay, friend"
+              value={draft.source}
+              onChange={(event) => updateDraft("source", event.currentTarget.value)}
+              required
+            />
             <TextInput name="sourceStore" label="Source store" placeholder="Target Hialeah, eBay seller, Whatnot stream" defaultValue={selectedExisting?.sourceStore ?? ""} />
             <TextInput name="purchasedAt" label="Purchase date" type="date" defaultValue={todayDateInput()} required />
           </div>
@@ -4493,8 +4740,9 @@ function PurchaseFlow({
         <article className="flow-step">
           <span>Step 3</span>
           <h3>Add proof/image</h3>
+          <ProductImagePreview imageUrl={draft.imageUrl} itemName={draft.itemName || "Product"} />
           <div className="form-grid compact">
-            <ImageUploadInput defaultValue={defaultImageUrl} />
+            <ImageUploadInput value={draft.imageUrl} onValueChange={(value) => updateDraft("imageUrl", value)} />
             <ImageUploadInput
               fieldName="receiptImageUrl"
               label="Receipt image"
@@ -4525,12 +4773,20 @@ function PurchaseFlow({
         <details className="inventory-advanced-details">
           <summary>Advanced details</summary>
           <div className="form-grid compact">
-            <TextInput name="retailer" label="Retailer" defaultValue={defaultRetailer} />
-            <TextInput name="exactProductUrl" label="Exact product URL" type="url" defaultValue={defaultExactUrl} />
-            <TextInput name="upc" label="UPC" defaultValue={defaultUpc} />
-            <TextInput name="sku" label="SKU / TCIN" defaultValue={selectedExisting?.sku ?? ""} />
+            <TextInput name="retailer" label="Retailer" value={draft.retailer} onChange={(event) => updateDraft("retailer", event.currentTarget.value)} />
+            <TextInput
+              name="exactProductUrl"
+              label="Exact product URL"
+              type="url"
+              value={draft.exactProductUrl}
+              onChange={(event) => updateDraft("exactProductUrl", event.currentTarget.value)}
+            />
+            <TextInput name="sku" label="SKU / TCIN" value={draft.sku} onChange={(event) => updateDraft("sku", event.currentTarget.value)} />
             <TextInput name="dpci" label="DPCI" defaultValue={selectedExisting?.dpci ?? ""} />
             <TextInput name="asin" label="ASIN" defaultValue={selectedExisting?.asin ?? ""} />
+            <TextInput name="manufacturer" label="Manufacturer" value={draft.manufacturer} onChange={(event) => updateDraft("manufacturer", event.currentTarget.value)} />
+            <TextInput name="model" label="Model" value={draft.model} onChange={(event) => updateDraft("model", event.currentTarget.value)} />
+            <TextInput name="msrp" label="MSRP / retail price" type="number" min="0" step="0.01" value={draft.msrp} onChange={(event) => updateDraft("msrp", event.currentTarget.value)} />
             <TextInput name="condition" label="Condition" defaultValue={selectedExisting?.condition ?? ""} placeholder="Mint box, clean corners, raw NM" />
             <SelectInput
               name="itemStatus"
@@ -4561,6 +4817,13 @@ function PurchaseFlow({
               options={listingStatuses.map(optionFromString)}
             />
             <TextInput name="listingPlatform" label="Listing platform" defaultValue={selectedExisting?.listingPlatform ?? ""} placeholder="eBay, Facebook, TCGPlayer" />
+            <TextareaInput
+              name="description"
+              label="Product description"
+              value={draft.description}
+              onChange={(event) => updateDraft("description", event.currentTarget.value)}
+              wide
+            />
             <TextareaInput name="notes" label="Notes" wide />
           </div>
         </details>
@@ -4802,6 +5065,8 @@ function InventoryDetailsModal({
               <span>Recommendation: <strong>{formatStatus(item.recommendedAction)}</strong></span>
               <span>{item.recommendationReason || "Add sold comps to generate a stronger recommendation."}</span>
               <span>Linked product: {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
+              <span>Brand {item.brand || "Missing"} - Model {item.model || "Missing"} - MSRP {money(item.msrp)}</span>
+              {item.description ? <span>{item.description}</span> : null}
               <span>UPC {item.upc || "Missing"} · SKU {item.sku || "Missing"} · DPCI {item.dpci || "Missing"} · ASIN {item.asin || "Missing"}</span>
             </div>
             <AttachWatchedProductForm item={item} products={products} busy={busy} busyLabel={busyLabel} submit={submit} />

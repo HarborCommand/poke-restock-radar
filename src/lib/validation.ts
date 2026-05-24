@@ -565,6 +565,11 @@ export const inventoryCreateSchema = z.object({
   purchaseExtraCost: optionalMoney,
   source: z.string().trim().min(2).max(120),
   retailer: optionalTrimmed,
+  brand: optionalTrimmed,
+  description: optionalTrimmed,
+  manufacturer: optionalTrimmed,
+  model: optionalTrimmed,
+  msrp: optionalMoney,
   purchasedAt: boundedDate.default(() => new Date()),
   receiptNumber: optionalTrimmed,
   receiptImageUrl: z.preprocess(

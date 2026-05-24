@@ -1,11 +1,11 @@
-const CACHE_NAME = "poke-restock-radar-v1";
-const APP_SHELL = ["/", "/offline.html", "/manifest.webmanifest", "/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE_NAME = "poke-restock-radar-v2-zxing-scanner";
+const OFFLINE_ASSETS = ["/offline.html", "/manifest.webmanifest", "/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => cache.addAll(OFFLINE_ASSETS))
       .then(() => self.skipWaiting())
   );
 });
@@ -16,6 +16,17 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then((clients) =>
+        Promise.all(
+          clients.map((client) => {
+            if ("navigate" in client && client.url && new URL(client.url).origin === self.location.origin) {
+              return client.navigate(client.url);
+            }
+            return Promise.resolve();
+          })
+        )
+      )
   );
 });
 
@@ -29,11 +40,24 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/", copy));
           return response;
         })
-        .catch(() => caches.match("/") || caches.match("/offline.html"))
+        .catch(() => caches.match("/offline.html"))
+    );
+    return;
+  }
+
+  if (url.origin === self.location.origin && url.pathname.startsWith("/_next/")) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
     );
     return;
   }

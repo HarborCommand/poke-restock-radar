@@ -731,12 +731,14 @@ Import/export:
 Barcode / UPC scanning:
 
 - Use `Scan UPC / Barcode` from Inventory quick actions or inside Add Purchase.
-- Camera access starts only after tapping `Start Camera`; no image or video is saved.
-- Supported browser formats are UPC-A, UPC-E, EAN-13, and EAN-8 when the browser exposes `BarcodeDetector`.
-- Manual UPC entry works on desktop and as a fallback when camera scanning is unavailable.
+- Camera access starts only after tapping `Start Camera` inside the scanner modal; no image or video is saved.
+- The camera scanner uses `@zxing/browser` by default for UPC-A, UPC-E, EAN-13, EAN-8, and CODE-128 decoding.
+- Manual UPC entry and `Lookup UPC` work on desktop and as a fallback when camera scanning is unavailable.
+- You can also upload a barcode image for local decoding; the app stores only the decoded UPC.
 - UPC lookup checks existing inventory first, watched products second, and an optional external lookup source third.
 - If the UPC already exists in inventory, the app opens Add Stock for that catalog item instead of creating a duplicate.
-- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer auth when your chosen public lookup provider requires it.
+- Successful UPC lookup fills empty add-product fields only: UPC, title, brand, category, description, image URL, MSRP, model/SKU, manufacturer, retailer, and product URL when the provider returns them.
+- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer auth when your chosen public lookup provider requires it. Keys are read server-side only.
 
 ## Inventory Spending And Sales Tracker
 

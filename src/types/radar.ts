@@ -113,6 +113,11 @@ export type InventoryItemDTO = {
   purchaseExtraCost: number | null;
   source: string;
   retailer: string | null;
+  brand: string | null;
+  description: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  msrp: number | null;
   purchasedAt: string;
   receiptNumber: string | null;
   receiptImageUrl: string | null;
@@ -234,13 +239,21 @@ export type BarcodeScanDTO = {
 };
 
 export type UpcLookupProductDTO = {
+  upc: string;
+  title: string;
   productName: string;
+  brand: string | null;
   category: string | null;
   setName: string | null;
+  description: string | null;
   imageUrl: string | null;
+  additionalImages: string[];
+  msrp: number | null;
+  model: string | null;
+  manufacturer: string | null;
+  sku: string | null;
   retailer: string | null;
   exactProductUrl: string | null;
-  upc: string;
   productId: string | null;
   source: "inventory" | "watched_product" | "external";
 };

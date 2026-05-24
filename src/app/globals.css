@@ -5547,6 +5547,18 @@ textarea {
   min-width: 0;
 }
 
+.barcode-image-upload {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.barcode-image-upload input {
+  width: 100%;
+}
+
 .barcode-result-card {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -5616,6 +5628,57 @@ textarea {
 .barcode-history-panel small {
   color: var(--subtle);
   white-space: nowrap;
+}
+
+.upc-lookup-strip {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(65, 229, 135, 0.16);
+  border-radius: 16px;
+  background: rgba(65, 229, 135, 0.055);
+  padding: 10px;
+}
+
+.product-image-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 10px;
+}
+
+.product-image-preview img {
+  width: 76px;
+  height: 76px;
+  flex: 0 0 76px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  object-fit: contain;
+}
+
+.product-image-preview.empty {
+  color: var(--muted);
+}
+
+.product-image-preview span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.image-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 @media (min-width: 980px) {
@@ -5759,8 +5822,13 @@ textarea {
   }
 
   .barcode-scanner-grid,
-  .barcode-result-card {
+  .barcode-result-card,
+  .upc-lookup-strip {
     grid-template-columns: 1fr;
+  }
+
+  .upc-lookup-strip .mini-action {
+    width: 100%;
   }
 
   .barcode-history-panel > div > span {

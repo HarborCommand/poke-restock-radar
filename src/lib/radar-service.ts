@@ -7,6 +7,7 @@ import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts }
 import { runProductDiscoveryCheck, validateDiscoverySourceUrl } from "@/lib/product-discovery";
 import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
+import { compactLookupText, normalizeUPC } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, fetchLastThreeInventoryEbayComps, testEbayConnection } from "@/lib/ebay";
 import {
@@ -1440,6 +1441,11 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     purchaseExtraCost: item.purchaseExtraCost,
     source: item.source,
     retailer: item.retailer,
+    brand: item.brand,
+    description: item.description,
+    manufacturer: item.manufacturer,
+    model: item.model,
+    msrp: item.msrp,
     purchasedAt: item.purchasedAt.toISOString(),
     receiptNumber: item.receiptNumber,
     receiptImageUrl: item.receiptImageUrl,
@@ -3009,10 +3015,6 @@ async function autoLinkInventoryProducts(currentUser: SessionUser) {
   }
 }
 
-function normalizeUpc(value: string) {
-  return value.replace(/\D/g, "");
-}
-
 function inventoryCategoryFromProductType(productType?: string | null) {
   const normalized = (productType || "").toLowerCase();
   if (normalized.includes("elite") || normalized.includes("etb")) return "etbs";
@@ -3025,14 +3027,23 @@ function inventoryCategoryFromProductType(productType?: string | null) {
 }
 
 function productToLookupProduct(product: Prisma.ProductGetPayload<{ include: typeof productInclude }>): UpcLookupProductDTO {
+  const productName = product.liveTitle || product.name;
   return {
-    productName: product.liveTitle || product.name,
+    upc: product.upc || "",
+    title: productName,
+    productName,
+    brand: product.name.toLowerCase().includes("pokemon") ? "Pokemon" : null,
     category: inventoryCategoryFromProductType(product.productType),
     setName: product.setName ?? product.release?.setName ?? null,
+    description: product.notes,
     imageUrl: product.liveImageUrl ?? product.imageUrl,
+    additionalImages: [],
+    msrp: product.livePrice ?? product.retailPrice ?? null,
+    model: product.sku,
+    manufacturer: product.retailer.name,
+    sku: product.sku ?? product.retailerProductId ?? null,
     retailer: product.retailer.name,
     exactProductUrl: product.verifiedFinalUrl || product.url,
-    upc: product.upc || "",
     productId: product.id,
     source: "watched_product"
   };
@@ -3050,17 +3061,59 @@ function textFromLookupPayload(payload: unknown, keys: string[]) {
   if (!payload || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
   for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
+    const value = compactLookupText(record[key]);
+    if (value) return value;
   }
   return null;
 }
 
-function objectFromLookupPayload(payload: unknown) {
+function numberFromLookupPayload(payload: unknown, keys: string[]) {
   if (!payload || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
-  const candidates = [record.product, record.item, record.result, record.data, Array.isArray(record.items) ? record.items[0] : null, record];
-  return candidates.find((candidate) => candidate && typeof candidate === "object") ?? null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const parsed = Number(value.replace(/[^\d.]/g, ""));
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return null;
+}
+
+function imageArrayFromLookupPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  const imageFields = [record.images, record.additionalImages, record.imageUrls, record.gallery];
+  const images = imageFields
+    .flatMap((field) => (Array.isArray(field) ? field : typeof field === "string" ? [field] : []))
+    .map(compactLookupText)
+    .filter((value): value is string => Boolean(value));
+  const singleImage = textFromLookupPayload(payload, ["imageUrl", "image", "thumbnail", "largeImage", "image_url"]);
+  return Array.from(new Set([singleImage, ...images].filter((value): value is string => Boolean(value))));
+}
+
+function lookupPayloadCandidates(payload: unknown): unknown[] {
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  return [
+    record.product,
+    record.item,
+    record.result,
+    Array.isArray(record.products) ? record.products[0] : null,
+    Array.isArray(record.items) ? record.items[0] : null,
+    Array.isArray(record.results) ? record.results[0] : null,
+    Array.isArray(record.data) ? record.data[0] : null,
+    record.data,
+    record
+  ].filter((candidate) => candidate && typeof candidate === "object");
+}
+
+function objectFromLookupPayload(payload: unknown) {
+  return lookupPayloadCandidates(payload).find((candidate) => {
+    const title = textFromLookupPayload(candidate, ["productName", "title", "name", "description"]);
+    return Boolean(title);
+  }) ?? null;
 }
 
 async function lookupExternalUpc(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
@@ -3073,18 +3126,29 @@ async function lookupExternalUpc(upc: string): Promise<{ configured: boolean; pr
     const response = await fetch(url, { headers, cache: "no-store" });
     if (!response.ok) return { configured: true, product: null, error: `Lookup source returned ${response.status}.` };
     const payload = objectFromLookupPayload(await response.json());
-    const productName = textFromLookupPayload(payload, ["productName", "title", "name", "description"]);
+    const productName = textFromLookupPayload(payload, ["productName", "title", "name", "product_name", "description"]);
     if (!productName) return { configured: true, product: null, error: "Lookup source did not return a product name." };
+    const images = imageArrayFromLookupPayload(payload);
+    const brand = textFromLookupPayload(payload, ["brand", "brandName", "manufacturer", "publisher"]);
+    const category = textFromLookupPayload(payload, ["category", "productType", "categoryName", "department"]);
     return {
       configured: true,
       product: {
-        productName,
-        category: textFromLookupPayload(payload, ["category", "productType"]),
-        setName: textFromLookupPayload(payload, ["setName", "set"]),
-        imageUrl: textFromLookupPayload(payload, ["imageUrl", "image", "thumbnail"]),
-        retailer: textFromLookupPayload(payload, ["retailer", "store", "brand"]),
-        exactProductUrl: textFromLookupPayload(payload, ["exactProductUrl", "url", "productUrl"]),
         upc,
+        title: productName,
+        productName,
+        brand,
+        category,
+        setName: textFromLookupPayload(payload, ["setName", "set"]),
+        description: textFromLookupPayload(payload, ["description", "longDescription", "shortDescription"]),
+        imageUrl: images[0] ?? null,
+        additionalImages: images.slice(1),
+        msrp: numberFromLookupPayload(payload, ["msrp", "price", "retailPrice", "lowestPrice"]),
+        model: textFromLookupPayload(payload, ["model", "modelNumber", "sku", "mpn"]),
+        manufacturer: textFromLookupPayload(payload, ["manufacturer", "brand", "publisher"]),
+        sku: textFromLookupPayload(payload, ["sku", "model", "mpn", "asin"]),
+        retailer: textFromLookupPayload(payload, ["retailer", "store", "merchant", "seller"]),
+        exactProductUrl: textFromLookupPayload(payload, ["exactProductUrl", "url", "productUrl"]),
         productId: null,
         source: "external"
       },
@@ -3108,7 +3172,7 @@ export async function lookupInventoryUpc(
   currentUser: SessionUser,
   input: { upc: string; source?: "camera" | "manual" }
 ): Promise<UpcLookupResultDTO> {
-  const upc = normalizeUpc(input.upc);
+  const upc = normalizeUPC(input.upc);
   if (!/^\d{6,14}$/.test(upc)) throw new Error("UPC/EAN must be 6 to 14 digits.");
   const inventoryItem = await prisma.inventoryItem.findFirst({
     where: { upc, OR: [{ userId: null }, { userId: currentUser.id }] },
@@ -3152,13 +3216,21 @@ export async function lookupInventoryUpc(
     matchedProduct: watchedProduct ? productToDTO(watchedProduct) : null,
     lookupProduct: inventoryItem
       ? {
+          upc,
+          title: inventoryItem.itemName,
           productName: inventoryItem.itemName,
+          brand: inventoryItem.brand,
           category: inventoryItem.category,
           setName: inventoryItem.setName,
+          description: inventoryItem.description,
           imageUrl: inventoryItem.imageUrl,
+          additionalImages: [],
+          msrp: inventoryItem.msrp,
+          model: inventoryItem.model,
+          manufacturer: inventoryItem.manufacturer,
+          sku: inventoryItem.sku,
           retailer: inventoryItem.retailer,
           exactProductUrl: inventoryItem.exactProductUrl,
-          upc,
           productId: inventoryItem.productId,
           source: "inventory"
         }
@@ -3335,6 +3407,11 @@ export async function createInventoryItem(
     purchaseExtraCost?: number;
     source: string;
     retailer?: string;
+    brand?: string;
+    description?: string;
+    manufacturer?: string;
+    model?: string;
+    msrp?: number;
     purchasedAt: Date;
     receiptNumber?: string;
     receiptImageUrl?: string;
@@ -3367,7 +3444,7 @@ export async function createInventoryItem(
   if (input.existingInventoryItemId) {
     return addInventoryStockLot(currentUser, input.existingInventoryItemId, input);
   }
-  const normalizedInput = input.upc ? { ...input, upc: normalizeUpc(input.upc) } : input;
+  const normalizedInput = input.upc ? { ...input, upc: normalizeUPC(input.upc) } : input;
   if (normalizedInput.upc) {
     const existingByUpc = await prisma.inventoryItem.findFirst({
       where: { upc: normalizedInput.upc, OR: [{ userId: null }, { userId: currentUser.id }] },
@@ -3400,6 +3477,11 @@ export async function createInventoryItem(
       purchaseExtraCost: linkedInput.purchaseExtraCost,
       source: linkedInput.source,
       retailer: linkedInput.retailer,
+      brand: linkedInput.brand,
+      description: linkedInput.description,
+      manufacturer: linkedInput.manufacturer,
+      model: linkedInput.model,
+      msrp: linkedInput.msrp,
       purchasedAt: linkedInput.purchasedAt,
       receiptNumber: linkedInput.receiptNumber,
       receiptImageUrl: linkedInput.receiptImageUrl,
@@ -3600,6 +3682,11 @@ export async function updateInventoryItem(
       purchaseExtraCost: input.purchaseExtraCost,
       source: input.source,
       retailer: input.retailer,
+      brand: input.brand,
+      description: input.description,
+      manufacturer: input.manufacturer,
+      model: input.model,
+      msrp: input.msrp,
       purchasedAt: input.purchasedAt,
       receiptNumber: input.receiptNumber,
       receiptImageUrl: input.receiptImageUrl,

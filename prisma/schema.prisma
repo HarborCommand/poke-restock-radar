@@ -571,6 +571,11 @@ model InventoryItem {
   purchaseExtraCost      Float?
   source                 String
   retailer               String?
+  brand                  String?
+  description            String?
+  manufacturer           String?
+  model                  String?
+  msrp                   Float?
   purchasedAt            DateTime
   receiptNumber          String?
   receiptImageUrl        String?

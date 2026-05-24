@@ -957,9 +957,11 @@ test("inventory tracker and market recommendation engine exists", () => {
     "Missing Market Data",
     "Attach watched product",
     "Scan UPC / Barcode",
-    "Camera preview active",
-    "Automatic barcode detection is not available",
+    "Point camera at barcode",
+    "ZXing decodes the live camera feed",
     "Lookup UPC",
+    "Upload barcode image",
+    "Product details found and filled from UPC",
     "Scanned UPC history",
     "Manual Inventory Sold Comp",
     "Catalog CSV",
@@ -981,7 +983,8 @@ test("inventory tracker and market recommendation engine exists", () => {
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "refresh-comps", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "refresh-comps", "route.ts"),
-    join(root, "src", "app", "api", "radar", "inventory", "upc", "lookup", "route.ts")
+    join(root, "src", "app", "api", "radar", "inventory", "upc", "lookup", "route.ts"),
+    join(root, "src", "app", "api", "products", "lookup-upc", "route.ts")
   ]) {
     assert.ok(statSync(route).isFile(), `missing inventory route ${route}`);
   }
