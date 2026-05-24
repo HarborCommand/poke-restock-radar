@@ -871,6 +871,9 @@ test("inventory tracker and market recommendation engine exists", () => {
   for (const field of [
     "InventoryMarketComp",
     "InventorySale",
+    "InventoryStockLot",
+    "stockLots",
+    "remainingQuantity",
     "purchaseExtraCost",
     "receiptNumber",
     "quantitySold",
@@ -890,6 +893,7 @@ test("inventory tracker and market recommendation engine exists", () => {
   const service = readFileSync(join(root, "src", "lib", "radar-service.ts"), "utf8");
   for (const phrase of [
     "summarizeInventory",
+    "addInventoryStockLot",
     "inventoryMarketRecommendation",
     "refreshInventoryEbayComps",
     "Market not collected yet",
@@ -902,6 +906,10 @@ test("inventory tracker and market recommendation engine exists", () => {
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   for (const phrase of [
     "Inventory",
+    "Product Catalog",
+    "Quick Actions",
+    "Add Existing Product Purchase",
+    "Stock Lots",
     "Add Purchase",
     "Record Sale",
     "Spending Log",

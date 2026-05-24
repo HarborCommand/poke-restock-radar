@@ -606,6 +606,7 @@ model InventoryItem {
   product                Product?              @relation(fields: [productId], references: [id], onDelete: SetNull)
   card                   Card?                 @relation(fields: [cardId], references: [id], onDelete: SetNull)
   marketComps            InventoryMarketComp[]
+  stockLots              InventoryStockLot[]
   sales                  InventorySale[]
 
   @@index([userId])
@@ -615,6 +616,26 @@ model InventoryItem {
   @@index([listingStatus])
   @@index([recommendedAction])
   @@index([purchasedAt])
+}
+
+model InventoryStockLot {
+  id                String        @id @default(cuid())
+  inventoryItemId   String
+  purchasedAt       DateTime
+  source            String
+  quantity          Int
+  costPerUnit       Float
+  purchaseExtraCost Float?
+  totalCost         Float
+  remainingQuantity Int
+  notes             String?
+  receiptNumber     String?
+  createdAt         DateTime      @default(now())
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([purchasedAt])
+  @@index([remainingQuantity])
 }
 
 model InventorySale {

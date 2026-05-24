@@ -44,7 +44,7 @@ const viewports = [
   { label: "tablet-768", width: 768, height: 1024 },
   { label: "desktop-1440", width: 1440, height: 960 }
 ];
-const tabs = ["Dashboard", "Products", "Stores", "Field", "Cards", "Inventory"] as const;
+const tabs = ["Dashboard", "Products", "Stores", "Releases", "Cards", "Inventory", "Alerts"] as const;
 
 if (!email || !password) {
   throw new Error("Set VIEWPORT_QA_EMAIL/VIEWPORT_QA_PASSWORD or FINAL_SMOKE_EMAIL/FINAL_SMOKE_PASSWORD.");
@@ -107,6 +107,10 @@ async function openAuthedPage(browser: Browser, viewport: (typeof viewports)[num
 
 async function clickTab(page: Page, tab: (typeof tabs)[number]) {
   if (tab === "Dashboard") return;
+  const tabButton = page.getByRole("button", { name: tab, exact: true });
+  if (!(await tabButton.first().isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: /open navigation/i }).click();
+  }
   await page.getByRole("button", { name: tab, exact: true }).click();
 }
 

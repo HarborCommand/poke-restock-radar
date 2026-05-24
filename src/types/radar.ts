@@ -144,11 +144,27 @@ export type InventoryItemDTO = {
   realizedRoiPercent: number | null;
   businessProfitLoss: number | null;
   lastThreeComps: InventoryMarketCompDTO[];
+  stockLots: InventoryStockLotDTO[];
   sales: InventorySaleDTO[];
   expectedPlan: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type InventoryStockLotDTO = {
+  id: string;
+  inventoryItemId: string;
+  purchasedAt: string;
+  source: string;
+  quantity: number;
+  costPerUnit: number;
+  purchaseExtraCost: number | null;
+  totalCost: number;
+  remainingQuantity: number;
+  notes: string | null;
+  receiptNumber: string | null;
+  createdAt: string;
 };
 
 export type InventorySaleDTO = {

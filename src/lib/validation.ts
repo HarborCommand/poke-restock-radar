@@ -547,6 +547,7 @@ export const markCheckedTodaySchema = z.object({
 });
 
 export const inventoryCreateSchema = z.object({
+  existingInventoryItemId: optionalTrimmed,
   itemType: z.enum(["product", "card", "sealed", "other"]).default("product"),
   itemName: z.string().trim().min(2).max(160),
   category: inventoryCategorySchema.default("sealed_packs"),

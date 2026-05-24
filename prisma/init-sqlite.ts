@@ -473,6 +473,21 @@ const statements = [
     CONSTRAINT "InventoryItem_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "InventoryItem_cardId_fkey" FOREIGN KEY ("cardId") REFERENCES "Card" ("id") ON DELETE SET NULL ON UPDATE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS "InventoryStockLot" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "inventoryItemId" TEXT NOT NULL,
+    "purchasedAt" DATETIME NOT NULL,
+    "source" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "costPerUnit" REAL NOT NULL,
+    "purchaseExtraCost" REAL,
+    "totalCost" REAL NOT NULL,
+    "remainingQuantity" INTEGER NOT NULL,
+    "notes" TEXT,
+    "receiptNumber" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "InventoryStockLot_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
   `CREATE TABLE IF NOT EXISTS "InventorySale" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "inventoryItemId" TEXT NOT NULL,
@@ -821,6 +836,9 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS "InventoryItem_listingStatus_idx" ON "InventoryItem"("listingStatus")`,
   `CREATE INDEX IF NOT EXISTS "InventoryItem_recommendedAction_idx" ON "InventoryItem"("recommendedAction")`,
   `CREATE INDEX IF NOT EXISTS "InventoryItem_purchasedAt_idx" ON "InventoryItem"("purchasedAt")`,
+  `CREATE INDEX IF NOT EXISTS "InventoryStockLot_inventoryItemId_idx" ON "InventoryStockLot"("inventoryItemId")`,
+  `CREATE INDEX IF NOT EXISTS "InventoryStockLot_purchasedAt_idx" ON "InventoryStockLot"("purchasedAt")`,
+  `CREATE INDEX IF NOT EXISTS "InventoryStockLot_remainingQuantity_idx" ON "InventoryStockLot"("remainingQuantity")`,
   `CREATE INDEX IF NOT EXISTS "InventorySale_inventoryItemId_idx" ON "InventorySale"("inventoryItemId")`,
   `CREATE INDEX IF NOT EXISTS "InventorySale_userId_idx" ON "InventorySale"("userId")`,
   `CREATE INDEX IF NOT EXISTS "InventorySale_platform_idx" ON "InventorySale"("platform")`,

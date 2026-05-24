@@ -18,6 +18,7 @@ import {
   LogOut,
   Mail,
   MapPin,
+  Menu,
   Navigation,
   PackageSearch,
   Play,
@@ -27,6 +28,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Settings,
   ShieldCheck,
   Smartphone,
   Sparkles,
@@ -79,7 +81,18 @@ import type {
   Zone
 } from "@/types/radar";
 
-type Tab = "dashboard" | "field" | "products" | "stores" | "releases" | "cards" | "inventory" | "alerts";
+type Tab =
+  | "dashboard"
+  | "field"
+  | "products"
+  | "stores"
+  | "releases"
+  | "cards"
+  | "inventory"
+  | "alerts"
+  | "market"
+  | "analytics"
+  | "settings";
 type Toast = { type: "error" | "success"; message: string };
 type SubmitHandler = <T>(
   event: FormEvent<HTMLFormElement>,
@@ -95,13 +108,15 @@ type ActionHandler = <T>(
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Radar }> = [
   { id: "dashboard", label: "Dashboard", icon: Radar },
-  { id: "field", label: "Field", icon: Navigation },
   { id: "products", label: "Products", icon: PackageSearch },
   { id: "stores", label: "Stores", icon: Store },
   { id: "releases", label: "Releases", icon: CalendarDays },
-  { id: "cards", label: "Cards", icon: CircleDollarSign },
+  { id: "alerts", label: "Alerts", icon: Bell },
   { id: "inventory", label: "Inventory", icon: Trophy },
-  { id: "alerts", label: "Alerts", icon: Bell }
+  { id: "cards", label: "Cards", icon: CircleDollarSign },
+  { id: "market", label: "Market", icon: Sparkles },
+  { id: "analytics", label: "Analytics", icon: Activity },
+  { id: "settings", label: "Settings", icon: Settings }
 ];
 
 const productStatuses: ProductStatus[] = [
@@ -607,6 +622,7 @@ export function RadarApp() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const busy = busyLabel !== null;
   const isAdmin = user?.role === "ADMIN";
@@ -735,6 +751,7 @@ export function RadarApp() {
   };
 
   const chase = useMemo(() => getChaseSummary(dashboard), [dashboard]);
+  const activeSection = tabs.find((tab) => tab.id === activeTab);
 
   if (loading) {
     return (
@@ -766,14 +783,50 @@ export function RadarApp() {
 
   return (
     <main className="screen app-shell">
-      <header className="topbar">
+      <aside className={sidebarOpen ? "app-sidebar open" : "app-sidebar"} aria-label="Primary navigation">
         <div className="brand-lockup">
           <div className="brand-mark">
-            <Radar size={22} />
+            <Radar size={19} />
           </div>
           <div>
-            <p className="eyeline">Private radar</p>
-            <h1>Poke Restock Radar</h1>
+            <p className="eyeline">Poke Radar</p>
+            <h1>Poke Radar</h1>
+          </div>
+        </div>
+        <nav className="sidebar-nav">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                className={activeTab === tab.id ? "sidebar-nav-item active" : "sidebar-nav-item"}
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setSidebarOpen(false);
+                }}
+                type="button"
+              >
+                <Icon size={16} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+        <div className="sidebar-foot">
+          <span>{dashboard.userAreaPreferences.customZoneName || formatStatus(dashboard.userAreaPreferences.preferredZone)}</span>
+          <small>Private Plan</small>
+        </div>
+      </aside>
+      {sidebarOpen ? <button className="sidebar-scrim" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} /> : null}
+      <section className="app-main">
+      <header className="topbar">
+        <div className="mobile-section-title">
+          <button className="icon-button mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" type="button">
+            <Menu size={18} />
+          </button>
+          <div>
+            <p className="eyeline">{activeSection?.label || "Poke Radar"}</p>
+            <h1>{activeTab === "inventory" ? "Inventory" : "Poke Restock Radar"}</h1>
           </div>
         </div>
         <div className="topbar-actions">
@@ -805,6 +858,7 @@ export function RadarApp() {
         </div>
       </header>
 
+      {activeTab === "inventory" ? null : (
       <section className={chase.product ? "hero-panel hero-with-product" : "hero-panel"}>
         <div>
           <p className="eyeline">What should I chase right now?</p>
@@ -829,24 +883,7 @@ export function RadarApp() {
           <span className={`chip ${statusTone(chase.priority)}`}>{formatStatus(chase.priority)}</span>
         </div>
       </section>
-
-      <nav className="tab-rail" aria-label="Primary sections">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              className={activeTab === tab.id ? "tab-item active" : "tab-item"}
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              aria-label={tab.label}
-              type="button"
-            >
-              <Icon size={17} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      )}
 
       {error ? (
         <div className="error-bar" role="alert">
@@ -914,6 +951,20 @@ export function RadarApp() {
             setActiveTab={setActiveTab}
           />
         ) : null}
+        {activeTab === "market" ? (
+          <CardsPanel
+            dashboard={dashboard}
+            isAdmin={isAdmin}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+          />
+        ) : null}
+        {activeTab === "analytics" ? <InventoryAnalyticsPanel dashboard={dashboard} /> : null}
+        {activeTab === "settings" ? (
+          <SettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+        ) : null}
       </section>
 
       {isAdmin && adminPanelOpen ? (
@@ -937,6 +988,7 @@ export function RadarApp() {
       </footer>
 
       <ToastViewport toast={toast} onClose={() => setToast(null)} />
+      </section>
     </main>
   );
 }
@@ -3236,6 +3288,9 @@ function InventoryPanel({
   runAction: ActionHandler;
 }) {
   const [view, setView] = useState<"items" | "spending" | "sales">("items");
+  const [purchaseFlowOpen, setPurchaseFlowOpen] = useState(false);
+  const [purchaseDefaultItemId, setPurchaseDefaultItemId] = useState<string>("");
+  const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [filters, setFilters] = useState({
     search: "",
     category: "ALL",
@@ -3268,12 +3323,36 @@ function InventoryPanel({
 
   const summary = dashboard.inventorySummary;
   const allSales = useMemo(() => dashboard.inventory.flatMap((item) => item.sales), [dashboard.inventory]);
+  const selectedItem = visibleItems.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? null;
   return (
     <>
-      <SectionIntro
-        title="Inventory"
-        detail="Simple tracker for what you bought, what you spent, what sold, and where profit or loss stands."
-      />
+      <section className="inventory-page-header">
+        <div>
+          <h2>Inventory</h2>
+          <p>Track what you own, what you spent, and your profit.</p>
+        </div>
+        <div className="inventory-header-actions">
+          <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
+            <Upload size={14} />
+            Import CSV
+          </a>
+          <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
+            <Download size={14} />
+            Export CSV
+          </a>
+          <button
+            className="primary-action"
+            type="button"
+            onClick={() => {
+              setPurchaseDefaultItemId("");
+              setPurchaseFlowOpen(true);
+            }}
+          >
+            <Plus size={16} />
+            Add Product
+          </button>
+        </div>
+      </section>
       <section className="inventory-kpi-grid">
         <InventoryKpiCard label="Total Spent" value={money(summary.totalSpent)} detail={`This month ${money(summary.spendingThisMonth)}`} />
         <InventoryKpiCard label="Current Inventory Value" value={money(summary.currentInventoryValue)} detail={`${summary.itemsOwned} items owned`} tone="good" />
@@ -3284,6 +3363,8 @@ function InventoryPanel({
           detail={`ROI ${percent(summary.totalRoiPercent)}`}
           tone={summary.netProfitLoss >= 0 ? "good" : "bad"}
         />
+        <InventoryKpiCard label="Items Owned" value={String(summary.itemsOwned)} detail={`Across ${dashboard.inventory.length} products`} />
+        <InventoryKpiCard label="Items Sold" value={String(summary.itemsSold)} detail={`Across ${summary.profitByPlatform.length || 0} platforms`} />
       </section>
       <section className="inventory-secondary-strip">
         <span>Owned <strong>{summary.itemsOwned}</strong></span>
@@ -3311,9 +3392,41 @@ function InventoryPanel({
       </section>
       {view === "items" ? (
         <>
-          <PurchaseFlow busy={busy} busyLabel={busyLabel} submit={submit} />
-          <InventoryFilters filters={filters} itemCount={visibleItems.length} updateFilter={updateFilter} />
-          <InventoryList items={visibleItems} busy={busy} busyLabel={busyLabel} runAction={runAction} submit={submit} />
+          <section className="inventory-management-grid">
+            <div className="catalog-panel">
+              <InventoryFilters filters={filters} itemCount={visibleItems.length} updateFilter={updateFilter} />
+              <InventoryList
+                items={visibleItems}
+                selectedId={selectedItem?.id ?? ""}
+                busy={busy}
+                busyLabel={busyLabel}
+                runAction={runAction}
+                submit={submit}
+                onSelect={(item) => setSelectedItemId(item.id)}
+                onAddStock={(item) => {
+                  setPurchaseDefaultItemId(item.id);
+                  setPurchaseFlowOpen(true);
+                }}
+              />
+            </div>
+            <InventoryQuickActions
+              dashboard={dashboard}
+              onAddProduct={() => {
+                setPurchaseDefaultItemId("");
+                setPurchaseFlowOpen(true);
+              }}
+              onAddStock={() => {
+                setPurchaseDefaultItemId(selectedItem?.id ?? "");
+                setPurchaseFlowOpen(true);
+              }}
+              onRecordSale={() => document.getElementById("inventory-sales-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              selectedItem={selectedItem}
+            />
+          </section>
+          <section className="inventory-lower-grid">
+            <StockLotsPanel item={selectedItem} />
+            <SelectedSalesPanel item={selectedItem} busy={busy} busyLabel={busyLabel} submit={submit} />
+          </section>
         </>
       ) : null}
       {view === "spending" ? <SpendingLog items={dashboard.inventory} summary={summary} /> : null}
@@ -3329,6 +3442,32 @@ function InventoryPanel({
         />
         <InventoryCompForm items={dashboard.inventory} busy={busy} busyLabel={busyLabel} submit={submit} />
       </UtilityFold>
+      {purchaseFlowOpen ? (
+        <div className="inventory-modal-backdrop" role="presentation">
+          <div className="inventory-modal" role="dialog" aria-modal="true" aria-label="Add purchase">
+            <div className="edit-card-heading">
+              <div>
+                <h2>Add Purchase</h2>
+                <span>Add a stock lot to an existing product or create a new catalog item.</span>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close add purchase" onClick={() => setPurchaseFlowOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <PurchaseFlow
+              key={purchaseDefaultItemId || "new-purchase"}
+              items={dashboard.inventory}
+              defaultItemId={purchaseDefaultItemId}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={async (event, label, run, options) => {
+                await submit(event, label, run, options);
+                setPurchaseFlowOpen(false);
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -3353,15 +3492,96 @@ function InventoryKpiCard({
   );
 }
 
-function PurchaseFlow({ busy, busyLabel, submit }: { busy: boolean; busyLabel: string | null; submit: SubmitHandler }) {
+function InventoryQuickActions({
+  dashboard,
+  selectedItem,
+  onAddProduct,
+  onAddStock,
+  onRecordSale
+}: {
+  dashboard: DashboardDTO;
+  selectedItem: InventoryItemDTO | null;
+  onAddProduct: () => void;
+  onAddStock: () => void;
+  onRecordSale: () => void;
+}) {
+  const sellNow = dashboard.inventory.filter((item) => item.recommendedAction === "SELL_NOW").length;
+  const hold = dashboard.inventory.filter((item) => item.recommendedAction === "HOLD").length;
+  const gradeFirst = dashboard.inventory.filter((item) => item.recommendedAction === "GRADE_FIRST").length;
+  const avoid = dashboard.inventory.filter((item) => item.recommendedAction === "AVOID_BUYING_MORE").length;
+  const missingMarket = dashboard.inventorySummary.missingMarketDataCount;
+
+  return (
+    <aside className="inventory-side-rail" aria-label="Inventory quick actions">
+      <section className="quick-actions-card">
+        <div>
+          <h2>Quick Actions</h2>
+          <span>Fast ways to add purchases or sales.</span>
+        </div>
+        <button className="inventory-quick-button" type="button" onClick={onAddStock} disabled={!selectedItem}>
+          <Plus size={16} />
+          <span>
+            Add Existing Product Purchase
+            <small>{selectedItem ? selectedItem.itemName : "Select a product first"}</small>
+          </span>
+        </button>
+        <button className="inventory-quick-button" type="button" onClick={onAddProduct}>
+          <Plus size={16} />
+          <span>
+            Create New Product
+            <small>Add a new product to your catalog</small>
+          </span>
+        </button>
+        <button className="inventory-quick-button" type="button" disabled={!selectedItem} onClick={onRecordSale}>
+          <CircleDollarSign size={16} />
+          <span>
+            Record Sale
+            <small>{selectedItem ? "Use the selected product sales panel" : "Select a product first"}</small>
+          </span>
+        </button>
+      </section>
+      <section className="quick-actions-card recommendation-card">
+        <div>
+          <h2>Top Recommendations</h2>
+          <span>What to do with your inventory.</span>
+        </div>
+        <div className="recommendation-list">
+          <span><strong className="dot bad" />Sell Now <b>{sellNow}</b></span>
+          <span><strong className="dot watch" />Hold <b>{hold}</b></span>
+          <span><strong className="dot good" />Grade First <b>{gradeFirst}</b></span>
+          <span><strong className="dot bad" />Avoid Buying More <b>{avoid}</b></span>
+          <span><strong className="dot muted" />Missing Market Data <b>{missingMarket}</b></span>
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function PurchaseFlow({
+  items,
+  defaultItemId,
+  busy,
+  busyLabel,
+  submit
+}: {
+  items: InventoryItemDTO[];
+  defaultItemId?: string;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const [selectedExistingId, setSelectedExistingId] = useState(defaultItemId ?? "");
   const [quantity, setQuantity] = useState(1);
   const [price, setPrice] = useState(0);
   const [extraCost, setExtraCost] = useState(0);
   const totalCost = quantity * price + extraCost;
+  const selectedExisting = items.find((item) => item.id === selectedExistingId) ?? null;
+  const flowKey = selectedExisting?.id ?? "new";
+
   return (
     <section className="inventory-flow-panel">
-      <PanelHeader title="Add Purchase" />
       <form
+        key={flowKey}
         className="purchase-flow"
         onSubmit={(event) =>
           submit(
@@ -3378,9 +3598,29 @@ function PurchaseFlow({ busy, busyLabel, submit }: { busy: boolean; busyLabel: s
           <span>Step 1</span>
           <h3>What did you buy?</h3>
           <div className="form-grid compact">
-            <TextInput name="itemName" label="Product/card name" required />
-            <SelectInput name="category" label="Category" options={inventoryCategories.map(optionFromString)} />
-            <TextInput name="setName" label="Set" />
+            <label>
+              Existing product
+              <select
+                name="existingInventoryItemId"
+                value={selectedExistingId}
+                onChange={(event) => setSelectedExistingId(event.currentTarget.value)}
+              >
+                <option value="">Create new product</option>
+                {items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.itemName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <TextInput name="itemName" label="Product/card name" defaultValue={selectedExisting?.itemName ?? ""} required />
+            <SelectInput
+              name="category"
+              label="Category"
+              defaultValue={selectedExisting?.category ?? "sealed_packs"}
+              options={inventoryCategories.map(optionFromString)}
+            />
+            <TextInput name="setName" label="Set" defaultValue={selectedExisting?.setName ?? ""} />
             <TextInput
               name="quantity"
               label="Quantity"
@@ -3427,7 +3667,7 @@ function PurchaseFlow({ busy, busyLabel, submit }: { busy: boolean; busyLabel: s
           <span>Step 3</span>
           <h3>Add proof/image</h3>
           <div className="form-grid compact">
-            <ImageUploadInput />
+            <ImageUploadInput defaultValue={selectedExisting?.imageUrl ?? ""} />
             <TextInput name="receiptNumber" label="Receipt/order number" />
           </div>
         </article>
@@ -3436,24 +3676,55 @@ function PurchaseFlow({ busy, busyLabel, submit }: { busy: boolean; busyLabel: s
           <h3>Plan</h3>
           <div className="form-grid compact">
             <SelectInput name="expectedPlan" label="Plan" options={inventoryPlanOptions} />
-            <TextInput name="targetSellPrice" label="Target sell price" type="number" min="0" step="0.01" />
+            <TextInput
+              name="targetSellPrice"
+              label="Target sell price"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue={selectedExisting?.targetSellPrice ?? ""}
+            />
           </div>
         </article>
         <details className="inventory-advanced-details">
           <summary>Advanced details</summary>
           <div className="form-grid compact">
-            <TextInput name="retailer" label="Retailer" />
-            <TextInput name="exactProductUrl" label="Exact product URL" type="url" />
-            <TextInput name="upc" label="UPC" />
-            <TextInput name="sku" label="SKU / TCIN" />
-            <TextInput name="dpci" label="DPCI" />
-            <TextInput name="asin" label="ASIN" />
-            <TextInput name="condition" label="Condition" placeholder="Mint box, clean corners, raw NM" />
-            <SelectInput name="itemStatus" label="Status" defaultValue="sealed" options={inventoryStatuses.map(optionFromString)} />
-            <TextInput name="minimumAcceptablePrice" label="Minimum acceptable price" type="number" min="0" step="0.01" />
-            <TextInput name="currentMarketEstimate" label="Manual market estimate" type="number" min="0" step="0.01" />
-            <SelectInput name="listingStatus" label="Listing status" options={listingStatuses.map(optionFromString)} />
-            <TextInput name="listingPlatform" label="Listing platform" placeholder="eBay, Facebook, TCGPlayer" />
+            <TextInput name="retailer" label="Retailer" defaultValue={selectedExisting?.retailer ?? ""} />
+            <TextInput name="exactProductUrl" label="Exact product URL" type="url" defaultValue={selectedExisting?.exactProductUrl ?? ""} />
+            <TextInput name="upc" label="UPC" defaultValue={selectedExisting?.upc ?? ""} />
+            <TextInput name="sku" label="SKU / TCIN" defaultValue={selectedExisting?.sku ?? ""} />
+            <TextInput name="dpci" label="DPCI" defaultValue={selectedExisting?.dpci ?? ""} />
+            <TextInput name="asin" label="ASIN" defaultValue={selectedExisting?.asin ?? ""} />
+            <TextInput name="condition" label="Condition" defaultValue={selectedExisting?.condition ?? ""} placeholder="Mint box, clean corners, raw NM" />
+            <SelectInput
+              name="itemStatus"
+              label="Status"
+              defaultValue={selectedExisting?.itemStatus ?? "sealed"}
+              options={inventoryStatuses.map(optionFromString)}
+            />
+            <TextInput
+              name="minimumAcceptablePrice"
+              label="Minimum acceptable price"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue={selectedExisting?.minimumAcceptablePrice ?? ""}
+            />
+            <TextInput
+              name="currentMarketEstimate"
+              label="Manual market estimate"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue={selectedExisting?.currentMarketEstimate ?? ""}
+            />
+            <SelectInput
+              name="listingStatus"
+              label="Listing status"
+              defaultValue={selectedExisting?.listingStatus ?? "not_listed"}
+              options={listingStatuses.map(optionFromString)}
+            />
+            <TextInput name="listingPlatform" label="Listing platform" defaultValue={selectedExisting?.listingPlatform ?? ""} placeholder="eBay, Facebook, TCGPlayer" />
             <TextareaInput name="notes" label="Notes" wide />
           </div>
         </details>
@@ -3479,8 +3750,8 @@ function InventoryFilters({
     <section className="form-panel inventory-filter-panel">
       <div className="edit-card-heading">
         <div>
-          <h2>Inventory List</h2>
-          <span>{itemCount} items shown</span>
+          <h2>Product Catalog</h2>
+          <span>{itemCount} saved products shown. Add stock or record sales from the row actions.</span>
         </div>
         <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
           <Download size={14} />
@@ -3513,65 +3784,72 @@ function InventoryFilters({
 
 function InventoryList({
   items,
+  selectedId,
   busy,
   busyLabel,
   runAction,
-  submit
+  submit,
+  onSelect,
+  onAddStock
 }: {
   items: InventoryItemDTO[];
+  selectedId: string;
   busy: boolean;
   busyLabel: string | null;
   runAction: ActionHandler;
   submit: SubmitHandler;
+  onSelect: (item: InventoryItemDTO) => void;
+  onAddStock: (item: InventoryItemDTO) => void;
 }) {
   if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
   return (
-    <div className="inventory-table">
+    <div className="catalog-table">
+      <div className="catalog-row catalog-head" aria-hidden="true">
+        <span>Product</span>
+        <span>Category</span>
+        <span>Qty</span>
+        <span>Avg Cost</span>
+        <span>Market</span>
+        <span>Target</span>
+        <span>Profit Est.</span>
+        <span>ROI</span>
+        <span>Actions</span>
+      </div>
       {items.map((item) => (
-        <article className="inventory-row" key={item.id}>
-          <InventoryImage item={item} />
-          <div className="inventory-main">
-            <h3>{item.itemName}</h3>
-            <p>
-              {formatStatus(item.category)} - {item.setName || "Set unknown"}
-            </p>
-            <div className="monitor-meta">
-              <span>Owned {item.quantityOwned}</span>
-              <span>Avg cost {money(item.averageCost)}</span>
-              <span>Market {item.currentMarketEstimate === null ? "Not collected" : money(item.currentMarketEstimate)}</span>
-              <span>Target {money(item.targetSellPrice)}</span>
-              <span>P/L {item.businessProfitLoss === null ? "TBD" : money(item.businessProfitLoss)}</span>
-              <span>{formatStatus(item.listingStatus)}</span>
-            </div>
-          </div>
-          <div className="inventory-decision">
-            <span className={`chip ${inventoryRecommendationTone(item.recommendedAction)}`}>{formatStatus(item.recommendedAction)}</span>
-            <strong>{item.marketConfidence}</strong>
-            <small>{item.recommendationReason || "Market not collected yet."}</small>
-          </div>
-          <div className="inventory-actions">
-            {item.exactProductUrl ? (
-              <a className="mini-action" href={item.exactProductUrl} target="_blank" rel="noreferrer">
-                Product <ExternalLink size={13} />
-              </a>
-            ) : null}
-            <button
-              className="mini-action"
-              disabled={busy}
-              type="button"
-              onClick={() =>
-                runAction(
-                  `Refreshing inventory comps ${item.id}`,
-                  () => requestJson(`/api/radar/inventory/${item.id}/refresh-comps`, { method: "POST" }),
-                  { success: "Inventory comp refresh finished" }
-                )
-              }
-            >
-              <RefreshCw size={13} />
-              {busyLabel === `Refreshing inventory comps ${item.id}` ? "Refreshing" : "Refresh eBay"}
+        <article className={selectedId === item.id ? "catalog-row selected" : "catalog-row"} key={item.id}>
+          <button className="catalog-product" type="button" onClick={() => onSelect(item)}>
+            <InventoryImage item={item} />
+            <span>
+              <strong>{item.itemName}</strong>
+              <small>{item.setName || item.retailer || "Set unknown"}</small>
+            </span>
+          </button>
+          <span className="catalog-cell" data-label="Category">{formatStatus(item.category)}</span>
+          <span className="catalog-cell strong" data-label="Qty">{item.quantityOwned}</span>
+          <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
+          <span className="catalog-cell" data-label="Market">
+            {item.currentMarketEstimate === null ? "Not collected" : money(item.currentMarketEstimate)}
+          </span>
+          <span className="catalog-cell" data-label="Target">{money(item.targetSellPrice)}</span>
+          <span
+            className={`catalog-cell strong ${
+              (item.businessProfitLoss ?? item.estimatedNetProfit ?? 0) >= 0 ? "profit-good" : "profit-bad"
+            }`}
+            data-label="Profit Est."
+          >
+            {item.businessProfitLoss === null ? "TBD" : money(item.businessProfitLoss)}
+          </span>
+          <span className="catalog-cell" data-label="ROI">{percent(item.roiPercent)}</span>
+          <div className="catalog-actions">
+            <span className={`chip compact-chip ${inventoryRecommendationTone(item.recommendedAction)}`}>{formatStatus(item.recommendedAction)}</span>
+            <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
+              Add Stock
+            </button>
+            <button className="mini-action" type="button" onClick={() => onSelect(item)}>
+              Record Sale
             </button>
             <details className="inventory-detail-drawer">
-              <summary>Details</summary>
+              <summary>View Details</summary>
               <div>
                 <span>Purchased {shortDate(item.purchasedAt)} from {item.source}</span>
                 <span>Total spent {money(item.totalCost)} - sold {item.quantitySold} for {money(item.totalSalesGross)}</span>
@@ -3579,19 +3857,9 @@ function InventoryList({
                 <span>UPC {item.upc || "Missing"} SKU {item.sku || "Missing"} DPCI {item.dpci || "Missing"} ASIN {item.asin || "Missing"}</span>
                 <span>Target {money(item.targetSellPrice)} minimum {money(item.minimumAcceptablePrice)}</span>
                 <span>Realized P/L {money(item.realizedProfitLoss)} - ROI {percent(item.realizedRoiPercent)}</span>
-                <span>Last refreshed {item.marketLastRefreshedAt ? relativeTime(item.marketLastRefreshedAt) : "Market not collected yet"}</span>
+                <span>Market {item.marketLastRefreshedAt ? relativeTime(item.marketLastRefreshedAt) : "Market not collected yet"}</span>
               </div>
               <RecordSaleForm item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
-              {item.sales.length ? (
-                <div className="inventory-comp-list">
-                  <strong>Sales history</strong>
-                  {item.sales.map((sale) => (
-                    <span key={sale.id}>
-                      {shortDate(sale.soldAt)} - {sale.quantitySold} sold on {formatStatus(sale.platform)} - net {money(sale.netSale)} - P/L {money(sale.profitLoss)}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
               {item.lastThreeComps.length ? (
                 <div className="inventory-comp-list">
                   <strong>Last 3 sold comps</strong>
@@ -3604,11 +3872,134 @@ function InventoryList({
               ) : (
                 <p className="push-copy">Market not collected yet.</p>
               )}
+              <button
+                className="mini-action"
+                disabled={busy}
+                type="button"
+                onClick={() =>
+                  runAction(
+                    `Refreshing inventory comps ${item.id}`,
+                    () => requestJson(`/api/radar/inventory/${item.id}/refresh-comps`, { method: "POST" }),
+                    { success: "Inventory comp refresh finished" }
+                  )
+                }
+              >
+                <RefreshCw size={13} />
+                {busyLabel === `Refreshing inventory comps ${item.id}` ? "Refreshing" : "Refresh eBay"}
+              </button>
             </details>
           </div>
         </article>
       ))}
     </div>
+  );
+}
+
+function StockLotsPanel({ item }: { item: InventoryItemDTO | null }) {
+  return (
+    <section className="inventory-detail-panel stock-lots-panel">
+      <div className="edit-card-heading">
+        <div>
+          <h2>Stock Lots</h2>
+          <span>{item ? `Purchase batches for ${item.itemName}` : "Select a product to see purchase batches."}</span>
+        </div>
+      </div>
+      {!item ? (
+        <EmptyState icon={History} title="No product selected" detail="Select a catalog product to see lots." />
+      ) : item.stockLots.length ? (
+        <div className="lot-table">
+          <div className="lot-row lot-head">
+            <span>Purchased</span>
+            <span>Source</span>
+            <span>Qty</span>
+            <span>Cost / Unit</span>
+            <span>Total</span>
+            <span>Remaining</span>
+            <span>Notes</span>
+          </div>
+          {item.stockLots.map((lot) => (
+            <div className="lot-row" key={lot.id}>
+              <span>{shortDate(lot.purchasedAt)}</span>
+              <strong>{lot.source}</strong>
+              <span>{lot.quantity}</span>
+              <span>{money(lot.costPerUnit)}</span>
+              <span>{money(lot.totalCost)}</span>
+              <span>{lot.remainingQuantity}</span>
+              <span>{lot.notes || lot.receiptNumber || "None"}</span>
+            </div>
+          ))}
+          <div className="lot-summary">
+            <span>Total Remaining: <strong>{item.quantityOwned}</strong></span>
+            <span>Total Cost: <strong>{money(item.totalCost)}</strong></span>
+          </div>
+        </div>
+      ) : (
+        <EmptyState icon={History} title="No lots yet" detail="Add stock to create purchase batches for true cost basis." />
+      )}
+    </section>
+  );
+}
+
+function SelectedSalesPanel({
+  item,
+  busy,
+  busyLabel,
+  submit
+}: {
+  item: InventoryItemDTO | null;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  return (
+    <section className="inventory-detail-panel sales-log-panel" id="inventory-sales-panel">
+      <div className="edit-card-heading">
+        <div>
+          <h2>Sales Log</h2>
+          <span>{item ? `Sales and realized profit for ${item.itemName}` : "Select a product to record a sale."}</span>
+        </div>
+      </div>
+      {!item ? (
+        <EmptyState icon={CircleDollarSign} title="No product selected" detail="Select a catalog product to record sales." />
+      ) : (
+        <>
+          <RecordSaleForm key={item.id} item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
+          {item.sales.length ? (
+            <div className="lot-table">
+              <div className="lot-row lot-head">
+                <span>Sold</span>
+                <span>Qty</span>
+                <span>Sold Price</span>
+                <span>Platform</span>
+                <span>Fees</span>
+                <span>Ship</span>
+                <span>Net Profit</span>
+                <span>ROI</span>
+              </div>
+              {item.sales.map((sale) => (
+                <div className="lot-row sale-row" key={sale.id}>
+                  <span>{shortDate(sale.soldAt)}</span>
+                  <span>{sale.quantitySold}</span>
+                  <span>{money(sale.soldPricePerItem)}</span>
+                  <strong>{formatStatus(sale.platform)}</strong>
+                  <span>{money(sale.fees)}</span>
+                  <span>{money(sale.shippingCost)}</span>
+                  <span className={sale.profitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.profitLoss)}</span>
+                  <span>{percent(sale.roiPercent)}</span>
+                </div>
+              ))}
+              <div className="lot-summary">
+                <span>Total Sold: <strong>{item.quantitySold}</strong></span>
+                <span>Gross: <strong>{money(item.totalSalesGross)}</strong></span>
+                <span>Net Profit: <strong>{money(item.realizedProfitLoss)}</strong></span>
+              </div>
+            </div>
+          ) : (
+            <EmptyState icon={CircleDollarSign} title="No sales recorded" detail="Use Record Sale after you sell part of this lot." />
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -3774,6 +4165,89 @@ function SalesLog({ sales, summary }: { sales: InventorySaleDTO[]; summary: Dash
         )}
       </div>
     </section>
+  );
+}
+
+function InventoryAnalyticsPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  const summary = dashboard.inventorySummary;
+  return (
+    <>
+      <SectionIntro title="Analytics" detail="Inventory performance, platform profit, and market-data gaps." />
+      <section className="inventory-kpi-grid">
+        <InventoryKpiCard label="Total Cost" value={money(summary.totalCost)} detail={`${summary.itemsOwned} items owned`} />
+        <InventoryKpiCard label="Estimated Market" value={money(summary.estimatedMarketValue)} detail="Known market estimates only" tone="good" />
+        <InventoryKpiCard label="Realized Profit" value={money(summary.realizedProfitLoss)} detail={`Sold ${summary.itemsSold} items`} tone={summary.realizedProfitLoss >= 0 ? "good" : "bad"} />
+        <InventoryKpiCard label="Missing Market" value={String(summary.missingMarketDataCount)} detail="Needs comps or manual estimate" tone="watch" />
+      </section>
+      <section className="inventory-lower-grid">
+        <div className="inventory-detail-panel">
+          <div className="edit-card-heading">
+            <div>
+              <h2>Quantity By Category</h2>
+              <span>Where your inventory is concentrated.</span>
+            </div>
+          </div>
+          <div className="recommendation-list">
+            {summary.quantityByCategory.length ? (
+              summary.quantityByCategory.map((item) => (
+                <span key={item.category}>
+                  {formatStatus(item.category)}
+                  <b>{item.quantity}</b>
+                </span>
+              ))
+            ) : (
+              <span>No inventory yet <b>0</b></span>
+            )}
+          </div>
+        </div>
+        <div className="inventory-detail-panel">
+          <div className="edit-card-heading">
+            <div>
+              <h2>Profit By Platform</h2>
+              <span>Realized profit from recorded sales.</span>
+            </div>
+          </div>
+          <div className="recommendation-list">
+            {summary.profitByPlatform.length ? (
+              summary.profitByPlatform.map((item) => (
+                <span key={item.platform}>
+                  {formatStatus(item.platform)}
+                  <b className={item.profit >= 0 ? "profit-good" : "profit-bad"}>{money(item.profit)}</b>
+                </span>
+              ))
+            ) : (
+              <span>No platform sales yet <b>{money(0)}</b></span>
+            )}
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function SettingsPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  return (
+    <>
+      <SectionIntro title="Settings" detail="Private radar settings, area preferences, and notification controls." />
+      <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+      <NotificationSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+      <section className="safety-strip manual-safety">
+        <ShieldCheck size={16} />
+        <span>Manual checkout only. Go / Buy Now opens official retailer product pages only.</span>
+      </section>
+    </>
   );
 }
 

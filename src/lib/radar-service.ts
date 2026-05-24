@@ -31,6 +31,7 @@ import type {
   InventoryItemDTO,
   InventoryMarketCompDTO,
   InventorySaleDTO,
+  InventoryStockLotDTO,
   InventorySummaryDTO,
   DailyRecapDTO,
   MonitorAccuracyStatsDTO,
@@ -181,6 +182,9 @@ const inventoryItemInclude = {
   marketComps: {
     orderBy: { soldAt: "desc" as const },
     take: 3
+  },
+  stockLots: {
+    orderBy: { purchasedAt: "desc" as const }
   },
   sales: {
     orderBy: { soldAt: "desc" as const }
@@ -1261,6 +1265,23 @@ function inventoryMarketCompToDTO(comp: Prisma.InventoryMarketCompGetPayload<Rec
   };
 }
 
+function inventoryStockLotToDTO(lot: Prisma.InventoryStockLotGetPayload<Record<string, never>>): InventoryStockLotDTO {
+  return {
+    id: lot.id,
+    inventoryItemId: lot.inventoryItemId,
+    purchasedAt: lot.purchasedAt.toISOString(),
+    source: lot.source,
+    quantity: lot.quantity,
+    costPerUnit: lot.costPerUnit,
+    purchaseExtraCost: lot.purchaseExtraCost,
+    totalCost: lot.totalCost,
+    remainingQuantity: lot.remainingQuantity,
+    notes: lot.notes,
+    receiptNumber: lot.receiptNumber,
+    createdAt: lot.createdAt.toISOString()
+  };
+}
+
 function inventorySaleToDTO(
   sale: Prisma.InventorySaleGetPayload<Record<string, never>>,
   itemName = ""
@@ -1288,7 +1309,8 @@ function inventorySaleToDTO(
 function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: typeof inventoryItemInclude }>): InventoryItemDTO {
   const totalCost = item.totalCost ?? item.cost * item.quantity;
   const quantitySold = item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
-  const quantityOwned = Math.max(0, item.quantity - quantitySold);
+  const lotRemaining = item.stockLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
+  const quantityOwned = item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - quantitySold);
   const averageCost = item.quantity > 0 ? totalCost / item.quantity : item.cost;
   const totalSalesGross = item.sales.reduce((sum, sale) => sum + sale.grossSale, 0);
   const totalSalesNet = item.sales.reduce((sum, sale) => sum + sale.netSale, 0);
@@ -1350,6 +1372,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     realizedRoiPercent: realizedRoiPercent > 0 ? (realizedProfitLoss / realizedRoiPercent) * 100 : null,
     businessProfitLoss: unrealizedProfit === null ? realizedProfitLoss : realizedProfitLoss + unrealizedProfit,
     lastThreeComps: item.marketComps.map(inventoryMarketCompToDTO),
+    stockLots: item.stockLots.map(inventoryStockLotToDTO),
     sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName)),
     expectedPlan: item.expectedPlan,
     notes: item.notes,
@@ -2876,6 +2899,7 @@ export async function createInventoryItem(
     setName?: string;
     productId?: string;
     cardId?: string;
+    existingInventoryItemId?: string;
     cost: number;
     quantity: number;
     totalCost?: number;
@@ -2906,8 +2930,12 @@ export async function createInventoryItem(
     notes?: string;
   }
 ) {
+  if (input.existingInventoryItemId) {
+    return addInventoryStockLot(currentUser, input.existingInventoryItemId, input);
+  }
   const settings = await ensureInvestmentSettings(currentUser);
-  const computed = inventoryMarketRecommendation(input, settings);
+  const totalCost = input.totalCost ?? input.cost * input.quantity + (input.purchaseExtraCost ?? 0);
+  const computed = inventoryMarketRecommendation({ ...input, totalCost }, settings);
   const item = await prisma.inventoryItem.create({
     data: {
       userId: currentUser.id,
@@ -2919,7 +2947,7 @@ export async function createInventoryItem(
       cardId: input.cardId,
       cost: input.cost,
       quantity: input.quantity,
-      totalCost: input.totalCost ?? input.cost * input.quantity + (input.purchaseExtraCost ?? 0),
+      totalCost,
       purchaseExtraCost: input.purchaseExtraCost,
       source: input.source,
       retailer: input.retailer,
@@ -2957,7 +2985,78 @@ export async function createInventoryItem(
     },
     include: inventoryItemInclude
   });
-  return inventoryItemToDTO(item);
+  await prisma.inventoryStockLot.create({
+    data: {
+      inventoryItemId: item.id,
+      purchasedAt: input.purchasedAt,
+      source: input.source,
+      quantity: input.quantity,
+      costPerUnit: input.cost,
+      purchaseExtraCost: input.purchaseExtraCost,
+      totalCost,
+      remainingQuantity: input.quantity,
+      notes: input.notes,
+      receiptNumber: input.receiptNumber
+    }
+  });
+  return recomputeInventoryItem(item.id, currentUser);
+}
+
+export async function addInventoryStockLot(
+  currentUser: SessionUser,
+  itemId: string,
+  input: {
+    cost: number;
+    quantity: number;
+    totalCost?: number;
+    purchaseExtraCost?: number;
+    source: string;
+    purchasedAt: Date;
+    receiptNumber?: string;
+    notes?: string;
+    imageUrl?: string;
+    targetSellPrice?: number;
+    currentMarketEstimate?: number;
+  }
+) {
+  const item = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: inventoryItemInclude
+  });
+  if (!item) throw new Error("Inventory item not found");
+  const lotTotal = input.totalCost ?? input.cost * input.quantity + (input.purchaseExtraCost ?? 0);
+  await prisma.inventoryStockLot.create({
+    data: {
+      inventoryItemId: item.id,
+      purchasedAt: input.purchasedAt,
+      source: input.source,
+      quantity: input.quantity,
+      costPerUnit: input.cost,
+      purchaseExtraCost: input.purchaseExtraCost,
+      totalCost: lotTotal,
+      remainingQuantity: input.quantity,
+      notes: input.notes,
+      receiptNumber: input.receiptNumber
+    }
+  });
+  const nextQuantity = item.quantity + input.quantity;
+  const nextTotalCost = (item.totalCost ?? item.cost * item.quantity) + lotTotal;
+  await prisma.inventoryItem.update({
+    where: { id: item.id },
+    data: {
+      quantity: nextQuantity,
+      totalCost: nextTotalCost,
+      cost: nextQuantity > 0 ? nextTotalCost / nextQuantity : item.cost,
+      purchaseExtraCost: (item.purchaseExtraCost ?? 0) + (input.purchaseExtraCost ?? 0),
+      source: input.source,
+      purchasedAt: input.purchasedAt,
+      receiptNumber: input.receiptNumber ?? item.receiptNumber,
+      imageUrl: input.imageUrl ?? item.imageUrl,
+      targetSellPrice: input.targetSellPrice ?? item.targetSellPrice,
+      currentMarketEstimate: input.currentMarketEstimate ?? item.currentMarketEstimate
+    }
+  });
+  return recomputeInventoryItem(item.id, currentUser);
 }
 
 export async function logProductPurchase(
@@ -3102,7 +3201,8 @@ export async function createInventorySale(
   });
   if (!item) throw new Error("Inventory item not found");
   const soldSoFar = item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
-  const quantityOwned = Math.max(0, item.quantity - soldSoFar);
+  const lotRemaining = item.stockLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
+  const quantityOwned = item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - soldSoFar);
   if (input.quantitySold > quantityOwned) {
     throw new Error(`Only ${quantityOwned} available to sell.`);
   }
@@ -3112,7 +3212,18 @@ export async function createInventorySale(
   const fees = input.fees ?? 0;
   const shippingCost = input.shippingCost ?? 0;
   const netSale = grossSale - fees - shippingCost;
-  const costBasis = averageCost * input.quantitySold;
+  let remainingToAllocate = input.quantitySold;
+  let costBasis = 0;
+  const lotsToUpdate = [...item.stockLots]
+    .filter((lot) => lot.remainingQuantity > 0)
+    .sort((a, b) => a.purchasedAt.getTime() - b.purchasedAt.getTime());
+  for (const lot of lotsToUpdate) {
+    if (remainingToAllocate <= 0) break;
+    const quantityFromLot = Math.min(remainingToAllocate, lot.remainingQuantity);
+    costBasis += quantityFromLot * (lot.totalCost / lot.quantity);
+    remainingToAllocate -= quantityFromLot;
+  }
+  if (remainingToAllocate > 0) costBasis += remainingToAllocate * averageCost;
   const profitLoss = netSale - costBasis;
   const roiPercent = costBasis > 0 ? (profitLoss / costBasis) * 100 : null;
   const sale = await prisma.inventorySale.create({
@@ -3133,6 +3244,16 @@ export async function createInventorySale(
       notes: input.notes
     }
   });
+  let quantityToDeduct = input.quantitySold;
+  for (const lot of lotsToUpdate) {
+    if (quantityToDeduct <= 0) break;
+    const quantityFromLot = Math.min(quantityToDeduct, lot.remainingQuantity);
+    quantityToDeduct -= quantityFromLot;
+    await prisma.inventoryStockLot.update({
+      where: { id: lot.id },
+      data: { remainingQuantity: lot.remainingQuantity - quantityFromLot }
+    });
+  }
   const totalSold = soldSoFar + input.quantitySold;
   await prisma.inventoryItem.update({
     where: { id: item.id },
@@ -4829,6 +4950,7 @@ async function clearRadarData(includeUsers: boolean) {
   await prisma.dailyRecap.deleteMany();
   await prisma.inventoryMarketComp.deleteMany();
   await prisma.inventorySale.deleteMany();
+  await prisma.inventoryStockLot.deleteMany();
   await prisma.inventoryItem.deleteMany();
   await prisma.cardCompSale.deleteMany();
   await prisma.cardPriceSnapshot.deleteMany();
@@ -5207,6 +5329,7 @@ export async function exportBackup() {
       auditLogs: await prisma.auditLog.findMany(),
       storePreferences: await prisma.userStorePreference.findMany(),
       inventoryItems: await prisma.inventoryItem.findMany(),
+      inventoryStockLots: await prisma.inventoryStockLot.findMany(),
       inventorySales: await prisma.inventorySale.findMany(),
       inventoryMarketComps: await prisma.inventoryMarketComp.findMany(),
       dailyRecaps: await prisma.dailyRecap.findMany(),
@@ -5688,6 +5811,22 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       notes: row.notes ? String(row.notes) : null,
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.inventoryStockLot.createMany({
+    data: rows(tables, "inventoryStockLots").map((row) => ({
+      id: String(row.id),
+      inventoryItemId: String(row.inventoryItemId),
+      purchasedAt: toDate(row.purchasedAt),
+      source: String(row.source),
+      quantity: Number(row.quantity),
+      costPerUnit: Number(row.costPerUnit),
+      purchaseExtraCost: row.purchaseExtraCost === null || row.purchaseExtraCost === undefined ? null : Number(row.purchaseExtraCost),
+      totalCost: Number(row.totalCost),
+      remainingQuantity: Number(row.remainingQuantity),
+      notes: row.notes ? String(row.notes) : null,
+      receiptNumber: row.receiptNumber ? String(row.receiptNumber) : null,
+      createdAt: toDate(row.createdAt)
     }))
   });
   await prisma.inventorySale.createMany({
