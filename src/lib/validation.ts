@@ -232,6 +232,11 @@ export const adminPasswordResetSchema = z
     message: "Passwords must match"
   });
 
+export const adminEmailUpdateSchema = z.object({
+  currentPassword: z.string().min(1),
+  email: z.string().trim().email()
+});
+
 export const friendInviteCreateSchema = z.object({
   email: z.string().trim().email(),
   name: optionalTrimmed,

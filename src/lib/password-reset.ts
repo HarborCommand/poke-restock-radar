@@ -155,3 +155,59 @@ export async function resetAdminPassword(currentUser: SessionUser, currentPasswo
     sessionVersion: updated.sessionVersion
   };
 }
+
+export async function updateAdminLoginEmail(currentUser: SessionUser, currentPassword: string, emailInput: string) {
+  const email = emailInput.trim().toLowerCase();
+  const user = await prisma.user.findUnique({ where: { id: currentUser.id } });
+  if (!user || user.role !== "ADMIN") throw new Error("Admin access required");
+  if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+    throw new Error("Current password is incorrect.");
+  }
+
+  const matches = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM "User" WHERE lower("email") = ${email} AND "id" <> ${user.id} LIMIT 1
+  `;
+  if (matches.length) {
+    throw new Error("That login email is already used by another private account.");
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { email },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      canAddSightings: true,
+      canAddComps: true,
+      canRunChecks: true,
+      canReceivePushAlerts: true,
+      preferredZone: true,
+      customZoneName: true,
+      hideDistantStores: true,
+      currentLatitude: true,
+      currentLongitude: true,
+      locationUpdatedAt: true,
+      sessionVersion: true
+    }
+  });
+
+  return {
+    id: updated.id,
+    email: updated.email,
+    name: updated.name,
+    role: updated.role as SessionUser["role"],
+    canAddSightings: updated.canAddSightings,
+    canAddComps: updated.canAddComps,
+    canRunChecks: updated.canRunChecks,
+    canReceivePushAlerts: updated.canReceivePushAlerts,
+    preferredZone: updated.preferredZone as SessionUser["preferredZone"],
+    customZoneName: updated.customZoneName,
+    hideDistantStores: updated.hideDistantStores,
+    currentLatitude: updated.currentLatitude,
+    currentLongitude: updated.currentLongitude,
+    locationUpdatedAt: updated.locationUpdatedAt?.toISOString() ?? null,
+    sessionVersion: updated.sessionVersion
+  };
+}

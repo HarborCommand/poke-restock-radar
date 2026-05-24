@@ -335,9 +335,17 @@ The smoke test verifies invalid login rejection, admin login, session persistenc
 
 Password recovery:
 
-- Admins can reset their own password from the Admin Health panel after signing in.
+- Admins can change the login email and password from `Settings -> Admin Account Settings` or the Admin drawer. Email changes update the `User` row in the database and refresh the session. Password changes require the current password, save only a bcrypt hash, invalidate existing sessions, and force a fresh login.
 - `Forgot Password` creates a 30-minute secure reset token and emails a reset link when SMTP is configured.
 - Resetting a password increments the user session version so older session cookies stop working.
+
+Emergency admin reset:
+
+```bash
+npm run admin:reset
+```
+
+The reset command prompts for the admin login email and a new password, hashes the password locally with bcrypt, and updates or creates the Admin user in the configured database. It does not print or store the plain-text password. For production recovery, run it with `DATABASE_URL` pointed at the standalone `poke_restock_radar_prod` database only; do not reuse Harbor Command database URLs or environment variables.
 
 Health endpoint:
 

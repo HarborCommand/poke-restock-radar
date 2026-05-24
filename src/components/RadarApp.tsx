@@ -101,7 +101,7 @@ type SubmitHandler = <T>(
   event: FormEvent<HTMLFormElement>,
   label: string,
   run: (form: HTMLFormElement) => Promise<T>,
-  options?: { reset?: boolean; success?: string }
+  options?: { reset?: boolean; success?: string; reauth?: boolean }
 ) => Promise<void>;
 type ActionHandler = <T>(
   label: string,
@@ -795,6 +795,11 @@ export function RadarApp() {
     try {
       await run(form);
       if (options.reset !== false) form.reset();
+      if (options.reauth) {
+        if (options.success) showToast({ type: "success", message: options.success });
+        await logout();
+        return;
+      }
       await loadDashboard();
       if (options.success) showToast({ type: "success", message: options.success });
     } catch (submitError) {
@@ -1098,6 +1103,10 @@ function AdminControlPanel({
         </div>
 
         <div className="admin-fold-list">
+          <AdminFold title="Admin Account Settings" detail="Change login email or password safely" defaultOpen>
+            <AdminAccountSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+          </AdminFold>
+
           <AdminFold title="My Area And Location" detail="Zone, saved browser location, favorite stores" defaultOpen>
             <AreaSetupPanel
               dashboard={dashboard}
@@ -1120,7 +1129,7 @@ function AdminControlPanel({
 
           {dashboard.health ? (
             <AdminFold title="Production Health" detail="Auth, database, cron, deployment warnings">
-              <AdminHealthPanel health={dashboard.health} busy={busy} busyLabel={busyLabel} submit={submit} />
+              <AdminHealthPanel health={dashboard.health} />
             </AdminFold>
           ) : null}
 
@@ -5063,6 +5072,97 @@ function InventoryAnalyticsPanel({ dashboard }: { dashboard: DashboardDTO }) {
   );
 }
 
+function AdminAccountSettingsPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const currentEmail = dashboard.currentUser.email;
+  return (
+    <section className="form-panel admin-account-settings">
+      <div className="panel-header">
+        <div>
+          <p className="eyeline">Admin Account Settings</p>
+          <h2>Login Email And Password</h2>
+        </div>
+      </div>
+      <div className="account-settings-grid">
+        <form
+          key={`email-${currentEmail}`}
+          className="account-settings-card"
+          onSubmit={(event) =>
+            submit(
+              event,
+              "Updating admin login email",
+              (form) =>
+                requestJson("/api/auth/admin/account", {
+                  method: "PATCH",
+                  body: JSON.stringify(formJson(form))
+                }),
+              { success: "Admin login email updated." }
+            )
+          }
+        >
+          <div className="account-settings-heading">
+            <Mail size={16} />
+            <div>
+              <strong>Change Login Email</strong>
+              <span>Current login: {currentEmail}</span>
+            </div>
+          </div>
+          <TextInput name="email" label="New login email" type="email" autoComplete="email" defaultValue={currentEmail} required />
+          <TextInput name="currentPassword" label="Current password" type="password" autoComplete="current-password" required />
+          <button className="primary-action" disabled={busy} type="submit">
+            <Save size={16} />
+            {busyLabel === "Updating admin login email" ? "Saving Email" : "Save Login Email"}
+          </button>
+        </form>
+
+        <form
+          className="account-settings-card"
+          onSubmit={(event) =>
+            submit(
+              event,
+              "Changing admin password",
+              (form) =>
+                requestJson("/api/auth/admin/password", {
+                  method: "POST",
+                  body: JSON.stringify(formJson(form))
+                }),
+              { reauth: true, success: "Password changed. Sign in again with the new password." }
+            )
+          }
+        >
+          <div className="account-settings-heading">
+            <Lock size={16} />
+            <div>
+              <strong>Change Password</strong>
+              <span>Requires your current password and signs you out after saving.</span>
+            </div>
+          </div>
+          <TextInput name="currentPassword" label="Current password" type="password" autoComplete="current-password" required />
+          <TextInput name="password" label="New password" type="password" autoComplete="new-password" required />
+          <TextInput name="confirmPassword" label="Confirm new password" type="password" autoComplete="new-password" required />
+          <button className="primary-action" disabled={busy} type="submit">
+            <Save size={16} />
+            {busyLabel === "Changing admin password" ? "Saving Password" : "Change Password"}
+          </button>
+        </form>
+      </div>
+      <p className="settings-note">
+        Passwords are hashed before saving and are never shown in logs. This updates the production database admin user,
+        not just seed or environment defaults.
+      </p>
+    </section>
+  );
+}
+
 function SettingsPanel({
   dashboard,
   busy,
@@ -5079,6 +5179,9 @@ function SettingsPanel({
   return (
     <>
       <SectionIntro title="Settings" detail="Private radar settings, area preferences, and notification controls." />
+      {dashboard.currentUser.role === "ADMIN" ? (
+        <AdminAccountSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+      ) : null}
       <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
       <NotificationSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
       <section className="safety-strip manual-safety">
@@ -8314,17 +8417,7 @@ function HealthCard({
   );
 }
 
-function AdminHealthPanel({
-  health,
-  busy,
-  busyLabel,
-  submit
-}: {
-  health: AppHealthDTO;
-  busy: boolean;
-  busyLabel: string | null;
-  submit: SubmitHandler;
-}) {
+function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
   const authWarningCount =
     Number(!health.auth.authReady) + Number(health.auth.adminUserCount === 0) + Number(!health.auth.configuredAdminEmailExists);
   const warningCount = health.environment.coreMissing.length + health.environment.warnings.length + authWarningCount;
@@ -8503,32 +8596,6 @@ function AdminHealthPanel({
           ))}
         </div>
       </div>
-      <form
-        className="auth-reset-panel"
-        onSubmit={(event) =>
-          submit(
-            event,
-            "Resetting admin password",
-            (form) =>
-              requestJson("/api/auth/admin/password", {
-                method: "POST",
-                body: JSON.stringify(formJson(form))
-              }),
-            { success: "Admin password reset. Current session refreshed." }
-          )
-        }
-      >
-        <h2>Reset Admin Password</h2>
-        <div className="form-grid">
-          <TextInput name="currentPassword" label="Current password" type="password" autoComplete="current-password" required />
-          <TextInput name="password" label="New password" type="password" autoComplete="new-password" required />
-          <TextInput name="confirmPassword" label="Confirm new password" type="password" autoComplete="new-password" required />
-        </div>
-        <button className="mini-action solid" disabled={busy} type="submit">
-          <Save size={14} />
-          {busyLabel === "Resetting admin password" ? "Saving" : "Reset Password"}
-        </button>
-      </form>
       {warningCount > 0 ? (
         <div className="health-warning">
           <AlertTriangle size={16} />
@@ -8547,7 +8614,7 @@ function AdminHealthPanel({
               {!health.auth.authReady ? <li>AUTH_SECRET must be configured with a strong production value.</li> : null}
               {health.auth.adminUserCount === 0 ? <li>No admin users exist in the database.</li> : null}
               {!health.auth.configuredAdminEmailExists ? (
-                <li>ADMIN_EMAIL does not match an Admin user in the production database.</li>
+                <li>ADMIN_EMAIL seed/default does not match a database Admin user. Login uses the database Admin email.</li>
               ) : null}
               {health.monitor.lastError ? <li>Last monitor error: {health.monitor.lastError}</li> : null}
               {health.database.error ? <li>Database error: {health.database.error}</li> : null}

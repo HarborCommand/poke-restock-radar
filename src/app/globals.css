@@ -704,6 +704,61 @@ textarea {
   padding: 14px;
 }
 
+.account-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.account-settings-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.16);
+  padding: 12px;
+}
+
+.account-settings-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.account-settings-heading svg {
+  color: var(--blue);
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.account-settings-heading div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.account-settings-heading strong {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.account-settings-heading span,
+.settings-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.settings-note {
+  margin: 0;
+}
+
 .admin-drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -5650,6 +5705,7 @@ textarea {
   .inventory-market-hero,
   .market-hero-metrics,
   .market-inline-comp-form,
+  .account-settings-grid,
   .market-comp-proof-list article,
   .compact-ledger-list article {
     grid-template-columns: 1fr;

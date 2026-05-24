@@ -12,6 +12,7 @@
     "test": "tsx --test tests/*.test.mjs tests/*.test.ts",
     "auth:smoke": "tsx scripts/auth-smoke.ts",
     "alert:smoke": "tsx scripts/alert-smoke.ts",
+    "admin:reset": "tsx scripts/admin-reset.ts",
     "smoke:prod": "tsx scripts/final-production-smoke.ts",
     "qa:viewport": "tsx scripts/viewport-qa.ts",
     "monitor": "tsx scripts/run-monitor.ts",

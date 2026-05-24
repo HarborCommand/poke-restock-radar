@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createSessionToken, requireAdmin, requireUser, setSessionCookie } from "@/lib/auth";
+import { clearSessionCookie, requireAdmin, requireUser } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import { badRequest, readJson } from "@/lib/http";
 import { resetAdminPassword } from "@/lib/password-reset";
 import { adminPasswordResetSchema } from "@/lib/validation";
@@ -15,9 +16,16 @@ export async function POST(request: Request) {
 
   try {
     const input = adminPasswordResetSchema.parse(await readJson(request));
-    const sessionUser = await resetAdminPassword(user, input.currentPassword, input.password);
-    const nextResponse = NextResponse.json({ ok: true, user: sessionUser });
-    setSessionCookie(nextResponse, createSessionToken(sessionUser));
+    await resetAdminPassword(user, input.currentPassword, input.password);
+    await logAudit({
+      user,
+      action: "auth.admin.password_changed",
+      entityType: "USER",
+      entityId: user.id,
+      summary: `${user.email} changed the admin login password.`
+    });
+    const nextResponse = NextResponse.json({ ok: true, reauthRequired: true });
+    clearSessionCookie(nextResponse);
     return nextResponse;
   } catch (error) {
     return badRequest(error);
