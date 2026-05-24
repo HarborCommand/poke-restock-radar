@@ -17,6 +17,60 @@ export async function GET(request: Request) {
   if (response) return response;
   const dashboard = await listDashboard(user);
   const format = new URL(request.url).searchParams.get("format");
+  if (format === "spending-csv") {
+    const headers = ["purchaseDate", "itemName", "category", "quantity", "pricePaidPerItem", "taxShipping", "totalCost", "source", "retailer", "receiptNumber"];
+    const rows = dashboard.inventory.map((item) =>
+      [
+        item.purchasedAt,
+        item.itemName,
+        item.category,
+        item.quantity,
+        item.cost,
+        item.purchaseExtraCost,
+        item.totalCost,
+        item.source,
+        item.retailer,
+        item.receiptNumber
+      ]
+        .map(csvCell)
+        .join(",")
+    );
+    return new Response([headers.join(","), ...rows].join("\n"), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": "attachment; filename=poke-restock-spending.csv"
+      }
+    });
+  }
+  if (format === "sales-csv") {
+    const headers = ["soldDate", "itemName", "quantitySold", "soldPricePerItem", "grossSale", "platform", "fees", "shippingCost", "netSale", "costBasis", "profitLoss", "roiPercent"];
+    const rows = dashboard.inventory.flatMap((item) =>
+      item.sales.map((sale) =>
+        [
+          sale.soldAt,
+          item.itemName,
+          sale.quantitySold,
+          sale.soldPricePerItem,
+          sale.grossSale,
+          sale.platform,
+          sale.fees,
+          sale.shippingCost,
+          sale.netSale,
+          sale.costBasis,
+          sale.profitLoss,
+          sale.roiPercent
+        ]
+          .map(csvCell)
+          .join(",")
+      )
+    );
+    return new Response([headers.join(","), ...rows].join("\n"), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": "attachment; filename=poke-restock-sales.csv"
+      }
+    });
+  }
   if (format === "csv") {
     const headers = [
       "itemName",

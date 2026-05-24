@@ -556,9 +556,11 @@ export const inventoryCreateSchema = z.object({
   cost: requiredMoney,
   quantity: z.coerce.number().int().min(1).max(1000).default(1),
   totalCost: optionalMoney,
+  purchaseExtraCost: optionalMoney,
   source: z.string().trim().min(2).max(120),
   retailer: optionalTrimmed,
   purchasedAt: boundedDate.default(() => new Date()),
+  receiptNumber: optionalTrimmed,
   exactProductUrl: optionalHttpUrl,
   upc: optionalTrimmed,
   sku: optionalTrimmed,
@@ -585,6 +587,16 @@ export const inventoryCreateSchema = z.object({
 });
 
 export const inventoryUpdateSchema = inventoryCreateSchema.partial();
+
+export const inventorySaleCreateSchema = z.object({
+  quantitySold: z.coerce.number().int().min(1).max(1000),
+  soldPricePerItem: requiredMoney,
+  platform: z.enum(["ebay", "facebook", "whatnot", "friend", "local", "other"]).default("ebay"),
+  fees: optionalMoney.default(0),
+  shippingCost: optionalMoney.default(0),
+  soldAt: boundedDate.default(() => new Date()),
+  notes: optionalTrimmed
+});
 
 export const inventoryCompCreateSchema = z.object({
   inventoryItemId: z.string().trim().min(2),

@@ -102,10 +102,15 @@ export type InventoryItemDTO = {
   cardId: string | null;
   cost: number;
   quantity: number;
+  quantityOwned: number;
+  quantitySold: number;
+  averageCost: number;
   totalCost: number;
+  purchaseExtraCost: number | null;
   source: string;
   retailer: string | null;
   purchasedAt: string;
+  receiptNumber: string | null;
   exactProductUrl: string | null;
   upc: string | null;
   sku: string | null;
@@ -133,11 +138,36 @@ export type InventoryItemDTO = {
   recommendedAction: string;
   recommendationReason: string | null;
   netProfitAfterFees: number | null;
+  totalSalesGross: number;
+  totalSalesNet: number;
+  realizedProfitLoss: number;
+  realizedRoiPercent: number | null;
+  businessProfitLoss: number | null;
   lastThreeComps: InventoryMarketCompDTO[];
+  sales: InventorySaleDTO[];
   expectedPlan: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type InventorySaleDTO = {
+  id: string;
+  inventoryItemId: string;
+  itemName: string;
+  quantitySold: number;
+  soldPricePerItem: number;
+  grossSale: number;
+  platform: string;
+  fees: number;
+  shippingCost: number;
+  netSale: number;
+  costBasis: number;
+  profitLoss: number;
+  roiPercent: number | null;
+  soldAt: string;
+  notes: string | null;
+  createdAt: string;
 };
 
 export type InventoryMarketCompDTO = {
@@ -154,10 +184,23 @@ export type InventoryMarketCompDTO = {
 };
 
 export type InventorySummaryDTO = {
+  totalSpent: number;
   totalCost: number;
+  currentInventoryValue: number;
   estimatedMarketValue: number;
+  totalSalesGross: number;
+  totalSalesNet: number;
   estimatedProfit: number;
+  realizedProfitLoss: number;
+  netProfitLoss: number;
   totalRoiPercent: number | null;
+  itemsOwned: number;
+  itemsSold: number;
+  spendingThisWeek: number;
+  spendingThisMonth: number;
+  salesThisWeek: number;
+  salesThisMonth: number;
+  profitByPlatform: Array<{ platform: string; profit: number; sales: number }>;
   quantityByCategory: Array<{ category: string; quantity: number }>;
   bestItem: InventoryItemDTO | null;
   worstItem: InventoryItemDTO | null;

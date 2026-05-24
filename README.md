@@ -710,6 +710,30 @@ Import/export:
 - `Inventory Import And Manual Comps` accepts CSV or JSON.
 - JSON backup/restore includes inventory items and inventory market comps.
 
+## Inventory Spending And Sales Tracker
+
+The Inventory tab is also the business tracker for spend, sales, and profit/loss.
+
+Top cards:
+
+- `Total Spent`: all purchase cost, including tax/shipping entered on purchases.
+- `Current Inventory Value`: current market estimate multiplied by quantity still owned.
+- `Total Sales`: gross sales recorded from inventory rows.
+- `Net Profit / Loss`: net sale proceeds plus current inventory value minus total spend.
+
+Use `Add Purchase` as a four-step flow:
+
+1. What did you buy?
+2. What did it cost?
+3. Add proof/image.
+4. Plan.
+
+Advanced identifiers, exact product URLs, UPC/SKU/DPCI/ASIN, manual market estimate, and notes are hidden under `Advanced details`.
+
+Use `Record Sale` on an inventory row for partial or full sales. The app calculates gross sale, net sale, cost basis, profit/loss, and ROI from quantity sold, sold price, fees, shipping, and original average cost.
+
+Use the `Spending` view for purchases by date and the `Sales` view for sales by date and profit by platform. CSV exports are available from each view.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.

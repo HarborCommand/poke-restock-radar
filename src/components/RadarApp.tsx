@@ -62,6 +62,7 @@ import type {
   InvestmentReportItemDTO,
   Priority,
   InventoryItemDTO,
+  InventorySaleDTO,
   ProductDTO,
   ProductDiscoveryCandidateDTO,
   ProductDiscoverySourceDTO,
@@ -135,6 +136,13 @@ const inventoryCategories = [
 const inventoryStatuses = ["sealed", "opened", "graded", "raw"];
 const listingStatuses = ["not_listed", "listed", "sold", "held"];
 const inventoryRecommendations = ["HOLD", "SELL_NOW", "LIST_HIGH", "GRADE_FIRST", "RIP_OPEN", "AVOID_BUYING_MORE"];
+const inventoryPlanOptions = [
+  { value: "Hold", label: "Hold" },
+  { value: "Sell raw/sealed", label: "Sell raw/sealed" },
+  { value: "Grade first", label: "Grade first" },
+  { value: "Rip/open", label: "Rip/open" }
+];
+const salePlatforms = ["ebay", "facebook", "whatnot", "friend", "local", "other"];
 
 function formatStatus(value: string) {
   return value
@@ -3227,6 +3235,7 @@ function InventoryPanel({
   submit: SubmitHandler;
   runAction: ActionHandler;
 }) {
+  const [view, setView] = useState<"items" | "spending" | "sales">("items");
   const [filters, setFilters] = useState({
     search: "",
     category: "ALL",
@@ -3246,9 +3255,9 @@ function InventoryPanel({
       .sort((a, b) => {
         if (filters.sort === "roi") return (b.roiPercent ?? -999) - (a.roiPercent ?? -999);
         if (filters.sort === "date") return new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime();
-        if (filters.sort === "quantity") return b.quantity - a.quantity;
-        if (filters.sort === "market") return (b.currentMarketEstimate ?? 0) * b.quantity - (a.currentMarketEstimate ?? 0) * a.quantity;
-        return (b.estimatedNetProfit ?? -999999) - (a.estimatedNetProfit ?? -999999);
+        if (filters.sort === "quantity") return b.quantityOwned - a.quantityOwned;
+        if (filters.sort === "market") return (b.currentMarketEstimate ?? 0) * b.quantityOwned - (a.currentMarketEstimate ?? 0) * a.quantityOwned;
+        return (b.businessProfitLoss ?? b.estimatedNetProfit ?? -999999) - (a.businessProfitLoss ?? a.estimatedNetProfit ?? -999999);
       });
   }, [dashboard.inventory, filters]);
 
@@ -3258,98 +3267,57 @@ function InventoryPanel({
   }
 
   const summary = dashboard.inventorySummary;
+  const allSales = useMemo(() => dashboard.inventory.flatMap((item) => item.sales), [dashboard.inventory]);
   return (
     <>
       <SectionIntro
         title="Inventory"
-        detail="Track what you bought, what it cost, market comps, sell targets, and whether to hold, list, grade, or avoid more."
-        stats={[
-          { label: "cost", value: money(summary.totalCost), tone: "watch" },
-          { label: "market", value: money(summary.estimatedMarketValue), tone: "good" },
-          { label: "profit", value: money(summary.estimatedProfit), tone: summary.estimatedProfit >= 0 ? "good" : "bad" },
-          { label: "ROI", value: percent(summary.totalRoiPercent), tone: (summary.totalRoiPercent ?? 0) >= 0 ? "good" : "bad" }
-        ]}
+        detail="Simple tracker for what you bought, what you spent, what sold, and where profit or loss stands."
       />
-      <section className="inventory-summary-grid">
-        <StatCard label="Items to sell" value={summary.sellNowCount} detail="Sell now or list high" />
-        <StatCard label="Hold" value={summary.holdCount} detail="Current margin below target" />
-        <StatCard label="Missing market" value={summary.missingMarketDataCount} detail="Needs comps or estimate" />
-        <StatCard label="Categories" value={summary.quantityByCategory.length} detail={summary.quantityByCategory.map((item) => `${formatStatus(item.category)} ${item.quantity}`).join(" | ") || "None"} />
+      <section className="inventory-kpi-grid">
+        <InventoryKpiCard label="Total Spent" value={money(summary.totalSpent)} detail={`This month ${money(summary.spendingThisMonth)}`} />
+        <InventoryKpiCard label="Current Inventory Value" value={money(summary.currentInventoryValue)} detail={`${summary.itemsOwned} items owned`} tone="good" />
+        <InventoryKpiCard label="Total Sales" value={money(summary.totalSalesGross)} detail={`This month ${money(summary.salesThisMonth)}`} tone="watch" />
+        <InventoryKpiCard
+          label="Net Profit / Loss"
+          value={money(summary.netProfitLoss)}
+          detail={`ROI ${percent(summary.totalRoiPercent)}`}
+          tone={summary.netProfitLoss >= 0 ? "good" : "bad"}
+        />
       </section>
-      <section className="form-panel inventory-add-panel">
-        <PanelHeader title="Add Inventory Item" />
-        <form
-          className="form-grid"
-          onSubmit={(event) =>
-            submit(
-              event,
-              "Adding inventory item",
-              (form) => requestJson("/api/radar/inventory", { method: "POST", body: JSON.stringify(formJson(form)) }),
-              { reset: true, success: "Inventory item added" }
-            )
-          }
-        >
-          <TextInput name="itemName" label="Product/card name" required />
-          <SelectInput name="category" label="Category" options={inventoryCategories.map(optionFromString)} />
-          <TextInput name="setName" label="Set name" />
-          <TextInput name="quantity" label="Quantity" type="number" min="1" defaultValue="1" required />
-          <TextInput name="cost" label="Purchase price per unit" type="number" min="0" step="0.01" required />
-          <TextInput name="purchasedAt" label="Purchase date" type="date" defaultValue={todayDateInput()} required />
-          <TextInput name="source" label="Source/store purchased from" placeholder="Target Hialeah, eBay, friend" required />
-          <TextInput name="retailer" label="Retailer" />
-          <TextInput name="exactProductUrl" label="Exact product URL" type="url" />
-          <TextInput name="upc" label="UPC" />
-          <TextInput name="sku" label="SKU / TCIN" />
-          <TextInput name="dpci" label="DPCI" />
-          <TextInput name="asin" label="ASIN" />
-          <ImageUploadInput />
-          <TextInput name="condition" label="Condition" placeholder="Mint box, clean corners, raw NM" />
-          <SelectInput name="itemStatus" label="Status" defaultValue="sealed" options={inventoryStatuses.map(optionFromString)} />
-          <TextInput name="targetSellPrice" label="Target sell price" type="number" min="0" step="0.01" />
-          <TextInput name="minimumAcceptablePrice" label="Minimum acceptable price" type="number" min="0" step="0.01" />
-          <TextInput name="currentMarketEstimate" label="Manual market estimate" type="number" min="0" step="0.01" />
-          <SelectInput name="listingStatus" label="Listing status" options={listingStatuses.map(optionFromString)} />
-          <TextInput name="listingPlatform" label="Listing platform" placeholder="eBay, Facebook, TCGPlayer" />
-          <TextareaInput name="notes" label="Notes" wide />
-          <button className="primary-action" disabled={busy} type="submit">
-            <Save size={16} />
-            {busyLabel === "Adding inventory item" ? "Saving" : "Add Inventory"}
+      <section className="inventory-secondary-strip">
+        <span>Owned <strong>{summary.itemsOwned}</strong></span>
+        <span>Sold <strong>{summary.itemsSold}</strong></span>
+        <span>Best <strong>{summary.bestItem?.itemName || "None"}</strong></span>
+        <span>Worst <strong>{summary.worstItem?.itemName || "None"}</strong></span>
+        <span>Sell now <strong>{summary.sellNowCount}</strong></span>
+        <span>Missing market <strong>{summary.missingMarketDataCount}</strong></span>
+      </section>
+      <section className="inventory-view-tabs" aria-label="Inventory views">
+        {[
+          { id: "items", label: "Inventory" },
+          { id: "spending", label: "Spending" },
+          { id: "sales", label: "Sales" }
+        ].map((option) => (
+          <button
+            className={view === option.id ? "active" : ""}
+            key={option.id}
+            onClick={() => setView(option.id as "items" | "spending" | "sales")}
+            type="button"
+          >
+            {option.label}
           </button>
-        </form>
+        ))}
       </section>
-      <section className="form-panel">
-        <div className="edit-card-heading">
-          <div>
-            <h2>Inventory Filters</h2>
-            <span>{visibleItems.length} items shown</span>
-          </div>
-          <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
-            <Download size={14} />
-            Export CSV
-          </a>
-        </div>
-        <div className="field-filter-grid">
-          <TextInput name="search" label="Search" value={filters.search} onChange={updateFilter} />
-          <SelectInput name="category" label="Category" value={filters.category} onChange={updateFilter} options={[{ value: "ALL", label: "All Categories" }, ...inventoryCategories.map(optionFromString)]} />
-          <TextInput name="source" label="Source/store" value={filters.source} onChange={updateFilter} />
-          <SelectInput name="recommendation" label="Recommendation" value={filters.recommendation} onChange={updateFilter} options={[{ value: "ALL", label: "All Recommendations" }, ...inventoryRecommendations.map(optionFromString)]} />
-          <SelectInput name="listingStatus" label="Listing" value={filters.listingStatus} onChange={updateFilter} options={[{ value: "ALL", label: "All Listing Statuses" }, ...listingStatuses.map(optionFromString)]} />
-          <SelectInput
-            name="sort"
-            label="Sort"
-            value={filters.sort}
-            onChange={updateFilter}
-            options={[
-              { value: "profit", label: "Profit" },
-              { value: "roi", label: "ROI" },
-              { value: "date", label: "Date purchased" },
-              { value: "quantity", label: "Quantity" },
-              { value: "market", label: "Market value" }
-            ]}
-          />
-        </div>
-      </section>
-      <InventoryList items={visibleItems} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+      {view === "items" ? (
+        <>
+          <PurchaseFlow busy={busy} busyLabel={busyLabel} submit={submit} />
+          <InventoryFilters filters={filters} itemCount={visibleItems.length} updateFilter={updateFilter} />
+          <InventoryList items={visibleItems} busy={busy} busyLabel={busyLabel} runAction={runAction} submit={submit} />
+        </>
+      ) : null}
+      {view === "spending" ? <SpendingLog items={dashboard.inventory} summary={summary} /> : null}
+      {view === "sales" ? <SalesLog sales={allSales} summary={summary} /> : null}
       <UtilityFold title="Inventory Import And Manual Comps" detail="CSV/JSON import and last-3 sold comp entry">
         <BulkImportPanel
           title="Bulk Inventory Import"
@@ -3365,16 +3333,196 @@ function InventoryPanel({
   );
 }
 
+function InventoryKpiCard({
+  label,
+  value,
+  detail,
+  tone = "neutral"
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "neutral" | "good" | "watch" | "bad";
+}) {
+  return (
+    <article className={`inventory-kpi-card ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function PurchaseFlow({ busy, busyLabel, submit }: { busy: boolean; busyLabel: string | null; submit: SubmitHandler }) {
+  const [quantity, setQuantity] = useState(1);
+  const [price, setPrice] = useState(0);
+  const [extraCost, setExtraCost] = useState(0);
+  const totalCost = quantity * price + extraCost;
+  return (
+    <section className="inventory-flow-panel">
+      <PanelHeader title="Add Purchase" />
+      <form
+        className="purchase-flow"
+        onSubmit={(event) =>
+          submit(
+            event,
+            "Adding inventory item",
+            (form) => requestJson("/api/radar/inventory", { method: "POST", body: JSON.stringify(formJson(form)) }),
+            { reset: true, success: "Purchase added" }
+          )
+        }
+      >
+        <input name="itemType" type="hidden" value="product" />
+        <input name="totalCost" type="hidden" value={totalCost.toFixed(2)} />
+        <article className="flow-step">
+          <span>Step 1</span>
+          <h3>What did you buy?</h3>
+          <div className="form-grid compact">
+            <TextInput name="itemName" label="Product/card name" required />
+            <SelectInput name="category" label="Category" options={inventoryCategories.map(optionFromString)} />
+            <TextInput name="setName" label="Set" />
+            <TextInput
+              name="quantity"
+              label="Quantity"
+              type="number"
+              min="1"
+              value={String(quantity)}
+              onChange={(event) => setQuantity(Math.max(1, Number(event.currentTarget.value) || 1))}
+              required
+            />
+          </div>
+        </article>
+        <article className="flow-step">
+          <span>Step 2</span>
+          <h3>What did it cost?</h3>
+          <div className="form-grid compact">
+            <TextInput
+              name="cost"
+              label="Price paid per item"
+              type="number"
+              min="0"
+              step="0.01"
+              value={String(price)}
+              onChange={(event) => setPrice(Math.max(0, Number(event.currentTarget.value) || 0))}
+              required
+            />
+            <TextInput
+              name="purchaseExtraCost"
+              label="Tax/shipping"
+              type="number"
+              min="0"
+              step="0.01"
+              value={String(extraCost)}
+              onChange={(event) => setExtraCost(Math.max(0, Number(event.currentTarget.value) || 0))}
+            />
+            <TextInput name="source" label="Store/source" placeholder="Target Hialeah, eBay, friend" required />
+            <TextInput name="purchasedAt" label="Purchase date" type="date" defaultValue={todayDateInput()} required />
+          </div>
+          <div className="total-preview">
+            <span>Total cost</span>
+            <strong>{money(totalCost)}</strong>
+          </div>
+        </article>
+        <article className="flow-step">
+          <span>Step 3</span>
+          <h3>Add proof/image</h3>
+          <div className="form-grid compact">
+            <ImageUploadInput />
+            <TextInput name="receiptNumber" label="Receipt/order number" />
+          </div>
+        </article>
+        <article className="flow-step">
+          <span>Step 4</span>
+          <h3>Plan</h3>
+          <div className="form-grid compact">
+            <SelectInput name="expectedPlan" label="Plan" options={inventoryPlanOptions} />
+            <TextInput name="targetSellPrice" label="Target sell price" type="number" min="0" step="0.01" />
+          </div>
+        </article>
+        <details className="inventory-advanced-details">
+          <summary>Advanced details</summary>
+          <div className="form-grid compact">
+            <TextInput name="retailer" label="Retailer" />
+            <TextInput name="exactProductUrl" label="Exact product URL" type="url" />
+            <TextInput name="upc" label="UPC" />
+            <TextInput name="sku" label="SKU / TCIN" />
+            <TextInput name="dpci" label="DPCI" />
+            <TextInput name="asin" label="ASIN" />
+            <TextInput name="condition" label="Condition" placeholder="Mint box, clean corners, raw NM" />
+            <SelectInput name="itemStatus" label="Status" defaultValue="sealed" options={inventoryStatuses.map(optionFromString)} />
+            <TextInput name="minimumAcceptablePrice" label="Minimum acceptable price" type="number" min="0" step="0.01" />
+            <TextInput name="currentMarketEstimate" label="Manual market estimate" type="number" min="0" step="0.01" />
+            <SelectInput name="listingStatus" label="Listing status" options={listingStatuses.map(optionFromString)} />
+            <TextInput name="listingPlatform" label="Listing platform" placeholder="eBay, Facebook, TCGPlayer" />
+            <TextareaInput name="notes" label="Notes" wide />
+          </div>
+        </details>
+        <button className="primary-action inventory-save-action" disabled={busy} type="submit">
+          <Save size={16} />
+          {busyLabel === "Adding inventory item" ? "Saving" : "Save Purchase"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function InventoryFilters({
+  filters,
+  itemCount,
+  updateFilter
+}: {
+  filters: { search: string; category: string; source: string; recommendation: string; listingStatus: string; sort: string };
+  itemCount: number;
+  updateFilter: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+}) {
+  return (
+    <section className="form-panel inventory-filter-panel">
+      <div className="edit-card-heading">
+        <div>
+          <h2>Inventory List</h2>
+          <span>{itemCount} items shown</span>
+        </div>
+        <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
+          <Download size={14} />
+          Export CSV
+        </a>
+      </div>
+      <div className="inventory-filter-row">
+        <TextInput name="search" label="Search" value={filters.search} onChange={updateFilter} />
+        <SelectInput name="category" label="Category" value={filters.category} onChange={updateFilter} options={[{ value: "ALL", label: "All Categories" }, ...inventoryCategories.map(optionFromString)]} />
+        <TextInput name="source" label="Source" value={filters.source} onChange={updateFilter} />
+        <SelectInput name="recommendation" label="Recommendation" value={filters.recommendation} onChange={updateFilter} options={[{ value: "ALL", label: "All Recommendations" }, ...inventoryRecommendations.map(optionFromString)]} />
+        <SelectInput name="listingStatus" label="Status" value={filters.listingStatus} onChange={updateFilter} options={[{ value: "ALL", label: "All Statuses" }, ...listingStatuses.map(optionFromString)]} />
+        <SelectInput
+          name="sort"
+          label="Sort"
+          value={filters.sort}
+          onChange={updateFilter}
+          options={[
+            { value: "profit", label: "Profit" },
+            { value: "roi", label: "ROI" },
+            { value: "date", label: "Date purchased" },
+            { value: "quantity", label: "Quantity" },
+            { value: "market", label: "Market value" }
+          ]}
+        />
+      </div>
+    </section>
+  );
+}
+
 function InventoryList({
   items,
   busy,
   busyLabel,
-  runAction
+  runAction,
+  submit
 }: {
   items: InventoryItemDTO[];
   busy: boolean;
   busyLabel: string | null;
   runAction: ActionHandler;
+  submit: SubmitHandler;
 }) {
   if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
   return (
@@ -3385,13 +3533,14 @@ function InventoryList({
           <div className="inventory-main">
             <h3>{item.itemName}</h3>
             <p>
-              {formatStatus(item.category)} - {item.setName || "Set unknown"} - {item.quantity} @ {money(item.cost)}
+              {formatStatus(item.category)} - {item.setName || "Set unknown"}
             </p>
             <div className="monitor-meta">
-              <span>Cost {money(item.totalCost)}</span>
-              <span>Market {item.currentMarketEstimate === null ? "Market not collected yet" : money(item.currentMarketEstimate)}</span>
-              <span>Profit {item.estimatedNetProfit === null ? "TBD" : money(item.estimatedNetProfit)}</span>
-              <span>ROI {percent(item.roiPercent)}</span>
+              <span>Owned {item.quantityOwned}</span>
+              <span>Avg cost {money(item.averageCost)}</span>
+              <span>Market {item.currentMarketEstimate === null ? "Not collected" : money(item.currentMarketEstimate)}</span>
+              <span>Target {money(item.targetSellPrice)}</span>
+              <span>P/L {item.businessProfitLoss === null ? "TBD" : money(item.businessProfitLoss)}</span>
               <span>{formatStatus(item.listingStatus)}</span>
             </div>
           </div>
@@ -3425,11 +3574,24 @@ function InventoryList({
               <summary>Details</summary>
               <div>
                 <span>Purchased {shortDate(item.purchasedAt)} from {item.source}</span>
+                <span>Total spent {money(item.totalCost)} - sold {item.quantitySold} for {money(item.totalSalesGross)}</span>
+                <span>Receipt/order {item.receiptNumber || "Not saved"}</span>
                 <span>UPC {item.upc || "Missing"} SKU {item.sku || "Missing"} DPCI {item.dpci || "Missing"} ASIN {item.asin || "Missing"}</span>
                 <span>Target {money(item.targetSellPrice)} minimum {money(item.minimumAcceptablePrice)}</span>
-                <span>Sold {item.soldPrice === null ? "Not sold" : `${money(item.soldPrice)} on ${shortDate(item.soldAt)}`}</span>
+                <span>Realized P/L {money(item.realizedProfitLoss)} - ROI {percent(item.realizedRoiPercent)}</span>
                 <span>Last refreshed {item.marketLastRefreshedAt ? relativeTime(item.marketLastRefreshedAt) : "Market not collected yet"}</span>
               </div>
+              <RecordSaleForm item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
+              {item.sales.length ? (
+                <div className="inventory-comp-list">
+                  <strong>Sales history</strong>
+                  {item.sales.map((sale) => (
+                    <span key={sale.id}>
+                      {shortDate(sale.soldAt)} - {sale.quantitySold} sold on {formatStatus(sale.platform)} - net {money(sale.netSale)} - P/L {money(sale.profitLoss)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               {item.lastThreeComps.length ? (
                 <div className="inventory-comp-list">
                   <strong>Last 3 sold comps</strong>
@@ -3447,6 +3609,171 @@ function InventoryList({
         </article>
       ))}
     </div>
+  );
+}
+
+function RecordSaleForm({
+  item,
+  busy,
+  busyLabel,
+  submit
+}: {
+  item: InventoryItemDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const [quantity, setQuantity] = useState(Math.min(1, Math.max(0, item.quantityOwned)));
+  const [price, setPrice] = useState(item.targetSellPrice ?? item.currentMarketEstimate ?? 0);
+  const [fees, setFees] = useState(0);
+  const [shipping, setShipping] = useState(0);
+  const gross = quantity * price;
+  const net = gross - fees - shipping;
+  const costBasis = item.averageCost * quantity;
+  const profit = net - costBasis;
+  const roi = costBasis > 0 ? (profit / costBasis) * 100 : null;
+  return (
+    <form
+      className="record-sale-form"
+      onSubmit={(event) =>
+        submit(
+          event,
+          `Recording sale ${item.id}`,
+          (form) => requestJson(`/api/radar/inventory/${item.id}/sales`, { method: "POST", body: JSON.stringify(formJson(form)) }),
+          { reset: true, success: "Sale recorded" }
+        )
+      }
+    >
+      <h4>Record Sale</h4>
+      <div className="form-grid compact">
+        <TextInput
+          name="quantitySold"
+          label="Quantity sold"
+          type="number"
+          min="1"
+          max={item.quantityOwned}
+          value={String(quantity)}
+          onChange={(event) => setQuantity(Math.min(item.quantityOwned, Math.max(1, Number(event.currentTarget.value) || 1)))}
+          required
+        />
+        <TextInput
+          name="soldPricePerItem"
+          label="Sold price per item"
+          type="number"
+          min="0"
+          step="0.01"
+          value={String(price)}
+          onChange={(event) => setPrice(Math.max(0, Number(event.currentTarget.value) || 0))}
+          required
+        />
+        <SelectInput name="platform" label="Platform" options={salePlatforms.map(optionFromString)} />
+        <TextInput
+          name="fees"
+          label="Fees"
+          type="number"
+          min="0"
+          step="0.01"
+          value={String(fees)}
+          onChange={(event) => setFees(Math.max(0, Number(event.currentTarget.value) || 0))}
+        />
+        <TextInput
+          name="shippingCost"
+          label="Shipping"
+          type="number"
+          min="0"
+          step="0.01"
+          value={String(shipping)}
+          onChange={(event) => setShipping(Math.max(0, Number(event.currentTarget.value) || 0))}
+        />
+        <TextInput name="soldAt" label="Sold date" type="date" defaultValue={todayDateInput()} required />
+        <TextareaInput name="notes" label="Notes" wide />
+      </div>
+      <div className="sale-preview">
+        <span>Gross {money(gross)}</span>
+        <span>Net {money(net)}</span>
+        <span>Cost basis {money(costBasis)}</span>
+        <strong>P/L {money(profit)} ({percent(roi)})</strong>
+      </div>
+      <button className="mini-action solid" disabled={busy || item.quantityOwned <= 0} type="submit">
+        <Save size={14} />
+        {busyLabel === `Recording sale ${item.id}` ? "Saving" : "Record Sale"}
+      </button>
+    </form>
+  );
+}
+
+function SpendingLog({ items, summary }: { items: InventoryItemDTO[]; summary: DashboardDTO["inventorySummary"] }) {
+  const sorted = [...items].sort((a, b) => new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime());
+  return (
+    <section className="inventory-log-panel">
+      <div className="edit-card-heading">
+        <div>
+          <h2>Spending Log</h2>
+          <span>Week {money(summary.spendingThisWeek)} - month {money(summary.spendingThisMonth)} - all time {money(summary.totalSpent)}</span>
+        </div>
+        <a className="mini-action" href="/api/radar/inventory?format=spending-csv" target="_blank" rel="noreferrer">
+          <Download size={14} />
+          Export Spending
+        </a>
+      </div>
+      <div className="inventory-log-list">
+        {sorted.length ? (
+          sorted.map((item) => (
+            <article className="inventory-log-row" key={item.id}>
+              <span>{shortDate(item.purchasedAt)}</span>
+              <strong>{item.itemName}</strong>
+              <span>{item.source}</span>
+              <span>{item.quantity} x {money(item.cost)}</span>
+              <strong>{money(item.totalCost)}</strong>
+            </article>
+          ))
+        ) : (
+          <EmptyState icon={Trophy} title="No spending logged" detail="Add a purchase to start tracking spend." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SalesLog({ sales, summary }: { sales: InventorySaleDTO[]; summary: DashboardDTO["inventorySummary"] }) {
+  const sorted = [...sales].sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime());
+  return (
+    <section className="inventory-log-panel">
+      <div className="edit-card-heading">
+        <div>
+          <h2>Sales Log</h2>
+          <span>Week {money(summary.salesThisWeek)} - month {money(summary.salesThisMonth)} - all time {money(summary.totalSalesGross)}</span>
+        </div>
+        <a className="mini-action" href="/api/radar/inventory?format=sales-csv" target="_blank" rel="noreferrer">
+          <Download size={14} />
+          Export Sales
+        </a>
+      </div>
+      <div className="profit-platform-strip">
+        {summary.profitByPlatform.length ? (
+          summary.profitByPlatform.map((item) => (
+            <span key={item.platform}>{formatStatus(item.platform)} {money(item.profit)}</span>
+          ))
+        ) : (
+          <span>No platform profit yet</span>
+        )}
+      </div>
+      <div className="inventory-log-list">
+        {sorted.length ? (
+          sorted.map((sale) => (
+            <article className="inventory-log-row" key={sale.id}>
+              <span>{shortDate(sale.soldAt)}</span>
+              <strong>{sale.itemName}</strong>
+              <span>{sale.quantitySold} on {formatStatus(sale.platform)}</span>
+              <span>Net {money(sale.netSale)}</span>
+              <strong className={sale.profitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.profitLoss)}</strong>
+            </article>
+          ))
+        ) : (
+          <EmptyState icon={CircleDollarSign} title="No sales recorded" detail="Record a sale from an inventory row." />
+        )}
+      </div>
+    </section>
   );
 }
 

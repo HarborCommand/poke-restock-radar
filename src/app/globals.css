@@ -3412,8 +3412,197 @@ textarea {
   grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
 }
 
+.inventory-kpi-grid,
+.inventory-secondary-strip,
+.inventory-view-tabs,
+.purchase-flow,
+.inventory-filter-row,
+.inventory-log-panel,
+.inventory-log-list,
+.record-sale-form,
+.sale-preview,
+.profit-platform-strip {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.inventory-kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+}
+
+.inventory-kpi-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.16);
+}
+
+.inventory-kpi-card.good {
+  background: linear-gradient(145deg, rgba(56, 215, 125, 0.105), rgba(255, 255, 255, 0.03));
+}
+
+.inventory-kpi-card.watch {
+  background: linear-gradient(145deg, rgba(255, 205, 77, 0.105), rgba(255, 255, 255, 0.03));
+}
+
+.inventory-kpi-card.bad {
+  background: linear-gradient(145deg, rgba(255, 111, 97, 0.11), rgba(255, 255, 255, 0.03));
+}
+
+.inventory-kpi-card span,
+.flow-step > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.inventory-kpi-card strong {
+  color: var(--text);
+  font-size: clamp(1.45rem, 3vw, 2.1rem);
+  line-height: 1;
+}
+
+.inventory-kpi-card small,
+.inventory-secondary-strip span,
+.profit-platform-strip span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.inventory-secondary-strip,
+.profit-platform-strip {
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 10px;
+}
+
+.inventory-secondary-strip strong {
+  color: var(--text);
+}
+
+.inventory-view-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 5px;
+}
+
+.inventory-view-tabs button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.inventory-view-tabs button.active {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+}
+
 .inventory-add-panel {
   overflow: hidden;
+}
+
+.inventory-flow-panel,
+.inventory-log-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.028);
+  padding: 14px;
+}
+
+.purchase-flow {
+  grid-template-columns: 1fr;
+}
+
+.flow-step {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+}
+
+.flow-step h3,
+.record-sale-form h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.form-grid.compact {
+  gap: 10px;
+}
+
+.total-preview,
+.sale-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 14px;
+  background: rgba(56, 215, 125, 0.075);
+  padding: 10px;
+}
+
+.total-preview span,
+.sale-preview span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.total-preview strong,
+.sale-preview strong {
+  color: var(--text);
+}
+
+.inventory-advanced-details {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 12px;
+}
+
+.inventory-advanced-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 950;
+}
+
+.inventory-advanced-details[open] summary {
+  margin-bottom: 12px;
+}
+
+.inventory-save-action {
+  justify-content: center;
+}
+
+.inventory-filter-row {
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
 }
 
 .inventory-table {
@@ -3520,6 +3709,13 @@ textarea {
   padding-top: 10px;
 }
 
+.record-sale-form {
+  border: 1px solid rgba(56, 215, 125, 0.16);
+  border-radius: 14px;
+  background: rgba(56, 215, 125, 0.045);
+  padding: 12px;
+}
+
 .inventory-comp-list {
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.16);
@@ -3546,6 +3742,42 @@ textarea {
   width: 100%;
   min-width: 0;
   max-width: 100%;
+}
+
+.inventory-log-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.7fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.026);
+  padding: 10px;
+}
+
+.inventory-log-row span,
+.inventory-log-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+}
+
+.inventory-log-row span {
+  color: var(--muted);
+}
+
+.inventory-log-row strong {
+  color: var(--text);
+}
+
+.profit-good {
+  color: var(--green) !important;
+}
+
+.profit-bad {
+  color: var(--red) !important;
 }
 
 @keyframes spin {
@@ -4117,6 +4349,21 @@ textarea {
   .inventory-actions a.mini-action {
     width: 100%;
     justify-content: center;
+  }
+
+  .inventory-view-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-log-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .total-preview,
+  .sale-preview {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .data-card,

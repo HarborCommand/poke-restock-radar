@@ -870,6 +870,11 @@ test("inventory tracker and market recommendation engine exists", () => {
   const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
   for (const field of [
     "InventoryMarketComp",
+    "InventorySale",
+    "purchaseExtraCost",
+    "receiptNumber",
+    "quantitySold",
+    "profitLoss",
     "category",
     "setName",
     "targetSellPrice",
@@ -897,7 +902,10 @@ test("inventory tracker and market recommendation engine exists", () => {
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   for (const phrase of [
     "Inventory",
-    "Add Inventory Item",
+    "Add Purchase",
+    "Record Sale",
+    "Spending Log",
+    "Sales Log",
     "Manual Inventory Sold Comp",
     "Export CSV",
     "Refresh eBay",
@@ -910,6 +918,7 @@ test("inventory tracker and market recommendation engine exists", () => {
     join(root, "src", "app", "api", "radar", "inventory", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "import", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "comps", "route.ts"),
+    join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "sales", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "refresh-comps", "route.ts")
   ]) {

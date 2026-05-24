@@ -40,6 +40,7 @@ model User {
   acceptedInvites          FriendInvite[]            @relation("InviteAcceptedBy")
   auditLogs                AuditLog[]
   inventoryItems           InventoryItem[]
+  inventorySales           InventorySale[]
   dailyRecaps              DailyRecap[]
   savedFilterPresets       SavedFilterPreset[]
   storePreferences         UserStorePreference[]
@@ -565,9 +566,11 @@ model InventoryItem {
   cost                   Float
   quantity               Int                   @default(1)
   totalCost              Float?
+  purchaseExtraCost      Float?
   source                 String
   retailer               String?
   purchasedAt            DateTime
+  receiptNumber          String?
   exactProductUrl        String?
   upc                    String?
   sku                    String?
@@ -603,6 +606,7 @@ model InventoryItem {
   product                Product?              @relation(fields: [productId], references: [id], onDelete: SetNull)
   card                   Card?                 @relation(fields: [cardId], references: [id], onDelete: SetNull)
   marketComps            InventoryMarketComp[]
+  sales                  InventorySale[]
 
   @@index([userId])
   @@index([productId])
@@ -611,6 +615,32 @@ model InventoryItem {
   @@index([listingStatus])
   @@index([recommendedAction])
   @@index([purchasedAt])
+}
+
+model InventorySale {
+  id               String        @id @default(cuid())
+  inventoryItemId  String
+  userId           String?
+  quantitySold     Int
+  soldPricePerItem Float
+  grossSale        Float
+  platform         String
+  fees             Float         @default(0)
+  shippingCost     Float         @default(0)
+  netSale          Float
+  costBasis        Float
+  profitLoss       Float
+  roiPercent       Float?
+  soldAt           DateTime
+  notes            String?
+  createdAt        DateTime      @default(now())
+  inventoryItem    InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  user             User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([inventoryItemId])
+  @@index([userId])
+  @@index([platform])
+  @@index([soldAt])
 }
 
 model InventoryMarketComp {

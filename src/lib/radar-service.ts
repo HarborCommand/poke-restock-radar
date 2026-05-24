@@ -30,6 +30,7 @@ import type {
   InvestmentReportItemDTO,
   InventoryItemDTO,
   InventoryMarketCompDTO,
+  InventorySaleDTO,
   InventorySummaryDTO,
   DailyRecapDTO,
   MonitorAccuracyStatsDTO,
@@ -180,6 +181,9 @@ const inventoryItemInclude = {
   marketComps: {
     orderBy: { soldAt: "desc" as const },
     take: 3
+  },
+  sales: {
+    orderBy: { soldAt: "desc" as const }
   }
 } satisfies Prisma.InventoryItemInclude;
 
@@ -1257,8 +1261,43 @@ function inventoryMarketCompToDTO(comp: Prisma.InventoryMarketCompGetPayload<Rec
   };
 }
 
+function inventorySaleToDTO(
+  sale: Prisma.InventorySaleGetPayload<Record<string, never>>,
+  itemName = ""
+): InventorySaleDTO {
+  return {
+    id: sale.id,
+    inventoryItemId: sale.inventoryItemId,
+    itemName,
+    quantitySold: sale.quantitySold,
+    soldPricePerItem: sale.soldPricePerItem,
+    grossSale: sale.grossSale,
+    platform: sale.platform,
+    fees: sale.fees,
+    shippingCost: sale.shippingCost,
+    netSale: sale.netSale,
+    costBasis: sale.costBasis,
+    profitLoss: sale.profitLoss,
+    roiPercent: sale.roiPercent,
+    soldAt: sale.soldAt.toISOString(),
+    notes: sale.notes,
+    createdAt: sale.createdAt.toISOString()
+  };
+}
+
 function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: typeof inventoryItemInclude }>): InventoryItemDTO {
   const totalCost = item.totalCost ?? item.cost * item.quantity;
+  const quantitySold = item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+  const quantityOwned = Math.max(0, item.quantity - quantitySold);
+  const averageCost = item.quantity > 0 ? totalCost / item.quantity : item.cost;
+  const totalSalesGross = item.sales.reduce((sum, sale) => sum + sale.grossSale, 0);
+  const totalSalesNet = item.sales.reduce((sum, sale) => sum + sale.netSale, 0);
+  const realizedProfitLoss = item.sales.reduce((sum, sale) => sum + sale.profitLoss, 0);
+  const realizedRoiPercent = item.sales.reduce((sum, sale) => sum + sale.costBasis, 0);
+  const unrealizedProfit =
+    item.currentMarketEstimate === null || item.currentMarketEstimate === undefined
+      ? null
+      : item.currentMarketEstimate * quantityOwned - averageCost * quantityOwned;
   return {
     id: item.id,
     itemType: item.itemType,
@@ -1269,10 +1308,15 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     cardId: item.cardId,
     cost: item.cost,
     quantity: item.quantity,
+    quantityOwned,
+    quantitySold,
+    averageCost,
     totalCost,
+    purchaseExtraCost: item.purchaseExtraCost,
     source: item.source,
     retailer: item.retailer,
     purchasedAt: item.purchasedAt.toISOString(),
+    receiptNumber: item.receiptNumber,
     exactProductUrl: item.exactProductUrl,
     upc: item.upc,
     sku: item.sku,
@@ -1300,7 +1344,13 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     recommendedAction: item.recommendedAction,
     recommendationReason: item.recommendationReason,
     netProfitAfterFees: item.netProfitAfterFees,
+    totalSalesGross,
+    totalSalesNet,
+    realizedProfitLoss,
+    realizedRoiPercent: realizedRoiPercent > 0 ? (realizedProfitLoss / realizedRoiPercent) * 100 : null,
+    businessProfitLoss: unrealizedProfit === null ? realizedProfitLoss : realizedProfitLoss + unrealizedProfit,
     lastThreeComps: item.marketComps.map(inventoryMarketCompToDTO),
+    sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName)),
     expectedPlan: item.expectedPlan,
     notes: item.notes,
     createdAt: item.createdAt.toISOString(),
@@ -1309,18 +1359,52 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
 }
 
 function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - now.getDay());
+  weekStart.setHours(0, 0, 0, 0);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const allSales = items.flatMap((item) => item.sales);
   const totalCost = items.reduce((sum, item) => sum + item.totalCost, 0);
-  const estimatedMarketValue = items.reduce((sum, item) => sum + (item.currentMarketEstimate ?? 0) * item.quantity, 0);
-  const estimatedProfit = items.reduce((sum, item) => sum + (item.estimatedNetProfit ?? 0), 0);
+  const currentInventoryValue = items.reduce((sum, item) => sum + (item.currentMarketEstimate ?? 0) * item.quantityOwned, 0);
+  const totalSalesGross = allSales.reduce((sum, sale) => sum + sale.grossSale, 0);
+  const totalSalesNet = allSales.reduce((sum, sale) => sum + sale.netSale, 0);
+  const realizedProfitLoss = allSales.reduce((sum, sale) => sum + sale.profitLoss, 0);
+  const estimatedProfit = items.reduce((sum, item) => sum + (item.businessProfitLoss ?? item.estimatedNetProfit ?? 0), 0);
+  const netProfitLoss = totalSalesNet + currentInventoryValue - totalCost;
   const quantityByCategoryMap = new Map<string, number>();
-  for (const item of items) quantityByCategoryMap.set(item.category, (quantityByCategoryMap.get(item.category) ?? 0) + item.quantity);
-  const withProfit = items.filter((item) => item.estimatedNetProfit !== null);
-  const sortedByProfit = [...withProfit].sort((a, b) => (b.estimatedNetProfit ?? 0) - (a.estimatedNetProfit ?? 0));
+  const profitByPlatformMap = new Map<string, { profit: number; sales: number }>();
+  for (const item of items) quantityByCategoryMap.set(item.category, (quantityByCategoryMap.get(item.category) ?? 0) + item.quantityOwned);
+  for (const sale of allSales) {
+    const platform = sale.platform || "other";
+    const current = profitByPlatformMap.get(platform) ?? { profit: 0, sales: 0 };
+    current.profit += sale.profitLoss;
+    current.sales += sale.grossSale;
+    profitByPlatformMap.set(platform, current);
+  }
+  const withProfit = items.filter((item) => item.businessProfitLoss !== null || item.estimatedNetProfit !== null);
+  const sortedByProfit = [...withProfit].sort(
+    (a, b) => (b.businessProfitLoss ?? b.estimatedNetProfit ?? 0) - (a.businessProfitLoss ?? a.estimatedNetProfit ?? 0)
+  );
+  const isAfter = (date: string, cutoff: Date) => new Date(date).getTime() >= cutoff.getTime();
   return {
+    totalSpent: totalCost,
     totalCost,
-    estimatedMarketValue,
+    currentInventoryValue,
+    estimatedMarketValue: currentInventoryValue,
+    totalSalesGross,
+    totalSalesNet,
     estimatedProfit,
-    totalRoiPercent: totalCost > 0 ? (estimatedProfit / totalCost) * 100 : null,
+    realizedProfitLoss,
+    netProfitLoss,
+    totalRoiPercent: totalCost > 0 ? (netProfitLoss / totalCost) * 100 : null,
+    itemsOwned: items.reduce((sum, item) => sum + item.quantityOwned, 0),
+    itemsSold: allSales.reduce((sum, sale) => sum + sale.quantitySold, 0),
+    spendingThisWeek: items.filter((item) => isAfter(item.purchasedAt, weekStart)).reduce((sum, item) => sum + item.totalCost, 0),
+    spendingThisMonth: items.filter((item) => isAfter(item.purchasedAt, monthStart)).reduce((sum, item) => sum + item.totalCost, 0),
+    salesThisWeek: allSales.filter((sale) => isAfter(sale.soldAt, weekStart)).reduce((sum, sale) => sum + sale.grossSale, 0),
+    salesThisMonth: allSales.filter((sale) => isAfter(sale.soldAt, monthStart)).reduce((sum, sale) => sum + sale.grossSale, 0),
+    profitByPlatform: [...profitByPlatformMap.entries()].map(([platform, values]) => ({ platform, ...values })),
     quantityByCategory: [...quantityByCategoryMap.entries()].map(([category, quantity]) => ({ category, quantity })),
     bestItem: sortedByProfit[0] ?? null,
     worstItem: sortedByProfit.at(-1) ?? null,
@@ -2681,6 +2765,8 @@ function inventoryMarketRecommendation(
     itemStatus?: string | null;
     cost: number;
     quantity: number;
+    totalCost?: number | null;
+    purchaseExtraCost?: number | null;
     currentMarketEstimate?: number | null;
     soldPrice?: number | null;
     estimatedEbayFee?: number | null;
@@ -2694,7 +2780,7 @@ function inventoryMarketRecommendation(
   },
   settings: { ebaySellingFee: number; shippingCost: number; minimumProfitTarget: number }
 ) {
-  const totalCost = input.cost * input.quantity;
+  const totalCost = input.totalCost ?? input.cost * input.quantity + (input.purchaseExtraCost ?? 0);
   const marketPrice = input.soldPrice ?? input.currentMarketEstimate ?? null;
   const gross = marketPrice === null ? null : marketPrice * input.quantity;
   const estimatedEbayFee = gross === null ? input.estimatedEbayFee ?? null : gross * settings.ebaySellingFee;
@@ -2755,6 +2841,8 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
       itemStatus: item.itemStatus,
       cost: item.cost,
       quantity: item.quantity,
+      totalCost: item.totalCost,
+      purchaseExtraCost: item.purchaseExtraCost,
       currentMarketEstimate,
       soldPrice: item.soldPrice,
       estimatedEbayFee: item.estimatedEbayFee,
@@ -2766,7 +2854,7 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
   const updated = await prisma.inventoryItem.update({
     where: { id: itemId },
     data: {
-      totalCost: item.cost * item.quantity,
+      totalCost: item.totalCost ?? item.cost * item.quantity + (item.purchaseExtraCost ?? 0),
       currentMarketEstimate,
       marketAverageSalePrice: currentMarketEstimate,
       marketCompCount: item.marketComps.length,
@@ -2791,9 +2879,11 @@ export async function createInventoryItem(
     cost: number;
     quantity: number;
     totalCost?: number;
+    purchaseExtraCost?: number;
     source: string;
     retailer?: string;
     purchasedAt: Date;
+    receiptNumber?: string;
     exactProductUrl?: string;
     upc?: string;
     sku?: string;
@@ -2829,10 +2919,12 @@ export async function createInventoryItem(
       cardId: input.cardId,
       cost: input.cost,
       quantity: input.quantity,
-      totalCost: input.totalCost ?? input.cost * input.quantity,
+      totalCost: input.totalCost ?? input.cost * input.quantity + (input.purchaseExtraCost ?? 0),
+      purchaseExtraCost: input.purchaseExtraCost,
       source: input.source,
       retailer: input.retailer,
       purchasedAt: input.purchasedAt,
+      receiptNumber: input.receiptNumber,
       exactProductUrl: input.exactProductUrl,
       upc: input.upc,
       sku: input.sku,
@@ -2924,10 +3016,15 @@ export async function updateInventoryItem(
       cardId: input.cardId,
       cost: input.cost,
       quantity: input.quantity,
-      totalCost: input.cost !== undefined || input.quantity !== undefined ? (input.cost ?? existing.cost) * (input.quantity ?? existing.quantity) : undefined,
+      totalCost:
+        input.cost !== undefined || input.quantity !== undefined || input.purchaseExtraCost !== undefined
+          ? (input.cost ?? existing.cost) * (input.quantity ?? existing.quantity) + (input.purchaseExtraCost ?? existing.purchaseExtraCost ?? 0)
+          : undefined,
+      purchaseExtraCost: input.purchaseExtraCost,
       source: input.source,
       retailer: input.retailer,
       purchasedAt: input.purchasedAt,
+      receiptNumber: input.receiptNumber,
       exactProductUrl: input.exactProductUrl,
       upc: input.upc,
       sku: input.sku,
@@ -2984,6 +3081,70 @@ export async function createInventoryMarketComp(
     }
   });
   return recomputeInventoryItem(input.inventoryItemId, currentUser);
+}
+
+export async function createInventorySale(
+  currentUser: SessionUser,
+  itemId: string,
+  input: {
+    quantitySold: number;
+    soldPricePerItem: number;
+    platform: string;
+    fees?: number;
+    shippingCost?: number;
+    soldAt: Date;
+    notes?: string;
+  }
+) {
+  const item = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: inventoryItemInclude
+  });
+  if (!item) throw new Error("Inventory item not found");
+  const soldSoFar = item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+  const quantityOwned = Math.max(0, item.quantity - soldSoFar);
+  if (input.quantitySold > quantityOwned) {
+    throw new Error(`Only ${quantityOwned} available to sell.`);
+  }
+  const totalCost = item.totalCost ?? item.cost * item.quantity + (item.purchaseExtraCost ?? 0);
+  const averageCost = item.quantity > 0 ? totalCost / item.quantity : item.cost;
+  const grossSale = input.quantitySold * input.soldPricePerItem;
+  const fees = input.fees ?? 0;
+  const shippingCost = input.shippingCost ?? 0;
+  const netSale = grossSale - fees - shippingCost;
+  const costBasis = averageCost * input.quantitySold;
+  const profitLoss = netSale - costBasis;
+  const roiPercent = costBasis > 0 ? (profitLoss / costBasis) * 100 : null;
+  const sale = await prisma.inventorySale.create({
+    data: {
+      inventoryItemId: item.id,
+      userId: currentUser.id,
+      quantitySold: input.quantitySold,
+      soldPricePerItem: input.soldPricePerItem,
+      grossSale,
+      platform: input.platform,
+      fees,
+      shippingCost,
+      netSale,
+      costBasis,
+      profitLoss,
+      roiPercent,
+      soldAt: input.soldAt,
+      notes: input.notes
+    }
+  });
+  const totalSold = soldSoFar + input.quantitySold;
+  await prisma.inventoryItem.update({
+    where: { id: item.id },
+    data: {
+      listingStatus: totalSold >= item.quantity ? "sold" : item.listingStatus === "not_listed" ? "held" : item.listingStatus,
+      soldPrice: input.soldPricePerItem,
+      soldAt: input.soldAt,
+      buyerPlatform: input.platform,
+      netProfitAfterFees: item.sales.reduce((sum, existingSale) => sum + existingSale.profitLoss, 0) + sale.profitLoss
+    }
+  });
+  return recomputeInventoryItem(item.id, currentUser);
 }
 
 export async function refreshInventoryEbayComps(currentUser: SessionUser, itemId: string) {
@@ -4667,6 +4828,7 @@ async function clearRadarData(includeUsers: boolean) {
   await prisma.savedFilterPreset.deleteMany();
   await prisma.dailyRecap.deleteMany();
   await prisma.inventoryMarketComp.deleteMany();
+  await prisma.inventorySale.deleteMany();
   await prisma.inventoryItem.deleteMany();
   await prisma.cardCompSale.deleteMany();
   await prisma.cardPriceSnapshot.deleteMany();
@@ -5045,6 +5207,7 @@ export async function exportBackup() {
       auditLogs: await prisma.auditLog.findMany(),
       storePreferences: await prisma.userStorePreference.findMany(),
       inventoryItems: await prisma.inventoryItem.findMany(),
+      inventorySales: await prisma.inventorySale.findMany(),
       inventoryMarketComps: await prisma.inventoryMarketComp.findMany(),
       dailyRecaps: await prisma.dailyRecap.findMany(),
       savedFilterPresets: await prisma.savedFilterPreset.findMany()
@@ -5484,9 +5647,11 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       cost: Number(row.cost),
       quantity: row.quantity === undefined ? 1 : Number(row.quantity),
       totalCost: row.totalCost === null || row.totalCost === undefined ? null : Number(row.totalCost),
+      purchaseExtraCost: row.purchaseExtraCost === null || row.purchaseExtraCost === undefined ? null : Number(row.purchaseExtraCost),
       source: String(row.source),
       retailer: row.retailer ? String(row.retailer) : null,
       purchasedAt: toDate(row.purchasedAt),
+      receiptNumber: row.receiptNumber ? String(row.receiptNumber) : null,
       exactProductUrl: row.exactProductUrl ? String(row.exactProductUrl) : null,
       upc: row.upc ? String(row.upc) : null,
       sku: row.sku ? String(row.sku) : null,
@@ -5523,6 +5688,26 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       notes: row.notes ? String(row.notes) : null,
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.inventorySale.createMany({
+    data: rows(tables, "inventorySales").map((row) => ({
+      id: String(row.id),
+      inventoryItemId: String(row.inventoryItemId),
+      userId: row.userId ? String(row.userId) : null,
+      quantitySold: Number(row.quantitySold),
+      soldPricePerItem: Number(row.soldPricePerItem),
+      grossSale: Number(row.grossSale),
+      platform: String(row.platform),
+      fees: row.fees === undefined ? 0 : Number(row.fees),
+      shippingCost: row.shippingCost === undefined ? 0 : Number(row.shippingCost),
+      netSale: Number(row.netSale),
+      costBasis: Number(row.costBasis),
+      profitLoss: Number(row.profitLoss),
+      roiPercent: row.roiPercent === null || row.roiPercent === undefined ? null : Number(row.roiPercent),
+      soldAt: toDate(row.soldAt),
+      notes: row.notes ? String(row.notes) : null,
+      createdAt: toDate(row.createdAt)
     }))
   });
   await prisma.inventoryMarketComp.createMany({
