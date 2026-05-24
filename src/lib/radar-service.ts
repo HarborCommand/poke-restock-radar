@@ -1320,6 +1320,11 @@ function inventoryStockLotToDTO(lot: Prisma.InventoryStockLotGetPayload<Record<s
     remainingQuantity: lot.remainingQuantity,
     notes: lot.notes,
     receiptNumber: lot.receiptNumber,
+    receiptImageUrl: lot.receiptImageUrl,
+    orderNumber: lot.orderNumber,
+    transactionId: lot.transactionId,
+    sourceStore: lot.sourceStore,
+    paymentMethod: lot.paymentMethod,
     createdAt: lot.createdAt.toISOString()
   };
 }
@@ -1417,6 +1422,11 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     retailer: item.retailer,
     purchasedAt: item.purchasedAt.toISOString(),
     receiptNumber: item.receiptNumber,
+    receiptImageUrl: item.receiptImageUrl,
+    orderNumber: item.orderNumber,
+    transactionId: item.transactionId,
+    sourceStore: item.sourceStore,
+    paymentMethod: item.paymentMethod,
     exactProductUrl: item.exactProductUrl,
     upc: item.upc,
     sku: item.sku,
@@ -3304,6 +3314,11 @@ export async function createInventoryItem(
     retailer?: string;
     purchasedAt: Date;
     receiptNumber?: string;
+    receiptImageUrl?: string;
+    orderNumber?: string;
+    transactionId?: string;
+    sourceStore?: string;
+    paymentMethod?: string;
     exactProductUrl?: string;
     upc?: string;
     sku?: string;
@@ -3361,6 +3376,11 @@ export async function createInventoryItem(
       retailer: linkedInput.retailer,
       purchasedAt: linkedInput.purchasedAt,
       receiptNumber: linkedInput.receiptNumber,
+      receiptImageUrl: linkedInput.receiptImageUrl,
+      orderNumber: linkedInput.orderNumber,
+      transactionId: linkedInput.transactionId,
+      sourceStore: linkedInput.sourceStore,
+      paymentMethod: linkedInput.paymentMethod,
       exactProductUrl: linkedInput.exactProductUrl,
       upc: linkedInput.upc,
       sku: linkedInput.sku,
@@ -3404,7 +3424,12 @@ export async function createInventoryItem(
       totalCost,
       remainingQuantity: linkedInput.quantity,
       notes: linkedInput.notes,
-      receiptNumber: linkedInput.receiptNumber
+      receiptNumber: linkedInput.receiptNumber,
+      receiptImageUrl: linkedInput.receiptImageUrl,
+      orderNumber: linkedInput.orderNumber,
+      transactionId: linkedInput.transactionId,
+      sourceStore: linkedInput.sourceStore,
+      paymentMethod: linkedInput.paymentMethod
     }
   });
   return recomputeInventoryItem(item.id, currentUser);
@@ -3421,6 +3446,11 @@ export async function addInventoryStockLot(
     source: string;
     purchasedAt: Date;
     receiptNumber?: string;
+    receiptImageUrl?: string;
+    orderNumber?: string;
+    transactionId?: string;
+    sourceStore?: string;
+    paymentMethod?: string;
     notes?: string;
     imageUrl?: string;
     targetSellPrice?: number;
@@ -3444,7 +3474,12 @@ export async function addInventoryStockLot(
       totalCost: lotTotal,
       remainingQuantity: input.quantity,
       notes: input.notes,
-      receiptNumber: input.receiptNumber
+      receiptNumber: input.receiptNumber,
+      receiptImageUrl: input.receiptImageUrl,
+      orderNumber: input.orderNumber,
+      transactionId: input.transactionId,
+      sourceStore: input.sourceStore,
+      paymentMethod: input.paymentMethod
     }
   });
   const nextQuantity = item.quantity + input.quantity;
@@ -3459,6 +3494,11 @@ export async function addInventoryStockLot(
       source: input.source,
       purchasedAt: input.purchasedAt,
       receiptNumber: input.receiptNumber ?? item.receiptNumber,
+      receiptImageUrl: input.receiptImageUrl ?? item.receiptImageUrl,
+      orderNumber: input.orderNumber ?? item.orderNumber,
+      transactionId: input.transactionId ?? item.transactionId,
+      sourceStore: input.sourceStore ?? item.sourceStore,
+      paymentMethod: input.paymentMethod ?? item.paymentMethod,
       imageUrl: input.imageUrl ?? item.imageUrl,
       targetSellPrice: input.targetSellPrice ?? item.targetSellPrice,
       currentMarketEstimate: input.currentMarketEstimate ?? item.currentMarketEstimate
@@ -3536,6 +3576,11 @@ export async function updateInventoryItem(
       retailer: input.retailer,
       purchasedAt: input.purchasedAt,
       receiptNumber: input.receiptNumber,
+      receiptImageUrl: input.receiptImageUrl,
+      orderNumber: input.orderNumber,
+      transactionId: input.transactionId,
+      sourceStore: input.sourceStore,
+      paymentMethod: input.paymentMethod,
       exactProductUrl: input.exactProductUrl,
       upc: input.upc,
       sku: input.sku,
@@ -3712,6 +3757,31 @@ export async function refreshInventoryEbayComps(currentUser: SessionUser, itemId
   });
   const updated = await recomputeInventoryItem(item.id, currentUser);
   return { mode: result.mode, message: result.message, item: updated };
+}
+
+export async function refreshAllInventoryMarketComps(currentUser: SessionUser) {
+  const items = await prisma.inventoryItem.findMany({
+    where: { OR: [{ userId: null }, { userId: currentUser.id }] },
+    select: { id: true },
+    orderBy: { updatedAt: "desc" },
+    take: 50
+  });
+  const refreshed: InventoryItemDTO[] = [];
+  let manualMode = false;
+  for (const item of items) {
+    const result = await refreshInventoryEbayComps(currentUser, item.id);
+    if (result.mode === "manual") manualMode = true;
+    refreshed.push(result.item);
+    if (result.mode === "manual") break;
+  }
+  return {
+    mode: manualMode ? "manual" : ebayMode(),
+    refreshedCount: refreshed.length,
+    message: manualMode
+      ? "Manual comp mode is active. Add manual comps or configure eBay credentials."
+      : `${refreshed.length} inventory product${refreshed.length === 1 ? "" : "s"} refreshed from eBay sold comps.`,
+    items: refreshed
+  };
 }
 
 export async function controlProductMonitor(
@@ -6190,6 +6260,11 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       retailer: row.retailer ? String(row.retailer) : null,
       purchasedAt: toDate(row.purchasedAt),
       receiptNumber: row.receiptNumber ? String(row.receiptNumber) : null,
+      receiptImageUrl: row.receiptImageUrl ? String(row.receiptImageUrl) : null,
+      orderNumber: row.orderNumber ? String(row.orderNumber) : null,
+      transactionId: row.transactionId ? String(row.transactionId) : null,
+      sourceStore: row.sourceStore ? String(row.sourceStore) : null,
+      paymentMethod: row.paymentMethod ? String(row.paymentMethod) : null,
       exactProductUrl: row.exactProductUrl ? String(row.exactProductUrl) : null,
       upc: row.upc ? String(row.upc) : null,
       sku: row.sku ? String(row.sku) : null,
@@ -6241,6 +6316,11 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       remainingQuantity: Number(row.remainingQuantity),
       notes: row.notes ? String(row.notes) : null,
       receiptNumber: row.receiptNumber ? String(row.receiptNumber) : null,
+      receiptImageUrl: row.receiptImageUrl ? String(row.receiptImageUrl) : null,
+      orderNumber: row.orderNumber ? String(row.orderNumber) : null,
+      transactionId: row.transactionId ? String(row.transactionId) : null,
+      sourceStore: row.sourceStore ? String(row.sourceStore) : null,
+      paymentMethod: row.paymentMethod ? String(row.paymentMethod) : null,
       createdAt: toDate(row.createdAt)
     }))
   });

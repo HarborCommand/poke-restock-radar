@@ -4884,6 +4884,15 @@ textarea {
   font-weight: 950;
 }
 
+.catalog-cell small {
+  display: block;
+  margin-top: 2px;
+  color: var(--subtle);
+  font-size: 0.66rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
 .catalog-actions {
   display: flex;
   align-items: center;

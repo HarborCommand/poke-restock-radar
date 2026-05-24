@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const dashboard = await listDashboard(user);
   const format = new URL(request.url).searchParams.get("format");
   if (format === "spending-csv") {
-    const headers = ["purchaseDate", "itemName", "category", "quantity", "pricePaidPerItem", "taxShipping", "totalCost", "source", "retailer", "receiptNumber"];
+    const headers = ["purchaseDate", "itemName", "category", "quantity", "pricePaidPerItem", "taxShipping", "totalCost", "source", "sourceStore", "retailer", "receiptNumber", "orderNumber", "transactionId", "paymentMethod", "receiptImageAttached"];
     const rows = dashboard.inventory.map((item) =>
       [
         item.purchasedAt,
@@ -29,8 +29,13 @@ export async function GET(request: Request) {
         item.purchaseExtraCost,
         item.totalCost,
         item.source,
+        item.sourceStore,
         item.retailer,
-        item.receiptNumber
+        item.receiptNumber,
+        item.orderNumber,
+        item.transactionId,
+        item.paymentMethod,
+        Boolean(item.receiptImageUrl)
       ]
         .map(csvCell)
         .join(",")
@@ -83,6 +88,11 @@ export async function GET(request: Request) {
       "totalCost",
       "remainingQuantity",
       "receiptNumber",
+      "orderNumber",
+      "transactionId",
+      "sourceStore",
+      "paymentMethod",
+      "receiptImageAttached",
       "notes"
     ];
     const rows = dashboard.inventory.flatMap((item) =>
@@ -98,6 +108,11 @@ export async function GET(request: Request) {
           lot.totalCost,
           lot.remainingQuantity,
           lot.receiptNumber,
+          lot.orderNumber,
+          lot.transactionId,
+          lot.sourceStore,
+          lot.paymentMethod,
+          Boolean(lot.receiptImageUrl),
           lot.notes
         ]
           .map(csvCell)
@@ -111,7 +126,61 @@ export async function GET(request: Request) {
       }
     });
   }
-  if (format === "csv") {
+  if (format === "profit-loss-summary-csv") {
+    const headers = [
+      "itemName",
+      "quantityOwned",
+      "quantitySold",
+      "totalCostBasis",
+      "marketEstimatePerUnit",
+      "grossMarketValue",
+      "estimatedFees",
+      "estimatedShipping",
+      "netMarketValue",
+      "marketProfitLoss",
+      "marketRoiPercent",
+      "totalSalesGross",
+      "totalSalesNet",
+      "realizedProfitLoss",
+      "businessProfitLoss",
+      "recommendation",
+      "marketConfidence",
+      "marketCompCount",
+      "lastRefreshed"
+    ];
+    const rows = dashboard.inventory.map((item) =>
+      [
+        item.itemName,
+        item.quantityOwned,
+        item.quantitySold,
+        item.averageCost * item.quantityOwned,
+        item.currentMarketEstimate,
+        item.grossMarketValue,
+        item.estimatedEbayFee,
+        item.estimatedShippingCost,
+        item.netMarketValue,
+        item.marketProfitLoss,
+        item.marketRoiPercent,
+        item.totalSalesGross,
+        item.totalSalesNet,
+        item.realizedProfitLoss,
+        item.businessProfitLoss,
+        item.recommendedAction,
+        item.marketConfidence,
+        item.marketCompCount,
+        item.marketLastRefreshedAt
+      ]
+        .map(csvCell)
+        .join(",")
+    );
+    return new Response([headers.join(","), ...rows].join("\n"), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": "attachment; filename=poke-restock-profit-loss-summary.csv"
+      }
+    });
+  }
+  if (format === "csv" || format === "product-catalog-csv") {
     const headers = [
       "itemName",
       "category",
@@ -120,8 +189,14 @@ export async function GET(request: Request) {
       "purchasePricePerUnit",
       "totalCost",
       "source",
+      "sourceStore",
       "retailer",
       "purchaseDate",
+      "receiptNumber",
+      "orderNumber",
+      "transactionId",
+      "paymentMethod",
+      "receiptImageAttached",
       "targetSellPrice",
       "currentMarketEstimate",
       "marketCompCount",
@@ -146,8 +221,14 @@ export async function GET(request: Request) {
         item.cost,
         item.totalCost,
         item.source,
+        item.sourceStore,
         item.retailer,
         item.purchasedAt,
+        item.receiptNumber,
+        item.orderNumber,
+        item.transactionId,
+        item.paymentMethod,
+        Boolean(item.receiptImageUrl),
         item.targetSellPrice,
         item.currentMarketEstimate,
         item.marketCompCount,

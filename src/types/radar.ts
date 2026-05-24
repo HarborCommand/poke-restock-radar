@@ -115,6 +115,11 @@ export type InventoryItemDTO = {
   retailer: string | null;
   purchasedAt: string;
   receiptNumber: string | null;
+  receiptImageUrl: string | null;
+  orderNumber: string | null;
+  transactionId: string | null;
+  sourceStore: string | null;
+  paymentMethod: string | null;
   exactProductUrl: string | null;
   upc: string | null;
   sku: string | null;
@@ -172,6 +177,11 @@ export type InventoryStockLotDTO = {
   remainingQuantity: number;
   notes: string | null;
   receiptNumber: string | null;
+  receiptImageUrl: string | null;
+  orderNumber: string | null;
+  transactionId: string | null;
+  sourceStore: string | null;
+  paymentMethod: string | null;
   createdAt: string;
 };
 

@@ -2623,18 +2623,28 @@ function InventoryImage({ item }: { item: InventoryItemDTO }) {
   );
 }
 
-function ImageUploadInput({ defaultValue = "" }: { defaultValue?: string }) {
+function ImageUploadInput({
+  defaultValue = "",
+  fieldName = "imageUrl",
+  label = "Product image",
+  placeholder = "Paste verified product image URL"
+}: {
+  defaultValue?: string;
+  fieldName?: string;
+  label?: string;
+  placeholder?: string;
+}) {
   const [value, setValue] = useState(defaultValue);
   const isUploadedImage = value.startsWith("data:");
   return (
     <label className="image-upload-field">
-      Product image
-      <input name="imageUrl" type="hidden" value={value} />
+      {label}
+      <input name={fieldName} type="hidden" value={value} />
       <input
         type="url"
         value={isUploadedImage ? "" : value}
         onChange={(event) => setValue(event.currentTarget.value)}
-        placeholder="Paste verified product image URL"
+        placeholder={placeholder}
       />
       <input
         type="file"
@@ -3337,16 +3347,35 @@ function InventoryPanel({
     source: "",
     recommendation: "ALL",
     listingStatus: "ALL",
+    dataQuality: "ALL",
     sort: "profit"
   });
+  const scannedUpcs = useMemo(
+    () => new Set(dashboard.barcodeScans.map((scan) => scan.upc).filter(Boolean)),
+    [dashboard.barcodeScans]
+  );
   const visibleItems = useMemo(() => {
     const search = filters.search.toLowerCase().trim();
     return dashboard.inventory
       .filter((item) => !search || item.itemName.toLowerCase().includes(search) || (item.setName || "").toLowerCase().includes(search))
       .filter((item) => filters.category === "ALL" || item.category === filters.category)
-      .filter((item) => !filters.source || item.source.toLowerCase().includes(filters.source.toLowerCase()))
+      .filter(
+        (item) =>
+          !filters.source ||
+          item.source.toLowerCase().includes(filters.source.toLowerCase()) ||
+          (item.sourceStore || "").toLowerCase().includes(filters.source.toLowerCase())
+      )
       .filter((item) => filters.recommendation === "ALL" || item.recommendedAction === filters.recommendation)
       .filter((item) => filters.listingStatus === "ALL" || item.listingStatus === filters.listingStatus)
+      .filter((item) => {
+        if (filters.dataQuality === "ALL") return true;
+        if (filters.dataQuality === "missing_receipt") return !item.receiptImageUrl && !item.receiptNumber && !item.orderNumber;
+        if (filters.dataQuality === "missing_market") return item.currentMarketEstimate === null || item.marketCompCount < 3;
+        if (filters.dataQuality === "profitable") return (item.marketProfitLoss ?? item.businessProfitLoss ?? item.estimatedNetProfit ?? 0) > 0;
+        if (filters.dataQuality === "losing_money") return (item.marketProfitLoss ?? item.businessProfitLoss ?? item.estimatedNetProfit ?? 0) < 0;
+        if (filters.dataQuality === "scanned_upc") return Boolean(item.upc && scannedUpcs.has(item.upc));
+        return true;
+      })
       .sort((a, b) => {
         if (filters.sort === "roi") return (b.marketRoiPercent ?? b.roiPercent ?? -999) - (a.marketRoiPercent ?? a.roiPercent ?? -999);
         if (filters.sort === "date") return new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime();
@@ -3354,7 +3383,7 @@ function InventoryPanel({
         if (filters.sort === "market") return (b.netMarketValue ?? (b.currentMarketEstimate ?? 0) * b.quantityOwned) - (a.netMarketValue ?? (a.currentMarketEstimate ?? 0) * a.quantityOwned);
         return (b.businessProfitLoss ?? b.marketProfitLoss ?? b.estimatedNetProfit ?? -999999) - (a.businessProfitLoss ?? a.marketProfitLoss ?? a.estimatedNetProfit ?? -999999);
       });
-  }, [dashboard.inventory, filters]);
+  }, [dashboard.inventory, filters, scannedUpcs]);
 
   function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.currentTarget;
@@ -3399,9 +3428,9 @@ function InventoryPanel({
           <p>Track what you own, what you spent, and your profit.</p>
         </div>
         <div className="inventory-header-actions">
-          <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
+          <a className="mini-action" href="/api/radar/inventory?format=product-catalog-csv" target="_blank" rel="noreferrer">
             <Download size={14} />
-            Inventory CSV
+            Catalog CSV
           </a>
           <a className="mini-action" href="/api/radar/inventory?format=stock-lots-csv" target="_blank" rel="noreferrer">
             <Download size={14} />
@@ -3411,6 +3440,25 @@ function InventoryPanel({
             <Download size={14} />
             Sales CSV
           </a>
+          <a className="mini-action" href="/api/radar/inventory?format=profit-loss-summary-csv" target="_blank" rel="noreferrer">
+            <Download size={14} />
+            P/L CSV
+          </a>
+          <button
+            className="mini-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                "Refreshing inventory market",
+                () => requestJson("/api/radar/inventory/refresh-comps", { method: "POST" }),
+                { success: "Inventory market refresh finished" }
+              )
+            }
+          >
+            <RefreshCw size={14} />
+            {busyLabel === "Refreshing inventory market" ? "Refreshing" : "Refresh Market"}
+          </button>
           <button
             className="primary-action"
             type="button"
@@ -3582,25 +3630,26 @@ function InventoryMarketDecisionPanels({ items }: { items: InventoryItemDTO[] })
     .filter((item) => ["SELL_NOW", "LIST_HIGH"].includes(item.recommendedAction))
     .sort((a, b) => (b.marketProfitLoss ?? b.businessProfitLoss ?? 0) - (a.marketProfitLoss ?? a.businessProfitLoss ?? 0))
     .slice(0, 3);
-  const losingMoney = [...items]
-    .filter((item) => (item.marketProfitLoss ?? item.businessProfitLoss ?? 0) < 0)
-    .sort((a, b) => (a.marketProfitLoss ?? a.businessProfitLoss ?? 0) - (b.marketProfitLoss ?? b.businessProfitLoss ?? 0))
+  const bestHold = [...items]
+    .filter((item) => item.recommendedAction === "HOLD" && (item.marketProfitLoss ?? item.businessProfitLoss ?? 0) >= 0)
+    .sort((a, b) => (b.marketRoiPercent ?? b.roiPercent ?? 0) - (a.marketRoiPercent ?? a.roiPercent ?? 0))
     .slice(0, 3);
-  const missingMarket = items
-    .filter((item) => item.currentMarketEstimate === null || item.marketCompCount < 3)
+  const avoidBuying = [...items]
+    .filter((item) => item.recommendedAction === "AVOID_BUYING_MORE" || (item.marketProfitLoss ?? item.businessProfitLoss ?? 0) < 0)
+    .sort((a, b) => (a.marketProfitLoss ?? a.businessProfitLoss ?? 0) - (b.marketProfitLoss ?? b.businessProfitLoss ?? 0))
     .slice(0, 3);
 
   return (
     <section className="inventory-decision-grid" aria-label="Inventory market decisions">
       <InventoryDecisionCard title="What should I sell today?" empty="No urgent sells yet." items={sellToday} metric={(item) => money(item.marketProfitLoss ?? item.businessProfitLoss)} />
-      <InventoryDecisionCard title="Items losing money" empty="Nothing is underwater." items={losingMoney} metric={(item) => money(item.marketProfitLoss ?? item.businessProfitLoss)} tone="bad" />
       <InventoryDecisionCard
-        title="Missing market data"
-        empty="All top items have comps."
-        items={missingMarket}
-        metric={(item) => `${item.marketCompCount}/3 comps`}
+        title="Best hold"
+        empty="No strong holds yet."
+        items={bestHold}
+        metric={(item) => percent(item.marketRoiPercent ?? item.roiPercent)}
         tone="watch"
       />
+      <InventoryDecisionCard title="Avoid buying more" empty="No avoid signals yet." items={avoidBuying} metric={(item) => money(item.marketProfitLoss ?? item.businessProfitLoss)} tone="bad" />
     </section>
   );
 }
@@ -4026,6 +4075,7 @@ function PurchaseFlow({
               onChange={(event) => setExtraCost(Math.max(0, Number(event.currentTarget.value) || 0))}
             />
             <TextInput name="source" label="Store/source" placeholder="Target Hialeah, eBay, friend" defaultValue={prefill?.source ?? ""} required />
+            <TextInput name="sourceStore" label="Source store" placeholder="Target Hialeah, eBay seller, Whatnot stream" defaultValue={selectedExisting?.sourceStore ?? ""} />
             <TextInput name="purchasedAt" label="Purchase date" type="date" defaultValue={todayDateInput()} required />
           </div>
           <div className="total-preview">
@@ -4038,7 +4088,16 @@ function PurchaseFlow({
           <h3>Add proof/image</h3>
           <div className="form-grid compact">
             <ImageUploadInput defaultValue={defaultImageUrl} />
-            <TextInput name="receiptNumber" label="Receipt/order number" />
+            <ImageUploadInput
+              fieldName="receiptImageUrl"
+              label="Receipt image"
+              placeholder="Paste receipt image URL or upload photo"
+              defaultValue={selectedExisting?.receiptImageUrl ?? ""}
+            />
+            <TextInput name="receiptNumber" label="Receipt number" defaultValue={selectedExisting?.receiptNumber ?? ""} />
+            <TextInput name="orderNumber" label="Order number" defaultValue={selectedExisting?.orderNumber ?? ""} />
+            <TextInput name="transactionId" label="Transaction ID" defaultValue={selectedExisting?.transactionId ?? ""} />
+            <TextInput name="paymentMethod" label="Payment method" placeholder="Visa, cash, PayPal" defaultValue={selectedExisting?.paymentMethod ?? ""} />
           </div>
         </article>
         <article className="flow-step">
@@ -4112,7 +4171,7 @@ function InventoryFilters({
   itemCount,
   updateFilter
 }: {
-  filters: { search: string; category: string; source: string; recommendation: string; listingStatus: string; sort: string };
+  filters: { search: string; category: string; source: string; recommendation: string; listingStatus: string; dataQuality: string; sort: string };
   itemCount: number;
   updateFilter: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
 }) {
@@ -4134,6 +4193,20 @@ function InventoryFilters({
         <TextInput name="source" label="Source" value={filters.source} onChange={updateFilter} />
         <SelectInput name="recommendation" label="Recommendation" value={filters.recommendation} onChange={updateFilter} options={[{ value: "ALL", label: "All Recommendations" }, ...inventoryRecommendations.map(optionFromString)]} />
         <SelectInput name="listingStatus" label="Status" value={filters.listingStatus} onChange={updateFilter} options={[{ value: "ALL", label: "All Statuses" }, ...listingStatuses.map(optionFromString)]} />
+        <SelectInput
+          name="dataQuality"
+          label="Data"
+          value={filters.dataQuality}
+          onChange={updateFilter}
+          options={[
+            { value: "ALL", label: "All Data" },
+            { value: "missing_receipt", label: "Missing Receipt" },
+            { value: "missing_market", label: "Missing Market Data" },
+            { value: "profitable", label: "Profitable" },
+            { value: "losing_money", label: "Losing Money" },
+            { value: "scanned_upc", label: "Scanned UPC Items" }
+          ]}
+        />
         <SelectInput
           name="sort"
           label="Sort"
@@ -4200,7 +4273,14 @@ function InventoryList({
           <span className="catalog-cell strong" data-label="Qty">{item.quantityOwned}</span>
           <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
           <span className="catalog-cell" data-label="Market">
-            {item.currentMarketEstimate === null ? "Not collected" : money(item.netMarketValue ?? item.currentMarketEstimate)}
+            {item.currentMarketEstimate === null ? (
+              "Not collected"
+            ) : (
+              <>
+                {money(item.netMarketValue ?? item.currentMarketEstimate)}
+                <small>{item.marketConfidence} - {item.marketCompCount}/3 comps</small>
+              </>
+            )}
           </span>
           <span className="catalog-cell" data-label="Target">{money(item.targetSellPrice)}</span>
           <span
@@ -4225,9 +4305,12 @@ function InventoryList({
               <div>
                 <span>Purchased {shortDate(item.purchasedAt)} from {item.source}</span>
                 <span>Total spent {money(item.totalCost)} - sold {item.quantitySold} for {money(item.totalSalesGross)}</span>
-                <span>Receipt/order {item.receiptNumber || "Not saved"}</span>
+                <span>Receipt {item.receiptNumber || "Not saved"} - order {item.orderNumber || "Not saved"}</span>
+                <span>Transaction {item.transactionId || "Not saved"} - payment {item.paymentMethod || "Not saved"}</span>
+                <span>Source store {item.sourceStore || item.source || "Not saved"} - receipt image {item.receiptImageUrl ? "attached" : "missing"}</span>
                 <span>Linked product {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
                 <span>UPC {item.upc || "Missing"} SKU {item.sku || "Missing"} DPCI {item.dpci || "Missing"} ASIN {item.asin || "Missing"}</span>
+                <span>Market estimate {item.currentMarketEstimate === null ? "Not collected yet" : money(item.currentMarketEstimate)} - confidence {item.marketConfidence} - {item.marketCompCount}/3 comps</span>
                 <span>Net market value {money(item.netMarketValue)} - market P/L {money(item.marketProfitLoss)} - ROI {percent(item.marketRoiPercent)}</span>
                 <span>Target {money(item.targetSellPrice)} minimum {money(item.minimumAcceptablePrice)}</span>
                 <span>Realized P/L {money(item.realizedProfitLoss)} - ROI {percent(item.realizedRoiPercent)}</span>
@@ -4341,7 +4424,7 @@ function StockLotsPanel({ item }: { item: InventoryItemDTO | null }) {
             <span>Cost / Unit</span>
             <span>Total</span>
             <span>Remaining</span>
-            <span>Notes</span>
+            <span>Proof</span>
           </div>
           {item.stockLots.map((lot) => (
             <div className="lot-row" key={lot.id}>
@@ -4351,7 +4434,11 @@ function StockLotsPanel({ item }: { item: InventoryItemDTO | null }) {
               <span>{money(lot.costPerUnit)}</span>
               <span>{money(lot.totalCost)}</span>
               <span>{lot.remainingQuantity}</span>
-              <span>{lot.notes || lot.receiptNumber || "None"}</span>
+              <span>
+                {lot.receiptNumber || lot.orderNumber || "No receipt"}
+                {lot.receiptImageUrl ? " - image" : ""}
+                {lot.sourceStore ? ` - ${lot.sourceStore}` : ""}
+              </span>
             </div>
           ))}
           <div className="lot-summary">

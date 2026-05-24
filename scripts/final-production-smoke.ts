@@ -189,8 +189,13 @@ async function main() {
       cost: 1.5,
       purchaseExtraCost: 0.5,
       source: "Smoke QA",
+      sourceStore: "Smoke QA Store",
       retailer: "Smoke",
       upc: smokeUpc,
+      receiptNumber: "SMOKE-RECEIPT",
+      orderNumber: "SMOKE-ORDER",
+      transactionId: "SMOKE-TXN",
+      paymentMethod: "Smoke Card",
       purchasedAt: new Date().toISOString(),
       targetSellPrice: 4.5,
       currentMarketEstimate: 5
@@ -211,6 +216,8 @@ async function main() {
       quantity: 1,
       cost: 1.75,
       source: "Smoke QA",
+      sourceStore: "Smoke QA Store",
+      orderNumber: "SMOKE-ORDER-2",
       purchasedAt: new Date().toISOString()
     })
   });
@@ -239,14 +246,16 @@ async function main() {
   if (upcLookupBody.status !== "PRODUCT_FOUND" || upcLookupBody.matchedInventoryItem?.id !== smokeItemId) {
     throw new Error(`Inventory UPC lookup did not match the smoke item: ${JSON.stringify(upcLookupBody).slice(0, 180)}`);
   }
-  for (const format of ["csv", "stock-lots-csv", "sales-csv"]) {
+  const marketRefresh = await fetch(`${baseUrl}/api/radar/inventory/refresh-comps`, { method: "POST", headers: { cookie } });
+  await expectStatus("inventory market refresh", marketRefresh, 200);
+  for (const format of ["product-catalog-csv", "stock-lots-csv", "sales-csv", "profit-loss-summary-csv"]) {
     const exportResponse = await authedGet(`/api/radar/inventory?format=${format}`);
     const csv = await exportResponse.text();
     if (!csv.includes(smokeItemName)) throw new Error(`Inventory ${format} export did not include smoke item.`);
   }
   const deleteInventory = await fetch(`${baseUrl}/api/radar/inventory/${smokeItemId}`, { method: "DELETE", headers: { cookie } });
   await expectStatus("inventory cleanup delete", deleteInventory, 200);
-  checks.inventoryBusinessFlow = "totals, add stock, record sale, UPC lookup, and CSV exports passed";
+  checks.inventoryBusinessFlow = "totals, receipt/order tracking, add stock, record sale, UPC lookup, market refresh, and CSV exports passed";
 
   const ebayStatus = await authedGet("/api/radar/ebay/status");
   const ebayStatusBody = await json(ebayStatus);

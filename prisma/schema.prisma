@@ -573,6 +573,11 @@ model InventoryItem {
   retailer               String?
   purchasedAt            DateTime
   receiptNumber          String?
+  receiptImageUrl        String?
+  orderNumber            String?
+  transactionId          String?
+  sourceStore            String?
+  paymentMethod          String?
   exactProductUrl        String?
   upc                    String?
   sku                    String?
@@ -633,6 +638,11 @@ model InventoryStockLot {
   remainingQuantity Int
   notes             String?
   receiptNumber     String?
+  receiptImageUrl   String?
+  orderNumber       String?
+  transactionId     String?
+  sourceStore       String?
+  paymentMethod     String?
   createdAt         DateTime      @default(now())
   inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 

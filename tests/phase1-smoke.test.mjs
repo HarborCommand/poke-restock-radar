@@ -878,6 +878,11 @@ test("inventory tracker and market recommendation engine exists", () => {
     "remainingQuantity",
     "purchaseExtraCost",
     "receiptNumber",
+    "receiptImageUrl",
+    "orderNumber",
+    "transactionId",
+    "sourceStore",
+    "paymentMethod",
     "quantitySold",
     "profitLoss",
     "category",
@@ -898,6 +903,7 @@ test("inventory tracker and market recommendation engine exists", () => {
     "addInventoryStockLot",
     "inventoryMarketRecommendation",
     "refreshInventoryEbayComps",
+    "refreshAllInventoryMarketComps",
     "autoLinkInventoryProducts",
     "findWatchedProductMatch",
     "inventoryOwnedCostBasis",
@@ -922,17 +928,21 @@ test("inventory tracker and market recommendation engine exists", () => {
     "Spending Log",
     "Sales Log",
     "What should I sell today?",
-    "Items losing money",
-    "Missing market data",
+    "Best hold",
+    "Avoid buying more",
+    "Missing Market Data",
     "Attach watched product",
     "Scan UPC / Barcode",
     "Lookup UPC",
     "Scanned UPC history",
     "Manual Inventory Sold Comp",
-    "Inventory CSV",
+    "Catalog CSV",
     "Lots CSV",
     "Sales CSV",
+    "P/L CSV",
+    "Receipt image",
     "Refresh eBay",
+    "Refresh Market",
     "Market not collected yet"
   ]) {
     assert.match(app, new RegExp(phrase), `missing inventory UI phrase ${phrase}`);
@@ -945,6 +955,7 @@ test("inventory tracker and market recommendation engine exists", () => {
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "sales", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "refresh-comps", "route.ts"),
+    join(root, "src", "app", "api", "radar", "inventory", "refresh-comps", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "upc", "lookup", "route.ts")
   ]) {
     assert.ok(statSync(route).isFile(), `missing inventory route ${route}`);

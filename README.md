@@ -685,7 +685,7 @@ Keep the first week conservative: confirm restocks manually, mark false positive
 
 Use the `Inventory` tab to track what you actually bought: sealed packs, sleeved boosters, ETBs, booster bundles, booster boxes, collection boxes, single cards, graded cards, and raw cards.
 
-Each inventory item stores the product/card name, category, set, quantity, purchase price, total cost, purchase date, source/store, retailer, exact product URL, UPC/SKU/DPCI/ASIN when available, image, condition, sealed/opened/graded/raw status, sell targets, listing status, sold price, notes, market estimate, profit, ROI, and recommendation.
+Each inventory item stores the product/card name, category, set, quantity, purchase price, total cost, purchase date, source/store, retailer, exact product URL, UPC/SKU/DPCI/ASIN when available, image, receipt image, receipt number, order number, transaction ID, payment method, condition, sealed/opened/graded/raw status, sell targets, listing status, sold price, notes, market estimate, profit, ROI, and recommendation.
 
 Market Recommendation behavior:
 
@@ -696,7 +696,14 @@ Market Recommendation behavior:
 - `RIP / OPEN`: sealed packs or bundles are materially underwater.
 - `AVOID BUYING MORE`: current comps show weak resale economics.
 
-Market data is conservative. If eBay credentials are configured, `Refresh eBay` imports the last 3 completed sold comps for the inventory item. If eBay is not configured, add manual sold comps or a manual market estimate. The app never invents prices or dates; missing data is shown as `Market not collected yet`.
+Market data is conservative. If eBay credentials are configured, `Refresh eBay` imports the last 3 completed sold comps for the inventory item, and `Refresh Market` runs that flow across inventory. If eBay is not configured, add manual sold comps or a manual market estimate. The app never invents prices or dates; missing data is shown as `Market not collected yet`.
+
+Market sync:
+
+- Scanned or manually entered UPC/SKU/DPCI/ASIN values are matched against watched products.
+- When a watched product matches, inventory pulls the verified product image, retailer, set, exact product URL, UPC/SKU/DPCI, and Amazon ASIN when applicable.
+- Cost basis uses remaining stock lots first, then falls back to average cost if older data has no lots.
+- Market value uses last-3 sold comps when available, then applies configured eBay fee and shipping assumptions before calculating profit/loss and ROI.
 
 Image behavior:
 
@@ -706,9 +713,10 @@ Image behavior:
 
 Import/export:
 
-- `Inventory -> Inventory CSV` exports the current inventory table.
+- `Inventory -> Catalog CSV` exports the current product catalog.
 - `Inventory -> Lots CSV` exports purchase lots and remaining quantity.
 - `Inventory -> Sales CSV` exports recorded sales and realized profit/loss.
+- `Inventory -> P/L CSV` exports profit/loss summary, market value, fees, shipping, ROI, confidence, and refresh timestamps.
 - `Inventory Import And Manual Comps` accepts CSV or JSON.
 - JSON backup/restore includes inventory items, stock lots, sales, inventory market comps, and barcode scan history.
 
@@ -741,6 +749,12 @@ Use `Add Purchase` as a four-step flow:
 4. Plan.
 
 Advanced identifiers, exact product URLs, UPC/SKU/DPCI/ASIN, manual market estimate, and notes are hidden under `Advanced details`.
+
+Receipt and order tracking:
+
+- Step 3 accepts an item image, receipt image, receipt number, order number, transaction ID, and optional payment method.
+- Purchase lots keep receipt/order proof independently, so restocks bought on different dates keep their own cost basis and proof.
+- Inventory filters include missing receipt, missing market data, profitable, losing money, and scanned UPC items.
 
 Use `Record Sale` on an inventory row for partial or full sales. The app calculates gross sale, net sale, cost basis, profit/loss, and ROI from quantity sold, sold price, fees, shipping, and original average cost.
 
