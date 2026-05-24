@@ -13,6 +13,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  HelpCircle,
   History,
   Lock,
   LogOut,
@@ -28,6 +29,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Search,
   Settings,
   ShieldCheck,
   Smartphone,
@@ -95,7 +97,8 @@ type Tab =
   | "alerts"
   | "market"
   | "analytics"
-  | "settings";
+  | "settings"
+  | "admin";
 type Toast = { type: "error" | "success"; message: string };
 type SubmitHandler = <T>(
   event: FormEvent<HTMLFormElement>,
@@ -130,18 +133,20 @@ declare global {
   }
 }
 
-const tabs: Array<{ id: Tab; label: string; icon: typeof Radar }> = [
-  { id: "dashboard", label: "Dashboard", icon: Radar },
-  { id: "products", label: "Products", icon: PackageSearch },
-  { id: "stores", label: "Stores", icon: Store },
-  { id: "releases", label: "Releases", icon: CalendarDays },
-  { id: "alerts", label: "Alerts", icon: Bell },
-  { id: "inventory", label: "Inventory", icon: Trophy },
-  { id: "cards", label: "Cards", icon: CircleDollarSign },
-  { id: "market", label: "Market", icon: Sparkles },
-  { id: "analytics", label: "Analytics", icon: Activity },
-  { id: "settings", label: "Settings", icon: Settings }
+const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: "main" | "manage" }> = [
+  { id: "dashboard", label: "Dashboard", icon: Radar, section: "main" },
+  { id: "products", label: "Products", icon: PackageSearch, section: "main" },
+  { id: "stores", label: "Stores", icon: Store, section: "main" },
+  { id: "releases", label: "Releases", icon: CalendarDays, section: "main" },
+  { id: "alerts", label: "Alerts", icon: Bell, section: "main" },
+  { id: "inventory", label: "Inventory", icon: Trophy, section: "main" },
+  { id: "cards", label: "Cards", icon: CircleDollarSign, section: "main" },
+  { id: "market", label: "Market", icon: Sparkles, section: "main" },
+  { id: "analytics", label: "Analytics", icon: Activity, section: "main" },
+  { id: "settings", label: "Settings", icon: Settings, section: "manage" },
+  { id: "admin", label: "Admin", icon: ShieldCheck, section: "manage" }
 ];
+type NavTab = (typeof tabs)[number];
 
 const productStatuses: ProductStatus[] = [
   "UNAVAILABLE",
@@ -559,11 +564,6 @@ function sortedStoreOptions(stores: StoreDTO[]) {
   );
 }
 
-function productImageRank(product: ProductDTO) {
-  const verified = productReadyForAlert(product);
-  return (product.liveImageUrl ? 100 : 0) + (verified ? 40 : 0) + (product.priorityScore?.score ?? 0);
-}
-
 function cardFreshnessLabel(card: CardDTO) {
   if (!card.compCount) return "Not collected yet";
   if (!card.lastCompAt) return "Comp date unknown";
@@ -682,6 +682,43 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+function SidebarNavGroup({
+  title,
+  tabs,
+  activeTab,
+  onSelect,
+  onClose
+}: {
+  title: string;
+  tabs: NavTab[];
+  activeTab: Tab;
+  onSelect: (tab: Tab) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="sidebar-nav-group">
+      <span className="sidebar-section-title">{title}</span>
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <button
+            className={activeTab === tab.id ? "sidebar-nav-item active" : "sidebar-nav-item"}
+            key={tab.id}
+            onClick={() => {
+              onSelect(tab.id);
+              onClose();
+            }}
+            type="button"
+          >
+            <Icon size={16} />
+            <span>{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function RadarApp() {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     if (typeof window === "undefined") return "dashboard";
@@ -694,7 +731,6 @@ export function RadarApp() {
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const busy = busyLabel !== null;
@@ -829,7 +865,8 @@ export function RadarApp() {
   };
 
   const chase = useMemo(() => getChaseSummary(dashboard), [dashboard]);
-  const activeSection = tabs.find((tab) => tab.id === activeTab);
+  const mainTabs = tabs.filter((tab) => tab.section === "main");
+  const manageTabs = tabs.filter((tab) => tab.section === "manage" && (tab.id !== "admin" || isAdmin));
 
   if (loading) {
     return (
@@ -862,37 +899,24 @@ export function RadarApp() {
   return (
     <main className="screen app-shell">
       <aside className={sidebarOpen ? "app-sidebar open" : "app-sidebar"} aria-label="Primary navigation">
-        <div className="brand-lockup">
+        <div className="brand-lockup sidebar-brand">
           <div className="brand-mark">
             <Radar size={19} />
           </div>
           <div>
-            <p className="eyeline">Poke Radar</p>
             <h1>Poke Radar</h1>
           </div>
         </div>
         <nav className="sidebar-nav">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                className={activeTab === tab.id ? "sidebar-nav-item active" : "sidebar-nav-item"}
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setSidebarOpen(false);
-                }}
-                type="button"
-              >
-                <Icon size={16} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+          <SidebarNavGroup title="Main" tabs={mainTabs} activeTab={activeTab} onSelect={setActiveTab} onClose={() => setSidebarOpen(false)} />
+          <SidebarNavGroup title="Manage" tabs={manageTabs} activeTab={activeTab} onSelect={setActiveTab} onClose={() => setSidebarOpen(false)} />
         </nav>
         <div className="sidebar-foot">
-          <span>{dashboard.userAreaPreferences.customZoneName || formatStatus(dashboard.userAreaPreferences.preferredZone)}</span>
-          <small>Private Plan</small>
+          <div>
+            <strong>{dashboard.userAreaPreferences.customZoneName || "Miami"}</strong>
+            <small>Private Plan</small>
+          </div>
+          <button className="upgrade-button" type="button">Upgrade</button>
         </div>
       </aside>
       {sidebarOpen ? <button className="sidebar-scrim" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} /> : null}
@@ -902,12 +926,37 @@ export function RadarApp() {
           <button className="icon-button mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" type="button">
             <Menu size={18} />
           </button>
-          <div>
-            <p className="eyeline">{activeSection?.label || "Poke Radar"}</p>
-            <h1>{activeTab === "inventory" ? "Inventory" : "Poke Restock Radar"}</h1>
+          <div className="topbar-search-wrap">
+            <Search size={16} />
+            <input aria-label="Search anything" placeholder="Search anything..." />
+            <kbd>Ctrl K</kbd>
           </div>
         </div>
         <div className="topbar-actions">
+          <button className="location-pill" type="button" onClick={() => setActiveTab("settings")}>
+            {dashboard.userAreaPreferences.customZoneName || "Miami"}
+            <ChevronRight size={14} />
+          </button>
+          <button className="icon-button" aria-label="Notifications" type="button" onClick={() => setActiveTab("alerts")}>
+            <Bell size={17} />
+            {dashboard.alertAnalytics.unreadAlerts ? <span className="topbar-badge">{Math.min(dashboard.alertAnalytics.unreadAlerts, 9)}</span> : null}
+          </button>
+          <button className="icon-button" aria-label="Help" type="button">
+            <HelpCircle size={17} />
+          </button>
+          {activeTab === "dashboard" || activeTab === "admin" ? (
+            <button
+              className="topbar-quick-action"
+              type="button"
+              onClick={() => {
+                const target = document.querySelector(activeTab === "admin" ? ".admin-action-grid" : ".dashboard-quick-actions-card");
+                target?.scrollIntoView({ block: "center" });
+              }}
+            >
+              Quick Actions
+              <ChevronRight size={14} />
+            </button>
+          ) : null}
           <button
             className="icon-button"
             disabled={busy}
@@ -919,24 +968,16 @@ export function RadarApp() {
           >
             <RefreshCw size={18} />
           </button>
-          {isAdmin ? (
-            <button
-              className="admin-button"
-              type="button"
-              aria-expanded={adminPanelOpen}
-              onClick={() => setAdminPanelOpen((open) => !open)}
-            >
-              <ShieldCheck size={16} />
-              Admin
-            </button>
-          ) : null}
+          <button className="user-avatar" type="button" aria-label={`Signed in as ${user.name || user.email}`}>
+            {(user.name || user.email || "A").slice(0, 1).toUpperCase()}
+          </button>
           <button className="icon-button" disabled={busy} onClick={logout} aria-label="Log out" type="button">
             <LogOut size={18} />
           </button>
         </div>
       </header>
 
-      {activeTab === "inventory" ? null : (
+      {activeTab === "inventory" || activeTab === "dashboard" || activeTab === "admin" ? null : (
       <section className={chase.product ? "hero-panel hero-with-product" : "hero-panel"}>
         <div>
           <p className="eyeline">What should I chase right now?</p>
@@ -1043,19 +1084,17 @@ export function RadarApp() {
         {activeTab === "settings" ? (
           <SettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
+        {activeTab === "admin" && isAdmin ? (
+          <AdminControlPanel
+            dashboard={dashboard}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+            setActiveTab={setActiveTab}
+          />
+        ) : null}
       </section>
-
-      {isAdmin && adminPanelOpen ? (
-        <AdminControlPanel
-          dashboard={dashboard}
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={submit}
-          runAction={runAction}
-          setActiveTab={setActiveTab}
-          onClose={() => setAdminPanelOpen(false)}
-        />
-      ) : null}
 
       <footer className="app-footer">
         <ShieldCheck size={16} />
@@ -1077,8 +1116,7 @@ function AdminControlPanel({
   busyLabel,
   submit,
   runAction,
-  setActiveTab,
-  onClose
+  setActiveTab
 }: {
   dashboard: DashboardDTO;
   busy: boolean;
@@ -1086,117 +1124,151 @@ function AdminControlPanel({
   submit: SubmitHandler;
   runAction: ActionHandler;
   setActiveTab: (tab: Tab) => void;
-  onClose: () => void;
 }) {
+  const health = dashboard.health;
   return (
-    <div className="admin-drawer-backdrop" role="presentation">
-      <aside className="admin-drawer" role="dialog" aria-modal="true" aria-label="Admin controls">
-        <div className="admin-drawer-header">
-          <div>
-            <p className="eyeline">Admin</p>
-            <h2>Admin Controls</h2>
-            <span>Setup, health, users, backups, and alert configuration are kept out of the daily dashboard.</span>
-          </div>
-          <button className="icon-button" type="button" aria-label="Close admin controls" onClick={onClose}>
-            <X size={18} />
-          </button>
+    <>
+      <section className="dashboard-page-header admin-page-header">
+        <div>
+          <h2>Admin Controls</h2>
+          <p>Manage account, alerts, health checks, data quality, backups, and release tools.</p>
         </div>
+        <button className="primary-action" type="button" onClick={() => setActiveTab("settings")}>
+          Open Settings <ChevronRight size={16} />
+        </button>
+      </section>
 
-        <div className="admin-fold-list">
-          <AdminFold title="Admin Account Settings" detail="Change login email or password safely" defaultOpen>
-            <AdminAccountSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
-          </AdminFold>
+      <section className="admin-action-grid">
+        <AdminActionCard
+          icon={Lock}
+          title="Account Settings"
+          detail="Change login email and password safely."
+          action="Manage Account"
+          onAction={() => document.getElementById("admin-account")?.scrollIntoView({ block: "center" })}
+        />
+        <AdminActionCard
+          icon={MapPin}
+          title="Area & Location"
+          detail={`Default area is ${zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)}.`}
+          action="Update Area"
+          onAction={() => document.getElementById("admin-location")?.scrollIntoView({ block: "center" })}
+        />
+        <AdminActionCard
+          icon={Bell}
+          title="Notifications"
+          detail={`${dashboard.notificationSettings.inApp ? "In-app on" : "In-app off"}; push/email/SMS configured from settings.`}
+          action="Configure Alerts"
+          onAction={() => document.getElementById("admin-notifications")?.scrollIntoView({ block: "center" })}
+        />
+        <AdminActionCard
+          icon={Activity}
+          title="Production Health"
+          detail={health ? `Status ${health.status}; database ${health.database.provider}.` : "Health data is not loaded."}
+          action="View Health"
+          onAction={() => document.getElementById("admin-health")?.scrollIntoView({ block: "center" })}
+        />
+      </section>
 
-          <AdminFold title="My Area And Location" detail="Zone, saved browser location, favorite stores" defaultOpen>
-            <AreaSetupPanel
-              dashboard={dashboard}
-              busy={busy}
-              busyLabel={busyLabel}
-              submit={submit}
-              runAction={runAction}
-            />
-          </AdminFold>
+      <div className="admin-section-grid">
+        <AdminSectionCard id="admin-account" icon={Lock} title="Account" detail="Login email, password, and private access controls.">
+          <AdminAccountSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
+          <AccessManagementPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+        </AdminSectionCard>
 
-          <AdminFold title="Notifications And Alert Tests" detail="Push, email, SMS, quiet hours">
-            <NotificationSettingsPanel
-              dashboard={dashboard}
-              busy={busy}
-              busyLabel={busyLabel}
-              submit={submit}
-              runAction={runAction}
-            />
-          </AdminFold>
+        <AdminSectionCard id="admin-location" icon={MapPin} title="Location" detail="Preferred zone, store proximity, and local route setup.">
+          <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+        </AdminSectionCard>
 
-          {dashboard.health ? (
-            <AdminFold title="Production Health" detail="Auth, database, cron, deployment warnings">
-              <AdminHealthPanel health={dashboard.health} />
-            </AdminFold>
-          ) : null}
+        <AdminSectionCard id="admin-notifications" icon={Bell} title="Alerts" detail="Notification providers, quiet hours, and test alerts.">
+          <NotificationSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+          <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+        </AdminSectionCard>
 
-          <AdminFold title="Owner QA And Data Quality" detail="Launch checklist, warnings, calibration">
-            <OwnerLaunchChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-            <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-            <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-            <DataQualityPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-          </AdminFold>
+        <AdminSectionCard id="admin-health" icon={Activity} title="System" detail="Production health, scanner status, and monitor accuracy.">
+          {health ? <AdminHealthPanel health={health} /> : <EmptyState icon={Activity} title="Health unavailable" detail="Health data will appear after the app loads system status." />}
+          <ScannerStatusPanel dashboard={dashboard} />
+          <MonitorAccuracyPanel dashboard={dashboard} />
+        </AdminSectionCard>
 
-          <AdminFold title="Release Management" detail="Add, import, and edit yearly drop data">
-            <ReleaseManagementPanel
-              dashboard={dashboard}
-              busy={busy}
-              busyLabel={busyLabel}
-              submit={submit}
-              runAction={runAction}
-            />
-          </AdminFold>
+        <AdminSectionCard icon={AlertTriangle} title="Data Quality" detail="Launch checklist, warnings, and calibration items.">
+          <OwnerLaunchChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+          <SetupChecklistPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+          <DataQualityPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+        </AdminSectionCard>
 
-          <AdminFold title="Monitor Logs And Accuracy" detail="Run history, blocked pages, false positives">
-            <MonitorAccuracyPanel dashboard={dashboard} />
-            <MonitorLogsPanel dashboard={dashboard} />
-          </AdminFold>
+        <AdminSectionCard icon={CalendarDays} title="Releases" detail="Add, import, and maintain yearly Pokemon TCG drop data.">
+          <ReleaseManagementPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+        </AdminSectionCard>
 
-          <AdminFold title="Friend Access" detail="Invite links, roles, audit log">
-            <AccessManagementPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
-          </AdminFold>
+        <AdminSectionCard icon={History} title="Logs" detail="Monitor run history, blocked pages, and parser results.">
+          <MonitorLogsPanel dashboard={dashboard} />
+        </AdminSectionCard>
 
-          <AdminFold title="Backups And Demo Tools" detail="JSON import/export and admin-only reset">
-            <AdminTools busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
-          </AdminFold>
+        <AdminSectionCard icon={Download} title="Backups" detail="JSON import/export, demo reset, and private recovery tools.">
+          <AdminTools busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+        </AdminSectionCard>
 
-          <AdminFold title="Morning Workflow Archive" detail="Recaps, inventory log, saved filters">
-            <TodayPlanPanel
-              dashboard={dashboard}
-              setActiveTab={setActiveTab}
-              busy={busy}
-              busyLabel={busyLabel}
-              runAction={runAction}
-            />
-          </AdminFold>
-        </div>
-      </aside>
-    </div>
+        <AdminSectionCard icon={FileText} title="Archive" detail="Daily recaps, inventory workflow, and saved operational history.">
+          <TodayPlanPanel dashboard={dashboard} setActiveTab={setActiveTab} busy={busy} busyLabel={busyLabel} runAction={runAction} />
+        </AdminSectionCard>
+      </div>
+    </>
   );
 }
 
-function AdminFold({
+function AdminActionCard({
+  icon: Icon,
   title,
   detail,
-  defaultOpen = false,
-  children
+  action,
+  onAction
 }: {
+  icon: typeof Radar;
   title: string;
   detail: string;
-  defaultOpen?: boolean;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <button className="admin-action-card" type="button" onClick={onAction}>
+      <span className="admin-action-icon">
+        <Icon size={19} />
+      </span>
+      <span>
+        <strong>{title}</strong>
+        <small>{detail}</small>
+      </span>
+      <b>{action}</b>
+    </button>
+  );
+}
+
+function AdminSectionCard({
+  id,
+  icon: Icon,
+  title,
+  detail,
+  children
+}: {
+  id?: string;
+  icon: typeof Radar;
+  title: string;
+  detail: string;
   children: ReactNode;
 }) {
   return (
-    <details className="admin-fold" open={defaultOpen}>
-      <summary>
-        <span>{title}</span>
-        <small>{detail}</small>
-      </summary>
-      <div className="admin-fold-body">{children}</div>
-    </details>
+    <section className="admin-section-card" id={id}>
+      <div className="admin-section-heading">
+        <span className="admin-section-icon">
+          <Icon size={18} />
+        </span>
+        <div>
+          <h3>{title}</h3>
+          <p>{detail}</p>
+        </div>
+      </div>
+      <div className="admin-section-body">{children}</div>
+    </section>
   );
 }
 
@@ -1493,19 +1565,35 @@ function DashboardPanel({
   busyLabel: string | null;
   runAction: ActionHandler;
 }) {
-  const storesToShow = dashboard.checkTodayStores.length ? dashboard.checkTodayStores : dashboard.stores;
-  const onlineDrops = [...dashboard.todaysChaseList].sort((left, right) => productImageRank(right) - productImageRank(left));
-  const [showWeakProducts, setShowWeakProducts] = useState(false);
-  const verifiedOnlineDrops = onlineDrops.filter((product) => productReadyForAlert(product));
-  const visibleOnlineDrops = showWeakProducts ? onlineDrops : verifiedOnlineDrops;
   const urgentRestock = dashboard.alerts.find(
     (alert) => alert.priority === "HIGH" && alert.entityType === "PRODUCT" && !alert.read && alert.actionUrl
   );
+  const unreadAlerts = dashboard.alerts.filter((alert) => !alert.read).length;
+  const trackedProducts = dashboard.products.filter((product) => !product.archivedAt).length;
+  const activeProducts = dashboard.products.filter((product) => product.monitorEnabled && !product.archivedAt).length;
+  const favoriteStores = dashboard.stores.filter((storeItem) => storeItem.isFavorite).length;
+  const storesWithCoordinates = dashboard.stores.filter(
+    (storeItem) => storeItem.latitude !== null && storeItem.longitude !== null
+  ).length;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const dailyScans = dashboard.monitorLogs.filter((log) => log.startedAt.startsWith(todayKey)).length;
+  const todayAlerts = dashboard.alerts.filter((alert) => alert.timestamp.startsWith(todayKey)).length;
+  const dataPoints =
+    dashboard.products.length +
+    dashboard.stores.length +
+    dashboard.cards.length +
+    dashboard.inventory.length +
+    dashboard.alerts.length;
+  const systemOperational = Boolean(dashboard.health?.database.ok && dashboard.scannerStatus.cronActive);
+
   return (
     <>
       {urgentRestock ? <UrgentRestockBanner alert={urgentRestock} /> : null}
-      <section className="dashboard-command-row">
-        <DashboardLocationStrip dashboard={dashboard} busy={busy} runAction={runAction} />
+      <section className="dashboard-page-header">
+        <div>
+          <h1>Dashboard</h1>
+          <p>Overview of your Poke Radar operation</p>
+        </div>
         <MoreActionsMenu
           dashboard={dashboard}
           setActiveTab={setActiveTab}
@@ -1514,44 +1602,262 @@ function DashboardPanel({
           runAction={runAction}
         />
       </section>
-      <section className="chase-now-grid apple-chase-grid" aria-label="What should I chase right now">
-        <section className="action-panel apple-card">
-          <div className="panel-header product-panel-header">
+      <section className="dashboard-welcome-card">
+        <div className="welcome-copy">
+          <span className="welcome-icon">
+            <Radar size={22} />
+          </span>
+          <div>
+            <h2>Welcome back, Admin!</h2>
+            <p>Here is what is happening with your private restock radar today.</p>
+          </div>
+        </div>
+        <div className="welcome-status">
+          <span className={systemOperational ? "status-dot success" : "status-dot warning"} />
+          <div>
+            <strong>System Status</strong>
+            <span>{systemOperational ? "All systems operational" : "Review admin health"}</span>
+          </div>
+        </div>
+        <RadarGraphic />
+      </section>
+      <section className="dashboard-metric-grid" aria-label="Online Drops">
+        <DashboardMetricCard
+          icon={Store}
+          label="Monitored Stores"
+          value={dashboard.stores.length}
+          detail={`${favoriteStores} favorites`}
+          tone="green"
+        />
+        <DashboardMetricCard
+          icon={Bell}
+          label="Active Alerts"
+          value={unreadAlerts}
+          detail={`${todayAlerts} today`}
+          tone="amber"
+        />
+        <DashboardMetricCard
+          icon={PackageSearch}
+          label="Products Tracked"
+          value={trackedProducts}
+          detail={`${activeProducts} active scans`}
+          tone="green"
+        />
+        <DashboardMetricCard
+          icon={CircleDollarSign}
+          label="Inventory Items"
+          value={dashboard.inventory.length}
+          detail="Tracked lots"
+          tone="blue"
+        />
+        <DashboardMetricCard
+          icon={ShieldCheck}
+          label="System Uptime"
+          value={systemOperational ? "Online" : "Warn"}
+          detail={dashboard.health?.checkedAt ? `Checked ${relativeTime(dashboard.health.checkedAt)}` : "Not checked"}
+          tone={systemOperational ? "green" : "amber"}
+        />
+      </section>
+      <section className="dashboard-main-grid">
+        <section className="dashboard-card recent-alerts-card">
+          <div className="dashboard-card-header">
             <div>
-              <h2>Online Drops</h2>
-              <span>{showWeakProducts ? "Including weak/unverified products" : "Verified/high-confidence only"}</span>
+              <h2>Recent Alerts</h2>
+              <p>Latest signals from products, stores, releases, and cards.</p>
             </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("products")}>
-              Open <ChevronRight size={14} />
+            <button className="link-button" type="button" onClick={() => setActiveTab("alerts")}>
+              View All Alerts
             </button>
           </div>
-          <label className="checkbox-label dashboard-product-toggle">
-            <input
-              type="checkbox"
-              checked={showWeakProducts}
-              onChange={(event) => setShowWeakProducts(event.target.checked)}
-            />
-            Show weak/unverified products
-          </label>
-          <ProductStack products={visibleOnlineDrops.slice(0, 2)} compact />
+          <div className="recent-alert-list">
+            {dashboard.alerts.length ? (
+              dashboard.alerts.slice(0, 5).map((alert) => (
+                <RecentAlertRow key={alert.id} alert={alert} products={dashboard.products} setActiveTab={setActiveTab} />
+              ))
+            ) : (
+              <EmptyState icon={Bell} title="No alerts yet" detail="Live restock and workflow alerts will appear here." />
+            )}
+          </div>
         </section>
-        <section className="action-panel apple-card">
-          <PanelHeader title="Stores To Check" action="Open" onAction={() => setActiveTab("field")} />
-          <StoreStack
-            stores={storesToShow.slice(0, 3)}
-            compact
-            busy={busy}
-            busyLabel={busyLabel}
-            runAction={runAction}
-            showPreferenceActions
-          />
-        </section>
-        <section className="action-panel apple-card">
-          <PanelHeader title="Card Opportunities" action="Open" onAction={() => setActiveTab("cards")} />
-          <CardStack cards={dashboard.cards.slice(0, 2)} compact />
-        </section>
+        <aside className="dashboard-side-column">
+          <section className="dashboard-card dashboard-quick-actions-card">
+            <div className="dashboard-card-header compact">
+              <h2>Quick Setup</h2>
+              <button className="link-button" type="button" onClick={() => setActiveTab("settings")}>
+                View All Settings
+              </button>
+            </div>
+            <div className="quick-action-list">
+              <QuickActionRow icon={Plus} title="Add New Product" description="Start tracking an exact product page" onClick={() => setActiveTab("products")} />
+              <QuickActionRow icon={Store} title="Add New Store" description="Monitor a local store location" onClick={() => setActiveTab("stores")} />
+              <QuickActionRow icon={Bell} title="Create Alert" description="Tune alert settings and tests" onClick={() => setActiveTab("settings")} />
+              <QuickActionRow icon={AlertTriangle} title="View All Alerts" description="Review alert history and status" onClick={() => setActiveTab("alerts")} />
+            </div>
+          </section>
+          <section className="dashboard-card">
+            <div className="dashboard-card-header compact">
+              <h2>System Health</h2>
+              <button className="link-button" type="button" onClick={() => setActiveTab("admin")}>
+                View Details
+              </button>
+            </div>
+            <div className="system-health-list">
+              <SystemHealthRow
+                label="Browser Push"
+                value={dashboard.notificationSettings.browserPush ? "Enabled" : "Setup needed"}
+                ok={dashboard.notificationSettings.browserPush}
+              />
+              <SystemHealthRow
+                label="Data Collection"
+                value={dashboard.scannerStatus.lastScanTime ? "Active" : "Idle"}
+                ok={Boolean(dashboard.scannerStatus.lastScanTime)}
+              />
+              <SystemHealthRow label="Alert System" value={dashboard.health ? "Operational" : "Needs review"} ok={Boolean(dashboard.health)} />
+              <SystemHealthRow label="Database" value={dashboard.health?.database.ok ? "Healthy" : "Warning"} ok={Boolean(dashboard.health?.database.ok)} />
+            </div>
+          </section>
+        </aside>
+      </section>
+      <section className="dashboard-card quick-stats-card">
+        <div className="dashboard-card-header compact">
+          <div>
+            <h2>Quick Stats</h2>
+            <p>Operational snapshot from today and your saved data.</p>
+          </div>
+          <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>
+            View Analytics
+          </button>
+        </div>
+        <div className="quick-stats-grid">
+          <QuickStat label="Daily Scans" value={dailyScans} detail="monitor runs today" />
+          <QuickStat label="Successful Alerts" value={todayAlerts} detail="alerts today" />
+          <QuickStat label="Stores Online" value={`${storesWithCoordinates}/${dashboard.stores.length}`} detail="with coordinates" />
+          <QuickStat label="Data Points" value={dataPoints.toLocaleString()} detail="saved records" />
+        </div>
       </section>
     </>
+  );
+}
+
+function DashboardMetricCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone
+}: {
+  icon: typeof Radar;
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: "green" | "amber" | "blue";
+}) {
+  return (
+    <article className={`dashboard-metric-card tone-${tone}`}>
+      <span className="metric-icon">
+        <Icon size={20} />
+      </span>
+      <div>
+        <strong>{value}</strong>
+        <span>{label}</span>
+        <small>{detail}</small>
+      </div>
+    </article>
+  );
+}
+
+function RecentAlertRow({
+  alert,
+  products,
+  setActiveTab
+}: {
+  alert: DashboardDTO["alerts"][number];
+  products: ProductDTO[];
+  setActiveTab: (tab: Tab) => void;
+}) {
+  const product = alert.entityType === "PRODUCT" ? products.find((item) => item.id === alert.entityId) : null;
+  const targetTab: Tab =
+    alert.entityType === "STORE" ? "stores" : alert.entityType === "CARD" ? "cards" : alert.entityType === "RELEASE" ? "releases" : "alerts";
+
+  return (
+    <button className="recent-alert-row" type="button" onClick={() => setActiveTab(targetTab)}>
+      <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
+      <div className="recent-alert-thumb">
+        {product ? (
+          <ProductImage product={product} />
+        ) : (
+          <span>
+            <Bell size={18} />
+          </span>
+        )}
+      </div>
+      <div className="recent-alert-copy">
+        <strong>{alert.title}</strong>
+        <span>{alert.reason}</span>
+      </div>
+      <span className="recent-alert-status">{alert.read ? "Read" : "New"}</span>
+      <time>{relativeTime(alert.timestamp)}</time>
+      <ChevronRight size={18} />
+    </button>
+  );
+}
+
+function QuickActionRow({
+  icon: Icon,
+  title,
+  description,
+  onClick
+}: {
+  icon: typeof Radar;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className="quick-action-row" type="button" onClick={onClick}>
+      <span>
+        <Icon size={18} />
+      </span>
+      <div>
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </div>
+      <ChevronRight size={16} />
+    </button>
+  );
+}
+
+function SystemHealthRow({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <div className="system-health-row">
+      <span>{label}</span>
+      <strong className={ok ? "is-ok" : "is-warn"}>
+        <span className={ok ? "status-dot success" : "status-dot warning"} />
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function QuickStat({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+  return (
+    <article className="quick-stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function RadarGraphic() {
+  return (
+    <div className="radar-graphic" aria-hidden="true">
+      <span className="radar-ring one" />
+      <span className="radar-ring two" />
+      <span className="radar-ring three" />
+      <span className="radar-sweep" />
+      <span className="radar-dot" />
+    </div>
   );
 }
 
@@ -1568,42 +1874,6 @@ function UrgentRestockBanner({ alert }: { alert: DashboardDTO["alerts"][number] 
           Go / Buy Now <ExternalLink size={14} />
         </a>
       ) : null}
-    </section>
-  );
-}
-
-function DashboardLocationStrip({
-  dashboard,
-  busy,
-  runAction
-}: {
-  dashboard: DashboardDTO;
-  busy: boolean;
-  runAction: ActionHandler;
-}) {
-  const locationSaved = dashboard.userAreaPreferences.currentLatitude !== null && dashboard.userAreaPreferences.currentLongitude !== null;
-  const missingCoordinateCount = dashboard.stores.filter(storeNeedsCoordinates).length;
-  return (
-    <section className="location-strip">
-      <div>
-        <strong>{locationSaved ? "Nearby stores active" : "Add your location"}</strong>
-        <span>
-          {locationSaved && missingCoordinateCount > 0
-            ? `${missingCoordinateCount} store${missingCoordinateCount === 1 ? "" : "s"} need address/coordinates before distance sorting.`
-            : locationSaved
-            ? `Ranking stores from your location, saved ${relativeTime(dashboard.userAreaPreferences.locationUpdatedAt)}.`
-            : `Using ${zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)} until you save browser location.`}
-        </span>
-      </div>
-      <button
-        className="mini-action solid"
-        disabled={busy}
-        type="button"
-        onClick={() => saveBrowserLocation(dashboard, runAction)}
-      >
-        <MapPin size={14} />
-        Use My Location
-      </button>
     </section>
   );
 }
