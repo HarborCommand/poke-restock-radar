@@ -248,10 +248,10 @@ function inventoryMarketBadges(item: InventoryItemDTO, ebayStatus: DashboardDTO[
   const hasManualComps = item.lastThreeComps.some((comp) => comp.sourceQuality !== "EBAY_SOLD");
   const badges: Array<{ label: string; tone: "good" | "watch" | "bad" | "muted" }> = [];
   if (hasEbayComps) badges.push({ label: "Live eBay Data", tone: item.marketCompCount >= 3 ? "good" : "watch" });
-  if (hasManualComps || item.marketConfidence === "MANUAL") badges.push({ label: "Manual Comp Data", tone: "watch" });
-  if (!item.marketCompCount && item.currentMarketEstimate === null) badges.push({ label: "Market Not Collected", tone: "muted" });
+  if (hasManualComps) badges.push({ label: "Manual Comp Data", tone: "watch" });
+  if (!item.marketCompCount) badges.push({ label: "Market Not Collected", tone: "muted" });
   if (!ebayStatus.ready) badges.push({ label: "eBay Not Configured", tone: "watch" });
-  if ((item.marketCompCount > 0 && item.marketCompCount < 3) || item.marketConfidence === "LOW") badges.push({ label: "Low Confidence", tone: "bad" });
+  if (item.marketCompCount > 0 && (item.marketCompCount < 3 || item.marketConfidence === "LOW")) badges.push({ label: "Low Confidence", tone: "bad" });
   const seen = new Set<string>();
   return badges.filter((badge) => {
     if (seen.has(badge.label)) return false;
@@ -263,14 +263,19 @@ function inventoryMarketBadges(item: InventoryItemDTO, ebayStatus: DashboardDTO[
 function inventoryMarketSource(item: InventoryItemDTO) {
   if (item.lastThreeComps.some((comp) => comp.sourceQuality === "EBAY_SOLD")) return "eBay sold comps";
   if (item.lastThreeComps.length) return "Manual sold comps";
-  if (item.currentMarketEstimate !== null) return "Manual estimate only";
-  return "No market source";
+  return "No sold comps collected";
 }
 
 function inventoryMarketTableValue(item: InventoryItemDTO) {
-  if (item.marketCompCount > 0) return money(item.netMarketValue ?? item.currentMarketEstimate);
-  if (item.currentMarketEstimate !== null && item.marketConfidence === "MANUAL") return "Manual estimate";
+  if (item.marketCompCount > 0) return money(item.grossMarketValue ?? item.currentMarketEstimate);
   return "Not collected";
+}
+
+function inventoryMarketTone(item: InventoryItemDTO): "good" | "watch" | "bad" | "muted" {
+  if (!item.marketCompCount) return "muted";
+  if ((item.marketProfitLoss ?? 0) < 0) return "bad";
+  if ((item.marketRoiPercent ?? 0) >= 20) return "good";
+  return "watch";
 }
 
 function monitorDetail(words: string | null | undefined, label: string) {
@@ -4317,7 +4322,11 @@ function InventoryList({
           <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
           <span className="catalog-cell" data-label="Market">
             {inventoryMarketTableValue(item)}
-            <small>{item.marketCompCount ? `${item.marketConfidence} - ${item.marketCompCount}/3 comps` : "No sold comps"}</small>
+            <small>
+              {item.marketCompCount
+                ? `Avg ${money(item.marketAverageLast3 ?? item.currentMarketEstimate)} - ${item.marketCompCount}/3 comps`
+                : "No sold comps"}
+            </small>
           </span>
           <span className="catalog-cell" data-label="Target">{money(item.targetSellPrice)}</span>
           <span
@@ -4372,6 +4381,7 @@ function InventoryDetailsModal({
 }) {
   const marketBadges = inventoryMarketBadges(item, ebayStatus);
   const compCount = item.lastThreeComps.length;
+  const marketTone = inventoryMarketTone(item);
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`${item.itemName} inventory details`}>
@@ -4431,7 +4441,7 @@ function InventoryDetailsModal({
               <DetailStat label="Owned" value={String(item.quantityOwned)} />
               <DetailStat label="Average Cost" value={money(item.averageCost)} />
               <DetailStat label="Total Cost Basis" value={money(item.averageCost * item.quantityOwned)} />
-              <DetailStat label="Market Value" value={item.marketCompCount ? money(item.netMarketValue) : "Not verified"} />
+              <DetailStat label="Market Value" value={item.marketCompCount ? money(item.grossMarketValue) : "Not verified"} />
               <DetailStat label="Profit / Loss" value={item.marketCompCount ? money(item.marketProfitLoss) : "Needs comps"} tone={(item.marketProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
               <DetailStat label="ROI" value={item.marketCompCount ? percent(item.marketRoiPercent) : "Needs comps"} />
             </div>
@@ -4446,14 +4456,22 @@ function InventoryDetailsModal({
 
           <section className="inventory-detail-section">
             <h3>Market Data</h3>
+            <InventoryMarketHero item={item} tone={marketTone} />
             <div className="market-proof-grid">
               <DetailStat label="Status" value={marketBadges[0]?.label || "Market Not Collected"} />
               <DetailStat label="Source" value={inventoryMarketSource(item)} />
               <DetailStat label="Comps Used" value={`${compCount}/3`} />
               <DetailStat label="Last Refreshed" value={item.marketLastRefreshedAt ? dateTime(item.marketLastRefreshedAt) : "Not collected yet"} />
-              <DetailStat label="Confidence" value={item.marketConfidence || "LOW"} />
-              <DetailStat label="Estimate" value={item.marketCompCount ? money(item.currentMarketEstimate) : "Not verified"} />
+              <DetailStat label="Confidence" value={item.marketCompCount ? item.marketConfidence || "LOW" : "NONE"} />
+              <DetailStat label="Average from last 3" value={item.marketCompCount ? money(item.marketAverageLast3) : "Not verified"} />
+              <DetailStat label="Lowest recent comp" value={item.marketCompCount ? money(item.marketLowestRecentComp) : "Not verified"} />
+              <DetailStat label="Highest recent comp" value={item.marketCompCount ? money(item.marketHighestRecentComp) : "Not verified"} />
+              <DetailStat label="Estimated eBay fees" value={item.marketCompCount ? money(item.estimatedEbayFee) : "Needs comps"} />
+              <DetailStat label="Estimated shipping" value={item.marketCompCount ? money(item.estimatedShippingCost) : "Needs comps"} />
             </div>
+            {!ebayStatus.ready ? (
+              <p className="market-mode-warning">Configure eBay production keys for live sold comps.</p>
+            ) : null}
             {!ebayStatus.ready ? (
               <p className="market-mode-warning">eBay API not configured — manual comp mode only.</p>
             ) : null}
@@ -4466,7 +4484,7 @@ function InventoryDetailsModal({
                   <article key={comp.id}>
                     <div>
                       <strong>{comp.saleTitle}</strong>
-                      <span>{formatStatus(comp.sourceQuality)} · confidence {comp.matchScore}%</span>
+                      <span>{formatSourceQuality(comp.sourceQuality)} - confidence {comp.matchScore}%</span>
                     </div>
                     <b>{money(comp.salePrice)}</b>
                     <span>{shortDate(comp.soldAt)}</span>
@@ -4483,6 +4501,7 @@ function InventoryDetailsModal({
             ) : (
               <EmptyState icon={CircleDollarSign} title="Market not collected yet" detail="Refresh eBay when credentials are configured, or add manual sold comps below." />
             )}
+            <InventoryInlineCompForm item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
           </section>
 
           <section className="inventory-detail-section">
@@ -4523,6 +4542,88 @@ function InventoryDetailsModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function InventoryMarketHero({ item, tone }: { item: InventoryItemDTO; tone: "good" | "watch" | "bad" | "muted" }) {
+  const hasComps = item.marketCompCount > 0;
+  return (
+    <div className={`inventory-market-hero ${tone}`}>
+      <div className="market-hero-primary">
+        <small>Current Market Value</small>
+        <strong>{hasComps ? money(item.grossMarketValue) : "Not collected"}</strong>
+        <span>
+          {hasComps
+            ? `${item.marketCompCount}/3 sold comps used - ${inventoryMarketSource(item)}`
+            : "Add manual sold comps or configure eBay before market value is treated as real."}
+        </span>
+      </div>
+      <div className="market-hero-metrics">
+        <MarketHeroMetric label="Estimated Net After Fees" value={hasComps ? money(item.netMarketValue) : "Needs comps"} tone={tone} />
+        <MarketHeroMetric label="Estimated Profit" value={hasComps ? money(item.marketProfitLoss) : "Needs comps"} tone={tone} />
+        <MarketHeroMetric label="ROI %" value={hasComps ? percent(item.marketRoiPercent) : "Needs comps"} tone={tone} />
+      </div>
+    </div>
+  );
+}
+
+function MarketHeroMetric({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: string;
+  tone: "good" | "watch" | "bad" | "muted";
+}) {
+  return (
+    <span className={`market-hero-metric ${tone}`}>
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </span>
+  );
+}
+
+function InventoryInlineCompForm({
+  item,
+  busy,
+  busyLabel,
+  submit
+}: {
+  item: InventoryItemDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  return (
+    <form
+      className="market-inline-comp-form"
+      onSubmit={(event) =>
+        submit(
+          event,
+          `Adding manual comp ${item.id}`,
+          (form) => requestJson("/api/radar/inventory/comps", { method: "POST", body: JSON.stringify(formJson(form)) }),
+          { reset: true, success: "Manual sold comp added" }
+        )
+      }
+    >
+      <input type="hidden" name="inventoryItemId" value={item.id} />
+      <div className="inline-comp-heading">
+        <strong>Add Manual Sold Comp</strong>
+        <span>Use a real completed sale. This comp becomes visible proof and updates market value.</span>
+      </div>
+      <TextInput name="saleTitle" label="Sold listing title" required />
+      <TextInput name="salePrice" label="Sold price" type="number" min="0" step="0.01" required />
+      <TextInput name="soldAt" label="Sold date" type="date" required />
+      <TextInput name="sourceUrl" label="Sold listing URL" type="url" />
+      <SelectInput name="sourceQuality" label="Source" defaultValue="MANUAL_ESTIMATE" options={compSourceQualities.map((value) => ({ value, label: formatSourceQuality(value) }))} />
+      <TextInput name="matchScore" label="Confidence" type="number" min="0" max="100" defaultValue="90" />
+      <TextareaInput name="notes" label="Notes" wide />
+      <button className="primary-action" disabled={busy} type="submit">
+        <Plus size={16} />
+        {busyLabel === `Adding manual comp ${item.id}` ? "Saving Comp" : "Add Manual Sold Comp"}
+      </button>
+    </form>
   );
 }
 

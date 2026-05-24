@@ -137,6 +137,9 @@ export type InventoryItemDTO = {
   buyerPlatform: string | null;
   currentMarketEstimate: number | null;
   marketAverageSalePrice: number | null;
+  marketLowestRecentComp: number | null;
+  marketHighestRecentComp: number | null;
+  marketAverageLast3: number | null;
   marketCompCount: number;
   marketLastRefreshedAt: string | null;
   marketConfidence: string;

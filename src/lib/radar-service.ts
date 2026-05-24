@@ -1359,6 +1359,25 @@ function roundedMoney(value: number | null | undefined) {
   return value === null || value === undefined ? null : Number(value.toFixed(2));
 }
 
+function inventoryCompStats(comps: Array<{ salePrice: number }>) {
+  const prices = comps.map((comp) => comp.salePrice).filter((price) => Number.isFinite(price));
+  if (!prices.length) {
+    return { average: null, lowest: null, highest: null };
+  }
+  return {
+    average: average(prices),
+    lowest: roundedMoney(Math.min(...prices)),
+    highest: roundedMoney(Math.max(...prices))
+  };
+}
+
+function latestInventoryCompEnteredAt(comps: Array<{ createdAt: Date }>) {
+  return comps.reduce<Date | null>((latest, comp) => {
+    if (!latest || comp.createdAt.getTime() > latest.getTime()) return comp.createdAt;
+    return latest;
+  }, null);
+}
+
 function inventoryQuantitySold(item: InventoryItemWithInclude) {
   return item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
 }
@@ -1391,12 +1410,13 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   const realizedProfitLoss = item.sales.reduce((sum, sale) => sum + sale.profitLoss, 0);
   const realizedRoiPercent = item.sales.reduce((sum, sale) => sum + sale.costBasis, 0);
   const ownedCostBasis = inventoryOwnedCostBasis(item);
-  const grossMarketValue =
-    item.currentMarketEstimate === null || item.currentMarketEstimate === undefined ? null : item.currentMarketEstimate * quantityOwned;
-  const netMarketValue =
-    grossMarketValue === null
-      ? null
-      : grossMarketValue - (item.estimatedEbayFee ?? 0) - (item.estimatedShippingCost ?? 0);
+  const compStats = inventoryCompStats(item.marketComps);
+  const realCompCount = item.marketComps.length;
+  const hasRealMarketComps = realCompCount > 0;
+  const marketUnitEstimate = hasRealMarketComps ? compStats.average : null;
+  const marketLastRefreshedAt = hasRealMarketComps ? latestInventoryCompEnteredAt(item.marketComps) ?? item.marketLastRefreshedAt : null;
+  const grossMarketValue = marketUnitEstimate === null ? null : marketUnitEstimate * quantityOwned;
+  const netMarketValue = grossMarketValue === null ? null : grossMarketValue - (item.estimatedEbayFee ?? 0) - (item.estimatedShippingCost ?? 0);
   const marketProfitLoss = netMarketValue === null ? null : netMarketValue - ownedCostBasis;
   const marketRoiPercent = marketProfitLoss === null || ownedCostBasis <= 0 ? null : (marketProfitLoss / ownedCostBasis) * 100;
   return {
@@ -1442,11 +1462,14 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     soldPrice: item.soldPrice,
     soldAt: item.soldAt?.toISOString() ?? null,
     buyerPlatform: item.buyerPlatform,
-    currentMarketEstimate: item.currentMarketEstimate,
-    marketAverageSalePrice: item.marketAverageSalePrice,
-    marketCompCount: item.marketCompCount,
-    marketLastRefreshedAt: item.marketLastRefreshedAt?.toISOString() ?? null,
-    marketConfidence: item.marketConfidence,
+    currentMarketEstimate: hasRealMarketComps ? marketUnitEstimate : item.currentMarketEstimate,
+    marketAverageSalePrice: hasRealMarketComps ? marketUnitEstimate : null,
+    marketLowestRecentComp: compStats.lowest,
+    marketHighestRecentComp: compStats.highest,
+    marketAverageLast3: compStats.average,
+    marketCompCount: realCompCount,
+    marketLastRefreshedAt: marketLastRefreshedAt?.toISOString() ?? null,
+    marketConfidence: hasRealMarketComps ? item.marketConfidence : "NONE",
     grossMarketValue: roundedMoney(grossMarketValue),
     netMarketValue: roundedMoney(netMarketValue),
     marketProfitLoss: roundedMoney(marketProfitLoss),
@@ -1481,10 +1504,7 @@ function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const allSales = items.flatMap((item) => item.sales);
   const totalCost = items.reduce((sum, item) => sum + item.totalCost, 0);
-  const currentInventoryValue = items.reduce(
-    (sum, item) => sum + (item.netMarketValue ?? (item.currentMarketEstimate ?? 0) * item.quantityOwned),
-    0
-  );
+  const currentInventoryValue = items.reduce((sum, item) => sum + (item.netMarketValue ?? 0), 0);
   const totalSalesGross = allSales.reduce((sum, sale) => sum + sale.grossSale, 0);
   const totalSalesNet = allSales.reduce((sum, sale) => sum + sale.netSale, 0);
   const realizedProfitLoss = allSales.reduce((sum, sale) => sum + sale.profitLoss, 0);
@@ -1528,7 +1548,7 @@ function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
     worstItem: sortedByProfit.at(-1) ?? null,
     sellNowCount: items.filter((item) => item.recommendedAction === "SELL_NOW" || item.recommendedAction === "LIST_HIGH").length,
     holdCount: items.filter((item) => item.recommendedAction === "HOLD").length,
-    missingMarketDataCount: items.filter((item) => item.currentMarketEstimate === null && item.marketCompCount === 0).length
+    missingMarketDataCount: items.filter((item) => item.marketCompCount === 0).length
   };
 }
 
@@ -3186,17 +3206,18 @@ function inventoryMarketRecommendation(
 ) {
   const quantityOwned = input.quantityOwned ?? input.quantity;
   const totalCost = input.costBasis ?? input.totalCost ?? input.cost * quantityOwned + (input.purchaseExtraCost ?? 0);
-  const marketPrice = input.soldPrice ?? input.currentMarketEstimate ?? null;
+  const compCount = input.marketCompCount ?? 0;
+  const hasRealComps = compCount > 0;
+  const marketPrice = hasRealComps ? input.currentMarketEstimate ?? null : null;
   const gross = marketPrice === null ? null : marketPrice * quantityOwned;
-  const estimatedEbayFee = gross === null ? input.estimatedEbayFee ?? null : gross * settings.ebaySellingFee;
-  const estimatedShippingCost = gross === null ? input.estimatedShippingCost ?? null : input.estimatedShippingCost ?? settings.shippingCost;
+  const estimatedEbayFee = gross === null ? null : gross * settings.ebaySellingFee;
+  const estimatedShippingCost = gross === null ? null : input.estimatedShippingCost ?? settings.shippingCost;
   const estimatedNetProfit =
     gross === null || estimatedEbayFee === null || estimatedShippingCost === null
       ? null
       : gross - estimatedEbayFee - estimatedShippingCost - totalCost;
   const roiPercent = estimatedNetProfit === null || totalCost <= 0 ? null : (estimatedNetProfit / totalCost) * 100;
   const itemStatus = input.itemStatus || "";
-  const compCount = input.marketCompCount ?? 0;
   const confidence = input.marketConfidence || (compCount >= 3 ? "HIGH" : compCount >= 2 ? "MEDIUM" : compCount === 1 ? "LOW" : "NONE");
   const strongComps = compCount >= 3 && (confidence === "HIGH" || confidence === "MEDIUM" || confidence === "MANUAL");
   const productSignals = [input.product?.sealedResaleNotes, input.product?.scarcityNotes, input.product?.priority, input.product?.rating, input.product?.manualPriorityOverride]
@@ -3208,9 +3229,9 @@ function inventoryMarketRecommendation(
     input.product?.liveStockStatus === "SOLD_OUT" ||
     input.product?.stockStatus === "SOLD_OUT";
   let recommendedAction = "HOLD";
-  let recommendationReason = "Market not collected yet.";
+  let recommendationReason = "Market not collected yet. Add sold comps before recommendations use profit data.";
 
-  if (input.card && itemStatus === "raw" && Math.max(input.card.psa9EstimatedProfit, input.card.psa10EstimatedProfit) >= settings.minimumProfitTarget) {
+  if (hasRealComps && input.card && itemStatus === "raw" && Math.max(input.card.psa9EstimatedProfit, input.card.psa10EstimatedProfit) >= settings.minimumProfitTarget) {
     recommendedAction = "GRADE_FIRST";
     recommendationReason = `Grade first because linked card comps show PSA upside over the ${settings.minimumProfitTarget.toFixed(0)} target.`;
   } else if (estimatedNetProfit !== null && roiPercent !== null) {
@@ -3254,9 +3275,11 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
       return recomputeInventoryItem(itemId, currentUser);
     }
   }
-  const compAverage = average(item.marketComps.map((comp) => comp.salePrice));
-  const currentMarketEstimate = compAverage ?? item.currentMarketEstimate;
-  const confidence = item.marketComps.length >= 3 ? "HIGH" : item.marketComps.length >= 2 ? "MEDIUM" : item.marketComps.length === 1 ? "LOW" : item.marketConfidence;
+  const compStats = inventoryCompStats(item.marketComps);
+  const compCount = item.marketComps.length;
+  const currentMarketEstimate = compCount ? compStats.average : item.currentMarketEstimate;
+  const confidence = compCount >= 3 ? "HIGH" : compCount >= 2 ? "MEDIUM" : compCount === 1 ? "LOW" : "NONE";
+  const latestCompEnteredAt = latestInventoryCompEnteredAt(item.marketComps);
   const quantityOwned = inventoryQuantityOwned(item);
   const costBasis = inventoryOwnedCostBasis(item);
   const computed = inventoryMarketRecommendation(
@@ -3273,7 +3296,7 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
       soldPrice: item.soldPrice,
       estimatedEbayFee: item.estimatedEbayFee,
       estimatedShippingCost: item.estimatedShippingCost,
-      marketCompCount: item.marketComps.length,
+      marketCompCount: compCount,
       marketConfidence: confidence,
       product: item.product,
       card: item.card
@@ -3285,9 +3308,9 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
     data: {
       totalCost: item.totalCost ?? item.cost * item.quantity + (item.purchaseExtraCost ?? 0),
       currentMarketEstimate,
-      marketAverageSalePrice: currentMarketEstimate,
-      marketCompCount: item.marketComps.length,
-      marketLastRefreshedAt: item.marketComps[0]?.soldAt ?? item.marketLastRefreshedAt,
+      marketAverageSalePrice: compCount ? compStats.average : null,
+      marketCompCount: compCount,
+      marketLastRefreshedAt: latestCompEnteredAt,
       marketConfidence: confidence,
       ...computed
     },
@@ -3358,7 +3381,10 @@ export async function createInventoryItem(
   const linkedInput = linkedProduct ? { ...normalizedInput, ...withoutUndefined(productSyncData(linkedProduct)) } : normalizedInput;
   const settings = await ensureInvestmentSettings(currentUser);
   const totalCost = linkedInput.totalCost ?? linkedInput.cost * linkedInput.quantity + (linkedInput.purchaseExtraCost ?? 0);
-  const computed = inventoryMarketRecommendation({ ...linkedInput, totalCost, quantityOwned: linkedInput.quantity, costBasis: totalCost }, settings);
+  const computed = inventoryMarketRecommendation(
+    { ...linkedInput, totalCost, quantityOwned: linkedInput.quantity, costBasis: totalCost, marketCompCount: 0, marketConfidence: "NONE" },
+    settings
+  );
   const item = await prisma.inventoryItem.create({
     data: {
       userId: currentUser.id,
@@ -3397,10 +3423,10 @@ export async function createInventoryItem(
       soldAt: linkedInput.soldAt,
       buyerPlatform: linkedInput.buyerPlatform,
       currentMarketEstimate: linkedInput.currentMarketEstimate,
-      marketAverageSalePrice: linkedInput.currentMarketEstimate,
-      marketCompCount: linkedInput.currentMarketEstimate === undefined ? 0 : 1,
-      marketLastRefreshedAt: linkedInput.currentMarketEstimate === undefined ? null : new Date(),
-      marketConfidence: linkedInput.currentMarketEstimate === undefined ? "LOW" : "MANUAL",
+      marketAverageSalePrice: null,
+      marketCompCount: 0,
+      marketLastRefreshedAt: null,
+      marketConfidence: "NONE",
       estimatedEbayFee: computed.estimatedEbayFee,
       estimatedShippingCost: computed.estimatedShippingCost,
       estimatedNetProfit: computed.estimatedNetProfit,
