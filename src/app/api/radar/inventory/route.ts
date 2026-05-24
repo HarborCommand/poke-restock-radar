@@ -71,6 +71,46 @@ export async function GET(request: Request) {
       }
     });
   }
+  if (format === "stock-lots-csv") {
+    const headers = [
+      "itemName",
+      "lotId",
+      "purchasedAt",
+      "source",
+      "quantity",
+      "costPerUnit",
+      "taxShipping",
+      "totalCost",
+      "remainingQuantity",
+      "receiptNumber",
+      "notes"
+    ];
+    const rows = dashboard.inventory.flatMap((item) =>
+      item.stockLots.map((lot) =>
+        [
+          item.itemName,
+          lot.id,
+          lot.purchasedAt,
+          lot.source,
+          lot.quantity,
+          lot.costPerUnit,
+          lot.purchaseExtraCost,
+          lot.totalCost,
+          lot.remainingQuantity,
+          lot.receiptNumber,
+          lot.notes
+        ]
+          .map(csvCell)
+          .join(",")
+      )
+    );
+    return new Response([headers.join(","), ...rows].join("\n"), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": "attachment; filename=poke-restock-stock-lots.csv"
+      }
+    });
+  }
   if (format === "csv") {
     const headers = [
       "itemName",
@@ -84,10 +124,18 @@ export async function GET(request: Request) {
       "purchaseDate",
       "targetSellPrice",
       "currentMarketEstimate",
+      "marketCompCount",
+      "marketConfidence",
+      "grossMarketValue",
+      "netMarketValue",
+      "marketProfitLoss",
+      "marketRoiPercent",
       "estimatedNetProfit",
       "roiPercent",
       "recommendedAction",
-      "listingStatus"
+      "listingStatus",
+      "linkedProductName",
+      "linkedProductRetailer"
     ];
     const rows = dashboard.inventory.map((item) =>
       [
@@ -102,10 +150,18 @@ export async function GET(request: Request) {
         item.purchasedAt,
         item.targetSellPrice,
         item.currentMarketEstimate,
+        item.marketCompCount,
+        item.marketConfidence,
+        item.grossMarketValue,
+        item.netMarketValue,
+        item.marketProfitLoss,
+        item.marketRoiPercent,
         item.estimatedNetProfit,
         item.roiPercent,
         item.recommendedAction,
-        item.listingStatus
+        item.listingStatus,
+        item.linkedProductName,
+        item.linkedProductRetailer
       ]
         .map(csvCell)
         .join(",")

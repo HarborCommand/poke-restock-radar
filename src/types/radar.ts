@@ -99,6 +99,10 @@ export type InventoryItemDTO = {
   category: string;
   setName: string | null;
   productId: string | null;
+  linkedProductName: string | null;
+  linkedProductRetailer: string | null;
+  linkedProductLivePrice: number | null;
+  linkedProductLiveStockStatus: ProductStatus | null;
   cardId: string | null;
   cost: number;
   quantity: number;
@@ -131,6 +135,10 @@ export type InventoryItemDTO = {
   marketCompCount: number;
   marketLastRefreshedAt: string | null;
   marketConfidence: string;
+  grossMarketValue: number | null;
+  netMarketValue: number | null;
+  marketProfitLoss: number | null;
+  marketRoiPercent: number | null;
   estimatedEbayFee: number | null;
   estimatedShippingCost: number | null;
   estimatedNetProfit: number | null;

@@ -3308,11 +3308,11 @@ function InventoryPanel({
       .filter((item) => filters.recommendation === "ALL" || item.recommendedAction === filters.recommendation)
       .filter((item) => filters.listingStatus === "ALL" || item.listingStatus === filters.listingStatus)
       .sort((a, b) => {
-        if (filters.sort === "roi") return (b.roiPercent ?? -999) - (a.roiPercent ?? -999);
+        if (filters.sort === "roi") return (b.marketRoiPercent ?? b.roiPercent ?? -999) - (a.marketRoiPercent ?? a.roiPercent ?? -999);
         if (filters.sort === "date") return new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime();
         if (filters.sort === "quantity") return b.quantityOwned - a.quantityOwned;
-        if (filters.sort === "market") return (b.currentMarketEstimate ?? 0) * b.quantityOwned - (a.currentMarketEstimate ?? 0) * a.quantityOwned;
-        return (b.businessProfitLoss ?? b.estimatedNetProfit ?? -999999) - (a.businessProfitLoss ?? a.estimatedNetProfit ?? -999999);
+        if (filters.sort === "market") return (b.netMarketValue ?? (b.currentMarketEstimate ?? 0) * b.quantityOwned) - (a.netMarketValue ?? (a.currentMarketEstimate ?? 0) * a.quantityOwned);
+        return (b.businessProfitLoss ?? b.marketProfitLoss ?? b.estimatedNetProfit ?? -999999) - (a.businessProfitLoss ?? a.marketProfitLoss ?? a.estimatedNetProfit ?? -999999);
       });
   }, [dashboard.inventory, filters]);
 
@@ -3333,12 +3333,16 @@ function InventoryPanel({
         </div>
         <div className="inventory-header-actions">
           <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
-            <Upload size={14} />
-            Import CSV
-          </a>
-          <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
             <Download size={14} />
-            Export CSV
+            Inventory CSV
+          </a>
+          <a className="mini-action" href="/api/radar/inventory?format=stock-lots-csv" target="_blank" rel="noreferrer">
+            <Download size={14} />
+            Lots CSV
+          </a>
+          <a className="mini-action" href="/api/radar/inventory?format=sales-csv" target="_blank" rel="noreferrer">
+            <Download size={14} />
+            Sales CSV
           </a>
           <button
             className="primary-action"
@@ -3374,6 +3378,7 @@ function InventoryPanel({
         <span>Sell now <strong>{summary.sellNowCount}</strong></span>
         <span>Missing market <strong>{summary.missingMarketDataCount}</strong></span>
       </section>
+      <InventoryMarketDecisionPanels items={dashboard.inventory} />
       <section className="inventory-view-tabs" aria-label="Inventory views">
         {[
           { id: "items", label: "Inventory" },
@@ -3400,6 +3405,7 @@ function InventoryPanel({
                 selectedId={selectedItem?.id ?? ""}
                 busy={busy}
                 busyLabel={busyLabel}
+                products={dashboard.products}
                 runAction={runAction}
                 submit={submit}
                 onSelect={(item) => setSelectedItemId(item.id)}
@@ -3488,6 +3494,67 @@ function InventoryKpiCard({
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{detail}</small>
+    </article>
+  );
+}
+
+function InventoryMarketDecisionPanels({ items }: { items: InventoryItemDTO[] }) {
+  const sellToday = [...items]
+    .filter((item) => ["SELL_NOW", "LIST_HIGH"].includes(item.recommendedAction))
+    .sort((a, b) => (b.marketProfitLoss ?? b.businessProfitLoss ?? 0) - (a.marketProfitLoss ?? a.businessProfitLoss ?? 0))
+    .slice(0, 3);
+  const losingMoney = [...items]
+    .filter((item) => (item.marketProfitLoss ?? item.businessProfitLoss ?? 0) < 0)
+    .sort((a, b) => (a.marketProfitLoss ?? a.businessProfitLoss ?? 0) - (b.marketProfitLoss ?? b.businessProfitLoss ?? 0))
+    .slice(0, 3);
+  const missingMarket = items
+    .filter((item) => item.currentMarketEstimate === null || item.marketCompCount < 3)
+    .slice(0, 3);
+
+  return (
+    <section className="inventory-decision-grid" aria-label="Inventory market decisions">
+      <InventoryDecisionCard title="What should I sell today?" empty="No urgent sells yet." items={sellToday} metric={(item) => money(item.marketProfitLoss ?? item.businessProfitLoss)} />
+      <InventoryDecisionCard title="Items losing money" empty="Nothing is underwater." items={losingMoney} metric={(item) => money(item.marketProfitLoss ?? item.businessProfitLoss)} tone="bad" />
+      <InventoryDecisionCard
+        title="Missing market data"
+        empty="All top items have comps."
+        items={missingMarket}
+        metric={(item) => `${item.marketCompCount}/3 comps`}
+        tone="watch"
+      />
+    </section>
+  );
+}
+
+function InventoryDecisionCard({
+  title,
+  empty,
+  items,
+  metric,
+  tone = "good"
+}: {
+  title: string;
+  empty: string;
+  items: InventoryItemDTO[];
+  metric: (item: InventoryItemDTO) => string;
+  tone?: "good" | "watch" | "bad";
+}) {
+  return (
+    <article className={`inventory-decision-card ${tone}`}>
+      <h3>{title}</h3>
+      {items.length ? (
+        items.map((item) => (
+          <div className="inventory-decision-row" key={item.id}>
+            <span>
+              <strong>{item.itemName}</strong>
+              <small>{item.recommendationReason || "Review current market comps before listing."}</small>
+            </span>
+            <b>{metric(item)}</b>
+          </div>
+        ))
+      ) : (
+        <p>{empty}</p>
+      )}
     </article>
   );
 }
@@ -3787,6 +3854,7 @@ function InventoryList({
   selectedId,
   busy,
   busyLabel,
+  products,
   runAction,
   submit,
   onSelect,
@@ -3796,6 +3864,7 @@ function InventoryList({
   selectedId: string;
   busy: boolean;
   busyLabel: string | null;
+  products: ProductDTO[];
   runAction: ActionHandler;
   submit: SubmitHandler;
   onSelect: (item: InventoryItemDTO) => void;
@@ -3828,18 +3897,18 @@ function InventoryList({
           <span className="catalog-cell strong" data-label="Qty">{item.quantityOwned}</span>
           <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
           <span className="catalog-cell" data-label="Market">
-            {item.currentMarketEstimate === null ? "Not collected" : money(item.currentMarketEstimate)}
+            {item.currentMarketEstimate === null ? "Not collected" : money(item.netMarketValue ?? item.currentMarketEstimate)}
           </span>
           <span className="catalog-cell" data-label="Target">{money(item.targetSellPrice)}</span>
           <span
             className={`catalog-cell strong ${
-              (item.businessProfitLoss ?? item.estimatedNetProfit ?? 0) >= 0 ? "profit-good" : "profit-bad"
+              (item.marketProfitLoss ?? item.businessProfitLoss ?? item.estimatedNetProfit ?? 0) >= 0 ? "profit-good" : "profit-bad"
             }`}
             data-label="Profit Est."
           >
-            {item.businessProfitLoss === null ? "TBD" : money(item.businessProfitLoss)}
+            {item.marketProfitLoss === null ? "TBD" : money(item.marketProfitLoss)}
           </span>
-          <span className="catalog-cell" data-label="ROI">{percent(item.roiPercent)}</span>
+          <span className="catalog-cell" data-label="ROI">{percent(item.marketRoiPercent ?? item.roiPercent)}</span>
           <div className="catalog-actions">
             <span className={`chip compact-chip ${inventoryRecommendationTone(item.recommendedAction)}`}>{formatStatus(item.recommendedAction)}</span>
             <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
@@ -3854,11 +3923,14 @@ function InventoryList({
                 <span>Purchased {shortDate(item.purchasedAt)} from {item.source}</span>
                 <span>Total spent {money(item.totalCost)} - sold {item.quantitySold} for {money(item.totalSalesGross)}</span>
                 <span>Receipt/order {item.receiptNumber || "Not saved"}</span>
+                <span>Linked product {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
                 <span>UPC {item.upc || "Missing"} SKU {item.sku || "Missing"} DPCI {item.dpci || "Missing"} ASIN {item.asin || "Missing"}</span>
+                <span>Net market value {money(item.netMarketValue)} - market P/L {money(item.marketProfitLoss)} - ROI {percent(item.marketRoiPercent)}</span>
                 <span>Target {money(item.targetSellPrice)} minimum {money(item.minimumAcceptablePrice)}</span>
                 <span>Realized P/L {money(item.realizedProfitLoss)} - ROI {percent(item.realizedRoiPercent)}</span>
                 <span>Market {item.marketLastRefreshedAt ? relativeTime(item.marketLastRefreshedAt) : "Market not collected yet"}</span>
               </div>
+              <AttachWatchedProductForm item={item} products={products} busy={busy} busyLabel={busyLabel} submit={submit} />
               <RecordSaleForm item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
               {item.lastThreeComps.length ? (
                 <div className="inventory-comp-list">
@@ -3892,6 +3964,57 @@ function InventoryList({
         </article>
       ))}
     </div>
+  );
+}
+
+function AttachWatchedProductForm({
+  item,
+  products,
+  busy,
+  busyLabel,
+  submit
+}: {
+  item: InventoryItemDTO;
+  products: ProductDTO[];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const productOptions = products
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((product) => ({
+      value: product.id,
+      label: `${product.name} - ${product.retailerName}${product.upc ? ` - UPC ${product.upc}` : ""}${product.sku ? ` - SKU ${product.sku}` : ""}`
+    }));
+  return (
+    <form
+      className="attach-product-form"
+      onSubmit={(event) =>
+        submit(
+          event,
+          `Attaching watched product ${item.id}`,
+          (form) => requestJson(`/api/radar/inventory/${item.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
+          { success: "Watched product attached and image synced" }
+        )
+      }
+    >
+      <div>
+        <strong>Attach watched product</strong>
+        <span>Matches by UPC, SKU, DPCI, ASIN, or exact product name. Verified retailer images copy into inventory.</span>
+      </div>
+      <SelectInput
+        name="productId"
+        label="Watched product"
+        defaultValue={item.productId ?? ""}
+        options={[{ value: "", label: productOptions.length ? "Choose a watched product" : "No watched products available" }, ...productOptions]}
+        disabled={!productOptions.length || busy}
+      />
+      <button className="mini-action" disabled={!productOptions.length || busy} type="submit">
+        <Save size={13} />
+        {busyLabel === `Attaching watched product ${item.id}` ? "Attaching" : "Attach"}
+      </button>
+    </form>
   );
 }
 

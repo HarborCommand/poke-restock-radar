@@ -171,6 +171,71 @@ async function main() {
     checks[path] = response.status;
   }
 
+  const inventoryResponse = await authedGet("/api/radar/inventory");
+  const inventoryBody = await json(inventoryResponse);
+  if (!Array.isArray(inventoryBody.inventory) || typeof inventoryBody.summary?.totalSpent !== "number") {
+    throw new Error("Inventory endpoint did not return items and totals.");
+  }
+  const smokeItemName = `Smoke Inventory ${Date.now()}`;
+  const createInventory = await fetch(`${baseUrl}/api/radar/inventory`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      itemType: "product",
+      itemName: smokeItemName,
+      category: "sealed_packs",
+      quantity: 2,
+      cost: 1.5,
+      purchaseExtraCost: 0.5,
+      source: "Smoke QA",
+      retailer: "Smoke",
+      purchasedAt: new Date().toISOString(),
+      targetSellPrice: 4.5,
+      currentMarketEstimate: 5
+    })
+  });
+  const createInventoryBody = await json(createInventory);
+  await expectStatus("inventory create", createInventory, 201);
+  const smokeItemId = createInventoryBody.item?.id;
+  if (!smokeItemId) throw new Error("Inventory create did not return item id.");
+  const addStock = await fetch(`${baseUrl}/api/radar/inventory`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      existingInventoryItemId: smokeItemId,
+      itemType: "product",
+      itemName: smokeItemName,
+      category: "sealed_packs",
+      quantity: 1,
+      cost: 1.75,
+      source: "Smoke QA",
+      purchasedAt: new Date().toISOString()
+    })
+  });
+  await expectStatus("inventory add stock", addStock, 201);
+  const recordSale = await fetch(`${baseUrl}/api/radar/inventory/${smokeItemId}/sales`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      quantitySold: 1,
+      soldPricePerItem: 5,
+      platform: "other",
+      fees: 0.5,
+      shippingCost: 0.25,
+      soldAt: new Date().toISOString(),
+      notes: "Production smoke sale"
+    })
+  });
+  await expectStatus("inventory record sale", recordSale, 201);
+  for (const format of ["csv", "stock-lots-csv", "sales-csv"]) {
+    const exportResponse = await authedGet(`/api/radar/inventory?format=${format}`);
+    const csv = await exportResponse.text();
+    if (!csv.includes(smokeItemName)) throw new Error(`Inventory ${format} export did not include smoke item.`);
+  }
+  const deleteInventory = await fetch(`${baseUrl}/api/radar/inventory/${smokeItemId}`, { method: "DELETE", headers: { cookie } });
+  await expectStatus("inventory cleanup delete", deleteInventory, 200);
+  checks.inventoryBusinessFlow = "totals, add stock, record sale, and CSV exports passed";
+
   const ebayStatus = await authedGet("/api/radar/ebay/status");
   const ebayStatusBody = await json(ebayStatus);
   if (!Array.isArray(ebayStatusBody.status?.variables)) throw new Error("eBay status endpoint did not return masked variable status.");

@@ -896,6 +896,9 @@ test("inventory tracker and market recommendation engine exists", () => {
     "addInventoryStockLot",
     "inventoryMarketRecommendation",
     "refreshInventoryEbayComps",
+    "autoLinkInventoryProducts",
+    "findWatchedProductMatch",
+    "inventoryOwnedCostBasis",
     "Market not collected yet",
     "GRADE_FIRST",
     "SELL_NOW"
@@ -914,8 +917,14 @@ test("inventory tracker and market recommendation engine exists", () => {
     "Record Sale",
     "Spending Log",
     "Sales Log",
+    "What should I sell today?",
+    "Items losing money",
+    "Missing market data",
+    "Attach watched product",
     "Manual Inventory Sold Comp",
-    "Export CSV",
+    "Inventory CSV",
+    "Lots CSV",
+    "Sales CSV",
     "Refresh eBay",
     "Market not collected yet"
   ]) {

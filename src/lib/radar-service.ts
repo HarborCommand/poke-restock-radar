@@ -166,7 +166,31 @@ const compSaleInclude = {
 } satisfies Prisma.CardCompSaleInclude;
 
 const inventoryItemInclude = {
-  product: { select: { id: true, name: true, liveImageUrl: true, imageUrl: true, livePrice: true, liveStockStatus: true } },
+  product: {
+    select: {
+      id: true,
+      name: true,
+      retailer: { select: { name: true } },
+      url: true,
+      verifiedFinalUrl: true,
+      retailerProductId: true,
+      sku: true,
+      upc: true,
+      dpci: true,
+      setName: true,
+      productType: true,
+      liveImageUrl: true,
+      imageUrl: true,
+      livePrice: true,
+      liveStockStatus: true,
+      stockStatus: true,
+      priority: true,
+      rating: true,
+      sealedResaleNotes: true,
+      scarcityNotes: true,
+      manualPriorityOverride: true
+    }
+  },
   card: {
     select: {
       id: true,
@@ -1306,20 +1330,52 @@ function inventorySaleToDTO(
   };
 }
 
-function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: typeof inventoryItemInclude }>): InventoryItemDTO {
-  const totalCost = item.totalCost ?? item.cost * item.quantity;
-  const quantitySold = item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+type InventoryItemWithInclude = Prisma.InventoryItemGetPayload<{ include: typeof inventoryItemInclude }>;
+
+function roundedMoney(value: number | null | undefined) {
+  return value === null || value === undefined ? null : Number(value.toFixed(2));
+}
+
+function inventoryQuantitySold(item: InventoryItemWithInclude) {
+  return item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+}
+
+function inventoryQuantityOwned(item: InventoryItemWithInclude) {
+  const quantitySold = inventoryQuantitySold(item);
   const lotRemaining = item.stockLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
-  const quantityOwned = item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - quantitySold);
+  return item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - quantitySold);
+}
+
+function inventoryOwnedCostBasis(item: InventoryItemWithInclude) {
+  if (item.stockLots.length) {
+    return item.stockLots.reduce((sum, lot) => {
+      const unitCost = lot.quantity > 0 ? lot.totalCost / lot.quantity : lot.costPerUnit;
+      return sum + unitCost * lot.remainingQuantity;
+    }, 0);
+  }
+  const totalCost = item.totalCost ?? item.cost * item.quantity + (item.purchaseExtraCost ?? 0);
+  const averageCost = item.quantity > 0 ? totalCost / item.quantity : item.cost;
+  return averageCost * inventoryQuantityOwned(item);
+}
+
+function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: typeof inventoryItemInclude }>): InventoryItemDTO {
+  const totalCost = item.totalCost ?? item.cost * item.quantity + (item.purchaseExtraCost ?? 0);
+  const quantitySold = inventoryQuantitySold(item);
+  const quantityOwned = inventoryQuantityOwned(item);
   const averageCost = item.quantity > 0 ? totalCost / item.quantity : item.cost;
   const totalSalesGross = item.sales.reduce((sum, sale) => sum + sale.grossSale, 0);
   const totalSalesNet = item.sales.reduce((sum, sale) => sum + sale.netSale, 0);
   const realizedProfitLoss = item.sales.reduce((sum, sale) => sum + sale.profitLoss, 0);
   const realizedRoiPercent = item.sales.reduce((sum, sale) => sum + sale.costBasis, 0);
-  const unrealizedProfit =
-    item.currentMarketEstimate === null || item.currentMarketEstimate === undefined
+  const ownedCostBasis = inventoryOwnedCostBasis(item);
+  const grossMarketValue =
+    item.currentMarketEstimate === null || item.currentMarketEstimate === undefined ? null : item.currentMarketEstimate * quantityOwned;
+  const netMarketValue =
+    grossMarketValue === null
       ? null
-      : item.currentMarketEstimate * quantityOwned - averageCost * quantityOwned;
+      : grossMarketValue - (item.estimatedEbayFee ?? 0) - (item.estimatedShippingCost ?? 0);
+  const marketProfitLoss = netMarketValue === null ? null : netMarketValue - ownedCostBasis;
+  const marketRoiPercent = marketProfitLoss === null || ownedCostBasis <= 0 ? null : (marketProfitLoss / ownedCostBasis) * 100;
   return {
     id: item.id,
     itemType: item.itemType,
@@ -1327,6 +1383,10 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     category: item.category,
     setName: item.setName,
     productId: item.productId,
+    linkedProductName: item.product?.name ?? null,
+    linkedProductRetailer: item.product?.retailer?.name ?? null,
+    linkedProductLivePrice: item.product?.livePrice ?? null,
+    linkedProductLiveStockStatus: (item.product?.liveStockStatus as ProductStatus | null | undefined) ?? null,
     cardId: item.cardId,
     cost: item.cost,
     quantity: item.quantity,
@@ -1359,6 +1419,10 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     marketCompCount: item.marketCompCount,
     marketLastRefreshedAt: item.marketLastRefreshedAt?.toISOString() ?? null,
     marketConfidence: item.marketConfidence,
+    grossMarketValue: roundedMoney(grossMarketValue),
+    netMarketValue: roundedMoney(netMarketValue),
+    marketProfitLoss: roundedMoney(marketProfitLoss),
+    marketRoiPercent: roundedMoney(marketRoiPercent),
     estimatedEbayFee: item.estimatedEbayFee,
     estimatedShippingCost: item.estimatedShippingCost,
     estimatedNetProfit: item.estimatedNetProfit,
@@ -1370,7 +1434,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     totalSalesNet,
     realizedProfitLoss,
     realizedRoiPercent: realizedRoiPercent > 0 ? (realizedProfitLoss / realizedRoiPercent) * 100 : null,
-    businessProfitLoss: unrealizedProfit === null ? realizedProfitLoss : realizedProfitLoss + unrealizedProfit,
+    businessProfitLoss: marketProfitLoss === null ? realizedProfitLoss : realizedProfitLoss + marketProfitLoss,
     lastThreeComps: item.marketComps.map(inventoryMarketCompToDTO),
     stockLots: item.stockLots.map(inventoryStockLotToDTO),
     sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName)),
@@ -1389,11 +1453,14 @@ function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const allSales = items.flatMap((item) => item.sales);
   const totalCost = items.reduce((sum, item) => sum + item.totalCost, 0);
-  const currentInventoryValue = items.reduce((sum, item) => sum + (item.currentMarketEstimate ?? 0) * item.quantityOwned, 0);
+  const currentInventoryValue = items.reduce(
+    (sum, item) => sum + (item.netMarketValue ?? (item.currentMarketEstimate ?? 0) * item.quantityOwned),
+    0
+  );
   const totalSalesGross = allSales.reduce((sum, sale) => sum + sale.grossSale, 0);
   const totalSalesNet = allSales.reduce((sum, sale) => sum + sale.netSale, 0);
   const realizedProfitLoss = allSales.reduce((sum, sale) => sum + sale.profitLoss, 0);
-  const estimatedProfit = items.reduce((sum, item) => sum + (item.businessProfitLoss ?? item.estimatedNetProfit ?? 0), 0);
+  const estimatedProfit = items.reduce((sum, item) => sum + (item.businessProfitLoss ?? item.marketProfitLoss ?? item.estimatedNetProfit ?? 0), 0);
   const netProfitLoss = totalSalesNet + currentInventoryValue - totalCost;
   const quantityByCategoryMap = new Map<string, number>();
   const profitByPlatformMap = new Map<string, { profit: number; sales: number }>();
@@ -1407,7 +1474,7 @@ function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
   }
   const withProfit = items.filter((item) => item.businessProfitLoss !== null || item.estimatedNetProfit !== null);
   const sortedByProfit = [...withProfit].sort(
-    (a, b) => (b.businessProfitLoss ?? b.estimatedNetProfit ?? 0) - (a.businessProfitLoss ?? a.estimatedNetProfit ?? 0)
+    (a, b) => (b.businessProfitLoss ?? b.marketProfitLoss ?? b.estimatedNetProfit ?? 0) - (a.businessProfitLoss ?? a.marketProfitLoss ?? a.estimatedNetProfit ?? 0)
   );
   const isAfter = (date: string, cutoff: Date) => new Date(date).getTime() >= cutoff.getTime();
   return {
@@ -1818,6 +1885,7 @@ async function refreshProductPriorityScores(
 }
 
 export async function listDashboard(currentUser: SessionUser): Promise<DashboardDTO> {
+  await autoLinkInventoryProducts(currentUser);
   const [
     retailers,
     products,
@@ -2782,18 +2850,135 @@ export async function markProductCheckedToday(
   return productToDTO(updated);
 }
 
+type InventoryProductLink = Prisma.ProductGetPayload<{
+  include: { retailer: { select: { name: true } }; release: { select: { setName: true } } };
+}>;
+
+function compactIdentifier(value?: string | null) {
+  return (value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function compactTokens(value?: string | null) {
+  const cleaned = (value || "")
+    .toLowerCase()
+    .replace(/pokemon|tcg|trading card game|game/g, " ")
+    .replace(/[^a-z0-9]+/g, " ");
+  return cleaned.split(/\s+/).filter(Boolean);
+}
+
+function tokenOverlapScore(a?: string | null, b?: string | null) {
+  const aTokens = new Set(compactTokens(a));
+  const bTokens = new Set(compactTokens(b));
+  if (!aTokens.size || !bTokens.size) return 0;
+  let hits = 0;
+  for (const token of aTokens) if (bTokens.has(token)) hits += 1;
+  return hits / Math.max(aTokens.size, bTokens.size);
+}
+
+type InventoryProductMatchInput = Pick<InventoryItemWithInclude, "itemName" | "retailer" | "setName" | "upc" | "sku" | "dpci" | "asin">;
+
+function inventoryProductMatchScore(
+  item: InventoryProductMatchInput,
+  product: InventoryProductLink
+) {
+  const itemIds = [item.upc, item.sku, item.dpci, item.asin].map(compactIdentifier).filter(Boolean);
+  const productIds = [product.upc, product.sku, product.dpci, product.retailerProductId].map(compactIdentifier).filter(Boolean);
+  if (itemIds.some((itemId) => productIds.includes(itemId))) return 100;
+  let score = 0;
+  const itemName = compactIdentifier(item.itemName);
+  const productName = compactIdentifier(product.name);
+  if (itemName && productName && (itemName === productName || itemName.includes(productName) || productName.includes(itemName))) {
+    score += 65;
+  } else {
+    score += tokenOverlapScore(item.itemName, product.name) * 55;
+  }
+  if (item.retailer && item.retailer.toLowerCase() === product.retailer.name.toLowerCase()) score += 20;
+  const productSet = product.setName || product.release?.setName;
+  if (item.setName && productSet && compactIdentifier(item.setName) === compactIdentifier(productSet)) score += 15;
+  return Math.round(score);
+}
+
+function bestWatchedProductMatch(item: InventoryProductMatchInput, products: InventoryProductLink[]) {
+  let best: { product: InventoryProductLink; score: number } | null = null;
+  for (const product of products) {
+    const score = inventoryProductMatchScore(item, product);
+    if (!best || score > best.score) best = { product, score };
+  }
+  return best && best.score >= 80 ? best.product : null;
+}
+
+function productSyncData(product: InventoryProductLink) {
+  const retailerName = product.retailer.name;
+  return {
+    productId: product.id,
+    retailer: retailerName,
+    setName: product.setName ?? product.release?.setName ?? undefined,
+    exactProductUrl: product.verifiedFinalUrl || product.url,
+    upc: product.upc ?? undefined,
+    sku: product.sku ?? undefined,
+    dpci: product.dpci ?? undefined,
+    asin: retailerName.toLowerCase().includes("amazon") ? product.retailerProductId ?? undefined : undefined,
+    imageUrl: product.liveImageUrl ?? product.imageUrl ?? undefined
+  };
+}
+
+function withoutUndefined<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
+}
+
+async function findWatchedProductMatch(item: InventoryProductMatchInput) {
+  const products = await prisma.product.findMany({
+    where: { archivedAt: null },
+    include: { retailer: { select: { name: true } }, release: { select: { setName: true } } }
+  });
+  return bestWatchedProductMatch(item, products);
+}
+
+async function autoLinkInventoryProducts(currentUser: SessionUser) {
+  const items = await prisma.inventoryItem.findMany({
+    where: { productId: null, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: inventoryItemInclude
+  });
+  if (!items.length) return;
+  const products = await prisma.product.findMany({
+    where: { archivedAt: null },
+    include: { retailer: { select: { name: true } }, release: { select: { setName: true } } }
+  });
+  for (const item of items) {
+    const match = bestWatchedProductMatch(item, products);
+    if (!match) continue;
+    await prisma.inventoryItem.update({
+      where: { id: item.id },
+      data: productSyncData(match)
+    });
+  }
+}
+
 function inventoryMarketRecommendation(
   input: {
     category?: string | null;
     itemStatus?: string | null;
     cost: number;
     quantity: number;
+    quantityOwned?: number;
+    costBasis?: number;
     totalCost?: number | null;
     purchaseExtraCost?: number | null;
     currentMarketEstimate?: number | null;
     soldPrice?: number | null;
     estimatedEbayFee?: number | null;
     estimatedShippingCost?: number | null;
+    marketCompCount?: number;
+    marketConfidence?: string | null;
+    product?: {
+      liveStockStatus?: string | null;
+      stockStatus?: string | null;
+      priority?: string | null;
+      rating?: string | null;
+      manualPriorityOverride?: string | null;
+      sealedResaleNotes?: string | null;
+      scarcityNotes?: string | null;
+    } | null;
     card?: {
       rawAveragePrice: number;
       psa9EstimatedProfit: number;
@@ -2803,9 +2988,10 @@ function inventoryMarketRecommendation(
   },
   settings: { ebaySellingFee: number; shippingCost: number; minimumProfitTarget: number }
 ) {
-  const totalCost = input.totalCost ?? input.cost * input.quantity + (input.purchaseExtraCost ?? 0);
+  const quantityOwned = input.quantityOwned ?? input.quantity;
+  const totalCost = input.costBasis ?? input.totalCost ?? input.cost * quantityOwned + (input.purchaseExtraCost ?? 0);
   const marketPrice = input.soldPrice ?? input.currentMarketEstimate ?? null;
-  const gross = marketPrice === null ? null : marketPrice * input.quantity;
+  const gross = marketPrice === null ? null : marketPrice * quantityOwned;
   const estimatedEbayFee = gross === null ? input.estimatedEbayFee ?? null : gross * settings.ebaySellingFee;
   const estimatedShippingCost = gross === null ? input.estimatedShippingCost ?? null : input.estimatedShippingCost ?? settings.shippingCost;
   const estimatedNetProfit =
@@ -2813,8 +2999,18 @@ function inventoryMarketRecommendation(
       ? null
       : gross - estimatedEbayFee - estimatedShippingCost - totalCost;
   const roiPercent = estimatedNetProfit === null || totalCost <= 0 ? null : (estimatedNetProfit / totalCost) * 100;
-  const category = input.category || "";
   const itemStatus = input.itemStatus || "";
+  const compCount = input.marketCompCount ?? 0;
+  const confidence = input.marketConfidence || (compCount >= 3 ? "HIGH" : compCount >= 2 ? "MEDIUM" : compCount === 1 ? "LOW" : "NONE");
+  const strongComps = compCount >= 3 && (confidence === "HIGH" || confidence === "MEDIUM" || confidence === "MANUAL");
+  const productSignals = [input.product?.sealedResaleNotes, input.product?.scarcityNotes, input.product?.priority, input.product?.rating, input.product?.manualPriorityOverride]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const lowSupplyOrHighDemand =
+    /scarce|limited|exclusive|low supply|hard to find|high demand|sold out|buy/.test(productSignals) ||
+    input.product?.liveStockStatus === "SOLD_OUT" ||
+    input.product?.stockStatus === "SOLD_OUT";
   let recommendedAction = "HOLD";
   let recommendationReason = "Market not collected yet.";
 
@@ -2822,18 +3018,18 @@ function inventoryMarketRecommendation(
     recommendedAction = "GRADE_FIRST";
     recommendationReason = `Grade first because linked card comps show PSA upside over the ${settings.minimumProfitTarget.toFixed(0)} target.`;
   } else if (estimatedNetProfit !== null && roiPercent !== null) {
-    if (estimatedNetProfit >= settings.minimumProfitTarget && roiPercent >= 35) {
+    if (estimatedNetProfit < 0) {
+      recommendedAction = "AVOID_BUYING_MORE";
+      recommendationReason = `Avoid buying more: current market is below your remaining cost after fees.`;
+    } else if (strongComps && estimatedNetProfit >= settings.minimumProfitTarget && roiPercent >= 30) {
       recommendedAction = "SELL_NOW";
-      recommendationReason = `Sell now: estimated profit ${estimatedNetProfit.toFixed(2)} and ROI ${roiPercent.toFixed(1)}%.`;
+      recommendationReason = `Sell now: last sold comps support about $${estimatedNetProfit.toFixed(2)} profit and ${roiPercent.toFixed(1)}% ROI after fees.`;
+    } else if (lowSupplyOrHighDemand && estimatedNetProfit >= settings.minimumProfitTarget && roiPercent >= 15) {
+      recommendedAction = "LIST_HIGH";
+      recommendationReason = `List high: margin clears target and linked product notes suggest low supply or strong demand.`;
     } else if (estimatedNetProfit >= settings.minimumProfitTarget && roiPercent >= 18) {
       recommendedAction = "LIST_HIGH";
-      recommendationReason = `List high: profit target is met, but margin is not urgent-sell level.`;
-    } else if (estimatedNetProfit < 0 && roiPercent <= -15) {
-      recommendedAction = category.includes("booster") || category.includes("packs") ? "RIP_OPEN" : "AVOID_BUYING_MORE";
-      recommendationReason =
-        recommendedAction === "RIP_OPEN"
-          ? `Market is below cost after fees; opening may be better than selling at a loss.`
-          : `Avoid buying more: expected resale is below your cost after fees.`;
+      recommendationReason = `List high: profit target is met, but comps are not strong enough for an urgent sell.`;
     } else {
       recommendedAction = "HOLD";
       recommendationReason = `Hold: current margin does not clear the ${settings.minimumProfitTarget.toFixed(0)} profit target.`;
@@ -2855,21 +3051,35 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
   const settings = await ensureInvestmentSettings(currentUser);
   const item = await prisma.inventoryItem.findUnique({ where: { id: itemId }, include: inventoryItemInclude });
   if (!item) throw new Error("Inventory item not found");
+  if (!item.productId) {
+    const match = await findWatchedProductMatch(item);
+    if (match) {
+      await prisma.inventoryItem.update({ where: { id: itemId }, data: productSyncData(match) });
+      return recomputeInventoryItem(itemId, currentUser);
+    }
+  }
   const compAverage = average(item.marketComps.map((comp) => comp.salePrice));
   const currentMarketEstimate = compAverage ?? item.currentMarketEstimate;
   const confidence = item.marketComps.length >= 3 ? "HIGH" : item.marketComps.length >= 2 ? "MEDIUM" : item.marketComps.length === 1 ? "LOW" : item.marketConfidence;
+  const quantityOwned = inventoryQuantityOwned(item);
+  const costBasis = inventoryOwnedCostBasis(item);
   const computed = inventoryMarketRecommendation(
     {
       category: item.category,
       itemStatus: item.itemStatus,
       cost: item.cost,
       quantity: item.quantity,
+      quantityOwned,
+      costBasis,
       totalCost: item.totalCost,
       purchaseExtraCost: item.purchaseExtraCost,
       currentMarketEstimate,
       soldPrice: item.soldPrice,
       estimatedEbayFee: item.estimatedEbayFee,
       estimatedShippingCost: item.estimatedShippingCost,
+      marketCompCount: item.marketComps.length,
+      marketConfidence: confidence,
+      product: item.product,
       card: item.card
     },
     settings
@@ -2933,46 +3143,50 @@ export async function createInventoryItem(
   if (input.existingInventoryItemId) {
     return addInventoryStockLot(currentUser, input.existingInventoryItemId, input);
   }
+  const linkedProduct = input.productId
+    ? await prisma.product.findUnique({ where: { id: input.productId }, include: { retailer: { select: { name: true } }, release: { select: { setName: true } } } })
+    : null;
+  const linkedInput = linkedProduct ? { ...input, ...withoutUndefined(productSyncData(linkedProduct)) } : input;
   const settings = await ensureInvestmentSettings(currentUser);
-  const totalCost = input.totalCost ?? input.cost * input.quantity + (input.purchaseExtraCost ?? 0);
-  const computed = inventoryMarketRecommendation({ ...input, totalCost }, settings);
+  const totalCost = linkedInput.totalCost ?? linkedInput.cost * linkedInput.quantity + (linkedInput.purchaseExtraCost ?? 0);
+  const computed = inventoryMarketRecommendation({ ...linkedInput, totalCost, quantityOwned: linkedInput.quantity, costBasis: totalCost }, settings);
   const item = await prisma.inventoryItem.create({
     data: {
       userId: currentUser.id,
-      itemType: input.itemType,
-      itemName: input.itemName,
-      category: input.category || "sealed_packs",
-      setName: input.setName,
-      productId: input.productId,
-      cardId: input.cardId,
-      cost: input.cost,
-      quantity: input.quantity,
+      itemType: linkedInput.itemType,
+      itemName: linkedInput.itemName,
+      category: linkedInput.category || "sealed_packs",
+      setName: linkedInput.setName,
+      productId: linkedInput.productId,
+      cardId: linkedInput.cardId,
+      cost: linkedInput.cost,
+      quantity: linkedInput.quantity,
       totalCost,
-      purchaseExtraCost: input.purchaseExtraCost,
-      source: input.source,
-      retailer: input.retailer,
-      purchasedAt: input.purchasedAt,
-      receiptNumber: input.receiptNumber,
-      exactProductUrl: input.exactProductUrl,
-      upc: input.upc,
-      sku: input.sku,
-      dpci: input.dpci,
-      asin: input.asin,
-      imageUrl: input.imageUrl,
-      condition: input.condition,
-      itemStatus: input.itemStatus || "sealed",
-      targetSellPrice: input.targetSellPrice,
-      minimumAcceptablePrice: input.minimumAcceptablePrice,
-      listingPlatform: input.listingPlatform,
-      listingStatus: input.listingStatus || "not_listed",
-      soldPrice: input.soldPrice,
-      soldAt: input.soldAt,
-      buyerPlatform: input.buyerPlatform,
-      currentMarketEstimate: input.currentMarketEstimate,
-      marketAverageSalePrice: input.currentMarketEstimate,
-      marketCompCount: input.currentMarketEstimate === undefined ? 0 : 1,
-      marketLastRefreshedAt: input.currentMarketEstimate === undefined ? null : new Date(),
-      marketConfidence: input.currentMarketEstimate === undefined ? "LOW" : "MANUAL",
+      purchaseExtraCost: linkedInput.purchaseExtraCost,
+      source: linkedInput.source,
+      retailer: linkedInput.retailer,
+      purchasedAt: linkedInput.purchasedAt,
+      receiptNumber: linkedInput.receiptNumber,
+      exactProductUrl: linkedInput.exactProductUrl,
+      upc: linkedInput.upc,
+      sku: linkedInput.sku,
+      dpci: linkedInput.dpci,
+      asin: linkedInput.asin,
+      imageUrl: linkedInput.imageUrl,
+      condition: linkedInput.condition,
+      itemStatus: linkedInput.itemStatus || "sealed",
+      targetSellPrice: linkedInput.targetSellPrice,
+      minimumAcceptablePrice: linkedInput.minimumAcceptablePrice,
+      listingPlatform: linkedInput.listingPlatform,
+      listingStatus: linkedInput.listingStatus || "not_listed",
+      soldPrice: linkedInput.soldPrice,
+      soldAt: linkedInput.soldAt,
+      buyerPlatform: linkedInput.buyerPlatform,
+      currentMarketEstimate: linkedInput.currentMarketEstimate,
+      marketAverageSalePrice: linkedInput.currentMarketEstimate,
+      marketCompCount: linkedInput.currentMarketEstimate === undefined ? 0 : 1,
+      marketLastRefreshedAt: linkedInput.currentMarketEstimate === undefined ? null : new Date(),
+      marketConfidence: linkedInput.currentMarketEstimate === undefined ? "LOW" : "MANUAL",
       estimatedEbayFee: computed.estimatedEbayFee,
       estimatedShippingCost: computed.estimatedShippingCost,
       estimatedNetProfit: computed.estimatedNetProfit,
@@ -2980,23 +3194,23 @@ export async function createInventoryItem(
       recommendedAction: computed.recommendedAction,
       recommendationReason: computed.recommendationReason,
       netProfitAfterFees: computed.netProfitAfterFees,
-      expectedPlan: input.expectedPlan,
-      notes: input.notes
+      expectedPlan: linkedInput.expectedPlan,
+      notes: linkedInput.notes
     },
     include: inventoryItemInclude
   });
   await prisma.inventoryStockLot.create({
     data: {
       inventoryItemId: item.id,
-      purchasedAt: input.purchasedAt,
-      source: input.source,
-      quantity: input.quantity,
-      costPerUnit: input.cost,
-      purchaseExtraCost: input.purchaseExtraCost,
+      purchasedAt: linkedInput.purchasedAt,
+      source: linkedInput.source,
+      quantity: linkedInput.quantity,
+      costPerUnit: linkedInput.cost,
+      purchaseExtraCost: linkedInput.purchaseExtraCost,
       totalCost,
-      remainingQuantity: input.quantity,
-      notes: input.notes,
-      receiptNumber: input.receiptNumber
+      remainingQuantity: linkedInput.quantity,
+      notes: linkedInput.notes,
+      receiptNumber: linkedInput.receiptNumber
     }
   });
   return recomputeInventoryItem(item.id, currentUser);
@@ -3104,6 +3318,10 @@ export async function updateInventoryItem(
     include: inventoryItemInclude
   });
   if (!existing) throw new Error("Inventory item not found");
+  const linkedProduct = input.productId
+    ? await prisma.product.findUnique({ where: { id: input.productId }, include: { retailer: { select: { name: true } }, release: { select: { setName: true } } } })
+    : null;
+  const productData = linkedProduct ? withoutUndefined(productSyncData(linkedProduct)) : {};
   await prisma.inventoryItem.update({
     where: { id: itemId },
     data: {
@@ -3143,7 +3361,8 @@ export async function updateInventoryItem(
       estimatedEbayFee: input.estimatedEbayFee,
       estimatedShippingCost: input.estimatedShippingCost,
       expectedPlan: input.expectedPlan,
-      notes: input.notes
+      notes: input.notes,
+      ...productData
     }
   });
   return recomputeInventoryItem(itemId, currentUser);
