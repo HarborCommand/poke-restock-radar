@@ -870,6 +870,8 @@ test("inventory tracker and market recommendation engine exists", () => {
   const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
   for (const field of [
     "InventoryMarketComp",
+    "BarcodeScan",
+    "barcodeScans",
     "InventorySale",
     "InventoryStockLot",
     "stockLots",
@@ -899,6 +901,8 @@ test("inventory tracker and market recommendation engine exists", () => {
     "autoLinkInventoryProducts",
     "findWatchedProductMatch",
     "inventoryOwnedCostBasis",
+    "lookupInventoryUpc",
+    "lookupExternalUpc",
     "Market not collected yet",
     "GRADE_FIRST",
     "SELL_NOW"
@@ -921,6 +925,9 @@ test("inventory tracker and market recommendation engine exists", () => {
     "Items losing money",
     "Missing market data",
     "Attach watched product",
+    "Scan UPC / Barcode",
+    "Lookup UPC",
+    "Scanned UPC history",
     "Manual Inventory Sold Comp",
     "Inventory CSV",
     "Lots CSV",
@@ -937,7 +944,8 @@ test("inventory tracker and market recommendation engine exists", () => {
     join(root, "src", "app", "api", "radar", "inventory", "comps", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "sales", "route.ts"),
     join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "route.ts"),
-    join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "refresh-comps", "route.ts")
+    join(root, "src", "app", "api", "radar", "inventory", "[itemId]", "refresh-comps", "route.ts"),
+    join(root, "src", "app", "api", "radar", "inventory", "upc", "lookup", "route.ts")
   ]) {
     assert.ok(statSync(route).isFile(), `missing inventory route ${route}`);
   }

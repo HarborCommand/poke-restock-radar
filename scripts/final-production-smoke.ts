@@ -177,6 +177,7 @@ async function main() {
     throw new Error("Inventory endpoint did not return items and totals.");
   }
   const smokeItemName = `Smoke Inventory ${Date.now()}`;
+  const smokeUpc = `990${String(Date.now()).slice(-9)}`;
   const createInventory = await fetch(`${baseUrl}/api/radar/inventory`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
@@ -189,6 +190,7 @@ async function main() {
       purchaseExtraCost: 0.5,
       source: "Smoke QA",
       retailer: "Smoke",
+      upc: smokeUpc,
       purchasedAt: new Date().toISOString(),
       targetSellPrice: 4.5,
       currentMarketEstimate: 5
@@ -227,6 +229,16 @@ async function main() {
     })
   });
   await expectStatus("inventory record sale", recordSale, 201);
+  const upcLookup = await fetch(`${baseUrl}/api/radar/inventory/upc/lookup`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ upc: smokeUpc, source: "manual" })
+  });
+  const upcLookupBody = await json(upcLookup);
+  await expectStatus("inventory UPC lookup", upcLookup, 200);
+  if (upcLookupBody.status !== "PRODUCT_FOUND" || upcLookupBody.matchedInventoryItem?.id !== smokeItemId) {
+    throw new Error(`Inventory UPC lookup did not match the smoke item: ${JSON.stringify(upcLookupBody).slice(0, 180)}`);
+  }
   for (const format of ["csv", "stock-lots-csv", "sales-csv"]) {
     const exportResponse = await authedGet(`/api/radar/inventory?format=${format}`);
     const csv = await exportResponse.text();
@@ -234,7 +246,7 @@ async function main() {
   }
   const deleteInventory = await fetch(`${baseUrl}/api/radar/inventory/${smokeItemId}`, { method: "DELETE", headers: { cookie } });
   await expectStatus("inventory cleanup delete", deleteInventory, 200);
-  checks.inventoryBusinessFlow = "totals, add stock, record sale, and CSV exports passed";
+  checks.inventoryBusinessFlow = "totals, add stock, record sale, UPC lookup, and CSV exports passed";
 
   const ebayStatus = await authedGet("/api/radar/ebay/status");
   const ebayStatusBody = await json(ebayStatus);

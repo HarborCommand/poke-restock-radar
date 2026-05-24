@@ -706,9 +706,21 @@ Image behavior:
 
 Import/export:
 
-- `Inventory -> Export CSV` exports the current inventory table.
+- `Inventory -> Inventory CSV` exports the current inventory table.
+- `Inventory -> Lots CSV` exports purchase lots and remaining quantity.
+- `Inventory -> Sales CSV` exports recorded sales and realized profit/loss.
 - `Inventory Import And Manual Comps` accepts CSV or JSON.
-- JSON backup/restore includes inventory items and inventory market comps.
+- JSON backup/restore includes inventory items, stock lots, sales, inventory market comps, and barcode scan history.
+
+Barcode / UPC scanning:
+
+- Use `Scan UPC / Barcode` from Inventory quick actions or inside Add Purchase.
+- Camera access starts only after tapping `Start Camera`; no image or video is saved.
+- Supported browser formats are UPC-A, UPC-E, EAN-13, and EAN-8 when the browser exposes `BarcodeDetector`.
+- Manual UPC entry works on desktop and as a fallback when camera scanning is unavailable.
+- UPC lookup checks existing inventory first, watched products second, and an optional external lookup source third.
+- If the UPC already exists in inventory, the app opens Add Stock for that catalog item instead of creating a duplicate.
+- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer auth when your chosen public lookup provider requires it.
 
 ## Inventory Spending And Sales Tracker
 

@@ -48,8 +48,10 @@ import {
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 import type {
@@ -78,6 +80,7 @@ import type {
   StoreDiscoveryResponseDTO,
   StoreDTO,
   StoreVisitResult,
+  UpcLookupResultDTO,
   Zone
 } from "@/types/radar";
 
@@ -105,6 +108,27 @@ type ActionHandler = <T>(
   run: () => Promise<T>,
   options?: { confirm?: string; reload?: boolean; success?: string }
 ) => Promise<void>;
+type InventoryPurchasePrefill = {
+  upc?: string;
+  itemName?: string;
+  category?: string | null;
+  setName?: string | null;
+  productId?: string | null;
+  retailer?: string | null;
+  exactProductUrl?: string | null;
+  imageUrl?: string | null;
+  source?: string | null;
+};
+
+type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => {
+  detect(source: CanvasImageSource): Promise<Array<{ rawValue?: string; format?: string }>>;
+};
+
+declare global {
+  interface Window {
+    BarcodeDetector?: BarcodeDetectorConstructor;
+  }
+}
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Radar }> = [
   { id: "dashboard", label: "Dashboard", icon: Radar },
@@ -158,6 +182,20 @@ const inventoryPlanOptions = [
   { value: "Rip/open", label: "Rip/open" }
 ];
 const salePlatforms = ["ebay", "facebook", "whatnot", "friend", "local", "other"];
+
+function inventoryCategoryFromLookup(value?: string | null) {
+  const normalized = (value || "").toLowerCase();
+  if (inventoryCategories.includes(normalized)) return normalized;
+  if (normalized.includes("elite") || normalized.includes("etb")) return "etbs";
+  if (normalized.includes("booster bundle")) return "booster_bundles";
+  if (normalized.includes("booster box")) return "booster_boxes";
+  if (normalized.includes("sleeved")) return "sleeved_boosters";
+  if (normalized.includes("collection")) return "collection_boxes";
+  if (normalized.includes("graded")) return "graded_cards";
+  if (normalized.includes("raw")) return "raw_cards";
+  if (normalized.includes("card")) return "single_cards";
+  return "sealed_packs";
+}
 
 function formatStatus(value: string) {
   return value
@@ -3290,6 +3328,8 @@ function InventoryPanel({
   const [view, setView] = useState<"items" | "spending" | "sales">("items");
   const [purchaseFlowOpen, setPurchaseFlowOpen] = useState(false);
   const [purchaseDefaultItemId, setPurchaseDefaultItemId] = useState<string>("");
+  const [purchasePrefill, setPurchasePrefill] = useState<InventoryPurchasePrefill | null>(null);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [filters, setFilters] = useState({
     search: "",
@@ -3324,6 +3364,33 @@ function InventoryPanel({
   const summary = dashboard.inventorySummary;
   const allSales = useMemo(() => dashboard.inventory.flatMap((item) => item.sales), [dashboard.inventory]);
   const selectedItem = visibleItems.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? null;
+  const openPurchaseFlow = useCallback((itemId = "", prefill: InventoryPurchasePrefill | null = null) => {
+    setPurchaseDefaultItemId(itemId);
+    setPurchasePrefill(prefill);
+    setPurchaseFlowOpen(true);
+  }, []);
+  const openBarcodeResult = useCallback(
+    (result: UpcLookupResultDTO) => {
+      if (result.matchedInventoryItem) {
+        openPurchaseFlow(result.matchedInventoryItem.id, { upc: result.upc });
+      } else {
+        const product = result.lookupProduct;
+        openPurchaseFlow("", {
+          upc: result.upc,
+          itemName: product?.productName ?? "",
+          category: inventoryCategoryFromLookup(product?.category),
+          setName: product?.setName ?? "",
+          productId: product?.productId ?? null,
+          retailer: product?.retailer ?? "",
+          exactProductUrl: product?.exactProductUrl ?? "",
+          imageUrl: product?.imageUrl ?? "",
+          source: product?.retailer ?? ""
+        });
+      }
+      setBarcodeScannerOpen(false);
+    },
+    [openPurchaseFlow]
+  );
   return (
     <>
       <section className="inventory-page-header">
@@ -3348,12 +3415,15 @@ function InventoryPanel({
             className="primary-action"
             type="button"
             onClick={() => {
-              setPurchaseDefaultItemId("");
-              setPurchaseFlowOpen(true);
+              openPurchaseFlow("");
             }}
           >
             <Plus size={16} />
             Add Product
+          </button>
+          <button className="mini-action" type="button" onClick={() => setBarcodeScannerOpen(true)}>
+            <PackageSearch size={14} />
+            Scan UPC
           </button>
         </div>
       </section>
@@ -3418,13 +3488,12 @@ function InventoryPanel({
             <InventoryQuickActions
               dashboard={dashboard}
               onAddProduct={() => {
-                setPurchaseDefaultItemId("");
-                setPurchaseFlowOpen(true);
+                openPurchaseFlow("");
               }}
               onAddStock={() => {
-                setPurchaseDefaultItemId(selectedItem?.id ?? "");
-                setPurchaseFlowOpen(true);
+                openPurchaseFlow(selectedItem?.id ?? "");
               }}
+              onScan={() => setBarcodeScannerOpen(true)}
               onRecordSale={() => document.getElementById("inventory-sales-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
               selectedItem={selectedItem}
             />
@@ -3461,18 +3530,28 @@ function InventoryPanel({
               </button>
             </div>
             <PurchaseFlow
-              key={purchaseDefaultItemId || "new-purchase"}
+              key={`${purchaseDefaultItemId || "new-purchase"}-${purchasePrefill?.upc || ""}`}
               items={dashboard.inventory}
               defaultItemId={purchaseDefaultItemId}
+              prefill={purchasePrefill}
+              onScanBarcode={() => setBarcodeScannerOpen(true)}
               busy={busy}
               busyLabel={busyLabel}
               submit={async (event, label, run, options) => {
                 await submit(event, label, run, options);
                 setPurchaseFlowOpen(false);
+                setPurchasePrefill(null);
               }}
             />
           </div>
         </div>
+      ) : null}
+      {barcodeScannerOpen ? (
+        <BarcodeScannerModal
+          dashboard={dashboard}
+          onUseResult={openBarcodeResult}
+          onClose={() => setBarcodeScannerOpen(false)}
+        />
       ) : null}
     </>
   );
@@ -3559,17 +3638,213 @@ function InventoryDecisionCard({
   );
 }
 
+function normalizeBarcodeValue(value: string) {
+  return value.replace(/\D/g, "").slice(0, 14);
+}
+
+function BarcodeScannerModal({
+  dashboard,
+  onUseResult,
+  onClose
+}: {
+  dashboard: DashboardDTO;
+  onUseResult: (result: UpcLookupResultDTO) => void;
+  onClose: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [manualUpc, setManualUpc] = useState("");
+  const [result, setResult] = useState<UpcLookupResultDTO | null>(null);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraMessage, setCameraMessage] = useState("Camera runs only after you tap Start Camera. No image or video is saved.");
+  const history = result?.history ?? dashboard.barcodeScans;
+  const scannerSupported =
+    typeof window !== "undefined" &&
+    Boolean(window.BarcodeDetector) &&
+    Boolean(navigator.mediaDevices?.getUserMedia);
+
+  const lookupUpc = useCallback(async (upc: string, source: "camera" | "manual") => {
+    const normalized = normalizeBarcodeValue(upc);
+    if (!/^\d{6,14}$/.test(normalized)) {
+      setCameraMessage("Enter or scan a 6 to 14 digit UPC/EAN.");
+      return;
+    }
+    setLookupBusy(true);
+    setCameraMessage(source === "camera" ? `Scanned ${normalized}. Looking up product...` : `Looking up ${normalized}...`);
+    try {
+      const lookup = await requestJson<UpcLookupResultDTO>("/api/radar/inventory/upc/lookup", {
+        method: "POST",
+        body: JSON.stringify({ upc: normalized, source })
+      });
+      setResult(lookup);
+      setManualUpc(lookup.upc);
+      setCameraMessage(lookup.message);
+      setCameraActive(false);
+    } catch (error) {
+      setCameraMessage(error instanceof Error ? error.message : "Lookup failed - fill manually.");
+    } finally {
+      setLookupBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cameraActive) return;
+    let stopped = false;
+    let stream: MediaStream | null = null;
+    let timer: number | null = null;
+    const videoElement = videoRef.current;
+    async function startCamera() {
+      if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
+        setCameraMessage("Camera barcode scanning is not supported in this browser. Use manual UPC entry.");
+        setCameraActive(false);
+        return;
+      }
+      try {
+        const detector = new window.BarcodeDetector({ formats: ["upc_a", "upc_e", "ean_13", "ean_8"] });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        if (!videoElement) return;
+        videoElement.srcObject = stream;
+        await videoElement.play();
+        setCameraMessage("Point your camera at the barcode.");
+        const scanFrame = async () => {
+          if (stopped || !videoElement) return;
+          try {
+            const codes = await detector.detect(videoElement);
+            const rawValue = codes.map((code) => code.rawValue || "").find(Boolean);
+            if (rawValue) {
+              stopped = true;
+              await lookupUpc(rawValue, "camera");
+              return;
+            }
+          } catch {
+            setCameraMessage("Scanning is active. Hold the barcode steady in good light.");
+          }
+          timer = window.setTimeout(scanFrame, 550);
+        };
+        await scanFrame();
+      } catch {
+        setCameraMessage("Camera permission was denied or unavailable. Use manual UPC entry.");
+        setCameraActive(false);
+      }
+    }
+    void startCamera();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+      stream?.getTracks().forEach((track) => track.stop());
+      if (videoElement) videoElement.srcObject = null;
+    };
+  }, [cameraActive, lookupUpc]);
+
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal barcode-scanner-modal" role="dialog" aria-modal="true" aria-label="Scan UPC barcode">
+        <div className="edit-card-heading">
+          <div>
+            <h2>Scan UPC / Barcode</h2>
+            <span>Scan with your phone camera or enter the UPC manually. Confirm before saving inventory.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close barcode scanner" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <section className="barcode-scanner-grid">
+          <div className="barcode-camera-panel">
+            <div className={cameraActive ? "barcode-video-frame active" : "barcode-video-frame"}>
+              <video ref={videoRef} muted playsInline />
+              {!cameraActive ? <span>No camera feed active</span> : null}
+            </div>
+            <p>{cameraMessage}</p>
+            <div className="barcode-action-row">
+              <button
+                className="primary-action"
+                disabled={!scannerSupported || lookupBusy}
+                type="button"
+                onClick={() => setCameraActive(true)}
+              >
+                <PackageSearch size={15} />
+                Start Camera
+              </button>
+              <button className="mini-action" type="button" onClick={() => setCameraActive(false)}>
+                Stop
+              </button>
+            </div>
+            {!scannerSupported ? <small>Camera barcode detection is not available here. Manual UPC lookup still works.</small> : null}
+          </div>
+          <form
+            className="barcode-manual-panel"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void lookupUpc(manualUpc, "manual");
+            }}
+          >
+            <TextInput
+              name="manualUpc"
+              label="Manual UPC / EAN"
+              inputMode="numeric"
+              value={manualUpc}
+              onChange={(event) => setManualUpc(normalizeBarcodeValue(event.currentTarget.value))}
+              placeholder="Scan or type barcode"
+            />
+            <button className="primary-action" disabled={lookupBusy} type="submit">
+              <PackageSearch size={15} />
+              {lookupBusy ? "Looking up" : "Lookup UPC"}
+            </button>
+          </form>
+        </section>
+        {result ? (
+          <section className={`barcode-result-card ${result.status.toLowerCase().replaceAll("_", "-")}`}>
+            <div>
+              <span>{result.status === "PRODUCT_FOUND" ? "Product found" : result.status === "NEW_UPC" ? "New UPC detected" : "Lookup failed - fill manually"}</span>
+              <h3>{result.lookupProduct?.productName || result.upc}</h3>
+              <p>{result.message}</p>
+            </div>
+            <div className="barcode-result-meta">
+              <span>UPC {result.upc}</span>
+              <span>{result.lookupProduct?.retailer || "Retailer unknown"}</span>
+              <span>{result.lookupProduct?.source ? formatStatus(result.lookupProduct.source) : "Manual fallback"}</span>
+            </div>
+            <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
+              <Check size={15} />
+              {result.matchedInventoryItem ? "Add Stock To Existing" : "Create Product With UPC"}
+            </button>
+          </section>
+        ) : null}
+        <section className="barcode-history-panel">
+          <h3>Scanned UPC history</h3>
+          {history.length ? (
+            <div>
+              {history.slice(0, 8).map((scan) => (
+                <span key={scan.id}>
+                  <strong>{scan.upc}</strong>
+                  {scan.productName || formatStatus(scan.status)}
+                  <small>{relativeTime(scan.createdAt)}</small>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p>No barcode scans yet.</p>
+          )}
+        </section>
+        <small className="manual-safety-note">Privacy: camera access starts only after tapping Start Camera. No image or video is saved; only the decoded UPC is stored.</small>
+      </div>
+    </div>
+  );
+}
+
 function InventoryQuickActions({
   dashboard,
   selectedItem,
   onAddProduct,
   onAddStock,
+  onScan,
   onRecordSale
 }: {
   dashboard: DashboardDTO;
   selectedItem: InventoryItemDTO | null;
   onAddProduct: () => void;
   onAddStock: () => void;
+  onScan: () => void;
   onRecordSale: () => void;
 }) {
   const sellNow = dashboard.inventory.filter((item) => item.recommendedAction === "SELL_NOW").length;
@@ -3597,6 +3872,13 @@ function InventoryQuickActions({
           <span>
             Create New Product
             <small>Add a new product to your catalog</small>
+          </span>
+        </button>
+        <button className="inventory-quick-button" type="button" onClick={onScan}>
+          <PackageSearch size={16} />
+          <span>
+            Scan UPC / Barcode
+            <small>Camera scan on phone or manual UPC lookup</small>
           </span>
         </button>
         <button className="inventory-quick-button" type="button" disabled={!selectedItem} onClick={onRecordSale}>
@@ -3627,12 +3909,16 @@ function InventoryQuickActions({
 function PurchaseFlow({
   items,
   defaultItemId,
+  prefill,
+  onScanBarcode,
   busy,
   busyLabel,
   submit
 }: {
   items: InventoryItemDTO[];
   defaultItemId?: string;
+  prefill?: InventoryPurchasePrefill | null;
+  onScanBarcode: () => void;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
@@ -3643,7 +3929,14 @@ function PurchaseFlow({
   const [extraCost, setExtraCost] = useState(0);
   const totalCost = quantity * price + extraCost;
   const selectedExisting = items.find((item) => item.id === selectedExistingId) ?? null;
-  const flowKey = selectedExisting?.id ?? "new";
+  const flowKey = selectedExisting?.id ?? prefill?.upc ?? "new";
+  const defaultName = selectedExisting?.itemName ?? prefill?.itemName ?? "";
+  const defaultCategory = selectedExisting?.category ?? prefill?.category ?? "sealed_packs";
+  const defaultSetName = selectedExisting?.setName ?? prefill?.setName ?? "";
+  const defaultImageUrl = selectedExisting?.imageUrl ?? prefill?.imageUrl ?? "";
+  const defaultRetailer = selectedExisting?.retailer ?? prefill?.retailer ?? "";
+  const defaultExactUrl = selectedExisting?.exactProductUrl ?? prefill?.exactProductUrl ?? "";
+  const defaultUpc = selectedExisting?.upc ?? prefill?.upc ?? "";
 
   return (
     <section className="inventory-flow-panel">
@@ -3661,9 +3954,19 @@ function PurchaseFlow({
       >
         <input name="itemType" type="hidden" value="product" />
         <input name="totalCost" type="hidden" value={totalCost.toFixed(2)} />
+        {prefill?.productId && !selectedExisting ? <input name="productId" type="hidden" value={prefill.productId} /> : null}
         <article className="flow-step">
-          <span>Step 1</span>
+          <div className="flow-step-title">
+            <span>Step 1</span>
+            <button className="mini-action" type="button" onClick={onScanBarcode}>
+              <PackageSearch size={13} />
+              Scan UPC
+            </button>
+          </div>
           <h3>What did you buy?</h3>
+          {prefill?.upc ? (
+            <p className="scan-prefill-note">UPC {prefill.upc} is prefilled. Confirm the product details before saving.</p>
+          ) : null}
           <div className="form-grid compact">
             <label>
               Existing product
@@ -3680,14 +3983,14 @@ function PurchaseFlow({
                 ))}
               </select>
             </label>
-            <TextInput name="itemName" label="Product/card name" defaultValue={selectedExisting?.itemName ?? ""} required />
+            <TextInput name="itemName" label="Product/card name" defaultValue={defaultName} required />
             <SelectInput
               name="category"
               label="Category"
-              defaultValue={selectedExisting?.category ?? "sealed_packs"}
+              defaultValue={defaultCategory || "sealed_packs"}
               options={inventoryCategories.map(optionFromString)}
             />
-            <TextInput name="setName" label="Set" defaultValue={selectedExisting?.setName ?? ""} />
+            <TextInput name="setName" label="Set" defaultValue={defaultSetName} />
             <TextInput
               name="quantity"
               label="Quantity"
@@ -3722,7 +4025,7 @@ function PurchaseFlow({
               value={String(extraCost)}
               onChange={(event) => setExtraCost(Math.max(0, Number(event.currentTarget.value) || 0))}
             />
-            <TextInput name="source" label="Store/source" placeholder="Target Hialeah, eBay, friend" required />
+            <TextInput name="source" label="Store/source" placeholder="Target Hialeah, eBay, friend" defaultValue={prefill?.source ?? ""} required />
             <TextInput name="purchasedAt" label="Purchase date" type="date" defaultValue={todayDateInput()} required />
           </div>
           <div className="total-preview">
@@ -3734,7 +4037,7 @@ function PurchaseFlow({
           <span>Step 3</span>
           <h3>Add proof/image</h3>
           <div className="form-grid compact">
-            <ImageUploadInput defaultValue={selectedExisting?.imageUrl ?? ""} />
+            <ImageUploadInput defaultValue={defaultImageUrl} />
             <TextInput name="receiptNumber" label="Receipt/order number" />
           </div>
         </article>
@@ -3756,9 +4059,9 @@ function PurchaseFlow({
         <details className="inventory-advanced-details">
           <summary>Advanced details</summary>
           <div className="form-grid compact">
-            <TextInput name="retailer" label="Retailer" defaultValue={selectedExisting?.retailer ?? ""} />
-            <TextInput name="exactProductUrl" label="Exact product URL" type="url" defaultValue={selectedExisting?.exactProductUrl ?? ""} />
-            <TextInput name="upc" label="UPC" defaultValue={selectedExisting?.upc ?? ""} />
+            <TextInput name="retailer" label="Retailer" defaultValue={defaultRetailer} />
+            <TextInput name="exactProductUrl" label="Exact product URL" type="url" defaultValue={defaultExactUrl} />
+            <TextInput name="upc" label="UPC" defaultValue={defaultUpc} />
             <TextInput name="sku" label="SKU / TCIN" defaultValue={selectedExisting?.sku ?? ""} />
             <TextInput name="dpci" label="DPCI" defaultValue={selectedExisting?.dpci ?? ""} />
             <TextInput name="asin" label="ASIN" defaultValue={selectedExisting?.asin ?? ""} />

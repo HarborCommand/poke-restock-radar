@@ -54,8 +54,11 @@ import type {
   ScannerStatusDTO,
   SightingDTO,
   AlertCalibrationItemDTO,
+  BarcodeScanDTO,
   StoreDTO,
   StoreVisitResult,
+  UpcLookupProductDTO,
+  UpcLookupResultDTO,
   UserAreaPreferencesDTO,
   Zone,
   ZoneOptionDTO
@@ -1289,6 +1292,21 @@ function inventoryMarketCompToDTO(comp: Prisma.InventoryMarketCompGetPayload<Rec
   };
 }
 
+function barcodeScanToDTO(scan: Prisma.BarcodeScanGetPayload<Record<string, never>>): BarcodeScanDTO {
+  return {
+    id: scan.id,
+    upc: scan.upc,
+    source: scan.source,
+    status: scan.status as BarcodeScanDTO["status"],
+    resultType: scan.resultType,
+    productId: scan.productId,
+    inventoryItemId: scan.inventoryItemId,
+    productName: scan.productName,
+    notes: scan.notes,
+    createdAt: scan.createdAt.toISOString()
+  };
+}
+
 function inventoryStockLotToDTO(lot: Prisma.InventoryStockLotGetPayload<Record<string, never>>): InventoryStockLotDTO {
   return {
     id: lot.id,
@@ -1899,6 +1917,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     investmentSettings,
     investmentReports,
     inventory,
+    barcodeScans,
     dailyRecaps,
     savedFilterPresets,
     storePreferences,
@@ -1935,6 +1954,11 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       include: inventoryItemInclude,
       orderBy: { purchasedAt: "desc" },
       take: 200
+    }),
+    prisma.barcodeScan.findMany({
+      where: { userId: currentUser.id },
+      orderBy: { createdAt: "desc" },
+      take: 20
     }),
     prisma.dailyRecap.findMany({
       where: { OR: [{ userId: null }, { userId: currentUser.id }] },
@@ -2105,6 +2129,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     },
     inventory: inventoryDTOs,
     inventorySummary: summarizeInventory(inventoryDTOs),
+    barcodeScans: barcodeScans.map(barcodeScanToDTO),
     dailyRecaps: dailyRecaps.map(dailyRecapToDTO),
     savedFilterPresets: savedFilterPresets.map(savedFilterPresetToDTO),
     retailers: retailers.map(retailerToDTO),
@@ -2954,6 +2979,167 @@ async function autoLinkInventoryProducts(currentUser: SessionUser) {
   }
 }
 
+function normalizeUpc(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function inventoryCategoryFromProductType(productType?: string | null) {
+  const normalized = (productType || "").toLowerCase();
+  if (normalized.includes("elite") || normalized.includes("etb")) return "etbs";
+  if (normalized.includes("booster bundle")) return "booster_bundles";
+  if (normalized.includes("booster box")) return "booster_boxes";
+  if (normalized.includes("sleeved")) return "sleeved_boosters";
+  if (normalized.includes("collection")) return "collection_boxes";
+  if (normalized.includes("card")) return "single_cards";
+  return "sealed_packs";
+}
+
+function productToLookupProduct(product: Prisma.ProductGetPayload<{ include: typeof productInclude }>): UpcLookupProductDTO {
+  return {
+    productName: product.liveTitle || product.name,
+    category: inventoryCategoryFromProductType(product.productType),
+    setName: product.setName ?? product.release?.setName ?? null,
+    imageUrl: product.liveImageUrl ?? product.imageUrl,
+    retailer: product.retailer.name,
+    exactProductUrl: product.verifiedFinalUrl || product.url,
+    upc: product.upc || "",
+    productId: product.id,
+    source: "watched_product"
+  };
+}
+
+function externalLookupUrl(upc: string) {
+  const template = process.env.UPC_LOOKUP_API_URL?.trim();
+  if (!template) return null;
+  if (template.includes("{upc}")) return template.replaceAll("{upc}", encodeURIComponent(upc));
+  const separator = template.includes("?") ? "&" : "?";
+  return `${template}${separator}upc=${encodeURIComponent(upc)}`;
+}
+
+function textFromLookupPayload(payload: unknown, keys: string[]) {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function objectFromLookupPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const candidates = [record.product, record.item, record.result, record.data, Array.isArray(record.items) ? record.items[0] : null, record];
+  return candidates.find((candidate) => candidate && typeof candidate === "object") ?? null;
+}
+
+async function lookupExternalUpc(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+  const url = externalLookupUrl(upc);
+  if (!url) return { configured: false, product: null, error: null };
+  try {
+    const headers: Record<string, string> = { accept: "application/json" };
+    const apiKey = process.env.UPC_LOOKUP_API_KEY?.trim();
+    if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+    const response = await fetch(url, { headers, cache: "no-store" });
+    if (!response.ok) return { configured: true, product: null, error: `Lookup source returned ${response.status}.` };
+    const payload = objectFromLookupPayload(await response.json());
+    const productName = textFromLookupPayload(payload, ["productName", "title", "name", "description"]);
+    if (!productName) return { configured: true, product: null, error: "Lookup source did not return a product name." };
+    return {
+      configured: true,
+      product: {
+        productName,
+        category: textFromLookupPayload(payload, ["category", "productType"]),
+        setName: textFromLookupPayload(payload, ["setName", "set"]),
+        imageUrl: textFromLookupPayload(payload, ["imageUrl", "image", "thumbnail"]),
+        retailer: textFromLookupPayload(payload, ["retailer", "store", "brand"]),
+        exactProductUrl: textFromLookupPayload(payload, ["exactProductUrl", "url", "productUrl"]),
+        upc,
+        productId: null,
+        source: "external"
+      },
+      error: null
+    };
+  } catch (error) {
+    return { configured: true, product: null, error: error instanceof Error ? error.message : "Lookup source failed." };
+  }
+}
+
+async function barcodeScanHistory(currentUser: SessionUser) {
+  const scans = await prisma.barcodeScan.findMany({
+    where: { userId: currentUser.id },
+    orderBy: { createdAt: "desc" },
+    take: 12
+  });
+  return scans.map(barcodeScanToDTO);
+}
+
+export async function lookupInventoryUpc(
+  currentUser: SessionUser,
+  input: { upc: string; source?: "camera" | "manual" }
+): Promise<UpcLookupResultDTO> {
+  const upc = normalizeUpc(input.upc);
+  if (!/^\d{6,14}$/.test(upc)) throw new Error("UPC/EAN must be 6 to 14 digits.");
+  const inventoryItem = await prisma.inventoryItem.findFirst({
+    where: { upc, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: inventoryItemInclude,
+    orderBy: { updatedAt: "desc" }
+  });
+  const watchedProduct = await prisma.product.findFirst({
+    where: { upc, archivedAt: null },
+    include: productInclude,
+    orderBy: { updatedAt: "desc" }
+  });
+  const external = inventoryItem || watchedProduct ? { configured: Boolean(process.env.UPC_LOOKUP_API_URL?.trim()), product: null, error: null } : await lookupExternalUpc(upc);
+  const status: BarcodeScanDTO["status"] = inventoryItem || watchedProduct || external.product ? "PRODUCT_FOUND" : external.configured && external.error ? "LOOKUP_FAILED" : "NEW_UPC";
+  const productName = inventoryItem?.itemName ?? watchedProduct?.name ?? external.product?.productName ?? null;
+  await prisma.barcodeScan.create({
+    data: {
+      userId: currentUser.id,
+      upc,
+      source: input.source || "manual",
+      status,
+      resultType: inventoryItem ? "inventory" : watchedProduct ? "watched_product" : external.product ? "external" : "manual",
+      inventoryItemId: inventoryItem?.id,
+      productId: watchedProduct?.id,
+      productName,
+      notes: external.error
+    }
+  });
+  return {
+    upc,
+    status,
+    message: inventoryItem
+      ? "Product found in your inventory catalog. Add stock to the existing item."
+      : watchedProduct
+        ? "Watched product found. Create the inventory item from the verified product details."
+        : external.product
+          ? "Product lookup found a possible match. Confirm before saving."
+          : external.configured && external.error
+            ? "Lookup failed - fill manually."
+            : "New UPC detected - fill manually.",
+    matchedInventoryItem: inventoryItem ? inventoryItemToDTO(inventoryItem) : null,
+    matchedProduct: watchedProduct ? productToDTO(watchedProduct) : null,
+    lookupProduct: inventoryItem
+      ? {
+          productName: inventoryItem.itemName,
+          category: inventoryItem.category,
+          setName: inventoryItem.setName,
+          imageUrl: inventoryItem.imageUrl,
+          retailer: inventoryItem.retailer,
+          exactProductUrl: inventoryItem.exactProductUrl,
+          upc,
+          productId: inventoryItem.productId,
+          source: "inventory"
+        }
+      : watchedProduct
+        ? { ...productToLookupProduct(watchedProduct), upc }
+        : external.product,
+    externalLookupConfigured: external.configured,
+    history: await barcodeScanHistory(currentUser)
+  };
+}
+
 function inventoryMarketRecommendation(
   input: {
     category?: string | null;
@@ -3143,10 +3329,18 @@ export async function createInventoryItem(
   if (input.existingInventoryItemId) {
     return addInventoryStockLot(currentUser, input.existingInventoryItemId, input);
   }
-  const linkedProduct = input.productId
-    ? await prisma.product.findUnique({ where: { id: input.productId }, include: { retailer: { select: { name: true } }, release: { select: { setName: true } } } })
+  const normalizedInput = input.upc ? { ...input, upc: normalizeUpc(input.upc) } : input;
+  if (normalizedInput.upc) {
+    const existingByUpc = await prisma.inventoryItem.findFirst({
+      where: { upc: normalizedInput.upc, OR: [{ userId: null }, { userId: currentUser.id }] },
+      select: { id: true }
+    });
+    if (existingByUpc) return addInventoryStockLot(currentUser, existingByUpc.id, normalizedInput);
+  }
+  const linkedProduct = normalizedInput.productId
+    ? await prisma.product.findUnique({ where: { id: normalizedInput.productId }, include: { retailer: { select: { name: true } }, release: { select: { setName: true } } } })
     : null;
-  const linkedInput = linkedProduct ? { ...input, ...withoutUndefined(productSyncData(linkedProduct)) } : input;
+  const linkedInput = linkedProduct ? { ...normalizedInput, ...withoutUndefined(productSyncData(linkedProduct)) } : normalizedInput;
   const settings = await ensureInvestmentSettings(currentUser);
   const totalCost = linkedInput.totalCost ?? linkedInput.cost * linkedInput.quantity + (linkedInput.purchaseExtraCost ?? 0);
   const computed = inventoryMarketRecommendation({ ...linkedInput, totalCost, quantityOwned: linkedInput.quantity, costBasis: totalCost }, settings);
@@ -3289,7 +3483,7 @@ export async function logProductPurchase(
   return createInventoryItem(currentUser, {
     itemType: "product",
     itemName: product.name,
-    category: (product.productType || "sealed_packs").toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+    category: inventoryCategoryFromProductType(product.productType),
     setName: product.setName ?? product.release?.setName ?? undefined,
     productId: product.id,
     cost: input.cost ?? product.retailPrice ?? 0,
@@ -5168,6 +5362,7 @@ async function clearRadarData(includeUsers: boolean) {
   await prisma.savedFilterPreset.deleteMany();
   await prisma.dailyRecap.deleteMany();
   await prisma.inventoryMarketComp.deleteMany();
+  await prisma.barcodeScan.deleteMany();
   await prisma.inventorySale.deleteMany();
   await prisma.inventoryStockLot.deleteMany();
   await prisma.inventoryItem.deleteMany();
@@ -5551,6 +5746,7 @@ export async function exportBackup() {
       inventoryStockLots: await prisma.inventoryStockLot.findMany(),
       inventorySales: await prisma.inventorySale.findMany(),
       inventoryMarketComps: await prisma.inventoryMarketComp.findMany(),
+      barcodeScans: await prisma.barcodeScan.findMany(),
       dailyRecaps: await prisma.dailyRecap.findMany(),
       savedFilterPresets: await prisma.savedFilterPreset.findMany()
     }
@@ -6078,6 +6274,21 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       sourceUrl: row.sourceUrl ? String(row.sourceUrl) : null,
       sourceQuality: row.sourceQuality ? String(row.sourceQuality) : "EBAY_SOLD",
       matchScore: row.matchScore === undefined ? 0 : Number(row.matchScore),
+      notes: row.notes ? String(row.notes) : null,
+      createdAt: toDate(row.createdAt)
+    }))
+  });
+  await prisma.barcodeScan.createMany({
+    data: rows(tables, "barcodeScans").map((row) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      upc: String(row.upc),
+      source: row.source ? String(row.source) : "manual",
+      status: row.status ? String(row.status) : "LOOKUP_FAILED",
+      resultType: row.resultType ? String(row.resultType) : "manual",
+      productId: row.productId ? String(row.productId) : null,
+      inventoryItemId: row.inventoryItemId ? String(row.inventoryItemId) : null,
+      productName: row.productName ? String(row.productName) : null,
       notes: row.notes ? String(row.notes) : null,
       createdAt: toDate(row.createdAt)
     }))

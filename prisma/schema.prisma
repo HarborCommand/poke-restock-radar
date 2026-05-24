@@ -41,6 +41,7 @@ model User {
   auditLogs                AuditLog[]
   inventoryItems           InventoryItem[]
   inventorySales           InventorySale[]
+  barcodeScans             BarcodeScan[]
   dailyRecaps              DailyRecap[]
   savedFilterPresets       SavedFilterPreset[]
   storePreferences         UserStorePreference[]
@@ -184,6 +185,7 @@ model Product {
   monitorLogs               MonitorLog[]
   priorityScores            ProductPriorityScore[]
   inventoryItems            InventoryItem[]
+  barcodeScans              BarcodeScan[]
 
   @@index([retailerId])
   @@index([releaseId])
@@ -608,6 +610,7 @@ model InventoryItem {
   marketComps            InventoryMarketComp[]
   stockLots              InventoryStockLot[]
   sales                  InventorySale[]
+  barcodeScans           BarcodeScan[]
 
   @@index([userId])
   @@index([productId])
@@ -680,6 +683,29 @@ model InventoryMarketComp {
   @@index([inventoryItemId])
   @@index([sourceQuality])
   @@index([soldAt])
+}
+
+model BarcodeScan {
+  id              String         @id @default(cuid())
+  userId          String
+  upc             String
+  source          String         @default("manual")
+  status          String         @default("LOOKUP_FAILED")
+  resultType      String         @default("manual")
+  productId       String?
+  inventoryItemId String?
+  productName     String?
+  notes           String?
+  createdAt       DateTime       @default(now())
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product         Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([upc])
+  @@index([createdAt])
+  @@index([productId])
+  @@index([inventoryItemId])
 }
 
 model DailyRecap {

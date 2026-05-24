@@ -207,6 +207,42 @@ export type InventoryMarketCompDTO = {
   createdAt: string;
 };
 
+export type BarcodeScanDTO = {
+  id: string;
+  upc: string;
+  source: string;
+  status: "PRODUCT_FOUND" | "NEW_UPC" | "LOOKUP_FAILED";
+  resultType: string;
+  productId: string | null;
+  inventoryItemId: string | null;
+  productName: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type UpcLookupProductDTO = {
+  productName: string;
+  category: string | null;
+  setName: string | null;
+  imageUrl: string | null;
+  retailer: string | null;
+  exactProductUrl: string | null;
+  upc: string;
+  productId: string | null;
+  source: "inventory" | "watched_product" | "external";
+};
+
+export type UpcLookupResultDTO = {
+  upc: string;
+  status: "PRODUCT_FOUND" | "NEW_UPC" | "LOOKUP_FAILED";
+  message: string;
+  matchedInventoryItem: InventoryItemDTO | null;
+  matchedProduct: ProductDTO | null;
+  lookupProduct: UpcLookupProductDTO | null;
+  externalLookupConfigured: boolean;
+  history: BarcodeScanDTO[];
+};
+
 export type InventorySummaryDTO = {
   totalSpent: number;
   totalCost: number;
@@ -871,6 +907,7 @@ export type DashboardDTO = {
   dailyPlan: DailyPlanDTO;
   inventory: InventoryItemDTO[];
   inventorySummary: InventorySummaryDTO;
+  barcodeScans: BarcodeScanDTO[];
   dailyRecaps: DailyRecapDTO[];
   savedFilterPresets: SavedFilterPresetDTO[];
   retailers: RetailerDTO[];

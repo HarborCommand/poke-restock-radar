@@ -589,6 +589,14 @@ export const inventoryCreateSchema = z.object({
 
 export const inventoryUpdateSchema = inventoryCreateSchema.partial();
 
+export const upcLookupSchema = z.object({
+  upc: z
+    .string()
+    .trim()
+    .regex(/^\d{6,14}$/, "UPC/EAN must be 6 to 14 digits."),
+  source: z.enum(["camera", "manual"]).default("manual")
+});
+
 export const inventorySaleCreateSchema = z.object({
   quantitySold: z.coerce.number().int().min(1).max(1000),
   soldPricePerItem: requiredMoney,
