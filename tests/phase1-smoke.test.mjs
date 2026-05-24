@@ -957,6 +957,8 @@ test("inventory tracker and market recommendation engine exists", () => {
     "Missing Market Data",
     "Attach watched product",
     "Scan UPC / Barcode",
+    "Camera preview active",
+    "Automatic barcode detection is not available",
     "Lookup UPC",
     "Scanned UPC history",
     "Manual Inventory Sold Comp",

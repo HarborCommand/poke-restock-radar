@@ -4038,12 +4038,12 @@ function BarcodeScannerModal({
   const [result, setResult] = useState<UpcLookupResultDTO | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
   const [cameraMessage, setCameraMessage] = useState("Camera runs only after you tap Start Camera. No image or video is saved.");
   const history = result?.history ?? dashboard.barcodeScans;
-  const scannerSupported =
-    typeof window !== "undefined" &&
-    Boolean(window.BarcodeDetector) &&
-    Boolean(navigator.mediaDevices?.getUserMedia);
+  const cameraAvailable = typeof window !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
+  const barcodeDetectionAvailable = typeof window !== "undefined" && Boolean(window.BarcodeDetector);
 
   const lookupUpc = useCallback(async (upc: string, source: "camera" | "manual") => {
     const normalized = normalizeBarcodeValue(upc);
@@ -4062,6 +4062,8 @@ function BarcodeScannerModal({
       setManualUpc(lookup.upc);
       setCameraMessage(lookup.message);
       setCameraActive(false);
+      setCameraStarting(false);
+      setCameraPreviewReady(false);
     } catch (error) {
       setCameraMessage(error instanceof Error ? error.message : "Lookup failed - fill manually.");
     } finally {
@@ -4076,18 +4078,44 @@ function BarcodeScannerModal({
     let timer: number | null = null;
     const videoElement = videoRef.current;
     async function startCamera() {
-      if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
-        setCameraMessage("Camera barcode scanning is not supported in this browser. Use manual UPC entry.");
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraMessage("Camera access is not available in this browser. Use manual UPC entry.");
         setCameraActive(false);
         return;
       }
+      setCameraStarting(true);
+      setCameraPreviewReady(false);
+      setCameraMessage("Starting camera. Approve camera permission if your browser asks.");
       try {
-        const detector = new window.BarcodeDetector({ formats: ["upc_a", "upc_e", "ean_13", "ean_8"] });
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-        if (!videoElement) return;
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+        if (stopped) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        if (!videoElement) {
+          setCameraMessage("Camera started, but the preview is not ready. Close and reopen the scanner.");
+          setCameraActive(false);
+          return;
+        }
+        videoElement.muted = true;
+        videoElement.playsInline = true;
         videoElement.srcObject = stream;
         await videoElement.play();
-        setCameraMessage("Point your camera at the barcode.");
+        setCameraStarting(false);
+        setCameraPreviewReady(true);
+        if (!window.BarcodeDetector) {
+          setCameraMessage("Camera preview active. Automatic barcode detection is not supported in this browser, so type the UPC below.");
+          return;
+        }
+        const detector = new window.BarcodeDetector({ formats: ["upc_a", "upc_e", "ean_13", "ean_8"] });
+        setCameraMessage("Camera preview active. Point your camera at the barcode.");
         const scanFrame = async () => {
           if (stopped || !videoElement) return;
           try {
@@ -4105,7 +4133,9 @@ function BarcodeScannerModal({
         };
         await scanFrame();
       } catch {
-        setCameraMessage("Camera permission was denied or unavailable. Use manual UPC entry.");
+        setCameraMessage("Camera permission was denied or unavailable. Check browser camera permissions or use manual UPC entry.");
+        setCameraStarting(false);
+        setCameraPreviewReady(false);
         setCameraActive(false);
       }
     }
@@ -4132,26 +4162,70 @@ function BarcodeScannerModal({
         </div>
         <section className="barcode-scanner-grid">
           <div className="barcode-camera-panel">
-            <div className={cameraActive ? "barcode-video-frame active" : "barcode-video-frame"}>
-              <video ref={videoRef} muted playsInline />
-              {!cameraActive ? <span>No camera feed active</span> : null}
+            <div
+              className={[
+                "barcode-video-frame",
+                cameraActive ? "active" : "",
+                cameraStarting ? "starting" : "",
+                cameraPreviewReady ? "ready" : ""
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                onLoadedMetadata={() => {
+                  if (cameraActive) {
+                    setCameraStarting(false);
+                    setCameraPreviewReady(true);
+                  }
+                }}
+              />
+              {!cameraActive ? (
+                <span className="barcode-camera-placeholder">Camera preview will appear here</span>
+              ) : !cameraPreviewReady ? (
+                <span className="barcode-camera-placeholder">Starting camera...</span>
+              ) : (
+                <span className="barcode-camera-guide">
+                  {barcodeDetectionAvailable ? "Align barcode inside the frame" : "Preview active - enter UPC below"}
+                </span>
+              )}
             </div>
             <p>{cameraMessage}</p>
             <div className="barcode-action-row">
               <button
-                className="primary-action"
-                disabled={!scannerSupported || lookupBusy}
+                className="primary-action barcode-start-button"
+                disabled={!cameraAvailable || lookupBusy || cameraStarting}
                 type="button"
-                onClick={() => setCameraActive(true)}
+                onClick={() => {
+                  setResult(null);
+                  setCameraPreviewReady(false);
+                  setCameraActive(true);
+                }}
               >
                 <PackageSearch size={15} />
-                Start Camera
+                {cameraStarting ? "Starting Camera" : cameraActive ? "Camera Active" : "Start Camera"}
               </button>
-              <button className="mini-action" type="button" onClick={() => setCameraActive(false)}>
+              <button
+                className="mini-action"
+                type="button"
+                onClick={() => {
+                  setCameraActive(false);
+                  setCameraStarting(false);
+                  setCameraPreviewReady(false);
+                  setCameraMessage("Camera stopped. Tap Start Camera to try again.");
+                }}
+              >
                 Stop
               </button>
             </div>
-            {!scannerSupported ? <small>Camera barcode detection is not available here. Manual UPC lookup still works.</small> : null}
+            {!cameraAvailable ? <small>Camera access is not available here. Manual UPC lookup still works.</small> : null}
+            {cameraAvailable && !barcodeDetectionAvailable ? (
+              <small>Automatic barcode detection is not available in this browser. You can still start the camera preview and type the UPC manually.</small>
+            ) : null}
           </div>
           <form
             className="barcode-manual-panel"
