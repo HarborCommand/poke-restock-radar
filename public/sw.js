@@ -16,17 +16,6 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
-      .then((clients) =>
-        Promise.all(
-          clients.map((client) => {
-            if ("navigate" in client && client.url && new URL(client.url).origin === self.location.origin) {
-              return client.navigate(client.url);
-            }
-            return Promise.resolve();
-          })
-        )
-      )
   );
 });
 

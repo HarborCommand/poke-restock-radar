@@ -79,6 +79,28 @@ const productInclude = {
   }
 } satisfies Prisma.ProductInclude;
 
+let inventoryMetadataSchemaReady: Promise<void> | null = null;
+
+async function ensureProductionInventoryMetadataColumns() {
+  if (process.env.NODE_ENV !== "production") return;
+  inventoryMetadataSchemaReady ??= (async () => {
+    const columns = [
+      ['"brand"', "TEXT"],
+      ['"description"', "TEXT"],
+      ['"manufacturer"', "TEXT"],
+      ['"model"', "TEXT"],
+      ['"msrp"', "DOUBLE PRECISION"]
+    ];
+    for (const [columnName, columnType] of columns) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "InventoryItem" ADD COLUMN IF NOT EXISTS ${columnName} ${columnType}`);
+    }
+  })().catch((error) => {
+    inventoryMetadataSchemaReady = null;
+    throw error;
+  });
+  await inventoryMetadataSchemaReady;
+}
+
 const productDiscoverySourceInclude = {
   retailer: { select: { name: true } }
 } satisfies Prisma.ProductDiscoverySourceInclude;
@@ -1939,6 +1961,7 @@ async function refreshProductPriorityScores(
 }
 
 export async function listDashboard(currentUser: SessionUser): Promise<DashboardDTO> {
+  await ensureProductionInventoryMetadataColumns();
   await autoLinkInventoryProducts(currentUser);
   const [
     retailers,
