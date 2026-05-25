@@ -77,8 +77,8 @@ export function getEnvironmentReport(): EnvironmentReport {
   const monitorJobSecretConfigured = hasEnv("MONITOR_JOB_SECRET");
   const vercelCronSecretConfigured = hasEnv("CRON_SECRET");
   const configuredUpcProvider = hasEnv("UPC_LOOKUP_API_URL");
-  const searchFallbackConfigured = hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY");
   const searchProvider = envValue("PRODUCT_SEARCH_PROVIDER");
+  const searchFallbackConfigured = Boolean(searchProvider && hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY"));
 
   const coreRequired = ["DATABASE_URL", "APP_URL"];
   if (isProduction || isVercel) {
@@ -123,7 +123,7 @@ export function getEnvironmentReport(): EnvironmentReport {
     warnings.push("Twilio SMS alerts are disabled until Twilio credentials and from number are set.");
   }
   if (!searchFallbackConfigured) {
-    warnings.push("Search fallback is not configured. UPC provider may miss newer Pokemon products.");
+    warnings.push("Search fallback is not configured. Set PRODUCT_SEARCH_PROVIDER, PRODUCT_SEARCH_API_URL, and PRODUCT_SEARCH_API_KEY so UPC provider misses can fall through to product search.");
   }
 
   return {

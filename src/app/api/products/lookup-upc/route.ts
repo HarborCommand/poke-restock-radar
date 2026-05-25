@@ -37,7 +37,9 @@ function toPublicLookupResponse(result: UpcLookupResultDTO, includeDebug: boolea
       retailer: result.lookupProduct.retailer,
       productUrl: result.lookupProduct.exactProductUrl,
       exactProductUrl: result.lookupProduct.exactProductUrl,
-      productId: result.lookupProduct.productId
+      productId: result.lookupProduct.productId,
+      confidence: result.lookupProduct.confidence,
+      matchQuality: result.lookupProduct.matchQuality
     },
     ...(includeDebug ? { debug: result.debug } : {})
   };

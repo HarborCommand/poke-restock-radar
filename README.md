@@ -738,8 +738,12 @@ Barcode / UPC scanning:
 - UPC lookup checks existing inventory first, watched products second, a configured UPC provider third, the public UPCItemDB trial API fourth, and an optional configured product search provider last.
 - If the UPC already exists in inventory, the app opens Add Stock for that catalog item instead of creating a duplicate.
 - Successful UPC lookup fills empty add-product fields only: UPC, title, brand, category, description, image URL, MSRP, model/SKU, manufacturer, retailer, and product URL when the provider returns them.
-- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` and `{apiKey}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer or `x-api-key` auth when your chosen public lookup provider requires it. Optional search fallback env vars are `PRODUCT_SEARCH_API_URL`, `PRODUCT_SEARCH_API_KEY`, and `PRODUCT_SEARCH_PROVIDER`. Keys are read server-side only.
-- Newer Pokemon UPCs can be missing from UPC-only providers. If `PRODUCT_SEARCH_API_URL` or `PRODUCT_SEARCH_API_KEY` are not configured, the app shows: `Search fallback is not configured. UPC provider may miss newer Pokemon products.`
+- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` and `{apiKey}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer or `x-api-key` auth when your chosen public lookup provider requires it.
+- Broad Pokemon UPC coverage uses the configurable product-search fallback after UPC-only providers miss. Built-in providers are `serpapi` and `custom`.
+- SerpApi setup: set `PRODUCT_SEARCH_PROVIDER=serpapi`, `PRODUCT_SEARCH_API_URL=https://serpapi.com/search.json`, and `PRODUCT_SEARCH_API_KEY=<your server-side key>`. The app calls Google Shopping with the exact UPC query and normalizes retailer candidates from Target, Walmart, GameStop, Best Buy, Pokemon Center, Amazon, TCGplayer, and other product pages.
+- Custom setup: set `PRODUCT_SEARCH_PROVIDER=custom`, `PRODUCT_SEARCH_API_URL` to your JSON product search endpoint, and `PRODUCT_SEARCH_API_KEY` if required. The URL can use `{upc}`, `{query}`, `{apiKey}`, or `{api_key}` placeholders; otherwise the server adds `q=<upc>`.
+- Product search returns a confidence score. High confidence is auto-filled as `Found from Target` / `Found from product search`; medium or low confidence is shown as `Possible match - review before saving.`
+- Newer Pokemon UPCs can be missing from UPC-only providers. If `PRODUCT_SEARCH_PROVIDER`, `PRODUCT_SEARCH_API_URL`, or `PRODUCT_SEARCH_API_KEY` are not configured, the app shows: `Search fallback is not configured. Set PRODUCT_SEARCH_PROVIDER, PRODUCT_SEARCH_API_URL, and PRODUCT_SEARCH_API_KEY so UPC provider misses can fall through to product search.`
 - Failed UPC lookups expose safe Admin diagnostics with attempted sources, provider status codes, missing-env reasons, and whether search fallback is configured. The diagnostics never expose API keys.
 
 ## Inventory Spending And Sales Tracker

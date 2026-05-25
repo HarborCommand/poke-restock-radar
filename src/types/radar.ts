@@ -256,6 +256,8 @@ export type UpcLookupProductDTO = {
   exactProductUrl: string | null;
   productId: string | null;
   source: "inventory" | "watched_product" | "external";
+  confidence: number | null;
+  matchQuality: "HIGH" | "MEDIUM" | "LOW" | null;
 };
 
 export type UpcLookupFailureDTO = {

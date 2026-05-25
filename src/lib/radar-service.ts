@@ -5,6 +5,7 @@ import { getAppHealth } from "@/lib/health";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import { runProductDiscoveryCheck, validateDiscoverySourceUrl } from "@/lib/product-discovery";
+import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
 import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { compactLookupText, normalizeUPC } from "@/lib/upc";
@@ -3070,7 +3071,9 @@ function productToLookupProduct(product: Prisma.ProductGetPayload<{ include: typ
     retailer: product.retailer.name,
     exactProductUrl: product.verifiedFinalUrl || product.url,
     productId: product.id,
-    source: "watched_product"
+    source: "watched_product",
+    confidence: 100,
+    matchQuality: "HIGH"
   };
 }
 
@@ -3085,23 +3088,13 @@ function externalLookupUrl(upc: string) {
   return `${template}${separator}upc=${encodeURIComponent(upc)}`;
 }
 
-function externalSearchUrl(upc: string) {
-  const template = process.env.PRODUCT_SEARCH_API_URL?.trim();
-  if (!template) return null;
-  const apiKey = process.env.PRODUCT_SEARCH_API_KEY?.trim() || "";
-  const withUpc = template.includes("{upc}") ? template.replaceAll("{upc}", encodeURIComponent(upc)) : template;
-  const withKey = withUpc.includes("{apiKey}") ? withUpc.replaceAll("{apiKey}", encodeURIComponent(apiKey)) : withUpc;
-  if (withKey !== template || withKey.includes("upc=") || withKey.includes("q=") || withKey.includes("query=")) return withKey;
-  const separator = withKey.includes("?") ? "&" : "?";
-  return `${withKey}${separator}q=${encodeURIComponent(upc)}`;
-}
-
 function upcProviderConfig(): UpcLookupDebugDTO["providerConfig"] {
+  const searchConfig = productSearchConfig();
   return {
     configuredUpcProvider: Boolean(process.env.UPC_LOOKUP_API_URL?.trim()),
     publicUpcProvider: true,
-    searchFallback: Boolean(process.env.PRODUCT_SEARCH_API_URL?.trim() && process.env.PRODUCT_SEARCH_API_KEY?.trim()),
-    searchProvider: process.env.PRODUCT_SEARCH_PROVIDER?.trim() || null
+    searchFallback: searchConfig.configured,
+    searchProvider: searchConfig.provider
   };
 }
 
@@ -3250,7 +3243,40 @@ function productFromLookupPayload(upc: string, payload: unknown, source: UpcLook
     retailer,
     exactProductUrl: textFromLookupPayload(object, ["exactProductUrl", "url", "productUrl", "link"]) ?? directTargetUrl ?? offerUrl,
     productId: null,
-    source
+    source,
+    confidence: 90,
+    matchQuality: "HIGH"
+  };
+}
+
+function lookupQualityFromConfidence(confidence: number | null | undefined): UpcLookupProductDTO["matchQuality"] {
+  if (confidence === null || confidence === undefined) return null;
+  if (confidence >= 70) return "HIGH";
+  if (confidence >= 50) return "MEDIUM";
+  return "LOW";
+}
+
+function productFromSearchCandidate(upc: string, candidate: ProductSearchCandidate): UpcLookupProductDTO {
+  return {
+    upc,
+    title: candidate.title,
+    productName: candidate.title,
+    brand: candidate.brand ?? null,
+    category: candidate.category ?? inferCategoryFromProductText(candidate.title),
+    setName: null,
+    description: null,
+    imageUrl: candidate.imageUrl ?? null,
+    additionalImages: [],
+    msrp: candidate.price ?? null,
+    model: candidate.sku ?? candidate.tcin ?? null,
+    manufacturer: candidate.brand ?? candidate.retailer ?? null,
+    sku: candidate.sku ?? candidate.tcin ?? null,
+    retailer: candidate.retailer ?? null,
+    exactProductUrl: candidate.productUrl ?? null,
+    productId: null,
+    source: "external",
+    confidence: candidate.confidence,
+    matchQuality: lookupQualityFromConfidence(candidate.confidence)
   };
 }
 
@@ -3333,51 +3359,39 @@ async function lookupUpcItemDb(upc: string): Promise<{ configured: boolean; prod
 async function lookupConfiguredSearchProvider(
   upc: string
 ): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null; failures: UpcLookupFailureDTO[] }> {
-  const searchUrlConfigured = Boolean(process.env.PRODUCT_SEARCH_API_URL?.trim());
-  const searchKeyConfigured = Boolean(process.env.PRODUCT_SEARCH_API_KEY?.trim());
-  if (!searchUrlConfigured || !searchKeyConfigured) {
+  const searchResult = await searchProductsByUpc(upc);
+  const failures = searchResult.failures.map((failure) =>
+    lookupFailure(failure.source, failure.reason, {
+      configured: failure.configured,
+      statusCode: failure.statusCode,
+      detail: failure.detail
+    })
+  );
+  const bestCandidate = searchResult.candidates[0] ?? null;
+  if (bestCandidate) {
+    return {
+      configured: searchResult.configured,
+      product: productFromSearchCandidate(upc, bestCandidate),
+      error: null,
+      failures
+    };
+  }
+  if (!searchResult.configured) {
     return {
       configured: false,
       product: null,
       error: "Search fallback is not configured. UPC provider may miss newer Pokemon products.",
-      failures: [
-        lookupFailure("search", "missing_env_or_no_results", {
-          configured: false,
-          detail: "PRODUCT_SEARCH_API_URL or PRODUCT_SEARCH_API_KEY is missing."
-        })
-      ]
+      failures
     };
   }
-  const url = externalSearchUrl(upc);
-  if (!url) {
-    return {
-      configured: false,
-      product: null,
-      error: "Search fallback is not configured. UPC provider may miss newer Pokemon products.",
-      failures: [lookupFailure("search", "missing_env_or_no_results", { configured: false, detail: "PRODUCT_SEARCH_API_URL is missing." })]
-    };
-  }
-  try {
-    const apiKey = process.env.PRODUCT_SEARCH_API_KEY?.trim();
-    const product = productFromLookupPayload(upc, await fetchLookupJson(url, apiKey), "external");
-    if (!product) {
-      return {
-        configured: true,
-        product: null,
-        error: "Search source did not return a structured product result.",
-        failures: [lookupFailure("search", "missing_env_or_no_results", { configured: true, detail: "Search provider returned no structured product." })]
-      };
-    }
-    return { configured: true, product, error: null, failures: [] };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Search source failed.";
-    return {
-      configured: true,
-      product: null,
-      error: message,
-      failures: [lookupFailure("search", "provider_error", { configured: true, statusCode: errorStatusCode(error), detail: message })]
-    };
-  }
+  return {
+    configured: true,
+    product: null,
+    error: "Search provider returned no high-confidence Pokemon product result.",
+    failures: failures.length
+      ? failures
+      : [lookupFailure("search", "low_confidence", { configured: true, detail: `Provider ${searchResult.provider || "unknown"} returned no usable candidates.` })]
+  };
 }
 
 async function lookupExternalUpc(
@@ -3503,7 +3517,9 @@ export async function lookupInventoryUpc(
           retailer: inventoryItem.retailer,
           exactProductUrl: inventoryItem.exactProductUrl,
           productId: inventoryItem.productId,
-          source: "inventory"
+          source: "inventory",
+          confidence: 100,
+          matchQuality: "HIGH"
         }
       : watchedProduct
         ? { ...productToLookupProduct(watchedProduct), upc }

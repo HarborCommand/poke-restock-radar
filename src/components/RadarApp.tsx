@@ -4090,6 +4090,18 @@ function upcLookupFailureMessage(result: UpcLookupResultDTO) {
   return result.message || "No product found from configured sources.";
 }
 
+function upcLookupSuccessMessage(result: UpcLookupResultDTO) {
+  const product = result.lookupProduct;
+  if (!product) return upcLookupFailureMessage(result);
+  if (product.source === "external" && product.matchQuality && product.matchQuality !== "HIGH") {
+    return `Possible match from ${product.retailer || "product search"} (${product.matchQuality.toLowerCase()} confidence). Review before saving.`;
+  }
+  if (product.source === "external") {
+    return `Found from ${product.retailer || "product search"}. Confirm before saving.`;
+  }
+  return result.message;
+}
+
 function UpcLookupDebugDetails({ result }: { result: UpcLookupResultDTO }) {
   return (
     <details className="barcode-debug-details">
@@ -4177,7 +4189,7 @@ function BarcodeScannerModal({
       });
       setResult(lookup);
       setManualUpc(lookup.upc);
-      setCameraMessage(lookup.lookupProduct ? "Product details filled from UPC." : upcLookupFailureMessage(lookup));
+      setCameraMessage(lookup.lookupProduct ? upcLookupSuccessMessage(lookup) : upcLookupFailureMessage(lookup));
       if (source === "camera") onUseResult(lookup);
     } catch (error) {
       setCameraMessage(error instanceof Error ? error.message : "Lookup failed - fill manually.");
@@ -4410,7 +4422,7 @@ function BarcodeScannerModal({
             <div>
               <span>{result.status === "PRODUCT_FOUND" ? "Product found" : result.status === "NEW_UPC" ? "No product found" : "Lookup failed - fill manually"}</span>
               <h3>{result.lookupProduct?.productName || "Enter details manually"}</h3>
-              <p>{result.lookupProduct ? result.message : upcLookupFailureMessage(result)}</p>
+              <p>{result.lookupProduct ? upcLookupSuccessMessage(result) : upcLookupFailureMessage(result)}</p>
             </div>
             <div className="barcode-result-meta">
               <span>UPC {result.upc}</span>
@@ -4418,6 +4430,9 @@ function BarcodeScannerModal({
               {result.lookupProduct?.category ? <span>{formatStatus(result.lookupProduct.category)}</span> : null}
               <span>{result.lookupProduct?.retailer || "Retailer unknown"}</span>
               <span>{result.lookupProduct?.source ? formatStatus(result.lookupProduct.source) : "Manual fallback"}</span>
+              {result.lookupProduct?.confidence !== null && result.lookupProduct?.confidence !== undefined ? (
+                <span>{result.lookupProduct.confidence}% confidence</span>
+              ) : null}
             </div>
             <div className="barcode-action-row">
               <button className="mini-action" type="button" onClick={startCamera}>
@@ -4644,7 +4659,7 @@ function PurchaseFlow({
         setLookupMessage("Product already exists in your catalog. Add stock to the existing item.");
       } else if (lookup.lookupProduct) {
         applyLookupToDraft(lookup);
-        setLookupMessage("Product details found and filled from UPC. Existing typed fields were kept.");
+        setLookupMessage(`${upcLookupSuccessMessage(lookup)} Existing typed fields were kept.`);
       } else {
         updateDraft("upc", lookup.upc);
         setLookupMessage(upcLookupFailureMessage(lookup));
@@ -9234,7 +9249,9 @@ function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
           title="UPC Lookup"
           value={health.providers.upc.searchFallbackConfigured ? "Search Ready" : "UPC Only"}
           tone={health.providers.upc.searchFallbackConfigured ? "OK" : "WARN"}
-          detail={`Public UPC ${configuredText(health.providers.upc.publicUpcProvider).toLowerCase()}, search fallback ${configuredText(
+          detail={`Public UPC ${configuredText(health.providers.upc.publicUpcProvider).toLowerCase()}, search ${
+            health.providers.upc.searchProvider || "provider missing"
+          } ${configuredText(
             health.providers.upc.searchFallbackConfigured
           ).toLowerCase()}`}
         />
