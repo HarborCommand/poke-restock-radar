@@ -4369,8 +4369,8 @@ function BarcodeScannerModal({
         {result ? (
           <section className={`barcode-result-card ${result.status.toLowerCase().replaceAll("_", "-")}`}>
             <div>
-              <span>{result.status === "PRODUCT_FOUND" ? "Product found" : result.status === "NEW_UPC" ? "New UPC detected" : "Lookup failed - fill manually"}</span>
-              <h3>{result.lookupProduct?.productName || result.upc}</h3>
+              <span>{result.status === "PRODUCT_FOUND" ? "Product found" : result.status === "NEW_UPC" ? "No product found" : "Lookup failed - fill manually"}</span>
+              <h3>{result.lookupProduct?.productName || "Enter details manually"}</h3>
               <p>{result.message}</p>
             </div>
             <div className="barcode-result-meta">
@@ -4510,7 +4510,13 @@ function PurchaseFlow({
   const [price, setPrice] = useState(0);
   const [extraCost, setExtraCost] = useState(0);
   const [lookupBusy, setLookupBusy] = useState(false);
-  const [lookupMessage, setLookupMessage] = useState<string | null>(prefill?.upc ? "Product details found and filled from UPC." : null);
+  const [lookupMessage, setLookupMessage] = useState<string | null>(
+    prefill?.upc
+      ? prefill.itemName
+        ? "Product details found and filled from UPC."
+        : "No product found for this UPC yet. Keep the UPC and enter product details manually."
+      : null
+  );
   const totalCost = quantity * price + extraCost;
   const selectedExisting = items.find((item) => item.id === selectedExistingId) ?? null;
   const flowKey = selectedExisting?.id ?? prefill?.upc ?? "new";

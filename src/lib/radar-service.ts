@@ -3075,9 +3075,23 @@ function productToLookupProduct(product: Prisma.ProductGetPayload<{ include: typ
 function externalLookupUrl(upc: string) {
   const template = process.env.UPC_LOOKUP_API_URL?.trim();
   if (!template) return null;
-  if (template.includes("{upc}")) return template.replaceAll("{upc}", encodeURIComponent(upc));
+  const apiKey = process.env.UPC_LOOKUP_API_KEY?.trim() || "";
+  const withUpc = template.includes("{upc}") ? template.replaceAll("{upc}", encodeURIComponent(upc)) : template;
+  const withKey = withUpc.includes("{apiKey}") ? withUpc.replaceAll("{apiKey}", encodeURIComponent(apiKey)) : withUpc;
+  if (withKey !== template) return withKey;
   const separator = template.includes("?") ? "&" : "?";
   return `${template}${separator}upc=${encodeURIComponent(upc)}`;
+}
+
+function externalSearchUrl(upc: string) {
+  const template = process.env.PRODUCT_SEARCH_API_URL?.trim();
+  if (!template) return null;
+  const apiKey = process.env.PRODUCT_SEARCH_API_KEY?.trim() || "";
+  const withUpc = template.includes("{upc}") ? template.replaceAll("{upc}", encodeURIComponent(upc)) : template;
+  const withKey = withUpc.includes("{apiKey}") ? withUpc.replaceAll("{apiKey}", encodeURIComponent(apiKey)) : withUpc;
+  if (withKey !== template || withKey.includes("upc=") || withKey.includes("q=") || withKey.includes("query=")) return withKey;
+  const separator = withKey.includes("?") ? "&" : "?";
+  return `${withKey}${separator}q=${encodeURIComponent(upc)}`;
 }
 
 function textFromLookupPayload(payload: unknown, keys: string[]) {
@@ -3102,6 +3116,16 @@ function numberFromLookupPayload(payload: unknown, keys: string[]) {
     }
   }
   return null;
+}
+
+function arrayFromLookupPayload(payload: unknown, keys: string[]) {
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  return keys.flatMap((key) => {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+    return [];
+  });
 }
 
 function imageArrayFromLookupPayload(payload: unknown) {
@@ -3139,47 +3163,137 @@ function objectFromLookupPayload(payload: unknown) {
   }) ?? null;
 }
 
-async function lookupExternalUpc(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+function bestOfferFromLookupPayload(payload: unknown) {
+  const offers = arrayFromLookupPayload(payload, ["offers", "sellers", "merchants"]);
+  return offers.find((offer) => offer && typeof offer === "object") as Record<string, unknown> | undefined;
+}
+
+function inferCategoryFromProductText(...values: Array<string | null | undefined>) {
+  const normalized = values.filter(Boolean).join(" ").toLowerCase();
+  if (normalized.includes("elite trainer") || normalized.includes(" etb")) return "etbs";
+  if (normalized.includes("booster bundle")) return "booster_bundles";
+  if (normalized.includes("booster box")) return "booster_boxes";
+  if (normalized.includes("sleeved booster")) return "sleeved_boosters";
+  if (normalized.includes("collection")) return "collection_boxes";
+  if (normalized.includes("graded")) return "graded_cards";
+  if (normalized.includes("raw card")) return "raw_cards";
+  if (normalized.includes("pokemon") || normalized.includes("trading card") || normalized.includes("tcg")) return "sealed_packs";
+  return null;
+}
+
+function productFromLookupPayload(upc: string, payload: unknown, source: UpcLookupProductDTO["source"]): UpcLookupProductDTO | null {
+  const object = objectFromLookupPayload(payload);
+  if (!object) return null;
+  const productName = textFromLookupPayload(object, ["productName", "title", "name", "product_name", "description"]);
+  if (!productName) return null;
+  const images = imageArrayFromLookupPayload(object);
+  const offer = bestOfferFromLookupPayload(object);
+  const offerMerchant = textFromLookupPayload(offer, ["merchant", "retailer", "store", "seller"]);
+  const offerUrl = textFromLookupPayload(offer, ["link", "url", "productUrl"]);
+  const offerPrice = numberFromLookupPayload(offer, ["price", "list_price", "salePrice"]);
+  const brand = textFromLookupPayload(object, ["brand", "brandName", "manufacturer", "publisher"]);
+  const description = textFromLookupPayload(object, ["description", "longDescription", "shortDescription"]);
+  const category =
+    textFromLookupPayload(object, ["category", "productType", "categoryName", "department"]) ??
+    inferCategoryFromProductText(productName, description);
+  const retailer = textFromLookupPayload(object, ["retailer", "store", "merchant", "seller"]) ?? offerMerchant;
+  const model = textFromLookupPayload(object, ["model", "modelNumber", "sku", "mpn", "tcin"]);
+  const directTargetUrl =
+    retailer?.toLowerCase().includes("target") && model && /^\d{6,12}$/.test(model)
+      ? `https://www.target.com/p/-/A-${model}`
+      : null;
+  return {
+    upc,
+    title: productName,
+    productName,
+    brand,
+    category,
+    setName: textFromLookupPayload(object, ["setName", "set"]),
+    description,
+    imageUrl: images[0] ?? null,
+    additionalImages: images.slice(1),
+    msrp: numberFromLookupPayload(object, ["msrp", "price", "retailPrice", "lowestPrice", "lowest_recorded_price"]) ?? offerPrice,
+    model,
+    manufacturer: textFromLookupPayload(object, ["manufacturer", "brand", "publisher"]),
+    sku: textFromLookupPayload(object, ["sku", "model", "mpn", "asin", "tcin"]),
+    retailer,
+    exactProductUrl: textFromLookupPayload(object, ["exactProductUrl", "url", "productUrl", "link"]) ?? directTargetUrl ?? offerUrl,
+    productId: null,
+    source
+  };
+}
+
+async function fetchLookupJson(url: string, apiKey?: string | null) {
+  const headers: Record<string, string> = { accept: "application/json" };
+  if (apiKey) {
+    headers.authorization = `Bearer ${apiKey}`;
+    headers["x-api-key"] = apiKey;
+  }
+  const response = await fetch(url, {
+    headers,
+    cache: "no-store",
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw new Error(`Lookup source returned ${response.status}.`);
+  return response.json();
+}
+
+async function lookupConfiguredUpcProvider(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
   const url = externalLookupUrl(upc);
   if (!url) return { configured: false, product: null, error: null };
   try {
-    const headers: Record<string, string> = { accept: "application/json" };
     const apiKey = process.env.UPC_LOOKUP_API_KEY?.trim();
-    if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-    const response = await fetch(url, { headers, cache: "no-store" });
-    if (!response.ok) return { configured: true, product: null, error: `Lookup source returned ${response.status}.` };
-    const payload = objectFromLookupPayload(await response.json());
-    const productName = textFromLookupPayload(payload, ["productName", "title", "name", "product_name", "description"]);
-    if (!productName) return { configured: true, product: null, error: "Lookup source did not return a product name." };
-    const images = imageArrayFromLookupPayload(payload);
-    const brand = textFromLookupPayload(payload, ["brand", "brandName", "manufacturer", "publisher"]);
-    const category = textFromLookupPayload(payload, ["category", "productType", "categoryName", "department"]);
-    return {
-      configured: true,
-      product: {
-        upc,
-        title: productName,
-        productName,
-        brand,
-        category,
-        setName: textFromLookupPayload(payload, ["setName", "set"]),
-        description: textFromLookupPayload(payload, ["description", "longDescription", "shortDescription"]),
-        imageUrl: images[0] ?? null,
-        additionalImages: images.slice(1),
-        msrp: numberFromLookupPayload(payload, ["msrp", "price", "retailPrice", "lowestPrice"]),
-        model: textFromLookupPayload(payload, ["model", "modelNumber", "sku", "mpn"]),
-        manufacturer: textFromLookupPayload(payload, ["manufacturer", "brand", "publisher"]),
-        sku: textFromLookupPayload(payload, ["sku", "model", "mpn", "asin"]),
-        retailer: textFromLookupPayload(payload, ["retailer", "store", "merchant", "seller"]),
-        exactProductUrl: textFromLookupPayload(payload, ["exactProductUrl", "url", "productUrl"]),
-        productId: null,
-        source: "external"
-      },
-      error: null
-    };
+    const product = productFromLookupPayload(upc, await fetchLookupJson(url, apiKey), "external");
+    if (!product) return { configured: true, product: null, error: "Lookup source did not return a product name." };
+    return { configured: true, product, error: null };
   } catch (error) {
     return { configured: true, product: null, error: error instanceof Error ? error.message : "Lookup source failed." };
   }
+}
+
+async function lookupUpcItemDb(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+  const url = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(upc)}`;
+  try {
+    const payload = await fetchLookupJson(url);
+    const product = productFromLookupPayload(upc, payload, "external");
+    return { configured: true, product, error: product ? null : null };
+  } catch (error) {
+    return { configured: true, product: null, error: error instanceof Error ? error.message : "UPCItemDB lookup failed." };
+  }
+}
+
+async function lookupConfiguredSearchProvider(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+  const url = externalSearchUrl(upc);
+  if (!url) return { configured: false, product: null, error: null };
+  try {
+    const apiKey = process.env.PRODUCT_SEARCH_API_KEY?.trim();
+    const product = productFromLookupPayload(upc, await fetchLookupJson(url, apiKey), "external");
+    if (!product) return { configured: true, product: null, error: "Search source did not return a structured product result." };
+    return { configured: true, product, error: null };
+  } catch (error) {
+    return { configured: true, product: null, error: error instanceof Error ? error.message : "Search source failed." };
+  }
+}
+
+async function lookupExternalUpc(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+  const errors: string[] = [];
+  const configuredProvider = await lookupConfiguredUpcProvider(upc);
+  if (configuredProvider.product) return configuredProvider;
+  if (configuredProvider.error) errors.push(configuredProvider.error);
+
+  const publicProvider = await lookupUpcItemDb(upc);
+  if (publicProvider.product) return publicProvider;
+  if (publicProvider.error) errors.push(publicProvider.error);
+
+  const searchProvider = await lookupConfiguredSearchProvider(upc);
+  if (searchProvider.product) return searchProvider;
+  if (searchProvider.error) errors.push(searchProvider.error);
+
+  return {
+    configured: configuredProvider.configured || publicProvider.configured || searchProvider.configured,
+    product: null,
+    error: errors[0] ?? null
+  };
 }
 
 async function barcodeScanHistory(currentUser: SessionUser) {

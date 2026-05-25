@@ -735,10 +735,10 @@ Barcode / UPC scanning:
 - The camera scanner uses `@zxing/browser` by default for UPC-A, UPC-E, EAN-13, EAN-8, and CODE-128 decoding.
 - Manual UPC entry and `Lookup UPC` work on desktop and as a fallback when camera scanning is unavailable.
 - You can also upload a barcode image for local decoding; the app stores only the decoded UPC.
-- UPC lookup checks existing inventory first, watched products second, and an optional external lookup source third.
+- UPC lookup checks existing inventory first, watched products second, a configured UPC provider third, the public UPCItemDB trial API fourth, and an optional configured product search provider last.
 - If the UPC already exists in inventory, the app opens Add Stock for that catalog item instead of creating a duplicate.
 - Successful UPC lookup fills empty add-product fields only: UPC, title, brand, category, description, image URL, MSRP, model/SKU, manufacturer, retailer, and product URL when the provider returns them.
-- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer auth when your chosen public lookup provider requires it. Keys are read server-side only.
+- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` and `{apiKey}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer or `x-api-key` auth when your chosen public lookup provider requires it. Optional search fallback env vars are `PRODUCT_SEARCH_API_URL` and `PRODUCT_SEARCH_API_KEY`. Keys are read server-side only.
 
 ## Inventory Spending And Sales Tracker
 

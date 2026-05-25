@@ -34,6 +34,7 @@ function toPublicLookupResponse(result: UpcLookupResultDTO) {
       manufacturer: result.lookupProduct.manufacturer,
       sku: result.lookupProduct.sku,
       retailer: result.lookupProduct.retailer,
+      productUrl: result.lookupProduct.exactProductUrl,
       exactProductUrl: result.lookupProduct.exactProductUrl,
       productId: result.lookupProduct.productId
     }
