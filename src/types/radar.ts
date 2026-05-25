@@ -258,6 +258,25 @@ export type UpcLookupProductDTO = {
   source: "inventory" | "watched_product" | "external";
 };
 
+export type UpcLookupFailureDTO = {
+  source: string;
+  reason: string;
+  configured?: boolean;
+  statusCode?: number;
+  detail?: string;
+};
+
+export type UpcLookupDebugDTO = {
+  attemptedSources: string[];
+  failures: UpcLookupFailureDTO[];
+  providerConfig: {
+    configuredUpcProvider: boolean;
+    publicUpcProvider: boolean;
+    searchFallback: boolean;
+    searchProvider: string | null;
+  };
+};
+
 export type UpcLookupResultDTO = {
   upc: string;
   status: "PRODUCT_FOUND" | "NEW_UPC" | "LOOKUP_FAILED";
@@ -266,6 +285,7 @@ export type UpcLookupResultDTO = {
   matchedProduct: ProductDTO | null;
   lookupProduct: UpcLookupProductDTO | null;
   externalLookupConfigured: boolean;
+  debug: UpcLookupDebugDTO;
   history: BarcodeScanDTO[];
 };
 
@@ -799,6 +819,12 @@ export type AppHealthDTO = {
       configured: boolean;
       accountSidConfigured: boolean;
       fromNumberConfigured: boolean;
+    };
+    upc: {
+      configuredUpcProvider: boolean;
+      publicUpcProvider: boolean;
+      searchFallbackConfigured: boolean;
+      searchProvider: string | null;
     };
   };
 };

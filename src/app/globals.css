@@ -5602,6 +5602,36 @@ textarea {
   font-size: 0.7rem;
 }
 
+.barcode-debug-details {
+  grid-column: 1 / -1;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(2, 6, 23, 0.34);
+  color: var(--muted);
+  padding: 0.75rem 0.85rem;
+}
+
+.barcode-debug-details summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.barcode-debug-details div,
+.barcode-debug-details ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.65rem 0 0;
+}
+
+.barcode-debug-details ul {
+  padding-left: 1rem;
+}
+
+.barcode-debug-details li {
+  overflow-wrap: anywhere;
+}
+
 .barcode-history-panel > div {
   display: grid;
   gap: 6px;

@@ -4077,6 +4077,45 @@ function normalizeBarcodeValue(value: string) {
   return normalizeUPC(value);
 }
 
+function upcLookupFailureMessage(result: UpcLookupResultDTO) {
+  if (result.lookupProduct) return result.message;
+  const searchFailure = result.debug.failures.find((failure) => failure.source === "search");
+  if (searchFailure?.reason === "missing_env_or_no_results" && searchFailure.configured === false) {
+    return "No product found from configured sources. Search fallback is not configured. UPC provider may miss newer Pokemon products.";
+  }
+  const providerFailure = result.debug.failures.find((failure) => failure.source === "upc_provider");
+  if (providerFailure?.reason === "not_found") {
+    return "No product found from configured sources. UPC provider missed this barcode and no configured search fallback returned a result.";
+  }
+  return result.message || "No product found from configured sources.";
+}
+
+function UpcLookupDebugDetails({ result }: { result: UpcLookupResultDTO }) {
+  return (
+    <details className="barcode-debug-details">
+      <summary>Lookup details</summary>
+      <div>
+        <span>Sources tried: {result.debug.attemptedSources.join(", ") || "None"}</span>
+        <span>Search fallback: {result.debug.providerConfig.searchFallback ? "Configured" : "Not configured"}</span>
+        {result.debug.providerConfig.searchProvider ? <span>Search provider: {result.debug.providerConfig.searchProvider}</span> : null}
+      </div>
+      {result.debug.failures.length ? (
+        <ul>
+          {result.debug.failures.map((failure, index) => (
+            <li key={`${failure.source}-${failure.reason}-${index}`}>
+              {failure.source}: {failure.reason}
+              {failure.statusCode ? ` (${failure.statusCode})` : ""}
+              {failure.detail ? ` - ${failure.detail}` : ""}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No lookup failures recorded.</p>
+      )}
+    </details>
+  );
+}
+
 function BarcodeScannerModal({
   dashboard,
   onUseResult,
@@ -4138,7 +4177,7 @@ function BarcodeScannerModal({
       });
       setResult(lookup);
       setManualUpc(lookup.upc);
-      setCameraMessage(source === "camera" ? "Product details filled from UPC." : lookup.message);
+      setCameraMessage(lookup.lookupProduct ? "Product details filled from UPC." : upcLookupFailureMessage(lookup));
       if (source === "camera") onUseResult(lookup);
     } catch (error) {
       setCameraMessage(error instanceof Error ? error.message : "Lookup failed - fill manually.");
@@ -4371,7 +4410,7 @@ function BarcodeScannerModal({
             <div>
               <span>{result.status === "PRODUCT_FOUND" ? "Product found" : result.status === "NEW_UPC" ? "No product found" : "Lookup failed - fill manually"}</span>
               <h3>{result.lookupProduct?.productName || "Enter details manually"}</h3>
-              <p>{result.message}</p>
+              <p>{result.lookupProduct ? result.message : upcLookupFailureMessage(result)}</p>
             </div>
             <div className="barcode-result-meta">
               <span>UPC {result.upc}</span>
@@ -4390,6 +4429,7 @@ function BarcodeScannerModal({
                 {result.matchedInventoryItem ? "Add Stock To Existing" : "Create Product With UPC"}
               </button>
             </div>
+            <UpcLookupDebugDetails result={result} />
           </section>
         ) : null}
         <section className="barcode-history-panel">
@@ -4607,7 +4647,7 @@ function PurchaseFlow({
         setLookupMessage("Product details found and filled from UPC. Existing typed fields were kept.");
       } else {
         updateDraft("upc", lookup.upc);
-        setLookupMessage(lookup.message);
+        setLookupMessage(upcLookupFailureMessage(lookup));
       }
     } catch (error) {
       setLookupMessage(error instanceof Error ? error.message : "UPC lookup failed. You can still fill the product manually.");
@@ -9187,6 +9227,15 @@ function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
           tone={health.providers.sms.configured ? "OK" : "WARN"}
           detail={`Twilio SID ${configuredText(health.providers.sms.accountSidConfigured).toLowerCase()}, from ${configuredText(
             health.providers.sms.fromNumberConfigured
+          ).toLowerCase()}`}
+        />
+        <HealthCard
+          icon={PackageSearch}
+          title="UPC Lookup"
+          value={health.providers.upc.searchFallbackConfigured ? "Search Ready" : "UPC Only"}
+          tone={health.providers.upc.searchFallbackConfigured ? "OK" : "WARN"}
+          detail={`Public UPC ${configuredText(health.providers.upc.publicUpcProvider).toLowerCase()}, search fallback ${configuredText(
+            health.providers.upc.searchFallbackConfigured
           ).toLowerCase()}`}
         />
       </div>

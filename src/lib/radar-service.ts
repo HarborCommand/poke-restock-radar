@@ -58,6 +58,8 @@ import type {
   BarcodeScanDTO,
   StoreDTO,
   StoreVisitResult,
+  UpcLookupDebugDTO,
+  UpcLookupFailureDTO,
   UpcLookupProductDTO,
   UpcLookupResultDTO,
   UserAreaPreferencesDTO,
@@ -3094,6 +3096,35 @@ function externalSearchUrl(upc: string) {
   return `${withKey}${separator}q=${encodeURIComponent(upc)}`;
 }
 
+function upcProviderConfig(): UpcLookupDebugDTO["providerConfig"] {
+  return {
+    configuredUpcProvider: Boolean(process.env.UPC_LOOKUP_API_URL?.trim()),
+    publicUpcProvider: true,
+    searchFallback: Boolean(process.env.PRODUCT_SEARCH_API_URL?.trim() && process.env.PRODUCT_SEARCH_API_KEY?.trim()),
+    searchProvider: process.env.PRODUCT_SEARCH_PROVIDER?.trim() || null
+  };
+}
+
+function lookupFailure(
+  source: string,
+  reason: string,
+  options: { configured?: boolean; statusCode?: number; detail?: string | null } = {}
+): UpcLookupFailureDTO {
+  return {
+    source,
+    reason,
+    configured: options.configured,
+    statusCode: options.statusCode,
+    detail: options.detail ? options.detail.slice(0, 240) : undefined
+  };
+}
+
+function errorStatusCode(error: unknown) {
+  return typeof error === "object" && error !== null && "statusCode" in error && typeof (error as { statusCode?: unknown }).statusCode === "number"
+    ? (error as { statusCode: number }).statusCode
+    : undefined;
+}
+
 function textFromLookupPayload(payload: unknown, keys: string[]) {
   if (!payload || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
@@ -3234,65 +3265,153 @@ async function fetchLookupJson(url: string, apiKey?: string | null) {
     cache: "no-store",
     signal: AbortSignal.timeout(12000)
   });
-  if (!response.ok) throw new Error(`Lookup source returned ${response.status}.`);
+  if (!response.ok) {
+    const error = new Error(`Lookup source returned ${response.status}.`) as Error & { statusCode?: number };
+    error.statusCode = response.status;
+    throw error;
+  }
   return response.json();
 }
 
-async function lookupConfiguredUpcProvider(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+async function lookupConfiguredUpcProvider(
+  upc: string
+): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null; failures: UpcLookupFailureDTO[] }> {
   const url = externalLookupUrl(upc);
-  if (!url) return { configured: false, product: null, error: null };
+  if (!url) {
+    return {
+      configured: false,
+      product: null,
+      error: null,
+      failures: [lookupFailure("configured_upc_provider", "missing_env", { configured: false, detail: "UPC_LOOKUP_API_URL is not configured." })]
+    };
+  }
   try {
     const apiKey = process.env.UPC_LOOKUP_API_KEY?.trim();
     const product = productFromLookupPayload(upc, await fetchLookupJson(url, apiKey), "external");
-    if (!product) return { configured: true, product: null, error: "Lookup source did not return a product name." };
-    return { configured: true, product, error: null };
+    if (!product) {
+      return {
+        configured: true,
+        product: null,
+        error: "Lookup source did not return a product name.",
+        failures: [lookupFailure("configured_upc_provider", "not_found", { configured: true, detail: "Configured UPC provider returned no structured product." })]
+      };
+    }
+    return { configured: true, product, error: null, failures: [] };
   } catch (error) {
-    return { configured: true, product: null, error: error instanceof Error ? error.message : "Lookup source failed." };
+    const message = error instanceof Error ? error.message : "Lookup source failed.";
+    return {
+      configured: true,
+      product: null,
+      error: message,
+      failures: [lookupFailure("configured_upc_provider", "provider_error", { configured: true, statusCode: errorStatusCode(error), detail: message })]
+    };
   }
 }
 
-async function lookupUpcItemDb(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+async function lookupUpcItemDb(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null; failures: UpcLookupFailureDTO[] }> {
   const url = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(upc)}`;
   try {
     const payload = await fetchLookupJson(url);
     const product = productFromLookupPayload(upc, payload, "external");
-    return { configured: true, product, error: product ? null : null };
+    return {
+      configured: true,
+      product,
+      error: product ? null : null,
+      failures: product ? [] : [lookupFailure("upc_provider", "not_found", { configured: true, detail: "UPCItemDB returned no structured product." })]
+    };
   } catch (error) {
-    return { configured: true, product: null, error: error instanceof Error ? error.message : "UPCItemDB lookup failed." };
+    const message = error instanceof Error ? error.message : "UPCItemDB lookup failed.";
+    return {
+      configured: true,
+      product: null,
+      error: message,
+      failures: [lookupFailure("upc_provider", "provider_error", { configured: true, statusCode: errorStatusCode(error), detail: message })]
+    };
   }
 }
 
-async function lookupConfiguredSearchProvider(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+async function lookupConfiguredSearchProvider(
+  upc: string
+): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null; failures: UpcLookupFailureDTO[] }> {
+  const searchUrlConfigured = Boolean(process.env.PRODUCT_SEARCH_API_URL?.trim());
+  const searchKeyConfigured = Boolean(process.env.PRODUCT_SEARCH_API_KEY?.trim());
+  if (!searchUrlConfigured || !searchKeyConfigured) {
+    return {
+      configured: false,
+      product: null,
+      error: "Search fallback is not configured. UPC provider may miss newer Pokemon products.",
+      failures: [
+        lookupFailure("search", "missing_env_or_no_results", {
+          configured: false,
+          detail: "PRODUCT_SEARCH_API_URL or PRODUCT_SEARCH_API_KEY is missing."
+        })
+      ]
+    };
+  }
   const url = externalSearchUrl(upc);
-  if (!url) return { configured: false, product: null, error: null };
+  if (!url) {
+    return {
+      configured: false,
+      product: null,
+      error: "Search fallback is not configured. UPC provider may miss newer Pokemon products.",
+      failures: [lookupFailure("search", "missing_env_or_no_results", { configured: false, detail: "PRODUCT_SEARCH_API_URL is missing." })]
+    };
+  }
   try {
     const apiKey = process.env.PRODUCT_SEARCH_API_KEY?.trim();
     const product = productFromLookupPayload(upc, await fetchLookupJson(url, apiKey), "external");
-    if (!product) return { configured: true, product: null, error: "Search source did not return a structured product result." };
-    return { configured: true, product, error: null };
+    if (!product) {
+      return {
+        configured: true,
+        product: null,
+        error: "Search source did not return a structured product result.",
+        failures: [lookupFailure("search", "missing_env_or_no_results", { configured: true, detail: "Search provider returned no structured product." })]
+      };
+    }
+    return { configured: true, product, error: null, failures: [] };
   } catch (error) {
-    return { configured: true, product: null, error: error instanceof Error ? error.message : "Search source failed." };
+    const message = error instanceof Error ? error.message : "Search source failed.";
+    return {
+      configured: true,
+      product: null,
+      error: message,
+      failures: [lookupFailure("search", "provider_error", { configured: true, statusCode: errorStatusCode(error), detail: message })]
+    };
   }
 }
 
-async function lookupExternalUpc(upc: string): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null }> {
+async function lookupExternalUpc(
+  upc: string
+): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null; debug: UpcLookupDebugDTO }> {
   const errors: string[] = [];
+  const attemptedSources = ["configured_upc_provider", "upc_provider", "search"];
+  const failures: UpcLookupFailureDTO[] = [];
   const configuredProvider = await lookupConfiguredUpcProvider(upc);
-  if (configuredProvider.product) return configuredProvider;
+  failures.push(...configuredProvider.failures);
+  if (configuredProvider.product) {
+    return { ...configuredProvider, debug: { attemptedSources, failures, providerConfig: upcProviderConfig() } };
+  }
   if (configuredProvider.error) errors.push(configuredProvider.error);
 
   const publicProvider = await lookupUpcItemDb(upc);
-  if (publicProvider.product) return publicProvider;
+  failures.push(...publicProvider.failures);
+  if (publicProvider.product) {
+    return { ...publicProvider, debug: { attemptedSources, failures, providerConfig: upcProviderConfig() } };
+  }
   if (publicProvider.error) errors.push(publicProvider.error);
 
   const searchProvider = await lookupConfiguredSearchProvider(upc);
-  if (searchProvider.product) return searchProvider;
+  failures.push(...searchProvider.failures);
+  if (searchProvider.product) {
+    return { ...searchProvider, debug: { attemptedSources, failures, providerConfig: upcProviderConfig() } };
+  }
   if (searchProvider.error) errors.push(searchProvider.error);
 
   return {
     configured: configuredProvider.configured || publicProvider.configured || searchProvider.configured,
     product: null,
-    error: errors[0] ?? null
+    error: errors[0] ?? searchProvider.error ?? null,
+    debug: { attemptedSources, failures, providerConfig: upcProviderConfig() }
   };
 }
 
@@ -3321,7 +3440,24 @@ export async function lookupInventoryUpc(
     include: productInclude,
     orderBy: { updatedAt: "desc" }
   });
-  const external = inventoryItem || watchedProduct ? { configured: Boolean(process.env.UPC_LOOKUP_API_URL?.trim()), product: null, error: null } : await lookupExternalUpc(upc);
+  const localFailures: UpcLookupFailureDTO[] = [
+    ...(inventoryItem ? [] : [lookupFailure("local", "not_found", { configured: true, detail: "No inventory item matched this UPC." })]),
+    ...(watchedProduct ? [] : [lookupFailure("catalog", "not_found", { configured: true, detail: "No watched product matched this UPC." })])
+  ];
+  const external =
+    inventoryItem || watchedProduct
+      ? {
+          configured: upcProviderConfig().configuredUpcProvider || upcProviderConfig().publicUpcProvider,
+          product: null,
+          error: null,
+          debug: { attemptedSources: [] as string[], failures: [] as UpcLookupFailureDTO[], providerConfig: upcProviderConfig() }
+        }
+      : await lookupExternalUpc(upc);
+  const debug: UpcLookupDebugDTO = {
+    attemptedSources: Array.from(new Set(["local", "catalog", ...external.debug.attemptedSources])),
+    failures: [...localFailures, ...external.debug.failures],
+    providerConfig: external.debug.providerConfig
+  };
   const status: BarcodeScanDTO["status"] = inventoryItem || watchedProduct || external.product ? "PRODUCT_FOUND" : external.configured && external.error ? "LOOKUP_FAILED" : "NEW_UPC";
   const productName = inventoryItem?.itemName ?? watchedProduct?.name ?? external.product?.productName ?? null;
   await prisma.barcodeScan.create({
@@ -3346,9 +3482,7 @@ export async function lookupInventoryUpc(
         ? "Watched product found. Create the inventory item from the verified product details."
         : external.product
           ? "Product lookup found a possible match. Confirm before saving."
-          : external.configured && external.error
-            ? "Lookup failed - fill manually."
-            : "New UPC detected - fill manually.",
+          : "No product found from configured sources.",
     matchedInventoryItem: inventoryItem ? inventoryItemToDTO(inventoryItem) : null,
     matchedProduct: watchedProduct ? productToDTO(watchedProduct) : null,
     lookupProduct: inventoryItem
@@ -3375,6 +3509,7 @@ export async function lookupInventoryUpc(
         ? { ...productToLookupProduct(watchedProduct), upc }
         : external.product,
     externalLookupConfigured: external.configured,
+    debug,
     history: await barcodeScanHistory(currentUser)
   };
 }

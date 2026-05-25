@@ -9,12 +9,13 @@ import type { UpcLookupResultDTO } from "@/types/radar";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function toPublicLookupResponse(result: UpcLookupResultDTO) {
+function toPublicLookupResponse(result: UpcLookupResultDTO, includeDebug: boolean) {
   if (!result.lookupProduct) {
     return {
       found: false,
       upc: result.upc,
-      message: result.externalLookupConfigured ? result.message : "No product found for this UPC. External UPC lookup is not configured."
+      message: "No product found for this UPC.",
+      ...(includeDebug ? { debug: result.debug } : {})
     };
   }
 
@@ -37,7 +38,8 @@ function toPublicLookupResponse(result: UpcLookupResultDTO) {
       productUrl: result.lookupProduct.exactProductUrl,
       exactProductUrl: result.lookupProduct.exactProductUrl,
       productId: result.lookupProduct.productId
-    }
+    },
+    ...(includeDebug ? { debug: result.debug } : {})
   };
 }
 
@@ -55,7 +57,7 @@ async function handleLookup(input: unknown) {
       entityId: result.matchedInventoryItem?.id ?? result.matchedProduct?.id ?? null,
       summary: `${user.email} looked up UPC ${result.upc}: ${result.status}.`
     });
-    return ok(toPublicLookupResponse(result));
+    return ok(toPublicLookupResponse(result, user.role === "ADMIN" || process.env.NODE_ENV !== "production"));
   } catch (error) {
     return badRequest(error);
   }

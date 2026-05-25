@@ -28,6 +28,12 @@ export type EnvironmentReport = {
       accountSidConfigured: boolean;
       fromNumberConfigured: boolean;
     };
+    upc: {
+      configuredUpcProvider: boolean;
+      publicUpcProvider: boolean;
+      searchFallbackConfigured: boolean;
+      searchProvider: string | null;
+    };
   };
 };
 
@@ -70,6 +76,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   const subjectConfigured = hasEnv("VAPID_SUBJECT");
   const monitorJobSecretConfigured = hasEnv("MONITOR_JOB_SECRET");
   const vercelCronSecretConfigured = hasEnv("CRON_SECRET");
+  const configuredUpcProvider = hasEnv("UPC_LOOKUP_API_URL");
+  const searchFallbackConfigured = hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY");
+  const searchProvider = envValue("PRODUCT_SEARCH_PROVIDER");
 
   const coreRequired = ["DATABASE_URL", "APP_URL"];
   if (isProduction || isVercel) {
@@ -113,6 +122,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   if (!accountSidConfigured || !authTokenConfigured || !fromNumberConfigured) {
     warnings.push("Twilio SMS alerts are disabled until Twilio credentials and from number are set.");
   }
+  if (!searchFallbackConfigured) {
+    warnings.push("Search fallback is not configured. UPC provider may miss newer Pokemon products.");
+  }
 
   return {
     nodeEnv,
@@ -143,6 +155,12 @@ export function getEnvironmentReport(): EnvironmentReport {
         configured: accountSidConfigured && authTokenConfigured && fromNumberConfigured,
         accountSidConfigured,
         fromNumberConfigured
+      },
+      upc: {
+        configuredUpcProvider,
+        publicUpcProvider: true,
+        searchFallbackConfigured,
+        searchProvider
       }
     }
   };

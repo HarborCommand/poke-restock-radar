@@ -738,7 +738,9 @@ Barcode / UPC scanning:
 - UPC lookup checks existing inventory first, watched products second, a configured UPC provider third, the public UPCItemDB trial API fourth, and an optional configured product search provider last.
 - If the UPC already exists in inventory, the app opens Add Stock for that catalog item instead of creating a duplicate.
 - Successful UPC lookup fills empty add-product fields only: UPC, title, brand, category, description, image URL, MSRP, model/SKU, manufacturer, retailer, and product URL when the provider returns them.
-- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` and `{apiKey}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer or `x-api-key` auth when your chosen public lookup provider requires it. Optional search fallback env vars are `PRODUCT_SEARCH_API_URL` and `PRODUCT_SEARCH_API_KEY`. Keys are read server-side only.
+- Optional external lookup env vars: `UPC_LOOKUP_API_URL` with `{upc}` and `{apiKey}` placeholder support, and `UPC_LOOKUP_API_KEY` for bearer or `x-api-key` auth when your chosen public lookup provider requires it. Optional search fallback env vars are `PRODUCT_SEARCH_API_URL`, `PRODUCT_SEARCH_API_KEY`, and `PRODUCT_SEARCH_PROVIDER`. Keys are read server-side only.
+- Newer Pokemon UPCs can be missing from UPC-only providers. If `PRODUCT_SEARCH_API_URL` or `PRODUCT_SEARCH_API_KEY` are not configured, the app shows: `Search fallback is not configured. UPC provider may miss newer Pokemon products.`
+- Failed UPC lookups expose safe Admin diagnostics with attempted sources, provider status codes, missing-env reasons, and whether search fallback is configured. The diagnostics never expose API keys.
 
 ## Inventory Spending And Sales Tracker
 
