@@ -789,6 +789,15 @@ export function RadarApp() {
   }, [user]);
 
   useEffect(() => {
+    if (!user || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("tab") === activeTab) return;
+    url.searchParams.set("tab", activeTab);
+    url.searchParams.delete("focus");
+    window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
+  }, [activeTab, user]);
+
+  useEffect(() => {
     if (!dashboard) return;
     const focus = new URLSearchParams(window.location.search).get("focus");
     if (!focus) return;
