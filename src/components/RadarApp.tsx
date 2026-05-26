@@ -1028,9 +1028,6 @@ export function RadarApp() {
           <DashboardPanel
             dashboard={dashboard}
             setActiveTab={setActiveTab}
-            busy={busy}
-            busyLabel={busyLabel}
-            runAction={runAction}
           />
         ) : null}
         {activeTab === "field" ? (
@@ -1566,16 +1563,10 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
 
 function DashboardPanel({
   dashboard,
-  setActiveTab,
-  busy,
-  busyLabel,
-  runAction
+  setActiveTab
 }: {
   dashboard: DashboardDTO;
   setActiveTab: (tab: Tab) => void;
-  busy: boolean;
-  busyLabel: string | null;
-  runAction: ActionHandler;
 }) {
   const urgentRestock = dashboard.alerts.find(
     (alert) => alert.priority === "HIGH" && alert.entityType === "PRODUCT" && !alert.read && alert.actionUrl
@@ -1583,64 +1574,45 @@ function DashboardPanel({
   const unreadAlerts = dashboard.alerts.filter((alert) => !alert.read).length;
   const trackedProducts = dashboard.products.filter((product) => !product.archivedAt).length;
   const activeProducts = dashboard.products.filter((product) => product.monitorEnabled && !product.archivedAt).length;
-  const favoriteStores = dashboard.stores.filter((storeItem) => storeItem.isFavorite).length;
-  const storesWithCoordinates = dashboard.stores.filter(
-    (storeItem) => storeItem.latitude !== null && storeItem.longitude !== null
-  ).length;
   const todayKey = new Date().toISOString().slice(0, 10);
-  const dailyScans = dashboard.monitorLogs.filter((log) => log.startedAt.startsWith(todayKey)).length;
   const todayAlerts = dashboard.alerts.filter((alert) => alert.timestamp.startsWith(todayKey)).length;
-  const dataPoints =
-    dashboard.products.length +
-    dashboard.stores.length +
-    dashboard.cards.length +
-    dashboard.inventory.length +
-    dashboard.alerts.length;
-  const systemOperational = Boolean(dashboard.health?.database.ok && dashboard.scannerStatus.cronActive);
+  const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert)).slice(0, 5);
+  const openOpportunities = dashboard.products.filter(productActionable).length;
+  const productsAddedToday = dashboard.products.filter((product) => product.updatedAt.startsWith(todayKey)).length;
+  const inventoryAddedToday = dashboard.inventory.filter((item) => item.createdAt.startsWith(todayKey)).length;
+  const salesToday = dashboard.inventory.reduce(
+    (total, item) => total + item.sales.filter((sale) => sale.soldAt.startsWith(todayKey)).length,
+    0
+  );
 
   return (
     <>
-      {urgentRestock ? <UrgentRestockBanner alert={urgentRestock} /> : null}
-      <section className="dashboard-page-header">
+      <section className="dashboard-page-header simplified-dashboard-header">
         <div>
           <h1>Dashboard</h1>
-          <p>Overview of your Poke Radar operation</p>
+          <p>Track restocks, products, stores, and inventory from one place.</p>
         </div>
-        <MoreActionsMenu
-          dashboard={dashboard}
-          setActiveTab={setActiveTab}
-          busy={busy}
-          busyLabel={busyLabel}
-          runAction={runAction}
-        />
+        <div className="dashboard-primary-actions" aria-label="More Actions">
+          <button className="mini-action solid" type="button" onClick={() => setActiveTab("products")}>
+            <Plus size={15} />
+            Add Product
+          </button>
+          <button className="mini-action" type="button" onClick={() => setActiveTab("inventory")}>
+            <PackageSearch size={15} />
+            Scan UPC
+          </button>
+          <button className="mini-action" type="button" onClick={() => setActiveTab("alerts")}>
+            <Bell size={15} />
+            Create Alert
+          </button>
+          <button className="mini-action" type="button" onClick={() => setActiveTab("stores")}>
+            <Store size={15} />
+            Add Store
+          </button>
+        </div>
       </section>
-      <section className="dashboard-welcome-card">
-        <div className="welcome-copy">
-          <span className="welcome-icon">
-            <Radar size={22} />
-          </span>
-          <div>
-            <h2>Welcome back, Admin!</h2>
-            <p>Here is what is happening with your private restock radar today.</p>
-          </div>
-        </div>
-        <div className="welcome-status">
-          <span className={systemOperational ? "status-dot success" : "status-dot warning"} />
-          <div>
-            <strong>System Status</strong>
-            <span>{systemOperational ? "All systems operational" : "Review admin health"}</span>
-          </div>
-        </div>
-        <RadarGraphic />
-      </section>
+      <DashboardLiveAlert alert={urgentRestock} products={dashboard.products} setActiveTab={setActiveTab} />
       <section className="dashboard-metric-grid" aria-label="Online Drops">
-        <DashboardMetricCard
-          icon={Store}
-          label="Monitored Stores"
-          value={dashboard.stores.length}
-          detail={`${favoriteStores} favorites`}
-          tone="green"
-        />
         <DashboardMetricCard
           icon={Bell}
           label="Active Alerts"
@@ -1656,18 +1628,25 @@ function DashboardPanel({
           tone="green"
         />
         <DashboardMetricCard
-          icon={CircleDollarSign}
-          label="Inventory Items"
-          value={dashboard.inventory.length}
-          detail="Tracked lots"
+          icon={Store}
+          label="Stores Watched"
+          value={dashboard.stores.length}
+          detail={`${dashboard.checkTodayStores.length} to check today`}
           tone="blue"
         />
         <DashboardMetricCard
-          icon={ShieldCheck}
-          label="System Uptime"
-          value={systemOperational ? "Online" : "Warn"}
-          detail={dashboard.health?.checkedAt ? `Checked ${relativeTime(dashboard.health.checkedAt)}` : "Not checked"}
-          tone={systemOperational ? "green" : "amber"}
+          icon={CircleDollarSign}
+          label="Inventory Items"
+          value={dashboard.inventorySummary.itemsOwned}
+          detail={`${dashboard.inventory.length} products owned`}
+          tone="blue"
+        />
+        <DashboardMetricCard
+          icon={Sparkles}
+          label="Open Opportunities"
+          value={openOpportunities}
+          detail="verified live targets"
+          tone={openOpportunities ? "green" : "amber"}
         />
       </section>
       <section className="dashboard-main-grid">
@@ -1675,76 +1654,61 @@ function DashboardPanel({
           <div className="dashboard-card-header">
             <div>
               <h2>Recent Alerts</h2>
-              <p>Latest signals from products, stores, releases, and cards.</p>
+              <p>New product, store, release, and card signals.</p>
             </div>
             <button className="link-button" type="button" onClick={() => setActiveTab("alerts")}>
               View All Alerts
             </button>
           </div>
           <div className="recent-alert-list">
-            {dashboard.alerts.length ? (
-              dashboard.alerts.slice(0, 5).map((alert) => (
+            {visibleAlerts.length ? (
+              visibleAlerts.map((alert) => (
                 <RecentAlertRow key={alert.id} alert={alert} products={dashboard.products} setActiveTab={setActiveTab} />
               ))
             ) : (
-              <EmptyState icon={Bell} title="No alerts yet" detail="Live restock and workflow alerts will appear here." />
+              <div className="dashboard-empty-card">
+                <EmptyState icon={Bell} title="No recent alerts yet" detail="Add products and stores to start monitoring." />
+                <div className="dashboard-empty-actions">
+                  <button className="mini-action solid" type="button" onClick={() => setActiveTab("products")}>
+                    <Plus size={14} />
+                    Add Product
+                  </button>
+                  <button className="mini-action" type="button" onClick={() => setActiveTab("stores")}>
+                    <Store size={14} />
+                    Add Store
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </section>
         <aside className="dashboard-side-column">
           <section className="dashboard-card dashboard-quick-actions-card">
             <div className="dashboard-card-header compact">
-              <h2>Quick Setup</h2>
-              <button className="link-button" type="button" onClick={() => setActiveTab("settings")}>
-                View All Settings
-              </button>
+              <h2>Quick Actions</h2>
             </div>
             <div className="quick-action-list">
-              <QuickActionRow icon={Plus} title="Add New Product" description="Start tracking an exact product page" onClick={() => setActiveTab("products")} />
-              <QuickActionRow icon={Store} title="Add New Store" description="Monitor a local store location" onClick={() => setActiveTab("stores")} />
-              <QuickActionRow icon={Bell} title="Create Alert" description="Tune alert settings and tests" onClick={() => setActiveTab("settings")} />
-              <QuickActionRow icon={AlertTriangle} title="View All Alerts" description="Review alert history and status" onClick={() => setActiveTab("alerts")} />
-            </div>
-          </section>
-          <section className="dashboard-card">
-            <div className="dashboard-card-header compact">
-              <h2>System Health</h2>
-              <button className="link-button" type="button" onClick={() => setActiveTab("admin")}>
-                View Details
-              </button>
-            </div>
-            <div className="system-health-list">
-              <SystemHealthRow
-                label="Browser Push"
-                value={dashboard.notificationSettings.browserPush ? "Enabled" : "Setup needed"}
-                ok={dashboard.notificationSettings.browserPush}
-              />
-              <SystemHealthRow
-                label="Data Collection"
-                value={dashboard.scannerStatus.lastScanTime ? "Active" : "Idle"}
-                ok={Boolean(dashboard.scannerStatus.lastScanTime)}
-              />
-              <SystemHealthRow label="Alert System" value={dashboard.health ? "Operational" : "Needs review"} ok={Boolean(dashboard.health)} />
-              <SystemHealthRow label="Database" value={dashboard.health?.database.ok ? "Healthy" : "Warning"} ok={Boolean(dashboard.health?.database.ok)} />
+              <QuickActionRow icon={Plus} title="Add Product" description="Track an exact product page" onClick={() => setActiveTab("products")} />
+              <QuickActionRow icon={PackageSearch} title="Scan UPC to Inventory" description="Add a purchased item by barcode" onClick={() => setActiveTab("inventory")} />
+              <QuickActionRow icon={Bell} title="Create Alert" description="Review alerts and notification rules" onClick={() => setActiveTab("alerts")} />
+              <QuickActionRow icon={Store} title="Add Store" description="Save a local store to watch" onClick={() => setActiveTab("stores")} />
+              <QuickActionRow icon={Trophy} title="View Inventory" description="See what you own and sold" onClick={() => setActiveTab("inventory")} />
             </div>
           </section>
         </aside>
       </section>
-      <section className="dashboard-card quick-stats-card">
+      <section className="dashboard-card dashboard-activity-card">
         <div className="dashboard-card-header compact">
           <div>
-            <h2>Quick Stats</h2>
-            <p>Operational snapshot from today and your saved data.</p>
+            <h2>Today</h2>
+            <p>Simple activity from the current day.</p>
           </div>
-          <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>
-            View Analytics
-          </button>
         </div>
-        <div className="quick-stats-grid">
-          <QuickStat label="Daily Scans" value={dailyScans} detail="monitor runs today" />
-          <QuickStat label="Successful Alerts" value={todayAlerts} detail="alerts today" />
-          <QuickStat label="Stores Online" value={`${storesWithCoordinates}/${dashboard.stores.length}`} detail="with coordinates" />
-          <QuickStat label="Data Points" value={dataPoints.toLocaleString()} detail="saved records" />
+        <div className="dashboard-activity-grid">
+          <DashboardActivityItem label="New alerts" value={todayAlerts} detail="alerts created today" icon={Bell} />
+          <DashboardActivityItem label="Products updated" value={productsAddedToday} detail="tracked products changed today" icon={PackageSearch} />
+          <DashboardActivityItem label="Inventory added" value={inventoryAddedToday} detail="items added today" icon={Trophy} />
+          <DashboardActivityItem label="Sales recorded" value={salesToday} detail="inventory sales today" icon={CircleDollarSign} />
         </div>
       </section>
     </>
@@ -1778,6 +1742,68 @@ function DashboardMetricCard({
   );
 }
 
+function DashboardLiveAlert({
+  alert,
+  products,
+  setActiveTab
+}: {
+  alert: DashboardDTO["alerts"][number] | undefined;
+  products: ProductDTO[];
+  setActiveTab: (tab: Tab) => void;
+}) {
+  const product = alert?.entityType === "PRODUCT" ? products.find((item) => item.id === alert.entityId) : null;
+
+  if (!alert) {
+    return (
+      <section className="dashboard-live-alert is-idle">
+        <div className="live-alert-icon">
+          <Bell size={20} />
+        </div>
+        <div className="live-alert-copy">
+          <span>No live restocks right now</span>
+          <strong>We&apos;ll show new product alerts here.</strong>
+          <p>Add exact product links and store sightings so the radar has useful signals.</p>
+        </div>
+        <div className="live-alert-actions">
+          <button className="mini-action solid" type="button" onClick={() => setActiveTab("products")}>
+            Add Product
+          </button>
+          <button className="mini-action" type="button" onClick={() => setActiveTab("stores")}>
+            Add Store
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="dashboard-live-alert">
+      <div className="live-alert-icon">
+        {product ? <ProductImage product={product} /> : <Bell size={20} />}
+      </div>
+      <div className="live-alert-copy">
+        <span>Live Restock Detected</span>
+        <strong>{alert.title}</strong>
+        <p>
+          {product ? `${product.retailerName} - ${productPriceLabel(product)} - ${productStockLabel(product)}` : alert.reason}
+          {alert.score ? ` - confidence ${alert.score}` : ""}
+        </p>
+        <small>Manual checkout only. Go / Buy Now opens the official product page.</small>
+      </div>
+      <div className="live-alert-actions">
+        {alert.actionUrl ? (
+          <a className="primary-action" href={alert.actionUrl} target="_blank" rel="noreferrer">
+            Go / Buy Now <ExternalLink size={14} />
+          </a>
+        ) : null}
+        <button className="mini-action" type="button" onClick={() => setActiveTab("alerts")}>
+          View Details
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function RecentAlertRow({
   alert,
   products,
@@ -1788,12 +1814,10 @@ function RecentAlertRow({
   setActiveTab: (tab: Tab) => void;
 }) {
   const product = alert.entityType === "PRODUCT" ? products.find((item) => item.id === alert.entityId) : null;
-  const targetTab: Tab =
-    alert.entityType === "STORE" ? "stores" : alert.entityType === "CARD" ? "cards" : alert.entityType === "RELEASE" ? "releases" : "alerts";
+  const targetTab = alertTargetTab(alert);
 
   return (
-    <button className="recent-alert-row" type="button" onClick={() => setActiveTab(targetTab)}>
-      <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
+    <article className="recent-alert-row">
       <div className="recent-alert-thumb">
         {product ? (
           <ProductImage product={product} />
@@ -1804,13 +1828,52 @@ function RecentAlertRow({
         )}
       </div>
       <div className="recent-alert-copy">
-        <strong>{alert.title}</strong>
-        <span>{alert.reason}</span>
+        <div className="recent-alert-title-row">
+          <strong>{alert.title}</strong>
+          <span className={`chip compact-chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
+        </div>
+        <span>{product ? `${product.retailerName} - ${productStockLabel(product)}` : alert.reason}</span>
+        <div className="recent-alert-meta">
+          <span className={alert.read ? "recent-alert-status is-read" : "recent-alert-status"}>{alert.read ? "Viewed" : "New"}</span>
+          <time>{relativeTime(alert.timestamp)}</time>
+        </div>
       </div>
-      <span className="recent-alert-status">{alert.read ? "Read" : "New"}</span>
-      <time>{relativeTime(alert.timestamp)}</time>
-      <ChevronRight size={18} />
-    </button>
+      <div className="recent-alert-actions">
+        {alert.actionUrl ? (
+          <a className="mini-action solid" href={alert.actionUrl} target="_blank" rel="noreferrer">
+            Go <ExternalLink size={13} />
+          </a>
+        ) : null}
+        <button className="mini-action" type="button" onClick={() => setActiveTab(targetTab)}>
+          Details
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function DashboardActivityItem({
+  icon: Icon,
+  label,
+  value,
+  detail
+}: {
+  icon: typeof Radar;
+  label: string;
+  value: string | number;
+  detail: string;
+}) {
+  return (
+    <article className="dashboard-activity-item">
+      <span>
+        <Icon size={17} />
+      </span>
+      <div>
+        <strong>{value}</strong>
+        <small>{label}</small>
+        <p>{detail}</p>
+      </div>
+    </article>
   );
 }
 
@@ -1839,127 +1902,17 @@ function QuickActionRow({
   );
 }
 
-function SystemHealthRow({ label, value, ok }: { label: string; value: string; ok: boolean }) {
-  return (
-    <div className="system-health-row">
-      <span>{label}</span>
-      <strong className={ok ? "is-ok" : "is-warn"}>
-        <span className={ok ? "status-dot success" : "status-dot warning"} />
-        {value}
-      </strong>
-    </div>
-  );
+function isTestDashboardAlert(alert: DashboardDTO["alerts"][number]) {
+  const text = `${alert.title} ${alert.reason} ${alert.explanation || ""}`.toLowerCase();
+  return text.includes("test alert") || text.includes("selected alert channel") || text.includes("confirms the selected alert");
 }
 
-function QuickStat({ label, value, detail }: { label: string; value: string | number; detail: string }) {
-  return (
-    <article className="quick-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </article>
-  );
-}
-
-function RadarGraphic() {
-  return (
-    <div className="radar-graphic" aria-hidden="true">
-      <span className="radar-ring one" />
-      <span className="radar-ring two" />
-      <span className="radar-ring three" />
-      <span className="radar-sweep" />
-      <span className="radar-dot" />
-    </div>
-  );
-}
-
-function UrgentRestockBanner({ alert }: { alert: DashboardDTO["alerts"][number] }) {
-  return (
-    <section className="urgent-restock-banner">
-      <div>
-        <span className="eyeline">Live restock detected</span>
-        <strong>{alert.title}</strong>
-        <p>{alert.reason}</p>
-      </div>
-      {alert.actionUrl ? (
-        <a className="primary-action" href={alert.actionUrl} target="_blank" rel="noreferrer">
-          Go / Buy Now <ExternalLink size={14} />
-        </a>
-      ) : null}
-    </section>
-  );
-}
-
-function MoreActionsMenu({
-  dashboard,
-  setActiveTab,
-  busy,
-  busyLabel,
-  runAction
-}: {
-  dashboard: DashboardDTO;
-  setActiveTab: (tab: Tab) => void;
-  busy: boolean;
-  busyLabel: string | null;
-  runAction: ActionHandler;
-}) {
-  const canRunChecks = dashboard.currentUser.role === "ADMIN" || dashboard.currentUser.canRunChecks;
-  return (
-    <details className="more-actions-menu">
-      <summary>
-        <span>More Actions</span>
-        <ChevronRight size={15} />
-      </summary>
-      <div>
-        <button
-          className="quick-action-button"
-          disabled={busy || !canRunChecks}
-          type="button"
-          onClick={() =>
-            runAction(
-              "Running all checks",
-              () =>
-                requestJson("/api/radar/monitor/run", {
-                  method: "POST",
-                  body: JSON.stringify({ mode: "all" })
-                }),
-              { success: "Product checks finished" }
-            )
-          }
-        >
-          <RefreshCw size={16} />
-          {busyLabel === "Running all checks" ? "Running" : "Run Checks"}
-        </button>
-        <button className="quick-action-button" type="button" onClick={() => setActiveTab("stores")}>
-          <MapPin size={16} />
-          Add Sighting
-        </button>
-        <button className="quick-action-button" type="button" onClick={() => setActiveTab("alerts")}>
-          <Bell size={16} />
-          Alerts
-        </button>
-        <button
-          className="quick-action-button"
-          disabled={busy || dashboard.currentUser.role !== "ADMIN"}
-          type="button"
-          onClick={() =>
-            runAction(
-              "Generating weekly investment report",
-              () =>
-                requestJson("/api/radar/cards/reports", {
-                  method: "POST",
-                  body: JSON.stringify({ notes: "Generated from dashboard more actions." })
-                }),
-              { success: "Weekly report generated" }
-            )
-          }
-        >
-          <FileText size={16} />
-          Generate Report
-        </button>
-      </div>
-    </details>
-  );
+function alertTargetTab(alert: DashboardDTO["alerts"][number]): Tab {
+  if (alert.entityType === "STORE") return "stores";
+  if (alert.entityType === "CARD") return "cards";
+  if (alert.entityType === "RELEASE") return "releases";
+  if (alert.entityType === "PRODUCT") return "products";
+  return "alerts";
 }
 
 function AreaSetupPanel({
