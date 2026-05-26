@@ -3737,6 +3737,7 @@ function InventoryPanel({
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [saleItemId, setSaleItemId] = useState<string>("");
   const [detailItemId, setDetailItemId] = useState<string>("");
+  const [editItemId, setEditItemId] = useState<string>("");
   const [filters, setFilters] = useState({
     search: "",
     category: "ALL",
@@ -3781,6 +3782,7 @@ function InventoryPanel({
   const allSales = useMemo(() => dashboard.inventory.flatMap((item) => item.sales), [dashboard.inventory]);
   const selectedItem = visibleItems.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? null;
   const detailItem = dashboard.inventory.find((item) => item.id === detailItemId) ?? null;
+  const editItem = dashboard.inventory.find((item) => item.id === editItemId) ?? null;
   const saleItem = dashboard.inventory.find((item) => item.id === saleItemId) ?? null;
   const openPurchaseFlow = useCallback((itemId = "", prefill: InventoryPurchasePrefill | null = null) => {
     setPurchaseDefaultItemId(itemId);
@@ -3998,7 +4000,20 @@ function InventoryPanel({
             setSelectedItemId(item.id);
             setSaleItemId(item.id);
           }}
+          onEditProduct={(item) => {
+            setDetailItemId("");
+            setEditItemId(item.id);
+          }}
           onClose={() => setDetailItemId("")}
+        />
+      ) : null}
+      {editItem ? (
+        <InventoryEditProductModal
+          item={editItem}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          onClose={() => setEditItemId("")}
         />
       ) : null}
     </>
@@ -5095,11 +5110,13 @@ function InventoryDetailsModal({
   item,
   onAddStock,
   onRecordSale,
+  onEditProduct,
   onClose
 }: {
   item: InventoryItemDTO;
   onAddStock: (item: InventoryItemDTO) => void;
   onRecordSale: (item: InventoryItemDTO) => void;
+  onEditProduct: (item: InventoryItemDTO) => void;
   onClose: () => void;
 }) {
   return (
@@ -5125,7 +5142,7 @@ function InventoryDetailsModal({
             <CircleDollarSign size={14} />
             Record Sale
           </button>
-          <button className="mini-action" type="button" title="Edit product details from the catalog form.">
+          <button className="mini-action" type="button" onClick={() => onEditProduct(item)} title="Edit product details.">
             <Settings size={14} />
             Edit Product
           </button>
@@ -5193,6 +5210,141 @@ function InventoryDetailsModal({
             </div>
           </section>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function InventoryEditProductModal({
+  item,
+  busy,
+  busyLabel,
+  submit,
+  onClose
+}: {
+  item: InventoryItemDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  onClose: () => void;
+}) {
+  const [imageUrl, setImageUrl] = useState(item.imageUrl ?? "");
+  const saveLabel = `Updating inventory item ${item.id}`;
+
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal inventory-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit ${item.itemName}`}>
+        <div className="edit-card-heading">
+          <div>
+            <h2>Edit Product</h2>
+            <span>Update the saved catalog details. Stock lots and sales history stay unchanged.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close edit product" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <form
+          className="inventory-edit-form"
+          onSubmit={(event) =>
+            submit(
+              event,
+              saveLabel,
+              (form) => requestJson(`/api/radar/inventory/${item.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
+              { reset: false, success: "Product updated" }
+            )
+          }
+        >
+          <section className="inventory-edit-preview">
+            <ProductImagePreview imageUrl={imageUrl} itemName={item.itemName} />
+            <div>
+              <strong>{item.itemName}</strong>
+              <span>
+                {formatStatus(item.category)} - UPC {item.upc || "missing"} - {inventoryStockStatusLabel(item)}
+              </span>
+            </div>
+          </section>
+
+          <section className="flow-step">
+            <span>Catalog</span>
+            <h3>Product details</h3>
+            <div className="form-grid compact">
+              <TextInput name="itemName" label="Product/card name" defaultValue={item.itemName} required />
+              <TextInput name="brand" label="Brand" defaultValue={item.brand ?? ""} />
+              <SelectInput name="category" label="Category" defaultValue={item.category || "sealed_packs"} options={inventoryCategories.map(optionFromString)} />
+              <TextInput name="setName" label="Set" defaultValue={item.setName ?? ""} />
+              <TextInput name="retailer" label="Retailer" defaultValue={item.retailer ?? ""} />
+              <TextInput name="source" label="Default source/store" defaultValue={item.source} required />
+              <TextInput name="manufacturer" label="Manufacturer" defaultValue={item.manufacturer ?? ""} />
+              <TextInput name="model" label="Model" defaultValue={item.model ?? ""} />
+              <TextareaInput name="description" label="Description" defaultValue={item.description ?? ""} wide />
+            </div>
+          </section>
+
+          <section className="flow-step">
+            <span>Identifiers</span>
+            <h3>UPC and retailer IDs</h3>
+            <div className="form-grid compact">
+              <TextInput name="upc" label="UPC / EAN" inputMode="numeric" defaultValue={item.upc ?? ""} />
+              <TextInput name="sku" label="SKU / TCIN" defaultValue={item.sku ?? ""} />
+              <TextInput name="dpci" label="DPCI" defaultValue={item.dpci ?? ""} />
+              <TextInput name="asin" label="ASIN" defaultValue={item.asin ?? ""} />
+              <TextInput name="exactProductUrl" label="Exact product URL" type="url" defaultValue={item.exactProductUrl ?? ""} wide />
+            </div>
+          </section>
+
+          <section className="flow-step">
+            <span>Image</span>
+            <h3>Product image</h3>
+            <div className="form-grid compact">
+              <ImageUploadInput defaultValue={item.imageUrl ?? ""} value={imageUrl} onValueChange={setImageUrl} />
+            </div>
+          </section>
+
+          <section className="flow-step">
+            <span>Plan</span>
+            <h3>Condition and selling plan</h3>
+            <div className="form-grid compact">
+              <SelectInput name="itemStatus" label="Item status" defaultValue={item.itemStatus || "sealed"} options={inventoryStatuses.map(optionFromString)} />
+              <TextInput name="condition" label="Condition" defaultValue={item.condition ?? ""} placeholder="Sealed, raw NM, graded PSA 10" />
+              <SelectInput name="expectedPlan" label="Plan" defaultValue={item.expectedPlan || "Hold"} options={inventoryPlanOptions} />
+              <TextInput name="targetSellPrice" label="Target sell price" type="number" min="0" step="0.01" defaultValue={item.targetSellPrice ?? ""} />
+              <TextInput name="minimumAcceptablePrice" label="Minimum acceptable price" type="number" min="0" step="0.01" defaultValue={item.minimumAcceptablePrice ?? ""} />
+              <SelectInput name="listingStatus" label="Listing status" defaultValue={item.listingStatus || "not_listed"} options={listingStatuses.map(optionFromString)} />
+              <TextInput name="listingPlatform" label="Listing platform" defaultValue={item.listingPlatform ?? ""} placeholder="eBay, Whatnot, Facebook" />
+              <TextInput name="msrp" label="MSRP / retail price" type="number" min="0" step="0.01" defaultValue={item.msrp ?? ""} />
+              <TextareaInput name="notes" label="Notes" defaultValue={item.notes ?? ""} wide />
+            </div>
+          </section>
+
+          <section className="flow-step">
+            <span>Proof</span>
+            <h3>Receipt and order details</h3>
+            <div className="form-grid compact">
+              <ImageUploadInput
+                fieldName="receiptImageUrl"
+                label="Receipt image"
+                placeholder="Paste receipt image URL or upload photo"
+                defaultValue={item.receiptImageUrl ?? ""}
+              />
+              <TextInput name="receiptNumber" label="Receipt number" defaultValue={item.receiptNumber ?? ""} />
+              <TextInput name="orderNumber" label="Order number" defaultValue={item.orderNumber ?? ""} />
+              <TextInput name="transactionId" label="Transaction ID" defaultValue={item.transactionId ?? ""} />
+              <TextInput name="sourceStore" label="Source store" defaultValue={item.sourceStore ?? ""} />
+              <TextInput name="paymentMethod" label="Payment method" defaultValue={item.paymentMethod ?? ""} />
+            </div>
+          </section>
+
+          <div className="inventory-edit-actions">
+            <button className="mini-action" disabled={busy} type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="primary-action" disabled={busy} type="submit">
+              <Save size={16} />
+              {busyLabel === saveLabel ? "Saving" : "Save Changes"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
