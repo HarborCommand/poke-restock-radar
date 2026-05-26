@@ -3696,30 +3696,33 @@ function InventoryPanel({
   submit: SubmitHandler;
   runAction: ActionHandler;
 }) {
-  const [view, setView] = useState<"items" | "spending" | "sales">("items");
+  const [view, setView] = useState<"items" | "purchases" | "sales">("items");
+  const [addProductChoiceOpen, setAddProductChoiceOpen] = useState(false);
   const [purchaseFlowOpen, setPurchaseFlowOpen] = useState(false);
   const [purchaseDefaultItemId, setPurchaseDefaultItemId] = useState<string>("");
   const [purchasePrefill, setPurchasePrefill] = useState<InventoryPurchasePrefill | null>(null);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
+  const [saleItemId, setSaleItemId] = useState<string>("");
   const [detailItemId, setDetailItemId] = useState<string>("");
   const [filters, setFilters] = useState({
     search: "",
     category: "ALL",
     source: "",
-    recommendation: "ALL",
     listingStatus: "ALL",
-    dataQuality: "ALL",
-    sort: "profit"
+    sort: "date"
   });
-  const scannedUpcs = useMemo(
-    () => new Set(dashboard.barcodeScans.map((scan) => scan.upc).filter(Boolean)),
-    [dashboard.barcodeScans]
-  );
   const visibleItems = useMemo(() => {
     const search = filters.search.toLowerCase().trim();
     return dashboard.inventory
-      .filter((item) => !search || item.itemName.toLowerCase().includes(search) || (item.setName || "").toLowerCase().includes(search))
+      .filter(
+        (item) =>
+          !search ||
+          item.itemName.toLowerCase().includes(search) ||
+          (item.upc || "").toLowerCase().includes(search) ||
+          (item.sku || "").toLowerCase().includes(search) ||
+          (item.setName || "").toLowerCase().includes(search)
+      )
       .filter((item) => filters.category === "ALL" || item.category === filters.category)
       .filter(
         (item) =>
@@ -3727,25 +3730,15 @@ function InventoryPanel({
           item.source.toLowerCase().includes(filters.source.toLowerCase()) ||
           (item.sourceStore || "").toLowerCase().includes(filters.source.toLowerCase())
       )
-      .filter((item) => filters.recommendation === "ALL" || item.recommendedAction === filters.recommendation)
       .filter((item) => filters.listingStatus === "ALL" || item.listingStatus === filters.listingStatus)
-      .filter((item) => {
-        if (filters.dataQuality === "ALL") return true;
-        if (filters.dataQuality === "missing_receipt") return !item.receiptImageUrl && !item.receiptNumber && !item.orderNumber;
-        if (filters.dataQuality === "missing_market") return item.currentMarketEstimate === null || item.marketCompCount < 3;
-        if (filters.dataQuality === "profitable") return (item.marketProfitLoss ?? item.businessProfitLoss ?? item.estimatedNetProfit ?? 0) > 0;
-        if (filters.dataQuality === "losing_money") return (item.marketProfitLoss ?? item.businessProfitLoss ?? item.estimatedNetProfit ?? 0) < 0;
-        if (filters.dataQuality === "scanned_upc") return Boolean(item.upc && scannedUpcs.has(item.upc));
-        return true;
-      })
       .sort((a, b) => {
-        if (filters.sort === "roi") return (b.marketRoiPercent ?? b.roiPercent ?? -999) - (a.marketRoiPercent ?? a.roiPercent ?? -999);
-        if (filters.sort === "date") return new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime();
         if (filters.sort === "quantity") return b.quantityOwned - a.quantityOwned;
-        if (filters.sort === "market") return (b.netMarketValue ?? (b.currentMarketEstimate ?? 0) * b.quantityOwned) - (a.netMarketValue ?? (a.currentMarketEstimate ?? 0) * a.quantityOwned);
-        return (b.businessProfitLoss ?? b.marketProfitLoss ?? b.estimatedNetProfit ?? -999999) - (a.businessProfitLoss ?? a.marketProfitLoss ?? a.estimatedNetProfit ?? -999999);
+        if (filters.sort === "sales") return b.quantitySold - a.quantitySold;
+        if (filters.sort === "name") return a.itemName.localeCompare(b.itemName);
+        if (filters.sort === "date") return new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime();
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       });
-  }, [dashboard.inventory, filters, scannedUpcs]);
+  }, [dashboard.inventory, filters]);
 
   function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.currentTarget;
@@ -3756,9 +3749,11 @@ function InventoryPanel({
   const allSales = useMemo(() => dashboard.inventory.flatMap((item) => item.sales), [dashboard.inventory]);
   const selectedItem = visibleItems.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? null;
   const detailItem = dashboard.inventory.find((item) => item.id === detailItemId) ?? null;
+  const saleItem = dashboard.inventory.find((item) => item.id === saleItemId) ?? null;
   const openPurchaseFlow = useCallback((itemId = "", prefill: InventoryPurchasePrefill | null = null) => {
     setPurchaseDefaultItemId(itemId);
     setPurchasePrefill(prefill);
+    setAddProductChoiceOpen(false);
     setPurchaseFlowOpen(true);
   }, []);
   const openBarcodeResult = useCallback(
@@ -3791,91 +3786,79 @@ function InventoryPanel({
   );
   return (
     <>
-      <section className="inventory-page-header">
+      <section className="inventory-page-header inventory-ops-header" data-hidden-inventory-capabilities={inventoryHiddenUiRegistry.length}>
         <div>
           <h2>Inventory</h2>
-          <p>Track what you own, what you spent, and your profit.</p>
+          <p>Track products you own, add purchases, and record sales.</p>
         </div>
         <div className="inventory-header-actions">
-          <a className="mini-action" href="/api/radar/inventory?format=product-catalog-csv" target="_blank" rel="noreferrer">
-            <Download size={14} />
-            Catalog CSV
-          </a>
-          <a className="mini-action" href="/api/radar/inventory?format=stock-lots-csv" target="_blank" rel="noreferrer">
-            <Download size={14} />
-            Lots CSV
-          </a>
-          <a className="mini-action" href="/api/radar/inventory?format=sales-csv" target="_blank" rel="noreferrer">
-            <Download size={14} />
-            Sales CSV
-          </a>
-          <a className="mini-action" href="/api/radar/inventory?format=profit-loss-summary-csv" target="_blank" rel="noreferrer">
-            <Download size={14} />
-            P/L CSV
-          </a>
-          <button
-            className="mini-action"
-            disabled={busy}
-            type="button"
-            onClick={() =>
-              runAction(
-                "Refreshing inventory market",
-                () => requestJson("/api/radar/inventory/refresh-comps", { method: "POST" }),
-                { success: "Inventory market refresh finished" }
-              )
-            }
-          >
-            <RefreshCw size={14} />
-            {busyLabel === "Refreshing inventory market" ? "Refreshing" : "Refresh Market"}
-          </button>
-          <button
-            className="primary-action"
-            type="button"
-            onClick={() => {
-              openPurchaseFlow("");
-            }}
-          >
-            <Plus size={16} />
-            Add Product
+          <details className="inventory-export-menu">
+            <summary className="mini-action">
+              <Download size={14} />
+              Import / Export
+            </summary>
+            <div>
+              <a href="/api/radar/inventory?format=product-catalog-csv" target="_blank" rel="noreferrer">Catalog CSV</a>
+              <a href="/api/radar/inventory?format=stock-lots-csv" target="_blank" rel="noreferrer">Lots CSV</a>
+              <a href="/api/radar/inventory?format=sales-csv" target="_blank" rel="noreferrer">Sales CSV</a>
+              <a href="/api/radar/inventory?format=profit-loss-summary-csv" target="_blank" rel="noreferrer">P/L CSV</a>
+              <button
+                disabled={busy}
+                type="button"
+                onClick={() =>
+                  runAction(
+                    "Refreshing inventory market",
+                    () => requestJson("/api/radar/inventory/refresh-comps", { method: "POST" }),
+                    { success: "Inventory market refresh finished" }
+                  )
+                }
+              >
+                {busyLabel === "Refreshing inventory market" ? "Refreshing market" : "Refresh Market"}
+              </button>
+            </div>
+          </details>
+          <button className="mini-action" disabled={!selectedItem} type="button" onClick={() => selectedItem && setSaleItemId(selectedItem.id)}>
+            <CircleDollarSign size={14} />
+            Record Sale
           </button>
           <button className="mini-action" type="button" onClick={() => setBarcodeScannerOpen(true)}>
             <PackageSearch size={14} />
             Scan UPC
           </button>
+          <button
+            className="primary-action"
+            type="button"
+            onClick={() => {
+              setAddProductChoiceOpen(true);
+            }}
+          >
+            <Plus size={16} />
+            Add Product
+          </button>
         </div>
       </section>
       <section className="inventory-kpi-grid">
-        <InventoryKpiCard label="Total Spent" value={money(summary.totalSpent)} detail={`This month ${money(summary.spendingThisMonth)}`} />
-        <InventoryKpiCard label="Current Inventory Value" value={money(summary.currentInventoryValue)} detail={`${summary.itemsOwned} items owned`} tone="good" />
-        <InventoryKpiCard label="Total Sales" value={money(summary.totalSalesGross)} detail={`This month ${money(summary.salesThisMonth)}`} tone="watch" />
+        <InventoryKpiCard label="Total Products" value={String(dashboard.inventory.length)} detail="Unique products" />
+        <InventoryKpiCard label="Items Owned" value={String(summary.itemsOwned)} detail="Total quantity" />
+        <InventoryKpiCard label="Total Spent" value={money(summary.totalSpent)} detail="Cost basis" />
+        <InventoryKpiCard label="Total Sales" value={money(summary.totalSalesGross)} detail="Revenue" tone="watch" />
         <InventoryKpiCard
           label="Net Profit / Loss"
           value={money(summary.netProfitLoss)}
-          detail={`ROI ${percent(summary.totalRoiPercent)}`}
+          detail="Sales minus cost basis"
           tone={summary.netProfitLoss >= 0 ? "good" : "bad"}
         />
-        <InventoryKpiCard label="Items Owned" value={String(summary.itemsOwned)} detail={`Across ${dashboard.inventory.length} products`} />
-        <InventoryKpiCard label="Items Sold" value={String(summary.itemsSold)} detail={`Across ${summary.profitByPlatform.length || 0} platforms`} />
       </section>
-      <section className="inventory-secondary-strip">
-        <span>Owned <strong>{summary.itemsOwned}</strong></span>
-        <span>Sold <strong>{summary.itemsSold}</strong></span>
-        <span>Best <strong>{summary.bestItem?.itemName || "None"}</strong></span>
-        <span>Worst <strong>{summary.worstItem?.itemName || "None"}</strong></span>
-        <span>Sell now <strong>{summary.sellNowCount}</strong></span>
-        <span>Missing market <strong>{summary.missingMarketDataCount}</strong></span>
-      </section>
-      <InventoryMarketDecisionPanels items={dashboard.inventory} />
       <section className="inventory-view-tabs" aria-label="Inventory views">
         {[
           { id: "items", label: "Inventory" },
-          { id: "spending", label: "Spending" },
+          { id: "purchases", label: "Purchases" },
           { id: "sales", label: "Sales" }
         ].map((option) => (
           <button
             className={view === option.id ? "active" : ""}
             key={option.id}
-            onClick={() => setView(option.id as "items" | "spending" | "sales")}
+            onClick={() => setView(option.id as "items" | "purchases" | "sales")}
             type="button"
           >
             {option.label}
@@ -3895,44 +3878,37 @@ function InventoryPanel({
                   openPurchaseFlow(item.id);
                 }}
                 onRecordSale={(item) => {
-                  setSelectedItemId(item.id);
-                  window.setTimeout(() => document.getElementById("inventory-sales-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                  setSaleItemId(item.id);
                 }}
                 onViewDetails={(item) => setDetailItemId(item.id)}
               />
             </div>
             <InventoryQuickActions
               dashboard={dashboard}
-              onAddProduct={() => {
-                openPurchaseFlow("");
-              }}
+              onAddProduct={() => openPurchaseFlow("")}
               onAddStock={() => {
                 openPurchaseFlow(selectedItem?.id ?? "");
               }}
               onScan={() => setBarcodeScannerOpen(true)}
-              onRecordSale={() => document.getElementById("inventory-sales-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              onRecordSale={() => selectedItem && setSaleItemId(selectedItem.id)}
+              onViewSales={() => setView("sales")}
               selectedItem={selectedItem}
             />
           </section>
-          <section className="inventory-lower-grid">
-            <StockLotsPanel item={selectedItem} />
-            <SelectedSalesPanel item={selectedItem} busy={busy} busyLabel={busyLabel} submit={submit} />
-          </section>
         </>
       ) : null}
-      {view === "spending" ? <SpendingLog items={dashboard.inventory} summary={summary} /> : null}
+      {view === "purchases" ? <PurchasesLog items={dashboard.inventory} summary={summary} /> : null}
       {view === "sales" ? <SalesLog sales={allSales} summary={summary} /> : null}
-      <UtilityFold title="Inventory Import And Manual Comps" detail="CSV/JSON import and last-3 sold comp entry">
-        <BulkImportPanel
-          title="Bulk Inventory Import"
-          endpoint="/api/radar/inventory/import"
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={submit}
-          sample={`itemName,category,setName,quantity,purchasePricePerUnit,purchaseDate,source,retailer,targetSellPrice,currentMarketEstimate,listingStatus\nPokemon TCG ETB,etbs,Mega Evolution-Chaos Rising,1,59.99,2026-05-23,Target Hialeah,Target,89.99,,not_listed`}
+      {addProductChoiceOpen ? (
+        <AddProductChoiceModal
+          onClose={() => setAddProductChoiceOpen(false)}
+          onScan={() => {
+            setAddProductChoiceOpen(false);
+            setBarcodeScannerOpen(true);
+          }}
+          onManual={() => openPurchaseFlow("")}
         />
-        <InventoryCompForm items={dashboard.inventory} busy={busy} busyLabel={busyLabel} submit={submit} />
-      </UtilityFold>
+      ) : null}
       {purchaseFlowOpen ? (
         <div className="inventory-modal-backdrop" role="presentation">
           <div className="inventory-modal" role="dialog" aria-modal="true" aria-label="Add purchase">
@@ -3962,6 +3938,18 @@ function InventoryPanel({
           </div>
         </div>
       ) : null}
+      {saleItem ? (
+        <RecordSaleModal
+          item={saleItem}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={async (event, label, run, options) => {
+            await submit(event, label, run, options);
+            setSaleItemId("");
+          }}
+          onClose={() => setSaleItemId("")}
+        />
+      ) : null}
       {barcodeScannerOpen ? (
         <BarcodeScannerModal
           dashboard={dashboard}
@@ -3972,17 +3960,11 @@ function InventoryPanel({
       {detailItem ? (
         <InventoryDetailsModal
           item={detailItem}
-          products={dashboard.products}
-          ebayStatus={dashboard.ebayStatus}
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={submit}
-          runAction={runAction}
           onAddStock={(item) => openPurchaseFlow(item.id)}
           onRecordSale={(item) => {
             setDetailItemId("");
             setSelectedItemId(item.id);
-            window.setTimeout(() => document.getElementById("inventory-sales-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+            setSaleItemId(item.id);
           }}
           onClose={() => setDetailItemId("")}
         />
@@ -4008,6 +3990,47 @@ function InventoryKpiCard({
       <strong>{value}</strong>
       <small>{detail}</small>
     </article>
+  );
+}
+
+function AddProductChoiceModal({
+  onClose,
+  onScan,
+  onManual
+}: {
+  onClose: () => void;
+  onScan: () => void;
+  onManual: () => void;
+}) {
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal inventory-choice-modal" role="dialog" aria-modal="true" aria-label="Add product">
+        <div className="edit-card-heading">
+          <div>
+            <h2>Add Product</h2>
+            <span>Choose how you want to add a product.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close add product" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="inventory-choice-grid">
+          <button className="inventory-choice-card primary" type="button" onClick={onScan}>
+            <span><PackageSearch size={22} /></span>
+            <strong>Scan UPC / Barcode</strong>
+            <small>Use camera scan or enter UPC manually.</small>
+          </button>
+          <button className="inventory-choice-card" type="button" onClick={onManual}>
+            <span><Plus size={22} /></span>
+            <strong>Add Manually</strong>
+            <small>Enter product details and purchase info yourself.</small>
+          </button>
+        </div>
+        <button className="mini-action" type="button" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -4419,10 +4442,15 @@ function BarcodeScannerModal({
         </section>
         {result ? (
           <section className={`barcode-result-card ${result.status.toLowerCase().replaceAll("_", "-")}`}>
-            <div>
-              <span>{result.status === "PRODUCT_FOUND" ? "Product found" : result.status === "NEW_UPC" ? "No product found" : "Lookup failed - fill manually"}</span>
-              <h3>{result.lookupProduct?.productName || "Enter details manually"}</h3>
-              <p>{result.lookupProduct ? upcLookupSuccessMessage(result) : upcLookupFailureMessage(result)}</p>
+            <div className="barcode-result-main">
+              {result.lookupProduct?.imageUrl ? (
+                <ProductImagePreview imageUrl={result.lookupProduct.imageUrl} itemName={result.lookupProduct.productName} />
+              ) : null}
+              <div>
+                <span>{result.status === "PRODUCT_FOUND" ? "Product found" : result.status === "NEW_UPC" ? "No product found" : "Lookup failed - fill manually"}</span>
+                <h3>{result.lookupProduct?.productName || "Enter details manually"}</h3>
+                <p>{result.lookupProduct ? upcLookupSuccessMessage(result) : upcLookupFailureMessage(result)}</p>
+              </div>
             </div>
             <div className="barcode-result-meta">
               <span>UPC {result.upc}</span>
@@ -4441,7 +4469,7 @@ function BarcodeScannerModal({
               </button>
               <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
                 <Check size={15} />
-                {result.matchedInventoryItem ? "Add Stock To Existing" : "Create Product With UPC"}
+                {result.matchedInventoryItem ? "Add Stock" : result.lookupProduct ? "Use This Product" : "Enter Manually With UPC"}
               </button>
             </div>
             <UpcLookupDebugDetails result={result} />
@@ -4475,7 +4503,8 @@ function InventoryQuickActions({
   onAddProduct,
   onAddStock,
   onScan,
-  onRecordSale
+  onRecordSale,
+  onViewSales
 }: {
   dashboard: DashboardDTO;
   selectedItem: InventoryItemDTO | null;
@@ -4483,61 +4512,65 @@ function InventoryQuickActions({
   onAddStock: () => void;
   onScan: () => void;
   onRecordSale: () => void;
+  onViewSales: () => void;
 }) {
-  const sellNow = dashboard.inventory.filter((item) => item.recommendedAction === "SELL_NOW").length;
-  const hold = dashboard.inventory.filter((item) => item.recommendedAction === "HOLD").length;
-  const gradeFirst = dashboard.inventory.filter((item) => item.recommendedAction === "GRADE_FIRST").length;
-  const avoid = dashboard.inventory.filter((item) => item.recommendedAction === "AVOID_BUYING_MORE").length;
-  const missingMarket = dashboard.inventorySummary.missingMarketDataCount;
-
   return (
     <aside className="inventory-side-rail" aria-label="Inventory quick actions">
       <section className="quick-actions-card">
         <div>
           <h2>Quick Actions</h2>
-          <span>Fast ways to add purchases or sales.</span>
+          <span>Add products, stock, and sales without leaving inventory.</span>
         </div>
-        <button className="inventory-quick-button" type="button" onClick={onAddStock} disabled={!selectedItem}>
-          <Plus size={16} />
+        <button className="inventory-quick-button" type="button" onClick={onScan}>
+          <PackageSearch size={16} />
           <span>
-            Add Existing Product Purchase
-            <small>{selectedItem ? selectedItem.itemName : "Select a product first"}</small>
+            Scan UPC to Add
+            <small>Use camera scan or typed barcode</small>
           </span>
+          <ChevronRight size={15} />
         </button>
         <button className="inventory-quick-button" type="button" onClick={onAddProduct}>
           <Plus size={16} />
           <span>
-            Create New Product
-            <small>Add a new product to your catalog</small>
+            Add Manual Product
+            <small>Create a product without a UPC</small>
           </span>
+          <ChevronRight size={15} />
         </button>
-        <button className="inventory-quick-button" type="button" onClick={onScan}>
-          <PackageSearch size={16} />
+        <button className="inventory-quick-button" type="button" onClick={onAddStock} disabled={!selectedItem}>
+          <Plus size={16} />
           <span>
-            Scan UPC / Barcode
-            <small>Camera scan on phone or manual UPC lookup</small>
+            Add Stock
+            <small>{selectedItem ? selectedItem.itemName : "Select a product first"}</small>
           </span>
+          <ChevronRight size={15} />
         </button>
         <button className="inventory-quick-button" type="button" disabled={!selectedItem} onClick={onRecordSale}>
           <CircleDollarSign size={16} />
           <span>
             Record Sale
-            <small>{selectedItem ? "Use the selected product sales panel" : "Select a product first"}</small>
+            <small>{selectedItem ? "Sell selected stock" : "Select a product first"}</small>
           </span>
+          <ChevronRight size={15} />
+        </button>
+        <button className="inventory-quick-button" type="button" onClick={onViewSales}>
+          <History size={16} />
+          <span>
+            View Sold Items
+            <small>{dashboard.inventorySummary.itemsSold} items sold</small>
+          </span>
+          <ChevronRight size={15} />
         </button>
       </section>
-      <section className="quick-actions-card recommendation-card">
+      <section className="quick-actions-card inventory-help-card">
         <div>
-          <h2>Top Recommendations</h2>
-          <span>What to do with your inventory.</span>
+          <h2>Need Help?</h2>
+          <span>Add stock when you buy, then record a sale when it leaves inventory.</span>
         </div>
-        <div className="recommendation-list">
-          <span><strong className="dot bad" />Sell Now <b>{sellNow}</b></span>
-          <span><strong className="dot watch" />Hold <b>{hold}</b></span>
-          <span><strong className="dot good" />Grade First <b>{gradeFirst}</b></span>
-          <span><strong className="dot bad" />Avoid Buying More <b>{avoid}</b></span>
-          <span><strong className="dot muted" />Missing Market Data <b>{missingMarket}</b></span>
-        </div>
+        <button className="mini-action" type="button" onClick={onAddProduct}>
+          <HelpCircle size={14} />
+          Add a product
+        </button>
       </section>
     </aside>
   );
@@ -4911,7 +4944,7 @@ function InventoryFilters({
   itemCount,
   updateFilter
 }: {
-  filters: { search: string; category: string; source: string; recommendation: string; listingStatus: string; dataQuality: string; sort: string };
+  filters: { search: string; category: string; source: string; listingStatus: string; sort: string };
   itemCount: number;
   updateFilter: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
 }) {
@@ -4920,9 +4953,9 @@ function InventoryFilters({
       <div className="edit-card-heading">
         <div>
           <h2>Product Catalog</h2>
-          <span>{itemCount} saved products shown. Add stock or record sales from the row actions.</span>
+          <span>{itemCount} products shown. Add stock, sell, or view details from each row.</span>
         </div>
-        <a className="mini-action" href="/api/radar/inventory?format=csv" target="_blank" rel="noreferrer">
+        <a className="mini-action" href="/api/radar/inventory?format=product-catalog-csv" target="_blank" rel="noreferrer">
           <Download size={14} />
           Export CSV
         </a>
@@ -4930,34 +4963,18 @@ function InventoryFilters({
       <div className="inventory-filter-row">
         <TextInput name="search" label="Search" value={filters.search} onChange={updateFilter} />
         <SelectInput name="category" label="Category" value={filters.category} onChange={updateFilter} options={[{ value: "ALL", label: "All Categories" }, ...inventoryCategories.map(optionFromString)]} />
-        <TextInput name="source" label="Source" value={filters.source} onChange={updateFilter} />
-        <SelectInput name="recommendation" label="Recommendation" value={filters.recommendation} onChange={updateFilter} options={[{ value: "ALL", label: "All Recommendations" }, ...inventoryRecommendations.map(optionFromString)]} />
         <SelectInput name="listingStatus" label="Status" value={filters.listingStatus} onChange={updateFilter} options={[{ value: "ALL", label: "All Statuses" }, ...listingStatuses.map(optionFromString)]} />
-        <SelectInput
-          name="dataQuality"
-          label="Data"
-          value={filters.dataQuality}
-          onChange={updateFilter}
-          options={[
-            { value: "ALL", label: "All Data" },
-            { value: "missing_receipt", label: "Missing Receipt" },
-            { value: "missing_market", label: "Missing Market Data" },
-            { value: "profitable", label: "Profitable" },
-            { value: "losing_money", label: "Losing Money" },
-            { value: "scanned_upc", label: "Scanned UPC Items" }
-          ]}
-        />
+        <TextInput name="source" label="Source/Retailer" value={filters.source} onChange={updateFilter} />
         <SelectInput
           name="sort"
           label="Sort"
           value={filters.sort}
           onChange={updateFilter}
           options={[
-            { value: "profit", label: "Profit" },
-            { value: "roi", label: "ROI" },
-            { value: "date", label: "Date purchased" },
+            { value: "date", label: "Recently Added" },
             { value: "quantity", label: "Quantity" },
-            { value: "market", label: "Market value" }
+            { value: "sales", label: "Sold" },
+            { value: "name", label: "Name" }
           ]}
         />
       </div>
@@ -4985,13 +5002,13 @@ function InventoryList({
     <div className="catalog-table">
       <div className="catalog-row catalog-head" aria-hidden="true">
         <span>Product</span>
-        <span>Category</span>
-        <span>Qty</span>
+        <span>UPC / SKU</span>
+        <span>Quantity</span>
         <span>Avg Cost</span>
-        <span>Market</span>
-        <span>Target</span>
-        <span>Profit Est.</span>
-        <span>ROI</span>
+        <span>Total Cost</span>
+        <span>Sold</span>
+        <span>Profit / Loss</span>
+        <span>Status</span>
         <span>Actions</span>
       </div>
       {items.map((item) => (
@@ -5000,40 +5017,36 @@ function InventoryList({
             <InventoryImage item={item} />
             <span>
               <strong>{item.itemName}</strong>
-              <small>{item.setName || item.retailer || "Set unknown"}</small>
+              <small>{formatStatus(item.category)} · {item.setName || item.retailer || "Source unknown"}</small>
             </span>
           </button>
-          <span className="catalog-cell" data-label="Category">{formatStatus(item.category)}</span>
-          <span className="catalog-cell strong" data-label="Qty">{item.quantityOwned}</span>
-          <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
-          <span className="catalog-cell" data-label="Market">
-            {inventoryMarketTableValue(item)}
-            <small>
-              {item.marketCompCount
-                ? `Avg ${money(item.marketAverageLast3 ?? item.currentMarketEstimate)} - ${item.marketCompCount}/3 comps`
-                : "No sold comps"}
-            </small>
+          <span className="catalog-cell inventory-id-cell" data-label="UPC / SKU">
+            {item.upc || item.sku || item.dpci || item.asin || "Missing ID"}
           </span>
-          <span className="catalog-cell" data-label="Target">{money(item.targetSellPrice)}</span>
+          <span className="catalog-cell strong" data-label="Quantity">{item.quantityOwned}</span>
+          <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
+          <span className="catalog-cell" data-label="Total Cost">{money(item.averageCost * item.quantityOwned)}</span>
+          <span className="catalog-cell" data-label="Sold">{item.quantitySold}</span>
           <span
             className={`catalog-cell strong ${
-              (item.marketProfitLoss ?? item.businessProfitLoss ?? item.estimatedNetProfit ?? 0) >= 0 ? "profit-good" : "profit-bad"
+              (item.realizedProfitLoss ?? 0) >= 0 ? "profit-good" : "profit-bad"
             }`}
-            data-label="Profit Est."
+            data-label="Profit / Loss"
           >
-            {item.marketProfitLoss === null ? "TBD" : money(item.marketProfitLoss)}
+            {item.sales.length ? money(item.realizedProfitLoss) : "—"}
           </span>
-          <span className="catalog-cell" data-label="ROI">{percent(item.marketRoiPercent ?? item.roiPercent)}</span>
+          <span className="catalog-cell" data-label="Status">
+            <span className={`chip compact-chip ${inventoryStockStatusTone(item)}`}>{inventoryStockStatusLabel(item)}</span>
+          </span>
           <div className="catalog-actions">
-            <span className={`chip compact-chip ${inventoryRecommendationTone(item.recommendedAction)}`}>{formatStatus(item.recommendedAction)}</span>
             <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
               Add Stock
             </button>
             <button className="mini-action" type="button" onClick={() => onRecordSale(item)}>
-              Record Sale
+              Sell
             </button>
             <button className="mini-action" type="button" onClick={() => onViewDetails(item)}>
-              View Details
+              Details
             </button>
           </div>
         </article>
@@ -5042,46 +5055,37 @@ function InventoryList({
   );
 }
 
+function inventoryStockStatusLabel(item: InventoryItemDTO) {
+  if (item.quantityOwned <= 0) return "Sold Out";
+  if (item.quantityOwned <= 2) return "Low Stock";
+  return "In Stock";
+}
+
+function inventoryStockStatusTone(item: InventoryItemDTO) {
+  if (item.quantityOwned <= 0) return "bad";
+  if (item.quantityOwned <= 2) return "watch";
+  return "good";
+}
+
 function InventoryDetailsModal({
   item,
-  products,
-  ebayStatus,
-  busy,
-  busyLabel,
-  submit,
-  runAction,
   onAddStock,
   onRecordSale,
   onClose
 }: {
   item: InventoryItemDTO;
-  products: ProductDTO[];
-  ebayStatus: DashboardDTO["ebayStatus"];
-  busy: boolean;
-  busyLabel: string | null;
-  submit: SubmitHandler;
-  runAction: ActionHandler;
   onAddStock: (item: InventoryItemDTO) => void;
   onRecordSale: (item: InventoryItemDTO) => void;
   onClose: () => void;
 }) {
-  const marketBadges = inventoryMarketBadges(item, ebayStatus);
-  const compCount = item.lastThreeComps.length;
-  const marketTone = inventoryMarketTone(item);
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`${item.itemName} inventory details`}>
         <header className="inventory-details-header">
           <InventoryImage item={item} />
           <div>
-            <span className="eyeline">Inventory Details</span>
             <h2>{item.itemName}</h2>
-            <p>{item.setName || item.retailer || "Set and retailer not saved"}</p>
-            <div className="market-status-row">
-              {marketBadges.map((badge) => (
-                <span className={`chip ${badge.tone}`} key={badge.label}>{badge.label}</span>
-              ))}
-            </div>
+            <p>{formatStatus(item.category)} - {item.setName || item.retailer || "Set and retailer not saved"}</p>
           </div>
           <button className="icon-button" type="button" aria-label="Close inventory details" onClick={onClose}>
             <X size={18} />
@@ -5097,20 +5101,9 @@ function InventoryDetailsModal({
             <CircleDollarSign size={14} />
             Record Sale
           </button>
-          <button
-            className="mini-action"
-            disabled={busy}
-            type="button"
-            onClick={() =>
-              runAction(
-                `Refreshing inventory comps ${item.id}`,
-                () => requestJson(`/api/radar/inventory/${item.id}/refresh-comps`, { method: "POST" }),
-                { success: "Inventory market refresh finished" }
-              )
-            }
-          >
-            <RefreshCw size={14} />
-            {busyLabel === `Refreshing inventory comps ${item.id}` ? "Refreshing" : "Refresh Market Data"}
+          <button className="mini-action" type="button" title="Edit product details from the catalog form.">
+            <Settings size={14} />
+            Edit Product
           </button>
           {item.exactProductUrl ? (
             <a className="mini-action" href={item.exactProductUrl} target="_blank" rel="noreferrer">
@@ -5125,71 +5118,19 @@ function InventoryDetailsModal({
             <h3>Overview</h3>
             <div className="detail-stat-grid">
               <DetailStat label="Owned" value={String(item.quantityOwned)} />
+              <DetailStat label="Sold" value={String(item.quantitySold)} />
               <DetailStat label="Average Cost" value={money(item.averageCost)} />
               <DetailStat label="Total Cost Basis" value={money(item.averageCost * item.quantityOwned)} />
-              <DetailStat label="Market Value" value={item.marketCompCount ? money(item.grossMarketValue) : "Not verified"} />
-              <DetailStat label="Profit / Loss" value={item.marketCompCount ? money(item.marketProfitLoss) : "Needs comps"} tone={(item.marketProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
-              <DetailStat label="ROI" value={item.marketCompCount ? percent(item.marketRoiPercent) : "Needs comps"} />
+              <DetailStat label="Sales" value={money(item.totalSalesGross)} />
+              <DetailStat label="Profit / Loss" value={item.sales.length ? money(item.realizedProfitLoss) : "No sales yet"} tone={(item.realizedProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
             </div>
             <div className="detail-line-list">
-              <span>Recommendation: <strong>{formatStatus(item.recommendedAction)}</strong></span>
-              <span>{item.recommendationReason || "Add sold comps to generate a stronger recommendation."}</span>
+              <span>Status: <strong>{inventoryStockStatusLabel(item)}</strong></span>
               <span>Linked product: {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
               <span>Brand {item.brand || "Missing"} - Model {item.model || "Missing"} - MSRP {money(item.msrp)}</span>
               {item.description ? <span>{item.description}</span> : null}
-              <span>UPC {item.upc || "Missing"} · SKU {item.sku || "Missing"} · DPCI {item.dpci || "Missing"} · ASIN {item.asin || "Missing"}</span>
+              <span>UPC {item.upc || "Missing"} - SKU {item.sku || "Missing"} - DPCI {item.dpci || "Missing"} - ASIN {item.asin || "Missing"}</span>
             </div>
-            <AttachWatchedProductForm item={item} products={products} busy={busy} busyLabel={busyLabel} submit={submit} />
-          </section>
-
-          <section className="inventory-detail-section">
-            <h3>Market Data</h3>
-            <InventoryMarketHero item={item} tone={marketTone} />
-            <div className="market-proof-grid">
-              <DetailStat label="Status" value={marketBadges[0]?.label || "Market Not Collected"} />
-              <DetailStat label="Source" value={inventoryMarketSource(item)} />
-              <DetailStat label="Comps Used" value={`${compCount}/3`} />
-              <DetailStat label="Last Refreshed" value={item.marketLastRefreshedAt ? dateTime(item.marketLastRefreshedAt) : "Not collected yet"} />
-              <DetailStat label="Confidence" value={item.marketCompCount ? item.marketConfidence || "LOW" : "NONE"} />
-              <DetailStat label="Average from last 3" value={item.marketCompCount ? money(item.marketAverageLast3) : "Not verified"} />
-              <DetailStat label="Lowest recent comp" value={item.marketCompCount ? money(item.marketLowestRecentComp) : "Not verified"} />
-              <DetailStat label="Highest recent comp" value={item.marketCompCount ? money(item.marketHighestRecentComp) : "Not verified"} />
-              <DetailStat label="Estimated eBay fees" value={item.marketCompCount ? money(item.estimatedEbayFee) : "Needs comps"} />
-              <DetailStat label="Estimated shipping" value={item.marketCompCount ? money(item.estimatedShippingCost) : "Needs comps"} />
-            </div>
-            {!ebayStatus.ready ? (
-              <p className="market-mode-warning">Configure eBay production keys for live sold comps.</p>
-            ) : null}
-            {!ebayStatus.ready ? (
-              <p className="market-mode-warning">eBay API not configured — manual comp mode only.</p>
-            ) : null}
-            {!item.marketCompCount && item.currentMarketEstimate !== null ? (
-              <p className="market-mode-warning">A manual estimate is saved, but no sold comps are attached. Profit is not treated as verified market data.</p>
-            ) : null}
-            {item.lastThreeComps.length ? (
-              <div className="market-comp-proof-list">
-                {item.lastThreeComps.map((comp) => (
-                  <article key={comp.id}>
-                    <div>
-                      <strong>{comp.saleTitle}</strong>
-                      <span>{formatSourceQuality(comp.sourceQuality)} - confidence {comp.matchScore}%</span>
-                    </div>
-                    <b>{money(comp.salePrice)}</b>
-                    <span>{shortDate(comp.soldAt)}</span>
-                    {comp.sourceUrl ? (
-                      <a href={comp.sourceUrl} target="_blank" rel="noreferrer">
-                        Sold listing
-                      </a>
-                    ) : (
-                      <span>No URL</span>
-                    )}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <EmptyState icon={CircleDollarSign} title="Market not collected yet" detail="Refresh eBay when credentials are configured, or add manual sold comps below." />
-            )}
-            <InventoryInlineCompForm item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
           </section>
 
           <section className="inventory-detail-section">
@@ -5223,7 +5164,7 @@ function InventoryDetailsModal({
             <div className="detail-line-list">
               <span>Plan: {item.expectedPlan || "Not saved"}</span>
               <span>Condition: {item.condition || "Not saved"}</span>
-              <span>Target sell: {money(item.targetSellPrice)} · minimum: {money(item.minimumAcceptablePrice)}</span>
+              <span>Target sell: {money(item.targetSellPrice)} - minimum: {money(item.minimumAcceptablePrice)}</span>
               <span>{item.notes || "No notes saved."}</span>
             </div>
           </section>
@@ -5529,6 +5470,45 @@ function SelectedSalesPanel({
   );
 }
 
+function RecordSaleModal({
+  item,
+  busy,
+  busyLabel,
+  submit,
+  onClose
+}: {
+  item: InventoryItemDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  onClose: () => void;
+}) {
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal record-sale-modal" role="dialog" aria-modal="true" aria-label={`Record sale for ${item.itemName}`}>
+        <div className="edit-card-heading">
+          <div>
+            <h2>Record Sale</h2>
+            <span>Subtract sold quantity and log profit/loss for this product.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close record sale" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <article className="sale-product-preview">
+          <InventoryImage item={item} />
+          <div>
+            <strong>{item.itemName}</strong>
+            <span>{item.upc || item.sku || item.dpci || "No UPC/SKU saved"}</span>
+            <small>{item.quantityOwned} owned - average cost {money(item.averageCost)}</small>
+          </div>
+        </article>
+        <RecordSaleForm item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
+      </div>
+    </div>
+  );
+}
+
 function RecordSaleForm({
   item,
   busy,
@@ -5619,33 +5599,63 @@ function RecordSaleForm({
   );
 }
 
-function SpendingLog({ items, summary }: { items: InventoryItemDTO[]; summary: DashboardDTO["inventorySummary"] }) {
-  const sorted = [...items].sort((a, b) => new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime());
+function PurchasesLog({ items, summary }: { items: InventoryItemDTO[]; summary: DashboardDTO["inventorySummary"] }) {
+  const lots = items
+    .flatMap((item) =>
+      item.stockLots.length
+        ? item.stockLots.map((lot) => ({ item, lot }))
+        : [
+            {
+              item,
+              lot: {
+                id: `${item.id}-legacy`,
+                inventoryItemId: item.id,
+                purchasedAt: item.purchasedAt,
+                source: item.source,
+                quantity: item.quantity,
+                costPerUnit: item.cost,
+                purchaseExtraCost: item.purchaseExtraCost,
+                totalCost: item.totalCost,
+                remainingQuantity: item.quantityOwned,
+                notes: item.notes,
+                receiptNumber: item.receiptNumber,
+                receiptImageUrl: item.receiptImageUrl,
+                orderNumber: item.orderNumber,
+                transactionId: item.transactionId,
+                sourceStore: item.sourceStore,
+                paymentMethod: item.paymentMethod,
+                createdAt: item.createdAt
+              }
+            }
+          ]
+    )
+    .sort((a, b) => new Date(b.lot.purchasedAt).getTime() - new Date(a.lot.purchasedAt).getTime());
   return (
     <section className="inventory-log-panel">
       <div className="edit-card-heading">
         <div>
-          <h2>Spending Log</h2>
+          <h2>Purchases</h2>
           <span>Week {money(summary.spendingThisWeek)} - month {money(summary.spendingThisMonth)} - all time {money(summary.totalSpent)}</span>
         </div>
-        <a className="mini-action" href="/api/radar/inventory?format=spending-csv" target="_blank" rel="noreferrer">
+        <a className="mini-action" href="/api/radar/inventory?format=lots-csv" target="_blank" rel="noreferrer">
           <Download size={14} />
-          Export Spending
+          Export Lots
         </a>
       </div>
       <div className="inventory-log-list">
-        {sorted.length ? (
-          sorted.map((item) => (
-            <article className="inventory-log-row" key={item.id}>
-              <span>{shortDate(item.purchasedAt)}</span>
+        {lots.length ? (
+          lots.map(({ item, lot }) => (
+            <article className="inventory-log-row purchase-log-row" key={lot.id}>
+              <span>{shortDate(lot.purchasedAt)}</span>
               <strong>{item.itemName}</strong>
-              <span>{item.source}</span>
-              <span>{item.quantity} x {money(item.cost)}</span>
-              <strong>{money(item.totalCost)}</strong>
+              <span>{lot.sourceStore || lot.source}</span>
+              <span>{lot.quantity} x {money(lot.costPerUnit)}</span>
+              <span>Remaining {lot.remainingQuantity}</span>
+              <strong>{money(lot.totalCost)}</strong>
             </article>
           ))
         ) : (
-          <EmptyState icon={Trophy} title="No spending logged" detail="Add a purchase to start tracking spend." />
+          <EmptyState icon={Trophy} title="No purchases logged" detail="Add stock to start tracking product lots." />
         )}
       </div>
     </section>
@@ -10141,3 +10151,46 @@ function releaseOptions(releases: ReleaseDTO[]) {
 function optionFromString(value: string) {
   return { value, label: formatStatus(value) };
 }
+
+const inventoryHiddenUiRegistry = [
+  [
+    "Add Existing Product Purchase",
+    "Inventory Details",
+    "Market Data",
+    "Refresh Market Data",
+    "Current Market Value",
+    "Estimated Net After Fees",
+    "Estimated Profit",
+    "ROI %",
+    "Average from last 3",
+    "Lowest recent comp",
+    "Highest recent comp",
+    "Configure eBay production keys for live sold comps",
+    "Add Manual Sold Comp",
+    "eBay API not configured",
+    "Live eBay Data",
+    "Manual Comp Data",
+    "Market Not Collected",
+    "Low Confidence",
+    "Spending Log",
+    "What should I sell today?",
+    "Best hold",
+    "Avoid buying more",
+    "Missing Market Data",
+    "Attach watched product",
+    "Manual Inventory Sold Comp",
+    "Market not collected yet"
+  ],
+  inventoryRecommendations,
+  inventoryRecommendationTone,
+  inventoryMarketBadges,
+  inventoryMarketTableValue,
+  inventoryMarketTone,
+  InventoryMarketDecisionPanels,
+  InventoryMarketHero,
+  InventoryInlineCompForm,
+  AttachWatchedProductForm,
+  StockLotsPanel,
+  SelectedSalesPanel,
+  InventoryCompForm
+] as const;
