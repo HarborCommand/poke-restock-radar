@@ -2928,18 +2928,50 @@ function ProductImage({ product }: { product: ProductDTO }) {
   );
 }
 
+function isRenderableImageUrl(url?: string | null) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:", "data:", "blob:"].includes(parsed.protocol)) return false;
+    if (parsed.protocol === "data:" || parsed.protocol === "blob:") return true;
+
+    const host = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    const productPagePatterns = [
+      { host: "bestbuy.com", path: /^\/(product|site)\// },
+      { host: "target.com", path: /^\/p\// },
+      { host: "walmart.com", path: /^\/ip\// },
+      { host: "amazon.com", path: /^\/(dp|gp\/product)\// },
+      { host: "pokemoncenter.com", path: /^\/product\// },
+      { host: "gamestop.com", path: /^\/.+\/products?\// }
+    ];
+    if (productPagePatterns.some((pattern) => host.endsWith(pattern.host) && pattern.path.test(pathname))) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function InventoryImage({ item }: { item: InventoryItemDTO }) {
+  const [imageFailure, setImageFailure] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
   const initials = item.retailer?.slice(0, 2).toUpperCase() || item.category.slice(0, 2).toUpperCase();
+  const imageUrl =
+    isRenderableImageUrl(item.imageUrl) && !(imageFailure.failed && imageFailure.url === item.imageUrl) ? item.imageUrl : null;
   return (
-    <div className={item.imageUrl ? "inventory-image-frame has-image" : "inventory-image-frame"}>
-      {item.imageUrl ? (
+    <div className={imageUrl ? "inventory-image-frame has-image" : "inventory-image-frame"}>
+      {imageUrl ? (
         <Image
-          src={item.imageUrl}
+          src={imageUrl}
           alt={`${item.itemName} inventory image`}
           width={76}
           height={76}
           loading="lazy"
           unoptimized
+          onError={() => setImageFailure({ url: imageUrl, failed: true })}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (image.naturalWidth < 16 || image.naturalHeight < 16) setImageFailure({ url: imageUrl, failed: true });
+          }}
         />
       ) : (
         <span>{initials}</span>
