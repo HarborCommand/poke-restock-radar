@@ -4697,6 +4697,7 @@ textarea {
 .content-grid > .inventory-secondary-strip,
 .content-grid > .inventory-decision-grid,
 .content-grid > .inventory-view-tabs,
+.content-grid > .inventory-quick-actions-strip,
 .content-grid > .inventory-management-grid,
 .content-grid > .inventory-lower-grid,
 .content-grid > .inventory-log-panel {
@@ -7353,6 +7354,10 @@ body {
 .app-main.app-main-inventory {
   width: 100%;
   max-width: none;
+}
+
+.app-main-inventory .content-grid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .app-main-inventory .content-grid,
