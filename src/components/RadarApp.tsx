@@ -3932,7 +3932,15 @@ function InventoryPanel({
         </>
       ) : null}
       {view === "purchases" ? <PurchasesLog items={dashboard.inventory} summary={summary} /> : null}
-      {view === "sales" ? <SalesLog sales={allSales} summary={summary} /> : null}
+      {view === "sales" ? (
+        <SalesLog
+          items={dashboard.inventory}
+          sales={allSales}
+          selectedItem={selectedItem}
+          summary={summary}
+          onRecordSale={() => selectedItem && setSaleItemId(selectedItem.id)}
+        />
+      ) : null}
       {addProductChoiceOpen ? (
         <AddProductChoiceModal
           onClose={() => setAddProductChoiceOpen(false)}
@@ -5838,45 +5846,356 @@ function PurchasesLog({ items, summary }: { items: InventoryItemDTO[]; summary: 
   );
 }
 
-function SalesLog({ sales, summary }: { sales: InventorySaleDTO[]; summary: DashboardDTO["inventorySummary"] }) {
-  const sorted = [...sales].sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime());
+function SalesLog({
+  items,
+  sales,
+  selectedItem,
+  summary,
+  onRecordSale
+}: {
+  items: InventoryItemDTO[];
+  sales: InventorySaleDTO[];
+  selectedItem: InventoryItemDTO | null;
+  summary: DashboardDTO["inventorySummary"];
+  onRecordSale: () => void;
+}) {
+  const [selectedSaleId, setSelectedSaleId] = useState<string>("");
+  const [filters, setFilters] = useState({
+    search: "",
+    platform: "ALL",
+    profitStatus: "ALL",
+    fromDate: "",
+    toDate: ""
+  });
+  const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  const platformOptions = useMemo(
+    () =>
+      Array.from(new Set(sales.map((sale) => sale.platform).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b))
+        .map((platform) => ({ value: platform, label: formatStatus(platform) })),
+    [sales]
+  );
+  const sorted = useMemo(
+    () => [...sales].sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime()),
+    [sales]
+  );
+  const saleRows = useMemo(
+    () =>
+      sorted
+        .map((sale) => ({ sale, item: itemById.get(sale.inventoryItemId) ?? null }))
+        .filter(({ sale, item }) => {
+          const query = filters.search.toLowerCase().trim();
+          const soldAt = new Date(sale.soldAt);
+          const fromDate = filters.fromDate ? new Date(`${filters.fromDate}T00:00:00`) : null;
+          const toDate = filters.toDate ? new Date(`${filters.toDate}T23:59:59`) : null;
+          const status = saleProfitStatus(sale);
+          if (
+            query &&
+            !sale.itemName.toLowerCase().includes(query) &&
+            !(item?.upc || "").toLowerCase().includes(query) &&
+            !(item?.sku || "").toLowerCase().includes(query) &&
+            !(item?.category || "").toLowerCase().includes(query) &&
+            !sale.platform.toLowerCase().includes(query)
+          ) {
+            return false;
+          }
+          if (filters.platform !== "ALL" && sale.platform !== filters.platform) return false;
+          if (filters.profitStatus !== "ALL" && status !== filters.profitStatus) return false;
+          if (fromDate && soldAt < fromDate) return false;
+          if (toDate && soldAt > toDate) return false;
+          return true;
+        }),
+    [filters, itemById, sorted]
+  );
+  const selectedSaleRow = saleRows.find(({ sale }) => sale.id === selectedSaleId) ?? null;
+  const averageSalePrice = summary.itemsSold > 0 ? summary.totalSalesGross / summary.itemsSold : 0;
+
+  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = event.currentTarget;
+    setFilters((current) => ({ ...current, [name]: value }));
+  }
+
   return (
-    <section className="inventory-log-panel">
-      <div className="edit-card-heading">
+    <section className="sales-dashboard-panel">
+      <div className="sales-header-card">
         <div>
-          <h2>Sales Log</h2>
-          <span>Week {money(summary.salesThisWeek)} - month {money(summary.salesThisMonth)} - all time {money(summary.totalSalesGross)}</span>
+          <h2>Sales</h2>
+          <span>Track sold items, revenue, and profit.</span>
         </div>
-        <a className="mini-action" href="/api/radar/inventory?format=sales-csv" target="_blank" rel="noreferrer">
-          <Download size={14} />
-          Export Sales
-        </a>
+        <div className="sales-header-actions">
+          <a className="mini-action" href="/api/radar/inventory?format=sales-csv" target="_blank" rel="noreferrer">
+            <Download size={14} />
+            Export Sales
+          </a>
+          <button className="mini-action solid" disabled={!selectedItem} type="button" onClick={onRecordSale}>
+            <CircleDollarSign size={14} />
+            Record Sale
+          </button>
+        </div>
       </div>
-      <div className="profit-platform-strip">
-        {summary.profitByPlatform.length ? (
-          summary.profitByPlatform.map((item) => (
-            <span key={item.platform}>{formatStatus(item.platform)} {money(item.profit)}</span>
+
+      <div className="sales-summary-grid">
+        <SalesSummaryCard label="Total Sales" value={money(summary.totalSalesGross)} detail={`This month ${money(summary.salesThisMonth)}`} icon={CircleDollarSign} tone="neutral" />
+        <SalesSummaryCard label="Items Sold" value={String(summary.itemsSold)} detail={`${sales.length} recorded sales`} icon={PackageSearch} tone="neutral" />
+        <SalesSummaryCard
+          label="Net Profit"
+          value={money(summary.realizedProfitLoss)}
+          detail="After cost basis"
+          icon={Activity}
+          tone={summary.realizedProfitLoss >= 0 ? "good" : "bad"}
+        />
+        <SalesSummaryCard label="Avg Sale Price" value={money(averageSalePrice)} detail="Gross per item sold" icon={Trophy} tone="watch" />
+      </div>
+
+      <div className="sales-filter-bar">
+        <TextInput name="search" label="Search sold products" value={filters.search} onChange={updateFilter} placeholder="Product, UPC, SKU, platform" />
+        <SelectInput
+          name="platform"
+          label="Platform"
+          value={filters.platform}
+          onChange={updateFilter}
+          options={[{ value: "ALL", label: "All Platforms" }, ...platformOptions]}
+        />
+        <SelectInput
+          name="profitStatus"
+          label="Profit status"
+          value={filters.profitStatus}
+          onChange={updateFilter}
+          options={[
+            { value: "ALL", label: "All" },
+            { value: "PROFIT", label: "Profit" },
+            { value: "LOSS", label: "Loss" },
+            { value: "BREAKEVEN", label: "Break-even" }
+          ]}
+        />
+        <TextInput name="fromDate" label="From" type="date" value={filters.fromDate} onChange={updateFilter} />
+        <TextInput name="toDate" label="To" type="date" value={filters.toDate} onChange={updateFilter} />
+      </div>
+
+      <div className="sales-list">
+        {saleRows.length ? (
+          saleRows.map(({ sale, item }) => (
+            <SaleCard key={sale.id} item={item} sale={sale} onViewDetails={() => setSelectedSaleId(sale.id)} />
           ))
+        ) : sorted.length ? (
+          <EmptyState icon={Search} title="No sales match these filters" detail="Clear filters or search another product/platform." />
         ) : (
-          <span>No platform profit yet</span>
+          <div className="sales-empty-state">
+            <CircleDollarSign size={28} />
+            <h3>No sales recorded yet</h3>
+            <p>Record a sale when a product leaves your inventory.</p>
+            <button className="primary-action" disabled={!selectedItem} type="button" onClick={onRecordSale}>
+              <CircleDollarSign size={15} />
+              Record Sale
+            </button>
+          </div>
         )}
       </div>
-      <div className="inventory-log-list">
-        {sorted.length ? (
-          sorted.map((sale) => (
-            <article className="inventory-log-row" key={sale.id}>
-              <span>{shortDate(sale.soldAt)}</span>
-              <strong>{sale.itemName}</strong>
-              <span>{sale.quantitySold} on {formatStatus(sale.platform)}</span>
-              <span>Net {money(sale.netSale)}</span>
-              <strong className={sale.profitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.profitLoss)}</strong>
-            </article>
-          ))
-        ) : (
-          <EmptyState icon={CircleDollarSign} title="No sales recorded" detail="Record a sale from an inventory row." />
-        )}
-      </div>
+      {selectedSaleRow ? (
+        <SaleDetailsModal
+          item={selectedSaleRow.item}
+          sale={selectedSaleRow.sale}
+          onClose={() => setSelectedSaleId("")}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function saleProfitStatus(sale: InventorySaleDTO) {
+  if (sale.profitLoss > 0.005) return "PROFIT";
+  if (sale.profitLoss < -0.005) return "LOSS";
+  return "BREAKEVEN";
+}
+
+function saleProfitStatusLabel(sale: InventorySaleDTO) {
+  const status = saleProfitStatus(sale);
+  if (status === "PROFIT") return "Profitable";
+  if (status === "LOSS") return "Loss";
+  return "Break-even";
+}
+
+function saleProfitTone(sale: InventorySaleDTO) {
+  const status = saleProfitStatus(sale);
+  if (status === "PROFIT") return "good";
+  if (status === "LOSS") return "bad";
+  return "watch";
+}
+
+function saleIdentifier(item: InventoryItemDTO | null) {
+  if (!item) return "UPC/SKU not saved";
+  return item.upc ? `UPC ${item.upc}` : item.sku ? `SKU ${item.sku}` : item.dpci ? `DPCI ${item.dpci}` : item.asin ? `ASIN ${item.asin}` : "UPC/SKU not saved";
+}
+
+function SaleProductThumb({ item, sale }: { item: InventoryItemDTO | null; sale: InventorySaleDTO }) {
+  const imageUrl = item?.imageUrl && isRenderableImageUrl(item.imageUrl) ? item.imageUrl : null;
+  const initials = (item?.brand || sale.itemName || "No image")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("");
+  return (
+    <div className={imageUrl ? "sale-product-thumb has-image" : "sale-product-thumb"}>
+      {imageUrl ? (
+        <Image src={imageUrl} alt={`${sale.itemName} sold item image`} width={72} height={72} loading="lazy" unoptimized />
+      ) : (
+        <span>{initials || "No image"}</span>
+      )}
+    </div>
+  );
+}
+
+function SalesSummaryCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  tone
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: typeof CircleDollarSign;
+  tone: "neutral" | "good" | "watch" | "bad";
+}) {
+  return (
+    <article className={`sales-summary-card ${tone}`}>
+      <span className="sales-summary-icon">
+        <Icon size={17} />
+      </span>
+      <div>
+        <small>{label}</small>
+        <strong>{value}</strong>
+        <em>{detail}</em>
+      </div>
+    </article>
+  );
+}
+
+function SaleCard({
+  item,
+  sale,
+  onViewDetails
+}: {
+  item: InventoryItemDTO | null;
+  sale: InventorySaleDTO;
+  onViewDetails: () => void;
+}) {
+  const tone = saleProfitTone(sale);
+  const productMeta = item
+    ? `${saleIdentifier(item)} · ${formatStatus(item.category)}`
+    : "UPC/SKU not saved · category unknown";
+  return (
+    <article className="sale-card">
+      <div className="sale-product-cell">
+        <SaleProductThumb item={item} sale={sale} />
+        <div>
+          <strong>{sale.itemName}</strong>
+          <span>{productMeta}</span>
+          <small>
+            Sold {shortDate(sale.soldAt)} · {formatStatus(sale.platform || "unknown_platform")} · Qty {sale.quantitySold}
+          </small>
+        </div>
+      </div>
+      <div className="sale-meta-cell">
+        <span className={`platform-pill ${sale.platform || "other"}`}>{formatStatus(sale.platform || "unknown_platform")}</span>
+        <small>{dateTime(sale.soldAt)}</small>
+        <b>Qty {sale.quantitySold}</b>
+      </div>
+      <div className="sale-money-grid">
+        <span>
+          <small>Sale Price</small>
+          <strong>{money(sale.grossSale)}</strong>
+        </span>
+        <span>
+          <small>Cost</small>
+          <strong>{sale.costBasis ? money(sale.costBasis) : "Cost not set"}</strong>
+        </span>
+        <span>
+          <small>Fees / Ship</small>
+          <strong>{money((sale.fees ?? 0) + (sale.shippingCost ?? 0))}</strong>
+        </span>
+        <span>
+          <small>Net Profit</small>
+          <strong className={tone === "good" ? "profit-good" : tone === "bad" ? "profit-bad" : "profit-watch"}>
+            {sale.profitLoss >= 0 ? "+" : ""}
+            {money(sale.profitLoss)}
+          </strong>
+        </span>
+      </div>
+      <div className="sale-status-cell">
+        <span className={`sale-status-badge ${tone}`}>{saleProfitStatusLabel(sale)}</span>
+        <button className="mini-action" type="button" onClick={onViewDetails}>
+          View Details
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function SaleDetailsModal({
+  item,
+  sale,
+  onClose
+}: {
+  item: InventoryItemDTO | null;
+  sale: InventorySaleDTO;
+  onClose: () => void;
+}) {
+  const tone = saleProfitTone(sale);
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal sale-details-modal" role="dialog" aria-modal="true" aria-label={`${sale.itemName} sale details`}>
+        <div className="sales-detail-header">
+          <SaleProductThumb item={item} sale={sale} />
+          <div>
+            <h2>{sale.itemName}</h2>
+            <span>{saleIdentifier(item)}</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close sale details" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="sale-detail-hero">
+          <span>
+            <small>Sale Price</small>
+            <strong>{money(sale.grossSale)}</strong>
+          </span>
+          <span>
+            <small>Net Profit / Loss</small>
+            <strong className={tone === "good" ? "profit-good" : tone === "bad" ? "profit-bad" : "profit-watch"}>
+              {sale.profitLoss >= 0 ? "+" : ""}
+              {money(sale.profitLoss)}
+            </strong>
+          </span>
+          <span className={`sale-status-badge ${tone}`}>{saleProfitStatusLabel(sale)}</span>
+        </div>
+        <div className="sale-detail-grid">
+          <DetailStat label="Sale Date" value={dateTime(sale.soldAt)} />
+          <DetailStat label="Platform" value={formatStatus(sale.platform || "Unknown platform")} />
+          <DetailStat label="Quantity Sold" value={String(sale.quantitySold)} />
+          <DetailStat label="Price Per Item" value={money(sale.soldPricePerItem)} />
+          <DetailStat label="Cost Basis" value={sale.costBasis ? money(sale.costBasis) : "Cost not set"} />
+          <DetailStat label="Fees" value={money(sale.fees)} />
+          <DetailStat label="Shipping" value={money(sale.shippingCost)} />
+          <DetailStat label="ROI" value={percent(sale.roiPercent)} tone={tone === "bad" ? "bad" : tone === "good" ? "good" : "neutral"} />
+        </div>
+        <section className="inventory-detail-section">
+          <h3>Notes</h3>
+          <div className="detail-line-list">
+            <span>{sale.notes || "No notes saved."}</span>
+            <span>{item?.category ? `Category: ${formatStatus(item.category)}` : "Category not saved"}</span>
+            <span>{item?.source ? `Original source: ${item.source}` : "Original source not saved"}</span>
+          </div>
+        </section>
+        <div className="inventory-edit-actions">
+          <button className="primary-action" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
