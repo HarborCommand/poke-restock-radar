@@ -931,7 +931,7 @@ export function RadarApp() {
         </div>
       </aside>
       {sidebarOpen ? <button className="sidebar-scrim" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} /> : null}
-      <section className="app-main">
+      <section className={activeTab === "inventory" ? "app-main app-main-inventory" : "app-main"}>
       <header className="topbar">
         <div className="mobile-section-title">
           <button className="icon-button mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" type="button">
@@ -3899,6 +3899,17 @@ function InventoryPanel({
       </section>
       {view === "items" ? (
         <>
+          <InventoryQuickActions
+            dashboard={dashboard}
+            onAddProduct={() => openPurchaseFlow("")}
+            onAddStock={() => {
+              openPurchaseFlow(selectedItem?.id ?? "");
+            }}
+            onScan={() => setBarcodeScannerOpen(true)}
+            onRecordSale={() => selectedItem && setSaleItemId(selectedItem.id)}
+            onViewSales={() => setView("sales")}
+            selectedItem={selectedItem}
+          />
           <section className="inventory-management-grid">
             <div className="catalog-panel">
               <InventoryFilters filters={filters} itemCount={visibleItems.length} updateFilter={updateFilter} />
@@ -3915,17 +3926,6 @@ function InventoryPanel({
                 onViewDetails={(item) => setDetailItemId(item.id)}
               />
             </div>
-            <InventoryQuickActions
-              dashboard={dashboard}
-              onAddProduct={() => openPurchaseFlow("")}
-              onAddStock={() => {
-                openPurchaseFlow(selectedItem?.id ?? "");
-              }}
-              onScan={() => setBarcodeScannerOpen(true)}
-              onRecordSale={() => selectedItem && setSaleItemId(selectedItem.id)}
-              onViewSales={() => setView("sales")}
-              selectedItem={selectedItem}
-            />
           </section>
         </>
       ) : null}
@@ -4547,12 +4547,14 @@ function InventoryQuickActions({
   onViewSales: () => void;
 }) {
   return (
-    <aside className="inventory-side-rail" aria-label="Inventory quick actions">
-      <section className="quick-actions-card">
+    <section className="inventory-quick-actions-strip" aria-label="Inventory quick actions">
+      <div className="inventory-quick-actions-heading">
         <div>
           <h2>Quick Actions</h2>
           <span>Add products, stock, and sales without leaving inventory.</span>
         </div>
+      </div>
+      <div className="inventory-quick-actions-list">
         <button className="inventory-quick-button" type="button" onClick={onScan}>
           <PackageSearch size={16} />
           <span>
@@ -4593,18 +4595,8 @@ function InventoryQuickActions({
           </span>
           <ChevronRight size={15} />
         </button>
-      </section>
-      <section className="quick-actions-card inventory-help-card">
-        <div>
-          <h2>Need Help?</h2>
-          <span>Add stock when you buy, then record a sale when it leaves inventory.</span>
-        </div>
-        <button className="mini-action" type="button" onClick={onAddProduct}>
-          <HelpCircle size={14} />
-          Add a product
-        </button>
-      </section>
-    </aside>
+      </div>
+    </section>
   );
 }
 
