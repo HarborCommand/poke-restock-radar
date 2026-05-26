@@ -71,6 +71,7 @@ import type {
   Priority,
   InventoryItemDTO,
   InventorySaleDTO,
+  InventoryStockLotDTO,
   ProductDTO,
   ProductDiscoveryCandidateDTO,
   ProductDiscoverySourceDTO,
@@ -1056,7 +1057,7 @@ export function RadarApp() {
           />
         ) : null}
         {activeTab === "releases" ? (
-          <ReleasesPanel dashboard={dashboard} />
+          <ReleasesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
         ) : null}
         {activeTab === "cards" ? (
           <CardsPanel
@@ -1766,7 +1767,7 @@ function DashboardMetricCard({
   return (
     <article className={`dashboard-metric-card tone-${tone}`}>
       <span className="metric-icon">
-        <Icon size={20} />
+        <Icon size={24} />
       </span>
       <div>
         <strong>{value}</strong>
@@ -5783,8 +5784,20 @@ function RecordSaleForm({
   );
 }
 
+type PurchaseLotRow = {
+  item: InventoryItemDTO;
+  lot: InventoryStockLotDTO;
+};
+
 function PurchasesLog({ items, summary }: { items: InventoryItemDTO[]; summary: DashboardDTO["inventorySummary"] }) {
-  const lots = items
+  const [selectedLotId, setSelectedLotId] = useState<string>("");
+  const [filters, setFilters] = useState({
+    search: "",
+    source: "ALL",
+    fromDate: "",
+    toDate: ""
+  });
+  const lots: PurchaseLotRow[] = items
     .flatMap((item) =>
       item.stockLots.length
         ? item.stockLots.map((lot) => ({ item, lot }))
@@ -5814,35 +5827,206 @@ function PurchasesLog({ items, summary }: { items: InventoryItemDTO[]; summary: 
           ]
     )
     .sort((a, b) => new Date(b.lot.purchasedAt).getTime() - new Date(a.lot.purchasedAt).getTime());
+  const sourceOptions = useMemo(
+    () =>
+      Array.from(new Set(lots.map(({ lot, item }) => lot.sourceStore || lot.source || item.source).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b))
+        .map((source) => ({ value: source, label: source })),
+    [lots]
+  );
+  const visibleLots = useMemo(
+    () =>
+      lots.filter(({ item, lot }) => {
+        const query = filters.search.toLowerCase().trim();
+        const purchasedAt = new Date(lot.purchasedAt);
+        const fromDate = filters.fromDate ? new Date(`${filters.fromDate}T00:00:00`) : null;
+        const toDate = filters.toDate ? new Date(`${filters.toDate}T23:59:59`) : null;
+        const source = lot.sourceStore || lot.source || item.source;
+        if (
+          query &&
+          !item.itemName.toLowerCase().includes(query) &&
+          !(item.upc || "").toLowerCase().includes(query) &&
+          !(item.sku || "").toLowerCase().includes(query) &&
+          !(item.category || "").toLowerCase().includes(query) &&
+          !source.toLowerCase().includes(query)
+        ) {
+          return false;
+        }
+        if (filters.source !== "ALL" && source !== filters.source) return false;
+        if (fromDate && purchasedAt < fromDate) return false;
+        if (toDate && purchasedAt > toDate) return false;
+        return true;
+      }),
+    [filters, lots]
+  );
+  const selectedLotRow = visibleLots.find(({ lot }) => lot.id === selectedLotId) ?? null;
+  const totalRemaining = lots.reduce((total, { lot }) => total + lot.remainingQuantity, 0);
+  const averageLotCost = lots.length ? lots.reduce((total, { lot }) => total + lot.totalCost, 0) / lots.length : 0;
+
+  function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = event.currentTarget;
+    setFilters((current) => ({ ...current, [name]: value }));
+  }
+
   return (
-    <section className="inventory-log-panel">
-      <div className="edit-card-heading">
+    <section className="purchase-dashboard-panel">
+      <div className="sales-header-card purchase-header-card">
         <div>
           <h2>Purchases</h2>
-          <span>Week {money(summary.spendingThisWeek)} - month {money(summary.spendingThisMonth)} - all time {money(summary.totalSpent)}</span>
+          <span>Track what you bought, where it came from, and what quantity remains.</span>
         </div>
-        <a className="mini-action" href="/api/radar/inventory?format=lots-csv" target="_blank" rel="noreferrer">
-          <Download size={14} />
-          Export Lots
-        </a>
+        <div className="sales-header-actions">
+          <a className="mini-action" href="/api/radar/inventory?format=lots-csv" target="_blank" rel="noreferrer">
+            <Download size={14} />
+            Export Purchases
+          </a>
+        </div>
       </div>
-      <div className="inventory-log-list">
-        {lots.length ? (
-          lots.map(({ item, lot }) => (
-            <article className="inventory-log-row purchase-log-row" key={lot.id}>
-              <span>{shortDate(lot.purchasedAt)}</span>
-              <strong>{item.itemName}</strong>
-              <span>{lot.sourceStore || lot.source}</span>
-              <span>{lot.quantity} x {money(lot.costPerUnit)}</span>
-              <span>Remaining {lot.remainingQuantity}</span>
-              <strong>{money(lot.totalCost)}</strong>
-            </article>
-          ))
+
+      <div className="sales-summary-grid">
+        <SalesSummaryCard label="Total Spent" value={money(summary.totalSpent)} detail={`This month ${money(summary.spendingThisMonth)}`} icon={CircleDollarSign} tone="neutral" />
+        <SalesSummaryCard label="Purchase Lots" value={String(lots.length)} detail={`${items.length} catalog products`} icon={PackageSearch} tone="neutral" />
+        <SalesSummaryCard label="Items Remaining" value={String(totalRemaining)} detail="Unsold quantity" icon={Trophy} tone="good" />
+        <SalesSummaryCard label="Avg Lot Cost" value={money(averageLotCost)} detail={`This week ${money(summary.spendingThisWeek)}`} icon={Activity} tone="watch" />
+      </div>
+
+      <div className="sales-filter-bar purchase-filter-bar">
+        <TextInput name="search" label="Search purchases" value={filters.search} onChange={updateFilter} placeholder="Product, UPC, SKU, source" />
+        <SelectInput
+          name="source"
+          label="Source"
+          value={filters.source}
+          onChange={updateFilter}
+          options={[{ value: "ALL", label: "All Sources" }, ...sourceOptions]}
+        />
+        <TextInput name="fromDate" label="From" type="date" value={filters.fromDate} onChange={updateFilter} />
+        <TextInput name="toDate" label="To" type="date" value={filters.toDate} onChange={updateFilter} />
+      </div>
+
+      <div className="purchase-list">
+        {visibleLots.length ? (
+          visibleLots.map((row) => <PurchaseCard key={row.lot.id} row={row} onViewDetails={() => setSelectedLotId(row.lot.id)} />)
+        ) : lots.length ? (
+          <EmptyState icon={Search} title="No purchases match these filters" detail="Clear filters or search another product/source." />
         ) : (
-          <EmptyState icon={Trophy} title="No purchases logged" detail="Add stock to start tracking product lots." />
+          <div className="sales-empty-state">
+            <Trophy size={28} />
+            <h3>No purchases logged yet</h3>
+            <p>Add stock when you buy a product to start tracking cost basis.</p>
+          </div>
         )}
       </div>
+      {selectedLotRow ? <PurchaseDetailsModal row={selectedLotRow} onClose={() => setSelectedLotId("")} /> : null}
     </section>
+  );
+}
+
+function purchaseIdentifier(item: InventoryItemDTO) {
+  return item.upc ? `UPC ${item.upc}` : item.sku ? `SKU ${item.sku}` : item.dpci ? `DPCI ${item.dpci}` : item.asin ? `ASIN ${item.asin}` : "UPC/SKU not saved";
+}
+
+function PurchaseCard({ row, onViewDetails }: { row: PurchaseLotRow; onViewDetails: () => void }) {
+  const { item, lot } = row;
+  const source = lot.sourceStore || lot.source || item.source || "Unknown source";
+  const remainingTone = lot.remainingQuantity > 0 ? "good" : "watch";
+  return (
+    <article className="purchase-card">
+      <div className="sale-product-cell">
+        <InventoryImage item={item} />
+        <div>
+          <strong>{item.itemName}</strong>
+          <span>{purchaseIdentifier(item)} - {formatStatus(item.category)}</span>
+          <small>
+            Bought {shortDate(lot.purchasedAt)} - {source} - Qty {lot.quantity}
+          </small>
+        </div>
+      </div>
+      <div className="purchase-source-cell">
+        <span className="platform-pill local">{source}</span>
+        <small>{dateTime(lot.purchasedAt)}</small>
+        <b>{lot.receiptNumber || lot.orderNumber || "No receipt saved"}</b>
+      </div>
+      <div className="sale-money-grid purchase-money-grid">
+        <span>
+          <small>Unit Cost</small>
+          <strong>{money(lot.costPerUnit)}</strong>
+        </span>
+        <span>
+          <small>Total Cost</small>
+          <strong>{money(lot.totalCost)}</strong>
+        </span>
+        <span>
+          <small>Remaining</small>
+          <strong>{lot.remainingQuantity} / {lot.quantity}</strong>
+        </span>
+        <span>
+          <small>Extra Cost</small>
+          <strong>{money(lot.purchaseExtraCost ?? 0)}</strong>
+        </span>
+      </div>
+      <div className="sale-status-cell">
+        <span className={`sale-status-badge ${remainingTone}`}>{lot.remainingQuantity > 0 ? "In Inventory" : "Sold Through"}</span>
+        <button className="mini-action" type="button" onClick={onViewDetails}>
+          View Details
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function PurchaseDetailsModal({ row, onClose }: { row: PurchaseLotRow; onClose: () => void }) {
+  const { item, lot } = row;
+  const source = lot.sourceStore || lot.source || item.source || "Unknown source";
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal sale-details-modal purchase-details-modal" role="dialog" aria-modal="true" aria-label={`${item.itemName} purchase details`}>
+        <div className="sales-detail-header">
+          <InventoryImage item={item} />
+          <div>
+            <h2>{item.itemName}</h2>
+            <span>{purchaseIdentifier(item)}</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close purchase details" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="sale-detail-hero">
+          <span>
+            <small>Total Cost</small>
+            <strong>{money(lot.totalCost)}</strong>
+          </span>
+          <span>
+            <small>Remaining Quantity</small>
+            <strong>{lot.remainingQuantity} / {lot.quantity}</strong>
+          </span>
+          <span className={`sale-status-badge ${lot.remainingQuantity > 0 ? "good" : "watch"}`}>{lot.remainingQuantity > 0 ? "In Inventory" : "Sold Through"}</span>
+        </div>
+        <div className="sale-detail-grid">
+          <DetailStat label="Purchased" value={dateTime(lot.purchasedAt)} />
+          <DetailStat label="Source" value={source} />
+          <DetailStat label="Quantity" value={String(lot.quantity)} />
+          <DetailStat label="Cost Per Unit" value={money(lot.costPerUnit)} />
+          <DetailStat label="Extra Cost" value={money(lot.purchaseExtraCost ?? 0)} />
+          <DetailStat label="Payment" value={lot.paymentMethod || "Not saved"} />
+          <DetailStat label="Receipt" value={lot.receiptNumber || "Not saved"} />
+          <DetailStat label="Order" value={lot.orderNumber || "Not saved"} />
+        </div>
+        <section className="inventory-detail-section">
+          <h3>Notes & Proof</h3>
+          <div className="detail-line-list">
+            <span>{lot.notes || item.notes || "No notes saved."}</span>
+            <span>{lot.transactionId ? `Transaction: ${lot.transactionId}` : "Transaction not saved"}</span>
+            <span>{lot.receiptImageUrl ? `Receipt image: ${lot.receiptImageUrl}` : "Receipt image not saved"}</span>
+            <span>{item.exactProductUrl ? `Product URL: ${item.exactProductUrl}` : "Product URL not saved"}</span>
+          </div>
+        </section>
+        <div className="inventory-edit-actions">
+          <button className="primary-action" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -8086,10 +8270,86 @@ function EditableSighting({
   );
 }
 
-function ReleasesPanel({ dashboard }: { dashboard: DashboardDTO }) {
+function releasesNextMonth(releases: ReleaseDTO[]) {
+  const now = new Date();
+  const horizon = new Date(now);
+  horizon.setDate(horizon.getDate() + 31);
+  return releases
+    .filter((release) => {
+      const date = calendarDate(release.officialReleaseDate);
+      return Boolean(date && date >= now && date <= horizon);
+    })
+    .sort((a, b) => {
+      const dateA = calendarDate(a.officialReleaseDate)?.getTime() ?? 0;
+      const dateB = calendarDate(b.officialReleaseDate)?.getTime() ?? 0;
+      return dateA - dateB;
+    });
+}
+
+function ReleasesPanel({
+  dashboard,
+  isAdmin,
+  busy,
+  busyLabel,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  isAdmin: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const nextMonth = useMemo(() => releasesNextMonth(dashboard.releases), [dashboard.releases]);
+  const nextDrop = dashboard.releases.find((release) => release.daysUntilRelease >= 0) ?? null;
   return (
     <>
-      <PanelHeader title="Yearly Release Calendar" />
+      <section className="release-hero-card">
+        <div>
+          <p className="eyeline">Release Radar</p>
+          <h2>Yearly Release Calendar</h2>
+          <span>Track upcoming Pokemon TCG set releases and product-drop news in one clean calendar.</span>
+        </div>
+        <div className="release-hero-actions">
+          <span className="chip good">{dashboard.releases.length} tracked</span>
+          <span className="chip watch">{nextMonth.length} next 31 days</span>
+          {isAdmin ? (
+            <button
+              className="mini-action solid"
+              disabled={busy}
+              type="button"
+              onClick={() =>
+                runAction(
+                  "Syncing release news",
+                  () => requestJson("/api/radar/releases/sync", { method: "POST" }),
+                  { success: "Release calendar checked against public sources" }
+                )
+              }
+            >
+              <RefreshCw size={14} />
+              {busyLabel === "Syncing release news" ? "Checking" : "Check Release News"}
+            </button>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="release-status-grid">
+        <article>
+          <small>Next Drop</small>
+          <strong>{nextDrop ? nextDrop.setName : "No upcoming drop"}</strong>
+          <span>{nextDrop ? `${shortDate(nextDrop.officialReleaseDate)} - ${Math.max(0, nextDrop.daysUntilRelease)} days` : "Add or sync releases to fill the calendar."}</span>
+        </article>
+        <article>
+          <small>Next Month</small>
+          <strong>{nextMonth.length}</strong>
+          <span>{nextMonth.length ? "Drops inside the next 31 days" : "No known drops in the next 31 days"}</span>
+        </article>
+        <article>
+          <small>Auto Update</small>
+          <strong>Daily</strong>
+          <span>Vercel cron checks public release sources every morning.</span>
+        </article>
+      </section>
+
       <ReleaseCalendar releases={dashboard.releases} />
     </>
   );

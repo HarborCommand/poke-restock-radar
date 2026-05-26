@@ -1744,13 +1744,97 @@ textarea {
   padding: 9px;
 }
 
+.release-hero-card,
+.release-status-grid,
+.release-calendar-panel {
+  grid-column: 1 / -1;
+}
+
+.release-hero-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  border: 1px solid rgba(170, 255, 219, 0.12);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(65, 229, 135, 0.13), transparent 18rem),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.014)),
+    rgba(10, 16, 20, 0.88);
+  padding: 20px;
+}
+
+.release-hero-card h2 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: clamp(1.65rem, 3.4vw, 2.55rem);
+  line-height: 1;
+}
+
+.release-hero-card span {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.release-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.release-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.release-status-grid article {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(170, 255, 219, 0.1);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+    rgba(11, 18, 22, 0.86);
+  padding: 14px;
+}
+
+.release-status-grid small {
+  color: var(--subtle);
+  font-size: 0.68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.release-status-grid strong {
+  color: var(--text);
+  font-size: clamp(1.15rem, 2.3vw, 1.6rem);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.release-status-grid span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .release-calendar-panel {
   display: grid;
   gap: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(18, 21, 20, 0.72);
-  padding: 14px;
+  border: 1px solid rgba(170, 255, 219, 0.1);
+  border-radius: 22px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    rgba(18, 21, 20, 0.76);
+  padding: 16px;
   max-width: 100%;
   overflow: hidden;
 }
@@ -1778,18 +1862,20 @@ textarea {
 
 .release-month-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 12px;
 }
 
 .release-month-card {
   display: grid;
   gap: 9px;
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.026);
-  padding: 11px;
+  border: 1px solid rgba(170, 255, 219, 0.09);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    rgba(9, 15, 18, 0.82);
+  padding: 13px;
 }
 
 .release-month-card h3 {
@@ -1808,14 +1894,14 @@ textarea {
 
 .release-day-row {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.055);
-  border-radius: 9px;
-  background: rgba(7, 8, 8, 0.42);
-  padding: 8px;
+  border-radius: 14px;
+  background: rgba(7, 8, 8, 0.44);
+  padding: 9px;
 }
 
 .release-day-number {
@@ -3948,7 +4034,15 @@ textarea {
   max-width: 100%;
 }
 
-.content-grid > .sales-dashboard-panel {
+.purchase-dashboard-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.content-grid > .sales-dashboard-panel,
+.content-grid > .purchase-dashboard-panel {
   grid-column: 1 / -1;
 }
 
@@ -4088,13 +4182,24 @@ textarea {
   padding: 12px;
 }
 
+.purchase-filter-bar {
+  grid-template-columns: minmax(260px, 1.5fr) minmax(170px, 0.9fr) repeat(2, minmax(132px, 0.7fr));
+}
+
 .sales-list {
   display: grid;
   gap: 10px;
   min-width: 0;
 }
 
-.sale-card {
+.purchase-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sale-card,
+.purchase-card {
   display: grid;
   grid-template-columns: minmax(280px, 1.7fr) minmax(150px, 0.65fr) minmax(360px, 1.3fr) minmax(128px, auto);
   align-items: center;
@@ -4109,10 +4214,15 @@ textarea {
   transition:
     border-color 0.16s ease,
     background 0.16s ease,
-    transform 0.16s ease;
+  transform 0.16s ease;
 }
 
-.sale-card:hover {
+.purchase-card {
+  grid-template-columns: minmax(300px, 1.65fr) minmax(170px, 0.7fr) minmax(360px, 1.25fr) minmax(130px, auto);
+}
+
+.sale-card:hover,
+.purchase-card:hover {
   border-color: rgba(65, 229, 135, 0.26);
   background:
     linear-gradient(145deg, rgba(65, 229, 135, 0.055), rgba(255, 255, 255, 0.018)),
@@ -4190,6 +4300,25 @@ textarea {
   font-size: 0.78rem;
 }
 
+.purchase-source-cell {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.purchase-source-cell small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.purchase-source-cell b {
+  color: var(--text);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
 .platform-pill,
 .sale-status-badge {
   display: inline-flex;
@@ -4226,6 +4355,10 @@ textarea {
   grid-template-columns: repeat(4, minmax(72px, 1fr));
   gap: 8px;
   min-width: 0;
+}
+
+.purchase-money-grid {
+  grid-template-columns: repeat(4, minmax(74px, 1fr));
 }
 
 .sale-money-grid span {
@@ -6734,12 +6867,22 @@ body {
 .quick-action-row > span:first-child {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid rgba(65, 229, 135, 0.2);
-  border-radius: 12px;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(65, 229, 135, 0.24);
+  border-radius: 15px;
   background: rgba(65, 229, 135, 0.11);
   color: var(--green);
+  flex: 0 0 auto;
+}
+
+.metric-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(65, 229, 135, 0.24), transparent 3rem),
+    rgba(65, 229, 135, 0.12);
 }
 
 .welcome-copy h2 {
@@ -6854,9 +6997,9 @@ body {
 
 .dashboard-metric-card {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 18px;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 19px;
 }
 
 .dashboard-metric-card strong {
@@ -7838,16 +7981,16 @@ body {
 
 .inventory-quick-actions-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
   min-width: 0;
 }
 
 .inventory-quick-actions-strip .inventory-quick-button {
-  grid-template-columns: 28px minmax(0, 1fr) 16px;
-  min-height: 64px;
-  padding: 10px 12px;
-  overflow: hidden;
+  grid-template-columns: 32px minmax(0, 1fr) 18px;
+  min-height: 72px;
+  padding: 12px 14px;
+  overflow: visible;
 }
 
 .inventory-quick-actions-strip .inventory-quick-button span {
@@ -7914,7 +8057,7 @@ body {
 
 @media (max-width: 1280px) {
   .inventory-quick-actions-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 
   .sales-summary-grid {
@@ -7924,16 +8067,35 @@ body {
   .sale-card {
     grid-template-columns: minmax(260px, 1.35fr) minmax(132px, 0.55fr) minmax(310px, 1.1fr) minmax(120px, auto);
   }
+
+  .purchase-card {
+    grid-template-columns: minmax(260px, 1.3fr) minmax(142px, 0.6fr) minmax(310px, 1.05fr) minmax(120px, auto);
+  }
 }
 
 @media (max-width: 980px) {
+  .release-hero-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .release-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .release-status-grid {
+    grid-template-columns: 1fr;
+  }
+
   .app-main-inventory .inventory-filter-row,
   .inventory-quick-actions-list,
-  .sales-filter-bar {
+  .sales-filter-bar,
+  .purchase-filter-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .sale-card {
+  .sale-card,
+  .purchase-card {
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
   }
@@ -7975,7 +8137,8 @@ body {
   .inventory-quick-actions-list,
   .app-main-inventory .inventory-filter-row,
   .sales-summary-grid,
-  .sales-filter-bar {
+  .sales-filter-bar,
+  .purchase-filter-bar {
     grid-template-columns: 1fr;
   }
 
@@ -8018,6 +8181,15 @@ body {
   .sale-detail-hero,
   .sale-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .release-day-row {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .release-day-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 
   .sale-card {

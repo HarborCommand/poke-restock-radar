@@ -5,6 +5,10 @@
     {
       "path": "/api/radar/monitor/cron",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/radar/releases/sync/cron",
+      "schedule": "0 10 * * *"
     }
   ]
 }

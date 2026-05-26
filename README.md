@@ -200,6 +200,17 @@ Alert rules added in this phase:
 - Preorder date is today or tomorrow.
 - High-priority product is in stock, preorder live, or add-to-cart available.
 
+### Release Calendar Auto-Sync
+
+The Releases page can now check public release sources and update the yearly drop calendar. The built-in sync uses the public Pokemon TCG API set list and can also read configured RSS/JSON product-drop feeds. Vercel Cron calls `/api/radar/releases/sync/cron` daily, protected by the same `MONITOR_JOB_SECRET` / `CRON_SECRET` bearer setup as monitor jobs.
+
+Optional release-sync env vars:
+
+- `POKEMON_TCG_API_KEY` - optional API key for higher Pokemon TCG API limits.
+- `POKEMON_RELEASE_FEED_URLS` - comma-separated public RSS or JSON feeds for product-drop/news sources beyond core set releases.
+
+Admin can also click **Check Release News** on the Releases page. Auto-sync adds missing releases and updates known auto-synced release dates/links, but user-added notes should still be reviewed because regional product dates can differ.
+
 ## Phase 5 Store Prediction And Field Mode
 
 Phase 5 turns store sightings into a visit-history based prediction engine. Store sightings now include a result type:
