@@ -4573,16 +4573,16 @@ function InventoryQuickActions({
         <button className="inventory-quick-button" type="button" onClick={onScan}>
           <PackageSearch size={16} />
           <span>
-            Scan UPC to Add
-            <small>Use camera scan or typed barcode</small>
+            Scan UPC
+            <small>Camera or typed barcode</small>
           </span>
           <ChevronRight size={15} />
         </button>
         <button className="inventory-quick-button" type="button" onClick={onAddProduct}>
           <Plus size={16} />
           <span>
-            Add Manual Product
-            <small>Create a product without a UPC</small>
+            Manual Product
+            <small>Create without UPC</small>
           </span>
           <ChevronRight size={15} />
         </button>
@@ -4598,14 +4598,14 @@ function InventoryQuickActions({
           <CircleDollarSign size={16} />
           <span>
             Record Sale
-            <small>{selectedItem ? "Sell selected stock" : "Select a product first"}</small>
+            <small>{selectedItem ? "Selected stock" : "Select a product first"}</small>
           </span>
           <ChevronRight size={15} />
         </button>
         <button className="inventory-quick-button" type="button" onClick={onViewSales}>
           <History size={16} />
           <span>
-            View Sold Items
+            Sold Items
             <small>{dashboard.inventorySummary.itemsSold} items sold</small>
           </span>
           <ChevronRight size={15} />

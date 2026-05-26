@@ -7370,9 +7370,8 @@ body {
 
 .inventory-quick-actions-strip {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: stretch;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -7381,13 +7380,15 @@ body {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0.012)),
     rgba(10, 16, 20, 0.82);
-  padding: 12px;
+  padding: 12px 14px;
 }
 
 .inventory-quick-actions-heading {
-  display: grid;
-  align-items: center;
-  min-width: 170px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
 }
 
 .inventory-quick-actions-heading h2 {
@@ -7407,25 +7408,35 @@ body {
 
 .inventory-quick-actions-list {
   display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 10px;
   min-width: 0;
 }
 
 .inventory-quick-actions-strip .inventory-quick-button {
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  min-height: 52px;
-  padding: 9px 10px;
+  grid-template-columns: 28px minmax(0, 1fr) 16px;
+  min-height: 64px;
+  padding: 10px 12px;
+  overflow: hidden;
 }
 
 .inventory-quick-actions-strip .inventory-quick-button span {
   min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
 }
 
 .inventory-quick-actions-strip .inventory-quick-button small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: block;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.inventory-quick-actions-strip .inventory-quick-button > svg:last-child {
+  justify-self: end;
 }
 
 .app-main-inventory .catalog-panel {
@@ -7472,12 +7483,8 @@ body {
 }
 
 @media (max-width: 1280px) {
-  .inventory-quick-actions-strip {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .inventory-quick-actions-list {
-    grid-template-columns: repeat(3, minmax(150px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
