@@ -3692,6 +3692,7 @@ function InventoryPanel({
   const [saleItemId, setSaleItemId] = useState<string>("");
   const [detailItemId, setDetailItemId] = useState<string>("");
   const [editItemId, setEditItemId] = useState<string>("");
+  const [editStockLotTarget, setEditStockLotTarget] = useState<{ itemId: string; lotId: string } | null>(null);
   const [filters, setFilters] = useState({
     search: "",
     category: "ALL",
@@ -3738,6 +3739,10 @@ function InventoryPanel({
   const detailItem = dashboard.inventory.find((item) => item.id === detailItemId) ?? null;
   const editItem = dashboard.inventory.find((item) => item.id === editItemId) ?? null;
   const saleItem = dashboard.inventory.find((item) => item.id === saleItemId) ?? null;
+  const editStockItem = editStockLotTarget
+    ? dashboard.inventory.find((item) => item.id === editStockLotTarget.itemId) ?? null
+    : null;
+  const editStockLot = editStockItem?.stockLots.find((lot) => lot.id === editStockLotTarget?.lotId) ?? null;
   const openPurchaseFlow = useCallback((itemId = "", prefill: InventoryPurchasePrefill | null = null) => {
     setPurchaseDefaultItemId(itemId);
     setPurchasePrefill(prefill);
@@ -3966,7 +3971,38 @@ function InventoryPanel({
             setDetailItemId("");
             setEditItemId(item.id);
           }}
+          onEditStockLot={(item, lot) => {
+            setDetailItemId("");
+            setEditStockLotTarget({ itemId: item.id, lotId: lot.id });
+          }}
+          onDeleteStockLot={(item, lot) =>
+            runAction(
+              `Removing stock lot ${lot.id}`,
+              () =>
+                requestJson(`/api/radar/inventory/${item.id}/stock-lots/${lot.id}`, {
+                  method: "DELETE"
+                }),
+              {
+                confirm:
+                  "Remove this stock lot? This is for fixing mistaken stock entries. Lots with recorded sales cannot be removed.",
+                success: "Stock lot removed"
+              }
+            )
+          }
           onClose={() => setDetailItemId("")}
+        />
+      ) : null}
+      {editStockItem && editStockLot ? (
+        <InventoryEditStockLotModal
+          item={editStockItem}
+          lot={editStockLot}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={async (event, label, run, options) => {
+            await submit(event, label, run, options);
+            setEditStockLotTarget(null);
+          }}
+          onClose={() => setEditStockLotTarget(null)}
         />
       ) : null}
       {editItem ? (
@@ -5018,7 +5054,7 @@ function InventoryList({
             <InventoryImage item={item} />
             <span>
               <strong>{item.itemName}</strong>
-              <small>{formatStatus(item.category)} · {item.setName || item.retailer || "Source unknown"}</small>
+              <small>{formatStatus(item.category)} - {item.setName || item.retailer || "Source unknown"}</small>
             </span>
           </button>
           <span className="catalog-cell inventory-id-cell" data-label="UPC / SKU">
@@ -5073,12 +5109,16 @@ function InventoryDetailsModal({
   onAddStock,
   onRecordSale,
   onEditProduct,
+  onEditStockLot,
+  onDeleteStockLot,
   onClose
 }: {
   item: InventoryItemDTO;
   onAddStock: (item: InventoryItemDTO) => void;
   onRecordSale: (item: InventoryItemDTO) => void;
   onEditProduct: (item: InventoryItemDTO) => void;
+  onEditStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+  onDeleteStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
   onClose: () => void;
 }) {
   return (
@@ -5138,7 +5178,7 @@ function InventoryDetailsModal({
 
           <section className="inventory-detail-section">
             <h3>Stock Lots</h3>
-            <CompactLotsList item={item} />
+            <CompactLotsList item={item} onEditLot={onEditStockLot} onDeleteLot={onDeleteStockLot} />
           </section>
 
           <section className="inventory-detail-section">
@@ -5172,6 +5212,113 @@ function InventoryDetailsModal({
             </div>
           </section>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function InventoryEditStockLotModal({
+  item,
+  lot,
+  busy,
+  busyLabel,
+  submit,
+  onClose
+}: {
+  item: InventoryItemDTO;
+  lot: InventoryStockLotDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  onClose: () => void;
+}) {
+  const saveLabel = `Updating stock lot ${lot.id}`;
+  const soldFromLot = Math.max(0, lot.quantity - lot.remainingQuantity);
+
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal inventory-edit-modal stock-lot-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit stock for ${item.itemName}`}>
+        <div className="edit-card-heading">
+          <div>
+            <h2>Edit Stock</h2>
+            <span>Fix a purchase lot quantity, cost, source, or receipt without changing product details.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close edit stock" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <section className="inventory-edit-preview">
+          <InventoryImage item={item} />
+          <div>
+            <strong>{item.itemName}</strong>
+            <span>
+              Lot from {lot.sourceStore || lot.source} - {lot.remainingQuantity} remaining - {soldFromLot} sold
+            </span>
+          </div>
+        </section>
+
+        <form
+          className="inventory-edit-form"
+          onSubmit={(event) =>
+            submit(
+              event,
+              saveLabel,
+              (form) =>
+                requestJson(`/api/radar/inventory/${item.id}/stock-lots/${lot.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify(formJson(form))
+                }),
+              { reset: false, success: "Stock lot updated" }
+            )
+          }
+        >
+          <section className="flow-step">
+            <span>Stock lot</span>
+            <h3>Quantity and cost</h3>
+            <p className="form-helper">
+              To remove a mistaken unsold lot completely, use Remove Stock Lot from Product Details. If any units were sold,
+              quantity cannot go below the sold count.
+            </p>
+            <div className="form-grid compact">
+              <TextInput name="quantity" label="Quantity purchased" type="number" min={String(Math.max(1, soldFromLot))} max="1000" defaultValue={lot.quantity} required />
+              <TextInput name="costPerUnit" label="Cost per unit" type="number" min="0" step="0.01" defaultValue={lot.costPerUnit} required />
+              <TextInput name="purchaseExtraCost" label="Tax / shipping" type="number" min="0" step="0.01" defaultValue={lot.purchaseExtraCost ?? ""} />
+              <TextInput name="totalCost" label="Total cost override" type="number" min="0" step="0.01" defaultValue={lot.totalCost} />
+              <TextInput name="source" label="Source / store" defaultValue={lot.source} required />
+              <TextInput name="purchasedAt" label="Purchase date" type="date" defaultValue={toDateInput(lot.purchasedAt)} required />
+            </div>
+          </section>
+
+          <section className="flow-step">
+            <span>Proof</span>
+            <h3>Receipt and notes</h3>
+            <div className="form-grid compact">
+              <ImageUploadInput
+                fieldName="receiptImageUrl"
+                label="Receipt image"
+                placeholder="Paste receipt image URL or upload photo"
+                defaultValue={lot.receiptImageUrl ?? ""}
+              />
+              <TextInput name="receiptNumber" label="Receipt number" defaultValue={lot.receiptNumber ?? ""} />
+              <TextInput name="orderNumber" label="Order number" defaultValue={lot.orderNumber ?? ""} />
+              <TextInput name="transactionId" label="Transaction ID" defaultValue={lot.transactionId ?? ""} />
+              <TextInput name="sourceStore" label="Source store" defaultValue={lot.sourceStore ?? ""} />
+              <TextInput name="paymentMethod" label="Payment method" defaultValue={lot.paymentMethod ?? ""} />
+              <TextareaInput name="notes" label="Notes" defaultValue={lot.notes ?? ""} wide />
+            </div>
+          </section>
+
+          <div className="inventory-edit-actions">
+            <button className="mini-action" disabled={busy} type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="primary-action" disabled={busy} type="submit">
+              <Save size={16} />
+              {busyLabel === saveLabel ? "Saving" : "Save Stock"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -5411,7 +5558,15 @@ function DetailStat({
   );
 }
 
-function CompactLotsList({ item }: { item: InventoryItemDTO }) {
+function CompactLotsList({
+  item,
+  onEditLot,
+  onDeleteLot
+}: {
+  item: InventoryItemDTO;
+  onEditLot?: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+  onDeleteLot?: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+}) {
   if (!item.stockLots.length) return <EmptyState icon={History} title="No lots yet" detail="Add stock to create purchase batches." />;
   return (
     <div className="compact-ledger-list">
@@ -5419,9 +5574,29 @@ function CompactLotsList({ item }: { item: InventoryItemDTO }) {
         <article key={lot.id}>
           <strong>{shortDate(lot.purchasedAt)}</strong>
           <span>{lot.sourceStore || lot.source}</span>
-          <span>Qty {lot.quantity} · remaining {lot.remainingQuantity}</span>
+          <span>Qty {lot.quantity} - remaining {lot.remainingQuantity}</span>
           <b>{money(lot.totalCost)}</b>
           <small>{lot.receiptNumber || lot.orderNumber || "No receipt saved"}</small>
+          {onEditLot || onDeleteLot ? (
+            <div className="compact-ledger-actions">
+              {onEditLot ? (
+                <button className="mini-action" type="button" onClick={() => onEditLot(item, lot)}>
+                  Edit Stock
+                </button>
+              ) : null}
+              {onDeleteLot ? (
+                <button
+                  className="mini-action danger"
+                  type="button"
+                  disabled={lot.remainingQuantity !== lot.quantity}
+                  title={lot.remainingQuantity !== lot.quantity ? "Lots with recorded sales cannot be removed." : "Remove this stock lot"}
+                  onClick={() => onDeleteLot(item, lot)}
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </article>
       ))}
     </div>
@@ -5436,7 +5611,7 @@ function CompactSalesList({ item }: { item: InventoryItemDTO }) {
         <article key={sale.id}>
           <strong>{shortDate(sale.soldAt)}</strong>
           <span>{formatStatus(sale.platform)}</span>
-          <span>Qty {sale.quantitySold} · net {money(sale.netSale)}</span>
+          <span>Qty {sale.quantitySold} - net {money(sale.netSale)}</span>
           <b className={sale.profitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.profitLoss)}</b>
           <small>ROI {percent(sale.roiPercent)}</small>
         </article>
@@ -6221,8 +6396,8 @@ function SaleCard({
 }) {
   const tone = saleProfitTone(sale);
   const productMeta = item
-    ? `${saleIdentifier(item)} · ${formatStatus(item.category)}`
-    : "UPC/SKU not saved · category unknown";
+    ? `${saleIdentifier(item)} - ${formatStatus(item.category)}`
+    : "UPC/SKU not saved - category unknown";
   return (
     <article className="sale-card">
       <div className="sale-product-cell">
@@ -6231,7 +6406,7 @@ function SaleCard({
           <strong>{sale.itemName}</strong>
           <span>{productMeta}</span>
           <small>
-            Sold {shortDate(sale.soldAt)} · {formatStatus(sale.platform || "unknown_platform")} · Qty {sale.quantitySold}
+            Sold {shortDate(sale.soldAt)} - {formatStatus(sale.platform || "unknown_platform")} - Qty {sale.quantitySold}
           </small>
         </div>
       </div>

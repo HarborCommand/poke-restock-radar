@@ -3679,6 +3679,37 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
   return inventoryItemToDTO(updated);
 }
 
+async function syncInventoryItemTotalsFromLots(itemId: string) {
+  const item = await prisma.inventoryItem.findUnique({
+    where: { id: itemId },
+    include: { stockLots: true }
+  });
+  if (!item) throw new Error("Inventory item not found");
+
+  const quantity = item.stockLots.reduce((sum, lot) => sum + lot.quantity, 0);
+  const totalCost = item.stockLots.reduce((sum, lot) => sum + lot.totalCost, 0);
+  const purchaseExtraCost = item.stockLots.reduce((sum, lot) => sum + (lot.purchaseExtraCost ?? 0), 0);
+  const latestLot = [...item.stockLots].sort((a, b) => b.purchasedAt.getTime() - a.purchasedAt.getTime())[0];
+
+  await prisma.inventoryItem.update({
+    where: { id: itemId },
+    data: {
+      quantity,
+      totalCost,
+      cost: quantity > 0 ? totalCost / quantity : 0,
+      purchaseExtraCost,
+      source: latestLot?.source ?? item.source,
+      purchasedAt: latestLot?.purchasedAt ?? item.purchasedAt,
+      receiptNumber: latestLot?.receiptNumber ?? item.receiptNumber,
+      receiptImageUrl: latestLot?.receiptImageUrl ?? item.receiptImageUrl,
+      orderNumber: latestLot?.orderNumber ?? item.orderNumber,
+      transactionId: latestLot?.transactionId ?? item.transactionId,
+      sourceStore: latestLot?.sourceStore ?? item.sourceStore,
+      paymentMethod: latestLot?.paymentMethod ?? item.paymentMethod
+    }
+  });
+}
+
 export async function createInventoryItem(
   currentUser: SessionUser,
   input: {
@@ -3900,6 +3931,80 @@ export async function addInventoryStockLot(
       currentMarketEstimate: input.currentMarketEstimate ?? item.currentMarketEstimate
     }
   });
+  return recomputeInventoryItem(item.id, currentUser);
+}
+
+export async function updateInventoryStockLot(
+  currentUser: SessionUser,
+  itemId: string,
+  lotId: string,
+  input: {
+    quantity: number;
+    costPerUnit: number;
+    purchaseExtraCost?: number;
+    totalCost?: number;
+    source: string;
+    purchasedAt: Date;
+    receiptNumber?: string;
+    receiptImageUrl?: string;
+    orderNumber?: string;
+    transactionId?: string;
+    sourceStore?: string;
+    paymentMethod?: string;
+    notes?: string;
+  }
+) {
+  const item = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: { stockLots: true }
+  });
+  if (!item) throw new Error("Inventory item not found");
+  const lot = item.stockLots.find((stockLot) => stockLot.id === lotId);
+  if (!lot) throw new Error("Stock lot not found");
+
+  const soldFromLot = Math.max(0, lot.quantity - lot.remainingQuantity);
+  if (input.quantity < soldFromLot) {
+    throw new Error(`This lot already has ${soldFromLot} sold. Quantity cannot be below sold quantity.`);
+  }
+
+  const nextTotalCost = input.totalCost ?? input.costPerUnit * input.quantity + (input.purchaseExtraCost ?? 0);
+  await prisma.inventoryStockLot.update({
+    where: { id: lot.id },
+    data: {
+      purchasedAt: input.purchasedAt,
+      source: input.source,
+      quantity: input.quantity,
+      costPerUnit: input.costPerUnit,
+      purchaseExtraCost: input.purchaseExtraCost,
+      totalCost: nextTotalCost,
+      remainingQuantity: input.quantity - soldFromLot,
+      notes: input.notes,
+      receiptNumber: input.receiptNumber,
+      receiptImageUrl: input.receiptImageUrl,
+      orderNumber: input.orderNumber,
+      transactionId: input.transactionId,
+      sourceStore: input.sourceStore,
+      paymentMethod: input.paymentMethod
+    }
+  });
+  await syncInventoryItemTotalsFromLots(item.id);
+  return recomputeInventoryItem(item.id, currentUser);
+}
+
+export async function deleteInventoryStockLot(currentUser: SessionUser, itemId: string, lotId: string) {
+  const item = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: { stockLots: true }
+  });
+  if (!item) throw new Error("Inventory item not found");
+  const lot = item.stockLots.find((stockLot) => stockLot.id === lotId);
+  if (!lot) throw new Error("Stock lot not found");
+  if (lot.remainingQuantity !== lot.quantity) {
+    throw new Error("This stock lot has recorded sales. Edit the lot instead of removing it.");
+  }
+
+  await prisma.inventoryStockLot.delete({ where: { id: lot.id } });
+  await syncInventoryItemTotalsFromLots(item.id);
   return recomputeInventoryItem(item.id, currentUser);
 }
 

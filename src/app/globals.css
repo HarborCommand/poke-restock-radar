@@ -6020,6 +6020,38 @@ textarea {
   grid-template-columns: 82px minmax(0, 1fr) minmax(0, 1fr) auto minmax(0, 0.9fr);
 }
 
+.compact-ledger-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.compact-ledger-list article:has(.compact-ledger-actions) {
+  grid-template-columns: 82px minmax(0, 1fr) minmax(0, 1fr) auto minmax(0, 0.9fr) minmax(150px, auto);
+}
+
+.compact-ledger-actions .mini-action {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 0.72rem;
+}
+
+.stock-lot-edit-modal {
+  width: min(100%, 820px);
+}
+
+.form-helper {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .market-comp-proof-list strong,
 .compact-ledger-list strong,
 .market-comp-proof-list b,

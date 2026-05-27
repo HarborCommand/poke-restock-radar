@@ -607,6 +607,25 @@ export const inventoryCreateSchema = z.object({
 
 export const inventoryUpdateSchema = inventoryCreateSchema.partial();
 
+export const inventoryStockLotUpdateSchema = z.object({
+  quantity: z.coerce.number().int().min(1).max(1000),
+  costPerUnit: requiredMoney,
+  purchaseExtraCost: optionalMoney.default(0),
+  totalCost: optionalMoney,
+  source: z.string().trim().min(2).max(120),
+  purchasedAt: boundedDate.default(() => new Date()),
+  receiptNumber: optionalTrimmed,
+  receiptImageUrl: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : value),
+    z.string().trim().max(250000).optional()
+  ),
+  orderNumber: optionalTrimmed,
+  transactionId: optionalTrimmed,
+  sourceStore: optionalTrimmed,
+  paymentMethod: optionalTrimmed,
+  notes: optionalTrimmed
+});
+
 export const upcLookupSchema = z.object({
   upc: z
     .string()
