@@ -4665,6 +4665,23 @@ function PurchaseFlow({
     [prefill, selectedExisting]
   );
   const [draft, setDraft] = useState(initialDraft);
+  const costPrefillKeyRef = useRef("");
+
+  useEffect(() => {
+    const fallbackCost =
+      selectedExisting && selectedExisting.cost > 0
+        ? selectedExisting.cost
+        : selectedExisting?.msrp && selectedExisting.msrp > 0
+          ? selectedExisting.msrp
+          : prefill?.msrp && prefill.msrp > 0
+          ? prefill.msrp
+          : null;
+    const key = `${selectedExisting?.id ?? "new"}:${prefill?.upc ?? ""}:${fallbackCost ?? ""}`;
+    if (fallbackCost && price <= 0 && costPrefillKeyRef.current !== key) {
+      costPrefillKeyRef.current = key;
+      setPrice(fallbackCost);
+    }
+  }, [prefill?.msrp, prefill?.upc, price, selectedExisting]);
 
   function updateDraft(name: keyof typeof draft, value: string) {
     setDraft((current) => ({ ...current, [name]: value }));
@@ -4692,6 +4709,7 @@ function PurchaseFlow({
 
   function applyLookupToDraft(lookup: UpcLookupResultDTO) {
     const product = lookup.lookupProduct;
+    if (product?.msrp && product.msrp > 0 && price <= 0) setPrice(product.msrp);
     setDraft((current) => ({
       ...current,
       upc: lookup.upc,
