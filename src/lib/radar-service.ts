@@ -1991,6 +1991,7 @@ async function refreshProductPriorityScores(
 export async function listDashboard(currentUser: SessionUser): Promise<DashboardDTO> {
   await ensureProductionInventoryMetadataColumns();
   await autoLinkInventoryProducts(currentUser);
+  await backfillMissingMsrpInventoryCosts(currentUser);
   const [
     retailers,
     products,
@@ -3737,6 +3738,43 @@ async function syncInventoryItemTotalsFromLots(itemId: string) {
 
 function purchaseCostFromMsrp(cost: number, msrp?: number | null) {
   return cost > 0 ? cost : msrp && msrp > 0 ? msrp : cost;
+}
+
+async function backfillMissingMsrpInventoryCosts(currentUser: SessionUser) {
+  const candidates = await prisma.inventoryItem.findMany({
+    where: {
+      userId: currentUser.id,
+      msrp: { gt: 0 },
+      cost: { lte: 0 },
+      OR: [{ totalCost: null }, { totalCost: { lte: 0 } }],
+      sales: { none: {} }
+    },
+    include: { stockLots: true }
+  });
+
+  for (const item of candidates) {
+    const msrp = item.msrp;
+    if (!msrp || msrp <= 0) continue;
+    const hasLotCost = item.stockLots.some((lot) => lot.costPerUnit > 0 || lot.totalCost > 0);
+    if (hasLotCost) continue;
+    const totalCost = msrp * item.quantity + (item.purchaseExtraCost ?? 0);
+    await prisma.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        cost: msrp,
+        totalCost
+      }
+    });
+    for (const lot of item.stockLots) {
+      await prisma.inventoryStockLot.update({
+        where: { id: lot.id },
+        data: {
+          costPerUnit: msrp,
+          totalCost: msrp * lot.quantity + (lot.purchaseExtraCost ?? 0)
+        }
+      });
+    }
+  }
 }
 
 export async function createInventoryItem(
