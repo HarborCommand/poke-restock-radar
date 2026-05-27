@@ -7908,7 +7908,7 @@ body {
   z-index: 20;
   display: grid;
   gap: 6px;
-  min-width: 210px;
+  min-width: 238px;
   border: 1px solid var(--line-strong);
   border-radius: 16px;
   background: rgba(7, 12, 15, 0.98);
@@ -7920,6 +7920,16 @@ body {
 .inventory-export-menu button {
   justify-content: flex-start;
   width: 100%;
+}
+
+.inventory-export-section-label {
+  margin: 4px 6px 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 .inventory-kpi-grid {

@@ -3777,6 +3777,46 @@ function InventoryPanel({
     },
     [openPurchaseFlow]
   );
+
+  async function downloadInventoryPdf(mode: "client" | "internal") {
+    await runAction(
+      mode === "client" ? "Generating client inventory PDF" : "Generating internal inventory PDF",
+      async () => {
+        const params = new URLSearchParams({
+          mode,
+          stock: mode === "client" ? "in-stock" : "all"
+        });
+        if (filters.search.trim()) params.set("q", filters.search.trim());
+        if (filters.category !== "ALL") params.set("category", filters.category);
+        if (filters.listingStatus !== "ALL") params.set("listingStatus", filters.listingStatus);
+        if (filters.source.trim()) params.set("source", filters.source.trim());
+        const response = await fetch(`/api/radar/inventory/export-pdf?${params.toString()}`, {
+          credentials: "same-origin"
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || "PDF export failed.");
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get("content-disposition") || "";
+        const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
+        const filename = filenameMatch?.[1] || `poke-radar-inventory-${mode}-${todayDateInput()}.pdf`;
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      },
+      {
+        reload: false,
+        success: mode === "client" ? "Client PDF downloaded" : "Internal PDF downloaded"
+      }
+    );
+  }
+
   return (
     <>
       <section className="inventory-page-header inventory-ops-header" data-hidden-inventory-capabilities={inventoryHiddenUiRegistry.length}>
@@ -3791,6 +3831,14 @@ function InventoryPanel({
               Import / Export
             </summary>
             <div>
+              <strong className="inventory-export-section-label">PDF exports</strong>
+              <button disabled={busy} type="button" onClick={() => downloadInventoryPdf("client")}>
+                {busyLabel === "Generating client inventory PDF" ? "Generating client PDF" : "Export Client PDF"}
+              </button>
+              <button disabled={busy} type="button" onClick={() => downloadInventoryPdf("internal")}>
+                {busyLabel === "Generating internal inventory PDF" ? "Generating internal PDF" : "Export Internal PDF"}
+              </button>
+              <strong className="inventory-export-section-label">CSV exports</strong>
               <a href="/api/radar/inventory?format=product-catalog-csv" target="_blank" rel="noreferrer">Catalog CSV</a>
               <a href="/api/radar/inventory?format=stock-lots-csv" target="_blank" rel="noreferrer">Lots CSV</a>
               <a href="/api/radar/inventory?format=sales-csv" target="_blank" rel="noreferrer">Sales CSV</a>
