@@ -5109,6 +5109,7 @@ function InventoryList({
         <span>Quantity</span>
         <span>Avg Cost</span>
         <span>Total Cost</span>
+        <span>Sell Price</span>
         <span>Sold</span>
         <span>Profit / Loss</span>
         <span>Status</span>
@@ -5129,6 +5130,10 @@ function InventoryList({
           <span className="catalog-cell strong" data-label="Quantity">{item.quantityOwned}</span>
           <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
           <span className="catalog-cell" data-label="Total Cost">{money(item.averageCost * item.quantityOwned)}</span>
+          <span className={item.targetSellPrice !== null ? "catalog-cell strong sell-price-cell" : "catalog-cell"} data-label="Sell Price">
+            {item.targetSellPrice !== null ? money(item.targetSellPrice) : "Not set"}
+            {item.minimumAcceptablePrice !== null ? <small>Min {money(item.minimumAcceptablePrice)}</small> : null}
+          </span>
           <span className="catalog-cell" data-label="Sold">{item.quantitySold}</span>
           <span
             className={`catalog-cell strong ${

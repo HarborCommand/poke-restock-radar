@@ -931,6 +931,7 @@ test("inventory tracker and market recommendation engine exists", () => {
     "Stock Lots",
     "Add Purchase",
     "Record Sale",
+    "Sell Price",
     "Inventory Details",
     "Market Data",
     "Attachments / Receipts",
