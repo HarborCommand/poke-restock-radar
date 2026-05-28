@@ -57,7 +57,7 @@ import {
   useRef,
   useState
 } from "react";
-import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
+import { BrowserCodeReader, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { normalizeUPC } from "@/lib/upc";
 import type {
@@ -4514,15 +4514,64 @@ const supportedBarcodeFormats = [
   BarcodeFormat.CODE_128
 ];
 
-function createOneDimensionalBarcodeReader() {
+function createBarcodeReader() {
   const hints = new Map<DecodeHintType, unknown>();
   hints.set(DecodeHintType.POSSIBLE_FORMATS, supportedBarcodeFormats);
   hints.set(DecodeHintType.TRY_HARDER, true);
-  return new BrowserMultiFormatOneDReader(hints, {
-    delayBetweenScanAttempts: 120,
+  return new BrowserMultiFormatReader(hints, {
+    delayBetweenScanAttempts: 90,
     delayBetweenScanSuccess: 300,
     tryPlayVideoTimeout: 8000
   });
+}
+
+function drawBarcodeVideoFrame(videoElement: HTMLVideoElement, cropScale: number, rotation: 0 | 90 | -90 | 180) {
+  if (!videoElement.videoWidth || !videoElement.videoHeight) return null;
+  const videoWidth = videoElement.videoWidth;
+  const videoHeight = videoElement.videoHeight;
+  const sourceWidth = Math.max(1, Math.floor(videoWidth * cropScale));
+  const sourceHeight = Math.max(1, Math.floor(videoHeight * cropScale));
+  const sourceX = Math.max(0, Math.floor((videoWidth - sourceWidth) / 2));
+  const sourceY = Math.max(0, Math.floor((videoHeight - sourceHeight) / 2));
+  const canvas = document.createElement("canvas");
+  const rotated = Math.abs(rotation) === 90;
+  canvas.width = rotated ? sourceHeight : sourceWidth;
+  canvas.height = rotated ? sourceWidth : sourceHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  if (rotation === 90) {
+    context.translate(canvas.width, 0);
+    context.rotate(Math.PI / 2);
+  } else if (rotation === -90) {
+    context.translate(0, canvas.height);
+    context.rotate(-Math.PI / 2);
+  } else if (rotation === 180) {
+    context.translate(canvas.width, canvas.height);
+    context.rotate(Math.PI);
+  }
+  context.drawImage(videoElement, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+  return canvas;
+}
+
+function decodeCurrentBarcodeFrame(reader: BrowserMultiFormatReader, videoElement: HTMLVideoElement) {
+  if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
+  const attempts: Array<{ cropScale: number; rotation: 0 | 90 | -90 | 180 }> = [
+    { cropScale: 1, rotation: 0 },
+    { cropScale: 0.82, rotation: 0 },
+    { cropScale: 1, rotation: 90 },
+    { cropScale: 1, rotation: -90 },
+    { cropScale: 1, rotation: 180 }
+  ];
+  for (const attempt of attempts) {
+    const canvas = drawBarcodeVideoFrame(videoElement, attempt.cropScale, attempt.rotation);
+    if (!canvas) continue;
+    try {
+      return reader.decodeFromCanvas(canvas).getText();
+    } catch {
+      // Missed frames are expected while the barcode is out of focus, angled, or not yet centered.
+    }
+  }
+  return null;
 }
 
 function upcLookupFailureMessage(result: UpcLookupResultDTO) {
@@ -4588,6 +4637,7 @@ function BarcodeScannerModal({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const frameDecodeTimerRef = useRef<number | null>(null);
   const scanLockedRef = useRef(false);
   const cameraStartLockedRef = useRef(false);
   const [manualUpc, setManualUpc] = useState("");
@@ -4597,6 +4647,7 @@ function BarcodeScannerModal({
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
+  const [cameraCaptured, setCameraCaptured] = useState(false);
   const [cameraMessage, setCameraMessage] = useState("Tap Start Camera to scan a UPC/EAN barcode with ZXing. No image or video is saved.");
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState("");
@@ -4627,6 +4678,10 @@ function BarcodeScannerModal({
       // Camera cleanup must continue even if the scanner already stopped itself.
     }
     scannerControlsRef.current = null;
+    if (frameDecodeTimerRef.current) {
+      window.clearInterval(frameDecodeTimerRef.current);
+      frameDecodeTimerRef.current = null;
+    }
     try {
       BrowserCodeReader.releaseAllStreams();
     } catch {
@@ -4703,9 +4758,10 @@ function BarcodeScannerModal({
         return;
       }
       scanLockedRef.current = true;
+      setCameraCaptured(true);
       setManualUpc(normalized);
       setResult(null);
-      stopCameraStream(`Detected ${normalized}. Looking up product...`);
+      stopCameraStream(`Barcode captured: ${normalized}. Looking up product...`);
       void lookupUpc(normalized, source);
     },
     [lookupUpc, stopCameraStream]
@@ -4721,6 +4777,7 @@ function BarcodeScannerModal({
     cameraStartLockedRef.current = true;
     scanLockedRef.current = false;
     setResult(null);
+    setCameraCaptured(false);
     setCameraActive(true);
     setCameraStarting(true);
     setCameraPreviewReady(false);
@@ -4731,12 +4788,13 @@ function BarcodeScannerModal({
       videoElement.muted = true;
       videoElement.playsInline = true;
       videoElement.autoplay = true;
-      const reader = createOneDimensionalBarcodeReader();
+      const reader = createBarcodeReader();
       const onDecoded = (scanResult: Result | undefined | null, _error: unknown, callbackControls: IScannerControls) => {
         if (scanLockedRef.current || !scanResult) return;
         const normalized = normalizeBarcodeValue(scanResult.getText());
         if (!/^\d{6,14}$/.test(normalized)) return;
         scanLockedRef.current = true;
+        setCameraCaptured(true);
         try {
           callbackControls.stop();
         } catch {
@@ -4803,10 +4861,27 @@ function BarcodeScannerModal({
         }
       } else {
         scannerControlsRef.current = controls;
+        const tryDecodeFrame = () => {
+          if (scanLockedRef.current || !videoRef.current) return;
+          const decodedValue = decodeCurrentBarcodeFrame(reader, videoRef.current);
+          if (!decodedValue) return;
+          const normalized = normalizeBarcodeValue(decodedValue);
+          if (!/^\d{6,14}$/.test(normalized)) return;
+          scanLockedRef.current = true;
+          setCameraCaptured(true);
+          try {
+            controls.stop();
+          } catch {
+            // The continuous scan loop may already be stopping.
+          }
+          handleDecodedBarcode(normalized, "camera");
+        };
+        frameDecodeTimerRef.current = window.setInterval(tryDecodeFrame, 320);
+        window.setTimeout(tryDecodeFrame, 160);
         setCameraActive(true);
         setCameraStarting(false);
         setCameraPreviewReady(true);
-        setCameraMessage("Point camera at barcode. Camera is on and ZXing is scanning. Hold it flat, bright, and close enough to fill most of the box.");
+        setCameraMessage("Point camera at barcode. Camera is on and ZXing is scanning live frames. Hold it flat, bright, and close enough to fill most of the box.");
         void refreshCameraDevices();
       }
     } catch (error) {
@@ -4824,7 +4899,7 @@ function BarcodeScannerModal({
       setCameraMessage("Reading barcode image...");
       const objectUrl = URL.createObjectURL(file);
       try {
-        const reader = createOneDimensionalBarcodeReader();
+        const reader = createBarcodeReader();
         const image = new window.Image();
         image.src = objectUrl;
         await new Promise<void>((resolve, reject) => {
@@ -4866,7 +4941,8 @@ function BarcodeScannerModal({
                 "barcode-video-frame",
                 cameraActive ? "active" : "",
                 cameraStarting ? "starting" : "",
-                cameraPreviewReady ? "ready" : ""
+                cameraPreviewReady ? "ready" : "",
+                cameraCaptured ? "captured" : ""
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -4888,7 +4964,7 @@ function BarcodeScannerModal({
               ) : !cameraPreviewReady ? (
                 <span className="barcode-camera-placeholder">Starting camera...</span>
               ) : (
-                <span className="barcode-camera-guide">Align barcode inside the frame</span>
+                <span className="barcode-camera-guide">{cameraCaptured ? "Barcode captured. Processing..." : "Align barcode inside the frame"}</span>
               )}
             </div>
             <p>{cameraMessage}</p>

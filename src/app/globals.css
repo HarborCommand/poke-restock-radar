@@ -6130,6 +6130,31 @@ textarea {
   opacity: 1;
 }
 
+.barcode-video-frame.ready:not(.captured)::before {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 22%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(65, 229, 135, 0.95), transparent);
+  box-shadow: 0 0 20px rgba(65, 229, 135, 0.42);
+  animation: barcode-scanline 1.35s ease-in-out infinite;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.barcode-video-frame.captured::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.78);
+  animation: barcode-shutter 0.46s ease-out forwards;
+  z-index: 5;
+  pointer-events: none;
+}
+
 .barcode-video-frame span {
   position: absolute;
   font-size: 0.82rem;
@@ -6161,7 +6186,38 @@ textarea {
   padding-bottom: 10px;
   text-align: center;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
-  z-index: 2;
+  z-index: 3;
+}
+
+.barcode-video-frame.captured .barcode-camera-guide {
+  border-color: rgba(65, 229, 135, 0.98);
+  background: rgba(65, 229, 135, 0.16);
+  color: #ffffff;
+  z-index: 6;
+}
+
+@keyframes barcode-scanline {
+  0%,
+  100% {
+    top: 22%;
+    opacity: 0.45;
+  }
+  50% {
+    top: 78%;
+    opacity: 1;
+  }
+}
+
+@keyframes barcode-shutter {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .barcode-start-button {
