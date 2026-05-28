@@ -4587,7 +4587,9 @@ function BarcodeScannerModal({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const scanLockedRef = useRef(false);
+  const cameraStartLockedRef = useRef(false);
   const [manualUpc, setManualUpc] = useState("");
   const [result, setResult] = useState<UpcLookupResultDTO | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
@@ -4618,20 +4620,29 @@ function BarcodeScannerModal({
 
   const stopCameraStream = useCallback((message?: string) => {
     scanLockedRef.current = true;
+    cameraStartLockedRef.current = false;
     try {
       scannerControlsRef.current?.stop();
     } catch {
       // Camera cleanup must continue even if the scanner already stopped itself.
     }
     scannerControlsRef.current = null;
+    try {
+      BrowserCodeReader.releaseAllStreams();
+    } catch {
+      // Older ZXing-owned streams are released as a backup; manual streams are handled below.
+    }
     const videoElement = videoRef.current;
-    const stream = videoElement?.srcObject;
+    const stream = mediaStreamRef.current ?? videoElement?.srcObject;
     if (stream instanceof MediaStream) {
       stream.getTracks().forEach((track) => track.stop());
     }
+    mediaStreamRef.current = null;
     if (videoElement) {
       videoElement.pause();
       videoElement.srcObject = null;
+      videoElement.removeAttribute("src");
+      videoElement.load();
     }
     setCameraActive(false);
     setCameraStarting(false);
@@ -4701,11 +4712,13 @@ function BarcodeScannerModal({
   );
 
   const startCamera = useCallback(async () => {
+    if (cameraStartLockedRef.current) return;
     if (!cameraAvailable) {
       setCameraMessage("Camera access is not available in this browser. Use manual UPC entry.");
       return;
     }
     stopCameraStream();
+    cameraStartLockedRef.current = true;
     scanLockedRef.current = false;
     setResult(null);
     setCameraActive(true);
@@ -4717,6 +4730,7 @@ function BarcodeScannerModal({
       if (!videoElement) throw new Error("Camera preview is not ready. Close and reopen the scanner.");
       videoElement.muted = true;
       videoElement.playsInline = true;
+      videoElement.autoplay = true;
       const reader = createOneDimensionalBarcodeReader();
       const onDecoded = (scanResult: Result | undefined | null, _error: unknown, callbackControls: IScannerControls) => {
         if (scanLockedRef.current || !scanResult) return;
@@ -4735,28 +4749,52 @@ function BarcodeScannerModal({
       const preferredLaptopOrRearCamera = selectedCameraId
         ? selectedCameraId
         : devices.find((device) => /back|rear|environment/i.test(device.label))?.deviceId ?? "";
-      let controls: IScannerControls;
+      let stream: MediaStream;
       try {
-        controls = preferredLaptopOrRearCamera
-          ? await reader.decodeFromVideoDevice(preferredLaptopOrRearCamera, videoElement, onDecoded)
-          : await reader.decodeFromConstraints(
-              {
-                video: {
-                  width: { ideal: 1920 },
-                  height: { ideal: 1080 }
-                },
-                audio: false
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: preferredLaptopOrRearCamera
+            ? {
+                deviceId: { exact: preferredLaptopOrRearCamera },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+              }
+            : {
+                facingMode: { ideal: "environment" },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
               },
-              videoElement,
-              onDecoded
-            );
+          audio: false
+        });
       } catch (primaryError) {
         try {
-          controls = await reader.decodeFromConstraints({ video: true, audio: false }, videoElement, onDecoded);
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          setSelectedCameraId("");
         } catch {
           throw primaryError;
         }
       }
+
+      mediaStreamRef.current = stream;
+      videoElement.srcObject = stream;
+      await videoElement.play();
+
+      const [videoTrack] = stream.getVideoTracks();
+      if (videoTrack) {
+        videoTrack
+          .applyConstraints({
+            advanced: [
+              {
+                focusMode: "continuous",
+                exposureMode: "continuous"
+              } as MediaTrackConstraintSet
+            ]
+          })
+          .catch(() => {
+            // Many laptop webcams do not expose focus/exposure controls. Scanning still works without them.
+          });
+      }
+
+      const controls = await reader.decodeFromVideoElement(videoElement, onDecoded);
       if (scanLockedRef.current) {
         try {
           controls.stop();
@@ -4765,23 +4803,17 @@ function BarcodeScannerModal({
         }
       } else {
         scannerControlsRef.current = controls;
-        controls.streamVideoConstraintsApply?.({
-          advanced: [
-            {
-              focusMode: "continuous",
-              exposureMode: "continuous"
-            } as MediaTrackConstraintSet
-          ]
-        } as MediaTrackConstraints);
         setCameraActive(true);
         setCameraStarting(false);
         setCameraPreviewReady(true);
-        setCameraMessage("Point camera at barcode. Keep it straight and fill most of the frame. ZXing is actively scanning UPC-A, UPC-E, EAN-13, EAN-8, and CODE-128.");
+        setCameraMessage("Point camera at barcode. Camera is on and ZXing is scanning. Hold it flat, bright, and close enough to fill most of the box.");
         void refreshCameraDevices();
       }
     } catch (error) {
       stopCameraStream();
       setCameraMessage(`${cameraErrorMessage(error)} Manual UPC lookup is still available below.`);
+    } finally {
+      cameraStartLockedRef.current = false;
     }
   }, [cameraAvailable, cameraErrorMessage, handleDecodedBarcode, refreshCameraDevices, selectedCameraId, stopCameraStream]);
 
