@@ -34,6 +34,12 @@ export type EnvironmentReport = {
       searchFallbackConfigured: boolean;
       searchProvider: string | null;
     };
+    stripe: {
+      configured: boolean;
+      secretKeyConfigured: boolean;
+      webhookSecretConfigured: boolean;
+      storeBaseUrlConfigured: boolean;
+    };
   };
 };
 
@@ -79,6 +85,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   const configuredUpcProvider = hasEnv("UPC_LOOKUP_API_URL");
   const searchProvider = envValue("PRODUCT_SEARCH_PROVIDER");
   const searchFallbackConfigured = Boolean(searchProvider && hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY"));
+  const stripeSecretConfigured = hasEnv("STRIPE_SECRET_KEY");
+  const stripeWebhookConfigured = hasEnv("STRIPE_WEBHOOK_SECRET");
+  const storeBaseUrlConfigured = hasEnv("STORE_BASE_URL");
 
   const coreRequired = ["DATABASE_URL", "APP_URL"];
   if (isProduction || isVercel) {
@@ -125,6 +134,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   if (!searchFallbackConfigured) {
     warnings.push("Search fallback is not configured. Set PRODUCT_SEARCH_PROVIDER, PRODUCT_SEARCH_API_URL, and PRODUCT_SEARCH_API_KEY so UPC provider misses can fall through to product search.");
   }
+  if (!stripeSecretConfigured || !stripeWebhookConfigured || !storeBaseUrlConfigured) {
+    warnings.push("Storefront checkout is disabled until STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STORE_BASE_URL are set.");
+  }
 
   return {
     nodeEnv,
@@ -161,6 +173,12 @@ export function getEnvironmentReport(): EnvironmentReport {
         publicUpcProvider: true,
         searchFallbackConfigured,
         searchProvider
+      },
+      stripe: {
+        configured: stripeSecretConfigured && stripeWebhookConfigured && storeBaseUrlConfigured,
+        secretKeyConfigured: stripeSecretConfigured,
+        webhookSecretConfigured: stripeWebhookConfigured,
+        storeBaseUrlConfigured
       }
     }
   };

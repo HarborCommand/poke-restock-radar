@@ -159,6 +159,21 @@ export type InventoryItemDTO = {
   recommendedAction: string;
   recommendationReason: string | null;
   netProfitAfterFees: number | null;
+  publishToStore: boolean;
+  publicSlug: string | null;
+  publicTitle: string | null;
+  publicDescription: string | null;
+  publicPrice: number | null;
+  compareAtPrice: number | null;
+  publicImages: string[];
+  availableForSale: number | null;
+  maxQuantityPerOrder: number;
+  shippingProfile: string;
+  storeStatus: "draft" | "active" | "hidden" | "sold_out";
+  localPickupAvailable: boolean;
+  shippingAvailable: boolean;
+  storefrontCategory: string | null;
+  storefrontTags: string[];
   totalSalesGross: number;
   totalSalesNet: number;
   realizedProfitLoss: number;
@@ -171,6 +186,84 @@ export type InventoryItemDTO = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type PublicStoreProductDTO = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  price: number;
+  compareAtPrice: number | null;
+  imageUrl: string | null;
+  images: string[];
+  category: string;
+  tags: string[];
+  availableQuantity: number;
+  maxQuantityPerOrder: number;
+  status: "active" | "sold_out";
+  localPickupAvailable: boolean;
+  shippingAvailable: boolean;
+};
+
+export type StorefrontSettingsDTO = {
+  storeName: string;
+  storeLogoUrl: string | null;
+  contactEmail: string | null;
+  returnPolicyText: string | null;
+  shippingPolicyText: string | null;
+  localPickupInstructions: string | null;
+  announcementBanner: string | null;
+  defaultShippingPrice: number;
+  freeShippingThreshold: number | null;
+  socialLinks: string[];
+};
+
+export type StorefrontOrderItemDTO = {
+  id: string;
+  inventoryItemId: string;
+  publicTitle: string;
+  publicSlug: string | null;
+  imageUrl: string | null;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  costBasis: number;
+  profitLoss: number;
+};
+
+export type StorefrontOrderDTO = {
+  id: string;
+  orderNumber: string;
+  customerEmail: string | null;
+  customerName: string | null;
+  status: string;
+  paymentStatus: string;
+  fulfillmentStatus: string;
+  subtotal: number;
+  shippingCharged: number;
+  tax: number;
+  total: number;
+  stripeFeeEstimate: number;
+  shippingCost: number;
+  costBasis: number;
+  netProfit: number;
+  roiPercent: number | null;
+  trackingNumber: string | null;
+  carrier: string | null;
+  notes: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  items: StorefrontOrderItemDTO[];
+};
+
+export type StorefrontSummaryDTO = {
+  productCount: number;
+  activeProductCount: number;
+  pendingOrderCount: number;
+  paidOrderCount: number;
+  totalRevenue: number;
+  netProfit: number;
 };
 
 export type InventoryStockLotDTO = {
@@ -828,6 +921,12 @@ export type AppHealthDTO = {
       searchFallbackConfigured: boolean;
       searchProvider: string | null;
     };
+    stripe: {
+      configured: boolean;
+      secretKeyConfigured: boolean;
+      webhookSecretConfigured: boolean;
+      storeBaseUrlConfigured: boolean;
+    };
   };
 };
 
@@ -961,6 +1060,9 @@ export type DashboardDTO = {
   dailyPlan: DailyPlanDTO;
   inventory: InventoryItemDTO[];
   inventorySummary: InventorySummaryDTO;
+  storefrontOrders: StorefrontOrderDTO[];
+  storefrontSummary: StorefrontSummaryDTO;
+  storefrontSettings: StorefrontSettingsDTO;
   barcodeScans: BarcodeScanDTO[];
   dailyRecaps: DailyRecapDTO[];
   savedFilterPresets: SavedFilterPresetDTO[];

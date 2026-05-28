@@ -8,6 +8,7 @@ import { runProductDiscoveryCheck, validateDiscoverySourceUrl } from "@/lib/prod
 import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
 import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
+import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
 import { compactLookupText, normalizeUPC } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, fetchLastThreeInventoryEbayComps, testEbayConnection } from "@/lib/ebay";
@@ -1457,6 +1458,20 @@ function inventoryOwnedAverageCost(item: InventoryItemWithInclude) {
   return inventoryOwnedCostBasis(item) / quantityOwned;
 }
 
+function parseJsonStringArray(value: string | null | undefined) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  } catch {
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: typeof inventoryItemInclude }>): InventoryItemDTO {
   const totalCost = inventoryEffectiveTotalCost(item);
   const quantitySold = inventoryQuantitySold(item);
@@ -1543,6 +1558,21 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     recommendedAction: item.recommendedAction,
     recommendationReason: item.recommendationReason,
     netProfitAfterFees: item.netProfitAfterFees,
+    publishToStore: item.publishToStore,
+    publicSlug: item.publicSlug,
+    publicTitle: item.publicTitle,
+    publicDescription: item.publicDescription,
+    publicPrice: item.publicPrice,
+    compareAtPrice: item.compareAtPrice,
+    publicImages: parseJsonStringArray(item.publicImages),
+    availableForSale: item.availableForSale,
+    maxQuantityPerOrder: item.maxQuantityPerOrder,
+    shippingProfile: item.shippingProfile,
+    storeStatus: item.storeStatus as InventoryItemDTO["storeStatus"],
+    localPickupAvailable: item.localPickupAvailable,
+    shippingAvailable: item.shippingAvailable,
+    storefrontCategory: item.storefrontCategory,
+    storefrontTags: parseJsonStringArray(item.storefrontTags),
     totalSalesGross,
     totalSalesNet,
     realizedProfitLoss,
@@ -2206,6 +2236,11 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     monitorLogs: monitorLogDTOs,
     alerts: alertDTOs
   });
+  const [storefrontOrders, storefrontStats, storefrontSettings] = await Promise.all([
+    listStorefrontOrders(currentUser),
+    storefrontSummary(currentUser),
+    getStorefrontSettings()
+  ]);
 
   return {
     currentUser,
@@ -2223,6 +2258,9 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     },
     inventory: inventoryDTOs,
     inventorySummary: summarizeInventory(inventoryDTOs),
+    storefrontOrders,
+    storefrontSummary: storefrontStats,
+    storefrontSettings,
     barcodeScans: barcodeScans.map(barcodeScanToDTO),
     dailyRecaps: dailyRecaps.map(dailyRecapToDTO),
     savedFilterPresets: savedFilterPresets.map(savedFilterPresetToDTO),

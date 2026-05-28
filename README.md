@@ -787,6 +787,46 @@ Use `Record Sale` on an inventory row for partial or full sales. The app calcula
 
 Use the `Spending` view for purchases by date and the `Sales` view for sales by date and profit by platform. CSV exports are available from each view.
 
+## Public Storefront And Stripe Checkout
+
+The private Poke Radar app remains the back-office. Public customers only see listings that are explicitly published to `/shop`.
+
+Public routes:
+
+- `/shop`: public storefront grid for active published inventory.
+- `/shop/product/[slug]`: customer-facing product detail page.
+- `/cart`: local browser cart with stock checks before checkout.
+- `/checkout/success` and `/checkout/cancel`: Stripe return pages.
+
+Publishing inventory:
+
+- Open Inventory, choose an item, then use `Listing`.
+- Set `Publish to public store`, public title, public description, public price, quantity available, category, tags, image, and `Active` status.
+- Draft, hidden, unpublished, missing-price, and unavailable listings do not appear publicly.
+- Public shop data never includes cost basis, supplier/source, stock lots, receipts, admin notes, restock scanner data, UPC scan history, or profit calculations.
+
+Stripe setup:
+
+- `STRIPE_SECRET_KEY`: server-side Stripe key used to create Checkout Sessions.
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: reserved for future embedded Stripe UI; Stripe-hosted Checkout does not expose the secret key.
+- `STRIPE_WEBHOOK_SECRET`: required for signed webhook verification.
+- `STORE_BASE_URL`: production storefront base URL, for example `https://poke-restock-radar.vercel.app`.
+
+Checkout behavior:
+
+- The cart validates product status, quantity, max quantity per order, and public price before creating checkout.
+- Checkout creates a pending order and 15-minute stock reservations before redirecting to Stripe.
+- Inventory is not deducted from the success redirect page.
+- The Stripe webhook is the source of truth: after `checkout.session.completed`, the app marks the order paid, completes reservations, creates inventory sale records, reduces stock lots, and calculates order cost/profit.
+- Failed or expired payment releases reservations.
+- `/api/storefront/webhook/stripe` rejects invalid or missing Stripe signatures.
+
+Order admin:
+
+- Use the `Orders` tab to view order status, payment status, fulfillment status, items, totals, cost basis, estimated Stripe fees, shipping cost, net profit, ROI, notes, and tracking.
+- Admin can mark orders packing/shipped, add tracking, add actual shipping cost, cancel/refund manually as needed, and print a packing slip.
+- Phase 1 shipping supports flat-rate shipping and local pickup settings. `SHIPPO_API_KEY` is documented as a future placeholder only.
+
 ## Later Phases
 
 The database schema already includes restock history, card comp sales, investment settings, release links, priority score records, and notification settings so later features can be added without reshaping the app.

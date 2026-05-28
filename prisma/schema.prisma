@@ -45,6 +45,9 @@ model User {
   dailyRecaps              DailyRecap[]
   savedFilterPresets       SavedFilterPreset[]
   storePreferences         UserStorePreference[]
+  storefrontSettings       StorefrontSettings?
+  storefrontOrders         StorefrontOrder[]
+  storefrontCustomers      StorefrontCustomer[]
 }
 
 model PasswordResetToken {
@@ -610,6 +613,21 @@ model InventoryItem {
   recommendedAction      String                @default("HOLD")
   recommendationReason   String?
   netProfitAfterFees     Float?
+  publishToStore         Boolean               @default(false)
+  publicSlug             String?               @unique
+  publicTitle            String?
+  publicDescription      String?
+  publicPrice            Float?
+  compareAtPrice         Float?
+  publicImages           String?
+  availableForSale       Int?
+  maxQuantityPerOrder    Int                   @default(4)
+  shippingProfile        String                @default("standard")
+  storeStatus            String                @default("draft")
+  localPickupAvailable   Boolean               @default(true)
+  shippingAvailable      Boolean               @default(true)
+  storefrontCategory     String?
+  storefrontTags         String?
   expectedPlan           String?
   notes                  String?
   createdAt              DateTime              @default(now())
@@ -621,6 +639,8 @@ model InventoryItem {
   stockLots              InventoryStockLot[]
   sales                  InventorySale[]
   barcodeScans           BarcodeScan[]
+  storefrontOrderItems   StorefrontOrderItem[]
+  stockReservations      StockReservation[]
 
   @@index([userId])
   @@index([productId])
@@ -628,6 +648,9 @@ model InventoryItem {
   @@index([category])
   @@index([listingStatus])
   @@index([recommendedAction])
+  @@index([publishToStore])
+  @@index([storeStatus])
+  @@index([storefrontCategory])
   @@index([purchasedAt])
 }
 
@@ -721,6 +744,151 @@ model BarcodeScan {
   @@index([createdAt])
   @@index([productId])
   @@index([inventoryItemId])
+}
+
+model StorefrontSettings {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  storeName             String   @default("Poke Radar Shop")
+  storeLogoUrl          String?
+  contactEmail          String?
+  returnPolicyText      String?
+  shippingPolicyText    String?
+  localPickupInstructions String?
+  announcementBanner    String?
+  defaultShippingPrice  Float    @default(5)
+  freeShippingThreshold Float?
+  socialLinks           String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StorefrontCustomer {
+  id             String            @id @default(cuid())
+  userId         String?
+  email          String            @unique
+  name           String?
+  phone          String?
+  stripeCustomerId String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orders         StorefrontOrder[]
+
+  @@index([userId])
+  @@index([email])
+  @@index([stripeCustomerId])
+}
+
+model StorefrontOrder {
+  id                  String                @id @default(cuid())
+  orderNumber         String                @unique
+  userId              String?
+  customerId          String?
+  customerEmail       String?
+  customerName        String?
+  status              String                @default("pending_payment")
+  paymentStatus       String                @default("pending")
+  fulfillmentStatus   String                @default("unfulfilled")
+  stripeCheckoutSessionId String?           @unique
+  stripePaymentIntentId String?
+  subtotal            Float                 @default(0)
+  shippingCharged     Float                 @default(0)
+  tax                 Float                 @default(0)
+  total               Float                 @default(0)
+  stripeFeeEstimate   Float                 @default(0)
+  shippingCost        Float                 @default(0)
+  costBasis           Float                 @default(0)
+  netProfit           Float                 @default(0)
+  roiPercent          Float?
+  trackingNumber      String?
+  carrier             String?
+  notes               String?
+  paidAt              DateTime?
+  canceledAt          DateTime?
+  refundedAt          DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  user                User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customer            StorefrontCustomer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items               StorefrontOrderItem[]
+  reservations        StockReservation[]
+  paymentEvents       PaymentEvent[]
+  fulfillment         Fulfillment?
+
+  @@index([userId])
+  @@index([customerId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([fulfillmentStatus])
+  @@index([createdAt])
+}
+
+model StorefrontOrderItem {
+  id              String          @id @default(cuid())
+  orderId         String
+  inventoryItemId String
+  publicTitle     String
+  publicSlug      String?
+  imageUrl        String?
+  quantity        Int
+  unitPrice       Float
+  lineTotal       Float
+  costBasis       Float          @default(0)
+  profitLoss      Float          @default(0)
+  createdAt       DateTime       @default(now())
+  order           StorefrontOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem   @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([inventoryItemId])
+}
+
+model StockReservation {
+  id              String           @id @default(cuid())
+  inventoryItemId String
+  orderId         String?
+  quantity        Int
+  status          String           @default("reserved")
+  expiresAt       DateTime
+  createdAt       DateTime         @default(now())
+  releasedAt      DateTime?
+  inventoryItem   InventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  order           StorefrontOrder? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([orderId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model PaymentEvent {
+  id             String          @id @default(cuid())
+  orderId        String?
+  provider       String          @default("stripe")
+  eventId        String          @unique
+  eventType      String
+  payload        String?
+  receivedAt     DateTime        @default(now())
+  order          StorefrontOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([eventType])
+  @@index([receivedAt])
+}
+
+model Fulfillment {
+  id             String          @id @default(cuid())
+  orderId        String          @unique
+  status         String          @default("unfulfilled")
+  carrier        String?
+  trackingNumber String?
+  shippedAt      DateTime?
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  order          StorefrontOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model DailyRecap {

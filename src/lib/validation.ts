@@ -18,6 +18,7 @@ export const inventoryCategorySchema = z.enum([
 export const inventoryItemStatusSchema = z.enum(["sealed", "opened", "graded", "raw"]);
 export const inventoryListingStatusSchema = z.enum(["not_listed", "listed", "sold", "held"]);
 export const inventoryRecommendationSchema = z.enum(["HOLD", "SELL_NOW", "LIST_HIGH", "GRADE_FIRST", "RIP_OPEN", "AVOID_BUYING_MORE"]);
+export const storeStatusSchema = z.enum(["draft", "active", "hidden", "sold_out"]);
 export const eraSchema = z.enum(["MODERN", "VINTAGE"]);
 export const zoneSchema = z.enum(["MIAMI", "FORT_LAUDERDALE", "ORLANDO", "TAMPA", "JACKSONVILLE", "CUSTOM"]);
 export const productVerificationStatusSchema = z.enum([
@@ -607,6 +608,24 @@ export const inventoryCreateSchema = z.object({
 
 export const inventoryUpdateSchema = inventoryCreateSchema.partial();
 
+export const inventoryStoreListingSchema = z.object({
+  publishToStore: checkboxBoolean.default(false),
+  publicSlug: optionalTrimmed,
+  publicTitle: z.string().trim().min(2).max(180).optional(),
+  publicDescription: z.string().trim().max(4000).optional(),
+  publicPrice: optionalMoney,
+  compareAtPrice: optionalMoney,
+  publicImages: z.union([z.array(z.string().trim().min(1).max(250000)), z.string().trim().max(250000)]).optional(),
+  availableForSale: z.coerce.number().int().min(0).max(10000).optional(),
+  maxQuantityPerOrder: z.coerce.number().int().min(1).max(25).default(4),
+  shippingProfile: z.string().trim().min(1).max(80).default("standard"),
+  storeStatus: storeStatusSchema.default("draft"),
+  localPickupAvailable: checkboxBooleanDefaultTrue.default(true),
+  shippingAvailable: checkboxBooleanDefaultTrue.default(true),
+  storefrontCategory: optionalTrimmed,
+  storefrontTags: z.union([z.array(z.string().trim().min(1).max(80)), z.string().trim().max(500)]).optional()
+});
+
 export const inventoryStockLotUpdateSchema = z.object({
   quantity: z.coerce.number().int().min(1).max(1000),
   costPerUnit: requiredMoney,
@@ -641,6 +660,40 @@ export const inventorySaleCreateSchema = z.object({
   fees: optionalMoney.default(0),
   shippingCost: optionalMoney.default(0),
   soldAt: boundedDate.default(() => new Date()),
+  notes: optionalTrimmed
+});
+
+export const storefrontCartItemSchema = z.object({
+  id: z.string().trim().min(2),
+  quantity: z.coerce.number().int().min(1).max(25)
+});
+
+export const storefrontCheckoutSchema = z.object({
+  items: z.array(storefrontCartItemSchema).min(1).max(25),
+  fulfillmentMethod: z.enum(["shipping", "pickup"]).default("shipping"),
+  customerEmail: z.string().trim().email().optional(),
+  customerName: optionalTrimmed
+});
+
+export const storefrontSettingsSchema = z.object({
+  storeName: z.string().trim().min(2).max(120),
+  storeLogoUrl: optionalHttpUrl,
+  contactEmail: z.preprocess((value) => (value === "" || value === null ? undefined : value), z.string().trim().email().optional()),
+  returnPolicyText: z.string().trim().max(4000).optional(),
+  shippingPolicyText: z.string().trim().max(4000).optional(),
+  localPickupInstructions: z.string().trim().max(4000).optional(),
+  announcementBanner: z.string().trim().max(240).optional(),
+  defaultShippingPrice: optionalMoney.default(5),
+  freeShippingThreshold: optionalMoney,
+  socialLinks: z.union([z.array(z.string().trim().min(1).max(500)), z.string().trim().max(2000)]).optional()
+});
+
+export const orderFulfillmentUpdateSchema = z.object({
+  status: z.enum(["pending_payment", "paid", "packing", "shipped", "canceled", "refunded"]).optional(),
+  fulfillmentStatus: z.enum(["unfulfilled", "packing", "shipped", "pickup_ready", "picked_up", "canceled"]).optional(),
+  trackingNumber: optionalTrimmed,
+  carrier: optionalTrimmed,
+  shippingCost: optionalMoney,
   notes: optionalTrimmed
 });
 
