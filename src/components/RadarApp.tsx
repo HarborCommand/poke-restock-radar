@@ -56,7 +56,7 @@ import {
   useRef,
   useState
 } from "react";
-import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { BarcodeFormat, BrowserCodeReader, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
@@ -4264,8 +4264,25 @@ function BarcodeScannerModal({
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
   const [cameraMessage, setCameraMessage] = useState("Tap Start Camera to scan a UPC/EAN barcode with ZXing. No image or video is saved.");
+  const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState("");
   const history = result?.history ?? dashboard.barcodeScans;
   const cameraAvailable = typeof window !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
+
+  const refreshCameraDevices = useCallback(async () => {
+    if (!cameraAvailable) return [] as MediaDeviceInfo[];
+    try {
+      const devices = await BrowserCodeReader.listVideoInputDevices();
+      setCameraDevices(devices);
+      if (selectedCameraId && !devices.some((device) => device.deviceId === selectedCameraId)) {
+        setSelectedCameraId("");
+      }
+      return devices;
+    } catch {
+      setCameraDevices([]);
+      return [] as MediaDeviceInfo[];
+    }
+  }, [cameraAvailable, selectedCameraId]);
 
   const stopCameraStream = useCallback((message?: string) => {
     scanLockedRef.current = true;
@@ -4288,6 +4305,27 @@ function BarcodeScannerModal({
     setCameraStarting(false);
     setCameraPreviewReady(false);
     if (message) setCameraMessage(message);
+  }, []);
+
+  const cameraErrorMessage = useCallback((error: unknown) => {
+    const name = error instanceof Error ? error.name : "";
+    const rawMessage = error instanceof Error ? error.message : "";
+    if (!window.isSecureContext) {
+      return "Camera scanning requires a secure HTTPS page. Open the live app at https://poke-restock-radar.vercel.app.";
+    }
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+      return "Camera permission was blocked. Use the browser lock icon beside the address bar, allow Camera for Poke Radar, then try Start Camera again.";
+    }
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      return "No laptop camera was found. Connect or enable your webcam, then try Start Camera again.";
+    }
+    if (name === "NotReadableError" || name === "TrackStartError") {
+      return "Your camera is already in use by another app or browser tab. Close the other camera app, then try again.";
+    }
+    if (name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError") {
+      return "The selected camera was not available. Choose another camera or use Default webcam.";
+    }
+    return rawMessage || "Camera could not start. Try another camera, refresh the page, or type the UPC manually.";
   }, []);
 
   const lookupUpc = useCallback(async (upc: string, source: "camera" | "manual") => {
@@ -4331,7 +4369,7 @@ function BarcodeScannerModal({
   );
 
   const startCamera = useCallback(async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
+    if (!cameraAvailable) {
       setCameraMessage("Camera access is not available in this browser. Use manual UPC entry.");
       return;
     }
@@ -4353,30 +4391,45 @@ function BarcodeScannerModal({
         tryPlayVideoTimeout: 8000
       });
       reader.possibleFormats = [BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128];
-      const controls = await reader.decodeFromConstraints(
-        {
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        },
-        videoElement,
-        (scanResult, _error, callbackControls) => {
-          if (scanLockedRef.current || !scanResult) return;
-          const normalized = normalizeBarcodeValue(scanResult.getText());
-          if (!/^\d{6,14}$/.test(normalized)) return;
-          scanLockedRef.current = true;
-          try {
-            callbackControls.stop();
-          } catch {
-            // ZXing may already be stopping if the modal is closing at the same time.
-          }
-          scannerControlsRef.current = null;
-          handleDecodedBarcode(normalized, "camera");
+      const onDecoded = (scanResult: { getText: () => string } | undefined | null, _error: unknown, callbackControls: IScannerControls) => {
+        if (scanLockedRef.current || !scanResult) return;
+        const normalized = normalizeBarcodeValue(scanResult.getText());
+        if (!/^\d{6,14}$/.test(normalized)) return;
+        scanLockedRef.current = true;
+        try {
+          callbackControls.stop();
+        } catch {
+          // ZXing may already be stopping if the modal is closing at the same time.
         }
-      );
+        scannerControlsRef.current = null;
+        handleDecodedBarcode(normalized, "camera");
+      };
+      const devices = await refreshCameraDevices();
+      const preferredLaptopOrRearCamera = selectedCameraId
+        ? selectedCameraId
+        : devices.find((device) => /back|rear|environment/i.test(device.label))?.deviceId ?? "";
+      let controls: IScannerControls;
+      try {
+        controls = preferredLaptopOrRearCamera
+          ? await reader.decodeFromVideoDevice(preferredLaptopOrRearCamera, videoElement, onDecoded)
+          : await reader.decodeFromConstraints(
+              {
+                video: {
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 }
+                },
+                audio: false
+              },
+              videoElement,
+              onDecoded
+            );
+      } catch (primaryError) {
+        try {
+          controls = await reader.decodeFromConstraints({ video: true, audio: false }, videoElement, onDecoded);
+        } catch {
+          throw primaryError;
+        }
+      }
       if (scanLockedRef.current) {
         try {
           controls.stop();
@@ -4389,13 +4442,13 @@ function BarcodeScannerModal({
         setCameraStarting(false);
         setCameraPreviewReady(true);
         setCameraMessage("Point camera at barcode. ZXing is scanning UPC-A, UPC-E, EAN-13, EAN-8, and CODE-128.");
+        void refreshCameraDevices();
       }
     } catch (error) {
       stopCameraStream();
-      const message = error instanceof Error ? error.message : "Camera permission was denied or unavailable.";
-      setCameraMessage(`${message} Manual UPC lookup is still available below.`);
+      setCameraMessage(`${cameraErrorMessage(error)} Manual UPC lookup is still available below.`);
     }
-  }, [handleDecodedBarcode, stopCameraStream]);
+  }, [cameraAvailable, cameraErrorMessage, handleDecodedBarcode, refreshCameraDevices, selectedCameraId, stopCameraStream]);
 
   const decodeBarcodeImage = useCallback(
     async (file: File | undefined) => {
@@ -4476,10 +4529,21 @@ function BarcodeScannerModal({
               )}
             </div>
             <p>{cameraMessage}</p>
+            <label className="barcode-camera-select">
+              Camera
+              <select value={selectedCameraId} onChange={(event) => setSelectedCameraId(event.currentTarget.value)}>
+                <option value="">Default webcam</option>
+                {cameraDevices.map((device, index) => (
+                  <option key={device.deviceId || `camera-${index}`} value={device.deviceId}>
+                    {device.label || `Camera ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="barcode-action-row">
               <button
                 className="primary-action barcode-start-button"
-                disabled={!cameraAvailable || lookupBusy || cameraStarting}
+                disabled={lookupBusy || cameraStarting}
                 type="button"
                 onClick={startCamera}
               >

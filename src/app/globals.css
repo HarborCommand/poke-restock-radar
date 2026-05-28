@@ -6194,6 +6194,26 @@ textarea {
   min-width: 0;
 }
 
+.barcode-camera-select {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.barcode-camera-select select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.38);
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
+}
+
 .barcode-image-upload {
   display: grid;
   gap: 6px;
