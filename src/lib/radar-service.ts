@@ -1430,32 +1430,38 @@ function inventoryEffectiveTotalCost(item: Pick<InventoryItemWithInclude, "cost"
 }
 
 function inventoryEffectiveAverageCost(item: Pick<InventoryItemWithInclude, "cost" | "quantity" | "purchaseExtraCost" | "totalCost" | "msrp">) {
+  if (item.cost > 0) return item.cost;
   const totalCost = inventoryEffectiveTotalCost(item);
   if (item.quantity > 0) return totalCost / item.quantity;
   return item.cost > 0 ? item.cost : inventoryMsrpFallbackCost(item) ?? item.cost;
 }
 
+function inventoryLotUnitCost(item: Pick<InventoryItemWithInclude, "msrp">, lot: { costPerUnit: number; totalCost: number; quantity: number }) {
+  if (lot.costPerUnit > 0) return lot.costPerUnit;
+  if (lot.totalCost > 0 && lot.quantity > 0) return lot.totalCost / lot.quantity;
+  return inventoryMsrpFallbackCost(item) ?? lot.costPerUnit;
+}
+
 function inventoryOwnedCostBasis(item: InventoryItemWithInclude) {
   if (item.stockLots.length) {
     return item.stockLots.reduce((sum, lot) => {
-      const msrpCost = inventoryMsrpFallbackCost(item);
-      const unitCost =
-        lot.totalCost > 0 && lot.quantity > 0
-          ? lot.totalCost / lot.quantity
-          : lot.costPerUnit > 0
-            ? lot.costPerUnit
-            : msrpCost ?? lot.costPerUnit;
-      return sum + unitCost * lot.remainingQuantity;
+      return sum + inventoryLotUnitCost(item, lot) * lot.remainingQuantity;
     }, 0);
   }
   return inventoryEffectiveAverageCost(item) * inventoryQuantityOwned(item);
+}
+
+function inventoryOwnedAverageCost(item: InventoryItemWithInclude) {
+  const quantityOwned = inventoryQuantityOwned(item);
+  if (quantityOwned <= 0) return inventoryEffectiveAverageCost(item);
+  return inventoryOwnedCostBasis(item) / quantityOwned;
 }
 
 function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: typeof inventoryItemInclude }>): InventoryItemDTO {
   const totalCost = inventoryEffectiveTotalCost(item);
   const quantitySold = inventoryQuantitySold(item);
   const quantityOwned = inventoryQuantityOwned(item);
-  const averageCost = inventoryEffectiveAverageCost(item);
+  const averageCost = inventoryOwnedAverageCost(item);
   const totalSalesGross = item.sales.reduce((sum, sale) => sum + sale.grossSale, 0);
   const totalSalesNet = item.sales.reduce((sum, sale) => sum + sale.netSale, 0);
   const realizedProfitLoss = item.sales.reduce((sum, sale) => sum + sale.profitLoss, 0);
@@ -3714,6 +3720,7 @@ async function syncInventoryItemTotalsFromLots(itemId: string) {
 
   const quantity = item.stockLots.reduce((sum, lot) => sum + lot.quantity, 0);
   const totalCost = item.stockLots.reduce((sum, lot) => sum + lot.totalCost, 0);
+  const unitCostTotal = item.stockLots.reduce((sum, lot) => sum + inventoryLotUnitCost(item, lot) * lot.quantity, 0);
   const purchaseExtraCost = item.stockLots.reduce((sum, lot) => sum + (lot.purchaseExtraCost ?? 0), 0);
   const latestLot = [...item.stockLots].sort((a, b) => b.purchasedAt.getTime() - a.purchasedAt.getTime())[0];
 
@@ -3722,7 +3729,7 @@ async function syncInventoryItemTotalsFromLots(itemId: string) {
     data: {
       quantity,
       totalCost,
-      cost: quantity > 0 ? totalCost / quantity : 0,
+      cost: quantity > 0 ? unitCostTotal / quantity : 0,
       purchaseExtraCost,
       source: latestLot?.source ?? item.source,
       purchasedAt: latestLot?.purchasedAt ?? item.purchasedAt,
@@ -3984,12 +3991,16 @@ export async function addInventoryStockLot(
   });
   const nextQuantity = item.quantity + input.quantity;
   const nextTotalCost = (item.totalCost ?? item.cost * item.quantity) + lotTotal;
+  const existingUnitCostTotal = item.stockLots.length
+    ? item.stockLots.reduce((sum, lot) => sum + inventoryLotUnitCost(item, lot) * lot.quantity, 0)
+    : item.cost * item.quantity;
+  const nextAverageUnitCost = nextQuantity > 0 ? (existingUnitCostTotal + unitCost * input.quantity) / nextQuantity : item.cost;
   await prisma.inventoryItem.update({
     where: { id: item.id },
     data: {
       quantity: nextQuantity,
       totalCost: nextTotalCost,
-      cost: nextQuantity > 0 ? nextTotalCost / nextQuantity : item.cost,
+      cost: nextAverageUnitCost,
       purchaseExtraCost: (item.purchaseExtraCost ?? 0) + (input.purchaseExtraCost ?? 0),
       source: input.source,
       purchasedAt: input.purchasedAt,
@@ -4291,12 +4302,7 @@ export async function createInventorySale(
   for (const lot of lotsToUpdate) {
     if (remainingToAllocate <= 0) break;
     const quantityFromLot = Math.min(remainingToAllocate, lot.remainingQuantity);
-    const lotUnitCost =
-      lot.totalCost > 0 && lot.quantity > 0
-        ? lot.totalCost / lot.quantity
-        : lot.costPerUnit > 0
-          ? lot.costPerUnit
-          : inventoryMsrpFallbackCost(item) ?? averageCost;
+    const lotUnitCost = inventoryLotUnitCost(item, lot) || averageCost;
     costBasis += quantityFromLot * lotUnitCost;
     remainingToAllocate -= quantityFromLot;
   }

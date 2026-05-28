@@ -904,6 +904,9 @@ test("inventory tracker and market recommendation engine exists", () => {
   for (const phrase of [
     "summarizeInventory",
     "addInventoryStockLot",
+    "inventoryLotUnitCost",
+    "inventoryOwnedAverageCost",
+    "inventoryOwnedCostBasis\\(item\\) / quantityOwned",
     "inventoryMarketRecommendation",
     "refreshInventoryEbayComps",
     "refreshAllInventoryMarketComps",
