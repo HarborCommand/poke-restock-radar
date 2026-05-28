@@ -56,7 +56,8 @@ import {
   useRef,
   useState
 } from "react";
-import { BarcodeFormat, BrowserCodeReader, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
+import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
@@ -4193,6 +4194,25 @@ function normalizeBarcodeValue(value: string) {
   return normalizeUPC(value);
 }
 
+const supportedBarcodeFormats = [
+  BarcodeFormat.UPC_A,
+  BarcodeFormat.UPC_E,
+  BarcodeFormat.EAN_13,
+  BarcodeFormat.EAN_8,
+  BarcodeFormat.CODE_128
+];
+
+function createOneDimensionalBarcodeReader() {
+  const hints = new Map<DecodeHintType, unknown>();
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, supportedBarcodeFormats);
+  hints.set(DecodeHintType.TRY_HARDER, true);
+  return new BrowserMultiFormatOneDReader(hints, {
+    delayBetweenScanAttempts: 120,
+    delayBetweenScanSuccess: 300,
+    tryPlayVideoTimeout: 8000
+  });
+}
+
 function upcLookupFailureMessage(result: UpcLookupResultDTO) {
   if (result.lookupProduct) return result.message;
   const searchFailure = result.debug.failures.find((failure) => failure.source === "search");
@@ -4385,13 +4405,8 @@ function BarcodeScannerModal({
       if (!videoElement) throw new Error("Camera preview is not ready. Close and reopen the scanner.");
       videoElement.muted = true;
       videoElement.playsInline = true;
-      const reader = new BrowserMultiFormatReader(undefined, {
-        delayBetweenScanAttempts: 220,
-        delayBetweenScanSuccess: 600,
-        tryPlayVideoTimeout: 8000
-      });
-      reader.possibleFormats = [BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128];
-      const onDecoded = (scanResult: { getText: () => string } | undefined | null, _error: unknown, callbackControls: IScannerControls) => {
+      const reader = createOneDimensionalBarcodeReader();
+      const onDecoded = (scanResult: Result | undefined | null, _error: unknown, callbackControls: IScannerControls) => {
         if (scanLockedRef.current || !scanResult) return;
         const normalized = normalizeBarcodeValue(scanResult.getText());
         if (!/^\d{6,14}$/.test(normalized)) return;
@@ -4415,8 +4430,8 @@ function BarcodeScannerModal({
           : await reader.decodeFromConstraints(
               {
                 video: {
-                  width: { ideal: 1280 },
-                  height: { ideal: 720 }
+                  width: { ideal: 1920 },
+                  height: { ideal: 1080 }
                 },
                 audio: false
               },
@@ -4438,10 +4453,18 @@ function BarcodeScannerModal({
         }
       } else {
         scannerControlsRef.current = controls;
+        controls.streamVideoConstraintsApply?.({
+          advanced: [
+            {
+              focusMode: "continuous",
+              exposureMode: "continuous"
+            } as MediaTrackConstraintSet
+          ]
+        } as MediaTrackConstraints);
         setCameraActive(true);
         setCameraStarting(false);
         setCameraPreviewReady(true);
-        setCameraMessage("Point camera at barcode. ZXing is scanning UPC-A, UPC-E, EAN-13, EAN-8, and CODE-128.");
+        setCameraMessage("Point camera at barcode. Keep it straight and fill most of the frame. ZXing is actively scanning UPC-A, UPC-E, EAN-13, EAN-8, and CODE-128.");
         void refreshCameraDevices();
       }
     } catch (error) {
@@ -4457,11 +4480,7 @@ function BarcodeScannerModal({
       setCameraMessage("Reading barcode image...");
       const objectUrl = URL.createObjectURL(file);
       try {
-        const reader = new BrowserMultiFormatReader(undefined, {
-          delayBetweenScanAttempts: 220,
-          delayBetweenScanSuccess: 600
-        });
-        reader.possibleFormats = [BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128];
+        const reader = createOneDimensionalBarcodeReader();
         const image = new window.Image();
         image.src = objectUrl;
         await new Promise<void>((resolve, reject) => {
