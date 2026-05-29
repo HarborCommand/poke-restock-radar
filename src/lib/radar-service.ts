@@ -1319,10 +1319,21 @@ function inventoryMarketCompToDTO(comp: Prisma.InventoryMarketCompGetPayload<Rec
   };
 }
 
+function safeJsonParse<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 function barcodeScanToDTO(scan: Prisma.BarcodeScanGetPayload<Record<string, never>>): BarcodeScanDTO {
   return {
     id: scan.id,
     upc: scan.upc,
+    rawCode: scan.rawCode ?? null,
+    normalizedUpc: scan.normalizedUpc ?? null,
+    variantsChecked: scan.variantsChecked ? safeJsonParse<string[]>(scan.variantsChecked, []) : [],
     source: scan.source,
     status: scan.status as BarcodeScanDTO["status"],
     resultType: scan.resultType,
@@ -3499,6 +3510,29 @@ async function lookupExternalUpc(
   };
 }
 
+async function lookupExternalUpcVariants(
+  variants: string[]
+): Promise<{ configured: boolean; product: UpcLookupProductDTO | null; error: string | null; debug: UpcLookupDebugDTO }> {
+  let configured = false;
+  const errors: string[] = [];
+  const attemptedSources = new Set<string>();
+  const failures: UpcLookupFailureDTO[] = [];
+  for (const variant of variants) {
+    const result = await lookupExternalUpc(variant);
+    configured ||= result.configured;
+    result.debug.attemptedSources.forEach((source) => attemptedSources.add(source));
+    failures.push(...result.debug.failures.map((failure) => ({ ...failure, detail: failure.detail ? `${variant}: ${failure.detail}` : failure.detail })));
+    if (result.product) return { ...result, configured, debug: { ...result.debug, attemptedSources: Array.from(attemptedSources), failures } };
+    if (result.error) errors.push(result.error);
+  }
+  return {
+    configured,
+    product: null,
+    error: errors[0] ?? null,
+    debug: { attemptedSources: Array.from(attemptedSources), failures, providerConfig: upcProviderConfig() }
+  };
+}
+
 async function barcodeScanHistory(currentUser: SessionUser) {
   const scans = await prisma.barcodeScan.findMany({
     where: { userId: currentUser.id },
@@ -3526,75 +3560,123 @@ export async function lookupInventoryUpc(
     include: productInclude,
     orderBy: { updatedAt: "desc" }
   });
+  const previousScan = await prisma.barcodeScan.findFirst({
+    where: {
+      userId: currentUser.id,
+      OR: [{ upc: { in: variants } }, { rawCode: { in: variants } }, { normalizedUpc: { in: variants } }],
+      status: "PRODUCT_FOUND"
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  const previousInventoryItem =
+    !inventoryItem && previousScan?.inventoryItemId
+      ? await prisma.inventoryItem.findFirst({
+          where: { id: previousScan.inventoryItemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+          include: inventoryItemInclude
+        })
+      : null;
+  const previousWatchedProduct =
+    !watchedProduct && previousScan?.productId
+      ? await prisma.product.findFirst({ where: { id: previousScan.productId, archivedAt: null }, include: productInclude })
+      : null;
+  const matchedInventoryItem = inventoryItem ?? previousInventoryItem;
+  const matchedWatchedProduct = watchedProduct ?? previousWatchedProduct;
   const localFailures: UpcLookupFailureDTO[] = [
-    ...(inventoryItem ? [] : [lookupFailure("local", "not_found", { configured: true, detail: `No inventory item matched UPC variants ${variants.join(", ")}.` })]),
-    ...(watchedProduct ? [] : [lookupFailure("catalog", "not_found", { configured: true, detail: `No watched product matched UPC variants ${variants.join(", ")}.` })])
+    ...(matchedInventoryItem ? [] : [lookupFailure("local", "not_found", { configured: true, detail: `No inventory item matched UPC variants ${variants.join(", ")}.` })]),
+    ...(matchedWatchedProduct ? [] : [lookupFailure("catalog", "not_found", { configured: true, detail: `No watched product matched UPC variants ${variants.join(", ")}.` })]),
+    ...(previousScan ? [] : [lookupFailure("scan_history", "not_found", { configured: true, detail: `No previous successful scan matched UPC variants ${variants.join(", ")}.` })])
   ];
   const external =
-    inventoryItem || watchedProduct
+    matchedInventoryItem || matchedWatchedProduct
       ? {
           configured: upcProviderConfig().configuredUpcProvider || upcProviderConfig().publicUpcProvider,
           product: null,
           error: null,
           debug: { attemptedSources: [] as string[], failures: [] as UpcLookupFailureDTO[], providerConfig: upcProviderConfig() }
         }
-      : await lookupExternalUpc(upc);
+      : await lookupExternalUpcVariants(variants);
+  const resultReason = matchedInventoryItem
+    ? "matched_inventory_product"
+    : matchedWatchedProduct
+      ? "matched_watched_product"
+      : external.product
+        ? "matched_external_lookup"
+        : external.configured
+          ? "new_upc_external_lookup_no_match"
+          : "new_upc_external_lookup_not_configured";
   const debug: UpcLookupDebugDTO = {
-    attemptedSources: Array.from(new Set(["local", "catalog", ...external.debug.attemptedSources])),
+    attemptedSources: Array.from(new Set(["local", "catalog", "scan_history", ...external.debug.attemptedSources])),
     failures: [...localFailures, ...external.debug.failures],
+    rawCode: rawUpc,
+    normalizedUpc: upc,
+    variantsChecked: variants,
+    matchedInventoryProduct: Boolean(matchedInventoryItem),
+    matchedWatchedProduct: Boolean(matchedWatchedProduct),
+    matchedPreviousScan: Boolean(previousScan),
+    externalLookupAttempted: !(matchedInventoryItem || matchedWatchedProduct),
+    resultReason,
     providerConfig: external.debug.providerConfig
   };
-  const status: BarcodeScanDTO["status"] = inventoryItem || watchedProduct || external.product ? "PRODUCT_FOUND" : external.configured && external.error ? "LOOKUP_FAILED" : "NEW_UPC";
-  const productName = inventoryItem?.itemName ?? watchedProduct?.name ?? external.product?.productName ?? null;
+  const status: BarcodeScanDTO["status"] = matchedInventoryItem || matchedWatchedProduct || external.product ? "PRODUCT_FOUND" : "NEW_UPC";
+  const productName = matchedInventoryItem?.itemName ?? matchedWatchedProduct?.name ?? external.product?.productName ?? null;
   await prisma.barcodeScan.create({
     data: {
       userId: currentUser.id,
       upc,
+      rawCode: rawUpc,
+      normalizedUpc: upc,
+      variantsChecked: JSON.stringify(variants),
       source: input.source || "manual",
       status,
-      resultType: inventoryItem ? "inventory" : watchedProduct ? "watched_product" : external.product ? "external" : "manual",
-      inventoryItemId: inventoryItem?.id,
-      productId: watchedProduct?.id,
+      resultType: matchedInventoryItem ? "inventory" : matchedWatchedProduct ? "watched_product" : external.product ? "external" : "manual",
+      inventoryItemId: matchedInventoryItem?.id,
+      productId: matchedWatchedProduct?.id,
       productName,
-      notes: external.error
+      notes: external.error ?? resultReason
     }
   });
   return {
     upc,
+    rawCode: rawUpc,
+    normalizedUpc: upc,
+    variantsChecked: variants,
+    nextAction: matchedInventoryItem ? "ADD_STOCK" : matchedWatchedProduct ? "CREATE_FROM_WATCHED" : "CREATE_MANUAL",
     status,
-    message: inventoryItem
+    message: matchedInventoryItem
       ? "Product found in your inventory catalog. Add stock to the existing item."
-      : watchedProduct
+      : matchedWatchedProduct
         ? "Watched product found. Create the inventory item from the verified product details."
         : external.product
           ? "Product lookup found a possible match. Confirm before saving."
-          : "No product found from configured sources.",
-    matchedInventoryItem: inventoryItem ? inventoryItemToDTO(inventoryItem) : null,
-    matchedProduct: watchedProduct ? productToDTO(watchedProduct) : null,
-    lookupProduct: inventoryItem
+          : external.configured
+            ? "New UPC detected. No existing product was found, so create this product manually."
+            : "New UPC detected. External lookup is not configured, but you can still create this product manually.",
+    matchedInventoryItem: matchedInventoryItem ? inventoryItemToDTO(matchedInventoryItem) : null,
+    matchedProduct: matchedWatchedProduct ? productToDTO(matchedWatchedProduct) : null,
+    lookupProduct: matchedInventoryItem
       ? {
           upc,
-          title: inventoryItem.itemName,
-          productName: inventoryItem.itemName,
-          brand: inventoryItem.brand,
-          category: inventoryItem.category,
-          setName: inventoryItem.setName,
-          description: inventoryItem.description,
-          imageUrl: inventoryItem.imageUrl,
+          title: matchedInventoryItem.itemName,
+          productName: matchedInventoryItem.itemName,
+          brand: matchedInventoryItem.brand,
+          category: matchedInventoryItem.category,
+          setName: matchedInventoryItem.setName,
+          description: matchedInventoryItem.description,
+          imageUrl: matchedInventoryItem.imageUrl,
           additionalImages: [],
-          msrp: inventoryItem.msrp,
-          model: inventoryItem.model,
-          manufacturer: inventoryItem.manufacturer,
-          sku: inventoryItem.sku,
-          retailer: inventoryItem.retailer,
-          exactProductUrl: inventoryItem.exactProductUrl,
-          productId: inventoryItem.productId,
+          msrp: matchedInventoryItem.msrp,
+          model: matchedInventoryItem.model,
+          manufacturer: matchedInventoryItem.manufacturer,
+          sku: matchedInventoryItem.sku,
+          retailer: matchedInventoryItem.retailer,
+          exactProductUrl: matchedInventoryItem.exactProductUrl,
+          productId: matchedInventoryItem.productId,
           source: "inventory",
           confidence: 100,
           matchQuality: "HIGH"
         }
-      : watchedProduct
-        ? { ...productToLookupProduct(watchedProduct), upc }
+      : matchedWatchedProduct
+        ? { ...productToLookupProduct(matchedWatchedProduct), upc }
         : external.product,
     externalLookupConfigured: external.configured,
     debug,
@@ -3877,10 +3959,11 @@ export async function createInventoryItem(
   if (input.existingInventoryItemId) {
     return addInventoryStockLot(currentUser, input.existingInventoryItemId, input);
   }
-  const normalizedInput = input.upc ? { ...input, upc: normalizeUPC(input.upc) } : input;
+  const normalizedInput = input.upc ? { ...input, upc: canonicalProductUPC(input.upc) } : input;
   if (normalizedInput.upc) {
+    const variants = upcLookupVariants(normalizedInput.upc);
     const existingByUpc = await prisma.inventoryItem.findFirst({
-      where: { upc: normalizedInput.upc, OR: [{ userId: null }, { userId: currentUser.id }] },
+      where: { upc: { in: variants }, OR: [{ userId: null }, { userId: currentUser.id }] },
       select: { id: true }
     });
     if (existingByUpc) return addInventoryStockLot(currentUser, existingByUpc.id, normalizedInput);

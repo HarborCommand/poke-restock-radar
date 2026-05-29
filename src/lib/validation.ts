@@ -646,10 +646,10 @@ export const inventoryStockLotUpdateSchema = z.object({
 });
 
 export const upcLookupSchema = z.object({
-  upc: z
-    .string()
-    .trim()
-    .regex(/^\d{6,14}$/, "UPC/EAN must be 6 to 14 digits."),
+  upc: z.preprocess(
+    (value) => String(value ?? "").replace(/\D/g, "").slice(0, 14),
+    z.string().regex(/^\d{6,14}$/, "UPC/EAN must be 6 to 14 digits.")
+  ),
   source: z.enum(["camera", "manual"]).default("manual")
 });
 

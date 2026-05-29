@@ -11,6 +11,7 @@ import {
   CircleDollarSign,
   Clock,
   Download,
+  Eye,
   ExternalLink,
   FileText,
   HelpCircle,
@@ -59,7 +60,7 @@ import {
 } from "react";
 import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
-import { canonicalProductUPC } from "@/lib/upc";
+import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
   CardDTO,
@@ -3994,6 +3995,10 @@ function InventoryPanel({
         <BarcodeScannerModal
           dashboard={dashboard}
           onUseResult={openBarcodeResult}
+          onViewProduct={(item) => {
+            setBarcodeScannerOpen(false);
+            setDetailItemId(item.id);
+          }}
           onClose={() => setBarcodeScannerOpen(false)}
         />
       ) : null}
@@ -4483,7 +4488,7 @@ function InventoryDecisionCard({
 }
 
 function normalizeBarcodeValue(value: string) {
-  return canonicalProductUPC(value);
+  return normalizeUPC(value);
 }
 
 type BarcodeFrameMode = "normal" | "contrast" | "threshold" | "invertedThreshold";
@@ -4711,6 +4716,11 @@ async function decodeCurrentBarcodeFrameWithQuagga(videoElement: HTMLVideoElemen
 
 function upcLookupFailureMessage(result: UpcLookupResultDTO) {
   if (result.lookupProduct) return result.message;
+  if (result.status === "NEW_UPC") {
+    return result.externalLookupConfigured
+      ? "New UPC detected. No existing product was found, so create this product manually."
+      : "New UPC detected. External UPC lookup is not configured, but you can still create this product manually.";
+  }
   const searchFailure = result.debug.failures.find((failure) => failure.source === "search");
   if (searchFailure?.reason === "missing_env_or_no_results" && searchFailure.configured === false) {
     return "No product found from configured sources. Search fallback is not configured. UPC provider may miss newer Pokemon products.";
@@ -4724,6 +4734,8 @@ function upcLookupFailureMessage(result: UpcLookupResultDTO) {
 
 function upcLookupSuccessMessage(result: UpcLookupResultDTO) {
   const product = result.lookupProduct;
+  if (result.matchedInventoryItem) return "Product found in your inventory catalog. Add stock to the existing item.";
+  if (result.matchedProduct) return "Watched product found. Create an inventory product from the saved tracker details.";
   if (!product) return upcLookupFailureMessage(result);
   if (product.source === "external" && product.matchQuality && product.matchQuality !== "HIGH") {
     return `Possible match from ${product.retailer || "product search"} (${product.matchQuality.toLowerCase()} confidence). Review before saving.`;
@@ -4734,12 +4746,34 @@ function upcLookupSuccessMessage(result: UpcLookupResultDTO) {
   return result.message;
 }
 
+function upcLookupResultTitle(result: UpcLookupResultDTO) {
+  if (result.matchedInventoryItem) return "Product found";
+  if (result.matchedProduct) return "Watched product found";
+  if (result.lookupProduct) return "Product details found";
+  if (result.status === "NEW_UPC") return "New UPC detected";
+  return "Manual product needed";
+}
+
+function upcLookupPrimaryAction(result: UpcLookupResultDTO) {
+  if (result.nextAction === "ADD_STOCK") return "Add Stock";
+  if (result.nextAction === "CREATE_FROM_WATCHED") return "Create Inventory Product";
+  return "Create New Product";
+}
+
 function UpcLookupDebugDetails({ result }: { result: UpcLookupResultDTO }) {
   return (
     <details className="barcode-debug-details">
       <summary>Lookup details</summary>
       <div>
         <span>Sources tried: {result.debug.attemptedSources.join(", ") || "None"}</span>
+        <span>Raw scan: {result.debug.rawCode || result.rawCode}</span>
+        <span>Normalized: {result.debug.normalizedUpc || result.normalizedUpc}</span>
+        <span>Variants: {(result.debug.variantsChecked || result.variantsChecked).join(", ")}</span>
+        <span>Inventory match: {result.debug.matchedInventoryProduct ? "Yes" : "No"}</span>
+        <span>Watched product match: {result.debug.matchedWatchedProduct ? "Yes" : "No"}</span>
+        <span>Previous scan match: {result.debug.matchedPreviousScan ? "Yes" : "No"}</span>
+        <span>External attempted: {result.debug.externalLookupAttempted ? "Yes" : "No"}</span>
+        <span>Reason: {result.debug.resultReason || "Not recorded"}</span>
         <span>Search fallback: {result.debug.providerConfig.searchFallback ? "Configured" : "Not configured"}</span>
         {result.debug.providerConfig.searchProvider ? <span>Search provider: {result.debug.providerConfig.searchProvider}</span> : null}
       </div>
@@ -4763,10 +4797,12 @@ function UpcLookupDebugDetails({ result }: { result: UpcLookupResultDTO }) {
 function BarcodeScannerModal({
   dashboard,
   onUseResult,
+  onViewProduct,
   onClose
 }: {
   dashboard: DashboardDTO;
   onUseResult: (result: UpcLookupResultDTO) => void;
+  onViewProduct: (item: InventoryItemDTO) => void;
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -4898,13 +4934,12 @@ function BarcodeScannerModal({
       setResult(lookup);
       setManualUpc(lookup.upc);
       setCameraMessage(lookup.lookupProduct ? upcLookupSuccessMessage(lookup) : upcLookupFailureMessage(lookup));
-      if (source === "camera") onUseResult(lookup);
     } catch (error) {
       setCameraMessage(error instanceof Error ? error.message : "Lookup failed - fill manually.");
     } finally {
       setLookupBusy(false);
     }
-  }, [onUseResult]);
+  }, []);
 
   const handleDecodedBarcode = useCallback(
     (rawValue: string, source: "camera" | "manual") => {
@@ -4915,6 +4950,9 @@ function BarcodeScannerModal({
       }
       scanLockedRef.current = true;
       setCameraCaptured(true);
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate?.(90);
+      }
       setManualUpc(normalized);
       setResult(null);
       stopCameraStream(`Barcode captured: ${normalized}. Looking up product...`);
@@ -5303,29 +5341,57 @@ function BarcodeScannerModal({
                 <ProductImagePreview imageUrl={result.lookupProduct.imageUrl} itemName={result.lookupProduct.productName} />
               ) : null}
               <div>
-                <span>{result.status === "PRODUCT_FOUND" ? "Product found" : result.status === "NEW_UPC" ? "No product found" : "Lookup failed - fill manually"}</span>
-                <h3>{result.lookupProduct?.productName || "Enter details manually"}</h3>
+                <span>{upcLookupResultTitle(result)}</span>
+                <h3>{result.lookupProduct?.productName || `UPC ${result.upc}`}</h3>
                 <p>{result.lookupProduct ? upcLookupSuccessMessage(result) : upcLookupFailureMessage(result)}</p>
               </div>
             </div>
+            {result.matchedInventoryItem ? (
+              <div className="barcode-found-summary">
+                <span>
+                  <strong>Owned</strong>
+                  {result.matchedInventoryItem.quantityOwned}
+                </span>
+                <span>
+                  <strong>Avg cost</strong>
+                  {money(result.matchedInventoryItem.averageCost)}
+                </span>
+                <span>
+                  <strong>Category</strong>
+                  {formatStatus(result.matchedInventoryItem.category)}
+                </span>
+                <span>
+                  <strong>Set</strong>
+                  {result.matchedInventoryItem.setName || "Not set"}
+                </span>
+              </div>
+            ) : null}
             <div className="barcode-result-meta">
               <span>UPC {result.upc}</span>
+              {result.rawCode !== result.upc ? <span>Scanned {result.rawCode}</span> : null}
               {result.lookupProduct?.brand ? <span>{result.lookupProduct.brand}</span> : null}
               {result.lookupProduct?.category ? <span>{formatStatus(result.lookupProduct.category)}</span> : null}
               <span>{result.lookupProduct?.retailer || "Retailer unknown"}</span>
-              <span>{result.lookupProduct?.source ? formatStatus(result.lookupProduct.source) : "Manual fallback"}</span>
+              <span>{result.lookupProduct?.source ? formatStatus(result.lookupProduct.source) : "Manual create"}</span>
               {result.lookupProduct?.confidence !== null && result.lookupProduct?.confidence !== undefined ? (
                 <span>{result.lookupProduct.confidence}% confidence</span>
               ) : null}
+              {!result.externalLookupConfigured && !result.lookupProduct ? <span>External lookup not configured</span> : null}
             </div>
             <div className="barcode-action-row">
               <button className="mini-action" type="button" onClick={startCamera}>
                 <PackageSearch size={15} />
                 Scan Again
               </button>
+              {result.matchedInventoryItem ? (
+                <button className="mini-action" type="button" onClick={() => onViewProduct(result.matchedInventoryItem!)}>
+                  <Eye size={15} />
+                  View Product
+                </button>
+              ) : null}
               <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
                 <Check size={15} />
-                {result.matchedInventoryItem ? "Add Stock" : result.lookupProduct ? "Use This Product" : "Enter Manually With UPC"}
+                {upcLookupPrimaryAction(result)}
               </button>
             </div>
             <UpcLookupDebugDetails result={result} />
@@ -5447,7 +5513,9 @@ function PurchaseFlow({
   const [extraCost, setExtraCost] = useState(0);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupMessage, setLookupMessage] = useState<string | null>(
-    prefill?.upc
+    defaultItemId
+      ? "Product already exists in your catalog. Add stock to the existing item."
+      : prefill?.upc
       ? prefill.itemName
         ? "Product details found and filled from UPC."
         : "No product found for this UPC yet. Keep the UPC and enter product details manually."

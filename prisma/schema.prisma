@@ -727,6 +727,9 @@ model BarcodeScan {
   id              String         @id @default(cuid())
   userId          String
   upc             String
+  rawCode         String?
+  normalizedUpc   String?
+  variantsChecked String?
   source          String         @default("manual")
   status          String         @default("LOOKUP_FAILED")
   resultType      String         @default("manual")
@@ -741,6 +744,8 @@ model BarcodeScan {
 
   @@index([userId])
   @@index([upc])
+  @@index([rawCode])
+  @@index([normalizedUpc])
   @@index([createdAt])
   @@index([productId])
   @@index([inventoryItemId])

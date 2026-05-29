@@ -321,6 +321,9 @@ export type InventoryMarketCompDTO = {
 export type BarcodeScanDTO = {
   id: string;
   upc: string;
+  rawCode: string | null;
+  normalizedUpc: string | null;
+  variantsChecked: string[];
   source: string;
   status: "PRODUCT_FOUND" | "NEW_UPC" | "LOOKUP_FAILED";
   resultType: string;
@@ -364,6 +367,14 @@ export type UpcLookupFailureDTO = {
 export type UpcLookupDebugDTO = {
   attemptedSources: string[];
   failures: UpcLookupFailureDTO[];
+  rawCode?: string;
+  normalizedUpc?: string;
+  variantsChecked?: string[];
+  matchedInventoryProduct?: boolean;
+  matchedWatchedProduct?: boolean;
+  matchedPreviousScan?: boolean;
+  externalLookupAttempted?: boolean;
+  resultReason?: string;
   providerConfig: {
     configuredUpcProvider: boolean;
     publicUpcProvider: boolean;
@@ -374,6 +385,10 @@ export type UpcLookupDebugDTO = {
 
 export type UpcLookupResultDTO = {
   upc: string;
+  rawCode: string;
+  normalizedUpc: string;
+  variantsChecked: string[];
+  nextAction: "ADD_STOCK" | "CREATE_FROM_WATCHED" | "CREATE_MANUAL";
   status: "PRODUCT_FOUND" | "NEW_UPC" | "LOOKUP_FAILED";
   message: string;
   matchedInventoryItem: InventoryItemDTO | null;
