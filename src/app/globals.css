@@ -3795,6 +3795,48 @@ textarea {
   font-size: 1rem;
 }
 
+.selected-stock-product {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) minmax(140px, 0.45fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid rgba(65, 229, 135, 0.16);
+  border-radius: 16px;
+  background: rgba(65, 229, 135, 0.055);
+  padding: 12px;
+  overflow: hidden;
+}
+
+.selected-stock-product .inventory-image-frame {
+  width: 72px;
+  height: 72px;
+}
+
+.selected-stock-product > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.selected-stock-product h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.2;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.selected-stock-product p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .form-grid.compact {
   gap: 10px;
 }
@@ -6078,7 +6120,9 @@ textarea {
 }
 
 .barcode-scanner-modal {
-  width: min(100%, 780px);
+  width: min(96vw, 1080px);
+  max-width: 1080px;
+  overflow-x: hidden;
 }
 
 .barcode-scanner-grid {
@@ -6345,6 +6389,10 @@ textarea {
 .barcode-result-card {
   grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
   border-color: rgba(65, 229, 135, 0.24);
   background:
     radial-gradient(circle at 92% 12%, rgba(65, 229, 135, 0.18), transparent 16rem),
@@ -6352,26 +6400,30 @@ textarea {
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
-.barcode-result-card > div:first-child {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.barcode-result-card span {
+.barcode-result-topline > span,
+.barcode-result-badge {
   color: var(--green);
   font-size: 0.7rem;
   font-weight: 950;
   text-transform: uppercase;
 }
 
-.barcode-result-card h3,
+.barcode-result-card h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.35rem, 3vw, 2.4rem);
+  line-height: 1.05;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .barcode-history-panel h3 {
   margin: 0;
   color: var(--text);
   font-size: 0.98rem;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .barcode-result-card.lookup-failed span {
@@ -6390,6 +6442,102 @@ textarea {
   min-width: 0;
 }
 
+.barcode-result-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.barcode-result-topline > span:not(.barcode-result-badge) {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  padding: 6px 9px;
+}
+
+.barcode-result-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: clamp(16px, 2.5vw, 28px);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.barcode-result-media {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 220px;
+  border: 1px solid rgba(65, 229, 135, 0.16);
+  border-radius: 22px;
+  background: rgba(3, 8, 7, 0.42);
+  padding: 14px;
+  overflow: hidden;
+}
+
+.barcode-result-media img {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  height: 220px;
+  object-fit: contain;
+}
+
+.barcode-result-copy {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.barcode-result-copy p {
+  margin-top: 8px;
+  max-width: 72ch;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.barcode-result-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.barcode-result-detail-grid span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font-size: 0.82rem;
+  padding: 10px;
+  overflow-wrap: anywhere;
+}
+
+.barcode-result-detail-grid strong {
+  color: var(--subtle);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.barcode-result-actions {
+  gap: 10px;
+}
+
+.barcode-result-actions .primary-action,
+.barcode-result-actions .mini-action {
+  min-height: 42px;
+}
+
 .barcode-result-badge {
   display: inline-flex;
   width: fit-content;
@@ -6404,8 +6552,8 @@ textarea {
 .barcode-result-placeholder {
   display: grid;
   place-items: center;
-  width: 84px;
-  height: 84px;
+  width: 96px;
+  height: 96px;
   border: 1px solid rgba(65, 229, 135, 0.16);
   border-radius: 18px;
   background: rgba(65, 229, 135, 0.08);
@@ -6746,15 +6894,40 @@ textarea {
   .market-inline-comp-form,
   .account-settings-grid,
   .market-comp-proof-list article,
-  .compact-ledger-list article {
+  .compact-ledger-list article,
+  .selected-stock-product {
     grid-template-columns: 1fr;
   }
 
   .barcode-scanner-grid,
   .barcode-result-card,
+  .barcode-result-layout,
   .barcode-result-hero,
   .upc-lookup-strip {
     grid-template-columns: 1fr;
+  }
+
+  .barcode-scanner-modal {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border-right: 0;
+    border-left: 0;
+  }
+
+  .barcode-result-media {
+    min-height: 180px;
+  }
+
+  .barcode-result-media img {
+    height: 180px;
+  }
+
+  .barcode-result-actions .primary-action,
+  .barcode-result-actions .mini-action {
+    width: 100%;
+    justify-content: center;
   }
 
   .barcode-live-log {

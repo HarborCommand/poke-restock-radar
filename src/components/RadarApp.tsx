@@ -4756,7 +4756,7 @@ function upcLookupResultTitle(result: UpcLookupResultDTO) {
 
 function upcLookupPrimaryAction(result: UpcLookupResultDTO) {
   if (result.nextAction === "ADD_STOCK") return "Add Stock";
-  if (result.nextAction === "CREATE_FROM_WATCHED") return "Create Inventory Product";
+  if (result.nextAction === "CREATE_FROM_WATCHED") return "Create Inventory Product From This";
   return "Create New Product";
 }
 
@@ -5253,72 +5253,113 @@ function BarcodeScannerModal({
     resultRef.current?.scrollIntoView({ block: "nearest" });
   }, [result]);
 
+  const scanAgain = useCallback(() => {
+    setResult(null);
+    setCameraCaptured(false);
+    window.setTimeout(() => {
+      void startCamera();
+    }, 0);
+  }, [startCamera]);
+
   const resultPanel = result ? (
     <section ref={resultRef} className={`barcode-result-card ${result.status.toLowerCase().replaceAll("_", "-")}`} aria-live="polite">
-      <div className="barcode-result-hero">
-        {result.lookupProduct?.imageUrl ? (
-          <ProductImagePreview imageUrl={result.lookupProduct.imageUrl} itemName={result.lookupProduct.productName} />
-        ) : (
-          <div className="barcode-result-placeholder" aria-hidden="true">
-            <PackageSearch size={26} />
-          </div>
-        )}
-        <div>
-          <span className="barcode-result-badge">
-            <Check size={14} />
-            {upcLookupResultTitle(result)}
-          </span>
-          <h3>{result.lookupProduct?.productName || `UPC ${result.upc}`}</h3>
-          <p>{result.lookupProduct ? upcLookupSuccessMessage(result) : upcLookupFailureMessage(result)}</p>
-        </div>
-      </div>
-      {result.matchedInventoryItem ? (
-        <div className="barcode-found-summary">
-          <span>
-            <strong>Owned</strong>
-            {result.matchedInventoryItem.quantityOwned}
-          </span>
-          <span>
-            <strong>Avg cost</strong>
-            {money(result.matchedInventoryItem.averageCost)}
-          </span>
-          <span>
-            <strong>Category</strong>
-            {formatStatus(result.matchedInventoryItem.category)}
-          </span>
-          <span>
-            <strong>Set</strong>
-            {result.matchedInventoryItem.setName || "Not set"}
-          </span>
-        </div>
-      ) : null}
-      <div className="barcode-result-meta">
+      <div className="barcode-result-topline">
+        <span className="barcode-result-badge">
+          <Check size={14} />
+          {upcLookupResultTitle(result)}
+        </span>
         <span>Scanned UPC {result.rawCode}</span>
-        {result.normalizedUpc !== result.rawCode ? <span>Normalized {result.normalizedUpc}</span> : null}
-        <span>Match source: {upcLookupMatchSource(result)}</span>
-        {result.lookupProduct?.brand ? <span>{result.lookupProduct.brand}</span> : null}
-        {result.lookupProduct?.category ? <span>{formatStatus(result.lookupProduct.category)}</span> : null}
-        {result.lookupProduct?.retailer ? <span>{result.lookupProduct.retailer}</span> : <span>Retailer unknown</span>}
-        {result.lookupProduct?.confidence !== null && result.lookupProduct?.confidence !== undefined ? (
-          <span>{result.lookupProduct.confidence}% confidence</span>
-        ) : null}
-        {!result.externalLookupConfigured && !result.lookupProduct ? <span>External lookup not configured</span> : null}
+        <span>{upcLookupMatchSource(result)}</span>
       </div>
-      <div className="barcode-action-row">
-        {result.matchedInventoryItem ? (
-          <button className="mini-action" type="button" onClick={() => onViewProduct(result.matchedInventoryItem!)}>
-            <Eye size={15} />
-            View Product
-          </button>
-        ) : null}
-        <button className="mini-action" type="button" onClick={startCamera}>
-          <PackageSearch size={15} />
-          Scan Again
-        </button>
-        <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
-          <Check size={15} />
-          {upcLookupPrimaryAction(result)}
-        </button>
+      <div className="barcode-result-layout">
+        <div className="barcode-result-media">
+          {result.lookupProduct?.imageUrl ? (
+            <Image
+              src={result.lookupProduct.imageUrl}
+              alt={`${result.lookupProduct.productName} scan result`}
+              width={280}
+              height={280}
+              unoptimized
+            />
+          ) : (
+            <div className="barcode-result-placeholder" aria-hidden="true">
+              <PackageSearch size={32} />
+            </div>
+          )}
+        </div>
+        <div className="barcode-result-copy">
+          <div>
+            <h3>{result.lookupProduct?.productName || `UPC ${result.upc}`}</h3>
+            <p>{result.lookupProduct ? upcLookupSuccessMessage(result) : upcLookupFailureMessage(result)}</p>
+          </div>
+          <div className="barcode-result-detail-grid">
+            <span>
+              <strong>UPC</strong>
+              {result.upc}
+            </span>
+            <span>
+              <strong>Source</strong>
+              {upcLookupMatchSource(result)}
+            </span>
+            <span>
+              <strong>Category</strong>
+              {formatStatus(result.matchedInventoryItem?.category ?? result.lookupProduct?.category ?? "Not set")}
+            </span>
+            <span>
+              <strong>Set</strong>
+              {result.matchedInventoryItem?.setName || result.lookupProduct?.setName || "Not set"}
+            </span>
+            {result.matchedInventoryItem ? (
+              <>
+                <span>
+                  <strong>Owned</strong>
+                  {result.matchedInventoryItem.quantityOwned}
+                </span>
+                <span>
+                  <strong>Avg cost</strong>
+                  {money(result.matchedInventoryItem.averageCost)}
+                </span>
+              </>
+            ) : null}
+            {result.lookupProduct?.retailer ? (
+              <span>
+                <strong>Retailer</strong>
+                {result.lookupProduct.retailer}
+              </span>
+            ) : null}
+            {result.lookupProduct?.confidence !== null && result.lookupProduct?.confidence !== undefined ? (
+              <span>
+                <strong>Confidence</strong>
+                {result.lookupProduct.confidence}%
+              </span>
+            ) : null}
+          </div>
+          <div className="barcode-action-row barcode-result-actions">
+            <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
+              <Check size={15} />
+              {upcLookupPrimaryAction(result)}
+            </button>
+            {result.matchedInventoryItem ? (
+              <button className="mini-action" type="button" onClick={() => onViewProduct(result.matchedInventoryItem!)}>
+                <Eye size={15} />
+                View Product
+              </button>
+            ) : null}
+            <button className="mini-action" type="button" onClick={scanAgain}>
+              <PackageSearch size={15} />
+              Scan Again
+            </button>
+            <button className="mini-action" type="button" onClick={onClose}>
+              <X size={15} />
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="barcode-result-meta">
+        {result.normalizedUpc !== result.rawCode ? <span>Normalized {result.normalizedUpc}</span> : null}
+        {result.lookupProduct?.brand ? <span>{result.lookupProduct.brand}</span> : null}
+        {!result.externalLookupConfigured && !result.lookupProduct ? <span>External lookup not configured</span> : null}
       </div>
       {dashboard.currentUser.role === "ADMIN" ? <UpcLookupDebugDetails result={result} /> : null}
     </section>
@@ -5337,7 +5378,8 @@ function BarcodeScannerModal({
           </button>
         </div>
         {resultPanel}
-        <section className="barcode-scanner-grid">
+        {!result ? (
+          <section className="barcode-scanner-grid">
           <div className="barcode-camera-panel">
             <div
               className={[
@@ -5371,13 +5413,6 @@ function BarcodeScannerModal({
               )}
             </div>
             <p>{cameraMessage}</p>
-            {result ? (
-              <div className="barcode-last-result">
-                <span>Last scanned UPC</span>
-                <strong>{result.rawCode}</strong>
-                <small>{upcLookupResultTitle(result)} - {upcLookupMatchSource(result)}</small>
-              </div>
-            ) : null}
             <div className="barcode-live-log" aria-live="polite">
               <span>
                 <strong>Frames</strong>
@@ -5477,7 +5512,8 @@ function BarcodeScannerModal({
               />
             </label>
           </form>
-        </section>
+          </section>
+        ) : null}
         <section className="barcode-history-panel">
           <h3>Scanned UPC history</h3>
           {history.length ? (
@@ -5779,54 +5815,82 @@ function PurchaseFlow({
             </button>
           </div>
           {lookupMessage ? <p className="scan-prefill-note">{lookupMessage}</p> : null}
-          <div className="form-grid compact">
-            <label>
-              Existing product
-              <select
-                name="existingInventoryItemId"
-                value={selectedExistingId}
-                onChange={(event) => {
-                  const nextId = event.currentTarget.value;
-                  const nextItem = items.find((item) => item.id === nextId) ?? null;
-                  setSelectedExistingId(nextId);
-                  setDraft(draftFromItem(nextItem));
-                  setLookupMessage(nextItem ? "Existing product selected. This will add stock to that catalog item." : null);
-                }}
-              >
-                <option value="">Create new product</option>
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.itemName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <TextInput
-              name="itemName"
-              label="Product/card name"
-              value={draft.itemName}
-              onChange={(event) => updateDraft("itemName", event.currentTarget.value)}
-              required
-            />
-            <TextInput name="brand" label="Brand" value={draft.brand} onChange={(event) => updateDraft("brand", event.currentTarget.value)} />
-            <SelectInput
-              name="category"
-              label="Category"
-              value={draft.category || "sealed_packs"}
-              onChange={(event) => updateDraft("category", event.currentTarget.value)}
-              options={inventoryCategories.map(optionFromString)}
-            />
-            <TextInput name="setName" label="Set" value={draft.setName} onChange={(event) => updateDraft("setName", event.currentTarget.value)} />
-            <TextInput
-              name="quantity"
-              label="Quantity"
-              type="number"
-              min="1"
-              value={String(quantity)}
-              onChange={(event) => setQuantity(Math.max(1, Number(event.currentTarget.value) || 1))}
-              required
-            />
-          </div>
+          {selectedExisting ? (
+            <div className="selected-stock-product">
+              <input name="existingInventoryItemId" type="hidden" value={selectedExisting.id} />
+              <input name="itemName" type="hidden" value={draft.itemName} />
+              <input name="category" type="hidden" value={draft.category || "sealed_packs"} />
+              <input name="brand" type="hidden" value={draft.brand} />
+              <input name="setName" type="hidden" value={draft.setName} />
+              <InventoryImage item={selectedExisting} />
+              <div>
+                <span className="barcode-result-badge">
+                  <Check size={14} />
+                  Existing product selected
+                </span>
+                <h4>{selectedExisting.itemName}</h4>
+                <p>UPC {selectedExisting.upc || draft.upc || "Missing"} - {formatStatus(selectedExisting.category)} - {selectedExisting.setName || selectedExisting.retailer || "Set not saved"}</p>
+              </div>
+              <TextInput
+                name="quantity"
+                label="Quantity to add"
+                type="number"
+                min="1"
+                value={String(quantity)}
+                onChange={(event) => setQuantity(Math.max(1, Number(event.currentTarget.value) || 1))}
+                required
+              />
+            </div>
+          ) : (
+            <div className="form-grid compact">
+              <label>
+                Existing product
+                <select
+                  name="existingInventoryItemId"
+                  value={selectedExistingId}
+                  onChange={(event) => {
+                    const nextId = event.currentTarget.value;
+                    const nextItem = items.find((item) => item.id === nextId) ?? null;
+                    setSelectedExistingId(nextId);
+                    setDraft(draftFromItem(nextItem));
+                    setLookupMessage(nextItem ? "Existing product selected. This will add stock to that catalog item." : null);
+                  }}
+                >
+                  <option value="">Create new product</option>
+                  {items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.itemName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <TextInput
+                name="itemName"
+                label="Product/card name"
+                value={draft.itemName}
+                onChange={(event) => updateDraft("itemName", event.currentTarget.value)}
+                required
+              />
+              <TextInput name="brand" label="Brand" value={draft.brand} onChange={(event) => updateDraft("brand", event.currentTarget.value)} />
+              <SelectInput
+                name="category"
+                label="Category"
+                value={draft.category || "sealed_packs"}
+                onChange={(event) => updateDraft("category", event.currentTarget.value)}
+                options={inventoryCategories.map(optionFromString)}
+              />
+              <TextInput name="setName" label="Set" value={draft.setName} onChange={(event) => updateDraft("setName", event.currentTarget.value)} />
+              <TextInput
+                name="quantity"
+                label="Quantity"
+                type="number"
+                min="1"
+                value={String(quantity)}
+                onChange={(event) => setQuantity(Math.max(1, Number(event.currentTarget.value) || 1))}
+                required
+              />
+            </div>
+          )}
         </article>
         <article className="flow-step">
           <span>Step 2</span>

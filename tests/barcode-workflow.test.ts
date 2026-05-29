@@ -22,7 +22,7 @@ test("barcode lookup returns deterministic next actions for every scan result", 
 test("scanner UI exposes useful actions instead of a dead-end lookup failed state", () => {
   assert.match(app, /function upcLookupPrimaryAction/);
   assert.match(app, /return "Add Stock"/);
-  assert.match(app, /return "Create Inventory Product"/);
+  assert.match(app, /return "Create Inventory Product From This"/);
   assert.match(app, /return "Create New Product"/);
   assert.match(app, /onViewProduct\(result\.matchedInventoryItem!\)/);
   assert.match(app, /defaultItemId\s*\?\s*"Product already exists in your catalog\. Add stock to the existing item\."/);
@@ -42,4 +42,15 @@ test("scanner result is shown before camera panels and history rows reopen looku
 test("product-found Add Stock flow keeps the matched UPC locked to the existing product", () => {
   assert.match(app, /openPurchaseFlow\(result\.matchedInventoryItem\.id, \{ upc: result\.upc \}\)/);
   assert.match(app, /readOnly=\{Boolean\(selectedExisting\)\}/);
+});
+
+test("scanner result uses a wide result layout and hides the scanner grid after a match", () => {
+  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  assert.match(app, /className="barcode-result-layout"/);
+  assert.match(app, /className="barcode-result-media"/);
+  assert.match(app, /className="barcode-result-detail-grid"/);
+  assert.match(app, /\{!result \? \(\s*<section className="barcode-scanner-grid">/);
+  assert.match(css, /\.barcode-scanner-modal\s*\{[\s\S]*width: min\(96vw, 1080px\)/);
+  assert.match(css, /\.barcode-result-layout\s*\{[\s\S]*grid-template-columns: minmax\(180px, 260px\) minmax\(0, 1fr\)/);
+  assert.match(css, /\.barcode-result-copy h3|\.barcode-result-card h3/);
 });
