@@ -4760,6 +4760,14 @@ function upcLookupPrimaryAction(result: UpcLookupResultDTO) {
   return "Create New Product";
 }
 
+function upcLookupMatchSource(result: UpcLookupResultDTO) {
+  if (result.matchedInventoryItem) return "Inventory Catalog";
+  if (result.matchedProduct) return "Watched Product";
+  if (result.lookupProduct?.source === "external") return "External Lookup";
+  if (result.debug.matchedPreviousScan) return "Previous Scan";
+  return "Manual Needed";
+}
+
 function UpcLookupDebugDetails({ result }: { result: UpcLookupResultDTO }) {
   return (
     <details className="barcode-debug-details">
@@ -4806,6 +4814,7 @@ function BarcodeScannerModal({
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const resultRef = useRef<HTMLElement | null>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const frameDecodeTimerRef = useRef<number | null>(null);
@@ -4918,6 +4927,49 @@ function BarcodeScannerModal({
     return rawMessage || "Camera could not start. Try another camera, refresh the page, or type the UPC manually.";
   }, []);
 
+  const createManualLookupResult = useCallback(
+    (upc: string, source: "camera" | "manual", message: string): UpcLookupResultDTO => ({
+      upc,
+      rawCode: upc,
+      normalizedUpc: upc,
+      variantsChecked: [upc],
+      nextAction: "CREATE_MANUAL",
+      status: "NEW_UPC",
+      message,
+      matchedInventoryItem: null,
+      matchedProduct: null,
+      lookupProduct: null,
+      externalLookupConfigured: false,
+      debug: {
+        attemptedSources: ["local", "catalog", "scan_history"],
+        failures: [
+          {
+            source: "lookup",
+            reason: "request_failed",
+            configured: false,
+            detail: message
+          }
+        ],
+        rawCode: upc,
+        normalizedUpc: upc,
+        variantsChecked: [upc],
+        matchedInventoryProduct: false,
+        matchedWatchedProduct: false,
+        matchedPreviousScan: false,
+        externalLookupAttempted: false,
+        resultReason: source === "camera" ? "camera_lookup_failed_manual_create" : "manual_lookup_failed_manual_create",
+        providerConfig: {
+          configuredUpcProvider: false,
+          publicUpcProvider: false,
+          searchFallback: false,
+          searchProvider: null
+        }
+      },
+      history: dashboard.barcodeScans
+    }),
+    [dashboard.barcodeScans]
+  );
+
   const lookupUpc = useCallback(async (upc: string, source: "camera" | "manual") => {
     const normalized = normalizeBarcodeValue(upc);
     if (!/^\d{6,14}$/.test(normalized)) {
@@ -4925,6 +4977,7 @@ function BarcodeScannerModal({
       return;
     }
     setLookupBusy(true);
+    setResult(null);
     setCameraMessage(source === "camera" ? `Scanned ${normalized}. Looking up product...` : `Looking up ${normalized}...`);
     try {
       const lookup = await requestJson<UpcLookupResultDTO>("/api/radar/inventory/upc/lookup", {
@@ -4935,17 +4988,24 @@ function BarcodeScannerModal({
       setManualUpc(lookup.upc);
       setCameraMessage(lookup.lookupProduct ? upcLookupSuccessMessage(lookup) : upcLookupFailureMessage(lookup));
     } catch (error) {
-      setCameraMessage(error instanceof Error ? error.message : "Lookup failed - fill manually.");
+      const message =
+        error instanceof Error
+          ? `${error.message} You can still create this product manually.`
+          : "Lookup failed. You can still create this product manually.";
+      const fallback = createManualLookupResult(normalized, source, message);
+      setResult(fallback);
+      setManualUpc(fallback.upc);
+      setCameraMessage(message);
     } finally {
       setLookupBusy(false);
     }
-  }, []);
+  }, [createManualLookupResult]);
 
   const handleDecodedBarcode = useCallback(
     (rawValue: string, source: "camera" | "manual") => {
       const normalized = normalizeBarcodeValue(rawValue);
       if (!/^\d{6,14}$/.test(normalized)) {
-        setCameraMessage("Barcode was detected, but it was not a valid 6 to 14 digit UPC/EAN. Try again or type it manually.");
+        setCameraMessage("Scanner Could Not Read Barcode: detected value was not a valid 6 to 14 digit UPC/EAN. Try again or type it manually.");
         return;
       }
       scanLockedRef.current = true;
@@ -4976,7 +5036,7 @@ function BarcodeScannerModal({
     setCameraActive(true);
     setCameraStarting(true);
     setCameraPreviewReady(false);
-    setCameraMessage("Starting camera. Approve camera permission if your browser asks.");
+      setCameraMessage("Starting camera. Approve camera permission if your browser asks.");
     try {
       const videoElement = videoRef.current;
       if (!videoElement) throw new Error("Camera preview is not ready. Close and reopen the scanner.");
@@ -5126,7 +5186,7 @@ function BarcodeScannerModal({
         setCameraActive(true);
         setCameraStarting(false);
         setCameraPreviewReady(true);
-        setCameraMessage("Point camera at barcode. ZXing plus the backup 1D reader are scanning live frames. Keep the bars flat, bright, and filling most of the box.");
+      setCameraMessage("Point camera at barcode. ZXing plus the backup 1D reader are scanning live frames. Keep the bars flat, bright, and filling most of the box.");
         updateScanDiagnostics({
           lastDecoder: "Live scanning",
           lastError: "No barcode detected yet",
@@ -5136,7 +5196,7 @@ function BarcodeScannerModal({
       }
     } catch (error) {
       stopCameraStream();
-      setCameraMessage(`${cameraErrorMessage(error)} Manual UPC lookup is still available below.`);
+      setCameraMessage(`Camera Permission Needed: ${cameraErrorMessage(error)} Manual UPC lookup is still available below.`);
     } finally {
       cameraStartLockedRef.current = false;
     }
@@ -5188,18 +5248,95 @@ function BarcodeScannerModal({
     return () => stopCameraStream();
   }, [stopCameraStream]);
 
+  useEffect(() => {
+    if (!result) return;
+    resultRef.current?.scrollIntoView({ block: "nearest" });
+  }, [result]);
+
+  const resultPanel = result ? (
+    <section ref={resultRef} className={`barcode-result-card ${result.status.toLowerCase().replaceAll("_", "-")}`} aria-live="polite">
+      <div className="barcode-result-hero">
+        {result.lookupProduct?.imageUrl ? (
+          <ProductImagePreview imageUrl={result.lookupProduct.imageUrl} itemName={result.lookupProduct.productName} />
+        ) : (
+          <div className="barcode-result-placeholder" aria-hidden="true">
+            <PackageSearch size={26} />
+          </div>
+        )}
+        <div>
+          <span className="barcode-result-badge">
+            <Check size={14} />
+            {upcLookupResultTitle(result)}
+          </span>
+          <h3>{result.lookupProduct?.productName || `UPC ${result.upc}`}</h3>
+          <p>{result.lookupProduct ? upcLookupSuccessMessage(result) : upcLookupFailureMessage(result)}</p>
+        </div>
+      </div>
+      {result.matchedInventoryItem ? (
+        <div className="barcode-found-summary">
+          <span>
+            <strong>Owned</strong>
+            {result.matchedInventoryItem.quantityOwned}
+          </span>
+          <span>
+            <strong>Avg cost</strong>
+            {money(result.matchedInventoryItem.averageCost)}
+          </span>
+          <span>
+            <strong>Category</strong>
+            {formatStatus(result.matchedInventoryItem.category)}
+          </span>
+          <span>
+            <strong>Set</strong>
+            {result.matchedInventoryItem.setName || "Not set"}
+          </span>
+        </div>
+      ) : null}
+      <div className="barcode-result-meta">
+        <span>Scanned UPC {result.rawCode}</span>
+        {result.normalizedUpc !== result.rawCode ? <span>Normalized {result.normalizedUpc}</span> : null}
+        <span>Match source: {upcLookupMatchSource(result)}</span>
+        {result.lookupProduct?.brand ? <span>{result.lookupProduct.brand}</span> : null}
+        {result.lookupProduct?.category ? <span>{formatStatus(result.lookupProduct.category)}</span> : null}
+        {result.lookupProduct?.retailer ? <span>{result.lookupProduct.retailer}</span> : <span>Retailer unknown</span>}
+        {result.lookupProduct?.confidence !== null && result.lookupProduct?.confidence !== undefined ? (
+          <span>{result.lookupProduct.confidence}% confidence</span>
+        ) : null}
+        {!result.externalLookupConfigured && !result.lookupProduct ? <span>External lookup not configured</span> : null}
+      </div>
+      <div className="barcode-action-row">
+        {result.matchedInventoryItem ? (
+          <button className="mini-action" type="button" onClick={() => onViewProduct(result.matchedInventoryItem!)}>
+            <Eye size={15} />
+            View Product
+          </button>
+        ) : null}
+        <button className="mini-action" type="button" onClick={startCamera}>
+          <PackageSearch size={15} />
+          Scan Again
+        </button>
+        <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
+          <Check size={15} />
+          {upcLookupPrimaryAction(result)}
+        </button>
+      </div>
+      {dashboard.currentUser.role === "ADMIN" ? <UpcLookupDebugDetails result={result} /> : null}
+    </section>
+  ) : null;
+
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-modal barcode-scanner-modal" role="dialog" aria-modal="true" aria-label="Scan UPC barcode">
         <div className="edit-card-heading">
           <div>
             <h2>Scan UPC / Barcode</h2>
-            <span>Start the camera to scan with ZXing, or use manual UPC lookup as a fallback.</span>
+            <span>Scanning live video frames. No photos or video are saved.</span>
           </div>
           <button className="icon-button" type="button" aria-label="Close barcode scanner" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
+        {resultPanel}
         <section className="barcode-scanner-grid">
           <div className="barcode-camera-panel">
             <div
@@ -5234,6 +5371,13 @@ function BarcodeScannerModal({
               )}
             </div>
             <p>{cameraMessage}</p>
+            {result ? (
+              <div className="barcode-last-result">
+                <span>Last scanned UPC</span>
+                <strong>{result.rawCode}</strong>
+                <small>{upcLookupResultTitle(result)} - {upcLookupMatchSource(result)}</small>
+              </div>
+            ) : null}
             <div className="barcode-live-log" aria-live="polite">
               <span>
                 <strong>Frames</strong>
@@ -5299,7 +5443,7 @@ function BarcodeScannerModal({
               </button>
             </div>
             {!cameraAvailable ? <small>Camera access is not available here. Manual UPC lookup still works.</small> : null}
-            <small>ZXing decodes the live camera feed after Start Camera. No camera frames are saved.</small>
+            <small>Hold barcode flat and fill the frame. ZXing decodes the live camera feed by scanning live video frames; no photos or video are saved.</small>
           </div>
           <form
             className="barcode-manual-panel"
@@ -5334,79 +5478,27 @@ function BarcodeScannerModal({
             </label>
           </form>
         </section>
-        {result ? (
-          <section className={`barcode-result-card ${result.status.toLowerCase().replaceAll("_", "-")}`}>
-            <div className="barcode-result-main">
-              {result.lookupProduct?.imageUrl ? (
-                <ProductImagePreview imageUrl={result.lookupProduct.imageUrl} itemName={result.lookupProduct.productName} />
-              ) : null}
-              <div>
-                <span>{upcLookupResultTitle(result)}</span>
-                <h3>{result.lookupProduct?.productName || `UPC ${result.upc}`}</h3>
-                <p>{result.lookupProduct ? upcLookupSuccessMessage(result) : upcLookupFailureMessage(result)}</p>
-              </div>
-            </div>
-            {result.matchedInventoryItem ? (
-              <div className="barcode-found-summary">
-                <span>
-                  <strong>Owned</strong>
-                  {result.matchedInventoryItem.quantityOwned}
-                </span>
-                <span>
-                  <strong>Avg cost</strong>
-                  {money(result.matchedInventoryItem.averageCost)}
-                </span>
-                <span>
-                  <strong>Category</strong>
-                  {formatStatus(result.matchedInventoryItem.category)}
-                </span>
-                <span>
-                  <strong>Set</strong>
-                  {result.matchedInventoryItem.setName || "Not set"}
-                </span>
-              </div>
-            ) : null}
-            <div className="barcode-result-meta">
-              <span>UPC {result.upc}</span>
-              {result.rawCode !== result.upc ? <span>Scanned {result.rawCode}</span> : null}
-              {result.lookupProduct?.brand ? <span>{result.lookupProduct.brand}</span> : null}
-              {result.lookupProduct?.category ? <span>{formatStatus(result.lookupProduct.category)}</span> : null}
-              <span>{result.lookupProduct?.retailer || "Retailer unknown"}</span>
-              <span>{result.lookupProduct?.source ? formatStatus(result.lookupProduct.source) : "Manual create"}</span>
-              {result.lookupProduct?.confidence !== null && result.lookupProduct?.confidence !== undefined ? (
-                <span>{result.lookupProduct.confidence}% confidence</span>
-              ) : null}
-              {!result.externalLookupConfigured && !result.lookupProduct ? <span>External lookup not configured</span> : null}
-            </div>
-            <div className="barcode-action-row">
-              <button className="mini-action" type="button" onClick={startCamera}>
-                <PackageSearch size={15} />
-                Scan Again
-              </button>
-              {result.matchedInventoryItem ? (
-                <button className="mini-action" type="button" onClick={() => onViewProduct(result.matchedInventoryItem!)}>
-                  <Eye size={15} />
-                  View Product
-                </button>
-              ) : null}
-              <button className="primary-action" type="button" onClick={() => onUseResult(result)}>
-                <Check size={15} />
-                {upcLookupPrimaryAction(result)}
-              </button>
-            </div>
-            <UpcLookupDebugDetails result={result} />
-          </section>
-        ) : null}
         <section className="barcode-history-panel">
           <h3>Scanned UPC history</h3>
           {history.length ? (
             <div>
               {history.slice(0, 8).map((scan) => (
-                <span key={scan.id}>
+                <button
+                  className="barcode-history-row"
+                  key={scan.id}
+                  type="button"
+                  onClick={() => {
+                    void lookupUpc(scan.rawCode || scan.normalizedUpc || scan.upc, scan.source === "camera" ? "camera" : "manual");
+                  }}
+                >
                   <strong>{scan.upc}</strong>
-                  {scan.productName || formatStatus(scan.status)}
+                  <span>
+                    {scan.productName || (scan.status === "NEW_UPC" ? "New UPC" : formatStatus(scan.status))}
+                    <small>{formatStatus(scan.resultType || scan.status)}</small>
+                  </span>
                   <small>{relativeTime(scan.createdAt)}</small>
-                </span>
+                  <em>{scan.productName ? "Open" : "Create"}</em>
+                </button>
               ))}
             </div>
           ) : (
@@ -5675,6 +5767,7 @@ function PurchaseFlow({
               value={draft.upc}
               onChange={(event) => updateDraft("upc", normalizeBarcodeValue(event.currentTarget.value))}
               placeholder="Scan or type barcode"
+              readOnly={Boolean(selectedExisting)}
             />
             <button className="mini-action" disabled={lookupBusy} type="button" onClick={lookupDraftUpc}>
               <PackageSearch size={14} />

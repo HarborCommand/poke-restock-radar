@@ -28,3 +28,18 @@ test("scanner UI exposes useful actions instead of a dead-end lookup failed stat
   assert.match(app, /defaultItemId\s*\?\s*"Product already exists in your catalog\. Add stock to the existing item\."/);
   assert.match(app, /External UPC lookup is not configured, but you can still create this product manually/);
 });
+
+test("scanner result is shown before camera panels and history rows reopen lookup workflow", () => {
+  const resultPanelIndex = app.indexOf("const resultPanel = result ?");
+  const scannerGridIndex = app.indexOf("<section className=\"barcode-scanner-grid\">");
+  assert.ok(resultPanelIndex > -1, "scanner should define a primary result panel");
+  assert.ok(scannerGridIndex > -1, "scanner grid should still exist");
+  assert.ok(resultPanelIndex < scannerGridIndex, "result panel should render before the camera/manual grid");
+  assert.match(app, /className="barcode-history-row"/);
+  assert.match(app, /lookupUpc\(scan\.rawCode \|\| scan\.normalizedUpc \|\| scan\.upc/);
+});
+
+test("product-found Add Stock flow keeps the matched UPC locked to the existing product", () => {
+  assert.match(app, /openPurchaseFlow\(result\.matchedInventoryItem\.id, \{ upc: result\.upc \}\)/);
+  assert.match(app, /readOnly=\{Boolean\(selectedExisting\)\}/);
+});

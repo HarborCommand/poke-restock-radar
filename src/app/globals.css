@@ -6343,8 +6343,13 @@ textarea {
 }
 
 .barcode-result-card {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  border-color: rgba(65, 229, 135, 0.24);
+  background:
+    radial-gradient(circle at 92% 12%, rgba(65, 229, 135, 0.18), transparent 16rem),
+    linear-gradient(145deg, rgba(65, 229, 135, 0.1), rgba(255, 255, 255, 0.032));
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
 .barcode-result-card > div:first-child {
@@ -6377,12 +6382,69 @@ textarea {
   color: var(--yellow);
 }
 
+.barcode-result-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.barcode-result-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(65, 229, 135, 0.18);
+  border-radius: 999px;
+  background: rgba(65, 229, 135, 0.11);
+  padding: 5px 8px;
+}
+
+.barcode-result-placeholder {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border: 1px solid rgba(65, 229, 135, 0.16);
+  border-radius: 18px;
+  background: rgba(65, 229, 135, 0.08);
+  color: var(--green);
+}
+
 .barcode-result-meta span {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.07);
   color: var(--muted);
   padding: 5px 8px;
   font-size: 0.7rem;
+}
+
+.barcode-last-result {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(65, 229, 135, 0.16);
+  border-radius: 12px;
+  background: rgba(65, 229, 135, 0.06);
+  padding: 9px;
+}
+
+.barcode-last-result span {
+  color: var(--subtle);
+  font-size: 0.62rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.barcode-last-result strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.barcode-last-result small {
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .barcode-debug-details {
@@ -6421,17 +6483,43 @@ textarea {
   min-width: 0;
 }
 
-.barcode-history-panel > div > span {
+.barcode-history-row {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) auto;
+  grid-template-columns: 120px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-width: 0;
+  border: 0;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.035);
   color: var(--muted);
   padding: 8px;
   font-size: 0.75rem;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.barcode-history-row:hover {
+  background: rgba(65, 229, 135, 0.08);
+}
+
+.barcode-history-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.barcode-history-row em {
+  border-radius: 999px;
+  background: rgba(65, 229, 135, 0.1);
+  color: var(--green);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+  padding: 5px 8px;
 }
 
 .barcode-history-panel strong {
@@ -6441,6 +6529,10 @@ textarea {
 .barcode-history-panel small {
   color: var(--subtle);
   white-space: nowrap;
+}
+
+.barcode-found-summary span {
+  text-transform: none;
 }
 
 .upc-lookup-strip {
@@ -6660,6 +6752,7 @@ textarea {
 
   .barcode-scanner-grid,
   .barcode-result-card,
+  .barcode-result-hero,
   .upc-lookup-strip {
     grid-template-columns: 1fr;
   }
@@ -6676,7 +6769,7 @@ textarea {
     width: 100%;
   }
 
-  .barcode-history-panel > div > span {
+  .barcode-history-row {
     grid-template-columns: 1fr;
   }
 
