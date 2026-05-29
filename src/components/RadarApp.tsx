@@ -59,7 +59,7 @@ import {
 } from "react";
 import { BrowserCodeReader, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
-import { normalizeUPC } from "@/lib/upc";
+import { canonicalProductUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
   CardDTO,
@@ -4483,7 +4483,29 @@ function InventoryDecisionCard({
 }
 
 function normalizeBarcodeValue(value: string) {
-  return normalizeUPC(value);
+  return canonicalProductUPC(value);
+}
+
+type BarcodeFrameMode = "normal" | "contrast" | "threshold" | "invertedThreshold";
+type BarcodeFrameAttempt = {
+  cropScale: number;
+  cropXScale?: number;
+  cropYScale?: number;
+  offsetX?: number;
+  offsetY?: number;
+  rotation: 0 | 90 | -90 | 180;
+  scale: number;
+  mode: BarcodeFrameMode;
+  smoothing?: boolean;
+};
+
+type QuaggaReader = typeof import("@ericblade/quagga2").default;
+
+let quaggaReaderPromise: Promise<QuaggaReader> | null = null;
+
+function loadQuaggaReader() {
+  quaggaReaderPromise ??= import("@ericblade/quagga2").then((module) => module.default);
+  return quaggaReaderPromise;
 }
 
 const supportedBarcodeFormats = [
@@ -4505,51 +4527,164 @@ function createBarcodeReader() {
   });
 }
 
-function drawBarcodeVideoFrame(videoElement: HTMLVideoElement, cropScale: number, rotation: 0 | 90 | -90 | 180) {
+function enhanceBarcodeCanvas(canvas: HTMLCanvasElement, mode: BarcodeFrameMode) {
+  if (mode === "normal") return;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return;
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = image.data;
+  let min = 255;
+  let max = 0;
+  for (let index = 0; index < data.length; index += 4) {
+    const luminance = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+    min = Math.min(min, luminance);
+    max = Math.max(max, luminance);
+  }
+  const midpoint = Math.max(72, Math.min(184, Math.round((min + max) / 2)));
+  for (let index = 0; index < data.length; index += 4) {
+    const luminance = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+    const contrasted = Math.max(0, Math.min(255, Math.round((luminance - 128) * 2.1 + 128)));
+    const value =
+      mode === "contrast"
+        ? contrasted
+        : mode === "threshold"
+          ? luminance > midpoint
+            ? 255
+            : 0
+          : luminance > midpoint
+            ? 0
+            : 255;
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+    data[index + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+}
+
+function drawBarcodeVideoFrame(videoElement: HTMLVideoElement, attempt: BarcodeFrameAttempt) {
   if (!videoElement.videoWidth || !videoElement.videoHeight) return null;
   const videoWidth = videoElement.videoWidth;
   const videoHeight = videoElement.videoHeight;
-  const sourceWidth = Math.max(1, Math.floor(videoWidth * cropScale));
-  const sourceHeight = Math.max(1, Math.floor(videoHeight * cropScale));
-  const sourceX = Math.max(0, Math.floor((videoWidth - sourceWidth) / 2));
-  const sourceY = Math.max(0, Math.floor((videoHeight - sourceHeight) / 2));
+  const sourceWidth = Math.max(1, Math.floor(videoWidth * (attempt.cropXScale ?? attempt.cropScale)));
+  const sourceHeight = Math.max(1, Math.floor(videoHeight * (attempt.cropYScale ?? attempt.cropScale)));
+  const centeredX = (videoWidth - sourceWidth) / 2 + (attempt.offsetX ?? 0) * videoWidth;
+  const centeredY = (videoHeight - sourceHeight) / 2 + (attempt.offsetY ?? 0) * videoHeight;
+  const sourceX = Math.max(0, Math.min(videoWidth - sourceWidth, Math.floor(centeredX)));
+  const sourceY = Math.max(0, Math.min(videoHeight - sourceHeight, Math.floor(centeredY)));
+  const targetWidth = Math.max(1, Math.floor(sourceWidth * attempt.scale));
+  const targetHeight = Math.max(1, Math.floor(sourceHeight * attempt.scale));
   const canvas = document.createElement("canvas");
-  const rotated = Math.abs(rotation) === 90;
-  canvas.width = rotated ? sourceHeight : sourceWidth;
-  canvas.height = rotated ? sourceWidth : sourceHeight;
+  const rotated = Math.abs(attempt.rotation) === 90;
+  canvas.width = rotated ? targetHeight : targetWidth;
+  canvas.height = rotated ? targetWidth : targetHeight;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return null;
-  if (rotation === 90) {
+  context.imageSmoothingEnabled = attempt.smoothing ?? false;
+  if (attempt.mode === "contrast") context.filter = "contrast(1.65) brightness(1.12) saturate(0)";
+  if (attempt.rotation === 90) {
     context.translate(canvas.width, 0);
     context.rotate(Math.PI / 2);
-  } else if (rotation === -90) {
+  } else if (attempt.rotation === -90) {
     context.translate(0, canvas.height);
     context.rotate(-Math.PI / 2);
-  } else if (rotation === 180) {
+  } else if (attempt.rotation === 180) {
     context.translate(canvas.width, canvas.height);
     context.rotate(Math.PI);
   }
-  context.drawImage(videoElement, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+  context.drawImage(videoElement, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
+  enhanceBarcodeCanvas(canvas, attempt.mode);
   return canvas;
 }
 
 function decodeCurrentBarcodeFrame(reader: BrowserMultiFormatReader, videoElement: HTMLVideoElement) {
   if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
-  const attempts: Array<{ cropScale: number; rotation: 0 | 90 | -90 | 180 }> = [
-    { cropScale: 1, rotation: 0 },
-    { cropScale: 0.82, rotation: 0 },
-    { cropScale: 1, rotation: 90 },
-    { cropScale: 1, rotation: -90 },
-    { cropScale: 1, rotation: 180 }
+  const attempts: BarcodeFrameAttempt[] = [
+    { cropScale: 1, rotation: 0, scale: 1, mode: "normal", smoothing: true },
+    { cropScale: 1, cropXScale: 0.96, cropYScale: 0.36, offsetY: 0.14, rotation: 0, scale: 2.25, mode: "contrast" },
+    { cropScale: 1, cropXScale: 0.96, cropYScale: 0.36, offsetY: 0.14, rotation: 0, scale: 2.25, mode: "threshold" },
+    { cropScale: 1, cropXScale: 0.9, cropYScale: 0.28, offsetY: 0.18, rotation: 0, scale: 2.7, mode: "contrast" },
+    { cropScale: 1, cropXScale: 0.9, cropYScale: 0.28, offsetY: 0.18, rotation: 0, scale: 2.7, mode: "threshold" },
+    { cropScale: 0.82, rotation: 0, scale: 1.45, mode: "contrast" },
+    { cropScale: 0.72, rotation: 0, scale: 1.9, mode: "contrast" },
+    { cropScale: 0.72, rotation: 0, scale: 1.9, mode: "threshold" },
+    { cropScale: 0.58, rotation: 0, scale: 2.4, mode: "contrast" },
+    { cropScale: 0.58, rotation: 0, scale: 2.4, mode: "threshold" },
+    { cropScale: 0.82, rotation: 180, scale: 1.45, mode: "contrast" },
+    { cropScale: 1, rotation: 90, scale: 1, mode: "normal", smoothing: true },
+    { cropScale: 1, rotation: -90, scale: 1, mode: "normal", smoothing: true }
   ];
   for (const attempt of attempts) {
-    const canvas = drawBarcodeVideoFrame(videoElement, attempt.cropScale, attempt.rotation);
+    const canvas = drawBarcodeVideoFrame(videoElement, attempt);
     if (!canvas) continue;
     try {
       return reader.decodeFromCanvas(canvas).getText();
     } catch {
       // Missed frames are expected while the barcode is out of focus, angled, or not yet centered.
     }
+  }
+  return null;
+}
+
+function quaggaDecodeCanvas(canvas: HTMLCanvasElement) {
+  return new Promise<string | null>((resolve) => {
+    const timeout = window.setTimeout(() => resolve(null), 1200);
+    loadQuaggaReader()
+      .then((Quagga) => {
+        void Quagga.decodeSingle(
+          {
+            src: canvas.toDataURL("image/png"),
+            inputStream: {
+              type: "ImageStream",
+              size: 960,
+              singleChannel: false,
+              willReadFrequently: true
+            },
+            locate: true,
+            numOfWorkers: 0,
+            frequency: 8,
+            canvas: { createOverlay: false },
+            locator: {
+              halfSample: false,
+              patchSize: "medium",
+              willReadFrequently: true
+            },
+            decoder: {
+              readers: ["upc_reader", "upc_e_reader", "ean_reader", "ean_8_reader", "code_128_reader"]
+            }
+          },
+          (scan) => {
+            window.clearTimeout(timeout);
+            resolve(scan?.codeResult?.code ?? null);
+          }
+        ).catch(() => {
+          window.clearTimeout(timeout);
+          resolve(null);
+        });
+      })
+      .catch(() => {
+        window.clearTimeout(timeout);
+        resolve(null);
+      });
+  });
+}
+
+async function decodeCurrentBarcodeFrameWithQuagga(videoElement: HTMLVideoElement) {
+  if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
+  const attempts: BarcodeFrameAttempt[] = [
+    { cropScale: 1, cropXScale: 0.96, cropYScale: 0.36, offsetY: 0.14, rotation: 0, scale: 2.25, mode: "contrast" },
+    { cropScale: 1, cropXScale: 0.9, cropYScale: 0.28, offsetY: 0.18, rotation: 0, scale: 2.7, mode: "contrast" },
+    { cropScale: 1, cropXScale: 0.9, cropYScale: 0.28, offsetY: 0.18, rotation: 0, scale: 2.7, mode: "threshold" },
+    { cropScale: 0.78, rotation: 0, scale: 1.7, mode: "contrast" },
+    { cropScale: 0.64, rotation: 0, scale: 2.25, mode: "contrast" },
+    { cropScale: 0.64, rotation: 0, scale: 2.25, mode: "threshold" },
+    { cropScale: 0.54, rotation: 0, scale: 2.65, mode: "threshold" }
+  ];
+  for (const attempt of attempts) {
+    const canvas = drawBarcodeVideoFrame(videoElement, attempt);
+    if (!canvas) continue;
+    const decoded = await quaggaDecodeCanvas(canvas);
+    if (decoded) return decoded;
   }
   return null;
 }
@@ -4618,6 +4753,7 @@ function BarcodeScannerModal({
   const scannerControlsRef = useRef<IScannerControls | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const frameDecodeTimerRef = useRef<number | null>(null);
+  const frameDecodeInFlightRef = useRef(false);
   const scanLockedRef = useRef(false);
   const cameraStartLockedRef = useRef(false);
   const [manualUpc, setManualUpc] = useState("");
@@ -4662,6 +4798,7 @@ function BarcodeScannerModal({
       window.clearInterval(frameDecodeTimerRef.current);
       frameDecodeTimerRef.current = null;
     }
+    frameDecodeInFlightRef.current = false;
     try {
       BrowserCodeReader.releaseAllStreams();
     } catch {
@@ -4841,27 +4978,37 @@ function BarcodeScannerModal({
         }
       } else {
         scannerControlsRef.current = controls;
-        const tryDecodeFrame = () => {
-          if (scanLockedRef.current || !videoRef.current) return;
-          const decodedValue = decodeCurrentBarcodeFrame(reader, videoRef.current);
-          if (!decodedValue) return;
-          const normalized = normalizeBarcodeValue(decodedValue);
-          if (!/^\d{6,14}$/.test(normalized)) return;
-          scanLockedRef.current = true;
-          setCameraCaptured(true);
+        const tryDecodeFrame = async () => {
+          if (scanLockedRef.current || frameDecodeInFlightRef.current || !videoRef.current) return;
+          frameDecodeInFlightRef.current = true;
           try {
-            controls.stop();
-          } catch {
-            // The continuous scan loop may already be stopping.
+            const videoElementForDecode = videoRef.current;
+            const decodedValue = decodeCurrentBarcodeFrame(reader, videoElementForDecode) ?? (await decodeCurrentBarcodeFrameWithQuagga(videoElementForDecode));
+            if (!decodedValue || scanLockedRef.current) return;
+            const normalized = normalizeBarcodeValue(decodedValue);
+            if (!/^\d{6,14}$/.test(normalized)) return;
+            scanLockedRef.current = true;
+            setCameraCaptured(true);
+            try {
+              controls.stop();
+            } catch {
+              // The continuous scan loop may already be stopping.
+            }
+            handleDecodedBarcode(normalized, "camera");
+          } finally {
+            frameDecodeInFlightRef.current = false;
           }
-          handleDecodedBarcode(normalized, "camera");
         };
-        frameDecodeTimerRef.current = window.setInterval(tryDecodeFrame, 320);
-        window.setTimeout(tryDecodeFrame, 160);
+        frameDecodeTimerRef.current = window.setInterval(() => {
+          void tryDecodeFrame();
+        }, 260);
+        window.setTimeout(() => {
+          void tryDecodeFrame();
+        }, 120);
         setCameraActive(true);
         setCameraStarting(false);
         setCameraPreviewReady(true);
-        setCameraMessage("Point camera at barcode. Camera is on and ZXing is scanning live frames. Hold it flat, bright, and close enough to fill most of the box.");
+        setCameraMessage("Point camera at barcode. ZXing plus the backup 1D reader are scanning live frames. Keep the bars flat, bright, and filling most of the box.");
         void refreshCameraDevices();
       }
     } catch (error) {
@@ -4878,9 +5025,9 @@ function BarcodeScannerModal({
       setImageDecodeBusy(true);
       setCameraMessage("Reading barcode image...");
       const objectUrl = URL.createObjectURL(file);
+      const image = new window.Image();
       try {
         const reader = createBarcodeReader();
-        const image = new window.Image();
         image.src = objectUrl;
         await new Promise<void>((resolve, reject) => {
           image.onload = () => resolve();
@@ -4889,7 +5036,23 @@ function BarcodeScannerModal({
         const decoded = await reader.decodeFromImageElement(image);
         handleDecodedBarcode(decoded.getText(), "manual");
       } catch (error) {
-        setCameraMessage(error instanceof Error ? error.message : "Barcode was not detected in that image. Type the UPC manually.");
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth || image.width;
+          canvas.height = image.naturalHeight || image.height;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context || !canvas.width || !canvas.height) throw error;
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          enhanceBarcodeCanvas(canvas, "contrast");
+          const decoded = await quaggaDecodeCanvas(canvas);
+          if (decoded) {
+            handleDecodedBarcode(decoded, "manual");
+          } else {
+            setCameraMessage(error instanceof Error ? error.message : "Barcode was not detected in that image. Type the UPC manually.");
+          }
+        } catch {
+          setCameraMessage(error instanceof Error ? error.message : "Barcode was not detected in that image. Type the UPC manually.");
+        }
       } finally {
         URL.revokeObjectURL(objectUrl);
         setImageDecodeBusy(false);

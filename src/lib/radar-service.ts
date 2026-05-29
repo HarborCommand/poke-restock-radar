@@ -9,7 +9,7 @@ import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate }
 import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
-import { compactLookupText, normalizeUPC } from "@/lib/upc";
+import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, fetchLastThreeInventoryEbayComps, testEbayConnection } from "@/lib/ebay";
 import {
@@ -3512,21 +3512,23 @@ export async function lookupInventoryUpc(
   currentUser: SessionUser,
   input: { upc: string; source?: "camera" | "manual" }
 ): Promise<UpcLookupResultDTO> {
-  const upc = normalizeUPC(input.upc);
+  const rawUpc = normalizeUPC(input.upc);
+  const variants = upcLookupVariants(rawUpc);
+  const upc = canonicalProductUPC(rawUpc);
   if (!/^\d{6,14}$/.test(upc)) throw new Error("UPC/EAN must be 6 to 14 digits.");
   const inventoryItem = await prisma.inventoryItem.findFirst({
-    where: { upc, OR: [{ userId: null }, { userId: currentUser.id }] },
+    where: { upc: { in: variants }, OR: [{ userId: null }, { userId: currentUser.id }] },
     include: inventoryItemInclude,
     orderBy: { updatedAt: "desc" }
   });
   const watchedProduct = await prisma.product.findFirst({
-    where: { upc, archivedAt: null },
+    where: { upc: { in: variants }, archivedAt: null },
     include: productInclude,
     orderBy: { updatedAt: "desc" }
   });
   const localFailures: UpcLookupFailureDTO[] = [
-    ...(inventoryItem ? [] : [lookupFailure("local", "not_found", { configured: true, detail: "No inventory item matched this UPC." })]),
-    ...(watchedProduct ? [] : [lookupFailure("catalog", "not_found", { configured: true, detail: "No watched product matched this UPC." })])
+    ...(inventoryItem ? [] : [lookupFailure("local", "not_found", { configured: true, detail: `No inventory item matched UPC variants ${variants.join(", ")}.` })]),
+    ...(watchedProduct ? [] : [lookupFailure("catalog", "not_found", { configured: true, detail: `No watched product matched UPC variants ${variants.join(", ")}.` })])
   ];
   const external =
     inventoryItem || watchedProduct

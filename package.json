@@ -32,6 +32,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@ericblade/quagga2": "^1.12.1",
     "@prisma/client": "6.19.3",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.22.0",
