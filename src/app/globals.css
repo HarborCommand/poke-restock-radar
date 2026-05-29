@@ -6241,6 +6241,39 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.barcode-live-log {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(65, 229, 135, 0.12);
+  border-radius: 12px;
+  background: rgba(3, 8, 7, 0.74);
+  padding: 8px;
+}
+
+.barcode-live-log span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.barcode-live-log span.wide {
+  grid-column: span 2;
+}
+
+.barcode-live-log strong {
+  color: var(--subtle);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
 .barcode-action-row,
 .barcode-result-meta {
   display: flex;
@@ -6602,6 +6635,10 @@ textarea {
   .barcode-result-card,
   .upc-lookup-strip {
     grid-template-columns: 1fr;
+  }
+
+  .barcode-live-log {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .upc-lookup-strip .mini-action {

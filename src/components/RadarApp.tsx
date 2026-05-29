@@ -57,7 +57,7 @@ import {
   useRef,
   useState
 } from "react";
-import { BrowserCodeReader, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { canonicalProductUPC } from "@/lib/upc";
 import type {
@@ -4499,6 +4499,16 @@ type BarcodeFrameAttempt = {
   smoothing?: boolean;
 };
 
+type BarcodeScanDiagnostics = {
+  frames: number;
+  zxingMisses: number;
+  backupAttempts: number;
+  lastDecoder: string;
+  lastRead: string;
+  lastError: string;
+  videoSize: string;
+};
+
 type QuaggaReader = typeof import("@ericblade/quagga2").default;
 
 let quaggaReaderPromise: Promise<QuaggaReader> | null = null;
@@ -4516,12 +4526,22 @@ const supportedBarcodeFormats = [
   BarcodeFormat.CODE_128
 ];
 
+const initialBarcodeScanDiagnostics: BarcodeScanDiagnostics = {
+  frames: 0,
+  zxingMisses: 0,
+  backupAttempts: 0,
+  lastDecoder: "Idle",
+  lastRead: "",
+  lastError: "Waiting for camera",
+  videoSize: ""
+};
+
 function createBarcodeReader() {
   const hints = new Map<DecodeHintType, unknown>();
   hints.set(DecodeHintType.POSSIBLE_FORMATS, supportedBarcodeFormats);
   hints.set(DecodeHintType.TRY_HARDER, true);
-  return new BrowserMultiFormatReader(hints, {
-    delayBetweenScanAttempts: 90,
+  return new BrowserMultiFormatOneDReader(hints, {
+    delayBetweenScanAttempts: 70,
     delayBetweenScanSuccess: 300,
     tryPlayVideoTimeout: 8000
   });
@@ -4597,7 +4617,7 @@ function drawBarcodeVideoFrame(videoElement: HTMLVideoElement, attempt: BarcodeF
   return canvas;
 }
 
-function decodeCurrentBarcodeFrame(reader: BrowserMultiFormatReader, videoElement: HTMLVideoElement) {
+function decodeCurrentBarcodeFrame(reader: BrowserMultiFormatOneDReader, videoElement: HTMLVideoElement) {
   if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
   const attempts: BarcodeFrameAttempt[] = [
     { cropScale: 1, rotation: 0, scale: 1, mode: "normal", smoothing: true },
@@ -4628,7 +4648,7 @@ function decodeCurrentBarcodeFrame(reader: BrowserMultiFormatReader, videoElemen
 
 function quaggaDecodeCanvas(canvas: HTMLCanvasElement) {
   return new Promise<string | null>((resolve) => {
-    const timeout = window.setTimeout(() => resolve(null), 1200);
+    const timeout = window.setTimeout(() => resolve(null), 520);
     loadQuaggaReader()
       .then((Quagga) => {
         void Quagga.decodeSingle(
@@ -4680,7 +4700,7 @@ async function decodeCurrentBarcodeFrameWithQuagga(videoElement: HTMLVideoElemen
     { cropScale: 0.64, rotation: 0, scale: 2.25, mode: "threshold" },
     { cropScale: 0.54, rotation: 0, scale: 2.65, mode: "threshold" }
   ];
-  for (const attempt of attempts) {
+  for (const attempt of attempts.slice(0, 3)) {
     const canvas = drawBarcodeVideoFrame(videoElement, attempt);
     if (!canvas) continue;
     const decoded = await quaggaDecodeCanvas(canvas);
@@ -4756,6 +4776,8 @@ function BarcodeScannerModal({
   const frameDecodeInFlightRef = useRef(false);
   const scanLockedRef = useRef(false);
   const cameraStartLockedRef = useRef(false);
+  const scanDiagnosticsRef = useRef<BarcodeScanDiagnostics>({ ...initialBarcodeScanDiagnostics });
+  const zxingMissCountRef = useRef(0);
   const [manualUpc, setManualUpc] = useState("");
   const [result, setResult] = useState<UpcLookupResultDTO | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
@@ -4765,10 +4787,24 @@ function BarcodeScannerModal({
   const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
   const [cameraCaptured, setCameraCaptured] = useState(false);
   const [cameraMessage, setCameraMessage] = useState("Tap Start Camera to scan a UPC/EAN barcode with ZXing. No image or video is saved.");
+  const [scanDiagnostics, setScanDiagnostics] = useState<BarcodeScanDiagnostics>(initialBarcodeScanDiagnostics);
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState("");
   const history = result?.history ?? dashboard.barcodeScans;
   const cameraAvailable = typeof window !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
+
+  const updateScanDiagnostics = useCallback((patch: Partial<BarcodeScanDiagnostics>) => {
+    const next = { ...scanDiagnosticsRef.current, ...patch };
+    scanDiagnosticsRef.current = next;
+    setScanDiagnostics(next);
+  }, []);
+
+  const resetScanDiagnostics = useCallback((patch?: Partial<BarcodeScanDiagnostics>) => {
+    const next = { ...initialBarcodeScanDiagnostics, ...patch };
+    scanDiagnosticsRef.current = next;
+    zxingMissCountRef.current = 0;
+    setScanDiagnostics(next);
+  }, []);
 
   const refreshCameraDevices = useCallback(async () => {
     if (!cameraAvailable) return [] as MediaDeviceInfo[];
@@ -4819,8 +4855,11 @@ function BarcodeScannerModal({
     setCameraActive(false);
     setCameraStarting(false);
     setCameraPreviewReady(false);
+    if (message) {
+      updateScanDiagnostics({ lastDecoder: "Stopped", lastError: message });
+    }
     if (message) setCameraMessage(message);
-  }, []);
+  }, [updateScanDiagnostics]);
 
   const cameraErrorMessage = useCallback((error: unknown) => {
     const name = error instanceof Error ? error.name : "";
@@ -4893,6 +4932,7 @@ function BarcodeScannerModal({
     stopCameraStream();
     cameraStartLockedRef.current = true;
     scanLockedRef.current = false;
+    resetScanDiagnostics({ lastDecoder: "Starting", lastError: "Requesting camera permission" });
     setResult(null);
     setCameraCaptured(false);
     setCameraActive(true);
@@ -4907,11 +4947,23 @@ function BarcodeScannerModal({
       videoElement.autoplay = true;
       const reader = createBarcodeReader();
       const onDecoded = (scanResult: Result | undefined | null, _error: unknown, callbackControls: IScannerControls) => {
-        if (scanLockedRef.current || !scanResult) return;
+        if (scanLockedRef.current) return;
+        if (!scanResult) {
+          zxingMissCountRef.current += 1;
+          if (zxingMissCountRef.current === 1 || zxingMissCountRef.current % 20 === 0) {
+            updateScanDiagnostics({
+              zxingMisses: zxingMissCountRef.current,
+              lastDecoder: "ZXing live",
+              lastError: _error instanceof Error ? _error.name || "No barcode in live frame" : "No barcode in live frame"
+            });
+          }
+          return;
+        }
         const normalized = normalizeBarcodeValue(scanResult.getText());
         if (!/^\d{6,14}$/.test(normalized)) return;
         scanLockedRef.current = true;
         setCameraCaptured(true);
+        updateScanDiagnostics({ lastDecoder: "ZXing live", lastRead: normalized, lastError: "Barcode detected" });
         try {
           callbackControls.stop();
         } catch {
@@ -4952,6 +5004,11 @@ function BarcodeScannerModal({
       mediaStreamRef.current = stream;
       videoElement.srcObject = stream;
       await videoElement.play();
+      updateScanDiagnostics({
+        lastDecoder: "Camera",
+        lastError: "Camera preview active",
+        videoSize: videoElement.videoWidth && videoElement.videoHeight ? `${videoElement.videoWidth}x${videoElement.videoHeight}` : "starting"
+      });
 
       const [videoTrack] = stream.getVideoTracks();
       if (videoTrack) {
@@ -4983,12 +5040,35 @@ function BarcodeScannerModal({
           frameDecodeInFlightRef.current = true;
           try {
             const videoElementForDecode = videoRef.current;
-            const decodedValue = decodeCurrentBarcodeFrame(reader, videoElementForDecode) ?? (await decodeCurrentBarcodeFrameWithQuagga(videoElementForDecode));
+            const nextFrameCount = scanDiagnosticsRef.current.frames + 1;
+            const videoSize =
+              videoElementForDecode.videoWidth && videoElementForDecode.videoHeight
+                ? `${videoElementForDecode.videoWidth}x${videoElementForDecode.videoHeight}`
+                : "waiting";
+            updateScanDiagnostics({
+              frames: nextFrameCount,
+              lastDecoder: "ZXing frame",
+              lastError: "Scanning live frame",
+              videoSize
+            });
+            let decodedValue = decodeCurrentBarcodeFrame(reader, videoElementForDecode);
+            if (!decodedValue && nextFrameCount % 3 === 0) {
+              updateScanDiagnostics({
+                backupAttempts: scanDiagnosticsRef.current.backupAttempts + 1,
+                lastDecoder: "Backup 1D reader",
+                lastError: "Trying enhanced barcode crop"
+              });
+              decodedValue = await decodeCurrentBarcodeFrameWithQuagga(videoElementForDecode);
+            }
             if (!decodedValue || scanLockedRef.current) return;
             const normalized = normalizeBarcodeValue(decodedValue);
-            if (!/^\d{6,14}$/.test(normalized)) return;
+            if (!/^\d{6,14}$/.test(normalized)) {
+              updateScanDiagnostics({ lastRead: decodedValue, lastError: "Detected value was not a valid UPC/EAN" });
+              return;
+            }
             scanLockedRef.current = true;
             setCameraCaptured(true);
+            updateScanDiagnostics({ lastRead: normalized, lastError: "Barcode detected" });
             try {
               controls.stop();
             } catch {
@@ -5009,6 +5089,11 @@ function BarcodeScannerModal({
         setCameraStarting(false);
         setCameraPreviewReady(true);
         setCameraMessage("Point camera at barcode. ZXing plus the backup 1D reader are scanning live frames. Keep the bars flat, bright, and filling most of the box.");
+        updateScanDiagnostics({
+          lastDecoder: "Live scanning",
+          lastError: "No barcode detected yet",
+          videoSize: videoElement.videoWidth && videoElement.videoHeight ? `${videoElement.videoWidth}x${videoElement.videoHeight}` : "waiting"
+        });
         void refreshCameraDevices();
       }
     } catch (error) {
@@ -5017,7 +5102,7 @@ function BarcodeScannerModal({
     } finally {
       cameraStartLockedRef.current = false;
     }
-  }, [cameraAvailable, cameraErrorMessage, handleDecodedBarcode, refreshCameraDevices, selectedCameraId, stopCameraStream]);
+  }, [cameraAvailable, cameraErrorMessage, handleDecodedBarcode, refreshCameraDevices, resetScanDiagnostics, selectedCameraId, stopCameraStream, updateScanDiagnostics]);
 
   const decodeBarcodeImage = useCallback(
     async (file: File | undefined) => {
@@ -5111,6 +5196,38 @@ function BarcodeScannerModal({
               )}
             </div>
             <p>{cameraMessage}</p>
+            <div className="barcode-live-log" aria-live="polite">
+              <span>
+                <strong>Frames</strong>
+                {scanDiagnostics.frames}
+              </span>
+              <span>
+                <strong>ZXing misses</strong>
+                {scanDiagnostics.zxingMisses}
+              </span>
+              <span>
+                <strong>Backup tries</strong>
+                {scanDiagnostics.backupAttempts}
+              </span>
+              <span>
+                <strong>Video</strong>
+                {scanDiagnostics.videoSize || "waiting"}
+              </span>
+              <span className="wide">
+                <strong>Decoder</strong>
+                {scanDiagnostics.lastDecoder}
+              </span>
+              <span className="wide">
+                <strong>Status</strong>
+                {scanDiagnostics.lastError}
+              </span>
+              {scanDiagnostics.lastRead ? (
+                <span className="wide">
+                  <strong>Last read</strong>
+                  {scanDiagnostics.lastRead}
+                </span>
+              ) : null}
+            </div>
             <label className="barcode-camera-select">
               Camera
               <select value={selectedCameraId} onChange={(event) => setSelectedCameraId(event.currentTarget.value)}>
