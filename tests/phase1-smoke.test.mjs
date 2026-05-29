@@ -133,12 +133,16 @@ test("Phase 15 daily workflow inventory and recap features exist", () => {
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   for (const phrase of [
     "Today.*s Plan",
-    "Quick Add Product",
+    "Open Inventory",
+    "Review Orders",
+    "Recent inventory",
+    "Storefront Status",
     "Mark Checked Today",
     "I Bought This",
     "Inventory Log",
     "Saved Filter Presets",
-    "Daily Recap Archive"
+    "Daily Recap Archive",
+    "Products, Stores, and Cards modules are hidden"
   ]) {
     assert.match(app, new RegExp(phrase), `missing Phase 15 UI phrase ${phrase}`);
   }
@@ -277,7 +281,7 @@ test("dashboard compact cards stay readable instead of narrow columns", () => {
   assert.match(css, /font-size:\s*clamp\(1\.45rem,\s*6vw,\s*2\.75rem\)/);
 
   const viewportQa = readFileSync(join(root, "scripts", "viewport-qa.ts"), "utf8");
-  for (const phrase of ["mobile-390", "tablet-768", "desktop-1440", "Cards", "bodyScrollWidth", "overflowingElements", "imageLeaks", "brokenImages"]) {
+  for (const phrase of ["mobile-390", "tablet-768", "desktop-1440", "Orders", "Market", "Admin", "bodyScrollWidth", "overflowingElements", "imageLeaks", "brokenImages"]) {
     assert.match(viewportQa, new RegExp(phrase), `missing viewport QA phrase ${phrase}`);
   }
 });
@@ -529,7 +533,7 @@ test("Phase 4 release priority engine fields exist", () => {
   }
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  assert.match(app, /Online Drops/);
+  assert.match(app, /Dashboard summary/);
   assert.match(app, /Yearly Release Calendar/);
   assert.match(app, /release-month-grid/);
   assert.match(app, /High priority only/);

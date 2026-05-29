@@ -260,6 +260,7 @@ Phase 7 adds Vercel deployment readiness:
 
 - `vercel.json` registers `/api/radar/monitor/cron` on a `*/5 * * * *` UTC schedule.
 - `/api/radar/monitor/cron` supports Vercel's GET cron invocation and the existing POST/manual test flow.
+- Scheduled product scans are paused by default while the Products, Stores, and Cards UI modules are hidden. Set `PRODUCT_MONITOR_CRON_ENABLED=true` to re-enable `/api/radar/monitor/cron`; authenticated manual monitor runs remain protected by user permissions.
 - Cron calls are protected by `MONITOR_JOB_SECRET`, with bearer-token compatibility for Vercel's `CRON_SECRET`.
 - `/api/health` reports app, database, cron, alert, push, email, and SMS readiness without exposing secret values.
 - Admin users see App Health inside the dashboard. Missing production env vars show an admin warning instead of crashing the public UI.

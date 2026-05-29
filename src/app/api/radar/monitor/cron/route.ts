@@ -18,10 +18,25 @@ function cronAuthorized(request: Request) {
   return secrets.some((secret) => monitorHeader === secret || bearer === secret);
 }
 
+function productMonitorCronEnabled() {
+  return process.env.PRODUCT_MONITOR_CRON_ENABLED === "true";
+}
+
+function pausedResponse() {
+  return ok({
+    status: "PAUSED",
+    runType: "DUE_JOB",
+    checked: 0,
+    alertsCreated: 0,
+    reason: "Product monitor cron is paused while Products, Stores, and Cards UI modules are hidden. Set PRODUCT_MONITOR_CRON_ENABLED=true to re-enable scheduled product scans."
+  });
+}
+
 export async function GET(request: Request) {
   if (!cronAuthorized(request)) {
     return NextResponse.json({ error: "Monitor job secret required" }, { status: 401 });
   }
+  if (!productMonitorCronEnabled()) return pausedResponse();
 
   try {
     return ok(await runProductMonitorBatch("due", "DUE_JOB"));
@@ -34,6 +49,7 @@ export async function POST(request: Request) {
   if (!cronAuthorized(request)) {
     return NextResponse.json({ error: "Monitor job secret required" }, { status: 401 });
   }
+  if (!productMonitorCronEnabled()) return pausedResponse();
 
   try {
     const input = monitorRunSchema.parse(await readJson(request));
