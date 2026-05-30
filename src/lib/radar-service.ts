@@ -1599,7 +1599,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   };
 }
 
-function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
+export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
   const now = new Date();
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - now.getDay());
@@ -1607,12 +1607,18 @@ function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const allSales = items.flatMap((item) => item.sales);
   const totalCost = items.reduce((sum, item) => sum + item.totalCost, 0);
-  const currentInventoryValue = items.reduce((sum, item) => sum + (item.netMarketValue ?? 0), 0);
+  const inventoryCostBasis = items.reduce((sum, item) => sum + item.quantityOwned * item.averageCost, 0);
+  const marketItems = items.filter((item) => item.quantityOwned > 0 && item.marketCompCount > 0 && item.grossMarketValue !== null);
+  const marketValue = marketItems.length ? marketItems.reduce((sum, item) => sum + (item.grossMarketValue ?? 0), 0) : null;
+  const currentInventoryValue = marketValue ?? 0;
   const totalSalesGross = allSales.reduce((sum, sale) => sum + sale.grossSale, 0);
   const totalSalesNet = allSales.reduce((sum, sale) => sum + sale.netSale, 0);
   const realizedProfitLoss = allSales.reduce((sum, sale) => sum + sale.profitLoss, 0);
-  const estimatedProfit = items.reduce((sum, item) => sum + (item.businessProfitLoss ?? item.marketProfitLoss ?? item.estimatedNetProfit ?? 0), 0);
-  const netProfitLoss = totalSalesNet + currentInventoryValue - totalCost;
+  const unrealizedProfitLoss = marketItems.length
+    ? marketItems.reduce((sum, item) => sum + ((item.grossMarketValue ?? 0) - item.quantityOwned * item.averageCost), 0)
+    : null;
+  const estimatedProfit = realizedProfitLoss + (unrealizedProfitLoss ?? 0);
+  const netProfitLoss = realizedProfitLoss + (unrealizedProfitLoss ?? 0);
   const quantityByCategoryMap = new Map<string, number>();
   const profitByPlatformMap = new Map<string, { profit: number; sales: number }>();
   for (const item of items) quantityByCategoryMap.set(item.category, (quantityByCategoryMap.get(item.category) ?? 0) + item.quantityOwned);
@@ -1631,12 +1637,16 @@ function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
   return {
     totalSpent: totalCost,
     totalCost,
+    inventoryCostBasis,
     currentInventoryValue,
     estimatedMarketValue: currentInventoryValue,
+    marketValue,
+    marketItemsWithDataCount: marketItems.length,
     totalSalesGross,
     totalSalesNet,
     estimatedProfit,
     realizedProfitLoss,
+    unrealizedProfitLoss,
     netProfitLoss,
     totalRoiPercent: totalCost > 0 ? (netProfitLoss / totalCost) * 100 : null,
     itemsOwned: items.reduce((sum, item) => sum + item.quantityOwned, 0),

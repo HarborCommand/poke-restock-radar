@@ -402,12 +402,16 @@ export type UpcLookupResultDTO = {
 export type InventorySummaryDTO = {
   totalSpent: number;
   totalCost: number;
+  inventoryCostBasis: number;
   currentInventoryValue: number;
   estimatedMarketValue: number;
+  marketValue: number | null;
+  marketItemsWithDataCount: number;
   totalSalesGross: number;
   totalSalesNet: number;
   estimatedProfit: number;
   realizedProfitLoss: number;
+  unrealizedProfitLoss: number | null;
   netProfitLoss: number;
   totalRoiPercent: number | null;
   itemsOwned: number;

@@ -5,15 +5,18 @@ import {
   AlertTriangle,
   Activity,
   Bell,
+  Boxes,
   CalendarDays,
   Check,
   ChevronRight,
   CircleDollarSign,
+  ClipboardList,
   Clock,
   Download,
   Eye,
   ExternalLink,
   FileText,
+  LineChart,
   HelpCircle,
   History,
   Lock,
@@ -25,11 +28,14 @@ import {
   PackageSearch,
   Play,
   Plus,
+  PlusCircle,
   Printer,
   Radar,
   RefreshCw,
+  Receipt,
   RotateCcw,
   Save,
+  ScanBarcode,
   Search,
   Settings,
   ShieldCheck,
@@ -39,8 +45,10 @@ import {
   Star,
   Store,
   Trash2,
+  TrendingUp,
   Trophy,
   Upload,
+  Wallet,
   Wifi,
   WifiOff,
   X
@@ -1544,6 +1552,19 @@ function DashboardPanel({
   const publishedStoreProducts = dashboard.inventory.filter(
     (item) => item.publishToStore && item.storeStatus === "active" && (item.availableForSale ?? item.quantityOwned) > 0
   ).length;
+  const recentSales = dashboard.inventory
+    .flatMap((item) => item.sales.map((sale) => ({ sale, item })))
+    .sort((a, b) => new Date(b.sale.soldAt).getTime() - new Date(a.sale.soldAt).getTime())
+    .slice(0, 4);
+  const recentOrders = [...dashboard.storefrontOrders]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 4);
+  const missingMarketItems = dashboard.inventory
+    .filter((item) => item.quantityOwned > 0 && item.marketCompCount === 0)
+    .slice(0, 5);
+  const marketValueLabel = dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue);
+  const unrealizedLabel =
+    dashboard.inventorySummary.unrealizedProfitLoss === null ? "Needs data" : money(dashboard.inventorySummary.unrealizedProfitLoss);
 
   return (
     <>
@@ -1554,11 +1575,11 @@ function DashboardPanel({
         </div>
         <div className="dashboard-primary-actions" aria-label="More Actions">
           <button className="mini-action solid" type="button" onClick={() => setActiveTab("inventory")}>
-            <Plus size={15} />
+            <PlusCircle size={15} />
             Add Inventory
           </button>
           <button className="mini-action" type="button" onClick={() => setActiveTab("inventory")}>
-            <PackageSearch size={15} />
+            <ScanBarcode size={15} />
             Scan UPC
           </button>
           <button className="mini-action" type="button" onClick={() => setActiveTab("orders")}>
@@ -1574,59 +1595,59 @@ function DashboardPanel({
       <DashboardAlertBanner alert={liveAlert} setActiveTab={setActiveTab} />
       <section className="dashboard-metric-grid" aria-label="Dashboard summary">
         <DashboardMetricCard
-          icon={Trophy}
-          label="Total Inventory Value"
-          value={money(dashboard.inventorySummary.currentInventoryValue)}
-          detail={`${dashboard.inventorySummary.itemsOwned} items owned`}
+          icon={Wallet}
+          label="Total Spent"
+          value={money(dashboard.inventorySummary.totalSpent)}
+          detail="From stock lots"
           tone="green"
         />
         <DashboardMetricCard
-          icon={CircleDollarSign}
-          label="Total Spent"
-          value={money(dashboard.inventorySummary.totalSpent)}
-          detail="cost basis"
+          icon={Boxes}
+          label="Inventory Cost Basis"
+          value={money(dashboard.inventorySummary.inventoryCostBasis)}
+          detail={`${dashboard.inventorySummary.itemsOwned} items owned`}
           tone="blue"
         />
         <DashboardMetricCard
-          icon={ShoppingBag}
+          icon={TrendingUp}
+          label="Market Value"
+          value={marketValueLabel}
+          detail={dashboard.inventorySummary.marketValue === null ? "Needs comps" : "From market comps"}
+          tone={dashboard.inventorySummary.marketValue === null ? "amber" : "green"}
+        />
+        <DashboardMetricCard
+          icon={Receipt}
           label="Total Sales"
           value={money(dashboard.inventorySummary.totalSalesGross)}
-          detail={`${dashboard.inventorySummary.itemsSold} items sold`}
+          detail="From sales log"
           tone="blue"
         />
         <DashboardMetricCard
           icon={CircleDollarSign}
-          label="Net Profit / Loss"
-          value={money(dashboard.inventorySummary.netProfitLoss)}
-          detail="sales plus inventory value"
-          tone={dashboard.inventorySummary.netProfitLoss >= 0 ? "green" : "amber"}
+          label="Realized Profit"
+          value={money(dashboard.inventorySummary.realizedProfitLoss)}
+          detail="Sold net minus cost"
+          tone={dashboard.inventorySummary.realizedProfitLoss >= 0 ? "green" : "amber"}
+        />
+        <DashboardMetricCard
+          icon={LineChart}
+          label="Unrealized P/L"
+          value={unrealizedLabel}
+          detail={dashboard.inventorySummary.unrealizedProfitLoss === null ? "Needs comps" : "Known market value"}
+          tone={dashboard.inventorySummary.unrealizedProfitLoss === null || dashboard.inventorySummary.unrealizedProfitLoss < 0 ? "amber" : "green"}
         />
         <DashboardMetricCard
           icon={ShoppingBag}
           label="Open Orders"
           value={dashboard.storefrontSummary.pendingOrderCount}
-          detail={`${dashboard.storefrontSummary.paidOrderCount} paid orders`}
+          detail="From storefront orders"
           tone={dashboard.storefrontSummary.pendingOrderCount ? "amber" : "blue"}
         />
         <DashboardMetricCard
-          icon={Store}
-          label="Published Store Products"
-          value={publishedStoreProducts}
-          detail={`${dashboard.storefrontSummary.activeProductCount} active listings`}
-          tone="green"
-        />
-        <DashboardMetricCard
           icon={AlertTriangle}
-          label="Items Low Stock"
-          value={lowStockItems}
-          detail="2 or fewer owned"
-          tone={lowStockItems ? "amber" : "blue"}
-        />
-        <DashboardMetricCard
-          icon={Sparkles}
           label="Missing Market Data"
           value={dashboard.inventorySummary.missingMarketDataCount}
-          detail="inventory items to review"
+          detail="Needs comps"
           tone={dashboard.inventorySummary.missingMarketDataCount ? "amber" : "green"}
         />
       </section>
@@ -1651,7 +1672,7 @@ function DashboardPanel({
                 <EmptyState icon={Bell} title="No recent alerts yet" detail="Inventory, orders, and storefront alerts will appear here." />
                 <div className="dashboard-empty-actions">
                   <button className="mini-action solid" type="button" onClick={() => setActiveTab("inventory")}>
-                    <Plus size={14} />
+                    <PlusCircle size={14} />
                     Add Inventory
                   </button>
                   <button className="mini-action" type="button" onClick={() => setActiveTab("orders")}>View Orders</button>
@@ -1666,8 +1687,8 @@ function DashboardPanel({
               <h2>Quick Actions</h2>
             </div>
             <div className="quick-action-list">
-              <QuickActionRow icon={Plus} title="Add Inventory" description="Add products you own" onClick={() => setActiveTab("inventory")} />
-              <QuickActionRow icon={PackageSearch} title="Scan UPC to Inventory" description="Add a purchased item by barcode" onClick={() => setActiveTab("inventory")} />
+              <QuickActionRow icon={PlusCircle} title="Add Inventory" description="Add products you own" onClick={() => setActiveTab("inventory")} />
+              <QuickActionRow icon={ScanBarcode} title="Scan UPC to Inventory" description="Add a purchased item by barcode" onClick={() => setActiveTab("inventory")} />
               <QuickActionRow icon={ShoppingBag} title="Review Orders" description="Pack, ship, and fulfill storefront sales" onClick={() => setActiveTab("orders")} />
               <QuickActionRow icon={Bell} title="Review Alerts" description="Check unread operational alerts" onClick={() => setActiveTab("alerts")} />
               <QuickActionRow icon={ExternalLink} title="Open Storefront" description="View the public shop" onClick={() => window.open("/shop", "_blank", "noopener,noreferrer")} />
@@ -1678,13 +1699,73 @@ function DashboardPanel({
               <h2>Storefront Status</h2>
             </div>
             <div className="quick-action-list">
+              <DashboardStatusRow label="Published products" value={publishedStoreProducts} />
+              <DashboardStatusRow label="Low stock items" value={lowStockItems} tone={lowStockItems ? "bad" : "good"} />
               <DashboardStatusRow label="Active listings" value={dashboard.storefrontSummary.activeProductCount} />
               <DashboardStatusRow label="Pending orders" value={dashboard.storefrontSummary.pendingOrderCount} />
-              <DashboardStatusRow label="Store revenue" value={money(dashboard.storefrontSummary.totalRevenue)} />
-              <DashboardStatusRow label="Store profit" value={money(dashboard.storefrontSummary.netProfit)} tone={dashboard.storefrontSummary.netProfit >= 0 ? "good" : "bad"} />
             </div>
           </section>
         </aside>
+      </section>
+      <section className="dashboard-secondary-grid">
+        <section className="dashboard-card">
+          <div className="dashboard-card-header compact">
+            <div>
+              <h2>Inventory Needing Market Data</h2>
+              <p>Items with stock but no saved comps yet.</p>
+            </div>
+            <button className="link-button" type="button" onClick={() => setActiveTab("market")}>Open Market</button>
+          </div>
+          <div className="dashboard-compact-list">
+            {missingMarketItems.length ? (
+              missingMarketItems.map((item) => (
+                <DashboardSimpleRow
+                  key={item.id}
+                  icon={AlertTriangle}
+                  title={item.itemName}
+                  detail={`${item.quantityOwned} owned - ${item.category}`}
+                  value="Needs comps"
+                  tone="warn"
+                />
+              ))
+            ) : (
+              <EmptyState icon={TrendingUp} title="Market data is covered" detail="Every owned item currently has at least one comp saved." />
+            )}
+          </div>
+        </section>
+        <section className="dashboard-card">
+          <div className="dashboard-card-header compact">
+            <div>
+              <h2>Recent Sales / Orders</h2>
+              <p>Latest business activity from inventory and storefront.</p>
+            </div>
+          </div>
+          <div className="dashboard-compact-list">
+            {recentSales.map(({ sale, item }) => (
+              <DashboardSimpleRow
+                key={sale.id}
+                icon={Receipt}
+                title={item.itemName}
+                detail={`${sale.platform || "Sale"} - ${relativeTime(sale.soldAt)}`}
+                value={money(sale.profitLoss)}
+                tone={sale.profitLoss >= 0 ? "good" : "bad"}
+              />
+            ))}
+            {recentOrders.map((order) => (
+              <DashboardSimpleRow
+                key={order.id}
+                icon={ClipboardList}
+                title={order.orderNumber}
+                detail={`${order.status.replaceAll("_", " ")} - ${relativeTime(order.createdAt)}`}
+                value={money(order.total)}
+                tone={order.status === "paid" ? "good" : "muted"}
+              />
+            ))}
+            {!recentSales.length && !recentOrders.length ? (
+              <EmptyState icon={ClipboardList} title="No recent sales or orders" detail="Recorded sales and storefront orders will show up here." />
+            ) : null}
+          </div>
+        </section>
       </section>
       <section className="dashboard-card dashboard-activity-card">
         <div className="dashboard-card-header compact">
@@ -1695,7 +1776,7 @@ function DashboardPanel({
         </div>
         <div className="dashboard-activity-grid">
           <DashboardActivityItem label="New alerts" value={todayAlerts} detail="alerts created today" icon={Bell} />
-          <DashboardActivityItem label="Inventory added" value={inventoryAddedToday} detail="items added today" icon={Trophy} />
+          <DashboardActivityItem label="Inventory added" value={inventoryAddedToday} detail="items added today" icon={Boxes} />
           <DashboardActivityItem label="Sales recorded" value={salesToday} detail="inventory sales today" icon={CircleDollarSign} />
           <DashboardActivityItem label="Orders created" value={ordersToday} detail="storefront orders today" icon={ShoppingBag} />
         </div>
@@ -1790,6 +1871,33 @@ function DashboardStatusRow({ label, value, tone = "muted" }: { label: string; v
       <span>{label}</span>
       <strong className={tone}>{value}</strong>
     </div>
+  );
+}
+
+function DashboardSimpleRow({
+  icon: Icon,
+  title,
+  detail,
+  value,
+  tone = "muted"
+}: {
+  icon: typeof Radar;
+  title: string;
+  detail: string;
+  value: string;
+  tone?: "good" | "bad" | "warn" | "muted";
+}) {
+  return (
+    <article className="dashboard-simple-row">
+      <span>
+        <Icon size={16} />
+      </span>
+      <div>
+        <strong>{title}</strong>
+        <small>{detail}</small>
+      </div>
+      <em className={tone}>{value}</em>
+    </article>
   );
 }
 
