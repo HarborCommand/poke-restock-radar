@@ -10252,6 +10252,580 @@ body {
   }
 }
 
+/* Final production light-theme guard.
+   This block intentionally lives after every legacy dark rule so the visible app cannot fall back to the old dark dashboard. */
+:root {
+  color-scheme: light;
+  --bg: #f7f9fb;
+  --bg-soft: #f2f6f4;
+  --panel: #ffffff;
+  --panel-strong: #ffffff;
+  --line: #e5e7eb;
+  --line-strong: #d6dde0;
+  --text: #111827;
+  --muted: #6b7280;
+  --subtle: #9ca3af;
+  --green: #22c55e;
+  --green-bg: #dcfce7;
+  --blue: #3b82f6;
+  --blue-bg: #dbeafe;
+  --yellow: #f59e0b;
+  --yellow-bg: #fef3c7;
+  --red: #ef4444;
+  --red-bg: #fee2e2;
+  --shadow: 0 16px 40px rgba(15, 23, 42, 0.07);
+  --radius: 20px;
+}
+
+html,
+body,
+.screen,
+.app-shell {
+  background: #f7f9fb !important;
+  color: #111827 !important;
+}
+
+body {
+  overflow-x: hidden;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+body * {
+  box-sizing: border-box;
+  min-width: 0;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+
+body h1,
+body h2,
+body h3,
+body p,
+body span,
+body strong,
+body small,
+body label,
+body li,
+body td,
+body th,
+body button,
+body a {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+body input,
+body select,
+body textarea {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #111827;
+}
+
+body button,
+body .mini-action,
+body .primary-action,
+body .icon-button,
+body .link-button,
+body .date-range-pill,
+body .location-pill {
+  white-space: nowrap;
+}
+
+body .app-shell {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  min-height: 100svh;
+}
+
+body .app-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow-y: auto;
+  border-right: 1px solid #e5e7eb;
+  background: #ffffff !important;
+  box-shadow: 10px 0 30px rgba(15, 23, 42, 0.04);
+  color: #111827;
+}
+
+body .sidebar-brand,
+body .sidebar-brand h1 {
+  color: #111827;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+body .sidebar-brand .brand-mark {
+  border-color: #bbf7d0;
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+body .sidebar-section-title {
+  color: #9ca3af;
+}
+
+body .sidebar-nav-item {
+  color: #374151;
+  background: transparent;
+}
+
+body .sidebar-nav-item:hover {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+body .sidebar-nav-item.active {
+  background: #dcfce7 !important;
+  box-shadow: none;
+  color: #15803d !important;
+}
+
+body .sidebar-foot {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #111827;
+}
+
+body .upgrade-button {
+  border: 0;
+  background: #dcfce7;
+  color: #15803d;
+}
+
+body .app-main,
+body .app-main.app-main-inventory {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 clamp(18px, 2vw, 30px) 56px;
+}
+
+body .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 35;
+  margin: 0 calc(clamp(18px, 2vw, 30px) * -1) 22px;
+  border-bottom: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  backdrop-filter: blur(18px);
+}
+
+body .topbar-search-wrap {
+  width: min(100%, 540px);
+  min-height: 42px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #6b7280;
+}
+
+body .topbar-search-wrap input {
+  color: #111827;
+}
+
+body .topbar-search-wrap kbd {
+  border-color: #e5e7eb;
+  background: #ffffff;
+  color: #6b7280;
+}
+
+body .icon-button,
+body .location-pill,
+body .topbar-quick-action,
+body .date-range-pill,
+body .mini-action,
+body .link-button {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: none;
+}
+
+body .user-avatar,
+body .primary-action,
+body .mini-action.solid,
+body .topbar-quick-action {
+  border-color: transparent;
+  background: #22c55e;
+  color: #052e16;
+}
+
+body .content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+}
+
+body .dashboard-page-header,
+body .section-intro,
+body .inventory-page-header {
+  align-items: flex-end;
+  gap: 18px;
+}
+
+body .dashboard-page-header h1,
+body .section-intro h2,
+body .inventory-page-header h2 {
+  color: #111827;
+  font-size: clamp(1.75rem, 2.4vw, 2.25rem);
+  letter-spacing: -0.02em;
+}
+
+body .dashboard-page-header p,
+body .section-intro p,
+body .inventory-page-header p {
+  color: #6b7280;
+}
+
+body .dashboard-card,
+body .dashboard-metric-card,
+body .dashboard-live-alert,
+body .section-intro,
+body .inventory-kpi-card,
+body .catalog-panel,
+body .form-panel,
+body .inventory-quick-actions-strip,
+body .inventory-detail-panel,
+body .admin-action-card,
+body .admin-section-card,
+body .storefront-settings-card,
+body .storefront-orders-card,
+body .sales-header-card,
+body .purchase-dashboard-panel,
+body .sales-dashboard-panel {
+  border: 1px solid #e5e7eb;
+  background: #ffffff !important;
+  color: #111827;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+}
+
+body .dashboard-metric-grid {
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+body .dashboard-metric-card {
+  min-height: 132px;
+  gap: 16px;
+  border-radius: 20px;
+  padding: 22px;
+}
+
+body .dashboard-metric-card strong {
+  color: #111827;
+  font-size: clamp(1.45rem, 2vw, 1.9rem);
+  line-height: 1.05;
+}
+
+body .dashboard-metric-card span {
+  color: #374151;
+  font-size: 0.85rem;
+}
+
+body .dashboard-metric-card small,
+body .dashboard-card-header p,
+body .quick-action-row small,
+body .recent-alert-copy span,
+body .dashboard-simple-row small,
+body .dashboard-watch-row span,
+body .dashboard-watch-row small {
+  color: #6b7280;
+}
+
+body .metric-icon,
+body .live-alert-icon,
+body .quick-action-row > span:first-child,
+body .dashboard-simple-row > span,
+body .recent-alert-thumb > span {
+  width: 54px;
+  height: 54px;
+  border: 0;
+  border-radius: 18px;
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+body .dashboard-metric-card.tone-blue .metric-icon {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+body .dashboard-metric-card.tone-amber .metric-icon {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+body .dashboard-quick-action-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(190px, 1fr));
+  gap: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+body .quick-action-row,
+body .recent-alert-row,
+body .dashboard-simple-row,
+body .dashboard-status-row,
+body .dashboard-watch-row,
+body .sale-card,
+body .purchase-card,
+body .catalog-row {
+  border-color: #e5e7eb;
+  background: #ffffff !important;
+  color: #111827;
+}
+
+body .quick-action-row {
+  min-height: 72px;
+  border-radius: 16px;
+}
+
+body .quick-action-row strong,
+body .recent-alert-copy strong,
+body .dashboard-simple-row strong,
+body .dashboard-watch-row strong,
+body .catalog-product-cell strong,
+body .sale-product-cell strong,
+body .purchase-product-cell strong {
+  color: #111827;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+body .dashboard-main-grid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.85fr);
+  gap: 18px;
+}
+
+body .dashboard-secondary-grid,
+body .module-grid.two {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+body .recent-alert-row {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  min-height: 88px;
+  border-radius: 16px;
+  padding: 12px;
+}
+
+body .recent-alert-thumb .product-image-frame,
+body .recent-alert-thumb .product-image-preview,
+body .dashboard-watch-row .product-image-preview {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+}
+
+body .dashboard-watch-row {
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  min-height: 78px;
+  border-radius: 16px;
+}
+
+body .chip,
+body .compact-chip,
+body .status-badge,
+body .sale-status-badge,
+body .platform-pill {
+  border: 0;
+  border-radius: 999px;
+}
+
+body .chip.good,
+body .compact-chip.good,
+body .sale-status-badge.good {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+body .chip.watch,
+body .compact-chip.watch,
+body .sale-status-badge.watch {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+body .chip.bad,
+body .compact-chip.bad,
+body .sale-status-badge.bad {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+body .app-main-inventory .catalog-panel,
+body .catalog-panel {
+  overflow: hidden;
+}
+
+body .app-main-inventory .catalog-table,
+body .catalog-table {
+  width: 100%;
+  overflow-x: auto;
+  background: #ffffff;
+}
+
+body .app-main-inventory .catalog-row {
+  grid-template-columns:
+    minmax(280px, 2.2fr)
+    minmax(108px, 0.75fr)
+    minmax(62px, 0.4fr)
+    minmax(82px, 0.55fr)
+    minmax(92px, 0.58fr)
+    minmax(92px, 0.58fr)
+    minmax(54px, 0.34fr)
+    minmax(96px, 0.6fr)
+    minmax(92px, 0.52fr)
+    minmax(236px, 1.1fr);
+  min-width: 0;
+  min-height: 72px;
+}
+
+body .catalog-actions {
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+body .catalog-actions .mini-action {
+  min-width: 68px;
+  padding-inline: 10px;
+}
+
+body .catalog-row > span,
+body .catalog-row > div {
+  min-width: 0;
+}
+
+body .catalog-row .upc-cell,
+body .catalog-row .sku-cell,
+body .upc-text,
+body .debug-text {
+  overflow-wrap: anywhere;
+}
+
+body .inventory-image-frame,
+body .product-image-frame,
+body .product-image-preview {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+body .inventory-modal,
+body .inventory-detail-modal,
+body .barcode-result-modal,
+body .sale-details-modal,
+body .purchase-detail-modal {
+  background: #ffffff !important;
+  color: #111827;
+}
+
+body .inventory-modal-backdrop {
+  background: rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(10px);
+}
+
+body .alert-card,
+body .alert-queue-row,
+body .calibration-card {
+  border-color: #e5e7eb;
+  background: #ffffff !important;
+  color: #111827;
+}
+
+body .eyeline {
+  color: #16a34a;
+}
+
+@media (max-width: 1180px) {
+  body .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  body .app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 80;
+    width: min(86vw, 300px);
+    transform: translateX(-104%);
+    transition: transform 0.2s ease;
+  }
+
+  body .app-sidebar.open {
+    transform: translateX(0);
+  }
+
+  body .dashboard-metric-grid,
+  body .dashboard-quick-action-strip {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  body .dashboard-main-grid,
+  body .dashboard-secondary-grid,
+  body .module-grid.two {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  body .app-main,
+  body .app-main.app-main-inventory {
+    padding-inline: 14px;
+  }
+
+  body .topbar,
+  body .dashboard-page-header,
+  body .section-intro,
+  body .inventory-page-header,
+  body .dashboard-live-alert {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body .dashboard-metric-grid,
+  body .dashboard-quick-action-strip {
+    grid-template-columns: 1fr;
+  }
+
+  body .recent-alert-row,
+  body .dashboard-watch-row,
+  body .dashboard-simple-row {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  body .recent-alert-actions,
+  body .dashboard-watch-count {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  body .app-main-inventory .catalog-table {
+    overflow-x: visible;
+  }
+
+  body .app-main-inventory .catalog-row {
+    grid-template-columns: 1fr;
+  }
+
+  body .catalog-actions {
+    flex-wrap: wrap;
+  }
+
+  body .catalog-actions .mini-action {
+    flex: 1 1 112px;
+  }
+}
+
 @media print {
   body {
     background: #ffffff;
