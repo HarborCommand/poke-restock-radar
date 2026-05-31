@@ -168,24 +168,20 @@ const navSectionLabels: Record<NavSection, string> = {
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSection }> = [
   { id: "dashboard", label: "Dashboard", icon: Home, section: "main" },
-  { id: "onlineDrops", label: "Online Drops", icon: Wifi, section: "tracker" },
-  { id: "checkStock", label: "Check Stock", icon: PackageSearch, section: "tracker" },
-  { id: "watchlist", label: "Watchlist", icon: Star, section: "tracker" },
-  { id: "alerts", label: "Alerts", icon: Bell, section: "tracker" },
-  { id: "keywords", label: "Keywords", icon: Tags, section: "tracker" },
   { id: "inventory", label: "Inventory", icon: Trophy, section: "inventory" },
   { id: "orders", label: "Orders", icon: ShoppingBag, section: "inventory" },
   { id: "sales", label: "Sales", icon: Receipt, section: "inventory" },
+  { id: "alerts", label: "Alerts", icon: Bell, section: "inventory" },
   { id: "market", label: "Market", icon: Sparkles, section: "analytics" },
-  { id: "profitLoss", label: "Profit & Loss", icon: CircleDollarSign, section: "analytics" },
-  { id: "trends", label: "Trends", icon: BarChart3, section: "analytics" },
-  { id: "myStore", label: "My Store", icon: Store, section: "store" },
+  { id: "analytics", label: "Analytics", icon: BarChart3, section: "analytics" },
   { id: "releases", label: "Releases", icon: CalendarDays, section: "manage" },
   { id: "settings", label: "Settings", icon: Settings, section: "manage" },
   { id: "admin", label: "Admin", icon: ShieldCheck, section: "manage" }
 ];
 type NavTab = (typeof tabs)[number];
-const deprecatedUiTabs = new Set<Tab>(["field", "products", "stores", "cards"]);
+const deprecatedUiTabs = new Set<Tab>(["field", "products", "stores", "cards", "myStore"]);
+const deprecatedTrackerTabs = new Set<Tab>(["onlineDrops", "checkStock", "watchlist", "keywords"]);
+const deprecatedAnalyticsTabs = new Set<Tab>(["profitLoss", "trends"]);
 const visibleTabIds = new Set<Tab>(tabs.map((tab) => tab.id));
 
 const productStatuses: ProductStatus[] = [
@@ -693,11 +689,18 @@ function formJson(form: HTMLFormElement) {
 }
 
 function isTab(value: string | null): value is Tab {
-  return Boolean(value) && (visibleTabIds.has(value as Tab) || deprecatedUiTabs.has(value as Tab));
+  return Boolean(value) && (
+    visibleTabIds.has(value as Tab) ||
+    deprecatedUiTabs.has(value as Tab) ||
+    deprecatedTrackerTabs.has(value as Tab) ||
+    deprecatedAnalyticsTabs.has(value as Tab)
+  );
 }
 
 function normalizeVisibleTab(value: string | null | undefined): Tab {
   const normalized = value ?? null;
+  if (isTab(normalized) && deprecatedAnalyticsTabs.has(normalized)) return "analytics";
+  if (isTab(normalized) && deprecatedTrackerTabs.has(normalized)) return "dashboard";
   if (isTab(normalized) && deprecatedUiTabs.has(normalized)) return "inventory";
   if (isTab(normalized) && visibleTabIds.has(normalized)) return normalized;
   return "dashboard";
@@ -1000,13 +1003,13 @@ export function RadarApp() {
           </button>
           <div className="topbar-search-wrap">
             <Search size={16} />
-            <input aria-label="Search anything" placeholder="Search products, SKU, UPC, stores..." />
+            <input aria-label="Search anything" placeholder="Search inventory, orders, UPC, alerts..." />
             <kbd>Ctrl K</kbd>
           </div>
         </div>
         <div className="topbar-actions">
-          <button className="location-pill" type="button" onClick={() => setActiveTab("myStore")}>
-            My Store <ChevronRight size={14} />
+          <button className="location-pill" type="button" onClick={() => setActiveTab("inventory")}>
+            Inventory <ChevronRight size={14} />
           </button>
           <button className="icon-button" aria-label="Notifications" type="button" onClick={() => setActiveTab("alerts")}>
             <Bell size={17} />
@@ -1020,7 +1023,7 @@ export function RadarApp() {
               className="topbar-quick-action"
               type="button"
               onClick={() => {
-                const target = document.querySelector(activeTab === "admin" ? ".admin-action-grid" : ".dashboard-quick-actions-card");
+                const target = document.querySelector(activeTab === "admin" ? ".admin-action-grid" : ".dashboard-quick-action-strip");
                 target?.scrollIntoView({ block: "center" });
               }}
             >
@@ -1062,10 +1065,6 @@ export function RadarApp() {
             setActiveTab={setActiveTab}
           />
         ) : null}
-        {activeTab === "onlineDrops" ? <OnlineDropsPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
-        {activeTab === "checkStock" ? <CheckStockPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
-        {activeTab === "watchlist" ? <WatchlistPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
-        {activeTab === "keywords" ? <KeywordsPanel dashboard={dashboard} /> : null}
         {activeTab === "releases" ? (
           <ReleasesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
         ) : null}
@@ -1089,7 +1088,6 @@ export function RadarApp() {
         {activeTab === "market" ? <MarketPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
         {activeTab === "profitLoss" ? <ProfitLossPanel dashboard={dashboard} /> : null}
         {activeTab === "trends" ? <TrendsPanel dashboard={dashboard} /> : null}
-        {activeTab === "myStore" ? <MyStorePanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
         {activeTab === "analytics" ? <InventoryAnalyticsPanel dashboard={dashboard} /> : null}
         {activeTab === "settings" ? (
           <SettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
@@ -1524,7 +1522,7 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
       reason: chaseProduct.priorityScore.reason,
       priority: chaseProduct.priorityScore.buyWatchSkip === "BUY" ? "HIGH" : "MEDIUM",
       url: exactProductUrl(chaseProduct) ?? undefined,
-      tab: "products",
+      tab: "inventory",
       product: chaseProduct
     };
   }
@@ -1536,7 +1534,7 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
       )}. Open the verified product page and check out manually.`,
       priority: actionable.priority,
       url: exactProductUrl(actionable) ?? undefined,
-      tab: "products",
+      tab: "inventory",
       product: actionable
     };
   }
@@ -1660,11 +1658,11 @@ function DashboardPanel({
         />
       </section>
       <section className="dashboard-quick-action-strip" aria-label="More Actions">
-        <QuickActionRow icon={PackageSearch} title="Check Stock" description="Find in-store inventory" onClick={() => setActiveTab("checkStock")} />
-        <QuickActionRow icon={ScanBarcode} title="Add to Inventory" description="Scan or add product" onClick={() => setActiveTab("inventory")} />
-        <QuickActionRow icon={Wifi} title="View Online Drops" description="See latest restocks" onClick={() => setActiveTab("onlineDrops")} />
-        <QuickActionRow icon={Star} title="Manage Watchlist" description="Edit tracked items" onClick={() => setActiveTab("watchlist")} />
-        <QuickActionRow icon={Bell} title="Alert Settings" description="Customize alerts" onClick={() => setActiveTab("settings")} />
+        <QuickActionRow icon={ScanBarcode} title="Add Inventory" description="Scan UPC or add product" onClick={() => setActiveTab("inventory")} />
+        <QuickActionRow icon={ShoppingBag} title="Orders" description="Review paid and pending orders" onClick={() => setActiveTab("orders")} />
+        <QuickActionRow icon={Receipt} title="Sales" description="Record and review sold items" onClick={() => setActiveTab("sales")} />
+        <QuickActionRow icon={Bell} title="Alerts" description="Review active notifications" onClick={() => setActiveTab("alerts")} />
+        <QuickActionRow icon={CalendarDays} title="Releases" description="Track upcoming product drops" onClick={() => setActiveTab("releases")} />
       </section>
       <section className="dashboard-main-grid">
         <section className="dashboard-card recent-alerts-card">
@@ -1699,10 +1697,10 @@ function DashboardPanel({
         <section className="dashboard-card watchlist-card">
           <div className="dashboard-card-header">
             <div>
-              <h2>Watchlist</h2>
-              <p>Inventory and store listings worth checking.</p>
+              <h2>Inventory Watch</h2>
+              <p>Products you own or have listed publicly.</p>
             </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("watchlist")}>View all</button>
+            <button className="link-button" type="button" onClick={() => setActiveTab("inventory")}>View all</button>
           </div>
           <div className="dashboard-compact-list">
             {watchlistItems.length ? (
@@ -1710,7 +1708,7 @@ function DashboardPanel({
                 <DashboardInventoryWatchRow key={item.id} item={item} />
               ))
             ) : (
-              <EmptyState icon={Star} title="No watchlist items" detail="Add inventory or publish a store listing to build your watchlist." />
+              <EmptyState icon={Trophy} title="No inventory yet" detail="Add inventory or publish a listing to build this list." />
             )}
           </div>
         </section>
@@ -1746,7 +1744,7 @@ function DashboardPanel({
               <h2>Best Performing</h2>
               <p>Only uses real sales or saved market estimates.</p>
             </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("profitLoss")}>View report</button>
+            <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>View report</button>
           </div>
           <div className="dashboard-compact-list">
             {bestPerforming.length ? (
@@ -1917,6 +1915,7 @@ function DashboardInventoryWatchRow({ item }: { item: InventoryItemDTO }) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function OnlineDropsPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
   const onlineAlerts = dashboard.alerts
     .filter((alert) => !isDeprecatedLocalStoreAlert(alert) && !isTestDashboardAlert(alert))
@@ -1959,6 +1958,7 @@ function OnlineDropsPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CheckStockPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
   const inStock = dashboard.inventory.filter((item) => item.quantityOwned > 0);
   return (
@@ -1989,6 +1989,7 @@ function CheckStockPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO;
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function WatchlistPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
   const watched = dashboard.inventory.filter((item) => item.quantityOwned > 0 || item.publishToStore || item.marketCompCount > 0);
   return (
@@ -2016,6 +2017,7 @@ function WatchlistPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; 
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function KeywordsPanel({ dashboard }: { dashboard: DashboardDTO }) {
   const categories = dashboard.inventorySummary.quantityByCategory.slice(0, 8);
   return (
@@ -2109,6 +2111,7 @@ function TrendsPanel({ dashboard }: { dashboard: DashboardDTO }) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MyStorePanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
   const published = dashboard.inventory.filter((item) => item.publishToStore);
   return (

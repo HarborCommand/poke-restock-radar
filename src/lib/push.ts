@@ -62,10 +62,10 @@ function configureWebPush() {
 
 export function notificationRouteForAlert(payload: PushAlertPayload) {
   const entityId = payload.entityId || payload.productId || "";
-  if (payload.entityType === "PRODUCT") return appUrl(`/?tab=products&focus=product-${entityId}`);
-  if (payload.entityType === "STORE") return appUrl(`/?tab=field&focus=store-${entityId}`);
+  if (payload.entityType === "PRODUCT") return appUrl(`/?tab=inventory&focus=product-${entityId}`);
+  if (payload.entityType === "STORE") return appUrl(`/?tab=alerts&focus=store-${entityId}`);
   if (payload.entityType === "RELEASE") return appUrl(`/?tab=releases&focus=release-${entityId}`);
-  if (payload.entityType === "CARD") return appUrl(`/?tab=cards&focus=card-${entityId}`);
+  if (payload.entityType === "CARD") return appUrl(`/?tab=market&focus=card-${entityId}`);
   return appUrl("/?tab=alerts");
 }
 
