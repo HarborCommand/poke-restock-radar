@@ -2126,7 +2126,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       orderBy: { seenAt: "desc" },
       take: 20
     }),
-    prisma.release.findMany({ orderBy: { officialReleaseDate: "asc" } }),
+    prisma.release.findMany({ where: { NOT: { status: "archived" } }, orderBy: { officialReleaseDate: "asc" } }),
     prisma.releaseSyncLog.findMany({ orderBy: { checkedAt: "desc" }, take: 24 }),
     prisma.card.findMany({ include: cardInclude, orderBy: [{ top10Score: "desc" }, { psa10EstimatedProfit: "desc" }] }),
     prisma.cardCompSale.findMany({ include: compSaleInclude, orderBy: { soldAt: "desc" }, take: 60 }),

@@ -10119,7 +10119,7 @@ function ReleasesPanel({
     ? latestSyncLogs.filter((log) => Math.abs(new Date(log.checkedAt).getTime() - new Date(latestRunTime).getTime()) < 2000)
     : [];
   const syncStats = {
-    sourcesChecked: new Set(latestRunLogs.filter((log) => log.adapter !== "merge").map((log) => log.sourceName)).size,
+    sourcesChecked: new Set(latestRunLogs.filter((log) => log.adapter !== "merge").map((log) => log.sourceUrl || log.sourceName)).size,
     parsed: latestRunLogs.reduce((total, log) => total + log.parsedCount, 0),
     created: latestRunLogs.reduce((total, log) => total + log.createdCount, 0),
     updated: latestRunLogs.reduce((total, log) => total + log.updatedCount, 0),

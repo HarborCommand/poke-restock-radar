@@ -86,9 +86,12 @@ export type ReleaseSyncResult = {
 
 const OFFICIAL_EXPANSIONS_URL = "https://tcg.pokemon.com/en-us/expansions/";
 const OFFICIAL_NEWS_BASE = "https://www.pokemon.com/us/pokemon-news/";
+const DEFAULT_OFFICIAL_NEWS_URLS = [
+  "https://www.pokemon.com/uk/pokemon-news/the-pokemon-tcg-mega-evolution-pitch-black-expansion-arrives-july-17-2026"
+];
 const POKEMON_CENTER_NEW_RELEASES_URL = "https://www.pokemoncenter.com/category/new-releases";
 const POKEMON_TCG_API_URL = "https://api.pokemontcg.io/v2/sets?orderBy=releaseDate&pageSize=250";
-const ICV2_SEARCH_URL = "https://icv2.com/search?q=Pokemon%20TCG%202026%20Product%20Calendar";
+const LEGACY_BAD_ICV2_SEARCH_URL = "https://icv2.com/search?q=Pokemon%20TCG%202026%20Product%20Calendar";
 
 const MONTHS = [
   "january",
@@ -564,7 +567,7 @@ function configuredSourceUrls() {
 
 function officialNewsUrls(now = new Date()) {
   const years = [now.getUTCFullYear(), now.getUTCFullYear() + 1];
-  const urls = new Set<string>();
+  const urls = new Set<string>(DEFAULT_OFFICIAL_NEWS_URLS);
   for (const year of years) {
     for (const month of MONTHS) {
       urls.add(`${OFFICIAL_NEWS_BASE}check-out-every-pokemon-tcg-product-release-in-${month}-${year}`);
@@ -651,7 +654,6 @@ async function runAdapters() {
     pokemonTcgApiAdapter(),
     htmlAdapter("Official Pokemon TCG expansions", OFFICIAL_EXPANSIONS_URL, "official_pokemon", parseOfficialExpansionsHtml),
     htmlAdapter("Official Pokemon Center new releases", POKEMON_CENTER_NEW_RELEASES_URL, "official_pokemon_center", parsePokemonCenterHtml),
-    htmlAdapter("ICv2 Pokemon TCG calendar search", ICV2_SEARCH_URL, "icv2_secondary", parseIcv2CalendarHtml),
     ...officialNewsUrls().map((url) => htmlAdapter("Official Pokemon News", url, "official_pokemon_news", parseOfficialNewsHtml)),
     ...configuredSources.map((url) => {
       if (/icv2\.com/i.test(url)) return htmlAdapter("ICv2 Pokemon TCG Product Calendar", url, "icv2_secondary", parseIcv2CalendarHtml);
@@ -792,6 +794,20 @@ async function ensureReleaseSyncSources(logs: AdapterLog[], checkedAt: Date) {
       }
     });
   }
+}
+
+async function cleanupLegacyBadIcv2SearchRows() {
+  await prisma.release.updateMany({
+    where: {
+      createdByManualEntry: false,
+      sourceUrl: LEGACY_BAD_ICV2_SEARCH_URL
+    },
+    data: {
+      status: "archived",
+      needsReview: true,
+      reviewReason: "Archived legacy ICv2 search-result row. Configure a direct ICv2 product calendar URL before using ICv2 as a secondary source."
+    }
+  });
 }
 
 export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyncResult> {
@@ -936,6 +952,7 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
     error: warnings.length ? warnings.slice(0, 3).join(" ") : null
   };
   const logs = [...rawLogs, summaryLog];
+  await cleanupLegacyBadIcv2SearchRows();
   await ensureReleaseSyncSources(rawLogs, checkedAt);
   await recordSyncLogs(checkedAt, logs);
 
