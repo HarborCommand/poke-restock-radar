@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Activity,
   Bell,
+  BarChart3,
   Boxes,
   CalendarDays,
   Check,
@@ -16,6 +17,7 @@ import {
   Eye,
   ExternalLink,
   FileText,
+  Home,
   LineChart,
   HelpCircle,
   History,
@@ -44,11 +46,11 @@ import {
   ShoppingBag,
   Star,
   Store,
+  Tags,
   Trash2,
   TrendingUp,
   Trophy,
   Upload,
-  Wallet,
   Wifi,
   WifiOff,
   X
@@ -103,6 +105,9 @@ import type {
 
 type Tab =
   | "dashboard"
+  | "onlineDrops"
+  | "checkStock"
+  | "watchlist"
   | "field"
   | "products"
   | "stores"
@@ -110,8 +115,13 @@ type Tab =
   | "cards"
   | "inventory"
   | "orders"
+  | "sales"
   | "alerts"
+  | "keywords"
   | "market"
+  | "profitLoss"
+  | "trends"
+  | "myStore"
   | "analytics"
   | "settings"
   | "admin";
@@ -145,14 +155,32 @@ type InventoryPurchasePrefill = {
   source?: string | null;
 };
 
-const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: "main" | "manage" }> = [
-  { id: "dashboard", label: "Dashboard", icon: Radar, section: "main" },
-  { id: "releases", label: "Releases", icon: CalendarDays, section: "main" },
-  { id: "alerts", label: "Alerts", icon: Bell, section: "main" },
-  { id: "inventory", label: "Inventory", icon: Trophy, section: "main" },
-  { id: "orders", label: "Orders", icon: ShoppingBag, section: "main" },
-  { id: "market", label: "Market", icon: Sparkles, section: "main" },
-  { id: "analytics", label: "Analytics", icon: Activity, section: "main" },
+type NavSection = "main" | "tracker" | "inventory" | "analytics" | "store" | "manage";
+
+const navSectionLabels: Record<NavSection, string> = {
+  main: "Main",
+  tracker: "Tracker",
+  inventory: "Inventory",
+  analytics: "Analytics",
+  store: "Store",
+  manage: "Manage"
+};
+
+const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSection }> = [
+  { id: "dashboard", label: "Dashboard", icon: Home, section: "main" },
+  { id: "onlineDrops", label: "Online Drops", icon: Wifi, section: "tracker" },
+  { id: "checkStock", label: "Check Stock", icon: PackageSearch, section: "tracker" },
+  { id: "watchlist", label: "Watchlist", icon: Star, section: "tracker" },
+  { id: "alerts", label: "Alerts", icon: Bell, section: "tracker" },
+  { id: "keywords", label: "Keywords", icon: Tags, section: "tracker" },
+  { id: "inventory", label: "Inventory", icon: Trophy, section: "inventory" },
+  { id: "orders", label: "Orders", icon: ShoppingBag, section: "inventory" },
+  { id: "sales", label: "Sales", icon: Receipt, section: "inventory" },
+  { id: "market", label: "Market", icon: Sparkles, section: "analytics" },
+  { id: "profitLoss", label: "Profit & Loss", icon: CircleDollarSign, section: "analytics" },
+  { id: "trends", label: "Trends", icon: BarChart3, section: "analytics" },
+  { id: "myStore", label: "My Store", icon: Store, section: "store" },
+  { id: "releases", label: "Releases", icon: CalendarDays, section: "manage" },
   { id: "settings", label: "Settings", icon: Settings, section: "manage" },
   { id: "admin", label: "Admin", icon: ShieldCheck, section: "manage" }
 ];
@@ -897,8 +925,12 @@ export function RadarApp() {
     }
   };
 
-  const mainTabs = tabs.filter((tab) => tab.section === "main");
-  const manageTabs = tabs.filter((tab) => tab.section === "manage" && (tab.id !== "admin" || isAdmin));
+  const navGroups = (Object.keys(navSectionLabels) as NavSection[])
+    .map((section) => ({
+      section,
+      tabs: tabs.filter((tab) => tab.section === section && (tab.id !== "admin" || isAdmin))
+    }))
+    .filter((group) => group.tabs.length);
 
   if (loading) {
     return (
@@ -940,12 +972,20 @@ export function RadarApp() {
           </div>
         </div>
         <nav className="sidebar-nav">
-          <SidebarNavGroup title="Main" tabs={mainTabs} activeTab={activeTab} onSelect={setActiveTab} onClose={() => setSidebarOpen(false)} />
-          <SidebarNavGroup title="Manage" tabs={manageTabs} activeTab={activeTab} onSelect={setActiveTab} onClose={() => setSidebarOpen(false)} />
+          {navGroups.map((group) => (
+            <SidebarNavGroup
+              key={group.section}
+              title={navSectionLabels[group.section]}
+              tabs={group.tabs}
+              activeTab={activeTab}
+              onSelect={setActiveTab}
+              onClose={() => setSidebarOpen(false)}
+            />
+          ))}
         </nav>
         <div className="sidebar-foot">
           <div>
-            <strong>Poke Radar</strong>
+            <strong>Pro Plan</strong>
             <small>Private Plan</small>
           </div>
           <button className="upgrade-button" type="button">Upgrade</button>
@@ -960,11 +1000,14 @@ export function RadarApp() {
           </button>
           <div className="topbar-search-wrap">
             <Search size={16} />
-            <input aria-label="Search anything" placeholder="Search anything..." />
+            <input aria-label="Search anything" placeholder="Search products, SKU, UPC, stores..." />
             <kbd>Ctrl K</kbd>
           </div>
         </div>
         <div className="topbar-actions">
+          <button className="location-pill" type="button" onClick={() => setActiveTab("myStore")}>
+            My Store <ChevronRight size={14} />
+          </button>
           <button className="icon-button" aria-label="Notifications" type="button" onClick={() => setActiveTab("alerts")}>
             <Bell size={17} />
             {dashboard.alertAnalytics.unreadAlerts ? <span className="topbar-badge">{Math.min(dashboard.alertAnalytics.unreadAlerts, 9)}</span> : null}
@@ -1019,6 +1062,10 @@ export function RadarApp() {
             setActiveTab={setActiveTab}
           />
         ) : null}
+        {activeTab === "onlineDrops" ? <OnlineDropsPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
+        {activeTab === "checkStock" ? <CheckStockPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
+        {activeTab === "watchlist" ? <WatchlistPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
+        {activeTab === "keywords" ? <KeywordsPanel dashboard={dashboard} /> : null}
         {activeTab === "releases" ? (
           <ReleasesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
         ) : null}
@@ -1028,6 +1075,7 @@ export function RadarApp() {
         {activeTab === "orders" ? (
           <StorefrontOrdersPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
+        {activeTab === "sales" ? <SalesPanel dashboard={dashboard} /> : null}
         {activeTab === "alerts" ? (
           <AlertsPanel
             dashboard={dashboard}
@@ -1039,6 +1087,9 @@ export function RadarApp() {
           />
         ) : null}
         {activeTab === "market" ? <MarketPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
+        {activeTab === "profitLoss" ? <ProfitLossPanel dashboard={dashboard} /> : null}
+        {activeTab === "trends" ? <TrendsPanel dashboard={dashboard} /> : null}
+        {activeTab === "myStore" ? <MyStorePanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
         {activeTab === "analytics" ? <InventoryAnalyticsPanel dashboard={dashboard} /> : null}
         {activeTab === "settings" ? (
           <SettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
@@ -1507,127 +1558,123 @@ function DashboardPanel({
   setActiveTab: (tab: Tab) => void;
 }) {
   const liveAlert = dashboard.alerts.find((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !alert.read) ?? null;
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const todayAlerts = dashboard.alerts.filter((alert) => alert.timestamp.startsWith(todayKey)).length;
   const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert)).slice(0, 5);
-  const inventoryAddedToday = dashboard.inventory.filter((item) => item.createdAt.startsWith(todayKey)).length;
-  const salesToday = dashboard.inventory.reduce(
-    (total, item) => total + item.sales.filter((sale) => sale.soldAt.startsWith(todayKey)).length,
-    0
-  );
-  const ordersToday = dashboard.storefrontOrders.filter((order) => order.createdAt.startsWith(todayKey)).length;
-  const lowStockItems = dashboard.inventory.filter((item) => item.quantityOwned > 0 && item.quantityOwned <= 2).length;
+  const profitValue = (item: InventoryItemDTO) => item.marketProfitLoss ?? item.businessProfitLoss ?? 0;
+  const productsInStock = dashboard.inventory.filter((item) => item.quantityOwned > 0).length;
+  const needsAttention =
+    dashboard.inventorySummary.missingMarketDataCount +
+    dashboard.inventory.filter((item) => item.quantityOwned > 0 && item.quantityOwned <= 2).length +
+    dashboard.storefrontSummary.pendingOrderCount;
   const publishedStoreProducts = dashboard.inventory.filter(
     (item) => item.publishToStore && item.storeStatus === "active" && (item.availableForSale ?? item.quantityOwned) > 0
   ).length;
-  const recentSales = dashboard.inventory
-    .flatMap((item) => item.sales.map((sale) => ({ sale, item })))
-    .sort((a, b) => new Date(b.sale.soldAt).getTime() - new Date(a.sale.soldAt).getTime())
-    .slice(0, 4);
-  const recentOrders = [...dashboard.storefrontOrders]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 4);
-  const missingMarketItems = dashboard.inventory
-    .filter((item) => item.quantityOwned > 0 && item.marketCompCount === 0)
+  const watchlistItems = dashboard.inventory
+    .filter((item) => item.quantityOwned > 0 || item.publishToStore)
+    .sort((a, b) => (b.quantityOwned + (b.availableForSale ?? 0)) - (a.quantityOwned + (a.availableForSale ?? 0)))
     .slice(0, 5);
+  const bestPerforming = dashboard.inventory
+    .filter((item) => item.businessProfitLoss !== 0 || item.marketProfitLoss !== null)
+    .sort((a, b) => profitValue(b) - profitValue(a))
+    .slice(0, 3);
+  const activityItems = [
+    ...dashboard.storefrontOrders.map((order) => ({
+      id: order.id,
+      icon: ShoppingBag,
+      title: `Order ${order.orderNumber}`,
+      detail: `${formatStatus(order.status)} - ${money(order.total)}`,
+      time: order.createdAt
+    })),
+    ...dashboard.inventory.map((item) => ({
+      id: item.id,
+      icon: Boxes,
+      title: `${item.itemName} added`,
+      detail: `Qty ${item.quantityOwned} - ${item.category}`,
+      time: item.createdAt
+    })),
+    ...dashboard.alerts
+      .filter((alert) => !isDeprecatedLocalStoreAlert(alert) && !isTestDashboardAlert(alert))
+      .map((alert) => ({
+        id: alert.id,
+        icon: Bell,
+        title: alert.title,
+        detail: alert.priority,
+        time: alert.timestamp
+      }))
+  ]
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+    .slice(0, 4);
   const marketValueLabel = dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue);
-  const unrealizedLabel =
-    dashboard.inventorySummary.unrealizedProfitLoss === null ? "Needs data" : money(dashboard.inventorySummary.unrealizedProfitLoss);
+  const now = new Date();
+  const rangeStart = new Date(now);
+  rangeStart.setDate(now.getDate() - 7);
 
   return (
     <>
-      <section className="dashboard-page-header simplified-dashboard-header">
+      <section className="dashboard-page-header overview-header">
         <div>
-          <h1>Dashboard</h1>
-          <p>Track inventory, orders, sales, alerts, and storefront activity from one place.</p>
+          <h1>Overview</h1>
+          <p>Your Pokemon business at a glance</p>
         </div>
-        <div className="dashboard-primary-actions" aria-label="More Actions">
-          <button className="mini-action solid" type="button" onClick={() => setActiveTab("inventory")}>
-            <PlusCircle size={15} />
-            Add Inventory
-          </button>
-          <button className="mini-action" type="button" onClick={() => setActiveTab("inventory")}>
-            <ScanBarcode size={15} />
-            Scan UPC
-          </button>
-          <button className="mini-action" type="button" onClick={() => setActiveTab("orders")}>
-            <ShoppingBag size={15} />
-            Orders
-          </button>
-          <button className="mini-action" type="button" onClick={() => setActiveTab("alerts")}>
-            <Bell size={15} />
-            Alerts
-          </button>
-        </div>
+        <button className="date-range-pill" type="button">
+          <CalendarDays size={15} />
+          {shortDate(rangeStart.toISOString())} - {shortDate(now.toISOString())}
+          <ChevronRight size={14} />
+        </button>
       </section>
       <DashboardAlertBanner alert={liveAlert} setActiveTab={setActiveTab} />
       <section className="dashboard-metric-grid" aria-label="Dashboard summary">
         <DashboardMetricCard
-          icon={Wallet}
-          label="Total Spent"
-          value={money(dashboard.inventorySummary.totalSpent)}
-          detail="From stock lots"
+          icon={Boxes}
+          label="Total Inventory Value"
+          value={marketValueLabel}
+          detail={dashboard.inventorySummary.marketValue === null ? "Needs market data" : "Verified comps only"}
           tone="green"
         />
         <DashboardMetricCard
-          icon={Boxes}
-          label="Inventory Cost Basis"
-          value={money(dashboard.inventorySummary.inventoryCostBasis)}
-          detail={`${dashboard.inventorySummary.itemsOwned} items owned`}
-          tone="blue"
-        />
-        <DashboardMetricCard
-          icon={TrendingUp}
-          label="Market Value"
-          value={marketValueLabel}
-          detail={dashboard.inventorySummary.marketValue === null ? "Needs comps" : "From market comps"}
-          tone={dashboard.inventorySummary.marketValue === null ? "amber" : "green"}
-        />
-        <DashboardMetricCard
-          icon={Receipt}
-          label="Total Sales"
-          value={money(dashboard.inventorySummary.totalSalesGross)}
-          detail="From sales log"
+          icon={ShoppingBag}
+          label="Products In Stock"
+          value={productsInStock}
+          detail={`${dashboard.inventorySummary.itemsOwned} total items`}
           tone="blue"
         />
         <DashboardMetricCard
           icon={CircleDollarSign}
-          label="Realized Profit"
+          label="Total Profit"
           value={money(dashboard.inventorySummary.realizedProfitLoss)}
-          detail="Sold net minus cost"
+          detail="Recorded sales only"
           tone={dashboard.inventorySummary.realizedProfitLoss >= 0 ? "green" : "amber"}
         />
         <DashboardMetricCard
-          icon={LineChart}
-          label="Unrealized P/L"
-          value={unrealizedLabel}
-          detail={dashboard.inventorySummary.unrealizedProfitLoss === null ? "Needs comps" : "Known market value"}
-          tone={dashboard.inventorySummary.unrealizedProfitLoss === null || dashboard.inventorySummary.unrealizedProfitLoss < 0 ? "amber" : "green"}
-        />
-        <DashboardMetricCard
-          icon={ShoppingBag}
-          label="Open Orders"
-          value={dashboard.storefrontSummary.pendingOrderCount}
-          detail="From storefront orders"
-          tone={dashboard.storefrontSummary.pendingOrderCount ? "amber" : "blue"}
+          icon={Bell}
+          label="Active Alerts"
+          value={dashboard.alertAnalytics.unreadAlerts}
+          detail={`${visibleAlerts.length} visible alerts`}
+          tone={dashboard.alertAnalytics.unreadAlerts ? "amber" : "green"}
         />
         <DashboardMetricCard
           icon={AlertTriangle}
-          label="Missing Market Data"
-          value={dashboard.inventorySummary.missingMarketDataCount}
-          detail="Needs comps"
-          tone={dashboard.inventorySummary.missingMarketDataCount ? "amber" : "green"}
+          label="Needs Attention"
+          value={needsAttention}
+          detail={`${dashboard.inventorySummary.missingMarketDataCount} missing market`}
+          tone={needsAttention ? "amber" : "green"}
         />
+      </section>
+      <section className="dashboard-quick-action-strip" aria-label="More Actions">
+        <QuickActionRow icon={PackageSearch} title="Check Stock" description="Find in-store inventory" onClick={() => setActiveTab("checkStock")} />
+        <QuickActionRow icon={ScanBarcode} title="Add to Inventory" description="Scan or add product" onClick={() => setActiveTab("inventory")} />
+        <QuickActionRow icon={Wifi} title="View Online Drops" description="See latest restocks" onClick={() => setActiveTab("onlineDrops")} />
+        <QuickActionRow icon={Star} title="Manage Watchlist" description="Edit tracked items" onClick={() => setActiveTab("watchlist")} />
+        <QuickActionRow icon={Bell} title="Alert Settings" description="Customize alerts" onClick={() => setActiveTab("settings")} />
       </section>
       <section className="dashboard-main-grid">
         <section className="dashboard-card recent-alerts-card">
           <div className="dashboard-card-header">
             <div>
               <h2>Recent Alerts</h2>
-              <p>Recent operational alerts and storefront updates.</p>
+              <p>Latest restock, order, and inventory alerts.</p>
             </div>
             <button className="link-button" type="button" onClick={() => setActiveTab("alerts")}>
-              View All Alerts
+              View all alerts
             </button>
           </div>
           <div className="recent-alert-list">
@@ -1643,111 +1690,95 @@ function DashboardPanel({
                     <PlusCircle size={14} />
                     Add Inventory
                   </button>
-                  <button className="mini-action" type="button" onClick={() => setActiveTab("orders")}>View Orders</button>
+                  <button className="mini-action" type="button" onClick={() => setActiveTab("inventory")}>Add Inventory</button>
                 </div>
               </div>
             )}
           </div>
         </section>
-        <aside className="dashboard-side-column">
-          <section className="dashboard-card dashboard-quick-actions-card">
-            <div className="dashboard-card-header compact">
-              <h2>Quick Actions</h2>
+        <section className="dashboard-card watchlist-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h2>Watchlist</h2>
+              <p>Inventory and store listings worth checking.</p>
             </div>
-            <div className="quick-action-list">
-              <QuickActionRow icon={PlusCircle} title="Add Inventory" description="Add products you own" onClick={() => setActiveTab("inventory")} />
-              <QuickActionRow icon={ScanBarcode} title="Scan UPC to Inventory" description="Add a purchased item by barcode" onClick={() => setActiveTab("inventory")} />
-              <QuickActionRow icon={ShoppingBag} title="Review Orders" description="Pack, ship, and fulfill storefront sales" onClick={() => setActiveTab("orders")} />
-              <QuickActionRow icon={Bell} title="Review Alerts" description="Check unread operational alerts" onClick={() => setActiveTab("alerts")} />
-              <QuickActionRow icon={ExternalLink} title="Open Storefront" description="View the public shop" onClick={() => window.open("/shop", "_blank", "noopener,noreferrer")} />
-            </div>
-          </section>
-          <section className="dashboard-card dashboard-quick-actions-card">
-            <div className="dashboard-card-header compact">
-              <h2>Storefront Status</h2>
-            </div>
-            <div className="quick-action-list">
-              <DashboardStatusRow label="Published products" value={publishedStoreProducts} />
-              <DashboardStatusRow label="Low stock items" value={lowStockItems} tone={lowStockItems ? "bad" : "good"} />
-              <DashboardStatusRow label="Active listings" value={dashboard.storefrontSummary.activeProductCount} />
-              <DashboardStatusRow label="Pending orders" value={dashboard.storefrontSummary.pendingOrderCount} />
-            </div>
-          </section>
-        </aside>
+            <button className="link-button" type="button" onClick={() => setActiveTab("watchlist")}>View all</button>
+          </div>
+          <div className="dashboard-compact-list">
+            {watchlistItems.length ? (
+              watchlistItems.map((item) => (
+                <DashboardInventoryWatchRow key={item.id} item={item} />
+              ))
+            ) : (
+              <EmptyState icon={Star} title="No watchlist items" detail="Add inventory or publish a store listing to build your watchlist." />
+            )}
+          </div>
+        </section>
       </section>
       <section className="dashboard-secondary-grid">
         <section className="dashboard-card">
           <div className="dashboard-card-header compact">
             <div>
-              <h2>Inventory Needing Market Data</h2>
-              <p>Items with stock but no saved comps yet.</p>
+              <h2>Activity Feed</h2>
+              <p>Recent orders, inventory, and alerts.</p>
             </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("market")}>Open Market</button>
+            <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>View all</button>
           </div>
           <div className="dashboard-compact-list">
-            {missingMarketItems.length ? (
-              missingMarketItems.map((item) => (
+            {activityItems.length ? (
+              activityItems.map((item) => (
                 <DashboardSimpleRow
                   key={item.id}
-                  icon={AlertTriangle}
-                  title={item.itemName}
-                  detail={`${item.quantityOwned} owned - ${item.category}`}
-                  value="Needs comps"
-                  tone="warn"
+                  icon={item.icon}
+                  title={item.title}
+                  detail={item.detail}
+                  value={relativeTime(item.time)}
                 />
               ))
             ) : (
-              <EmptyState icon={TrendingUp} title="Market data is covered" detail="Every owned item currently has at least one comp saved." />
+              <EmptyState icon={Activity} title="No activity yet" detail="Orders, inventory additions, and alerts will show here." />
             )}
           </div>
         </section>
         <section className="dashboard-card">
           <div className="dashboard-card-header compact">
             <div>
-              <h2>Recent Sales / Orders</h2>
-              <p>Latest business activity from inventory and storefront.</p>
+              <h2>Best Performing</h2>
+              <p>Only uses real sales or saved market estimates.</p>
             </div>
+            <button className="link-button" type="button" onClick={() => setActiveTab("profitLoss")}>View report</button>
           </div>
           <div className="dashboard-compact-list">
-            {recentSales.map(({ sale, item }) => (
+            {bestPerforming.length ? (
+              bestPerforming.map((item) => (
               <DashboardSimpleRow
-                key={sale.id}
-                icon={Receipt}
-                title={item.itemName}
-                detail={`${sale.platform || "Sale"} - ${relativeTime(sale.soldAt)}`}
-                value={money(sale.profitLoss)}
-                tone={sale.profitLoss >= 0 ? "good" : "bad"}
+                  key={item.id}
+                  icon={TrendingUp}
+                  title={item.itemName}
+                  detail={item.marketCompCount ? "Market comps saved" : "Sales history"}
+                  value={money(profitValue(item))}
+                  tone={profitValue(item) >= 0 ? "good" : "bad"}
               />
-            ))}
-            {recentOrders.map((order) => (
-              <DashboardSimpleRow
-                key={order.id}
-                icon={ClipboardList}
-                title={order.orderNumber}
-                detail={`${order.status.replaceAll("_", " ")} - ${relativeTime(order.createdAt)}`}
-                value={money(order.total)}
-                tone={order.status === "paid" ? "good" : "muted"}
-              />
-            ))}
-            {!recentSales.length && !recentOrders.length ? (
-              <EmptyState icon={ClipboardList} title="No recent sales or orders" detail="Recorded sales and storefront orders will show up here." />
-            ) : null}
+              ))
+            ) : (
+              <EmptyState icon={LineChart} title="No performance data yet" detail="Record sales or add comps to see winners here." />
+            )}
           </div>
         </section>
-      </section>
-      <section className="dashboard-card dashboard-activity-card">
-        <div className="dashboard-card-header compact">
-          <div>
-            <h2>Today</h2>
-            <p>Simple activity from the current day.</p>
+        <section className="dashboard-card">
+          <div className="dashboard-card-header compact">
+            <div>
+              <h2>Storefront Status</h2>
+              <p>No backend health clutter here, just the user-facing scanner queue.</p>
+            </div>
           </div>
-        </div>
-        <div className="dashboard-activity-grid">
-          <DashboardActivityItem label="New alerts" value={todayAlerts} detail="alerts created today" icon={Bell} />
-          <DashboardActivityItem label="Inventory added" value={inventoryAddedToday} detail="items added today" icon={Boxes} />
-          <DashboardActivityItem label="Sales recorded" value={salesToday} detail="inventory sales today" icon={CircleDollarSign} />
-          <DashboardActivityItem label="Orders created" value={ordersToday} detail="storefront orders today" icon={ShoppingBag} />
-        </div>
+          <div className="quick-action-list">
+            <DashboardStatusRow label="Published products" value={publishedStoreProducts} />
+            <DashboardStatusRow label="Open orders" value={dashboard.storefrontSummary.pendingOrderCount} />
+            <DashboardStatusRow label="UPC scanner" value="Ready" tone="good" />
+            <DashboardStatusRow label="Manual checkout" value="Required" />
+          </div>
+        </section>
       </section>
     </>
   );
@@ -1869,6 +1900,256 @@ function DashboardSimpleRow({
   );
 }
 
+function DashboardInventoryWatchRow({ item }: { item: InventoryItemDTO }) {
+  const status = item.quantityOwned <= 0 ? "Sold Out" : item.quantityOwned <= 2 ? "Low Stock" : "In Stock";
+  return (
+    <article className="dashboard-watch-row">
+      <ProductImagePreview imageUrl={item.imageUrl ?? ""} itemName={item.itemName} />
+      <div>
+        <strong>{item.itemName}</strong>
+        <span>{item.source || item.retailer || item.category || "Inventory"}</span>
+      </div>
+      <div className="dashboard-watch-count">
+        <b>{item.quantityOwned}</b>
+        <small>{status}</small>
+      </div>
+    </article>
+  );
+}
+
+function OnlineDropsPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
+  const onlineAlerts = dashboard.alerts
+    .filter((alert) => !isDeprecatedLocalStoreAlert(alert) && !isTestDashboardAlert(alert))
+    .slice(0, 10);
+  return (
+    <>
+      <SectionIntro
+        title="Online Drops"
+        detail="Discord-style feed for product drops and online restock alerts. Exact monitoring stays conservative and manual-checkout only."
+        stats={[{ label: "alerts", value: onlineAlerts.length }, { label: "tracked inventory", value: dashboard.inventory.length }]}
+      />
+      <section className="module-grid two">
+        <div className="dashboard-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h2>Drop Feed</h2>
+              <p>Recent non-local alerts. Test alerts and deprecated local store alerts stay hidden here.</p>
+            </div>
+            <button className="mini-action" type="button" onClick={() => setActiveTab("alerts")}>Open Alerts</button>
+          </div>
+          <div className="recent-alert-list">
+            {onlineAlerts.length ? onlineAlerts.map((alert) => (
+              <RecentAlertRow key={alert.id} alert={alert} products={dashboard.products} setActiveTab={setActiveTab} />
+            )) : <EmptyState icon={Wifi} title="No online drops right now" detail="Online drop alerts will appear here when verified data exists." />}
+          </div>
+        </div>
+        <div className="dashboard-card">
+          <div className="dashboard-card-header compact">
+            <h2>Scanner Rules</h2>
+          </div>
+          <div className="quick-action-list">
+            <DashboardStatusRow label="Manual checkout" value="Always" />
+            <DashboardStatusRow label="Search pages" value="Review only" />
+            <DashboardStatusRow label="Buy alerts" value="Exact match" />
+            <DashboardStatusRow label="Old local tracker" value="Hidden" />
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function CheckStockPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
+  const inStock = dashboard.inventory.filter((item) => item.quantityOwned > 0);
+  return (
+    <>
+      <SectionIntro
+        title="Check Stock"
+        detail="Manual operating screen for checking what you have available without the old local store prediction module."
+        stats={[{ label: "products in stock", value: inStock.length }, { label: "items owned", value: dashboard.inventorySummary.itemsOwned }]}
+      />
+      <section className="dashboard-card">
+        <div className="dashboard-card-header">
+          <div>
+            <h2>Available Inventory</h2>
+            <p>Use this for quick in-hand stock checks. No browser location or local store predictions are active.</p>
+          </div>
+          <button className="primary-action" type="button" onClick={() => setActiveTab("inventory")}>
+            Open Inventory <ChevronRight size={15} />
+          </button>
+        </div>
+        <div className="dashboard-compact-list">
+          {inStock.slice(0, 12).map((item) => (
+            <DashboardInventoryWatchRow key={item.id} item={item} />
+          ))}
+          {!inStock.length ? <EmptyState icon={PackageSearch} title="No stock to check" detail="Add inventory to start checking product availability." /> : null}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function WatchlistPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
+  const watched = dashboard.inventory.filter((item) => item.quantityOwned > 0 || item.publishToStore || item.marketCompCount > 0);
+  return (
+    <>
+      <SectionIntro
+        title="Watchlist"
+        detail="A clean list of inventory and listings you are actively watching. Old card opportunity panels remain hidden."
+        stats={[{ label: "watched", value: watched.length }, { label: "published", value: dashboard.storefrontSummary.activeProductCount }]}
+      />
+      <section className="dashboard-card">
+        <div className="dashboard-card-header">
+          <div>
+            <h2>Tracked Items</h2>
+            <p>Based on inventory, public listings, and saved market comps.</p>
+          </div>
+          <button className="mini-action" type="button" onClick={() => setActiveTab("inventory")}>Manage Inventory</button>
+        </div>
+        <div className="dashboard-compact-list">
+          {watched.length ? watched.map((item) => <DashboardInventoryWatchRow key={item.id} item={item} />) : (
+            <EmptyState icon={Star} title="No watchlist yet" detail="Add inventory or publish products to build this list." />
+          )}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function KeywordsPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  const categories = dashboard.inventorySummary.quantityByCategory.slice(0, 8);
+  return (
+    <>
+      <SectionIntro title="Keywords" detail="Lightweight keyword workspace for future tracker tuning. No old Cards module is shown." />
+      <section className="module-grid two">
+        <div className="dashboard-card">
+          <div className="dashboard-card-header compact">
+            <h2>Inventory Keywords</h2>
+          </div>
+          <div className="keyword-chip-cloud">
+            {categories.length ? categories.map((item) => (
+              <span className="chip good" key={item.category}>{formatStatus(item.category)} · {item.quantity}</span>
+            )) : <span className="chip muted">No inventory keywords yet</span>}
+          </div>
+        </div>
+        <div className="dashboard-card">
+          <EmptyState icon={Tags} title="Keyword tracker coming next" detail="This page is ready for search terms, drop keywords, and alert tuning when you define the new flow." />
+        </div>
+      </section>
+    </>
+  );
+}
+
+function SalesPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  const sales = dashboard.inventory.flatMap((item) => item.sales);
+  return (
+    <>
+      <SectionIntro
+        title="Sales"
+        detail="Sold item history, sales revenue, and realized profit from inventory."
+        stats={[
+          { label: "sold", value: dashboard.inventorySummary.itemsSold },
+          { label: "sales", value: money(dashboard.inventorySummary.totalSalesGross), tone: "good" }
+        ]}
+      />
+      <SalesLog
+        items={dashboard.inventory}
+        sales={sales}
+        selectedItem={dashboard.inventory[0] ?? null}
+        summary={dashboard.inventorySummary}
+        onRecordSale={() => undefined}
+      />
+    </>
+  );
+}
+
+function ProfitLossPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  const summary = dashboard.inventorySummary;
+  return (
+    <>
+      <SectionIntro title="Profit & Loss" detail="Cost basis, sales, and profit using recorded inventory data only." />
+      <section className="inventory-kpi-grid">
+        <InventoryKpiCard label="Total Spent" value={money(summary.totalSpent)} detail="Purchase lots and extra costs" />
+        <InventoryKpiCard label="Total Sales" value={money(summary.totalSalesGross)} detail={`${summary.itemsSold} sold`} tone="good" />
+        <InventoryKpiCard label="Realized Profit" value={money(summary.realizedProfitLoss)} detail="Sales minus cost basis" tone={summary.realizedProfitLoss >= 0 ? "good" : "bad"} />
+        <InventoryKpiCard label="Inventory Cost" value={money(summary.inventoryCostBasis)} detail={`${summary.itemsOwned} items owned`} />
+      </section>
+      <InventoryAnalyticsPanel dashboard={dashboard} />
+    </>
+  );
+}
+
+function TrendsPanel({ dashboard }: { dashboard: DashboardDTO }) {
+  return (
+    <>
+      <SectionIntro title="Trends" detail="Simple trend view from real saved data. Unknown market values stay labeled as missing." />
+      <section className="dashboard-secondary-grid">
+        <div className="dashboard-card">
+          <div className="dashboard-card-header compact">
+            <h2>Category Mix</h2>
+          </div>
+          <div className="recommendation-list">
+            {dashboard.inventorySummary.quantityByCategory.length ? dashboard.inventorySummary.quantityByCategory.map((item) => (
+              <span key={item.category}>{formatStatus(item.category)}<b>{item.quantity}</b></span>
+            )) : <span>No category data <b>0</b></span>}
+          </div>
+        </div>
+        <div className="dashboard-card">
+          <div className="dashboard-card-header compact">
+            <h2>Market Freshness</h2>
+          </div>
+          <div className="quick-action-list">
+            <DashboardStatusRow label="Missing market data" value={dashboard.inventorySummary.missingMarketDataCount} />
+            <DashboardStatusRow label="eBay comp mode" value={dashboard.ebayStatus.ready ? "Live" : "Manual"} />
+            <DashboardStatusRow label="Products tracked" value={dashboard.inventory.length} />
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function MyStorePanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
+  const published = dashboard.inventory.filter((item) => item.publishToStore);
+  return (
+    <>
+      <SectionIntro
+        title="My Store"
+        detail="Public storefront manager. This is separate from the deprecated local Stores/My Area tracker."
+        stats={[{ label: "published", value: published.length }, { label: "active", value: dashboard.storefrontSummary.activeProductCount }]}
+      />
+      <section className="module-grid two">
+        <div className="dashboard-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h2>Store Listings</h2>
+              <p>Only products you publish from inventory can appear publicly.</p>
+            </div>
+            <a className="mini-action" href="/shop" target="_blank" rel="noreferrer">
+              View Shop <ExternalLink size={14} />
+            </a>
+          </div>
+          <div className="dashboard-compact-list">
+            {published.length ? published.map((item) => <DashboardInventoryWatchRow key={item.id} item={item} />) : (
+              <EmptyState icon={Store} title="No products published" detail="Open Inventory, choose a product, and edit its store listing." />
+            )}
+          </div>
+        </div>
+        <div className="dashboard-card">
+          <div className="dashboard-card-header compact">
+            <h2>Store Controls</h2>
+          </div>
+          <div className="quick-action-list">
+            <QuickActionRow icon={Trophy} title="Open Inventory" description="Publish or edit product listings" onClick={() => setActiveTab("inventory")} />
+            <QuickActionRow icon={ShoppingBag} title="Orders" description="Fulfill storefront purchases" onClick={() => setActiveTab("orders")} />
+            <QuickActionRow icon={Settings} title="Store Settings" description="Edit policies and contact details" onClick={() => setActiveTab("orders")} />
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
 function RecentAlertRow({
   alert,
   products,
@@ -1912,31 +2193,6 @@ function RecentAlertRow({
         <button className="mini-action" type="button" onClick={() => setActiveTab(targetTab)}>
           Details
         </button>
-      </div>
-    </article>
-  );
-}
-
-function DashboardActivityItem({
-  icon: Icon,
-  label,
-  value,
-  detail
-}: {
-  icon: typeof Radar;
-  label: string;
-  value: string | number;
-  detail: string;
-}) {
-  return (
-    <article className="dashboard-activity-item">
-      <span>
-        <Icon size={17} />
-      </span>
-      <div>
-        <strong>{value}</strong>
-        <small>{label}</small>
-        <p>{detail}</p>
       </div>
     </article>
   );
