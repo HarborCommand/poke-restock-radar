@@ -10645,6 +10645,18 @@ body .dashboard-watch-row .product-image-preview {
   border-radius: 14px;
 }
 
+body .recent-alert-thumb .product-image-preview span,
+body .dashboard-watch-row .product-image-preview span {
+  display: none !important;
+}
+
+body .recent-alert-thumb .product-image-preview img,
+body .dashboard-watch-row .product-image-preview img {
+  width: 100% !important;
+  height: 100% !important;
+  flex: 0 0 100% !important;
+}
+
 body .dashboard-watch-row {
   grid-template-columns: 58px minmax(0, 1fr) auto;
   min-height: 78px;

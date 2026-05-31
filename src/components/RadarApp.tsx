@@ -3287,7 +3287,6 @@ function ProductImagePreview({ imageUrl, itemName }: { imageUrl: string; itemNam
   return (
     <div className="product-image-preview">
       <Image src={imageUrl} alt={`${itemName} preview`} width={96} height={96} unoptimized />
-      <span>Image preview from UPC lookup or your upload. You can edit or remove it below.</span>
     </div>
   );
 }
