@@ -12311,7 +12311,9 @@ body .storefront-settings-card {
 body .release-radar-page,
 body .release-calendar-panel,
 body .release-review-panel,
+body .release-sync-log-panel,
 body .release-source-strip,
+body .release-sync-log-card,
 body .release-detail-modal,
 body .release-month-card,
 body .release-day-row,
@@ -12338,11 +12340,13 @@ body .release-radar-page {
 
 body .release-radar-header h1,
 body .release-year-heading h2,
+body .release-sync-log-heading h2,
 body .release-detail-top h2,
 body .release-metric-card strong,
 body .release-day-main strong,
 body .release-list-main strong,
 body .release-review-list strong,
+body .release-sync-log-card strong,
 body .info-block strong,
 body .release-month-card h3 {
   color: #0f172a !important;
@@ -12353,6 +12357,9 @@ body .release-month-card h3 {
 
 body .release-radar-header span,
 body .release-source-strip span,
+body .release-sync-log-heading span,
+body .release-sync-log-card span,
+body .release-sync-log-card small,
 body .release-year-heading span,
 body .release-metric-card span,
 body .release-day-main span,
@@ -12361,6 +12368,48 @@ body .release-list-main span,
 body .release-review-list span,
 body .release-detail-notes {
   color: #64748b !important;
+}
+
+body .release-sync-log-panel {
+  border-radius: 24px !important;
+  display: grid !important;
+  gap: 14px !important;
+  padding: 18px !important;
+}
+
+body .release-sync-log-heading {
+  align-items: flex-start !important;
+  display: flex !important;
+  gap: 16px !important;
+  justify-content: space-between !important;
+}
+
+body .release-sync-log-grid {
+  display: grid !important;
+  gap: 10px !important;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+}
+
+body .release-sync-log-card {
+  border-radius: 16px !important;
+  display: grid !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  padding: 12px !important;
+}
+
+body .release-sync-log-card strong,
+body .release-sync-log-card span,
+body .release-sync-log-card small,
+body .release-sync-log-card em {
+  min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+}
+
+body .release-sync-log-card em {
+  color: #b45309 !important;
+  font-size: 0.76rem !important;
+  font-style: normal !important;
 }
 
 body .release-kpi-grid {

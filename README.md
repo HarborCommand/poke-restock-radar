@@ -202,14 +202,15 @@ Alert rules added in this phase:
 
 ### Release Calendar Auto-Sync
 
-The Releases page is now a source-aware **Release Radar**. The built-in sync uses the public Pokemon TCG API set list, labels official/configured/manual sources, and can also read configured RSS/JSON product-drop feeds. Vercel Cron calls `/api/radar/releases/sync/cron` daily, protected by the same `MONITOR_JOB_SECRET` / `CRON_SECRET` bearer setup as monitor jobs.
+The Releases page is now a source-aware **Release Radar**. The built-in sync uses the public Pokemon TCG API set list, official Pokemon expansion/news pages, Pokemon Center pages when exact dates are visible, ICv2 as a secondary review-only source, and configured RSS/JSON product-drop feeds. Vercel Cron calls `/api/radar/releases/sync/cron` daily, protected by the same `MONITOR_JOB_SECRET` / `CRON_SECRET` bearer setup as monitor jobs.
 
 Optional release-sync env vars:
 
 - `POKEMON_TCG_API_KEY` - optional API key for higher Pokemon TCG API limits.
+- `POKEMON_RELEASE_SOURCE_URLS` - comma-separated direct source pages to check, such as official Pokemon News articles, Pokemon Center product pages, or ICv2 calendar pages.
 - `POKEMON_RELEASE_FEED_URLS` - comma-separated public RSS or JSON feeds for product-drop/news sources beyond core set releases.
 
-Admin can also click **Sync Public Sources** on the Releases page. Auto-sync adds missing releases, updates known auto-synced release dates/links/images, creates alerts for new/date-changed releases, and sends low-confidence or date-missing entries to the review queue. Dates are not fabricated: unknown dates are shown as `TBD` until a source confirms them.
+Admin can also click **Sync Public Sources** on the Releases page. Auto-sync adds missing releases, updates known auto-synced release dates/links/images, records per-source sync logs, creates alerts for new/date-changed releases, and sends secondary-only, conflicting, low-confidence, or date-missing entries to the review queue. Dates are not fabricated: unknown dates are shown as `TBD` until a source confirms them.
 
 ## Phase 5 Store Prediction And Field Mode
 

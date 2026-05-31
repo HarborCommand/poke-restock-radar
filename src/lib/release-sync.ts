@@ -1,9 +1,19 @@
 import { prisma } from "@/lib/db";
 import { daysUntil } from "@/lib/calculations";
 
+type ReleaseSourceType =
+  | "official_pokemon"
+  | "official_pokemon_news"
+  | "official_pokemon_center"
+  | "pokemon_tcg_api"
+  | "icv2_secondary"
+  | "configured_feed"
+  | "merge";
+
 type ReleaseCandidate = {
   setName: string;
   releaseName?: string | null;
+  productName?: string | null;
   productType: string | null;
   releaseType: string;
   officialReleaseDate: Date | null;
@@ -19,11 +29,38 @@ type ReleaseCandidate = {
   priority: "LOW" | "MEDIUM" | "HIGH";
   sourceUrl: string | null;
   sourceName: string;
-  sourceType: "official" | "secondary" | "configured_feed";
+  sourceType: ReleaseSourceType;
   confidence: "LOW" | "MEDIUM" | "HIGH";
-  status: "upcoming" | "released" | "needs_review";
+  status: "upcoming" | "released" | "needs_review" | "TBD";
   needsReview: boolean;
   reviewReason?: string | null;
+  supportingSources: ReleaseSourceRef[];
+};
+
+type ReleaseSourceRef = {
+  sourceName: string;
+  sourceUrl: string | null;
+  sourceType: ReleaseSourceType;
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+};
+
+type AdapterLog = {
+  sourceName: string;
+  sourceUrl: string | null;
+  adapter: ReleaseSourceType;
+  httpStatus?: number | null;
+  parsedCount: number;
+  createdCount?: number;
+  updatedCount?: number;
+  duplicateCount?: number;
+  conflictCount?: number;
+  error?: string | null;
+};
+
+type AdapterResult = {
+  log: AdapterLog;
+  candidates: ReleaseCandidate[];
+  warnings: string[];
 };
 
 export type ReleaseSyncResult = {
@@ -32,6 +69,8 @@ export type ReleaseSyncResult = {
   created: number;
   updated: number;
   skipped: number;
+  duplicates: number;
+  conflicts: number;
   candidates: Array<{
     setName: string;
     releaseDate: string;
@@ -41,13 +80,29 @@ export type ReleaseSyncResult = {
     action: "created" | "updated" | "skipped";
   }>;
   reviewQueue: Array<{ setName: string; reason: string; source: string }>;
+  logs: AdapterLog[];
   warnings: string[];
 };
 
-const officialSources = [
-  "Pokemon TCG API",
-  "https://tcg.pokemon.com/en-us/expansions/",
-  "https://www.pokemon.com/us/pokemon-news/"
+const OFFICIAL_EXPANSIONS_URL = "https://tcg.pokemon.com/en-us/expansions/";
+const OFFICIAL_NEWS_BASE = "https://www.pokemon.com/us/pokemon-news/";
+const POKEMON_CENTER_NEW_RELEASES_URL = "https://www.pokemoncenter.com/category/new-releases";
+const POKEMON_TCG_API_URL = "https://api.pokemontcg.io/v2/sets?orderBy=releaseDate&pageSize=250";
+const ICV2_SEARCH_URL = "https://icv2.com/search?q=Pokemon%20TCG%202026%20Product%20Calendar";
+
+const MONTHS = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december"
 ];
 
 function releaseYearWindow(now = new Date()) {
@@ -59,13 +114,31 @@ function releaseYearWindow(now = new Date()) {
 
 function parseReleaseDate(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return null;
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? `${value.trim()}T14:00:00.000Z` : value.trim();
+  const clean = value.replace(/\b(?:st|nd|rd|th)\b/gi, "").trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(clean) ? `${clean}T14:00:00.000Z` : clean;
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function normalizeReleaseName(value: string) {
-  return value.toLowerCase().replace(/pokemon|pokémon|tcg|trading card game|:/gi, "").replace(/\s+/g, " ").trim();
+  return value
+    .toLowerCase()
+    .replace(/pok[eé]mon|tcg|trading card game|scarlet & violet|mega evolution|[:—-]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripTags(html: string) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#8212;|&mdash;/g, "—")
+    .replace(/&#8211;|&ndash;/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function priorityForRelease(date: Date | null) {
@@ -76,69 +149,402 @@ function priorityForRelease(date: Date | null) {
   return "LOW";
 }
 
-function releaseNotes(source: string, extra: string[] = []) {
-  return [`Auto-synced from ${source}. Verify regional product dates before chasing drops.`, ...extra].join(" ");
-}
-
-function releaseStatus(date: Date | null) {
-  if (!date) return "needs_review" as const;
+function releaseStatus(date: Date | null, needsReview = false) {
+  if (needsReview) return "needs_review" as const;
+  if (!date) return "TBD" as const;
   return date.getTime() < Date.now() ? ("released" as const) : ("upcoming" as const);
 }
 
-async function fetchPokemonTcgSets(): Promise<{ candidates: ReleaseCandidate[]; warning?: string }> {
-  const endpoint = "https://api.pokemontcg.io/v2/sets?orderBy=releaseDate&pageSize=250";
+function dateKey(date: Date | null) {
+  return date ? date.toISOString().slice(0, 10) : "TBD";
+}
+
+function releaseNotes(source: string, extra: string[] = []) {
+  return [`Auto-synced from ${source}. No fabricated dates; unconfirmed entries are marked for review.`, ...extra]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function supportingSource(candidate: Omit<ReleaseCandidate, "supportingSources">): ReleaseSourceRef {
+  return {
+    sourceName: candidate.sourceName,
+    sourceUrl: candidate.sourceUrl,
+    sourceType: candidate.sourceType,
+    confidence: candidate.confidence
+  };
+}
+
+function candidate(input: Omit<ReleaseCandidate, "supportingSources" | "priority" | "status"> & { priority?: "LOW" | "MEDIUM" | "HIGH"; status?: ReleaseCandidate["status"] }): ReleaseCandidate {
+  const priority = input.priority ?? priorityForRelease(input.officialReleaseDate);
+  const status = input.status ?? releaseStatus(input.officialReleaseDate, input.needsReview);
+  return {
+    ...input,
+    priority,
+    status,
+    supportingSources: [supportingSource({ ...input, priority, status } as ReleaseCandidate)]
+  };
+}
+
+async function fetchText(url: string, accept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8") {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch(url, {
+      headers: {
+        accept,
+        "user-agent":
+          "Mozilla/5.0 (compatible; PokeRestockRadar/1.0; +https://poke-restock-radar.vercel.app)"
+      },
+      signal: controller.signal,
+      cache: "no-store"
+    });
+    const text = await response.text();
+    return { status: response.status, ok: response.ok, text };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function monthDateMatches(text: string) {
+  return Array.from(
+    text.matchAll(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},\s+20\d{2}\b/gi)
+  ).map((match) => ({ value: match[0], index: match.index ?? 0 }));
+}
+
+function extractFirstDate(text: string) {
+  const iso = text.match(/\b20\d{2}-\d{2}-\d{2}\b/)?.[0];
+  if (iso) return parseReleaseDate(iso);
+  const monthDate = monthDateMatches(text)[0]?.value;
+  return monthDate ? parseReleaseDate(monthDate) : null;
+}
+
+function inferReleaseType(text: string) {
+  if (/pre-?order|preorder/i.test(text)) return "preorder_window";
+  if (/expansion|set/i.test(text)) return "expansion";
+  return "product_drop";
+}
+
+function inferProductType(text: string) {
+  if (/elite trainer box|etb/i.test(text)) return "Elite Trainer Box";
+  if (/booster bundle/i.test(text)) return "Booster Bundle";
+  if (/booster box/i.test(text)) return "Booster Box";
+  if (/three-booster|3-booster|blister/i.test(text)) return "Blister Pack";
+  if (/premium collection/i.test(text)) return "Premium Collection";
+  if (/tin/i.test(text)) return "Tin";
+  if (/expansion|set/i.test(text)) return "Expansion";
+  return "Product";
+}
+
+function inferSetName(title: string) {
+  const quoted = title.match(/Pok[eé]mon TCG:\s*([^|]+?)(?:\s+(?:Elite Trainer Box|Booster Bundle|Booster Box|Premium Collection|Three-Booster|Blister|Tin)\b|$)/i)?.[1];
+  if (quoted) return quoted.trim();
+  const expansion = title.match(/\b(Mega Evolution[^\n|,.;]+|Scarlet & Violet[^\n|,.;]+)\b/i)?.[1];
+  if (expansion) return expansion.trim();
+  return title.replace(/^Pok[eé]mon TCG:\s*/i, "").trim();
+}
+
+function titleCandidatesFromHtml(html: string) {
+  const headingTitles = new Set<string>();
+  const headingMatches = html.matchAll(/<(h1|h2|h3)[^>]*>([\s\S]*?)<\/\1>/gi);
+  for (const match of headingMatches) {
+    const title = stripTags(match[2]);
+    if (/pok[eé]mon|tcg|booster|elite trainer|collection|expansion|tin|mega evolution|scarlet & violet/i.test(title) && title.length > 6) {
+      headingTitles.add(title);
+    }
+  }
+  if (headingTitles.size) return Array.from(headingTitles);
+
+  const titles = new Set<string>();
+  const text = stripTags(html);
+  for (const match of text.matchAll(/Pok[eé]mon TCG:\s*[^.]{8,120}/gi)) {
+    titles.add(match[0].trim());
+  }
+  for (const match of text.matchAll(/Mega Evolution[—\-\s][^.]{4,90}/gi)) {
+    titles.add(match[0].trim());
+  }
+  return Array.from(titles);
+}
+
+function imageNearTitle(html: string, title: string) {
+  const index = html.toLowerCase().indexOf(title.toLowerCase().slice(0, 40));
+  const windowText = index >= 0 ? html.slice(Math.max(0, index - 2500), index + 2500) : html.slice(0, 4000);
+  return (
+    windowText.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["'][^>]*>/i)?.[1] ??
+    windowText.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ??
+    null
+  );
+}
+
+export function parseOfficialExpansionsHtml(html: string, sourceUrl = OFFICIAL_EXPANSIONS_URL): ReleaseCandidate[] {
+  const text = stripTags(html);
+  const titles = titleCandidatesFromHtml(html);
+  const candidates: ReleaseCandidate[] = [];
+
+  for (const title of titles) {
+    const titleIndex = text.toLowerCase().indexOf(title.toLowerCase().slice(0, 40));
+    const context = titleIndex >= 0 ? text.slice(Math.max(0, titleIndex - 700), titleIndex + 1200) : text;
+    const releaseDate = extractFirstDate(context);
+    if (!releaseDate) continue;
+    candidates.push(
+      candidate({
+        setName: inferSetName(title),
+        releaseName: inferSetName(title),
+        productName: title,
+        productType: inferProductType(title),
+        releaseType: "expansion",
+        officialReleaseDate: releaseDate,
+        preorderDate: null,
+        preorderWindowText: null,
+        region: "US",
+        retailer: null,
+        productTypes: inferProductType(title),
+        productImage: imageNearTitle(html, title),
+        productUrl: sourceUrl,
+        productLinks: sourceUrl,
+        sourceUrl,
+        sourceName: "Official Pokemon TCG expansions",
+        sourceType: "official_pokemon",
+        confidence: "HIGH",
+        needsReview: false,
+        reviewReason: null,
+        notes: releaseNotes("Official Pokemon TCG expansions page", [`Parsed title: ${title}.`])
+      })
+    );
+  }
+
+  return dedupeCandidates(candidates);
+}
+
+export function parseOfficialNewsHtml(html: string, sourceUrl: string): ReleaseCandidate[] {
+  const text = stripTags(html);
+  const pageTitle = stripTags(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
+  const titles = titleCandidatesFromHtml(html);
+  const dates = monthDateMatches(text);
+  const candidates: ReleaseCandidate[] = [];
+
+  for (const title of titles) {
+    const titleIndex = text.toLowerCase().indexOf(title.toLowerCase().slice(0, 40));
+    const context = titleIndex >= 0 ? text.slice(Math.max(0, titleIndex - 800), titleIndex + 1500) : text;
+    let releaseDate = extractFirstDate(context);
+    if (!releaseDate && dates.length === 1 && /product release|available|arrives|expansion/i.test(pageTitle + text.slice(0, 1000))) {
+      releaseDate = parseReleaseDate(dates[0].value);
+    }
+    if (!releaseDate) continue;
+    const isPreorder = /pre-?order|preorder/i.test(context);
+    candidates.push(
+      candidate({
+        setName: inferSetName(title),
+        releaseName: inferSetName(title),
+        productName: title,
+        productType: inferProductType(title),
+        releaseType: inferReleaseType(context),
+        officialReleaseDate: releaseDate,
+        preorderDate: isPreorder ? releaseDate : null,
+        preorderWindowText: isPreorder ? `Preorder mentioned by official Pokemon News on ${dateKey(releaseDate)}` : null,
+        region: "US",
+        retailer: null,
+        productTypes: inferProductType(title),
+        productImage: imageNearTitle(html, title),
+        productUrl: sourceUrl,
+        productLinks: sourceUrl,
+        sourceUrl,
+        sourceName: "Official Pokemon News",
+        sourceType: "official_pokemon_news",
+        confidence: "HIGH",
+        needsReview: false,
+        reviewReason: null,
+        notes: releaseNotes("Official Pokemon News", [context.slice(0, 240)])
+      })
+    );
+  }
+
+  return dedupeCandidates(candidates);
+}
+
+export function parsePokemonCenterHtml(html: string, sourceUrl: string): ReleaseCandidate[] {
+  const text = stripTags(html);
+  const titles = titleCandidatesFromHtml(html);
+  const candidates: ReleaseCandidate[] = [];
+
+  for (const title of titles) {
+    const titleIndex = text.toLowerCase().indexOf(title.toLowerCase().slice(0, 40));
+    const context = titleIndex >= 0 ? text.slice(Math.max(0, titleIndex - 500), titleIndex + 1000) : text;
+    const releaseDate = extractFirstDate(context);
+    if (!releaseDate) continue;
+    candidates.push(
+      candidate({
+        setName: inferSetName(title),
+        releaseName: inferSetName(title),
+        productName: title,
+        productType: inferProductType(title),
+        releaseType: inferReleaseType(context),
+        officialReleaseDate: releaseDate,
+        preorderDate: /pre-?order|preorder/i.test(context) ? releaseDate : null,
+        preorderWindowText: /pre-?order|preorder/i.test(context) ? "Pokemon Center preorder date visible on source page" : null,
+        region: "US",
+        retailer: "Pokemon Center",
+        productTypes: inferProductType(title),
+        productImage: imageNearTitle(html, title),
+        productUrl: sourceUrl,
+        productLinks: sourceUrl,
+        sourceUrl,
+        sourceName: "Official Pokemon Center",
+        sourceType: "official_pokemon_center",
+        confidence: "HIGH",
+        needsReview: false,
+        reviewReason: null,
+        notes: releaseNotes("Pokemon Center", [context.slice(0, 220)])
+      })
+    );
+  }
+
+  return dedupeCandidates(candidates);
+}
+
+export function parseIcv2CalendarHtml(html: string, sourceUrl: string): ReleaseCandidate[] {
+  const text = stripTags(html);
+  const candidates: ReleaseCandidate[] = [];
+  const lines = text
+    .split(/(?=(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},\s+20\d{2})/i)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (!/pok[eé]mon|tcg|booster|elite trainer|collection|tin|mega evolution/i.test(line)) continue;
+    const releaseDate = extractFirstDate(line);
+    if (!releaseDate) continue;
+    const titleMatch =
+      line.match(/Pok[eé]mon[^.]{8,150}/i)?.[0] ??
+      line.match(/Mega Evolution[^.]{4,150}/i)?.[0] ??
+      line.slice(0, 140);
+    const title = titleMatch.replace(/\s+Release Date.*$/i, "").trim();
+    candidates.push(
+      candidate({
+        setName: inferSetName(title),
+        releaseName: inferSetName(title),
+        productName: title,
+        productType: inferProductType(title),
+        releaseType: inferReleaseType(line),
+        officialReleaseDate: releaseDate,
+        preorderDate: null,
+        preorderWindowText: null,
+        region: "US",
+        retailer: null,
+        productTypes: inferProductType(title),
+        productImage: imageNearTitle(html, title),
+        productUrl: sourceUrl,
+        productLinks: sourceUrl,
+        sourceUrl,
+        sourceName: "ICv2 Pokemon TCG Product Calendar",
+        sourceType: "icv2_secondary",
+        confidence: "MEDIUM",
+        needsReview: true,
+        reviewReason: "Secondary ICv2 calendar needs official confirmation before treating as final.",
+        notes: releaseNotes("ICv2 secondary product calendar", [line.slice(0, 260)])
+      })
+    );
+  }
+
+  return dedupeCandidates(candidates);
+}
+
+function dedupeCandidates(candidates: ReleaseCandidate[]) {
+  const seen = new Set<string>();
+  return candidates.filter((item) => {
+    const key = `${normalizeReleaseName(item.setName)}:${dateKey(item.officialReleaseDate)}:${item.productName ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function pokemonTcgApiAdapter(): Promise<AdapterResult> {
+  try {
+    const response = await fetch(POKEMON_TCG_API_URL, {
       headers: {
         accept: "application/json",
         ...(process.env.POKEMON_TCG_API_KEY ? { "X-Api-Key": process.env.POKEMON_TCG_API_KEY } : {})
       },
-      next: { revalidate: 60 * 60 * 12 }
+      cache: "no-store"
     });
     if (!response.ok) {
-      return { candidates: [], warning: `Pokemon TCG API returned ${response.status}.` };
+      return {
+        candidates: [],
+        warnings: [`Pokemon TCG API returned ${response.status}.`],
+        log: { sourceName: "Pokemon TCG API", sourceUrl: POKEMON_TCG_API_URL, adapter: "pokemon_tcg_api", httpStatus: response.status, parsedCount: 0, error: `HTTP ${response.status}` }
+      };
     }
     const payload = (await response.json()) as {
-      data?: Array<{ id?: string; name?: string; series?: string; releaseDate?: string; total?: number; printedTotal?: number }>;
+      data?: Array<{ id?: string; name?: string; series?: string; releaseDate?: string; total?: number }>;
     };
     const { start, end } = releaseYearWindow();
     const candidates = (payload.data ?? [])
       .map((set): ReleaseCandidate | null => {
-        const date = parseReleaseDate(set.releaseDate);
-        if (!date || date < start || date > end || !set.name) return null;
-        const setLink = set.id ? `https://pokemontcg.io/sets/${encodeURIComponent(set.id)}` : "https://pokemontcg.io/";
-        return {
+        const releaseDate = parseReleaseDate(set.releaseDate);
+        if (!releaseDate || releaseDate < start || releaseDate > end || !set.name) return null;
+        const sourceUrl = set.id ? `https://pokemontcg.io/sets/${encodeURIComponent(set.id)}` : "https://pokemontcg.io/";
+        return candidate({
           setName: set.name,
           releaseName: set.name,
+          productName: set.name,
           productType: "Expansion",
           releaseType: "expansion",
-          officialReleaseDate: date,
+          officialReleaseDate: releaseDate,
           preorderDate: null,
           preorderWindowText: null,
           region: "US",
           retailer: null,
           productTypes: "Booster packs, Elite Trainer Boxes, booster bundles, collection products",
           productImage: null,
-          productUrl: setLink,
-          productLinks: setLink,
-          priority: priorityForRelease(date),
-          sourceUrl: setLink,
+          productUrl: sourceUrl,
+          productLinks: sourceUrl,
+          sourceUrl,
           sourceName: "Pokemon TCG API",
-          sourceType: "official",
+          sourceType: "pokemon_tcg_api",
           confidence: "HIGH",
-          status: releaseStatus(date),
           needsReview: false,
           reviewReason: null,
-          notes: releaseNotes("Pokemon TCG API", [
-            set.series ? `Series: ${set.series}.` : "",
-            set.total ? `${set.total} cards tracked by the API.` : ""
-          ].filter(Boolean))
-        } satisfies ReleaseCandidate;
+          notes: releaseNotes("Pokemon TCG API", [set.series ? `Series: ${set.series}.` : "", set.total ? `${set.total} cards tracked by the API.` : ""].filter(Boolean))
+        });
       })
-      .filter((candidate): candidate is ReleaseCandidate => Boolean(candidate));
-    return { candidates };
+      .filter((item): item is ReleaseCandidate => Boolean(item));
+    return {
+      candidates,
+      warnings: [],
+      log: { sourceName: "Pokemon TCG API", sourceUrl: POKEMON_TCG_API_URL, adapter: "pokemon_tcg_api", httpStatus: response.status, parsedCount: candidates.length }
+    };
   } catch (error) {
-    return { candidates: [], warning: error instanceof Error ? error.message : "Pokemon TCG API fetch failed." };
+    return {
+      candidates: [],
+      warnings: [error instanceof Error ? error.message : "Pokemon TCG API fetch failed."],
+      log: { sourceName: "Pokemon TCG API", sourceUrl: POKEMON_TCG_API_URL, adapter: "pokemon_tcg_api", parsedCount: 0, error: error instanceof Error ? error.message : "fetch failed" }
+    };
+  }
+}
+
+async function htmlAdapter(sourceName: string, sourceUrl: string, adapter: ReleaseSourceType, parser: (html: string, url: string) => ReleaseCandidate[]): Promise<AdapterResult> {
+  try {
+    const response = await fetchText(sourceUrl);
+    if (!response.ok) {
+      return {
+        candidates: [],
+        warnings: [`${sourceName} returned ${response.status}.`],
+        log: { sourceName, sourceUrl, adapter, httpStatus: response.status, parsedCount: 0, error: `HTTP ${response.status}` }
+      };
+    }
+    const candidates = parser(response.text, sourceUrl);
+    return {
+      candidates,
+      warnings: [],
+      log: { sourceName, sourceUrl, adapter, httpStatus: response.status, parsedCount: candidates.length }
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `${sourceName} fetch failed.`;
+    return {
+      candidates: [],
+      warnings: [message],
+      log: { sourceName, sourceUrl, adapter, parsedCount: 0, error: message }
+    };
   }
 }
 
@@ -149,11 +555,23 @@ function releaseFeedUrls() {
     .filter(Boolean);
 }
 
-function extractDateFromText(text: string) {
-  const iso = text.match(/\b20\d{2}-\d{2}-\d{2}\b/)?.[0];
-  if (iso) return parseReleaseDate(iso);
-  const monthDate = text.match(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},\s+20\d{2}\b/i)?.[0];
-  return monthDate ? parseReleaseDate(monthDate) : null;
+function configuredSourceUrls() {
+  return (process.env.POKEMON_RELEASE_SOURCE_URLS || "")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean);
+}
+
+function officialNewsUrls(now = new Date()) {
+  const years = [now.getUTCFullYear(), now.getUTCFullYear() + 1];
+  const urls = new Set<string>();
+  for (const year of years) {
+    for (const month of MONTHS) {
+      urls.add(`${OFFICIAL_NEWS_BASE}check-out-every-pokemon-tcg-product-release-in-${month}-${year}`);
+      urls.add(`${OFFICIAL_NEWS_BASE}pokemon-tcg-product-release-calendar-${month}-${year}`);
+    }
+  }
+  return Array.from(urls);
 }
 
 function tagValue(input: string, tag: string) {
@@ -165,83 +583,99 @@ function linkValue(input: string) {
   return tagValue(input, "link") || input.match(/<link[^>]+href=["']([^"']+)["']/i)?.[1] || "";
 }
 
-async function fetchConfiguredFeeds(): Promise<{ candidates: ReleaseCandidate[]; warnings: string[] }> {
+async function configuredFeedAdapters(): Promise<AdapterResult[]> {
+  const results: AdapterResult[] = [];
   const urls = releaseFeedUrls();
-  const warnings: string[] = [];
-  const candidates: ReleaseCandidate[] = [];
-  const { start, end } = releaseYearWindow();
-
   for (const url of urls) {
     try {
-      const response = await fetch(url, { headers: { accept: "application/rss+xml, application/json, text/xml, text/plain" } });
+      const response = await fetchText(url, "application/rss+xml, application/json, text/xml, text/plain");
       if (!response.ok) {
-        warnings.push(`${url} returned ${response.status}.`);
+        results.push({ candidates: [], warnings: [`${url} returned ${response.status}.`], log: { sourceName: "Configured release feed", sourceUrl: url, adapter: "configured_feed", httpStatus: response.status, parsedCount: 0, error: `HTTP ${response.status}` } });
         continue;
       }
-      const text = await response.text();
-      const items = text.trim().startsWith("[") || text.trim().startsWith("{")
-        ? (Array.isArray(JSON.parse(text)) ? JSON.parse(text) : JSON.parse(text).items ?? JSON.parse(text).data ?? [])
-        : Array.from(text.matchAll(/<item[\s\S]*?<\/item>|<entry[\s\S]*?<\/entry>/gi)).map((match) => ({
+      const rawItems = response.text.trim().startsWith("[") || response.text.trim().startsWith("{")
+        ? (Array.isArray(JSON.parse(response.text)) ? JSON.parse(response.text) : JSON.parse(response.text).items ?? JSON.parse(response.text).data ?? [])
+        : Array.from(response.text.matchAll(/<item[\s\S]*?<\/item>|<entry[\s\S]*?<\/entry>/gi)).map((match) => ({
             title: tagValue(match[0], "title"),
             link: linkValue(match[0]),
             content: `${tagValue(match[0], "description")} ${tagValue(match[0], "summary")} ${tagValue(match[0], "content")}`
           }));
-
-      for (const raw of items as Array<Record<string, unknown>>) {
+      const candidates: ReleaseCandidate[] = [];
+      const { start, end } = releaseYearWindow();
+      for (const raw of rawItems as Array<Record<string, unknown>>) {
         const title = String(raw.title ?? raw.name ?? "");
         const content = String(raw.content ?? raw.description ?? raw.summary ?? "");
         const link = String(raw.link ?? raw.url ?? raw.productUrl ?? "");
         const combined = `${title} ${content}`;
         if (!/pok[eé]mon|tcg|trading card/i.test(combined)) continue;
-        const date = parseReleaseDate(raw.releaseDate) ?? parseReleaseDate(raw.date) ?? extractDateFromText(combined);
-        if (date && (date < start || date > end)) continue;
-        candidates.push({
-          setName: title.replace(/\s+-\s+.*$/, "").trim() || "Pokemon TCG Release",
-          releaseName: title.replace(/\s+-\s+.*$/, "").trim() || "Pokemon TCG Release",
-          productType: "News",
-          releaseType: /preorder/i.test(combined) ? "preorder_window" : "product_drop",
-          officialReleaseDate: date,
-          preorderDate: parseReleaseDate(raw.preorderDate) ?? (/preorder/i.test(combined) ? date : null),
-          preorderWindowText: /preorder/i.test(combined) ? "Preorder window mentioned by configured feed" : null,
-          region: String(raw.region ?? "US"),
-          retailer: typeof raw.retailer === "string" ? raw.retailer : null,
-          productTypes: "Release news, product drop, preorder window",
-          productImage: typeof raw.imageUrl === "string" ? raw.imageUrl : null,
-          productUrl: link || url,
-          productLinks: link || url,
-          priority: priorityForRelease(date),
-          sourceUrl: link || url,
-          sourceName: `Configured release feed`,
-          sourceType: "configured_feed",
-          confidence: date ? "MEDIUM" : "LOW",
-          status: releaseStatus(date),
-          needsReview: !date,
-          reviewReason: date ? null : "Configured feed item did not include a verified release date.",
-          notes: releaseNotes(`release news feed ${url}`, [content.slice(0, 220)])
-        });
+        const releaseDate = parseReleaseDate(raw.releaseDate) ?? parseReleaseDate(raw.date) ?? extractFirstDate(combined);
+        if (releaseDate && (releaseDate < start || releaseDate > end)) continue;
+        candidates.push(
+          candidate({
+            setName: inferSetName(title) || "Pokemon TCG Release",
+            releaseName: inferSetName(title) || "Pokemon TCG Release",
+            productName: title || "Pokemon TCG Release",
+            productType: inferProductType(combined),
+            releaseType: inferReleaseType(combined),
+            officialReleaseDate: releaseDate,
+            preorderDate: parseReleaseDate(raw.preorderDate) ?? (/preorder/i.test(combined) ? releaseDate : null),
+            preorderWindowText: /preorder/i.test(combined) ? "Preorder window mentioned by configured feed" : null,
+            region: String(raw.region ?? "US"),
+            retailer: typeof raw.retailer === "string" ? raw.retailer : null,
+            productTypes: inferProductType(combined),
+            productImage: typeof raw.imageUrl === "string" ? raw.imageUrl : null,
+            productUrl: link || url,
+            productLinks: link || url,
+            sourceUrl: link || url,
+            sourceName: "Configured release feed",
+            sourceType: "configured_feed",
+            confidence: releaseDate ? "MEDIUM" : "LOW",
+            needsReview: !releaseDate,
+            reviewReason: releaseDate ? null : "Configured feed item did not include a verified release date.",
+            notes: releaseNotes(`configured release feed ${url}`, [content.slice(0, 220)])
+          })
+        );
       }
+      results.push({ candidates, warnings: [], log: { sourceName: "Configured release feed", sourceUrl: url, adapter: "configured_feed", httpStatus: response.status, parsedCount: candidates.length } });
     } catch (error) {
-      warnings.push(`${url} failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      const message = error instanceof Error ? error.message : "configured feed failed";
+      results.push({ candidates: [], warnings: [message], log: { sourceName: "Configured release feed", sourceUrl: url, adapter: "configured_feed", parsedCount: 0, error: message } });
     }
   }
-
-  return { candidates, warnings };
+  return results;
 }
 
-function mergeCandidates(candidates: ReleaseCandidate[]) {
-  const byName = new Map<string, ReleaseCandidate>();
-  for (const candidate of candidates) {
-    const key = normalizeReleaseName(candidate.setName);
-    const existing = byName.get(key);
-    if (!existing || (candidate.officialReleaseDate && (!existing.officialReleaseDate || candidate.officialReleaseDate < existing.officialReleaseDate))) {
-      byName.set(key, candidate);
-    }
-  }
-  return Array.from(byName.values()).sort((a, b) => (a.officialReleaseDate?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.officialReleaseDate?.getTime() ?? Number.MAX_SAFE_INTEGER));
+async function runAdapters() {
+  const configuredSources = configuredSourceUrls();
+  const adapterPromises: Array<Promise<AdapterResult>> = [
+    pokemonTcgApiAdapter(),
+    htmlAdapter("Official Pokemon TCG expansions", OFFICIAL_EXPANSIONS_URL, "official_pokemon", parseOfficialExpansionsHtml),
+    htmlAdapter("Official Pokemon Center new releases", POKEMON_CENTER_NEW_RELEASES_URL, "official_pokemon_center", parsePokemonCenterHtml),
+    htmlAdapter("ICv2 Pokemon TCG calendar search", ICV2_SEARCH_URL, "icv2_secondary", parseIcv2CalendarHtml),
+    ...officialNewsUrls().map((url) => htmlAdapter("Official Pokemon News", url, "official_pokemon_news", parseOfficialNewsHtml)),
+    ...configuredSources.map((url) => {
+      if (/icv2\.com/i.test(url)) return htmlAdapter("ICv2 Pokemon TCG Product Calendar", url, "icv2_secondary", parseIcv2CalendarHtml);
+      if (/pokemoncenter\.com/i.test(url)) return htmlAdapter("Official Pokemon Center", url, "official_pokemon_center", parsePokemonCenterHtml);
+      if (/pokemon\.com\/us\/pokemon-news/i.test(url)) return htmlAdapter("Official Pokemon News", url, "official_pokemon_news", parseOfficialNewsHtml);
+      return htmlAdapter("Official Pokemon source", url, "official_pokemon", parseOfficialExpansionsHtml);
+    })
+  ];
+  return [...(await Promise.all(adapterPromises)), ...(await configuredFeedAdapters())];
 }
 
-function mergeLinks(existing: string | null, next: string | null) {
-  const links = [existing, next]
+function sourceRank(sourceType: ReleaseSourceType) {
+  if (["official_pokemon", "official_pokemon_news", "official_pokemon_center", "pokemon_tcg_api"].includes(sourceType)) return 4;
+  if (sourceType === "configured_feed") return 2;
+  if (sourceType === "icv2_secondary") return 2;
+  return 0;
+}
+
+function confidenceRank(confidence: "LOW" | "MEDIUM" | "HIGH") {
+  return confidence === "HIGH" ? 3 : confidence === "MEDIUM" ? 2 : 1;
+}
+
+function mergeLinks(...values: Array<string | null | undefined>) {
+  const links = values
     .filter(Boolean)
     .flatMap((value) => String(value).split(/\s*,\s*/))
     .map((value) => value.trim())
@@ -249,12 +683,123 @@ function mergeLinks(existing: string | null, next: string | null) {
   return Array.from(new Set(links)).join(", ") || null;
 }
 
+function mergeSupportSources(sources: ReleaseSourceRef[]) {
+  const unique = new Map<string, ReleaseSourceRef>();
+  for (const source of sources) {
+    unique.set(`${source.sourceName}:${source.sourceUrl ?? ""}`, source);
+  }
+  return Array.from(unique.values()).sort((a, b) => sourceRank(b.sourceType) - sourceRank(a.sourceType));
+}
+
+function mergeCandidates(candidates: ReleaseCandidate[]) {
+  const byName = new Map<string, ReleaseCandidate>();
+  let duplicates = 0;
+  let conflicts = 0;
+
+  for (const next of candidates) {
+    const key = normalizeReleaseName(next.setName || next.productName || "");
+    if (!key) continue;
+    const current = byName.get(key);
+    if (!current) {
+      byName.set(key, next);
+      continue;
+    }
+    duplicates += 1;
+    const currentRank = sourceRank(current.sourceType);
+    const nextRank = sourceRank(next.sourceType);
+    const currentDate = dateKey(current.officialReleaseDate);
+    const nextDate = dateKey(next.officialReleaseDate);
+    const dateConflict = currentDate !== "TBD" && nextDate !== "TBD" && currentDate !== nextDate;
+    const officialWinner = nextRank > currentRank || (nextRank === currentRank && confidenceRank(next.confidence) > confidenceRank(current.confidence)) ? next : current;
+    const mergedSources = mergeSupportSources([...current.supportingSources, ...next.supportingSources]);
+    const conflictReview = dateConflict
+      ? `Conflicting release dates: ${current.sourceName} says ${currentDate}; ${next.sourceName} says ${nextDate}. Official/highest confidence source is shown until reviewed.`
+      : null;
+    if (dateConflict) conflicts += 1;
+
+    byName.set(key, {
+      ...officialWinner,
+      setName: officialWinner.setName || current.setName || next.setName,
+      releaseName: officialWinner.releaseName || current.releaseName || next.releaseName,
+      productName: officialWinner.productName || current.productName || next.productName,
+      productType: officialWinner.productType || current.productType || next.productType,
+      productTypes: officialWinner.productTypes || current.productTypes || next.productTypes,
+      productImage: officialWinner.productImage || current.productImage || next.productImage,
+      productUrl: officialWinner.productUrl || current.productUrl || next.productUrl,
+      productLinks: mergeLinks(current.productLinks, next.productLinks, current.sourceUrl, next.sourceUrl),
+      supportingSources: mergedSources,
+      needsReview: Boolean(conflictReview) || officialWinner.needsReview,
+      reviewReason: conflictReview || officialWinner.reviewReason || null,
+      status: releaseStatus(officialWinner.officialReleaseDate, Boolean(conflictReview) || officialWinner.needsReview),
+      notes: [
+        officialWinner.notes,
+        `Confirmed by ${mergedSources.length} source${mergedSources.length === 1 ? "" : "s"}: ${mergedSources.map((source) => source.sourceName).join(", ")}.`
+      ].join(" ")
+    });
+  }
+
+  return {
+    candidates: Array.from(byName.values()).sort(
+      (a, b) => (a.officialReleaseDate?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.officialReleaseDate?.getTime() ?? Number.MAX_SAFE_INTEGER)
+    ),
+    duplicates,
+    conflicts
+  };
+}
+
+export function mergeReleaseCandidatesForTest(candidates: ReleaseCandidate[]) {
+  return mergeCandidates(candidates);
+}
+
+async function recordSyncLogs(checkedAt: Date, logs: AdapterLog[]) {
+  if (!logs.length) return;
+  await prisma.releaseSyncLog.createMany({
+    data: logs.map((log) => ({
+      checkedAt,
+      sourceName: log.sourceName,
+      sourceUrl: log.sourceUrl,
+      adapter: log.adapter,
+      httpStatus: log.httpStatus ?? null,
+      parsedCount: log.parsedCount,
+      createdCount: log.createdCount ?? 0,
+      updatedCount: log.updatedCount ?? 0,
+      duplicateCount: log.duplicateCount ?? 0,
+      conflictCount: log.conflictCount ?? 0,
+      error: log.error ?? null
+    }))
+  });
+}
+
+async function ensureReleaseSyncSources(logs: AdapterLog[], checkedAt: Date) {
+  for (const log of logs.filter((item) => item.sourceUrl)) {
+    await prisma.releaseSyncSource.upsert({
+      where: { sourceUrl: log.sourceUrl as string },
+      create: {
+        sourceName: log.sourceName,
+        sourceUrl: log.sourceUrl as string,
+        adapter: log.adapter,
+        enabled: true,
+        lastCheckedAt: checkedAt,
+        lastStatus: log.error ? "error" : "ok",
+        lastError: log.error ?? null
+      },
+      update: {
+        sourceName: log.sourceName,
+        adapter: log.adapter,
+        lastCheckedAt: checkedAt,
+        lastStatus: log.error ? "error" : "ok",
+        lastError: log.error ?? null
+      }
+    });
+  }
+}
+
 export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyncResult> {
-  const checkedAt = new Date().toISOString();
-  const [api, feeds] = await Promise.all([fetchPokemonTcgSets(), fetchConfiguredFeeds()]);
-  const warnings = [api.warning, ...feeds.warnings].filter((warning): warning is string => Boolean(warning));
-  const sources = [...officialSources, ...releaseFeedUrls()];
-  const candidates = mergeCandidates([...api.candidates, ...feeds.candidates]);
+  const checkedAt = new Date();
+  const adapterResults = await runAdapters();
+  const warnings = adapterResults.flatMap((result) => result.warnings);
+  const rawLogs = adapterResults.map((result) => result.log);
+  const { candidates, duplicates, conflicts } = mergeCandidates(adapterResults.flatMap((result) => result.candidates));
   const existing = await prisma.release.findMany();
   let created = 0;
   let updated = 0;
@@ -262,114 +807,149 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
   const actions: ReleaseSyncResult["candidates"] = [];
   const reviewQueue: ReleaseSyncResult["reviewQueue"] = [];
 
-  for (const candidate of candidates) {
-    const key = normalizeReleaseName(candidate.setName);
-    const match = existing.find((release) => normalizeReleaseName(release.setName) === key);
+  for (const releaseCandidate of candidates) {
+    const key = normalizeReleaseName(releaseCandidate.setName);
+    const match = existing.find((release) => normalizeReleaseName(release.setName) === key || normalizeReleaseName(release.releaseName || "") === key || normalizeReleaseName(release.productName || "") === key);
+    const supportingSources = JSON.stringify(releaseCandidate.supportingSources);
+    const actionBase = {
+      setName: releaseCandidate.setName,
+      releaseDate: releaseCandidate.officialReleaseDate?.toISOString() ?? "TBD",
+      source: releaseCandidate.sourceName,
+      confidence: releaseCandidate.confidence,
+      needsReview: releaseCandidate.needsReview
+    };
+
     if (!match) {
       await prisma.release.create({
         data: {
-          setName: candidate.setName,
-          releaseName: candidate.releaseName,
-          productType: candidate.productType,
-          releaseType: candidate.releaseType,
-          officialReleaseDate: candidate.officialReleaseDate,
-          preorderDate: candidate.preorderDate ?? null,
-          preorderWindowText: candidate.preorderWindowText ?? null,
-          region: candidate.region,
-          retailer: candidate.retailer ?? null,
-          productTypes: candidate.productTypes,
-          pokemonCenterExclusiveVersion: false,
-          productImage: candidate.productImage ?? null,
-          productUrl: candidate.productUrl ?? null,
+          setName: releaseCandidate.setName,
+          releaseName: releaseCandidate.releaseName,
+          productName: releaseCandidate.productName ?? releaseCandidate.releaseName ?? releaseCandidate.setName,
+          productType: releaseCandidate.productType,
+          releaseType: releaseCandidate.releaseType,
+          officialReleaseDate: releaseCandidate.officialReleaseDate,
+          preorderDate: releaseCandidate.preorderDate ?? null,
+          preorderWindowText: releaseCandidate.preorderWindowText ?? null,
+          region: releaseCandidate.region,
+          retailer: releaseCandidate.retailer ?? null,
+          productTypes: releaseCandidate.productTypes,
+          pokemonCenterExclusiveVersion: releaseCandidate.sourceType === "official_pokemon_center",
+          productImage: releaseCandidate.productImage ?? null,
+          productUrl: releaseCandidate.productUrl ?? null,
           chaseCards: null,
-          demandRating: candidate.priority,
-          estimatedDemand: candidate.priority,
-          priority: candidate.priority,
-          sealedProductPriority: candidate.priority,
-          notes: candidate.notes,
-          productLinks: candidate.productLinks,
-          sourceUrl: candidate.sourceUrl,
-          sourceName: candidate.sourceName,
-          sourceType: candidate.sourceType,
-          confidence: candidate.confidence,
-          status: candidate.status,
-          lastSyncedAt: new Date(checkedAt),
+          demandRating: releaseCandidate.priority,
+          estimatedDemand: releaseCandidate.priority,
+          priority: releaseCandidate.priority,
+          sealedProductPriority: releaseCandidate.priority,
+          notes: releaseCandidate.notes,
+          productLinks: releaseCandidate.productLinks,
+          supportingSources,
+          sourceUrl: releaseCandidate.sourceUrl,
+          sourceName: releaseCandidate.sourceName,
+          sourceType: releaseCandidate.sourceType,
+          confidence: releaseCandidate.confidence,
+          status: releaseCandidate.status,
+          lastSyncedAt: checkedAt,
           createdByManualEntry: false,
-          needsReview: candidate.needsReview,
-          reviewReason: candidate.reviewReason ?? null
+          needsReview: releaseCandidate.needsReview,
+          reviewReason: releaseCandidate.reviewReason ?? null
         }
       });
       created += 1;
-      if (candidate.needsReview) reviewQueue.push({ setName: candidate.setName, reason: candidate.reviewReason || "Needs source review.", source: candidate.sourceName });
-      await createReleaseSyncAlert(candidate, "created");
-      actions.push({ setName: candidate.setName, releaseDate: candidate.officialReleaseDate?.toISOString() ?? "TBD", source: candidate.sourceName, confidence: candidate.confidence, needsReview: candidate.needsReview, action: "created" });
+      if (releaseCandidate.needsReview) reviewQueue.push({ setName: releaseCandidate.setName, reason: releaseCandidate.reviewReason || "Needs source review.", source: releaseCandidate.sourceName });
+      await createReleaseSyncAlert(releaseCandidate, "created");
+      actions.push({ ...actionBase, action: "created" });
       continue;
     }
 
-    const nextLinks = mergeLinks(match.productLinks, candidate.productLinks);
-    const dateChanged = Boolean(match.officialReleaseDate && candidate.officialReleaseDate && match.officialReleaseDate.getTime() !== candidate.officialReleaseDate.getTime());
+    const nextLinks = mergeLinks(match.productLinks, releaseCandidate.productLinks);
+    const dateChanged = Boolean(match.officialReleaseDate && releaseCandidate.officialReleaseDate && match.officialReleaseDate.getTime() !== releaseCandidate.officialReleaseDate.getTime());
     const shouldUpdate =
       dateChanged ||
-      !match.productType ||
-      !match.productLinks?.includes(candidate.productLinks || "__no_link__") ||
-      !match.notes?.includes("Auto-synced") ||
-      match.sourceUrl !== candidate.sourceUrl ||
-      match.productImage !== candidate.productImage;
+      !match.officialReleaseDate ||
+      match.productName !== (releaseCandidate.productName ?? match.productName) ||
+      match.supportingSources !== supportingSources ||
+      match.sourceUrl !== releaseCandidate.sourceUrl ||
+      match.needsReview !== releaseCandidate.needsReview ||
+      match.reviewReason !== (releaseCandidate.reviewReason ?? null);
 
     if (!shouldUpdate) {
       skipped += 1;
-      actions.push({ setName: match.setName, releaseDate: match.officialReleaseDate?.toISOString() ?? "TBD", source: candidate.sourceName, confidence: candidate.confidence, needsReview: match.needsReview, action: "skipped" });
+      actions.push({ ...actionBase, setName: match.setName, releaseDate: match.officialReleaseDate?.toISOString() ?? "TBD", needsReview: match.needsReview, action: "skipped" });
       continue;
     }
 
     await prisma.release.update({
       where: { id: match.id },
       data: {
-        officialReleaseDate: candidate.officialReleaseDate,
+        officialReleaseDate: releaseCandidate.officialReleaseDate,
         previousReleaseDate: dateChanged ? match.officialReleaseDate : match.previousReleaseDate,
-        releaseName: match.releaseName || candidate.releaseName,
-        productType: match.productType || candidate.productType,
-        releaseType: match.releaseType || candidate.releaseType,
-        preorderDate: match.preorderDate || candidate.preorderDate || null,
-        preorderWindowText: match.preorderWindowText || candidate.preorderWindowText || null,
-        region: match.region || candidate.region,
-        retailer: match.retailer || candidate.retailer || null,
-        productTypes: match.productTypes || candidate.productTypes,
-        productImage: match.productImage || candidate.productImage || null,
-        productUrl: match.productUrl || candidate.productUrl || null,
+        releaseName: releaseCandidate.releaseName || match.releaseName,
+        productName: releaseCandidate.productName || match.productName,
+        productType: releaseCandidate.productType || match.productType,
+        releaseType: releaseCandidate.releaseType || match.releaseType,
+        preorderDate: releaseCandidate.preorderDate || match.preorderDate || null,
+        preorderWindowText: releaseCandidate.preorderWindowText || match.preorderWindowText || null,
+        region: releaseCandidate.region || match.region,
+        retailer: releaseCandidate.retailer || match.retailer || null,
+        productTypes: releaseCandidate.productTypes || match.productTypes,
+        productImage: releaseCandidate.productImage || match.productImage || null,
+        productUrl: releaseCandidate.productUrl || match.productUrl || null,
         productLinks: nextLinks,
-        notes: match.notes?.includes("Auto-synced") ? candidate.notes : `${match.notes || ""}\n\n${candidate.notes}`.trim(),
-        priority: match.priority || candidate.priority,
-        estimatedDemand: match.estimatedDemand || candidate.priority,
-        sealedProductPriority: match.sealedProductPriority || candidate.priority,
-        sourceUrl: candidate.sourceUrl || match.sourceUrl,
-        sourceName: candidate.sourceName || match.sourceName,
-        sourceType: candidate.sourceType,
-        confidence: candidate.confidence,
-        status: candidate.status,
-        lastSyncedAt: new Date(checkedAt),
-        needsReview: candidate.needsReview,
-        reviewReason: candidate.reviewReason ?? null
+        supportingSources,
+        notes: match.createdByManualEntry && match.notes ? `${match.notes}\n\n${releaseCandidate.notes}` : releaseCandidate.notes,
+        priority: releaseCandidate.priority,
+        estimatedDemand: releaseCandidate.priority,
+        sealedProductPriority: releaseCandidate.priority,
+        sourceUrl: releaseCandidate.sourceUrl || match.sourceUrl,
+        sourceName: releaseCandidate.sourceName || match.sourceName,
+        sourceType: releaseCandidate.sourceType,
+        confidence: releaseCandidate.confidence,
+        status: releaseCandidate.status,
+        lastSyncedAt: checkedAt,
+        needsReview: releaseCandidate.needsReview,
+        reviewReason: releaseCandidate.reviewReason ?? null
       }
     });
     updated += 1;
-    if (candidate.needsReview) reviewQueue.push({ setName: candidate.setName, reason: candidate.reviewReason || "Needs source review.", source: candidate.sourceName });
-    if (dateChanged) await createReleaseSyncAlert(candidate, "date_changed");
-    actions.push({ setName: match.setName, releaseDate: candidate.officialReleaseDate?.toISOString() ?? "TBD", source: candidate.sourceName, confidence: candidate.confidence, needsReview: candidate.needsReview, action: "updated" });
+    if (releaseCandidate.needsReview) reviewQueue.push({ setName: releaseCandidate.setName, reason: releaseCandidate.reviewReason || "Needs source review.", source: releaseCandidate.sourceName });
+    if (dateChanged) await createReleaseSyncAlert(releaseCandidate, "date_changed");
+    actions.push({ ...actionBase, action: "updated" });
   }
 
-  if (!process.env.POKEMON_RELEASE_FEED_URLS) {
-    warnings.push("POKEMON_RELEASE_FEED_URLS is not configured. Set feeds for product-drop news beyond core set releases.");
+  if (!process.env.POKEMON_RELEASE_SOURCE_URLS) {
+    warnings.push("POKEMON_RELEASE_SOURCE_URLS is not configured. Add official or ICv2 calendar URLs when the source site uses pages not covered by default discovery.");
   }
+  if (!process.env.POKEMON_RELEASE_FEED_URLS) {
+    warnings.push("POKEMON_RELEASE_FEED_URLS is not configured. Set feeds for product-drop news beyond official/default sources.");
+  }
+
+  const summaryLog: AdapterLog = {
+    sourceName: "Release sync summary",
+    sourceUrl: null,
+    adapter: "merge",
+    parsedCount: candidates.length,
+    createdCount: created,
+    updatedCount: updated,
+    duplicateCount: duplicates,
+    conflictCount: conflicts,
+    error: warnings.length ? warnings.slice(0, 3).join(" ") : null
+  };
+  const logs = [...rawLogs, summaryLog];
+  await ensureReleaseSyncSources(rawLogs, checkedAt);
+  await recordSyncLogs(checkedAt, logs);
 
   return {
-    checkedAt,
-    sources,
+    checkedAt: checkedAt.toISOString(),
+    sources: Array.from(new Set(rawLogs.map((log) => log.sourceUrl || log.sourceName))),
     created,
     updated,
     skipped,
+    duplicates,
+    conflicts,
     candidates: actions,
     reviewQueue,
+    logs,
     warnings
   };
 }

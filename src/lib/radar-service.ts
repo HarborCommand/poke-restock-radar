@@ -50,6 +50,7 @@ import type {
   ProductStatus,
   Rating,
   ReleaseDTO,
+  ReleaseSyncLogDTO,
   RetailerDTO,
   SavedFilterPresetDTO,
   SetupChecklistItemDTO,
@@ -568,6 +569,7 @@ function releaseToDTO(
     id: release.id,
     setName: release.setName,
     releaseName: release.releaseName,
+    productName: release.productName,
     productType: release.productType,
     releaseType: release.releaseType,
     officialReleaseDate: release.officialReleaseDate?.toISOString() ?? null,
@@ -586,6 +588,7 @@ function releaseToDTO(
     sealedProductPriority: release.sealedProductPriority as Priority,
     notes: release.notes,
     productLinks: release.productLinks,
+    supportingSources: release.supportingSources,
     sourceUrl: release.sourceUrl,
     sourceName: release.sourceName,
     sourceType: release.sourceType,
@@ -599,6 +602,23 @@ function releaseToDTO(
     daysUntilRelease: release.officialReleaseDate ? daysUntil(release.officialReleaseDate) : null,
     daysUntilPreorder: release.preorderDate ? daysUntil(release.preorderDate) : null,
     ...metrics
+  };
+}
+
+function releaseSyncLogToDTO(log: Prisma.ReleaseSyncLogGetPayload<Record<string, never>>): ReleaseSyncLogDTO {
+  return {
+    id: log.id,
+    checkedAt: log.checkedAt.toISOString(),
+    sourceName: log.sourceName,
+    sourceUrl: log.sourceUrl,
+    adapter: log.adapter,
+    httpStatus: log.httpStatus,
+    parsedCount: log.parsedCount,
+    createdCount: log.createdCount,
+    updatedCount: log.updatedCount,
+    duplicateCount: log.duplicateCount,
+    conflictCount: log.conflictCount,
+    error: log.error
   };
 }
 
@@ -2073,6 +2093,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     stores,
     sightings,
     releases,
+    releaseSyncLogs,
     cards,
     cardCompSales,
     monitorLogs,
@@ -2106,6 +2127,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       take: 20
     }),
     prisma.release.findMany({ orderBy: { officialReleaseDate: "asc" } }),
+    prisma.releaseSyncLog.findMany({ orderBy: { checkedAt: "desc" }, take: 24 }),
     prisma.card.findMany({ include: cardInclude, orderBy: [{ top10Score: "desc" }, { psa10EstimatedProfit: "desc" }] }),
     prisma.cardCompSale.findMany({ include: compSaleInclude, orderBy: { soldAt: "desc" }, take: 60 }),
     prisma.monitorLog.findMany({ include: monitorLogInclude, orderBy: { startedAt: "desc" }, take: 50 }),
@@ -2311,6 +2333,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     checkTodayStores,
     sightings: sightings.map(sightingToDTO),
     releases: releaseDTOs,
+    releaseSyncLogs: releaseSyncLogs.map(releaseSyncLogToDTO),
     releaseCountdowns: releaseDTOs
       .filter((release) => (release.daysUntilRelease ?? 9999) >= 0 || (release.daysUntilPreorder ?? 9999) >= 0)
       .slice(0, 6),

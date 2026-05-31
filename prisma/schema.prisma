@@ -272,6 +272,7 @@ model Release {
   id                            String    @id @default(cuid())
   setName                       String
   releaseName                   String?
+  productName                   String?
   productType                   String?
   releaseType                   String    @default("expansion")
   officialReleaseDate           DateTime?
@@ -290,6 +291,7 @@ model Release {
   sealedProductPriority         String    @default("MEDIUM")
   notes                         String?
   productLinks                  String?
+  supportingSources             String?
   sourceUrl                     String?
   sourceName                    String?
   sourceType                    String    @default("manual")
@@ -309,6 +311,41 @@ model Release {
   @@index([preorderDate])
   @@index([status])
   @@index([needsReview])
+}
+
+model ReleaseSyncSource {
+  id            String    @id @default(cuid())
+  sourceName    String
+  sourceUrl     String    @unique
+  adapter       String
+  enabled       Boolean   @default(true)
+  lastCheckedAt DateTime?
+  lastStatus    String?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([adapter])
+  @@index([enabled])
+}
+
+model ReleaseSyncLog {
+  id             String   @id @default(cuid())
+  checkedAt      DateTime @default(now())
+  sourceName     String
+  sourceUrl      String?
+  adapter        String
+  httpStatus     Int?
+  parsedCount    Int      @default(0)
+  createdCount   Int      @default(0)
+  updatedCount   Int      @default(0)
+  duplicateCount Int      @default(0)
+  conflictCount  Int      @default(0)
+  error          String?
+  createdAt      DateTime @default(now())
+
+  @@index([checkedAt])
+  @@index([adapter])
 }
 
 model Alert {

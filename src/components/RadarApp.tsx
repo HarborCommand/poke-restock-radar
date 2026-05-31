@@ -10050,12 +10050,12 @@ function EditableSighting({
 
 function releasesNextMonth(releases: ReleaseDTO[]) {
   const now = new Date();
-  const horizon = new Date(now);
-  horizon.setDate(horizon.getDate() + 31);
+  const start = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59, 999);
   return releases
     .filter((release) => {
       const date = calendarDate(release.officialReleaseDate);
-      return Boolean(date && date >= now && date <= horizon);
+      return Boolean(date && date >= start && date <= end);
     })
     .sort((a, b) => {
       const dateA = calendarDate(a.officialReleaseDate)?.getTime() ?? 0;
@@ -10112,6 +10112,20 @@ function ReleasesPanel({
   const [selectedRelease, setSelectedRelease] = useState<ReleaseDTO | null>(null);
   const nextMonth = useMemo(() => releasesNextMonth(dashboard.releases), [dashboard.releases]);
   const thisMonth = useMemo(() => releasesThisMonth(dashboard.releases), [dashboard.releases]);
+  const latestSyncLogs = dashboard.releaseSyncLogs.slice(0, 12);
+  const latestSummaryLog = latestSyncLogs.find((log) => log.adapter === "merge") ?? latestSyncLogs[0] ?? null;
+  const latestRunTime = latestSummaryLog?.checkedAt ?? null;
+  const latestRunLogs = latestRunTime
+    ? latestSyncLogs.filter((log) => Math.abs(new Date(log.checkedAt).getTime() - new Date(latestRunTime).getTime()) < 2000)
+    : [];
+  const syncStats = {
+    sourcesChecked: new Set(latestRunLogs.filter((log) => log.adapter !== "merge").map((log) => log.sourceName)).size,
+    parsed: latestRunLogs.reduce((total, log) => total + log.parsedCount, 0),
+    created: latestRunLogs.reduce((total, log) => total + log.createdCount, 0),
+    updated: latestRunLogs.reduce((total, log) => total + log.updatedCount, 0),
+    conflicts: latestRunLogs.reduce((total, log) => total + log.conflictCount, 0),
+    failures: latestRunLogs.filter((log) => log.error && log.adapter !== "merge").length
+  };
   const upcoming = useMemo(
     () =>
       dashboard.releases
@@ -10175,18 +10189,46 @@ function ReleasesPanel({
         <ReleaseMetricCard label="Next Drop" value={nextDrop ? nextDrop.setName : "TBD"} detail={nextDrop ? `${releaseDateLabel(nextDrop)} - ${releaseTimingLabel(nextDrop)}` : "No verified upcoming release"} icon={<CalendarDays size={18} />} />
         <ReleaseMetricCard label="Next Preorder" value={nextPreorder ? nextPreorder.setName : "TBD"} detail={nextPreorder ? `${shortDate(nextPreorder.preorderDate)} - ${nextPreorder.preorderWindowText || "Watch retailer windows"}` : "No verified preorder window"} icon={<Clock size={18} />} />
         <ReleaseMetricCard label="This Month" value={String(thisMonth.length)} detail="Verified releases this month" icon={<CalendarDays size={18} />} />
-        <ReleaseMetricCard label="Next Month" value={String(nextMonth.length)} detail="Known drops in the next 31 days" icon={<TrendingUp size={18} />} />
+        <ReleaseMetricCard label="Next Month" value={String(nextMonth.length)} detail="Known drops in the next calendar month" icon={<TrendingUp size={18} />} />
         <ReleaseMetricCard label="Tracked" value={String(dashboard.releases.length)} detail={`${needsReview.length} need review`} icon={<ClipboardList size={18} />} />
-        <ReleaseMetricCard label="Last Sync" value={lastSync ? relativeTime(lastSync) : "Never"} detail="Public source refresh" icon={<RefreshCw size={18} />} />
+        <ReleaseMetricCard label="Last Sync" value={latestRunTime ? relativeTime(latestRunTime) : lastSync ? relativeTime(lastSync) : "Never"} detail="Public source refresh" icon={<RefreshCw size={18} />} />
       </div>
 
       <div className="release-source-strip">
         <div>
-          <strong>Release sources</strong>
-          <span>Official Pokemon TCG set API, official Pokemon news/expansion pages, and any configured public feeds. Secondary-only or conflicting entries go to review.</span>
+          <strong>Source sync</strong>
+          <span>
+            {latestRunTime
+              ? `${syncStats.sourcesChecked} sources checked, ${syncStats.parsed} parsed, ${syncStats.created} new, ${syncStats.updated} updated, ${syncStats.conflicts} conflicts.`
+              : "Official Pokemon TCG, Pokemon News, Pokemon Center, ICv2, and configured feeds will be checked when you sync."}
+          </span>
         </div>
-        <span className={`light-pill ${needsReview.length ? "warn" : "good"}`}>{needsReview.length ? `${needsReview.length} review` : "Clean"}</span>
+        <span className={`light-pill ${syncStats.failures || needsReview.length ? "warn" : "good"}`}>
+          {syncStats.failures ? `${syncStats.failures} source issues` : needsReview.length ? `${needsReview.length} review` : "Clean"}
+        </span>
       </div>
+
+      {latestRunLogs.length ? (
+        <section className="release-sync-log-panel">
+          <div className="release-sync-log-heading">
+            <div>
+              <p className="eyeline">Sync Log</p>
+              <h2>Latest source checks</h2>
+            </div>
+            <span>Last checked {relativeTime(latestRunTime || latestRunLogs[0].checkedAt)}</span>
+          </div>
+          <div className="release-sync-log-grid">
+            {latestRunLogs.slice(0, 8).map((log) => (
+              <article className="release-sync-log-card" key={log.id}>
+                <strong>{log.sourceName}</strong>
+                <span>{log.adapter} {log.httpStatus ? `- HTTP ${log.httpStatus}` : ""}</span>
+                <small>{log.parsedCount} parsed / {log.createdCount} added / {log.updatedCount} updated</small>
+                {log.error ? <em>{log.error}</em> : null}
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="release-view-toolbar">
         <div className="release-view-tabs">

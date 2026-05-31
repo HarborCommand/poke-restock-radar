@@ -642,6 +642,7 @@ export type ReleaseDTO = {
   id: string;
   setName: string;
   releaseName: string | null;
+  productName: string | null;
   productType: string | null;
   releaseType: string;
   officialReleaseDate: string | null;
@@ -660,6 +661,7 @@ export type ReleaseDTO = {
   sealedProductPriority: Priority;
   notes: string | null;
   productLinks: string | null;
+  supportingSources: string | null;
   sourceUrl: string | null;
   sourceName: string | null;
   sourceType: string;
@@ -676,6 +678,21 @@ export type ReleaseDTO = {
   cardCount: number;
   profitablePsa9Count: number;
   psa10Upside: number;
+};
+
+export type ReleaseSyncLogDTO = {
+  id: string;
+  checkedAt: string;
+  sourceName: string;
+  sourceUrl: string | null;
+  adapter: string;
+  httpStatus: number | null;
+  parsedCount: number;
+  createdCount: number;
+  updatedCount: number;
+  duplicateCount: number;
+  conflictCount: number;
+  error: string | null;
 };
 
 export type CardDTO = {
@@ -1110,6 +1127,7 @@ export type DashboardDTO = {
   checkTodayStores: StoreDTO[];
   sightings: SightingDTO[];
   releases: ReleaseDTO[];
+  releaseSyncLogs: ReleaseSyncLogDTO[];
   releaseCountdowns: ReleaseDTO[];
   cards: CardDTO[];
   top10Watchlist: CardDTO[];
