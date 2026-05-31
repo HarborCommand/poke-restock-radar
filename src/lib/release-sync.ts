@@ -3,12 +3,27 @@ import { daysUntil } from "@/lib/calculations";
 
 type ReleaseCandidate = {
   setName: string;
-  productType: string;
-  officialReleaseDate: Date;
+  releaseName?: string | null;
+  productType: string | null;
+  releaseType: string;
+  officialReleaseDate: Date | null;
+  preorderDate?: Date | null;
+  preorderWindowText?: string | null;
+  region: string;
+  retailer?: string | null;
   productTypes: string;
+  productImage?: string | null;
+  productUrl?: string | null;
   productLinks: string | null;
   notes: string;
   priority: "LOW" | "MEDIUM" | "HIGH";
+  sourceUrl: string | null;
+  sourceName: string;
+  sourceType: "official" | "secondary" | "configured_feed";
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+  status: "upcoming" | "released" | "needs_review";
+  needsReview: boolean;
+  reviewReason?: string | null;
 };
 
 export type ReleaseSyncResult = {
@@ -21,10 +36,19 @@ export type ReleaseSyncResult = {
     setName: string;
     releaseDate: string;
     source: string;
+    confidence: "LOW" | "MEDIUM" | "HIGH";
+    needsReview: boolean;
     action: "created" | "updated" | "skipped";
   }>;
+  reviewQueue: Array<{ setName: string; reason: string; source: string }>;
   warnings: string[];
 };
+
+const officialSources = [
+  "Pokemon TCG API",
+  "https://tcg.pokemon.com/en-us/expansions/",
+  "https://www.pokemon.com/us/pokemon-news/"
+];
 
 function releaseYearWindow(now = new Date()) {
   return {
@@ -44,7 +68,8 @@ function normalizeReleaseName(value: string) {
   return value.toLowerCase().replace(/pokemon|pokémon|tcg|trading card game|:/gi, "").replace(/\s+/g, " ").trim();
 }
 
-function priorityForRelease(date: Date) {
+function priorityForRelease(date: Date | null) {
+  if (!date) return "MEDIUM";
   const remaining = daysUntil(date);
   if (remaining >= 0 && remaining <= 45) return "HIGH";
   if (remaining >= 0 && remaining <= 120) return "MEDIUM";
@@ -53,6 +78,11 @@ function priorityForRelease(date: Date) {
 
 function releaseNotes(source: string, extra: string[] = []) {
   return [`Auto-synced from ${source}. Verify regional product dates before chasing drops.`, ...extra].join(" ");
+}
+
+function releaseStatus(date: Date | null) {
+  if (!date) return "needs_review" as const;
+  return date.getTime() < Date.now() ? ("released" as const) : ("upcoming" as const);
 }
 
 async function fetchPokemonTcgSets(): Promise<{ candidates: ReleaseCandidate[]; warning?: string }> {
@@ -79,11 +109,26 @@ async function fetchPokemonTcgSets(): Promise<{ candidates: ReleaseCandidate[]; 
         const setLink = set.id ? `https://pokemontcg.io/sets/${encodeURIComponent(set.id)}` : "https://pokemontcg.io/";
         return {
           setName: set.name,
+          releaseName: set.name,
           productType: "Expansion",
+          releaseType: "expansion",
           officialReleaseDate: date,
+          preorderDate: null,
+          preorderWindowText: null,
+          region: "US",
+          retailer: null,
           productTypes: "Booster packs, Elite Trainer Boxes, booster bundles, collection products",
+          productImage: null,
+          productUrl: setLink,
           productLinks: setLink,
           priority: priorityForRelease(date),
+          sourceUrl: setLink,
+          sourceName: "Pokemon TCG API",
+          sourceType: "official",
+          confidence: "HIGH",
+          status: releaseStatus(date),
+          needsReview: false,
+          reviewReason: null,
           notes: releaseNotes("Pokemon TCG API", [
             set.series ? `Series: ${set.series}.` : "",
             set.total ? `${set.total} cards tracked by the API.` : ""
@@ -149,14 +194,29 @@ async function fetchConfiguredFeeds(): Promise<{ candidates: ReleaseCandidate[];
         const combined = `${title} ${content}`;
         if (!/pok[eé]mon|tcg|trading card/i.test(combined)) continue;
         const date = parseReleaseDate(raw.releaseDate) ?? parseReleaseDate(raw.date) ?? extractDateFromText(combined);
-        if (!date || date < start || date > end) continue;
+        if (date && (date < start || date > end)) continue;
         candidates.push({
           setName: title.replace(/\s+-\s+.*$/, "").trim() || "Pokemon TCG Release",
+          releaseName: title.replace(/\s+-\s+.*$/, "").trim() || "Pokemon TCG Release",
           productType: "News",
+          releaseType: /preorder/i.test(combined) ? "preorder_window" : "product_drop",
           officialReleaseDate: date,
+          preorderDate: parseReleaseDate(raw.preorderDate) ?? (/preorder/i.test(combined) ? date : null),
+          preorderWindowText: /preorder/i.test(combined) ? "Preorder window mentioned by configured feed" : null,
+          region: String(raw.region ?? "US"),
+          retailer: typeof raw.retailer === "string" ? raw.retailer : null,
           productTypes: "Release news, product drop, preorder window",
+          productImage: typeof raw.imageUrl === "string" ? raw.imageUrl : null,
+          productUrl: link || url,
           productLinks: link || url,
           priority: priorityForRelease(date),
+          sourceUrl: link || url,
+          sourceName: `Configured release feed`,
+          sourceType: "configured_feed",
+          confidence: date ? "MEDIUM" : "LOW",
+          status: releaseStatus(date),
+          needsReview: !date,
+          reviewReason: date ? null : "Configured feed item did not include a verified release date.",
           notes: releaseNotes(`release news feed ${url}`, [content.slice(0, 220)])
         });
       }
@@ -173,11 +233,11 @@ function mergeCandidates(candidates: ReleaseCandidate[]) {
   for (const candidate of candidates) {
     const key = normalizeReleaseName(candidate.setName);
     const existing = byName.get(key);
-    if (!existing || candidate.officialReleaseDate < existing.officialReleaseDate) {
+    if (!existing || (candidate.officialReleaseDate && (!existing.officialReleaseDate || candidate.officialReleaseDate < existing.officialReleaseDate))) {
       byName.set(key, candidate);
     }
   }
-  return Array.from(byName.values()).sort((a, b) => a.officialReleaseDate.getTime() - b.officialReleaseDate.getTime());
+  return Array.from(byName.values()).sort((a, b) => (a.officialReleaseDate?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.officialReleaseDate?.getTime() ?? Number.MAX_SAFE_INTEGER));
 }
 
 function mergeLinks(existing: string | null, next: string | null) {
@@ -193,13 +253,14 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
   const checkedAt = new Date().toISOString();
   const [api, feeds] = await Promise.all([fetchPokemonTcgSets(), fetchConfiguredFeeds()]);
   const warnings = [api.warning, ...feeds.warnings].filter((warning): warning is string => Boolean(warning));
-  const sources = ["Pokemon TCG API", ...releaseFeedUrls()];
+  const sources = [...officialSources, ...releaseFeedUrls()];
   const candidates = mergeCandidates([...api.candidates, ...feeds.candidates]);
   const existing = await prisma.release.findMany();
   let created = 0;
   let updated = 0;
   let skipped = 0;
   const actions: ReleaseSyncResult["candidates"] = [];
+  const reviewQueue: ReleaseSyncResult["reviewQueue"] = [];
 
   for (const candidate of candidates) {
     const key = normalizeReleaseName(candidate.setName);
@@ -208,34 +269,56 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
       await prisma.release.create({
         data: {
           setName: candidate.setName,
+          releaseName: candidate.releaseName,
           productType: candidate.productType,
+          releaseType: candidate.releaseType,
           officialReleaseDate: candidate.officialReleaseDate,
+          preorderDate: candidate.preorderDate ?? null,
+          preorderWindowText: candidate.preorderWindowText ?? null,
+          region: candidate.region,
+          retailer: candidate.retailer ?? null,
           productTypes: candidate.productTypes,
           pokemonCenterExclusiveVersion: false,
+          productImage: candidate.productImage ?? null,
+          productUrl: candidate.productUrl ?? null,
           chaseCards: null,
           demandRating: candidate.priority,
           estimatedDemand: candidate.priority,
           priority: candidate.priority,
           sealedProductPriority: candidate.priority,
           notes: candidate.notes,
-          productLinks: candidate.productLinks
+          productLinks: candidate.productLinks,
+          sourceUrl: candidate.sourceUrl,
+          sourceName: candidate.sourceName,
+          sourceType: candidate.sourceType,
+          confidence: candidate.confidence,
+          status: candidate.status,
+          lastSyncedAt: new Date(checkedAt),
+          createdByManualEntry: false,
+          needsReview: candidate.needsReview,
+          reviewReason: candidate.reviewReason ?? null
         }
       });
       created += 1;
-      actions.push({ setName: candidate.setName, releaseDate: candidate.officialReleaseDate.toISOString(), source: "public", action: "created" });
+      if (candidate.needsReview) reviewQueue.push({ setName: candidate.setName, reason: candidate.reviewReason || "Needs source review.", source: candidate.sourceName });
+      await createReleaseSyncAlert(candidate, "created");
+      actions.push({ setName: candidate.setName, releaseDate: candidate.officialReleaseDate?.toISOString() ?? "TBD", source: candidate.sourceName, confidence: candidate.confidence, needsReview: candidate.needsReview, action: "created" });
       continue;
     }
 
     const nextLinks = mergeLinks(match.productLinks, candidate.productLinks);
+    const dateChanged = Boolean(match.officialReleaseDate && candidate.officialReleaseDate && match.officialReleaseDate.getTime() !== candidate.officialReleaseDate.getTime());
     const shouldUpdate =
-      match.officialReleaseDate.getTime() !== candidate.officialReleaseDate.getTime() ||
+      dateChanged ||
       !match.productType ||
       !match.productLinks?.includes(candidate.productLinks || "__no_link__") ||
-      !match.notes?.includes("Auto-synced");
+      !match.notes?.includes("Auto-synced") ||
+      match.sourceUrl !== candidate.sourceUrl ||
+      match.productImage !== candidate.productImage;
 
     if (!shouldUpdate) {
       skipped += 1;
-      actions.push({ setName: match.setName, releaseDate: match.officialReleaseDate.toISOString(), source: "public", action: "skipped" });
+      actions.push({ setName: match.setName, releaseDate: match.officialReleaseDate?.toISOString() ?? "TBD", source: candidate.sourceName, confidence: candidate.confidence, needsReview: match.needsReview, action: "skipped" });
       continue;
     }
 
@@ -243,17 +326,36 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
       where: { id: match.id },
       data: {
         officialReleaseDate: candidate.officialReleaseDate,
+        previousReleaseDate: dateChanged ? match.officialReleaseDate : match.previousReleaseDate,
+        releaseName: match.releaseName || candidate.releaseName,
         productType: match.productType || candidate.productType,
+        releaseType: match.releaseType || candidate.releaseType,
+        preorderDate: match.preorderDate || candidate.preorderDate || null,
+        preorderWindowText: match.preorderWindowText || candidate.preorderWindowText || null,
+        region: match.region || candidate.region,
+        retailer: match.retailer || candidate.retailer || null,
         productTypes: match.productTypes || candidate.productTypes,
+        productImage: match.productImage || candidate.productImage || null,
+        productUrl: match.productUrl || candidate.productUrl || null,
         productLinks: nextLinks,
         notes: match.notes?.includes("Auto-synced") ? candidate.notes : `${match.notes || ""}\n\n${candidate.notes}`.trim(),
         priority: match.priority || candidate.priority,
         estimatedDemand: match.estimatedDemand || candidate.priority,
-        sealedProductPriority: match.sealedProductPriority || candidate.priority
+        sealedProductPriority: match.sealedProductPriority || candidate.priority,
+        sourceUrl: candidate.sourceUrl || match.sourceUrl,
+        sourceName: candidate.sourceName || match.sourceName,
+        sourceType: candidate.sourceType,
+        confidence: candidate.confidence,
+        status: candidate.status,
+        lastSyncedAt: new Date(checkedAt),
+        needsReview: candidate.needsReview,
+        reviewReason: candidate.reviewReason ?? null
       }
     });
     updated += 1;
-    actions.push({ setName: match.setName, releaseDate: candidate.officialReleaseDate.toISOString(), source: "public", action: "updated" });
+    if (candidate.needsReview) reviewQueue.push({ setName: candidate.setName, reason: candidate.reviewReason || "Needs source review.", source: candidate.sourceName });
+    if (dateChanged) await createReleaseSyncAlert(candidate, "date_changed");
+    actions.push({ setName: match.setName, releaseDate: candidate.officialReleaseDate?.toISOString() ?? "TBD", source: candidate.sourceName, confidence: candidate.confidence, needsReview: candidate.needsReview, action: "updated" });
   }
 
   if (!process.env.POKEMON_RELEASE_FEED_URLS) {
@@ -267,6 +369,28 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
     updated,
     skipped,
     candidates: actions,
+    reviewQueue,
     warnings
   };
+}
+
+async function createReleaseSyncAlert(candidate: ReleaseCandidate, action: "created" | "date_changed") {
+  const title = action === "date_changed" ? `${candidate.setName} release date changed` : `New Pokemon release discovered: ${candidate.setName}`;
+  const dedupeKey = `release_sync:${action}:${normalizeReleaseName(candidate.setName)}:${candidate.officialReleaseDate?.toISOString() ?? "tbd"}`;
+  const existing = await prisma.alert.findFirst({ where: { dedupeKey } });
+  if (existing) return;
+  await prisma.alert.create({
+    data: {
+      title,
+      reason: candidate.officialReleaseDate
+        ? `${candidate.setName} is listed for ${candidate.officialReleaseDate.toISOString().slice(0, 10)} from ${candidate.sourceName}.`
+        : `${candidate.setName} was found without an official date and needs review.`,
+      priority: candidate.needsReview ? "MEDIUM" : candidate.priority,
+      entityType: "RELEASE",
+      actionUrl: candidate.sourceUrl,
+      dedupeKey,
+      score: candidate.needsReview ? 55 : 75,
+      explanation: `Release calendar sync from ${candidate.sourceName}.`
+    }
+  });
 }

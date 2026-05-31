@@ -21,6 +21,475 @@
   --radius: 10px;
 }
 
+/* Release Radar white operating layout */
+.app-light-surface,
+.release-radar-page,
+.release-calendar-panel {
+  color: #111827;
+}
+
+.release-radar-page {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  max-width: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(34, 197, 94, 0.12), transparent 24rem),
+    #ffffff;
+  box-shadow: 0 20px 55px rgba(15, 23, 42, 0.08);
+  padding: clamp(18px, 3vw, 30px);
+  overflow: hidden;
+}
+
+.release-radar-header,
+.release-year-heading,
+.release-detail-top,
+.release-detail-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+}
+
+.release-radar-header h1 {
+  margin: 4px 0 6px;
+  color: #0f172a;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+}
+
+.release-radar-header span,
+.release-source-strip span,
+.release-year-heading span {
+  color: #64748b;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.release-radar-actions,
+.release-view-toolbar,
+.release-list-badges,
+.release-detail-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.light-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #dce3e8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  padding: 10px 14px;
+  font-size: 0.86rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.light-action.primary {
+  border-color: #22c55e;
+  background: #22c55e;
+  color: #052e16;
+}
+
+.release-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.release-metric-card,
+.release-source-strip,
+.release-review-panel,
+.release-calendar-panel,
+.release-detail-modal {
+  border: 1px solid #e5e7eb;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.release-metric-card {
+  display: grid;
+  gap: 7px;
+  min-height: 138px;
+  padding: 16px;
+}
+
+.release-metric-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.release-metric-card small,
+.info-block small {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.release-metric-card strong {
+  color: #0f172a;
+  font-size: clamp(1.2rem, 1.6vw, 1.7rem);
+  line-height: 1.12;
+}
+
+.release-metric-card span {
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.release-source-strip,
+.release-review-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.light-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.light-pill.good,
+.light-pill.high,
+.light-pill.buy {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.light-pill.watch,
+.light-pill.medium,
+.light-pill.warn {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.light-pill.low,
+.light-pill.skip {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.release-view-toolbar {
+  justify-content: space-between;
+}
+
+.release-view-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 4px;
+}
+
+.release-view-tabs button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #475569;
+  padding: 9px 14px;
+  font-weight: 850;
+}
+
+.release-view-tabs button.active {
+  background: #111827;
+  color: #ffffff;
+}
+
+.release-view-toolbar select {
+  min-height: 42px;
+  border-radius: 999px;
+  padding-inline: 14px;
+}
+
+.release-calendar-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.release-year {
+  display: grid;
+  gap: 14px;
+}
+
+.release-year-heading h2 {
+  margin: 2px 0 0;
+  color: #0f172a;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+}
+
+.release-month-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+  gap: 14px;
+}
+
+.release-month-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.release-month-card h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.release-day-list,
+.release-upcoming-list,
+.release-review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.release-day-row,
+.release-list-row,
+.release-review-list button {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #0f172a;
+  text-align: left;
+  padding: 12px;
+}
+
+.release-day-row {
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.release-list-row {
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.release-day-number {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: #2563eb;
+  padding: 8px 4px;
+}
+
+.release-day-number strong,
+.release-list-date strong,
+.info-block strong {
+  color: #0f172a;
+}
+
+.release-day-number span,
+.release-day-main span,
+.release-day-main small,
+.release-list-date span,
+.release-list-main span,
+.release-review-list span {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.release-day-main,
+.release-list-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.release-day-main strong,
+.release-list-main strong,
+.release-review-list strong {
+  color: #0f172a;
+  font-size: 0.94rem;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+
+.release-day-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.release-review-panel {
+  align-items: flex-start;
+}
+
+.release-review-list {
+  min-width: min(100%, 430px);
+}
+
+.release-detail-modal {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  width: min(94vw, 980px);
+  max-height: 88svh;
+  overflow-y: auto;
+  padding: clamp(18px, 3vw, 28px);
+}
+
+.release-detail-top {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.release-image-card {
+  display: grid;
+  place-items: center;
+  width: 180px;
+  aspect-ratio: 1;
+  border: 1px solid #e5e7eb;
+  border-radius: 24px;
+  background: #f8fafc;
+  color: #22c55e;
+  overflow: hidden;
+}
+
+.release-image-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.release-detail-top h2 {
+  margin: 4px 0 6px;
+  color: #0f172a;
+  font-size: clamp(1.6rem, 3vw, 2.6rem);
+  line-height: 1.08;
+}
+
+.release-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.info-block {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.release-review-note,
+.release-detail-notes {
+  margin: 0;
+  border-radius: 16px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 12px;
+  line-height: 1.5;
+}
+
+.release-review-note {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+@media (max-width: 1050px) {
+  .release-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .release-radar-header,
+  .release-source-strip,
+  .release-review-panel,
+  .release-year-heading,
+  .release-detail-top,
+  .release-detail-actions {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .release-kpi-grid,
+  .release-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .release-view-toolbar {
+    display: grid;
+  }
+
+  .release-view-tabs {
+    width: 100%;
+  }
+
+  .release-day-row,
+  .release-list-row {
+    grid-template-columns: 1fr;
+  }
+
+  .release-day-actions,
+  .release-list-badges {
+    justify-content: flex-start;
+  }
+
+  .release-detail-modal {
+    width: 100vw;
+    min-height: 100svh;
+    max-height: 100svh;
+    border-radius: 0;
+  }
+
+  .release-image-card {
+    width: 100%;
+    max-width: 260px;
+  }
+}
+
 /* Light Apple-style Poke Radar operating system */
 :root {
   color-scheme: light;
@@ -11835,5 +12304,124 @@ body .storefront-settings-card {
   .poster-row span,
   .poster-card-name span {
     color: #444444;
+  }
+}
+
+/* Release Radar final overrides: kept after legacy dark module rules. */
+body .release-radar-page,
+body .release-calendar-panel,
+body .release-review-panel,
+body .release-source-strip,
+body .release-detail-modal,
+body .release-month-card,
+body .release-day-row,
+body .release-list-row,
+body .release-review-list button,
+body .release-metric-card,
+body .info-block {
+  color: #111827 !important;
+  border-color: #e5e7eb !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+body .release-radar-page {
+  display: grid !important;
+  gap: 18px !important;
+  width: 100% !important;
+  max-width: none !important;
+  border-radius: 28px !important;
+  padding: clamp(18px, 3vw, 30px) !important;
+  overflow: hidden !important;
+}
+
+body .release-radar-header h1,
+body .release-year-heading h2,
+body .release-detail-top h2,
+body .release-metric-card strong,
+body .release-day-main strong,
+body .release-list-main strong,
+body .release-review-list strong,
+body .info-block strong,
+body .release-month-card h3 {
+  color: #0f172a !important;
+  writing-mode: horizontal-tb !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+body .release-radar-header span,
+body .release-source-strip span,
+body .release-year-heading span,
+body .release-metric-card span,
+body .release-day-main span,
+body .release-day-main small,
+body .release-list-main span,
+body .release-review-list span,
+body .release-detail-notes {
+  color: #64748b !important;
+}
+
+body .release-kpi-grid {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+body .release-day-row {
+  grid-template-columns: 56px minmax(0, 1fr) auto !important;
+}
+
+body .release-list-row {
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr) auto !important;
+}
+
+body .release-view-tabs button.active {
+  background: #111827 !important;
+  color: #ffffff !important;
+}
+
+body .release-detail-modal {
+  width: min(94vw, 980px) !important;
+  max-height: 88svh !important;
+  overflow-y: auto !important;
+  border-radius: 22px !important;
+}
+
+body .release-image-card {
+  background: #f8fafc !important;
+  color: #22c55e !important;
+}
+
+@media (max-width: 1050px) {
+  body .release-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body .release-kpi-grid,
+  body .release-detail-grid,
+  body .release-day-row,
+  body .release-list-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  body .release-radar-header,
+  body .release-source-strip,
+  body .release-review-panel,
+  body .release-year-heading,
+  body .release-detail-top,
+  body .release-detail-actions {
+    display: grid !important;
+    justify-content: stretch !important;
+  }
+
+  body .release-detail-modal {
+    width: 100vw !important;
+    min-height: 100svh !important;
+    max-height: 100svh !important;
+    border-radius: 0 !important;
   }
 }

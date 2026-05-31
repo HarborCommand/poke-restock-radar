@@ -403,19 +403,34 @@ export const sightingUpdateSchema = sightingCreateSchema.omit({ storeId: true })
 
 export const releaseCreateSchema = z.object({
   setName: z.string().trim().min(2),
+  releaseName: optionalTrimmed,
   productType: optionalTrimmed,
-  officialReleaseDate: boundedDate,
+  releaseType: z.string().trim().min(2).default("expansion"),
+  officialReleaseDate: optionalDate.nullable(),
   preorderDate: optionalDate.nullable(),
+  preorderWindowText: optionalTrimmed,
+  region: z.string().trim().min(2).default("US"),
+  retailer: optionalTrimmed,
   productTypes: z.string().trim().min(2),
   pokemonCenterExclusiveVersion: checkboxBoolean,
+  productImage: optionalHttpUrl,
+  productUrl: optionalHttpUrl,
   chaseCards: optionalTrimmed,
   demandRating: prioritySchema.default("MEDIUM"),
   estimatedDemand: prioritySchema.default("MEDIUM"),
   priority: prioritySchema.default("MEDIUM"),
   sealedProductPriority: prioritySchema.default("MEDIUM"),
   notes: optionalTrimmed,
-  productLinks: optionalUrlList
-}).refine((value) => !value.preorderDate || value.preorderDate <= value.officialReleaseDate, {
+  productLinks: optionalUrlList,
+  sourceUrl: optionalHttpUrl,
+  sourceName: optionalTrimmed,
+  sourceType: z.string().trim().min(2).default("manual"),
+  confidence: prioritySchema.default("MEDIUM"),
+  status: z.string().trim().min(2).default("upcoming"),
+  createdByManualEntry: checkboxBoolean.default(true),
+  needsReview: checkboxBoolean.default(false),
+  reviewReason: optionalTrimmed
+}).refine((value) => !value.preorderDate || !value.officialReleaseDate || value.preorderDate <= value.officialReleaseDate, {
   message: "Preorder date cannot be after official release date",
   path: ["preorderDate"]
 });

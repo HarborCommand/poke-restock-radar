@@ -1564,9 +1564,6 @@ function DashboardPanel({
     dashboard.inventorySummary.missingMarketDataCount +
     dashboard.inventory.filter((item) => item.quantityOwned > 0 && item.quantityOwned <= 2).length +
     dashboard.storefrontSummary.pendingOrderCount;
-  const publishedStoreProducts = dashboard.inventory.filter(
-    (item) => item.publishToStore && item.storeStatus === "active" && (item.availableForSale ?? item.quantityOwned) > 0
-  ).length;
   const watchlistItems = dashboard.inventory
     .filter((item) => item.quantityOwned > 0 || item.publishToStore)
     .sort((a, b) => (b.quantityOwned + (b.availableForSale ?? 0)) - (a.quantityOwned + (a.availableForSale ?? 0)))
@@ -1603,6 +1600,15 @@ function DashboardPanel({
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
     .slice(0, 4);
   const marketValueLabel = dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue);
+  const dashboardUpcomingReleases = dashboard.releases
+    .filter((release) => release.daysUntilRelease === null || release.daysUntilRelease >= 0)
+    .sort((a, b) => (calendarDate(a.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (calendarDate(b.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER));
+  const dashboardNextRelease = dashboardUpcomingReleases.find((release) => release.officialReleaseDate) ?? null;
+  const dashboardNextPreorder =
+    dashboard.releases
+      .filter((release) => release.daysUntilPreorder !== null && release.daysUntilPreorder >= 0)
+      .sort((a, b) => (a.daysUntilPreorder ?? 9999) - (b.daysUntilPreorder ?? 9999))[0] ?? null;
+  const releaseAlerts = visibleAlerts.filter((alert) => alert.entityType === "RELEASE").length;
   const now = new Date();
   const rangeStart = new Date(now);
   rangeStart.setDate(now.getDate() - 7);
@@ -1767,15 +1773,16 @@ function DashboardPanel({
         <section className="dashboard-card">
           <div className="dashboard-card-header compact">
             <div>
-              <h2>Storefront Status</h2>
-              <p>No backend health clutter here, just the user-facing scanner queue.</p>
+              <h2>Release Radar</h2>
+              <p>Next verified drops and preorder windows.</p>
             </div>
+            <button className="link-button" type="button" onClick={() => setActiveTab("releases")}>Open calendar</button>
           </div>
           <div className="quick-action-list">
-            <DashboardStatusRow label="Published products" value={publishedStoreProducts} />
-            <DashboardStatusRow label="Open orders" value={dashboard.storefrontSummary.pendingOrderCount} />
-            <DashboardStatusRow label="UPC scanner" value="Ready" tone="good" />
-            <DashboardStatusRow label="Manual checkout" value="Required" />
+            <DashboardStatusRow label="Next release" value={dashboardNextRelease ? `${dashboardNextRelease.setName} - ${releaseDateLabel(dashboardNextRelease)}` : "TBD"} />
+            <DashboardStatusRow label="Next preorder" value={dashboardNextPreorder ? `${dashboardNextPreorder.setName} - ${shortDate(dashboardNextPreorder.preorderDate)}` : "TBD"} />
+            <DashboardStatusRow label="Release alerts" value={releaseAlerts} tone={releaseAlerts ? "good" : "muted"} />
+            <DashboardStatusRow label="Needs review" value={dashboard.releases.filter((release) => release.needsReview || !release.officialReleaseDate).length} />
           </div>
         </section>
       </section>
@@ -3469,7 +3476,7 @@ function ReleaseStack({ releases }: { releases: ReleaseDTO[] }) {
               <div>
                 <h3>{release.setName}</h3>
                 <p>
-                  {shortDate(release.officialReleaseDate)} - {Math.max(0, release.daysUntilRelease)} days to release
+                  {release.officialReleaseDate ? `${shortDate(release.officialReleaseDate)} - ${Math.max(0, release.daysUntilRelease ?? 0)} days to release` : "Release date TBD"}
                 </p>
               </div>
             </div>
@@ -10057,6 +10064,36 @@ function releasesNextMonth(releases: ReleaseDTO[]) {
     });
 }
 
+function releasesThisMonth(releases: ReleaseDTO[]) {
+  const now = new Date();
+  return releases.filter((release) => {
+    const date = calendarDate(release.officialReleaseDate);
+    return Boolean(date && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth());
+  });
+}
+
+function releaseDateLabel(release: ReleaseDTO) {
+  return release.officialReleaseDate ? shortDate(release.officialReleaseDate) : "TBD";
+}
+
+function releaseTimingLabel(release: ReleaseDTO) {
+  if (!release.officialReleaseDate) return "Date needs official confirmation";
+  if (release.daysUntilRelease === null) return "Release timing unknown";
+  if (release.daysUntilRelease < 0) return "Released";
+  if (release.daysUntilRelease === 0) return "Releases today";
+  if (release.daysUntilRelease === 1) return "Releases tomorrow";
+  return `${release.daysUntilRelease} days away`;
+}
+
+function releaseSourceLabel(release: ReleaseDTO) {
+  if (release.createdByManualEntry) return "Manual entry";
+  return release.sourceName || (release.sourceType === "official" ? "Official source" : "Public source");
+}
+
+function releasePrimaryUrl(release: ReleaseDTO) {
+  return release.productUrl || release.sourceUrl || firstUrl(release.productLinks);
+}
+
 function ReleasesPanel({
   dashboard,
   isAdmin,
@@ -10070,22 +10107,49 @@ function ReleasesPanel({
   busyLabel: string | null;
   runAction: ActionHandler;
 }) {
+  const [view, setView] = useState<"month" | "year" | "upcoming">("month");
+  const [filter, setFilter] = useState<"ALL" | "HIGH" | "PC" | "REVIEW">("ALL");
+  const [selectedRelease, setSelectedRelease] = useState<ReleaseDTO | null>(null);
   const nextMonth = useMemo(() => releasesNextMonth(dashboard.releases), [dashboard.releases]);
-  const nextDrop = dashboard.releases.find((release) => release.daysUntilRelease >= 0) ?? null;
+  const thisMonth = useMemo(() => releasesThisMonth(dashboard.releases), [dashboard.releases]);
+  const upcoming = useMemo(
+    () =>
+      dashboard.releases
+        .filter((release) => release.daysUntilRelease === null || release.daysUntilRelease >= 0)
+        .sort((a, b) => (calendarDate(a.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (calendarDate(b.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER)),
+    [dashboard.releases]
+  );
+  const filteredReleases = useMemo(() => {
+    return dashboard.releases.filter((release) => {
+      if (filter === "HIGH") return release.priority === "HIGH" || release.demandRating === "HIGH";
+      if (filter === "PC") return release.pokemonCenterExclusiveVersion;
+      if (filter === "REVIEW") return release.needsReview || !release.officialReleaseDate;
+      return true;
+    });
+  }, [dashboard.releases, filter]);
+  const nextDrop = upcoming.find((release) => release.officialReleaseDate) ?? null;
+  const nextPreorder = dashboard.releases
+    .filter((release) => release.daysUntilPreorder !== null && release.daysUntilPreorder >= 0)
+    .sort((a, b) => (a.daysUntilPreorder ?? 9999) - (b.daysUntilPreorder ?? 9999))[0] ?? null;
+  const lastSync = dashboard.releases
+    .map((release) => release.lastSyncedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1) ?? null;
+  const needsReview = dashboard.releases.filter((release) => release.needsReview || !release.officialReleaseDate);
+
   return (
-    <>
-      <section className="release-hero-card">
+    <section className="release-radar-page app-light-surface">
+      <div className="release-radar-header">
         <div>
           <p className="eyeline">Release Radar</p>
-          <h2>Yearly Release Calendar</h2>
-          <span>Track upcoming Pokemon TCG set releases and product-drop news in one clean calendar.</span>
+          <h1>Pokemon TCG Release Calendar</h1>
+          <span>Official dates first. Unconfirmed drops stay marked as TBD until a trusted source verifies them.</span>
         </div>
-        <div className="release-hero-actions">
-          <span className="chip good">{dashboard.releases.length} tracked</span>
-          <span className="chip watch">{nextMonth.length} next 31 days</span>
+        <div className="release-radar-actions">
           {isAdmin ? (
             <button
-              className="mini-action solid"
+              className="light-action primary"
               disabled={busy}
               type="button"
               onClick={() =>
@@ -10097,36 +10161,88 @@ function ReleasesPanel({
               }
             >
               <RefreshCw size={14} />
-              {busyLabel === "Syncing release news" ? "Checking" : "Check Release News"}
+              {busyLabel === "Syncing release news" ? "Syncing" : "Sync Public Sources"}
             </button>
           ) : null}
+          <button className="light-action" type="button" onClick={() => document.getElementById("manual-release-form")?.scrollIntoView({ behavior: "smooth" })}>
+            <Plus size={14} />
+            Manual Add
+          </button>
         </div>
-      </section>
+      </div>
 
-      <section className="release-status-grid">
-        <article>
-          <small>Next Drop</small>
-          <strong>{nextDrop ? nextDrop.setName : "No upcoming drop"}</strong>
-          <span>{nextDrop ? `${shortDate(nextDrop.officialReleaseDate)} - ${Math.max(0, nextDrop.daysUntilRelease)} days` : "Add or sync releases to fill the calendar."}</span>
-        </article>
-        <article>
-          <small>Next Month</small>
-          <strong>{nextMonth.length}</strong>
-          <span>{nextMonth.length ? "Drops inside the next 31 days" : "No known drops in the next 31 days"}</span>
-        </article>
-        <article>
-          <small>Auto Update</small>
-          <strong>Daily</strong>
-          <span>Vercel cron checks public release sources every morning.</span>
-        </article>
-      </section>
+      <div className="release-kpi-grid">
+        <ReleaseMetricCard label="Next Drop" value={nextDrop ? nextDrop.setName : "TBD"} detail={nextDrop ? `${releaseDateLabel(nextDrop)} - ${releaseTimingLabel(nextDrop)}` : "No verified upcoming release"} icon={<CalendarDays size={18} />} />
+        <ReleaseMetricCard label="Next Preorder" value={nextPreorder ? nextPreorder.setName : "TBD"} detail={nextPreorder ? `${shortDate(nextPreorder.preorderDate)} - ${nextPreorder.preorderWindowText || "Watch retailer windows"}` : "No verified preorder window"} icon={<Clock size={18} />} />
+        <ReleaseMetricCard label="This Month" value={String(thisMonth.length)} detail="Verified releases this month" icon={<CalendarDays size={18} />} />
+        <ReleaseMetricCard label="Next Month" value={String(nextMonth.length)} detail="Known drops in the next 31 days" icon={<TrendingUp size={18} />} />
+        <ReleaseMetricCard label="Tracked" value={String(dashboard.releases.length)} detail={`${needsReview.length} need review`} icon={<ClipboardList size={18} />} />
+        <ReleaseMetricCard label="Last Sync" value={lastSync ? relativeTime(lastSync) : "Never"} detail="Public source refresh" icon={<RefreshCw size={18} />} />
+      </div>
 
-      <ReleaseCalendar releases={dashboard.releases} />
-    </>
+      <div className="release-source-strip">
+        <div>
+          <strong>Release sources</strong>
+          <span>Official Pokemon TCG set API, official Pokemon news/expansion pages, and any configured public feeds. Secondary-only or conflicting entries go to review.</span>
+        </div>
+        <span className={`light-pill ${needsReview.length ? "warn" : "good"}`}>{needsReview.length ? `${needsReview.length} review` : "Clean"}</span>
+      </div>
+
+      <div className="release-view-toolbar">
+        <div className="release-view-tabs">
+          {(["month", "year", "upcoming"] as const).map((option) => (
+            <button className={view === option ? "active" : ""} key={option} type="button" onClick={() => setView(option)}>
+              {option === "month" ? "Monthly" : option === "year" ? "Year" : "Upcoming"}
+            </button>
+          ))}
+        </div>
+        <select value={filter} onChange={(event) => setFilter(event.currentTarget.value as typeof filter)}>
+          <option value="ALL">All releases</option>
+          <option value="HIGH">High demand</option>
+          <option value="PC">Pokemon Center exclusive</option>
+          <option value="REVIEW">Needs review / TBD</option>
+        </select>
+      </div>
+
+      {view === "year" ? <ReleaseCalendar releases={filteredReleases} onSelect={setSelectedRelease} /> : null}
+      {view === "month" ? <ReleaseMonthView releases={filteredReleases} onSelect={setSelectedRelease} /> : null}
+      {view === "upcoming" ? <ReleaseUpcomingList releases={filteredReleases} onSelect={setSelectedRelease} /> : null}
+
+      {needsReview.length ? (
+        <section className="release-review-panel">
+          <div>
+            <p className="eyeline">Review Queue</p>
+            <h2>Needs confirmation</h2>
+            <span>These entries are missing an official date, have lower confidence, or came from a non-official feed.</span>
+          </div>
+          <div className="release-review-list">
+            {needsReview.slice(0, 6).map((release) => (
+              <button key={release.id} type="button" onClick={() => setSelectedRelease(release)}>
+                <strong>{release.setName}</strong>
+                <span>{release.reviewReason || "Date/source needs review"} - {releaseSourceLabel(release)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {selectedRelease ? <ReleaseDetailModal release={selectedRelease} onClose={() => setSelectedRelease(null)} /> : null}
+    </section>
   );
 }
 
-function ReleaseCalendar({ releases }: { releases: ReleaseDTO[] }) {
+function ReleaseMetricCard({ label, value, detail, icon }: { label: string; value: string; detail: string; icon: ReactNode }) {
+  return (
+    <article className="release-metric-card">
+      <div className="release-metric-icon">{icon}</div>
+      <small>{label}</small>
+      <strong>{value}</strong>
+      <span>{detail}</span>
+    </article>
+  );
+}
+
+function ReleaseCalendar({ releases, onSelect }: { releases: ReleaseDTO[]; onSelect: (release: ReleaseDTO) => void }) {
   const yearlyDrops = useMemo(() => groupReleasesByYear(releases), [releases]);
 
   if (!releases.length) {
@@ -10134,8 +10250,8 @@ function ReleaseCalendar({ releases }: { releases: ReleaseDTO[] }) {
       <section className="release-calendar-panel">
         <EmptyState
           icon={CalendarDays}
-          title="No yearly drops tracked"
-          detail="Admin can add verified release dates from Release Management."
+          title="No release dates tracked"
+          detail="Sync public sources or add a manual release when a verified date is available."
         />
       </section>
     );
@@ -10158,10 +10274,10 @@ function ReleaseCalendar({ releases }: { releases: ReleaseDTO[] }) {
                 <h3>{month.label}</h3>
                 <div className="release-day-list">
                   {month.releases.map((release) => {
-                    const actionUrl = firstUrl(release.productLinks);
+                    const actionUrl = releasePrimaryUrl(release);
                     const releaseDate = calendarDateParts(release.officialReleaseDate);
                     return (
-                      <div className="release-day-row" id={`release-${release.id}`} key={release.id}>
+                      <button className="release-day-row" id={`release-${release.id}`} key={release.id} type="button" onClick={() => onSelect(release)}>
                         <div className="release-day-number">
                           <strong>{releaseDate ? releaseDate.day : "?"}</strong>
                           <span>{releaseDate ? releaseDate.weekday : "TBD"}</span>
@@ -10169,20 +10285,20 @@ function ReleaseCalendar({ releases }: { releases: ReleaseDTO[] }) {
                         <div className="release-day-main">
                           <strong>{release.setName}</strong>
                           <span>
-                            {release.productType || release.productTypes.split(",")[0]} - Release {shortDate(release.officialReleaseDate)}
+                            {release.productType || release.productTypes.split(",")[0]} - Release {releaseDateLabel(release)}
                           </span>
-                          {release.preorderDate ? <small>Preorder {shortDate(release.preorderDate)}</small> : <small>Preorder TBD</small>}
+                          <small>{release.preorderDate ? `Preorder ${shortDate(release.preorderDate)}` : release.preorderWindowText || "Preorder TBD"}</small>
                         </div>
                         <div className="release-day-actions">
-                          <span className={`chip compact-chip ${statusTone(release.priority)}`}>{release.priority}</span>
+                          <span className={`light-pill ${statusTone(release.priority)}`}>{release.priority}</span>
                           {release.pokemonCenterExclusiveVersion ? <span className="chip compact-chip watch">PC</span> : null}
                           {actionUrl ? (
-                            <a className="mini-action icon-only" href={actionUrl} target="_blank" rel="noreferrer" aria-label={`Open ${release.setName}`}>
+                            <a className="mini-action icon-only" href={actionUrl} target="_blank" rel="noreferrer" aria-label={`Open ${release.setName}`} onClick={(event) => event.stopPropagation()}>
                               <ExternalLink size={14} />
                             </a>
                           ) : null}
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -10192,6 +10308,129 @@ function ReleaseCalendar({ releases }: { releases: ReleaseDTO[] }) {
         </div>
       ))}
     </section>
+  );
+}
+
+function ReleaseMonthView({ releases, onSelect }: { releases: ReleaseDTO[]; onSelect: (release: ReleaseDTO) => void }) {
+  const now = new Date();
+  const monthReleases = releases.filter((release) => {
+    const date = calendarDate(release.officialReleaseDate);
+    return Boolean(date && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth());
+  });
+  const tbd = releases.filter((release) => !release.officialReleaseDate);
+  return (
+    <section className="release-calendar-panel">
+      <div className="release-year-heading">
+        <div>
+          <p className="eyeline">Monthly Calendar</p>
+          <h2>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(now)}</h2>
+        </div>
+        <span className="light-pill">{monthReleases.length} this month</span>
+      </div>
+      <div className="release-upcoming-list">
+        {[...monthReleases, ...tbd].map((release) => (
+          <ReleaseListRow key={release.id} release={release} onSelect={onSelect} />
+        ))}
+        {!monthReleases.length && !tbd.length ? <EmptyState icon={CalendarDays} title="No drops this month" detail="Upcoming verified releases will show here after sync." /> : null}
+      </div>
+    </section>
+  );
+}
+
+function ReleaseUpcomingList({ releases, onSelect }: { releases: ReleaseDTO[]; onSelect: (release: ReleaseDTO) => void }) {
+  const upcoming = releases
+    .filter((release) => release.daysUntilRelease === null || release.daysUntilRelease >= 0)
+    .sort((a, b) => (calendarDate(a.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (calendarDate(b.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER));
+  return (
+    <section className="release-calendar-panel">
+      <div className="release-year-heading">
+        <div>
+          <p className="eyeline">Upcoming Drops</p>
+          <h2>Next releases and preorder windows</h2>
+        </div>
+        <span className="light-pill">{upcoming.length} upcoming</span>
+      </div>
+      <div className="release-upcoming-list">
+        {upcoming.map((release) => <ReleaseListRow key={release.id} release={release} onSelect={onSelect} />)}
+        {!upcoming.length ? <EmptyState icon={CalendarDays} title="No upcoming releases" detail="Sync public sources or add the next known drop manually." /> : null}
+      </div>
+    </section>
+  );
+}
+
+function ReleaseListRow({ release, onSelect }: { release: ReleaseDTO; onSelect: (release: ReleaseDTO) => void }) {
+  return (
+    <button className="release-list-row" type="button" onClick={() => onSelect(release)}>
+      <div className="release-list-date">
+        <strong>{releaseDateLabel(release)}</strong>
+        <span>{releaseTimingLabel(release)}</span>
+      </div>
+      <div className="release-list-main">
+        <strong>{release.setName}</strong>
+        <span>{release.productType || release.productTypes.split(",")[0]} - {release.region} - {releaseSourceLabel(release)}</span>
+      </div>
+      <div className="release-list-badges">
+        <span className={`light-pill ${statusTone(release.priority)}`}>{release.priority}</span>
+        <span className={`light-pill ${statusTone(release.confidence)}`}>{release.confidence} confidence</span>
+        {release.needsReview ? <span className="light-pill warn">Needs Review</span> : null}
+      </div>
+    </button>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="info-block">
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ReleaseDetailModal({ release, onClose }: { release: ReleaseDTO; onClose: () => void }) {
+  const actionUrl = releasePrimaryUrl(release);
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <article className="release-detail-modal app-light-surface" role="dialog" aria-modal="true" aria-label={`${release.setName} release details`}>
+        <button className="modal-close" type="button" onClick={onClose} aria-label="Close release details">
+          <X size={18} />
+        </button>
+        <div className="release-detail-top">
+          <div className="release-image-card">
+            {release.productImage ? <Image src={release.productImage} alt="" width={220} height={220} unoptimized /> : <CalendarDays size={46} />}
+          </div>
+          <div>
+            <p className="eyeline">{release.status === "released" ? "Released" : "Upcoming Release"}</p>
+            <h2>{release.setName}</h2>
+            <span>{release.productType || release.releaseType} - {releaseTimingLabel(release)}</span>
+            <div className="release-detail-badges">
+              <span className={`light-pill ${statusTone(release.priority)}`}>{release.priority}</span>
+              <span className={`light-pill ${statusTone(release.confidence)}`}>{release.confidence} confidence</span>
+              {release.needsReview ? <span className="light-pill warn">Needs Review</span> : null}
+              {release.createdByManualEntry ? <span className="light-pill">Manual</span> : <span className="light-pill good">Synced</span>}
+            </div>
+          </div>
+        </div>
+        <div className="release-detail-grid">
+          <InfoBlock label="Release date" value={releaseDateLabel(release)} />
+          <InfoBlock label="Preorder" value={release.preorderDate ? shortDate(release.preorderDate) : release.preorderWindowText || "TBD"} />
+          <InfoBlock label="Region" value={release.region || "US"} />
+          <InfoBlock label="Retailer" value={release.retailer || (release.pokemonCenterExclusiveVersion ? "Pokemon Center" : "TBD")} />
+          <InfoBlock label="Source" value={releaseSourceLabel(release)} />
+          <InfoBlock label="Last sync" value={release.lastSyncedAt ? dateTime(release.lastSyncedAt) : "Not synced"} />
+        </div>
+        {release.reviewReason ? <p className="release-review-note">{release.reviewReason}</p> : null}
+        <p className="release-detail-notes">{release.notes || "No notes saved."}</p>
+        <div className="release-detail-actions">
+          {actionUrl ? (
+            <a className="light-action primary" href={actionUrl} target="_blank" rel="noreferrer">
+              Open Source <ExternalLink size={14} />
+            </a>
+          ) : null}
+          <button className="light-action" type="button" onClick={onClose}>Close</button>
+        </div>
+      </article>
+    </div>
   );
 }
 
@@ -10210,8 +10449,8 @@ function ReleaseManagementPanel({
 }) {
   return (
     <>
-      <section className="form-panel">
-        <h2>Add Release</h2>
+      <section className="form-panel" id="manual-release-form">
+        <h2>Add Manual Release</h2>
         <form
           className="form-grid"
           onSubmit={(event) =>
@@ -10224,14 +10463,21 @@ function ReleaseManagementPanel({
           }
         >
           <TextInput name="setName" label="Set name" required />
+          <TextInput name="releaseName" label="Public release name" />
           <SelectInput
             name="productType"
             label="Primary product type"
             options={productTypeOptions.map((value) => ({ value, label: value }))}
           />
-          <TextInput name="officialReleaseDate" label="Release date" type="date" min="2020-01-01" required />
+          <SelectInput name="releaseType" label="Release type" options={["expansion", "product_drop", "preorder_window", "promo"].map(optionFromString)} />
+          <TextInput name="officialReleaseDate" label="Release date" type="date" min="2020-01-01" />
           <TextInput name="preorderDate" label="Preorder date" type="date" min="2020-01-01" />
+          <TextInput name="preorderWindowText" label="Preorder window text" placeholder="TBD, tomorrow, retailer window" />
+          <TextInput name="region" label="Region" defaultValue="US" />
+          <TextInput name="retailer" label="Retailer" placeholder="Pokemon Center, Target, Walmart" />
           <TextareaInput name="productTypes" label="Product types" placeholder="ETB, Booster Bundle" wide required />
+          <TextInput name="productImage" label="Product image URL" />
+          <TextInput name="productUrl" label="Product URL" />
           <SelectInput name="demandRating" label="Demand" options={priorities.map(optionFromString)} />
           <SelectInput name="estimatedDemand" label="Estimated demand" options={priorities.map(optionFromString)} />
           <SelectInput name="priority" label="Priority" options={priorities.map(optionFromString)} />
@@ -10242,6 +10488,14 @@ function ReleaseManagementPanel({
           </label>
           <TextareaInput name="chaseCards" label="Chase cards" wide />
           <TextareaInput name="productLinks" label="Product links" placeholder="https://..." wide />
+          <TextInput name="sourceName" label="Source name" placeholder="Official Pokemon, manual note" />
+          <TextInput name="sourceUrl" label="Source URL" />
+          <SelectInput name="confidence" label="Confidence" options={priorities.map(optionFromString)} />
+          <label className="checkbox-label">
+            <input name="needsReview" type="checkbox" value="true" />
+            Needs review
+          </label>
+          <TextInput name="reviewReason" label="Review reason" />
           <TextareaInput name="notes" label="Notes" wide />
           <button className="primary-action" disabled={busy} type="submit">
             <Plus size={16} />
@@ -10313,27 +10567,28 @@ function EditableRelease({
       <div className="edit-card-heading">
         <div>
           <strong>{release.setName}</strong>
-          <span>
-            {shortDate(release.officialReleaseDate)} - {Math.max(0, release.daysUntilRelease)} days
-          </span>
+          <span>{release.officialReleaseDate ? `${shortDate(release.officialReleaseDate)} - ${Math.max(0, release.daysUntilRelease ?? 0)} days` : "Release date TBD"}</span>
         </div>
         <span className={`chip ${statusTone(release.priority)}`}>{release.priority}</span>
       </div>
       <div className="form-grid">
+        <input name="sourceType" type="hidden" value={release.sourceType} />
+        <input name="createdByManualEntry" type="hidden" value={release.createdByManualEntry ? "true" : "false"} />
         <TextInput name="setName" label="Set name" defaultValue={release.setName} required />
+        <TextInput name="releaseName" label="Public release name" defaultValue={release.releaseName ?? ""} />
         <SelectInput
           name="productType"
           label="Primary product type"
           defaultValue={release.productType ?? productTypeOptions[0]}
           options={productTypeOptions.map((value) => ({ value, label: value }))}
         />
+        <SelectInput name="releaseType" label="Release type" defaultValue={release.releaseType} options={["expansion", "product_drop", "preorder_window", "promo"].map(optionFromString)} />
         <TextInput
           name="officialReleaseDate"
           label="Release date"
           type="date"
           min="2020-01-01"
           defaultValue={toDateInput(release.officialReleaseDate)}
-          required
         />
         <TextInput
           name="preorderDate"
@@ -10342,7 +10597,12 @@ function EditableRelease({
           min="2020-01-01"
           defaultValue={toDateInput(release.preorderDate)}
         />
+        <TextInput name="preorderWindowText" label="Preorder window text" defaultValue={release.preorderWindowText ?? ""} />
+        <TextInput name="region" label="Region" defaultValue={release.region || "US"} />
+        <TextInput name="retailer" label="Retailer" defaultValue={release.retailer ?? ""} />
         <TextareaInput name="productTypes" label="Product types" defaultValue={release.productTypes} wide required />
+        <TextInput name="productImage" label="Product image URL" defaultValue={release.productImage ?? ""} />
+        <TextInput name="productUrl" label="Product URL" defaultValue={release.productUrl ?? ""} />
         <SelectInput name="demandRating" label="Demand" defaultValue={release.demandRating} options={priorities.map(optionFromString)} />
         <SelectInput
           name="estimatedDemand"
@@ -10368,6 +10628,15 @@ function EditableRelease({
         </label>
         <TextareaInput name="chaseCards" label="Chase cards" defaultValue={release.chaseCards ?? ""} wide />
         <TextareaInput name="productLinks" label="Product links" defaultValue={release.productLinks ?? ""} wide />
+        <TextInput name="sourceName" label="Source name" defaultValue={release.sourceName ?? ""} />
+        <TextInput name="sourceUrl" label="Source URL" defaultValue={release.sourceUrl ?? ""} />
+        <SelectInput name="confidence" label="Confidence" defaultValue={release.confidence} options={priorities.map(optionFromString)} />
+        <TextInput name="status" label="Status" defaultValue={release.status} />
+        <label className="checkbox-label">
+          <input name="needsReview" type="checkbox" value="true" defaultChecked={release.needsReview} />
+          Needs review
+        </label>
+        <TextInput name="reviewReason" label="Review reason" defaultValue={release.reviewReason ?? ""} />
         <TextareaInput name="notes" label="Notes" defaultValue={release.notes ?? ""} wide />
       </div>
       <div className="form-actions">

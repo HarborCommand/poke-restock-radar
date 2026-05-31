@@ -136,7 +136,7 @@ test("Phase 15 daily workflow inventory and recap features exist", () => {
     "Open Inventory",
     "Review Orders",
     "Recent inventory",
-    "Storefront Status",
+    "Release Radar",
     "Mark Checked Today",
     "I Bought This",
     "Inventory Log",
@@ -534,9 +534,38 @@ test("Phase 4 release priority engine fields exist", () => {
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   assert.match(app, /Dashboard summary/);
-  assert.match(app, /Yearly Release Calendar/);
+  assert.match(app, /Pokemon TCG Release Calendar/);
   assert.match(app, /release-month-grid/);
   assert.match(app, /High priority only/);
+});
+
+test("Release Radar source-aware calendar is wired", () => {
+  const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
+  for (const field of [
+    "releaseName",
+    "releaseType",
+    "preorderWindowText",
+    "sourceUrl",
+    "sourceName",
+    "sourceType",
+    "confidence",
+    "needsReview",
+    "lastSyncedAt"
+  ]) {
+    assert.match(schema, new RegExp(field), `missing release radar field ${field}`);
+  }
+
+  const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  assert.match(app, /Release Radar/);
+  assert.match(app, /Sync Public Sources/);
+  assert.match(app, /Needs review \/ TBD/);
+  assert.match(app, /ReleaseDetailModal/);
+
+  const sync = readFileSync(join(root, "src", "lib", "release-sync.ts"), "utf8");
+  assert.match(sync, /Pokemon TCG API/);
+  assert.match(sync, /reviewQueue/);
+  assert.match(sync, /POKEMON_RELEASE_FEED_URLS/);
+  assert.match(sync, /date_changed/);
 });
 
 test("Phase 5 store prediction and field mode fields exist", () => {

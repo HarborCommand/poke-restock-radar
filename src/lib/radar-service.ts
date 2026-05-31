@@ -567,11 +567,18 @@ function releaseToDTO(
   return {
     id: release.id,
     setName: release.setName,
+    releaseName: release.releaseName,
     productType: release.productType,
-    officialReleaseDate: release.officialReleaseDate.toISOString(),
+    releaseType: release.releaseType,
+    officialReleaseDate: release.officialReleaseDate?.toISOString() ?? null,
     preorderDate: release.preorderDate?.toISOString() ?? null,
+    preorderWindowText: release.preorderWindowText,
+    region: release.region,
+    retailer: release.retailer,
     productTypes: release.productTypes,
     pokemonCenterExclusiveVersion: release.pokemonCenterExclusiveVersion,
+    productImage: release.productImage,
+    productUrl: release.productUrl,
     chaseCards: release.chaseCards,
     demandRating: release.demandRating as Priority,
     estimatedDemand: release.estimatedDemand as Priority,
@@ -579,7 +586,17 @@ function releaseToDTO(
     sealedProductPriority: release.sealedProductPriority as Priority,
     notes: release.notes,
     productLinks: release.productLinks,
-    daysUntilRelease: daysUntil(release.officialReleaseDate),
+    sourceUrl: release.sourceUrl,
+    sourceName: release.sourceName,
+    sourceType: release.sourceType,
+    confidence: release.confidence as Priority,
+    status: release.status,
+    lastSyncedAt: release.lastSyncedAt?.toISOString() ?? null,
+    createdByManualEntry: release.createdByManualEntry,
+    needsReview: release.needsReview,
+    reviewReason: release.reviewReason,
+    previousReleaseDate: release.previousReleaseDate?.toISOString() ?? null,
+    daysUntilRelease: release.officialReleaseDate ? daysUntil(release.officialReleaseDate) : null,
     daysUntilPreorder: release.preorderDate ? daysUntil(release.preorderDate) : null,
     ...metrics
   };
@@ -1951,6 +1968,7 @@ async function createAlertOnce(input: {
 
 async function refreshReleaseAlerts(releases: ReleaseScoreInput[]) {
   for (const release of releases) {
+    if (!release.officialReleaseDate) continue;
     const releaseDays = daysUntil(release.officialReleaseDate);
     const preorderDays = release.preorderDate ? daysUntil(release.preorderDate) : null;
     const actionUrl = release.productLinks
@@ -2294,7 +2312,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     sightings: sightings.map(sightingToDTO),
     releases: releaseDTOs,
     releaseCountdowns: releaseDTOs
-      .filter((release) => release.daysUntilRelease >= 0 || (release.daysUntilPreorder ?? 9999) >= 0)
+      .filter((release) => (release.daysUntilRelease ?? 9999) >= 0 || (release.daysUntilPreorder ?? 9999) >= 0)
       .slice(0, 6),
     cards: cardDTOs,
     top10Watchlist: cardDTOs.slice(0, 10),
@@ -4881,11 +4899,18 @@ export async function deleteSighting(currentUser: SessionUser, sightingId: strin
 
 export async function createRelease(input: {
   setName: string;
+  releaseName?: string | null;
   productType?: string;
-  officialReleaseDate: Date;
+  releaseType?: string;
+  officialReleaseDate?: Date | null;
   preorderDate?: Date | null;
+  preorderWindowText?: string | null;
+  region?: string;
+  retailer?: string | null;
   productTypes: string;
   pokemonCenterExclusiveVersion: boolean;
+  productImage?: string | null;
+  productUrl?: string | null;
   chaseCards?: string;
   demandRating: Priority;
   estimatedDemand: Priority;
@@ -4893,6 +4918,14 @@ export async function createRelease(input: {
   sealedProductPriority: Priority;
   notes?: string;
   productLinks?: string;
+  sourceUrl?: string | null;
+  sourceName?: string | null;
+  sourceType?: string;
+  confidence?: Priority;
+  status?: string;
+  createdByManualEntry?: boolean;
+  needsReview?: boolean;
+  reviewReason?: string | null;
 }) {
   const release = await prisma.release.create({ data: input });
   return releaseToDTO(release);
@@ -4902,11 +4935,18 @@ export async function updateRelease(
   releaseId: string,
   input: {
     setName: string;
+    releaseName?: string | null;
     productType?: string;
-    officialReleaseDate: Date;
+    releaseType?: string;
+    officialReleaseDate?: Date | null;
     preorderDate?: Date | null;
+    preorderWindowText?: string | null;
+    region?: string;
+    retailer?: string | null;
     productTypes: string;
     pokemonCenterExclusiveVersion: boolean;
+    productImage?: string | null;
+    productUrl?: string | null;
     chaseCards?: string;
     demandRating: Priority;
     estimatedDemand: Priority;
@@ -4914,6 +4954,13 @@ export async function updateRelease(
     sealedProductPriority: Priority;
     notes?: string;
     productLinks?: string;
+    sourceUrl?: string | null;
+    sourceName?: string | null;
+    sourceType?: string;
+    confidence?: Priority;
+    status?: string;
+    needsReview?: boolean;
+    reviewReason?: string | null;
   }
 ) {
   const release = await prisma.release.update({ where: { id: releaseId }, data: input });
@@ -5119,18 +5166,32 @@ export async function importReleases(format: "csv" | "json", data: string) {
     try {
       const input = releaseCreateSchema.parse({
         setName: textFromRow(row, "setName", "name"),
+        releaseName: textFromRow(row, "releaseName"),
         productType: textFromRow(row, "productType", "type"),
+        releaseType: textFromRow(row, "releaseType") || "manual",
         officialReleaseDate: textFromRow(row, "officialReleaseDate", "releaseDate"),
         preorderDate: textFromRow(row, "preorderDate"),
+        preorderWindowText: textFromRow(row, "preorderWindowText", "preorderWindow"),
+        region: textFromRow(row, "region") || "US",
+        retailer: textFromRow(row, "retailer"),
         productTypes: textFromRow(row, "productTypes"),
         pokemonCenterExclusiveVersion: boolFromRow(row, "pokemonCenterExclusiveVersion", "pokemonCenterExclusive") ?? false,
+        productImage: textFromRow(row, "productImage", "imageUrl"),
+        productUrl: textFromRow(row, "productUrl"),
         chaseCards: textFromRow(row, "chaseCards"),
         demandRating: (textFromRow(row, "demandRating", "demand") || "MEDIUM").toUpperCase(),
         estimatedDemand: (textFromRow(row, "estimatedDemand") || textFromRow(row, "demandRating", "demand") || "MEDIUM").toUpperCase(),
         priority: (textFromRow(row, "priority") || "MEDIUM").toUpperCase(),
         sealedProductPriority: (textFromRow(row, "sealedProductPriority") || "MEDIUM").toUpperCase(),
         notes: textFromRow(row, "notes"),
-        productLinks: textFromRow(row, "productLinks")
+        productLinks: textFromRow(row, "productLinks"),
+        sourceUrl: textFromRow(row, "sourceUrl"),
+        sourceName: textFromRow(row, "sourceName"),
+        sourceType: textFromRow(row, "sourceType") || "manual",
+        confidence: (textFromRow(row, "confidence") || "MEDIUM").toUpperCase(),
+        status: textFromRow(row, "status") || "upcoming",
+        needsReview: boolFromRow(row, "needsReview") ?? false,
+        reviewReason: textFromRow(row, "reviewReason")
       });
       await createRelease(input);
       result.created += 1;
@@ -6693,11 +6754,18 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
     data: rows(tables, "releases").map((row) => ({
       id: String(row.id),
       setName: String(row.setName),
+      releaseName: row.releaseName ? String(row.releaseName) : null,
       productType: row.productType ? String(row.productType) : null,
-      officialReleaseDate: toDate(row.officialReleaseDate),
+      releaseType: row.releaseType ? String(row.releaseType) : "manual",
+      officialReleaseDate: toNullableDate(row.officialReleaseDate),
       preorderDate: toNullableDate(row.preorderDate),
+      preorderWindowText: row.preorderWindowText ? String(row.preorderWindowText) : null,
+      region: row.region ? String(row.region) : "US",
+      retailer: row.retailer ? String(row.retailer) : null,
       productTypes: String(row.productTypes),
       pokemonCenterExclusiveVersion: Boolean(row.pokemonCenterExclusiveVersion),
+      productImage: row.productImage ? String(row.productImage) : null,
+      productUrl: row.productUrl ? String(row.productUrl) : null,
       chaseCards: row.chaseCards ? String(row.chaseCards) : null,
       demandRating: String(row.demandRating),
       estimatedDemand: row.estimatedDemand ? String(row.estimatedDemand) : String(row.demandRating ?? "MEDIUM"),
@@ -6705,6 +6773,16 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       sealedProductPriority: row.sealedProductPriority ? String(row.sealedProductPriority) : String(row.priority ?? "MEDIUM"),
       notes: row.notes ? String(row.notes) : null,
       productLinks: row.productLinks ? String(row.productLinks) : null,
+      sourceUrl: row.sourceUrl ? String(row.sourceUrl) : null,
+      sourceName: row.sourceName ? String(row.sourceName) : null,
+      sourceType: row.sourceType ? String(row.sourceType) : "manual",
+      confidence: row.confidence ? String(row.confidence) : "MEDIUM",
+      status: row.status ? String(row.status) : "upcoming",
+      lastSyncedAt: toNullableDate(row.lastSyncedAt),
+      createdByManualEntry: row.createdByManualEntry === undefined ? true : Boolean(row.createdByManualEntry),
+      needsReview: row.needsReview === undefined ? false : Boolean(row.needsReview),
+      reviewReason: row.reviewReason ? String(row.reviewReason) : null,
+      previousReleaseDate: toNullableDate(row.previousReleaseDate),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
     }))

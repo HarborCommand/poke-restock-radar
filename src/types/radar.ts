@@ -641,11 +641,18 @@ export type UserAreaPreferencesDTO = {
 export type ReleaseDTO = {
   id: string;
   setName: string;
+  releaseName: string | null;
   productType: string | null;
-  officialReleaseDate: string;
+  releaseType: string;
+  officialReleaseDate: string | null;
   preorderDate: string | null;
+  preorderWindowText: string | null;
+  region: string;
+  retailer: string | null;
   productTypes: string;
   pokemonCenterExclusiveVersion: boolean;
+  productImage: string | null;
+  productUrl: string | null;
   chaseCards: string | null;
   demandRating: Priority;
   estimatedDemand: Priority;
@@ -653,7 +660,17 @@ export type ReleaseDTO = {
   sealedProductPriority: Priority;
   notes: string | null;
   productLinks: string | null;
-  daysUntilRelease: number;
+  sourceUrl: string | null;
+  sourceName: string | null;
+  sourceType: string;
+  confidence: Priority;
+  status: string;
+  lastSyncedAt: string | null;
+  createdByManualEntry: boolean;
+  needsReview: boolean;
+  reviewReason: string | null;
+  previousReleaseDate: string | null;
+  daysUntilRelease: number | null;
   daysUntilPreorder: number | null;
   productCount: number;
   cardCount: number;

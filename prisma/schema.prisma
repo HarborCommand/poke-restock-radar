@@ -271,11 +271,18 @@ model StoreSighting {
 model Release {
   id                            String    @id @default(cuid())
   setName                       String
+  releaseName                   String?
   productType                   String?
-  officialReleaseDate           DateTime
+  releaseType                   String    @default("expansion")
+  officialReleaseDate           DateTime?
   preorderDate                  DateTime?
+  preorderWindowText            String?
+  region                        String    @default("US")
+  retailer                      String?
   productTypes                  String
   pokemonCenterExclusiveVersion Boolean   @default(false)
+  productImage                  String?
+  productUrl                    String?
   chaseCards                    String?
   demandRating                  String    @default("MEDIUM")
   estimatedDemand               String    @default("MEDIUM")
@@ -283,10 +290,25 @@ model Release {
   sealedProductPriority         String    @default("MEDIUM")
   notes                         String?
   productLinks                  String?
+  sourceUrl                     String?
+  sourceName                    String?
+  sourceType                    String    @default("manual")
+  confidence                    String    @default("MEDIUM")
+  status                        String    @default("upcoming")
+  lastSyncedAt                  DateTime?
+  createdByManualEntry          Boolean   @default(true)
+  needsReview                   Boolean   @default(false)
+  reviewReason                  String?
+  previousReleaseDate           DateTime?
   createdAt                     DateTime  @default(now())
   updatedAt                     DateTime  @updatedAt
   products                      Product[]
   cards                         Card[]
+
+  @@index([officialReleaseDate])
+  @@index([preorderDate])
+  @@index([status])
+  @@index([needsReview])
 }
 
 model Alert {
