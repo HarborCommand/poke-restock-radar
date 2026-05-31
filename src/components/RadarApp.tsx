@@ -2050,15 +2050,7 @@ function KeywordsPanel({ dashboard }: { dashboard: DashboardDTO }) {
 function SalesPanel({ dashboard }: { dashboard: DashboardDTO }) {
   const sales = dashboard.inventory.flatMap((item) => item.sales);
   return (
-    <>
-      <SectionIntro
-        title="Sales"
-        detail="Sold item history, sales revenue, and realized profit from inventory."
-        stats={[
-          { label: "sold", value: dashboard.inventorySummary.itemsSold },
-          { label: "sales", value: money(dashboard.inventorySummary.totalSalesGross), tone: "good" }
-        ]}
-      />
+    <section className="sales-page">
       <SalesLog
         items={dashboard.inventory}
         sales={sales}
@@ -2066,7 +2058,7 @@ function SalesPanel({ dashboard }: { dashboard: DashboardDTO }) {
         summary={dashboard.inventorySummary}
         onRecordSale={() => undefined}
       />
-    </>
+    </section>
   );
 }
 
@@ -4451,9 +4443,8 @@ function StorefrontOrdersPanel({
     <>
       <section className="inventory-page-header inventory-ops-header storefront-admin-header">
         <div>
-          <span className="eyebrow">Public Store</span>
           <h2>Orders</h2>
-          <p>Manage storefront sales, fulfillment, packing, and profit without exposing private inventory data.</p>
+          <p>Manage storefront sales, fulfillment, shipping, and profit.</p>
         </div>
         <div className="inventory-header-actions">
           <a className="mini-action" href="/shop" target="_blank" rel="noreferrer">
@@ -4525,7 +4516,7 @@ function StorefrontOrdersPanel({
                 </article>
               ))
             ) : (
-              <EmptyState icon={ShoppingBag} title="No storefront orders yet" detail="Publish inventory items and customers can buy through /shop." />
+              <EmptyState icon={ShoppingBag} title="No orders yet" detail="Published products will appear in your store when active." />
             )}
           </div>
         </section>
@@ -11515,25 +11506,29 @@ function AlertsPanel({
   const visibleAlerts = dashboard.alerts.filter((alert) => !isDeprecatedLocalStoreAlert(alert));
   const deprecatedCount = dashboard.alerts.length - visibleAlerts.length;
   return (
-    <>
-      <PanelHeader title="Alerts Table" />
+    <section className="alerts-page">
+      <section className="inventory-page-header inventory-ops-header alerts-page-header">
+        <div>
+          <h2>Alerts</h2>
+          <p>Restock, inventory, order, and system notifications.</p>
+          <span className="sr-only">Alert History Analytics</span>
+        </div>
+      </section>
+      <section className="inventory-kpi-grid alerts-kpi-grid">
+        <InventoryKpiCard label="All Alerts" value={String(dashboard.alertAnalytics.totalAlerts)} detail="All history" />
+        <InventoryKpiCard label="Unread" value={String(dashboard.alertAnalytics.unreadAlerts)} detail="Need review" tone={dashboard.alertAnalytics.unreadAlerts ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Urgent" value={String(dashboard.alertAnalytics.highPriorityAlerts)} detail="High priority" tone={dashboard.alertAnalytics.highPriorityAlerts ? "bad" : "neutral"} />
+        <InventoryKpiCard label="False Positives" value={String(dashboard.alertAnalytics.falsePositiveAlerts)} detail="Feedback loop" tone={dashboard.alertAnalytics.falsePositiveAlerts ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Avg Priority" value={String(dashboard.alertAnalytics.averageScore)} detail="0-100 score" />
+      </section>
       {deprecatedCount ? (
         <section className="safety-strip archived-local-alerts">
           <ArchiveIcon />
           <span>{deprecatedCount} deprecated local store alert{deprecatedCount === 1 ? "" : "s"} hidden by default. Historical data is preserved for the future tracker rebuild.</span>
         </section>
       ) : null}
-      <section className="form-panel">
-        <PanelHeader title="Alert History Analytics" />
-        <div className="accuracy-grid">
-          <StatCard label="Total alerts" value={dashboard.alertAnalytics.totalAlerts} detail="All history" />
-          <StatCard label="Unread" value={dashboard.alertAnalytics.unreadAlerts} detail="Need review" />
-          <StatCard label="High priority" value={dashboard.alertAnalytics.highPriorityAlerts} detail="Urgent signals" />
-          <StatCard label="False positives" value={dashboard.alertAnalytics.falsePositiveAlerts} detail="Feedback loop" />
-          <StatCard label="Avg score" value={dashboard.alertAnalytics.averageScore} detail="0-100 priority" />
-        </div>
-      </section>
       <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
+      <PanelHeader title="Alert History" />
       <div className="table-list alerts-table">
         {visibleAlerts.length ? (
           visibleAlerts.map((alert) => {
@@ -11609,7 +11604,7 @@ function AlertsPanel({
           <EmptyState icon={Bell} title="No active alerts yet" detail="Inventory, order, release, and market alerts will appear here." />
         )}
       </div>
-    </>
+    </section>
   );
 }
 

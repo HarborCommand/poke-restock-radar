@@ -10864,6 +10864,15 @@ body {
   overflow-x: hidden !important;
 }
 
+body .sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+}
+
 body .app-shell {
   grid-template-columns: 244px minmax(0, 1fr) !important;
   width: 100vw !important;
@@ -11405,6 +11414,378 @@ body .table-row * {
 
   body .catalog-actions .mini-action {
     flex: 1 1 112px !important;
+  }
+}
+
+/* Orders, Sales, and Alerts light polish. Keep this after legacy dark module
+   styles so these active operating pages match the white Poke Radar shell. */
+body .sales-page,
+body .alerts-page {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+body .storefront-admin-header,
+body .alerts-page-header,
+body .sales-header-card {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+body .storefront-admin-header h2,
+body .alerts-page-header h2,
+body .sales-header-card h2 {
+  margin: 0;
+  color: #111827 !important;
+  font-size: clamp(1.75rem, 2.6vw, 2.35rem);
+  line-height: 1.08;
+}
+
+body .storefront-admin-header p,
+body .alerts-page-header p,
+body .sales-header-card span {
+  color: #6b7280 !important;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+body .storefront-admin-grid {
+  grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.72fr) !important;
+  gap: 18px !important;
+  align-items: start;
+}
+
+body .storefront-orders-card,
+body .storefront-settings-card,
+body .sales-dashboard-panel,
+body .sales-filter-bar,
+body .sales-empty-state,
+body .alerts-page .table-list,
+body .alerts-page .split-grid,
+body .alerts-page .safety-strip {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 20px !important;
+  background: #ffffff !important;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06) !important;
+  color: #111827 !important;
+}
+
+body .sales-dashboard-panel {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body .storefront-orders-card,
+body .storefront-settings-card,
+body .alerts-page .table-list,
+body .alerts-page .split-grid {
+  padding: 18px !important;
+}
+
+body .storefront-order-row,
+body .sale-card,
+body .purchase-card,
+body .alerts-table .table-row,
+body .calibration-panel .quality-row {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+  color: #111827 !important;
+}
+
+body .storefront-order-row:hover,
+body .sale-card:hover,
+body .purchase-card:hover,
+body .alerts-table .table-row:hover,
+body .calibration-panel .quality-row:hover {
+  border-color: #bbf7d0 !important;
+  background: #f8fffb !important;
+  transform: none !important;
+}
+
+body .storefront-order-row strong,
+body .storefront-order-total,
+body .sale-product-cell strong,
+body .sale-meta-cell b,
+body .sale-money-grid strong,
+body .purchase-source-cell b,
+body .alerts-table .table-row strong,
+body .calibration-panel .quality-row strong {
+  color: #111827 !important;
+}
+
+body .storefront-order-row small,
+body .storefront-order-row span,
+body .storefront-order-item small,
+body .sale-product-cell span,
+body .sale-product-cell small,
+body .sale-meta-cell small,
+body .purchase-source-cell small,
+body .alerts-table .table-row > span,
+body .calibration-panel .quality-row span {
+  color: #6b7280 !important;
+}
+
+body .sales-summary-grid,
+body .alerts-kpi-grid,
+body .inventory-kpi-grid {
+  gap: 14px !important;
+}
+
+body .sales-summary-card,
+body .inventory-kpi-card,
+body .stat-card {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 20px !important;
+  background: #ffffff !important;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.055) !important;
+  color: #111827 !important;
+}
+
+body .sales-summary-card small,
+body .sales-summary-card em,
+body .inventory-kpi-card span,
+body .inventory-kpi-card small,
+body .stat-card span,
+body .stat-card small {
+  color: #6b7280 !important;
+}
+
+body .sales-summary-card strong,
+body .inventory-kpi-card strong,
+body .stat-card strong {
+  color: #111827 !important;
+}
+
+body .sales-summary-card.good strong,
+body .inventory-kpi-card.good strong,
+body .profit-good {
+  color: #16a34a !important;
+}
+
+body .sales-summary-card.bad strong,
+body .inventory-kpi-card.bad strong,
+body .profit-bad {
+  color: #dc2626 !important;
+}
+
+body .sales-summary-card.watch strong,
+body .profit-watch {
+  color: #d97706 !important;
+}
+
+body .sales-summary-icon,
+body .sales-summary-card.watch .sales-summary-icon,
+body .sales-summary-card.bad .sales-summary-icon {
+  background: #dcfce7 !important;
+  color: #16a34a !important;
+}
+
+body .sales-filter-bar {
+  grid-template-columns: minmax(260px, 1.35fr) repeat(4, minmax(150px, 0.75fr)) !important;
+  padding: 16px !important;
+}
+
+body .sales-filter-bar label,
+body .storefront-settings-card label {
+  color: #374151 !important;
+}
+
+body .sales-filter-bar input,
+body .sales-filter-bar select,
+body .storefront-settings-card input,
+body .storefront-settings-card select,
+body .storefront-settings-card textarea {
+  border: 1px solid #dbe3ea !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+}
+
+body .sale-card {
+  grid-template-columns: minmax(300px, 1.45fr) minmax(140px, 0.55fr) minmax(360px, 1.15fr) minmax(126px, auto) !important;
+  padding: 14px !important;
+}
+
+body .sale-money-grid span {
+  border: 1px solid #eef2f7 !important;
+  background: #f8fafc !important;
+}
+
+body .sale-money-grid small {
+  color: #64748b !important;
+}
+
+body .sale-product-thumb {
+  border-color: #e5e7eb !important;
+  background: #f8fafc !important;
+  color: #2563eb !important;
+}
+
+body .sales-empty-state {
+  border-style: dashed !important;
+  min-height: 240px;
+  padding: 28px !important;
+}
+
+body .platform-pill,
+body .sale-status-badge,
+body .chip {
+  border: 0 !important;
+  color: #111827;
+}
+
+body .platform-pill {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+}
+
+body .sale-status-badge.good,
+body .chip.good {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+}
+
+body .sale-status-badge.bad,
+body .chip.bad {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+
+body .sale-status-badge.watch,
+body .chip.watch {
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+}
+
+body .chip.muted {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+}
+
+body .alerts-page .panel-header {
+  margin-top: 4px;
+}
+
+body .alerts-page .panel-header h2,
+body .dashboard-card-header h3 {
+  color: #111827 !important;
+}
+
+body .alerts-table {
+  overflow-x: visible !important;
+}
+
+body .alerts-table .table-row {
+  display: grid;
+  grid-template-columns: 112px minmax(220px, 0.8fr) minmax(320px, 1.5fr) minmax(150px, 0.55fr) minmax(260px, auto) !important;
+  align-items: center;
+  gap: 12px;
+  padding: 14px !important;
+}
+
+body .alerts-table .row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+body .alerts-page .safety-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px !important;
+  box-shadow: none !important;
+}
+
+body .calibration-panel {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+}
+
+body .calibration-panel .table-list {
+  display: grid;
+  gap: 10px;
+}
+
+body .calibration-panel .quality-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px !important;
+}
+
+body .storefront-settings-card {
+  position: sticky;
+  top: 18px;
+}
+
+@media (max-width: 1180px) {
+  body .storefront-admin-grid,
+  body .sale-card,
+  body .purchase-card,
+  body .alerts-table .table-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  body .storefront-settings-card {
+    position: static;
+  }
+
+  body .sales-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 700px) {
+  body .sales-header-card,
+  body .storefront-admin-header,
+  body .alerts-page-header {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  body .sales-header-actions,
+  body .inventory-header-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    justify-content: stretch !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  body .sales-header-actions .mini-action,
+  body .inventory-header-actions .mini-action {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+  }
+
+  body .sales-summary-grid,
+  body .alerts-kpi-grid,
+  body .inventory-kpi-grid,
+  body .sales-filter-bar {
+    grid-template-columns: 1fr !important;
+  }
+
+  body .sale-product-cell {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+  }
+
+  body .sale-money-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
