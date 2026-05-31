@@ -26,6 +26,7 @@ import {
   Mail,
   MapPin,
   Menu,
+  MoreHorizontal,
   Navigation,
   PackageSearch,
   Play,
@@ -1903,9 +1904,9 @@ function DashboardInventoryWatchRow({ item }: { item: InventoryItemDTO }) {
   return (
     <article className="dashboard-watch-row">
       <ProductImagePreview imageUrl={item.imageUrl ?? ""} itemName={item.itemName} />
-      <div>
-        <strong>{item.itemName}</strong>
-        <span>{item.source || item.retailer || item.category || "Inventory"}</span>
+      <div className="dashboard-watch-info text-safe">
+        <strong className="text-safe">{item.itemName}</strong>
+        <span className="text-safe">{item.source || item.retailer || item.category || "Inventory"}</span>
       </div>
       <div className="dashboard-watch-count">
         <b>{item.quantityOwned}</b>
@@ -6439,6 +6440,9 @@ function InventoryList({
   onEditListing: (item: InventoryItemDTO) => void;
 }) {
   if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
+  function closeActionDetails(event: { currentTarget: HTMLElement }) {
+    event.currentTarget.closest("details")?.removeAttribute("open");
+  }
   return (
     <div className="catalog-table">
       <div className="catalog-row catalog-head" aria-hidden="true">
@@ -6457,12 +6461,12 @@ function InventoryList({
         <article className={selectedId === item.id ? "catalog-row selected" : "catalog-row"} key={item.id}>
           <button className="catalog-product" type="button" onClick={() => onSelect(item)}>
             <InventoryImage item={item} />
-            <span>
-              <strong>{item.itemName}</strong>
-              <small>{formatStatus(item.category)} - {item.setName || item.retailer || "Source unknown"}</small>
+            <span className="catalog-product-copy text-safe">
+              <strong className="catalog-product-title text-safe">{item.itemName}</strong>
+              <small className="text-safe">{formatStatus(item.category)} - {item.setName || item.retailer || "Source unknown"}</small>
             </span>
           </button>
-          <span className="catalog-cell inventory-id-cell" data-label="UPC / SKU">
+          <span className="catalog-cell inventory-id-cell identifier-text" data-label="UPC / SKU">
             {item.upc || item.sku || item.dpci || item.asin || "Missing ID"}
           </span>
           <span className="catalog-cell strong" data-label="Quantity">{item.quantityOwned}</span>
@@ -6486,18 +6490,36 @@ function InventoryList({
             <span className={`chip compact-chip ${storeListingTone(item)}`}>{storeListingLabel(item)}</span>
           </span>
           <div className="catalog-actions">
-            <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
-              Add Stock
-            </button>
-            <button className="mini-action" type="button" onClick={() => onRecordSale(item)}>
-              Sell
-            </button>
-            <button className="mini-action" type="button" onClick={() => onViewDetails(item)}>
-              Details
-            </button>
-            <button className="mini-action" type="button" onClick={() => onEditListing(item)}>
-              Listing
-            </button>
+            <details className="catalog-action-menu-wrap">
+              <summary className="catalog-action-trigger">
+                Actions
+                <MoreHorizontal size={15} />
+              </summary>
+              <div className="catalog-action-menu" role="menu">
+                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onAddStock(item); }}>
+                  <Plus size={14} />
+                  Add Stock
+                </button>
+                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onRecordSale(item); }}>
+                  <CircleDollarSign size={14} />
+                  Record Sale
+                </button>
+                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onViewDetails(item); }}>
+                  <FileText size={14} />
+                  View Details
+                </button>
+                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onEditListing(item); }}>
+                  <Store size={14} />
+                  Edit Listing
+                </button>
+                {item.publishToStore && item.publicSlug ? (
+                  <a role="menuitem" href={`/shop/product/${item.publicSlug}`} target="_blank" rel="noreferrer">
+                    <ExternalLink size={14} />
+                    View Public Page
+                  </a>
+                ) : null}
+              </div>
+            </details>
           </div>
         </article>
       ))}
