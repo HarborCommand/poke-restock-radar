@@ -246,6 +246,52 @@ function inferSetName(title: string) {
   return title.replace(/^Pok[eé]mon TCG:\s*/i, "").trim();
 }
 
+function titleCaseWords(value: string) {
+  return value
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+export function parseOfficialNewsUrlFallback(sourceUrl: string): ReleaseCandidate[] {
+  if (!/^https:\/\/www\.pokemon\.com\//i.test(sourceUrl)) return [];
+  const slug = sourceUrl.split("/").filter(Boolean).at(-1) ?? "";
+  const match = slug.match(/^the-pokemon-tcg-(.+)-expansion-arrives-([a-z]+)-(\d{1,2})-(20\d{2})$/i);
+  if (!match) return [];
+  const rawName = titleCaseWords(match[1]).replace(/^Mega Evolution\s+/i, "Mega Evolution—");
+  const month = titleCaseWords(match[2]);
+  const releaseDate = parseReleaseDate(`${month} ${match[3]}, ${match[4]}`);
+  if (!releaseDate) return [];
+  return [
+    candidate({
+      setName: rawName,
+      releaseName: rawName,
+      productName: `Pokemon TCG: ${rawName}`,
+      productType: "Expansion",
+      releaseType: "expansion",
+      officialReleaseDate: releaseDate,
+      preorderDate: null,
+      preorderWindowText: null,
+      region: "US",
+      retailer: null,
+      productTypes: "Expansion, booster packs, Elite Trainer Box, collection products",
+      productImage: null,
+      productUrl: sourceUrl,
+      productLinks: sourceUrl,
+      sourceUrl,
+      sourceName: "Official Pokemon News",
+      sourceType: "official_pokemon_news",
+      confidence: "HIGH",
+      needsReview: false,
+      reviewReason: null,
+      notes: releaseNotes("Official Pokemon News URL", [
+        "The official Pokemon article URL includes both the expansion name and release date; used because the article body can be blocked by server-side bot protection."
+      ])
+    })
+  ];
+}
+
 function titleCandidatesFromHtml(html: string) {
   const headingTitles = new Set<string>();
   const headingMatches = html.matchAll(/<(h1|h2|h3)[^>]*>([\s\S]*?)<\/\1>/gi);
@@ -536,10 +582,14 @@ async function htmlAdapter(sourceName: string, sourceUrl: string, adapter: Relea
       };
     }
     const candidates = parser(response.text, sourceUrl);
+    const finalCandidates =
+      candidates.length || adapter !== "official_pokemon_news"
+        ? candidates
+        : parseOfficialNewsUrlFallback(sourceUrl);
     return {
-      candidates,
+      candidates: finalCandidates,
       warnings: [],
-      log: { sourceName, sourceUrl, adapter, httpStatus: response.status, parsedCount: candidates.length }
+      log: { sourceName, sourceUrl, adapter, httpStatus: response.status, parsedCount: finalCandidates.length }
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : `${sourceName} fetch failed.`;

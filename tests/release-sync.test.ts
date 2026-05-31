@@ -4,7 +4,8 @@ import {
   mergeReleaseCandidatesForTest,
   parseIcv2CalendarHtml,
   parseOfficialExpansionsHtml,
-  parseOfficialNewsHtml
+  parseOfficialNewsHtml,
+  parseOfficialNewsUrlFallback
 } from "../src/lib/release-sync";
 
 test("official expansion parser captures future Pokemon TCG set dates", () => {
@@ -43,6 +44,21 @@ test("official news parser captures product roundup entries with dates", () => {
   assert.equal(releases.length, 2);
   assert.ok(releases.every((release) => release.sourceType === "official_pokemon_news"));
   assert.ok(releases.every((release) => release.confidence === "HIGH"));
+});
+
+test("official news sync can derive a release from an official dated article URL when the body is blocked", () => {
+  const releases = parseOfficialNewsHtml(
+    `<html><h1>Pardon Our Interruption</h1><p>Please stand by</p></html>`,
+    "https://www.pokemon.com/uk/pokemon-news/the-pokemon-tcg-mega-evolution-pitch-black-expansion-arrives-july-17-2026"
+  );
+
+  assert.equal(releases.length, 0);
+  const fallback = parseOfficialNewsUrlFallback(
+    "https://www.pokemon.com/uk/pokemon-news/the-pokemon-tcg-mega-evolution-pitch-black-expansion-arrives-july-17-2026"
+  );
+  assert.equal(fallback.length, 1);
+  assert.equal(fallback[0].setName, "Mega Evolution—Pitch Black");
+  assert.equal(fallback[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-07-17");
 });
 
 test("icv2 parser marks secondary-only product calendar entries for review", () => {
