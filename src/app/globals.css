@@ -10826,6 +10826,376 @@ body .eyeline {
   }
 }
 
+/* Critical width and overflow cleanup. This intentionally lives after the
+   legacy redesign layers so dashboard and inventory cannot be squeezed by
+   older max-width/grid rules. */
+body {
+  overflow-x: hidden !important;
+}
+
+body .app-shell {
+  grid-template-columns: 244px minmax(0, 1fr) !important;
+  width: 100vw !important;
+  max-width: none !important;
+  overflow-x: hidden !important;
+}
+
+body .app-sidebar {
+  width: 244px !important;
+  min-width: 244px !important;
+}
+
+body .app-main,
+body .app-main.app-main-inventory {
+  width: 100% !important;
+  max-width: 1540px !important;
+  min-width: 0 !important;
+  margin: 0 auto !important;
+  padding-inline: clamp(24px, 2.4vw, 42px) !important;
+}
+
+body .app-main.app-main-inventory {
+  max-width: none !important;
+}
+
+body .topbar {
+  width: auto !important;
+  max-width: none !important;
+  margin-inline: calc(clamp(24px, 2.4vw, 42px) * -1) !important;
+  padding-inline: clamp(24px, 2.4vw, 42px) !important;
+}
+
+body .topbar,
+body .mobile-section-title,
+body .topbar-actions,
+body .dashboard-card,
+body .dashboard-metric-card,
+body .dashboard-live-alert,
+body .dashboard-main-grid,
+body .dashboard-secondary-grid,
+body .dashboard-quick-action-strip,
+body .inventory-quick-actions-strip,
+body .inventory-quick-actions-list,
+body .inventory-filter-row,
+body .catalog-panel,
+body .catalog-table,
+body .catalog-row,
+body .catalog-product,
+body .catalog-cell,
+body .catalog-actions {
+  min-width: 0 !important;
+  max-width: 100%;
+}
+
+body .screen::before,
+body .screen::after,
+body .app-shell::before,
+body .app-shell::after,
+body .app-main::before,
+body .app-main::after {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body .sidebar-scrim:not(.open),
+body .modal-backdrop:empty,
+body .inventory-modal-backdrop:empty {
+  display: none;
+}
+
+body .dashboard-metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+}
+
+body .dashboard-main-grid {
+  grid-template-columns: minmax(0, 1.55fr) minmax(380px, 0.9fr) !important;
+  align-items: stretch;
+}
+
+body .dashboard-secondary-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(340px, 0.8fr) !important;
+}
+
+body .dashboard-quick-action-strip {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+}
+
+body .quick-action-row,
+body .inventory-quick-actions-strip .inventory-quick-button {
+  min-width: 220px;
+  white-space: normal !important;
+}
+
+body .quick-action-row strong,
+body .quick-action-row small,
+body .inventory-quick-actions-strip .inventory-quick-button span,
+body .inventory-quick-actions-strip .inventory-quick-button small,
+body .recent-alert-copy strong,
+body .dashboard-watch-row strong,
+body .dashboard-simple-row strong,
+body .catalog-product strong {
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  hyphens: none !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+
+body .recent-alert-row {
+  grid-template-columns: 68px minmax(0, 1fr) minmax(170px, auto) !important;
+}
+
+body .dashboard-watch-row {
+  grid-template-columns: 62px minmax(0, 1fr) minmax(78px, auto) !important;
+}
+
+body .dashboard-card .dashboard-compact-list,
+body .recent-alert-list,
+body .quick-action-list {
+  min-width: 0;
+}
+
+body .app-main-inventory .content-grid,
+body .app-main-inventory .inventory-management-grid,
+body .app-main-inventory .catalog-panel {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+body .app-main-inventory .inventory-quick-actions-strip {
+  grid-template-columns: minmax(190px, 0.26fr) minmax(0, 1fr) !important;
+  align-items: center;
+}
+
+body .app-main-inventory .inventory-quick-actions-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+}
+
+body .app-main-inventory .inventory-filter-row {
+  grid-template-columns:
+    minmax(280px, 1.5fr)
+    minmax(180px, 0.9fr)
+    minmax(180px, 0.9fr)
+    minmax(220px, 1fr)
+    minmax(180px, 0.85fr) !important;
+}
+
+body .app-main-inventory .catalog-panel,
+body .catalog-panel {
+  overflow: hidden !important;
+}
+
+body .app-main-inventory .catalog-table,
+body .catalog-table {
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  scrollbar-gutter: stable;
+}
+
+body .app-main-inventory .catalog-row,
+body .catalog-row {
+  display: grid !important;
+  grid-template-columns:
+    minmax(420px, 2.3fr)
+    minmax(150px, 0.75fr)
+    minmax(90px, 0.45fr)
+    minmax(112px, 0.55fr)
+    minmax(118px, 0.55fr)
+    minmax(118px, 0.55fr)
+    minmax(80px, 0.38fr)
+    minmax(125px, 0.62fr)
+    minmax(132px, 0.62fr)
+    minmax(270px, 1fr) !important;
+  min-width: 1725px !important;
+  column-gap: 16px !important;
+  align-items: center !important;
+}
+
+body .catalog-product {
+  display: grid !important;
+  grid-template-columns: 58px minmax(0, 1fr) !important;
+  width: 100%;
+  text-align: left;
+}
+
+body .catalog-product strong {
+  display: block;
+  max-width: 100%;
+  line-height: 1.25;
+  white-space: normal !important;
+}
+
+body .catalog-product small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body .catalog-cell,
+body .inventory-id-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body .sell-price-cell,
+body .catalog-cell[data-label="Status"] {
+  white-space: normal;
+}
+
+body .catalog-actions {
+  justify-content: flex-start !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  overflow: visible !important;
+}
+
+body .catalog-actions .mini-action {
+  flex: 0 0 auto !important;
+  min-width: 72px !important;
+  white-space: nowrap !important;
+}
+
+body .alerts-table,
+body .monitor-logs,
+body .comp-table {
+  overflow-x: auto;
+}
+
+body .table-row {
+  min-width: 0;
+}
+
+body .dashboard-card *,
+body .catalog-panel *,
+body .inventory-quick-actions-strip *,
+body .alert-card *,
+body .table-row * {
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+
+@media (min-width: 1700px) {
+  body .app-main {
+    max-width: 1600px !important;
+  }
+
+  body .app-main.app-main-inventory {
+    max-width: none !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  body .app-shell {
+    grid-template-columns: 1fr !important;
+  }
+
+  body .app-sidebar {
+    width: min(86vw, 300px) !important;
+    min-width: 0 !important;
+  }
+
+  body .app-main,
+  body .app-main.app-main-inventory {
+    max-width: none !important;
+    padding-inline: clamp(16px, 3vw, 28px) !important;
+  }
+
+  body .topbar {
+    margin-inline: calc(clamp(16px, 3vw, 28px) * -1) !important;
+    padding-inline: clamp(16px, 3vw, 28px) !important;
+  }
+
+  body .dashboard-main-grid,
+  body .dashboard-secondary-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  body .app-main-inventory .inventory-quick-actions-strip {
+    grid-template-columns: 1fr !important;
+  }
+
+  body .app-main-inventory .inventory-filter-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body .app-main,
+  body .app-main.app-main-inventory {
+    padding-inline: 14px !important;
+  }
+
+  body .topbar {
+    margin-inline: -14px !important;
+    padding-inline: 14px !important;
+  }
+
+  body .dashboard-metric-grid,
+  body .dashboard-quick-action-strip,
+  body .app-main-inventory .inventory-quick-actions-list,
+  body .app-main-inventory .inventory-filter-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  body .recent-alert-row,
+  body .dashboard-watch-row,
+  body .dashboard-simple-row {
+    grid-template-columns: 58px minmax(0, 1fr) !important;
+  }
+
+  body .recent-alert-actions,
+  body .dashboard-watch-count {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  body .app-main-inventory .catalog-table,
+  body .catalog-table {
+    overflow-x: visible !important;
+  }
+
+  body .app-main-inventory .catalog-row,
+  body .catalog-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-width: 0 !important;
+    row-gap: 10px !important;
+  }
+
+  body .catalog-head {
+    display: none !important;
+  }
+
+  body .catalog-cell {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 12px;
+    white-space: normal;
+  }
+
+  body .catalog-cell::before {
+    content: attr(data-label);
+    color: #6b7280;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  body .catalog-actions {
+    flex-wrap: wrap !important;
+  }
+
+  body .catalog-actions .mini-action {
+    flex: 1 1 112px !important;
+  }
+}
+
 @media print {
   body {
     background: #ffffff;
