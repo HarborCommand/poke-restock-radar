@@ -335,7 +335,8 @@ function monitorDetail(words: string | null | undefined, label: string) {
 
 function shortDate(value: string | null | undefined) {
   if (!value) return "Not set";
-  const date = new Date(value);
+  const date = /^(\d{4})-(\d{2})-(\d{2})/.test(value) ? calendarDate(value) : new Date(value);
+  if (!date) return "Unknown";
   if (Number.isNaN(date.getTime())) return "Unknown";
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
 }
