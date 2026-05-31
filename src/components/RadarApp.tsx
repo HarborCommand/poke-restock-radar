@@ -1817,6 +1817,10 @@ function DashboardAlertBanner({
   alert: DashboardDTO["alerts"][number] | null;
   setActiveTab: (tab: Tab) => void;
 }) {
+  const alertSummary = alert
+    ? `${formatStatus(alert.priority)} priority alert. Open details for the full reason.`
+    : "";
+
   if (!alert) {
     return (
       <section className="dashboard-live-alert is-idle">
@@ -1846,7 +1850,7 @@ function DashboardAlertBanner({
       <div className="live-alert-copy">
         <span>Latest Alert</span>
         <strong>{alert.title}</strong>
-        <p>{alert.reason}{alert.score ? ` - score ${alert.score}` : ""}</p>
+        <p>{alertSummary}{alert.score ? ` Score ${alert.score}.` : ""}</p>
         <small>{formatStatus(alert.priority)} priority - {relativeTime(alert.timestamp)}</small>
       </div>
       <div className="live-alert-actions">

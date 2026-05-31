@@ -8762,10 +8762,12 @@ body {
 .dashboard-live-alert {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) auto;
+  grid-template-columns: 74px minmax(280px, 1fr) auto;
   align-items: center;
   gap: 16px;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   border: 1px solid rgba(65, 229, 135, 0.18);
   border-radius: 18px;
   background:
@@ -8829,14 +8831,18 @@ body {
 .live-alert-copy p,
 .live-alert-copy small {
   display: block;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .live-alert-copy p {
+  overflow: hidden;
   margin: 5px 0 0;
   color: rgba(213, 230, 224, 0.76);
   font-size: 0.84rem;
   font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .live-alert-copy small {
@@ -10937,6 +10943,53 @@ body .quick-action-row,
 body .inventory-quick-actions-strip .inventory-quick-button {
   min-width: 220px;
   white-space: normal !important;
+}
+
+body .dashboard-live-alert {
+  grid-template-columns: 58px minmax(280px, 1fr) auto !important;
+  overflow: hidden !important;
+}
+
+body .live-alert-copy,
+body .live-alert-copy * {
+  min-width: 0 !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+
+body .live-alert-copy strong,
+body .live-alert-copy p,
+body .live-alert-copy small {
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+body .live-alert-copy p {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 760px) {
+  body .dashboard-live-alert {
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  body .live-alert-actions {
+    display: grid !important;
+    grid-column: 1 / -1 !important;
+    grid-template-columns: 1fr !important;
+    justify-content: stretch !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  body .live-alert-actions .mini-action,
+  body .live-alert-actions .primary-action {
+    width: auto !important;
+    max-width: 100% !important;
+  }
 }
 
 body .quick-action-row strong,
