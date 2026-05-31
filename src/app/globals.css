@@ -11039,6 +11039,7 @@ body .catalog-table {
 
 body .app-main-inventory .catalog-row,
 body .catalog-row {
+  position: relative !important;
   display: grid !important;
   grid-template-columns:
     minmax(360px, 2.4fr)
@@ -11054,6 +11055,12 @@ body .catalog-row {
   min-width: 1380px !important;
   column-gap: 12px !important;
   align-items: center !important;
+  z-index: 1;
+  isolation: isolate;
+}
+
+body .catalog-row:has(.catalog-action-menu-wrap[open]) {
+  z-index: 200 !important;
 }
 
 body .catalog-product {
@@ -11107,12 +11114,17 @@ body .catalog-actions {
   flex-wrap: nowrap !important;
   gap: 0 !important;
   overflow: visible !important;
-  z-index: 5;
+  z-index: 20;
 }
 
 body .catalog-action-menu-wrap {
   position: relative;
   width: 100%;
+  z-index: 21;
+}
+
+body .catalog-action-menu-wrap[open] {
+  z-index: 220;
 }
 
 body .catalog-action-menu-wrap summary {
@@ -11149,16 +11161,17 @@ body .catalog-action-menu {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 40;
+  z-index: 230;
   display: grid;
   gap: 4px;
-  min-width: 210px;
-  max-width: 100%;
+  width: 230px;
+  max-width: min(230px, calc(100vw - 32px));
   padding: 8px;
   border: 1px solid #dbe3ea;
   border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+  pointer-events: auto;
 }
 
 body .catalog-action-menu button,
