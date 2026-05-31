@@ -945,7 +945,7 @@ export function RadarApp() {
         </nav>
         <div className="sidebar-foot">
           <div>
-            <strong>{dashboard.userAreaPreferences.customZoneName || "Miami"}</strong>
+            <strong>Poke Radar</strong>
             <small>Private Plan</small>
           </div>
           <button className="upgrade-button" type="button">Upgrade</button>
@@ -965,10 +965,6 @@ export function RadarApp() {
           </div>
         </div>
         <div className="topbar-actions">
-          <button className="location-pill" type="button" onClick={() => setActiveTab("settings")}>
-            {dashboard.userAreaPreferences.customZoneName || "Miami"}
-            <ChevronRight size={14} />
-          </button>
           <button className="icon-button" aria-label="Notifications" type="button" onClick={() => setActiveTab("alerts")}>
             <Bell size={17} />
             {dashboard.alertAnalytics.unreadAlerts ? <span className="topbar-badge">{Math.min(dashboard.alertAnalytics.unreadAlerts, 9)}</span> : null}
@@ -1110,11 +1106,11 @@ function AdminControlPanel({
           onAction={() => document.getElementById("admin-account")?.scrollIntoView({ block: "center" })}
         />
         <AdminActionCard
-          icon={MapPin}
-          title="Area & Location"
-          detail={`Default area is ${zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)}.`}
-          action="Update Area"
-          onAction={() => document.getElementById("admin-location")?.scrollIntoView({ block: "center" })}
+          icon={ClipboardList}
+          title="Tracker Rebuild"
+          detail="Local store and area tracking are hidden for the future Discord-style rebuild."
+          action="View Note"
+          onAction={() => document.getElementById("admin-deprecated-local")?.scrollIntoView({ block: "center" })}
         />
         <AdminActionCard
           icon={Bell}
@@ -1138,10 +1134,6 @@ function AdminControlPanel({
         <AdminSectionCard id="admin-account" icon={Lock} title="Account" detail="Login email, password, and private access controls.">
           <AdminAccountSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
           <AccessManagementPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} runAction={runAction} />
-        </AdminSectionCard>
-
-        <AdminSectionCard id="admin-location" icon={MapPin} title="Location" detail="Preferred zone, store proximity, and local route setup.">
-          <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         </AdminSectionCard>
 
         <AdminSectionCard id="admin-notifications" icon={Bell} title="Alerts" detail="Notification providers, quiet hours, and test alerts.">
@@ -1204,13 +1196,13 @@ function AdminActionCard({
 
 function AdminDeprecatedModulesNotice() {
   return (
-    <section className="admin-deprecated-note">
+    <section className="admin-deprecated-note" id="admin-deprecated-local">
       <span className="admin-action-icon">
         <ArchiveIcon />
       </span>
       <div>
-        <strong>Products, Stores, and Cards modules are hidden</strong>
-        <p>Those older modules are deprecated in the UI and preserved in the database for a future rebuild. Inventory, Orders, Storefront, Alerts, Releases, Market, Analytics, Settings, and Admin remain active.</p>
+        <strong>Local store/area tracking is deprecated and hidden</strong>
+        <p>Stores, Field Mode, My Area, sightings, nearby store discovery, and local restock prediction UI are preserved in the database but hidden for a future Discord-style tracker rebuild. Inventory, Orders, Storefront, Alerts, Releases, Market, Analytics, Settings, and Admin remain active.</p>
       </div>
     </section>
   );
@@ -1498,35 +1490,11 @@ function getChaseSummary(dashboard: DashboardDTO | null): {
     };
   }
 
-  const store = dashboard?.checkTodayStores[0] || dashboard?.stores.find((item) => item.prediction.probability === "HIGH");
-  if (store) {
-    return {
-      title: store.storeName,
-      reason: `${store.prediction.reason}. Window: ${store.prediction.likelyRestockWindow}.`,
-      priority: "HIGH",
-      tab: "field",
-      product: null
-    };
-  }
-
-  const card = dashboard?.cards.find((item) => item.rating === "BUY") || dashboard?.cards[0];
-  if (card) {
-    return {
-      title: `${card.cardName} raw-to-grade`,
-      reason: `PSA 10 upside is ${money(card.psa10EstimatedProfit)} with max PSA 9 raw buy near ${money(
-        card.maxRawBuyPricePsa9
-      )}.`,
-      priority: card.rating === "BUY" ? "HIGH" : "MEDIUM",
-      tab: "cards",
-      product: null
-    };
-  }
-
   return {
-    title: "Add your first target",
-    reason: "Start with a product URL, local store, upcoming release, or manual card comp.",
+    title: "Build your inventory workflow",
+    reason: "Start with inventory, sales, orders, releases, or market comps.",
     priority: "MEDIUM",
-    tab: "products",
+    tab: "inventory",
     product: null
   };
 }
@@ -1538,10 +1506,10 @@ function DashboardPanel({
   dashboard: DashboardDTO;
   setActiveTab: (tab: Tab) => void;
 }) {
-  const liveAlert = dashboard.alerts.find((alert) => !isTestDashboardAlert(alert) && !alert.read) ?? null;
+  const liveAlert = dashboard.alerts.find((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !alert.read) ?? null;
   const todayKey = new Date().toISOString().slice(0, 10);
   const todayAlerts = dashboard.alerts.filter((alert) => alert.timestamp.startsWith(todayKey)).length;
-  const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert)).slice(0, 5);
+  const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert)).slice(0, 5);
   const inventoryAddedToday = dashboard.inventory.filter((item) => item.createdAt.startsWith(todayKey)).length;
   const salesToday = dashboard.inventory.reduce(
     (total, item) => total + item.sales.filter((sale) => sale.soldAt.startsWith(todayKey)).length,
@@ -2004,6 +1972,19 @@ function isTestDashboardAlert(alert: DashboardDTO["alerts"][number]) {
   return text.includes("test alert") || text.includes("selected alert channel") || text.includes("confirms the selected alert");
 }
 
+function isDeprecatedLocalStoreAlert(alert: DashboardDTO["alerts"][number]) {
+  const text = `${alert.title} ${alert.reason} ${alert.explanation || ""}`.toLowerCase();
+  return (
+    alert.entityType === "STORE" ||
+    text.includes("field result") ||
+    text.includes("store sighting") ||
+    text.includes("shelf sighting") ||
+    text.includes("local restock") ||
+    text.includes("store restock") ||
+    text.includes("vendor spotted")
+  );
+}
+
 function alertTargetTab(alert: DashboardDTO["alerts"][number]): Tab {
   if (alert.entityType === "RELEASE") return "releases";
   if (alert.entityType === "PRODUCT" || alert.entityType === "STORE" || alert.entityType === "CARD") return "alerts";
@@ -2028,7 +2009,7 @@ function AreaSetupPanel({
   return (
     <section className="zone-panel">
       <div>
-        <p className="eyeline">My Area setup</p>
+        <p className="eyeline">Deprecated area setup</p>
         <h2>{zoneDisplay(dashboard.userAreaPreferences.preferredZone, dashboard)}</h2>
         <p>
           Field Mode and dashboard store lists prioritize nearby and favorite stores first. Hide non-zone stores when you only
@@ -2052,7 +2033,7 @@ function AreaSetupPanel({
           onClick={() => saveBrowserLocation(dashboard, runAction)}
         >
           <MapPin size={14} />
-          {busyLabel === "Saving browser location" ? "Saving" : "Use My Location"}
+          {busyLabel === "Saving browser location" ? "Saving" : "Location Disabled"}
         </button>
       </div>
       <form
@@ -2110,7 +2091,7 @@ function StoreCoveragePanel({ dashboard }: { dashboard: DashboardDTO }) {
     <section className="form-panel store-coverage-panel">
       <div className="edit-card-heading">
         <div>
-          <p className="eyeline">Store Coverage</p>
+          <p className="eyeline">Deprecated store coverage</p>
           <h2>Nearby Store Network</h2>
           <span>Coverage uses saved browser location when available, with favorites sorted first.</span>
         </div>
@@ -2210,8 +2191,8 @@ function StoreDiscoveryPanel({
     <section className="form-panel store-discovery-panel">
       <div className="edit-card-heading">
         <div>
-          <p className="eyeline">Find Nearby Stores</p>
-          <h2>Expand Store Coverage</h2>
+          <p className="eyeline">Deprecated store discovery</p>
+          <h2>Store discovery hidden</h2>
           <span>Use public Google Places when configured, or stay in manual CSV/JSON import mode.</span>
         </div>
         <span className="chip muted">{coords ? "Location ready" : "ZIP/city or browser location"}</span>
@@ -2244,7 +2225,7 @@ function StoreDiscoveryPanel({
         <div className="form-actions">
           <button className="mini-action" disabled={searching || locating || busy} type="button" onClick={useBrowserLocationForDiscovery}>
             <MapPin size={14} />
-            {locating ? "Locating" : "Use Browser Location"}
+            {locating ? "Locating" : "Browser Location Disabled"}
           </button>
           <button className="primary-action" disabled={searching || busy} type="submit">
             <Store size={16} />
@@ -2310,7 +2291,7 @@ function StoreDiscoveryPanel({
           {isAdmin ? (
             <button
               className="primary-action"
-              aria-label="Add To My Stores"
+              aria-label="Add Store Disabled"
               disabled={busy || selectedCandidates.length === 0}
               type="button"
               onClick={() =>
@@ -3564,7 +3545,7 @@ function FieldModePanel({
               onClick={() => saveBrowserLocation(dashboard, runAction)}
             >
               <MapPin size={14} />
-              {busyLabel === "Saving browser location" ? "Saving" : "Use My Location"}
+              {busyLabel === "Saving browser location" ? "Saving" : "Location Disabled"}
             </button>
           </div>
         </div>
@@ -3593,7 +3574,7 @@ function FieldModePanel({
           </label>
           <label className="checkbox-label">
             <input name="nearMe" type="checkbox" checked={filters.nearMe} onChange={updateFilter} />
-            Near Me
+            Nearby Hidden
           </label>
           <label className="checkbox-label">
             <input name="favoritesOnly" type="checkbox" checked={filters.favoritesOnly} onChange={updateFilter} />
@@ -3650,7 +3631,7 @@ function FieldStoreCard({
     productSeen: string;
     icon: typeof Check;
   }> = [
-    { resultType: "no_visit", label: "I'm Here", quantityEstimate: "Arrived", productSeen: "Store arrival", icon: MapPin },
+    { resultType: "no_visit", label: "Arrived", quantityEstimate: "Arrived", productSeen: "Store arrival", icon: MapPin },
     { resultType: "stock_seen", label: "Found Product", quantityEstimate: "1+", productSeen: fallbackProduct, icon: Sparkles },
     { resultType: "stock_seen", label: "Seen Stock", quantityEstimate: "1+", productSeen: fallbackProduct, icon: Check },
     { resultType: "empty_shelf", label: "Empty Shelf", quantityEstimate: "0", productSeen: "Pokemon TCG shelf", icon: X },
@@ -8060,11 +8041,10 @@ function SettingsPanel({
 }) {
   return (
     <>
-      <SectionIntro title="Settings" detail="Private radar settings, area preferences, and notification controls." />
+      <SectionIntro title="Settings" detail="Private radar account and notification controls." />
       {dashboard.currentUser.role === "ADMIN" ? (
         <AdminAccountSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
       ) : null}
-      <AreaSetupPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
       <NotificationSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
       <section className="safety-strip manual-safety">
         <ShieldCheck size={16} />
@@ -9431,7 +9411,7 @@ function StoresPanel({
           </label>
           <label className="checkbox-label">
             <input name="nearMe" type="checkbox" checked={filters.nearMe} onChange={updateFilter} />
-            Near Me
+            Nearby Hidden
           </label>
           <label className="checkbox-label">
             <input name="favoritesOnly" type="checkbox" checked={filters.favoritesOnly} onChange={updateFilter} />
@@ -11248,9 +11228,17 @@ function AlertsPanel({
   runAction: ActionHandler;
   setActiveTab: (tab: Tab) => void;
 }) {
+  const visibleAlerts = dashboard.alerts.filter((alert) => !isDeprecatedLocalStoreAlert(alert));
+  const deprecatedCount = dashboard.alerts.length - visibleAlerts.length;
   return (
     <>
       <PanelHeader title="Alerts Table" />
+      {deprecatedCount ? (
+        <section className="safety-strip archived-local-alerts">
+          <ArchiveIcon />
+          <span>{deprecatedCount} deprecated local store alert{deprecatedCount === 1 ? "" : "s"} hidden by default. Historical data is preserved for the future tracker rebuild.</span>
+        </section>
+      ) : null}
       <section className="form-panel">
         <PanelHeader title="Alert History Analytics" />
         <div className="accuracy-grid">
@@ -11263,8 +11251,8 @@ function AlertsPanel({
       </section>
       <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
       <div className="table-list alerts-table">
-        {dashboard.alerts.length ? (
-          dashboard.alerts.map((alert) => {
+        {visibleAlerts.length ? (
+          visibleAlerts.map((alert) => {
             const saveLabel = `Reading alert ${alert.id}`;
             return (
               <form
@@ -11334,7 +11322,7 @@ function AlertsPanel({
             );
           })
         ) : (
-          <EmptyState icon={Bell} title="No alerts yet" detail="Alerts will appear after manual updates and sightings." />
+          <EmptyState icon={Bell} title="No active alerts yet" detail="Inventory, order, release, and market alerts will appear here." />
         )}
       </div>
     </>

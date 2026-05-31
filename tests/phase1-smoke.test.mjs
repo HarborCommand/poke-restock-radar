@@ -142,7 +142,7 @@ test("Phase 15 daily workflow inventory and recap features exist", () => {
     "Inventory Log",
     "Saved Filter Presets",
     "Daily Recap Archive",
-    "Products, Stores, and Cards modules are hidden"
+    "Local store/area tracking is deprecated and hidden"
   ]) {
     assert.match(app, new RegExp(phrase), `missing Phase 15 UI phrase ${phrase}`);
   }
@@ -561,9 +561,8 @@ test("Phase 5 store prediction and field mode fields exist", () => {
   assert.match(calculations, /timeWindowFor/);
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  for (const phrase of ["Field Mode", "Seen Stock", "Empty Shelf", "Vendor Spotted", "Bought Product", "No Visit"]) {
-    assert.match(app, new RegExp(phrase), `missing Phase 5 UI phrase ${phrase}`);
-  }
+  assert.match(app, /Local store\/area tracking is deprecated and hidden/);
+  assert.doesNotMatch(app, /label:\s*"Field"/);
 });
 
 test("Phase 6 PWA and push notification pieces exist", () => {
@@ -766,9 +765,6 @@ test("UI real retail flow improvements exist", () => {
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   for (const phrase of [
     "Admin Controls",
-    "Use My Location",
-    "Browser location",
-    "My Area setup",
     "More Actions",
     "Exact product links give better alerts",
     "Verified Exact Product",
@@ -776,13 +772,12 @@ test("UI real retail flow improvements exist", () => {
     "Needs UPC/SKU",
     "Ready for Alert",
     "Verify Exact Product",
-    "Found Product",
-    "I'm Here",
-    "Near Me",
-    "Favorites",
-    "store-row"
+    "Found Product"
   ]) {
     assert.match(app, new RegExp(phrase), `missing UI phrase ${phrase}`);
+  }
+  for (const hiddenPhrase of ["Use My Location", "My Area setup", "I'm Here", "Near Me"]) {
+    assert.doesNotMatch(app, new RegExp(hiddenPhrase), `deprecated local UI phrase should be hidden: ${hiddenPhrase}`);
   }
 
   const service = readFileSync(join(root, "src", "lib", "radar-service.ts"), "utf8");
@@ -801,23 +796,14 @@ test("UI real retail flow improvements exist", () => {
   assert.match(readme, /Product Link Verification/);
   assert.match(readme, /imageUrl/);
   assert.match(readme, /Search link only/);
-  assert.match(readme, /Zone And Field Mode Setup/);
   assert.match(readme, /Admin.*button/);
 });
 
 test("store discovery and coverage expansion exists", () => {
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  for (const phrase of [
-    "Store Coverage",
-    "Find Nearby Stores",
-    "Expand Store Coverage",
-    "Add To My Stores",
-    "Use Browser Location",
-    "Search saved stores by name",
-    "Manual mode",
-    "Google Places"
-  ]) {
-    assert.match(app, new RegExp(phrase), `missing store discovery UI phrase ${phrase}`);
+  assert.match(app, /Local store\/area tracking is deprecated and hidden/);
+  for (const hiddenPhrase of ["Store Coverage", "Find Nearby Stores", "Expand Store Coverage", "Add To My Stores", "Use Browser Location"]) {
+    assert.doesNotMatch(app, new RegExp(hiddenPhrase), `deprecated store discovery UI should be hidden: ${hiddenPhrase}`);
   }
 
   const discoveryRoute = readFileSync(join(root, "src", "app", "api", "radar", "stores", "discovery", "route.ts"), "utf8");
