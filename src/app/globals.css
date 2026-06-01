@@ -12417,6 +12417,11 @@ body .light-pill.danger {
   color: #b91c1c !important;
 }
 
+body .light-pill.info {
+  background: #dbeafe !important;
+  color: #1d4ed8 !important;
+}
+
 body .release-sync-summary-grid {
   display: grid !important;
   gap: 10px !important;

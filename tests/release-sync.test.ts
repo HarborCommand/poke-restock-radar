@@ -14,7 +14,7 @@ test("official expansion parser captures future Pokemon TCG set dates", () => {
   const releases = parseOfficialExpansionsHtml(
     `
       <main>
-        <h2>Mega Evolution—Pitch Black</h2>
+        <h2>Mega Evolution Pitch Black</h2>
         <p>Release Date: July 17, 2026</p>
         <p>Explore the newest Pokemon TCG expansion.</p>
       </main>
@@ -23,7 +23,7 @@ test("official expansion parser captures future Pokemon TCG set dates", () => {
   );
 
   assert.equal(releases.length, 1);
-  assert.equal(releases[0].setName, "Mega Evolution—Pitch Black");
+  assert.equal(releases[0].setName, "Mega Evolution Pitch Black");
   assert.equal(releases[0].sourceType, "official_pokemon");
   assert.equal(releases[0].confidence, "HIGH");
   assert.equal(releases[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-07-17");
@@ -80,11 +80,12 @@ test("official news sync can derive a release from an official dated article URL
     "https://www.pokemon.com/uk/pokemon-news/the-pokemon-tcg-mega-evolution-pitch-black-expansion-arrives-july-17-2026"
   );
   assert.equal(fallback.length, 1);
-  assert.equal(fallback[0].setName, "Mega Evolution—Pitch Black");
+  assert.match(fallback[0].setName, /Mega Evolution.*Pitch Black/);
+  assert.equal(fallback[0].status, "confirmed");
   assert.equal(fallback[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-07-17");
 });
 
-test("icv2 parser marks secondary-only product calendar entries for review", () => {
+test("icv2 parser schedules trusted product calendar entries automatically", () => {
   const releases = parseIcv2CalendarHtml(
     `
       July 17, 2026 Pokemon TCG: Mega Evolution Pitch Black Booster Bundle
@@ -95,7 +96,8 @@ test("icv2 parser marks secondary-only product calendar entries for review", () 
 
   assert.equal(releases.length, 2);
   assert.ok(releases.every((release) => release.sourceType === "icv2_calendar"));
-  assert.ok(releases.every((release) => release.needsReview));
+  assert.ok(releases.every((release) => !release.needsReview));
+  assert.ok(releases.every((release) => release.status === "scheduled"));
 });
 
 test("icv2 parser handles product-name-first calendar entries", () => {
@@ -120,12 +122,27 @@ test("icv2 parser handles product-name-first calendar entries", () => {
     )
   );
   assert.ok(releases.every((release) => release.confidence === "MEDIUM"));
-  assert.ok(releases.every((release) => release.needsReview));
+  assert.ok(releases.every((release) => !release.needsReview));
+  assert.ok(releases.every((release) => release.status === "scheduled"));
 });
 
+
+test("icv2 parser extracts clean product name from description-heavy lines", () => {
+  const releases = parseIcv2CalendarHtml(
+    `
+      coin-flip die, 2 coin condition markers, a deck box, a strategy sheet, and a code card for online play. Lumiose City Mini Tins Release Date: June 5, 2026
+    `,
+    "https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar"
+  );
+
+  assert.equal(releases.length, 1);
+  assert.equal(releases[0].productName, "Lumiose City Mini Tins");
+  assert.equal(releases[0].status, "scheduled");
+  assert.equal(releases[0].needsReview, false);
+});
 test("release candidate merge prefers official sources and flags date conflicts", () => {
   const [official] = parseOfficialExpansionsHtml(
-    `<h2>Mega Evolution—Pitch Black</h2><p>Release Date: July 17, 2026</p>`,
+    `<h2>Mega Evolution Pitch Black</h2><p>Release Date: July 17, 2026</p>`,
     "https://tcg.pokemon.com/en-us/expansions/"
   );
   const [secondary] = parseIcv2CalendarHtml(
@@ -166,3 +183,5 @@ test("source health marks blocked and 404 sources instead of clean", () => {
     "blocked"
   );
 });
+
+

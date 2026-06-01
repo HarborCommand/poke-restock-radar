@@ -33,7 +33,7 @@ type ReleaseCandidate = {
   sourceName: string;
   sourceType: ReleaseSourceType;
   confidence: "LOW" | "MEDIUM" | "HIGH";
-  status: "upcoming" | "released" | "needs_review" | "TBD";
+  status: "confirmed" | "scheduled" | "released" | "needs_review" | "TBD";
   needsReview: boolean;
   reviewReason?: string | null;
   supportingSources: ReleaseSourceRef[];
@@ -116,7 +116,12 @@ function parseReleaseDate(value: unknown) {
 function normalizeReleaseName(value: string) {
   return value
     .toLowerCase()
-    .replace(/pok[eé]mon|tcg|trading card game|scarlet & violet|mega evolution|[:—-]/gi, " ")
+    .replace(/pok[eé]mon|tcg|trading card game|scarlet & violet|mega evolution/gi, " ")
+    .replace(
+      /\b(elite trainer box|etb|booster bundle|booster box|premium collection|collection box|mini tins?|tin|blister|three-booster blister|build\s*&\s*battle box|build and battle box|build\s*&\s*battle stadium|league battle deck|poster collection|binder collection|checklane blister|expansion|product drop|product)\b/gi,
+      " "
+    )
+    .replace(/[^a-z0-9]+/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -142,10 +147,12 @@ function priorityForRelease(date: Date | null) {
   return "LOW";
 }
 
-function releaseStatus(date: Date | null, needsReview = false) {
+function releaseStatus(date: Date | null, needsReview = false, sourceType: ReleaseSourceType = "configured_feed") {
   if (needsReview) return "needs_review" as const;
   if (!date) return "TBD" as const;
-  return date.getTime() < Date.now() ? ("released" as const) : ("upcoming" as const);
+  if (date.getTime() < Date.now()) return "released" as const;
+  if (sourceType === "icv2_calendar" || sourceType === "configured_feed") return "scheduled" as const;
+  return "confirmed" as const;
 }
 
 function dateKey(date: Date | null) {
@@ -201,7 +208,7 @@ function supportingSource(candidate: Omit<ReleaseCandidate, "supportingSources">
 
 function candidate(input: Omit<ReleaseCandidate, "supportingSources" | "priority" | "status"> & { priority?: "LOW" | "MEDIUM" | "HIGH"; status?: ReleaseCandidate["status"] }): ReleaseCandidate {
   const priority = input.priority ?? priorityForRelease(input.officialReleaseDate);
-  const status = input.status ?? releaseStatus(input.officialReleaseDate, input.needsReview);
+  const status = input.status ?? releaseStatus(input.officialReleaseDate, input.needsReview, input.sourceType);
   return {
     ...input,
     priority,
@@ -260,12 +267,43 @@ function inferProductType(text: string) {
   return "Product";
 }
 
+function cleanReleaseTitle(value: string) {
+  let title = value
+    .replace(/\s+/g, " ")
+    .replace(/\b(?:includes|comes with|contains|for more info|see)\b.*?(?=Pok[e\u00e9]mon TCG:|Mega Evolution|Lumiose City|[A-Z][A-Za-z' -]+(?:Mini Tins|Premium Collection|Booster Bundle|Booster Box|Elite Trainer Box|Blister|Tin|Collection))/gi, "")
+    .replace(/\b(?:coin-flip die|coin condition markers?|damage-counter dice|deck box|strategy sheet|code card for online play|code card)\b[,:;\s]*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const productMatches = Array.from(
+    title.matchAll(
+      /(?:Pok[e\u00e9]mon TCG:\s*)?(?:Mega Evolution[^.;|]{3,100}|Lumiose City Mini Tins|[A-Z][A-Za-z0-9'&:() -]{2,90}(?:Elite Trainer Box|Booster Bundle|Booster Box|Premium Collection|Collection Box|Mini Tins|Tin|Blister|Build & Battle Box|Build and Battle Box|Build & Battle Stadium|League Battle Deck|Poster Collection|Binder Collection|Checklane Blister|Expansion))/gi
+    )
+  ).map((match) => match[0].trim());
+  if ((title.length > 120 || /coin|strategy sheet|code card|deck box|condition marker/i.test(value)) && productMatches.length) {
+    title = productMatches.at(-1) as string;
+  }
+
+  return title
+    .replace(/\s+(?:Release Date|Available|Street Date)\s*:.*$/i, "")
+    .replace(/[.;,:-]\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function titleNeedsReview(value: string) {
+  if (!value || value.length < 5) return true;
+  if (value.length > 120) return true;
+  if (isLikelyReleaseArticleTitle(value)) return true;
+  return /coin-flip die|coin condition markers?|strategy sheet|code card|deck box|don't miss out|more products from/i.test(value);
+}
+
 export function isLikelyReleaseArticleTitle(value: string | null | undefined) {
   const text = (value || "").trim();
   if (!text) return false;
   return (
-    /check out every pok[eÃ©]mon tcg product release/i.test(text) ||
-    /don[â€™']?t miss out on more products/i.test(text) ||
+    /check out every pok[e\u00e9]mon tcg product release/i.test(text) ||
+    /don(?:\u2019|')?t miss out on more products/i.test(text) ||
     /more products from the latest expansions/i.test(text) ||
     /product releases?\s+in\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(text) ||
     /(?:roundup|preview|announcement|article|news)\b/i.test(text)
@@ -274,7 +312,7 @@ export function isLikelyReleaseArticleTitle(value: string | null | undefined) {
 
 function hasReleaseProductSignal(value: string | null | undefined) {
   const text = value || "";
-  return /expansion|elite trainer box|\betb\b|booster bundle|booster box|sleeved booster|premium collection|collection box|mini tin|\btin\b|blister|build\s*&\s*battle|build and battle|league battle deck|promo|special collection|binder collection|poster collection|checklane|deck|pokemon tcg:|pok[eÃ©]mon tcg:/i.test(text);
+  return /expansion|elite trainer box|\betb\b|booster bundle|booster box|sleeved booster|premium collection|collection box|mini tin|\btin\b|blister|build\s*&\s*battle|build and battle|league battle deck|promo|special collection|binder collection|poster collection|checklane|deck|pokemon tcg:|pok[e\u00e9]mon tcg:/i.test(text);
 }
 
 function isConfirmedReleaseCandidate(candidate: ReleaseCandidate) {
@@ -380,23 +418,24 @@ export function parseOfficialExpansionsHtml(html: string, sourceUrl = OFFICIAL_E
   const candidates: ReleaseCandidate[] = [];
 
   for (const title of titles) {
+    const cleanTitle = cleanReleaseTitle(title);
     const titleIndex = text.toLowerCase().indexOf(title.toLowerCase().slice(0, 40));
     const context = titleIndex >= 0 ? text.slice(Math.max(0, titleIndex - 700), titleIndex + 1200) : text;
     const releaseDate = extractFirstDate(context);
     if (!releaseDate) continue;
     candidates.push(
       candidate({
-        setName: inferSetName(title),
-        releaseName: inferSetName(title),
-        productName: title,
-        productType: inferProductType(title),
+        setName: inferSetName(cleanTitle),
+        releaseName: inferSetName(cleanTitle),
+        productName: cleanTitle,
+        productType: inferProductType(cleanTitle),
         releaseType: "expansion",
         officialReleaseDate: releaseDate,
         preorderDate: null,
         preorderWindowText: null,
         region: "US",
         retailer: null,
-        productTypes: inferProductType(title),
+        productTypes: inferProductType(cleanTitle),
         productImage: imageNearTitle(html, title),
         productUrl: sourceUrl,
         productLinks: sourceUrl,
@@ -404,9 +443,9 @@ export function parseOfficialExpansionsHtml(html: string, sourceUrl = OFFICIAL_E
         sourceName: "Official Pokemon TCG expansions",
         sourceType: "official_pokemon",
         confidence: "HIGH",
-        needsReview: false,
-        reviewReason: null,
-        notes: releaseNotes("Official Pokemon TCG expansions page", [`Parsed title: ${title}.`])
+        needsReview: titleNeedsReview(cleanTitle),
+        reviewReason: titleNeedsReview(cleanTitle) ? "Parser could not confirm a clean product or set title." : null,
+        notes: releaseNotes("Official Pokemon TCG expansions page", [`Parsed title: ${cleanTitle}.`])
       })
     );
   }
@@ -422,7 +461,8 @@ export function parseOfficialNewsHtml(html: string, sourceUrl: string): ReleaseC
   const candidates: ReleaseCandidate[] = [];
 
   for (const title of titles) {
-    if (isLikelyReleaseArticleTitle(title) || !hasReleaseProductSignal(title)) continue;
+    const cleanTitle = cleanReleaseTitle(title);
+    if (isLikelyReleaseArticleTitle(cleanTitle) || !hasReleaseProductSignal(cleanTitle)) continue;
     const titleIndex = text.toLowerCase().indexOf(title.toLowerCase().slice(0, 40));
     const context = titleIndex >= 0 ? text.slice(Math.max(0, titleIndex - 800), titleIndex + 1500) : text;
     let releaseDate = extractFirstDate(context);
@@ -433,17 +473,17 @@ export function parseOfficialNewsHtml(html: string, sourceUrl: string): ReleaseC
     const isPreorder = /pre-?order|preorder/i.test(context);
     candidates.push(
       candidate({
-        setName: inferSetName(title),
-        releaseName: inferSetName(title),
-        productName: title,
-        productType: inferProductType(title),
+        setName: inferSetName(cleanTitle),
+        releaseName: inferSetName(cleanTitle),
+        productName: cleanTitle,
+        productType: inferProductType(cleanTitle),
         releaseType: inferReleaseType(context),
         officialReleaseDate: releaseDate,
         preorderDate: isPreorder ? releaseDate : null,
         preorderWindowText: isPreorder ? `Preorder mentioned by official Pokemon News on ${dateKey(releaseDate)}` : null,
         region: "US",
         retailer: null,
-        productTypes: inferProductType(title),
+        productTypes: inferProductType(cleanTitle),
         productImage: imageNearTitle(html, title),
         productUrl: sourceUrl,
         productLinks: sourceUrl,
@@ -451,8 +491,8 @@ export function parseOfficialNewsHtml(html: string, sourceUrl: string): ReleaseC
         sourceName: "Official Pokemon News",
         sourceType: "official_pokemon_news",
         confidence: "HIGH",
-        needsReview: false,
-        reviewReason: null,
+        needsReview: titleNeedsReview(cleanTitle),
+        reviewReason: titleNeedsReview(cleanTitle) ? "Parser could not confirm a clean product title." : null,
         notes: releaseNotes("Official Pokemon News", [context.slice(0, 240)])
       })
     );
@@ -467,23 +507,24 @@ export function parsePokemonCenterHtml(html: string, sourceUrl: string): Release
   const candidates: ReleaseCandidate[] = [];
 
   for (const title of titles) {
+    const cleanTitle = cleanReleaseTitle(title);
     const titleIndex = text.toLowerCase().indexOf(title.toLowerCase().slice(0, 40));
     const context = titleIndex >= 0 ? text.slice(Math.max(0, titleIndex - 500), titleIndex + 1000) : text;
     const releaseDate = extractFirstDate(context);
     if (!releaseDate) continue;
     candidates.push(
       candidate({
-        setName: inferSetName(title),
-        releaseName: inferSetName(title),
-        productName: title,
-        productType: inferProductType(title),
+        setName: inferSetName(cleanTitle),
+        releaseName: inferSetName(cleanTitle),
+        productName: cleanTitle,
+        productType: inferProductType(cleanTitle),
         releaseType: inferReleaseType(context),
         officialReleaseDate: releaseDate,
         preorderDate: /pre-?order|preorder/i.test(context) ? releaseDate : null,
         preorderWindowText: /pre-?order|preorder/i.test(context) ? "Pokemon Center preorder date visible on source page" : null,
         region: "US",
         retailer: "Pokemon Center",
-        productTypes: inferProductType(title),
+        productTypes: inferProductType(cleanTitle),
         productImage: imageNearTitle(html, title),
         productUrl: sourceUrl,
         productLinks: sourceUrl,
@@ -491,8 +532,8 @@ export function parsePokemonCenterHtml(html: string, sourceUrl: string): Release
         sourceName: "Official Pokemon Center",
         sourceType: "official_pokemon_center",
         confidence: "HIGH",
-        needsReview: false,
-        reviewReason: null,
+        needsReview: titleNeedsReview(cleanTitle),
+        reviewReason: titleNeedsReview(cleanTitle) ? "Parser could not confirm a clean Pokemon Center product title." : null,
         notes: releaseNotes("Pokemon Center", [context.slice(0, 220)])
       })
     );
@@ -526,12 +567,13 @@ export function parseIcv2CalendarHtml(html: string, sourceUrl: string): ReleaseC
       line.match(/Pokemon[^.]{8,150}/i)?.[0] ??
       line.match(/Mega Evolution[^.]{4,150}/i)?.[0] ??
       line.slice(0, 140);
-    const title = titleMatch
+    const title = cleanReleaseTitle(titleMatch
       .replace(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},\s+20\d{2}\b/gi, "")
       .replace(/\s+Release Date.*$/i, "")
       .replace(/\s+/g, " ")
-      .trim();
+      .trim());
     if (title.length < 5) continue;
+    const needsReview = titleNeedsReview(title);
     candidates.push(
       candidate({
         setName: inferSetName(title),
@@ -552,9 +594,14 @@ export function parseIcv2CalendarHtml(html: string, sourceUrl: string): ReleaseC
         sourceName: "ICv2 Pokemon TCG Product Calendar",
         sourceType: "icv2_calendar",
         confidence: "MEDIUM",
-        needsReview: true,
-        reviewReason: "Secondary ICv2 calendar needs official confirmation before treating as final.",
-        notes: releaseNotes("ICv2 secondary product calendar", [line.slice(0, 260)])
+        needsReview,
+        reviewReason: needsReview ? "Parser could not confirm a clean ICv2 product title." : null,
+        notes: releaseNotes("ICv2 secondary product calendar", [
+          needsReview
+            ? "Needs review because the parsed title looked unclear."
+            : "Trusted secondary calendar with product name and release date; shown as Scheduled until official confirmation.",
+          line.slice(0, 260)
+        ])
       })
     );
   }
@@ -863,7 +910,7 @@ function mergeCandidates(candidates: ReleaseCandidate[]) {
       supportingSources: mergedSources,
       needsReview: Boolean(conflictReview) || officialWinner.needsReview,
       reviewReason: conflictReview || officialWinner.reviewReason || null,
-      status: releaseStatus(officialWinner.officialReleaseDate, Boolean(conflictReview) || officialWinner.needsReview),
+      status: releaseStatus(officialWinner.officialReleaseDate, Boolean(conflictReview) || officialWinner.needsReview, officialWinner.sourceType),
       notes: [
         officialWinner.notes,
         `Confirmed by ${mergedSources.length} source${mergedSources.length === 1 ? "" : "s"}: ${mergedSources.map((source) => source.sourceName).join(", ")}.`
@@ -966,7 +1013,7 @@ async function cleanupArticleTitleReleaseRows() {
     "Product Release in",
     "Product Releases in",
     "Don't miss out on more products",
-    "Donâ€™t miss out on more products",
+    "Don't miss out on more products",
     "more products from the latest expansions"
   ];
   for (const title of badTitleFilters) {
@@ -988,6 +1035,47 @@ async function cleanupArticleTitleReleaseRows() {
       }
     });
   }
+}
+
+async function cleanupScheduledReleaseRows() {
+  await prisma.release.updateMany({
+    where: {
+      createdByManualEntry: false,
+      sourceType: "icv2_calendar",
+      officialReleaseDate: { not: null },
+      status: { not: "archived" },
+      OR: [
+        { reviewReason: { contains: "Secondary ICv2 calendar" } },
+        { reviewReason: { contains: "needs official confirmation" } }
+      ]
+    },
+    data: {
+      status: "scheduled",
+      needsReview: false,
+      reviewReason: null
+    }
+  });
+
+  await prisma.release.updateMany({
+    where: {
+      status: { not: "archived" },
+      OR: [
+        { setName: { contains: "Lumiose City Mini Tins" } },
+        { releaseName: { contains: "Lumiose City Mini Tins" } },
+        { productName: { contains: "Lumiose City Mini Tins" } }
+      ]
+    },
+    data: {
+      setName: "Lumiose City Mini Tins",
+      releaseName: "Lumiose City Mini Tins",
+      productName: "Lumiose City Mini Tins",
+      productType: "Tin",
+      productTypes: "Tin",
+      status: "scheduled",
+      needsReview: false,
+      reviewReason: null
+    }
+  });
 }
 
 async function disableRepeated404Sources(logs: AdapterLog[]) {
@@ -1161,6 +1249,7 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
   const logs = [...rawLogs, summaryLog];
   await cleanupLegacyBadIcv2SearchRows();
   await cleanupArticleTitleReleaseRows();
+  await cleanupScheduledReleaseRows();
   await ensureReleaseSyncSources(rawLogs, checkedAt);
   await recordSyncLogs(checkedAt, logs);
   await disableRepeated404Sources(rawLogs);

@@ -10060,7 +10060,7 @@ function releasesNextMonth(releases: ReleaseDTO[]) {
   return releases
     .filter((release) => {
       const date = calendarDate(release.officialReleaseDate);
-      return Boolean(date && date >= start && date <= end);
+      return Boolean(date && date >= start && date <= end && !release.needsReview);
     })
     .sort((a, b) => {
       const dateA = calendarDate(a.officialReleaseDate)?.getTime() ?? 0;
@@ -10073,7 +10073,7 @@ function releasesThisMonth(releases: ReleaseDTO[]) {
   const now = new Date();
   return releases.filter((release) => {
     const date = calendarDate(release.officialReleaseDate);
-    return Boolean(date && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth());
+    return Boolean(date && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && !release.needsReview);
   });
 }
 
@@ -10102,8 +10102,18 @@ function releasePrimaryUrl(release: ReleaseDTO) {
 function releaseStatusLabel(release: ReleaseDTO) {
   if (release.needsReview) return "Needs Review";
   if (!release.officialReleaseDate) return "TBD";
+  if (release.status === "scheduled") return "Scheduled";
+  if (release.status === "confirmed" || release.confidence === "HIGH") return "Confirmed";
   if (release.daysUntilRelease !== null && release.daysUntilRelease < 0) return "Released";
-  return "Upcoming";
+  return "Scheduled";
+}
+
+function releaseStatusTone(release: ReleaseDTO) {
+  const label = releaseStatusLabel(release);
+  if (label === "Needs Review") return "warn";
+  if (label === "Scheduled") return "info";
+  if (label === "Confirmed") return "good";
+  return "";
 }
 
 function releaseSourceBadgeLabel(release: ReleaseDTO) {
@@ -10163,7 +10173,7 @@ function ReleasesPanel({
   const upcoming = useMemo(
     () =>
       dashboard.releases
-        .filter((release) => release.daysUntilRelease === null || release.daysUntilRelease >= 0)
+        .filter((release) => !release.needsReview && (release.daysUntilRelease === null || release.daysUntilRelease >= 0))
         .sort((a, b) => (calendarDate(a.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (calendarDate(b.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER)),
     [dashboard.releases]
   );
@@ -10175,7 +10185,7 @@ function ReleasesPanel({
       return true;
     });
   }, [dashboard.releases, filter]);
-  const nextDrop = upcoming.find((release) => release.officialReleaseDate) ?? null;
+  const nextDrop = upcoming.find((release) => release.officialReleaseDate && (release.status === "confirmed" || release.status === "scheduled" || release.createdByManualEntry)) ?? null;
   const nextPreorder = dashboard.releases
     .filter((release) => release.daysUntilPreorder !== null && release.daysUntilPreorder >= 0)
     .sort((a, b) => (a.daysUntilPreorder ?? 9999) - (b.daysUntilPreorder ?? 9999))[0] ?? null;
@@ -10184,7 +10194,8 @@ function ReleasesPanel({
     .filter(Boolean)
     .sort()
     .at(-1) ?? null;
-  const needsReview = dashboard.releases.filter((release) => release.needsReview || !release.officialReleaseDate);
+  const needsReview = dashboard.releases.filter((release) => release.needsReview);
+  const tbdReleases = dashboard.releases.filter((release) => !release.needsReview && !release.officialReleaseDate);
 
   return (
     <section className="release-radar-page app-light-surface">
@@ -10192,7 +10203,7 @@ function ReleasesPanel({
         <div>
           <p className="eyeline">Release Radar</p>
           <h1>Pokemon TCG Release Calendar</h1>
-          <span>Official dates first. Unconfirmed drops stay marked as TBD until a trusted source verifies them.</span>
+          <span>Official dates show as Confirmed. Trusted product calendars show as Scheduled; only unclear parser results need review.</span>
         </div>
         <div className="release-radar-actions">
           {isAdmin ? (
@@ -10224,7 +10235,7 @@ function ReleasesPanel({
         <ReleaseMetricCard label="Next Preorder" value={nextPreorder ? nextPreorder.setName : "TBD"} detail={nextPreorder ? `${shortDate(nextPreorder.preorderDate)} - ${nextPreorder.preorderWindowText || "Watch retailer windows"}` : "No verified preorder window"} icon={<Clock size={18} />} />
         <ReleaseMetricCard label="This Month" value={String(thisMonth.length)} detail="Verified releases this month" icon={<CalendarDays size={18} />} />
         <ReleaseMetricCard label="Next Month" value={String(nextMonth.length)} detail="Known drops in the next calendar month" icon={<TrendingUp size={18} />} />
-        <ReleaseMetricCard label="Tracked" value={String(dashboard.releases.length)} detail={`${needsReview.length} need review`} icon={<ClipboardList size={18} />} />
+        <ReleaseMetricCard label="Tracked" value={String(dashboard.releases.length)} detail={`${needsReview.length} need review, ${tbdReleases.length} TBD`} icon={<ClipboardList size={18} />} />
         <ReleaseMetricCard label="Last Sync" value={latestRunTime ? relativeTime(latestRunTime) : lastSync ? relativeTime(lastSync) : "Never"} detail="Public source refresh" icon={<RefreshCw size={18} />} />
       </div>
 
@@ -10504,7 +10515,7 @@ function ReleaseListRow({ release, onSelect }: { release: ReleaseDTO; onSelect: 
       <div className="release-list-badges">
         <span className="light-pill">{releaseSourceBadgeLabel(release)}</span>
         <span className={`light-pill ${statusTone(release.confidence)}`}>{release.confidence} confidence</span>
-        <span className={`light-pill ${release.needsReview ? "warn" : releaseStatusLabel(release) === "Released" ? "" : "good"}`}>{releaseStatusLabel(release)}</span>
+        <span className={`light-pill ${releaseStatusTone(release)}`}>{releaseStatusLabel(release)}</span>
         <span className="mini-action">View Details</span>
       </div>
     </button>
@@ -10522,6 +10533,15 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
 
 function ReleaseDetailModal({ release, onClose }: { release: ReleaseDTO; onClose: () => void }) {
   const actionUrl = releasePrimaryUrl(release);
+  const statusLabel = releaseStatusLabel(release);
+  const statusReason =
+    statusLabel === "Scheduled"
+      ? "Trusted secondary calendar with product name and release date."
+      : statusLabel === "Confirmed"
+        ? "Trusted official, retailer, or manual source with product name and release date."
+        : statusLabel === "TBD"
+          ? "Real product tracked without a confirmed release date."
+          : release.reviewReason || "Parser or source conflict needs review.";
   return (
     <div className="modal-backdrop" role="presentation">
       <article className="release-detail-modal app-light-surface" role="dialog" aria-modal="true" aria-label={`${release.setName} release details`}>
@@ -10539,12 +10559,13 @@ function ReleaseDetailModal({ release, onClose }: { release: ReleaseDTO; onClose
             <div className="release-detail-badges">
               <span className={`light-pill ${statusTone(release.priority)}`}>{release.priority}</span>
               <span className={`light-pill ${statusTone(release.confidence)}`}>{release.confidence} confidence</span>
-              {release.needsReview ? <span className="light-pill warn">Needs Review</span> : null}
+              <span className={`light-pill ${releaseStatusTone(release)}`}>{statusLabel}</span>
               {release.createdByManualEntry ? <span className="light-pill">Manual</span> : <span className="light-pill good">Synced</span>}
             </div>
           </div>
         </div>
         <div className="release-detail-grid">
+          <InfoBlock label="Status" value={statusLabel} />
           <InfoBlock label="Release date" value={releaseDateLabel(release)} />
           <InfoBlock label="Preorder" value={release.preorderDate ? shortDate(release.preorderDate) : release.preorderWindowText || "TBD"} />
           <InfoBlock label="Region" value={release.region || "US"} />
@@ -10552,7 +10573,7 @@ function ReleaseDetailModal({ release, onClose }: { release: ReleaseDTO; onClose
           <InfoBlock label="Source" value={releaseSourceLabel(release)} />
           <InfoBlock label="Last sync" value={release.lastSyncedAt ? dateTime(release.lastSyncedAt) : "Not synced"} />
         </div>
-        {release.reviewReason ? <p className="release-review-note">{release.reviewReason}</p> : null}
+        <p className="release-review-note">{statusReason}</p>
         <p className="release-detail-notes">{release.notes || "No notes saved."}</p>
         <div className="release-detail-actions">
           {actionUrl ? (
