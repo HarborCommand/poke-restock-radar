@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { summarizeInventory } from "../src/lib/radar-service";
+import { inventoryCompStatsForTest, summarizeInventory } from "../src/lib/radar-service";
 import type { InventoryItemDTO, InventorySaleDTO } from "../src/types/radar";
 
 function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
@@ -80,6 +80,7 @@ function item(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
     marketLowestRecentComp: null,
     marketHighestRecentComp: null,
     marketAverageLast3: null,
+    marketMedianLast3: null,
     marketCompCount: 0,
     marketLastRefreshedAt: null,
     marketConfidence: "NONE",
@@ -172,6 +173,28 @@ test("market value and unrealized profit use real comps only", () => {
   assert.equal(summary.marketValue, 50);
   assert.equal(summary.unrealizedProfitLoss, 30);
   assert.equal(summary.marketItemsWithDataCount, 1);
+});
+
+test("inventory market stats use sold comps and ignore active asking prices", () => {
+  const stats = inventoryCompStatsForTest([
+    { salePrice: 20, sourceQuality: "EBAY_SOLD" },
+    { salePrice: 24, sourceQuality: "MANUAL_ESTIMATE" },
+    { salePrice: 999, sourceQuality: "ACTIVE_ASKING" },
+    { salePrice: 28, sourceQuality: "PRICECHARTING" }
+  ]);
+
+  assert.equal(stats.average, 24);
+  assert.equal(stats.median, 24);
+  assert.equal(stats.lowest, 20);
+  assert.equal(stats.highest, 28);
+});
+
+test("market UI explains sold-comp-only pricing and manual mode", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+
+  assert.match(app, /sold comps only/i);
+  assert.match(app, /manual\/Terapeak mode/i);
+  assert.match(app, /Active asking price/);
 });
 
 test("dashboard labels unknown market data as not collected instead of showing zero dollars", () => {

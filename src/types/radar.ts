@@ -15,7 +15,7 @@ export type Probability = "LOW" | "MEDIUM" | "HIGH";
 export type MonitorLogStatus = "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR";
 export type MonitorLogStatusExtended = MonitorLogStatus | "BLOCKED" | "PENDING_CONFIRMATION" | "FALSE_POSITIVE" | "FORCED_ALERT";
 export type GradeType = "RAW" | "PSA_9" | "PSA_10" | "BGS_9_5" | "BGS_10" | "BGS_BLACK_LABEL";
-export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "MANUAL_ESTIMATE";
+export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "MANUAL_ESTIMATE" | "ACTIVE_ASKING";
 export type Era = "MODERN" | "VINTAGE";
 export type StoreVisitResult = "stock_seen" | "empty_shelf" | "vendor_spotted" | "bought_product" | "no_visit";
 export type Zone = "MIAMI" | "FORT_LAUDERDALE" | "ORLANDO" | "TAMPA" | "JACKSONVILLE" | "CUSTOM";
@@ -145,6 +145,7 @@ export type InventoryItemDTO = {
   marketLowestRecentComp: number | null;
   marketHighestRecentComp: number | null;
   marketAverageLast3: number | null;
+  marketMedianLast3: number | null;
   marketCompCount: number;
   marketLastRefreshedAt: string | null;
   marketConfidence: string;

@@ -3,7 +3,7 @@ import { z } from "zod";
 export const prioritySchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
 export const ratingSchema = z.enum(["BUY", "WATCH", "SKIP", "AVOID"]);
 export const gradeTypeSchema = z.enum(["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"]);
-export const compSourceQualitySchema = z.enum(["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE"]);
+export const compSourceQualitySchema = z.enum(["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE", "ACTIVE_ASKING"]);
 export const inventoryCategorySchema = z.enum([
   "sealed_packs",
   "sleeved_boosters",
@@ -716,9 +716,13 @@ export const inventoryCompCreateSchema = z.object({
   inventoryItemId: z.string().trim().min(2),
   saleTitle: z.string().trim().min(2).max(220),
   salePrice: requiredMoney,
+  shippingCharged: optionalMoney,
   soldAt: boundedDate,
   sourceUrl: optionalHttpUrl,
   sourceQuality: compSourceQualitySchema.default("EBAY_SOLD"),
+  platform: optionalTrimmed,
+  condition: optionalTrimmed,
+  quantity: z.coerce.number().int().min(1).max(1000).optional(),
   matchScore: z.coerce.number().int().min(0).max(100).default(100),
   notes: optionalTrimmed
 });

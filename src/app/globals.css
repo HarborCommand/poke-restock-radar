@@ -7113,6 +7113,197 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.market-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid rgba(63, 220, 135, 0.2);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(63, 220, 135, 0.09), rgba(255, 255, 255, 0.025));
+  padding: 16px;
+}
+
+.market-status-strip div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.market-status-strip strong {
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.market-status-strip span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.market-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.8fr);
+  gap: 16px;
+  min-width: 0;
+  width: 100%;
+}
+
+.market-main-column,
+.market-side-column,
+.market-inventory-list {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.market-card {
+  min-width: 0;
+}
+
+.market-card > .form-panel {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.market-card > .form-panel .panel-header {
+  display: none;
+}
+
+.market-card > .form-panel .form-grid {
+  margin-top: 0;
+}
+
+.market-inventory-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.2fr) minmax(260px, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.026);
+  padding: 14px;
+}
+
+.market-product-cell {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.market-product-cell strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.2;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.market-product-cell span,
+.market-product-cell small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.market-money-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.market-money-grid span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.14);
+  padding: 9px;
+}
+
+.market-money-grid small {
+  color: var(--subtle);
+  font-size: 0.62rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.market-money-grid strong {
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.market-proof-cell {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.market-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.market-comp-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.market-comp-list a,
+.market-comp-list > span {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.14);
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  padding: 7px 8px;
+  text-decoration: none;
+}
+
+.market-comp-list b {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.market-comp-list span {
+  overflow-wrap: anywhere;
+}
+
+.market-csv-import-form {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.market-csv-import-form textarea {
+  min-height: 132px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
 .market-comp-proof-list article,
 .compact-ledger-list article {
   display: grid;
@@ -7831,6 +8022,11 @@ textarea {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .market-page-grid,
+  .market-inventory-row {
+    grid-template-columns: 1fr;
+  }
+
   .inventory-decision-grid {
     grid-template-columns: 1fr;
   }
@@ -7846,6 +8042,10 @@ textarea {
 }
 
 @media (max-width: 860px) {
+  .market-status-strip {
+    display: grid;
+  }
+
   .inventory-page-header,
   .inventory-header-actions {
     align-items: stretch;
@@ -7954,6 +8154,8 @@ textarea {
   .inventory-details-grid,
   .inventory-market-hero,
   .market-hero-metrics,
+  .market-status-strip,
+  .market-money-grid,
   .market-inline-comp-form,
   .account-settings-grid,
   .market-comp-proof-list article,

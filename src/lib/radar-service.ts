@@ -1438,16 +1438,31 @@ function roundedMoney(value: number | null | undefined) {
   return value === null || value === undefined ? null : Number(value.toFixed(2));
 }
 
-function inventoryCompStats(comps: Array<{ salePrice: number }>) {
-  const prices = comps.map((comp) => comp.salePrice).filter((price) => Number.isFinite(price));
+function isSoldMarketCompSource(sourceQuality: string | null | undefined) {
+  return sourceQuality !== "ACTIVE_ASKING";
+}
+
+function inventoryCompStats(comps: Array<{ salePrice: number; sourceQuality?: string | null }>) {
+  const prices = comps
+    .filter((comp) => isSoldMarketCompSource(comp.sourceQuality))
+    .map((comp) => comp.salePrice)
+    .filter((price) => Number.isFinite(price))
+    .sort((a, b) => a - b);
   if (!prices.length) {
-    return { average: null, lowest: null, highest: null };
+    return { average: null, median: null, lowest: null, highest: null };
   }
+  const middle = Math.floor(prices.length / 2);
+  const median = prices.length % 2 ? prices[middle] : (prices[middle - 1] + prices[middle]) / 2;
   return {
     average: average(prices),
+    median: roundedMoney(median),
     lowest: roundedMoney(Math.min(...prices)),
     highest: roundedMoney(Math.max(...prices))
   };
+}
+
+export function inventoryCompStatsForTest(comps: Array<{ salePrice: number; sourceQuality?: string | null }>) {
+  return inventoryCompStats(comps);
 }
 
 function latestInventoryCompEnteredAt(comps: Array<{ createdAt: Date }>) {
@@ -1534,8 +1549,9 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   const realizedProfitLoss = item.sales.reduce((sum, sale) => sum + sale.profitLoss, 0);
   const realizedRoiPercent = item.sales.reduce((sum, sale) => sum + sale.costBasis, 0);
   const ownedCostBasis = inventoryOwnedCostBasis(item);
-  const compStats = inventoryCompStats(item.marketComps);
-  const realCompCount = item.marketComps.length;
+  const soldMarketComps = item.marketComps.filter((comp) => isSoldMarketCompSource(comp.sourceQuality));
+  const compStats = inventoryCompStats(soldMarketComps);
+  const realCompCount = soldMarketComps.length;
   const hasRealMarketComps = realCompCount > 0;
   const marketUnitEstimate = hasRealMarketComps ? compStats.average : null;
   const marketLastRefreshedAt = hasRealMarketComps ? latestInventoryCompEnteredAt(item.marketComps) ?? item.marketLastRefreshedAt : null;
@@ -1596,6 +1612,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     marketLowestRecentComp: compStats.lowest,
     marketHighestRecentComp: compStats.highest,
     marketAverageLast3: compStats.average,
+    marketMedianLast3: compStats.median,
     marketCompCount: realCompCount,
     marketLastRefreshedAt: marketLastRefreshedAt?.toISOString() ?? null,
     marketConfidence: hasRealMarketComps ? item.marketConfidence : "NONE",
@@ -1630,7 +1647,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     realizedProfitLoss,
     realizedRoiPercent: realizedRoiPercent > 0 ? (realizedProfitLoss / realizedRoiPercent) * 100 : null,
     businessProfitLoss: marketProfitLoss === null ? realizedProfitLoss : realizedProfitLoss + marketProfitLoss,
-    lastThreeComps: item.marketComps.map(inventoryMarketCompToDTO),
+    lastThreeComps: soldMarketComps.map(inventoryMarketCompToDTO),
     stockLots: item.stockLots.map(inventoryStockLotToDTO),
     sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName)),
     expectedPlan: item.expectedPlan,
@@ -3850,8 +3867,9 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
       return recomputeInventoryItem(itemId, currentUser);
     }
   }
-  const compStats = inventoryCompStats(item.marketComps);
-  const compCount = item.marketComps.length;
+  const soldMarketComps = item.marketComps.filter((comp) => isSoldMarketCompSource(comp.sourceQuality));
+  const compStats = inventoryCompStats(soldMarketComps);
+  const compCount = soldMarketComps.length;
   const currentMarketEstimate = compCount ? compStats.average : item.currentMarketEstimate;
   const confidence = compCount >= 3 ? "HIGH" : compCount >= 2 ? "MEDIUM" : compCount === 1 ? "LOW" : "NONE";
   const latestCompEnteredAt = latestInventoryCompEnteredAt(item.marketComps);
@@ -4422,9 +4440,13 @@ export async function createInventoryMarketComp(
     inventoryItemId: string;
     saleTitle: string;
     salePrice: number;
+    shippingCharged?: number;
     soldAt: Date;
     sourceUrl?: string;
     sourceQuality: string;
+    platform?: string;
+    condition?: string;
+    quantity?: number;
     matchScore: number;
     notes?: string;
   }
@@ -4434,16 +4456,30 @@ export async function createInventoryMarketComp(
     select: { id: true }
   });
   if (!item) throw new Error("Inventory item not found");
+  const titleLooksLikeLot = /\blot\b|bundle of|\b\d+\s*(?:x|pack|packs|boxes|items)\b/i.test(input.saleTitle);
+  if (titleLooksLikeLot && !input.quantity) {
+    throw new Error("Lot comps need a quantity so the sold price can be normalized per unit.");
+  }
+  const quantity = input.quantity && input.quantity > 0 ? input.quantity : 1;
+  const salePricePerUnit = input.salePrice / quantity;
+  const metadataNotes = [
+    input.platform ? `Platform: ${input.platform}.` : "",
+    input.condition ? `Condition: ${input.condition}.` : "",
+    input.quantity ? `Comp quantity: ${input.quantity}; original sold total: $${input.salePrice.toFixed(2)}.` : "",
+    input.shippingCharged !== undefined ? `Shipping charged: $${input.shippingCharged.toFixed(2)}.` : "",
+    input.sourceQuality === "ACTIVE_ASKING" ? "Active asking snapshot only; excluded from market value until replaced by sold comps." : "",
+    input.notes ?? ""
+  ].filter(Boolean).join(" ");
   await prisma.inventoryMarketComp.create({
     data: {
       inventoryItemId: input.inventoryItemId,
       saleTitle: input.saleTitle,
-      salePrice: input.salePrice,
+      salePrice: salePricePerUnit,
       soldAt: input.soldAt,
       sourceUrl: input.sourceUrl,
       sourceQuality: input.sourceQuality,
       matchScore: input.matchScore,
-      notes: input.notes
+      notes: metadataNotes || null
     }
   });
   return recomputeInventoryItem(input.inventoryItemId, currentUser);

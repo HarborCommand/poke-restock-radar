@@ -198,7 +198,7 @@ const priorities: Priority[] = ["LOW", "MEDIUM", "HIGH"];
 const productRatings: Array<Exclude<Rating, "AVOID">> = ["BUY", "WATCH", "SKIP"];
 const cardRatings: Rating[] = ["BUY", "WATCH", "SKIP", "AVOID"];
 const gradeTypes: GradeType[] = ["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"];
-const compSourceQualities: CompSourceQuality[] = ["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE"];
+const compSourceQualities: CompSourceQuality[] = ["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE", "ACTIVE_ASKING"];
 const eras: Array<"ALL" | Era> = ["ALL", "MODERN", "VINTAGE"];
 const productTypeOptions = ["ETB", "Booster Bundle", "Sleeved Booster", "Collection Box", "Booster Box", "Premium Collection"];
 const storeVisitResults: StoreVisitResult[] = ["stock_seen", "empty_shelf", "vendor_spotted", "bought_product", "no_visit"];
@@ -255,6 +255,7 @@ function formatSourceQuality(value: string) {
   if (value === "PRICECHARTING") return "PriceCharting";
   if (value === "TCGPLAYER") return "TCGPlayer";
   if (value === "MANUAL_ESTIMATE") return "Manual estimate";
+  if (value === "ACTIVE_ASKING") return "Active asking price";
   return "eBay sold";
 }
 
@@ -1095,7 +1096,7 @@ export function RadarApp() {
             setActiveTab={setActiveTab}
           />
         ) : null}
-        {activeTab === "market" ? <MarketPanel dashboard={dashboard} setActiveTab={setActiveTab} /> : null}
+        {activeTab === "market" ? <MarketPanel dashboard={dashboard} setActiveTab={setActiveTab} busy={busy} busyLabel={busyLabel} submit={submit} /> : null}
         {activeTab === "profitLoss" ? <ProfitLossPanel dashboard={dashboard} /> : null}
         {activeTab === "trends" ? <TrendsPanel dashboard={dashboard} /> : null}
         {activeTab === "analytics" ? <InventoryAnalyticsPanel dashboard={dashboard} /> : null}
@@ -7124,6 +7125,10 @@ function InventoryInlineCompForm({
       <TextInput name="salePrice" label="Sold price" type="number" min="0" step="0.01" required />
       <TextInput name="soldAt" label="Sold date" type="date" required />
       <TextInput name="sourceUrl" label="Sold listing URL" type="url" />
+      <TextInput name="platform" label="Platform" placeholder="eBay, TCGplayer, local" />
+      <TextInput name="condition" label="Condition" placeholder="Sealed, raw NM, PSA 10" />
+      <TextInput name="quantity" label="Quantity in comp" type="number" min="1" defaultValue="1" />
+      <TextInput name="shippingCharged" label="Shipping charged" type="number" min="0" step="0.01" />
       <SelectInput name="sourceQuality" label="Source" defaultValue="MANUAL_ESTIMATE" options={compSourceQualities.map((value) => ({ value, label: formatSourceQuality(value) }))} />
       <TextInput name="matchScore" label="Confidence" type="number" min="0" max="100" defaultValue="90" />
       <TextareaInput name="notes" label="Notes" wide />
@@ -8162,67 +8167,242 @@ function InventoryAnalyticsPanel({ dashboard }: { dashboard: DashboardDTO }) {
   );
 }
 
-function MarketPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
-  const withMarketData = dashboard.inventory.filter((item) => item.marketCompCount > 0);
-  const missingMarketData = dashboard.inventory.filter((item) => item.marketCompCount === 0).slice(0, 8);
-  const profitableItems = withMarketData
-    .filter((item) => (item.marketProfitLoss ?? item.businessProfitLoss ?? 0) > 0)
-    .sort((a, b) => (b.marketProfitLoss ?? b.businessProfitLoss ?? 0) - (a.marketProfitLoss ?? a.businessProfitLoss ?? 0))
+function MarketPanel({
+  dashboard,
+  setActiveTab,
+  busy,
+  busyLabel,
+  submit
+}: {
+  dashboard: DashboardDTO;
+  setActiveTab: (tab: Tab) => void;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
+  const ownedInventory = dashboard.inventory.filter((item) => item.quantityOwned > 0);
+  const withMarketData = ownedInventory.filter((item) => item.marketCompCount > 0);
+  const missingMarketData = ownedInventory.filter((item) => item.marketCompCount === 0).slice(0, 8);
+  const lowConfidenceItems = withMarketData
+    .filter((item) => item.marketCompCount < 3 || item.marketConfidence === "LOW")
+    .sort((a, b) => a.marketCompCount - b.marketCompCount)
+    .slice(0, 6);
+  const pricedItems = withMarketData
+    .slice()
+    .sort((a, b) => (b.marketProfitLoss ?? -999999) - (a.marketProfitLoss ?? -999999))
+    .slice(0, 10);
+  const sellSignals = pricedItems
+    .filter((item) => item.recommendedAction === "SELL_NOW" || item.recommendedAction === "LIST_HIGH" || (item.marketProfitLoss ?? 0) > 0)
     .slice(0, 5);
+  const estimatedNet = withMarketData.reduce((sum, item) => sum + (item.netMarketValue ?? 0), 0);
+  const estimatedProfit = withMarketData.reduce((sum, item) => sum + (item.marketProfitLoss ?? 0), 0);
+  const coveragePercent = ownedInventory.length ? (withMarketData.length / ownedInventory.length) * 100 : 0;
 
   return (
     <>
-      <SectionIntro title="Market" detail="Inventory market-data status and comp coverage. Card-specific tools are hidden for rebuild." />
+      <SectionIntro
+        title="Market Pricing"
+        detail="Inventory value is calculated from real sold comps only. Active listing prices can be saved for reference, but they do not drive value, ROI, or recommendations."
+      />
       <section className="inventory-kpi-grid">
-        <InventoryKpiCard label="Items With Market Data" value={String(withMarketData.length)} detail="accepted comps or estimates" tone="good" />
-        <InventoryKpiCard label="Missing Market Data" value={String(dashboard.inventorySummary.missingMarketDataCount)} detail="needs comps" tone={dashboard.inventorySummary.missingMarketDataCount ? "watch" : "good"} />
-        <InventoryKpiCard label="Estimated Market Value" value={money(dashboard.inventorySummary.estimatedMarketValue)} detail="known values only" tone="good" />
-        <InventoryKpiCard label="eBay Status" value={dashboard.ebayStatus.ready ? "Ready" : "Manual"} detail={dashboard.ebayStatus.ready ? "live comps configured" : "manual comp mode"} tone={dashboard.ebayStatus.ready ? "good" : "watch"} />
+        <InventoryKpiCard label="Market Coverage" value={`${coveragePercent.toFixed(0)}%`} detail={`${withMarketData.length} of ${ownedInventory.length} owned products priced`} tone={coveragePercent >= 80 ? "good" : "watch"} />
+        <InventoryKpiCard label="Missing Sold Comps" value={String(dashboard.inventorySummary.missingMarketDataCount)} detail="needs real sold comps" tone={dashboard.inventorySummary.missingMarketDataCount ? "watch" : "good"} />
+        <InventoryKpiCard label="Estimated Market Value" value={dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue)} detail="sold comps only" tone="good" />
+        <InventoryKpiCard label="Estimated Net" value={withMarketData.length ? money(estimatedNet) : "Not collected"} detail="after estimated fees/shipping" tone="good" />
+        <InventoryKpiCard label="Estimated Profit" value={withMarketData.length ? money(estimatedProfit) : "Not collected"} detail="unrealized from sold comps" tone={estimatedProfit >= 0 ? "good" : "bad"} />
+        <InventoryKpiCard label="eBay Status" value={dashboard.ebayStatus.ready ? "Ready" : "Manual"} detail={dashboard.ebayStatus.ready ? "live sold comps configured" : "manual/Terapeak mode"} tone={dashboard.ebayStatus.ready ? "good" : "watch"} />
       </section>
-      <section className="inventory-lower-grid">
-        <div className="inventory-detail-panel">
+      <section className="market-status-strip">
+        <div>
+          <strong>{dashboard.ebayStatus.ready ? "eBay sold-comp refresh is configured." : "Manual/Terapeak comp mode is active."}</strong>
+          <span>
+            {dashboard.ebayStatus.ready
+              ? "Use Refresh Market Data for live sold comps, then review the exact comps below."
+              : "Enter completed sales manually from eBay sold results, Terapeak, TCGPlayer, PriceCharting, or your own confirmed sales. Active listings are labeled separately and excluded."}
+          </span>
+        </div>
+        <button className="primary-action compact-action" type="button" onClick={() => setActiveTab("inventory")}>
+          Open Inventory
+          <ChevronRight size={15} />
+        </button>
+      </section>
+      <section className="market-page-grid">
+        <div className="market-main-column">
+          <div className="inventory-detail-panel market-card">
+            <div className="edit-card-heading">
+              <div>
+                <h2>Priced Inventory</h2>
+                <span>Market values, profit, and recommendations from accepted sold comps.</span>
+              </div>
+            </div>
+            <div className="market-inventory-list">
+              {pricedItems.length ? (
+                pricedItems.map((item) => <MarketInventoryRow key={item.id} item={item} ebayStatus={dashboard.ebayStatus} />)
+              ) : (
+                <EmptyState icon={Sparkles} title="No priced inventory yet" detail="Add sold comps to turn inventory into real market values." />
+              )}
+            </div>
+          </div>
+          <div className="inventory-detail-panel market-card">
+            <div className="edit-card-heading">
+              <div>
+                <h2>Manual Sold Comp Entry</h2>
+                <span>Add completed sales only. Quantity normalizes lot sales into a per-unit comp.</span>
+              </div>
+            </div>
+            <InventoryCompForm items={ownedInventory} busy={busy} busyLabel={busyLabel} submit={submit} />
+          </div>
+        </div>
+        <aside className="market-side-column">
+          <div className="inventory-detail-panel market-card">
           <div className="edit-card-heading">
             <div>
-              <h2>Market Data Coverage</h2>
-              <span>Items still needing comps or a manual estimate.</span>
+              <h2>Pricing Queue</h2>
+              <span>Products that still need sold comps.</span>
             </div>
-            <button className="mini-action" type="button" onClick={() => setActiveTab("inventory")}>Open Inventory</button>
           </div>
           <div className="recommendation-list">
             {missingMarketData.length ? (
               missingMarketData.map((item) => (
                 <span key={item.id}>
                   {item.itemName}
-                  <b>Missing</b>
+                  <b>Needs comps</b>
                 </span>
               ))
             ) : (
-              <span>All inventory has market data <b>Ready</b></span>
+              <span>All owned inventory has sold comps <b>Ready</b></span>
             )}
           </div>
-        </div>
-        <div className="inventory-detail-panel">
+          </div>
+          <div className="inventory-detail-panel market-card">
           <div className="edit-card-heading">
             <div>
-              <h2>Top Market Signals</h2>
-              <span>Profit estimates only from inventory market comps.</span>
+              <h2>Low Confidence</h2>
+              <span>Use three strong sold comps before trusting a price.</span>
             </div>
           </div>
           <div className="recommendation-list">
-            {profitableItems.length ? (
-              profitableItems.map((item) => (
+            {lowConfidenceItems.length ? (
+              lowConfidenceItems.map((item) => (
                 <span key={item.id}>
                   {item.itemName}
-                  <b className="profit-good">{money(item.marketProfitLoss ?? item.businessProfitLoss)}</b>
+                  <b>{item.marketCompCount}/3 comps</b>
                 </span>
               ))
             ) : (
-              <span>No profitable comp signals yet <b>No comps</b></span>
+              <span>No low-confidence priced items <b>Good</b></span>
             )}
           </div>
-        </div>
+          </div>
+          <div className="inventory-detail-panel market-card">
+            <div className="edit-card-heading">
+              <div>
+                <h2>What To Review</h2>
+                <span>Real comps can support sell decisions; no fake market values are used.</span>
+              </div>
+            </div>
+            <div className="recommendation-list">
+              {sellSignals.length ? (
+                sellSignals.map((item) => (
+                  <span key={item.id}>
+                    {item.itemName}
+                    <b className={(item.marketProfitLoss ?? 0) >= 0 ? "profit-good" : "profit-bad"}>{money(item.marketProfitLoss)}</b>
+                  </span>
+                ))
+              ) : (
+                <span>No sell signals from sold comps yet <b>Needs data</b></span>
+              )}
+            </div>
+          </div>
+          <div className="inventory-detail-panel market-card">
+            <div className="edit-card-heading">
+              <div>
+                <h2>CSV Comp Import</h2>
+                <span>Paste sold-comp rows exported from Terapeak, eBay, or your own sheet.</span>
+              </div>
+            </div>
+            <form
+              className="market-csv-import-form"
+              onSubmit={(event) =>
+                submit(
+                  event,
+                  "Importing inventory comps",
+                  (form) => requestJson("/api/radar/inventory/comps/import", { method: "POST", body: JSON.stringify(formJson(form)) }),
+                  { reset: true, success: "Inventory comps imported" }
+                )
+              }
+            >
+              <TextareaInput
+                name="csv"
+                label="CSV"
+                placeholder={"upc,title,soldPrice,soldDate,source,url,quantity\n196214154155,Chaos Rising Three-Booster Blister,18.99,2026-05-31,EBAY_SOLD,https://..."}
+                required
+              />
+              <button className="mini-action" disabled={busy} type="submit">
+                <Upload size={14} />
+                {busyLabel === "Importing inventory comps" ? "Importing" : "Import CSV Comps"}
+              </button>
+            </form>
+          </div>
+        </aside>
       </section>
     </>
+  );
+}
+
+function MarketInventoryRow({ item, ebayStatus }: { item: InventoryItemDTO; ebayStatus: DashboardDTO["ebayStatus"] }) {
+  const tone = inventoryMarketTone(item);
+  return (
+    <article className="market-inventory-row">
+      <div className="market-product-cell">
+        <InventoryImage item={item} />
+        <div>
+          <strong>{item.itemName}</strong>
+          <span>{item.upc || item.sku || item.dpci || item.asin || "No UPC/SKU saved"}</span>
+          <small>{formatStatus(item.category)} - {item.quantityOwned} owned</small>
+        </div>
+      </div>
+      <div className="market-money-grid">
+        <span>
+          <small>Avg Last 3</small>
+          <strong>{money(item.marketAverageLast3)}</strong>
+        </span>
+        <span>
+          <small>Median</small>
+          <strong>{money(item.marketMedianLast3)}</strong>
+        </span>
+        <span>
+          <small>Net Value</small>
+          <strong>{money(item.netMarketValue)}</strong>
+        </span>
+        <span>
+          <small>Profit / ROI</small>
+          <strong className={tone === "bad" ? "profit-bad" : tone === "muted" ? "" : "profit-good"}>
+            {money(item.marketProfitLoss)} / {percent(item.marketRoiPercent)}
+          </strong>
+        </span>
+      </div>
+      <div className="market-proof-cell">
+        <div className="market-badge-row">
+          {inventoryMarketBadges(item, ebayStatus).map((badge) => (
+            <span className={`status-chip ${badge.tone}`} key={badge.label}>{badge.label}</span>
+          ))}
+          <span className={`status-chip ${inventoryRecommendationTone(item.recommendedAction)}`}>{formatStatus(item.recommendedAction)}</span>
+        </div>
+        <div className="market-comp-list">
+          {item.lastThreeComps.length ? (
+            item.lastThreeComps.slice(0, 3).map((comp) => (
+              <a key={comp.id} href={comp.sourceUrl || undefined} target="_blank" rel="noreferrer" aria-disabled={!comp.sourceUrl}>
+                <b>{money(comp.salePrice)}</b>
+                <span>{shortDate(comp.soldAt)} - {formatSourceQuality(comp.sourceQuality)} - {comp.matchScore}%</span>
+              </a>
+            ))
+          ) : (
+            <span>No sold comps accepted yet.</span>
+          )}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -8380,6 +8560,10 @@ function InventoryCompForm({
         <TextInput name="salePrice" label="Sold price" type="number" min="0" step="0.01" required />
         <TextInput name="soldAt" label="Sale date" type="date" required />
         <TextInput name="sourceUrl" label="Source URL" type="url" />
+        <TextInput name="platform" label="Platform" placeholder="eBay, Terapeak, TCGPlayer" />
+        <TextInput name="condition" label="Condition" placeholder="Sealed, raw NM, PSA 10" />
+        <TextInput name="quantity" label="Quantity in comp" type="number" min="1" defaultValue="1" />
+        <TextInput name="shippingCharged" label="Shipping charged" type="number" min="0" step="0.01" />
         <SelectInput name="sourceQuality" label="Source" options={compSourceQualities.map((value) => ({ value, label: formatSourceQuality(value) }))} />
         <TextInput name="matchScore" label="Confidence" type="number" min="0" max="100" defaultValue="100" />
         <TextareaInput name="notes" label="Notes" wide />
