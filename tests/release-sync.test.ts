@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   classifyAdapterStatusForTest,
@@ -182,6 +183,35 @@ test("source health marks blocked and 404 sources instead of clean", () => {
     }),
     "blocked"
   );
+});
+
+test("release details UI exposes source links and source-missing states", () => {
+  const app = readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+
+  assert.match(app, /function ReleaseDetailModal/);
+  assert.match(app, /Open Source <ExternalLink/);
+  assert.match(app, /Copy Source Link/);
+  assert.match(app, /This release does not have a source link yet\./);
+  assert.match(app, /Save Source URL/);
+  assert.match(app, /releaseSourceUrl\(release\)/);
+  assert.match(app, /aria-label=\{`Open source for \$\{release\.setName\}`\}/);
+  assert.match(app, /aria-label=\{`Source missing for \$\{release\.setName\}`\}/);
+  assert.match(css, /release-source-card/);
+  assert.match(css, /release-source-warning/);
+});
+
+test("release detail admin controls can mark status and save source URL", () => {
+  const app = readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+
+  assert.match(app, /Mark Confirmed/);
+  assert.match(app, /Mark Needs Review/);
+  assert.match(app, /Merge Duplicate/);
+  assert.match(app, /Ignore/);
+  assert.match(app, /releasePatchPayload\(release, \{\s*status: "confirmed"/);
+  assert.match(app, /releasePatchPayload\(release, \{\s*status: "needs_review"/);
+  assert.match(app, /const nextSourceUrl = formString\(data\.sourceUrl\)/);
+  assert.match(app, /sourceUrl: nextSourceUrl \|\| null/);
 });
 
 

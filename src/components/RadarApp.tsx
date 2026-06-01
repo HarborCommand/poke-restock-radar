@@ -694,6 +694,10 @@ function formJson(form: HTMLFormElement) {
   return Object.fromEntries(new FormData(form).entries());
 }
 
+function formString(value: FormDataEntryValue | null | undefined) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function isTab(value: string | null): value is Tab {
   return Boolean(value) && (
     visibleTabIds.has(value as Tab) ||
@@ -10099,6 +10103,45 @@ function releasePrimaryUrl(release: ReleaseDTO) {
   return release.productUrl || release.sourceUrl || firstUrl(release.productLinks);
 }
 
+function releaseSourceUrl(release: ReleaseDTO) {
+  return release.sourceUrl;
+}
+
+function releasePatchPayload(release: ReleaseDTO, overrides: Partial<ReleaseDTO> = {}) {
+  const next = { ...release, ...overrides };
+  return {
+    setName: next.setName,
+    releaseName: next.releaseName ?? "",
+    productName: next.productName ?? "",
+    productType: next.productType ?? productTypeOptions[0],
+    releaseType: next.releaseType || "product_drop",
+    officialReleaseDate: next.officialReleaseDate ?? "",
+    preorderDate: next.preorderDate ?? "",
+    preorderWindowText: next.preorderWindowText ?? "",
+    region: next.region || "US",
+    retailer: next.retailer ?? "",
+    productTypes: next.productTypes || next.productType || productTypeOptions[0],
+    pokemonCenterExclusiveVersion: Boolean(next.pokemonCenterExclusiveVersion),
+    productImage: next.productImage ?? "",
+    productUrl: next.productUrl ?? "",
+    chaseCards: next.chaseCards ?? "",
+    demandRating: next.demandRating,
+    estimatedDemand: next.estimatedDemand,
+    priority: next.priority,
+    sealedProductPriority: next.sealedProductPriority,
+    notes: next.notes ?? "",
+    productLinks: next.productLinks ?? "",
+    sourceUrl: next.sourceUrl ?? "",
+    sourceName: next.sourceName ?? "",
+    sourceType: next.sourceType || "manual",
+    confidence: next.confidence,
+    status: next.status || "scheduled",
+    createdByManualEntry: Boolean(next.createdByManualEntry),
+    needsReview: Boolean(next.needsReview),
+    reviewReason: next.reviewReason ?? ""
+  };
+}
+
 function releaseStatusLabel(release: ReleaseDTO) {
   if (release.needsReview) return "Needs Review";
   if (!release.officialReleaseDate) return "TBD";
@@ -10341,7 +10384,16 @@ function ReleasesPanel({
         </section>
       ) : null}
 
-      {selectedRelease ? <ReleaseDetailModal release={selectedRelease} onClose={() => setSelectedRelease(null)} /> : null}
+      {selectedRelease ? (
+        <ReleaseDetailModal
+          busy={busy}
+          busyLabel={busyLabel}
+          isAdmin={isAdmin}
+          release={selectedRelease}
+          runAction={runAction}
+          onClose={() => setSelectedRelease(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -10498,8 +10550,9 @@ function ReleaseUpcomingList({ releases, onSelect }: { releases: ReleaseDTO[]; o
 
 function ReleaseListRow({ release, onSelect }: { release: ReleaseDTO; onSelect: (release: ReleaseDTO) => void }) {
   const releaseDate = calendarDateParts(release.officialReleaseDate);
+  const sourceUrl = releaseSourceUrl(release);
   return (
-    <button className="release-list-row" type="button" onClick={() => onSelect(release)}>
+    <article className="release-list-row">
       <div className="release-list-date">
         <strong>{releaseDate ? releaseDate.day : "TBD"}</strong>
         <span>{releaseDate ? `${releaseDate.weekday} ${shortDate(release.officialReleaseDate)}` : "Needs date"}</span>
@@ -10516,9 +10569,20 @@ function ReleaseListRow({ release, onSelect }: { release: ReleaseDTO; onSelect: 
         <span className="light-pill">{releaseSourceBadgeLabel(release)}</span>
         <span className={`light-pill ${statusTone(release.confidence)}`}>{release.confidence} confidence</span>
         <span className={`light-pill ${releaseStatusTone(release)}`}>{releaseStatusLabel(release)}</span>
-        <span className="mini-action">View Details</span>
+        <button className="mini-action" type="button" onClick={() => onSelect(release)}>
+          View Details
+        </button>
+        {sourceUrl ? (
+          <a className="mini-action icon-only" href={sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open source for ${release.setName}`}>
+            <ExternalLink size={14} />
+          </a>
+        ) : (
+          <button className="mini-action icon-only warn" type="button" onClick={() => onSelect(release)} aria-label={`Source missing for ${release.setName}`}>
+            <AlertTriangle size={14} />
+          </button>
+        )}
       </div>
-    </button>
+    </article>
   );
 }
 
@@ -10531,9 +10595,27 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ReleaseDetailModal({ release, onClose }: { release: ReleaseDTO; onClose: () => void }) {
+function ReleaseDetailModal({
+  release,
+  isAdmin,
+  busy,
+  busyLabel,
+  runAction,
+  onClose
+}: {
+  release: ReleaseDTO;
+  isAdmin: boolean;
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+  onClose: () => void;
+}) {
   const actionUrl = releasePrimaryUrl(release);
+  const sourceUrl = releaseSourceUrl(release);
   const statusLabel = releaseStatusLabel(release);
+  const markConfirmedLabel = `Marking release confirmed ${release.id}`;
+  const markReviewLabel = `Marking release review ${release.id}`;
+  const saveSourceLabel = `Saving release source ${release.id}`;
   const statusReason =
     statusLabel === "Scheduled"
       ? "Trusted secondary calendar with product name and release date."
@@ -10542,6 +10624,10 @@ function ReleaseDetailModal({ release, onClose }: { release: ReleaseDTO; onClose
         : statusLabel === "TBD"
           ? "Real product tracked without a confirmed release date."
           : release.reviewReason || "Parser or source conflict needs review.";
+  async function copySource() {
+    if (!sourceUrl || typeof navigator === "undefined" || !navigator.clipboard) return;
+    await navigator.clipboard.writeText(sourceUrl);
+  }
   return (
     <div className="modal-backdrop" role="presentation">
       <article className="release-detail-modal app-light-surface" role="dialog" aria-modal="true" aria-label={`${release.setName} release details`}>
@@ -10568,19 +10654,167 @@ function ReleaseDetailModal({ release, onClose }: { release: ReleaseDTO; onClose
           <InfoBlock label="Status" value={statusLabel} />
           <InfoBlock label="Release date" value={releaseDateLabel(release)} />
           <InfoBlock label="Preorder" value={release.preorderDate ? shortDate(release.preorderDate) : release.preorderWindowText || "TBD"} />
+          <InfoBlock label="Product type" value={release.productType || release.productTypes.split(",")[0] || release.releaseType} />
+          <InfoBlock label="Set name" value={release.setName} />
           <InfoBlock label="Region" value={release.region || "US"} />
           <InfoBlock label="Retailer" value={release.retailer || (release.pokemonCenterExclusiveVersion ? "Pokemon Center" : "TBD")} />
+          <InfoBlock label="Pokemon Center exclusive" value={release.pokemonCenterExclusiveVersion ? "Yes" : "No"} />
+          <InfoBlock label="Demand" value={release.estimatedDemand || release.demandRating} />
           <InfoBlock label="Source" value={releaseSourceLabel(release)} />
           <InfoBlock label="Last sync" value={release.lastSyncedAt ? dateTime(release.lastSyncedAt) : "Not synced"} />
         </div>
         <p className="release-review-note">{statusReason}</p>
-        <p className="release-detail-notes">{release.notes || "No notes saved."}</p>
-        <div className="release-detail-actions">
-          {actionUrl ? (
-            <a className="light-action primary" href={actionUrl} target="_blank" rel="noreferrer">
-              Open Source <ExternalLink size={14} />
-            </a>
+        <section className={`release-source-card ${sourceUrl ? "" : "missing"}`}>
+          <div className="release-source-card-heading">
+            <div>
+              <p className="eyeline">Source</p>
+              <h3>{release.sourceName || (release.createdByManualEntry ? "Manual entry" : "Unknown source")}</h3>
+            </div>
+            <span className="light-pill">{releaseSourceBadgeLabel(release)}</span>
+          </div>
+          <div className="release-detail-grid">
+            <InfoBlock label="Source type" value={release.sourceType || "manual"} />
+            <InfoBlock label="Source URL" value={sourceUrl || "Source missing"} />
+            <InfoBlock label="Parsed title / product" value={release.productName || release.releaseName || release.setName} />
+          </div>
+          {!sourceUrl ? (
+            <p className="release-source-warning">
+              <AlertTriangle size={16} />
+              This release does not have a source link yet.
+            </p>
           ) : null}
+          <div className="release-detail-actions">
+            {sourceUrl ? (
+              <>
+                <a className="light-action primary" href={sourceUrl} target="_blank" rel="noreferrer">
+                  Open Source <ExternalLink size={14} />
+                </a>
+                <button
+                  className="light-action"
+                  type="button"
+                  onClick={() =>
+                    runAction("Copying source link", copySource, {
+                      reload: false,
+                      success: "Source link copied"
+                    })
+                  }
+                >
+                  Copy Source Link
+                </button>
+              </>
+            ) : null}
+            {actionUrl && actionUrl !== sourceUrl ? (
+              <a className="light-action" href={actionUrl} target="_blank" rel="noreferrer">
+                Open Product Page <ExternalLink size={14} />
+              </a>
+            ) : null}
+          </div>
+        </section>
+        <p className="release-detail-notes">{release.notes || "No notes saved."}</p>
+        {isAdmin ? (
+          <section className="release-admin-card">
+            <div className="release-source-card-heading">
+              <div>
+                <p className="eyeline">Admin Actions</p>
+                <h3>Release controls</h3>
+              </div>
+            </div>
+            <div className="release-admin-actions">
+              <button
+                className="light-action"
+                disabled={busy}
+                type="button"
+                onClick={() =>
+                  runAction(
+                    markConfirmedLabel,
+                    () =>
+                      requestJson(`/api/radar/releases/${release.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify(
+                          releasePatchPayload(release, {
+                            status: "confirmed",
+                            needsReview: false,
+                            reviewReason: null,
+                            confidence: release.confidence === "LOW" ? "MEDIUM" : release.confidence
+                          })
+                        )
+                      }),
+                    { success: "Release marked confirmed" }
+                  )
+                }
+              >
+                {busyLabel === markConfirmedLabel ? "Saving" : "Mark Confirmed"}
+              </button>
+              <button
+                className="light-action"
+                disabled={busy}
+                type="button"
+                onClick={() =>
+                  runAction(
+                    markReviewLabel,
+                    () =>
+                      requestJson(`/api/radar/releases/${release.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify(
+                          releasePatchPayload(release, {
+                            status: "needs_review",
+                            needsReview: true,
+                            reviewReason: release.reviewReason || "Marked for admin review from release detail."
+                          })
+                        )
+                      }),
+                    { success: "Release marked needs review" }
+                  )
+                }
+              >
+                {busyLabel === markReviewLabel ? "Saving" : "Mark Needs Review"}
+              </button>
+              <a className="light-action" href="#manual-release-form" onClick={onClose}>
+                Edit Release
+              </a>
+              <button className="light-action" disabled type="button" title="Duplicate merge workflow is not automated yet.">
+                Merge Duplicate
+              </button>
+              <button className="light-action" disabled type="button" title="Ignore/archive remains available from the full release admin form.">
+                Ignore
+              </button>
+            </div>
+            <form
+              className="release-source-edit-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const data = formJson(form);
+                const nextSourceUrl = formString(data.sourceUrl);
+                const nextSourceName = formString(data.sourceName);
+                const nextSourceType = formString(data.sourceType);
+                void runAction(
+                  saveSourceLabel,
+                  () =>
+                    requestJson(`/api/radar/releases/${release.id}`, {
+                      method: "PATCH",
+                      body: JSON.stringify(
+                        releasePatchPayload(release, {
+                          sourceUrl: nextSourceUrl || null,
+                          sourceName: nextSourceName || release.sourceName || "Manual source",
+                          sourceType: nextSourceType || release.sourceType || "manual"
+                        })
+                      )
+                    }),
+                  { success: "Release source saved" }
+                );
+              }}
+            >
+              <TextInput name="sourceName" label="Source name" defaultValue={release.sourceName ?? ""} />
+              <TextInput name="sourceType" label="Source type" defaultValue={release.sourceType || "manual"} />
+              <TextInput name="sourceUrl" label="Add/Edit Source URL" type="url" defaultValue={sourceUrl ?? ""} />
+              <button className="light-action primary" disabled={busy} type="submit">
+                {busyLabel === saveSourceLabel ? "Saving Source" : "Save Source URL"}
+              </button>
+            </form>
+          </section>
+        ) : null}
+        <div className="release-detail-actions">
           <button className="light-action" type="button" onClick={onClose}>Close</button>
         </div>
       </article>

@@ -12515,6 +12515,23 @@ body .release-list-row {
   width: 100% !important;
 }
 
+body .release-list-row .mini-action {
+  cursor: pointer !important;
+}
+
+body .release-list-row .icon-only {
+  width: 36px !important;
+  min-width: 36px !important;
+  padding-inline: 0 !important;
+  justify-content: center !important;
+}
+
+body .release-list-row .icon-only.warn {
+  border-color: #fde68a !important;
+  background: #fffbeb !important;
+  color: #b45309 !important;
+}
+
 body .release-list-image {
   align-items: center !important;
   background: #f8fafc !important;
@@ -12613,6 +12630,53 @@ body .release-detail-modal {
   border-radius: 22px !important;
 }
 
+body .release-source-card,
+body .release-admin-card {
+  display: grid !important;
+  gap: 14px !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 18px !important;
+  background: #f8fafc !important;
+  padding: 16px !important;
+  color: #0f172a !important;
+}
+
+body .release-source-card.missing {
+  border-color: #fde68a !important;
+  background: #fffbeb !important;
+}
+
+body .release-source-card-heading,
+body .release-admin-actions,
+body .release-source-edit-form {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+  min-width: 0 !important;
+}
+
+body .release-source-card-heading h3 {
+  margin: 2px 0 0 !important;
+  color: #0f172a !important;
+  font-size: 1rem !important;
+}
+
+body .release-source-warning {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  color: #92400e !important;
+  font-weight: 800 !important;
+}
+
+body .release-source-edit-form .field {
+  flex: 1 1 190px !important;
+  min-width: min(100%, 190px) !important;
+}
+
 body .release-image-card {
   background: #f8fafc !important;
   color: #22c55e !important;
@@ -12668,5 +12732,12 @@ body .release-image-card {
   body .release-list-badges {
     grid-column: 1 / -1 !important;
     justify-content: flex-start !important;
+  }
+
+  body .release-source-card-heading,
+  body .release-admin-actions,
+  body .release-source-edit-form {
+    display: grid !important;
+    justify-content: stretch !important;
   }
 }
