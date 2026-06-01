@@ -10121,11 +10121,15 @@ function ReleasesPanel({
     : [];
   const syncStats = {
     sourcesChecked: new Set(latestRunLogs.filter((log) => log.adapter !== "merge").map((log) => log.sourceUrl || log.sourceName)).size,
+    succeeded: latestRunLogs.filter((log) => log.adapter !== "merge" && log.status === "active").length,
+    blocked: latestRunLogs.filter((log) => log.adapter !== "merge" && log.status === "blocked").length,
+    failed: latestRunLogs.filter((log) => log.adapter !== "merge" && log.status === "failed").length,
+    needsReviewSources: latestRunLogs.filter((log) => log.adapter !== "merge" && log.status === "needs_review").length,
     parsed: latestRunLogs.reduce((total, log) => total + log.parsedCount, 0),
     created: latestRunLogs.reduce((total, log) => total + log.createdCount, 0),
     updated: latestRunLogs.reduce((total, log) => total + log.updatedCount, 0),
     conflicts: latestRunLogs.reduce((total, log) => total + log.conflictCount, 0),
-    failures: latestRunLogs.filter((log) => log.error && log.adapter !== "merge").length
+    failures: latestRunLogs.filter((log) => log.adapter !== "merge" && (log.status === "failed" || log.status === "blocked")).length
   };
   const upcoming = useMemo(
     () =>
@@ -10200,12 +10204,12 @@ function ReleasesPanel({
           <strong>Source sync</strong>
           <span>
             {latestRunTime
-              ? `${syncStats.sourcesChecked} sources checked, ${syncStats.parsed} parsed, ${syncStats.created} new, ${syncStats.updated} updated, ${syncStats.conflicts} conflicts.`
+              ? `${syncStats.sourcesChecked} sources checked, ${syncStats.succeeded} succeeded, ${syncStats.blocked} blocked, ${syncStats.failed} failed, ${syncStats.parsed} parsed, ${syncStats.created} new, ${syncStats.updated} updated, ${syncStats.conflicts} conflicts.`
               : "Official Pokemon TCG, Pokemon News, Pokemon Center, ICv2, and configured feeds will be checked when you sync."}
           </span>
         </div>
         <span className={`light-pill ${syncStats.failures || needsReview.length ? "warn" : "good"}`}>
-          {syncStats.failures ? `${syncStats.failures} source issues` : needsReview.length ? `${needsReview.length} review` : "Clean"}
+          {syncStats.failures ? `${syncStats.failures} source issues` : needsReview.length || syncStats.needsReviewSources ? `${needsReview.length + syncStats.needsReviewSources} review` : "Clean"}
         </span>
       </div>
 
@@ -10222,7 +10226,7 @@ function ReleasesPanel({
             {latestRunLogs.slice(0, 8).map((log) => (
               <article className="release-sync-log-card" key={log.id}>
                 <strong>{log.sourceName}</strong>
-                <span>{log.adapter} {log.httpStatus ? `- HTTP ${log.httpStatus}` : ""}</span>
+                <span>{log.adapter} - {log.status}{log.httpStatus ? ` - HTTP ${log.httpStatus}` : ""}</span>
                 <small>{log.parsedCount} parsed / {log.createdCount} added / {log.updatedCount} updated</small>
                 {log.error ? <em>{log.error}</em> : null}
               </article>

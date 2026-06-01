@@ -611,13 +611,16 @@ function releaseSyncLogToDTO(log: Prisma.ReleaseSyncLogGetPayload<Record<string,
     checkedAt: log.checkedAt.toISOString(),
     sourceName: log.sourceName,
     sourceUrl: log.sourceUrl,
+    sourceType: log.sourceType,
     adapter: log.adapter,
+    status: log.status,
     httpStatus: log.httpStatus,
     parsedCount: log.parsedCount,
     createdCount: log.createdCount,
     updatedCount: log.updatedCount,
     duplicateCount: log.duplicateCount,
     conflictCount: log.conflictCount,
+    warningCount: log.warningCount,
     error: log.error
   };
 }

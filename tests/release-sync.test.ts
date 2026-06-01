@@ -71,7 +71,24 @@ test("icv2 parser marks secondary-only product calendar entries for review", () 
   );
 
   assert.equal(releases.length, 2);
-  assert.ok(releases.every((release) => release.sourceType === "icv2_secondary"));
+  assert.ok(releases.every((release) => release.sourceType === "icv2_calendar"));
+  assert.ok(releases.every((release) => release.needsReview));
+});
+
+test("icv2 parser handles product-name-first calendar entries", () => {
+  const releases = parseIcv2CalendarHtml(
+    `
+      Pokemon TCG: Mega Evolution Pitch Black Booster Bundle Release Date: July 17, 2026
+      Pokemon TCG: Lumiose City Mini Tins Release Date: June 5, 2026
+      Pokemon TCG: Mega Evolution Pitch Black Premium Collection Street Date: July 24, 2026
+    `,
+    "https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar"
+  );
+
+  assert.equal(releases.length, 3);
+  assert.equal(releases[0].productName, "Pokemon TCG: Mega Evolution Pitch Black Booster Bundle");
+  assert.equal(releases[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-07-17");
+  assert.ok(releases.every((release) => release.confidence === "MEDIUM"));
   assert.ok(releases.every((release) => release.needsReview));
 });
 

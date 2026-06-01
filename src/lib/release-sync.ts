@@ -6,9 +6,11 @@ type ReleaseSourceType =
   | "official_pokemon_news"
   | "official_pokemon_center"
   | "pokemon_tcg_api"
-  | "icv2_secondary"
+  | "icv2_calendar"
   | "configured_feed"
   | "merge";
+
+type ReleaseSourceStatus = "active" | "blocked" | "failed" | "needs_review" | "disabled";
 
 type ReleaseCandidate = {
   setName: string;
@@ -47,13 +49,16 @@ type ReleaseSourceRef = {
 type AdapterLog = {
   sourceName: string;
   sourceUrl: string | null;
+  sourceType?: ReleaseSourceType;
   adapter: ReleaseSourceType;
+  status?: ReleaseSourceStatus;
   httpStatus?: number | null;
   parsedCount: number;
   createdCount?: number;
   updatedCount?: number;
   duplicateCount?: number;
   conflictCount?: number;
+  warningCount?: number;
   error?: string | null;
 };
 
@@ -91,6 +96,7 @@ const DEFAULT_OFFICIAL_NEWS_URLS = [
 ];
 const POKEMON_CENTER_NEW_RELEASES_URL = "https://www.pokemoncenter.com/category/new-releases";
 const POKEMON_TCG_API_URL = "https://api.pokemontcg.io/v2/sets?orderBy=releaseDate&pageSize=250";
+const DEFAULT_ICV2_CALENDAR_URLS = ["https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar"];
 const LEGACY_BAD_ICV2_SEARCH_URL = "https://icv2.com/search?q=Pokemon%20TCG%202026%20Product%20Calendar";
 
 const MONTHS = [
@@ -160,6 +166,34 @@ function releaseStatus(date: Date | null, needsReview = false) {
 
 function dateKey(date: Date | null) {
   return date ? date.toISOString().slice(0, 10) : "TBD";
+}
+
+function classifyAdapterStatus(log: AdapterLog, warnings: string[] = []): ReleaseSourceStatus {
+  const blockedText = `${log.error ?? ""} ${warnings.join(" ")}`;
+  if (log.httpStatus === 401 || log.httpStatus === 403 || log.httpStatus === 429 || /blocked|captcha|incapsula|access denied|forbidden|aborted/i.test(blockedText)) {
+    return "blocked";
+  }
+  if (log.error || (log.httpStatus !== undefined && log.httpStatus !== null && log.httpStatus >= 400)) {
+    return "failed";
+  }
+  if (log.adapter === "icv2_calendar" || log.parsedCount === 0 || warnings.length) {
+    return "needs_review";
+  }
+  return "active";
+}
+
+function withSourceHealth(result: AdapterResult): AdapterResult {
+  const status = classifyAdapterStatus(result.log, result.warnings);
+  return {
+    ...result,
+    log: {
+      ...result.log,
+      sourceType: result.log.sourceType ?? result.log.adapter,
+      status,
+      warningCount: result.warnings.length,
+      error: result.log.error ?? (status === "needs_review" && result.log.parsedCount === 0 ? "No release records parsed from this source." : null)
+    }
+  };
 }
 
 function releaseNotes(source: string, extra: string[] = []) {
@@ -453,20 +487,34 @@ export function parsePokemonCenterHtml(html: string, sourceUrl: string): Release
 export function parseIcv2CalendarHtml(html: string, sourceUrl: string): ReleaseCandidate[] {
   const text = stripTags(html);
   const candidates: ReleaseCandidate[] = [];
-  const lines = text
-    .split(/(?=(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},\s+20\d{2})/i)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const productDateMatches = Array.from(
+    text.matchAll(
+      /(?<title>(?:Pok.mon|Pokemon|Mega Evolution|Scarlet & Violet)[^|]{4,180}?)\s+(?:Release Date|Available|Street Date)\s*[:\-]?\s*(?<date>(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},\s+20\d{2})/gi
+    )
+  );
+  const lines = productDateMatches.length
+    ? productDateMatches.map((match) => `${match.groups?.title ?? ""} Release Date: ${match.groups?.date ?? ""}`)
+    : text
+        .split(/(?=(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},\s+20\d{2})/i)
+        .map((line) => line.trim())
+        .filter(Boolean);
 
   for (const line of lines) {
-    if (!/pok[eé]mon|tcg|booster|elite trainer|collection|tin|mega evolution/i.test(line)) continue;
+    if (!/pok.mon|pokemon|tcg|booster|elite trainer|collection|tin|mega evolution|scarlet & violet/i.test(line)) continue;
     const releaseDate = extractFirstDate(line);
     if (!releaseDate) continue;
     const titleMatch =
-      line.match(/Pok[eé]mon[^.]{8,150}/i)?.[0] ??
+      line.match(/^(.*?)(?:\s+Release Date\s*:|\s+Available\s*:|\s+Street Date\s*:)/i)?.[1] ??
+      line.match(/Pok.mon[^.]{8,150}/i)?.[0] ??
+      line.match(/Pokemon[^.]{8,150}/i)?.[0] ??
       line.match(/Mega Evolution[^.]{4,150}/i)?.[0] ??
       line.slice(0, 140);
-    const title = titleMatch.replace(/\s+Release Date.*$/i, "").trim();
+    const title = titleMatch
+      .replace(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},\s+20\d{2}\b/gi, "")
+      .replace(/\s+Release Date.*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (title.length < 5) continue;
     candidates.push(
       candidate({
         setName: inferSetName(title),
@@ -485,7 +533,7 @@ export function parseIcv2CalendarHtml(html: string, sourceUrl: string): ReleaseC
         productLinks: sourceUrl,
         sourceUrl,
         sourceName: "ICv2 Pokemon TCG Product Calendar",
-        sourceType: "icv2_secondary",
+        sourceType: "icv2_calendar",
         confidence: "MEDIUM",
         needsReview: true,
         reviewReason: "Secondary ICv2 calendar needs official confirmation before treating as final.",
@@ -581,15 +629,24 @@ async function htmlAdapter(sourceName: string, sourceUrl: string, adapter: Relea
         log: { sourceName, sourceUrl, adapter, httpStatus: response.status, parsedCount: 0, error: `HTTP ${response.status}` }
       };
     }
+    const blockedBody = /pardon our interruption|incapsula|captcha|access denied|temporarily unavailable|robot/i.test(response.text);
     const candidates = parser(response.text, sourceUrl);
     const finalCandidates =
       candidates.length || adapter !== "official_pokemon_news"
         ? candidates
         : parseOfficialNewsUrlFallback(sourceUrl);
+    const warnings = blockedBody && !finalCandidates.length ? [`${sourceName} appears blocked or unavailable.`] : [];
     return {
       candidates: finalCandidates,
-      warnings: [],
-      log: { sourceName, sourceUrl, adapter, httpStatus: response.status, parsedCount: finalCandidates.length }
+      warnings,
+      log: {
+        sourceName,
+        sourceUrl,
+        adapter,
+        httpStatus: response.status,
+        parsedCount: finalCandidates.length,
+        error: blockedBody && !finalCandidates.length ? "Blocked or bot-protected response" : null
+      }
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : `${sourceName} fetch failed.`;
@@ -616,13 +673,12 @@ function configuredSourceUrls() {
 }
 
 function officialNewsUrls(now = new Date()) {
-  const years = [now.getUTCFullYear(), now.getUTCFullYear() + 1];
   const urls = new Set<string>(DEFAULT_OFFICIAL_NEWS_URLS);
-  for (const year of years) {
-    for (const month of MONTHS) {
-      urls.add(`${OFFICIAL_NEWS_BASE}check-out-every-pokemon-tcg-product-release-in-${month}-${year}`);
-      urls.add(`${OFFICIAL_NEWS_BASE}pokemon-tcg-product-release-calendar-${month}-${year}`);
-    }
+  for (let offset = 0; offset < 6; offset += 1) {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, 1));
+    const month = MONTHS[date.getUTCMonth()];
+    const year = date.getUTCFullYear();
+    urls.add(`${OFFICIAL_NEWS_BASE}check-out-every-pokemon-tcg-product-release-in-${month}-${year}`);
   }
   return Array.from(urls);
 }
@@ -699,26 +755,26 @@ async function configuredFeedAdapters(): Promise<AdapterResult[]> {
 }
 
 async function runAdapters() {
-  const configuredSources = configuredSourceUrls();
+  const configuredSources = Array.from(new Set([...DEFAULT_ICV2_CALENDAR_URLS, ...configuredSourceUrls()]));
   const adapterPromises: Array<Promise<AdapterResult>> = [
     pokemonTcgApiAdapter(),
     htmlAdapter("Official Pokemon TCG expansions", OFFICIAL_EXPANSIONS_URL, "official_pokemon", parseOfficialExpansionsHtml),
     htmlAdapter("Official Pokemon Center new releases", POKEMON_CENTER_NEW_RELEASES_URL, "official_pokemon_center", parsePokemonCenterHtml),
     ...officialNewsUrls().map((url) => htmlAdapter("Official Pokemon News", url, "official_pokemon_news", parseOfficialNewsHtml)),
     ...configuredSources.map((url) => {
-      if (/icv2\.com/i.test(url)) return htmlAdapter("ICv2 Pokemon TCG Product Calendar", url, "icv2_secondary", parseIcv2CalendarHtml);
+      if (/icv2\.com/i.test(url)) return htmlAdapter("ICv2 Pokemon TCG Product Calendar", url, "icv2_calendar", parseIcv2CalendarHtml);
       if (/pokemoncenter\.com/i.test(url)) return htmlAdapter("Official Pokemon Center", url, "official_pokemon_center", parsePokemonCenterHtml);
-      if (/pokemon\.com\/us\/pokemon-news/i.test(url)) return htmlAdapter("Official Pokemon News", url, "official_pokemon_news", parseOfficialNewsHtml);
+      if (/pokemon\.com\/[^/]+\/pokemon-news/i.test(url)) return htmlAdapter("Official Pokemon News", url, "official_pokemon_news", parseOfficialNewsHtml);
       return htmlAdapter("Official Pokemon source", url, "official_pokemon", parseOfficialExpansionsHtml);
     })
   ];
-  return [...(await Promise.all(adapterPromises)), ...(await configuredFeedAdapters())];
+  return [...(await Promise.all(adapterPromises)), ...(await configuredFeedAdapters())].map(withSourceHealth);
 }
 
 function sourceRank(sourceType: ReleaseSourceType) {
   if (["official_pokemon", "official_pokemon_news", "official_pokemon_center", "pokemon_tcg_api"].includes(sourceType)) return 4;
   if (sourceType === "configured_feed") return 2;
-  if (sourceType === "icv2_secondary") return 2;
+  if (sourceType === "icv2_calendar") return 2;
   return 0;
 }
 
@@ -810,13 +866,16 @@ async function recordSyncLogs(checkedAt: Date, logs: AdapterLog[]) {
       checkedAt,
       sourceName: log.sourceName,
       sourceUrl: log.sourceUrl,
+      sourceType: log.sourceType ?? log.adapter,
       adapter: log.adapter,
+      status: log.status ?? classifyAdapterStatus(log),
       httpStatus: log.httpStatus ?? null,
       parsedCount: log.parsedCount,
       createdCount: log.createdCount ?? 0,
       updatedCount: log.updatedCount ?? 0,
       duplicateCount: log.duplicateCount ?? 0,
       conflictCount: log.conflictCount ?? 0,
+      warningCount: log.warningCount ?? 0,
       error: log.error ?? null
     }))
   });
@@ -828,19 +887,35 @@ async function ensureReleaseSyncSources(logs: AdapterLog[], checkedAt: Date) {
       where: { sourceUrl: log.sourceUrl as string },
       create: {
         sourceName: log.sourceName,
+        sourceType: log.sourceType ?? log.adapter,
         sourceUrl: log.sourceUrl as string,
         adapter: log.adapter,
         enabled: true,
+        priority: sourceRank(log.adapter) * 25,
+        confidenceDefault: log.adapter.startsWith("official") || log.adapter === "pokemon_tcg_api" ? "HIGH" : "MEDIUM",
         lastCheckedAt: checkedAt,
-        lastStatus: log.error ? "error" : "ok",
-        lastError: log.error ?? null
+        lastSuccessfulParseAt: log.parsedCount > 0 && !log.error ? checkedAt : null,
+        lastHttpStatus: log.httpStatus ?? null,
+        lastStatus: log.status ?? classifyAdapterStatus(log),
+        lastError: log.error ?? null,
+        parsedCount: log.parsedCount,
+        createdCount: log.createdCount ?? 0,
+        updatedCount: log.updatedCount ?? 0
       },
       update: {
         sourceName: log.sourceName,
+        sourceType: log.sourceType ?? log.adapter,
         adapter: log.adapter,
+        priority: sourceRank(log.adapter) * 25,
+        confidenceDefault: log.adapter.startsWith("official") || log.adapter === "pokemon_tcg_api" ? "HIGH" : "MEDIUM",
         lastCheckedAt: checkedAt,
-        lastStatus: log.error ? "error" : "ok",
-        lastError: log.error ?? null
+        lastSuccessfulParseAt: log.parsedCount > 0 && !log.error ? checkedAt : undefined,
+        lastHttpStatus: log.httpStatus ?? null,
+        lastStatus: log.status ?? classifyAdapterStatus(log),
+        lastError: log.error ?? null,
+        parsedCount: log.parsedCount,
+        createdCount: log.createdCount ?? 0,
+        updatedCount: log.updatedCount ?? 0
       }
     });
   }
@@ -865,6 +940,8 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
   const adapterResults = await runAdapters();
   const warnings = adapterResults.flatMap((result) => result.warnings);
   const rawLogs = adapterResults.map((result) => result.log);
+  const failedSourceCount = rawLogs.filter((log) => log.status === "failed" || log.status === "blocked").length;
+  const reviewSourceCount = rawLogs.filter((log) => log.status === "needs_review").length;
   const { candidates, duplicates, conflicts } = mergeCandidates(adapterResults.flatMap((result) => result.candidates));
   const existing = await prisma.release.findMany();
   let created = 0;
@@ -993,18 +1070,22 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
   const summaryLog: AdapterLog = {
     sourceName: "Release sync summary",
     sourceUrl: null,
+    sourceType: "merge",
     adapter: "merge",
+    status: failedSourceCount ? "failed" : conflicts || reviewQueue.length || reviewSourceCount || warnings.length ? "needs_review" : "active",
     parsedCount: candidates.length,
     createdCount: created,
     updatedCount: updated,
     duplicateCount: duplicates,
     conflictCount: conflicts,
+    warningCount: warnings.length,
     error: warnings.length ? warnings.slice(0, 3).join(" ") : null
   };
   const logs = [...rawLogs, summaryLog];
   await cleanupLegacyBadIcv2SearchRows();
   await ensureReleaseSyncSources(rawLogs, checkedAt);
   await recordSyncLogs(checkedAt, logs);
+  await createReleaseSourceFailureAlerts(rawLogs);
 
   return {
     checkedAt: checkedAt.toISOString(),
@@ -1040,4 +1121,28 @@ async function createReleaseSyncAlert(candidate: ReleaseCandidate, action: "crea
       explanation: `Release calendar sync from ${candidate.sourceName}.`
     }
   });
+}
+
+async function createReleaseSourceFailureAlerts(logs: AdapterLog[]) {
+  for (const log of logs) {
+    if (log.status !== "failed" && log.status !== "blocked") continue;
+    const dedupeKey = `release_source:${log.status}:${log.sourceUrl || log.sourceName}:${new Date().toISOString().slice(0, 10)}`;
+    const existing = await prisma.alert.findFirst({ where: { dedupeKey } });
+    if (existing) continue;
+    await prisma.alert.create({
+      data: {
+        title: `Release source ${log.status}: ${log.sourceName}`,
+        reason:
+          log.status === "blocked"
+            ? `${log.sourceName} was blocked or unavailable during release sync. Secondary sources remain visible for review.`
+            : `${log.sourceName} failed during release sync${log.httpStatus ? ` with HTTP ${log.httpStatus}` : ""}.`,
+        priority: "MEDIUM",
+        entityType: "RELEASE_SOURCE",
+        actionUrl: log.sourceUrl,
+        dedupeKey,
+        score: log.status === "blocked" ? 60 : 55,
+        explanation: log.error || "Release source health issue recorded by daily sync."
+      }
+    });
+  }
 }

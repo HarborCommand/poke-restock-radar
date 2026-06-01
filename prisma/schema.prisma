@@ -314,19 +314,29 @@ model Release {
 }
 
 model ReleaseSyncSource {
-  id            String    @id @default(cuid())
-  sourceName    String
-  sourceUrl     String    @unique
-  adapter       String
-  enabled       Boolean   @default(true)
-  lastCheckedAt DateTime?
-  lastStatus    String?
-  lastError     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  sourceName            String
+  sourceType            String    @default("custom_public_feed")
+  sourceUrl             String    @unique
+  adapter               String
+  enabled               Boolean   @default(true)
+  priority              Int       @default(50)
+  confidenceDefault     String    @default("MEDIUM")
+  lastCheckedAt         DateTime?
+  lastSuccessfulParseAt DateTime?
+  lastHttpStatus        Int?
+  lastStatus            String?
+  lastError             String?
+  parsedCount           Int       @default(0)
+  createdCount          Int       @default(0)
+  updatedCount          Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
+  @@index([sourceType])
   @@index([adapter])
   @@index([enabled])
+  @@index([lastStatus])
 }
 
 model ReleaseSyncLog {
@@ -334,18 +344,22 @@ model ReleaseSyncLog {
   checkedAt      DateTime @default(now())
   sourceName     String
   sourceUrl      String?
+  sourceType     String   @default("custom_public_feed")
   adapter        String
+  status         String   @default("active")
   httpStatus     Int?
   parsedCount    Int      @default(0)
   createdCount   Int      @default(0)
   updatedCount   Int      @default(0)
   duplicateCount Int      @default(0)
   conflictCount  Int      @default(0)
+  warningCount   Int      @default(0)
   error          String?
   createdAt      DateTime @default(now())
 
   @@index([checkedAt])
   @@index([adapter])
+  @@index([status])
 }
 
 model Alert {

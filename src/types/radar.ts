@@ -685,13 +685,16 @@ export type ReleaseSyncLogDTO = {
   checkedAt: string;
   sourceName: string;
   sourceUrl: string | null;
+  sourceType: string;
   adapter: string;
+  status: string;
   httpStatus: number | null;
   parsedCount: number;
   createdCount: number;
   updatedCount: number;
   duplicateCount: number;
   conflictCount: number;
+  warningCount: number;
   error: string | null;
 };
 
