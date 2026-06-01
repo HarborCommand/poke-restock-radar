@@ -10211,8 +10211,12 @@ function ReleasesPanel({
     : usableSourceParsed === 0
       ? { tone: "danger", label: "Failed" }
       : syncStats.failures || syncStats.needsReviewSources
-        ? { tone: "warn", label: "Source issue" }
+        ? { tone: "warn", label: "Warning" }
         : { tone: "good", label: "Clean" };
+  const blockedFallbackMessage =
+    latestRunTime && syncStats.blocked && usableSourceParsed
+      ? "Official source blocked. Using Pokemon TCG API and ICv2 fallback until official source is accessible."
+      : null;
   const upcoming = useMemo(
     () =>
       dashboard.releases
@@ -10289,6 +10293,7 @@ function ReleasesPanel({
             {latestRunTime
               ? `${syncStats.sourcesChecked} sources checked, ${syncStats.parsed} product releases parsed, ${syncStats.ignoredArticleTitles} article/source warnings, ${syncStats.created} new, ${syncStats.updated} updated, ${syncStats.blocked} blocked, ${syncStats.failed} failed.`
               : "Official Pokemon TCG, Pokemon News, Pokemon Center, ICv2, and configured feeds will be checked when you sync."}
+            {blockedFallbackMessage ? ` ${blockedFallbackMessage}` : ""}
           </span>
         </div>
         <span className={`light-pill ${syncHealth.tone}`}>

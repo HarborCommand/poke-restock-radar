@@ -7,6 +7,7 @@ type ReleaseSourceType =
   | "official_pokemon_center"
   | "pokemon_tcg_api"
   | "icv2_calendar"
+  | "retailer_product_page"
   | "configured_feed"
   | "merge";
 
@@ -94,7 +95,7 @@ const DEFAULT_OFFICIAL_NEWS_URLS = [
   "https://www.pokemon.com/uk/pokemon-news/the-pokemon-tcg-mega-evolution-pitch-black-expansion-arrives-july-17-2026"
 ];
 const POKEMON_CENTER_NEW_RELEASES_URL = "https://www.pokemoncenter.com/category/new-releases";
-const POKEMON_TCG_API_URL = "https://api.pokemontcg.io/v2/sets?orderBy=releaseDate&pageSize=250";
+const POKEMON_TCG_API_URL = "https://api.pokemontcg.io/v2/sets?orderBy=-releaseDate&pageSize=250";
 const DEFAULT_ICV2_CALENDAR_URLS = ["https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar"];
 const LEGACY_BAD_ICV2_SEARCH_URL = "https://icv2.com/search?q=Pokemon%20TCG%202026%20Product%20Calendar";
 
@@ -167,7 +168,7 @@ function classifyAdapterStatus(log: AdapterLog, warnings: string[] = []): Releas
   if (log.error || (log.httpStatus !== undefined && log.httpStatus !== null && log.httpStatus >= 400)) {
     return "failed";
   }
-  if (log.adapter === "icv2_calendar" || log.parsedCount === 0 || warnings.length) {
+  if (log.parsedCount === 0 || warnings.length) {
     return "needs_review";
   }
   return "active";
@@ -186,7 +187,13 @@ function withSourceHealth(result: AdapterResult): AdapterResult {
       sourceType: result.log.sourceType ?? result.log.adapter,
       status,
       warningCount: result.warnings.length,
-      error: result.log.error ?? (status === "needs_review" && result.log.parsedCount === 0 ? "No release records parsed from this source." : null)
+      error:
+        result.log.error ??
+        (status === "blocked"
+          ? "Official source blocked. Using Pokemon TCG API and ICv2 fallback until official source is accessible."
+          : status === "needs_review" && result.log.parsedCount === 0
+            ? "No release records parsed from this source."
+            : null)
     }
   };
 }
@@ -635,40 +642,8 @@ async function pokemonTcgApiAdapter(): Promise<AdapterResult> {
         log: { sourceName: "Pokemon TCG API", sourceUrl: POKEMON_TCG_API_URL, adapter: "pokemon_tcg_api", httpStatus: response.status, parsedCount: 0, error: `HTTP ${response.status}` }
       };
     }
-    const payload = (await response.json()) as {
-      data?: Array<{ id?: string; name?: string; series?: string; releaseDate?: string; total?: number }>;
-    };
-    const { start, end } = releaseYearWindow();
-    const candidates = (payload.data ?? [])
-      .map((set): ReleaseCandidate | null => {
-        const releaseDate = parseReleaseDate(set.releaseDate);
-        if (!releaseDate || releaseDate < start || releaseDate > end || !set.name) return null;
-        const sourceUrl = set.id ? `https://pokemontcg.io/sets/${encodeURIComponent(set.id)}` : "https://pokemontcg.io/";
-        return candidate({
-          setName: set.name,
-          releaseName: set.name,
-          productName: set.name,
-          productType: "Expansion",
-          releaseType: "expansion",
-          officialReleaseDate: releaseDate,
-          preorderDate: null,
-          preorderWindowText: null,
-          region: "US",
-          retailer: null,
-          productTypes: "Booster packs, Elite Trainer Boxes, booster bundles, collection products",
-          productImage: null,
-          productUrl: sourceUrl,
-          productLinks: sourceUrl,
-          sourceUrl,
-          sourceName: "Pokemon TCG API",
-          sourceType: "pokemon_tcg_api",
-          confidence: "HIGH",
-          needsReview: false,
-          reviewReason: null,
-          notes: releaseNotes("Pokemon TCG API", [set.series ? `Series: ${set.series}.` : "", set.total ? `${set.total} cards tracked by the API.` : ""].filter(Boolean))
-        });
-      })
-      .filter((item): item is ReleaseCandidate => Boolean(item));
+    const payload = (await response.json()) as PokemonTcgApiPayload;
+    const candidates = parsePokemonTcgApiPayload(payload);
     return {
       candidates,
       warnings: [],
@@ -681,6 +656,61 @@ async function pokemonTcgApiAdapter(): Promise<AdapterResult> {
       log: { sourceName: "Pokemon TCG API", sourceUrl: POKEMON_TCG_API_URL, adapter: "pokemon_tcg_api", parsedCount: 0, error: error instanceof Error ? error.message : "fetch failed" }
     };
   }
+}
+
+type PokemonTcgApiPayload = {
+  data?: Array<{
+    id?: string;
+    name?: string;
+    series?: string;
+    releaseDate?: string;
+    printedTotal?: number;
+    total?: number;
+    updatedAt?: string;
+    images?: {
+      symbol?: string;
+      logo?: string;
+    };
+  }>;
+};
+
+export function parsePokemonTcgApiPayload(payload: PokemonTcgApiPayload, now = new Date()): ReleaseCandidate[] {
+  const { start, end } = releaseYearWindow(now);
+  return (payload.data ?? [])
+    .map((set): ReleaseCandidate | null => {
+      const releaseDate = parseReleaseDate(set.releaseDate);
+      if (!releaseDate || releaseDate < start || releaseDate > end || !set.name) return null;
+      const sourceUrl = set.id ? `https://pokemontcg.io/sets/${encodeURIComponent(set.id)}` : POKEMON_TCG_API_URL;
+      const total = set.printedTotal || set.total;
+      return candidate({
+        setName: set.name,
+        releaseName: set.name,
+        productName: set.name,
+        productType: "Expansion",
+        releaseType: "expansion",
+        officialReleaseDate: releaseDate,
+        preorderDate: null,
+        preorderWindowText: null,
+        region: "US",
+        retailer: null,
+        productTypes: "Expansion",
+        productImage: set.images?.logo || set.images?.symbol || null,
+        productUrl: sourceUrl,
+        productLinks: sourceUrl,
+        sourceUrl,
+        sourceName: "Pokemon TCG API",
+        sourceType: "pokemon_tcg_api",
+        confidence: "HIGH",
+        needsReview: false,
+        reviewReason: null,
+        notes: releaseNotes("Pokemon TCG API", [
+          set.series ? `Series: ${set.series}.` : "",
+          total ? `${total} cards tracked by the API.` : "",
+          set.updatedAt ? `API updated at ${set.updatedAt}.` : ""
+        ].filter(Boolean))
+      });
+    })
+    .filter((item): item is ReleaseCandidate => Boolean(item));
 }
 
 async function htmlAdapter(sourceName: string, sourceUrl: string, adapter: ReleaseSourceType, parser: (html: string, url: string) => ReleaseCandidate[]): Promise<AdapterResult> {
@@ -699,7 +729,12 @@ async function htmlAdapter(sourceName: string, sourceUrl: string, adapter: Relea
       candidates.length || adapter !== "official_pokemon_news"
         ? candidates
         : parseOfficialNewsUrlFallback(sourceUrl);
-    const warnings = blockedBody && !finalCandidates.length ? [`${sourceName} appears blocked or unavailable.`] : [];
+    const warnings = blockedBody
+      ? [
+          `${sourceName} appears blocked or unavailable.`,
+          "Official source blocked. Using Pokemon TCG API and ICv2 fallback until official source is accessible."
+        ]
+      : [];
     return {
       candidates: finalCandidates,
       warnings,
@@ -709,7 +744,7 @@ async function htmlAdapter(sourceName: string, sourceUrl: string, adapter: Relea
         adapter,
         httpStatus: response.status,
         parsedCount: finalCandidates.length,
-        error: blockedBody && !finalCandidates.length ? "Blocked or bot-protected response" : null
+        error: blockedBody ? "Blocked or bot-protected response" : null
       }
     };
   } catch (error) {
@@ -844,7 +879,9 @@ async function runAdapters() {
 }
 
 function sourceRank(sourceType: ReleaseSourceType) {
-  if (["official_pokemon", "official_pokemon_news", "official_pokemon_center", "pokemon_tcg_api"].includes(sourceType)) return 4;
+  if (sourceType === "pokemon_tcg_api") return 5;
+  if (["official_pokemon", "official_pokemon_news", "official_pokemon_center"].includes(sourceType)) return 4;
+  if (sourceType === "retailer_product_page") return 3;
   if (sourceType === "configured_feed") return 2;
   if (sourceType === "icv2_calendar") return 2;
   return 0;
@@ -929,6 +966,23 @@ function mergeCandidates(candidates: ReleaseCandidate[]) {
 
 export function mergeReleaseCandidatesForTest(candidates: ReleaseCandidate[]) {
   return mergeCandidates(candidates);
+}
+
+function releaseSyncSummaryStatus(input: {
+  parsedCount: number;
+  failedSourceCount: number;
+  conflicts: number;
+  reviewQueueCount: number;
+  reviewSourceCount: number;
+  warningCount: number;
+}): ReleaseSourceStatus {
+  if (input.parsedCount === 0 && input.failedSourceCount > 0) return "failed";
+  if (input.failedSourceCount || input.conflicts || input.reviewQueueCount || input.reviewSourceCount || input.warningCount) return "needs_review";
+  return "active";
+}
+
+export function releaseSyncSummaryStatusForTest(input: Parameters<typeof releaseSyncSummaryStatus>[0]) {
+  return releaseSyncSummaryStatus(input);
 }
 
 async function recordSyncLogs(checkedAt: Date, logs: AdapterLog[]) {
@@ -1232,19 +1286,33 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
     warnings.push("POKEMON_RELEASE_FEED_URLS is not configured. Set feeds for product-drop news beyond official/default sources.");
   }
 
+  const summaryStatus = releaseSyncSummaryStatus({
+    parsedCount: candidates.length,
+    failedSourceCount,
+    conflicts,
+    reviewQueueCount: reviewQueue.length,
+    reviewSourceCount,
+    warningCount: warnings.length
+  });
+  const summaryWarning =
+    failedSourceCount && candidates.length
+      ? "Warning: one or more release sources were blocked or failed. Safe fallback sources parsed usable release data; no bot bypass was attempted."
+      : null;
+  if (summaryWarning) warnings.push(summaryWarning);
+
   const summaryLog: AdapterLog = {
     sourceName: "Release sync summary",
     sourceUrl: null,
     sourceType: "merge",
     adapter: "merge",
-    status: failedSourceCount ? "failed" : conflicts || reviewQueue.length || reviewSourceCount || warnings.length ? "needs_review" : "active",
+    status: summaryStatus,
     parsedCount: candidates.length,
     createdCount: created,
     updatedCount: updated,
     duplicateCount: duplicates,
     conflictCount: conflicts,
     warningCount: warnings.length,
-    error: warnings.length ? warnings.slice(0, 3).join(" ") : null
+    error: summaryWarning || (warnings.length ? warnings.slice(0, 3).join(" ") : null)
   };
   const logs = [...rawLogs, summaryLog];
   await cleanupLegacyBadIcv2SearchRows();

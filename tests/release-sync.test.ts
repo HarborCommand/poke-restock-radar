@@ -8,7 +8,9 @@ import {
   parseIcv2CalendarHtml,
   parseOfficialExpansionsHtml,
   parseOfficialNewsHtml,
-  parseOfficialNewsUrlFallback
+  parseOfficialNewsUrlFallback,
+  parsePokemonTcgApiPayload,
+  releaseSyncSummaryStatusForTest
 } from "../src/lib/release-sync";
 
 test("official expansion parser captures future Pokemon TCG set dates", () => {
@@ -101,6 +103,36 @@ test("icv2 parser schedules trusted product calendar entries automatically", () 
   assert.ok(releases.every((release) => release.status === "scheduled"));
 });
 
+test("Pokemon TCG API set release becomes confirmed high-confidence expansion", () => {
+  const releases = parsePokemonTcgApiPayload(
+    {
+      data: [
+        {
+          id: "mega1",
+          name: "Mega Evolution Pitch Black",
+          series: "Mega Evolution",
+          releaseDate: "2026-07-17",
+          printedTotal: 142,
+          updatedAt: "2026/06/01 12:00:00",
+          images: {
+            logo: "https://images.pokemontcg.io/mega1/logo.png",
+            symbol: "https://images.pokemontcg.io/mega1/symbol.png"
+          }
+        }
+      ]
+    },
+    new Date("2026-06-01T12:00:00.000Z")
+  );
+
+  assert.equal(releases.length, 1);
+  assert.equal(releases[0].sourceType, "pokemon_tcg_api");
+  assert.equal(releases[0].releaseType, "expansion");
+  assert.equal(releases[0].status, "confirmed");
+  assert.equal(releases[0].confidence, "HIGH");
+  assert.equal(releases[0].productImage, "https://images.pokemontcg.io/mega1/logo.png");
+  assert.equal(releases[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-07-17");
+});
+
 test("icv2 parser handles product-name-first calendar entries", () => {
   const releases = parseIcv2CalendarHtml(
     `
@@ -160,6 +192,34 @@ test("release candidate merge prefers official sources and flags date conflicts"
   assert.match(merged.candidates[0].reviewReason ?? "", /Conflicting release dates/);
 });
 
+test("API and ICv2 duplicate merge upgrades confidence and keeps fallback source link", () => {
+  const [api] = parsePokemonTcgApiPayload(
+    {
+      data: [
+        {
+          id: "mega1",
+          name: "Mega Evolution Pitch Black",
+          releaseDate: "2026-07-17"
+        }
+      ]
+    },
+    new Date("2026-06-01T12:00:00.000Z")
+  );
+  const [secondary] = parseIcv2CalendarHtml(
+    `July 17, 2026 Pokemon TCG: Mega Evolution Pitch Black Booster Bundle`,
+    "https://icv2.com/calendar"
+  );
+  const merged = mergeReleaseCandidatesForTest([api, secondary]);
+
+  assert.equal(merged.candidates.length, 1);
+  assert.equal(merged.conflicts, 0);
+  assert.equal(merged.candidates[0].sourceType, "pokemon_tcg_api");
+  assert.equal(merged.candidates[0].status, "confirmed");
+  assert.equal(merged.candidates[0].confidence, "HIGH");
+  assert.match(merged.candidates[0].productLinks ?? "", /icv2\.com\/calendar/);
+  assert.equal(merged.candidates[0].supportingSources.length, 2);
+});
+
 test("source health marks blocked and 404 sources instead of clean", () => {
   assert.equal(
     classifyAdapterStatusForTest({
@@ -174,6 +234,16 @@ test("source health marks blocked and 404 sources instead of clean", () => {
   );
   assert.equal(
     classifyAdapterStatusForTest({
+      sourceName: "ICv2 Pokemon TCG Product Calendar",
+      sourceUrl: "https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar",
+      adapter: "icv2_calendar",
+      httpStatus: 200,
+      parsedCount: 2
+    }),
+    "active"
+  );
+  assert.equal(
+    classifyAdapterStatusForTest({
       sourceName: "Official Pokemon expansions",
       sourceUrl: "https://tcg.pokemon.com/en-us/expansions/",
       adapter: "official_pokemon",
@@ -183,6 +253,38 @@ test("source health marks blocked and 404 sources instead of clean", () => {
     }),
     "blocked"
   );
+});
+
+test("sync report shows warning when a source is blocked but fallback parsed releases", () => {
+  assert.equal(
+    releaseSyncSummaryStatusForTest({
+      parsedCount: 3,
+      failedSourceCount: 1,
+      conflicts: 0,
+      reviewQueueCount: 0,
+      reviewSourceCount: 0,
+      warningCount: 1
+    }),
+    "needs_review"
+  );
+  assert.equal(
+    releaseSyncSummaryStatusForTest({
+      parsedCount: 0,
+      failedSourceCount: 2,
+      conflicts: 0,
+      reviewQueueCount: 0,
+      reviewSourceCount: 0,
+      warningCount: 2
+    }),
+    "failed"
+  );
+});
+
+test("blocked official source fallback does not add bypass behavior", () => {
+  const sync = readFileSync(new URL("../src/lib/release-sync.ts", import.meta.url), "utf8");
+
+  assert.match(sync, /Official source blocked\. Using Pokemon TCG API and ICv2 fallback/);
+  assert.doesNotMatch(sync, /proxy|rotate|stealth|captcha bypass|cloudflare bypass/i);
 });
 
 test("release details UI exposes source links and source-missing states", () => {
