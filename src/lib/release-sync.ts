@@ -260,6 +260,31 @@ function inferProductType(text: string) {
   return "Product";
 }
 
+export function isLikelyReleaseArticleTitle(value: string | null | undefined) {
+  const text = (value || "").trim();
+  if (!text) return false;
+  return (
+    /check out every pok[eÃ©]mon tcg product release/i.test(text) ||
+    /don[â€™']?t miss out on more products/i.test(text) ||
+    /more products from the latest expansions/i.test(text) ||
+    /product releases?\s+in\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(text) ||
+    /(?:roundup|preview|announcement|article|news)\b/i.test(text)
+  );
+}
+
+function hasReleaseProductSignal(value: string | null | undefined) {
+  const text = value || "";
+  return /expansion|elite trainer box|\betb\b|booster bundle|booster box|sleeved booster|premium collection|collection box|mini tin|\btin\b|blister|build\s*&\s*battle|build and battle|league battle deck|promo|special collection|binder collection|poster collection|checklane|deck|pokemon tcg:|pok[eÃ©]mon tcg:/i.test(text);
+}
+
+function isConfirmedReleaseCandidate(candidate: ReleaseCandidate) {
+  const title = candidate.productName || candidate.releaseName || candidate.setName;
+  if (isLikelyReleaseArticleTitle(title)) return false;
+  if (!candidate.officialReleaseDate && !candidate.preorderDate) return false;
+  if (candidate.releaseType === "expansion" && !isLikelyReleaseArticleTitle(candidate.setName)) return true;
+  return hasReleaseProductSignal(`${title} ${candidate.productType || ""} ${candidate.productTypes || ""}`);
+}
+
 function inferSetName(title: string) {
   const quoted = title.match(/Pok[eé]mon TCG:\s*([^|]+?)(?:\s+(?:Elite Trainer Box|Booster Bundle|Booster Box|Premium Collection|Three-Booster|Blister|Tin)\b|$)/i)?.[1];
   if (quoted) return quoted.trim();
@@ -319,6 +344,7 @@ function titleCandidatesFromHtml(html: string) {
   const headingMatches = html.matchAll(/<(h1|h2|h3)[^>]*>([\s\S]*?)<\/\1>/gi);
   for (const match of headingMatches) {
     const title = stripTags(match[2]);
+    if (isLikelyReleaseArticleTitle(title)) continue;
     if (/pok[eé]mon|tcg|booster|elite trainer|collection|expansion|tin|mega evolution|scarlet & violet/i.test(title) && title.length > 6) {
       headingTitles.add(title);
     }
@@ -328,10 +354,12 @@ function titleCandidatesFromHtml(html: string) {
   const titles = new Set<string>();
   const text = stripTags(html);
   for (const match of text.matchAll(/Pok[eé]mon TCG:\s*[^.]{8,120}/gi)) {
-    titles.add(match[0].trim());
+    const title = match[0].trim();
+    if (!isLikelyReleaseArticleTitle(title)) titles.add(title);
   }
   for (const match of text.matchAll(/Mega Evolution[—\-\s][^.]{4,90}/gi)) {
-    titles.add(match[0].trim());
+    const title = match[0].trim();
+    if (!isLikelyReleaseArticleTitle(title)) titles.add(title);
   }
   return Array.from(titles);
 }
@@ -394,6 +422,7 @@ export function parseOfficialNewsHtml(html: string, sourceUrl: string): ReleaseC
   const candidates: ReleaseCandidate[] = [];
 
   for (const title of titles) {
+    if (isLikelyReleaseArticleTitle(title) || !hasReleaseProductSignal(title)) continue;
     const titleIndex = text.toLowerCase().indexOf(title.toLowerCase().slice(0, 40));
     const context = titleIndex >= 0 ? text.slice(Math.max(0, titleIndex - 800), titleIndex + 1500) : text;
     let releaseDate = extractFirstDate(context);
@@ -429,7 +458,7 @@ export function parseOfficialNewsHtml(html: string, sourceUrl: string): ReleaseC
     );
   }
 
-  return dedupeCandidates(candidates);
+  return dedupeCandidates(candidates.filter(isConfirmedReleaseCandidate));
 }
 
 export function parsePokemonCenterHtml(html: string, sourceUrl: string): ReleaseCandidate[] {
@@ -800,7 +829,7 @@ function mergeCandidates(candidates: ReleaseCandidate[]) {
   let duplicates = 0;
   let conflicts = 0;
 
-  for (const next of candidates) {
+  for (const next of candidates.filter(isConfirmedReleaseCandidate)) {
     const key = normalizeReleaseName(next.setName || next.productName || "");
     if (!key) continue;
     const current = byName.get(key);
@@ -929,6 +958,36 @@ async function cleanupLegacyBadIcv2SearchRows() {
       reviewReason: "Archived legacy ICv2 search-result row. Configure a direct ICv2 product calendar URL before using ICv2 as a secondary source."
     }
   });
+}
+
+async function cleanupArticleTitleReleaseRows() {
+  const badTitleFilters = [
+    "Check Out Every",
+    "Product Release in",
+    "Product Releases in",
+    "Don't miss out on more products",
+    "Donâ€™t miss out on more products",
+    "more products from the latest expansions"
+  ];
+  for (const title of badTitleFilters) {
+    await prisma.release.updateMany({
+      where: {
+        createdByManualEntry: false,
+        status: { not: "archived" },
+        OR: [
+          { setName: { contains: title } },
+          { releaseName: { contains: title } },
+          { productName: { contains: title } }
+        ]
+      },
+      data: {
+        status: "archived",
+        needsReview: true,
+        reviewReason:
+          "Archived because this row was a source/news article title, not a confirmed Pokemon TCG product or set release. Source history remains available in Release News / Source Log."
+      }
+    });
+  }
 }
 
 async function disableRepeated404Sources(logs: AdapterLog[]) {
@@ -1101,6 +1160,7 @@ export async function syncReleaseCalendarFromPublicSources(): Promise<ReleaseSyn
   };
   const logs = [...rawLogs, summaryLog];
   await cleanupLegacyBadIcv2SearchRows();
+  await cleanupArticleTitleReleaseRows();
   await ensureReleaseSyncSources(rawLogs, checkedAt);
   await recordSyncLogs(checkedAt, logs);
   await disableRepeated404Sources(rawLogs);

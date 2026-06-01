@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   classifyAdapterStatusForTest,
+  isLikelyReleaseArticleTitle,
   mergeReleaseCandidatesForTest,
   parseIcv2CalendarHtml,
   parseOfficialExpansionsHtml,
@@ -45,6 +46,27 @@ test("official news parser captures product roundup entries with dates", () => {
   assert.equal(releases.length, 2);
   assert.ok(releases.every((release) => release.sourceType === "official_pokemon_news"));
   assert.ok(releases.every((release) => release.confidence === "HIGH"));
+});
+
+test("official news parser ignores source article titles and generic headlines", () => {
+  const releases = parseOfficialNewsHtml(
+    `
+      <html>
+        <title>Check Out Every Pokemon TCG Product Release in March 2026</title>
+        <h1>Check Out Every Pokemon TCG Product Release in March 2026</h1>
+        <h2>Don't miss out on more products from the latest expansions.</h2>
+        <h2>Pokemon TCG: Mega Evolution Perfect Order Booster Bundle</h2>
+        <p>Available March 20, 2026 at participating retailers.</p>
+      </html>
+    `,
+    "https://www.pokemon.com/us/pokemon-news/check-out-every-pokemon-tcg-product-release-in-march-2026"
+  );
+
+  assert.equal(releases.length, 1);
+  assert.equal(releases[0].productName, "Pokemon TCG: Mega Evolution Perfect Order Booster Bundle");
+  assert.equal(releases[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-03-20");
+  assert.ok(isLikelyReleaseArticleTitle("Check Out Every Pokemon TCG Product Release in March 2026"));
+  assert.ok(isLikelyReleaseArticleTitle("Don't miss out on more products from the latest expansions."));
 });
 
 test("official news sync can derive a release from an official dated article URL when the body is blocked", () => {

@@ -12420,7 +12420,7 @@ body .light-pill.danger {
 body .release-sync-summary-grid {
   display: grid !important;
   gap: 10px !important;
-  grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;
 }
 
 body .release-sync-summary-grid span {

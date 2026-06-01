@@ -8,6 +8,7 @@ import { runProductDiscoveryCheck, validateDiscoverySourceUrl } from "@/lib/prod
 import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
 import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
+import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
@@ -2238,7 +2239,13 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     .sort((a, b) => (b.priorityScore?.score ?? 0) - (a.priorityScore?.score ?? 0));
   const cardDTOs = cards.map(cardToDTO);
   const alertDTOs = alerts.map(alertToDTO);
-  const releaseDTOs = releases.map((release) => releaseToDTO(release, releaseMetrics(release, products, cards)));
+  const calendarReleases = releases.filter(
+    (release) =>
+      !isLikelyReleaseArticleTitle(release.setName) &&
+      !isLikelyReleaseArticleTitle(release.releaseName) &&
+      !isLikelyReleaseArticleTitle(release.productName)
+  );
+  const releaseDTOs = calendarReleases.map((release) => releaseToDTO(release, releaseMetrics(release, products, cards)));
   const health = currentUser.role === "ADMIN" ? await getAppHealth(currentUser) : null;
   const accuracyStats = await monitorAccuracyStats();
   const alertStats = await alertAnalytics();

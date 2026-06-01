@@ -10147,6 +10147,7 @@ function ReleasesPanel({
     failed: latestRunLogs.filter((log) => log.adapter !== "merge" && log.status === "failed").length,
     needsReviewSources: latestRunLogs.filter((log) => log.adapter !== "merge" && log.status === "needs_review").length,
     parsed: latestRunLogs.reduce((total, log) => total + log.parsedCount, 0),
+    ignoredArticleTitles: latestRunLogs.reduce((total, log) => total + log.warningCount, 0),
     created: latestRunLogs.reduce((total, log) => total + log.createdCount, 0),
     updated: latestRunLogs.reduce((total, log) => total + log.updatedCount, 0),
     conflicts: latestRunLogs.reduce((total, log) => total + log.conflictCount, 0),
@@ -10232,7 +10233,7 @@ function ReleasesPanel({
           <strong>Source sync</strong>
           <span>
             {latestRunTime
-              ? `${syncStats.sourcesChecked} sources checked, ${syncStats.succeeded} succeeded, ${syncStats.blocked} blocked, ${syncStats.failed} failed, ${syncStats.parsed} parsed, ${syncStats.created} new, ${syncStats.updated} updated, ${syncStats.conflicts} conflicts.`
+              ? `${syncStats.sourcesChecked} sources checked, ${syncStats.parsed} product releases parsed, ${syncStats.ignoredArticleTitles} article/source warnings, ${syncStats.created} new, ${syncStats.updated} updated, ${syncStats.blocked} blocked, ${syncStats.failed} failed.`
               : "Official Pokemon TCG, Pokemon News, Pokemon Center, ICv2, and configured feeds will be checked when you sync."}
           </span>
         </div>
@@ -10245,7 +10246,7 @@ function ReleasesPanel({
         <section className="release-sync-log-panel">
           <div className="release-sync-log-heading">
             <div>
-              <p className="eyeline">Sync Log</p>
+              <p className="eyeline">Release News / Source Articles</p>
               <h2>Latest source checks</h2>
             </div>
             <span>Last checked {relativeTime(latestRunTime || latestRunLogs[0].checkedAt)}</span>
@@ -10256,6 +10257,7 @@ function ReleasesPanel({
             <span><strong>{syncStats.blocked}</strong> blocked</span>
             <span><strong>{syncStats.failed}</strong> failed</span>
             <span><strong>{syncStats.parsed}</strong> parsed</span>
+            <span><strong>{syncStats.ignoredArticleTitles}</strong> warnings</span>
             <span><strong>{syncStats.created}</strong> new</span>
             <span><strong>{syncStats.updated}</strong> updated</span>
             <span><strong>{syncStats.conflicts}</strong> conflicts</span>
@@ -10275,7 +10277,7 @@ function ReleasesPanel({
               </div>
               {latestRunLogs.filter((log) => log.adapter !== "merge").map((log) => (
                 <div className="release-sync-table-row" role="row" key={log.id}>
-                  <span><strong>{log.sourceName}</strong><small>{log.adapter}</small></span>
+                  <span><strong>{log.sourceName}</strong><small>{log.sourceUrl || log.adapter}</small></span>
                   <span><span className={`light-pill ${log.status === "active" ? "good" : log.status === "failed" || log.status === "blocked" ? "danger" : "warn"}`}>{log.status}</span></span>
                   <span>{log.httpStatus ?? "n/a"}</span>
                   <span>{log.parsedCount}</span>
