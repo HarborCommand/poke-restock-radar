@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  classifyAdapterStatusForTest,
   mergeReleaseCandidatesForTest,
   parseIcv2CalendarHtml,
   parseOfficialExpansionsHtml,
@@ -80,14 +81,22 @@ test("icv2 parser handles product-name-first calendar entries", () => {
     `
       Pokemon TCG: Mega Evolution Pitch Black Booster Bundle Release Date: July 17, 2026
       Pokemon TCG: Lumiose City Mini Tins Release Date: June 5, 2026
+      Mega Greninja ex Premium Collection Release Date: July 3, 2026
       Pokemon TCG: Mega Evolution Pitch Black Premium Collection Street Date: July 24, 2026
     `,
     "https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar"
   );
 
-  assert.equal(releases.length, 3);
+  assert.equal(releases.length, 4);
   assert.equal(releases[0].productName, "Pokemon TCG: Mega Evolution Pitch Black Booster Bundle");
   assert.equal(releases[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-07-17");
+  assert.ok(
+    releases.some(
+      (release) =>
+        release.productName === "Mega Greninja ex Premium Collection" &&
+        release.officialReleaseDate?.toISOString().slice(0, 10) === "2026-07-03"
+    )
+  );
   assert.ok(releases.every((release) => release.confidence === "MEDIUM"));
   assert.ok(releases.every((release) => release.needsReview));
 });
@@ -109,4 +118,29 @@ test("release candidate merge prefers official sources and flags date conflicts"
   assert.equal(merged.candidates[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-07-17");
   assert.equal(merged.candidates[0].needsReview, true);
   assert.match(merged.candidates[0].reviewReason ?? "", /Conflicting release dates/);
+});
+
+test("source health marks blocked and 404 sources instead of clean", () => {
+  assert.equal(
+    classifyAdapterStatusForTest({
+      sourceName: "Official Pokemon News",
+      sourceUrl: "https://www.pokemon.com/us/pokemon-news/missing",
+      adapter: "official_pokemon_news",
+      httpStatus: 404,
+      parsedCount: 0,
+      error: "HTTP 404"
+    }),
+    "failed"
+  );
+  assert.equal(
+    classifyAdapterStatusForTest({
+      sourceName: "Official Pokemon expansions",
+      sourceUrl: "https://tcg.pokemon.com/en-us/expansions/",
+      adapter: "official_pokemon",
+      httpStatus: 200,
+      parsedCount: 0,
+      error: "Blocked or bot-protected response"
+    }),
+    "blocked"
+  );
 });

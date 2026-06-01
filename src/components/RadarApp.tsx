@@ -371,7 +371,7 @@ function calendarDateParts(value: string | null | undefined) {
   };
 }
 
-function groupReleasesByYear(releases: ReleaseDTO[]) {
+function groupReleasesByYear(releases: ReleaseDTO[], showEmptyMonths = false) {
   const byYear = new Map<number, Map<number, ReleaseDTO[]>>();
   for (const release of releases) {
     const date = calendarDate(release.officialReleaseDate);
@@ -385,11 +385,15 @@ function groupReleasesByYear(releases: ReleaseDTO[]) {
     byYear.set(year, months);
   }
 
-  return Array.from(byYear.entries())
+  const currentYear = new Date().getFullYear();
+  const entries = Array.from(byYear.entries());
+  if (showEmptyMonths && !byYear.has(currentYear)) entries.push([currentYear, new Map<number, ReleaseDTO[]>()]);
+
+  return entries
     .sort(([a], [b]) => a - b)
     .map(([year, months]) => ({
       year,
-      months: Array.from(months.entries())
+      months: (showEmptyMonths ? Array.from({ length: 12 }, (_, month) => [month, months.get(month) ?? []] as [number, ReleaseDTO[]]) : Array.from(months.entries()))
         .sort(([a], [b]) => a - b)
         .map(([month, monthReleases]) => ({
           month,
@@ -10095,6 +10099,20 @@ function releasePrimaryUrl(release: ReleaseDTO) {
   return release.productUrl || release.sourceUrl || firstUrl(release.productLinks);
 }
 
+function releaseStatusLabel(release: ReleaseDTO) {
+  if (release.needsReview) return "Needs Review";
+  if (!release.officialReleaseDate) return "TBD";
+  if (release.daysUntilRelease !== null && release.daysUntilRelease < 0) return "Released";
+  return "Upcoming";
+}
+
+function releaseSourceBadgeLabel(release: ReleaseDTO) {
+  if (release.createdByManualEntry || release.sourceType === "manual") return "Manual";
+  if (release.sourceType?.startsWith("official") || release.sourceType === "pokemon_tcg_api") return "Official";
+  if (release.sourceType === "icv2_calendar") return "ICv2";
+  return "Public";
+}
+
 function ReleasesPanel({
   dashboard,
   isAdmin,
@@ -10117,8 +10135,11 @@ function ReleasesPanel({
   const latestSummaryLog = latestSyncLogs.find((log) => log.adapter === "merge") ?? latestSyncLogs[0] ?? null;
   const latestRunTime = latestSummaryLog?.checkedAt ?? null;
   const latestRunLogs = latestRunTime
-    ? latestSyncLogs.filter((log) => Math.abs(new Date(log.checkedAt).getTime() - new Date(latestRunTime).getTime()) < 2000)
+    ? dashboard.releaseSyncLogs.filter((log) => Math.abs(new Date(log.checkedAt).getTime() - new Date(latestRunTime).getTime()) < 2000)
     : [];
+  const usableSourceParsed = latestRunLogs
+    .filter((log) => log.adapter !== "merge" && log.status !== "failed" && log.status !== "blocked")
+    .reduce((total, log) => total + log.parsedCount, 0);
   const syncStats = {
     sourcesChecked: new Set(latestRunLogs.filter((log) => log.adapter !== "merge").map((log) => log.sourceUrl || log.sourceName)).size,
     succeeded: latestRunLogs.filter((log) => log.adapter !== "merge" && log.status === "active").length,
@@ -10131,6 +10152,13 @@ function ReleasesPanel({
     conflicts: latestRunLogs.reduce((total, log) => total + log.conflictCount, 0),
     failures: latestRunLogs.filter((log) => log.adapter !== "merge" && (log.status === "failed" || log.status === "blocked")).length
   };
+  const syncHealth = !latestRunTime
+    ? { tone: "warn", label: "Not synced" }
+    : usableSourceParsed === 0
+      ? { tone: "danger", label: "Failed" }
+      : syncStats.failures || syncStats.needsReviewSources
+        ? { tone: "warn", label: "Source issue" }
+        : { tone: "good", label: "Clean" };
   const upcoming = useMemo(
     () =>
       dashboard.releases
@@ -10208,8 +10236,8 @@ function ReleasesPanel({
               : "Official Pokemon TCG, Pokemon News, Pokemon Center, ICv2, and configured feeds will be checked when you sync."}
           </span>
         </div>
-        <span className={`light-pill ${syncStats.failures || needsReview.length ? "warn" : "good"}`}>
-          {syncStats.failures ? `${syncStats.failures} source issues` : needsReview.length || syncStats.needsReviewSources ? `${needsReview.length + syncStats.needsReviewSources} review` : "Clean"}
+        <span className={`light-pill ${syncHealth.tone}`}>
+          {syncHealth.label}
         </span>
       </div>
 
@@ -10222,16 +10250,43 @@ function ReleasesPanel({
             </div>
             <span>Last checked {relativeTime(latestRunTime || latestRunLogs[0].checkedAt)}</span>
           </div>
-          <div className="release-sync-log-grid">
-            {latestRunLogs.slice(0, 8).map((log) => (
-              <article className="release-sync-log-card" key={log.id}>
-                <strong>{log.sourceName}</strong>
-                <span>{log.adapter} - {log.status}{log.httpStatus ? ` - HTTP ${log.httpStatus}` : ""}</span>
-                <small>{log.parsedCount} parsed / {log.createdCount} added / {log.updatedCount} updated</small>
-                {log.error ? <em>{log.error}</em> : null}
-              </article>
-            ))}
+          <div className="release-sync-summary-grid" aria-label="Release sync summary">
+            <span><strong>{syncStats.sourcesChecked}</strong> checked</span>
+            <span><strong>{syncStats.succeeded}</strong> succeeded</span>
+            <span><strong>{syncStats.blocked}</strong> blocked</span>
+            <span><strong>{syncStats.failed}</strong> failed</span>
+            <span><strong>{syncStats.parsed}</strong> parsed</span>
+            <span><strong>{syncStats.created}</strong> new</span>
+            <span><strong>{syncStats.updated}</strong> updated</span>
+            <span><strong>{syncStats.conflicts}</strong> conflicts</span>
           </div>
+          <details className="release-sync-details">
+            <summary>View source details</summary>
+            <div className="release-sync-table" role="table" aria-label="Release source sync details">
+              <div className="release-sync-table-head" role="row">
+                <span>Source</span>
+                <span>Status</span>
+                <span>HTTP</span>
+                <span>Parsed</span>
+                <span>Added</span>
+                <span>Updated</span>
+                <span>Last checked</span>
+                <span>Error</span>
+              </div>
+              {latestRunLogs.filter((log) => log.adapter !== "merge").map((log) => (
+                <div className="release-sync-table-row" role="row" key={log.id}>
+                  <span><strong>{log.sourceName}</strong><small>{log.adapter}</small></span>
+                  <span><span className={`light-pill ${log.status === "active" ? "good" : log.status === "failed" || log.status === "blocked" ? "danger" : "warn"}`}>{log.status}</span></span>
+                  <span>{log.httpStatus ?? "n/a"}</span>
+                  <span>{log.parsedCount}</span>
+                  <span>{log.createdCount}</span>
+                  <span>{log.updatedCount}</span>
+                  <span>{relativeTime(log.checkedAt)}</span>
+                  <span>{log.error || "None"}</span>
+                </div>
+              ))}
+            </div>
+          </details>
         </section>
       ) : null}
 
@@ -10290,7 +10345,8 @@ function ReleaseMetricCard({ label, value, detail, icon }: { label: string; valu
 }
 
 function ReleaseCalendar({ releases, onSelect }: { releases: ReleaseDTO[]; onSelect: (release: ReleaseDTO) => void }) {
-  const yearlyDrops = useMemo(() => groupReleasesByYear(releases), [releases]);
+  const [showEmptyMonths, setShowEmptyMonths] = useState(false);
+  const yearlyDrops = useMemo(() => groupReleasesByYear(releases, showEmptyMonths), [releases, showEmptyMonths]);
 
   if (!releases.length) {
     return (
@@ -10313,41 +10369,23 @@ function ReleaseCalendar({ releases, onSelect }: { releases: ReleaseDTO[]; onSel
               <p className="eyeline">Pokemon TCG Drops</p>
               <h2>{year}</h2>
             </div>
-            <span className="chip muted">{months.reduce((total, month) => total + month.releases.length, 0)} tracked drops</span>
+            <div className="release-year-actions">
+              <span className="chip muted">{months.reduce((total, month) => total + month.releases.length, 0)} tracked drops</span>
+              <label className="release-empty-toggle">
+                <input type="checkbox" checked={showEmptyMonths} onChange={(event) => setShowEmptyMonths(event.currentTarget.checked)} />
+                Show empty months
+              </label>
+            </div>
           </div>
-          <div className="release-month-grid">
+          <div className="release-year-timeline">
             {months.map((month) => (
-              <article className="release-month-card" key={`${year}-${month.month}`}>
-                <h3>{month.label}</h3>
+              <article className={`release-month-section ${month.releases.length ? "" : "is-empty"}`} key={`${year}-${month.month}`}>
+                <div className="release-month-heading">
+                  <h3>{month.label} {year}</h3>
+                  <span>{month.releases.length ? `${month.releases.length} release${month.releases.length === 1 ? "" : "s"}` : "No releases"}</span>
+                </div>
                 <div className="release-day-list">
-                  {month.releases.map((release) => {
-                    const actionUrl = releasePrimaryUrl(release);
-                    const releaseDate = calendarDateParts(release.officialReleaseDate);
-                    return (
-                      <button className="release-day-row" id={`release-${release.id}`} key={release.id} type="button" onClick={() => onSelect(release)}>
-                        <div className="release-day-number">
-                          <strong>{releaseDate ? releaseDate.day : "?"}</strong>
-                          <span>{releaseDate ? releaseDate.weekday : "TBD"}</span>
-                        </div>
-                        <div className="release-day-main">
-                          <strong>{release.setName}</strong>
-                          <span>
-                            {release.productType || release.productTypes.split(",")[0]} - Release {releaseDateLabel(release)}
-                          </span>
-                          <small>{release.preorderDate ? `Preorder ${shortDate(release.preorderDate)}` : release.preorderWindowText || "Preorder TBD"}</small>
-                        </div>
-                        <div className="release-day-actions">
-                          <span className={`light-pill ${statusTone(release.priority)}`}>{release.priority}</span>
-                          {release.pokemonCenterExclusiveVersion ? <span className="chip compact-chip watch">PC</span> : null}
-                          {actionUrl ? (
-                            <a className="mini-action icon-only" href={actionUrl} target="_blank" rel="noreferrer" aria-label={`Open ${release.setName}`} onClick={(event) => event.stopPropagation()}>
-                              <ExternalLink size={14} />
-                            </a>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
+                  {month.releases.map((release) => <ReleaseListRow key={release.id} release={release} onSelect={onSelect} />)}
                 </div>
               </article>
             ))}
@@ -10388,6 +10426,38 @@ function ReleaseUpcomingList({ releases, onSelect }: { releases: ReleaseDTO[]; o
   const upcoming = releases
     .filter((release) => release.daysUntilRelease === null || release.daysUntilRelease >= 0)
     .sort((a, b) => (calendarDate(a.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (calendarDate(b.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER));
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const laterThisYearStart = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+  const nextYearStart = new Date(now.getFullYear() + 1, 0, 1);
+  const groups = [
+    {
+      label: "This Month",
+      releases: upcoming.filter((release) => {
+        const date = calendarDate(release.officialReleaseDate);
+        return date && date >= thisMonthStart && date < nextMonthStart;
+      })
+    },
+    {
+      label: "Next Month",
+      releases: upcoming.filter((release) => {
+        const date = calendarDate(release.officialReleaseDate);
+        return date && date >= nextMonthStart && date < laterThisYearStart;
+      })
+    },
+    {
+      label: "Later This Year",
+      releases: upcoming.filter((release) => {
+        const date = calendarDate(release.officialReleaseDate);
+        return date && date >= laterThisYearStart && date < nextYearStart;
+      })
+    },
+    {
+      label: "TBD / Needs Review",
+      releases: upcoming.filter((release) => !release.officialReleaseDate)
+    }
+  ].filter((group) => group.releases.length);
   return (
     <section className="release-calendar-panel">
       <div className="release-year-heading">
@@ -10398,7 +10468,15 @@ function ReleaseUpcomingList({ releases, onSelect }: { releases: ReleaseDTO[]; o
         <span className="light-pill">{upcoming.length} upcoming</span>
       </div>
       <div className="release-upcoming-list">
-        {upcoming.map((release) => <ReleaseListRow key={release.id} release={release} onSelect={onSelect} />)}
+        {groups.map((group) => (
+          <div className="release-upcoming-group" key={group.label}>
+            <div className="release-month-heading">
+              <h3>{group.label}</h3>
+              <span>{group.releases.length} release{group.releases.length === 1 ? "" : "s"}</span>
+            </div>
+            {group.releases.map((release) => <ReleaseListRow key={release.id} release={release} onSelect={onSelect} />)}
+          </div>
+        ))}
         {!upcoming.length ? <EmptyState icon={CalendarDays} title="No upcoming releases" detail="Sync public sources or add the next known drop manually." /> : null}
       </div>
     </section>
@@ -10406,20 +10484,26 @@ function ReleaseUpcomingList({ releases, onSelect }: { releases: ReleaseDTO[]; o
 }
 
 function ReleaseListRow({ release, onSelect }: { release: ReleaseDTO; onSelect: (release: ReleaseDTO) => void }) {
+  const releaseDate = calendarDateParts(release.officialReleaseDate);
   return (
     <button className="release-list-row" type="button" onClick={() => onSelect(release)}>
       <div className="release-list-date">
-        <strong>{releaseDateLabel(release)}</strong>
-        <span>{releaseTimingLabel(release)}</span>
+        <strong>{releaseDate ? releaseDate.day : "TBD"}</strong>
+        <span>{releaseDate ? `${releaseDate.weekday} ${shortDate(release.officialReleaseDate)}` : "Needs date"}</span>
+      </div>
+      <div className="release-list-image">
+        {release.productImage ? <Image src={release.productImage} alt="" width={56} height={56} unoptimized /> : <CalendarDays size={22} />}
       </div>
       <div className="release-list-main">
         <strong>{release.setName}</strong>
         <span>{release.productType || release.productTypes.split(",")[0]} - {release.region} - {releaseSourceLabel(release)}</span>
+        <small>{releaseTimingLabel(release)}</small>
       </div>
       <div className="release-list-badges">
-        <span className={`light-pill ${statusTone(release.priority)}`}>{release.priority}</span>
+        <span className="light-pill">{releaseSourceBadgeLabel(release)}</span>
         <span className={`light-pill ${statusTone(release.confidence)}`}>{release.confidence} confidence</span>
-        {release.needsReview ? <span className="light-pill warn">Needs Review</span> : null}
+        <span className={`light-pill ${release.needsReview ? "warn" : releaseStatusLabel(release) === "Released" ? "" : "good"}`}>{releaseStatusLabel(release)}</span>
+        <span className="mini-action">View Details</span>
       </div>
     </button>
   );

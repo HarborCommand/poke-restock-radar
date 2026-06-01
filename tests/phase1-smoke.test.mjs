@@ -535,7 +535,7 @@ test("Phase 4 release priority engine fields exist", () => {
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   assert.match(app, /Dashboard summary/);
   assert.match(app, /Pokemon TCG Release Calendar/);
-  assert.match(app, /release-month-grid/);
+  assert.match(app, /release-year-timeline/);
   assert.match(app, /High priority only/);
 });
 
@@ -560,11 +560,14 @@ test("Release Radar source-aware calendar is wired", () => {
   assert.match(app, /Sync Public Sources/);
   assert.match(app, /Needs review \/ TBD/);
   assert.match(app, /ReleaseDetailModal/);
+  assert.match(app, /release-sync-table/);
+  assert.match(app, /Show empty months/);
 
   const sync = readFileSync(join(root, "src", "lib", "release-sync.ts"), "utf8");
   assert.match(sync, /Pokemon TCG API/);
   assert.match(sync, /reviewQueue/);
   assert.match(sync, /POKEMON_RELEASE_FEED_URLS/);
+  assert.match(sync, /DEFAULT_ICV2_CALENDAR_URLS/);
   assert.match(sync, /date_changed/);
 });
 
