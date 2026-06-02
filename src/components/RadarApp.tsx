@@ -185,6 +185,7 @@ const deprecatedUiTabs = new Set<Tab>(["field", "products", "stores", "cards", "
 const deprecatedTrackerTabs = new Set<Tab>(["onlineDrops", "checkStock", "watchlist", "keywords"]);
 const deprecatedAnalyticsTabs = new Set<Tab>(["profitLoss", "trends"]);
 const visibleTabIds = new Set<Tab>(tabs.map((tab) => tab.id));
+const INVENTORY_PREFILL_STORAGE_KEY = "poke-radar-inventory-prefill";
 
 const productStatuses: ProductStatus[] = [
   "UNAVAILABLE",
@@ -2275,6 +2276,217 @@ function alertTargetTab(alert: DashboardDTO["alerts"][number]): Tab {
   return "alerts";
 }
 
+type TrackerAlertView = "live" | "check" | "watchlist" | "keywords" | "history" | "scanner" | "system";
+
+type TrackerAlertCategory =
+  | "tracker_online_drop"
+  | "tracker_local_stock"
+  | "tracker_keyword_match"
+  | "tracker_sku_match"
+  | "tracker_price_change"
+  | "tracker_preorder_live"
+  | "tracker_add_to_cart"
+  | "tracker_sold_out"
+  | "inventory_low_stock"
+  | "inventory_market_missing"
+  | "order_paid"
+  | "order_needs_fulfillment"
+  | "system_warning"
+  | "system_error"
+  | "deprecated_local_store";
+
+type TrackerAlertRecord = {
+  alert: DashboardDTO["alerts"][number];
+  product: ProductDTO | null;
+  category: TrackerAlertCategory;
+  channel: string;
+  statusLabel: string;
+  statusTone: string;
+  isDeprecated: boolean;
+  isSystem: boolean;
+  isMuted: boolean;
+  duplicateKey: string;
+};
+
+const trackerViews: Array<{ id: TrackerAlertView; label: string; icon: typeof Radar }> = [
+  { id: "live", label: "Live Drops", icon: Bell },
+  { id: "check", label: "Check Stock", icon: Search },
+  { id: "watchlist", label: "My Watchlist", icon: Eye },
+  { id: "keywords", label: "Keywords", icon: Tags },
+  { id: "history", label: "Alert History", icon: History },
+  { id: "scanner", label: "Scanner Status", icon: Radar },
+  { id: "system", label: "System Alerts", icon: AlertTriangle }
+];
+
+const trackerChannelFilters = ["All", "Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center", "High Stock", "Preorders", "Price Drops"];
+const trackerDefaultPositiveKeywords = ["Chaos Rising", "Perfect Order", "ETB", "Booster Bundle", "Premium Collection"];
+const trackerDefaultNegativeKeywords = ["sleeves", "plush", "jumbo", "Japanese", "damaged"];
+
+function trackerAlertText(alert: DashboardDTO["alerts"][number], product?: ProductDTO | null) {
+  return `${alert.title} ${alert.reason} ${alert.explanation || ""} ${alert.entityType} ${alert.actionUrl || ""} ${product?.name || ""} ${
+    product?.retailerName || ""
+  } ${product?.sku || ""} ${product?.upc || ""} ${product?.dpci || ""} ${product?.retailerProductId || ""}`.toLowerCase();
+}
+
+function trackerKeywordMatch(text: string, positiveKeywords: string[], negativeKeywords: string[]) {
+  const normalized = text.toLowerCase();
+  const blockedBy = negativeKeywords.find((keyword) => keyword.trim() && normalized.includes(keyword.trim().toLowerCase())) || null;
+  if (blockedBy) return { matched: false, blockedBy, matchedBy: null };
+  const matchedBy = positiveKeywords.find((keyword) => keyword.trim() && normalized.includes(keyword.trim().toLowerCase())) || null;
+  return { matched: Boolean(matchedBy), blockedBy: null, matchedBy };
+}
+
+function trackerSkuMatch(text: string, product: ProductDTO | null) {
+  if (!product) return false;
+  const normalized = text.toLowerCase();
+  return [product.sku, product.upc, product.dpci, product.retailerProductId]
+    .filter(Boolean)
+    .some((identifier) => normalized.includes(String(identifier).toLowerCase()));
+}
+
+function trackerMuted(alert: DashboardDTO["alerts"][number]) {
+  if (alert.suppressedAt) return true;
+  if (!alert.cooldownUntil) return false;
+  const cooldown = new Date(alert.cooldownUntil).getTime();
+  return Number.isFinite(cooldown) && cooldown > Date.now();
+}
+
+function trackerDuplicateCooldownKey(alert: DashboardDTO["alerts"][number], product: ProductDTO | null) {
+  return alert.dedupeKey || `${alert.entityType}:${alert.entityId || product?.id || alert.title}:${alert.actionUrl || ""}`;
+}
+
+function trackerProductImage(product: ProductDTO | null) {
+  return product?.liveImageUrl || product?.imageUrl || null;
+}
+
+function trackerProductPrice(product: ProductDTO | null) {
+  if (!product) return null;
+  if (product.livePrice !== null && product.livePriceVerifiedAt) return product.livePrice;
+  return product.retailPrice;
+}
+
+function trackerProductIdentifier(product: ProductDTO | null) {
+  if (!product) return "No saved SKU";
+  return product.upc || product.sku || product.dpci || product.retailerProductId || "Needs SKU/UPC";
+}
+
+function trackerFindProduct(alert: DashboardDTO["alerts"][number], products: ProductDTO[]) {
+  if (alert.entityType === "PRODUCT" && alert.entityId) {
+    const byId = products.find((product) => product.id === alert.entityId);
+    if (byId) return byId;
+  }
+  const text = trackerAlertText(alert);
+  return (
+    products.find((product) => {
+      const identifiers = [product.url, product.verifiedFinalUrl, product.sku, product.upc, product.dpci, product.retailerProductId]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+      return identifiers.some((identifier) => identifier.length > 4 && text.includes(identifier));
+    }) ||
+    products.find((product) => {
+      const name = product.name.toLowerCase();
+      return name.length > 8 && text.includes(name.slice(0, Math.min(name.length, 45)));
+    }) ||
+    null
+  );
+}
+
+function trackerChannel(product: ProductDTO | null, alert: DashboardDTO["alerts"][number]) {
+  const text = trackerAlertText(alert, product);
+  const retailer = (product?.retailerName || "").toLowerCase();
+  const source = retailer || text;
+  if (source.includes("target")) {
+    if (text.includes("high stock") || text.includes("large stock") || alert.score >= 75) return "Target Big Stock";
+    return "Target Small Stock";
+  }
+  if (source.includes("walmart")) return "Walmart";
+  if (source.includes("best buy")) return "Best Buy";
+  if (source.includes("amazon")) return "Amazon";
+  if (source.includes("gamestop")) return "GameStop";
+  if (source.includes("pokemon center") || source.includes("pokemoncenter")) return "Pokemon Center";
+  if (source.includes("ebay")) return "eBay Deals";
+  return "Other Pokemon";
+}
+
+function trackerStatus(product: ProductDTO | null, alert: DashboardDTO["alerts"][number]) {
+  const text = trackerAlertText(alert, product);
+  const status = product?.liveStockStatus || product?.stockStatus || null;
+  if (text.includes("price")) return { label: "Price Drop", tone: "watch" };
+  if (text.includes("preorder") || status === "PREORDER_LIVE") return { label: "Preorder Live", tone: "good" };
+  if (text.includes("add to cart") || status === "ADD_TO_CART_AVAILABLE") return { label: "Add To Cart", tone: "good" };
+  if (text.includes("sold out") || status === "SOLD_OUT") return { label: "Sold Out", tone: "muted" };
+  if (text.includes("high stock") || alert.score >= 80) return { label: "High Stock", tone: "good" };
+  if (status === "IN_STOCK") return { label: "In Stock", tone: "good" };
+  if (status === "PRICE_CHANGE") return { label: "Price Drop", tone: "watch" };
+  if (status === "PAGE_UPDATED") return { label: "Page Updated", tone: "watch" };
+  return { label: alert.priority === "HIGH" ? "In Stock" : "Watch", tone: statusTone(alert.priority) };
+}
+
+function trackerCategory(alert: DashboardDTO["alerts"][number], product: ProductDTO | null): TrackerAlertCategory {
+  if (isDeprecatedLocalStoreAlert(alert)) return "deprecated_local_store";
+  const text = trackerAlertText(alert, product);
+  if (isTestDashboardAlert(alert)) return "system_warning";
+  if (text.includes("error") || text.includes("failed") || text.includes("webhook") || text.includes("parser")) return "system_error";
+  if (text.includes("blocked") || text.includes("captcha") || text.includes("cron") || text.includes("provider") || text.includes("not configured") || text.includes("sync")) {
+    return "system_warning";
+  }
+  if (alert.entityType === "ORDER") return text.includes("paid") || text.includes("completed") ? "order_paid" : "order_needs_fulfillment";
+  if (alert.entityType === "INVENTORY") return text.includes("market") || text.includes("price") ? "inventory_market_missing" : "inventory_low_stock";
+  if (alert.entityType === "RELEASE") return text.includes("preorder") ? "tracker_preorder_live" : "system_warning";
+  if (alert.entityType === "PRODUCT" || product || alert.actionUrl) {
+    if (text.includes("sold out")) return "tracker_sold_out";
+    if (text.includes("price")) return "tracker_price_change";
+    if (text.includes("preorder")) return "tracker_preorder_live";
+    if (text.includes("add to cart")) return "tracker_add_to_cart";
+    if (trackerSkuMatch(text, product)) return "tracker_sku_match";
+    return "tracker_online_drop";
+  }
+  return "system_warning";
+}
+
+function trackerClassifyAlert(alert: DashboardDTO["alerts"][number], products: ProductDTO[]): TrackerAlertRecord {
+  const product = trackerFindProduct(alert, products);
+  const category = trackerCategory(alert, product);
+  const status = trackerStatus(product, alert);
+  const isDeprecated = category === "deprecated_local_store";
+  const isSystem = category === "system_warning" || category === "system_error" || isDeprecated;
+  return {
+    alert,
+    product,
+    category,
+    channel: trackerChannel(product, alert),
+    statusLabel: isDeprecated ? "Deprecated" : status.label,
+    statusTone: isDeprecated ? "muted" : status.tone,
+    isDeprecated,
+    isSystem,
+    isMuted: trackerMuted(alert),
+    duplicateKey: trackerDuplicateCooldownKey(alert, product)
+  };
+}
+
+function trackerIsLiveDrop(record: TrackerAlertRecord) {
+  return (
+    !record.isSystem &&
+    [
+      "tracker_online_drop",
+      "tracker_keyword_match",
+      "tracker_sku_match",
+      "tracker_price_change",
+      "tracker_preorder_live",
+      "tracker_add_to_cart",
+      "tracker_sold_out"
+    ].includes(record.category)
+  );
+}
+
+function trackerChannelMatches(record: TrackerAlertRecord, filter: string) {
+  if (filter === "All") return true;
+  if (filter === "High Stock") return record.statusLabel === "High Stock";
+  if (filter === "Preorders") return record.category === "tracker_preorder_live";
+  if (filter === "Price Drops") return record.category === "tracker_price_change";
+  return record.channel.toLowerCase().includes(filter.toLowerCase());
+}
+
 function AreaSetupPanel({
   dashboard,
   busy,
@@ -4175,6 +4387,22 @@ function InventoryPanel({
     },
     [openPurchaseFlow]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.sessionStorage.getItem(INVENTORY_PREFILL_STORAGE_KEY);
+    if (!raw) return;
+    window.sessionStorage.removeItem(INVENTORY_PREFILL_STORAGE_KEY);
+    try {
+      const prefill = JSON.parse(raw) as InventoryPurchasePrefill;
+      queueMicrotask(() => {
+        setView("items");
+        openPurchaseFlow("", prefill);
+      });
+    } catch {
+      window.sessionStorage.removeItem(INVENTORY_PREFILL_STORAGE_KEY);
+    }
+  }, [openPurchaseFlow]);
 
   async function downloadInventoryPdf(mode: "client" | "internal") {
     await runAction(
@@ -12583,8 +12811,6 @@ function EditableCard({
 function AlertsPanel({
   dashboard,
   busy,
-  busyLabel,
-  submit,
   runAction,
   setActiveTab
 }: {
@@ -12595,107 +12821,471 @@ function AlertsPanel({
   runAction: ActionHandler;
   setActiveTab: (tab: Tab) => void;
 }) {
-  const visibleAlerts = dashboard.alerts.filter((alert) => !isDeprecatedLocalStoreAlert(alert));
-  const deprecatedCount = dashboard.alerts.length - visibleAlerts.length;
+  const [view, setView] = useState<TrackerAlertView>("live");
+  const [channelFilter, setChannelFilter] = useState("All");
+  const [showArchived, setShowArchived] = useState(false);
+  const [positiveKeywords, setPositiveKeywords] = useState(trackerDefaultPositiveKeywords);
+  const [negativeKeywords, setNegativeKeywords] = useState(trackerDefaultNegativeKeywords);
+  const [keywordDraft, setKeywordDraft] = useState("");
+  const [negativeKeywordDraft, setNegativeKeywordDraft] = useState("");
+  const [keywordTest, setKeywordTest] = useState("Chaos Rising booster bundle Target 196214154155");
+  const trackerAlerts = useMemo(
+    () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
+    [dashboard.alerts, dashboard.products]
+  );
+  const liveDrops = trackerAlerts
+    .filter((record) => trackerIsLiveDrop(record))
+    .filter((record) => !record.isDeprecated)
+    .filter((record) => !isTestDashboardAlert(record.alert))
+    .filter((record) => trackerChannelMatches(record, channelFilter))
+    .sort((a, b) => new Date(b.alert.timestamp).getTime() - new Date(a.alert.timestamp).getTime());
+  const historyAlerts = trackerAlerts
+    .filter((record) => (showArchived ? true : !record.isDeprecated))
+    .sort((a, b) => new Date(b.alert.timestamp).getTime() - new Date(a.alert.timestamp).getTime());
+  const systemAlerts = trackerAlerts
+    .filter((record) => record.isSystem || record.alert.entityType === "SYSTEM")
+    .filter((record) => (showArchived ? true : !record.isDeprecated));
+  const watchProducts = dashboard.products.filter((product) => product.monitorEnabled && !product.archivedAt);
+  const exactProducts = watchProducts.filter((product) => product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED");
+  const needsExactLink = watchProducts.length - exactProducts.length;
+  const blockedChecks = dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length;
+  const failedChecks = dashboard.monitorLogs.filter((log) => log.status === "ERROR").length;
+  const deprecatedCount = trackerAlerts.filter((record) => record.isDeprecated).length;
+  const keywordResult = trackerKeywordMatch(keywordTest, positiveKeywords, negativeKeywords);
+
+  function markAlert(alert: DashboardDTO["alerts"][number], action: "read" | "false_positive", success: string) {
+    return runAction(
+      `${action === "false_positive" ? "Feedback" : "Reading"} alert ${alert.id}`,
+      () =>
+        requestJson("/api/radar/alerts", {
+          method: "PATCH",
+          body: JSON.stringify({ alertId: alert.id, action })
+        }),
+      { reload: false, success }
+    );
+  }
+
+  function openAlertInventoryPrefill(record: TrackerAlertRecord) {
+    const { product, alert } = record;
+    const prefill: InventoryPurchasePrefill = {
+      itemName: product?.name || alert.title,
+      brand: "Pokemon",
+      category: inventoryCategoryFromLookup(product?.productType || product?.setName || product?.name || alert.title),
+      setName: product?.setName || product?.releaseName || null,
+      msrp: trackerProductPrice(product),
+      sku: product?.sku || product?.retailerProductId || null,
+      productId: product?.id || null,
+      retailer: product?.retailerName || record.channel,
+      exactProductUrl: product?.verifiedFinalUrl || product?.url || alert.actionUrl,
+      imageUrl: trackerProductImage(product),
+      source: "Tracker Alert",
+      upc: product?.upc || undefined
+    };
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(INVENTORY_PREFILL_STORAGE_KEY, JSON.stringify(prefill));
+    }
+    setActiveTab("inventory");
+  }
+
+  function addPositiveKeyword() {
+    const keyword = keywordDraft.trim();
+    if (!keyword) return;
+    setPositiveKeywords((current) => Array.from(new Set([...current, keyword])));
+    setKeywordDraft("");
+  }
+
+  function addNegativeKeyword() {
+    const keyword = negativeKeywordDraft.trim();
+    if (!keyword) return;
+    setNegativeKeywords((current) => Array.from(new Set([...current, keyword])));
+    setNegativeKeywordDraft("");
+  }
+
+  function renderLiveDropCard(record: TrackerAlertRecord) {
+    const { alert, product } = record;
+    const price = trackerProductPrice(product);
+    const goUrl = alert.actionUrl || product?.verifiedFinalUrl || product?.url || "";
+    const sku = product?.sku || product?.retailerProductId || "Unknown";
+    const upc = product?.upc || "Unknown";
+    const dpci = product?.dpci || "Unknown";
+    const confidence = product?.liveConfidenceScore ?? alert.score;
+    return (
+      <article className={alert.read ? "tracker-drop-card is-read" : "tracker-drop-card"} key={alert.id}>
+        <div className="tracker-drop-media">
+          <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product?.name || alert.title} />
+        </div>
+        <div className="tracker-drop-body">
+          <div className="tracker-drop-top">
+            <div>
+              <span className="tracker-channel">{record.channel}</span>
+              <h3>{product?.name || alert.title}</h3>
+              <p>{alert.reason}</p>
+            </div>
+            <div className="tracker-drop-badges">
+              <span className={`chip ${record.statusTone}`}>{record.statusLabel}</span>
+              <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
+            </div>
+          </div>
+          <div className="tracker-drop-meta" aria-label="Alert metadata">
+            <span><b>Price</b>{price === null ? "Price unknown" : money(price)}</span>
+            <span><b>Stock</b>{record.statusLabel.includes("Stock") ? record.statusLabel : product?.liveStockStatus ? formatStatus(product.liveStockStatus) : "Unknown"}</span>
+            <span><b>Limit</b>Unknown</span>
+            <span><b>SKU</b>{sku}</span>
+            <span><b>UPC</b>{upc}</span>
+            <span><b>DPCI / ASIN</b>{dpci}</span>
+            <span><b>Detected</b>{relativeTime(alert.timestamp)}</span>
+            <span><b>Confidence</b>{confidence ?? 0}%</span>
+          </div>
+          <div className="tracker-drop-actions">
+            {goUrl ? (
+              <a className="mini-action solid" href={goUrl} target="_blank" rel="noreferrer">
+                Go Buy <ExternalLink size={13} />
+              </a>
+            ) : null}
+            <button className="mini-action" type="button" onClick={() => openAlertInventoryPrefill(record)}>
+              <ShoppingBag size={13} />
+              Add to Inventory
+            </button>
+            <button className="mini-action" type="button" onClick={() => setView("watchlist")}>
+              <Eye size={13} />
+              Watch
+            </button>
+            <button className="mini-action" disabled={busy} type="button" onClick={() => markAlert(alert, "read", "Alert muted for now")}>
+              <WifiOff size={13} />
+              Mute
+            </button>
+            <button className="mini-action" disabled={busy || alert.read} type="button" onClick={() => markAlert(alert, "read", "Alert marked handled")}>
+              <Check size={13} />
+              Got It
+            </button>
+            <button className="mini-action" disabled={busy} type="button" onClick={() => markAlert(alert, "read", "Missed feedback saved")}>
+              Missed
+            </button>
+            <button className="mini-action" disabled={busy} type="button" onClick={() => markAlert(alert, "read", "Sold-out feedback saved")}>
+              Sold Out
+            </button>
+            <button className="mini-action danger" disabled={busy || Boolean(alert.falsePositiveAt)} type="button" onClick={() => markAlert(alert, "false_positive", "Bad-alert feedback saved")}>
+              <X size={13} />
+              Bad Alert
+            </button>
+          </div>
+          <details className="tracker-drop-details">
+            <summary>View Details</summary>
+            <dl>
+              <div><dt>Category</dt><dd>{formatStatus(record.category)}</dd></div>
+              <div><dt>Duplicate key</dt><dd>{record.duplicateKey}</dd></div>
+              <div><dt>Matched exact product</dt><dd>{product ? productVerificationLabel(product.verificationStatus) : "No product match"}</dd></div>
+              <div><dt>Why:</dt><dd>{alert.explanation || "No parser notes saved."}</dd></div>
+            </dl>
+          </details>
+        </div>
+      </article>
+    );
+  }
+
   return (
-    <section className="alerts-page">
+    <section className="alerts-page tracker-alerts-page">
       <section className="inventory-page-header inventory-ops-header alerts-page-header">
         <div>
-          <h2>Alerts</h2>
-          <p>Restock, inventory, order, and system notifications.</p>
+          <h2>Tracker Alerts</h2>
+          <p>Live drops, watchlist matches, keyword hits, scanner status, and clean alert history.</p>
           <span className="sr-only">Alert History Analytics</span>
+        </div>
+        <div className="inventory-header-actions">
+          <button className="mini-action" type="button" onClick={() => setView("scanner")}>
+            <Radar size={14} />
+            Scanner Status
+          </button>
+          <button className="mini-action solid" type="button" onClick={() => setActiveTab("inventory")}>
+            <Plus size={14} />
+            Add Inventory
+          </button>
         </div>
       </section>
       <section className="inventory-kpi-grid alerts-kpi-grid">
-        <InventoryKpiCard label="All Alerts" value={String(dashboard.alertAnalytics.totalAlerts)} detail="All history" />
+        <InventoryKpiCard label="Live Drops" value={String(liveDrops.length)} detail="Online feed" tone={liveDrops.length ? "good" : "neutral"} />
+        <InventoryKpiCard label="Watchlist" value={String(watchProducts.length)} detail={`${exactProducts.length} exact products`} />
         <InventoryKpiCard label="Unread" value={String(dashboard.alertAnalytics.unreadAlerts)} detail="Need review" tone={dashboard.alertAnalytics.unreadAlerts ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Urgent" value={String(dashboard.alertAnalytics.highPriorityAlerts)} detail="High priority" tone={dashboard.alertAnalytics.highPriorityAlerts ? "bad" : "neutral"} />
-        <InventoryKpiCard label="False Positives" value={String(dashboard.alertAnalytics.falsePositiveAlerts)} detail="Feedback loop" tone={dashboard.alertAnalytics.falsePositiveAlerts ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Avg Priority" value={String(dashboard.alertAnalytics.averageScore)} detail="0-100 score" />
+        <InventoryKpiCard label="System Alerts" value={String(systemAlerts.length)} detail="Provider and cron warnings" tone={systemAlerts.length ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Deprecated Hidden" value={String(deprecatedCount)} detail="Local store history preserved" tone="neutral" />
       </section>
-      {deprecatedCount ? (
-        <section className="safety-strip archived-local-alerts">
-          <ArchiveIcon />
-          <span>{deprecatedCount} deprecated local store alert{deprecatedCount === 1 ? "" : "s"} hidden by default. Historical data is preserved for the future tracker rebuild.</span>
+      <section className="tracker-nav-card">
+        <div className="tracker-view-tabs" role="tablist" aria-label="Tracker alert sections">
+          {trackerViews.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button className={view === item.id ? "active" : ""} key={item.id} type="button" onClick={() => setView(item.id)}>
+                <Icon size={15} />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        <label className="tracker-archive-toggle">
+          <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.currentTarget.checked)} />
+          Show archived/deprecated alerts
+        </label>
+      </section>
+
+      {view === "live" ? (
+        <>
+          <section className="tracker-filter-bar" aria-label="Channel filters">
+            {trackerChannelFilters.map((filter) => (
+              <button className={channelFilter === filter ? "active" : ""} key={filter} type="button" onClick={() => setChannelFilter(filter)}>
+                {filter}
+              </button>
+            ))}
+          </section>
+          <section className="tracker-feed">
+            <div className="panel-header">
+              <div>
+                <p className="eyeline">Discord-style feed</p>
+                <h2>Live Drops</h2>
+              </div>
+              <span className="chip good">Manual checkout only</span>
+            </div>
+            {liveDrops.length ? (
+              liveDrops.map(renderLiveDropCard)
+            ) : (
+              <EmptyState icon={Bell} title="No live drops right now" detail="Exact online restock alerts will appear here. Deprecated local store alerts stay hidden." />
+            )}
+          </section>
+        </>
+      ) : null}
+
+      {view === "check" ? (
+        <section className="tracker-section-card">
+          <div className="panel-header">
+            <div>
+              <p className="eyeline">Manual stock check</p>
+              <h2>Check Stock</h2>
+            </div>
+            <span className="chip watch">Source required</span>
+          </div>
+          <div className="safety-strip tracker-source-missing">
+            <AlertTriangle size={16} />
+            <span>Stock source not configured yet. Configure a trusted stock provider before this can return live local availability. No fake local stock data is shown.</span>
+          </div>
+          <div className="tracker-check-grid">
+            <TextInput name="zip" label="ZIP code" placeholder="33132" />
+            <SelectInput name="radius" label="Radius" defaultValue="25" options={["5", "10", "25", "50", "75"].map((value) => ({ value, label: `${value} miles` }))} />
+            <SelectInput name="retailer" label="Retailer" defaultValue="Target" options={["Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center"].map(optionFromString)} />
+            <TextInput name="identifier" label="Product / SKU / UPC / DPCI / ASIN" placeholder="196214154155" wide />
+            <button className="mini-action solid" disabled type="button">
+              <Search size={14} />
+              Check Stock
+            </button>
+          </div>
         </section>
       ) : null}
-      <AlertCalibrationPanel dashboard={dashboard} setActiveTab={setActiveTab} />
-      <PanelHeader title="Alert History" />
-      <div className="table-list alerts-table">
-        {visibleAlerts.length ? (
-          visibleAlerts.map((alert) => {
-            const saveLabel = `Reading alert ${alert.id}`;
-            return (
-              <form
-                className={alert.read ? "table-row read" : "table-row"}
-                key={alert.id}
-                onSubmit={(event) =>
-                  submit(
-                    event,
-                    saveLabel,
-                    () =>
-                      requestJson("/api/radar/alerts", {
-                        method: "PATCH",
-                        body: JSON.stringify({ alertId: alert.id })
-                      }),
-                    { reset: false }
-                  )
-                }
-              >
-                <span className={`chip ${statusTone(alert.priority)}`}>{alert.priority}</span>
-                <strong>{alert.title}</strong>
-                <span>
-                  {alert.reason}
-                  {alert.explanation ? ` Why: ${alert.explanation}` : ""}
+
+      {view === "watchlist" ? (
+        <section className="tracker-section-card">
+          <div className="panel-header">
+            <div>
+              <p className="eyeline">Exact product monitor</p>
+              <h2>My Watchlist</h2>
+            </div>
+            <span className="chip muted">{needsExactLink} need exact link</span>
+          </div>
+          <div className="tracker-watch-grid">
+            {watchProducts.length ? (
+              watchProducts.map((product) => (
+                <article className="tracker-watch-card" key={product.id}>
+                  <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
+                  <div>
+                    <h3>{product.name}</h3>
+                    <p>{product.retailerName} - {product.productType || product.setName || "Tracked product"}</p>
+                    <div className="tracker-watch-meta">
+                      <span>{trackerProductIdentifier(product)}</span>
+                      <span>{trackerProductPrice(product) === null ? "Price not verified" : money(trackerProductPrice(product))}</span>
+                      <span>{product.lastCheckedAt ? `Checked ${relativeTime(product.lastCheckedAt)}` : "Not checked yet"}</span>
+                    </div>
+                    <div className="tracker-drop-actions">
+                      <button className="mini-action" type="button" onClick={() => openAlertInventoryPrefill({ alert: { id: product.id, title: product.name, reason: "Watched product", priority: product.priority, timestamp: product.updatedAt, entityType: "PRODUCT", entityId: product.id, actionUrl: product.verifiedFinalUrl || product.url, read: false, score: product.priorityScore?.score ?? 0, dedupeKey: null, explanation: null, falsePositiveAt: null, suppressedAt: null, cooldownUntil: null }, product, category: "tracker_sku_match", channel: trackerChannel(product, { id: product.id, title: product.name, reason: "", priority: product.priority, timestamp: product.updatedAt, entityType: "PRODUCT", entityId: product.id, actionUrl: product.url, read: false, score: 0, dedupeKey: null, explanation: null, falsePositiveAt: null, suppressedAt: null, cooldownUntil: null }), statusLabel: product.liveStockStatus ? formatStatus(product.liveStockStatus) : formatStatus(product.stockStatus), statusTone: statusTone(product.liveStockStatus || product.stockStatus), isDeprecated: false, isSystem: false, isMuted: false, duplicateKey: product.id })}>
+                        <ShoppingBag size={13} />
+                        Add to Inventory
+                      </button>
+                      <button
+                        className="mini-action"
+                        disabled={busy}
+                        type="button"
+                        onClick={() =>
+                          runAction(`Checking product ${product.id}`, () => requestJson(`/api/radar/products/${product.id}/check`, { method: "POST" }), {
+                            success: "Product check finished"
+                          })
+                        }
+                      >
+                        <RefreshCw size={13} />
+                        Run Check Now
+                      </button>
+                    </div>
+                  </div>
+                  <span className={`chip ${verificationTone(product.verificationStatus)}`}>{productVerificationLabel(product.verificationStatus)}</span>
+                </article>
+              ))
+            ) : (
+              <EmptyState icon={Eye} title="No watched products" detail="Add exact retailer product URLs in Admin when you are ready to rebuild the product tracker." />
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {view === "keywords" ? (
+        <section className="tracker-section-card">
+          <div className="panel-header">
+            <div>
+              <p className="eyeline">Keyword subscriptions</p>
+              <h2>Keywords</h2>
+            </div>
+            <span className="chip good">UI-based tuning</span>
+          </div>
+          <div className="tracker-keyword-grid">
+            <div className="tracker-keyword-card">
+              <h3>Positive Keywords</h3>
+              <div className="tracker-chip-list">
+                {positiveKeywords.map((keyword) => (
+                  <button key={keyword} type="button" onClick={() => setPositiveKeywords((current) => current.filter((item) => item !== keyword))}>{keyword} <X size={12} /></button>
+                ))}
+              </div>
+              <div className="tracker-inline-control">
+                <input value={keywordDraft} onChange={(event) => setKeywordDraft(event.currentTarget.value)} placeholder="Add keyword" />
+                <button className="mini-action" type="button" onClick={addPositiveKeyword}>Add Keyword</button>
+              </div>
+            </div>
+            <div className="tracker-keyword-card">
+              <h3>Negative Keywords</h3>
+              <div className="tracker-chip-list">
+                {negativeKeywords.map((keyword) => (
+                  <button key={keyword} type="button" onClick={() => setNegativeKeywords((current) => current.filter((item) => item !== keyword))}>{keyword} <X size={12} /></button>
+                ))}
+              </div>
+              <div className="tracker-inline-control">
+                <input value={negativeKeywordDraft} onChange={(event) => setNegativeKeywordDraft(event.currentTarget.value)} placeholder="Ignore keyword" />
+                <button className="mini-action" type="button" onClick={addNegativeKeyword}>Add Ignore Word</button>
+              </div>
+            </div>
+            <div className="tracker-keyword-card">
+              <h3>Test Match</h3>
+              <textarea value={keywordTest} onChange={(event) => setKeywordTest(event.currentTarget.value)} />
+              <div className="tracker-keyword-result">
+                <span className={`chip ${keywordResult.matched ? "good" : keywordResult.blockedBy ? "bad" : "muted"}`}>
+                  {keywordResult.matched ? `Matched ${keywordResult.matchedBy}` : keywordResult.blockedBy ? `Suppressed by ${keywordResult.blockedBy}` : "No match"}
                 </span>
-                <span>{dateTime(alert.timestamp)}</span>
-                <div className="row-actions">
-                  <span className={`chip ${alert.score >= 75 ? "good" : alert.score >= 45 ? "watch" : "muted"}`}>
-                    Score {alert.score}
-                  </span>
-                  {alert.suppressedAt ? <span className="chip muted">Suppressed</span> : null}
-                  {alert.falsePositiveAt ? <span className="chip bad">False positive</span> : null}
-                  {alert.actionUrl ? (
-                    <a className="mini-action" href={alert.actionUrl} target="_blank" rel="noreferrer">
-                      Go <ExternalLink size={14} />
-                    </a>
+                <button className="mini-action" type="button" onClick={() => {
+                  setPositiveKeywords(trackerDefaultPositiveKeywords);
+                  setNegativeKeywords(trackerDefaultNegativeKeywords);
+                }}>
+                  Reset Keywords
+                </button>
+              </div>
+              <p>Matching checks retailer/channel subscriptions, positive keywords, negative keywords, SKU/UPC/DPCI/ASIN, mute rules, quiet hours, minimum confidence, and duplicate cooldown before alerts enter Live Drops.</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {view === "history" ? (
+        <section className="tracker-section-card">
+          <div className="panel-header">
+            <div>
+              <p className="eyeline">Preserved history</p>
+              <h2>Alert History</h2>
+            </div>
+            <span className="chip muted">{showArchived ? "Archived visible" : "Deprecated hidden"}</span>
+          </div>
+          <div className="tracker-history-list">
+            {historyAlerts.length ? (
+              historyAlerts.map((record) => (
+                <article className={record.alert.read ? "tracker-history-row read" : "tracker-history-row"} key={record.alert.id}>
+                  <span className={`chip ${record.statusTone}`}>{record.statusLabel}</span>
+                  <div>
+                    <strong>{record.alert.title}</strong>
+                    <p>{record.alert.reason}</p>
+                  </div>
+                  <span>{formatStatus(record.category)}</span>
+                  <span>{dateTime(record.alert.timestamp)}</span>
+                  {record.alert.actionUrl ? (
+                    <a className="mini-action" href={record.alert.actionUrl} target="_blank" rel="noreferrer">Go <ExternalLink size={13} /></a>
                   ) : null}
-                  {!alert.falsePositiveAt ? (
-                    <button
-                      className="mini-action"
-                      disabled={busy}
-                      type="button"
-                      onClick={() =>
-                        runAction(
-                          `False positive alert ${alert.id}`,
-                          () =>
-                            requestJson("/api/radar/alerts", {
-                              method: "PATCH",
-                              body: JSON.stringify({ alertId: alert.id, action: "false_positive" })
-                            }),
-                          { confirm: `Mark ${alert.title} as a false positive?`, success: "False-positive feedback saved" }
-                        )
-                      }
-                    >
-                      <X size={14} />
-                      False Positive
-                    </button>
-                  ) : null}
-                  {!alert.read ? (
-                    <button className="icon-button compact" disabled={busy} aria-label="Mark alert read" type="submit">
-                      {busyLabel === saveLabel ? <RefreshCw className="spin-slow" size={15} /> : <Check size={15} />}
-                    </button>
-                  ) : (
-                    <span className="chip muted">Read</span>
-                  )}
+                </article>
+              ))
+            ) : (
+              <EmptyState icon={History} title="No alert history" detail="Tracker and system alerts will be preserved here." />
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {view === "scanner" ? (
+        <section className="tracker-section-card">
+          <div className="panel-header">
+            <div>
+              <p className="eyeline">Monitor health</p>
+              <h2>Scanner Status</h2>
+            </div>
+            <span className={`chip ${dashboard.scannerStatus.cronActive ? "good" : "watch"}`}>{dashboard.scannerStatus.cronActive ? "Cron Active" : "Cron Paused"}</span>
+          </div>
+          <div className="tracker-scanner-grid">
+            <DetailStat label="Active monitors" value={String(dashboard.scannerStatus.activeProductsScanned)} />
+            <DetailStat label="Last scan" value={relativeTime(dashboard.scannerStatus.lastScanTime)} />
+            <DetailStat label="Next scan" value={relativeTime(dashboard.scannerStatus.nextScanEstimate)} />
+            <DetailStat label="Alerts today" value={String(dashboard.scannerStatus.liveRestocksDetectedToday)} tone="good" />
+            <DetailStat label="Blocked checks" value={String(blockedChecks)} tone="neutral" />
+            <DetailStat label="Failed checks" value={String(failedChecks)} tone={failedChecks ? "bad" : "neutral"} />
+            <DetailStat label="Exact products verified" value={String(exactProducts.length)} />
+            <DetailStat label="Need exact link" value={String(needsExactLink)} tone={needsExactLink ? "bad" : "good"} />
+            <DetailStat label="Discovery pending" value={String(dashboard.scannerStatus.newFindsPendingReview)} />
+          </div>
+          <div className="tracker-monitor-log-list">
+            {dashboard.monitorLogs.slice(0, 8).map((log) => (
+              <article key={log.id}>
+                <span className={`chip ${statusTone(log.status)}`}>{formatStatus(log.status)}</span>
+                <strong>{log.productName || log.runType}</strong>
+                <span>{log.changeSummary || log.reason || log.error || "No parser detail saved."}</span>
+                <time>{relativeTime(log.startedAt)}</time>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {view === "system" ? (
+        <section className="tracker-section-card">
+          <div className="panel-header">
+            <div>
+              <p className="eyeline">System and archived notices</p>
+              <h2>System Alerts</h2>
+            </div>
+            <span className="chip watch">Separated from drops</span>
+          </div>
+          <div className="tracker-system-list">
+            {dashboard.dataQualityWarnings.map((warning) => (
+              <article key={warning.id}>
+                <span className={`chip ${statusTone(warning.severity)}`}>{warning.severity}</span>
+                <div>
+                  <strong>{warning.title}</strong>
+                  <p>{warning.detail}</p>
                 </div>
-              </form>
-            );
-          })
-        ) : (
-          <EmptyState icon={Bell} title="No active alerts yet" detail="Inventory, order, release, and market alerts will appear here." />
-        )}
-      </div>
+              </article>
+            ))}
+            {systemAlerts.length ? (
+              systemAlerts.map((record) => (
+                <article key={record.alert.id}>
+                  <span className={`chip ${record.statusTone}`}>{record.statusLabel}</span>
+                  <div>
+                    <strong>{record.alert.title}</strong>
+                    <p>{record.alert.reason}</p>
+                  </div>
+                  {record.isDeprecated ? <span className="chip muted">Deprecated</span> : null}
+                </article>
+              ))
+            ) : !dashboard.dataQualityWarnings.length ? (
+              <EmptyState icon={ShieldCheck} title="No system alerts" detail="Provider, cron, parser, push, and archived tracker notices will appear here." />
+            ) : null}
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

@@ -277,3 +277,79 @@ test("public storefront does not expose internal market or profit data", () => {
   assert.doesNotMatch(dtoBlock, /marketProvider|currentMarketEstimate|marketProfitLoss|costBasis|roiPercent/);
   assert.doesNotMatch(storefront, /currentMarketEstimate|marketProfitLoss|TCGCSV|ROI|cost basis/i);
 });
+
+test("alerts tab is rebuilt as a Discord-style tracker command center", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+
+  for (const section of ["Live Drops", "Check Stock", "My Watchlist", "Keywords", "Alert History", "Scanner Status", "System Alerts"]) {
+    assert.match(alertsPanel, new RegExp(section), `missing tracker section ${section}`);
+  }
+
+  assert.match(alertsPanel, /Discord-style feed/);
+  assert.match(alertsPanel, /Go Buy/);
+  assert.match(alertsPanel, /Add to Inventory/);
+  assert.match(alertsPanel, /Got It/);
+  assert.match(alertsPanel, /Missed/);
+  assert.match(alertsPanel, /Sold Out/);
+  assert.match(alertsPanel, /Bad Alert/);
+  assert.doesNotMatch(alertsPanel, /AlertCalibrationPanel/);
+  assert.match(app, /<AlertCalibrationPanel dashboard=\{dashboard\} setActiveTab=\{setActiveTab\}/);
+});
+
+test("tracker alert categories and archived local store cleanup are wired", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+
+  for (const category of [
+    "tracker_online_drop",
+    "tracker_local_stock",
+    "tracker_keyword_match",
+    "tracker_sku_match",
+    "tracker_price_change",
+    "tracker_preorder_live",
+    "tracker_add_to_cart",
+    "tracker_sold_out",
+    "inventory_low_stock",
+    "inventory_market_missing",
+    "order_paid",
+    "order_needs_fulfillment",
+    "system_warning",
+    "system_error",
+    "deprecated_local_store"
+  ]) {
+    assert.match(app, new RegExp(category), `missing category ${category}`);
+  }
+
+  assert.match(app, /Show archived\/deprecated alerts/);
+  assert.match(app, /deprecated local store/i);
+  assert.match(app, /Deprecated Hidden/);
+  assert.match(app, /trackerIsLiveDrop/);
+  assert.match(app, /record\.isSystem/);
+});
+
+test("tracker matching helpers cover keywords, identifiers, mute, duplicate cooldown, and feedback", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+
+  assert.match(app, /function trackerKeywordMatch/);
+  assert.match(app, /blockedBy/);
+  assert.match(app, /function trackerSkuMatch/);
+  assert.match(app, /product\.sku, product\.upc, product\.dpci, product\.retailerProductId/);
+  assert.match(app, /function trackerMuted/);
+  assert.match(app, /function trackerDuplicateCooldownKey/);
+  assert.match(app, /markAlert\(alert, "false_positive"/);
+  assert.match(app, /Alert muted for now/);
+  assert.match(app, /Bad-alert feedback saved/);
+});
+
+test("alerts Check Stock avoids fake local stock and inventory handoff is wired", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+
+  assert.match(alertsPanel, /Stock source not configured yet/);
+  assert.match(alertsPanel, /No fake local stock data is shown/);
+  assert.doesNotMatch(alertsPanel, /Stock: 10/);
+  assert.match(app, /INVENTORY_PREFILL_STORAGE_KEY/);
+  assert.match(app, /window\.sessionStorage\.setItem\(INVENTORY_PREFILL_STORAGE_KEY/);
+  assert.match(app, /window\.sessionStorage\.getItem\(INVENTORY_PREFILL_STORAGE_KEY\)/);
+  assert.match(app, /source: "Tracker Alert"/);
+});
