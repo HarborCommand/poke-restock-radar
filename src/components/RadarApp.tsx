@@ -84,6 +84,7 @@ import type {
   InvestmentReportItemDTO,
   Priority,
   InventoryItemDTO,
+  MarketMatchCandidateDTO,
   InventorySaleDTO,
   InventoryStockLotDTO,
   ProductDTO,
@@ -8221,23 +8222,43 @@ function MarketPanel({
   busy: boolean;
   runAction: ActionHandler;
 }) {
+  const [marketSearches, setMarketSearches] = useState<Record<string, { query: string; candidates: MarketMatchCandidateDTO[] }>>({});
   const ownedInventory = dashboard.inventory.filter((item) => item.quantityOwned > 0);
   const withMarketData = ownedInventory.filter((item) => item.marketCompCount > 0 && item.currentMarketEstimate !== null);
-  const missingMarketData = ownedInventory
-    .filter((item) => item.marketCompCount === 0 || item.marketProviderMatchStatus === "UNMATCHED" || item.marketProviderMatchStatus === "REJECTED")
-    .slice(0, 10);
+  const reviewItemIds = new Set(dashboard.marketMatchReview.map((match) => match.inventoryItemId));
+  const missingMarketData = ownedInventory.filter(
+    (item) =>
+      !reviewItemIds.has(item.id) &&
+      (item.marketCompCount === 0 ||
+        item.currentMarketEstimate === null ||
+        ["UNMATCHED", "REJECTED", "ERROR"].includes(item.marketProviderMatchStatus))
+  );
   const pricedItems = withMarketData
     .slice()
-    .sort((a, b) => (b.marketProfitLoss ?? -999999) - (a.marketProfitLoss ?? -999999))
-    .slice(0, 10);
+    .sort((a, b) => (b.marketProfitLoss ?? -999999) - (a.marketProfitLoss ?? -999999));
   const sellSignals = pricedItems
     .filter((item) => item.recommendedAction === "SELL_NOW" || item.recommendedAction === "LIST_HIGH" || (item.marketProfitLoss ?? 0) > 0)
     .slice(0, 5);
   const estimatedNet = withMarketData.reduce((sum, item) => sum + (item.netMarketValue ?? 0), 0);
   const estimatedProfit = withMarketData.reduce((sum, item) => sum + (item.marketProfitLoss ?? 0), 0);
   const tcgcsvProvider = dashboard.marketProviders.find((provider) => provider.provider === "TCGCSV");
-  const activeProvider = tcgcsvProvider ?? dashboard.marketProviders.find((provider) => provider.enabled && provider.provider !== "MANUAL") ?? dashboard.marketProviders.find((provider) => provider.provider === "MANUAL");
   const reviewCount = dashboard.marketMatchReview.length;
+  const unmatchedCount = missingMarketData.length;
+
+  function updateMarketSearchQuery(itemId: string, query: string) {
+    setMarketSearches((current) => ({
+      ...current,
+      [itemId]: { query, candidates: current[itemId]?.candidates ?? [] }
+    }));
+  }
+
+  function candidateAction(match: DashboardDTO["marketMatchReview"][number], action: "accept" | "lock" | "reject" | "search_again" | "mark_unmatched", providerProductId?: string | null) {
+    return runAction(
+      `${formatStatus(action)} TCGCSV match`,
+      () => requestJson(`/api/radar/inventory/tcgcsv/matches/${match.inventoryItemId}`, { method: "PATCH", body: JSON.stringify({ action, providerProductId }) }),
+      { success: `TCGCSV match ${formatStatus(action).toLowerCase()}` }
+    );
+  }
 
   return (
     <>
@@ -8247,11 +8268,11 @@ function MarketPanel({
       />
       <section className="inventory-kpi-grid">
         <InventoryKpiCard label="Items Priced" value={String(withMarketData.length)} detail={`${ownedInventory.length} owned inventory items`} tone={withMarketData.length ? "good" : "watch"} />
-        <InventoryKpiCard label="Missing Market Data" value={String(dashboard.inventorySummary.missingMarketDataCount)} detail={reviewCount ? `${reviewCount} need match review` : "need TCGCSV match"} tone={dashboard.inventorySummary.missingMarketDataCount ? "watch" : "good"} />
+        <InventoryKpiCard label="Needs Review" value={String(reviewCount)} detail="TCGCSV candidates need approval" tone={reviewCount ? "watch" : "good"} />
+        <InventoryKpiCard label="Unmatched" value={String(unmatchedCount)} detail="no confident cached match yet" tone={unmatchedCount ? "watch" : "good"} />
         <InventoryKpiCard label="Estimated Market Value" value={dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue)} detail="TCGCSV estimate" tone="good" />
         <InventoryKpiCard label="Estimated Net" value={withMarketData.length ? money(estimatedNet) : "Not collected"} detail="after estimated fees/shipping" tone="good" />
         <InventoryKpiCard label="Estimated Profit" value={withMarketData.length ? money(estimatedProfit) : "Not collected"} detail="unrealized estimate" tone={estimatedProfit >= 0 ? "good" : "bad"} />
-        <InventoryKpiCard label="Active Provider" value={activeProvider?.label ?? "TCGCSV"} detail={activeProvider?.configured ? "server cache enabled" : "not configured"} tone={activeProvider?.configured ? "good" : "watch"} />
       </section>
       <section className="market-status-strip">
         <div>
@@ -8286,7 +8307,7 @@ function MarketPanel({
               runAction(
                 "Refreshing missing market data",
                 () => requestJson("/api/radar/inventory/refresh-comps", { method: "POST", body: JSON.stringify({ mode: "missing" }) }),
-                { success: "Missing market data refresh started" }
+                { success: "Missing, review, and unmatched inventory refresh started" }
               )
             }
           >
@@ -8307,6 +8328,21 @@ function MarketPanel({
           >
             <RefreshCw size={14} />
             Refresh All Inventory
+          </button>
+          <button
+            className="mini-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                "Auto-matching all inventory",
+                () => requestJson("/api/radar/inventory/refresh-comps", { method: "POST", body: JSON.stringify({ mode: "all" }) }),
+                { success: "Auto-match all inventory started" }
+              )
+            }
+          >
+            <Sparkles size={14} />
+            Auto-Match All Inventory
           </button>
           <button className="mini-action" type="button" onClick={() => document.getElementById("market-match-review")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
             Review Matches
@@ -8336,7 +8372,7 @@ function MarketPanel({
             <div className="edit-card-heading">
               <div>
                 <h2>Priced Inventory</h2>
-                <span>Market values, profit, and recommendations from accepted TCGCSV market estimates.</span>
+                <span>All inventory with accepted TCGCSV market estimates.</span>
               </div>
             </div>
             <div className="market-inventory-list">
@@ -8351,50 +8387,96 @@ function MarketPanel({
             <div className="edit-card-heading">
               <div>
                 <h2>Match Review</h2>
-                <span>Accept or lock medium-confidence TCGCSV matches before they price inventory.</span>
+                <span>Review candidate matches. 85%+ can auto-price; lower confidence stays here until approved.</span>
               </div>
             </div>
             <div className="market-match-review-list">
               {dashboard.marketMatchReview.length ? (
-                dashboard.marketMatchReview.map((match) => (
-                  <article className="market-match-card" key={match.inventoryItemId}>
-                    <div className="market-product-cell">
-                      <InventoryFallbackImage imageUrl={match.itemImageUrl} label={match.itemName} />
-                      <div>
-                        <strong>{match.itemName}</strong>
-                        <span>{match.upc || "No UPC"} - {formatStatus(match.category)} - {match.quantityOwned} owned</span>
-                        <small>Your avg cost {money(match.averageCost)}</small>
+                dashboard.marketMatchReview.map((match) => {
+                  const search = marketSearches[match.inventoryItemId];
+                  const candidates = search?.candidates.length ? search.candidates : match.candidates;
+                  const query = search?.query ?? `${match.itemName} ${match.category}`;
+                  return (
+                    <article className="market-match-card" key={match.inventoryItemId}>
+                      <div className="market-product-cell">
+                        <InventoryFallbackImage imageUrl={match.itemImageUrl} label={match.itemName} />
+                        <div>
+                          <strong>{match.itemName}</strong>
+                          <span>{match.upc || "No UPC"} - {formatStatus(match.category)} - {match.quantityOwned} owned</span>
+                          <small>Your avg cost {money(match.averageCost)} - Status {formatStatus(match.status)}</small>
+                        </div>
                       </div>
-                    </div>
-                    <div className="market-match-suggestion">
-                      <InventoryFallbackImage imageUrl={match.providerImageUrl} label={match.providerProductName || "TCGCSV"} />
-                      <div>
-                        <b>{match.providerProductName || "Suggested TCGCSV product"}</b>
-                        <span>{match.providerGroupName || "Unknown group"} - {money(match.marketPrice)}</span>
-                        <small>{match.reason || "Needs review"} - {match.confidence}% confidence</small>
+                      <div className="market-candidate-list">
+                        {candidates.length ? (
+                          candidates.map((candidate) => (
+                            <article className="market-candidate-card" key={candidate.providerProductId}>
+                              <InventoryFallbackImage imageUrl={candidate.imageUrl} label={candidate.productName} />
+                              <div>
+                                <b>{candidate.productName}</b>
+                                <span>{candidate.groupName} - {money(candidate.marketPrice)}</span>
+                                <small>
+                                  {candidate.confidence}% confidence - {candidate.reason || "candidate match"}
+                                </small>
+                              </div>
+                              <div className="market-match-actions">
+                                <button className="mini-action" disabled={busy} type="button" onClick={() => candidateAction(match, "accept", candidate.providerProductId)}>
+                                  Accept Match
+                                </button>
+                                <button className="secondary-action compact-action" disabled={busy} type="button" onClick={() => candidateAction(match, "lock", candidate.providerProductId)}>
+                                  Lock
+                                </button>
+                                {candidate.productUrl ? (
+                                  <a className="secondary-action compact-action" href={candidate.productUrl} target="_blank" rel="noreferrer">
+                                    Source
+                                    <ExternalLink size={12} />
+                                  </a>
+                                ) : null}
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <EmptyState icon={Search} title="No candidates yet" detail="Search TCGCSV manually or mark this item unmatched until the cache has more data." />
+                        )}
                       </div>
-                    </div>
-                    <div className="market-match-actions">
-                      {(["accept", "lock", "reject", "search_again"] as const).map((action) => (
-                        <button
-                          className={action === "accept" || action === "lock" ? "mini-action" : "secondary-action compact-action"}
-                          disabled={busy}
-                          key={action}
-                          type="button"
-                          onClick={() =>
-                            runAction(
-                              `${formatStatus(action)} TCGCSV match`,
-                              () => requestJson(`/api/radar/inventory/tcgcsv/matches/${match.inventoryItemId}`, { method: "PATCH", body: JSON.stringify({ action }) }),
-                              { success: `TCGCSV match ${formatStatus(action).toLowerCase()}` }
-                            )
-                          }
-                        >
-                          {formatStatus(action)}
-                        </button>
-                      ))}
-                    </div>
-                  </article>
-                ))
+                      <div className="market-manual-search">
+                        <label>
+                          Search TCGCSV manually
+                          <input value={query} onChange={(event) => updateMarketSearchQuery(match.inventoryItemId, event.target.value)} placeholder="Product, set, or type" />
+                        </label>
+                        <div className="market-match-actions">
+                          <button
+                            className="mini-action"
+                            disabled={busy}
+                            type="button"
+                            onClick={() =>
+                              runAction(
+                                "Searching TCGCSV matches",
+                                async () => {
+                                  const result = await requestJson<{ candidates: MarketMatchCandidateDTO[] }>(
+                                    `/api/radar/inventory/tcgcsv/search?itemId=${encodeURIComponent(match.inventoryItemId)}&query=${encodeURIComponent(query)}`
+                                  );
+                                  setMarketSearches((current) => ({
+                                    ...current,
+                                    [match.inventoryItemId]: { query, candidates: result.candidates }
+                                  }));
+                                },
+                                { reload: false, success: "TCGCSV search results updated" }
+                              )
+                            }
+                          >
+                            Search Again
+                          </button>
+                          <button className="secondary-action compact-action" disabled={busy} type="button" onClick={() => candidateAction(match, "reject")}>
+                            Reject Current
+                          </button>
+                          <button className="secondary-action compact-action" disabled={busy} type="button" onClick={() => candidateAction(match, "mark_unmatched")}>
+                            Mark Unmatched
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })
               ) : (
                 <EmptyState icon={Check} title="No matches need review" detail="Low-confidence TCGCSV matches will appear here before they affect inventory value." />
               )}
@@ -8414,7 +8496,7 @@ function MarketPanel({
               missingMarketData.map((item) => (
                 <span key={item.id}>
                   {item.itemName}
-                  <b>{formatStatus(item.marketProviderMatchStatus || "Needs Data")}</b>
+                  <b>{formatStatus(item.marketProviderMatchStatus || "Not Attempted")}</b>
                 </span>
               ))
             ) : (

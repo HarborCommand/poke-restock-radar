@@ -1106,6 +1106,20 @@ export type MarketSyncLogDTO = {
   createdAt: string;
 };
 
+export type MarketMatchCandidateDTO = {
+  providerProductId: string;
+  productName: string;
+  groupName: string;
+  imageUrl: string | null;
+  productUrl: string | null;
+  marketPrice: number | null;
+  lowPrice: number | null;
+  midPrice: number | null;
+  highPrice: number | null;
+  confidence: number;
+  reason: string;
+};
+
 export type MarketMatchReviewDTO = {
   inventoryItemId: string;
   itemName: string;
@@ -1126,6 +1140,7 @@ export type MarketMatchReviewDTO = {
   reason: string | null;
   status: string;
   lastRefreshedAt: string | null;
+  candidates: MarketMatchCandidateDTO[];
 };
 
 export type InvestmentReportItemDTO = {

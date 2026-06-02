@@ -18,6 +18,7 @@ import {
   applyTcgcsvEstimateToInventoryItem,
   getTcgcsvProviderStats,
   listTcgcsvMatchReview,
+  searchTcgcsvCandidatesForItem,
   syncTcgcsvCatalog,
   updateTcgcsvMatch
 } from "@/lib/tcgcsv-market";
@@ -1563,7 +1564,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   const priceRecordCount = marketPriceRecords.length;
   const hasMarketEstimate = priceRecordCount > 0;
   const providerConfidence =
-    item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 90
+    item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 85
       ? "HIGH"
       : item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 70
         ? "MEDIUM"
@@ -1742,7 +1743,13 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
     worstItem: sortedByProfit.at(-1) ?? null,
     sellNowCount: items.filter((item) => item.recommendedAction === "SELL_NOW" || item.recommendedAction === "LIST_HIGH").length,
     holdCount: items.filter((item) => item.recommendedAction === "HOLD").length,
-    missingMarketDataCount: items.filter((item) => item.marketCompCount === 0).length
+    missingMarketDataCount: items.filter(
+      (item) =>
+        item.quantityOwned > 0 &&
+        (item.marketCompCount === 0 ||
+          item.currentMarketEstimate === null ||
+          ["UNMATCHED", "REVIEW", "REJECTED", "ERROR"].includes(item.marketProviderMatchStatus))
+    ).length
   };
 }
 
@@ -3933,7 +3940,7 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
   const compCount = marketPriceRecords.length;
   const currentMarketEstimate = compCount ? compStats.average : item.currentMarketEstimate;
   const confidence =
-    item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 90 && compCount > 0
+    item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 85 && compCount > 0
       ? "HIGH"
       : item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 70 && compCount > 0
         ? "MEDIUM"
@@ -4055,6 +4062,25 @@ async function backfillMissingMsrpInventoryCosts(currentUser: SessionUser) {
         }
       });
     }
+  }
+}
+
+async function autoMatchInventoryItemMarket(currentUser: SessionUser, itemId: string) {
+  try {
+    return (await refreshInventoryMarketEstimate(currentUser, itemId)).item;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Automatic market match failed.";
+    await prisma.inventoryItem.update({
+      where: { id: itemId },
+      data: {
+        marketProvider: "TCGCSV",
+        marketProviderMatchStatus: "ERROR",
+        marketProviderConfidenceScore: 0,
+        marketProviderMatchReason: message,
+        marketProviderLastPricedAt: new Date()
+      }
+    }).catch(() => null);
+    return recomputeInventoryItem(itemId, currentUser);
   }
 }
 
@@ -4212,7 +4238,7 @@ export async function createInventoryItem(
       paymentMethod: linkedInput.paymentMethod
     }
   });
-  return recomputeInventoryItem(item.id, currentUser);
+  return autoMatchInventoryItemMarket(currentUser, item.id);
 }
 
 export async function addInventoryStockLot(
@@ -4290,7 +4316,7 @@ export async function addInventoryStockLot(
       currentMarketEstimate: input.currentMarketEstimate ?? item.currentMarketEstimate
     }
   });
-  return recomputeInventoryItem(item.id, currentUser);
+  return autoMatchInventoryItemMarket(currentUser, item.id);
 }
 
 export async function updateInventoryStockLot(
@@ -4504,7 +4530,18 @@ export async function updateInventoryItem(
       });
     }
   }
-  return recomputeInventoryItem(itemId, currentUser);
+  const marketIdentityChanged = [
+    "itemName",
+    "upc",
+    "sku",
+    "dpci",
+    "asin",
+    "category",
+    "setName",
+    "productId",
+    "cardId"
+  ].some((field) => Object.prototype.hasOwnProperty.call(input, field));
+  return marketIdentityChanged ? autoMatchInventoryItemMarket(currentUser, itemId) : recomputeInventoryItem(itemId, currentUser);
 }
 
 export async function createInventoryMarketComp(
@@ -4673,9 +4710,23 @@ export async function refreshInventoryEbayComps(currentUser: SessionUser, itemId
 export async function refreshAllInventoryMarketComps(currentUser: SessionUser, options: { onlyMissing?: boolean; onlyStale?: boolean; limit?: number } = {}) {
   const staleCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const refreshFilter = options.onlyMissing
-    ? { marketCompCount: 0 }
+    ? {
+        OR: [
+          { marketCompCount: 0 },
+          { currentMarketEstimate: null },
+          { marketProviderLastPricedAt: null },
+          { marketProviderMatchStatus: { in: ["UNMATCHED", "REVIEW", "REJECTED", "ERROR"] } }
+        ]
+      }
     : options.onlyStale
-      ? { OR: [{ marketLastRefreshedAt: null }, { marketLastRefreshedAt: { lt: staleCutoff } }] }
+      ? {
+          OR: [
+            { marketLastRefreshedAt: null },
+            { marketLastRefreshedAt: { lt: staleCutoff } },
+            { marketProviderLastPricedAt: null },
+            { marketProviderLastPricedAt: { lt: staleCutoff } }
+          ]
+        }
       : {};
   const items = await prisma.inventoryItem.findMany({
     where: {
@@ -4683,34 +4734,72 @@ export async function refreshAllInventoryMarketComps(currentUser: SessionUser, o
     },
     select: { id: true },
     orderBy: [{ marketCompCount: "asc" }, { marketLastRefreshedAt: "asc" }, { updatedAt: "desc" }],
-    take: options.limit ?? 50
+    ...(options.limit ? { take: options.limit } : {})
   });
   const refreshed: InventoryItemDTO[] = [];
   let manualMode = false;
   const logs: MarketSyncLogDTO[] = [];
+  let priced = 0;
+  let needsReview = 0;
+  let unmatched = 0;
+  let errors = 0;
   for (const item of items) {
-    const result = await refreshInventoryMarketEstimate(currentUser, item.id);
-    const resultMode: "api" | "manual" = result.mode;
-    if (resultMode === "manual") manualMode = true;
-    refreshed.push(result.item);
-    logs.push({
-      provider: result.provider ?? "TCGCSV",
-      inventoryItemId: result.item.id,
-      itemName: result.item.itemName,
-      status: result.matchStatus === "PRICED" ? "PRICED" : result.matchStatus === "LOW_CONFIDENCE" ? "LOW_CONFIDENCE" : resultMode === "manual" ? "MANUAL_MODE" : "MISSING",
-      matchedProduct: result.matchedProduct ?? result.item.marketProviderProductName ?? null,
-      priceFound: result.priceFound ?? result.item.marketAverageSalePrice,
-      confidence: result.confidence ?? result.item.marketProviderConfidenceScore ?? null,
-      message: result.message,
-      createdAt: new Date().toISOString()
-    });
+    try {
+      const result = await refreshInventoryMarketEstimate(currentUser, item.id);
+      const resultMode: "api" | "manual" = result.mode;
+      if (resultMode === "manual") manualMode = true;
+      refreshed.push(result.item);
+      if (result.item.marketCompCount > 0 && result.item.currentMarketEstimate !== null) priced += 1;
+      else if (result.item.marketProviderMatchStatus === "REVIEW") needsReview += 1;
+      else unmatched += 1;
+      logs.push({
+        provider: result.provider ?? "TCGCSV",
+        inventoryItemId: result.item.id,
+        itemName: result.item.itemName,
+        status: result.matchStatus === "PRICED" ? "PRICED" : result.matchStatus === "LOW_CONFIDENCE" ? "LOW_CONFIDENCE" : resultMode === "manual" ? "MANUAL_MODE" : "MISSING",
+        matchedProduct: result.matchedProduct ?? result.item.marketProviderProductName ?? null,
+        priceFound: result.priceFound ?? result.item.marketAverageSalePrice,
+        confidence: result.confidence ?? result.item.marketProviderConfidenceScore ?? null,
+        message: result.message,
+        createdAt: new Date().toISOString()
+      });
+    } catch (error) {
+      errors += 1;
+      const message = error instanceof Error ? error.message : "Market refresh failed.";
+      await prisma.inventoryItem.update({
+        where: { id: item.id },
+        data: {
+          marketProvider: "TCGCSV",
+          marketProviderMatchStatus: "ERROR",
+          marketProviderConfidenceScore: 0,
+          marketProviderMatchReason: message,
+          marketProviderLastPricedAt: new Date()
+        }
+      }).catch(() => null);
+      logs.push({
+        provider: "TCGCSV",
+        inventoryItemId: item.id,
+        itemName: null,
+        status: "ERROR",
+        matchedProduct: null,
+        priceFound: null,
+        confidence: null,
+        message,
+        createdAt: new Date().toISOString()
+      });
+    }
   }
   return {
     mode: manualMode ? "manual" : "api",
+    totalItems: items.length,
     refreshedCount: refreshed.length,
+    priced,
+    needsReview,
+    unmatched,
+    errors,
     message: manualMode
       ? "TCGCSV is not configured. Set TCGCSV_ENABLED=true to use automatic market estimates."
-      : `${refreshed.length} inventory product${refreshed.length === 1 ? "" : "s"} refreshed from cached TCGCSV market estimates.`,
+      : `${items.length} inventory product${items.length === 1 ? "" : "s"} processed from cached TCGCSV market estimates.`,
     items: refreshed,
     logs
   };
@@ -4718,25 +4807,48 @@ export async function refreshAllInventoryMarketComps(currentUser: SessionUser, o
 
 export async function syncTcgcsvMarketData(currentUser: SessionUser, options: { limitGroups?: number; refreshLimit?: number } = {}) {
   const sync = await syncTcgcsvCatalog({ limitGroups: options.limitGroups });
-  const refresh = await refreshAllInventoryMarketComps(currentUser, { onlyMissing: true, limit: options.refreshLimit ?? 50 });
+  const refresh = await refreshAllInventoryMarketComps(currentUser, { onlyMissing: true, limit: options.refreshLimit });
   return {
     provider: "TCGCSV" as const,
     ...sync,
     refreshedCount: refresh.refreshedCount,
+    totalItems: refresh.totalItems,
+    priced: refresh.priced,
+    needsReview: refresh.needsReview,
+    unmatched: refresh.unmatched,
+    errors: refresh.errors,
     items: refresh.items,
     logs: refresh.logs,
     stats: await getTcgcsvProviderStats()
   };
 }
 
-export async function reviewTcgcsvMarketMatch(currentUser: SessionUser, itemId: string, action: "accept" | "reject" | "lock" | "search_again") {
-  await updateTcgcsvMatch(currentUser, itemId, action);
+export async function reviewTcgcsvMarketMatch(currentUser: SessionUser, itemId: string, action: "accept" | "reject" | "lock" | "search_again" | "mark_unmatched", providerProductId?: string | null) {
+  await updateTcgcsvMatch(currentUser, itemId, action, providerProductId);
   const updated = await prisma.inventoryItem.findFirst({
     where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
     include: inventoryItemInclude
   });
   if (!updated) throw new Error("Inventory item not found");
   return recomputeInventoryItem(updated.id, currentUser);
+}
+
+export async function searchTcgcsvMarketMatches(
+  currentUser: SessionUser,
+  itemId: string,
+  input: { query?: string; group?: string; productType?: string; limit?: number } = {}
+) {
+  const item = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: inventoryItemInclude
+  });
+  if (!item) throw new Error("Inventory item not found");
+  return searchTcgcsvCandidatesForItem(inventoryItemToDTO(item), {
+    query: input.query,
+    group: input.group,
+    productType: input.productType,
+    limit: input.limit ?? 8
+  });
 }
 
 export async function controlProductMonitor(

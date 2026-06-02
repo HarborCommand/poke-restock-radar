@@ -12,11 +12,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
   try {
     if (user.role !== "ADMIN") throw new Error("Admin access required.");
     const { itemId } = await params;
-    const body = (await readJson(request)) as { action?: "accept" | "reject" | "lock" | "search_again" };
-    if (!body.action || !["accept", "reject", "lock", "search_again"].includes(body.action)) {
+    const body = (await readJson(request)) as {
+      action?: "accept" | "reject" | "lock" | "search_again" | "mark_unmatched";
+      providerProductId?: string | null;
+    };
+    if (!body.action || !["accept", "reject", "lock", "search_again", "mark_unmatched"].includes(body.action)) {
       throw new Error("Valid match action required.");
     }
-    const item = await reviewTcgcsvMarketMatch(user, itemId, body.action);
+    const item = await reviewTcgcsvMarketMatch(user, itemId, body.action, body.providerProductId);
     await logAudit({
       user,
       action: `inventory.market.tcgcsv_match.${body.action}`,

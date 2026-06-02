@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   try {
     const user = await ownerUser();
     if (process.env.TCGCSV_ENABLED === "true") {
-      return ok(await syncTcgcsvMarketData(user, { refreshLimit: 25 }));
+      return ok(await syncTcgcsvMarketData(user, { refreshLimit: 100 }));
     }
     return ok(await refreshAllInventoryMarketComps(user, { onlyStale: true, limit: 25 }));
   } catch (error) {

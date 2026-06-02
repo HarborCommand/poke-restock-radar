@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import { inventoryCompStatsForTest, summarizeInventory } from "../src/lib/radar-service";
+import { inferTcgcsvProductType, normalizeTcgcsvProductText } from "../src/lib/tcgcsv-market";
 import type { InventoryItemDTO, InventorySaleDTO } from "../src/types/radar";
 
 function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
@@ -215,7 +216,8 @@ test("market auto-pricing provider UI and cron are registered", () => {
 
   const tcgcsv = fs.readFileSync(new URL("../src/lib/tcgcsv-market.ts", import.meta.url), "utf8");
 
-  assert.match(app, /Active Provider/);
+  assert.match(app, /Needs Review/);
+  assert.match(app, /Unmatched/);
   assert.match(app, /Refresh All Missing/);
   assert.match(app, /Market Sync Log/);
   assert.match(app, /Match Review/);
@@ -227,6 +229,36 @@ test("market auto-pricing provider UI and cron are registered", () => {
   assert.match(providers, /TCGCSV_ENABLED/);
   assert.match(providers, /EBAY_SOLD/);
   assert.ok(vercel.includes("/api/radar/inventory/market-sync/cron"));
+});
+
+test("TCGCSV auto-match backfill and review workflow are wired", () => {
+  const service = fs.readFileSync(new URL("../src/lib/radar-service.ts", import.meta.url), "utf8");
+  const tcgcsv = fs.readFileSync(new URL("../src/lib/tcgcsv-market.ts", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const matchRoute = fs.readFileSync(new URL("../src/app/api/radar/inventory/tcgcsv/matches/[itemId]/route.ts", import.meta.url), "utf8");
+  const searchRoute = fs.readFileSync(new URL("../src/app/api/radar/inventory/tcgcsv/search/route.ts", import.meta.url), "utf8");
+
+  assert.match(service, /autoMatchInventoryItemMarket\(currentUser, item\.id\)/);
+  assert.match(service, /autoMatchInventoryItemMarket\(currentUser, itemId\)/);
+  assert.match(service, /marketProviderMatchStatus: \{ in: \["UNMATCHED", "REVIEW", "REJECTED", "ERROR"\] \}/);
+  assert.doesNotMatch(service, /take: options\.limit \?\? 50/);
+  assert.match(tcgcsv, /confidence >= 85/);
+  assert.match(tcgcsv, /findTcgcsvCandidates/);
+  assert.match(tcgcsv, /exact UPC\/identifier match/);
+  assert.match(tcgcsv, /candidates: candidates\.map\(tcgcsvCandidateToDTO\)/);
+  assert.match(app, /Auto-Match All Inventory/);
+  assert.match(app, /Needs Review/);
+  assert.match(app, /Unmatched/);
+  assert.match(matchRoute, /providerProductId/);
+  assert.match(matchRoute, /mark_unmatched/);
+  assert.match(searchRoute, /searchTcgcsvMarketMatches/);
+});
+
+test("TCGCSV normalization handles Pokemon sealed product names", () => {
+  assert.equal(normalizeTcgcsvProductText("Pok&#233;mon TCG: Mega Evolution - Chaos Rising Booster Bundle"), "chaos rising booster bundle");
+  assert.equal(inferTcgcsvProductType("Mega Evolution Chaos Rising Booster Bundle"), "booster_bundle");
+  assert.equal(inferTcgcsvProductType("Mega Evolution Chaos Rising Booster Box"), "booster_box");
+  assert.equal(inferTcgcsvProductType("Perfect Order Premium Checklane Blister - Meganium"), "premium_checklane_blister");
 });
 
 test("dashboard labels unknown market data as not collected instead of showing zero dollars", () => {
