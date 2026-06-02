@@ -1096,7 +1096,16 @@ export function RadarApp() {
             setActiveTab={setActiveTab}
           />
         ) : null}
-        {activeTab === "market" ? <MarketPanel dashboard={dashboard} setActiveTab={setActiveTab} busy={busy} busyLabel={busyLabel} submit={submit} /> : null}
+        {activeTab === "market" ? (
+          <MarketPanel
+            dashboard={dashboard}
+            setActiveTab={setActiveTab}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            runAction={runAction}
+          />
+        ) : null}
         {activeTab === "profitLoss" ? <ProfitLossPanel dashboard={dashboard} /> : null}
         {activeTab === "trends" ? <TrendsPanel dashboard={dashboard} /> : null}
         {activeTab === "analytics" ? <InventoryAnalyticsPanel dashboard={dashboard} /> : null}
@@ -8172,13 +8181,15 @@ function MarketPanel({
   setActiveTab,
   busy,
   busyLabel,
-  submit
+  submit,
+  runAction
 }: {
   dashboard: DashboardDTO;
   setActiveTab: (tab: Tab) => void;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  runAction: ActionHandler;
 }) {
   const ownedInventory = dashboard.inventory.filter((item) => item.quantityOwned > 0);
   const withMarketData = ownedInventory.filter((item) => item.marketCompCount > 0);
@@ -8197,6 +8208,7 @@ function MarketPanel({
   const estimatedNet = withMarketData.reduce((sum, item) => sum + (item.netMarketValue ?? 0), 0);
   const estimatedProfit = withMarketData.reduce((sum, item) => sum + (item.marketProfitLoss ?? 0), 0);
   const coveragePercent = ownedInventory.length ? (withMarketData.length / ownedInventory.length) * 100 : 0;
+  const activeProvider = dashboard.marketProviders.find((provider) => provider.enabled && provider.provider !== "MANUAL") ?? dashboard.marketProviders.find((provider) => provider.provider === "MANUAL");
 
   return (
     <>
@@ -8210,21 +8222,66 @@ function MarketPanel({
         <InventoryKpiCard label="Estimated Market Value" value={dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue)} detail="sold comps only" tone="good" />
         <InventoryKpiCard label="Estimated Net" value={withMarketData.length ? money(estimatedNet) : "Not collected"} detail="after estimated fees/shipping" tone="good" />
         <InventoryKpiCard label="Estimated Profit" value={withMarketData.length ? money(estimatedProfit) : "Not collected"} detail="unrealized from sold comps" tone={estimatedProfit >= 0 ? "good" : "bad"} />
-        <InventoryKpiCard label="eBay Status" value={dashboard.ebayStatus.ready ? "Ready" : "Manual"} detail={dashboard.ebayStatus.ready ? "live sold comps configured" : "manual/Terapeak mode"} tone={dashboard.ebayStatus.ready ? "good" : "watch"} />
+        <InventoryKpiCard label="Active Market Provider" value={activeProvider?.label ?? "Manual"} detail={activeProvider?.message ?? "Market provider not configured"} tone={activeProvider?.provider === "MANUAL" ? "watch" : "good"} />
       </section>
       <section className="market-status-strip">
         <div>
-          <strong>{dashboard.ebayStatus.ready ? "eBay sold-comp refresh is configured." : "Manual/Terapeak comp mode is active."}</strong>
+          <strong>{activeProvider?.provider === "MANUAL" ? "Market provider not configured." : `${activeProvider?.label} auto-pricing is active.`}</strong>
           <span>
-            {dashboard.ebayStatus.ready
-              ? "Use Refresh Market Data for live sold comps, then review the exact comps below."
-              : "Enter completed sales manually from eBay sold results, Terapeak, TCGPlayer, PriceCharting, or your own confirmed sales. Active listings are labeled separately and excluded."}
+            {activeProvider?.provider === "MANUAL"
+              ? "Manual comp entry remains available. Configure PriceCharting, TCGplayer/TCGCSV, or eBay sold-comp access to price inventory automatically."
+              : "Use the refresh actions to price missing or stale items. Active listing prices are not used as market value unless explicitly saved as excluded asking snapshots."}
           </span>
         </div>
-        <button className="primary-action compact-action" type="button" onClick={() => setActiveTab("inventory")}>
-          Open Inventory
-          <ChevronRight size={15} />
-        </button>
+        <div className="market-refresh-actions">
+          <button
+            className="mini-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                "Refreshing missing market data",
+                () => requestJson("/api/radar/inventory/refresh-comps", { method: "POST", body: JSON.stringify({ mode: "missing" }) }),
+                { success: "Missing market data refresh started" }
+              )
+            }
+          >
+            <RefreshCw size={14} />
+            Refresh All Missing
+          </button>
+          <button
+            className="mini-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                "Refreshing all market data",
+                () => requestJson("/api/radar/inventory/refresh-comps", { method: "POST", body: JSON.stringify({ mode: "all" }) }),
+                { success: "Inventory market refresh started" }
+              )
+            }
+          >
+            <RefreshCw size={14} />
+            Refresh All Inventory
+          </button>
+          <button className="primary-action compact-action" type="button" onClick={() => setActiveTab("inventory")}>
+            Open Inventory
+            <ChevronRight size={15} />
+          </button>
+        </div>
+      </section>
+      <section className="market-provider-grid">
+        {dashboard.marketProviders.map((provider) => (
+          <article className={`market-provider-card ${provider.enabled ? "active" : "missing"}`} key={provider.provider}>
+            <span>{provider.priority}</span>
+            <div>
+              <strong>{provider.label}</strong>
+              <small>{provider.mode === "active_only" ? "Active listings only - excluded from value" : formatStatus(provider.mode)}</small>
+              <p>{provider.message}</p>
+            </div>
+            <b>{provider.configured ? "Configured" : "Not configured"}</b>
+          </article>
+        ))}
       </section>
       <section className="market-page-grid">
         <div className="market-main-column">
@@ -8237,7 +8294,7 @@ function MarketPanel({
             </div>
             <div className="market-inventory-list">
               {pricedItems.length ? (
-                pricedItems.map((item) => <MarketInventoryRow key={item.id} item={item} ebayStatus={dashboard.ebayStatus} />)
+                pricedItems.map((item) => <MarketInventoryRow key={item.id} item={item} ebayStatus={dashboard.ebayStatus} busy={busy} runAction={runAction} />)
               ) : (
                 <EmptyState icon={Sparkles} title="No priced inventory yet" detail="Add sold comps to turn inventory into real market values." />
               )}
@@ -8344,13 +8401,48 @@ function MarketPanel({
               </button>
             </form>
           </div>
+          <div className="inventory-detail-panel market-card">
+            <div className="edit-card-heading">
+              <div>
+                <h2>Market Sync Log</h2>
+                <span>Recent provider pricing results and manual comp updates.</span>
+              </div>
+            </div>
+            <div className="market-sync-log-list">
+              {dashboard.marketSyncLogs.length ? (
+                dashboard.marketSyncLogs.map((log, index) => (
+                  <article key={`${log.inventoryItemId || log.provider}-${log.createdAt}-${index}`}>
+                    <span className={`status-chip ${log.status === "PRICED" ? "good" : log.status === "ERROR" ? "bad" : "watch"}`}>{formatStatus(log.status)}</span>
+                    <div>
+                      <strong>{log.itemName || "Inventory item"}</strong>
+                      <small>{log.provider} - {log.matchedProduct || "No match"} - {relativeTime(log.createdAt)}</small>
+                      <p>{log.message}</p>
+                    </div>
+                    <b>{log.priceFound === null ? "No price" : money(log.priceFound)}</b>
+                  </article>
+                ))
+              ) : (
+                <EmptyState icon={History} title="No market syncs yet" detail="Run a refresh after configuring a provider, or add manual comps." />
+              )}
+            </div>
+          </div>
         </aside>
       </section>
     </>
   );
 }
 
-function MarketInventoryRow({ item, ebayStatus }: { item: InventoryItemDTO; ebayStatus: DashboardDTO["ebayStatus"] }) {
+function MarketInventoryRow({
+  item,
+  ebayStatus,
+  busy,
+  runAction
+}: {
+  item: InventoryItemDTO;
+  ebayStatus: DashboardDTO["ebayStatus"];
+  busy: boolean;
+  runAction: ActionHandler;
+}) {
   const tone = inventoryMarketTone(item);
   return (
     <article className="market-inventory-row">
@@ -8389,6 +8481,21 @@ function MarketInventoryRow({ item, ebayStatus }: { item: InventoryItemDTO; ebay
           ))}
           <span className={`status-chip ${inventoryRecommendationTone(item.recommendedAction)}`}>{formatStatus(item.recommendedAction)}</span>
         </div>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              `Refreshing market ${item.id}`,
+              () => requestJson(`/api/radar/inventory/${item.id}/refresh-comps`, { method: "POST" }),
+              { success: "Item market data refreshed" }
+            )
+          }
+        >
+          <RefreshCw size={13} />
+          Refresh Item
+        </button>
         <div className="market-comp-list">
           {item.lastThreeComps.length ? (
             item.lastThreeComps.slice(0, 3).map((comp) => (

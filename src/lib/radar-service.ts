@@ -9,6 +9,7 @@ import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate }
 import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
+import { fetchTrustedProviderMarketPrice, marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
@@ -37,6 +38,7 @@ import type {
   InventorySaleDTO,
   InventoryStockLotDTO,
   InventorySummaryDTO,
+  MarketSyncLogDTO,
   DailyRecapDTO,
   MonitorAccuracyStatsDTO,
   MonitorLogDTO,
@@ -1723,6 +1725,28 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
   };
 }
 
+function marketSyncLogsFromInventory(items: InventoryItemDTO[]): MarketSyncLogDTO[] {
+  return items
+    .filter((item) => item.marketCompCount > 0 || item.marketLastRefreshedAt)
+    .sort((a, b) => new Date(b.marketLastRefreshedAt || b.updatedAt).getTime() - new Date(a.marketLastRefreshedAt || a.updatedAt).getTime())
+    .slice(0, 20)
+    .map((item) => {
+      const comp = item.lastThreeComps[0] ?? null;
+      const provider = comp?.sourceQuality === "EBAY_SOLD" ? "EBAY_SOLD" : comp?.sourceQuality || "UNKNOWN";
+      return {
+        provider,
+        inventoryItemId: item.id,
+        itemName: item.itemName,
+        status: item.marketCompCount >= 3 ? "PRICED" : "LOW_CONFIDENCE",
+        matchedProduct: comp?.saleTitle ?? item.itemName,
+        priceFound: item.marketAverageSalePrice,
+        confidence: item.marketConfidence === "HIGH" ? 100 : item.marketConfidence === "MEDIUM" ? 75 : item.marketConfidence === "LOW" ? 50 : null,
+        message: item.marketCompCount >= 3 ? "Market value refreshed from trusted provider data." : "Market value refreshed with fewer than 3 accepted price points.",
+        createdAt: item.marketLastRefreshedAt || item.updatedAt
+      };
+    });
+}
+
 function dailyRecapToDTO(recap: Prisma.DailyRecapGetPayload<Record<string, never>>): DailyRecapDTO {
   return {
     id: recap.id,
@@ -2306,6 +2330,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const qualityWarnings = dataQualityWarnings({ products: productDTOs, cards: cardDTOs, notificationSettings: notificationSettingsDTO });
   const monitorLogDTOs = monitorLogs.map(monitorLogToDTO);
   const inventoryDTOs = inventory.map(inventoryItemToDTO);
+  const ebayStatus = ebayConnectionStatus();
+  const marketProviders = marketProviderStatuses(ebayStatus);
   const launchChecklist = ownerLaunchChecklist({
     products: productDTOs,
     stores: storeDTOs,
@@ -2368,7 +2394,9 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     top10Watchlist: cardDTOs.slice(0, 10),
     cardCompSales: cardCompSales.map(cardCompSaleToDTO),
     investmentReports: investmentReports.map(investmentReportToDTO),
-    ebayStatus: ebayConnectionStatus(),
+    ebayStatus,
+    marketProviders,
+    marketSyncLogs: marketSyncLogsFromInventory(inventoryDTOs),
     alerts: alertDTOs,
     monitorLogs: monitorLogDTOs,
     monitorAccuracyStats: accuracyStats,
@@ -4577,6 +4605,42 @@ export async function refreshInventoryEbayComps(currentUser: SessionUser, itemId
     include: inventoryItemInclude
   });
   if (!item) throw new Error("Inventory item not found");
+  const itemDTO = inventoryItemToDTO(item);
+  const trustedProvider = await fetchTrustedProviderMarketPrice(itemDTO);
+  if (trustedProvider.result) {
+    const sourceQuality: CompSourceQuality =
+      trustedProvider.result.provider === "PRICECHARTING"
+        ? "PRICECHARTING"
+        : trustedProvider.result.provider === "EBAY_SOLD"
+          ? "EBAY_SOLD"
+          : "TCGPLAYER";
+    await prisma.inventoryMarketComp.deleteMany({
+      where: {
+        inventoryItemId: item.id,
+        sourceQuality
+      }
+    });
+    await prisma.inventoryMarketComp.create({
+      data: {
+        inventoryItemId: item.id,
+        saleTitle: trustedProvider.result.matchedTitle,
+        salePrice: trustedProvider.result.price,
+        soldAt: new Date(),
+        sourceUrl: trustedProvider.result.sourceUrl,
+        sourceQuality,
+        matchScore: trustedProvider.result.confidence,
+        notes: `${trustedProvider.result.notes} Auto-pricing provider: ${trustedProvider.result.provider}.`
+      }
+    });
+    const updated = await recomputeInventoryItem(item.id, currentUser);
+    return {
+      mode: "api" as const,
+      provider: trustedProvider.result.provider,
+      message: `${trustedProvider.result.provider} priced ${item.itemName} at $${trustedProvider.result.price.toFixed(2)} with ${trustedProvider.result.confidence}% confidence.`,
+      item: updated,
+      failures: trustedProvider.failures
+    };
+  }
   const result = await fetchLastThreeInventoryEbayComps({
     itemName: item.itemName,
     setName: item.setName,
@@ -4585,7 +4649,15 @@ export async function refreshInventoryEbayComps(currentUser: SessionUser, itemId
     sku: item.sku || item.asin
   });
   if (result.mode === "manual") {
-    return { mode: result.mode, message: result.message, item: inventoryItemToDTO(item) };
+    return {
+      mode: result.mode,
+      provider: "MANUAL" as const,
+      message: trustedProvider.failures.length
+        ? `Market provider not configured or no provider match found. ${result.message}`
+        : result.message,
+      item: inventoryItemToDTO(item),
+      failures: trustedProvider.failures
+    };
   }
   await prisma.inventoryMarketComp.deleteMany({ where: { inventoryItemId: item.id, sourceQuality: "EBAY_SOLD" } });
   await prisma.inventoryMarketComp.createMany({
@@ -4601,31 +4673,52 @@ export async function refreshInventoryEbayComps(currentUser: SessionUser, itemId
     }))
   });
   const updated = await recomputeInventoryItem(item.id, currentUser);
-  return { mode: result.mode, message: result.message, item: updated };
+  return { mode: result.mode, provider: "EBAY_SOLD" as const, message: result.message, item: updated, failures: trustedProvider.failures };
 }
 
-export async function refreshAllInventoryMarketComps(currentUser: SessionUser) {
+export async function refreshAllInventoryMarketComps(currentUser: SessionUser, options: { onlyMissing?: boolean; onlyStale?: boolean; limit?: number } = {}) {
+  const staleCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const refreshFilter = options.onlyMissing
+    ? { marketCompCount: 0 }
+    : options.onlyStale
+      ? { OR: [{ marketLastRefreshedAt: null }, { marketLastRefreshedAt: { lt: staleCutoff } }] }
+      : {};
   const items = await prisma.inventoryItem.findMany({
-    where: { OR: [{ userId: null }, { userId: currentUser.id }] },
+    where: {
+      AND: [{ OR: [{ userId: null }, { userId: currentUser.id }] }, refreshFilter]
+    },
     select: { id: true },
-    orderBy: { updatedAt: "desc" },
-    take: 50
+    orderBy: [{ marketCompCount: "asc" }, { marketLastRefreshedAt: "asc" }, { updatedAt: "desc" }],
+    take: options.limit ?? 50
   });
   const refreshed: InventoryItemDTO[] = [];
   let manualMode = false;
+  const logs: MarketSyncLogDTO[] = [];
   for (const item of items) {
     const result = await refreshInventoryEbayComps(currentUser, item.id);
-    if (result.mode === "manual") manualMode = true;
+    const resultMode: "api" | "manual" = result.mode;
+    if (resultMode === "manual") manualMode = true;
     refreshed.push(result.item);
-    if (result.mode === "manual") break;
+    logs.push({
+      provider: result.provider ?? (resultMode === "manual" ? "MANUAL" : "EBAY_SOLD"),
+      inventoryItemId: result.item.id,
+      itemName: result.item.itemName,
+      status: result.item.marketCompCount > 0 ? (result.item.marketCompCount >= 3 ? "PRICED" : "LOW_CONFIDENCE") : resultMode === "manual" ? "MANUAL_MODE" : "MISSING",
+      matchedProduct: result.item.lastThreeComps[0]?.saleTitle ?? null,
+      priceFound: result.item.marketAverageSalePrice,
+      confidence: result.item.marketConfidence === "HIGH" ? 100 : result.item.marketConfidence === "MEDIUM" ? 75 : result.item.marketConfidence === "LOW" ? 50 : null,
+      message: result.message,
+      createdAt: new Date().toISOString()
+    });
   }
   return {
     mode: manualMode ? "manual" : ebayMode(),
     refreshedCount: refreshed.length,
     message: manualMode
-      ? "Manual comp mode is active. Add manual comps or configure eBay credentials."
-      : `${refreshed.length} inventory product${refreshed.length === 1 ? "" : "s"} refreshed from eBay sold comps.`,
-    items: refreshed
+      ? "Market provider not configured or no provider match found. Add manual comps or configure PriceCharting, TCGplayer/TCGCSV, or eBay sold-comp access."
+      : `${refreshed.length} inventory product${refreshed.length === 1 ? "" : "s"} refreshed from configured market providers.`,
+    items: refreshed,
+    logs
   };
 }
 

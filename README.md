@@ -717,14 +717,34 @@ Market Recommendation behavior:
 - `RIP / OPEN`: sealed packs or bundles are materially underwater.
 - `AVOID BUYING MORE`: current comps show weak resale economics.
 
-Market data is conservative. If eBay credentials are configured, `Refresh eBay` imports the last 3 completed sold comps for the inventory item, and `Refresh Market` runs that flow across inventory. If eBay is not configured, add manual sold comps or a manual market estimate. The app never invents prices or dates; missing data is shown as `Market not collected yet`.
+Market data is conservative. The `Market` tab auto-prices inventory only from configured trusted providers. Default priority is PriceCharting, TCGplayer, TCGCSV, eBay sold comps, then manual comps. Active eBay listings are treated as asking prices only and are not used as sold market value by default. If no provider returns a trusted price, the app shows `Market provider not configured` or `Market not collected yet` instead of inventing values.
+
+Inventory market provider env vars:
+
+- `PRICECHARTING_API_TOKEN`
+- `TCGPLAYER_PUBLIC_KEY`
+- `TCGPLAYER_PRIVATE_KEY`
+- `TCGPLAYER_ACCESS_TOKEN`
+- `TCGCSV_ENABLED`
+- `EBAY_CLIENT_ID`
+- `EBAY_CLIENT_SECRET`
+- `EBAY_ENVIRONMENT`
+- `EBAY_MARKETPLACE_ID`
+
+Market auto-sync:
+
+- `Refresh Market for Item` checks configured providers for one product.
+- `Refresh All Missing` prices products with no market data first.
+- `Refresh All Inventory` reruns provider pricing across inventory.
+- Vercel Cron calls `/api/radar/inventory/market-sync/cron` daily and refreshes stale market data older than 24 hours.
+- Provider keys stay server-side; Admin only sees configured/missing status.
 
 Market sync:
 
 - Scanned or manually entered UPC/SKU/DPCI/ASIN values are matched against watched products.
 - When a watched product matches, inventory pulls the verified product image, retailer, set, exact product URL, UPC/SKU/DPCI, and Amazon ASIN when applicable.
 - Cost basis uses remaining stock lots first, then falls back to average cost if older data has no lots.
-- Market value uses last-3 sold comps when available, then applies configured eBay fee and shipping assumptions before calculating profit/loss and ROI.
+- Market value uses the best trusted provider price or accepted sold comps, then applies configured fee and shipping assumptions before calculating profit/loss and ROI.
 
 Image behavior:
 

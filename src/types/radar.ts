@@ -1069,6 +1069,31 @@ export type EbayConnectionStatusDTO = {
   message: string;
 };
 
+export type MarketProviderStatusDTO = {
+  provider: "PRICECHARTING" | "TCGPLAYER" | "TCGCSV" | "EBAY_SOLD" | "MANUAL";
+  label: string;
+  enabled: boolean;
+  configured: boolean;
+  mode: "trusted_market" | "sold_comps" | "active_only" | "manual" | "not_configured";
+  priority: number;
+  supportedCategories: string[];
+  message: string;
+  lastSuccessfulSyncAt?: string | null;
+  lastError?: string | null;
+};
+
+export type MarketSyncLogDTO = {
+  provider: string;
+  inventoryItemId: string | null;
+  itemName: string | null;
+  status: "PRICED" | "MISSING" | "LOW_CONFIDENCE" | "MANUAL_MODE" | "ERROR";
+  matchedProduct: string | null;
+  priceFound: number | null;
+  confidence: number | null;
+  message: string;
+  createdAt: string;
+};
+
 export type InvestmentReportItemDTO = {
   cardId: string;
   cardName: string;
@@ -1138,6 +1163,8 @@ export type DashboardDTO = {
   cardCompSales: CardCompSaleDTO[];
   investmentReports: InvestmentReportDTO[];
   ebayStatus: EbayConnectionStatusDTO;
+  marketProviders: MarketProviderStatusDTO[];
+  marketSyncLogs: MarketSyncLogDTO[];
   alerts: AlertDTO[];
   monitorLogs: MonitorLogDTO[];
   monitorAccuracyStats: MonitorAccuracyStatsDTO;

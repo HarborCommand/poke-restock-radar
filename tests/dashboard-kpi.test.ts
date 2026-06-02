@@ -193,8 +193,23 @@ test("market UI explains sold-comp-only pricing and manual mode", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
 
   assert.match(app, /sold comps only/i);
-  assert.match(app, /manual\/Terapeak mode/i);
+  assert.match(app, /Manual comp entry remains available/i);
   assert.match(app, /Active asking price/);
+});
+
+test("market auto-pricing provider UI and cron are registered", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const providers = fs.readFileSync(new URL("../src/lib/market-providers.ts", import.meta.url), "utf8");
+  const vercel = fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8");
+
+  assert.match(app, /Active Market Provider/);
+  assert.match(app, /Refresh All Missing/);
+  assert.match(app, /Market Sync Log/);
+  assert.match(providers, /PRICECHARTING_API_TOKEN/);
+  assert.match(providers, /TCGPLAYER_ACCESS_TOKEN/);
+  assert.match(providers, /TCGCSV_ENABLED/);
+  assert.match(providers, /EBAY_SOLD/);
+  assert.ok(vercel.includes("/api/radar/inventory/market-sync/cron"));
 });
 
 test("dashboard labels unknown market data as not collected instead of showing zero dollars", () => {

@@ -40,6 +40,13 @@ export type EnvironmentReport = {
       webhookSecretConfigured: boolean;
       storeBaseUrlConfigured: boolean;
     };
+    market: {
+      priceChartingConfigured: boolean;
+      tcgplayerConfigured: boolean;
+      tcgcsvEnabled: boolean;
+      ebaySoldConfigured: boolean;
+      activeProvider: string | null;
+    };
   };
 };
 
@@ -88,6 +95,10 @@ export function getEnvironmentReport(): EnvironmentReport {
   const stripeSecretConfigured = hasEnv("STRIPE_SECRET_KEY");
   const stripeWebhookConfigured = hasEnv("STRIPE_WEBHOOK_SECRET");
   const storeBaseUrlConfigured = hasEnv("STORE_BASE_URL");
+  const priceChartingConfigured = hasEnv("PRICECHARTING_API_TOKEN");
+  const tcgplayerConfigured = hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY"));
+  const tcgcsvEnabled = envValue("TCGCSV_ENABLED") === "true";
+  const ebaySoldConfigured = hasEnv("EBAY_CLIENT_ID") && hasEnv("EBAY_CLIENT_SECRET") && hasEnv("EBAY_MARKETPLACE_ID");
 
   const coreRequired = ["DATABASE_URL", "APP_URL"];
   if (isProduction || isVercel) {
@@ -137,6 +148,18 @@ export function getEnvironmentReport(): EnvironmentReport {
   if (!stripeSecretConfigured || !stripeWebhookConfigured || !storeBaseUrlConfigured) {
     warnings.push("Storefront checkout is disabled until STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STORE_BASE_URL are set.");
   }
+  if (!priceChartingConfigured && !tcgplayerConfigured && !tcgcsvEnabled && !ebaySoldConfigured) {
+    warnings.push("Market provider not configured. Set PRICECHARTING_API_TOKEN, TCGplayer/TCGCSV, or eBay sold-comp credentials for automatic inventory pricing.");
+  }
+  const activeProvider = priceChartingConfigured
+    ? "PRICECHARTING"
+    : tcgplayerConfigured
+      ? "TCGPLAYER"
+      : tcgcsvEnabled
+        ? "TCGCSV"
+        : ebaySoldConfigured
+          ? "EBAY_SOLD"
+          : null;
 
   return {
     nodeEnv,
@@ -179,6 +202,13 @@ export function getEnvironmentReport(): EnvironmentReport {
         secretKeyConfigured: stripeSecretConfigured,
         webhookSecretConfigured: stripeWebhookConfigured,
         storeBaseUrlConfigured
+      },
+      market: {
+        priceChartingConfigured,
+        tcgplayerConfigured,
+        tcgcsvEnabled,
+        ebaySoldConfigured,
+        activeProvider
       }
     }
   };
