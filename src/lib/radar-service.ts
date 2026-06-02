@@ -9,11 +9,18 @@ import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate }
 import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
-import { fetchTrustedProviderMarketPrice, marketProviderStatuses } from "@/lib/market-providers";
+import { marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
-import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, fetchLastThreeInventoryEbayComps, testEbayConnection } from "@/lib/ebay";
+import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, testEbayConnection } from "@/lib/ebay";
+import {
+  applyTcgcsvEstimateToInventoryItem,
+  getTcgcsvProviderStats,
+  listTcgcsvMatchReview,
+  syncTcgcsvCatalog,
+  updateTcgcsvMatch
+} from "@/lib/tcgcsv-market";
 import {
   calculateCardProfit,
   calculateMaxRawBuyPrice,
@@ -1551,12 +1558,18 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   const realizedProfitLoss = item.sales.reduce((sum, sale) => sum + sale.profitLoss, 0);
   const realizedRoiPercent = item.sales.reduce((sum, sale) => sum + sale.costBasis, 0);
   const ownedCostBasis = inventoryOwnedCostBasis(item);
-  const soldMarketComps = item.marketComps.filter((comp) => isSoldMarketCompSource(comp.sourceQuality));
-  const compStats = inventoryCompStats(soldMarketComps);
-  const realCompCount = soldMarketComps.length;
-  const hasRealMarketComps = realCompCount > 0;
-  const marketUnitEstimate = hasRealMarketComps ? compStats.average : null;
-  const marketLastRefreshedAt = hasRealMarketComps ? latestInventoryCompEnteredAt(item.marketComps) ?? item.marketLastRefreshedAt : null;
+  const marketPriceRecords = item.marketComps.filter((comp) => isSoldMarketCompSource(comp.sourceQuality));
+  const compStats = inventoryCompStats(marketPriceRecords);
+  const priceRecordCount = marketPriceRecords.length;
+  const hasMarketEstimate = priceRecordCount > 0;
+  const providerConfidence =
+    item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 90
+      ? "HIGH"
+      : item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 70
+        ? "MEDIUM"
+        : null;
+  const marketUnitEstimate = hasMarketEstimate ? compStats.average : null;
+  const marketLastRefreshedAt = hasMarketEstimate ? latestInventoryCompEnteredAt(item.marketComps) ?? item.marketLastRefreshedAt : null;
   const grossMarketValue = marketUnitEstimate === null ? null : marketUnitEstimate * quantityOwned;
   const netMarketValue = grossMarketValue === null ? null : grossMarketValue - (item.estimatedEbayFee ?? 0) - (item.estimatedShippingCost ?? 0);
   const marketProfitLoss = netMarketValue === null ? null : netMarketValue - ownedCostBasis;
@@ -1609,15 +1622,23 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     soldPrice: item.soldPrice,
     soldAt: item.soldAt?.toISOString() ?? null,
     buyerPlatform: item.buyerPlatform,
-    currentMarketEstimate: hasRealMarketComps ? marketUnitEstimate : item.currentMarketEstimate,
-    marketAverageSalePrice: hasRealMarketComps ? marketUnitEstimate : null,
+    currentMarketEstimate: hasMarketEstimate ? marketUnitEstimate : item.currentMarketEstimate,
+    marketAverageSalePrice: hasMarketEstimate ? marketUnitEstimate : null,
     marketLowestRecentComp: compStats.lowest,
     marketHighestRecentComp: compStats.highest,
     marketAverageLast3: compStats.average,
     marketMedianLast3: compStats.median,
-    marketCompCount: realCompCount,
+    marketCompCount: priceRecordCount,
     marketLastRefreshedAt: marketLastRefreshedAt?.toISOString() ?? null,
-    marketConfidence: hasRealMarketComps ? item.marketConfidence : "NONE",
+    marketConfidence: hasMarketEstimate ? providerConfidence ?? item.marketConfidence : "NONE",
+    marketProvider: item.marketProvider,
+    marketProviderProductId: item.marketProviderProductId,
+    marketProviderProductName: item.marketProviderProductName,
+    marketProviderMatchStatus: item.marketProviderMatchStatus,
+    marketProviderConfidenceScore: item.marketProviderConfidenceScore,
+    marketProviderMatchReason: item.marketProviderMatchReason,
+    marketProviderMatchedAt: item.marketProviderMatchedAt?.toISOString() ?? null,
+    marketProviderLastPricedAt: item.marketProviderLastPricedAt?.toISOString() ?? null,
     grossMarketValue: roundedMoney(grossMarketValue),
     netMarketValue: roundedMoney(netMarketValue),
     marketProfitLoss: roundedMoney(marketProfitLoss),
@@ -1649,7 +1670,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     realizedProfitLoss,
     realizedRoiPercent: realizedRoiPercent > 0 ? (realizedProfitLoss / realizedRoiPercent) * 100 : null,
     businessProfitLoss: marketProfitLoss === null ? realizedProfitLoss : realizedProfitLoss + marketProfitLoss,
-    lastThreeComps: soldMarketComps.map(inventoryMarketCompToDTO),
+    lastThreeComps: marketPriceRecords.map(inventoryMarketCompToDTO),
     stockLots: item.stockLots.map(inventoryStockLotToDTO),
     sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName)),
     expectedPlan: item.expectedPlan,
@@ -1732,16 +1753,21 @@ function marketSyncLogsFromInventory(items: InventoryItemDTO[]): MarketSyncLogDT
     .slice(0, 20)
     .map((item) => {
       const comp = item.lastThreeComps[0] ?? null;
-      const provider = comp?.sourceQuality === "EBAY_SOLD" ? "EBAY_SOLD" : comp?.sourceQuality || "UNKNOWN";
+      const provider = item.marketProvider || (comp?.sourceQuality === "EBAY_SOLD" ? "EBAY_SOLD" : comp?.sourceQuality || "UNKNOWN");
+      const isTcgcsv = provider === "TCGCSV" || comp?.sourceQuality === "TCGCSV_ESTIMATE";
       return {
         provider,
         inventoryItemId: item.id,
         itemName: item.itemName,
-        status: item.marketCompCount >= 3 ? "PRICED" : "LOW_CONFIDENCE",
-        matchedProduct: comp?.saleTitle ?? item.itemName,
+        status: item.marketCompCount > 0 && (item.marketConfidence === "HIGH" || isTcgcsv) ? "PRICED" : "LOW_CONFIDENCE",
+        matchedProduct: item.marketProviderProductName ?? comp?.saleTitle ?? item.itemName,
         priceFound: item.marketAverageSalePrice,
-        confidence: item.marketConfidence === "HIGH" ? 100 : item.marketConfidence === "MEDIUM" ? 75 : item.marketConfidence === "LOW" ? 50 : null,
-        message: item.marketCompCount >= 3 ? "Market value refreshed from trusted provider data." : "Market value refreshed with fewer than 3 accepted price points.",
+        confidence: item.marketProviderConfidenceScore || (item.marketConfidence === "HIGH" ? 100 : item.marketConfidence === "MEDIUM" ? 75 : item.marketConfidence === "LOW" ? 50 : null),
+        message: isTcgcsv
+          ? "Market value refreshed from cached TCGCSV Market Estimate. Not a sold comp."
+          : item.marketCompCount >= 3
+            ? "Market value refreshed from trusted provider data."
+            : "Market value refreshed with fewer than 3 accepted price points.",
         createdAt: item.marketLastRefreshedAt || item.updatedAt
       };
     });
@@ -1803,6 +1829,7 @@ function gradeLabel(gradeType: GradeType) {
 function sourceQualityLabel(sourceQuality: CompSourceQuality) {
   if (sourceQuality === "PRICECHARTING") return "PriceCharting";
   if (sourceQuality === "TCGPLAYER") return "TCGPlayer";
+  if (sourceQuality === "TCGCSV_ESTIMATE") return "TCGCSV Market Estimate";
   if (sourceQuality === "MANUAL_ESTIMATE") return "Manual estimate";
   return "eBay sold";
 }
@@ -2331,7 +2358,9 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const monitorLogDTOs = monitorLogs.map(monitorLogToDTO);
   const inventoryDTOs = inventory.map(inventoryItemToDTO);
   const ebayStatus = ebayConnectionStatus();
-  const marketProviders = marketProviderStatuses(ebayStatus);
+  const tcgcsvStats = await getTcgcsvProviderStats();
+  const marketProviders = marketProviderStatuses(ebayStatus, tcgcsvStats);
+  const marketMatchReview = await listTcgcsvMatchReview(inventoryDTOs);
   const launchChecklist = ownerLaunchChecklist({
     products: productDTOs,
     stores: storeDTOs,
@@ -2396,6 +2425,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     investmentReports: investmentReports.map(investmentReportToDTO),
     ebayStatus,
     marketProviders,
+    marketMatchReview,
     marketSyncLogs: marketSyncLogsFromInventory(inventoryDTOs),
     alerts: alertDTOs,
     monitorLogs: monitorLogDTOs,
@@ -3806,6 +3836,7 @@ function inventoryMarketRecommendation(
     estimatedShippingCost?: number | null;
     marketCompCount?: number;
     marketConfidence?: string | null;
+    marketProvider?: string | null;
     product?: {
       liveStockStatus?: string | null;
       stockStatus?: string | null;
@@ -3827,8 +3858,8 @@ function inventoryMarketRecommendation(
   const quantityOwned = input.quantityOwned ?? input.quantity;
   const totalCost = input.costBasis ?? input.totalCost ?? input.cost * quantityOwned + (input.purchaseExtraCost ?? 0);
   const compCount = input.marketCompCount ?? 0;
-  const hasRealComps = compCount > 0;
-  const marketPrice = hasRealComps ? input.currentMarketEstimate ?? null : null;
+  const hasMarketEstimate = compCount > 0;
+  const marketPrice = hasMarketEstimate ? input.currentMarketEstimate ?? null : null;
   const gross = marketPrice === null ? null : marketPrice * quantityOwned;
   const estimatedEbayFee = gross === null ? null : gross * settings.ebaySellingFee;
   const estimatedShippingCost = gross === null ? null : input.estimatedShippingCost ?? settings.shippingCost;
@@ -3839,7 +3870,9 @@ function inventoryMarketRecommendation(
   const roiPercent = estimatedNetProfit === null || totalCost <= 0 ? null : (estimatedNetProfit / totalCost) * 100;
   const itemStatus = input.itemStatus || "";
   const confidence = input.marketConfidence || (compCount >= 3 ? "HIGH" : compCount >= 2 ? "MEDIUM" : compCount === 1 ? "LOW" : "NONE");
-  const strongComps = compCount >= 3 && (confidence === "HIGH" || confidence === "MEDIUM" || confidence === "MANUAL");
+  const strongMarketEstimate =
+    (input.marketProvider === "TCGCSV" && compCount > 0 && confidence === "HIGH") ||
+    (compCount >= 3 && (confidence === "HIGH" || confidence === "MEDIUM" || confidence === "MANUAL"));
   const productSignals = [input.product?.sealedResaleNotes, input.product?.scarcityNotes, input.product?.priority, input.product?.rating, input.product?.manualPriorityOverride]
     .filter(Boolean)
     .join(" ")
@@ -3849,24 +3882,24 @@ function inventoryMarketRecommendation(
     input.product?.liveStockStatus === "SOLD_OUT" ||
     input.product?.stockStatus === "SOLD_OUT";
   let recommendedAction = "HOLD";
-  let recommendationReason = "Market not collected yet. Add sold comps before recommendations use profit data.";
+  let recommendationReason = "Market not collected yet. Run TCGCSV sync or add an admin fallback estimate before recommendations use profit data.";
 
-  if (hasRealComps && input.card && itemStatus === "raw" && Math.max(input.card.psa9EstimatedProfit, input.card.psa10EstimatedProfit) >= settings.minimumProfitTarget) {
+  if (hasMarketEstimate && input.card && itemStatus === "raw" && Math.max(input.card.psa9EstimatedProfit, input.card.psa10EstimatedProfit) >= settings.minimumProfitTarget) {
     recommendedAction = "GRADE_FIRST";
     recommendationReason = `Grade first because linked card comps show PSA upside over the ${settings.minimumProfitTarget.toFixed(0)} target.`;
   } else if (estimatedNetProfit !== null && roiPercent !== null) {
     if (estimatedNetProfit < 0) {
       recommendedAction = "AVOID_BUYING_MORE";
       recommendationReason = `Avoid buying more: current market is below your remaining cost after fees.`;
-    } else if (strongComps && estimatedNetProfit >= settings.minimumProfitTarget && roiPercent >= 30) {
+    } else if (strongMarketEstimate && estimatedNetProfit >= settings.minimumProfitTarget && roiPercent >= 30) {
       recommendedAction = "SELL_NOW";
-      recommendationReason = `Sell now: last sold comps support about $${estimatedNetProfit.toFixed(2)} profit and ${roiPercent.toFixed(1)}% ROI after fees.`;
+      recommendationReason = `Sell now: current market estimate supports about $${estimatedNetProfit.toFixed(2)} profit and ${roiPercent.toFixed(1)}% ROI after fees.`;
     } else if (lowSupplyOrHighDemand && estimatedNetProfit >= settings.minimumProfitTarget && roiPercent >= 15) {
       recommendedAction = "LIST_HIGH";
       recommendationReason = `List high: margin clears target and linked product notes suggest low supply or strong demand.`;
     } else if (estimatedNetProfit >= settings.minimumProfitTarget && roiPercent >= 18) {
       recommendedAction = "LIST_HIGH";
-      recommendationReason = `List high: profit target is met, but comps are not strong enough for an urgent sell.`;
+      recommendationReason = `List high: profit target is met, but confidence is not strong enough for an urgent sell.`;
     } else {
       recommendedAction = "HOLD";
       recommendationReason = `Hold: current margin does not clear the ${settings.minimumProfitTarget.toFixed(0)} profit target.`;
@@ -3895,11 +3928,22 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
       return recomputeInventoryItem(itemId, currentUser);
     }
   }
-  const soldMarketComps = item.marketComps.filter((comp) => isSoldMarketCompSource(comp.sourceQuality));
-  const compStats = inventoryCompStats(soldMarketComps);
-  const compCount = soldMarketComps.length;
+  const marketPriceRecords = item.marketComps.filter((comp) => isSoldMarketCompSource(comp.sourceQuality));
+  const compStats = inventoryCompStats(marketPriceRecords);
+  const compCount = marketPriceRecords.length;
   const currentMarketEstimate = compCount ? compStats.average : item.currentMarketEstimate;
-  const confidence = compCount >= 3 ? "HIGH" : compCount >= 2 ? "MEDIUM" : compCount === 1 ? "LOW" : "NONE";
+  const confidence =
+    item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 90 && compCount > 0
+      ? "HIGH"
+      : item.marketProvider === "TCGCSV" && item.marketProviderConfidenceScore >= 70 && compCount > 0
+        ? "MEDIUM"
+        : compCount >= 3
+          ? "HIGH"
+          : compCount >= 2
+            ? "MEDIUM"
+            : compCount === 1
+              ? "LOW"
+              : "NONE";
   const latestCompEnteredAt = latestInventoryCompEnteredAt(item.marketComps);
   const quantityOwned = inventoryQuantityOwned(item);
   const costBasis = inventoryOwnedCostBasis(item);
@@ -3919,6 +3963,7 @@ async function recomputeInventoryItem(itemId: string, currentUser: SessionUser) 
       estimatedShippingCost: item.estimatedShippingCost,
       marketCompCount: compCount,
       marketConfidence: confidence,
+      marketProvider: item.marketProvider,
       product: item.product,
       card: item.card
     },
@@ -4599,81 +4644,30 @@ export async function createInventorySale(
   return recomputeInventoryItem(item.id, currentUser);
 }
 
-export async function refreshInventoryEbayComps(currentUser: SessionUser, itemId: string) {
+export async function refreshInventoryMarketEstimate(currentUser: SessionUser, itemId: string) {
   const item = await prisma.inventoryItem.findFirst({
     where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
     include: inventoryItemInclude
   });
   if (!item) throw new Error("Inventory item not found");
   const itemDTO = inventoryItemToDTO(item);
-  const trustedProvider = await fetchTrustedProviderMarketPrice(itemDTO);
-  if (trustedProvider.result) {
-    const sourceQuality: CompSourceQuality =
-      trustedProvider.result.provider === "PRICECHARTING"
-        ? "PRICECHARTING"
-        : trustedProvider.result.provider === "EBAY_SOLD"
-          ? "EBAY_SOLD"
-          : "TCGPLAYER";
-    await prisma.inventoryMarketComp.deleteMany({
-      where: {
-        inventoryItemId: item.id,
-        sourceQuality
-      }
-    });
-    await prisma.inventoryMarketComp.create({
-      data: {
-        inventoryItemId: item.id,
-        saleTitle: trustedProvider.result.matchedTitle,
-        salePrice: trustedProvider.result.price,
-        soldAt: new Date(),
-        sourceUrl: trustedProvider.result.sourceUrl,
-        sourceQuality,
-        matchScore: trustedProvider.result.confidence,
-        notes: `${trustedProvider.result.notes} Auto-pricing provider: ${trustedProvider.result.provider}.`
-      }
-    });
-    const updated = await recomputeInventoryItem(item.id, currentUser);
-    return {
-      mode: "api" as const,
-      provider: trustedProvider.result.provider,
-      message: `${trustedProvider.result.provider} priced ${item.itemName} at $${trustedProvider.result.price.toFixed(2)} with ${trustedProvider.result.confidence}% confidence.`,
-      item: updated,
-      failures: trustedProvider.failures
-    };
-  }
-  const result = await fetchLastThreeInventoryEbayComps({
-    itemName: item.itemName,
-    setName: item.setName,
-    category: item.category,
-    upc: item.upc,
-    sku: item.sku || item.asin
-  });
-  if (result.mode === "manual") {
-    return {
-      mode: result.mode,
-      provider: "MANUAL" as const,
-      message: trustedProvider.failures.length
-        ? `Market provider not configured or no provider match found. ${result.message}`
-        : result.message,
-      item: inventoryItemToDTO(item),
-      failures: trustedProvider.failures
-    };
-  }
-  await prisma.inventoryMarketComp.deleteMany({ where: { inventoryItemId: item.id, sourceQuality: "EBAY_SOLD" } });
-  await prisma.inventoryMarketComp.createMany({
-    data: result.sales.map((sale) => ({
-      inventoryItemId: item.id,
-      saleTitle: sale.saleTitle,
-      salePrice: sale.salePrice,
-      soldAt: sale.soldAt,
-      sourceUrl: sale.sourceUrl,
-      sourceQuality: "EBAY_SOLD",
-      matchScore: sale.matchScore,
-      notes: sale.notes
-    }))
-  });
+  const result = await applyTcgcsvEstimateToInventoryItem(currentUser, itemDTO);
   const updated = await recomputeInventoryItem(item.id, currentUser);
-  return { mode: result.mode, provider: "EBAY_SOLD" as const, message: result.message, item: updated, failures: trustedProvider.failures };
+  return {
+    mode: result.status === "MANUAL_MODE" ? "manual" as const : "api" as const,
+    provider: "TCGCSV" as const,
+    message: result.message,
+    item: updated,
+    failures: result.status === "MANUAL_MODE" ? [{ provider: "TCGCSV", reason: result.message }] : [],
+    matchStatus: result.status,
+    matchedProduct: result.matchedProduct,
+    priceFound: result.priceFound,
+    confidence: result.confidence
+  };
+}
+
+export async function refreshInventoryEbayComps(currentUser: SessionUser, itemId: string) {
+  return refreshInventoryMarketEstimate(currentUser, itemId);
 }
 
 export async function refreshAllInventoryMarketComps(currentUser: SessionUser, options: { onlyMissing?: boolean; onlyStale?: boolean; limit?: number } = {}) {
@@ -4695,31 +4689,54 @@ export async function refreshAllInventoryMarketComps(currentUser: SessionUser, o
   let manualMode = false;
   const logs: MarketSyncLogDTO[] = [];
   for (const item of items) {
-    const result = await refreshInventoryEbayComps(currentUser, item.id);
+    const result = await refreshInventoryMarketEstimate(currentUser, item.id);
     const resultMode: "api" | "manual" = result.mode;
     if (resultMode === "manual") manualMode = true;
     refreshed.push(result.item);
     logs.push({
-      provider: result.provider ?? (resultMode === "manual" ? "MANUAL" : "EBAY_SOLD"),
+      provider: result.provider ?? "TCGCSV",
       inventoryItemId: result.item.id,
       itemName: result.item.itemName,
-      status: result.item.marketCompCount > 0 ? (result.item.marketCompCount >= 3 ? "PRICED" : "LOW_CONFIDENCE") : resultMode === "manual" ? "MANUAL_MODE" : "MISSING",
-      matchedProduct: result.item.lastThreeComps[0]?.saleTitle ?? null,
-      priceFound: result.item.marketAverageSalePrice,
-      confidence: result.item.marketConfidence === "HIGH" ? 100 : result.item.marketConfidence === "MEDIUM" ? 75 : result.item.marketConfidence === "LOW" ? 50 : null,
+      status: result.matchStatus === "PRICED" ? "PRICED" : result.matchStatus === "LOW_CONFIDENCE" ? "LOW_CONFIDENCE" : resultMode === "manual" ? "MANUAL_MODE" : "MISSING",
+      matchedProduct: result.matchedProduct ?? result.item.marketProviderProductName ?? null,
+      priceFound: result.priceFound ?? result.item.marketAverageSalePrice,
+      confidence: result.confidence ?? result.item.marketProviderConfidenceScore ?? null,
       message: result.message,
       createdAt: new Date().toISOString()
     });
   }
   return {
-    mode: manualMode ? "manual" : ebayMode(),
+    mode: manualMode ? "manual" : "api",
     refreshedCount: refreshed.length,
     message: manualMode
-      ? "Market provider not configured or no provider match found. Add manual comps or configure PriceCharting, TCGplayer/TCGCSV, or eBay sold-comp access."
-      : `${refreshed.length} inventory product${refreshed.length === 1 ? "" : "s"} refreshed from configured market providers.`,
+      ? "TCGCSV is not configured. Set TCGCSV_ENABLED=true to use automatic market estimates."
+      : `${refreshed.length} inventory product${refreshed.length === 1 ? "" : "s"} refreshed from cached TCGCSV market estimates.`,
     items: refreshed,
     logs
   };
+}
+
+export async function syncTcgcsvMarketData(currentUser: SessionUser, options: { limitGroups?: number; refreshLimit?: number } = {}) {
+  const sync = await syncTcgcsvCatalog({ limitGroups: options.limitGroups });
+  const refresh = await refreshAllInventoryMarketComps(currentUser, { onlyMissing: true, limit: options.refreshLimit ?? 50 });
+  return {
+    provider: "TCGCSV" as const,
+    ...sync,
+    refreshedCount: refresh.refreshedCount,
+    items: refresh.items,
+    logs: refresh.logs,
+    stats: await getTcgcsvProviderStats()
+  };
+}
+
+export async function reviewTcgcsvMarketMatch(currentUser: SessionUser, itemId: string, action: "accept" | "reject" | "lock" | "search_again") {
+  await updateTcgcsvMatch(currentUser, itemId, action);
+  const updated = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: inventoryItemInclude
+  });
+  if (!updated) throw new Error("Inventory item not found");
+  return recomputeInventoryItem(updated.id, currentUser);
 }
 
 export async function controlProductMonitor(

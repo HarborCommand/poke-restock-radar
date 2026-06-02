@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { badRequest, ok } from "@/lib/http";
-import { refreshInventoryEbayComps } from "@/lib/radar-service";
+import { refreshInventoryMarketEstimate } from "@/lib/radar-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
   if (response) return response;
   try {
     const { itemId } = await params;
-    return ok(await refreshInventoryEbayComps(user, itemId));
+    return ok(await refreshInventoryMarketEstimate(user, itemId));
   } catch (error) {
     return badRequest(error);
   }

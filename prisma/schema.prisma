@@ -679,6 +679,14 @@ model InventoryItem {
   marketCompCount        Int                   @default(0)
   marketLastRefreshedAt  DateTime?
   marketConfidence       String                @default("LOW")
+  marketProvider         String?
+  marketProviderProductId String?
+  marketProviderProductName String?
+  marketProviderMatchStatus String             @default("UNMATCHED")
+  marketProviderConfidenceScore Int            @default(0)
+  marketProviderMatchReason String?
+  marketProviderMatchedAt DateTime?
+  marketProviderLastPricedAt DateTime?
   estimatedEbayFee       Float?
   estimatedShippingCost  Float?
   estimatedNetProfit     Float?
@@ -721,10 +729,60 @@ model InventoryItem {
   @@index([category])
   @@index([listingStatus])
   @@index([recommendedAction])
+  @@index([marketProvider])
+  @@index([marketProviderProductId])
+  @@index([marketProviderMatchStatus])
   @@index([publishToStore])
   @@index([storeStatus])
   @@index([storefrontCategory])
   @@index([purchasedAt])
+}
+
+model TcgcsvProduct {
+  id                 String    @id @default(cuid())
+  tcgcsvProductId    String    @unique
+  categoryId         Int       @default(3)
+  groupId            Int
+  groupName          String
+  productName        String
+  cleanProductName   String?
+  normalizedName     String
+  imageUrl           String?
+  productUrl         String?
+  extendedData       String?
+  marketPrice        Float?
+  lowPrice           Float?
+  midPrice           Float?
+  highPrice          Float?
+  directLowPrice     Float?
+  subTypeName        String?
+  lastSyncedAt       DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([categoryId])
+  @@index([groupId])
+  @@index([normalizedName])
+  @@index([groupName])
+  @@index([lastSyncedAt])
+}
+
+model TcgcsvSyncLog {
+  id             String   @id @default(cuid())
+  status         String
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+  groupsFetched  Int      @default(0)
+  productsCached Int      @default(0)
+  pricesCached   Int      @default(0)
+  itemsMatched   Int      @default(0)
+  itemsReview    Int      @default(0)
+  error          String?
+  message        String?
+  createdAt      DateTime @default(now())
+
+  @@index([startedAt])
+  @@index([status])
 }
 
 model InventoryStockLot {

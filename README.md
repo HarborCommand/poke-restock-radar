@@ -717,15 +717,17 @@ Market Recommendation behavior:
 - `RIP / OPEN`: sealed packs or bundles are materially underwater.
 - `AVOID BUYING MORE`: current comps show weak resale economics.
 
-Market data is conservative. The `Market` tab auto-prices inventory only from configured trusted providers. Default priority is PriceCharting, TCGplayer, TCGCSV, eBay sold comps, then manual comps. Active eBay listings are treated as asking prices only and are not used as sold market value by default. If no provider returns a trusted price, the app shows `Market provider not configured` or `Market not collected yet` instead of inventing values.
+Market data is conservative. The `Market` tab uses TCGCSV as the primary automatic provider and caches Pokemon products/prices server-side before matching inventory. TCGCSV values are labeled as `TCGCSV Market Estimate` or `TCGplayer-derived market estimate`; they are not sold comps. If no cached provider match or price exists, the app shows `Market not collected yet` instead of inventing values. Manual comps remain an admin fallback only and are hidden from the main Market workflow.
 
 Inventory market provider env vars:
 
+- `TCGCSV_ENABLED=true`
+- `TCGCSV_BASE_URL=https://tcgcsv.com/tcgplayer`
+- `TCGCSV_SYNC_FREQUENCY=daily`
 - `PRICECHARTING_API_TOKEN`
 - `TCGPLAYER_PUBLIC_KEY`
 - `TCGPLAYER_PRIVATE_KEY`
 - `TCGPLAYER_ACCESS_TOKEN`
-- `TCGCSV_ENABLED`
 - `EBAY_CLIENT_ID`
 - `EBAY_CLIENT_SECRET`
 - `EBAY_ENVIRONMENT`
@@ -733,18 +735,19 @@ Inventory market provider env vars:
 
 Market auto-sync:
 
-- `Refresh Market for Item` checks configured providers for one product.
-- `Refresh All Missing` prices products with no market data first.
-- `Refresh All Inventory` reruns provider pricing across inventory.
-- Vercel Cron calls `/api/radar/inventory/market-sync/cron` daily and refreshes stale market data older than 24 hours.
-- Provider keys stay server-side; Admin only sees configured/missing status.
+- `Sync TCGCSV Now` pulls Pokemon groups, products, and prices into the local database.
+- `Refresh Market for Item` matches one inventory item against cached TCGCSV data.
+- `Refresh All Missing` processes inventory with no market estimate first.
+- `Refresh All Inventory` reruns cached TCGCSV matching across inventory.
+- Vercel Cron calls `/api/radar/inventory/market-sync/cron` daily, syncs TCGCSV when enabled, then refreshes stale/missing inventory estimates.
+- Provider keys and sync requests stay server-side; Admin only sees configured/missing status and aggregate cache counts.
 
 Market sync:
 
 - Scanned or manually entered UPC/SKU/DPCI/ASIN values are matched against watched products.
 - When a watched product matches, inventory pulls the verified product image, retailer, set, exact product URL, UPC/SKU/DPCI, and Amazon ASIN when applicable.
 - Cost basis uses remaining stock lots first, then falls back to average cost if older data has no lots.
-- Market value uses the best trusted provider price or accepted sold comps, then applies configured fee and shipping assumptions before calculating profit/loss and ROI.
+- Market value prefers the cached TCGCSV market price, then mid price, then low price. The app applies configured fee and shipping assumptions before calculating profit/loss and ROI.
 
 Image behavior:
 

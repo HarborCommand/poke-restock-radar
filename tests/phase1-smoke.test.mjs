@@ -938,8 +938,8 @@ test("inventory tracker and market recommendation engine exists", () => {
     "lookupInventoryUpc",
     "lookupExternalUpc",
     "Market not collected yet",
-    "Add sold comps before recommendations use profit data",
-    "const hasRealComps = compCount > 0",
+    "Run TCGCSV sync or add an admin fallback estimate before recommendations use profit data",
+    "const hasMarketEstimate = compCount > 0",
     "marketCompCount: 0",
     "GRADE_FIRST",
     "SELL_NOW"

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { badRequest, ok } from "@/lib/http";
 import { prisma } from "@/lib/db";
-import { refreshAllInventoryMarketComps } from "@/lib/radar-service";
+import { refreshAllInventoryMarketComps, syncTcgcsvMarketData } from "@/lib/radar-service";
 import type { SessionUser } from "@/types/radar";
 
 export const runtime = "nodejs";
@@ -44,7 +44,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    return ok(await refreshAllInventoryMarketComps(await ownerUser(), { onlyStale: true, limit: 25 }));
+    const user = await ownerUser();
+    if (process.env.TCGCSV_ENABLED === "true") {
+      return ok(await syncTcgcsvMarketData(user, { refreshLimit: 25 }));
+    }
+    return ok(await refreshAllInventoryMarketComps(user, { onlyStale: true, limit: 25 }));
   } catch (error) {
     return badRequest(error);
   }

@@ -95,9 +95,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   const stripeSecretConfigured = hasEnv("STRIPE_SECRET_KEY");
   const stripeWebhookConfigured = hasEnv("STRIPE_WEBHOOK_SECRET");
   const storeBaseUrlConfigured = hasEnv("STORE_BASE_URL");
+  const tcgcsvEnabled = envValue("TCGCSV_ENABLED") === "true";
   const priceChartingConfigured = hasEnv("PRICECHARTING_API_TOKEN");
   const tcgplayerConfigured = hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY"));
-  const tcgcsvEnabled = envValue("TCGCSV_ENABLED") === "true";
   const ebaySoldConfigured = hasEnv("EBAY_CLIENT_ID") && hasEnv("EBAY_CLIENT_SECRET") && hasEnv("EBAY_MARKETPLACE_ID");
 
   const coreRequired = ["DATABASE_URL", "APP_URL"];
@@ -148,15 +148,15 @@ export function getEnvironmentReport(): EnvironmentReport {
   if (!stripeSecretConfigured || !stripeWebhookConfigured || !storeBaseUrlConfigured) {
     warnings.push("Storefront checkout is disabled until STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STORE_BASE_URL are set.");
   }
-  if (!priceChartingConfigured && !tcgplayerConfigured && !tcgcsvEnabled && !ebaySoldConfigured) {
-    warnings.push("Market provider not configured. Set PRICECHARTING_API_TOKEN, TCGplayer/TCGCSV, or eBay sold-comp credentials for automatic inventory pricing.");
+  if (!tcgcsvEnabled) {
+    warnings.push("TCGCSV market estimates are disabled. Set TCGCSV_ENABLED=true to use automatic inventory pricing.");
   }
-  const activeProvider = priceChartingConfigured
-    ? "PRICECHARTING"
-    : tcgplayerConfigured
-      ? "TCGPLAYER"
-      : tcgcsvEnabled
-        ? "TCGCSV"
+  const activeProvider = tcgcsvEnabled
+    ? "TCGCSV"
+    : priceChartingConfigured
+      ? "PRICECHARTING"
+      : tcgplayerConfigured
+        ? "TCGPLAYER"
         : ebaySoldConfigured
           ? "EBAY_SOLD"
           : null;

@@ -198,7 +198,7 @@ const priorities: Priority[] = ["LOW", "MEDIUM", "HIGH"];
 const productRatings: Array<Exclude<Rating, "AVOID">> = ["BUY", "WATCH", "SKIP"];
 const cardRatings: Rating[] = ["BUY", "WATCH", "SKIP", "AVOID"];
 const gradeTypes: GradeType[] = ["RAW", "PSA_9", "PSA_10", "BGS_9_5", "BGS_10", "BGS_BLACK_LABEL"];
-const compSourceQualities: CompSourceQuality[] = ["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "MANUAL_ESTIMATE", "ACTIVE_ASKING"];
+const compSourceQualities: CompSourceQuality[] = ["EBAY_SOLD", "PRICECHARTING", "TCGPLAYER", "TCGCSV_ESTIMATE", "MANUAL_ESTIMATE", "ACTIVE_ASKING"];
 const eras: Array<"ALL" | Era> = ["ALL", "MODERN", "VINTAGE"];
 const productTypeOptions = ["ETB", "Booster Bundle", "Sleeved Booster", "Collection Box", "Booster Box", "Premium Collection"];
 const storeVisitResults: StoreVisitResult[] = ["stock_seen", "empty_shelf", "vendor_spotted", "bought_product", "no_visit"];
@@ -254,6 +254,7 @@ function formatGradeType(value: string) {
 function formatSourceQuality(value: string) {
   if (value === "PRICECHARTING") return "PriceCharting";
   if (value === "TCGPLAYER") return "TCGPlayer";
+  if (value === "TCGCSV_ESTIMATE") return "TCGCSV Market Estimate";
   if (value === "MANUAL_ESTIMATE") return "Manual estimate";
   if (value === "ACTIVE_ASKING") return "Active asking price";
   return "eBay sold";
@@ -288,12 +289,14 @@ function inventoryRecommendationTone(value: string) {
 
 function inventoryMarketBadges(item: InventoryItemDTO, ebayStatus: DashboardDTO["ebayStatus"]) {
   const hasEbayComps = item.lastThreeComps.some((comp) => comp.sourceQuality === "EBAY_SOLD");
-  const hasManualComps = item.lastThreeComps.some((comp) => comp.sourceQuality !== "EBAY_SOLD");
+  const hasTcgcsvEstimate = item.lastThreeComps.some((comp) => comp.sourceQuality === "TCGCSV_ESTIMATE") || item.marketProvider === "TCGCSV";
+  const hasManualComps = item.lastThreeComps.some((comp) => !["EBAY_SOLD", "TCGCSV_ESTIMATE"].includes(comp.sourceQuality));
   const badges: Array<{ label: string; tone: "good" | "watch" | "bad" | "muted" }> = [];
+  if (hasTcgcsvEstimate) badges.push({ label: "TCGCSV Market Estimate", tone: item.marketProviderMatchStatus === "REVIEW" ? "watch" : "good" });
   if (hasEbayComps) badges.push({ label: "Live eBay Data", tone: item.marketCompCount >= 3 ? "good" : "watch" });
   if (hasManualComps) badges.push({ label: "Manual Comp Data", tone: "watch" });
   if (!item.marketCompCount) badges.push({ label: "Market Not Collected", tone: "muted" });
-  if (!ebayStatus.ready) badges.push({ label: "eBay Not Configured", tone: "watch" });
+  if (!hasTcgcsvEstimate && !ebayStatus.ready) badges.push({ label: "eBay Not Configured", tone: "watch" });
   if (item.marketCompCount > 0 && (item.marketCompCount < 3 || item.marketConfidence === "LOW")) badges.push({ label: "Low Confidence", tone: "bad" });
   const seen = new Set<string>();
   return badges.filter((badge) => {
@@ -304,9 +307,10 @@ function inventoryMarketBadges(item: InventoryItemDTO, ebayStatus: DashboardDTO[
 }
 
 function inventoryMarketSource(item: InventoryItemDTO) {
+  if (item.lastThreeComps.some((comp) => comp.sourceQuality === "TCGCSV_ESTIMATE") || item.marketProvider === "TCGCSV") return "TCGCSV Market Estimate";
   if (item.lastThreeComps.some((comp) => comp.sourceQuality === "EBAY_SOLD")) return "eBay sold comps";
   if (item.lastThreeComps.length) return "Manual sold comps";
-  return "No sold comps collected";
+  return "Market not collected";
 }
 
 function inventoryMarketTableValue(item: InventoryItemDTO) {
@@ -1099,10 +1103,7 @@ export function RadarApp() {
         {activeTab === "market" ? (
           <MarketPanel
             dashboard={dashboard}
-            setActiveTab={setActiveTab}
             busy={busy}
-            busyLabel={busyLabel}
-            submit={submit}
             runAction={runAction}
           />
         ) : null}
@@ -3288,6 +3289,27 @@ function InventoryImage({ item }: { item: InventoryItemDTO }) {
         />
       ) : (
         <span>{initials}</span>
+      )}
+    </div>
+  );
+}
+
+function InventoryFallbackImage({ imageUrl, label }: { imageUrl: string | null | undefined; label: string }) {
+  const [failed, setFailed] = useState(false);
+  const renderable = isRenderableImageUrl(imageUrl) && !failed;
+  const initials = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return (
+    <div className={renderable ? "inventory-image-frame has-image" : "inventory-image-frame"}>
+      {renderable && imageUrl ? (
+        <Image src={imageUrl} alt={`${label} image`} width={76} height={76} loading="lazy" unoptimized onError={() => setFailed(true)} />
+      ) : (
+        <span>{initials || "TCG"}</span>
       )}
     </div>
   );
@@ -8178,26 +8200,18 @@ function InventoryAnalyticsPanel({ dashboard }: { dashboard: DashboardDTO }) {
 
 function MarketPanel({
   dashboard,
-  setActiveTab,
   busy,
-  busyLabel,
-  submit,
   runAction
 }: {
   dashboard: DashboardDTO;
-  setActiveTab: (tab: Tab) => void;
   busy: boolean;
-  busyLabel: string | null;
-  submit: SubmitHandler;
   runAction: ActionHandler;
 }) {
   const ownedInventory = dashboard.inventory.filter((item) => item.quantityOwned > 0);
-  const withMarketData = ownedInventory.filter((item) => item.marketCompCount > 0);
-  const missingMarketData = ownedInventory.filter((item) => item.marketCompCount === 0).slice(0, 8);
-  const lowConfidenceItems = withMarketData
-    .filter((item) => item.marketCompCount < 3 || item.marketConfidence === "LOW")
-    .sort((a, b) => a.marketCompCount - b.marketCompCount)
-    .slice(0, 6);
+  const withMarketData = ownedInventory.filter((item) => item.marketCompCount > 0 && item.currentMarketEstimate !== null);
+  const missingMarketData = ownedInventory
+    .filter((item) => item.marketCompCount === 0 || item.marketProviderMatchStatus === "UNMATCHED" || item.marketProviderMatchStatus === "REJECTED")
+    .slice(0, 10);
   const pricedItems = withMarketData
     .slice()
     .sort((a, b) => (b.marketProfitLoss ?? -999999) - (a.marketProfitLoss ?? -999999))
@@ -8207,33 +8221,49 @@ function MarketPanel({
     .slice(0, 5);
   const estimatedNet = withMarketData.reduce((sum, item) => sum + (item.netMarketValue ?? 0), 0);
   const estimatedProfit = withMarketData.reduce((sum, item) => sum + (item.marketProfitLoss ?? 0), 0);
-  const coveragePercent = ownedInventory.length ? (withMarketData.length / ownedInventory.length) * 100 : 0;
-  const activeProvider = dashboard.marketProviders.find((provider) => provider.enabled && provider.provider !== "MANUAL") ?? dashboard.marketProviders.find((provider) => provider.provider === "MANUAL");
+  const tcgcsvProvider = dashboard.marketProviders.find((provider) => provider.provider === "TCGCSV");
+  const activeProvider = tcgcsvProvider ?? dashboard.marketProviders.find((provider) => provider.enabled && provider.provider !== "MANUAL") ?? dashboard.marketProviders.find((provider) => provider.provider === "MANUAL");
+  const reviewCount = dashboard.marketMatchReview.length;
 
   return (
     <>
       <SectionIntro
-        title="Market Pricing"
-        detail="Inventory value is calculated from real sold comps only. Active listing prices can be saved for reference, but they do not drive value, ROI, or recommendations."
+        title="Market Estimates"
+        detail="TCGCSV is the primary automatic provider. These are TCGplayer-derived market estimates from server-side cache, not sold comps."
       />
       <section className="inventory-kpi-grid">
-        <InventoryKpiCard label="Market Coverage" value={`${coveragePercent.toFixed(0)}%`} detail={`${withMarketData.length} of ${ownedInventory.length} owned products priced`} tone={coveragePercent >= 80 ? "good" : "watch"} />
-        <InventoryKpiCard label="Missing Sold Comps" value={String(dashboard.inventorySummary.missingMarketDataCount)} detail="needs real sold comps" tone={dashboard.inventorySummary.missingMarketDataCount ? "watch" : "good"} />
-        <InventoryKpiCard label="Estimated Market Value" value={dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue)} detail="sold comps only" tone="good" />
+        <InventoryKpiCard label="Items Priced" value={String(withMarketData.length)} detail={`${ownedInventory.length} owned inventory items`} tone={withMarketData.length ? "good" : "watch"} />
+        <InventoryKpiCard label="Missing Market Data" value={String(dashboard.inventorySummary.missingMarketDataCount)} detail={reviewCount ? `${reviewCount} need match review` : "need TCGCSV match"} tone={dashboard.inventorySummary.missingMarketDataCount ? "watch" : "good"} />
+        <InventoryKpiCard label="Estimated Market Value" value={dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue)} detail="TCGCSV estimate" tone="good" />
         <InventoryKpiCard label="Estimated Net" value={withMarketData.length ? money(estimatedNet) : "Not collected"} detail="after estimated fees/shipping" tone="good" />
-        <InventoryKpiCard label="Estimated Profit" value={withMarketData.length ? money(estimatedProfit) : "Not collected"} detail="unrealized from sold comps" tone={estimatedProfit >= 0 ? "good" : "bad"} />
-        <InventoryKpiCard label="Active Market Provider" value={activeProvider?.label ?? "Manual"} detail={activeProvider?.message ?? "Market provider not configured"} tone={activeProvider?.provider === "MANUAL" ? "watch" : "good"} />
+        <InventoryKpiCard label="Estimated Profit" value={withMarketData.length ? money(estimatedProfit) : "Not collected"} detail="unrealized estimate" tone={estimatedProfit >= 0 ? "good" : "bad"} />
+        <InventoryKpiCard label="Active Provider" value={activeProvider?.label ?? "TCGCSV"} detail={activeProvider?.configured ? "server cache enabled" : "not configured"} tone={activeProvider?.configured ? "good" : "watch"} />
       </section>
       <section className="market-status-strip">
         <div>
-          <strong>{activeProvider?.provider === "MANUAL" ? "Market provider not configured." : `${activeProvider?.label} auto-pricing is active.`}</strong>
+          <strong>{tcgcsvProvider?.configured ? "TCGCSV auto-estimates are active." : "TCGCSV is not configured."}</strong>
           <span>
-            {activeProvider?.provider === "MANUAL"
-              ? "Manual comp entry remains available. Configure PriceCharting, TCGplayer/TCGCSV, or eBay sold-comp access to price inventory automatically."
-              : "Use the refresh actions to price missing or stale items. Active listing prices are not used as market value unless explicitly saved as excluded asking snapshots."}
+            {tcgcsvProvider?.configured
+              ? `Last sync ${tcgcsvProvider.lastSuccessfulSyncAt ? relativeTime(tcgcsvProvider.lastSuccessfulSyncAt) : "not run yet"} - ${tcgcsvProvider.productsCached ?? 0} products cached - ${tcgcsvProvider.itemsMatched ?? 0} matched - ${tcgcsvProvider.itemsNeedingReview ?? 0} need review.`
+              : "Set TCGCSV_ENABLED=true to cache Pokemon products and prices server-side. Manual comps stay hidden as an admin fallback."}
           </span>
         </div>
         <div className="market-refresh-actions">
+          <button
+            className="primary-action compact-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                "Syncing TCGCSV market data",
+                () => requestJson("/api/radar/inventory/tcgcsv/sync", { method: "POST", body: JSON.stringify({}) }),
+                { success: "TCGCSV sync started" }
+              )
+            }
+          >
+            <RefreshCw size={14} />
+            Sync TCGCSV Now
+          </button>
           <button
             className="mini-action"
             disabled={busy}
@@ -8264,20 +8294,23 @@ function MarketPanel({
             <RefreshCw size={14} />
             Refresh All Inventory
           </button>
-          <button className="primary-action compact-action" type="button" onClick={() => setActiveTab("inventory")}>
-            Open Inventory
+          <button className="mini-action" type="button" onClick={() => document.getElementById("market-match-review")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            Review Matches
             <ChevronRight size={15} />
           </button>
         </div>
       </section>
       <section className="market-provider-grid">
-        {dashboard.marketProviders.map((provider) => (
+        {dashboard.marketProviders.filter((provider) => provider.provider === "TCGCSV").map((provider) => (
           <article className={`market-provider-card ${provider.enabled ? "active" : "missing"}`} key={provider.provider}>
             <span>{provider.priority}</span>
             <div>
               <strong>{provider.label}</strong>
               <small>{provider.mode === "active_only" ? "Active listings only - excluded from value" : formatStatus(provider.mode)}</small>
               <p>{provider.message}</p>
+              <p>
+                Cached: {provider.productsCached ?? 0} products / {provider.pricesCached ?? 0} prices - Matched: {provider.itemsMatched ?? 0} - Review: {provider.itemsNeedingReview ?? 0}
+              </p>
             </div>
             <b>{provider.configured ? "Configured" : "Not configured"}</b>
           </article>
@@ -8289,33 +8322,77 @@ function MarketPanel({
             <div className="edit-card-heading">
               <div>
                 <h2>Priced Inventory</h2>
-                <span>Market values, profit, and recommendations from accepted sold comps.</span>
+                <span>Market values, profit, and recommendations from accepted TCGCSV market estimates.</span>
               </div>
             </div>
             <div className="market-inventory-list">
               {pricedItems.length ? (
                 pricedItems.map((item) => <MarketInventoryRow key={item.id} item={item} ebayStatus={dashboard.ebayStatus} busy={busy} runAction={runAction} />)
               ) : (
-                <EmptyState icon={Sparkles} title="No priced inventory yet" detail="Add sold comps to turn inventory into real market values." />
+                <EmptyState icon={Sparkles} title="No priced inventory yet" detail="Run TCGCSV sync, then refresh missing inventory to collect estimates." />
               )}
             </div>
           </div>
-          <div className="inventory-detail-panel market-card">
+          <div className="inventory-detail-panel market-card" id="market-match-review">
             <div className="edit-card-heading">
               <div>
-                <h2>Manual Sold Comp Entry</h2>
-                <span>Add completed sales only. Quantity normalizes lot sales into a per-unit comp.</span>
+                <h2>Match Review</h2>
+                <span>Accept or lock medium-confidence TCGCSV matches before they price inventory.</span>
               </div>
             </div>
-            <InventoryCompForm items={ownedInventory} busy={busy} busyLabel={busyLabel} submit={submit} />
+            <div className="market-match-review-list">
+              {dashboard.marketMatchReview.length ? (
+                dashboard.marketMatchReview.map((match) => (
+                  <article className="market-match-card" key={match.inventoryItemId}>
+                    <div className="market-product-cell">
+                      <InventoryFallbackImage imageUrl={match.itemImageUrl} label={match.itemName} />
+                      <div>
+                        <strong>{match.itemName}</strong>
+                        <span>{match.upc || "No UPC"} - {formatStatus(match.category)} - {match.quantityOwned} owned</span>
+                        <small>Your avg cost {money(match.averageCost)}</small>
+                      </div>
+                    </div>
+                    <div className="market-match-suggestion">
+                      <InventoryFallbackImage imageUrl={match.providerImageUrl} label={match.providerProductName || "TCGCSV"} />
+                      <div>
+                        <b>{match.providerProductName || "Suggested TCGCSV product"}</b>
+                        <span>{match.providerGroupName || "Unknown group"} - {money(match.marketPrice)}</span>
+                        <small>{match.reason || "Needs review"} - {match.confidence}% confidence</small>
+                      </div>
+                    </div>
+                    <div className="market-match-actions">
+                      {(["accept", "lock", "reject", "search_again"] as const).map((action) => (
+                        <button
+                          className={action === "accept" || action === "lock" ? "mini-action" : "secondary-action compact-action"}
+                          disabled={busy}
+                          key={action}
+                          type="button"
+                          onClick={() =>
+                            runAction(
+                              `${formatStatus(action)} TCGCSV match`,
+                              () => requestJson(`/api/radar/inventory/tcgcsv/matches/${match.inventoryItemId}`, { method: "PATCH", body: JSON.stringify({ action }) }),
+                              { success: `TCGCSV match ${formatStatus(action).toLowerCase()}` }
+                            )
+                          }
+                        >
+                          {formatStatus(action)}
+                        </button>
+                      ))}
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <EmptyState icon={Check} title="No matches need review" detail="Low-confidence TCGCSV matches will appear here before they affect inventory value." />
+              )}
+            </div>
           </div>
         </div>
         <aside className="market-side-column">
           <div className="inventory-detail-panel market-card">
           <div className="edit-card-heading">
             <div>
-              <h2>Pricing Queue</h2>
-              <span>Products that still need sold comps.</span>
+              <h2>Missing Market Data Queue</h2>
+              <span>Products that still need a TCGCSV match or price.</span>
             </div>
           </div>
           <div className="recommendation-list">
@@ -8323,39 +8400,35 @@ function MarketPanel({
               missingMarketData.map((item) => (
                 <span key={item.id}>
                   {item.itemName}
-                  <b>Needs comps</b>
+                  <b>{formatStatus(item.marketProviderMatchStatus || "Needs Data")}</b>
                 </span>
               ))
             ) : (
-              <span>All owned inventory has sold comps <b>Ready</b></span>
+              <span>All owned inventory has estimates <b>Ready</b></span>
             )}
           </div>
           </div>
           <div className="inventory-detail-panel market-card">
           <div className="edit-card-heading">
             <div>
-              <h2>Low Confidence</h2>
-              <span>Use three strong sold comps before trusting a price.</span>
+              <h2>Provider Status</h2>
+              <span>TCGCSV server-side cache and match health.</span>
             </div>
           </div>
           <div className="recommendation-list">
-            {lowConfidenceItems.length ? (
-              lowConfidenceItems.map((item) => (
-                <span key={item.id}>
-                  {item.itemName}
-                  <b>{item.marketCompCount}/3 comps</b>
-                </span>
-              ))
-            ) : (
-              <span>No low-confidence priced items <b>Good</b></span>
-            )}
+            <span>Connection <b>{tcgcsvProvider?.configured ? "Connected" : "Not configured"}</b></span>
+            <span>Last Sync <b>{tcgcsvProvider?.lastSuccessfulSyncAt ? relativeTime(tcgcsvProvider.lastSuccessfulSyncAt) : "Never"}</b></span>
+            <span>Products Cached <b>{tcgcsvProvider?.productsCached ?? 0}</b></span>
+            <span>Prices Cached <b>{tcgcsvProvider?.pricesCached ?? 0}</b></span>
+            <span>Needs Review <b>{tcgcsvProvider?.itemsNeedingReview ?? reviewCount}</b></span>
+            {tcgcsvProvider?.lastError ? <span>Last Error <b className="profit-bad">{tcgcsvProvider.lastError}</b></span> : null}
           </div>
           </div>
           <div className="inventory-detail-panel market-card">
             <div className="edit-card-heading">
               <div>
-                <h2>What To Review</h2>
-                <span>Real comps can support sell decisions; no fake market values are used.</span>
+                <h2>Top Sell Signals</h2>
+                <span>Uses estimates only when TCGCSV match confidence is accepted.</span>
               </div>
             </div>
             <div className="recommendation-list">
@@ -8367,45 +8440,15 @@ function MarketPanel({
                   </span>
                 ))
               ) : (
-                <span>No sell signals from sold comps yet <b>Needs data</b></span>
+                <span>No sell signals from estimates yet <b>Needs data</b></span>
               )}
             </div>
           </div>
           <div className="inventory-detail-panel market-card">
             <div className="edit-card-heading">
               <div>
-                <h2>CSV Comp Import</h2>
-                <span>Paste sold-comp rows exported from Terapeak, eBay, or your own sheet.</span>
-              </div>
-            </div>
-            <form
-              className="market-csv-import-form"
-              onSubmit={(event) =>
-                submit(
-                  event,
-                  "Importing inventory comps",
-                  (form) => requestJson("/api/radar/inventory/comps/import", { method: "POST", body: JSON.stringify(formJson(form)) }),
-                  { reset: true, success: "Inventory comps imported" }
-                )
-              }
-            >
-              <TextareaInput
-                name="csv"
-                label="CSV"
-                placeholder={"upc,title,soldPrice,soldDate,source,url,quantity\n196214154155,Chaos Rising Three-Booster Blister,18.99,2026-05-31,EBAY_SOLD,https://..."}
-                required
-              />
-              <button className="mini-action" disabled={busy} type="submit">
-                <Upload size={14} />
-                {busyLabel === "Importing inventory comps" ? "Importing" : "Import CSV Comps"}
-              </button>
-            </form>
-          </div>
-          <div className="inventory-detail-panel market-card">
-            <div className="edit-card-heading">
-              <div>
                 <h2>Market Sync Log</h2>
-                <span>Recent provider pricing results and manual comp updates.</span>
+                <span>Recent TCGCSV pricing and match results.</span>
               </div>
             </div>
             <div className="market-sync-log-list">
@@ -8422,7 +8465,7 @@ function MarketPanel({
                   </article>
                 ))
               ) : (
-                <EmptyState icon={History} title="No market syncs yet" detail="Run a refresh after configuring a provider, or add manual comps." />
+                <EmptyState icon={History} title="No market syncs yet" detail="Run Sync TCGCSV Now or refresh missing items after configuring the provider." />
               )}
             </div>
           </div>
@@ -8456,16 +8499,16 @@ function MarketInventoryRow({
       </div>
       <div className="market-money-grid">
         <span>
-          <small>Avg Last 3</small>
-          <strong>{money(item.marketAverageLast3)}</strong>
+          <small>TCGCSV Estimate</small>
+          <strong>{money(item.currentMarketEstimate)}</strong>
         </span>
         <span>
-          <small>Median</small>
-          <strong>{money(item.marketMedianLast3)}</strong>
-        </span>
-        <span>
-          <small>Net Value</small>
+          <small>Estimated Net</small>
           <strong>{money(item.netMarketValue)}</strong>
+        </span>
+        <span>
+          <small>Provider / Confidence</small>
+          <strong>{item.marketProvider || inventoryMarketSource(item)} · {item.marketProviderConfidenceScore || (item.marketConfidence === "HIGH" ? 100 : item.marketConfidence === "MEDIUM" ? 75 : item.marketConfidence === "LOW" ? 50 : 0)}%</strong>
         </span>
         <span>
           <small>Profit / ROI</small>
@@ -8501,11 +8544,11 @@ function MarketInventoryRow({
             item.lastThreeComps.slice(0, 3).map((comp) => (
               <a key={comp.id} href={comp.sourceUrl || undefined} target="_blank" rel="noreferrer" aria-disabled={!comp.sourceUrl}>
                 <b>{money(comp.salePrice)}</b>
-                <span>{shortDate(comp.soldAt)} - {formatSourceQuality(comp.sourceQuality)} - {comp.matchScore}%</span>
+                <span>{formatSourceQuality(comp.sourceQuality)} - {comp.matchScore}% - refreshed {shortDate(item.marketLastRefreshedAt || comp.soldAt)}</span>
               </a>
             ))
           ) : (
-            <span>No sold comps accepted yet.</span>
+            <span>Market not collected.</span>
           )}
         </div>
       </div>

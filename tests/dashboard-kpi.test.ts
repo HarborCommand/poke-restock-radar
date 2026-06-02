@@ -84,6 +84,14 @@ function item(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
     marketCompCount: 0,
     marketLastRefreshedAt: null,
     marketConfidence: "NONE",
+    marketProvider: null,
+    marketProviderProductId: null,
+    marketProviderProductName: null,
+    marketProviderMatchStatus: "UNMATCHED",
+    marketProviderConfidenceScore: 0,
+    marketProviderMatchReason: null,
+    marketProviderMatchedAt: null,
+    marketProviderLastPricedAt: null,
     grossMarketValue: null,
     netMarketValue: null,
     marketProfitLoss: null,
@@ -175,10 +183,10 @@ test("market value and unrealized profit use real comps only", () => {
   assert.equal(summary.marketItemsWithDataCount, 1);
 });
 
-test("inventory market stats use sold comps and ignore active asking prices", () => {
+test("inventory market stats use trusted estimates and ignore active asking prices", () => {
   const stats = inventoryCompStatsForTest([
     { salePrice: 20, sourceQuality: "EBAY_SOLD" },
-    { salePrice: 24, sourceQuality: "MANUAL_ESTIMATE" },
+    { salePrice: 24, sourceQuality: "TCGCSV_ESTIMATE" },
     { salePrice: 999, sourceQuality: "ACTIVE_ASKING" },
     { salePrice: 28, sourceQuality: "PRICECHARTING" }
   ]);
@@ -189,11 +197,14 @@ test("inventory market stats use sold comps and ignore active asking prices", ()
   assert.equal(stats.highest, 28);
 });
 
-test("market UI explains sold-comp-only pricing and manual mode", () => {
+test("market UI explains TCGCSV estimates and hides manual comp as the main workflow", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
 
-  assert.match(app, /sold comps only/i);
-  assert.match(app, /Manual comp entry remains available/i);
+  assert.match(app, /TCGCSV Market Estimate/i);
+  assert.match(app, /not sold comps/i);
+  assert.match(app, /Sync TCGCSV Now/i);
+  assert.match(app, /Manual comps stay hidden as an admin fallback/i);
+  assert.doesNotMatch(app, /<h2>Manual Sold Comp Entry<\/h2>/);
   assert.match(app, /Active asking price/);
 });
 
@@ -202,9 +213,15 @@ test("market auto-pricing provider UI and cron are registered", () => {
   const providers = fs.readFileSync(new URL("../src/lib/market-providers.ts", import.meta.url), "utf8");
   const vercel = fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8");
 
-  assert.match(app, /Active Market Provider/);
+  const tcgcsv = fs.readFileSync(new URL("../src/lib/tcgcsv-market.ts", import.meta.url), "utf8");
+
+  assert.match(app, /Active Provider/);
   assert.match(app, /Refresh All Missing/);
   assert.match(app, /Market Sync Log/);
+  assert.match(app, /Match Review/);
+  assert.match(tcgcsv, /syncTcgcsvCatalog/);
+  assert.match(tcgcsv, /tcgcsvProduct/);
+  assert.match(tcgcsv, /TCGCSV_ESTIMATE/);
   assert.match(providers, /PRICECHARTING_API_TOKEN/);
   assert.match(providers, /TCGPLAYER_ACCESS_TOKEN/);
   assert.match(providers, /TCGCSV_ENABLED/);
@@ -217,4 +234,14 @@ test("dashboard labels unknown market data as not collected instead of showing z
 
   assert.match(app, /marketValue === null \? "Not collected"/);
   assert.doesNotMatch(app, /label="Market Value"[\s\S]{0,140}money\(dashboard\.inventorySummary\.marketValue\)/);
+});
+
+test("public storefront does not expose internal market or profit data", () => {
+  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
+  const storefront = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const dtoBlock = types.match(/export type PublicStoreProductDTO = \{[\s\S]*?\n\};/)?.[0] ?? "";
+
+  assert.match(dtoBlock, /price: number/);
+  assert.doesNotMatch(dtoBlock, /marketProvider|currentMarketEstimate|marketProfitLoss|costBasis|roiPercent/);
+  assert.doesNotMatch(storefront, /currentMarketEstimate|marketProfitLoss|TCGCSV|ROI|cost basis/i);
 });

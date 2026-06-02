@@ -15,7 +15,7 @@ export type Probability = "LOW" | "MEDIUM" | "HIGH";
 export type MonitorLogStatus = "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR";
 export type MonitorLogStatusExtended = MonitorLogStatus | "BLOCKED" | "PENDING_CONFIRMATION" | "FALSE_POSITIVE" | "FORCED_ALERT";
 export type GradeType = "RAW" | "PSA_9" | "PSA_10" | "BGS_9_5" | "BGS_10" | "BGS_BLACK_LABEL";
-export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "MANUAL_ESTIMATE" | "ACTIVE_ASKING";
+export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "TCGCSV_ESTIMATE" | "MANUAL_ESTIMATE" | "ACTIVE_ASKING";
 export type Era = "MODERN" | "VINTAGE";
 export type StoreVisitResult = "stock_seen" | "empty_shelf" | "vendor_spotted" | "bought_product" | "no_visit";
 export type Zone = "MIAMI" | "FORT_LAUDERDALE" | "ORLANDO" | "TAMPA" | "JACKSONVILLE" | "CUSTOM";
@@ -149,6 +149,14 @@ export type InventoryItemDTO = {
   marketCompCount: number;
   marketLastRefreshedAt: string | null;
   marketConfidence: string;
+  marketProvider: string | null;
+  marketProviderProductId: string | null;
+  marketProviderProductName: string | null;
+  marketProviderMatchStatus: string;
+  marketProviderConfidenceScore: number;
+  marketProviderMatchReason: string | null;
+  marketProviderMatchedAt: string | null;
+  marketProviderLastPricedAt: string | null;
   grossMarketValue: number | null;
   netMarketValue: number | null;
   marketProfitLoss: number | null;
@@ -1080,6 +1088,10 @@ export type MarketProviderStatusDTO = {
   message: string;
   lastSuccessfulSyncAt?: string | null;
   lastError?: string | null;
+  productsCached?: number;
+  pricesCached?: number;
+  itemsMatched?: number;
+  itemsNeedingReview?: number;
 };
 
 export type MarketSyncLogDTO = {
@@ -1092,6 +1104,28 @@ export type MarketSyncLogDTO = {
   confidence: number | null;
   message: string;
   createdAt: string;
+};
+
+export type MarketMatchReviewDTO = {
+  inventoryItemId: string;
+  itemName: string;
+  itemImageUrl: string | null;
+  quantityOwned: number;
+  averageCost: number;
+  setName: string | null;
+  category: string;
+  upc: string | null;
+  provider: "TCGCSV";
+  providerProductId: string | null;
+  providerProductName: string | null;
+  providerGroupName: string | null;
+  providerImageUrl: string | null;
+  providerProductUrl: string | null;
+  marketPrice: number | null;
+  confidence: number;
+  reason: string | null;
+  status: string;
+  lastRefreshedAt: string | null;
 };
 
 export type InvestmentReportItemDTO = {
@@ -1165,6 +1199,7 @@ export type DashboardDTO = {
   ebayStatus: EbayConnectionStatusDTO;
   marketProviders: MarketProviderStatusDTO[];
   marketSyncLogs: MarketSyncLogDTO[];
+  marketMatchReview: MarketMatchReviewDTO[];
   alerts: AlertDTO[];
   monitorLogs: MonitorLogDTO[];
   monitorAccuracyStats: MonitorAccuracyStatsDTO;

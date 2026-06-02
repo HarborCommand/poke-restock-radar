@@ -54,17 +54,36 @@ function titleConfidence(title: string, item: Pick<InventoryItemDTO, "itemName" 
   return Math.min(100, Math.max(0, score || 45));
 }
 
-export function marketProviderStatuses(ebayStatus: EbayConnectionStatusDTO): MarketProviderStatusDTO[] {
+export function marketProviderStatuses(ebayStatus: EbayConnectionStatusDTO, tcgcsvStats?: Partial<MarketProviderStatusDTO>): MarketProviderStatusDTO[] {
+  const tcgcsvEnabled = envValue("TCGCSV_ENABLED") === "true";
   return [
+    {
+      provider: "TCGCSV",
+      label: "TCGCSV",
+      enabled: tcgcsvEnabled,
+      configured: tcgcsvEnabled,
+      mode: tcgcsvEnabled ? "trusted_market" : "not_configured",
+      priority: 1,
+      supportedCategories: ["Pokemon sealed products", "cards", "inventory products"],
+      message: tcgcsvEnabled
+        ? "Primary provider. TCGplayer-derived market estimates are cached server-side."
+        : "TCGCSV not configured. Set TCGCSV_ENABLED=true to use automatic market estimates.",
+      lastSuccessfulSyncAt: tcgcsvStats?.lastSuccessfulSyncAt,
+      lastError: tcgcsvStats?.lastError,
+      productsCached: tcgcsvStats?.productsCached,
+      pricesCached: tcgcsvStats?.pricesCached,
+      itemsMatched: tcgcsvStats?.itemsMatched,
+      itemsNeedingReview: tcgcsvStats?.itemsNeedingReview
+    },
     {
       provider: "PRICECHARTING",
       label: "PriceCharting",
       enabled: hasEnv("PRICECHARTING_API_TOKEN"),
       configured: hasEnv("PRICECHARTING_API_TOKEN"),
       mode: hasEnv("PRICECHARTING_API_TOKEN") ? "trusted_market" : "not_configured",
-      priority: 1,
+      priority: 2,
       supportedCategories: ["sealed products", "raw cards", "graded cards", "slabs", "collectibles"],
-      message: hasEnv("PRICECHARTING_API_TOKEN") ? "Configured for market price lookups." : "PriceCharting not configured."
+      message: hasEnv("PRICECHARTING_API_TOKEN") ? "Configured as optional fallback." : "PriceCharting not configured."
     },
     {
       provider: "TCGPLAYER",
@@ -72,19 +91,9 @@ export function marketProviderStatuses(ebayStatus: EbayConnectionStatusDTO): Mar
       enabled: hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY")),
       configured: hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY")),
       mode: hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY")) ? "trusted_market" : "not_configured",
-      priority: 2,
-      supportedCategories: ["cards", "sealed products"],
-      message: hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY")) ? "Configured for TCGplayer pricing." : "TCGplayer not configured."
-    },
-    {
-      provider: "TCGCSV",
-      label: "TCGCSV",
-      enabled: envValue("TCGCSV_ENABLED") === "true",
-      configured: envValue("TCGCSV_ENABLED") === "true",
-      mode: envValue("TCGCSV_ENABLED") === "true" ? "trusted_market" : "not_configured",
       priority: 3,
       supportedCategories: ["cards", "sealed products"],
-      message: envValue("TCGCSV_ENABLED") === "true" ? "Configured for public TCGCSV pricing." : "TCGCSV not configured."
+      message: hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY")) ? "Configured as optional fallback." : "TCGplayer not configured."
     },
     {
       provider: "EBAY_SOLD",
@@ -96,7 +105,7 @@ export function marketProviderStatuses(ebayStatus: EbayConnectionStatusDTO): Mar
       supportedCategories: ["sealed products", "raw cards", "graded cards", "collectibles"],
       message: ebayStatus.ready
         ? "Marketplace Insights sold-comp access configured."
-        : "eBay sold comps unavailable - use PriceCharting, TCGplayer, or manual comps."
+        : "Optional sold-comp provider disabled."
     },
     {
       provider: "MANUAL",
@@ -106,7 +115,7 @@ export function marketProviderStatuses(ebayStatus: EbayConnectionStatusDTO): Mar
       mode: "manual",
       priority: 5,
       supportedCategories: ["all inventory"],
-      message: "Manual sold comps remain available as fallback."
+      message: "Manual estimates are hidden from the main Market page and kept as admin fallback."
     }
   ];
 }
@@ -177,38 +186,10 @@ async function fetchTcgplayerMarketPrice(item: InventoryItemDTO): Promise<Market
   };
 }
 
-async function fetchTcgcsvMarketPrice(item: InventoryItemDTO): Promise<MarketProviderPrice | null> {
-  if (envValue("TCGCSV_ENABLED") !== "true") return null;
-  const query = compact(`${item.itemName} ${item.setName || ""}`);
-  const url = new URL("https://tcgcsv.com/tcgplayer/3/products");
-  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  const data = (await response.json().catch(() => ({}))) as { results?: Array<Record<string, unknown>> };
-  if (!response.ok) throw new Error(`TCGCSV lookup failed with HTTP ${response.status}`);
-  const match = data.results?.find((row) => compact(String(row.name || row.cleanName || "")).includes(query.slice(0, 18)));
-  if (!match) return null;
-  const productId = String(match.productId || match.id || "");
-  const priceResponse = await fetch(`https://tcgcsv.com/tcgplayer/3/prices`, { signal: AbortSignal.timeout(15000) });
-  const priceData = (await priceResponse.json().catch(() => ({}))) as { results?: Array<Record<string, unknown>> };
-  const priceRow = priceData.results?.find((row) => String(row.productId || row.id) === productId);
-  const price = priceRow ? pickFirstPrice(priceRow, ["marketPrice", "midPrice", "lowPrice"]) : null;
-  if (!price) return null;
-  const title = String(match.name || item.itemName);
-  return {
-    provider: "TCGCSV",
-    providerProductId: productId || null,
-    matchedTitle: title,
-    price,
-    sourceUrl: productId ? `https://www.tcgplayer.com/product/${productId}` : null,
-    confidence: titleConfidence(title, item),
-    notes: "TCGCSV market price snapshot."
-  };
-}
-
 export async function fetchTrustedProviderMarketPrice(item: InventoryItemDTO) {
   const attempts: Array<{ provider: Exclude<MarketProviderName, "MANUAL">; run: () => Promise<MarketProviderPrice | null> }> = [
     { provider: "PRICECHARTING", run: () => fetchPriceChartingMarketPrice(item) },
-    { provider: "TCGPLAYER", run: () => fetchTcgplayerMarketPrice(item) },
-    { provider: "TCGCSV", run: () => fetchTcgcsvMarketPrice(item) }
+    { provider: "TCGPLAYER", run: () => fetchTcgplayerMarketPrice(item) }
   ];
   const failures: Array<{ provider: string; reason: string }> = [];
   for (const attempt of attempts) {
