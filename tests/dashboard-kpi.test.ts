@@ -353,3 +353,45 @@ test("alerts Check Stock avoids fake local stock and inventory handoff is wired"
   assert.match(app, /window\.sessionStorage\.getItem\(INVENTORY_PREFILL_STORAGE_KEY\)/);
   assert.match(app, /source: "Tracker Alert"/);
 });
+
+test("alerts watchlist can add exact watched products from the tracker UI", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const watchForm = app.slice(app.indexOf("function WatchProductQuickForm"), app.indexOf("function AlertsPanel"));
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+
+  assert.match(watchForm, /Add Watch Product/);
+  for (const field of ["retailerId", "name", "url", "sku", "upc", "dpci", "retailerProductId", "imageUrl", "productType", "requiredWords", "monitorEnabled"]) {
+    assert.match(watchForm, new RegExp(`name="${field}"`), `missing watch field ${field}`);
+  }
+  assert.match(watchForm, /requestJson\("\/api\/radar\/products"/);
+  assert.match(watchForm, /Search\/category links stay unverified/);
+  assert.match(alertsPanel, /openWatchProductForm/);
+  assert.match(alertsPanel, /trackerWatchPrefillFromRecord/);
+});
+
+test("live drops are restricted to real product monitor alerts", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const liveDropHelper = app.slice(app.indexOf("function trackerIsLiveDrop"), app.indexOf("function trackerChannelMatches"));
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+
+  assert.match(liveDropHelper, /record\.category === "tracker_online_drop"/);
+  assert.match(liveDropHelper, /record\.alert\.entityType === "PRODUCT"/);
+  assert.match(liveDropHelper, /Boolean\(record\.product\)/);
+  assert.match(liveDropHelper, /manual checkout only/);
+  assert.match(alertsPanel, /\.filter\(\(record\) => trackerIsLiveDrop\(record\)\)/);
+  assert.doesNotMatch(liveDropHelper, /tracker_sold_out/);
+});
+
+test("admin-only tracker simulation and alert actions are wired", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const notificationPanel = app.slice(app.indexOf("function NotificationSettingsPanel"), app.indexOf("function AccessManagementPanel"));
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+
+  assert.match(notificationPanel, /Simulate Tracker Alert/);
+  assert.match(notificationPanel, /productReadyForAlert/);
+  assert.match(notificationPanel, /action: "force_alert"/);
+  assert.match(notificationPanel, /Admin simulated a tracker alert/);
+  for (const action of ["Go Buy", "Add to Inventory", "Watch", "Mute", "Got It", "Missed", "Sold Out", "Bad Alert"]) {
+    assert.match(alertsPanel, new RegExp(action), `missing alert action ${action}`);
+  }
+});

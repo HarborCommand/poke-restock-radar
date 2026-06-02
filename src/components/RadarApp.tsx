@@ -156,6 +156,19 @@ type InventoryPurchasePrefill = {
   imageUrl?: string | null;
   source?: string | null;
 };
+type WatchProductPrefill = {
+  retailerId?: string;
+  name?: string;
+  url?: string;
+  imageUrl?: string | null;
+  sku?: string | null;
+  upc?: string | null;
+  dpci?: string | null;
+  retailerProductId?: string | null;
+  productType?: string | null;
+  setName?: string | null;
+  requiredWords?: string | null;
+};
 
 type NavSection = "main" | "tracker" | "inventory" | "analytics" | "store" | "manage";
 
@@ -2436,8 +2449,9 @@ function trackerCategory(alert: DashboardDTO["alerts"][number], product: Product
   if (alert.entityType === "PRODUCT" || product || alert.actionUrl) {
     if (text.includes("sold out")) return "tracker_sold_out";
     if (text.includes("price")) return "tracker_price_change";
-    if (text.includes("preorder")) return "tracker_preorder_live";
-    if (text.includes("add to cart")) return "tracker_add_to_cart";
+    if (text.includes("preorder") || text.includes("add to cart") || text.includes("in stock") || text.includes("detected")) {
+      return "tracker_online_drop";
+    }
     if (trackerSkuMatch(text, product)) return "tracker_sku_match";
     return "tracker_online_drop";
   }
@@ -2465,26 +2479,43 @@ function trackerClassifyAlert(alert: DashboardDTO["alerts"][number], products: P
 }
 
 function trackerIsLiveDrop(record: TrackerAlertRecord) {
+  const text = trackerAlertText(record.alert, record.product);
   return (
     !record.isSystem &&
-    [
-      "tracker_online_drop",
-      "tracker_keyword_match",
-      "tracker_sku_match",
-      "tracker_price_change",
-      "tracker_preorder_live",
-      "tracker_add_to_cart",
-      "tracker_sold_out"
-    ].includes(record.category)
+    record.category === "tracker_online_drop" &&
+    record.alert.entityType === "PRODUCT" &&
+    Boolean(record.product) &&
+    !record.isDeprecated &&
+    !record.alert.suppressedAt &&
+    !record.isMuted &&
+    !isTestDashboardAlert(record.alert) &&
+    (text.includes("urgent") || text.includes("detected") || text.includes("manual checkout only") || text.includes("exact product link"))
   );
 }
 
 function trackerChannelMatches(record: TrackerAlertRecord, filter: string) {
   if (filter === "All") return true;
   if (filter === "High Stock") return record.statusLabel === "High Stock";
-  if (filter === "Preorders") return record.category === "tracker_preorder_live";
+  if (filter === "Preorders") return record.statusLabel === "Preorder Live" || trackerAlertText(record.alert, record.product).includes("preorder");
   if (filter === "Price Drops") return record.category === "tracker_price_change";
   return record.channel.toLowerCase().includes(filter.toLowerCase());
+}
+
+function trackerWatchPrefillFromRecord(record: TrackerAlertRecord): WatchProductPrefill {
+  const product = record.product;
+  return {
+    retailerId: product?.retailerId,
+    name: product?.name || record.alert.title.replace(/^URGENT\s+/i, "").trim(),
+    url: product?.verifiedFinalUrl || product?.url || record.alert.actionUrl || "",
+    imageUrl: trackerProductImage(product),
+    sku: product?.sku || null,
+    upc: product?.upc || null,
+    dpci: product?.dpci || null,
+    retailerProductId: product?.retailerProductId || null,
+    productType: product?.productType || record.channel,
+    setName: product?.setName || product?.releaseName || null,
+    requiredWords: product?.requiredWords || record.alert.title
+  };
 }
 
 function AreaSetupPanel({
@@ -12808,9 +12839,97 @@ function EditableCard({
   );
 }
 
+function WatchProductQuickForm({
+  dashboard,
+  busy,
+  busyLabel,
+  submit,
+  prefill,
+  onCancel,
+  onSaved
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  prefill: WatchProductPrefill | null;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const defaultRetailerId = prefill?.retailerId || dashboard.retailers[0]?.id || "";
+  const addLabel = "Adding watch product";
+  return (
+    <form
+      className="tracker-watch-form"
+      key={`${prefill?.name || "blank"}-${prefill?.url || "new-watch"}`}
+      onSubmit={(event) =>
+        submit(
+          event,
+          addLabel,
+          async (form) => {
+            await requestJson("/api/radar/products", {
+              method: "POST",
+              body: JSON.stringify(formJson(form))
+            });
+            onSaved();
+          },
+          { success: "Watch product added" }
+        )
+      }
+    >
+      <div className="panel-header">
+        <div>
+          <p className="eyeline">Add Watch Product</p>
+          <h3>Exact product monitor</h3>
+        </div>
+        <span className="chip good">Alerts enabled by default</span>
+      </div>
+      <div className="tracker-watch-form-grid">
+        <SelectInput name="retailerId" label="Retailer" defaultValue={defaultRetailerId} options={dashboard.retailers.map(optionFromRetailer)} required />
+        <TextInput name="name" label="Product name" defaultValue={prefill?.name || ""} placeholder="Pokemon TCG Booster Bundle" required />
+        <TextInput name="url" label="Exact product URL" type="url" defaultValue={prefill?.url || ""} placeholder="https://..." required wide />
+        <TextInput name="sku" label="SKU / ASIN" defaultValue={prefill?.sku || ""} />
+        <TextInput name="upc" label="UPC" inputMode="numeric" defaultValue={prefill?.upc || ""} />
+        <TextInput name="dpci" label="DPCI / TCIN" defaultValue={prefill?.dpci || ""} />
+        <TextInput name="retailerProductId" label="Retailer product ID / ASIN" defaultValue={prefill?.retailerProductId || ""} />
+        <TextInput name="imageUrl" label="Image URL" type="url" defaultValue={prefill?.imageUrl || ""} />
+        <TextInput name="productType" label="Channel / category" defaultValue={prefill?.productType || ""} placeholder="Target Big Stock, ETB, Booster Bundle" />
+        <TextInput name="setName" label="Set / release" defaultValue={prefill?.setName || ""} placeholder="Mega Evolution-Chaos Rising" />
+        <TextareaInput name="requiredWords" label="Keywords" defaultValue={prefill?.requiredWords || ""} placeholder="Pokemon, Chaos Rising, booster" wide />
+        <TextareaInput name="ignoreWords" label="Ignore words" placeholder="plush, sleeves, unrelated" wide />
+        <TextInput name="checkFrequencyMinutes" label="Check frequency minutes" type="number" min="15" max="10080" defaultValue="60" />
+        <SelectInput name="priority" label="Priority" defaultValue="MEDIUM" options={priorities.map(optionFromString)} />
+        <input name="stockStatus" type="hidden" value="UNAVAILABLE" />
+        <input name="rating" type="hidden" value="WATCH" />
+        <input name="manualPriorityOverride" type="hidden" value="WATCH" />
+        <label className="checkbox-label">
+          <input name="monitorEnabled" type="hidden" value="false" />
+          <input name="monitorEnabled" type="checkbox" value="true" defaultChecked />
+          Alert enabled
+        </label>
+      </div>
+      <div className="safety-strip compact">
+        <ShieldCheck size={15} />
+        <span>Use exact retailer product pages only. Search/category links stay unverified and cannot send high-priority buy alerts.</span>
+      </div>
+      <div className="form-actions">
+        <button className="mini-action" type="button" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="mini-action solid" type="submit" disabled={busy || !defaultRetailerId}>
+          <Plus size={14} />
+          {busyLabel === addLabel ? "Adding" : "Add Watch Product"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function AlertsPanel({
   dashboard,
   busy,
+  busyLabel,
+  submit,
   runAction,
   setActiveTab
 }: {
@@ -12829,6 +12948,8 @@ function AlertsPanel({
   const [keywordDraft, setKeywordDraft] = useState("");
   const [negativeKeywordDraft, setNegativeKeywordDraft] = useState("");
   const [keywordTest, setKeywordTest] = useState("Chaos Rising booster bundle Target 196214154155");
+  const [showWatchProductForm, setShowWatchProductForm] = useState(false);
+  const [watchProductPrefill, setWatchProductPrefill] = useState<WatchProductPrefill | null>(null);
   const trackerAlerts = useMemo(
     () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
     [dashboard.alerts, dashboard.products]
@@ -12885,6 +13006,17 @@ function AlertsPanel({
       window.sessionStorage.setItem(INVENTORY_PREFILL_STORAGE_KEY, JSON.stringify(prefill));
     }
     setActiveTab("inventory");
+  }
+
+  function openWatchProductForm(prefill: WatchProductPrefill | null = null) {
+    setWatchProductPrefill(prefill);
+    setShowWatchProductForm(true);
+    setView("watchlist");
+  }
+
+  function closeWatchProductForm() {
+    setShowWatchProductForm(false);
+    setWatchProductPrefill(null);
   }
 
   function addPositiveKeyword() {
@@ -12946,7 +13078,7 @@ function AlertsPanel({
               <ShoppingBag size={13} />
               Add to Inventory
             </button>
-            <button className="mini-action" type="button" onClick={() => setView("watchlist")}>
+            <button className="mini-action" type="button" onClick={() => openWatchProductForm(trackerWatchPrefillFromRecord(record))}>
               <Eye size={13} />
               Watch
             </button>
@@ -13086,8 +13218,25 @@ function AlertsPanel({
               <p className="eyeline">Exact product monitor</p>
               <h2>My Watchlist</h2>
             </div>
-            <span className="chip muted">{needsExactLink} need exact link</span>
+            <div className="row-actions">
+              <span className="chip muted">{needsExactLink} need exact link</span>
+              <button className="mini-action solid" type="button" onClick={() => openWatchProductForm()}>
+                <Plus size={14} />
+                Add Watch Product
+              </button>
+            </div>
           </div>
+          {showWatchProductForm ? (
+            <WatchProductQuickForm
+              dashboard={dashboard}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={submit}
+              prefill={watchProductPrefill}
+              onCancel={closeWatchProductForm}
+              onSaved={closeWatchProductForm}
+            />
+          ) : null}
           <div className="tracker-watch-grid">
             {watchProducts.length ? (
               watchProducts.map((product) => (
@@ -13125,7 +13274,7 @@ function AlertsPanel({
                 </article>
               ))
             ) : (
-              <EmptyState icon={Eye} title="No watched products" detail="Add exact retailer product URLs in Admin when you are ready to rebuild the product tracker." />
+              <EmptyState icon={Eye} title="No watched products" detail="Add exact retailer product URLs here to start monitor checks and live drop alerts." />
             )}
           </div>
         </section>
@@ -13570,6 +13719,7 @@ function NotificationSettingsPanel({
   const browserPushActive = Boolean(health?.providers.push.configured && settings.browserPush && pushReady);
   const emailActive = Boolean(health?.providers.email.configured && settings.email && settings.emailTo);
   const smsActive = Boolean(health?.providers.sms.configured && settings.sms && settings.phone);
+  const simulatableTrackerProduct = dashboard.products.find((product) => !product.archivedAt && productReadyForAlert(product));
 
   useEffect(() => {
     let mounted = true;
@@ -13842,6 +13992,28 @@ function NotificationSettingsPanel({
         >
           <Bell size={14} />
           {busyLabel === "Testing in-app alert" ? "Testing" : "Test In-App"}
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy || !simulatableTrackerProduct}
+          type="button"
+          title={simulatableTrackerProduct ? "Simulate a tracker product alert" : "Verify an exact product before simulating tracker alerts"}
+          onClick={() =>
+            simulatableTrackerProduct
+              ? runAction(
+                  `Simulating tracker alert ${simulatableTrackerProduct.id}`,
+                  () =>
+                    requestJson(`/api/radar/products/${simulatableTrackerProduct.id}/monitor`, {
+                      method: "POST",
+                      body: JSON.stringify({ action: "force_alert", reason: "Admin simulated a tracker alert from the Alerts admin tools." })
+                    }),
+                  { success: "Tracker alert simulation sent" }
+                )
+              : undefined
+          }
+        >
+          <Radar size={14} />
+          {busyLabel === `Simulating tracker alert ${simulatableTrackerProduct?.id}` ? "Simulating" : "Simulate Tracker Alert"}
         </button>
         <button
           className="mini-action"

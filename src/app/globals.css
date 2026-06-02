@@ -12962,6 +12962,27 @@ body .tracker-keyword-grid {
   gap: 12px;
 }
 
+body .tracker-watch-form {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #f8fffb 0%, #ffffff 100%);
+  padding: 16px;
+  box-shadow: 0 14px 36px rgba(16, 185, 129, 0.08);
+}
+
+body .tracker-watch-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body .tracker-watch-form-grid > .wide,
+body .tracker-watch-form-grid > label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
 body .tracker-watch-card {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr) auto;
@@ -13107,7 +13128,8 @@ body .tracker-scanner-grid {
 @media (max-width: 1120px) {
   body .tracker-drop-meta,
   body .tracker-scanner-grid,
-  body .tracker-keyword-grid {
+  body .tracker-keyword-grid,
+  body .tracker-watch-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -13137,7 +13159,8 @@ body .tracker-scanner-grid {
   body .tracker-check-grid,
   body .tracker-check-grid .wide,
   body .tracker-scanner-grid,
-  body .tracker-keyword-grid {
+  body .tracker-keyword-grid,
+  body .tracker-watch-form-grid {
     grid-template-columns: 1fr;
     grid-column: auto;
   }
