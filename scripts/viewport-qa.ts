@@ -107,11 +107,12 @@ async function openAuthedPage(browser: Browser, viewport: (typeof viewports)[num
 
 async function clickTab(page: Page, tab: (typeof tabs)[number]) {
   if (tab === "Dashboard") return;
-  const tabButton = page.getByRole("button", { name: tab, exact: true });
+  const navTabButton = page.getByLabel("Primary navigation").getByRole("button", { name: tab, exact: true });
+  const tabButton = navTabButton.or(page.getByRole("button", { name: tab, exact: true })).first();
   if (!(await tabButton.first().isVisible().catch(() => false))) {
     await page.getByRole("button", { name: /open navigation/i }).click();
   }
-  await page.getByRole("button", { name: tab, exact: true }).click();
+  await tabButton.click();
 }
 
 async function measure(page: Page) {

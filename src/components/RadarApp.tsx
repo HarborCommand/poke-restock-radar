@@ -3316,17 +3316,31 @@ function InventoryFallbackImage({ imageUrl, label }: { imageUrl: string | null |
 }
 
 function ProductImagePreview({ imageUrl, itemName }: { imageUrl: string; itemName: string }) {
-  if (!imageUrl) {
+  const [imageFailure, setImageFailure] = useState<{ url: string; failed: boolean }>({ url: "", failed: false });
+  const renderableImage = isRenderableImageUrl(imageUrl) && !(imageFailure.failed && imageFailure.url === imageUrl);
+
+  if (!renderableImage) {
     return (
       <div className="product-image-preview empty">
         <PackageSearch size={18} />
-        <span>No product image yet. Scan or lookup a UPC, paste an image URL, or upload a photo.</span>
+        <span>{imageUrl ? "Image unavailable. Add a new product image URL or upload a photo." : "No product image yet. Scan or lookup a UPC, paste an image URL, or upload a photo."}</span>
       </div>
     );
   }
   return (
     <div className="product-image-preview">
-      <Image src={imageUrl} alt={`${itemName} preview`} width={96} height={96} unoptimized />
+      <Image
+        src={imageUrl}
+        alt={`${itemName} preview`}
+        width={96}
+        height={96}
+        unoptimized
+        onError={() => setImageFailure({ url: imageUrl, failed: true })}
+        onLoad={(event) => {
+          const image = event.currentTarget;
+          if (image.naturalWidth < 16 || image.naturalHeight < 16) setImageFailure({ url: imageUrl, failed: true });
+        }}
+      />
     </div>
   );
 }

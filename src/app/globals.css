@@ -4990,11 +4990,11 @@ textarea {
 
 .inventory-image-frame img {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 100% !important;
+  height: 100% !important;
   max-width: 100%;
   max-height: 100%;
-  object-fit: contain;
+  object-fit: contain !important;
   padding: 7px;
 }
 
@@ -11973,18 +11973,19 @@ body .catalog-row {
   position: relative !important;
   display: grid !important;
   grid-template-columns:
-    minmax(360px, 2.4fr)
-    minmax(150px, 0.75fr)
-    minmax(90px, 0.45fr)
-    minmax(110px, 0.55fr)
-    minmax(110px, 0.55fr)
-    minmax(110px, 0.55fr)
-    minmax(80px, 0.38fr)
-    minmax(120px, 0.62fr)
-    minmax(130px, 0.62fr)
-    minmax(92px, 0.34fr) !important;
-  min-width: 1380px !important;
-  column-gap: 12px !important;
+    minmax(300px, 2.25fr)
+    minmax(112px, 0.72fr)
+    minmax(58px, 0.34fr)
+    minmax(72px, 0.42fr)
+    minmax(82px, 0.46fr)
+    minmax(76px, 0.42fr)
+    minmax(44px, 0.28fr)
+    minmax(84px, 0.5fr)
+    minmax(96px, 0.54fr)
+    minmax(112px, 0.64fr) !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  column-gap: 9px !important;
   align-items: center !important;
   z-index: 1;
   isolation: isolate;
@@ -13128,4 +13129,16 @@ body .release-image-card {
     display: grid !important;
     justify-content: stretch !important;
   }
+}
+
+body .catalog-product .inventory-image-frame > img {
+  width: 50px !important;
+  height: 50px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 50px !important;
+  max-height: 50px !important;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: contain !important;
+  object-position: center !important;
 }
