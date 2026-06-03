@@ -91,6 +91,7 @@ import type {
   ProductDiscoveryCandidateDTO,
   ProductDiscoverySourceDTO,
   ProductStatus,
+  ProductVerificationStatus,
   Rating,
   ReleaseDTO,
   RetailerDTO,
@@ -2321,6 +2322,33 @@ type TrackerAlertRecord = {
   duplicateKey: string;
 };
 
+type BestBuyCheckStockResult = {
+  retailer: "Best Buy";
+  sku: string;
+  zip: string;
+  radiusMiles: number;
+  sourceAvailable: boolean;
+  message: string;
+  checkedAt: string;
+  stores: Array<{
+    storeName: string;
+    address: string;
+    distanceMiles: number | null;
+    availability: string;
+  }>;
+  onlineProduct: {
+    id: string;
+    name: string;
+    imageUrl: string | null;
+    productUrl: string;
+    price: number | null;
+    stockStatus: ProductStatus | string | null;
+    lastCheckedAt: string | null;
+    confidence: number | null;
+    verificationStatus: ProductVerificationStatus | string;
+  } | null;
+};
+
 const trackerViews: Array<{ id: TrackerAlertView; label: string; icon: typeof Radar }> = [
   { id: "live", label: "Live Drops", icon: Bell },
   { id: "check", label: "Check Stock", icon: Search },
@@ -2331,7 +2359,7 @@ const trackerViews: Array<{ id: TrackerAlertView; label: string; icon: typeof Ra
   { id: "system", label: "System Alerts", icon: AlertTriangle }
 ];
 
-const trackerChannelFilters = ["All", "Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center", "High Stock", "Preorders", "Price Drops"];
+const trackerChannelFilters = ["All", "Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center", "High Stock", "Low Stock", "Preorders", "Price Drops"];
 const trackerDefaultPositiveKeywords = ["Chaos Rising", "Perfect Order", "ETB", "Booster Bundle", "Premium Collection"];
 const trackerDefaultNegativeKeywords = ["sleeves", "plush", "jumbo", "Japanese", "damaged"];
 
@@ -2413,7 +2441,11 @@ function trackerChannel(product: ProductDTO | null, alert: DashboardDTO["alerts"
     return "Target Small Stock";
   }
   if (source.includes("walmart")) return "Walmart";
-  if (source.includes("best buy")) return "Best Buy";
+  if (source.includes("best buy")) {
+    if (text.includes("high stock") || text.includes("available in many stores") || alert.score >= 80) return "High Stock";
+    if (text.includes("low stock") || text.includes("limited stock") || text.includes("only a few left")) return "Low Stock";
+    return "Best Buy";
+  }
   if (source.includes("amazon")) return "Amazon";
   if (source.includes("gamestop")) return "GameStop";
   if (source.includes("pokemon center") || source.includes("pokemoncenter")) return "Pokemon Center";
@@ -2429,6 +2461,7 @@ function trackerStatus(product: ProductDTO | null, alert: DashboardDTO["alerts"]
   if (text.includes("add to cart") || status === "ADD_TO_CART_AVAILABLE") return { label: "Add To Cart", tone: "good" };
   if (text.includes("sold out") || status === "SOLD_OUT") return { label: "Sold Out", tone: "muted" };
   if (text.includes("high stock") || alert.score >= 80) return { label: "High Stock", tone: "good" };
+  if (text.includes("low stock") || text.includes("limited stock") || text.includes("only a few left")) return { label: "Low Stock", tone: "watch" };
   if (status === "IN_STOCK") return { label: "In Stock", tone: "good" };
   if (status === "PRICE_CHANGE") return { label: "Price Drop", tone: "watch" };
   if (status === "PAGE_UPDATED") return { label: "Page Updated", tone: "watch" };
@@ -2496,8 +2529,10 @@ function trackerIsLiveDrop(record: TrackerAlertRecord) {
 function trackerChannelMatches(record: TrackerAlertRecord, filter: string) {
   if (filter === "All") return true;
   if (filter === "High Stock") return record.statusLabel === "High Stock";
+  if (filter === "Low Stock") return record.statusLabel === "Low Stock" || record.channel === "Low Stock";
   if (filter === "Preorders") return record.statusLabel === "Preorder Live" || trackerAlertText(record.alert, record.product).includes("preorder");
   if (filter === "Price Drops") return record.category === "tracker_price_change";
+  if (filter === "Best Buy") return trackerAlertText(record.alert, record.product).includes("best buy") || (record.product?.retailerName || "").toLowerCase().includes("best buy");
   return record.channel.toLowerCase().includes(filter.toLowerCase());
 }
 
@@ -12950,6 +12985,7 @@ function AlertsPanel({
   const [keywordTest, setKeywordTest] = useState("Chaos Rising booster bundle Target 196214154155");
   const [showWatchProductForm, setShowWatchProductForm] = useState(false);
   const [watchProductPrefill, setWatchProductPrefill] = useState<WatchProductPrefill | null>(null);
+  const [bestBuyStockResult, setBestBuyStockResult] = useState<BestBuyCheckStockResult | null>(null);
   const trackerAlerts = useMemo(
     () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
     [dashboard.alerts, dashboard.products]
@@ -13041,6 +13077,7 @@ function AlertsPanel({
     const upc = product?.upc || "Unknown";
     const dpci = product?.dpci || "Unknown";
     const confidence = product?.liveConfidenceScore ?? alert.score;
+    const retailer = product?.retailerName || record.channel;
     return (
       <article className={alert.read ? "tracker-drop-card is-read" : "tracker-drop-card"} key={alert.id}>
         <div className="tracker-drop-media">
@@ -13059,6 +13096,7 @@ function AlertsPanel({
             </div>
           </div>
           <div className="tracker-drop-meta" aria-label="Alert metadata">
+            <span><b>Retailer</b>{retailer}</span>
             <span><b>Price</b>{price === null ? "Price unknown" : money(price)}</span>
             <span><b>Stock</b>{record.statusLabel.includes("Stock") ? record.statusLabel : product?.liveStockStatus ? formatStatus(product.liveStockStatus) : "Unknown"}</span>
             <span><b>Limit</b>Unknown</span>
@@ -13107,6 +13145,9 @@ function AlertsPanel({
               <div><dt>Category</dt><dd>{formatStatus(record.category)}</dd></div>
               <div><dt>Duplicate key</dt><dd>{record.duplicateKey}</dd></div>
               <div><dt>Matched exact product</dt><dd>{product ? productVerificationLabel(product.verificationStatus) : "No product match"}</dd></div>
+              <div><dt>Monitor result</dt><dd>{product?.lastMonitorResult || "No monitor result saved."}</dd></div>
+              <div><dt>Parser error</dt><dd>{product?.lastMonitorError || "No parser error saved."}</dd></div>
+              <div><dt>Live price source</dt><dd>{product?.livePriceSource || "No live price source saved."}</dd></div>
               <div><dt>Why:</dt><dd>{alert.explanation || "No parser notes saved."}</dd></div>
             </dl>
           </details>
@@ -13189,25 +13230,87 @@ function AlertsPanel({
         <section className="tracker-section-card">
           <div className="panel-header">
             <div>
-              <p className="eyeline">Manual stock check</p>
+              <p className="eyeline">Best Buy stock check</p>
               <h2>Check Stock</h2>
             </div>
-            <span className="chip watch">Source required</span>
+            <span className="chip good">Best Buy only</span>
           </div>
           <div className="safety-strip tracker-source-missing">
             <AlertTriangle size={16} />
-            <span>Stock source not configured yet. Configure a trusted stock provider before this can return live local availability. No fake local stock data is shown.</span>
+            <span>Best Buy online checks use exact watched product pages. Store-level stock is shown only if a public source is available; no fake store stock is generated.</span>
           </div>
-          <div className="tracker-check-grid">
+          <form
+            className="tracker-check-grid"
+            onSubmit={(event) =>
+              submit(
+                event,
+                "Checking Best Buy stock",
+                async (form) => {
+                  const result = await requestJson<BestBuyCheckStockResult>("/api/radar/check-stock", {
+                    method: "POST",
+                    body: JSON.stringify(formJson(form))
+                  });
+                  setBestBuyStockResult(result);
+                },
+                { reset: false, success: "Best Buy stock check finished" }
+              )
+            }
+          >
             <TextInput name="zip" label="ZIP code" placeholder="33132" />
             <SelectInput name="radius" label="Radius" defaultValue="25" options={["5", "10", "25", "50", "75"].map((value) => ({ value, label: `${value} miles` }))} />
-            <SelectInput name="retailer" label="Retailer" defaultValue="Target" options={["Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center"].map(optionFromString)} />
-            <TextInput name="identifier" label="Product / SKU / UPC / DPCI / ASIN" placeholder="196214154155" wide />
-            <button className="mini-action solid" disabled type="button">
+            <SelectInput name="retailer" label="Retailer" defaultValue="Best Buy" options={["Best Buy"].map(optionFromString)} />
+            <TextInput name="sku" label="Best Buy SKU" placeholder="6561234" wide />
+            <button className="mini-action solid" disabled={busy && busyLabel === "Checking Best Buy stock"} type="submit">
               <Search size={14} />
-              Check Stock
+              {busyLabel === "Checking Best Buy stock" ? "Checking" : "Check Stock"}
             </button>
-          </div>
+          </form>
+          {bestBuyStockResult ? (
+            <article className="tracker-stock-result">
+              <div className="panel-header compact">
+                <div>
+                  <p className="eyeline">{bestBuyStockResult.retailer} SKU {bestBuyStockResult.sku}</p>
+                  <h3>{bestBuyStockResult.message}</h3>
+                  <p>{bestBuyStockResult.zip} within {bestBuyStockResult.radiusMiles} miles - checked {relativeTime(bestBuyStockResult.checkedAt)}</p>
+                </div>
+                <span className={bestBuyStockResult.sourceAvailable ? "chip good" : "chip watch"}>
+                  {bestBuyStockResult.sourceAvailable ? "Store source active" : "Store source unavailable"}
+                </span>
+              </div>
+              {bestBuyStockResult.onlineProduct ? (
+                <div className="tracker-stock-product">
+                  <InventoryFallbackImage imageUrl={bestBuyStockResult.onlineProduct.imageUrl} label={bestBuyStockResult.onlineProduct.name} />
+                  <div>
+                    <strong>{bestBuyStockResult.onlineProduct.name}</strong>
+                    <p>
+                      {bestBuyStockResult.onlineProduct.price === null ? "Price not verified" : money(bestBuyStockResult.onlineProduct.price)}
+                      {" - "}
+                      {bestBuyStockResult.onlineProduct.stockStatus ? formatStatus(String(bestBuyStockResult.onlineProduct.stockStatus)) : "Stock not verified"}
+                    </p>
+                    <p>Confidence {bestBuyStockResult.onlineProduct.confidence ?? 0}% - {productVerificationLabel(bestBuyStockResult.onlineProduct.verificationStatus as ProductVerificationStatus)}</p>
+                  </div>
+                  <a className="mini-action solid" href={bestBuyStockResult.onlineProduct.productUrl} target="_blank" rel="noreferrer">
+                    Go Buy <ExternalLink size={13} />
+                  </a>
+                </div>
+              ) : (
+                <EmptyState icon={Search} title="No watched Best Buy product matched" detail="Add the exact Best Buy product URL and SKU to My Watchlist, then run Check Stock again." />
+              )}
+              {bestBuyStockResult.stores.length ? (
+                <div className="tracker-stock-store-list">
+                  {bestBuyStockResult.stores.map((store) => (
+                    <div key={`${store.storeName}-${store.address}`}>
+                      <strong>{store.storeName}</strong>
+                      <span>{store.availability}</span>
+                      <small>{store.distanceMiles === null ? "Distance unknown" : `${store.distanceMiles.toFixed(1)} mi`} - {store.address}</small>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted-note">Best Buy store stock source not available.</p>
+              )}
+            </article>
+          ) : null}
         </section>
       ) : null}
 

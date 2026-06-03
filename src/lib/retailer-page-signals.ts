@@ -15,6 +15,9 @@ export type RetailerLiveSignal = {
   title: string | null;
   imageUrl: string | null;
   source: string;
+  sku?: string | null;
+  stockLevel?: "HIGH" | "LOW" | null;
+  storeAvailabilityText?: string | null;
 };
 
 function htmlDecode(value: string) {
@@ -86,9 +89,103 @@ function genericPrice(html: string) {
   return null;
 }
 
+function firstDecodedMatch(html: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const value = html.match(pattern)?.[1];
+    if (value) return htmlDecode(value.replace(/\\\//g, "/"));
+  }
+  return null;
+}
+
+function absolutePublicUrl(value: string | null, baseUrl: string) {
+  if (!value) return null;
+  try {
+    return new URL(value, baseUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+function bestBuySku(html: string, finalUrl: string) {
+  try {
+    const parsed = new URL(finalUrl);
+    const fromQuery = parsed.searchParams.get("skuId");
+    if (fromQuery) return fromQuery;
+    const fromPath = parsed.pathname.match(/\/sku\/(\d{5,})/i)?.[1] ?? parsed.pathname.match(/\/(\d{5,})\.p(?:\/|$)/i)?.[1];
+    if (fromPath) return fromPath;
+  } catch {
+    // Keep checking page text below.
+  }
+
+  return firstDecodedMatch(html, [
+    /"skuId"\s*:\s*"?(\d{5,})"?/i,
+    /"sku"\s*:\s*"?(\d{5,})"?/i,
+    /(?:SKU|Sku)\s*[:#]?\s*<\/?[^>]*>?\s*(\d{5,})/i
+  ]);
+}
+
+function bestBuyPrice(html: string) {
+  const candidates = [
+    /"salePrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"currentPrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"customerPrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"price"\s*:\s*\{[^{}]{0,300}"value"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /(?:priceView-hero-price|pricing-price)[\s\S]{0,180}?\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/i
+  ];
+
+  for (const pattern of candidates) {
+    const value = numberFromPrice(html.match(pattern)?.[1]);
+    if (value !== null) return value;
+  }
+
+  return genericPrice(html);
+}
+
+function bestBuyTitle(html: string) {
+  return firstDecodedMatch(html, [
+    /<meta\s+(?:property|name)=["']og:title["']\s+content=["']([^"']{4,240})["']/i,
+    /<meta\s+content=["']([^"']{4,240})["']\s+(?:property|name)=["']og:title["']/i,
+    /"name"\s*:\s*"([^"]{4,240})"/i,
+    /<h1\b[^>]*>([\s\S]{4,300}?)<\/h1>/i
+  ])?.replace(/\s*-\s*Best Buy\s*$/i, "") ?? null;
+}
+
+function bestBuyImage(html: string, finalUrl: string) {
+  const image = firstDecodedMatch(html, [
+    /<meta\s+(?:property|name)=["']og:image["']\s+content=["']([^"']+)["']/i,
+    /<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:image["']/i,
+    /"primaryImage"\s*:\s*"([^"]+)"/i,
+    /"image"\s*:\s*"([^"]+)"/i
+  ]);
+  return absolutePublicUrl(image, finalUrl);
+}
+
+function bestBuyStockLevel(html: string): { level: "HIGH" | "LOW" | null; text: string | null } {
+  const text = visibleText(html);
+  const storeCount =
+    Number(text.match(/available\s+(?:at|in)\s+(\d{1,3})\s+stores?/i)?.[1]) ||
+    Number(text.match(/(\d{1,3})\s+stores?\s+(?:nearby\s+)?(?:have|with)\s+stock/i)?.[1]) ||
+    0;
+  const quantity =
+    Number(html.match(/"availableQuantity"\s*:\s*(\d{1,4})/i)?.[1]) ||
+    Number(html.match(/"quantity"\s*:\s*(\d{1,4})/i)?.[1]) ||
+    0;
+
+  if (storeCount >= 3 || quantity >= 5 || text.includes("available in many stores")) {
+    return { level: "HIGH", text: storeCount ? `Available in ${storeCount} stores` : quantity ? `Quantity ${quantity}` : "High stock" };
+  }
+  if (storeCount > 0 || quantity > 0 || text.includes("limited stock") || text.includes("only a few left")) {
+    return { level: "LOW", text: storeCount ? `Available in ${storeCount} store${storeCount === 1 ? "" : "s"}` : quantity ? `Quantity ${quantity}` : "Low stock" };
+  }
+  return { level: null, text: null };
+}
+
 export function detectRetailerPrice(html: string, retailerName: string) {
   if (retailerName.toLowerCase().includes("target")) {
     return targetPrice(html) ?? genericPrice(html);
+  }
+  if (retailerName.toLowerCase().includes("best buy")) {
+    return bestBuyPrice(html);
   }
 
   return genericPrice(html);
@@ -280,6 +377,170 @@ export async function fetchTargetRedskyLiveSignal(input: {
       fallback: input.fallbackAvailability,
       price
     })
+  };
+}
+
+export function detectBestBuyAvailability(
+  html: string,
+  fallbackAvailability?: RetailerAvailabilitySignal
+): RetailerAvailabilitySignal {
+  const text = visibleText(html);
+  const compact = compactText(`${html} ${text}`);
+  const addToCartEnabled = enabledPurchaseAction(html, "Best Buy");
+  const stockLevel = bestBuyStockLevel(html);
+  const hasCaptcha =
+    text.includes("captcha") ||
+    text.includes("verify you are human") ||
+    text.includes("robot check") ||
+    text.includes("automated access") ||
+    text.includes("press and hold");
+  const hasBlocked =
+    hasCaptcha ||
+    text.includes("access denied") ||
+    text.includes("request blocked") ||
+    text.includes("temporarily blocked") ||
+    text.includes("waiting room");
+  const hasSoldOut =
+    text.includes("sold out") ||
+    text.includes("out of stock") ||
+    text.includes("currently unavailable") ||
+    text.includes("unavailable nearby") ||
+    compact.includes("outofstock") ||
+    compact.includes("soldout") ||
+    compact.includes("availabilityoutofstock");
+  const hasUnavailable =
+    text.includes("not available") ||
+    text.includes("no longer available") ||
+    text.includes("unavailable online") ||
+    compact.includes("notavailable") ||
+    compact.includes("unavailableonline");
+  const hasPreorder = text.includes("preorder") || text.includes("pre-order") || compact.includes("preorder");
+  const hasJsonInStock =
+    /"availability"\s*:\s*"[^"]*InStock/i.test(html) ||
+    /"availableForSale"\s*:\s*true/i.test(html) ||
+    /"inStock"\s*:\s*true/i.test(html);
+  const detectedWords = uniqueWords([
+    ...(fallbackAvailability?.detectedWords ?? []),
+    "best buy adapter",
+    hasCaptcha ? "captcha/robot page" : "",
+    hasBlocked ? "blocked page" : "",
+    hasSoldOut ? "out of stock" : "",
+    hasUnavailable ? "unavailable" : "",
+    hasPreorder ? "preorder" : "",
+    addToCartEnabled === true ? "enabled purchase button" : "",
+    addToCartEnabled === false ? "disabled purchase button" : "",
+    hasJsonInStock ? "in stock" : "",
+    stockLevel.level === "HIGH" ? "high stock" : "",
+    stockLevel.level === "LOW" ? "low stock" : "",
+    stockLevel.text ? `store stock cue: ${stockLevel.text}` : "",
+    "best buy store stock source not available"
+  ]);
+
+  if (hasBlocked) {
+    return {
+      status: null,
+      stockText: hasCaptcha ? "Captcha or robot page" : "Blocked page",
+      addToCartEnabled: null,
+      confidenceScore: 0,
+      reason: "Best Buy page appears blocked or shows captcha/robot verification. No buy alert will be sent.",
+      detectedWords
+    };
+  }
+
+  if (hasSoldOut) {
+    return {
+      status: "SOLD_OUT",
+      stockText: "Out of stock",
+      addToCartEnabled: addToCartEnabled ?? false,
+      confidenceScore: addToCartEnabled === false ? 96 : 90,
+      reason: "Best Buy public page says sold out/out of stock.",
+      detectedWords
+    };
+  }
+
+  if (hasUnavailable || addToCartEnabled === false) {
+    return {
+      status: "UNAVAILABLE",
+      stockText: addToCartEnabled === false ? "Purchase button disabled" : "Unavailable",
+      addToCartEnabled: addToCartEnabled ?? false,
+      confidenceScore: addToCartEnabled === false ? 92 : 84,
+      reason: addToCartEnabled === false
+        ? "Best Buy purchase button is disabled; product is not buyable right now."
+        : "Best Buy page has unavailable cues.",
+      detectedWords
+    };
+  }
+
+  if (hasPreorder && addToCartEnabled === true) {
+    return {
+      status: "PREORDER_LIVE",
+      stockText: stockLevel.text || "Preorder live",
+      addToCartEnabled: true,
+      confidenceScore: 94,
+      reason: "Best Buy preorder cues matched and an enabled purchase button was found.",
+      detectedWords
+    };
+  }
+
+  if (addToCartEnabled === true) {
+    return {
+      status: "ADD_TO_CART_AVAILABLE",
+      stockText: stockLevel.text || "Add to cart available",
+      addToCartEnabled: true,
+      confidenceScore: 96,
+      reason: "Best Buy exact product page has an enabled public Add to Cart action.",
+      detectedWords
+    };
+  }
+
+  if (hasJsonInStock) {
+    return {
+      status: "IN_STOCK",
+      stockText: stockLevel.text || "In stock",
+      addToCartEnabled: null,
+      confidenceScore: 86,
+      reason: "Best Buy public product data reports in-stock availability, but no enabled purchase button was proven.",
+      detectedWords
+    };
+  }
+
+  const safeFallbackStatus =
+    fallbackAvailability?.status === "SOLD_OUT" ||
+    fallbackAvailability?.status === "UNAVAILABLE" ||
+    fallbackAvailability?.status === "PAGE_UPDATED" ||
+    fallbackAvailability?.status === "PRICE_CHANGE"
+      ? fallbackAvailability.status
+      : null;
+
+  return {
+    status: safeFallbackStatus,
+    stockText: safeFallbackStatus ? fallbackAvailability?.stockText ?? stockLevel.text : stockLevel.text,
+    addToCartEnabled: safeFallbackStatus ? fallbackAvailability?.addToCartEnabled ?? null : null,
+    confidenceScore: safeFallbackStatus ? Math.max(fallbackAvailability?.confidenceScore ?? 35, stockLevel.level ? 58 : 35) : stockLevel.level ? 58 : 35,
+    reason:
+      safeFallbackStatus && fallbackAvailability?.reason
+        ? fallbackAvailability.reason
+        : "Best Buy public page did not prove an actionable buyable stock signal.",
+    detectedWords
+  };
+}
+
+export async function fetchBestBuyLiveSignal(input: {
+  html: string;
+  finalUrl: string;
+  fallbackAvailability: RetailerAvailabilitySignal;
+}): Promise<RetailerLiveSignal | null> {
+  const sku = bestBuySku(input.html, input.finalUrl);
+  const stockLevel = bestBuyStockLevel(input.html);
+  return {
+    price: bestBuyPrice(input.html),
+    title: bestBuyTitle(input.html),
+    imageUrl: bestBuyImage(input.html, input.finalUrl),
+    source: "Best Buy public product page",
+    sku,
+    stockLevel: stockLevel.level,
+    storeAvailabilityText: stockLevel.text,
+    availability: detectBestBuyAvailability(input.html, input.fallbackAvailability)
   };
 }
 

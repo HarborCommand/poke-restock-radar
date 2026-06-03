@@ -7,6 +7,7 @@ import {
   detectRetailerAvailability,
   detectRetailerPrice,
   detectTargetAvailability,
+  fetchBestBuyLiveSignal,
   fetchTargetRedskyLiveSignal
 } from "@/lib/retailer-page-signals";
 import { templateForRetailerName, type RetailerTemplate } from "@/lib/retailer-templates";
@@ -472,33 +473,51 @@ async function fetchPublicProductPage(input: {
     throw new Error(`Public page returned HTTP ${response.status}`);
   }
   const titleText = extractHtmlTitle(body);
-  const targetApiSignal = input.retailerName.toLowerCase().includes("target")
+  const retailerLower = input.retailerName.toLowerCase();
+  const fallbackAvailability = {
+    status: pageStatus.status,
+    stockText: pageStatus.parsedStockText,
+    addToCartEnabled: pageStatus.addToCartEnabled,
+    confidenceScore: pageStatus.confidenceScore,
+    reason: pageStatus.reason,
+    detectedWords: pageStatus.detectedWords
+  };
+  const targetApiSignal = retailerLower.includes("target")
     ? await fetchTargetRedskyLiveSignal({
         html: body,
         finalUrl,
         retailerProductId: input.product.retailerProductId,
         userAgent: MONITOR_USER_AGENT,
-        fallbackAvailability: {
-          status: pageStatus.status,
-          stockText: pageStatus.parsedStockText,
-          addToCartEnabled: pageStatus.addToCartEnabled,
-          confidenceScore: pageStatus.confidenceScore,
-          reason: pageStatus.reason,
-          detectedWords: pageStatus.detectedWords
-        }
+        fallbackAvailability
       }).catch(() => null)
     : null;
-  const status = targetApiSignal
+  const bestBuySignal = retailerLower.includes("best buy")
+    ? await fetchBestBuyLiveSignal({
+        html: body,
+        finalUrl,
+        fallbackAvailability
+      }).catch(() => null)
+    : null;
+  const liveSignal = targetApiSignal || bestBuySignal;
+  const status = liveSignal
     ? {
         ...pageStatus,
-        status: targetApiSignal.availability.status,
-        confidenceScore: targetApiSignal.availability.confidenceScore,
-        reason: targetApiSignal.availability.reason,
-        detectedWords: uniqueWords([...pageStatus.detectedWords, ...targetApiSignal.availability.detectedWords]),
-        parsedStockText: targetApiSignal.availability.stockText,
-        addToCartEnabled: targetApiSignal.availability.addToCartEnabled
+        status: liveSignal.availability.status,
+        confidenceScore: liveSignal.availability.confidenceScore,
+        reason: liveSignal.availability.reason,
+        detectedWords: uniqueWords([
+          ...pageStatus.detectedWords,
+          ...liveSignal.availability.detectedWords,
+          bestBuySignal?.sku ? `best buy sku: ${bestBuySignal.sku}` : "",
+          bestBuySignal?.stockLevel === "HIGH" ? "high stock" : "",
+          bestBuySignal?.stockLevel === "LOW" ? "low stock" : "",
+          bestBuySignal?.storeAvailabilityText ? `store stock cue: ${bestBuySignal.storeAvailabilityText}` : ""
+        ]),
+        parsedStockText: liveSignal.availability.stockText,
+        addToCartEnabled: liveSignal.availability.addToCartEnabled
       }
     : pageStatus;
+  const liveTitle = targetApiSignal?.title || bestBuySignal?.title || titleText || null;
   const identityMatch = matchProductIdentity({
     product: {
       retailerName: input.retailerName,
@@ -513,17 +532,17 @@ async function fetchPublicProductPage(input: {
     },
     finalUrl,
     html: body,
-    titleText,
+    titleText: liveTitle || titleText,
     httpStatus: response.status
   });
-  const rawImageUrl = targetApiSignal?.imageUrl || extractProductImageUrl(body, finalUrl);
+  const rawImageUrl = targetApiSignal?.imageUrl || bestBuySignal?.imageUrl || extractProductImageUrl(body, finalUrl);
   const verifiedImageUrl =
     identityMatch.readyForAlert && !status.blockedType ? await validateProductImageUrl(rawImageUrl) : null;
 
   return {
     ...status,
-    price: targetApiSignal?.price ?? detectRetailerPrice(body, input.retailerName),
-    title: targetApiSignal?.title || titleText || null,
+    price: targetApiSignal?.price ?? bestBuySignal?.price ?? detectRetailerPrice(body, input.retailerName),
+    title: liveTitle,
     imageUrl: verifiedImageUrl,
     pageHash: hashPage(body),
     httpStatus: response.status,

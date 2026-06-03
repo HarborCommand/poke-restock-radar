@@ -345,8 +345,10 @@ test("alerts Check Stock avoids fake local stock and inventory handoff is wired"
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
 
-  assert.match(alertsPanel, /Stock source not configured yet/);
-  assert.match(alertsPanel, /No fake local stock data is shown/);
+  assert.match(alertsPanel, /Best Buy stock check/);
+  assert.match(alertsPanel, /Best Buy store stock source not available/);
+  assert.match(alertsPanel, /\/api\/radar\/check-stock/);
+  assert.match(alertsPanel, /Best Buy only/);
   assert.doesNotMatch(alertsPanel, /Stock: 10/);
   assert.match(app, /INVENTORY_PREFILL_STORAGE_KEY/);
   assert.match(app, /window\.sessionStorage\.setItem\(INVENTORY_PREFILL_STORAGE_KEY/);

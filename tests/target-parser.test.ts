@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyRetailerProductUrl, productReadyForBuyAlerts } from "../src/lib/product-identity";
-import { detectRetailerAvailability, detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
+import { classifyRetailerProductUrl, matchProductIdentity, productReadyForBuyAlerts } from "../src/lib/product-identity";
+import { detectBestBuyAvailability, detectRetailerAvailability, detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
 
 const targetOutOfStockEtbPage = `
 <!doctype html>
@@ -88,6 +88,94 @@ test("generic retailer parser requires actionable purchase proof", () => {
   const blocked = detectRetailerAvailability(amazonCaptcha, "Amazon");
   assert.equal(blocked.status, null);
   assert.match(blocked.reason, /captcha|robot/i);
+});
+
+test("Best Buy parser detects exact public price and enabled add-to-cart state", () => {
+  const bestBuyInStock = `
+    <html>
+      <head>
+        <meta property="og:title" content="Pokemon TCG Mega Evolution Chaos Rising Booster Bundle - Best Buy" />
+        <meta property="og:image" content="https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6561/6561234_sd.jpg" />
+        <script type="application/ld+json">
+          {
+            "name": "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle",
+            "sku": "6561234",
+            "image": "https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6561/6561234_sd.jpg",
+            "offers": { "price": "29.99", "availability": "https://schema.org/InStock" }
+          }
+        </script>
+      </head>
+      <body>
+        <h1>Pokemon TCG Mega Evolution Chaos Rising Booster Bundle</h1>
+        <div class="priceView-hero-price">$29.99</div>
+        <button class="add-to-cart-button">Add to Cart</button>
+      </body>
+    </html>
+  `;
+  const availability = detectBestBuyAvailability(bestBuyInStock);
+
+  assert.equal(detectRetailerPrice(bestBuyInStock, "Best Buy"), 29.99);
+  assert.equal(availability.status, "ADD_TO_CART_AVAILABLE");
+  assert.equal(availability.addToCartEnabled, true);
+  assert.ok(availability.confidenceScore >= 90);
+  assert.match(availability.reason, /Best Buy exact product page/i);
+});
+
+test("Best Buy exact product verification requires the stored SKU to match", () => {
+  const html = `
+    <html>
+      <head><title>Pokemon TCG Mega Evolution Chaos Rising Booster Bundle - Best Buy</title></head>
+      <body><h1>Pokemon TCG Mega Evolution Chaos Rising Booster Bundle</h1><p>SKU: 6561234</p></body>
+    </html>
+  `;
+  const finalUrl = "https://www.bestbuy.com/site/pokemon-tcg-mega-evolution-chaos-rising-booster-bundle/6561234.p?skuId=6561234";
+  const exactUrl = classifyRetailerProductUrl(finalUrl, "Best Buy");
+  assert.equal(exactUrl.exactProductUrl, true);
+  assert.equal(exactUrl.retailerProductIdFromUrl, "6561234");
+
+  const missingSku = matchProductIdentity({
+    product: {
+      retailerName: "Best Buy",
+      name: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle",
+      url: finalUrl
+    },
+    finalUrl,
+    html,
+    titleText: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle - Best Buy",
+    httpStatus: 200
+  });
+  assert.equal(missingSku.verificationStatus, "NEEDS_IDENTIFIERS");
+  assert.equal(missingSku.readyForAlert, false);
+
+  const matchedSku = matchProductIdentity({
+    product: {
+      retailerName: "Best Buy",
+      name: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle",
+      url: finalUrl,
+      sku: "6561234"
+    },
+    finalUrl,
+    html,
+    titleText: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle - Best Buy",
+    httpStatus: 200
+  });
+  assert.equal(matchedSku.verificationStatus, "VERIFIED_EXACT");
+  assert.equal(matchedSku.readyForAlert, true);
+
+  const wrongSku = matchProductIdentity({
+    product: {
+      retailerName: "Best Buy",
+      name: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle",
+      url: finalUrl,
+      sku: "0000000"
+    },
+    finalUrl,
+    html,
+    titleText: "Pokemon TCG Mega Evolution Chaos Rising Booster Bundle - Best Buy",
+    httpStatus: 200
+  });
+  assert.equal(wrongSku.verificationStatus, "POSSIBLE_MISMATCH");
+  assert.equal(wrongSku.readyForAlert, false);
 });
 
 test("exact product gates reject search links and require verified live image data", () => {

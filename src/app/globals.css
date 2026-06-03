@@ -12956,6 +12956,63 @@ body .tracker-source-missing {
   box-shadow: none !important;
 }
 
+body .tracker-stock-result {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 16px;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.06);
+}
+
+body .tracker-stock-product {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid #edf2f7;
+  border-radius: 16px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+body .tracker-stock-product strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.96rem;
+  line-height: 1.3;
+  overflow-wrap: normal;
+}
+
+body .tracker-stock-product p,
+body .tracker-stock-result .muted-note {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+body .tracker-stock-store-list {
+  display: grid;
+  gap: 8px;
+}
+
+body .tracker-stock-store-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+body .tracker-stock-store-list small {
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-weight: 700;
+}
+
 body .tracker-watch-grid,
 body .tracker-keyword-grid {
   display: grid;
@@ -13142,6 +13199,7 @@ body .tracker-scanner-grid {
   body .tracker-nav-card,
   body .tracker-drop-card,
   body .tracker-drop-top,
+  body .tracker-stock-product,
   body .tracker-watch-card,
   body .tracker-history-row,
   body .tracker-system-list article,

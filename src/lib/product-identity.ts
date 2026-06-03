@@ -251,6 +251,7 @@ export function matchProductIdentity(input: {
 }): ProductIdentityMatch {
   const originalUrl = classifyRetailerProductUrl(input.product.url, input.product.retailerName);
   const finalUrl = classifyRetailerProductUrl(input.finalUrl, input.product.retailerName);
+  const retailerLower = input.product.retailerName.toLowerCase();
   const searchOrCategory = originalUrl.searchOrCategory || finalUrl.searchOrCategory;
   const exactProductUrl = originalUrl.exactProductUrl && finalUrl.exactProductUrl;
   const retailerProductIdFromUrl = finalUrl.retailerProductIdFromUrl || originalUrl.retailerProductIdFromUrl;
@@ -266,13 +267,15 @@ export function matchProductIdentity(input: {
     input.product.dpci,
     input.product.retailerProductId
   ].filter((value): value is string => Boolean(value?.trim()));
+  const bestBuyNeedsStoredSku =
+    retailerLower.includes("best buy") && !input.product.sku?.trim() && !input.product.retailerProductId?.trim();
   const evidenceText = `${input.finalUrl} ${input.html.slice(0, 500000)}`;
   const matchedIdentifiers = expectedIdentifiers.filter((identifier) => {
     if (textIncludesIdentifier(evidenceText, identifier)) return true;
     if (!retailerProductIdFromUrl) return false;
     return compactIdentifier(identifier) === compactIdentifier(retailerProductIdFromUrl);
   });
-  if (!input.product.retailerProductId && retailerProductIdFromUrl && exactProductUrl) {
+  if (expectedIdentifiers.length === 0 && !bestBuyNeedsStoredSku && retailerProductIdFromUrl && exactProductUrl) {
     matchedIdentifiers.push(retailerProductIdFromUrl);
   }
   const missingIdentifiers = expectedIdentifiers.filter((identifier) => !matchedIdentifiers.includes(identifier));
@@ -281,12 +284,13 @@ export function matchProductIdentity(input: {
     compactIdentifier(retailerProductIdFromUrl) !== compactIdentifier(input.product.retailerProductId) &&
     !matchedIdentifiers.some((identifier) => compactIdentifier(identifier) === compactIdentifier(retailerProductIdFromUrl));
   const productIdVerified =
+    !bestBuyNeedsStoredSku &&
     Boolean(retailerProductIdFromUrl) &&
     !urlIdConflict &&
     (!input.product.retailerProductId ||
       compactIdentifier(input.product.retailerProductId) === compactIdentifier(retailerProductIdFromUrl) ||
       textIncludesIdentifier(evidenceText, input.product.retailerProductId));
-  const needsIdentifiers = !productIdVerified && expectedIdentifiers.length === 0;
+  const needsIdentifiers = bestBuyNeedsStoredSku || (!productIdVerified && expectedIdentifiers.length === 0);
   const notFound = input.httpStatus === 404 || input.httpStatus === 410;
 
   let verificationStatus: ProductVerificationStatus = "VERIFIED_EXACT";
@@ -302,7 +306,11 @@ export function matchProductIdentity(input: {
     originalUrl.reason,
     finalUrl.reason,
     exactProductUrl ? "Exact retailer product URL shape matched." : "URL is not recognized as an exact product page.",
-    needsIdentifiers ? "Needs UPC/SKU/DPCI/TCIN/item ID before alerts are trusted." : null,
+    bestBuyNeedsStoredSku
+      ? "Best Buy tracker requires a stored SKU or retailer product ID before alerts are trusted."
+      : needsIdentifiers
+        ? "Needs UPC/SKU/DPCI/TCIN/item ID before alerts are trusted."
+        : null,
     productIdVerified ? "Retailer product ID verified from exact product URL." : "Retailer product ID is not verified.",
     titleMatched
       ? `Title keywords matched: ${matchedTitleKeywords.join(", ") || "not required"}`
