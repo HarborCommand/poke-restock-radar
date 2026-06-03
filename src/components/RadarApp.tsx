@@ -2422,8 +2422,8 @@ type TrackerAlertRecord = {
   duplicateKey: string;
 };
 
-type BestBuyCheckStockResult = {
-  retailer: "Best Buy";
+type RetailerCheckStockResult = {
+  retailer: "Best Buy" | "GameStop";
   sku: string;
   zip: string;
   radiusMiles: number;
@@ -2459,7 +2459,7 @@ const trackerViews: Array<{ id: TrackerAlertView; label: string; icon: typeof Ra
   { id: "system", label: "System Alerts", icon: AlertTriangle }
 ];
 
-const trackerChannelFilters = ["All", "Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center", "In Stock", "Add To Cart", "High Stock", "Low Stock", "Preorders", "Price Drops"];
+const trackerChannelFilters = ["All", "Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center", "In Stock", "Add To Cart", "High Stock", "Low Stock", "Preorders", "Sold Out", "Price Drops"];
 const trackerDefaultPositiveKeywords = ["Chaos Rising", "Perfect Order", "ETB", "Booster Bundle", "Premium Collection"];
 const trackerDefaultNegativeKeywords = ["sleeves", "plush", "jumbo", "Japanese", "damaged"];
 
@@ -2539,7 +2539,13 @@ function trackerChannel(product: ProductDTO | null, alert: DashboardDTO["alerts"
     return "Best Buy";
   }
   if (source.includes("amazon")) return "Amazon";
-  if (source.includes("gamestop")) return "GameStop";
+  if (source.includes("gamestop")) {
+    if (text.includes("price drop")) return "Price Drop";
+    if (text.includes("preorder") || text.includes("pre-order")) return "Preorder Live";
+    if (text.includes("add to cart")) return "Add To Cart Available";
+    if (text.includes("sold out") || text.includes("out of stock")) return "Sold Out";
+    return "GameStop";
+  }
   if (source.includes("pokemon center") || source.includes("pokemoncenter")) return "Pokemon Center";
   if (source.includes("ebay")) return "eBay Deals";
   return "Other Pokemon";
@@ -2627,8 +2633,10 @@ function trackerChannelMatches(record: TrackerAlertRecord, filter: string) {
   if (filter === "High Stock") return record.statusLabel === "High Stock";
   if (filter === "Low Stock") return record.statusLabel === "Low Stock" || record.channel === "Low Stock";
   if (filter === "Preorders") return record.statusLabel === "Preorder Live" || trackerAlertText(record.alert, record.product).includes("preorder");
+  if (filter === "Sold Out") return record.statusLabel === "Sold Out" || record.channel === "Sold Out";
   if (filter === "Price Drops") return record.category === "tracker_price_change" || record.statusLabel === "Price Drop" || trackerAlertText(record.alert, record.product).includes("price drop");
   if (filter === "Best Buy") return trackerAlertText(record.alert, record.product).includes("best buy") || (record.product?.retailerName || "").toLowerCase().includes("best buy");
+  if (filter === "GameStop") return trackerAlertText(record.alert, record.product).includes("gamestop") || (record.product?.retailerName || "").toLowerCase().includes("gamestop");
   return record.channel.toLowerCase().includes(filter.toLowerCase());
 }
 
@@ -13164,7 +13172,7 @@ function AlertsPanel({
   const [showWatchProductForm, setShowWatchProductForm] = useState(false);
   const [watchProductPrefill, setWatchProductPrefill] = useState<WatchProductPrefill | null>(null);
   const [editingWatchProductId, setEditingWatchProductId] = useState<string | null>(null);
-  const [bestBuyStockResult, setBestBuyStockResult] = useState<BestBuyCheckStockResult | null>(null);
+  const [retailerStockResult, setRetailerStockResult] = useState<RetailerCheckStockResult | null>(null);
   const trackerAlerts = useMemo(
     () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
     [dashboard.alerts, dashboard.products]
@@ -13744,75 +13752,75 @@ function AlertsPanel({
         <section className="tracker-section-card">
           <div className="panel-header">
             <div>
-              <p className="eyeline">Best Buy stock check</p>
+              <p className="eyeline">Retailer stock check</p>
               <h2>Check Stock</h2>
             </div>
-            <span className="chip good">Best Buy only</span>
+            <span className="chip good">Best Buy + GameStop</span>
           </div>
           <div className="safety-strip tracker-source-missing">
             <AlertTriangle size={16} />
-            <span>Best Buy online checks use exact watched product pages. Store-level stock is shown only if a public source is available; no fake store stock is generated.</span>
+            <span>Best Buy and GameStop checks use exact watched product pages. Store-level stock is shown only if a public source is available; no fake store stock is generated.</span>
           </div>
           <form
             className="tracker-check-grid"
             onSubmit={(event) =>
               submit(
                 event,
-                "Checking Best Buy stock",
+                "Checking retailer stock",
                 async (form) => {
-                  const result = await requestJson<BestBuyCheckStockResult>("/api/radar/check-stock", {
+                  const result = await requestJson<RetailerCheckStockResult>("/api/radar/check-stock", {
                     method: "POST",
                     body: JSON.stringify(formJson(form))
                   });
-                  setBestBuyStockResult(result);
+                  setRetailerStockResult(result);
                 },
-                { reset: false, success: "Best Buy stock check finished" }
+                { reset: false, success: "Retailer stock check finished" }
               )
             }
           >
             <TextInput name="zip" label="ZIP code" placeholder="33132" />
             <SelectInput name="radius" label="Radius" defaultValue="25" options={["5", "10", "25", "50", "75"].map((value) => ({ value, label: `${value} miles` }))} />
-            <SelectInput name="retailer" label="Retailer" defaultValue="Best Buy" options={["Best Buy"].map(optionFromString)} />
-            <TextInput name="sku" label="Best Buy SKU" placeholder="6561234" wide />
-            <button className="mini-action solid" disabled={busy && busyLabel === "Checking Best Buy stock"} type="submit">
+            <SelectInput name="retailer" label="Retailer" defaultValue="Best Buy" options={["Best Buy", "GameStop"].map(optionFromString)} />
+            <TextInput name="sku" label="SKU / Product ID" placeholder="6561234 or 20017647" wide />
+            <button className="mini-action solid" disabled={busy && busyLabel === "Checking retailer stock"} type="submit">
               <Search size={14} />
-              {busyLabel === "Checking Best Buy stock" ? "Checking" : "Check Stock"}
+              {busyLabel === "Checking retailer stock" ? "Checking" : "Check Stock"}
             </button>
           </form>
-          {bestBuyStockResult ? (
+          {retailerStockResult ? (
             <article className="tracker-stock-result">
               <div className="panel-header compact">
                 <div>
-                  <p className="eyeline">{bestBuyStockResult.retailer} SKU {bestBuyStockResult.sku}</p>
-                  <h3>{bestBuyStockResult.message}</h3>
-                  <p>{bestBuyStockResult.zip} within {bestBuyStockResult.radiusMiles} miles - checked {relativeTime(bestBuyStockResult.checkedAt)}</p>
+                  <p className="eyeline">{retailerStockResult.retailer} SKU {retailerStockResult.sku}</p>
+                  <h3>{retailerStockResult.message}</h3>
+                  <p>{retailerStockResult.zip} within {retailerStockResult.radiusMiles} miles - checked {relativeTime(retailerStockResult.checkedAt)}</p>
                 </div>
-                <span className={bestBuyStockResult.sourceAvailable ? "chip good" : "chip watch"}>
-                  {bestBuyStockResult.sourceAvailable ? "Store source active" : "Store source unavailable"}
+                <span className={retailerStockResult.sourceAvailable ? "chip good" : "chip watch"}>
+                  {retailerStockResult.sourceAvailable ? "Store source active" : "Store source unavailable"}
                 </span>
               </div>
-              {bestBuyStockResult.onlineProduct ? (
+              {retailerStockResult.onlineProduct ? (
                 <div className="tracker-stock-product">
-                  <InventoryFallbackImage imageUrl={bestBuyStockResult.onlineProduct.imageUrl} label={bestBuyStockResult.onlineProduct.name} />
+                  <InventoryFallbackImage imageUrl={retailerStockResult.onlineProduct.imageUrl} label={retailerStockResult.onlineProduct.name} />
                   <div>
-                    <strong>{bestBuyStockResult.onlineProduct.name}</strong>
+                    <strong>{retailerStockResult.onlineProduct.name}</strong>
                     <p>
-                      {bestBuyStockResult.onlineProduct.price === null ? "Price not verified" : money(bestBuyStockResult.onlineProduct.price)}
+                      {retailerStockResult.onlineProduct.price === null ? "Price not verified" : money(retailerStockResult.onlineProduct.price)}
                       {" - "}
-                      {bestBuyStockResult.onlineProduct.stockStatus ? formatStatus(String(bestBuyStockResult.onlineProduct.stockStatus)) : "Stock not verified"}
+                      {retailerStockResult.onlineProduct.stockStatus ? formatStatus(String(retailerStockResult.onlineProduct.stockStatus)) : "Stock not verified"}
                     </p>
-                    <p>Confidence {bestBuyStockResult.onlineProduct.confidence ?? 0}% - {productVerificationLabel(bestBuyStockResult.onlineProduct.verificationStatus as ProductVerificationStatus)}</p>
+                    <p>Confidence {retailerStockResult.onlineProduct.confidence ?? 0}% - {productVerificationLabel(retailerStockResult.onlineProduct.verificationStatus as ProductVerificationStatus)}</p>
                   </div>
-                  <a className="mini-action solid" href={bestBuyStockResult.onlineProduct.productUrl} target="_blank" rel="noreferrer">
+                  <a className="mini-action solid" href={retailerStockResult.onlineProduct.productUrl} target="_blank" rel="noreferrer">
                     Go Buy <ExternalLink size={13} />
                   </a>
                 </div>
               ) : (
-                <EmptyState icon={Search} title="No watched Best Buy product matched" detail="Add the exact Best Buy product URL and SKU to My Watchlist, then run Check Stock again." />
+                <EmptyState icon={Search} title={`No watched ${retailerStockResult.retailer} product matched`} detail={`Add the exact ${retailerStockResult.retailer} product URL and SKU/product ID to My Watchlist, then run Check Stock again.`} />
               )}
-              {bestBuyStockResult.stores.length ? (
+              {retailerStockResult.stores.length ? (
                 <div className="tracker-stock-store-list">
-                  {bestBuyStockResult.stores.map((store) => (
+                  {retailerStockResult.stores.map((store) => (
                     <div key={`${store.storeName}-${store.address}`}>
                       <strong>{store.storeName}</strong>
                       <span>{store.availability}</span>
@@ -13821,7 +13829,7 @@ function AlertsPanel({
                   ))}
                 </div>
               ) : (
-                <p className="muted-note">Best Buy store stock source not available.</p>
+                <p className="muted-note">{retailerStockResult.retailer} store stock source not available.</p>
               )}
             </article>
           ) : null}
@@ -13860,7 +13868,7 @@ function AlertsPanel({
             />
           ) : null}
           <div className="watchlist-qa-summary">
-            <DetailStat label="Target / Best Buy products" value={String(watchProducts.filter((product) => /target|best buy/i.test(product.retailerName)).length)} />
+            <DetailStat label="Target / Best Buy / GameStop products" value={String(watchProducts.filter((product) => /target|best buy|gamestop/i.test(product.retailerName)).length)} />
             <DetailStat label="Alerts enabled" value={String(watchProducts.filter((product) => product.monitorEnabled).length)} tone="good" />
             <DetailStat label="Missing identifiers" value={String(watchProducts.filter((product) => !productHasIdentifier(product)).length)} tone={watchProducts.some((product) => !productHasIdentifier(product)) ? "neutral" : "good"} />
             <DetailStat label="Blocked or failed" value={String(watchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError).length)} tone={watchProducts.some((product) => product.liveBlockedType || product.lastMonitorError) ? "bad" : "good"} />

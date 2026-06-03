@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyRetailerProductUrl, matchProductIdentity, productReadyForBuyAlerts } from "../src/lib/product-identity";
-import { detectBestBuyAvailability, detectRetailerAvailability, detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
+import { detectBestBuyAvailability, detectGameStopAvailability, detectRetailerAvailability, detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
 
 const targetOutOfStockEtbPage = `
 <!doctype html>
@@ -176,6 +176,114 @@ test("Best Buy exact product verification requires the stored SKU to match", () 
   });
   assert.equal(wrongSku.verificationStatus, "POSSIBLE_MISMATCH");
   assert.equal(wrongSku.readyForAlert, false);
+});
+
+test("GameStop parser detects price and actionable preorder only with enabled purchase proof", () => {
+  const gameStopPreorder = `
+    <html>
+      <head>
+        <meta property="og:title" content="Pokemon TCG Mega Evolution Chaos Rising Premium Collection | GameStop" />
+        <meta property="og:image" content="https://media.gamestop.com/i/gamestop/20017647_ALT01" />
+        <script type="application/ld+json">
+          {
+            "name": "Pokemon TCG Mega Evolution Chaos Rising Premium Collection",
+            "sku": "20017647",
+            "image": "https://media.gamestop.com/i/gamestop/20017647_ALT01",
+            "offers": { "price": "49.99", "availability": "https://schema.org/PreOrder" }
+          }
+        </script>
+      </head>
+      <body>
+        <h1>Pokemon TCG Mega Evolution Chaos Rising Premium Collection</h1>
+        <div class="product-price">$49.99</div>
+        <button class="add-to-cart">Pre-Order</button>
+      </body>
+    </html>
+  `;
+  const availability = detectGameStopAvailability(gameStopPreorder);
+
+  assert.equal(detectRetailerPrice(gameStopPreorder, "GameStop"), 49.99);
+  assert.equal(availability.status, "PREORDER_LIVE");
+  assert.equal(availability.addToCartEnabled, true);
+  assert.ok(availability.confidenceScore >= 90);
+  assert.match(availability.reason, /GameStop preorder/i);
+});
+
+test("GameStop parser does not mark disabled sold-out pages as buyable", () => {
+  const gameStopSoldOut = `
+    <html>
+      <head><title>Pokemon TCG Product | GameStop</title></head>
+      <body>
+        <h1>Pokemon TCG Product</h1>
+        <p>Sold Out</p>
+        <button disabled aria-disabled="true">Add to Cart</button>
+      </body>
+    </html>
+  `;
+  const availability = detectRetailerAvailability(gameStopSoldOut, "GameStop");
+
+  assert.equal(availability.status, "SOLD_OUT");
+  assert.equal(availability.addToCartEnabled, false);
+  assert.match(availability.reason, /sold out|out of stock/i);
+});
+
+test("GameStop parser logs blocked pages without buyable status", () => {
+  const gameStopBlocked = `
+    <html><body><h1>Access Denied</h1><p>Press and hold to verify you are human.</p></body></html>
+  `;
+  const availability = detectRetailerAvailability(gameStopBlocked, "GameStop");
+
+  assert.equal(availability.status, null);
+  assert.equal(availability.addToCartEnabled, null);
+  assert.equal(availability.confidenceScore, 0);
+  assert.match(availability.reason, /blocked|captcha|robot/i);
+});
+
+test("GameStop exact product verification rejects search links and verifies product ID matches", () => {
+  const searchLink = classifyRetailerProductUrl("https://www.gamestop.com/search/?q=pokemon+cards", "GameStop");
+  assert.equal(searchLink.searchOrCategory, true);
+  assert.equal(searchLink.exactProductUrl, false);
+
+  const html = `
+    <html>
+      <head><title>Pokemon TCG Mega Evolution Chaos Rising Premium Collection | GameStop</title></head>
+      <body><h1>Pokemon TCG Mega Evolution Chaos Rising Premium Collection</h1><p>SKU: 20017647</p></body>
+    </html>
+  `;
+  const finalUrl = "https://www.gamestop.com/toys-games/trading-cards/products/pokemon-tcg-mega-evolution-chaos-rising-premium-collection/20017647.html";
+  const exactUrl = classifyRetailerProductUrl(finalUrl, "GameStop");
+  assert.equal(exactUrl.exactProductUrl, true);
+  assert.equal(exactUrl.retailerProductIdFromUrl, "20017647");
+
+  const matchedId = matchProductIdentity({
+    product: {
+      retailerName: "GameStop",
+      name: "Pokemon TCG Mega Evolution Chaos Rising Premium Collection",
+      url: finalUrl,
+      retailerProductId: "20017647"
+    },
+    finalUrl,
+    html,
+    titleText: "Pokemon TCG Mega Evolution Chaos Rising Premium Collection | GameStop",
+    httpStatus: 200
+  });
+  assert.equal(matchedId.verificationStatus, "VERIFIED_EXACT");
+  assert.equal(matchedId.readyForAlert, true);
+
+  const wrongId = matchProductIdentity({
+    product: {
+      retailerName: "GameStop",
+      name: "Pokemon TCG Mega Evolution Chaos Rising Premium Collection",
+      url: finalUrl,
+      retailerProductId: "000000"
+    },
+    finalUrl,
+    html,
+    titleText: "Pokemon TCG Mega Evolution Chaos Rising Premium Collection | GameStop",
+    httpStatus: 200
+  });
+  assert.equal(wrongId.verificationStatus, "POSSIBLE_MISMATCH");
+  assert.equal(wrongId.readyForAlert, false);
 });
 
 test("exact product gates reject search links and require verified live image data", () => {

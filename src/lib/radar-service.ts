@@ -6,7 +6,14 @@ import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import { runProductDiscoveryCheck, validateDiscoverySourceUrl } from "@/lib/product-discovery";
 import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
-import { detectRetailerPrice, detectTargetAvailability, fetchTargetRedskyLiveSignal } from "@/lib/retailer-page-signals";
+import {
+  detectRetailerAvailability,
+  detectRetailerPrice,
+  detectTargetAvailability,
+  fetchBestBuyLiveSignal,
+  fetchGameStopLiveSignal,
+  fetchTargetRedskyLiveSignal
+} from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
 import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
 import { marketProviderStatuses } from "@/lib/market-providers";
@@ -2933,28 +2940,41 @@ export async function verifyProductLink(productId: string) {
     const finalUrl = response.url || product.url;
     const sameRetailerHost = normalizeUrlHost(finalUrl) === normalizeUrlHost(product.url);
     const titleText = extractHtmlTitle(html);
-    const targetAvailability = product.retailer.name.toLowerCase().includes("target") ? detectTargetAvailability(html) : null;
-    const targetApiSignal = product.retailer.name.toLowerCase().includes("target")
+    const retailerLower = product.retailer.name.toLowerCase();
+    const targetAvailability = retailerLower.includes("target") ? detectTargetAvailability(html) : null;
+    const fallbackAvailability =
+      targetAvailability ??
+      detectRetailerAvailability(html, product.retailer.name);
+    const targetApiSignal = retailerLower.includes("target")
       ? await fetchTargetRedskyLiveSignal({
           html,
           finalUrl,
           retailerProductId: product.retailerProductId,
           userAgent: "PokeRestockRadar/0.4 product-link-verifier (+manual-checkout-only)",
-          fallbackAvailability: targetAvailability ?? {
-            status: null,
-            stockText: null,
-            addToCartEnabled: null,
-            confidenceScore: 0,
-            reason: "Target page availability was not parsed.",
-            detectedWords: []
-          }
+          fallbackAvailability
         }).catch(() => null)
       : null;
-    const visiblePriceValue = targetApiSignal?.price ?? detectRetailerPrice(html, product.retailer.name);
+    const bestBuySignal = retailerLower.includes("best buy")
+      ? await fetchBestBuyLiveSignal({
+          html,
+          finalUrl,
+          fallbackAvailability
+        }).catch(() => null)
+      : null;
+    const gameStopSignal = retailerLower.includes("gamestop")
+      ? await fetchGameStopLiveSignal({
+          html,
+          finalUrl,
+          fallbackAvailability
+        }).catch(() => null)
+      : null;
+    const liveSignal = targetApiSignal || bestBuySignal || gameStopSignal;
+    const liveTitle = liveSignal?.title || titleText;
+    const visiblePriceValue = liveSignal?.price ?? detectRetailerPrice(html, product.retailer.name);
     const visiblePrice = visiblePriceValue === null ? extractVisiblePrice(html) : `$${visiblePriceValue.toFixed(2)}`;
-    const productImageUrl = targetApiSignal?.imageUrl || extractProductImage(html, finalUrl);
+    const productImageUrl = liveSignal?.imageUrl || extractProductImage(html, finalUrl);
     const stockCue = detectStockCue(html, product.retailer.name);
-    const liveStockStatus = targetApiSignal?.availability.status ?? targetAvailability?.status ?? stockStatusFromCue(stockCue);
+    const liveStockStatus = liveSignal?.availability.status ?? fallbackAvailability.status ?? stockStatusFromCue(stockCue);
     const redirectedAway = !sameRetailerHost;
     const blockedType = isBlockedRetailPage(html, response.status);
     const identity = matchProductIdentity({
@@ -2971,7 +2991,7 @@ export async function verifyProductLink(productId: string) {
       },
       finalUrl,
       html,
-      titleText,
+      titleText: liveTitle,
       httpStatus: response.status
     });
     const verifiedProductImageUrl =
@@ -3003,24 +3023,29 @@ export async function verifyProductLink(productId: string) {
       visiblePrice ? `Visible price cue: ${visiblePrice}` : "Visible price cue not found",
       targetApiSignal?.availability.stockText
         ? `Stock cue: ${targetApiSignal.availability.stockText}`
-        : targetAvailability?.stockText
-        ? `Stock cue: ${targetAvailability.stockText}`
+        : liveSignal?.availability.stockText
+        ? `Stock cue: ${liveSignal.availability.stockText}`
+        : fallbackAvailability.stockText
+        ? `Stock cue: ${fallbackAvailability.stockText}`
         : stockCue
         ? `Stock cue: ${stockCue}`
         : "Stock cue not found",
-      targetApiSignal || targetAvailability
+      liveSignal || fallbackAvailability
         ? `Add-to-cart enabled: ${
-            (targetApiSignal?.availability.addToCartEnabled ?? targetAvailability?.addToCartEnabled) === null
+            (liveSignal?.availability.addToCartEnabled ?? fallbackAvailability.addToCartEnabled) === null
               ? "unknown"
-              : targetApiSignal?.availability.addToCartEnabled ?? targetAvailability?.addToCartEnabled
+              : liveSignal?.availability.addToCartEnabled ?? fallbackAvailability.addToCartEnabled
           }`
         : null,
-      targetApiSignal?.availability.reason
-        ? `Availability reason: ${targetApiSignal.availability.reason}`
-        : targetAvailability?.reason
-        ? `Availability reason: ${targetAvailability.reason}`
+      liveSignal?.availability.reason
+        ? `Availability reason: ${liveSignal.availability.reason}`
+        : fallbackAvailability.reason
+        ? `Availability reason: ${fallbackAvailability.reason}`
         : null,
-      targetApiSignal?.source ? `Live data source: ${targetApiSignal.source}` : null,
+      liveSignal?.source ? `Live data source: ${liveSignal.source}` : null,
+      bestBuySignal?.sku ? `Best Buy SKU parsed: ${bestBuySignal.sku}` : null,
+      gameStopSignal?.sku ? `GameStop product ID parsed: ${gameStopSignal.sku}` : null,
+      gameStopSignal?.storeAvailabilityText ?? bestBuySignal?.storeAvailabilityText ?? null,
       `Response ${Date.now() - started}ms`,
       blockedType ? `Blocked page signal: ${blockedType}` : null,
       `Expected title keywords: ${identity.titleKeywords.join(", ") || "none"}`,
@@ -3042,7 +3067,7 @@ export async function verifyProductLink(productId: string) {
         retailerProductId: product.retailerProductId || identity.retailerProductIdFromUrl,
         imageUrl: identity.readyForAlert && !redirectedAway && verifiedProductImageUrl ? verifiedProductImageUrl : product.imageUrl,
         retailPrice: visiblePriceValue !== null && liveConfidenceScore >= 70 ? visiblePriceValue : product.retailPrice,
-        liveTitle: titleText || null,
+        liveTitle: liveTitle || null,
         livePrice: visiblePriceValue,
         livePriceSource: visiblePriceValue === null ? null : "Retailer page",
         livePriceVerifiedAt: visiblePriceValue === null ? undefined : now,

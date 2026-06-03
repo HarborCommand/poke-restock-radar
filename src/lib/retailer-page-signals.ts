@@ -160,6 +160,62 @@ function bestBuyImage(html: string, finalUrl: string) {
   return absolutePublicUrl(image, finalUrl);
 }
 
+function gameStopProductId(html: string, finalUrl: string) {
+  try {
+    const parsed = new URL(finalUrl);
+    const pathId =
+      parsed.pathname.match(/\/(\d{5,})\.html(?:\/)?$/i)?.[1] ??
+      parsed.pathname.match(/\/products\/[^/?#]+\/(\d{5,})(?:[/?#]|$)/i)?.[1];
+    if (pathId) return pathId;
+  } catch {
+    // Keep checking page text below.
+  }
+
+  return firstDecodedMatch(html, [
+    /"sku"\s*:\s*"?([A-Za-z0-9_-]{5,})"?/i,
+    /"productId"\s*:\s*"?([A-Za-z0-9_-]{5,})"?/i,
+    /"productID"\s*:\s*"?([A-Za-z0-9_-]{5,})"?/i,
+    /(?:SKU|Product\s*ID)\s*[:#]?\s*<\/?[^>]*>?\s*([A-Za-z0-9_-]{5,})/i
+  ]);
+}
+
+function gameStopPrice(html: string) {
+  const candidates = [
+    /"price"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"salePrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"currentPrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"displayPrice"\s*:\s*"\$?\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"/i,
+    /(?:product-price|actual-price|sales-price|price-sales)[\s\S]{0,180}?\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/i
+  ];
+
+  for (const pattern of candidates) {
+    const value = numberFromPrice(html.match(pattern)?.[1]);
+    if (value !== null) return value;
+  }
+
+  return genericPrice(html);
+}
+
+function gameStopTitle(html: string) {
+  return firstDecodedMatch(html, [
+    /<meta\s+(?:property|name)=["']og:title["']\s+content=["']([^"']{4,240})["']/i,
+    /<meta\s+content=["']([^"']{4,240})["']\s+(?:property|name)=["']og:title["']/i,
+    /"name"\s*:\s*"([^"]{4,240})"/i,
+    /<h1\b[^>]*>([\s\S]{4,300}?)<\/h1>/i
+  ])?.replace(/\s*(?:-\s*|\|\s*)GameStop(?:\.com)?\s*$/i, "") ?? null;
+}
+
+function gameStopImage(html: string, finalUrl: string) {
+  const image = firstDecodedMatch(html, [
+    /<meta\s+(?:property|name)=["']og:image["']\s+content=["']([^"']+)["']/i,
+    /<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:image["']/i,
+    /"primaryImage"\s*:\s*"([^"]+)"/i,
+    /"image"\s*:\s*"([^"]+)"/i,
+    /"imageUrl"\s*:\s*"([^"]+)"/i
+  ]);
+  return absolutePublicUrl(image, finalUrl);
+}
+
 function bestBuyStockLevel(html: string): { level: "HIGH" | "LOW" | null; text: string | null } {
   const text = visibleText(html);
   const storeCount =
@@ -186,6 +242,9 @@ export function detectRetailerPrice(html: string, retailerName: string) {
   }
   if (retailerName.toLowerCase().includes("best buy")) {
     return bestBuyPrice(html);
+  }
+  if (retailerName.toLowerCase().includes("gamestop")) {
+    return gameStopPrice(html);
   }
 
   return genericPrice(html);
@@ -544,6 +603,170 @@ export async function fetchBestBuyLiveSignal(input: {
   };
 }
 
+export function detectGameStopAvailability(
+  html: string,
+  fallbackAvailability?: RetailerAvailabilitySignal
+): RetailerAvailabilitySignal {
+  const text = visibleText(html);
+  const compact = compactText(`${html} ${text}`);
+  const addToCartEnabled = enabledPurchaseAction(html, "GameStop");
+  const hasCaptcha =
+    text.includes("captcha") ||
+    text.includes("verify you are human") ||
+    text.includes("robot check") ||
+    text.includes("automated access") ||
+    text.includes("press and hold");
+  const hasBlocked =
+    hasCaptcha ||
+    text.includes("access denied") ||
+    text.includes("request blocked") ||
+    text.includes("temporarily blocked") ||
+    text.includes("waiting room");
+  const hasSoldOut =
+    text.includes("sold out") ||
+    text.includes("out of stock") ||
+    text.includes("currently unavailable") ||
+    text.includes("temporarily unavailable") ||
+    compact.includes("outofstock") ||
+    compact.includes("soldout") ||
+    compact.includes("availabilityoutofstock");
+  const hasUnavailable =
+    text.includes("not available") ||
+    text.includes("no longer available") ||
+    text.includes("unavailable online") ||
+    text.includes("not available for shipping") ||
+    text.includes("not available for pickup") ||
+    compact.includes("notavailable") ||
+    compact.includes("unavailableonline");
+  const hasPreorder =
+    text.includes("preorder") ||
+    text.includes("pre-order") ||
+    text.includes("pre order") ||
+    compact.includes("preorder");
+  const hasJsonInStock =
+    /"availability"\s*:\s*"[^"]*InStock/i.test(html) ||
+    /"availableForSale"\s*:\s*true/i.test(html) ||
+    /"inStock"\s*:\s*true/i.test(html);
+  const detectedWords = uniqueWords([
+    ...(fallbackAvailability?.detectedWords ?? []),
+    "gamestop adapter",
+    hasCaptcha ? "captcha/robot page" : "",
+    hasBlocked ? "blocked page" : "",
+    hasSoldOut ? "out of stock" : "",
+    hasUnavailable ? "unavailable" : "",
+    hasPreorder ? "preorder" : "",
+    addToCartEnabled === true ? "enabled purchase button" : "",
+    addToCartEnabled === false ? "disabled purchase button" : "",
+    hasJsonInStock ? "in stock" : "",
+    "gamestop store stock source not available"
+  ]);
+
+  if (hasBlocked) {
+    return {
+      status: null,
+      stockText: hasCaptcha ? "Captcha or robot page" : "Blocked page",
+      addToCartEnabled: null,
+      confidenceScore: 0,
+      reason: "GameStop page appears blocked or shows captcha/robot verification. No buy alert will be sent.",
+      detectedWords
+    };
+  }
+
+  if (hasSoldOut) {
+    return {
+      status: "SOLD_OUT",
+      stockText: "Sold out",
+      addToCartEnabled: addToCartEnabled ?? false,
+      confidenceScore: addToCartEnabled === false ? 96 : 90,
+      reason: "GameStop public product page says sold out/out of stock.",
+      detectedWords
+    };
+  }
+
+  if (hasUnavailable || addToCartEnabled === false) {
+    return {
+      status: "UNAVAILABLE",
+      stockText: addToCartEnabled === false ? "Purchase button disabled" : "Unavailable",
+      addToCartEnabled: addToCartEnabled ?? false,
+      confidenceScore: addToCartEnabled === false ? 92 : 84,
+      reason: addToCartEnabled === false
+        ? "GameStop purchase button is disabled; product is not buyable right now."
+        : "GameStop page has unavailable cues.",
+      detectedWords
+    };
+  }
+
+  if (hasPreorder && addToCartEnabled === true) {
+    return {
+      status: "PREORDER_LIVE",
+      stockText: "Preorder live",
+      addToCartEnabled: true,
+      confidenceScore: 94,
+      reason: "GameStop preorder cues matched and an enabled public purchase button was found.",
+      detectedWords
+    };
+  }
+
+  if (addToCartEnabled === true) {
+    return {
+      status: "ADD_TO_CART_AVAILABLE",
+      stockText: "Add to cart available",
+      addToCartEnabled: true,
+      confidenceScore: 96,
+      reason: "GameStop exact product page has an enabled public Add to Cart action.",
+      detectedWords
+    };
+  }
+
+  if (hasJsonInStock) {
+    return {
+      status: "IN_STOCK",
+      stockText: "In stock",
+      addToCartEnabled: null,
+      confidenceScore: 78,
+      reason: "GameStop public product data reports in-stock availability, but no enabled purchase button was separately proven.",
+      detectedWords
+    };
+  }
+
+  const safeFallbackStatus =
+    fallbackAvailability?.status === "SOLD_OUT" ||
+    fallbackAvailability?.status === "UNAVAILABLE" ||
+    fallbackAvailability?.status === "PAGE_UPDATED" ||
+    fallbackAvailability?.status === "PRICE_CHANGE"
+      ? fallbackAvailability.status
+      : null;
+
+  return {
+    status: safeFallbackStatus,
+    stockText: safeFallbackStatus ? fallbackAvailability?.stockText ?? null : null,
+    addToCartEnabled: safeFallbackStatus ? fallbackAvailability?.addToCartEnabled ?? null : null,
+    confidenceScore: safeFallbackStatus ? Math.max(fallbackAvailability?.confidenceScore ?? 35, 35) : 35,
+    reason:
+      safeFallbackStatus && fallbackAvailability?.reason
+        ? fallbackAvailability.reason
+        : "GameStop public page did not prove an actionable buyable stock signal.",
+    detectedWords
+  };
+}
+
+export async function fetchGameStopLiveSignal(input: {
+  html: string;
+  finalUrl: string;
+  fallbackAvailability: RetailerAvailabilitySignal;
+}): Promise<RetailerLiveSignal | null> {
+  return {
+    price: gameStopPrice(input.html),
+    title: gameStopTitle(input.html),
+    imageUrl: gameStopImage(input.html, input.finalUrl),
+    source: "GameStop public product page",
+    sku: gameStopProductId(input.html, input.finalUrl),
+    stockLevel: null,
+    storeAvailabilityText: "GameStop store stock source not available",
+    availability: detectGameStopAvailability(input.html, input.fallbackAvailability)
+  };
+}
+
 function hasDisabledAttribute(value: string) {
   return (
     /\sdisabled(?:\s|=|>)/i.test(value) ||
@@ -622,6 +845,8 @@ function enabledPurchaseAction(html: string, retailerName: string) {
 
 export function detectRetailerAvailability(html: string, retailerName: string): RetailerAvailabilitySignal {
   if (retailerName.toLowerCase().includes("target")) return detectTargetAvailability(html);
+  if (retailerName.toLowerCase().includes("best buy")) return detectBestBuyAvailability(html);
+  if (retailerName.toLowerCase().includes("gamestop")) return detectGameStopAvailability(html);
 
   const text = visibleText(html);
   const compact = compactText(`${html} ${text}`);

@@ -8,6 +8,7 @@ import {
   detectRetailerPrice,
   detectTargetAvailability,
   fetchBestBuyLiveSignal,
+  fetchGameStopLiveSignal,
   fetchTargetRedskyLiveSignal
 } from "@/lib/retailer-page-signals";
 import { templateForRetailerName, type RetailerTemplate } from "@/lib/retailer-templates";
@@ -499,7 +500,14 @@ async function fetchPublicProductPage(input: {
         fallbackAvailability
       }).catch(() => null)
     : null;
-  const liveSignal = targetApiSignal || bestBuySignal;
+  const gameStopSignal = retailerLower.includes("gamestop")
+    ? await fetchGameStopLiveSignal({
+        html: body,
+        finalUrl,
+        fallbackAvailability
+      }).catch(() => null)
+    : null;
+  const liveSignal = targetApiSignal || bestBuySignal || gameStopSignal;
   const status = liveSignal
     ? {
         ...pageStatus,
@@ -512,13 +520,15 @@ async function fetchPublicProductPage(input: {
           bestBuySignal?.sku ? `best buy sku: ${bestBuySignal.sku}` : "",
           bestBuySignal?.stockLevel === "HIGH" ? "high stock" : "",
           bestBuySignal?.stockLevel === "LOW" ? "low stock" : "",
-          bestBuySignal?.storeAvailabilityText ? `store stock cue: ${bestBuySignal.storeAvailabilityText}` : ""
+          bestBuySignal?.storeAvailabilityText ? `store stock cue: ${bestBuySignal.storeAvailabilityText}` : "",
+          gameStopSignal?.sku ? `gamestop product id: ${gameStopSignal.sku}` : "",
+          gameStopSignal?.storeAvailabilityText ? gameStopSignal.storeAvailabilityText : ""
         ]),
         parsedStockText: liveSignal.availability.stockText,
         addToCartEnabled: liveSignal.availability.addToCartEnabled
       }
     : pageStatus;
-  const liveTitle = targetApiSignal?.title || bestBuySignal?.title || titleText || null;
+  const liveTitle = targetApiSignal?.title || bestBuySignal?.title || gameStopSignal?.title || titleText || null;
   const identityMatch = matchProductIdentity({
     product: {
       retailerName: input.retailerName,
@@ -536,13 +546,13 @@ async function fetchPublicProductPage(input: {
     titleText: liveTitle || titleText,
     httpStatus: response.status
   });
-  const rawImageUrl = targetApiSignal?.imageUrl || bestBuySignal?.imageUrl || extractProductImageUrl(body, finalUrl);
+  const rawImageUrl = targetApiSignal?.imageUrl || bestBuySignal?.imageUrl || gameStopSignal?.imageUrl || extractProductImageUrl(body, finalUrl);
   const verifiedImageUrl =
     identityMatch.readyForAlert && !status.blockedType ? await validateProductImageUrl(rawImageUrl) : null;
 
   return {
     ...status,
-    price: targetApiSignal?.price ?? bestBuySignal?.price ?? detectRetailerPrice(body, input.retailerName),
+    price: targetApiSignal?.price ?? bestBuySignal?.price ?? gameStopSignal?.price ?? detectRetailerPrice(body, input.retailerName),
     title: liveTitle,
     imageUrl: verifiedImageUrl,
     pageHash: hashPage(body),
