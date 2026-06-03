@@ -1,6 +1,6 @@
-import { requireUser } from "@/lib/auth";
+import { requireAdmin, requireUser } from "@/lib/auth";
 import { badRequest, ok, readJson } from "@/lib/http";
-import { listDashboard, markAlertFalsePositive, markAlertRead } from "@/lib/radar-service";
+import { clearSimulatedTrackerAlerts, listDashboard, markAlertFalsePositive, markAlertRead } from "@/lib/radar-service";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -28,6 +28,19 @@ export async function PATCH(request: Request) {
       return ok({ alert: await markAlertFalsePositive(user, input.alertId) });
     }
     return ok({ alert: await markAlertRead(input.alertId) });
+  } catch (error) {
+    return badRequest(error);
+  }
+}
+
+export async function DELETE() {
+  const { user, response } = await requireUser();
+  if (response) return response;
+  const adminResponse = requireAdmin(user);
+  if (adminResponse) return adminResponse;
+
+  try {
+    return ok(await clearSimulatedTrackerAlerts());
   } catch (error) {
     return badRequest(error);
   }

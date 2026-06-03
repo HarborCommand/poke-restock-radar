@@ -2359,7 +2359,7 @@ const trackerViews: Array<{ id: TrackerAlertView; label: string; icon: typeof Ra
   { id: "system", label: "System Alerts", icon: AlertTriangle }
 ];
 
-const trackerChannelFilters = ["All", "Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center", "High Stock", "Low Stock", "Preorders", "Price Drops"];
+const trackerChannelFilters = ["All", "Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center", "In Stock", "Add To Cart", "High Stock", "Low Stock", "Preorders", "Price Drops"];
 const trackerDefaultPositiveKeywords = ["Chaos Rising", "Perfect Order", "ETB", "Booster Bundle", "Premium Collection"];
 const trackerDefaultNegativeKeywords = ["sleeves", "plush", "jumbo", "Japanese", "damaged"];
 
@@ -2386,10 +2386,7 @@ function trackerSkuMatch(text: string, product: ProductDTO | null) {
 }
 
 function trackerMuted(alert: DashboardDTO["alerts"][number]) {
-  if (alert.suppressedAt) return true;
-  if (!alert.cooldownUntil) return false;
-  const cooldown = new Date(alert.cooldownUntil).getTime();
-  return Number.isFinite(cooldown) && cooldown > Date.now();
+  return Boolean(alert.suppressedAt);
 }
 
 function trackerDuplicateCooldownKey(alert: DashboardDTO["alerts"][number], product: ProductDTO | null) {
@@ -2472,6 +2469,7 @@ function trackerCategory(alert: DashboardDTO["alerts"][number], product: Product
   if (isDeprecatedLocalStoreAlert(alert)) return "deprecated_local_store";
   const text = trackerAlertText(alert, product);
   if (isTestDashboardAlert(alert)) return "system_warning";
+  if (alert.dedupeKey?.startsWith("tracker_online_drop:") || text.includes("tracker_online_drop")) return "tracker_online_drop";
   if (text.includes("error") || text.includes("failed") || text.includes("webhook") || text.includes("parser")) return "system_error";
   if (text.includes("blocked") || text.includes("captcha") || text.includes("cron") || text.includes("provider") || text.includes("not configured") || text.includes("sync")) {
     return "system_warning";
@@ -2513,6 +2511,7 @@ function trackerClassifyAlert(alert: DashboardDTO["alerts"][number], products: P
 
 function trackerIsLiveDrop(record: TrackerAlertRecord) {
   const text = trackerAlertText(record.alert, record.product);
+  const explicitTrackerDrop = record.alert.dedupeKey?.startsWith("tracker_online_drop:") || text.includes("tracker_online_drop");
   return (
     !record.isSystem &&
     record.category === "tracker_online_drop" &&
@@ -2522,16 +2521,18 @@ function trackerIsLiveDrop(record: TrackerAlertRecord) {
     !record.alert.suppressedAt &&
     !record.isMuted &&
     !isTestDashboardAlert(record.alert) &&
-    (text.includes("urgent") || text.includes("detected") || text.includes("manual checkout only") || text.includes("exact product link"))
+    (explicitTrackerDrop || text.includes("urgent") || text.includes("detected") || text.includes("manual checkout only") || text.includes("exact product link"))
   );
 }
 
 function trackerChannelMatches(record: TrackerAlertRecord, filter: string) {
   if (filter === "All") return true;
+  if (filter === "In Stock") return record.statusLabel === "In Stock";
+  if (filter === "Add To Cart") return record.statusLabel === "Add To Cart" || record.statusLabel === "Add To Cart Available";
   if (filter === "High Stock") return record.statusLabel === "High Stock";
   if (filter === "Low Stock") return record.statusLabel === "Low Stock" || record.channel === "Low Stock";
   if (filter === "Preorders") return record.statusLabel === "Preorder Live" || trackerAlertText(record.alert, record.product).includes("preorder");
-  if (filter === "Price Drops") return record.category === "tracker_price_change";
+  if (filter === "Price Drops") return record.category === "tracker_price_change" || record.statusLabel === "Price Drop" || trackerAlertText(record.alert, record.product).includes("price drop");
   if (filter === "Best Buy") return trackerAlertText(record.alert, record.product).includes("best buy") || (record.product?.retailerName || "").toLowerCase().includes("best buy");
   return record.channel.toLowerCase().includes(filter.toLowerCase());
 }
@@ -14012,7 +14013,10 @@ function NotificationSettingsPanel({
   const browserPushActive = Boolean(health?.providers.push.configured && settings.browserPush && pushReady);
   const emailActive = Boolean(health?.providers.email.configured && settings.email && settings.emailTo);
   const smsActive = Boolean(health?.providers.sms.configured && settings.sms && settings.phone);
-  const simulatableTrackerProduct = dashboard.products.find((product) => !product.archivedAt && productReadyForAlert(product));
+  const simulatableTrackerProduct =
+    dashboard.products.find((product) => !product.archivedAt && productReadyForAlert(product)) ??
+    dashboard.products.find((product) => !product.archivedAt && product.url) ??
+    dashboard.products.find((product) => !product.archivedAt);
 
   useEffect(() => {
     let mounted = true;
@@ -14290,7 +14294,7 @@ function NotificationSettingsPanel({
           className="mini-action"
           disabled={busy || !simulatableTrackerProduct}
           type="button"
-          title={simulatableTrackerProduct ? "Simulate a tracker product alert" : "Verify an exact product before simulating tracker alerts"}
+          title={simulatableTrackerProduct ? "Create a simulated tracker_online_drop event for Live Drops QA" : "Add a watch product before simulating tracker alerts"}
           onClick={() =>
             simulatableTrackerProduct
               ? runAction(
@@ -14298,7 +14302,7 @@ function NotificationSettingsPanel({
                   () =>
                     requestJson(`/api/radar/products/${simulatableTrackerProduct.id}/monitor`, {
                       method: "POST",
-                      body: JSON.stringify({ action: "force_alert", reason: "Admin simulated a tracker alert from the Alerts admin tools." })
+                      body: JSON.stringify({ action: "simulate_tracker_drop", reason: "Admin simulated a tracker_online_drop test event from the Alerts admin tools." })
                     }),
                   { success: "Tracker alert simulation sent" }
                 )
@@ -14307,6 +14311,21 @@ function NotificationSettingsPanel({
         >
           <Radar size={14} />
           {busyLabel === `Simulating tracker alert ${simulatableTrackerProduct?.id}` ? "Simulating" : "Simulate Tracker Alert"}
+        </button>
+        <button
+          className="mini-action"
+          disabled={busy}
+          type="button"
+          onClick={() =>
+            runAction(
+              "Clearing simulated tracker alerts",
+              () => requestJson("/api/radar/alerts", { method: "DELETE" }),
+              { success: "Simulated tracker alerts cleared" }
+            )
+          }
+        >
+          <Trash2 size={14} />
+          {busyLabel === "Clearing simulated tracker alerts" ? "Clearing" : "Clear Test Alerts"}
         </button>
         <button
           className="mini-action"

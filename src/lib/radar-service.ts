@@ -13,6 +13,7 @@ import { marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
+import { createTrackerOnlineDropAlert } from "@/lib/monitor";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, testEbayConnection } from "@/lib/ebay";
 import {
   applyTcgcsvEstimateToInventoryItem,
@@ -4854,7 +4855,7 @@ export async function searchTcgcsvMarketMatches(
 export async function controlProductMonitor(
   productId: string,
   input: {
-    action: "pause" | "resume" | "force_alert" | "mark_false_positive";
+    action: "pause" | "resume" | "force_alert" | "simulate_tracker_drop" | "mark_false_positive";
     monitorLogId?: string;
     reason?: string;
   }
@@ -4954,6 +4955,46 @@ export async function controlProductMonitor(
     return { ok: true, action: input.action, alertSent, logId: log.id };
   }
 
+  if (input.action === "simulate_tracker_drop") {
+    const trackerDelivery = await createTrackerOnlineDropAlert({
+      product,
+      eventKind: "simulated",
+      status: product.liveStockStatus || product.stockStatus,
+      price: product.livePrice ?? product.retailPrice,
+      confidenceScore: product.liveConfidenceScore,
+      reason: input.reason || "Admin simulated a tracker_online_drop test event from Alerts admin tools.",
+      actionUrl: exactProductActionUrl(product) || product.verifiedFinalUrl || product.url,
+      detectedAt: now,
+      simulated: true
+    });
+    await prisma.product.update({
+      where: { id: productId },
+      data: {
+        lastAlertSentAt: trackerDelivery.alertSent ? now : product.lastAlertSentAt,
+        lastMonitorResult: "Admin simulated a tracker_online_drop test event."
+      }
+    });
+    const log = await prisma.monitorLog.create({
+      data: {
+        productId,
+        runType: "MANUAL_PRODUCT",
+        status: "FORCED_ALERT",
+        previousStatus: product.stockStatus,
+        detectedStatus: product.liveStockStatus || product.stockStatus,
+        previousPrice: product.retailPrice,
+        detectedPrice: product.livePrice ?? product.retailPrice,
+        startedAt: now,
+        finishedAt: now,
+        durationMs: 0,
+        changeSummary: input.reason || "Admin simulated a tracker_online_drop test event.",
+        finalUrl: exactProductActionUrl(product) || product.verifiedFinalUrl || product.url,
+        alertSent: trackerDelivery.alertSent,
+        notificationSummary: trackerDelivery.deliverySummary
+      }
+    });
+    return { ok: true, action: input.action, alertSent: trackerDelivery.alertSent, logId: log.id };
+  }
+
   if (input.monitorLogId) {
     await prisma.monitorLog.updateMany({
       where: { id: input.monitorLogId, productId },
@@ -4999,6 +5040,20 @@ export async function controlProductMonitor(
     }
   });
   return { ok: true, action: input.action, logId: log.id };
+}
+
+export async function clearSimulatedTrackerAlerts() {
+  const deleted = await prisma.alert.deleteMany({
+    where: {
+      OR: [
+        { dedupeKey: { contains: ":simulated:" } },
+        { title: { startsWith: "Simulated Live Drop:" } },
+        { explanation: { contains: "Admin simulated" } },
+        { reason: { contains: "Admin simulated a tracker_online_drop" } }
+      ]
+    }
+  });
+  return { ok: true, deleted: deleted.count };
 }
 
 export async function createStore(input: {

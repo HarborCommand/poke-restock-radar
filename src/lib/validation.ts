@@ -481,7 +481,7 @@ export const monitorRunSchema = z.object({
 });
 
 export const productMonitorActionSchema = z.object({
-  action: z.enum(["pause", "resume", "force_alert", "mark_false_positive"]),
+  action: z.enum(["pause", "resume", "force_alert", "simulate_tracker_drop", "mark_false_positive"]),
   monitorLogId: optionalTrimmed,
   reason: optionalTrimmed
 });

@@ -11,6 +11,9 @@ type AlertPayload = {
   entityId?: string;
   productId?: string;
   actionUrl?: string;
+  dedupeKey?: string;
+  score?: number;
+  explanation?: string;
 };
 
 type DeliveryResult = {
@@ -85,10 +88,12 @@ function isInQuietHours(start: string | null, end: string | null, now = new Date
 }
 
 function alertDedupeKey(payload: AlertPayload) {
+  if (payload.dedupeKey) return payload.dedupeKey.toLowerCase();
   return `${payload.entityType}:${payload.entityId || payload.productId || "system"}:${payload.title}`.toLowerCase();
 }
 
 function alertScore(payload: AlertPayload, product?: { priority: string; stockStatus: string } | null) {
+  if (payload.score !== undefined) return Math.max(0, Math.min(100, Math.round(payload.score)));
   let score = payload.priority === "HIGH" ? 70 : payload.priority === "MEDIUM" ? 45 : 25;
   if (["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product?.stockStatus || "")) score += 18;
   if (product?.priority === "HIGH") score += 10;
@@ -116,6 +121,7 @@ function explanationFor(input: {
   productName?: string | null;
   retailerName?: string | null;
 }) {
+  if (input.payload.explanation) return input.payload.explanation;
   const parts = [
     `Score ${input.score}/100 from ${input.payload.priority.toLowerCase()} priority`,
     input.productName ? `product ${input.productName}` : `${input.payload.entityType.toLowerCase()} alert`,

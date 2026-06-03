@@ -16,6 +16,7 @@ import type { Priority, ProductStatus } from "@/types/radar";
 export type RunType = "MANUAL_PRODUCT" | "MANUAL_ALL" | "DUE_JOB" | "DISCOVERY_DUE" | "DISCOVERY_MANUAL" | "DISCOVERY_ALL";
 type MonitorLogStatus = "SUCCESS" | "CHANGED" | "SKIPPED" | "ERROR" | "BLOCKED" | "PENDING_CONFIRMATION";
 type BlockedType = "PAGE_BLOCKED" | "CAPTCHA_ROBOT_PAGE";
+type TrackerDropEventKind = "in_stock" | "preorder_live" | "add_to_cart" | "price_drop" | "high_stock" | "low_stock" | "simulated";
 const MONITOR_USER_AGENT = "PokeRestockRadar/0.3 private-safe-monitor (+manual-checkout-only)";
 
 type Detection = {
@@ -713,6 +714,188 @@ function pendingClear() {
   };
 }
 
+function trackerEventLabel(kind: TrackerDropEventKind, status: ProductStatus | string) {
+  if (kind === "simulated") return "Simulated";
+  if (kind === "price_drop") return "Price Drop";
+  if (kind === "high_stock") return "High Stock";
+  if (kind === "low_stock") return "Low Stock";
+  if (kind === "preorder_live") return "Preorder Live";
+  if (kind === "add_to_cart") return "Add To Cart Available";
+  if (kind === "in_stock") return "In Stock";
+  return status.replaceAll("_", " ");
+}
+
+function trackerEventScore(kind: TrackerDropEventKind) {
+  if (kind === "simulated") return 96;
+  if (kind === "high_stock") return 92;
+  if (kind === "add_to_cart") return 90;
+  if (kind === "preorder_live") return 86;
+  if (kind === "in_stock") return 82;
+  if (kind === "price_drop") return 74;
+  return 68;
+}
+
+function trackerEventKindForDetection(input: {
+  detection: Detection;
+  nextStatus: ProductStatus;
+  previousPrice: number | null;
+}) {
+  const text = input.detection.detectedWords.join(" ").toLowerCase();
+  const priceDrop =
+    input.detection.price !== null &&
+    input.previousPrice !== null &&
+    input.previousPrice > 0 &&
+    input.detection.price < input.previousPrice;
+
+  if (priceDrop && input.detection.identityMatch.readyForAlert && !input.detection.blockedType && input.detection.confidenceScore >= 70) {
+    return "price_drop" satisfies TrackerDropEventKind;
+  }
+
+  if (!detectionReadyForBuyAlerts(input.detection)) return null;
+  if (text.includes("high stock") || text.includes("available in many stores")) return "high_stock" satisfies TrackerDropEventKind;
+  if (text.includes("low stock") || text.includes("limited stock") || text.includes("only a few left")) return "low_stock" satisfies TrackerDropEventKind;
+  if (input.nextStatus === "PREORDER_LIVE") return "preorder_live" satisfies TrackerDropEventKind;
+  if (input.nextStatus === "ADD_TO_CART_AVAILABLE") return "add_to_cart" satisfies TrackerDropEventKind;
+  if (input.nextStatus === "IN_STOCK") return "in_stock" satisfies TrackerDropEventKind;
+  return null;
+}
+
+export async function createTrackerOnlineDropAlert(input: {
+  product: {
+    id: string;
+    name: string;
+    priority: string;
+    url: string;
+    verifiedFinalUrl?: string | null;
+    sku?: string | null;
+    upc?: string | null;
+    dpci?: string | null;
+    retailerProductId?: string | null;
+    retailer: { name: string };
+  };
+  eventKind: TrackerDropEventKind;
+  status: ProductStatus | string;
+  price: number | null;
+  confidenceScore: number | null;
+  reason: string;
+  actionUrl?: string | null;
+  detectedAt?: Date;
+  simulated?: boolean;
+}) {
+  const detectedAt = input.detectedAt ?? new Date();
+  const statusLabel = trackerEventLabel(input.eventKind, input.status);
+  const priceText = input.price === null ? "Price not verified" : `$${input.price.toFixed(2)}`;
+  const identifierText = [
+    input.product.sku ? `SKU ${input.product.sku}` : null,
+    input.product.upc ? `UPC ${input.product.upc}` : null,
+    input.product.dpci ? `DPCI/TCIN ${input.product.dpci}` : null,
+    input.product.retailerProductId ? `retailer ID ${input.product.retailerProductId}` : null
+  ].filter(Boolean).join(", ") || "identifier saved";
+  const actionUrl = input.actionUrl || exactProductActionUrl(input.product) || input.product.verifiedFinalUrl || input.product.url;
+  const dedupeKey = input.simulated
+    ? `tracker_online_drop:${input.product.id}:simulated:${detectedAt.getTime()}`
+    : `tracker_online_drop:${input.product.id}:${input.eventKind}:${input.status}:${input.price ?? "unknown"}`.toLowerCase();
+
+  if (!input.simulated) {
+    const existing = await prisma.alert.findFirst({
+      where: {
+        dedupeKey,
+        read: false,
+        suppressedAt: null,
+        falsePositiveAt: null
+      }
+    });
+    if (existing) {
+      return { alertSent: false, deliverySummary: "duplicate unread tracker event suppressed before delivery", dedupeKey };
+    }
+  }
+
+  const priority = input.eventKind === "low_stock" || input.eventKind === "price_drop" ? "MEDIUM" : "HIGH";
+  const score = trackerEventScore(input.eventKind);
+  const title = `${input.simulated ? "Simulated Live Drop" : "Tracker Live Drop"}: ${input.product.retailer.name} ${input.product.name}`;
+  const reason =
+    `tracker_online_drop ${input.product.retailer.name} ${input.product.name} is ${statusLabel} at ${priceText}. ` +
+    `Detected ${detectedAt.toISOString()}. ${identifierText}. Exact product link: ${actionUrl}. ` +
+    `${input.reason} Manual checkout only.`;
+  const explanation =
+    `Tracker event ${input.eventKind} from exact product monitor. Confidence ${input.confidenceScore ?? 0}%. ` +
+    `${input.simulated ? "Admin simulated this test event. " : ""}${input.reason}`;
+
+  const delivery = await deliverAlert({
+    title,
+    reason,
+    priority,
+    entityType: "PRODUCT",
+    entityId: input.product.id,
+    productId: input.product.id,
+    actionUrl,
+    dedupeKey,
+    score,
+    explanation
+  });
+  if (delivery.inAppCreated === 0) {
+    const existingVisible = await prisma.alert.findFirst({
+      where: {
+        dedupeKey,
+        suppressedAt: null,
+        falsePositiveAt: null
+      }
+    });
+    if (!existingVisible) {
+      const admins = await prisma.user.findMany({ where: { role: "ADMIN", disabledAt: null }, select: { id: true } });
+      for (const admin of admins) {
+        await prisma.alert.create({
+          data: {
+            title,
+            reason,
+            priority,
+            entityType: "PRODUCT",
+            entityId: input.product.id,
+            productId: input.product.id,
+            actionUrl,
+            userId: admin.id,
+            score,
+            dedupeKey,
+            explanation,
+            cooldownUntil: null
+          }
+        });
+        delivery.inAppCreated += 1;
+      }
+    }
+  }
+  const deliverySummary = notificationSummary(delivery);
+  return {
+    alertSent: delivery.inAppCreated + delivery.emailSent + delivery.smsSent + delivery.pushSent > 0,
+    deliverySummary,
+    dedupeKey
+  };
+}
+
+async function createTrackerSystemAlert(input: {
+  product: { id: string; name: string; retailer: { name: string } };
+  kind: "blocked" | "error";
+  reason: string;
+  priority?: Priority;
+}) {
+  const delivery = await deliverAlert({
+    title: `Tracker check ${input.kind}: ${input.product.name}`,
+    reason: `${input.product.retailer.name} ${input.product.name}: ${input.reason}`,
+    priority: input.priority ?? "MEDIUM",
+    entityType: "SYSTEM",
+    entityId: input.product.id,
+    productId: input.product.id,
+    dedupeKey: `tracker_system:${input.product.id}:${input.kind}`,
+    score: input.kind === "error" ? 60 : 50,
+    explanation: `System Alert from product monitor ${input.kind}. ${input.reason}`
+  });
+  const deliverySummary = notificationSummary(delivery);
+  return {
+    alertSent: delivery.inAppCreated + delivery.emailSent + delivery.smsSent + delivery.pushSent > 0,
+    deliverySummary
+  };
+}
+
 function detectionDetailWords(input: {
   detectedWords?: string[];
   detectedPrice?: number | null;
@@ -832,6 +1015,20 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         pageHash: detection.pageHash,
         startedAt
       });
+      const systemDelivery = await createTrackerSystemAlert({
+        product,
+        kind: "blocked",
+        reason: detection.reason
+      });
+      if (systemDelivery.alertSent) {
+        await prisma.monitorLog.update({
+          where: { id: log.id },
+          data: {
+            alertSent: true,
+            notificationSummary: systemDelivery.deliverySummary
+          }
+        });
+      }
       return {
         productId,
         productName: product.name,
@@ -978,6 +1175,11 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
 
     let alertSent = false;
     let deliverySummary: string | undefined;
+    const trackerEventKind = trackerEventKindForDetection({
+      detection,
+      nextStatus: change.nextStatus,
+      previousPrice: product.livePrice ?? product.retailPrice
+    });
 
     if (change.changed) {
       await prisma.restockHistory.create({
@@ -988,26 +1190,21 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
           snapshotReason: `Monitor: ${change.summary} Confidence ${detection.confidenceScore}%.`
         }
       });
+    }
 
-      if (buyAvailableStatuses.includes(change.nextStatus) && detectionReadyForBuyAlerts(detection)) {
-        const actionUrl = detection.identityMatch.actionUrl || exactProductActionUrl(product);
-        const detectedTime = now.toISOString();
-        const priceText = detection.price === null ? "Price not verified" : `$${detection.price.toFixed(2)}`;
-        const delivery = await deliverAlert({
-          title: `URGENT ${product.retailer.name}: ${product.name}`,
-          reason:
-            `${product.retailer.name} ${product.name} is ${change.nextStatus.replaceAll("_", " ").toLowerCase()} at ${priceText}. ` +
-            `Detected ${detectedTime}. Exact product link: ${actionUrl || product.url}. ` +
-            `${change.summary} ${detection.reason} Manual checkout only.`,
-          priority: "HIGH" satisfies Priority,
-          entityType: "PRODUCT",
-          entityId: product.id,
-          productId: product.id,
-          actionUrl: actionUrl ?? undefined
-        });
-        deliverySummary = notificationSummary(delivery);
-        alertSent = delivery.inAppCreated + delivery.emailSent + delivery.smsSent + delivery.pushSent > 0;
-      }
+    if (trackerEventKind && (change.changed || runType === "MANUAL_PRODUCT" || trackerEventKind === "price_drop")) {
+      const trackerDelivery = await createTrackerOnlineDropAlert({
+        product,
+        eventKind: trackerEventKind,
+        status: change.nextStatus,
+        price: detection.price,
+        confidenceScore: detection.confidenceScore,
+        reason: `${change.summary} ${detection.reason}`,
+        actionUrl: detection.identityMatch.actionUrl || exactProductActionUrl(product) || product.url,
+        detectedAt: now
+      });
+      deliverySummary = trackerDelivery.deliverySummary;
+      alertSent = trackerDelivery.alertSent;
     }
 
     const updated = await prisma.product.update({
@@ -1096,6 +1293,21 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
       error: message,
       changeSummary: "Public product page check failed."
     });
+    const systemDelivery = await createTrackerSystemAlert({
+      product,
+      kind: "error",
+      reason: message,
+      priority: "MEDIUM"
+    });
+    if (systemDelivery.alertSent) {
+      await prisma.monitorLog.update({
+        where: { id: log.id },
+        data: {
+          alertSent: true,
+          notificationSummary: systemDelivery.deliverySummary
+        }
+      });
+    }
     return { productId, productName: product.name, status: "ERROR", error: message, logId: log.id };
   }
 }

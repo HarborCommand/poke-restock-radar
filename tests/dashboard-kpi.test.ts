@@ -324,6 +324,9 @@ test("tracker alert categories and archived local store cleanup are wired", () =
   assert.match(app, /deprecated local store/i);
   assert.match(app, /Muted \/ Archived/);
   assert.match(app, /trackerIsLiveDrop/);
+  assert.match(app, /tracker_online_drop:/);
+  assert.match(app, /In Stock/);
+  assert.match(app, /Add To Cart/);
   assert.match(app, /record\.isSystem/);
   assert.match(app, /No live drops right now/);
   assert.match(app, /Example Alert/);
@@ -334,12 +337,15 @@ test("tracker alert categories and archived local store cleanup are wired", () =
 
 test("tracker matching helpers cover keywords, identifiers, mute, duplicate cooldown, and feedback", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const trackerMutedHelper = app.slice(app.indexOf("function trackerMuted"), app.indexOf("function trackerDuplicateCooldownKey"));
 
   assert.match(app, /function trackerKeywordMatch/);
   assert.match(app, /blockedBy/);
   assert.match(app, /function trackerSkuMatch/);
   assert.match(app, /product\.sku, product\.upc, product\.dpci, product\.retailerProductId/);
   assert.match(app, /function trackerMuted/);
+  assert.match(trackerMutedHelper, /suppressedAt/);
+  assert.doesNotMatch(trackerMutedHelper, /cooldownUntil/);
   assert.match(app, /function trackerDuplicateCooldownKey/);
   assert.match(app, /markAlert\(alert, "false_positive"/);
   assert.match(app, /Alert muted for now/);
@@ -384,6 +390,7 @@ test("live drops are restricted to real product monitor alerts", () => {
   assert.match(liveDropHelper, /record\.category === "tracker_online_drop"/);
   assert.match(liveDropHelper, /record\.alert\.entityType === "PRODUCT"/);
   assert.match(liveDropHelper, /Boolean\(record\.product\)/);
+  assert.match(liveDropHelper, /explicitTrackerDrop/);
   assert.match(liveDropHelper, /manual checkout only/);
   assert.match(alertsPanel, /\.filter\(\(record\) => trackerIsLiveDrop\(record\)\)/);
   assert.doesNotMatch(liveDropHelper, /tracker_sold_out/);
@@ -395,10 +402,31 @@ test("admin-only tracker simulation and alert actions are wired", () => {
   const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
 
   assert.match(notificationPanel, /Simulate Tracker Alert/);
+  assert.match(notificationPanel, /Clear Test Alerts/);
   assert.match(notificationPanel, /productReadyForAlert/);
-  assert.match(notificationPanel, /action: "force_alert"/);
-  assert.match(notificationPanel, /Admin simulated a tracker alert/);
+  assert.match(notificationPanel, /action: "simulate_tracker_drop"/);
+  assert.match(notificationPanel, /Admin simulated a tracker_online_drop/);
+  assert.match(notificationPanel, /requestJson\("\/api\/radar\/alerts", \{ method: "DELETE" \}/);
   for (const action of ["Go Buy", "Add to Inventory", "Watch", "Mute", "Got It", "Missed", "Sold Out", "Bad Alert"]) {
     assert.match(alertsPanel, new RegExp(action), `missing alert action ${action}`);
   }
+});
+
+test("monitor creates explicit tracker online drop and system alert events", () => {
+  const monitor = fs.readFileSync(new URL("../src/lib/monitor.ts", import.meta.url), "utf8");
+  const notifications = fs.readFileSync(new URL("../src/lib/notifications.ts", import.meta.url), "utf8");
+  const route = fs.readFileSync(new URL("../src/app/api/radar/alerts/route.ts", import.meta.url), "utf8");
+
+  assert.match(monitor, /createTrackerOnlineDropAlert/);
+  assert.match(monitor, /trackerEventKindForDetection/);
+  assert.match(monitor, /tracker_online_drop:\$\{input\.product\.id\}/);
+  assert.match(monitor, /delivery\.inAppCreated === 0/);
+  assert.match(monitor, /existingVisible/);
+  assert.match(monitor, /createTrackerSystemAlert/);
+  assert.match(monitor, /kind: "blocked"/);
+  assert.match(monitor, /kind: "error"/);
+  assert.match(notifications, /payload\.dedupeKey/);
+  assert.match(notifications, /payload\.score/);
+  assert.match(route, /export async function DELETE/);
+  assert.match(route, /clearSimulatedTrackerAlerts/);
 });
