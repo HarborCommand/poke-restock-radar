@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const outputPath = join(root, "src", "generated", "build-info.ts");
-const serviceWorkerVersion = "poke-radar-sw-2026-06-03-live-drops-v3";
+const serviceWorkerVersion = "poke-radar-sw-2026-06-03-live-drops-v4";
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -15,13 +15,17 @@ function envValue(name: string) {
 
 function gitValue(args: string[]) {
   try {
-    return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+    return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
     return "";
   }
 }
 
-const commitSha = envValue("VERCEL_GIT_COMMIT_SHA") || envValue("NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA") || gitValue(["rev-parse", "HEAD"]);
+const commitSha =
+  envValue("SOURCE_COMMIT_SHA") ||
+  envValue("VERCEL_GIT_COMMIT_SHA") ||
+  envValue("NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA") ||
+  gitValue(["rev-parse", "HEAD"]);
 const deployId = envValue("VERCEL_DEPLOYMENT_ID") || envValue("NEXT_PUBLIC_VERCEL_DEPLOYMENT_ID") || envValue("VERCEL_URL");
 const buildTimestamp = new Date().toISOString();
 

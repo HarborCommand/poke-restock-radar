@@ -1,4 +1,4 @@
-const CACHE_NAME = "poke-radar-sw-2026-06-03-live-drops-v3";
+const CACHE_NAME = "poke-radar-sw-2026-06-03-live-drops-v4";
 const OFFLINE_ASSETS = ["/offline.html", "/manifest.webmanifest", "/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 async function notifyClients(message) {
