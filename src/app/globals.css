@@ -12761,7 +12761,7 @@ body .tracker-filter-bar button {
   font-weight: 850;
   padding: 8px 13px;
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
 body .tracker-view-tabs button:hover,
@@ -12771,6 +12771,7 @@ body .tracker-filter-bar button.active {
   border-color: #86efac;
   background: #dcfce7;
   color: #15803d;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.2), 0 8px 18px rgba(16, 185, 129, 0.14);
 }
 
 body .tracker-archive-toggle {
@@ -12782,6 +12783,15 @@ body .tracker-archive-toggle {
   font-size: 0.82rem;
   font-weight: 800;
   white-space: nowrap;
+}
+
+body .tracker-archive-toggle input {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  max-width: 16px !important;
+  flex: 0 0 auto;
+  accent-color: #22c55e;
 }
 
 body .tracker-filter-bar {
@@ -12796,6 +12806,78 @@ body .tracker-section-card {
   padding: 18px;
 }
 
+body .tracker-live-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(300px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+body .tracker-side-rail {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+body .tracker-side-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fffb 100%);
+  padding: 16px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.045);
+}
+
+body .tracker-empty-feed {
+  display: grid;
+  gap: 16px;
+}
+
+body .tracker-empty-copy {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+  border: 1px solid #dbeafe;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f8fffb 0%, #f8fbff 100%);
+  padding: 16px;
+}
+
+body .tracker-empty-icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+body .tracker-empty-copy h3,
+body .tracker-side-card h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.02rem;
+  line-height: 1.25;
+}
+
+body .tracker-empty-copy p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+body .tracker-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
 body .tracker-feed .panel-header,
 body .tracker-section-card .panel-header {
   margin: 0;
@@ -12806,11 +12888,19 @@ body .tracker-drop-card {
   grid-template-columns: 92px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #dbeafe;
   border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfffd 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #f9fffc 100%);
   padding: 14px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.045);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.055);
+  border-left: 4px solid #22c55e;
+}
+
+body .tracker-example-card {
+  border-color: #e5e7eb;
+  border-left-color: #93c5fd;
+  opacity: 0.86;
+  box-shadow: none;
 }
 
 body .tracker-drop-card.is-read {
@@ -12859,6 +12949,10 @@ body .tracker-keyword-card h3 {
   word-break: normal;
 }
 
+body .tracker-example-card .tracker-drop-top h3 {
+  color: #334155;
+}
+
 body .tracker-drop-top p,
 body .tracker-watch-card p,
 body .tracker-keyword-card p {
@@ -12875,6 +12969,10 @@ body .tracker-drop-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+body .tracker-example-card .tracker-drop-actions {
+  justify-content: flex-start;
 }
 
 body .tracker-drop-meta {
@@ -12894,6 +12992,102 @@ body .tracker-drop-meta span {
   font-weight: 800;
   padding: 9px 10px;
   overflow-wrap: anywhere;
+}
+
+body .tracker-example-card .tracker-drop-meta span {
+  background: #ffffff;
+}
+
+body .tracker-checklist,
+body .tracker-watch-preview-list,
+body .tracker-mini-stats {
+  display: grid;
+  gap: 9px;
+}
+
+body .tracker-checklist > div {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid #edf2f7;
+  border-radius: 15px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+body .tracker-checklist > div > span {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: #fef3c7;
+  color: #d97706;
+}
+
+body .tracker-checklist > div.complete > span {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+body .tracker-checklist strong,
+body .tracker-watch-preview-list strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.86rem;
+  line-height: 1.3;
+  overflow-wrap: normal;
+}
+
+body .tracker-checklist p,
+body .tracker-watch-preview-list p,
+body .tracker-watch-preview-list span {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+body .tracker-watch-preview-list article {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #edf2f7;
+  border-radius: 15px;
+  background: #ffffff;
+  padding: 9px;
+}
+
+body .tracker-watch-preview-list .inventory-image-frame {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+}
+
+body .tracker-mini-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body .tracker-mini-stats span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 10px;
+}
+
+body .tracker-mini-stats b {
+  color: #0f172a;
+  font-size: 0.88rem;
+  font-weight: 950;
 }
 
 body .tracker-drop-meta b {
@@ -13183,6 +13377,10 @@ body .tracker-scanner-grid {
 }
 
 @media (max-width: 1120px) {
+  body .tracker-live-layout {
+    grid-template-columns: 1fr;
+  }
+
   body .tracker-drop-meta,
   body .tracker-scanner-grid,
   body .tracker-keyword-grid,
@@ -13199,7 +13397,9 @@ body .tracker-scanner-grid {
   body .tracker-nav-card,
   body .tracker-drop-card,
   body .tracker-drop-top,
+  body .tracker-empty-copy,
   body .tracker-stock-product,
+  body .tracker-watch-preview-list article,
   body .tracker-watch-card,
   body .tracker-history-row,
   body .tracker-system-list article,
@@ -13209,7 +13409,8 @@ body .tracker-scanner-grid {
 
   body .tracker-archive-toggle,
   body .tracker-drop-badges,
-  body .tracker-drop-actions {
+  body .tracker-drop-actions,
+  body .tracker-empty-actions {
     justify-content: flex-start;
   }
 
@@ -13221,6 +13422,10 @@ body .tracker-scanner-grid {
   body .tracker-watch-form-grid {
     grid-template-columns: 1fr;
     grid-column: auto;
+  }
+
+  body .tracker-mini-stats {
+    grid-template-columns: 1fr;
   }
 
   body .tracker-drop-details div {

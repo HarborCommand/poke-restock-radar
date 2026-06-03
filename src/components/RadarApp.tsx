@@ -13008,6 +13008,41 @@ function AlertsPanel({
   const blockedChecks = dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length;
   const failedChecks = dashboard.monitorLogs.filter((log) => log.status === "ERROR").length;
   const deprecatedCount = trackerAlerts.filter((record) => record.isDeprecated).length;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const liveDropsToday = liveDrops.filter((record) => new Date(record.alert.timestamp).getTime() >= todayStart.getTime()).length;
+  const mutedArchivedCount = dashboard.alerts.filter((alert) => alert.suppressedAt || alert.falsePositiveAt).length + deprecatedCount;
+  const latestMonitorLog = dashboard.monitorLogs[0] ?? null;
+  const watchPreviewProducts = watchProducts.slice(0, 5);
+  const watchProductsWithIdentifiers = watchProducts.filter((product) => Boolean(product.sku || product.upc || product.dpci || product.retailerProductId));
+  const alertsEnabledProducts = watchProducts.filter((product) => product.alertStatus || product.monitorEnabled);
+  const setupItems = [
+    {
+      label: "Add at least one watch product",
+      complete: watchProducts.length > 0,
+      detail: watchProducts.length ? `${watchProducts.length} products watched` : "Start with an exact retailer product page."
+    },
+    {
+      label: "Confirm exact product URL",
+      complete: exactProducts.length > 0,
+      detail: exactProducts.length ? `${exactProducts.length} exact products verified` : "Search/category links cannot trigger buy alerts."
+    },
+    {
+      label: "Add SKU / UPC / DPCI / ASIN",
+      complete: watchProductsWithIdentifiers.length > 0,
+      detail: watchProductsWithIdentifiers.length ? `${watchProductsWithIdentifiers.length} products have identifiers` : "Identifiers reduce false alerts."
+    },
+    {
+      label: "Enable alerts",
+      complete: alertsEnabledProducts.length > 0,
+      detail: alertsEnabledProducts.length ? "Alerts enabled for watched products" : "Turn alerts on for products you care about."
+    },
+    {
+      label: "Run first check",
+      complete: Boolean(latestMonitorLog || watchProducts.some((product) => product.lastCheckedAt)),
+      detail: latestMonitorLog ? `Last run ${relativeTime(latestMonitorLog.startedAt)}` : "Use Check Stock or Run Check on a watch item."
+    }
+  ];
   const keywordResult = trackerKeywordMatch(keywordTest, positiveKeywords, negativeKeywords);
 
   function markAlert(alert: DashboardDTO["alerts"][number], action: "read" | "false_positive", success: string) {
@@ -13067,6 +13102,127 @@ function AlertsPanel({
     if (!keyword) return;
     setNegativeKeywords((current) => Array.from(new Set([...current, keyword])));
     setNegativeKeywordDraft("");
+  }
+
+  function runProductCheck(product: ProductDTO) {
+    return runAction(`Checking product ${product.id}`, () => requestJson(`/api/radar/products/${product.id}/check`, { method: "POST" }), {
+      success: "Product check finished"
+    });
+  }
+
+  function renderExampleLiveDropCard() {
+    return (
+      <article className="tracker-drop-card tracker-example-card" aria-label="Example tracker alert">
+        <div className="tracker-drop-media">
+          <InventoryFallbackImage imageUrl={null} label="Example Alert" />
+        </div>
+        <div className="tracker-drop-body">
+          <div className="tracker-drop-top">
+            <div>
+              <span className="tracker-channel">Example Alert</span>
+              <h3>Pokemon TCG Mega Evolution Booster Bundle</h3>
+              <p>This is the alert format. Real live drops appear here only when a watched exact product becomes buyable.</p>
+            </div>
+            <div className="tracker-drop-badges">
+              <span className="chip good">In Stock</span>
+              <span className="chip watch">Sample</span>
+            </div>
+          </div>
+          <div className="tracker-drop-meta" aria-label="Example alert metadata">
+            <span><b>Retailer</b>Best Buy</span>
+            <span><b>Price</b>$29.99</span>
+            <span><b>Stock</b>Add To Cart</span>
+            <span><b>SKU</b>6561234</span>
+            <span><b>UPC</b>196214154155</span>
+            <span><b>Detected</b>Just now</span>
+            <span><b>Confidence</b>96%</span>
+          </div>
+          <div className="tracker-drop-actions">
+            <button className="mini-action solid" type="button" disabled>Sample Go Buy</button>
+            <button className="mini-action" type="button" disabled>Sample Add to Inventory</button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  function renderTrackerSetupChecklist() {
+    return (
+      <section className="tracker-side-card">
+        <div className="panel-header compact">
+          <div>
+            <p className="eyeline">Tracker setup</p>
+            <h3>Ready for live drops</h3>
+          </div>
+          <span className="chip muted">{setupItems.filter((item) => item.complete).length}/{setupItems.length}</span>
+        </div>
+        <div className="tracker-checklist">
+          {setupItems.map((item) => (
+            <div className={item.complete ? "complete" : ""} key={item.label}>
+              <span>{item.complete ? <Check size={14} /> : <AlertTriangle size={14} />}</span>
+              <div>
+                <strong>{item.label}</strong>
+                <p>{item.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  function renderWatchlistPreview() {
+    return (
+      <section className="tracker-side-card">
+        <div className="panel-header compact">
+          <div>
+            <p className="eyeline">My Watchlist</p>
+            <h3>Watching {watchProducts.length} products</h3>
+          </div>
+          <button className="mini-action" type="button" onClick={() => setView("watchlist")}>View</button>
+        </div>
+        {watchPreviewProducts.length ? (
+          <div className="tracker-watch-preview-list">
+            {watchPreviewProducts.map((product) => (
+              <article key={product.id}>
+                <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
+                <div>
+                  <strong>{product.name}</strong>
+                  <p>{product.retailerName} - {product.lastCheckedAt ? `checked ${relativeTime(product.lastCheckedAt)}` : "not checked yet"}</p>
+                  <span>{product.alertStatus || product.monitorEnabled ? "Alerts enabled" : "Alerts off"}</span>
+                </div>
+                <button className="mini-action icon-only" type="button" disabled={busy} onClick={() => runProductCheck(product)} aria-label={`Run check for ${product.name}`}>
+                  <RefreshCw size={14} />
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Eye} title="No watched products" detail="Add exact products so alerts can enter Live Drops." />
+        )}
+      </section>
+    );
+  }
+
+  function renderScannerMiniPanel() {
+    return (
+      <section className="tracker-side-card">
+        <div className="panel-header compact">
+          <div>
+            <p className="eyeline">Scanner status</p>
+            <h3>{dashboard.scannerStatus.cronActive ? "Monitor active" : "Monitor paused"}</h3>
+          </div>
+          <span className={`chip ${dashboard.scannerStatus.cronActive ? "good" : "watch"}`}>{dashboard.scannerStatus.cronActive ? "Active" : "Paused"}</span>
+        </div>
+        <div className="tracker-mini-stats">
+          <span><b>{dashboard.scannerStatus.activeProductsScanned}</b>Active monitors</span>
+          <span><b>{relativeTime(dashboard.scannerStatus.lastScanTime)}</b>Last scan</span>
+          <span><b>{relativeTime(dashboard.scannerStatus.nextScanEstimate)}</b>Next scan</span>
+          <span><b>{blockedChecks}</b>Blocked</span>
+          <span><b>{failedChecks}</b>Failed</span>
+        </div>
+      </section>
+    );
   }
 
   function renderLiveDropCard(record: TrackerAlertRecord) {
@@ -13165,22 +13321,26 @@ function AlertsPanel({
           <span className="sr-only">Alert History Analytics</span>
         </div>
         <div className="inventory-header-actions">
-          <button className="mini-action" type="button" onClick={() => setView("scanner")}>
-            <Radar size={14} />
-            Scanner Status
+          <button className="mini-action" type="button" onClick={() => openWatchProductForm()}>
+            <Plus size={14} />
+            Add Watch Product
+          </button>
+          <button className="mini-action" type="button" onClick={() => setView("check")}>
+            <Search size={14} />
+            Run Check Now
           </button>
           <button className="mini-action solid" type="button" onClick={() => setActiveTab("inventory")}>
-            <Plus size={14} />
-            Add Inventory
+            <ShoppingBag size={14} />
+            Inventory
           </button>
         </div>
       </section>
       <section className="inventory-kpi-grid alerts-kpi-grid">
-        <InventoryKpiCard label="Live Drops" value={String(liveDrops.length)} detail="Online feed" tone={liveDrops.length ? "good" : "neutral"} />
-        <InventoryKpiCard label="Watchlist" value={String(watchProducts.length)} detail={`${exactProducts.length} exact products`} />
-        <InventoryKpiCard label="Unread" value={String(dashboard.alertAnalytics.unreadAlerts)} detail="Need review" tone={dashboard.alertAnalytics.unreadAlerts ? "watch" : "neutral"} />
-        <InventoryKpiCard label="System Alerts" value={String(systemAlerts.length)} detail="Provider and cron warnings" tone={systemAlerts.length ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Deprecated Hidden" value={String(deprecatedCount)} detail="Local store history preserved" tone="neutral" />
+        <InventoryKpiCard label="Live Drops Today" value={String(liveDropsToday)} detail={liveDropsToday ? "Fresh restocks" : "No drops today"} tone={liveDropsToday ? "good" : "neutral"} />
+        <InventoryKpiCard label="Watch Products" value={String(watchProducts.length)} detail={watchProducts.length ? `${exactProducts.length} exact products` : "Add your first watch"} />
+        <InventoryKpiCard label="Unread Alerts" value={String(dashboard.alertAnalytics.unreadAlerts)} detail={dashboard.alertAnalytics.unreadAlerts ? "Need review" : "Inbox clear"} tone={dashboard.alertAnalytics.unreadAlerts ? "watch" : "neutral"} />
+        <InventoryKpiCard label="System Warnings" value={String(systemAlerts.length)} detail={systemAlerts.length ? "Provider or cron notices" : "No warnings"} tone={systemAlerts.length ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Muted / Archived" value={String(mutedArchivedCount)} detail={mutedArchivedCount ? "Hidden from feed" : "Nothing muted"} tone="neutral" />
       </section>
       <section className="tracker-nav-card">
         <div className="tracker-view-tabs" role="tablist" aria-label="Tracker alert sections">
@@ -13209,19 +13369,49 @@ function AlertsPanel({
               </button>
             ))}
           </section>
-          <section className="tracker-feed">
-            <div className="panel-header">
-              <div>
-                <p className="eyeline">Discord-style feed</p>
-                <h2>Live Drops</h2>
+          <section className="tracker-live-layout">
+            <div className="tracker-feed">
+              <div className="panel-header">
+                <div>
+                  <p className="eyeline">Discord-style feed</p>
+                  <h2>Live Drops</h2>
+                </div>
+                <span className="chip good">Manual checkout only</span>
               </div>
-              <span className="chip good">Manual checkout only</span>
+              {liveDrops.length ? (
+                liveDrops.map(renderLiveDropCard)
+              ) : (
+                <div className="tracker-empty-feed">
+                  <div className="tracker-empty-copy">
+                    <span className="tracker-empty-icon"><Bell size={18} /></span>
+                    <div>
+                      <h3>No live drops right now</h3>
+                      <p>When a watched product restocks, it will appear here instantly. Add products to My Watchlist or run a check from Check Stock.</p>
+                    </div>
+                  </div>
+                  <div className="tracker-empty-actions">
+                    <button className="mini-action solid" type="button" onClick={() => openWatchProductForm()}>
+                      <Plus size={14} />
+                      Add Watch Product
+                    </button>
+                    <button className="mini-action" type="button" onClick={() => setView("check")}>
+                      <Search size={14} />
+                      Run Check Now
+                    </button>
+                    <button className="mini-action" type="button" onClick={() => setView("watchlist")}>
+                      <Eye size={14} />
+                      View Watchlist
+                    </button>
+                  </div>
+                  {renderExampleLiveDropCard()}
+                </div>
+              )}
             </div>
-            {liveDrops.length ? (
-              liveDrops.map(renderLiveDropCard)
-            ) : (
-              <EmptyState icon={Bell} title="No live drops right now" detail="Exact online restock alerts will appear here. Deprecated local store alerts stay hidden." />
-            )}
+            <aside className="tracker-side-rail" aria-label="Tracker setup and status">
+              {renderTrackerSetupChecklist()}
+              {renderWatchlistPreview()}
+              {renderScannerMiniPanel()}
+            </aside>
           </section>
         </>
       ) : null}

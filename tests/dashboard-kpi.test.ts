@@ -322,9 +322,14 @@ test("tracker alert categories and archived local store cleanup are wired", () =
 
   assert.match(app, /Show archived\/deprecated alerts/);
   assert.match(app, /deprecated local store/i);
-  assert.match(app, /Deprecated Hidden/);
+  assert.match(app, /Muted \/ Archived/);
   assert.match(app, /trackerIsLiveDrop/);
   assert.match(app, /record\.isSystem/);
+  assert.match(app, /No live drops right now/);
+  assert.match(app, /Example Alert/);
+  assert.match(app, /Tracker setup/);
+  assert.match(app, /Watching \{watchProducts\.length\} products/);
+  assert.match(app, /tracker-side-rail/);
 });
 
 test("tracker matching helpers cover keywords, identifiers, mute, duplicate cooldown, and feedback", () => {
