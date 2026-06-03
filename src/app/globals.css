@@ -13261,6 +13261,163 @@ body .tracker-watch-meta span {
   padding: 6px 9px;
 }
 
+body .watchlist-qa-summary,
+body .watchlist-qa-list,
+body .watchlist-qa-card,
+body .watchlist-qa-status-grid,
+body .watchlist-qa-warnings,
+body .watchlist-qa-actions,
+body .tracker-watch-edit-form,
+body .tracker-watch-edit-grid {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+}
+
+body .watchlist-qa-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body .watchlist-qa-list {
+  gap: 14px;
+}
+
+body .watchlist-qa-card {
+  gap: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fffb 100%);
+  padding: 16px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.055);
+}
+
+body .watchlist-qa-main {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+body .watchlist-qa-main .inventory-image-frame {
+  width: 92px;
+  height: 92px;
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+body .watchlist-qa-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+body .watchlist-qa-title-row h3 {
+  margin: 3px 0 0;
+  color: #0f172a;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+body .watchlist-qa-url {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+body .watchlist-qa-identifiers,
+body .watchlist-qa-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body .watchlist-qa-identifiers {
+  margin-top: 10px;
+}
+
+body .watchlist-qa-identifiers span {
+  display: grid;
+  gap: 2px;
+  border: 1px solid #edf2f7;
+  border-radius: 13px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.79rem;
+  font-weight: 850;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+}
+
+body .watchlist-qa-identifiers b {
+  color: #94a3b8;
+  font-size: 0.65rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .watchlist-qa-status-grid .detail-stat {
+  background: #ffffff;
+}
+
+body .watchlist-qa-warnings {
+  gap: 7px;
+  border: 1px solid #fde68a;
+  border-radius: 16px;
+  background: #fffbeb;
+  padding: 10px;
+}
+
+body .watchlist-qa-warnings.is-clean {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+}
+
+body .watchlist-qa-warnings span {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: #92400e;
+  font-size: 0.79rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+body .watchlist-qa-warnings.is-clean span {
+  color: #15803d;
+}
+
+body .watchlist-qa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body .tracker-watch-edit-form {
+  gap: 12px;
+  border: 1px solid #bbf7d0;
+  border-radius: 18px;
+  background: #f8fffb;
+  padding: 14px;
+}
+
+body .tracker-watch-edit-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body .tracker-watch-edit-grid > .wide,
+body .tracker-watch-edit-grid > label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
 body .tracker-keyword-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -13384,7 +13541,11 @@ body .tracker-scanner-grid {
   body .tracker-drop-meta,
   body .tracker-scanner-grid,
   body .tracker-keyword-grid,
-  body .tracker-watch-form-grid {
+  body .tracker-watch-form-grid,
+  body .watchlist-qa-summary,
+  body .watchlist-qa-identifiers,
+  body .watchlist-qa-status-grid,
+  body .tracker-watch-edit-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -13401,6 +13562,8 @@ body .tracker-scanner-grid {
   body .tracker-stock-product,
   body .tracker-watch-preview-list article,
   body .tracker-watch-card,
+  body .watchlist-qa-main,
+  body .watchlist-qa-title-row,
   body .tracker-history-row,
   body .tracker-system-list article,
   body .tracker-monitor-log-list article {
@@ -13410,7 +13573,8 @@ body .tracker-scanner-grid {
   body .tracker-archive-toggle,
   body .tracker-drop-badges,
   body .tracker-drop-actions,
-  body .tracker-empty-actions {
+  body .tracker-empty-actions,
+  body .watchlist-qa-actions {
     justify-content: flex-start;
   }
 
@@ -13419,7 +13583,11 @@ body .tracker-scanner-grid {
   body .tracker-check-grid .wide,
   body .tracker-scanner-grid,
   body .tracker-keyword-grid,
-  body .tracker-watch-form-grid {
+  body .tracker-watch-form-grid,
+  body .watchlist-qa-summary,
+  body .watchlist-qa-identifiers,
+  body .watchlist-qa-status-grid,
+  body .tracker-watch-edit-grid {
     grid-template-columns: 1fr;
     grid-column: auto;
   }

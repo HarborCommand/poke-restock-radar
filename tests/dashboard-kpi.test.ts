@@ -382,6 +382,30 @@ test("alerts watchlist can add exact watched products from the tracker UI", () =
   assert.match(alertsPanel, /trackerWatchPrefillFromRecord/);
 });
 
+test("watchlist QA exposes real product readiness, warnings, and monitor actions", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+  const editForm = app.slice(app.indexOf("function WatchProductIdentifierForm"), app.indexOf("function AlertsPanel"));
+
+  assert.match(app, /function watchProductWarnings/);
+  assert.match(app, /Search\/category URL is rejected for live alerts/);
+  assert.match(app, /Live stock status is not verified/);
+  assert.match(alertsPanel, /Watchlist QA/);
+  assert.match(alertsPanel, /Ready for Live Alerts/);
+  assert.match(alertsPanel, /Run Check Now/);
+  assert.match(alertsPanel, /Edit Identifiers/);
+  assert.match(alertsPanel, /Verify Exact Product/);
+  assert.match(alertsPanel, /Open Product Page/);
+  assert.match(alertsPanel, /Create Test Live Drop/);
+  assert.match(alertsPanel, /Pause Monitor/);
+  assert.match(alertsPanel, /Remove Watch Product/);
+  assert.match(alertsPanel, /\/api\/radar\/products\/\$\{product\.id\}\/verify/);
+  assert.match(alertsPanel, /\/api\/radar\/products\/\$\{product\.id\}\/archive/);
+  for (const field of ["sku", "upc", "dpci", "retailerProductId", "expectedTitleKeywords", "imageUrl"]) {
+    assert.match(editForm, new RegExp(`name="${field}"`), `missing edit field ${field}`);
+  }
+});
+
 test("live drops are restricted to real product monitor alerts", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const liveDropHelper = app.slice(app.indexOf("function trackerIsLiveDrop"), app.indexOf("function trackerChannelMatches"));

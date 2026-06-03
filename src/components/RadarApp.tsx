@@ -517,7 +517,7 @@ function productVerificationStages(product: ProductDTO) {
     },
     { label: "Title", complete: exactIdentity && Boolean(product.liveTitle) },
     { label: "ID", complete: exactIdentity && Boolean(product.retailerProductId) },
-    { label: "Image", complete: exactIdentity && Boolean(product.liveImageUrl) },
+    { label: "Image", complete: exactIdentity && Boolean(product.liveImageUrl || product.imageUrl) },
     { label: "Stock", complete: exactIdentity && Boolean(product.liveStockStatus) },
     { label: "Price", complete: exactIdentity && product.livePrice !== null }
   ];
@@ -551,6 +551,46 @@ function productLiveBadge(product: ProductDTO) {
 function productPriceLabel(product: ProductDTO) {
   if (product.livePrice !== null && product.livePriceVerifiedAt) return money(product.livePrice);
   return "Price not verified";
+}
+
+function productHasIdentifier(product: ProductDTO) {
+  return Boolean(product.sku || product.upc || product.dpci || product.retailerProductId);
+}
+
+function watchProductReadyForLiveAlerts(product: ProductDTO) {
+  return productReadyForAlert(product) && product.monitorEnabled && !product.archivedAt;
+}
+
+function productPriceStatusLabel(product: ProductDTO) {
+  if (product.livePrice !== null && product.livePriceVerifiedAt) return `${money(product.livePrice)} live`;
+  if (product.retailPrice !== null) return `${money(product.retailPrice)} stored, live not verified`;
+  return "Price not verified";
+}
+
+function productStockStatusLabel(product: ProductDTO) {
+  if (product.liveBlockedType) return `Blocked: ${formatStatus(product.liveBlockedType)}`;
+  if (product.liveStockStatus) return formatStatus(product.liveStockStatus);
+  return "Stock not verified";
+}
+
+function watchProductWarnings(product: ProductDTO) {
+  const warnings: string[] = [];
+  if (product.verificationStatus === "SEARCH_OR_CATEGORY_LINK") warnings.push("Search/category URL is rejected for live alerts.");
+  if (!product.url) warnings.push("Exact product URL is missing.");
+  if (!productHasIdentifier(product)) warnings.push("SKU/UPC/DPCI/TCIN/ASIN is missing.");
+  if (product.verificationStatus === "POSSIBLE_MISMATCH") warnings.push("Title or identifier mismatch detected.");
+  if (product.verificationStatus === "UNVERIFIED" || product.verificationStatus === "VERIFIED_URL") warnings.push("Run Verify Exact Product.");
+  if (product.verificationStatus === "NEEDS_IDENTIFIERS") warnings.push("Identifiers are needed before exact verification.");
+  if (!product.liveTitle) warnings.push("Live title has not been verified.");
+  if (!product.liveImageUrl && !product.imageUrl) warnings.push("Product image is missing.");
+  if (product.livePrice === null) warnings.push("Live price is not verified.");
+  if (!product.liveStockStatus) warnings.push("Live stock status is not verified.");
+  if (product.liveBlockedType) warnings.push(`Latest check was blocked: ${formatStatus(product.liveBlockedType)}.`);
+  if ((product.liveConfidenceScore ?? 0) < 70) warnings.push("Confidence is below 70%.");
+  if (!product.monitorEnabled) warnings.push("Monitor is paused.");
+  if (!product.alertStatus && !product.monitorEnabled) warnings.push("Alerts are disabled.");
+  if (product.archivedAt) warnings.push("Product is archived.");
+  return warnings;
 }
 
 function exactProductUrl(product: ProductDTO) {
@@ -2461,11 +2501,6 @@ function trackerProductPrice(product: ProductDTO | null) {
   if (!product) return null;
   if (product.livePrice !== null && product.livePriceVerifiedAt) return product.livePrice;
   return product.retailPrice;
-}
-
-function trackerProductIdentifier(product: ProductDTO | null) {
-  if (!product) return "No saved SKU";
-  return product.upc || product.sku || product.dpci || product.retailerProductId || "Needs SKU/UPC";
 }
 
 function trackerFindProduct(alert: DashboardDTO["alerts"][number], products: ProductDTO[]) {
@@ -13021,6 +13056,88 @@ function WatchProductQuickForm({
   );
 }
 
+function WatchProductIdentifierForm({
+  product,
+  dashboard,
+  busy,
+  busyLabel,
+  submit,
+  onCancel,
+  onSaved
+}: {
+  product: ProductDTO;
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const saveLabel = `Saving watch identifiers ${product.id}`;
+  return (
+    <form
+      className="tracker-watch-edit-form"
+      onSubmit={(event) =>
+        submit(
+          event,
+          saveLabel,
+          async (form) => {
+            await requestJson(`/api/radar/products/${product.id}`, {
+              method: "PATCH",
+              body: JSON.stringify(formJson(form))
+            });
+            onSaved();
+          },
+          { reset: false, success: "Watch identifiers saved" }
+        )
+      }
+    >
+      <div className="panel-header compact">
+        <div>
+          <p className="eyeline">Edit identifiers</p>
+          <h3>{product.name}</h3>
+        </div>
+        <span className={`chip ${verificationTone(product.verificationStatus)}`}>{productVerificationLabel(product.verificationStatus)}</span>
+      </div>
+      <div className="tracker-watch-edit-grid">
+        <TextInput name="name" label="Product name" defaultValue={product.name} required />
+        <SelectInput name="retailerId" label="Retailer" defaultValue={product.retailerId} options={dashboard.retailers.map(optionFromRetailer)} required />
+        <TextInput name="url" label="Exact product URL" type="url" defaultValue={product.url} required wide />
+        <TextInput name="expectedTitleKeywords" label="Expected title keywords" defaultValue={product.expectedTitleKeywords ?? ""} wide />
+        <TextInput name="sku" label="SKU / ASIN" defaultValue={product.sku ?? ""} />
+        <TextInput name="upc" label="UPC" inputMode="numeric" defaultValue={product.upc ?? ""} />
+        <TextInput name="dpci" label="DPCI / TCIN" defaultValue={product.dpci ?? ""} />
+        <TextInput name="retailerProductId" label="Retailer product ID" defaultValue={product.retailerProductId ?? ""} />
+        <TextInput name="imageUrl" label="Image URL" type="url" defaultValue={product.imageUrl ?? ""} wide />
+        <TextInput name="setName" label="Set / release" defaultValue={product.setName ?? ""} />
+        <TextInput name="productType" label="Channel / category" defaultValue={product.productType ?? ""} />
+        <TextInput name="retailPrice" label="Stored retail price" type="number" min="0" max="100000" step="0.01" defaultValue={product.retailPrice ?? ""} />
+        <TextInput name="checkFrequencyMinutes" label="Check frequency minutes" type="number" min="15" max="10080" defaultValue={product.checkFrequencyMinutes} />
+        <TextareaInput name="requiredWords" label="Required words" defaultValue={product.requiredWords ?? ""} wide />
+        <TextareaInput name="ignoreWords" label="Ignore words" defaultValue={product.ignoreWords ?? ""} wide />
+        <TextareaInput name="notes" label="Notes" defaultValue={product.notes ?? ""} wide />
+        <input name="releaseId" type="hidden" value={product.releaseId ?? ""} />
+        <input name="stockStatus" type="hidden" value={product.stockStatus} />
+        <input name="priority" type="hidden" value={product.priority} />
+        <input name="rating" type="hidden" value={product.rating === "AVOID" ? "WATCH" : product.rating} />
+        <input name="manualPriorityOverride" type="hidden" value={product.manualPriorityOverride ?? (product.rating === "AVOID" ? "WATCH" : product.rating)} />
+        <input name="monitorEnabled" type="hidden" value={product.monitorEnabled ? "true" : "false"} />
+        <input name="sealedResaleNotes" type="hidden" value={product.sealedResaleNotes ?? ""} />
+        <input name="scarcityNotes" type="hidden" value={product.scarcityNotes ?? ""} />
+      </div>
+      <div className="form-actions">
+        <button className="mini-action" type="button" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="mini-action solid" type="submit" disabled={busy}>
+          <Save size={14} />
+          {busyLabel === saveLabel ? "Saving" : "Save Identifiers"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function AlertsPanel({
   dashboard,
   busy,
@@ -13046,6 +13163,7 @@ function AlertsPanel({
   const [keywordTest, setKeywordTest] = useState("Chaos Rising booster bundle Target 196214154155");
   const [showWatchProductForm, setShowWatchProductForm] = useState(false);
   const [watchProductPrefill, setWatchProductPrefill] = useState<WatchProductPrefill | null>(null);
+  const [editingWatchProductId, setEditingWatchProductId] = useState<string | null>(null);
   const [bestBuyStockResult, setBestBuyStockResult] = useState<BestBuyCheckStockResult | null>(null);
   const trackerAlerts = useMemo(
     () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
@@ -13169,6 +13287,151 @@ function AlertsPanel({
     return runAction(`Checking product ${product.id}`, () => requestJson(`/api/radar/products/${product.id}/check`, { method: "POST" }), {
       success: "Product check finished"
     });
+  }
+
+  function verifyWatchProduct(product: ProductDTO) {
+    return runAction(`Verifying product ${product.id}`, () => requestJson(`/api/radar/products/${product.id}/verify`, { method: "POST" }), {
+      success: "Exact product verification finished"
+    });
+  }
+
+  function simulateWatchProductDrop(product: ProductDTO) {
+    return runAction(
+      `Simulating tracker alert ${product.id}`,
+      () =>
+        requestJson(`/api/radar/products/${product.id}/monitor`, {
+          method: "POST",
+          body: JSON.stringify({ action: "simulate_tracker_drop", reason: "Admin simulated a tracker_online_drop test event from Watchlist QA." })
+        }),
+      { success: "Test Live Drop created" }
+    );
+  }
+
+  function toggleWatchProductMonitor(product: ProductDTO) {
+    const action = product.monitorEnabled ? "pause" : "resume";
+    return runAction(
+      `${product.monitorEnabled ? "Pausing" : "Resuming"} product ${product.id}`,
+      () =>
+        requestJson(`/api/radar/products/${product.id}/monitor`, {
+          method: "POST",
+          body: JSON.stringify({ action, reason: `${product.monitorEnabled ? "Paused" : "Resumed"} from Watchlist QA.` })
+        }),
+      { success: product.monitorEnabled ? "Monitor paused" : "Monitor resumed" }
+    );
+  }
+
+  function removeWatchProduct(product: ProductDTO) {
+    return runAction(
+      `Removing watch product ${product.id}`,
+      () => requestJson(`/api/radar/products/${product.id}/archive`, { method: "POST" }),
+      {
+        confirm: `Remove ${product.name} from the watchlist? This archives the monitor and preserves history.`,
+        success: "Watch product archived"
+      }
+    );
+  }
+
+  function renderWatchlistQARow(product: ProductDTO) {
+    const warnings = watchProductWarnings(product);
+    const ready = watchProductReadyForLiveAlerts(product);
+    const latestLog = dashboard.monitorLogs.find((log) => log.productId === product.id) ?? null;
+    const actionUrl = product.verifiedFinalUrl || product.url;
+    const editing = editingWatchProductId === product.id;
+    return (
+      <article className="watchlist-qa-card" key={product.id}>
+        <div className="watchlist-qa-main">
+          <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
+          <div>
+            <div className="watchlist-qa-title-row">
+              <div>
+                <p className="eyeline">{product.retailerName}</p>
+                <h3>{product.name}</h3>
+              </div>
+              <div className="tracker-drop-badges">
+                <span className={`chip ${ready ? "good" : "watch"}`}>{ready ? "Ready for Live Alerts" : "Needs QA"}</span>
+                <span className={`chip ${verificationTone(product.verificationStatus)}`}>{productVerificationLabel(product.verificationStatus)}</span>
+              </div>
+            </div>
+            <p className="watchlist-qa-url">{actionUrl}</p>
+            <div className="watchlist-qa-identifiers">
+              <span><b>SKU</b>{product.sku || "Missing"}</span>
+              <span><b>UPC</b>{product.upc || "Missing"}</span>
+              <span><b>DPCI/TCIN</b>{product.dpci || "Missing"}</span>
+              <span><b>Product ID</b>{product.retailerProductId || "Missing"}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="watchlist-qa-status-grid">
+          <DetailStat label="Alert enabled" value={product.monitorEnabled ? "Yes" : "Paused"} tone={product.monitorEnabled ? "good" : "neutral"} />
+          <DetailStat label="Last checked" value={relativeTime(product.lastCheckedAt)} />
+          <DetailStat label="Last result" value={product.lastMonitorResult || latestLog?.changeSummary || "Not checked yet"} />
+          <DetailStat label="Verification" value={productVerificationLabel(product.verificationStatus)} tone={product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED" ? "good" : product.verificationStatus === "POSSIBLE_MISMATCH" ? "bad" : "neutral"} />
+          <DetailStat label="Price status" value={productPriceStatusLabel(product)} tone={product.livePrice !== null ? "good" : "neutral"} />
+          <DetailStat label="Stock status" value={productStockStatusLabel(product)} tone={product.liveBlockedType ? "bad" : product.liveStockStatus ? "good" : "neutral"} />
+          <DetailStat label="Confidence" value={product.liveConfidenceScore === null ? "Unknown" : `${product.liveConfidenceScore}%`} tone={(product.liveConfidenceScore ?? 0) >= 70 ? "good" : "neutral"} />
+          <DetailStat label="Latest monitor reason" value={product.lastMonitorError || latestLog?.reason || product.verificationNotes || "No issue saved"} />
+        </div>
+
+        <div className={warnings.length ? "watchlist-qa-warnings" : "watchlist-qa-warnings is-clean"}>
+          {warnings.length ? (
+            warnings.map((warning) => (
+              <span key={`${product.id}-${warning}`}>
+                <AlertTriangle size={13} />
+                {warning}
+              </span>
+            ))
+          ) : (
+            <span>
+              <Check size={13} />
+              Ready for live alerts. If a check confirms buyable stock, Live Drops can be created.
+            </span>
+          )}
+        </div>
+
+        <div className="watchlist-qa-actions">
+          <button className="mini-action solid" disabled={busy} type="button" onClick={() => runProductCheck(product)}>
+            <RefreshCw size={13} />
+            {busyLabel === `Checking product ${product.id}` ? "Checking" : "Run Check Now"}
+          </button>
+          <button className="mini-action" disabled={busy} type="button" onClick={() => setEditingWatchProductId(editing ? null : product.id)}>
+            <Settings size={13} />
+            Edit Identifiers
+          </button>
+          <button className="mini-action" disabled={busy} type="button" onClick={() => verifyWatchProduct(product)}>
+            <ShieldCheck size={13} />
+            Verify Exact Product
+          </button>
+          <a className="mini-action" href={actionUrl} target="_blank" rel="noreferrer">
+            Open Product Page <ExternalLink size={13} />
+          </a>
+          <button className="mini-action" disabled={busy} type="button" onClick={() => simulateWatchProductDrop(product)}>
+            <Radar size={13} />
+            Create Test Live Drop
+          </button>
+          <button className="mini-action" disabled={busy} type="button" onClick={() => toggleWatchProductMonitor(product)}>
+            {product.monitorEnabled ? <WifiOff size={13} /> : <Wifi size={13} />}
+            {product.monitorEnabled ? "Pause Monitor" : "Resume Monitor"}
+          </button>
+          <button className="mini-action danger" disabled={busy} type="button" onClick={() => removeWatchProduct(product)}>
+            <Trash2 size={13} />
+            Remove Watch Product
+          </button>
+        </div>
+
+        {editing ? (
+          <WatchProductIdentifierForm
+            product={product}
+            dashboard={dashboard}
+            busy={busy}
+            busyLabel={busyLabel}
+            submit={submit}
+            onCancel={() => setEditingWatchProductId(null)}
+            onSaved={() => setEditingWatchProductId(null)}
+          />
+        ) : null}
+      </article>
+    );
   }
 
   function renderExampleLiveDropCard() {
@@ -13569,11 +13832,16 @@ function AlertsPanel({
         <section className="tracker-section-card">
           <div className="panel-header">
             <div>
-              <p className="eyeline">Exact product monitor</p>
-              <h2>My Watchlist</h2>
+              <p className="eyeline">Watchlist QA</p>
+              <h2>Real product readiness</h2>
+              <p>Verify exact URLs, identifiers, parser results, and alert readiness before Live Drops are trusted.</p>
             </div>
             <div className="row-actions">
-              <span className="chip muted">{needsExactLink} need exact link</span>
+              <span className="chip muted">{watchProducts.length} watched</span>
+              <span className={`chip ${watchProducts.filter(watchProductReadyForLiveAlerts).length ? "good" : "watch"}`}>
+                {watchProducts.filter(watchProductReadyForLiveAlerts).length} ready
+              </span>
+              <span className={`chip ${needsExactLink ? "watch" : "good"}`}>{needsExactLink} need exact link</span>
               <button className="mini-action solid" type="button" onClick={() => openWatchProductForm()}>
                 <Plus size={14} />
                 Add Watch Product
@@ -13591,42 +13859,15 @@ function AlertsPanel({
               onSaved={closeWatchProductForm}
             />
           ) : null}
-          <div className="tracker-watch-grid">
+          <div className="watchlist-qa-summary">
+            <DetailStat label="Target / Best Buy products" value={String(watchProducts.filter((product) => /target|best buy/i.test(product.retailerName)).length)} />
+            <DetailStat label="Alerts enabled" value={String(watchProducts.filter((product) => product.monitorEnabled).length)} tone="good" />
+            <DetailStat label="Missing identifiers" value={String(watchProducts.filter((product) => !productHasIdentifier(product)).length)} tone={watchProducts.some((product) => !productHasIdentifier(product)) ? "neutral" : "good"} />
+            <DetailStat label="Blocked or failed" value={String(watchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError).length)} tone={watchProducts.some((product) => product.liveBlockedType || product.lastMonitorError) ? "bad" : "good"} />
+          </div>
+          <div className="watchlist-qa-list">
             {watchProducts.length ? (
-              watchProducts.map((product) => (
-                <article className="tracker-watch-card" key={product.id}>
-                  <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
-                  <div>
-                    <h3>{product.name}</h3>
-                    <p>{product.retailerName} - {product.productType || product.setName || "Tracked product"}</p>
-                    <div className="tracker-watch-meta">
-                      <span>{trackerProductIdentifier(product)}</span>
-                      <span>{trackerProductPrice(product) === null ? "Price not verified" : money(trackerProductPrice(product))}</span>
-                      <span>{product.lastCheckedAt ? `Checked ${relativeTime(product.lastCheckedAt)}` : "Not checked yet"}</span>
-                    </div>
-                    <div className="tracker-drop-actions">
-                      <button className="mini-action" type="button" onClick={() => openAlertInventoryPrefill({ alert: { id: product.id, title: product.name, reason: "Watched product", priority: product.priority, timestamp: product.updatedAt, entityType: "PRODUCT", entityId: product.id, actionUrl: product.verifiedFinalUrl || product.url, read: false, score: product.priorityScore?.score ?? 0, dedupeKey: null, explanation: null, falsePositiveAt: null, suppressedAt: null, cooldownUntil: null }, product, category: "tracker_sku_match", channel: trackerChannel(product, { id: product.id, title: product.name, reason: "", priority: product.priority, timestamp: product.updatedAt, entityType: "PRODUCT", entityId: product.id, actionUrl: product.url, read: false, score: 0, dedupeKey: null, explanation: null, falsePositiveAt: null, suppressedAt: null, cooldownUntil: null }), statusLabel: product.liveStockStatus ? formatStatus(product.liveStockStatus) : formatStatus(product.stockStatus), statusTone: statusTone(product.liveStockStatus || product.stockStatus), isDeprecated: false, isSystem: false, isMuted: false, duplicateKey: product.id })}>
-                        <ShoppingBag size={13} />
-                        Add to Inventory
-                      </button>
-                      <button
-                        className="mini-action"
-                        disabled={busy}
-                        type="button"
-                        onClick={() =>
-                          runAction(`Checking product ${product.id}`, () => requestJson(`/api/radar/products/${product.id}/check`, { method: "POST" }), {
-                            success: "Product check finished"
-                          })
-                        }
-                      >
-                        <RefreshCw size={13} />
-                        Run Check Now
-                      </button>
-                    </div>
-                  </div>
-                  <span className={`chip ${verificationTone(product.verificationStatus)}`}>{productVerificationLabel(product.verificationStatus)}</span>
-                </article>
-              ))
+              watchProducts.map(renderWatchlistQARow)
             ) : (
               <EmptyState icon={Eye} title="No watched products" detail="Add exact retailer product URLs here to start monitor checks and live drop alerts." />
             )}
