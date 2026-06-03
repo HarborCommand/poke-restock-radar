@@ -412,6 +412,26 @@ test("admin-only tracker simulation and alert actions are wired", () => {
   }
 });
 
+test("admin health exposes build version and cache refresh controls", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const health = fs.readFileSync(new URL("../src/lib/health.ts", import.meta.url), "utf8");
+  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
+  const serviceWorker = fs.readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
+  const packageJson = fs.readFileSync(new URL("../package.json", import.meta.url), "utf8");
+
+  assert.match(app, /App Build/);
+  assert.match(app, /Refresh App \/ Clear Cache/);
+  assert.match(app, /APP_VERSION_READY/);
+  assert.match(app, /APP_CACHE_CLEARED/);
+  assert.match(health, /getBuildInfo/);
+  assert.match(types, /serviceWorkerVersion/);
+  assert.match(serviceWorker, /poke-radar-sw-2026-06-03-live-drops-v3/);
+  assert.match(serviceWorker, /CLEAR_APP_CACHE/);
+  assert.match(serviceWorker, /SKIP_WAITING/);
+  assert.match(packageJson, /"build:info"/);
+  assert.match(packageJson, /"prevercel-build"/);
+});
+
 test("monitor creates explicit tracker online drop and system alert events", () => {
   const monitor = fs.readFileSync(new URL("../src/lib/monitor.ts", import.meta.url), "utf8");
   const notifications = fs.readFileSync(new URL("../src/lib/notifications.ts", import.meta.url), "utf8");

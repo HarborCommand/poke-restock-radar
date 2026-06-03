@@ -13,3 +13,4 @@ tmp-*.png
 *.tsbuildinfo
 backups/
 *.dump
+src/generated/build-info.ts

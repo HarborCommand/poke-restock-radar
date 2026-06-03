@@ -746,11 +746,29 @@ function pushSupported() {
   );
 }
 
+function serviceWorkerSupported() {
+  return typeof window !== "undefined" && "serviceWorker" in navigator;
+}
+
 async function ensureServiceWorkerRegistration() {
   if (!pushSupported()) throw new Error("This browser does not support service worker push notifications.");
   const registration = await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
   void registration.update();
   return navigator.serviceWorker.ready;
+}
+
+async function clearAppCachesForReload() {
+  if (typeof window === "undefined") return;
+  if (serviceWorkerSupported()) {
+    const registration = await navigator.serviceWorker.getRegistration();
+    registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+    registration?.active?.postMessage({ type: "CLEAR_APP_CACHE" });
+    await registration?.update();
+  }
+  if ("caches" in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+  }
 }
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -865,12 +883,47 @@ export function RadarApp() {
   }, []);
 
   useEffect(() => {
-    if (!user || !pushSupported()) return;
+    if (!user || !serviceWorkerSupported()) return;
+    let mounted = true;
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (!mounted) return;
+      if (event.data?.type === "APP_VERSION_READY") {
+        showToast({ type: "success", message: "New app version is ready. Use Admin Refresh App / Clear Cache if the UI looks stale." });
+      }
+      if (event.data?.type === "APP_CACHE_CLEARED") {
+        showToast({ type: "success", message: "App cache cleared." });
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
     navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
-      .then((registration) => registration.update())
+      .then((registration) => {
+        if (!mounted) return undefined;
+        if (registration.waiting && navigator.serviceWorker.controller) {
+          showToast({ type: "success", message: "New app version available. Refresh App / Clear Cache from Admin to load it." });
+        }
+        registration.addEventListener("updatefound", () => {
+          const installing = registration.installing;
+          installing?.addEventListener("statechange", () => {
+            if (installing.state === "installed" && navigator.serviceWorker.controller) {
+              showToast({ type: "success", message: "New app version available. Refresh App / Clear Cache from Admin to load it." });
+            }
+          });
+        });
+        return registration.update();
+      })
       .catch(() => undefined);
+    return () => {
+      mounted = false;
+      navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+    };
   }, [user]);
+
+  async function refreshAppCacheAndReload() {
+    await clearAppCachesForReload();
+    showToast({ type: "success", message: "App cache cleared. Reloading the latest build." });
+    window.setTimeout(() => window.location.reload(), 400);
+  }
 
   useEffect(() => {
     if (!user || typeof window === "undefined") return;
@@ -1137,6 +1190,7 @@ export function RadarApp() {
             submit={submit}
             runAction={runAction}
             setActiveTab={setActiveTab}
+            onRefreshAppCache={refreshAppCacheAndReload}
           />
         ) : null}
       </section>
@@ -1161,7 +1215,8 @@ function AdminControlPanel({
   busyLabel,
   submit,
   runAction,
-  setActiveTab
+  setActiveTab,
+  onRefreshAppCache
 }: {
   dashboard: DashboardDTO;
   busy: boolean;
@@ -1169,6 +1224,7 @@ function AdminControlPanel({
   submit: SubmitHandler;
   runAction: ActionHandler;
   setActiveTab: (tab: Tab) => void;
+  onRefreshAppCache: () => Promise<void>;
 }) {
   const health = dashboard.health;
   return (
@@ -1228,7 +1284,11 @@ function AdminControlPanel({
         </AdminSectionCard>
 
         <AdminSectionCard id="admin-health" icon={Activity} title="System" detail="Production health and required production configuration.">
-          {health ? <AdminHealthPanel health={health} /> : <EmptyState icon={Activity} title="Health unavailable" detail="Health data will appear after the app loads system status." />}
+          {health ? (
+            <AdminHealthPanel health={health} onRefreshAppCache={onRefreshAppCache} />
+          ) : (
+            <EmptyState icon={Activity} title="Health unavailable" detail="Health data will appear after the app loads system status." />
+          )}
         </AdminSectionCard>
 
         <AdminSectionCard icon={AlertTriangle} title="Data Quality" detail="Launch checklist, warnings, and calibration items.">
@@ -13770,7 +13830,7 @@ function HealthCard({
   );
 }
 
-function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
+function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO; onRefreshAppCache: () => Promise<void> }) {
   const authWarningCount =
     Number(!health.auth.authReady) + Number(health.auth.adminUserCount === 0) + Number(!health.auth.configuredAdminEmailExists);
   const warningCount = health.environment.coreMissing.length + health.environment.warnings.length + authWarningCount;
@@ -13845,6 +13905,20 @@ function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
         <span className={`chip ${statusTone(health.status)}`}>{health.status}</span>
       </div>
       <div className="health-grid">
+        <HealthCard
+          icon={RefreshCw}
+          title="App Build"
+          value={health.build.commitShort}
+          tone="OK"
+          detail={`Built ${dateTime(health.build.buildTimestamp)} - SW ${health.build.serviceWorkerVersion}`}
+        />
+        <HealthCard
+          icon={Upload}
+          title="Deployment"
+          value={health.build.deployId ? "Visible" : "Unavailable"}
+          tone={health.build.deployId ? "OK" : "WARN"}
+          detail={health.build.deployId || "Vercel deployment ID was not exposed to the runtime."}
+        />
         <HealthCard
           icon={Lock}
           title="Auth Session"
@@ -13933,10 +14007,19 @@ function AdminHealthPanel({ health }: { health: AppHealthDTO }) {
       <div className="monitor-status">
         <span>Checked {dateTime(health.checkedAt)}</span>
         <span>Env {health.environment.nodeEnv}</span>
+        <span>Commit {health.build.commitSha}</span>
+        <span>Deploy {health.build.deployId || "unavailable"}</span>
+        <span>SW {health.build.serviceWorkerVersion}</span>
         <span>App URL {health.environment.appUrl || "missing"}</span>
         <span>Vercel Cron bearer {configuredText(health.monitor.vercelCronSecretConfigured)}</span>
         <span>Password reset email {configuredText(health.auth.passwordResetEmailConfigured)}</span>
         <span>Delay {health.monitor.requestDelayMs}ms</span>
+      </div>
+      <div className="admin-actions">
+        <button className="mini-action solid" type="button" onClick={() => void onRefreshAppCache()}>
+          <RefreshCw size={14} />
+          Refresh App / Clear Cache
+        </button>
       </div>
       <div className="system-checklist" aria-label="System Status Checklist">
         <div className="panel-header">

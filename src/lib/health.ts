@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getEnvironmentReport } from "@/lib/env";
 import { authRuntimeConfig } from "@/lib/auth";
+import { getBuildInfo } from "@/lib/build-info";
 import type { AppHealthDTO, SessionUser } from "@/types/radar";
 
 function errorMessage(error: unknown) {
@@ -133,6 +134,7 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
     auth,
     monitor,
     alerts,
+    build: getBuildInfo(),
     providers: env.providers
   };
 }

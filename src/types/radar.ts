@@ -958,6 +958,13 @@ export type AppHealthDTO = {
     lastAlertPriority: string | null;
     unreadCount: number;
   };
+  build: {
+    commitSha: string;
+    commitShort: string;
+    deployId: string | null;
+    buildTimestamp: string;
+    serviceWorkerVersion: string;
+  };
   providers: {
     cron: {
       monitorJobSecretConfigured: boolean;

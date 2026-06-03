@@ -1,5 +1,15 @@
-const CACHE_NAME = "poke-restock-radar-v2-zxing-scanner";
+const CACHE_NAME = "poke-radar-sw-2026-06-03-live-drops-v3";
 const OFFLINE_ASSETS = ["/offline.html", "/manifest.webmanifest", "/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
+
+async function notifyClients(message) {
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  clients.forEach((client) => client.postMessage({ version: CACHE_NAME, ...message }));
+}
+
+async function clearAppCaches() {
+  const keys = await caches.keys();
+  await Promise.all(keys.map((key) => caches.delete(key)));
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -16,7 +26,19 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
+      .then(() => notifyClients({ type: "APP_VERSION_READY" }))
   );
+});
+
+self.addEventListener("message", (event) => {
+  const type = event.data?.type;
+  if (type === "SKIP_WAITING") {
+    self.skipWaiting();
+    return;
+  }
+  if (type === "CLEAR_APP_CACHE") {
+    event.waitUntil(clearAppCaches().then(() => notifyClients({ type: "APP_CACHE_CLEARED" })));
+  }
 });
 
 self.addEventListener("fetch", (event) => {

@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:info": "tsx scripts/write-build-info.ts",
+    "prebuild": "npm run build:info",
+    "precheck": "npm run build:info",
+    "prelint": "npm run build:info",
+    "pretest": "npm run build:info",
+    "prevercel-build": "npm run build:info",
     "dev": "npm run db:push && npm run db:seed && next dev",
     "build": "prisma generate && next build",
     "start": "next start",
