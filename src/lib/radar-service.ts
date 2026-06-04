@@ -3,7 +3,7 @@ import { listAccessOverview } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
-import { exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
+import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import { runProductDiscoveryCheck, validateDiscoverySourceUrl } from "@/lib/product-discovery";
 import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
 import {
@@ -2496,10 +2496,13 @@ export async function createProduct(input: {
   const retailer = await prisma.retailer.findUnique({ where: { id: input.retailerId }, select: { name: true } });
   if (!retailer) throw new Error("Retailer not found");
   validateRetailerUrl(retailer.name, input.url);
+  const urlIdentity = classifyRetailerProductUrl(input.url, retailer.name);
+  const retailerProductId = input.retailerProductId || urlIdentity.retailerProductIdFromUrl || undefined;
   const checkFrequencyMinutes = input.checkFrequencyMinutes ?? 60;
   const product = await prisma.product.create({
     data: {
       ...input,
+      retailerProductId,
       releaseId: input.releaseId,
       manualPriorityOverride: input.manualPriorityOverride ?? input.rating,
       monitorEnabled: input.monitorEnabled ?? true,
@@ -2680,6 +2683,8 @@ export async function updateProductManualStatus(
   const retailer = await prisma.retailer.findUnique({ where: { id: input.retailerId }, select: { name: true } });
   if (!retailer) throw new Error("Retailer not found");
   validateRetailerUrl(retailer.name, input.url);
+  const urlIdentity = classifyRetailerProductUrl(input.url, retailer.name);
+  const retailerProductId = input.retailerProductId || urlIdentity.retailerProductIdFromUrl || undefined;
   const identityChanged =
     before.url !== input.url ||
     before.name !== input.name ||
@@ -2687,7 +2692,7 @@ export async function updateProductManualStatus(
     before.sku !== (input.sku ?? null) ||
     before.upc !== (input.upc ?? null) ||
     before.dpci !== (input.dpci ?? null) ||
-    before.retailerProductId !== (input.retailerProductId ?? null);
+    before.retailerProductId !== (retailerProductId ?? null);
 
   const product = await prisma.product.update({
     where: { id: productId },
@@ -2703,7 +2708,7 @@ export async function updateProductManualStatus(
       sku: input.sku,
       upc: input.upc,
       dpci: input.dpci,
-      retailerProductId: input.retailerProductId,
+      retailerProductId,
       verificationStatus: identityChanged ? "UNVERIFIED" : before.verificationStatus,
       verifiedAt: identityChanged ? null : before.verifiedAt,
       verifiedFinalUrl: identityChanged ? null : before.verifiedFinalUrl,

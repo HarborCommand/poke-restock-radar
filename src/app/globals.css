@@ -13234,6 +13234,12 @@ body .tracker-watch-form-grid > label:has(textarea) {
   grid-column: 1 / -1;
 }
 
+body .tracker-retailer-help {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 body .tracker-watch-card {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr) auto;
@@ -13277,6 +13283,51 @@ body .tracker-watch-edit-grid {
 body .watchlist-qa-summary {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
+}
+
+body .watchlist-retailer-filter {
+  margin: 2px 0 0;
+}
+
+body .watchlist-retailer-filter button {
+  display: inline-flex;
+  gap: 8px;
+}
+
+body .watchlist-retailer-filter button span {
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: inherit;
+  font-size: 0.72rem;
+  padding: 2px 7px;
+}
+
+body .watchlist-retailer-empty {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #fed7aa;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 70%);
+  padding: 14px;
+}
+
+body .watchlist-retailer-empty h3 {
+  margin: 2px 0 4px;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+body .watchlist-retailer-empty p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.45;
 }
 
 body .watchlist-qa-list {
@@ -13398,6 +13449,11 @@ body .watchlist-qa-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+body .empty-state-action {
+  grid-column: 1 / -1;
+  margin-top: 4px;
 }
 
 body .tracker-watch-edit-form {
@@ -13564,10 +13620,15 @@ body .tracker-scanner-grid {
   body .tracker-watch-card,
   body .watchlist-qa-main,
   body .watchlist-qa-title-row,
+  body .watchlist-retailer-empty,
   body .tracker-history-row,
   body .tracker-system-list article,
   body .tracker-monitor-log-list article {
     grid-template-columns: 1fr;
+  }
+
+  body .watchlist-retailer-empty {
+    display: grid;
   }
 
   body .tracker-archive-toggle,

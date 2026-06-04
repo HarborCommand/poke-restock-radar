@@ -2460,6 +2460,7 @@ const trackerViews: Array<{ id: TrackerAlertView; label: string; icon: typeof Ra
 ];
 
 const trackerChannelFilters = ["All", "Target", "Walmart", "Best Buy", "Amazon", "GameStop", "Pokemon Center", "In Stock", "Add To Cart", "High Stock", "Low Stock", "Preorders", "Sold Out", "Price Drops"];
+const watchlistRetailerFilters = ["All", "Target", "Best Buy", "GameStop", "Pokemon Center"] as const;
 const trackerDefaultPositiveKeywords = ["Chaos Rising", "Perfect Order", "ETB", "Booster Bundle", "Premium Collection"];
 const trackerDefaultNegativeKeywords = ["sleeves", "plush", "jumbo", "Japanese", "damaged"];
 
@@ -3389,11 +3390,13 @@ function PanelHeader({ title, action, onAction }: { title: string; action?: stri
 function EmptyState({
   icon: Icon,
   title,
-  detail
+  detail,
+  action
 }: {
   icon: typeof Radar;
   title: string;
   detail: string;
+  action?: ReactNode;
 }) {
   return (
     <div className="empty-state">
@@ -3402,6 +3405,7 @@ function EmptyState({
         <strong>{title}</strong>
         <span>{detail}</span>
       </div>
+      {action ? <div className="empty-state-action">{action}</div> : null}
     </div>
   );
 }
@@ -12996,6 +13000,9 @@ function WatchProductQuickForm({
   onSaved: () => void;
 }) {
   const defaultRetailerId = prefill?.retailerId || dashboard.retailers[0]?.id || "";
+  const [selectedRetailerId, setSelectedRetailerId] = useState(defaultRetailerId);
+  const selectedRetailer = dashboard.retailers.find((retailer) => retailer.id === selectedRetailerId) ?? dashboard.retailers.find((retailer) => retailer.id === defaultRetailerId);
+  const isGameStop = /gamestop/i.test(selectedRetailer?.name || "");
   const addLabel = "Adding watch product";
   return (
     <form
@@ -13024,7 +13031,14 @@ function WatchProductQuickForm({
         <span className="chip good">Alerts enabled by default</span>
       </div>
       <div className="tracker-watch-form-grid">
-        <SelectInput name="retailerId" label="Retailer" defaultValue={defaultRetailerId} options={dashboard.retailers.map(optionFromRetailer)} required />
+        <SelectInput
+          name="retailerId"
+          label="Retailer"
+          defaultValue={defaultRetailerId}
+          options={dashboard.retailers.map(optionFromRetailer)}
+          onChange={(event) => setSelectedRetailerId(event.currentTarget.value)}
+          required
+        />
         <TextInput name="name" label="Product name" defaultValue={prefill?.name || ""} placeholder="Pokemon TCG Booster Bundle" required />
         <TextInput name="url" label="Exact product URL" type="url" defaultValue={prefill?.url || ""} placeholder="https://..." required wide />
         <TextInput name="sku" label="SKU / ASIN" defaultValue={prefill?.sku || ""} />
@@ -13047,6 +13061,12 @@ function WatchProductQuickForm({
           Alert enabled
         </label>
       </div>
+      {isGameStop ? (
+        <div className="safety-strip compact tracker-retailer-help">
+          <Store size={15} />
+          <span>GameStop: use the exact GameStop product page, not search/category pages. The app saves the product ID from the URL when it can parse it.</span>
+        </div>
+      ) : null}
       <div className="safety-strip compact">
         <ShieldCheck size={15} />
         <span>Use exact retailer product pages only. Search/category links stay unverified and cannot send high-priority buy alerts.</span>
@@ -13171,6 +13191,7 @@ function AlertsPanel({
   const [keywordTest, setKeywordTest] = useState("Chaos Rising booster bundle Target 196214154155");
   const [showWatchProductForm, setShowWatchProductForm] = useState(false);
   const [watchProductPrefill, setWatchProductPrefill] = useState<WatchProductPrefill | null>(null);
+  const [watchRetailerFilter, setWatchRetailerFilter] = useState<(typeof watchlistRetailerFilters)[number]>("All");
   const [editingWatchProductId, setEditingWatchProductId] = useState<string | null>(null);
   const [retailerStockResult, setRetailerStockResult] = useState<RetailerCheckStockResult | null>(null);
   const trackerAlerts = useMemo(
@@ -13190,6 +13211,12 @@ function AlertsPanel({
     .filter((record) => record.isSystem || record.alert.entityType === "SYSTEM")
     .filter((record) => (showArchived ? true : !record.isDeprecated));
   const watchProducts = dashboard.products.filter((product) => product.monitorEnabled && !product.archivedAt);
+  const watchProductsByRetailer = (retailerName: string) => watchProducts.filter((product) => product.retailerName.toLowerCase().includes(retailerName.toLowerCase()));
+  const filteredWatchProducts =
+    watchRetailerFilter === "All"
+      ? watchProducts
+      : watchProductsByRetailer(watchRetailerFilter);
+  const gameStopWatchProducts = watchProductsByRetailer("GameStop");
   const exactProducts = watchProducts.filter((product) => product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED");
   const needsExactLink = watchProducts.length - exactProducts.length;
   const blockedChecks = dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length;
@@ -13270,6 +13297,15 @@ function AlertsPanel({
     setWatchProductPrefill(prefill);
     setShowWatchProductForm(true);
     setView("watchlist");
+  }
+
+  function openRetailerWatchProductForm(retailerName: (typeof watchlistRetailerFilters)[number]) {
+    const retailer = dashboard.retailers.find((item) => item.name.toLowerCase().includes(retailerName.toLowerCase()));
+    openWatchProductForm({
+      retailerId: retailer?.id,
+      productType: retailerName === "All" ? "" : retailerName,
+      requiredWords: retailerName === "GameStop" ? "Pokemon" : ""
+    });
   }
 
   function closeWatchProductForm() {
@@ -13873,11 +13909,42 @@ function AlertsPanel({
             <DetailStat label="Missing identifiers" value={String(watchProducts.filter((product) => !productHasIdentifier(product)).length)} tone={watchProducts.some((product) => !productHasIdentifier(product)) ? "neutral" : "good"} />
             <DetailStat label="Blocked or failed" value={String(watchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError).length)} tone={watchProducts.some((product) => product.liveBlockedType || product.lastMonitorError) ? "bad" : "good"} />
           </div>
+          <div className="tracker-filter-bar watchlist-retailer-filter" aria-label="Watchlist retailer filters">
+            {watchlistRetailerFilters.map((filter) => {
+              const count = filter === "All" ? watchProducts.length : watchProductsByRetailer(filter).length;
+              return (
+                <button className={watchRetailerFilter === filter ? "active" : ""} key={filter} type="button" onClick={() => setWatchRetailerFilter(filter)}>
+                  {filter}
+                  <span>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+          {gameStopWatchProducts.length === 0 ? (
+            <section className="watchlist-retailer-empty">
+              <div>
+                <p className="eyeline">GameStop</p>
+                <h3>No GameStop products watched yet</h3>
+                <p>Add an exact GameStop product URL so Run Check Now can use the GameStop parser and show the latest price, stock, and confidence result.</p>
+              </div>
+              <button className="mini-action solid" type="button" onClick={() => openRetailerWatchProductForm("GameStop")}>
+                <Plus size={14} />
+                Add GameStop Product
+              </button>
+            </section>
+          ) : null}
           <div className="watchlist-qa-list">
-            {watchProducts.length ? (
-              watchProducts.map(renderWatchlistQARow)
+            {filteredWatchProducts.length ? (
+              filteredWatchProducts.map(renderWatchlistQARow)
+            ) : watchRetailerFilter === "GameStop" ? (
+              <EmptyState icon={Store} title="No GameStop products watched yet" detail="Add an exact GameStop product page, then run Check Now from this watchlist." action={
+                <button className="mini-action solid" type="button" onClick={() => openRetailerWatchProductForm("GameStop")}>
+                  <Plus size={14} />
+                  Add GameStop Product
+                </button>
+              } />
             ) : (
-              <EmptyState icon={Eye} title="No watched products" detail="Add exact retailer product URLs here to start monitor checks and live drop alerts." />
+              <EmptyState icon={Eye} title={`No ${watchRetailerFilter} watch products`} detail="Switch retailer filters or add an exact product page for this retailer." />
             )}
           </div>
         </section>

@@ -387,12 +387,20 @@ test("watchlist QA exposes real product readiness, warnings, and monitor actions
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
   const editForm = app.slice(app.indexOf("function WatchProductIdentifierForm"), app.indexOf("function AlertsPanel"));
+  const watchForm = app.slice(app.indexOf("function WatchProductQuickForm"), app.indexOf("function WatchProductIdentifierForm"));
 
   assert.match(app, /function watchProductWarnings/);
   assert.match(app, /Search\/category URL is rejected for live alerts/);
   assert.match(app, /Live stock status is not verified/);
+  assert.match(app, /watchlistRetailerFilters/);
+  assert.match(watchForm, /GameStop: use the exact GameStop product page/);
+  assert.match(watchForm, /product ID from the URL/);
   assert.match(alertsPanel, /Watchlist QA/);
   assert.match(alertsPanel, /Ready for Live Alerts/);
+  assert.match(alertsPanel, /watchRetailerFilter/);
+  assert.match(alertsPanel, /No GameStop products watched yet/);
+  assert.match(alertsPanel, /Add GameStop Product/);
+  assert.match(alertsPanel, /openRetailerWatchProductForm\("GameStop"\)/);
   assert.match(alertsPanel, /Run Check Now/);
   assert.match(alertsPanel, /Edit Identifiers/);
   assert.match(alertsPanel, /Verify Exact Product/);
@@ -405,6 +413,16 @@ test("watchlist QA exposes real product readiness, warnings, and monitor actions
   for (const field of ["sku", "upc", "dpci", "retailerProductId", "expectedTitleKeywords", "imageUrl"]) {
     assert.match(editForm, new RegExp(`name="${field}"`), `missing edit field ${field}`);
   }
+});
+
+test("product create and edit save retailer product IDs parsed from exact URLs", () => {
+  const service = fs.readFileSync(new URL("../src/lib/radar-service.ts", import.meta.url), "utf8");
+
+  assert.match(service, /classifyRetailerProductUrl/);
+  assert.match(service, /const urlIdentity = classifyRetailerProductUrl\(input\.url, retailer\.name\)/);
+  assert.match(service, /const retailerProductId = input\.retailerProductId \|\| urlIdentity\.retailerProductIdFromUrl \|\| undefined/);
+  assert.match(service, /before\.retailerProductId !== \(retailerProductId \?\? null\)/);
+  assert.match(service, /retailerProductId,/);
 });
 
 test("live drops are restricted to real product monitor alerts", () => {
