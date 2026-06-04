@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { previewTargetDiscoveryHtml, targetDiscoverySourceUrl } from "../src/lib/product-discovery";
+import { previewTargetDiscoveryHtml, previewTargetDiscoveryHtmlWithSearch, targetDiscoverySourceUrl } from "../src/lib/product-discovery";
 
 const sourceUrl = targetDiscoverySourceUrl("Pokemon TCG");
 
@@ -94,4 +94,86 @@ test("Target discovery deduplicates repeated product links", () => {
   assert.equal(result.productLinksFound, 1);
   assert.equal(result.candidates.length, 1);
   assert.equal(result.candidates[0].retailerProductId, "95280000");
+});
+
+test("Target discovery falls back to public search JSON when static HTML has no product links", async () => {
+  const targetConfig = {
+    services: {
+      redsky: {
+        apiKey: "test-redsky-key",
+        baseUrl: "https://redsky.target.com"
+      },
+      redskyAggregations: {
+        apis: {
+          product: {
+            endpointPaths: {
+              plpSearchV2: "redsky_aggregations/v1/web/plp_search_v2"
+            }
+          }
+        }
+      }
+    },
+    serverLocationVariables: {
+      store_id: "2848",
+      store_ids: "2848,2109"
+    }
+  };
+  const encodedConfig = JSON.stringify(JSON.stringify(targetConfig)).slice(1, -1);
+  const html = `<html><script>window.__CONFIG__ = JSON.parse("${encodedConfig}")</script></html>`;
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    requestedUrl = String(url);
+    return new Response(
+      JSON.stringify({
+        data: {
+          search: {
+            products: [
+              {
+                tcin: "1009003207",
+                item: {
+                  enrichment: {
+                    buy_url: "https://www.target.com/p/pokemon-tcg-ultra-rare-value-pack-12-cards/-/A-1009003207",
+                    image_info: {
+                      primary_image: {
+                        url: "https://target.scene7.com/is/image/Target/GUEST_a5ecdc09-16b9-4b5d-87e2-22ef751deba1"
+                      }
+                    }
+                  },
+                  product_classification: {
+                    item_type: {
+                      name: "Collectible Trading Cards"
+                    }
+                  },
+                  product_description: {
+                    title: "Pokemon TCG Ultra Rare Value Pack - 12 Cards"
+                  },
+                  primary_brand: {
+                    name: "Pokemon"
+                  }
+                },
+                price: {
+                  current_retail: 14.99
+                }
+              }
+            ]
+          }
+        }
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }) as typeof fetch;
+
+  try {
+    const result = await previewTargetDiscoveryHtmlWithSearch({ sourceUrl, finalUrl: sourceUrl, httpStatus: 200, html });
+    assert.match(requestedUrl, /plp_search_v2/);
+    assert.equal(result.productLinksFound, 1);
+    assert.equal(result.candidates.length, 1);
+    assert.equal(result.candidates[0].retailerProductId, "1009003207");
+    assert.match(result.candidates[0].productName, /Ultra Rare Value Pack/);
+    assert.equal(result.candidates[0].livePrice, 14.99);
+    assert.match(result.candidates[0].reason, /Target public search API/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

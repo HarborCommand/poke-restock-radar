@@ -94,6 +94,14 @@ type DiscoveryCandidateRecord = {
   status?: "PENDING" | "REJECTED_NON_TCG";
 };
 
+type TargetSearchConfig = {
+  apiKey: string;
+  baseUrl: string;
+  plpSearchPath: string;
+  storeId: string;
+  storeIds: string;
+};
+
 export type TargetTcgCandidateEvaluation = {
   included: boolean;
   confidenceScore: number;
@@ -492,6 +500,191 @@ function extractTargetProductCandidates(html: string, finalUrl: string) {
   });
 }
 
+function parseTargetJsonPayloads(html: string) {
+  const payloads: Record<string, unknown>[] = [];
+  for (const match of html.matchAll(/JSON\.parse\("([\s\S]*?)"\)/g)) {
+    try {
+      const decoded = JSON.parse(`"${match[1]}"`);
+      if (typeof decoded !== "string") continue;
+      const parsed = JSON.parse(decoded);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) payloads.push(parsed as Record<string, unknown>);
+    } catch {
+      // Target embeds several JSON.parse payloads; ignore ones that are not application config/data.
+    }
+  }
+  return payloads;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(/[^0-9.]/g, ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function pathJoin(baseUrl: string, path: string) {
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const normalizedPath = path.replace(/^\/+/, "");
+  return `${normalizedBase}/${normalizedPath}`;
+}
+
+function targetSearchTermFromUrl(sourceUrl: string) {
+  try {
+    const url = new URL(sourceUrl);
+    return (
+      url.searchParams.get("searchTerm") ||
+      url.searchParams.get("keyword") ||
+      url.searchParams.get("q") ||
+      decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "")
+    );
+  } catch {
+    return "";
+  }
+}
+
+function targetSearchPageParam(searchTerm: string) {
+  const slug = searchTerm
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+  return `/s/${slug || "pokemon tcg"}`;
+}
+
+function targetSearchConfigFromHtml(html: string): TargetSearchConfig | null {
+  let apiKey: string | null = null;
+  let baseUrl: string | null = null;
+  let plpSearchPath: string | null = null;
+  let storeId: string | null = null;
+  let storeIds: string | null = null;
+
+  for (const payload of parseTargetJsonPayloads(html)) {
+    const services = recordValue(payload.services);
+    const redsky = recordValue(services?.redsky);
+    const redskyAggregations = recordValue(services?.redskyAggregations);
+    const redskyAggregationsApis = recordValue(redskyAggregations?.apis);
+    const productApi = recordValue(redskyAggregationsApis?.product);
+    const productPaths = recordValue(productApi?.endpointPaths);
+    const configPath = stringValue(productPaths?.plpSearchV2);
+    if (configPath) plpSearchPath = configPath;
+    apiKey = apiKey || stringValue(redsky?.apiKey) || stringValue(payload.defaultServicesApiKey);
+    baseUrl = baseUrl || stringValue(redsky?.baseUrl) || stringValue(redskyAggregations?.baseUrl);
+
+    const serverLocation = recordValue(payload.serverLocationVariables);
+    const primaryStore = recordValue(serverLocation?.primaryStore);
+    storeId = storeId || stringValue(serverLocation?.store_id) || stringValue(primaryStore?.id);
+    storeIds = storeIds || stringValue(serverLocation?.store_ids) || storeId;
+  }
+
+  if (!apiKey || !plpSearchPath) return null;
+  return {
+    apiKey,
+    baseUrl: baseUrl || "https://redsky.target.com",
+    plpSearchPath,
+    storeId: storeId || "2848",
+    storeIds: storeIds || storeId || "2848"
+  };
+}
+
+function targetCandidateFromSearchProduct(product: Record<string, unknown>, finalUrl: string): DiscoveryCandidateRecord | null {
+  const item = recordValue(product.item);
+  const enrichment = recordValue(item?.enrichment);
+  const imageInfo = recordValue(enrichment?.image_info);
+  const primaryImage = recordValue(imageInfo?.primary_image);
+  const description = recordValue(item?.product_description);
+  const brand = recordValue(item?.primary_brand);
+  const classification = recordValue(item?.product_classification);
+  const itemType = recordValue(classification?.item_type);
+  const price = recordValue(product.price);
+  const tcin = stringValue(product.tcin) || stringValue(product.original_tcin);
+  const buyUrl = stringValue(enrichment?.buy_url) || (tcin ? `https://www.target.com/p/-/A-${tcin}` : null);
+  const url = buyUrl ? canonicalTargetProductUrl(buyUrl, finalUrl) : null;
+  if (!tcin || !url) return null;
+
+  const title = stringValue(description?.title) || stringValue(product.title) || candidateNameFromUrl(url);
+  const imageUrl = stringValue(primaryImage?.url) || stringValue(imageInfo?.base_url);
+  const productType = stringValue(itemType?.name);
+  const brandName = stringValue(brand?.name);
+  const currentPrice = numberValue(price?.current_retail) ?? numberValue(price?.formatted_current_price);
+  return {
+    url,
+    label: normalizeSpace(title),
+    retailerProductId: tcin,
+    imageUrl: imageUrl?.replace(/^\/\//, "https://") ?? null,
+    livePrice: currentPrice,
+    productType: productType && /trading card/i.test(productType) ? productType : null,
+    reason: [
+      "Target public search API",
+      `TCIN ${tcin}`,
+      brandName ? `brand ${brandName}` : null,
+      productType ? `type ${productType}` : null
+    ]
+      .filter(Boolean)
+      .join("; ")
+  };
+}
+
+async function fetchTargetSearchCandidates(input: {
+  html: string;
+  sourceUrl: string;
+  finalUrl: string;
+  userAgent: string;
+}) {
+  const config = targetSearchConfigFromHtml(input.html);
+  const searchTerm = targetSearchTermFromUrl(input.sourceUrl);
+  if (!config || !searchTerm) return { candidates: [] as DiscoveryCandidateRecord[], reason: "Target public search API config or search term missing" };
+
+  const params = new URLSearchParams({
+    key: config.apiKey,
+    keyword: searchTerm,
+    channel: "WEB",
+    count: "24",
+    offset: "0",
+    default_purchasability_filter: "true",
+    pricing_store_id: config.storeId,
+    scheduled_delivery_store_id: config.storeId,
+    store_ids: config.storeIds,
+    visitor_id: "018F000000000201A9A0000000000000",
+    page: targetSearchPageParam(searchTerm)
+  });
+  const url = `${pathJoin(config.baseUrl, config.plpSearchPath)}?${params}`;
+  const response = await fetch(url, {
+    method: "GET",
+    redirect: "follow",
+    signal: AbortSignal.timeout(10000),
+    headers: {
+      Accept: "application/json",
+      Origin: "https://www.target.com",
+      Referer: input.sourceUrl,
+      "User-Agent": input.userAgent
+    }
+  });
+  if (!response.ok) {
+    return { candidates: [] as DiscoveryCandidateRecord[], reason: `Target public search API returned HTTP ${response.status}` };
+  }
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  const data = recordValue(payload?.data);
+  const search = recordValue(data?.search);
+  const products = Array.isArray(search?.products) ? (search.products as Record<string, unknown>[]) : [];
+  return {
+    candidates: products.flatMap((product) => {
+      const candidate = targetCandidateFromSearchProduct(product, input.finalUrl);
+      return candidate ? [candidate] : [];
+    }),
+    reason: products.length ? `Target public search API returned ${products.length} products` : "Target public search API returned zero products"
+  };
+}
+
 function sourceItselfCandidate(sourceUrl: string, finalUrl: string, retailerName: string) {
   const source = classifyRetailerProductUrl(sourceUrl, retailerName);
   const final = classifyRetailerProductUrl(finalUrl, retailerName);
@@ -540,8 +733,8 @@ function enrichDiscoveryCandidate(
   return {
     ...candidate,
     label: productName,
-    imageUrl: metadata.imageUrl,
-    livePrice: metadata.price ?? (isDirect ? detectRetailerPrice(html, retailerName) : null),
+    imageUrl: metadata.imageUrl ?? candidate.imageUrl,
+    livePrice: metadata.price ?? candidate.livePrice ?? (isDirect ? detectRetailerPrice(html, retailerName) : null),
     productType: evaluation.productType,
     confidenceScore: evaluation.confidenceScore,
     reason: targetMetadataReason ? `${evaluation.reason} ${targetMetadataReason}.` : evaluation.reason,
@@ -549,17 +742,13 @@ function enrichDiscoveryCandidate(
   };
 }
 
-export function previewTargetDiscoveryHtml(input: {
+function targetDiscoveryDebugResultFromRaw(input: {
   sourceUrl: string;
   finalUrl: string;
   httpStatus: number;
   html: string;
-}): TargetDiscoveryDebugResult {
+}, rawCandidates: DiscoveryCandidateRecord[], blocked: boolean, blockedReason: string | null, zeroRawReason: string | null): TargetDiscoveryDebugResult {
   const availability = detectRetailerAvailability(input.html, "Target");
-  const blocked =
-    [401, 403, 429, 503].includes(input.httpStatus) ||
-    availability.detectedWords.some((word) => /blocked|captcha|robot|queue/i.test(word));
-  const rawCandidates = blocked ? [] : extractTargetProductCandidates(input.html, input.finalUrl);
   const evaluatedCandidates = rawCandidates.map((candidate) => enrichDiscoveryCandidate(candidate, input.html, "Target", null, availability));
   const candidates = evaluatedCandidates
     .filter((candidate) => (candidate.status ?? "PENDING") === "PENDING")
@@ -588,9 +777,9 @@ export function previewTargetDiscoveryHtml(input: {
       reason: candidate.reason ?? "Rejected as non-TCG Target result."
     }));
   const zeroCandidateReason = blocked
-    ? `blocked: ${availability.reason}`
+    ? `blocked: ${blockedReason || availability.reason}`
     : rawCandidates.length === 0
-      ? "no product links found; Target search page may be empty, redirected, blocked, or structure changed"
+      ? zeroRawReason || "no product links found; Target search page may be empty, redirected, blocked, or structure changed"
       : candidates.length === 0
         ? "parsed links were all non-TCG or duplicate products"
         : null;
@@ -609,6 +798,57 @@ export function previewTargetDiscoveryHtml(input: {
     candidates,
     rejected
   };
+}
+
+export function previewTargetDiscoveryHtml(input: {
+  sourceUrl: string;
+  finalUrl: string;
+  httpStatus: number;
+  html: string;
+}): TargetDiscoveryDebugResult {
+  const availability = detectRetailerAvailability(input.html, "Target");
+  const blocked =
+    [401, 403, 429, 503].includes(input.httpStatus) ||
+    availability.detectedWords.some((word) => /blocked|captcha|robot|queue/i.test(word));
+  const rawCandidates = blocked ? [] : extractTargetProductCandidates(input.html, input.finalUrl);
+  return targetDiscoveryDebugResultFromRaw(
+    input,
+    rawCandidates,
+    blocked,
+    blocked ? availability.reason : null,
+    "no product links found; Target search page may be empty, redirected, blocked, or structure changed"
+  );
+}
+
+export async function previewTargetDiscoveryHtmlWithSearch(input: {
+  sourceUrl: string;
+  finalUrl: string;
+  httpStatus: number;
+  html: string;
+  userAgent?: string;
+}): Promise<TargetDiscoveryDebugResult> {
+  const availability = detectRetailerAvailability(input.html, "Target");
+  const blocked =
+    [401, 403, 429, 503].includes(input.httpStatus) ||
+    availability.detectedWords.some((word) => /blocked|captcha|robot|queue/i.test(word));
+  const htmlCandidates = blocked ? [] : extractTargetProductCandidates(input.html, input.finalUrl);
+  const searchResult =
+    blocked || htmlCandidates.length > 0
+      ? { candidates: [] as DiscoveryCandidateRecord[], reason: null as string | null }
+      : await fetchTargetSearchCandidates({
+          html: input.html,
+          sourceUrl: input.sourceUrl,
+          finalUrl: input.finalUrl,
+          userAgent: input.userAgent || DISCOVERY_USER_AGENT
+        });
+
+  return targetDiscoveryDebugResultFromRaw(
+    input,
+    [...htmlCandidates, ...searchResult.candidates],
+    blocked,
+    blocked ? availability.reason : null,
+    searchResult.reason || "no product links found; Target search page may be empty, redirected, blocked, or structure changed"
+  );
 }
 
 async function createMonitorLog(input: {
@@ -732,8 +972,18 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
 
     const directCandidate = sourceItselfCandidate(source.url, finalUrl, source.retailer.name);
     const isTargetDiscovery = source.retailer.name.toLowerCase().includes("target");
+    const targetHtmlCandidates = isTargetDiscovery ? extractTargetProductCandidates(html, finalUrl) : [];
+    const targetSearchResult =
+      isTargetDiscovery && targetHtmlCandidates.length === 0 && !directCandidate
+        ? await fetchTargetSearchCandidates({
+            html,
+            sourceUrl: source.url,
+            finalUrl,
+            userAgent: DISCOVERY_USER_AGENT
+          })
+        : { candidates: [] as DiscoveryCandidateRecord[], reason: null as string | null };
     const rawCandidates: DiscoveryCandidateRecord[] = isTargetDiscovery
-      ? [...(directCandidate ? [directCandidate] : []), ...extractTargetProductCandidates(html, finalUrl)]
+      ? [...(directCandidate ? [directCandidate] : []), ...targetHtmlCandidates, ...targetSearchResult.candidates]
       : [
           ...(directCandidate ? [directCandidate] : []),
           ...extractLinks(html, finalUrl).flatMap((link) => {
@@ -813,7 +1063,7 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
     const pendingCount = candidates.filter((candidate) => (candidate.status ?? "PENDING") === "PENDING").length;
     const zeroCandidateReason =
       rawCandidates.length === 0
-        ? "no product links found; search page returned no exact product links or Target structure changed"
+        ? targetSearchResult.reason || "no product links found; search page returned no exact product links or Target structure changed"
         : candidates.length === 0
           ? "parsed links were not usable for this retailer"
           : pendingCount === 0 && rejected > 0
@@ -830,6 +1080,7 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
       `${created} created`,
       `${updated} updated`,
       `${skippedExistingProducts} already watched`,
+      targetSearchResult.reason ? `target search: ${targetSearchResult.reason}` : null,
       zeroCandidateReason ? `zero reason: ${zeroCandidateReason}` : null
     ]
       .filter(Boolean)
