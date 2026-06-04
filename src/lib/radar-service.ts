@@ -6,6 +6,7 @@ import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import {
   TARGET_DISCOVERY_SEARCH_TERMS,
+  previewTargetDiscoveryHtml,
   runProductDiscoveryCheck,
   targetDiscoverySourceUrl,
   validateDiscoverySourceUrl
@@ -2684,6 +2685,30 @@ export async function runTargetProductDiscoveryNow() {
     blocked: results.filter((result) => result.status === "BLOCKED").length,
     errors: results.filter((result) => result.status === "ERROR").length,
     results
+  };
+}
+
+export async function testTargetDiscoveryUrl(url: string) {
+  validateDiscoverySourceUrl("Target", url);
+  const requestStarted = Date.now();
+  const response = await fetch(url, {
+    method: "GET",
+    redirect: "follow",
+    signal: AbortSignal.timeout(12000),
+    headers: {
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "User-Agent": "PokeRestockRadar/0.3 private-safe-discovery-test (+review-before-watch)"
+    }
+  });
+  const html = await response.text();
+  return {
+    ...previewTargetDiscoveryHtml({
+      sourceUrl: url,
+      finalUrl: response.url || url,
+      httpStatus: response.status,
+      html
+    }),
+    responseTimeMs: Date.now() - requestStarted
   };
 }
 

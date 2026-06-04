@@ -7,14 +7,16 @@ import {
   clearRejectedTargetDiscoveryCandidates,
   ensureTargetDiscoverySources,
   listDashboard,
-  runTargetProductDiscoveryNow
+  runTargetProductDiscoveryNow,
+  testTargetDiscoveryUrl
 } from "@/lib/radar-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const targetDiscoveryActionSchema = z.object({
-  action: z.enum(["ensure_sources", "run_now", "approve_high_confidence", "clear_rejected"])
+  action: z.enum(["ensure_sources", "run_now", "approve_high_confidence", "clear_rejected", "test_url"]),
+  url: z.string().url().optional()
 });
 
 export async function POST(request: Request) {
@@ -30,6 +32,10 @@ export async function POST(request: Request) {
     if (input.action === "run_now") result = await runTargetProductDiscoveryNow();
     if (input.action === "approve_high_confidence") result = await approveHighConfidenceTargetDiscoveryCandidates();
     if (input.action === "clear_rejected") result = await clearRejectedTargetDiscoveryCandidates();
+    if (input.action === "test_url") {
+      if (!input.url) throw new Error("Target discovery test URL is required.");
+      result = await testTargetDiscoveryUrl(input.url);
+    }
 
     await logAudit({
       user,

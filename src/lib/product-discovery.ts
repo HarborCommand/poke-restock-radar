@@ -102,6 +102,33 @@ export type TargetTcgCandidateEvaluation = {
   excludedKeywords: string[];
   reason: string;
 };
+
+export type TargetDiscoveryPreviewCandidate = {
+  url: string;
+  productName: string;
+  productType: string | null;
+  retailerProductId: string | null;
+  imageUrl: string | null;
+  livePrice: number | null;
+  confidenceScore: number;
+  status: "PENDING" | "REJECTED_NON_TCG";
+  reason: string;
+};
+
+export type TargetDiscoveryDebugResult = {
+  sourceUrl: string;
+  httpStatus: number;
+  finalUrl: string;
+  responseLength: number;
+  blocked: boolean;
+  blockedReason: string | null;
+  productLinksFound: number;
+  candidatesCreatedCount: number;
+  candidatesRejectedCount: number;
+  zeroCandidateReason: string | null;
+  candidates: TargetDiscoveryPreviewCandidate[];
+  rejected: TargetDiscoveryPreviewCandidate[];
+};
 const productTerms = [
   "pokemon",
   "pokémon",
@@ -200,19 +227,61 @@ function decodeHtmlAttribute(value: string) {
     .trim();
 }
 
+function decodeTargetSearchPayload(value: string) {
+  return value
+    .replace(/\\u002F/gi, "/")
+    .replace(/\\u0026/gi, "&")
+    .replace(/\\u003D/gi, "=")
+    .replace(/\\u003F/gi, "?")
+    .replace(/\\u002D/gi, "-")
+    .replace(/\\u003A/gi, ":")
+    .replace(/\\\//g, "/")
+    .replace(/\\"/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'");
+}
+
+function canonicalTargetProductUrl(value: string, baseUrl: string) {
+  const decoded = decodeHtmlAttribute(decodeTargetSearchPayload(value));
+  const productMatch = decoded.match(/(?:https?:\/\/(?:www\.)?target\.com)?(\/p\/(?:-\/A-\d{5,}|[^"'<>\s\\]*?\/-\/A-\d{5,}))(?:[?#][^"'<>\s\\]*)?/i);
+  if (!productMatch?.[1]) return null;
+  const url = absoluteUrl(productMatch[1], baseUrl);
+  if (!url) return null;
+  const parsed = new URL(url);
+  parsed.hostname = "www.target.com";
+  parsed.hash = "";
+  parsed.search = "";
+  return parsed.toString();
+}
+
+function targetTcinFromUrl(url: string) {
+  return url.match(/\/A-(\d{5,})/i)?.[1] ?? null;
+}
+
 function targetCandidateContext(html: string, candidateUrl: string, retailerProductId: string | null) {
+  const searchHtml = decodeTargetSearchPayload(html);
   const decodedUrl = candidateUrl.replace(/https?:\/\//i, "").replace(/^www\./, "");
+  const candidatePath = (() => {
+    try {
+      return new URL(candidateUrl).pathname;
+    } catch {
+      return "";
+    }
+  })();
   const needles = [
     candidateUrl,
     candidateUrl.replace(/\//g, "\\/"),
     decodedUrl,
+    candidatePath,
     retailerProductId ? `A-${retailerProductId}` : "",
     retailerProductId ? `"tcin":"${retailerProductId}"` : "",
     retailerProductId ? `"tcin":${retailerProductId}` : ""
   ].filter(Boolean);
-  const index = needles.map((needle) => html.indexOf(needle)).find((value) => value >= 0) ?? -1;
+  const index = needles.map((needle) => searchHtml.indexOf(needle)).find((value) => value >= 0) ?? -1;
   if (index < 0) return "";
-  return html.slice(Math.max(0, index - 4500), Math.min(html.length, index + 6500));
+  return searchHtml.slice(Math.max(0, index - 6500), Math.min(searchHtml.length, index + 8500));
 }
 
 function targetMetadataFromContext(html: string, candidate: DiscoveryCandidateRecord) {
@@ -223,8 +292,7 @@ function targetMetadataFromContext(html: string, candidate: DiscoveryCandidateRe
     candidate.label;
   const imageUrl =
     firstJsonishString(context, ["primary_image_url", "image_url", "imageUrl", "image", "base_url"]) ||
-    context.match(/https?:\\?\/\\?\/target\.scene7\.com\\?\/is\\?\/image\\?\/Target\/[^"',\s<]+/i)?.[0] ||
-    context.match(/https?:\\?\/\\?\/target\.scene7\.com\/is\/image\/Target\/[^"',\s<]+/i)?.[0] ||
+    context.match(/(?:https?:)?\/\/target\.scene7\.com\/is\/image\/Target\/[^"',\s<\\]+/i)?.[0] ||
     null;
   const price =
     firstJsonishNumber(context, ["current_retail", "formatted_current_price", "price", "currentPrice"]) ??
@@ -234,7 +302,7 @@ function targetMetadataFromContext(html: string, candidate: DiscoveryCandidateRe
 
   return {
     title,
-    imageUrl: imageUrl ? decodeHtmlAttribute(imageUrl).replace(/\\\//g, "/") : null,
+    imageUrl: imageUrl ? decodeHtmlAttribute(imageUrl).replace(/\\\//g, "/").replace(/^\/\//, "https://") : null,
     price,
     dpci,
     upc
@@ -366,6 +434,64 @@ function extractLinks(html: string, finalUrl: string) {
   });
 }
 
+function extractTargetProductCandidates(html: string, finalUrl: string) {
+  const candidates = new Map<string, DiscoveryCandidateRecord>();
+  const decodedHtml = decodeTargetSearchPayload(html);
+
+  function addCandidate(rawUrl: string, label = "") {
+    const url = canonicalTargetProductUrl(rawUrl, finalUrl);
+    if (!url) return;
+    const retailerProductId = targetTcinFromUrl(url);
+    if (!retailerProductId) return;
+    const key = retailerProductId || url;
+    const existing = candidates.get(key);
+    if (existing) {
+      if (existing.url.includes("/p/-/A-") && !url.includes("/p/-/A-")) existing.url = url;
+      if (!existing.label && label) existing.label = normalizeSpace(label);
+      return;
+    }
+    candidates.set(key, {
+      url,
+      label: normalizeSpace(label),
+      retailerProductId
+    });
+  }
+
+  for (const link of extractLinks(decodedHtml, finalUrl)) {
+    addCandidate(link.url, link.label);
+  }
+
+  for (const match of decodedHtml.matchAll(/(?:https?:\/\/(?:www\.)?target\.com)?\/p\/(?:-\/A-\d{5,}|[^"'<>\s\\]*?\/-\/A-\d{5,})(?:[?#][^"'<>\s\\]*)?/gi)) {
+    addCandidate(match[0]);
+  }
+
+  for (const match of decodedHtml.matchAll(/["'](?:url|canonical_url|product_url|pdp_url|buy_url|link|href)["']\s*:\s*["']([^"']*\/p\/(?:-\/A-\d{5,}|[^"']*?\/-\/A-\d{5,})[^"']*)["']/gi)) {
+    addCandidate(match[1]);
+  }
+
+  for (const match of decodedHtml.matchAll(/\b(?:tcin|product_id|productId)["']?\s*[:=]\s*["']?(\d{5,})["']?/gi)) {
+    const tcin = match[1];
+    addCandidate(`/p/-/A-${tcin}`);
+  }
+
+  return Array.from(candidates.values()).map((candidate) => {
+    const metadata = targetMetadataFromContext(decodedHtml, candidate);
+    return {
+      ...candidate,
+      label: metadata.title || candidate.label || candidateNameFromUrl(candidate.url),
+      imageUrl: metadata.imageUrl,
+      livePrice: metadata.price ?? null,
+      reason: [
+        metadata.dpci ? `DPCI ${metadata.dpci}` : null,
+        metadata.upc ? `UPC ${metadata.upc}` : null,
+        candidate.retailerProductId ? `TCIN ${candidate.retailerProductId}` : null
+      ]
+        .filter(Boolean)
+        .join("; ")
+    };
+  });
+}
+
 function sourceItselfCandidate(sourceUrl: string, finalUrl: string, retailerName: string) {
   const source = classifyRetailerProductUrl(sourceUrl, retailerName);
   const final = classifyRetailerProductUrl(finalUrl, retailerName);
@@ -405,7 +531,8 @@ function enrichDiscoveryCandidate(
   const targetMetadataReason = [
     metadata.dpci ? `DPCI ${metadata.dpci}` : null,
     metadata.upc ? `UPC ${metadata.upc}` : null,
-    candidate.retailerProductId ? `TCIN ${candidate.retailerProductId}` : null
+    candidate.retailerProductId ? `TCIN ${candidate.retailerProductId}` : null,
+    candidate.reason || null
   ]
     .filter(Boolean)
     .join("; ");
@@ -419,6 +546,68 @@ function enrichDiscoveryCandidate(
     confidenceScore: evaluation.confidenceScore,
     reason: targetMetadataReason ? `${evaluation.reason} ${targetMetadataReason}.` : evaluation.reason,
     status: evaluation.included ? "PENDING" : "REJECTED_NON_TCG"
+  };
+}
+
+export function previewTargetDiscoveryHtml(input: {
+  sourceUrl: string;
+  finalUrl: string;
+  httpStatus: number;
+  html: string;
+}): TargetDiscoveryDebugResult {
+  const availability = detectRetailerAvailability(input.html, "Target");
+  const blocked =
+    [401, 403, 429, 503].includes(input.httpStatus) ||
+    availability.detectedWords.some((word) => /blocked|captcha|robot|queue/i.test(word));
+  const rawCandidates = blocked ? [] : extractTargetProductCandidates(input.html, input.finalUrl);
+  const evaluatedCandidates = rawCandidates.map((candidate) => enrichDiscoveryCandidate(candidate, input.html, "Target", null, availability));
+  const candidates = evaluatedCandidates
+    .filter((candidate) => (candidate.status ?? "PENDING") === "PENDING")
+    .map((candidate): TargetDiscoveryPreviewCandidate => ({
+      url: candidate.url,
+      productName: candidate.label || candidateNameFromUrl(candidate.url),
+      productType: candidate.productType ?? productTypeFromText(candidate.label),
+      retailerProductId: candidate.retailerProductId,
+      imageUrl: candidate.imageUrl ?? null,
+      livePrice: candidate.livePrice ?? null,
+      confidenceScore: candidate.confidenceScore ?? 55,
+      status: "PENDING",
+      reason: candidate.reason ?? "Target Pokemon TCG candidate found."
+    }));
+  const rejected = evaluatedCandidates
+    .filter((candidate) => candidate.status === "REJECTED_NON_TCG")
+    .map((candidate): TargetDiscoveryPreviewCandidate => ({
+      url: candidate.url,
+      productName: candidate.label || candidateNameFromUrl(candidate.url),
+      productType: candidate.productType ?? productTypeFromText(candidate.label),
+      retailerProductId: candidate.retailerProductId,
+      imageUrl: candidate.imageUrl ?? null,
+      livePrice: candidate.livePrice ?? null,
+      confidenceScore: candidate.confidenceScore ?? 15,
+      status: "REJECTED_NON_TCG",
+      reason: candidate.reason ?? "Rejected as non-TCG Target result."
+    }));
+  const zeroCandidateReason = blocked
+    ? `blocked: ${availability.reason}`
+    : rawCandidates.length === 0
+      ? "no product links found; Target search page may be empty, redirected, blocked, or structure changed"
+      : candidates.length === 0
+        ? "parsed links were all non-TCG or duplicate products"
+        : null;
+
+  return {
+    sourceUrl: input.sourceUrl,
+    httpStatus: input.httpStatus,
+    finalUrl: input.finalUrl,
+    responseLength: input.html.length,
+    blocked,
+    blockedReason: blocked ? availability.reason : null,
+    productLinksFound: rawCandidates.length,
+    candidatesCreatedCount: candidates.length,
+    candidatesRejectedCount: rejected.length,
+    zeroCandidateReason,
+    candidates,
+    rejected
   };
 }
 
@@ -522,22 +711,39 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
         blockedType: availability.detectedWords.some((word) => /captcha|robot/i.test(word)) ? "CAPTCHA_ROBOT_PAGE" : "PAGE_BLOCKED",
         pageHash: hashPage(html)
       });
-      return { sourceId, sourceName: source.name, status: "BLOCKED", found: 0, created: 0 };
+      return {
+        sourceId,
+        sourceName: source.name,
+        status: "BLOCKED",
+        found: 0,
+        created: 0,
+        rejected: 0,
+        sourceUrl: source.url,
+        httpStatus: response.status,
+        finalUrl,
+        responseLength: html.length,
+        blocked: true,
+        productLinksFound: 0,
+        zeroCandidateReason: availability.reason
+      };
     }
 
     if (!response.ok) throw new Error(`Discovery page returned HTTP ${response.status}`);
 
     const directCandidate = sourceItselfCandidate(source.url, finalUrl, source.retailer.name);
-    const rawCandidates: DiscoveryCandidateRecord[] = [
-      ...(directCandidate ? [directCandidate] : []),
-      ...extractLinks(html, finalUrl).flatMap((link) => {
-        const classification = classifyRetailerProductUrl(link.url, source.retailer.name);
-        if (!classification.exactProductUrl || classification.searchOrCategory) return [];
-        const label = link.label || candidateNameFromUrl(link.url);
-        if (!source.retailer.name.toLowerCase().includes("target") && !looksLikePokemonProduct(label, link.url)) return [];
-        return [{ ...link, label, retailerProductId: classification.retailerProductIdFromUrl }];
-      })
-    ];
+    const isTargetDiscovery = source.retailer.name.toLowerCase().includes("target");
+    const rawCandidates: DiscoveryCandidateRecord[] = isTargetDiscovery
+      ? [...(directCandidate ? [directCandidate] : []), ...extractTargetProductCandidates(html, finalUrl)]
+      : [
+          ...(directCandidate ? [directCandidate] : []),
+          ...extractLinks(html, finalUrl).flatMap((link) => {
+            const classification = classifyRetailerProductUrl(link.url, source.retailer.name);
+            if (!classification.exactProductUrl || classification.searchOrCategory) return [];
+            const label = link.label || candidateNameFromUrl(link.url);
+            if (!looksLikePokemonProduct(label, link.url)) return [];
+            return [{ ...link, label, retailerProductId: classification.retailerProductIdFromUrl }];
+          })
+        ];
 
     const candidates = rawCandidates
       .filter((candidate) => retailerHostMatches(candidate.url, source.retailer.name))
@@ -545,7 +751,9 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
       .slice(0, 80);
 
     let created = 0;
+    let updated = 0;
     let rejected = 0;
+    let skippedExistingProducts = 0;
     for (const candidate of candidates) {
       const name = candidate.label || candidateNameFromUrl(candidate.url);
       const finalCandidateUrl = candidate.url;
@@ -559,7 +767,10 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
         },
         select: { id: true }
       });
-      if (existingProduct) continue;
+      if (existingProduct) {
+        skippedExistingProducts += 1;
+        continue;
+      }
 
       const existingCandidate = await prisma.productDiscoveryCandidate.findFirst({
         where: {
@@ -591,6 +802,7 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
 
       if (existingCandidate) {
         await prisma.productDiscoveryCandidate.update({ where: { id: existingCandidate.id }, data });
+        updated += 1;
       } else {
         await prisma.productDiscoveryCandidate.create({ data });
         created += 1;
@@ -599,6 +811,29 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
     }
 
     const pendingCount = candidates.filter((candidate) => (candidate.status ?? "PENDING") === "PENDING").length;
+    const zeroCandidateReason =
+      rawCandidates.length === 0
+        ? "no product links found; search page returned no exact product links or Target structure changed"
+        : candidates.length === 0
+          ? "parsed links were not usable for this retailer"
+          : pendingCount === 0 && rejected > 0
+            ? "parsed links were all non-TCG products"
+            : pendingCount === 0 && skippedExistingProducts > 0
+              ? "all parsed products are already watched or already queued"
+              : null;
+    const debugSummary = [
+      `HTTP ${response.status}`,
+      `response ${html.length} chars`,
+      `${rawCandidates.length} product links found`,
+      `${pendingCount} pending TCG`,
+      `${rejected} rejected non-TCG`,
+      `${created} created`,
+      `${updated} updated`,
+      `${skippedExistingProducts} already watched`,
+      zeroCandidateReason ? `zero reason: ${zeroCandidateReason}` : null
+    ]
+      .filter(Boolean)
+      .join("; ");
 
     await prisma.productDiscoverySource.update({
       where: { id: source.id },
@@ -606,7 +841,7 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
         lastCheckedAt: now,
         lastSuccessfulCheckedAt: now,
         nextCheckAt: nextCheckAt(source.checkFrequencyMinutes),
-        lastResult: `${pendingCount} TCG candidate links found; ${rejected} non-TCG excluded; ${created} new review rows.`,
+        lastResult: debugSummary,
         lastError: null,
         lastFoundCount: pendingCount
       }
@@ -618,13 +853,36 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
       httpStatus: response.status,
       finalUrl,
       responseTimeMs,
-      detectedWords: ["discovery source", `${pendingCount} TCG candidate links`, `${rejected} non-TCG excluded`, `${created} new candidates`],
+      detectedWords: [
+        "discovery source",
+        `${rawCandidates.length} product links found`,
+        `${pendingCount} TCG candidate links`,
+        `${rejected} non-TCG excluded`,
+        `${created} new candidates`,
+        ...(zeroCandidateReason ? [zeroCandidateReason] : [])
+      ],
       confidenceScore: availability.confidenceScore,
-      reason: `${source.retailer.name} discovery scan found ${pendingCount} exact Pokemon TCG candidate links and excluded ${rejected} non-card results. Search/category pages never trigger buy alerts.`,
+      reason: `${source.retailer.name} discovery debug: source ${source.url}; final ${finalUrl}; status ${response.status}; response length ${html.length}; blocked no; product links found ${rawCandidates.length}; candidates created ${created}; candidates rejected ${rejected}; ${zeroCandidateReason ? `reason ${zeroCandidateReason}.` : "candidate queue updated."} Search/category pages never trigger buy alerts.`,
       pageHash: hashPage(html)
     });
 
-    return { sourceId, sourceName: source.name, status: "SUCCESS", found: pendingCount, created, rejected };
+    return {
+      sourceId,
+      sourceName: source.name,
+      status: "SUCCESS",
+      found: pendingCount,
+      created,
+      updated,
+      rejected,
+      skippedExistingProducts,
+      sourceUrl: source.url,
+      httpStatus: response.status,
+      finalUrl,
+      responseLength: html.length,
+      blocked: false,
+      productLinksFound: rawCandidates.length,
+      zeroCandidateReason
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Discovery check failed";
     await prisma.productDiscoverySource.update({
@@ -643,7 +901,7 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
       changeSummary: "Public discovery page check failed.",
       error: message
     });
-    return { sourceId, sourceName: source.name, status: "ERROR", found: 0, created: 0, error: message };
+    return { sourceId, sourceName: source.name, status: "ERROR", found: 0, created: 0, rejected: 0, error: message, zeroCandidateReason: message };
   }
 }
 

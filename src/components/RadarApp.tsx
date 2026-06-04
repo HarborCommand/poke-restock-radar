@@ -13243,6 +13243,21 @@ function AlertsPanel({
   const [editingWatchProductId, setEditingWatchProductId] = useState<string | null>(null);
   const [retailerStockResult, setRetailerStockResult] = useState<RetailerCheckStockResult | null>(null);
   const [showRejectedTargetCandidates, setShowRejectedTargetCandidates] = useState(false);
+  const [targetDiscoveryTestUrl, setTargetDiscoveryTestUrl] = useState("https://www.target.com/s?searchTerm=Pokemon+TCG");
+  const [targetDiscoveryTestResult, setTargetDiscoveryTestResult] = useState<{
+    sourceUrl: string;
+    httpStatus: number;
+    finalUrl: string;
+    responseLength: number;
+    responseTimeMs?: number;
+    blocked: boolean;
+    productLinksFound: number;
+    candidatesCreatedCount: number;
+    candidatesRejectedCount: number;
+    zeroCandidateReason: string | null;
+    candidates: Array<{ productName: string; url: string; retailerProductId: string | null; confidenceScore: number; reason: string }>;
+    rejected: Array<{ productName: string; url: string; retailerProductId: string | null; confidenceScore: number; reason: string }>;
+  } | null>(null);
   const trackerAlerts = useMemo(
     () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
     [dashboard.alerts, dashboard.products]
@@ -13397,6 +13412,21 @@ function AlertsPanel({
           body: JSON.stringify({ action })
         }),
       { success }
+    );
+  }
+
+  function testTargetDiscoveryUrl() {
+    return runAction(
+      "Testing Target discovery URL",
+      async () => {
+        const result = await requestJson<{ result: NonNullable<typeof targetDiscoveryTestResult> }>("/api/radar/product-discovery/target", {
+          method: "POST",
+          body: JSON.stringify({ action: "test_url", url: targetDiscoveryTestUrl })
+        });
+        setTargetDiscoveryTestResult(result.result);
+        return result;
+      },
+      { reload: false, success: "Target discovery URL parsed" }
     );
   }
 
@@ -13892,6 +13922,72 @@ function AlertsPanel({
             <input type="checkbox" checked={showRejectedTargetCandidates} onChange={(event) => setShowRejectedTargetCandidates(event.currentTarget.checked)} />
             Show Rejected
           </label>
+        </div>
+        <div className="target-discovery-test">
+          <div>
+            <p className="eyeline">Manual discovery test</p>
+            <h3>Test Target Discovery URL</h3>
+            <p>Paste a public Target search/category URL to preview parser results without creating candidates.</p>
+          </div>
+          <div className="target-discovery-test-row">
+            <input
+              aria-label="Target discovery test URL"
+              value={targetDiscoveryTestUrl}
+              onChange={(event) => setTargetDiscoveryTestUrl(event.currentTarget.value)}
+              placeholder="https://www.target.com/s?searchTerm=Pokemon+TCG"
+            />
+            <button className="mini-action solid" type="button" disabled={busy || !targetDiscoveryTestUrl} onClick={testTargetDiscoveryUrl}>
+              {busyLabel === "Testing Target discovery URL" ? "Testing" : "Test URL"}
+            </button>
+          </div>
+          {targetDiscoveryTestResult ? (
+            <div className="target-discovery-debug-card">
+              <div className="target-candidate-meta">
+                <span><b>HTTP</b>{targetDiscoveryTestResult.httpStatus}</span>
+                <span><b>Response</b>{targetDiscoveryTestResult.responseLength.toLocaleString()} chars</span>
+                <span><b>Time</b>{targetDiscoveryTestResult.responseTimeMs ? `${targetDiscoveryTestResult.responseTimeMs}ms` : "n/a"}</span>
+                <span><b>Blocked</b>{targetDiscoveryTestResult.blocked ? "Yes" : "No"}</span>
+                <span><b>Links</b>{targetDiscoveryTestResult.productLinksFound}</span>
+                <span><b>Pending</b>{targetDiscoveryTestResult.candidatesCreatedCount}</span>
+                <span><b>Rejected</b>{targetDiscoveryTestResult.candidatesRejectedCount}</span>
+                <span><b>Reason</b>{targetDiscoveryTestResult.zeroCandidateReason || "Candidates found"}</span>
+              </div>
+              <p className="target-candidate-reason">
+                Final URL: <a href={targetDiscoveryTestResult.finalUrl} target="_blank" rel="noreferrer">{targetDiscoveryTestResult.finalUrl}</a>
+              </p>
+              <div className="target-discovery-debug-grid">
+                <article>
+                  <strong>Would create</strong>
+                  {targetDiscoveryTestResult.candidates.slice(0, 6).map((candidate) => (
+                    <span key={candidate.url}>
+                      {candidate.productName} · TCIN {candidate.retailerProductId || "missing"} · {candidate.confidenceScore}%
+                    </span>
+                  ))}
+                  {!targetDiscoveryTestResult.candidates.length ? <span>No TCG candidates from this test.</span> : null}
+                </article>
+                <article>
+                  <strong>Rejected</strong>
+                  {targetDiscoveryTestResult.rejected.slice(0, 6).map((candidate) => (
+                    <span key={candidate.url}>
+                      {candidate.productName} · {candidate.reason}
+                    </span>
+                  ))}
+                  {!targetDiscoveryTestResult.rejected.length ? <span>No rejected links in this test.</span> : null}
+                </article>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="target-discovery-diagnostics">
+          <p className="eyeline">Discovery diagnostics</p>
+          {targetDiscoverySources.slice(0, 5).map((source) => (
+            <article key={source.id}>
+              <strong>{source.name}</strong>
+              <span>{source.lastResult || "Not checked yet"}</span>
+              {source.lastError ? <small>{source.lastError}</small> : null}
+            </article>
+          ))}
+          {!targetDiscoverySources.length ? <span>No Target discovery sources created yet.</span> : null}
         </div>
         <div className="target-discovery-notes">
           <span>Pokemon Center and GameStop may block automated checks; blocked pages become System Alerts, not Live Drops.</span>

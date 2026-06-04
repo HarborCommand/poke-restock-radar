@@ -13373,6 +13373,77 @@ body .target-discovery-notes {
   gap: 8px;
 }
 
+body .target-discovery-test,
+body .target-discovery-diagnostics,
+body .target-discovery-debug-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+body .target-discovery-test-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+body .target-discovery-test-row input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.88rem;
+  font-weight: 800;
+  padding: 10px 12px;
+  overflow-wrap: normal;
+}
+
+body .target-discovery-debug-grid,
+body .target-discovery-diagnostics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 10px;
+}
+
+body .target-discovery-debug-grid article,
+body .target-discovery-diagnostics article {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+body .target-discovery-debug-grid strong,
+body .target-discovery-diagnostics strong {
+  color: #0f172a;
+  font-size: 0.86rem;
+  line-height: 1.25;
+}
+
+body .target-discovery-debug-grid span,
+body .target-discovery-diagnostics span,
+body .target-discovery-diagnostics small {
+  min-width: 0;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 body .target-discovery-notes span {
   border: 1px solid #dbeafe;
   border-radius: 14px;
@@ -13768,6 +13839,8 @@ body .tracker-scanner-grid {
   body .tracker-keyword-grid,
   body .tracker-watch-form-grid,
   body .target-candidate-meta,
+  body .target-discovery-test-row,
+  body .target-discovery-debug-grid,
   body .watchlist-qa-summary,
   body .watchlist-qa-identifiers,
   body .watchlist-qa-status-grid,
@@ -13822,6 +13895,8 @@ body .tracker-scanner-grid {
   body .tracker-keyword-grid,
   body .tracker-watch-form-grid,
   body .target-candidate-meta,
+  body .target-discovery-test-row,
+  body .target-discovery-debug-grid,
   body .watchlist-qa-summary,
   body .watchlist-qa-identifiers,
   body .watchlist-qa-status-grid,
