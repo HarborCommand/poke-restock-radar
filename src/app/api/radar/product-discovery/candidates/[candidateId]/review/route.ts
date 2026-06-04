@@ -22,7 +22,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ can
       action: `product.discovery.candidate.${input.action}`,
       entityType: "PRODUCT_DISCOVERY_CANDIDATE",
       entityId: candidateId,
-      summary: `${user.email} ${input.action === "approve" ? "approved" : "ignored"} discovery candidate.`
+      summary: `${user.email} ${
+        input.action === "approve" ? "approved" : input.action === "reject_non_tcg" ? "rejected as non-TCG" : "ignored"
+      } discovery candidate.`
     });
     return ok(result);
   } catch (error) {

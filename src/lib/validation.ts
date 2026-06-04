@@ -310,7 +310,7 @@ export const productDiscoverySourceCreateSchema = z.object({
 });
 
 export const productDiscoveryReviewSchema = z.object({
-  action: z.enum(["approve", "ignore"]),
+  action: z.enum(["approve", "ignore", "reject_non_tcg"]),
   priority: prioritySchema.default("MEDIUM"),
   rating: z.enum(["BUY", "WATCH", "SKIP"]).default("WATCH"),
   checkFrequencyMinutes: z.coerce.number().int().min(15).max(10080).default(60),

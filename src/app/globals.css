@@ -13341,6 +13341,168 @@ body .watchlist-qa-list {
   gap: 14px;
 }
 
+body .target-discovery-panel,
+body .target-candidate-list,
+body .target-candidate-card,
+body .target-candidate-main,
+body .target-watch-groups {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+}
+
+body .target-discovery-panel {
+  gap: 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #f8fffb 0%, #ffffff 100%);
+  padding: 16px;
+}
+
+body .target-discovery-actions,
+body .target-candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+body .target-discovery-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 8px;
+}
+
+body .target-discovery-notes span {
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.4;
+  padding: 9px 11px;
+}
+
+body .target-watch-groups {
+  gap: 10px;
+}
+
+body .target-watch-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 10px;
+}
+
+body .target-watch-group-grid article {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+body .target-watch-group-grid strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+body .target-watch-group-grid span,
+body .target-watch-group-grid small {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+body .target-watch-group-grid div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+body .target-candidate-list {
+  gap: 10px;
+}
+
+body .target-candidate-card {
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+body .target-candidate-card.is-rejected {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+body .target-candidate-card .inventory-image-frame {
+  width: 88px;
+  height: 88px;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+body .target-candidate-main {
+  gap: 10px;
+}
+
+body .target-candidate-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+}
+
+body .target-candidate-title h3 {
+  margin: 2px 0 0;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.25;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+body .target-candidate-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body .target-candidate-meta span {
+  display: grid;
+  gap: 2px;
+  border: 1px solid #edf2f7;
+  border-radius: 13px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 850;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+}
+
+body .target-candidate-meta b {
+  color: #94a3b8;
+  font-size: 0.64rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .target-candidate-reason {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
 body .watchlist-qa-card {
   gap: 14px;
   border: 1px solid #dbeafe;
@@ -13605,6 +13767,7 @@ body .tracker-scanner-grid {
   body .tracker-scanner-grid,
   body .tracker-keyword-grid,
   body .tracker-watch-form-grid,
+  body .target-candidate-meta,
   body .watchlist-qa-summary,
   body .watchlist-qa-identifiers,
   body .watchlist-qa-status-grid,
@@ -13625,6 +13788,8 @@ body .tracker-scanner-grid {
   body .tracker-stock-product,
   body .tracker-watch-preview-list article,
   body .tracker-watch-card,
+  body .target-candidate-card,
+  body .target-candidate-title,
   body .watchlist-qa-main,
   body .watchlist-qa-title-row,
   body .watchlist-retailer-empty,
@@ -13656,6 +13821,7 @@ body .tracker-scanner-grid {
   body .tracker-scanner-grid,
   body .tracker-keyword-grid,
   body .tracker-watch-form-grid,
+  body .target-candidate-meta,
   body .watchlist-qa-summary,
   body .watchlist-qa-identifiers,
   body .watchlist-qa-status-grid,

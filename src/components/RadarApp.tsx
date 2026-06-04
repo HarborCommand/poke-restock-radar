@@ -255,6 +255,39 @@ function inventoryCategoryFromLookup(value?: string | null) {
   return "sealed_packs";
 }
 
+function candidateIdentifiersFromReason(candidate: ProductDiscoveryCandidateDTO) {
+  const reason = candidate.reason || "";
+  return {
+    dpci: reason.match(/\bDPCI\s+([0-9]{3}-[0-9]{2}-[0-9]{4}|[0-9-]{6,})/i)?.[1] ?? null,
+    upc: reason.match(/\bUPC\s+(\d{8,14})/i)?.[1] ?? null,
+    tcin: candidate.retailerProductId || (reason.match(/\bTCIN\s+(\d{5,})/i)?.[1] ?? null)
+  };
+}
+
+function discoveryCandidateStatusLabel(status: ProductDiscoveryCandidateDTO["status"]) {
+  if (status === "REJECTED_NON_TCG") return "Rejected Non-TCG";
+  return formatStatus(status);
+}
+
+function discoveryCandidateStatusTone(status: ProductDiscoveryCandidateDTO["status"]) {
+  if (status === "PENDING") return "watch";
+  if (status === "APPROVED") return "good";
+  if (status === "REJECTED_NON_TCG") return "bad";
+  return "muted";
+}
+
+function targetProductGroupLabel(productType?: string | null) {
+  const normalized = (productType || "").toLowerCase();
+  if (normalized.includes("booster bundle")) return "Booster Bundles";
+  if (normalized.includes("etb") || normalized.includes("elite trainer")) return "ETBs";
+  if (normalized.includes("sleeved booster")) return "Sleeved Boosters";
+  if (normalized.includes("blister") || normalized.includes("checklane")) return "Blisters";
+  if (normalized.includes("premium") || normalized.includes("collection")) return "Premium Collections";
+  if (normalized.includes("tin")) return "Tins";
+  if (normalized.includes("box")) return "Collection Boxes";
+  return "Other TCG";
+}
+
 function formatStatus(value: string) {
   return value
     .toLowerCase()
@@ -13003,6 +13036,7 @@ function WatchProductQuickForm({
   const defaultRetailerId = prefill?.retailerId || dashboard.retailers[0]?.id || "";
   const [selectedRetailerId, setSelectedRetailerId] = useState(defaultRetailerId);
   const selectedRetailer = dashboard.retailers.find((retailer) => retailer.id === selectedRetailerId) ?? dashboard.retailers.find((retailer) => retailer.id === defaultRetailerId);
+  const isTarget = /target/i.test(selectedRetailer?.name || "");
   const isGameStop = /gamestop/i.test(selectedRetailer?.name || "");
   const isPokemonCenter = /pokemon center/i.test(selectedRetailer?.name || "");
   const addLabel = "Adding watch product";
@@ -13063,6 +13097,12 @@ function WatchProductQuickForm({
           Alert enabled
         </label>
       </div>
+      {isTarget ? (
+        <div className="safety-strip compact tracker-retailer-help">
+          <Store size={15} />
+          <span>Target: use the exact target.com/p product page with TCIN, not Target search/category pages. Discovery candidates must be approved and verified before Live Drops.</span>
+        </div>
+      ) : null}
       {isGameStop ? (
         <div className="safety-strip compact tracker-retailer-help">
           <Store size={15} />
@@ -13202,6 +13242,7 @@ function AlertsPanel({
   const [watchRetailerFilter, setWatchRetailerFilter] = useState<(typeof watchlistRetailerFilters)[number]>("All");
   const [editingWatchProductId, setEditingWatchProductId] = useState<string | null>(null);
   const [retailerStockResult, setRetailerStockResult] = useState<RetailerCheckStockResult | null>(null);
+  const [showRejectedTargetCandidates, setShowRejectedTargetCandidates] = useState(false);
   const trackerAlerts = useMemo(
     () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
     [dashboard.alerts, dashboard.products]
@@ -13224,8 +13265,17 @@ function AlertsPanel({
     watchRetailerFilter === "All"
       ? watchProducts
       : watchProductsByRetailer(watchRetailerFilter);
+  const targetWatchProducts = watchProductsByRetailer("Target");
   const gameStopWatchProducts = watchProductsByRetailer("GameStop");
   const pokemonCenterWatchProducts = watchProductsByRetailer("Pokemon Center");
+  const targetReadyProducts = targetWatchProducts.filter(watchProductReadyForLiveAlerts);
+  const targetDiscoverySources = dashboard.productDiscoverySources.filter((source) => /target/i.test(source.retailerName));
+  const targetDiscoveryCandidates = dashboard.productDiscoveryCandidates.filter((candidate) => /target/i.test(candidate.retailerName));
+  const pendingTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING");
+  const rejectedTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.status === "REJECTED_NON_TCG");
+  const visibleTargetCandidates = targetDiscoveryCandidates
+    .filter((candidate) => candidate.status === "PENDING" || (showRejectedTargetCandidates && candidate.status === "REJECTED_NON_TCG"))
+    .slice(0, 24);
   const exactProducts = watchProducts.filter((product) => product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED");
   const needsExactLink = watchProducts.length - exactProducts.length;
   const blockedChecks = dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length;
@@ -13236,6 +13286,11 @@ function AlertsPanel({
   const liveDropsToday = liveDrops.filter((record) => new Date(record.alert.timestamp).getTime() >= todayStart.getTime()).length;
   const mutedArchivedCount = dashboard.alerts.filter((alert) => alert.suppressedAt || alert.falsePositiveAt).length + deprecatedCount;
   const latestMonitorLog = dashboard.monitorLogs[0] ?? null;
+  const targetProductIds = new Set(targetWatchProducts.map((product) => product.id));
+  const latestTargetMonitorLog = dashboard.monitorLogs.find((log) => Boolean(log.productId && targetProductIds.has(log.productId))) ?? null;
+  const latestTargetDiscoverySource = targetDiscoverySources
+    .filter((source) => source.lastCheckedAt)
+    .sort((a, b) => new Date(b.lastCheckedAt || 0).getTime() - new Date(a.lastCheckedAt || 0).getTime())[0] ?? null;
   const watchPreviewProducts = watchProducts.slice(0, 5);
   const watchProductsWithIdentifiers = watchProducts.filter((product) => Boolean(product.sku || product.upc || product.dpci || product.retailerProductId));
   const alertsEnabledProducts = watchProducts.filter((product) => product.alertStatus || product.monitorEnabled);
@@ -13313,7 +13368,7 @@ function AlertsPanel({
     openWatchProductForm({
       retailerId: retailer?.id,
       productType: retailerName === "All" ? "" : retailerName,
-      requiredWords: retailerName === "GameStop" || retailerName === "Pokemon Center" ? "Pokemon" : ""
+      requiredWords: retailerName === "Target" ? "Pokemon, TCG" : retailerName === "GameStop" || retailerName === "Pokemon Center" ? "Pokemon" : ""
     });
   }
 
@@ -13331,6 +13386,89 @@ function AlertsPanel({
       () => requestJson("/api/radar/products/seed-pokemon-center", { method: "POST" }),
       { success: "Pokemon Center watch product ready" }
     );
+  }
+
+  function runTargetDiscoveryAction(action: "ensure_sources" | "run_now" | "approve_high_confidence" | "clear_rejected", label: string, success: string) {
+    return runAction(
+      label,
+      () =>
+        requestJson("/api/radar/product-discovery/target", {
+          method: "POST",
+          body: JSON.stringify({ action })
+        }),
+      { success }
+    );
+  }
+
+  function reviewTargetCandidate(candidate: ProductDiscoveryCandidateDTO, action: "approve" | "ignore" | "reject_non_tcg") {
+    const labels = {
+      approve: `Approving target candidate ${candidate.id}`,
+      ignore: `Ignoring target candidate ${candidate.id}`,
+      reject_non_tcg: `Rejecting target candidate ${candidate.id}`
+    };
+    return runAction(
+      labels[action],
+      () =>
+        requestJson(`/api/radar/product-discovery/candidates/${candidate.id}/review`, {
+          method: "POST",
+          body: JSON.stringify({
+            action,
+            priority: "MEDIUM",
+            rating: "WATCH",
+            checkFrequencyMinutes: 60,
+            notes:
+              action === "reject_non_tcg"
+                ? "Rejected from Target discovery as non-TCG merchandise."
+                : "Reviewed from Target Pokemon TCG discovery."
+          })
+        }),
+      {
+        confirm: action === "ignore" ? "Ignore this Target discovery candidate?" : undefined,
+        success:
+          action === "approve"
+            ? "Target candidate approved and verified"
+            : action === "reject_non_tcg"
+              ? "Candidate marked non-TCG"
+              : "Candidate ignored"
+      }
+    );
+  }
+
+  function addTargetCandidateToInventory(candidate: ProductDiscoveryCandidateDTO) {
+    const identifiers = candidateIdentifiersFromReason(candidate);
+    const prefill: InventoryPurchasePrefill = {
+      itemName: candidate.productName,
+      brand: "Pokemon",
+      category: inventoryCategoryFromLookup(candidate.productType || candidate.productName),
+      msrp: candidate.livePrice,
+      sku: identifiers.tcin,
+      retailer: "Target",
+      exactProductUrl: candidate.finalUrl || candidate.url,
+      imageUrl: candidate.imageUrl,
+      source: "Target Discovery",
+      upc: identifiers.upc || undefined
+    };
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(INVENTORY_PREFILL_STORAGE_KEY, JSON.stringify(prefill));
+    }
+    setActiveTab("inventory");
+  }
+
+  function prefillWatchProductFromCandidate(candidate: ProductDiscoveryCandidateDTO) {
+    const targetRetailer = dashboard.retailers.find((retailer) => /target/i.test(retailer.name));
+    const identifiers = candidateIdentifiersFromReason(candidate);
+    openWatchProductForm({
+      retailerId: targetRetailer?.id || candidate.retailerId,
+      name: candidate.productName,
+      url: candidate.finalUrl || candidate.url,
+      imageUrl: candidate.imageUrl,
+      sku: identifiers.tcin,
+      upc: identifiers.upc,
+      dpci: identifiers.dpci,
+      retailerProductId: candidate.retailerProductId || identifiers.tcin,
+      productType: candidate.productType,
+      requiredWords: "Pokemon, TCG"
+    });
   }
 
   function closeWatchProductForm() {
@@ -13597,6 +13735,184 @@ function AlertsPanel({
     );
   }
 
+  function renderTargetWatchGroups() {
+    const groups = targetWatchProducts.reduce<Record<string, ProductDTO[]>>((acc, product) => {
+      const label = targetProductGroupLabel(product.productType || product.name);
+      acc[label] = acc[label] || [];
+      acc[label].push(product);
+      return acc;
+    }, {});
+    const groupEntries = Object.entries(groups);
+    return (
+      <section className="target-watch-groups">
+        <div className="panel-header compact">
+          <div>
+            <p className="eyeline">Approved Target Watchlist</p>
+            <h3>Grouped by Pokemon TCG type</h3>
+          </div>
+          <span className="chip muted">{targetWatchProducts.length} Target products</span>
+        </div>
+        {groupEntries.length ? (
+          <div className="target-watch-group-grid">
+            {groupEntries.map(([group, products]) => (
+              <article key={group}>
+                <strong>{group}</strong>
+                <span>{products.length} watched</span>
+                <div>
+                  {products.slice(0, 3).map((product) => (
+                    <small key={product.id}>{product.name}</small>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={PackageSearch} title="No Target products watched yet" detail="Run Target discovery, approve candidates, then exact Target /p/ pages will appear here." />
+        )}
+      </section>
+    );
+  }
+
+  function renderTargetCandidateCard(candidate: ProductDiscoveryCandidateDTO) {
+    const identifiers = candidateIdentifiersFromReason(candidate);
+    const approvalLabel = `Approving target candidate ${candidate.id}`;
+    const rejectLabel = `Rejecting target candidate ${candidate.id}`;
+    const ignoreLabel = `Ignoring target candidate ${candidate.id}`;
+    const isRejected = candidate.status === "REJECTED_NON_TCG";
+    return (
+      <article className={isRejected ? "target-candidate-card is-rejected" : "target-candidate-card"} key={candidate.id}>
+        <InventoryFallbackImage imageUrl={candidate.imageUrl} label={candidate.productName} />
+        <div className="target-candidate-main">
+          <div className="target-candidate-title">
+            <div>
+              <span className="tracker-channel">Target Discovery</span>
+              <h3>{candidate.productName}</h3>
+            </div>
+            <div className="tracker-drop-badges">
+              <span className={`chip ${discoveryCandidateStatusTone(candidate.status)}`}>{discoveryCandidateStatusLabel(candidate.status)}</span>
+              <span className={candidate.confidenceScore >= 80 ? "chip good" : "chip watch"}>{candidate.confidenceScore}%</span>
+            </div>
+          </div>
+          <div className="target-candidate-meta">
+            <span><b>Type</b>{candidate.productType || "Other TCG"}</span>
+            <span><b>Price</b>{candidate.livePrice === null ? "Unknown" : money(candidate.livePrice)}</span>
+            <span><b>TCIN</b>{identifiers.tcin || "Missing"}</span>
+            <span><b>DPCI</b>{identifiers.dpci || "Not found"}</span>
+            <span><b>UPC</b>{identifiers.upc || "Not found"}</span>
+            <span><b>Source</b>{candidate.sourceName}</span>
+          </div>
+          <p className="target-candidate-reason">{candidate.reason || "Found on public Target discovery source. Admin approval is required before monitoring."}</p>
+          <div className="target-candidate-actions">
+            {!isRejected ? (
+              <button className="mini-action solid" type="button" disabled={busy} onClick={() => reviewTargetCandidate(candidate, "approve")}>
+                <Check size={13} />
+                {busyLabel === approvalLabel ? "Approving" : "Approve to Watchlist"}
+              </button>
+            ) : null}
+            {!isRejected ? (
+              <button className="mini-action" type="button" disabled={busy} onClick={() => reviewTargetCandidate(candidate, "reject_non_tcg")}>
+                <X size={13} />
+                {busyLabel === rejectLabel ? "Rejecting" : "Reject as Non-TCG"}
+              </button>
+            ) : null}
+            <button className="mini-action" type="button" disabled={busy || isRejected} onClick={() => reviewTargetCandidate(candidate, "ignore")}>
+              {busyLabel === ignoreLabel ? "Ignoring" : "Ignore"}
+            </button>
+            <a className="mini-action" href={candidate.finalUrl || candidate.url} target="_blank" rel="noreferrer">
+              Open Target Page <ExternalLink size={13} />
+            </a>
+            <button className="mini-action" type="button" onClick={() => addTargetCandidateToInventory(candidate)}>
+              <ShoppingBag size={13} />
+              Add to Inventory
+            </button>
+            {!isRejected ? (
+              <button className="mini-action" type="button" onClick={() => prefillWatchProductFromCandidate(candidate)}>
+                <Eye size={13} />
+                Manual Watch Form
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  function renderTargetDiscoveryPanel() {
+    return (
+      <section className="target-discovery-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyeline">Target Pokemon TCG Discovery</p>
+            <h2>Find cards, then approve exact products</h2>
+            <p>Target search pages are discovery-only. Buy alerts require an approved exact target.com/p product page that verifies product identity and stock.</p>
+          </div>
+          <div className="row-actions">
+            <span className="chip muted">{targetDiscoverySources.length} sources</span>
+            <span className="chip watch">{pendingTargetCandidates.length} pending</span>
+            <span className="chip muted">{rejectedTargetCandidates.length} rejected</span>
+          </div>
+        </div>
+        <div className="target-discovery-actions">
+          <button
+            className="mini-action solid"
+            type="button"
+            disabled={busy}
+            onClick={() => runTargetDiscoveryAction("run_now", "Running Target discovery", "Target discovery finished")}
+          >
+            <RefreshCw size={13} />
+            {busyLabel === "Running Target discovery" ? "Running" : "Run Target Discovery Now"}
+          </button>
+          <button
+            className="mini-action"
+            type="button"
+            disabled={busy}
+            onClick={() => runTargetDiscoveryAction("ensure_sources", "Refreshing Target sources", "Target discovery sources refreshed")}
+          >
+            Refresh Candidates
+          </button>
+          <button
+            className="mini-action"
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              runTargetDiscoveryAction("approve_high_confidence", "Approving high confidence Target candidates", "High-confidence Target candidates reviewed")
+            }
+          >
+            Approve All High Confidence
+          </button>
+          <button
+            className="mini-action"
+            type="button"
+            disabled={busy}
+            onClick={() => runTargetDiscoveryAction("clear_rejected", "Clearing rejected Target candidates", "Rejected Target candidates cleared")}
+          >
+            Clear Rejected
+          </button>
+          <label className="checkbox-label inline">
+            <input type="checkbox" checked={showRejectedTargetCandidates} onChange={(event) => setShowRejectedTargetCandidates(event.currentTarget.checked)} />
+            Show Rejected
+          </label>
+        </div>
+        <div className="target-discovery-notes">
+          <span>Pokemon Center and GameStop may block automated checks; blocked pages become System Alerts, not Live Drops.</span>
+          <span>Best Buy exact products can be watched, but store-level stock only appears when a safe public source supports it.</span>
+        </div>
+        {renderTargetWatchGroups()}
+        <div className="target-candidate-list">
+          {visibleTargetCandidates.length ? (
+            visibleTargetCandidates.map(renderTargetCandidateCard)
+          ) : (
+            <EmptyState
+              icon={PackageSearch}
+              title="No Target candidates waiting"
+              detail="Run Target discovery to scan the default Pokemon TCG terms. Non-card Pokemon merch is filtered out before approval."
+            />
+          )}
+        </div>
+      </section>
+    );
+  }
+
   function renderScannerMiniPanel() {
     return (
       <section className="tracker-side-card">
@@ -13609,6 +13925,9 @@ function AlertsPanel({
         </div>
         <div className="tracker-mini-stats">
           <span><b>{dashboard.scannerStatus.activeProductsScanned}</b>Active monitors</span>
+          <span><b>{targetWatchProducts.length}</b>Target watched</span>
+          <span><b>{pendingTargetCandidates.length}</b>Target pending</span>
+          <span><b>{targetReadyProducts.length}</b>Target ready</span>
           <span><b>{relativeTime(dashboard.scannerStatus.lastScanTime)}</b>Last scan</span>
           <span><b>{relativeTime(dashboard.scannerStatus.nextScanEstimate)}</b>Next scan</span>
           <span><b>{blockedChecks}</b>Blocked</span>
@@ -13932,6 +14251,7 @@ function AlertsPanel({
               onSaved={closeWatchProductForm}
             />
           ) : null}
+          {renderTargetDiscoveryPanel()}
           <div className="watchlist-qa-summary">
             <DetailStat label="Target / Best Buy / GameStop / Pokemon Center products" value={String(watchProducts.filter((product) => /target|best buy|gamestop|pokemon center/i.test(product.retailerName)).length)} />
             <DetailStat label="Alerts enabled" value={String(watchProducts.filter((product) => product.monitorEnabled).length)} tone="good" />
@@ -14120,10 +14440,15 @@ function AlertsPanel({
           </div>
           <div className="tracker-scanner-grid">
             <DetailStat label="Active monitors" value={String(dashboard.scannerStatus.activeProductsScanned)} />
+            <DetailStat label="Target watched count" value={String(targetWatchProducts.length)} />
+            <DetailStat label="Pending Target candidates" value={String(pendingTargetCandidates.length)} tone={pendingTargetCandidates.length ? "neutral" : "good"} />
+            <DetailStat label="Target ready count" value={String(targetReadyProducts.length)} tone={targetReadyProducts.length ? "good" : "neutral"} />
             <DetailStat label="Last scan" value={relativeTime(dashboard.scannerStatus.lastScanTime)} />
+            <DetailStat label="Last Target discovery run" value={relativeTime(latestTargetDiscoverySource?.lastCheckedAt)} />
+            <DetailStat label="Last Target monitor run" value={relativeTime(latestTargetMonitorLog?.startedAt)} />
             <DetailStat label="Next scan" value={relativeTime(dashboard.scannerStatus.nextScanEstimate)} />
             <DetailStat label="Alerts today" value={String(dashboard.scannerStatus.liveRestocksDetectedToday)} tone="good" />
-            <DetailStat label="Blocked checks" value={String(blockedChecks)} tone="neutral" />
+            <DetailStat label="Blocked retailer count" value={String(blockedChecks)} tone="neutral" />
             <DetailStat label="Failed checks" value={String(failedChecks)} tone={failedChecks ? "bad" : "neutral"} />
             <DetailStat label="Exact products verified" value={String(exactProducts.length)} />
             <DetailStat label="Need exact link" value={String(needsExactLink)} tone={needsExactLink ? "bad" : "good"} />

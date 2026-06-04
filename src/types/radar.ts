@@ -881,7 +881,7 @@ export type ProductDiscoveryCandidateDTO = {
   stockStatus: ProductStatus | null;
   confidenceScore: number;
   reason: string | null;
-  status: "PENDING" | "APPROVED" | "IGNORED";
+  status: "PENDING" | "APPROVED" | "IGNORED" | "REJECTED_NON_TCG";
   approvedProductId: string | null;
   reviewedAt: string | null;
   ignoredAt: string | null;

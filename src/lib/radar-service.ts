@@ -4,7 +4,12 @@ import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
-import { runProductDiscoveryCheck, validateDiscoverySourceUrl } from "@/lib/product-discovery";
+import {
+  TARGET_DISCOVERY_SEARCH_TERMS,
+  runProductDiscoveryCheck,
+  targetDiscoverySourceUrl,
+  validateDiscoverySourceUrl
+} from "@/lib/product-discovery";
 import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
 import {
   detectRetailerAvailability,
@@ -2627,10 +2632,107 @@ export async function runProductDiscoverySourceNow(sourceId: string) {
   return runProductDiscoveryCheck(sourceId, true);
 }
 
+export async function ensureTargetDiscoverySources() {
+  const retailer = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true, name: true } });
+  if (!retailer) throw new Error("Target retailer is missing");
+  const sources = [];
+  for (const searchTerm of TARGET_DISCOVERY_SEARCH_TERMS) {
+    const url = targetDiscoverySourceUrl(searchTerm);
+    const existing = await prisma.productDiscoverySource.findFirst({
+      where: { retailerId: retailer.id, url },
+      include: productDiscoverySourceInclude
+    });
+    if (existing) {
+      sources.push(existing);
+      continue;
+    }
+    const source = await prisma.productDiscoverySource.create({
+      data: {
+        retailerId: retailer.id,
+        name: `Target Discovery: ${searchTerm}`,
+        url,
+        notes:
+          "Default Target Pokemon TCG discovery source. Search/category pages are review-only and never trigger buy alerts.",
+        enabled: true,
+        checkFrequencyMinutes: 720,
+        nextCheckAt: new Date()
+      },
+      include: productDiscoverySourceInclude
+    });
+    sources.push(source);
+  }
+  return sources.map(productDiscoverySourceToDTO);
+}
+
+export async function runTargetProductDiscoveryNow() {
+  const sources = await ensureTargetDiscoverySources();
+  const limit = Math.max(1, Math.min(10, Number(process.env.TARGET_DISCOVERY_RUN_LIMIT || 8)));
+  const selectedSources = sources.slice(0, limit);
+  const results = [];
+  for (const source of selectedSources) {
+    results.push(await runProductDiscoveryCheck(source.id, true));
+    if (results.length < selectedSources.length) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(750, Number(process.env.MONITOR_REQUEST_DELAY_MS || 1500))));
+    }
+  }
+  return {
+    checked: results.length,
+    totalSources: sources.length,
+    created: results.reduce((total, result) => total + result.created, 0),
+    found: results.reduce((total, result) => total + result.found, 0),
+    rejected: results.reduce((total, result) => total + ("rejected" in result ? Number(result.rejected || 0) : 0), 0),
+    blocked: results.filter((result) => result.status === "BLOCKED").length,
+    errors: results.filter((result) => result.status === "ERROR").length,
+    results
+  };
+}
+
+export async function approveHighConfidenceTargetDiscoveryCandidates() {
+  const target = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true } });
+  if (!target) throw new Error("Target retailer is missing");
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: {
+      retailerId: target.id,
+      status: "PENDING",
+      confidenceScore: { gte: 80 }
+    },
+    orderBy: [{ confidenceScore: "desc" }, { createdAt: "desc" }],
+    take: 20
+  });
+
+  let approved = 0;
+  const failures: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      await reviewProductDiscoveryCandidate(candidate.id, {
+        action: "approve",
+        priority: "MEDIUM",
+        rating: "WATCH",
+        checkFrequencyMinutes: 60,
+        notes: "Approved by high-confidence Target Pokemon TCG discovery action."
+      });
+      approved += 1;
+    } catch (error) {
+      failures.push(`${candidate.productName}: ${error instanceof Error ? error.message : "approval failed"}`);
+    }
+  }
+
+  return { reviewed: candidates.length, approved, failed: failures.length, failures };
+}
+
+export async function clearRejectedTargetDiscoveryCandidates() {
+  const target = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true } });
+  if (!target) throw new Error("Target retailer is missing");
+  const result = await prisma.productDiscoveryCandidate.deleteMany({
+    where: { retailerId: target.id, status: "REJECTED_NON_TCG" }
+  });
+  return { cleared: result.count };
+}
+
 export async function reviewProductDiscoveryCandidate(
   candidateId: string,
   input: {
-    action: "approve" | "ignore";
+    action: "approve" | "ignore" | "reject_non_tcg";
     priority: Priority;
     rating: Exclude<Rating, "AVOID">;
     checkFrequencyMinutes: number;
@@ -2644,6 +2746,20 @@ export async function reviewProductDiscoveryCandidate(
   if (!candidate) throw new Error("Discovery candidate not found");
   if (candidate.status !== "PENDING") throw new Error("Discovery candidate has already been reviewed");
 
+  if (input.action === "reject_non_tcg") {
+    const rejected = await prisma.productDiscoveryCandidate.update({
+      where: { id: candidateId },
+      data: {
+        status: "REJECTED_NON_TCG",
+        reviewedAt: new Date(),
+        ignoredAt: new Date(),
+        reason: input.notes || candidate.reason || "Rejected as non-TCG product."
+      },
+      include: productDiscoveryCandidateInclude
+    });
+    return { candidate: productDiscoveryCandidateToDTO(rejected), product: null };
+  }
+
   if (input.action === "ignore") {
     const ignored = await prisma.productDiscoveryCandidate.update({
       where: { id: candidateId },
@@ -2651,6 +2767,11 @@ export async function reviewProductDiscoveryCandidate(
       include: productDiscoveryCandidateInclude
     });
     return { candidate: productDiscoveryCandidateToDTO(ignored), product: null };
+  }
+
+  const classification = classifyRetailerProductUrl(candidate.url, candidate.retailer.name);
+  if (classification.searchOrCategory || !classification.exactProductUrl) {
+    throw new Error(`Discovery approval requires an exact ${candidate.retailer.name} product URL. ${classification.reason}`);
   }
 
   validateRetailerUrl(candidate.retailer.name, candidate.url);
@@ -2693,6 +2814,8 @@ export async function reviewProductDiscoveryCandidate(
       include: productInclude
     }));
 
+  const verifiedProduct = await verifyProductLink(product.id).catch(() => productToDTO(product));
+
   const reviewed = await prisma.productDiscoveryCandidate.update({
     where: { id: candidateId },
     data: {
@@ -2716,7 +2839,7 @@ export async function reviewProductDiscoveryCandidate(
 
   return {
     candidate: productDiscoveryCandidateToDTO(reviewed),
-    product: productToDTO(product)
+    product: verifiedProduct
   };
 }
 
