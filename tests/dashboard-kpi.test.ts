@@ -359,8 +359,10 @@ test("alerts Check Stock avoids fake local stock and inventory handoff is wired"
   assert.match(alertsPanel, /Retailer stock check/);
   assert.match(alertsPanel, /store stock source not available/);
   assert.match(alertsPanel, /GameStop/);
+  assert.match(alertsPanel, /Pokemon Center/);
   assert.match(alertsPanel, /\/api\/radar\/check-stock/);
-  assert.match(alertsPanel, /Best Buy \+ GameStop/);
+  assert.match(alertsPanel, /Best Buy \+ GameStop \+ Pokemon Center/);
+  assert.match(alertsPanel, /Pokemon Center is online-only; use Online Drops \/ Watchlist/);
   assert.doesNotMatch(alertsPanel, /Stock: 10/);
   assert.match(app, /INVENTORY_PREFILL_STORAGE_KEY/);
   assert.match(app, /window\.sessionStorage\.setItem\(INVENTORY_PREFILL_STORAGE_KEY/);
@@ -394,6 +396,8 @@ test("watchlist QA exposes real product readiness, warnings, and monitor actions
   assert.match(app, /Live stock status is not verified/);
   assert.match(app, /watchlistRetailerFilters/);
   assert.match(watchForm, /GameStop: use the exact GameStop product page/);
+  assert.match(watchForm, /Pokemon Center: use the exact pokemoncenter\.com\/product page/);
+  assert.match(watchForm, /Queue, captcha, or waiting-room pages become System Alerts only/);
   assert.match(watchForm, /product ID from the URL/);
   assert.match(alertsPanel, /Watchlist QA/);
   assert.match(alertsPanel, /Ready for Live Alerts/);
@@ -403,6 +407,12 @@ test("watchlist QA exposes real product readiness, warnings, and monitor actions
   assert.match(alertsPanel, /Seed Real GameStop Product/);
   assert.match(alertsPanel, /\/api\/radar\/products\/seed-gamestop/);
   assert.match(alertsPanel, /openRetailerWatchProductForm\("GameStop"\)/);
+  assert.match(alertsPanel, /No Pokemon Center products watched yet/);
+  assert.match(alertsPanel, /Add Pokemon Center Product/);
+  assert.match(alertsPanel, /Seed Real Pokemon Center Product/);
+  assert.match(alertsPanel, /\/api\/radar\/products\/seed-pokemon-center/);
+  assert.match(alertsPanel, /openRetailerWatchProductForm\("Pokemon Center"\)/);
+  assert.match(alertsPanel, /Target \/ Best Buy \/ GameStop \/ Pokemon Center products/);
   assert.match(alertsPanel, /Run Check Now/);
   assert.match(alertsPanel, /Edit Identifiers/);
   assert.match(alertsPanel, /Verify Exact Product/);
@@ -419,17 +429,22 @@ test("watchlist QA exposes real product readiness, warnings, and monitor actions
 
 test("product create and edit save retailer product IDs parsed from exact URLs", () => {
   const service = fs.readFileSync(new URL("../src/lib/radar-service.ts", import.meta.url), "utf8");
-  const route = fs.readFileSync(new URL("../src/app/api/radar/products/seed-gamestop/route.ts", import.meta.url), "utf8");
+  const gameStopRoute = fs.readFileSync(new URL("../src/app/api/radar/products/seed-gamestop/route.ts", import.meta.url), "utf8");
+  const pokemonCenterRoute = fs.readFileSync(new URL("../src/app/api/radar/products/seed-pokemon-center/route.ts", import.meta.url), "utf8");
 
   assert.match(service, /classifyRetailerProductUrl/);
   assert.match(service, /ensureGameStopWatchProduct/);
+  assert.match(service, /ensurePokemonCenterWatchProduct/);
   assert.match(service, /gamestop\.com\/toys-games\/trading-cards\/products\/pokemon-trading-card-game-mega-evolution-booster-bundle\/20023793\.html/);
+  assert.match(service, /pokemoncenter\.com\/product\/10-10377-109\/pokemon-tcg-mega-evolution-booster-bundle/);
   assert.match(service, /const urlIdentity = classifyRetailerProductUrl\(input\.url, retailer\.name\)/);
   assert.match(service, /const retailerProductId = input\.retailerProductId \|\| urlIdentity\.retailerProductIdFromUrl \|\| undefined/);
   assert.match(service, /before\.retailerProductId !== \(retailerProductId \?\? null\)/);
   assert.match(service, /retailerProductId,/);
-  assert.match(route, /requireAdmin/);
-  assert.match(route, /ensureGameStopWatchProduct/);
+  assert.match(gameStopRoute, /requireAdmin/);
+  assert.match(gameStopRoute, /ensureGameStopWatchProduct/);
+  assert.match(pokemonCenterRoute, /requireAdmin/);
+  assert.match(pokemonCenterRoute, /ensurePokemonCenterWatchProduct/);
 });
 
 test("live drops are restricted to real product monitor alerts", () => {
@@ -489,6 +504,8 @@ test("monitor creates explicit tracker online drop and system alert events", () 
 
   assert.match(monitor, /createTrackerOnlineDropAlert/);
   assert.match(monitor, /trackerEventKindForDetection/);
+  assert.match(monitor, /fetchPokemonCenterLiveSignal/);
+  assert.match(monitor, /pokemonCenterSignal/);
   assert.match(monitor, /tracker_online_drop:\$\{input\.product\.id\}/);
   assert.match(monitor, /delivery\.inAppCreated === 0/);
   assert.match(monitor, /existingVisible/);

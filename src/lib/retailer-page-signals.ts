@@ -216,6 +216,60 @@ function gameStopImage(html: string, finalUrl: string) {
   return absolutePublicUrl(image, finalUrl);
 }
 
+function pokemonCenterProductId(html: string, finalUrl: string) {
+  try {
+    const parsed = new URL(finalUrl);
+    const fromPath = parsed.pathname.match(/\/product\/([^/?#]+)/i)?.[1];
+    if (fromPath) return fromPath;
+  } catch {
+    // Keep checking page text below.
+  }
+
+  return firstDecodedMatch(html, [
+    /"sku"\s*:\s*"?([A-Za-z0-9_-]{3,})"?/i,
+    /"productId"\s*:\s*"?([A-Za-z0-9_-]{3,})"?/i,
+    /"productID"\s*:\s*"?([A-Za-z0-9_-]{3,})"?/i,
+    /(?:SKU|Product\s*ID)\s*[:#]?\s*<\/?[^>]*>?\s*([A-Za-z0-9_-]{3,})/i
+  ]);
+}
+
+function pokemonCenterPrice(html: string) {
+  const candidates = [
+    /"price"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"salePrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"currentPrice"\s*:\s*"?([0-9]{1,5}(?:\.[0-9]{1,2})?)"?/i,
+    /"displayPrice"\s*:\s*"\$?\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"/i,
+    /(?:product-price|price-sales|sales-price|price-value)[\s\S]{0,180}?\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/i
+  ];
+
+  for (const pattern of candidates) {
+    const value = numberFromPrice(html.match(pattern)?.[1]);
+    if (value !== null) return value;
+  }
+
+  return genericPrice(html);
+}
+
+function pokemonCenterTitle(html: string) {
+  return firstDecodedMatch(html, [
+    /<meta\s+(?:property|name)=["']og:title["']\s+content=["']([^"']{4,240})["']/i,
+    /<meta\s+content=["']([^"']{4,240})["']\s+(?:property|name)=["']og:title["']/i,
+    /"name"\s*:\s*"([^"]{4,240})"/i,
+    /<h1\b[^>]*>([\s\S]{4,300}?)<\/h1>/i
+  ])?.replace(/\s*(?:-\s*|\|\s*)Pokemon Center(?: Official Site)?\s*$/i, "") ?? null;
+}
+
+function pokemonCenterImage(html: string, finalUrl: string) {
+  const image = firstDecodedMatch(html, [
+    /<meta\s+(?:property|name)=["']og:image["']\s+content=["']([^"']+)["']/i,
+    /<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:image["']/i,
+    /"primaryImage"\s*:\s*"([^"]+)"/i,
+    /"image"\s*:\s*"([^"]+)"/i,
+    /"imageUrl"\s*:\s*"([^"]+)"/i
+  ]);
+  return absolutePublicUrl(image, finalUrl);
+}
+
 function bestBuyStockLevel(html: string): { level: "HIGH" | "LOW" | null; text: string | null } {
   const text = visibleText(html);
   const storeCount =
@@ -245,6 +299,9 @@ export function detectRetailerPrice(html: string, retailerName: string) {
   }
   if (retailerName.toLowerCase().includes("gamestop")) {
     return gameStopPrice(html);
+  }
+  if (retailerName.toLowerCase().includes("pokemon center")) {
+    return pokemonCenterPrice(html);
   }
 
   return genericPrice(html);
@@ -767,6 +824,178 @@ export async function fetchGameStopLiveSignal(input: {
   };
 }
 
+export function detectPokemonCenterAvailability(
+  html: string,
+  fallbackAvailability?: RetailerAvailabilitySignal
+): RetailerAvailabilitySignal {
+  const text = visibleText(html);
+  const compact = compactText(`${html} ${text}`);
+  const addToCartEnabled = enabledPurchaseAction(html, "Pokemon Center");
+  const hasCaptcha =
+    text.includes("captcha") ||
+    text.includes("verify you are human") ||
+    text.includes("robot check") ||
+    text.includes("automated access") ||
+    text.includes("press and hold") ||
+    text.includes("are you a human");
+  const hasQueue =
+    text.includes("queue-it") ||
+    text.includes("queue it") ||
+    text.includes("waiting room") ||
+    text.includes("please wait") ||
+    text.includes("you are now in line");
+  const hasBlocked =
+    hasCaptcha ||
+    hasQueue ||
+    text.includes("access denied") ||
+    text.includes("request blocked") ||
+    text.includes("temporarily blocked") ||
+    text.includes("incapsula") ||
+    text.includes("cloudflare");
+  const hasSoldOut =
+    text.includes("sold out") ||
+    text.includes("out of stock") ||
+    text.includes("currently unavailable") ||
+    text.includes("temporarily unavailable") ||
+    compact.includes("outofstock") ||
+    compact.includes("soldout") ||
+    compact.includes("availabilityoutofstock");
+  const hasUnavailable =
+    text.includes("unavailable") ||
+    text.includes("not available") ||
+    text.includes("no longer available") ||
+    compact.includes("notavailable") ||
+    compact.includes("unavailableonline");
+  const hasPreorder =
+    text.includes("preorder") ||
+    text.includes("pre-order") ||
+    text.includes("pre order") ||
+    compact.includes("preorder");
+  const hasJsonInStock =
+    /"availability"\s*:\s*"[^"]*InStock/i.test(html) ||
+    /"availableForSale"\s*:\s*true/i.test(html) ||
+    /"inStock"\s*:\s*true/i.test(html);
+  const detectedWords = uniqueWords([
+    ...(fallbackAvailability?.detectedWords ?? []),
+    "pokemon center adapter",
+    hasCaptcha ? "captcha/robot page" : "",
+    hasQueue ? "queue/waiting room" : "",
+    hasBlocked ? "blocked page" : "",
+    hasSoldOut ? "out of stock" : "",
+    hasUnavailable ? "unavailable" : "",
+    hasPreorder ? "preorder" : "",
+    addToCartEnabled === true ? "enabled purchase button" : "",
+    addToCartEnabled === false ? "disabled purchase button" : "",
+    hasJsonInStock ? "in stock" : "",
+    "pokemon center online-only"
+  ]);
+
+  if (hasBlocked) {
+    return {
+      status: null,
+      stockText: hasQueue ? "Queue or waiting room" : hasCaptcha ? "Captcha or robot page" : "Blocked page",
+      addToCartEnabled: null,
+      confidenceScore: 0,
+      reason: "Pokemon Center page appears blocked, queued, or shows captcha/robot verification. No buy alert will be sent.",
+      detectedWords
+    };
+  }
+
+  if (hasSoldOut) {
+    return {
+      status: "SOLD_OUT",
+      stockText: "Sold out",
+      addToCartEnabled: addToCartEnabled ?? false,
+      confidenceScore: addToCartEnabled === false ? 96 : 90,
+      reason: "Pokemon Center public product page says sold out/out of stock.",
+      detectedWords
+    };
+  }
+
+  if (hasUnavailable || addToCartEnabled === false) {
+    return {
+      status: "UNAVAILABLE",
+      stockText: addToCartEnabled === false ? "Purchase button disabled" : "Unavailable",
+      addToCartEnabled: addToCartEnabled ?? false,
+      confidenceScore: addToCartEnabled === false ? 92 : 84,
+      reason: addToCartEnabled === false
+        ? "Pokemon Center purchase button is disabled; product is not buyable right now."
+        : "Pokemon Center page has unavailable cues.",
+      detectedWords
+    };
+  }
+
+  if (hasPreorder && addToCartEnabled === true) {
+    return {
+      status: "PREORDER_LIVE",
+      stockText: "Preorder live",
+      addToCartEnabled: true,
+      confidenceScore: 94,
+      reason: "Pokemon Center preorder cues matched and an enabled public purchase button was found.",
+      detectedWords
+    };
+  }
+
+  if (addToCartEnabled === true) {
+    return {
+      status: "ADD_TO_CART_AVAILABLE",
+      stockText: "Add to cart available",
+      addToCartEnabled: true,
+      confidenceScore: 96,
+      reason: "Pokemon Center exact product page has an enabled public Add to Cart action.",
+      detectedWords
+    };
+  }
+
+  if (hasJsonInStock) {
+    return {
+      status: "IN_STOCK",
+      stockText: "In stock",
+      addToCartEnabled: null,
+      confidenceScore: 82,
+      reason: "Pokemon Center public product data reports in-stock availability, but no enabled purchase button was separately proven.",
+      detectedWords
+    };
+  }
+
+  const safeFallbackStatus =
+    fallbackAvailability?.status === "SOLD_OUT" ||
+    fallbackAvailability?.status === "UNAVAILABLE" ||
+    fallbackAvailability?.status === "PAGE_UPDATED" ||
+    fallbackAvailability?.status === "PRICE_CHANGE"
+      ? fallbackAvailability.status
+      : null;
+
+  return {
+    status: safeFallbackStatus ?? "UNAVAILABLE",
+    stockText: safeFallbackStatus ? fallbackAvailability?.stockText ?? null : "Not proven available",
+    addToCartEnabled: safeFallbackStatus ? fallbackAvailability?.addToCartEnabled ?? null : null,
+    confidenceScore: safeFallbackStatus ? Math.max(fallbackAvailability?.confidenceScore ?? 35, 35) : 35,
+    reason:
+      safeFallbackStatus && fallbackAvailability?.reason
+        ? fallbackAvailability.reason
+        : "Pokemon Center public page did not prove an actionable buyable stock signal.",
+    detectedWords
+  };
+}
+
+export async function fetchPokemonCenterLiveSignal(input: {
+  html: string;
+  finalUrl: string;
+  fallbackAvailability: RetailerAvailabilitySignal;
+}): Promise<RetailerLiveSignal | null> {
+  return {
+    price: pokemonCenterPrice(input.html),
+    title: pokemonCenterTitle(input.html),
+    imageUrl: pokemonCenterImage(input.html, input.finalUrl),
+    source: "Pokemon Center public product page",
+    sku: pokemonCenterProductId(input.html, input.finalUrl),
+    stockLevel: null,
+    storeAvailabilityText: "Pokemon Center is online-only; use Online Drops / Watchlist.",
+    availability: detectPokemonCenterAvailability(input.html, input.fallbackAvailability)
+  };
+}
+
 function hasDisabledAttribute(value: string) {
   return (
     /\sdisabled(?:\s|=|>)/i.test(value) ||
@@ -847,6 +1076,7 @@ export function detectRetailerAvailability(html: string, retailerName: string): 
   if (retailerName.toLowerCase().includes("target")) return detectTargetAvailability(html);
   if (retailerName.toLowerCase().includes("best buy")) return detectBestBuyAvailability(html);
   if (retailerName.toLowerCase().includes("gamestop")) return detectGameStopAvailability(html);
+  if (retailerName.toLowerCase().includes("pokemon center")) return detectPokemonCenterAvailability(html);
 
   const text = visibleText(html);
   const compact = compactText(`${html} ${text}`);

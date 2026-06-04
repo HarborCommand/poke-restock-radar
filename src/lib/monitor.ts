@@ -9,6 +9,7 @@ import {
   detectTargetAvailability,
   fetchBestBuyLiveSignal,
   fetchGameStopLiveSignal,
+  fetchPokemonCenterLiveSignal,
   fetchTargetRedskyLiveSignal
 } from "@/lib/retailer-page-signals";
 import { templateForRetailerName, type RetailerTemplate } from "@/lib/retailer-templates";
@@ -334,6 +335,13 @@ function detectPublicStatus(input: {
     retailerAvailability.confidenceScore >= 60 ||
     retailerAvailability.detectedWords.some((word) => /blocked|captcha|robot/i.test(word))
   ) {
+    const retailerBlocked = retailerAvailability.detectedWords.some((word) => /blocked|captcha|robot|queue|waiting room/i.test(word)) ||
+      /blocked|captcha|robot|queue|waiting room/i.test(retailerAvailability.reason);
+    const retailerBlockedType: BlockedType | null = retailerBlocked
+      ? retailerAvailability.detectedWords.some((word) => /captcha|robot/i.test(word))
+        ? "CAPTCHA_ROBOT_PAGE"
+        : "PAGE_BLOCKED"
+      : null;
     return withRequirementPenalty({
       status: retailerAvailability.status,
       confidenceScore: retailerAvailability.confidenceScore,
@@ -341,7 +349,7 @@ function detectPublicStatus(input: {
       detectedWords: uniqueWords([...detectedWords, ...retailerAvailability.detectedWords]),
       parsedStockText: retailerAvailability.stockText,
       addToCartEnabled: retailerAvailability.addToCartEnabled,
-      blockedType: null,
+      blockedType: retailerBlockedType,
       requiredMissing
     });
   }
@@ -507,7 +515,14 @@ async function fetchPublicProductPage(input: {
         fallbackAvailability
       }).catch(() => null)
     : null;
-  const liveSignal = targetApiSignal || bestBuySignal || gameStopSignal;
+  const pokemonCenterSignal = retailerLower.includes("pokemon center")
+    ? await fetchPokemonCenterLiveSignal({
+        html: body,
+        finalUrl,
+        fallbackAvailability
+      }).catch(() => null)
+    : null;
+  const liveSignal = targetApiSignal || bestBuySignal || gameStopSignal || pokemonCenterSignal;
   const status = liveSignal
     ? {
         ...pageStatus,
@@ -522,13 +537,15 @@ async function fetchPublicProductPage(input: {
           bestBuySignal?.stockLevel === "LOW" ? "low stock" : "",
           bestBuySignal?.storeAvailabilityText ? `store stock cue: ${bestBuySignal.storeAvailabilityText}` : "",
           gameStopSignal?.sku ? `gamestop product id: ${gameStopSignal.sku}` : "",
-          gameStopSignal?.storeAvailabilityText ? gameStopSignal.storeAvailabilityText : ""
+          gameStopSignal?.storeAvailabilityText ? gameStopSignal.storeAvailabilityText : "",
+          pokemonCenterSignal?.sku ? `pokemon center product id: ${pokemonCenterSignal.sku}` : "",
+          pokemonCenterSignal?.storeAvailabilityText ? pokemonCenterSignal.storeAvailabilityText : ""
         ]),
         parsedStockText: liveSignal.availability.stockText,
         addToCartEnabled: liveSignal.availability.addToCartEnabled
       }
     : pageStatus;
-  const liveTitle = targetApiSignal?.title || bestBuySignal?.title || gameStopSignal?.title || titleText || null;
+  const liveTitle = targetApiSignal?.title || bestBuySignal?.title || gameStopSignal?.title || pokemonCenterSignal?.title || titleText || null;
   const identityMatch = matchProductIdentity({
     product: {
       retailerName: input.retailerName,
@@ -546,13 +563,13 @@ async function fetchPublicProductPage(input: {
     titleText: liveTitle || titleText,
     httpStatus: response.status
   });
-  const rawImageUrl = targetApiSignal?.imageUrl || bestBuySignal?.imageUrl || gameStopSignal?.imageUrl || extractProductImageUrl(body, finalUrl);
+  const rawImageUrl = targetApiSignal?.imageUrl || bestBuySignal?.imageUrl || gameStopSignal?.imageUrl || pokemonCenterSignal?.imageUrl || extractProductImageUrl(body, finalUrl);
   const verifiedImageUrl =
     identityMatch.readyForAlert && !status.blockedType ? await validateProductImageUrl(rawImageUrl) : null;
 
   return {
     ...status,
-    price: targetApiSignal?.price ?? bestBuySignal?.price ?? gameStopSignal?.price ?? detectRetailerPrice(body, input.retailerName),
+    price: targetApiSignal?.price ?? bestBuySignal?.price ?? gameStopSignal?.price ?? pokemonCenterSignal?.price ?? detectRetailerPrice(body, input.retailerName),
     title: liveTitle,
     imageUrl: verifiedImageUrl,
     pageHash: hashPage(body),

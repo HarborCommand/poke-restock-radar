@@ -2423,7 +2423,7 @@ type TrackerAlertRecord = {
 };
 
 type RetailerCheckStockResult = {
-  retailer: "Best Buy" | "GameStop";
+  retailer: "Best Buy" | "GameStop" | "Pokemon Center";
   sku: string;
   zip: string;
   radiusMiles: number;
@@ -2638,6 +2638,7 @@ function trackerChannelMatches(record: TrackerAlertRecord, filter: string) {
   if (filter === "Price Drops") return record.category === "tracker_price_change" || record.statusLabel === "Price Drop" || trackerAlertText(record.alert, record.product).includes("price drop");
   if (filter === "Best Buy") return trackerAlertText(record.alert, record.product).includes("best buy") || (record.product?.retailerName || "").toLowerCase().includes("best buy");
   if (filter === "GameStop") return trackerAlertText(record.alert, record.product).includes("gamestop") || (record.product?.retailerName || "").toLowerCase().includes("gamestop");
+  if (filter === "Pokemon Center") return trackerAlertText(record.alert, record.product).includes("pokemon center") || (record.product?.retailerName || "").toLowerCase().includes("pokemon center");
   return record.channel.toLowerCase().includes(filter.toLowerCase());
 }
 
@@ -13003,6 +13004,7 @@ function WatchProductQuickForm({
   const [selectedRetailerId, setSelectedRetailerId] = useState(defaultRetailerId);
   const selectedRetailer = dashboard.retailers.find((retailer) => retailer.id === selectedRetailerId) ?? dashboard.retailers.find((retailer) => retailer.id === defaultRetailerId);
   const isGameStop = /gamestop/i.test(selectedRetailer?.name || "");
+  const isPokemonCenter = /pokemon center/i.test(selectedRetailer?.name || "");
   const addLabel = "Adding watch product";
   return (
     <form
@@ -13065,6 +13067,12 @@ function WatchProductQuickForm({
         <div className="safety-strip compact tracker-retailer-help">
           <Store size={15} />
           <span>GameStop: use the exact GameStop product page, not search/category pages. The app saves the product ID from the URL when it can parse it.</span>
+        </div>
+      ) : null}
+      {isPokemonCenter ? (
+        <div className="safety-strip compact tracker-retailer-help">
+          <Store size={15} />
+          <span>Pokemon Center: use the exact pokemoncenter.com/product page. Queue, captcha, or waiting-room pages become System Alerts only.</span>
         </div>
       ) : null}
       <div className="safety-strip compact">
@@ -13217,6 +13225,7 @@ function AlertsPanel({
       ? watchProducts
       : watchProductsByRetailer(watchRetailerFilter);
   const gameStopWatchProducts = watchProductsByRetailer("GameStop");
+  const pokemonCenterWatchProducts = watchProductsByRetailer("Pokemon Center");
   const exactProducts = watchProducts.filter((product) => product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED");
   const needsExactLink = watchProducts.length - exactProducts.length;
   const blockedChecks = dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length;
@@ -13304,7 +13313,7 @@ function AlertsPanel({
     openWatchProductForm({
       retailerId: retailer?.id,
       productType: retailerName === "All" ? "" : retailerName,
-      requiredWords: retailerName === "GameStop" ? "Pokemon" : ""
+      requiredWords: retailerName === "GameStop" || retailerName === "Pokemon Center" ? "Pokemon" : ""
     });
   }
 
@@ -13313,6 +13322,14 @@ function AlertsPanel({
       "Seeding GameStop watch product",
       () => requestJson("/api/radar/products/seed-gamestop", { method: "POST" }),
       { success: "GameStop watch product ready" }
+    );
+  }
+
+  function seedPokemonCenterWatchProduct() {
+    return runAction(
+      "Seeding Pokemon Center watch product",
+      () => requestJson("/api/radar/products/seed-pokemon-center", { method: "POST" }),
+      { success: "Pokemon Center watch product ready" }
     );
   }
 
@@ -13799,11 +13816,11 @@ function AlertsPanel({
               <p className="eyeline">Retailer stock check</p>
               <h2>Check Stock</h2>
             </div>
-            <span className="chip good">Best Buy + GameStop</span>
+            <span className="chip good">Best Buy + GameStop + Pokemon Center</span>
           </div>
           <div className="safety-strip tracker-source-missing">
             <AlertTriangle size={16} />
-            <span>Best Buy and GameStop checks use exact watched product pages. Store-level stock is shown only if a public source is available; no fake store stock is generated.</span>
+            <span>Best Buy and GameStop checks use exact watched product pages. Pokemon Center is online-only; use Online Drops / Watchlist. No fake store stock is generated.</span>
           </div>
           <form
             className="tracker-check-grid"
@@ -13824,8 +13841,8 @@ function AlertsPanel({
           >
             <TextInput name="zip" label="ZIP code" placeholder="33132" />
             <SelectInput name="radius" label="Radius" defaultValue="25" options={["5", "10", "25", "50", "75"].map((value) => ({ value, label: `${value} miles` }))} />
-            <SelectInput name="retailer" label="Retailer" defaultValue="Best Buy" options={["Best Buy", "GameStop"].map(optionFromString)} />
-            <TextInput name="sku" label="SKU / Product ID" placeholder="6561234 or 20017647" wide />
+            <SelectInput name="retailer" label="Retailer" defaultValue="Best Buy" options={["Best Buy", "GameStop", "Pokemon Center"].map(optionFromString)} />
+            <TextInput name="sku" label="SKU / Product ID" placeholder="6561234, 20017647, or 10-10377-109" wide />
             <button className="mini-action solid" disabled={busy && busyLabel === "Checking retailer stock"} type="submit">
               <Search size={14} />
               {busyLabel === "Checking retailer stock" ? "Checking" : "Check Stock"}
@@ -13873,7 +13890,11 @@ function AlertsPanel({
                   ))}
                 </div>
               ) : (
-                <p className="muted-note">{retailerStockResult.retailer} store stock source not available.</p>
+                <p className="muted-note">
+                  {retailerStockResult.retailer === "Pokemon Center"
+                    ? "Pokemon Center is online-only; use Online Drops / Watchlist."
+                    : `${retailerStockResult.retailer} store stock source not available.`}
+                </p>
               )}
             </article>
           ) : null}
@@ -13912,7 +13933,7 @@ function AlertsPanel({
             />
           ) : null}
           <div className="watchlist-qa-summary">
-            <DetailStat label="Target / Best Buy / GameStop products" value={String(watchProducts.filter((product) => /target|best buy|gamestop/i.test(product.retailerName)).length)} />
+            <DetailStat label="Target / Best Buy / GameStop / Pokemon Center products" value={String(watchProducts.filter((product) => /target|best buy|gamestop|pokemon center/i.test(product.retailerName)).length)} />
             <DetailStat label="Alerts enabled" value={String(watchProducts.filter((product) => product.monitorEnabled).length)} tone="good" />
             <DetailStat label="Missing identifiers" value={String(watchProducts.filter((product) => !productHasIdentifier(product)).length)} tone={watchProducts.some((product) => !productHasIdentifier(product)) ? "neutral" : "good"} />
             <DetailStat label="Blocked or failed" value={String(watchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError).length)} tone={watchProducts.some((product) => product.liveBlockedType || product.lastMonitorError) ? "bad" : "good"} />
@@ -13947,6 +13968,25 @@ function AlertsPanel({
               </div>
             </section>
           ) : null}
+          {pokemonCenterWatchProducts.length === 0 ? (
+            <section className="watchlist-retailer-empty">
+              <div>
+                <p className="eyeline">Pokemon Center</p>
+                <h3>No Pokemon Center products watched yet</h3>
+                <p>Add an exact pokemoncenter.com/product URL so Run Check Now can use the Pokemon Center parser and treat queues/captcha as System Alerts only.</p>
+              </div>
+              <div className="watchlist-retailer-empty-actions">
+                <button className="mini-action solid" type="button" onClick={() => openRetailerWatchProductForm("Pokemon Center")}>
+                  <Plus size={14} />
+                  Add Pokemon Center Product
+                </button>
+                <button className="mini-action" type="button" disabled={busy && busyLabel === "Seeding Pokemon Center watch product"} onClick={seedPokemonCenterWatchProduct}>
+                  <Store size={14} />
+                  {busyLabel === "Seeding Pokemon Center watch product" ? "Adding" : "Seed Real Pokemon Center Product"}
+                </button>
+              </div>
+            </section>
+          ) : null}
           <div className="watchlist-qa-list">
             {filteredWatchProducts.length ? (
               filteredWatchProducts.map(renderWatchlistQARow)
@@ -13960,6 +14000,19 @@ function AlertsPanel({
                   <button className="mini-action" type="button" disabled={busy && busyLabel === "Seeding GameStop watch product"} onClick={seedGameStopWatchProduct}>
                     <Store size={14} />
                     {busyLabel === "Seeding GameStop watch product" ? "Adding" : "Seed Real GameStop Product"}
+                  </button>
+                </div>
+              } />
+            ) : watchRetailerFilter === "Pokemon Center" ? (
+              <EmptyState icon={Store} title="No Pokemon Center products watched yet" detail="Add an exact Pokemon Center product page, then run Check Now from this watchlist." action={
+                <div className="watchlist-retailer-empty-actions">
+                  <button className="mini-action solid" type="button" onClick={() => openRetailerWatchProductForm("Pokemon Center")}>
+                    <Plus size={14} />
+                    Add Pokemon Center Product
+                  </button>
+                  <button className="mini-action" type="button" disabled={busy && busyLabel === "Seeding Pokemon Center watch product"} onClick={seedPokemonCenterWatchProduct}>
+                    <Store size={14} />
+                    {busyLabel === "Seeding Pokemon Center watch product" ? "Adding" : "Seed Real Pokemon Center Product"}
                   </button>
                 </div>
               } />

@@ -12,6 +12,7 @@ import {
   detectTargetAvailability,
   fetchBestBuyLiveSignal,
   fetchGameStopLiveSignal,
+  fetchPokemonCenterLiveSignal,
   fetchTargetRedskyLiveSignal
 } from "@/lib/retailer-page-signals";
 import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates";
@@ -2561,6 +2562,41 @@ export async function ensureGameStopWatchProduct() {
   return { created: true, product };
 }
 
+export async function ensurePokemonCenterWatchProduct() {
+  const exactUrl = "https://www.pokemoncenter.com/product/10-10377-109/pokemon-tcg-mega-evolution-booster-bundle";
+  const retailerProductId = "10-10377-109";
+  const retailer = await prisma.retailer.findUnique({ where: { name: "Pokemon Center" }, select: { id: true } });
+  if (!retailer) throw new Error("Pokemon Center retailer is missing");
+
+  const existing = await prisma.product.findFirst({
+    where: {
+      retailerId: retailer.id,
+      archivedAt: null,
+      OR: [{ url: exactUrl }, { retailerProductId }, { sku: retailerProductId }]
+    },
+    include: productInclude
+  });
+  if (existing) return { created: false, product: productToDTO(existing) };
+
+  const product = await createProduct({
+    retailerId: retailer.id,
+    name: "Pokemon TCG Mega Evolution Booster Bundle",
+    url: exactUrl,
+    sku: retailerProductId,
+    retailerProductId,
+    productType: "Pokemon Center",
+    requiredWords: "Pokemon, Mega Evolution, Booster Bundle",
+    stockStatus: "UNAVAILABLE",
+    priority: "HIGH",
+    rating: "WATCH",
+    manualPriorityOverride: "WATCH",
+    monitorEnabled: true,
+    checkFrequencyMinutes: 60,
+    notes: "Production Pokemon Center watch product added for tracker QA. Public pages only; queues/captcha remain system alerts."
+  });
+  return { created: true, product };
+}
+
 export async function createProductDiscoverySource(input: {
   retailerId: string;
   name: string;
@@ -3009,7 +3045,14 @@ export async function verifyProductLink(productId: string) {
           fallbackAvailability
         }).catch(() => null)
       : null;
-    const liveSignal = targetApiSignal || bestBuySignal || gameStopSignal;
+    const pokemonCenterSignal = retailerLower.includes("pokemon center")
+      ? await fetchPokemonCenterLiveSignal({
+          html,
+          finalUrl,
+          fallbackAvailability
+        }).catch(() => null)
+      : null;
+    const liveSignal = targetApiSignal || bestBuySignal || gameStopSignal || pokemonCenterSignal;
     const liveTitle = liveSignal?.title || titleText;
     const visiblePriceValue = liveSignal?.price ?? detectRetailerPrice(html, product.retailer.name);
     const visiblePrice = visiblePriceValue === null ? extractVisiblePrice(html) : `$${visiblePriceValue.toFixed(2)}`;
@@ -3086,7 +3129,8 @@ export async function verifyProductLink(productId: string) {
       liveSignal?.source ? `Live data source: ${liveSignal.source}` : null,
       bestBuySignal?.sku ? `Best Buy SKU parsed: ${bestBuySignal.sku}` : null,
       gameStopSignal?.sku ? `GameStop product ID parsed: ${gameStopSignal.sku}` : null,
-      gameStopSignal?.storeAvailabilityText ?? bestBuySignal?.storeAvailabilityText ?? null,
+      pokemonCenterSignal?.sku ? `Pokemon Center product ID parsed: ${pokemonCenterSignal.sku}` : null,
+      pokemonCenterSignal?.storeAvailabilityText ?? gameStopSignal?.storeAvailabilityText ?? bestBuySignal?.storeAvailabilityText ?? null,
       `Response ${Date.now() - started}ms`,
       blockedType ? `Blocked page signal: ${blockedType}` : null,
       `Expected title keywords: ${identity.titleKeywords.join(", ") || "none"}`,

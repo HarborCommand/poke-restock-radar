@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyRetailerProductUrl, matchProductIdentity, productReadyForBuyAlerts } from "../src/lib/product-identity";
-import { detectBestBuyAvailability, detectGameStopAvailability, detectRetailerAvailability, detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
+import { detectBestBuyAvailability, detectGameStopAvailability, detectPokemonCenterAvailability, detectRetailerAvailability, detectRetailerPrice, detectTargetAvailability } from "../src/lib/retailer-page-signals";
 
 const targetOutOfStockEtbPage = `
 <!doctype html>
@@ -284,6 +284,146 @@ test("GameStop exact product verification rejects search links and verifies prod
   });
   assert.equal(wrongId.verificationStatus, "POSSIBLE_MISMATCH");
   assert.equal(wrongId.readyForAlert, false);
+});
+
+test("Pokemon Center exact product verification rejects search links and verifies product IDs", () => {
+  const searchLink = classifyRetailerProductUrl("https://www.pokemoncenter.com/search/pokemon-cards", "Pokemon Center");
+  assert.equal(searchLink.searchOrCategory, true);
+  assert.equal(searchLink.exactProductUrl, false);
+
+  const categoryLink = classifyRetailerProductUrl("https://www.pokemoncenter.com/shop/tcg-cards", "Pokemon Center");
+  assert.equal(categoryLink.searchOrCategory, true);
+  assert.equal(categoryLink.exactProductUrl, false);
+
+  const finalUrl = "https://www.pokemoncenter.com/product/10-10377-109/pokemon-tcg-mega-evolution-booster-bundle";
+  const exactUrl = classifyRetailerProductUrl(finalUrl, "Pokemon Center");
+  assert.equal(exactUrl.exactProductUrl, true);
+  assert.equal(exactUrl.retailerProductIdFromUrl, "10-10377-109");
+
+  const html = `
+    <html>
+      <head><title>Pokemon TCG Mega Evolution Booster Bundle | Pokemon Center</title></head>
+      <body><h1>Pokemon TCG Mega Evolution Booster Bundle</h1><p>SKU: 10-10377-109</p></body>
+    </html>
+  `;
+  const matchedId = matchProductIdentity({
+    product: {
+      retailerName: "Pokemon Center",
+      name: "Pokemon TCG Mega Evolution Booster Bundle",
+      url: finalUrl,
+      retailerProductId: "10-10377-109"
+    },
+    finalUrl,
+    html,
+    titleText: "Pokemon TCG Mega Evolution Booster Bundle | Pokemon Center",
+    httpStatus: 200
+  });
+  assert.equal(matchedId.verificationStatus, "VERIFIED_EXACT");
+  assert.equal(matchedId.readyForAlert, true);
+
+  const wrongId = matchProductIdentity({
+    product: {
+      retailerName: "Pokemon Center",
+      name: "Pokemon TCG Mega Evolution Booster Bundle",
+      url: finalUrl,
+      retailerProductId: "WRONG-ID"
+    },
+    finalUrl,
+    html,
+    titleText: "Pokemon TCG Mega Evolution Booster Bundle | Pokemon Center",
+    httpStatus: 200
+  });
+  assert.equal(wrongId.verificationStatus, "POSSIBLE_MISMATCH");
+  assert.equal(wrongId.readyForAlert, false);
+});
+
+test("Pokemon Center parser treats unavailable and sold-out product pages as not buyable", () => {
+  const soldOutPage = `
+    <html>
+      <head><title>Pokemon TCG Mega Evolution Booster Bundle | Pokemon Center</title></head>
+      <body>
+        <h1>Pokemon TCG Mega Evolution Booster Bundle</h1>
+        <span class="price">$29.99</span>
+        <p>Out of stock</p>
+        <button disabled aria-disabled="true">Add to Cart</button>
+      </body>
+    </html>
+  `;
+  const availability = detectPokemonCenterAvailability(soldOutPage);
+
+  assert.equal(detectRetailerPrice(soldOutPage, "Pokemon Center"), 29.99);
+  assert.equal(availability.status, "SOLD_OUT");
+  assert.equal(availability.addToCartEnabled, false);
+  assert.match(availability.reason, /sold out|out of stock/i);
+});
+
+test("Pokemon Center parser only alerts preorder when an enabled public purchase action exists", () => {
+  const preorderPage = `
+    <html>
+      <head>
+        <meta property="og:title" content="Pokemon TCG Mega Evolution Booster Bundle | Pokemon Center" />
+        <script type="application/ld+json">
+          {
+            "name": "Pokemon TCG Mega Evolution Booster Bundle",
+            "sku": "10-10377-109",
+            "image": "https://www.pokemoncenter.com/images/products/10-10377-109.jpg",
+            "offers": { "price": "29.99", "availability": "https://schema.org/PreOrder" }
+          }
+        </script>
+      </head>
+      <body>
+        <h1>Pokemon TCG Mega Evolution Booster Bundle</h1>
+        <button>Pre-Order</button>
+      </body>
+    </html>
+  `;
+  const availability = detectRetailerAvailability(preorderPage, "Pokemon Center");
+
+  assert.equal(detectRetailerPrice(preorderPage, "Pokemon Center"), 29.99);
+  assert.equal(availability.status, "PREORDER_LIVE");
+  assert.equal(availability.addToCartEnabled, true);
+  assert.ok(availability.confidenceScore >= 90);
+  assert.match(availability.reason, /preorder/i);
+});
+
+test("Pokemon Center parser detects enabled add-to-cart without inferring it from loose text", () => {
+  const addToCartPage = `
+    <html>
+      <head><title>Pokemon TCG Mega Evolution Booster Bundle | Pokemon Center</title></head>
+      <body>
+        <h1>Pokemon TCG Mega Evolution Booster Bundle</h1>
+        <button>Add to Cart</button>
+      </body>
+    </html>
+  `;
+  const live = detectPokemonCenterAvailability(addToCartPage);
+  assert.equal(live.status, "ADD_TO_CART_AVAILABLE");
+  assert.equal(live.addToCartEnabled, true);
+
+  const looseTextPage = `
+    <html><body><h1>Pokemon Product</h1><p>Add to cart help and purchase limits.</p></body></html>
+  `;
+  const unavailable = detectPokemonCenterAvailability(looseTextPage);
+  assert.equal(unavailable.status, "UNAVAILABLE");
+  assert.equal(unavailable.addToCartEnabled, null);
+  assert.match(unavailable.reason, /did not prove an actionable buyable stock signal/i);
+});
+
+test("Pokemon Center parser logs queue and captcha pages without buyable status", () => {
+  const queuedPage = `
+    <html>
+      <body>
+        <h1>Pokemon Center Waiting Room</h1>
+        <p>You are now in the queue-it waiting room. Please wait.</p>
+      </body>
+    </html>
+  `;
+  const blocked = detectRetailerAvailability(queuedPage, "Pokemon Center");
+
+  assert.equal(blocked.status, null);
+  assert.equal(blocked.addToCartEnabled, null);
+  assert.equal(blocked.confidenceScore, 0);
+  assert.match(blocked.reason, /blocked|queued|captcha|robot/i);
 });
 
 test("exact product gates reject search links and require verified live image data", () => {
