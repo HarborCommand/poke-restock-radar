@@ -13308,6 +13308,14 @@ function AlertsPanel({
     });
   }
 
+  function seedGameStopWatchProduct() {
+    return runAction(
+      "Seeding GameStop watch product",
+      () => requestJson("/api/radar/products/seed-gamestop", { method: "POST" }),
+      { success: "GameStop watch product ready" }
+    );
+  }
+
   function closeWatchProductForm() {
     setShowWatchProductForm(false);
     setWatchProductPrefill(null);
@@ -13927,10 +13935,16 @@ function AlertsPanel({
                 <h3>No GameStop products watched yet</h3>
                 <p>Add an exact GameStop product URL so Run Check Now can use the GameStop parser and show the latest price, stock, and confidence result.</p>
               </div>
-              <button className="mini-action solid" type="button" onClick={() => openRetailerWatchProductForm("GameStop")}>
-                <Plus size={14} />
-                Add GameStop Product
-              </button>
+              <div className="watchlist-retailer-empty-actions">
+                <button className="mini-action solid" type="button" onClick={() => openRetailerWatchProductForm("GameStop")}>
+                  <Plus size={14} />
+                  Add GameStop Product
+                </button>
+                <button className="mini-action" type="button" disabled={busy && busyLabel === "Seeding GameStop watch product"} onClick={seedGameStopWatchProduct}>
+                  <Store size={14} />
+                  {busyLabel === "Seeding GameStop watch product" ? "Adding" : "Seed Real GameStop Product"}
+                </button>
+              </div>
             </section>
           ) : null}
           <div className="watchlist-qa-list">
@@ -13938,10 +13952,16 @@ function AlertsPanel({
               filteredWatchProducts.map(renderWatchlistQARow)
             ) : watchRetailerFilter === "GameStop" ? (
               <EmptyState icon={Store} title="No GameStop products watched yet" detail="Add an exact GameStop product page, then run Check Now from this watchlist." action={
-                <button className="mini-action solid" type="button" onClick={() => openRetailerWatchProductForm("GameStop")}>
-                  <Plus size={14} />
-                  Add GameStop Product
-                </button>
+                <div className="watchlist-retailer-empty-actions">
+                  <button className="mini-action solid" type="button" onClick={() => openRetailerWatchProductForm("GameStop")}>
+                    <Plus size={14} />
+                    Add GameStop Product
+                  </button>
+                  <button className="mini-action" type="button" disabled={busy && busyLabel === "Seeding GameStop watch product"} onClick={seedGameStopWatchProduct}>
+                    <Store size={14} />
+                    {busyLabel === "Seeding GameStop watch product" ? "Adding" : "Seed Real GameStop Product"}
+                  </button>
+                </div>
               } />
             ) : (
               <EmptyState icon={Eye} title={`No ${watchRetailerFilter} watch products`} detail="Switch retailer filters or add an exact product page for this retailer." />

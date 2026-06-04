@@ -400,6 +400,8 @@ test("watchlist QA exposes real product readiness, warnings, and monitor actions
   assert.match(alertsPanel, /watchRetailerFilter/);
   assert.match(alertsPanel, /No GameStop products watched yet/);
   assert.match(alertsPanel, /Add GameStop Product/);
+  assert.match(alertsPanel, /Seed Real GameStop Product/);
+  assert.match(alertsPanel, /\/api\/radar\/products\/seed-gamestop/);
   assert.match(alertsPanel, /openRetailerWatchProductForm\("GameStop"\)/);
   assert.match(alertsPanel, /Run Check Now/);
   assert.match(alertsPanel, /Edit Identifiers/);
@@ -417,12 +419,17 @@ test("watchlist QA exposes real product readiness, warnings, and monitor actions
 
 test("product create and edit save retailer product IDs parsed from exact URLs", () => {
   const service = fs.readFileSync(new URL("../src/lib/radar-service.ts", import.meta.url), "utf8");
+  const route = fs.readFileSync(new URL("../src/app/api/radar/products/seed-gamestop/route.ts", import.meta.url), "utf8");
 
   assert.match(service, /classifyRetailerProductUrl/);
+  assert.match(service, /ensureGameStopWatchProduct/);
+  assert.match(service, /gamestop\.com\/toys-games\/trading-cards\/products\/pokemon-trading-card-game-mega-evolution-booster-bundle\/20023793\.html/);
   assert.match(service, /const urlIdentity = classifyRetailerProductUrl\(input\.url, retailer\.name\)/);
   assert.match(service, /const retailerProductId = input\.retailerProductId \|\| urlIdentity\.retailerProductIdFromUrl \|\| undefined/);
   assert.match(service, /before\.retailerProductId !== \(retailerProductId \?\? null\)/);
   assert.match(service, /retailerProductId,/);
+  assert.match(route, /requireAdmin/);
+  assert.match(route, /ensureGameStopWatchProduct/);
 });
 
 test("live drops are restricted to real product monitor alerts", () => {

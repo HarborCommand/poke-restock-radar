@@ -2525,6 +2525,42 @@ export async function createProduct(input: {
   return productToDTO(product);
 }
 
+export async function ensureGameStopWatchProduct() {
+  const exactUrl =
+    "https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-mega-evolution-booster-bundle/20023793.html";
+  const retailerProductId = "20023793";
+  const retailer = await prisma.retailer.findUnique({ where: { name: "GameStop" }, select: { id: true } });
+  if (!retailer) throw new Error("GameStop retailer is missing");
+
+  const existing = await prisma.product.findFirst({
+    where: {
+      retailerId: retailer.id,
+      archivedAt: null,
+      OR: [{ url: exactUrl }, { retailerProductId }, { sku: retailerProductId }]
+    },
+    include: productInclude
+  });
+  if (existing) return { created: false, product: productToDTO(existing) };
+
+  const product = await createProduct({
+    retailerId: retailer.id,
+    name: "Pokemon Trading Card Game: Mega Evolution Booster Bundle",
+    url: exactUrl,
+    sku: retailerProductId,
+    retailerProductId,
+    productType: "GameStop",
+    requiredWords: "Pokemon, Mega Evolution, Booster Bundle",
+    stockStatus: "UNAVAILABLE",
+    priority: "MEDIUM",
+    rating: "WATCH",
+    manualPriorityOverride: "WATCH",
+    monitorEnabled: true,
+    checkFrequencyMinutes: 60,
+    notes: "Production GameStop watch product added for tracker QA. Checkout remains manual."
+  });
+  return { created: true, product };
+}
+
 export async function createProductDiscoverySource(input: {
   retailerId: string;
   name: string;

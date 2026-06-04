@@ -13330,6 +13330,13 @@ body .watchlist-retailer-empty p {
   line-height: 1.45;
 }
 
+body .watchlist-retailer-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 body .watchlist-qa-list {
   gap: 14px;
 }
@@ -13629,6 +13636,10 @@ body .tracker-scanner-grid {
 
   body .watchlist-retailer-empty {
     display: grid;
+  }
+
+  body .watchlist-retailer-empty-actions {
+    justify-content: flex-start;
   }
 
   body .tracker-archive-toggle,
