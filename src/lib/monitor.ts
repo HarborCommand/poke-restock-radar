@@ -13,6 +13,7 @@ import {
   fetchTargetRedskyLiveSignal
 } from "@/lib/retailer-page-signals";
 import { templateForRetailerName, type RetailerTemplate } from "@/lib/retailer-templates";
+import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetAlertEligibility, type TargetFulfillmentType, type TargetPriceStatus, type TargetSellerType } from "@/lib/target-retail-policy";
 import type { Priority, ProductStatus } from "@/types/radar";
 
 export type RunType = "MANUAL_PRODUCT" | "MANUAL_ALL" | "DUE_JOB" | "DISCOVERY_DUE" | "DISCOVERY_MANUAL" | "DISCOVERY_ALL";
@@ -37,6 +38,17 @@ type Detection = {
   addToCartEnabled: boolean | null;
   blockedType: BlockedType | null;
   identityMatch: ProductIdentityMatch;
+  sellerName: string | null;
+  sellerType: TargetSellerType;
+  fulfillmentType: TargetFulfillmentType;
+  sellerVerified: boolean;
+  priceStatus: TargetPriceStatus;
+  alertEligibility: TargetAlertEligibility;
+  expectedRetailPrice: number | null;
+  maxAlertPrice: number | null;
+  targetRetailMin: number | null;
+  targetRetailMax: number | null;
+  targetRetailReason: string | null;
 };
 
 export const buyAvailableStatuses: ProductStatus[] = ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"];
@@ -52,7 +64,10 @@ function detectionReadyForBuyAlerts(detection: Detection) {
     detection.price !== null &&
     Boolean(detection.imageUrl) &&
     !detection.blockedType &&
-    detection.confidenceScore >= 70
+    detection.confidenceScore >= 70 &&
+    detection.alertEligibility !== "suppressed_marketplace" &&
+    detection.alertEligibility !== "suppressed_over_msrp" &&
+    detection.alertEligibility !== "needs_review"
   );
 }
 
@@ -452,6 +467,14 @@ async function fetchPublicProductPage(input: {
     dpci: string | null;
     retailerProductId: string | null;
     retailPrice: number | null;
+    productType: string | null;
+    sellerName?: string | null;
+    sellerType?: string | null;
+    fulfillmentType?: string | null;
+    sellerVerified?: boolean | null;
+    expectedRetailPrice?: number | null;
+    maxAlertPrice?: number | null;
+    allowOverMsrp?: boolean | null;
   };
   retailerName: string;
   requiredWords?: string | null;
@@ -566,17 +589,61 @@ async function fetchPublicProductPage(input: {
   const rawImageUrl = targetApiSignal?.imageUrl || bestBuySignal?.imageUrl || gameStopSignal?.imageUrl || pokemonCenterSignal?.imageUrl || extractProductImageUrl(body, finalUrl);
   const verifiedImageUrl =
     identityMatch.readyForAlert && !status.blockedType ? await validateProductImageUrl(rawImageUrl) : null;
+  const price = targetApiSignal?.price ?? bestBuySignal?.price ?? gameStopSignal?.price ?? pokemonCenterSignal?.price ?? detectRetailerPrice(body, input.retailerName);
+  const targetRetailPolicy = retailerLower.includes("target")
+    ? evaluateTargetRetailPolicy({
+        retailerName: input.retailerName,
+        title: liveTitle || input.product.name,
+        productType: input.product.productType,
+        price,
+        sellerName: targetApiSignal?.sellerName ?? input.product.sellerName,
+        sellerType: targetApiSignal?.sellerType ?? input.product.sellerType,
+        fulfillmentType: targetApiSignal?.fulfillmentType ?? input.product.fulfillmentType,
+        sellerVerified: targetApiSignal?.sellerVerified ?? input.product.sellerVerified,
+        confidenceScore: status.confidenceScore,
+        exactUrl: Boolean(identityMatch.readyForAlert && identityMatch.productIdVerified),
+        isPokemonTcg: isPokemonTcgTargetText({ title: liveTitle || input.product.name, productType: input.product.productType }),
+        expectedRetailPrice: input.product.expectedRetailPrice,
+        maxAlertPrice: input.product.maxAlertPrice,
+        allowOverMsrp: input.product.allowOverMsrp
+      })
+    : null;
+  const detectedWords = targetRetailPolicy
+    ? uniqueWords([
+        ...status.detectedWords,
+        `seller type: ${targetRetailPolicy.sellerType}`,
+        `price status: ${targetRetailPolicy.priceStatus}`,
+        `alert eligibility: ${targetRetailPolicy.alertEligibility}`,
+        targetRetailPolicy.targetRetailMin !== null && targetRetailPolicy.targetRetailMax !== null
+          ? `target msrp range: ${targetRetailPolicy.targetRetailMin}-${targetRetailPolicy.targetRetailMax}`
+          : "target msrp range: review"
+      ])
+    : status.detectedWords;
+  const reason = targetRetailPolicy ? `${status.reason} ${targetRetailPolicy.targetRetailReason}` : status.reason;
 
   return {
     ...status,
-    price: targetApiSignal?.price ?? bestBuySignal?.price ?? gameStopSignal?.price ?? pokemonCenterSignal?.price ?? detectRetailerPrice(body, input.retailerName),
+    detectedWords,
+    reason,
+    price,
     title: liveTitle,
     imageUrl: verifiedImageUrl,
     pageHash: hashPage(body),
     httpStatus: response.status,
     finalUrl,
     responseTimeMs,
-    identityMatch
+    identityMatch,
+    sellerName: targetRetailPolicy?.sellerName ?? null,
+    sellerType: targetRetailPolicy?.sellerType ?? "unknown",
+    fulfillmentType: targetRetailPolicy?.fulfillmentType ?? "unknown",
+    sellerVerified: targetRetailPolicy?.sellerVerified ?? false,
+    priceStatus: targetRetailPolicy?.priceStatus ?? "unknown",
+    alertEligibility: targetRetailPolicy?.alertEligibility ?? "eligible",
+    expectedRetailPrice: targetRetailPolicy?.expectedRetailPrice ?? null,
+    maxAlertPrice: targetRetailPolicy?.maxAlertPrice ?? null,
+    targetRetailMin: targetRetailPolicy?.targetRetailMin ?? null,
+    targetRetailMax: targetRetailPolicy?.targetRetailMax ?? null,
+    targetRetailReason: targetRetailPolicy?.targetRetailReason ?? null
   };
 }
 
@@ -996,7 +1063,15 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         sku: product.sku,
         dpci: product.dpci,
         retailerProductId: product.retailerProductId,
-        retailPrice: product.retailPrice
+        retailPrice: product.retailPrice,
+        productType: product.productType,
+        sellerName: product.sellerName,
+        sellerType: product.sellerType,
+        fulfillmentType: product.fulfillmentType,
+        sellerVerified: product.sellerVerified,
+        expectedRetailPrice: product.expectedRetailPrice,
+        maxAlertPrice: product.maxAlertPrice,
+        allowOverMsrp: product.allowOverMsrp
       },
       retailerName: product.retailer.name,
       requiredWords: product.requiredWords,
@@ -1019,7 +1094,18 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
           liveStockVerifiedAt: undefined,
           liveImageUrl: detection.imageUrl,
           liveConfidenceScore: detection.confidenceScore,
-          liveBlockedType: detection.blockedType
+          liveBlockedType: detection.blockedType,
+          sellerName: detection.sellerName,
+          sellerType: detection.sellerType,
+          fulfillmentType: detection.fulfillmentType,
+          sellerVerified: detection.sellerVerified,
+          priceStatus: detection.priceStatus,
+          alertEligibility: detection.alertEligibility,
+          expectedRetailPrice: detection.expectedRetailPrice,
+          maxAlertPrice: detection.maxAlertPrice,
+          targetRetailMin: detection.targetRetailMin,
+          targetRetailMax: detection.targetRetailMax,
+          targetRetailReason: detection.targetRetailReason
         }
       });
       const log = await createMonitorLog({
@@ -1161,6 +1247,17 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
           liveImageUrl: detection.imageUrl,
           liveConfidenceScore: detection.confidenceScore,
           liveBlockedType: null,
+          sellerName: detection.sellerName,
+          sellerType: detection.sellerType,
+          fulfillmentType: detection.fulfillmentType,
+          sellerVerified: detection.sellerVerified,
+          priceStatus: detection.priceStatus,
+          alertEligibility: detection.alertEligibility,
+          expectedRetailPrice: detection.expectedRetailPrice,
+          maxAlertPrice: detection.maxAlertPrice,
+          targetRetailMin: detection.targetRetailMin,
+          targetRetailMax: detection.targetRetailMax,
+          targetRetailReason: detection.targetRetailReason,
           pendingAlertStatus: change.nextStatus,
           pendingAlertPrice: detection.price,
           pendingAlertPageHash: detection.pageHash,
@@ -1255,6 +1352,17 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
         liveImageUrl: detection.imageUrl,
         liveConfidenceScore: detection.confidenceScore,
         liveBlockedType: null,
+        sellerName: detection.sellerName,
+        sellerType: detection.sellerType,
+        fulfillmentType: detection.fulfillmentType,
+        sellerVerified: detection.sellerVerified,
+        priceStatus: detection.priceStatus,
+        alertEligibility: detection.alertEligibility,
+        expectedRetailPrice: detection.expectedRetailPrice,
+        maxAlertPrice: detection.maxAlertPrice,
+        targetRetailMin: detection.targetRetailMin,
+        targetRetailMax: detection.targetRetailMax,
+        targetRetailReason: detection.targetRetailReason,
         isDemoData: detection.price !== null || detection.status !== null ? false : product.isDemoData,
         lastCheckedAt: now,
         lastSuccessfulCheckedAt: now,

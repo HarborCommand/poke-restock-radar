@@ -2,6 +2,15 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { classifyRetailerProductUrl } from "@/lib/product-identity";
 import { detectRetailerAvailability, detectRetailerPrice } from "@/lib/retailer-page-signals";
+import {
+  detectTargetSellerInfoFromText,
+  evaluateTargetRetailPolicy,
+  isPokemonTcgTargetText,
+  type TargetAlertEligibility,
+  type TargetFulfillmentType,
+  type TargetPriceStatus,
+  type TargetSellerType
+} from "@/lib/target-retail-policy";
 
 type DiscoveryMode = "due" | "all";
 
@@ -97,6 +106,17 @@ type DiscoveryCandidateRecord = {
   livePrice?: number | null;
   productType?: string | null;
   stockStatus?: string | null;
+  sellerName?: string | null;
+  sellerType?: TargetSellerType | null;
+  fulfillmentType?: TargetFulfillmentType | null;
+  sellerVerified?: boolean | null;
+  priceStatus?: TargetPriceStatus | null;
+  alertEligibility?: TargetAlertEligibility | null;
+  expectedRetailPrice?: number | null;
+  maxAlertPrice?: number | null;
+  targetRetailMin?: number | null;
+  targetRetailMax?: number | null;
+  targetRetailReason?: string | null;
   enrichmentStatus?: "ENRICHED" | "PARTIAL" | "BLOCKED" | "NEEDS_REVIEW";
   enrichmentReason?: string | null;
   enrichedAt?: Date | null;
@@ -137,6 +157,17 @@ export type TargetDiscoveryPreviewCandidate = {
   imageUrl: string | null;
   livePrice: number | null;
   stockStatus: string | null;
+  sellerName: string | null;
+  sellerType: TargetSellerType;
+  fulfillmentType: TargetFulfillmentType;
+  sellerVerified: boolean;
+  priceStatus: TargetPriceStatus;
+  alertEligibility: TargetAlertEligibility;
+  expectedRetailPrice: number | null;
+  maxAlertPrice: number | null;
+  targetRetailMin: number | null;
+  targetRetailMax: number | null;
+  targetRetailReason: string | null;
   enrichmentStatus: "ENRICHED" | "PARTIAL" | "BLOCKED" | "NEEDS_REVIEW";
   enrichmentReason: string | null;
   confidenceScore: number;
@@ -332,6 +363,7 @@ function targetMetadataFromContext(html: string, candidate: DiscoveryCandidateRe
   const category = firstJsonishString(context, ["category", "category_name", "item_type", "product_type", "class_name"]);
   const description = firstJsonishString(context, ["description", "long_description", "soft_bullets", "bullet_description"]);
   const itemDetails = firstJsonishString(context, ["item_details", "details", "specifications", "bullet_descriptions"]);
+  const seller = detectTargetSellerInfoFromText(context);
 
   return {
     title,
@@ -342,7 +374,11 @@ function targetMetadataFromContext(html: string, candidate: DiscoveryCandidateRe
     brand,
     category,
     description,
-    itemDetails
+    itemDetails,
+    sellerName: seller.sellerName,
+    sellerType: seller.sellerType,
+    fulfillmentType: seller.fulfillmentType,
+    sellerVerified: seller.sellerVerified
   };
 }
 
@@ -379,6 +415,45 @@ function targetEnrichmentReason(candidate: DiscoveryCandidateRecord) {
   return missing.length
     ? `Missing ${missing.join(", ")}. UPC/DPCI are not fabricated when Target does not expose them publicly.`
     : "Public Target product data filled required and recommended candidate fields.";
+}
+
+function withTargetRetailPolicy(candidate: DiscoveryCandidateRecord) {
+  const exactUrl = Boolean(canonicalTargetProductUrl(candidate.url, candidate.url));
+  const policy = evaluateTargetRetailPolicy({
+    retailerName: "Target",
+    title: candidate.label,
+    productType: candidate.productType,
+    price: candidate.livePrice,
+    sellerName: candidate.sellerName,
+    sellerType: candidate.sellerType,
+    fulfillmentType: candidate.fulfillmentType,
+    sellerVerified: candidate.sellerVerified,
+    confidenceScore: candidate.confidenceScore ?? 55,
+    exactUrl,
+    isPokemonTcg: isPokemonTcgTargetText({ title: candidate.label, productType: candidate.productType }),
+    expectedRetailPrice: candidate.expectedRetailPrice,
+    maxAlertPrice: candidate.maxAlertPrice
+  });
+  const reasonParts = [
+    candidate.enrichmentReason || null,
+    policy.targetRetailReason,
+    policy.alertEligibility === "eligible" ? "Retail/MSRP Watch Ready." : `Target retail status: ${policy.alertEligibility}.`
+  ].filter(Boolean);
+  return {
+    ...candidate,
+    sellerName: policy.sellerName,
+    sellerType: policy.sellerType,
+    fulfillmentType: policy.fulfillmentType,
+    sellerVerified: policy.sellerVerified,
+    priceStatus: policy.priceStatus,
+    alertEligibility: policy.alertEligibility,
+    expectedRetailPrice: policy.expectedRetailPrice,
+    maxAlertPrice: policy.maxAlertPrice,
+    targetRetailMin: policy.targetRetailMin,
+    targetRetailMax: policy.targetRetailMax,
+    targetRetailReason: policy.targetRetailReason,
+    enrichmentReason: reasonParts.join(" ")
+  };
 }
 
 export function evaluateTargetPokemonTcgCandidate(name: string, url: string): TargetTcgCandidateEvaluation {
@@ -569,15 +644,20 @@ function extractTargetProductCandidates(html: string, finalUrl: string) {
       category: normalizeIdentifier(metadata.category),
       description: normalizeIdentifier(metadata.description),
       itemDetails: normalizeIdentifier(metadata.itemDetails),
-      productType
+      productType,
+      sellerName: normalizeIdentifier(metadata.sellerName),
+      sellerType: metadata.sellerType,
+      fulfillmentType: metadata.fulfillmentType,
+      sellerVerified: metadata.sellerVerified
     };
     enrichedCandidate.enrichmentStatus = targetEnrichmentStatus(enrichedCandidate);
     enrichedCandidate.enrichmentReason = targetEnrichmentReason(enrichedCandidate);
+    const policyCandidate = withTargetRetailPolicy(enrichedCandidate);
     return {
-      ...enrichedCandidate,
+      ...policyCandidate,
       reason: [
-        enrichedCandidate.dpci ? `DPCI ${enrichedCandidate.dpci}` : null,
-        enrichedCandidate.upc ? `UPC ${enrichedCandidate.upc}` : null,
+        policyCandidate.dpci ? `DPCI ${policyCandidate.dpci}` : null,
+        policyCandidate.upc ? `UPC ${policyCandidate.upc}` : null,
         candidate.retailerProductId ? `TCIN ${candidate.retailerProductId}` : null
       ]
         .filter(Boolean)
@@ -702,6 +782,7 @@ function targetCandidateFromSearchProduct(product: Record<string, unknown>, fina
   const itemTypeName = stringValue(itemType?.name);
   const brandName = stringValue(brand?.name);
   const currentPrice = numberValue(price?.current_retail) ?? numberValue(price?.formatted_current_price);
+  const seller = detectTargetSellerInfoFromText(product);
   const bullets = [
     stringValue(description?.downstream_description),
     stringValue(description?.soft_bullets),
@@ -719,6 +800,10 @@ function targetCandidateFromSearchProduct(product: Record<string, unknown>, fina
     itemDetails: itemTypeName,
     imageUrl: imageUrl?.replace(/^\/\//, "https://") ?? null,
     livePrice: currentPrice,
+    sellerName: seller.sellerName,
+    sellerType: seller.sellerType,
+    fulfillmentType: seller.fulfillmentType,
+    sellerVerified: seller.sellerVerified,
     productType: productTypeFromText(`${title} ${itemTypeName || ""} ${bullets}`) || (itemTypeName && /trading card/i.test(itemTypeName) ? "Other TCG" : null),
     reason: [
       "Target public search API",
@@ -731,7 +816,7 @@ function targetCandidateFromSearchProduct(product: Record<string, unknown>, fina
   };
   candidate.enrichmentStatus = targetEnrichmentStatus(candidate);
   candidate.enrichmentReason = targetEnrichmentReason(candidate);
-  return candidate;
+  return withTargetRetailPolicy(candidate);
 }
 
 async function fetchTargetSearchCandidates(input: {
@@ -838,6 +923,10 @@ function enrichDiscoveryCandidate(
     category: normalizeIdentifier(metadata.category) || normalizeIdentifier(candidate.category),
     description: normalizeIdentifier(metadata.description) || normalizeIdentifier(candidate.description),
     itemDetails: normalizeIdentifier(metadata.itemDetails) || normalizeIdentifier(candidate.itemDetails),
+    sellerName: normalizeIdentifier(metadata.sellerName) || normalizeIdentifier(candidate.sellerName),
+    sellerType: metadata.sellerType || candidate.sellerType || "unknown",
+    fulfillmentType: metadata.fulfillmentType || candidate.fulfillmentType || "unknown",
+    sellerVerified: metadata.sellerVerified || candidate.sellerVerified || false,
     productType,
     stockStatus: isDirect ? availability.status : candidate.stockStatus ?? null,
     confidenceScore: evaluation.confidenceScore,
@@ -845,9 +934,10 @@ function enrichDiscoveryCandidate(
   };
   enrichedCandidate.enrichmentStatus = targetEnrichmentStatus(enrichedCandidate);
   enrichedCandidate.enrichmentReason = targetEnrichmentReason(enrichedCandidate);
+  const policyCandidate = withTargetRetailPolicy(enrichedCandidate);
   const targetMetadataReason = [
-    enrichedCandidate.dpci ? `DPCI ${enrichedCandidate.dpci}` : null,
-    enrichedCandidate.upc ? `UPC ${enrichedCandidate.upc}` : null,
+    policyCandidate.dpci ? `DPCI ${policyCandidate.dpci}` : null,
+    policyCandidate.upc ? `UPC ${policyCandidate.upc}` : null,
     candidate.retailerProductId ? `TCIN ${candidate.retailerProductId}` : null,
     candidate.reason || null
   ]
@@ -855,9 +945,9 @@ function enrichDiscoveryCandidate(
     .join("; ");
 
   return {
-    ...enrichedCandidate,
+    ...policyCandidate,
     reason: targetMetadataReason ? `${evaluation.reason} ${targetMetadataReason}.` : evaluation.reason,
-    enrichmentReason: enrichedCandidate.enrichmentReason
+    enrichmentReason: policyCandidate.enrichmentReason
   };
 }
 
@@ -886,6 +976,17 @@ function targetDiscoveryDebugResultFromRaw(input: {
       imageUrl: candidate.imageUrl ?? null,
       livePrice: candidate.livePrice ?? null,
       stockStatus: candidate.stockStatus ?? null,
+      sellerName: candidate.sellerName ?? null,
+      sellerType: candidate.sellerType ?? "unknown",
+      fulfillmentType: candidate.fulfillmentType ?? "unknown",
+      sellerVerified: Boolean(candidate.sellerVerified),
+      priceStatus: candidate.priceStatus ?? "unknown",
+      alertEligibility: candidate.alertEligibility ?? "needs_review",
+      expectedRetailPrice: candidate.expectedRetailPrice ?? null,
+      maxAlertPrice: candidate.maxAlertPrice ?? null,
+      targetRetailMin: candidate.targetRetailMin ?? null,
+      targetRetailMax: candidate.targetRetailMax ?? null,
+      targetRetailReason: candidate.targetRetailReason ?? null,
       enrichmentStatus: candidate.enrichmentStatus ?? targetEnrichmentStatus(candidate),
       enrichmentReason: candidate.enrichmentReason ?? targetEnrichmentReason(candidate),
       confidenceScore: candidate.confidenceScore ?? 55,
@@ -909,6 +1010,17 @@ function targetDiscoveryDebugResultFromRaw(input: {
       imageUrl: candidate.imageUrl ?? null,
       livePrice: candidate.livePrice ?? null,
       stockStatus: candidate.stockStatus ?? null,
+      sellerName: candidate.sellerName ?? null,
+      sellerType: candidate.sellerType ?? "unknown",
+      fulfillmentType: candidate.fulfillmentType ?? "unknown",
+      sellerVerified: Boolean(candidate.sellerVerified),
+      priceStatus: candidate.priceStatus ?? "unknown",
+      alertEligibility: candidate.alertEligibility ?? "needs_review",
+      expectedRetailPrice: candidate.expectedRetailPrice ?? null,
+      maxAlertPrice: candidate.maxAlertPrice ?? null,
+      targetRetailMin: candidate.targetRetailMin ?? null,
+      targetRetailMax: candidate.targetRetailMax ?? null,
+      targetRetailReason: candidate.targetRetailReason ?? null,
       enrichmentStatus: candidate.enrichmentStatus ?? targetEnrichmentStatus(candidate),
       enrichmentReason: candidate.enrichmentReason ?? targetEnrichmentReason(candidate),
       confidenceScore: candidate.confidenceScore ?? 15,
@@ -1097,6 +1209,17 @@ export async function enrichTargetDiscoveryCandidateFromPage(candidateId: string
       imageUrl: record.imageUrl ?? candidate.imageUrl,
       livePrice: record.livePrice ?? candidate.livePrice,
       stockStatus: record.stockStatus ?? availability.status,
+      sellerName: record.sellerName ?? candidate.sellerName,
+      sellerType: record.sellerType ?? candidate.sellerType,
+      fulfillmentType: record.fulfillmentType ?? candidate.fulfillmentType,
+      sellerVerified: record.sellerVerified ?? candidate.sellerVerified,
+      priceStatus: record.priceStatus ?? candidate.priceStatus,
+      alertEligibility: record.alertEligibility ?? candidate.alertEligibility,
+      expectedRetailPrice: record.expectedRetailPrice ?? candidate.expectedRetailPrice,
+      maxAlertPrice: record.maxAlertPrice ?? candidate.maxAlertPrice,
+      targetRetailMin: record.targetRetailMin ?? candidate.targetRetailMin,
+      targetRetailMax: record.targetRetailMax ?? candidate.targetRetailMax,
+      targetRetailReason: record.targetRetailReason ?? candidate.targetRetailReason,
       confidenceScore: Math.max(record.confidenceScore ?? candidate.confidenceScore, candidate.confidenceScore),
       reason: record.reason || candidate.reason,
       enrichmentStatus: record.enrichmentStatus ?? targetEnrichmentStatus(record),
@@ -1345,6 +1468,17 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
         imageUrl: candidate.imageUrl,
         livePrice: candidate.livePrice ?? null,
         stockStatus: candidate.stockStatus ?? (directCandidate?.url === finalCandidateUrl ? availability.status : null),
+        sellerName: candidate.sellerName ?? null,
+        sellerType: candidate.sellerType ?? "unknown",
+        fulfillmentType: candidate.fulfillmentType ?? "unknown",
+        sellerVerified: Boolean(candidate.sellerVerified),
+        priceStatus: candidate.priceStatus ?? "unknown",
+        alertEligibility: candidate.alertEligibility ?? "needs_review",
+        expectedRetailPrice: candidate.expectedRetailPrice ?? null,
+        maxAlertPrice: candidate.maxAlertPrice ?? null,
+        targetRetailMin: candidate.targetRetailMin ?? null,
+        targetRetailMax: candidate.targetRetailMax ?? null,
+        targetRetailReason: candidate.targetRetailReason ?? null,
         enrichmentStatus: candidate.enrichmentStatus ?? "NEEDS_REVIEW",
         enrichmentReason: candidate.enrichmentReason ?? null,
         enrichedAt: candidate.enrichmentStatus ? new Date() : null,

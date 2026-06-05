@@ -27,6 +27,7 @@ import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates
 import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
 import { marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
+import { evaluateTargetRetailPolicy, isPokemonTcgTargetText } from "@/lib/target-retail-policy";
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
 import { createTrackerOnlineDropAlert } from "@/lib/monitor";
@@ -487,6 +488,18 @@ function productToDTO(
     liveImageUrl: product.liveImageUrl,
     liveConfidenceScore: product.liveConfidenceScore,
     liveBlockedType: product.liveBlockedType,
+    sellerName: product.sellerName,
+    sellerType: product.sellerType as ProductDTO["sellerType"],
+    fulfillmentType: product.fulfillmentType as ProductDTO["fulfillmentType"],
+    sellerVerified: product.sellerVerified,
+    priceStatus: product.priceStatus as ProductDTO["priceStatus"],
+    alertEligibility: product.alertEligibility as ProductDTO["alertEligibility"],
+    expectedRetailPrice: product.expectedRetailPrice,
+    maxAlertPrice: product.maxAlertPrice,
+    allowOverMsrp: product.allowOverMsrp,
+    targetRetailMin: product.targetRetailMin,
+    targetRetailMax: product.targetRetailMax,
+    targetRetailReason: product.targetRetailReason,
     isDemoData: product.isDemoData,
     stockStatus: product.stockStatus as ProductStatus,
     alertStatus: product.alertStatus,
@@ -805,6 +818,17 @@ function productDiscoveryCandidateToDTO(
     imageUrl: candidate.imageUrl,
     livePrice: candidate.livePrice,
     stockStatus: candidate.stockStatus as ProductStatus | null,
+    sellerName: candidate.sellerName,
+    sellerType: candidate.sellerType as ProductDiscoveryCandidateDTO["sellerType"],
+    fulfillmentType: candidate.fulfillmentType as ProductDiscoveryCandidateDTO["fulfillmentType"],
+    sellerVerified: candidate.sellerVerified,
+    priceStatus: candidate.priceStatus as ProductDiscoveryCandidateDTO["priceStatus"],
+    alertEligibility: candidate.alertEligibility as ProductDiscoveryCandidateDTO["alertEligibility"],
+    expectedRetailPrice: candidate.expectedRetailPrice,
+    maxAlertPrice: candidate.maxAlertPrice,
+    targetRetailMin: candidate.targetRetailMin,
+    targetRetailMax: candidate.targetRetailMax,
+    targetRetailReason: candidate.targetRetailReason,
     enrichmentStatus: (candidate.enrichmentStatus || "NEEDS_REVIEW") as ProductDiscoveryCandidateDTO["enrichmentStatus"],
     enrichmentReason: candidate.enrichmentReason,
     enrichedAt: candidate.enrichedAt?.toISOString() ?? null,
@@ -2734,13 +2758,15 @@ export async function approveHighConfidenceTargetDiscoveryCandidates() {
       status: "PENDING",
       confidenceScore: { gte: 80 }
     },
+    include: productDiscoveryCandidateInclude,
     orderBy: [{ confidenceScore: "desc" }, { createdAt: "desc" }],
     take: 20
   });
+  const retailReadyCandidates = candidates.filter(isTargetWatchReadyCandidate);
 
   let approved = 0;
   const failures: string[] = [];
-  for (const candidate of candidates) {
+  for (const candidate of retailReadyCandidates) {
     try {
       await reviewProductDiscoveryCandidate(candidate.id, {
         action: "approve",
@@ -2755,7 +2781,7 @@ export async function approveHighConfidenceTargetDiscoveryCandidates() {
     }
   }
 
-  return { reviewed: candidates.length, approved, failed: failures.length, failures };
+  return { reviewed: retailReadyCandidates.length, approved, skipped: candidates.length - retailReadyCandidates.length, failed: failures.length, failures };
 }
 
 function normalizedDiscoveryTitle(value: string | null | undefined) {
@@ -2781,12 +2807,28 @@ function isTargetWatchReadyCandidate(candidate: Prisma.ProductDiscoveryCandidate
   if (candidate.status !== "PENDING") return false;
   if (candidate.confidenceScore < 70) return false;
   const exactUrl = classifyRetailerProductUrl(candidate.finalUrl || candidate.url, candidate.retailer.name);
+  const policy = evaluateTargetRetailPolicy({
+    retailerName: candidate.retailer.name,
+    title: candidate.productName,
+    productType: candidate.productType,
+    price: candidate.livePrice,
+    sellerName: candidate.sellerName,
+    sellerType: candidate.sellerType,
+    fulfillmentType: candidate.fulfillmentType,
+    sellerVerified: candidate.sellerVerified,
+    confidenceScore: candidate.confidenceScore,
+    exactUrl: Boolean(exactUrl.exactProductUrl && !exactUrl.searchOrCategory),
+    isPokemonTcg: isPokemonTcgTargetText({ title: candidate.productName, productType: candidate.productType }),
+    expectedRetailPrice: candidate.expectedRetailPrice,
+    maxAlertPrice: candidate.maxAlertPrice
+  });
   return Boolean(
     exactUrl.exactProductUrl &&
       !exactUrl.searchOrCategory &&
       candidate.retailerProductId &&
       candidate.productName &&
       candidate.imageUrl &&
+      policy.alertEligibility === "eligible" &&
       targetCandidateHasTcgSignal(candidate)
   );
 }
@@ -2872,13 +2914,15 @@ export async function approveHighConfidenceEnrichedTargetDiscoveryCandidates() {
       imageUrl: { not: null },
       enrichmentStatus: { in: ["ENRICHED", "PARTIAL"] }
     },
+    include: productDiscoveryCandidateInclude,
     orderBy: [{ enrichmentStatus: "asc" }, { confidenceScore: "desc" }, { createdAt: "desc" }],
     take: 20
   });
+  const retailReadyCandidates = candidates.filter(isTargetWatchReadyCandidate);
 
   let approved = 0;
   const failures: string[] = [];
-  for (const candidate of candidates) {
+  for (const candidate of retailReadyCandidates) {
     try {
       const missingIdentifiers = [candidate.upc ? null : "UPC", candidate.dpci ? null : "DPCI"].filter(Boolean).join("/");
       await reviewProductDiscoveryCandidate(candidate.id, {
@@ -2896,7 +2940,7 @@ export async function approveHighConfidenceEnrichedTargetDiscoveryCandidates() {
     }
   }
 
-  return { reviewed: candidates.length, approved, failed: failures.length, failures };
+  return { reviewed: retailReadyCandidates.length, approved, skipped: candidates.length - retailReadyCandidates.length, failed: failures.length, failures };
 }
 
 export async function approveWatchReadyTargetDiscoveryCandidates() {
@@ -3036,6 +3080,21 @@ export async function updateProductDiscoveryCandidateIdentifiers(
   const productType = input.productType?.trim() || null;
   const requiredComplete = Boolean(candidate.url && candidate.productName && retailerProductId && candidate.imageUrl);
   const recommendedComplete = Boolean((upc || candidate.upc) && (dpci || candidate.dpci) && (candidate.livePrice !== null && candidate.livePrice !== undefined) && (productType || candidate.productType));
+  const policy = evaluateTargetRetailPolicy({
+    retailerName: candidate.retailer.name,
+    title: candidate.productName,
+    productType: productType || candidate.productType,
+    price: candidate.livePrice,
+    sellerName: candidate.sellerName,
+    sellerType: candidate.sellerType,
+    fulfillmentType: candidate.fulfillmentType,
+    sellerVerified: candidate.sellerVerified,
+    confidenceScore: candidate.confidenceScore,
+    exactUrl: Boolean(classifyRetailerProductUrl(candidate.finalUrl || candidate.url, candidate.retailer.name).exactProductUrl),
+    isPokemonTcg: targetCandidateHasTcgSignal({ ...candidate, productType: productType || candidate.productType }),
+    expectedRetailPrice: candidate.expectedRetailPrice,
+    maxAlertPrice: candidate.maxAlertPrice
+  });
   const updated = await prisma.productDiscoveryCandidate.update({
     where: { id: candidateId },
     data: {
@@ -3046,8 +3105,19 @@ export async function updateProductDiscoveryCandidateIdentifiers(
       productType,
       enrichmentStatus: requiredComplete ? (recommendedComplete ? "ENRICHED" : "PARTIAL") : "NEEDS_REVIEW",
       enrichmentReason: recommendedComplete
-        ? "Identifiers edited manually and candidate quality checklist is complete."
-        : "Identifiers edited manually. UPC/DPCI may still be missing; alerts can rely on TCIN/title with weaker matching.",
+        ? `Identifiers edited manually and candidate quality checklist is complete. ${policy.targetRetailReason}`
+        : `Identifiers edited manually. UPC/DPCI may still be missing; alerts can rely on TCIN/title with weaker matching. ${policy.targetRetailReason}`,
+      sellerName: policy.sellerName,
+      sellerType: policy.sellerType,
+      fulfillmentType: policy.fulfillmentType,
+      sellerVerified: policy.sellerVerified,
+      priceStatus: policy.priceStatus,
+      alertEligibility: policy.alertEligibility,
+      expectedRetailPrice: policy.expectedRetailPrice,
+      maxAlertPrice: policy.maxAlertPrice,
+      targetRetailMin: policy.targetRetailMin,
+      targetRetailMax: policy.targetRetailMax,
+      targetRetailReason: policy.targetRetailReason,
       enrichedAt: new Date()
     },
     include: productDiscoveryCandidateInclude
@@ -3123,6 +3193,17 @@ export async function reviewProductDiscoveryCandidate(
         dpci: candidate.dpci,
         retailerProductId: candidate.retailerProductId,
         retailPrice: candidate.livePrice,
+        sellerName: candidate.sellerName,
+        sellerType: candidate.sellerType,
+        fulfillmentType: candidate.fulfillmentType,
+        sellerVerified: candidate.sellerVerified,
+        priceStatus: candidate.priceStatus,
+        alertEligibility: candidate.alertEligibility,
+        expectedRetailPrice: candidate.expectedRetailPrice,
+        maxAlertPrice: candidate.maxAlertPrice,
+        targetRetailMin: candidate.targetRetailMin,
+        targetRetailMax: candidate.targetRetailMax,
+        targetRetailReason: candidate.targetRetailReason,
         stockStatus: "UNAVAILABLE",
         priority: input.priority,
         rating: input.rating,
@@ -3148,6 +3229,17 @@ export async function reviewProductDiscoveryCandidate(
           retailerProductId: existingProduct.retailerProductId || candidate.retailerProductId,
           imageUrl: existingProduct.imageUrl || candidate.imageUrl,
           retailPrice: existingProduct.retailPrice ?? candidate.livePrice,
+          sellerName: candidate.sellerName ?? existingProduct.sellerName,
+          sellerType: candidate.sellerType ?? existingProduct.sellerType,
+          fulfillmentType: candidate.fulfillmentType ?? existingProduct.fulfillmentType,
+          sellerVerified: candidate.sellerVerified || existingProduct.sellerVerified,
+          priceStatus: candidate.priceStatus ?? existingProduct.priceStatus,
+          alertEligibility: candidate.alertEligibility ?? existingProduct.alertEligibility,
+          expectedRetailPrice: candidate.expectedRetailPrice ?? existingProduct.expectedRetailPrice,
+          maxAlertPrice: candidate.maxAlertPrice ?? existingProduct.maxAlertPrice,
+          targetRetailMin: candidate.targetRetailMin ?? existingProduct.targetRetailMin,
+          targetRetailMax: candidate.targetRetailMax ?? existingProduct.targetRetailMax,
+          targetRetailReason: candidate.targetRetailReason ?? existingProduct.targetRetailReason,
           productType: existingProduct.productType || candidate.productType,
           notes:
             existingProduct.notes ||

@@ -71,6 +71,7 @@ import {
 } from "react";
 import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
+import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPolicyResult } from "@/lib/target-retail-policy";
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
@@ -307,6 +308,11 @@ function targetProductGroupLabel(productType?: string | null) {
 const targetCandidateFilterOptions = [
   "All",
   "Watch Ready",
+  "Retail/MSRP only",
+  "Suppressed Over MSRP",
+  "Marketplace",
+  "Seller Unknown",
+  "Needs Review",
   "Missing UPC",
   "Missing DPCI",
   "Booster Bundles",
@@ -345,6 +351,7 @@ function targetCandidateHasTcgSignal(candidate: ProductDiscoveryCandidateDTO) {
 function targetCandidateWatchReady(candidate: ProductDiscoveryCandidateDTO) {
   const identifiers = candidateIdentifiersFromReason(candidate);
   const exactUrl = /target\.com\/p\//i.test(candidate.finalUrl || candidate.url);
+  const policy = targetCandidateRetailPolicy(candidate);
   return Boolean(
     candidate.status === "PENDING" &&
       exactUrl &&
@@ -352,6 +359,7 @@ function targetCandidateWatchReady(candidate: ProductDiscoveryCandidateDTO) {
       candidate.productName &&
       candidate.imageUrl &&
       candidate.confidenceScore >= 70 &&
+      policy.alertEligibility === "eligible" &&
       targetCandidateHasTcgSignal(candidate)
   );
 }
@@ -359,8 +367,14 @@ function targetCandidateWatchReady(candidate: ProductDiscoveryCandidateDTO) {
 function targetCandidateMatchesFilter(candidate: ProductDiscoveryCandidateDTO, filter: TargetCandidateFilter) {
   const identifiers = candidateIdentifiersFromReason(candidate);
   const group = targetProductGroupLabel(candidate.productType);
+  const policy = targetCandidateRetailPolicy(candidate);
   if (filter === "All") return true;
   if (filter === "Watch Ready") return targetCandidateWatchReady(candidate);
+  if (filter === "Retail/MSRP only") return policy.alertEligibility === "eligible";
+  if (filter === "Suppressed Over MSRP") return policy.alertEligibility === "suppressed_over_msrp";
+  if (filter === "Marketplace") return policy.alertEligibility === "suppressed_marketplace" || policy.sellerType === "marketplace";
+  if (filter === "Seller Unknown") return policy.sellerType === "unknown";
+  if (filter === "Needs Review") return policy.alertEligibility === "needs_review";
   if (filter === "Missing UPC") return !identifiers.upc;
   if (filter === "Missing DPCI") return !identifiers.dpci;
   if (filter === "Low Confidence") return candidate.confidenceScore < 70;
@@ -403,6 +417,59 @@ function buyableNowDetectedAt(product: ProductDTO) {
 
 function buyableNowSignalText(product: ProductDTO) {
   return `${product.liveStockStatus || ""} ${product.stockStatus || ""} ${product.lastMonitorResult || ""} ${product.pendingAlertStatus || ""} ${product.pendingAlertReason || ""} ${product.notes || ""}`.toLowerCase();
+}
+
+function isTargetRetailer(product: ProductDTO | ProductDiscoveryCandidateDTO) {
+  return /target/i.test(product.retailerName);
+}
+
+function targetProductRetailPolicy(product: ProductDTO): TargetRetailPolicyResult {
+  const price = trackerProductPrice(product);
+  return evaluateTargetRetailPolicy({
+    retailerName: product.retailerName,
+    title: product.liveTitle || product.name,
+    productType: product.productType,
+    price,
+    sellerName: product.sellerName,
+    sellerType: product.sellerType,
+    fulfillmentType: product.fulfillmentType,
+    sellerVerified: product.sellerVerified,
+    confidenceScore: product.liveConfidenceScore ?? 0,
+    exactUrl: Boolean(targetExactProductUrl(product)),
+    isPokemonTcg: isPokemonTcgTargetText({ title: product.liveTitle || product.name, productType: product.productType }),
+    expectedRetailPrice: product.expectedRetailPrice,
+    maxAlertPrice: product.maxAlertPrice,
+    allowOverMsrp: product.allowOverMsrp
+  });
+}
+
+function targetCandidateRetailPolicy(candidate: ProductDiscoveryCandidateDTO): TargetRetailPolicyResult {
+  return evaluateTargetRetailPolicy({
+    retailerName: candidate.retailerName,
+    title: candidate.productName,
+    productType: candidate.productType,
+    price: candidate.livePrice,
+    sellerName: candidate.sellerName,
+    sellerType: candidate.sellerType,
+    fulfillmentType: candidate.fulfillmentType,
+    sellerVerified: candidate.sellerVerified,
+    confidenceScore: candidate.confidenceScore,
+    exactUrl: /target\.com\/p\//i.test(candidate.finalUrl || candidate.url),
+    isPokemonTcg: targetCandidateHasTcgSignal(candidate),
+    expectedRetailPrice: candidate.expectedRetailPrice,
+    maxAlertPrice: candidate.maxAlertPrice
+  });
+}
+
+function productRetailEligibleForBuyable(product: ProductDTO) {
+  if (!isTargetRetailer(product)) return true;
+  return targetProductRetailPolicy(product).alertEligibility === "eligible";
+}
+
+function productRetailSuppressed(product: ProductDTO) {
+  if (!isTargetRetailer(product)) return false;
+  const policy = targetProductRetailPolicy(product);
+  return policy.suppressed || policy.alertEligibility === "needs_review";
 }
 
 function productIsCurrentlyBuyable(product: ProductDTO) {
@@ -750,7 +817,8 @@ function productReadyForAlert(product: ProductDTO) {
   return (
     productVerificationStages(product).every((stage) => stage.complete) &&
     !product.liveBlockedType &&
-    (product.liveConfidenceScore ?? 0) >= 70
+    (product.liveConfidenceScore ?? 0) >= 70 &&
+    productRetailEligibleForBuyable(product)
   );
 }
 
@@ -785,6 +853,12 @@ function watchProductReadyForLiveAlerts(product: ProductDTO) {
 }
 
 function productPriceStatusLabel(product: ProductDTO) {
+  if (isTargetRetailer(product)) {
+    const policy = targetProductRetailPolicy(product);
+    if (policy.priceStatus === "over_msrp") return `Over MSRP (${money(trackerProductPrice(product))})`;
+    if (policy.priceStatus === "marketplace_price") return "Marketplace price";
+    if (policy.priceStatus === "msrp" || policy.priceStatus === "near_retail") return `${money(trackerProductPrice(product))} retail`;
+  }
   if (product.livePrice !== null && product.livePriceVerifiedAt) return `${money(product.livePrice)} live`;
   if (product.retailPrice !== null) return `${money(product.retailPrice)} stored, live not verified`;
   return "Price not verified";
@@ -798,6 +872,12 @@ function productStockStatusLabel(product: ProductDTO) {
 
 function watchProductWarnings(product: ProductDTO) {
   const warnings: string[] = [];
+  if (isTargetRetailer(product)) {
+    const policy = targetProductRetailPolicy(product);
+    if (policy.alertEligibility === "suppressed_marketplace") warnings.push("Target listing is suppressed because seller appears to be marketplace/third-party.");
+    if (policy.alertEligibility === "suppressed_over_msrp") warnings.push(policy.targetRetailReason);
+    if (policy.alertEligibility === "needs_review") warnings.push(`Target retail/MSRP needs review: ${policy.targetRetailReason}`);
+  }
   if (product.verificationStatus === "SEARCH_OR_CATEGORY_LINK") warnings.push("Search/category URL is rejected for live alerts.");
   if (!product.url) warnings.push("Exact product URL is missing.");
   if (!productHasIdentifier(product)) warnings.push("SKU/UPC/DPCI/TCIN/ASIN is missing.");
@@ -13508,6 +13588,7 @@ function AlertsPanel({
         .filter((record) => trackerIsLiveDrop(record))
         .filter((record) => !record.isDeprecated)
         .filter((record) => !isTestDashboardAlert(record.alert))
+        .filter((record) => (record.product ? productRetailEligibleForBuyable(record.product) : true))
         .filter((record) => trackerChannelMatches(record, channelFilter))
         .sort((a, b) => new Date(b.alert.timestamp).getTime() - new Date(a.alert.timestamp).getTime()),
     [channelFilter, trackerAlerts]
@@ -13565,6 +13646,22 @@ function AlertsPanel({
   const missingTargetUpcCandidates = useMemo(() => pendingTargetCandidates.filter((candidate) => !candidate.upc), [pendingTargetCandidates]);
   const missingTargetDpciCandidates = useMemo(() => pendingTargetCandidates.filter((candidate) => !candidate.dpci), [pendingTargetCandidates]);
   const readyTargetCandidates = useMemo(() => pendingTargetCandidates.filter(targetCandidateWatchReady), [pendingTargetCandidates]);
+  const targetRetailEligibleCandidates = useMemo(
+    () => pendingTargetCandidates.filter((candidate) => targetCandidateRetailPolicy(candidate).alertEligibility === "eligible"),
+    [pendingTargetCandidates]
+  );
+  const targetSuppressedOverMsrpCandidates = useMemo(
+    () => targetDiscoveryCandidates.filter((candidate) => targetCandidateRetailPolicy(candidate).alertEligibility === "suppressed_over_msrp"),
+    [targetDiscoveryCandidates]
+  );
+  const targetSuppressedMarketplaceCandidates = useMemo(
+    () => targetDiscoveryCandidates.filter((candidate) => targetCandidateRetailPolicy(candidate).alertEligibility === "suppressed_marketplace"),
+    [targetDiscoveryCandidates]
+  );
+  const targetSellerUnknownCandidates = useMemo(
+    () => targetDiscoveryCandidates.filter((candidate) => targetCandidateRetailPolicy(candidate).sellerType === "unknown"),
+    [targetDiscoveryCandidates]
+  );
   const filteredTargetCandidates = useMemo(
     () =>
       targetDiscoveryCandidates
@@ -13597,7 +13694,19 @@ function AlertsPanel({
     [targetDiscoverySources]
   );
   const buyableNowProducts = useMemo(
-    () => watchProducts.filter(productIsCurrentlyBuyable).sort(buyableNowProductComparator(targetBuyableSort)),
+    () =>
+      watchProducts
+        .filter(productIsCurrentlyBuyable)
+        .filter(productRetailEligibleForBuyable)
+        .sort(buyableNowProductComparator(targetBuyableSort)),
+    [targetBuyableSort, watchProducts]
+  );
+  const suppressedBuyableNowProducts = useMemo(
+    () =>
+      watchProducts
+        .filter(productIsCurrentlyBuyable)
+        .filter(productRetailSuppressed)
+        .sort(buyableNowProductComparator(targetBuyableSort)),
     [targetBuyableSort, watchProducts]
   );
   const visibleBuyableNowProducts = useMemo(
@@ -13608,7 +13717,11 @@ function AlertsPanel({
         .slice(0, 48),
     [buyableNowProducts, channelFilter, targetBuyableFilter]
   );
-  const targetBuyableProducts = useMemo(() => targetWatchProducts.filter(productIsCurrentlyBuyable), [targetWatchProducts]);
+  const targetBuyableProducts = useMemo(() => targetWatchProducts.filter(productIsCurrentlyBuyable).filter(productRetailEligibleForBuyable), [targetWatchProducts]);
+  const targetSuppressedBuyableProducts = useMemo(
+    () => targetWatchProducts.filter(productIsCurrentlyBuyable).filter(productRetailSuppressed),
+    [targetWatchProducts]
+  );
   const targetSoldOutProducts = useMemo(() => targetWatchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(targetBuyableStatus(product))), [targetWatchProducts]);
   const soldOutWatchProducts = useMemo(() => watchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(buyableNowStatus(product))), [watchProducts]);
   const targetBlockedProducts = useMemo(() => targetWatchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError), [targetWatchProducts]);
@@ -13976,6 +14089,13 @@ function AlertsPanel({
     const latestLog = dashboard.monitorLogs.find((log) => log.productId === product.id) ?? null;
     const actionUrl = product.verifiedFinalUrl || product.url;
     const editing = editingWatchProductId === product.id;
+    const targetPolicy = isTargetRetailer(product) ? targetProductRetailPolicy(product) : null;
+    const targetMsrpRange =
+      targetPolicy && targetPolicy.targetRetailMin !== null && targetPolicy.targetRetailMax !== null
+        ? `${money(targetPolicy.targetRetailMin)}-${money(targetPolicy.targetRetailMax)}`
+        : targetPolicy
+          ? "Manual review"
+          : "n/a";
     return (
       <article className="watchlist-qa-card" key={product.id}>
         <div className="watchlist-qa-main">
@@ -14010,6 +14130,10 @@ function AlertsPanel({
           <DetailStat label="Stock status" value={productStockStatusLabel(product)} tone={product.liveBlockedType ? "bad" : product.liveStockStatus ? "good" : "neutral"} />
           <DetailStat label="Confidence" value={product.liveConfidenceScore === null ? "Unknown" : `${product.liveConfidenceScore}%`} tone={(product.liveConfidenceScore ?? 0) >= 70 ? "good" : "neutral"} />
           <DetailStat label="Latest monitor reason" value={product.lastMonitorError || latestLog?.reason || product.verificationNotes || "No issue saved"} />
+          {targetPolicy ? <DetailStat label="Seller type" value={formatStatus(targetPolicy.sellerType)} tone={targetPolicy.sellerType === "marketplace" ? "bad" : targetPolicy.sellerType === "target" ? "good" : "neutral"} /> : null}
+          {targetPolicy ? <DetailStat label="Expected MSRP" value={targetMsrpRange} tone={targetPolicy.alertEligibility === "eligible" ? "good" : "bad"} /> : null}
+          {targetPolicy ? <DetailStat label="Alert eligibility" value={formatStatus(targetPolicy.alertEligibility)} tone={targetPolicy.alertEligibility === "eligible" ? "good" : "bad"} /> : null}
+          {targetPolicy ? <DetailStat label="Suppression reason" value={targetPolicy.targetRetailReason} tone={targetPolicy.suppressed ? "bad" : "neutral"} /> : null}
         </div>
 
         <div className={warnings.length ? "watchlist-qa-warnings" : "watchlist-qa-warnings is-clean"}>
@@ -14216,6 +14340,7 @@ function AlertsPanel({
     const editing = editingTargetCandidateId === candidate.id;
     const selected = selectedTargetCandidateIds.has(candidate.id);
     const exactUrl = /target\.com\/p\//i.test(candidate.finalUrl || candidate.url);
+    const targetPolicy = targetCandidateRetailPolicy(candidate);
     const watchReady = targetCandidateWatchReady(candidate);
     const missingIdentifiers = [identifiers.upc ? null : "UPC", identifiers.dpci ? null : "DPCI"].filter(Boolean).join("/");
     return (
@@ -14240,8 +14365,10 @@ function AlertsPanel({
               ) : null}
               <span className={`chip ${discoveryCandidateStatusTone(candidate.status)}`}>{discoveryCandidateStatusLabel(candidate.status)}</span>
               <span className={`chip ${targetCandidateEnrichmentTone(candidate.enrichmentStatus)}`}>{targetCandidateEnrichmentLabel(candidate.enrichmentStatus)}</span>
-              {watchReady ? <span className="chip good">Watch Ready</span> : <span className="chip watch">Needs QA</span>}
+              {watchReady ? <span className="chip good">Retail/MSRP Watch Ready</span> : <span className={targetPolicy.suppressed ? "chip bad" : "chip watch"}>{formatStatus(targetPolicy.alertEligibility)}</span>}
               {exactUrl ? <span className="chip good">Exact URL</span> : <span className="chip bad">Needs URL</span>}
+              <span className={`chip ${targetPolicy.priceStatus === "over_msrp" || targetPolicy.priceStatus === "marketplace_price" ? "bad" : targetPolicy.priceStatus === "unknown" ? "watch" : "good"}`}>{formatStatus(targetPolicy.priceStatus)}</span>
+              <span className={`chip ${targetPolicy.sellerType === "marketplace" ? "bad" : targetPolicy.sellerType === "target" ? "good" : "watch"}`}>{formatStatus(targetPolicy.sellerType)} seller</span>
               {!identifiers.upc ? <span className="chip watch">Missing UPC</span> : null}
               {!identifiers.dpci ? <span className="chip watch">Missing DPCI</span> : null}
               <span className={candidate.confidenceScore >= 80 ? "chip good" : "chip watch"}>{candidate.confidenceScore}%</span>
@@ -14251,8 +14378,9 @@ function AlertsPanel({
             <span><b>Type</b>{candidate.productType || "Other TCG"}</span>
             <span><b>Price</b>{candidate.livePrice === null ? "Unknown" : money(candidate.livePrice)}</span>
             <span><b>TCIN</b>{identifiers.tcin || "Missing"}</span>
+            <span><b>MSRP</b>{targetPolicy.targetRetailMin !== null && targetPolicy.targetRetailMax !== null ? `${money(targetPolicy.targetRetailMin)}-${money(targetPolicy.targetRetailMax)}` : "Review"}</span>
             <span><b>Confidence</b>{candidate.confidenceScore}%</span>
-            <span><b>Status</b>{watchReady ? "Watch Ready" : "Needs QA"}</span>
+            <span><b>Status</b>{watchReady ? "Retail/MSRP Watch Ready" : formatStatus(targetPolicy.alertEligibility)}</span>
           </div>
           {missingIdentifiers ? (
             <p className="target-candidate-warning compact">
@@ -14330,6 +14458,8 @@ function AlertsPanel({
               <span><b>Brand</b>{candidate.brand || "Unknown"}</span>
               <span><b>Category</b>{candidate.category || "Unknown"}</span>
               <span><b>Stock</b>{candidate.stockStatus ? formatStatus(candidate.stockStatus) : "Not checked"}</span>
+              <span><b>Seller</b>{targetPolicy.sellerName || "Unknown"} ({formatStatus(targetPolicy.sellerType)})</span>
+              <span><b>Eligibility</b>{formatStatus(targetPolicy.alertEligibility)}</span>
               <span><b>Source</b>{candidate.sourceName}</span>
             </div>
             <div className={watchReady ? "target-quality-checklist is-ready" : "target-quality-checklist"}>
@@ -14340,10 +14470,12 @@ function AlertsPanel({
               <span><Check size={13} /> Confidence {candidate.confidenceScore >= 70 ? "ready" : "low"}</span>
               <span className={identifiers.upc ? "" : "is-warning"}>{identifiers.upc ? <Check size={13} /> : <AlertTriangle size={13} />} UPC {identifiers.upc ? "found" : "warning only"}</span>
               <span className={identifiers.dpci ? "" : "is-warning"}>{identifiers.dpci ? <Check size={13} /> : <AlertTriangle size={13} />} DPCI {identifiers.dpci ? "found" : "warning only"}</span>
+              <span className={targetPolicy.alertEligibility === "eligible" ? "" : "is-warning"}>{targetPolicy.alertEligibility === "eligible" ? <Check size={13} /> : <AlertTriangle size={13} />} Retail/MSRP {targetPolicy.alertEligibility === "eligible" ? "ready" : "not eligible"}</span>
             </div>
             {candidate.enrichmentReason ? (
               <p className="target-candidate-warning">{candidate.enrichmentReason}</p>
             ) : null}
+            <p className={targetPolicy.suppressed ? "target-candidate-warning" : "target-candidate-reason"}>{targetPolicy.targetRetailReason}</p>
             <p className="target-candidate-reason">{candidate.reason || "Found on public Target discovery source. Admin approval is required before monitoring."}</p>
             <div className="target-candidate-actions">
               <button className="mini-action" type="button" disabled={busy || isRejected} onClick={() => reviewTargetCandidate(candidate, "ignore")}>
@@ -14488,6 +14620,10 @@ function AlertsPanel({
           <DetailStat label="Missing UPC" value={String(missingTargetUpcCandidates.length)} tone={missingTargetUpcCandidates.length ? "neutral" : "good"} />
           <DetailStat label="Missing DPCI" value={String(missingTargetDpciCandidates.length)} tone={missingTargetDpciCandidates.length ? "neutral" : "good"} />
           <DetailStat label="Watch ready" value={String(readyTargetCandidates.length)} tone={readyTargetCandidates.length ? "good" : "neutral"} />
+          <DetailStat label="Retail/MSRP eligible" value={String(targetRetailEligibleCandidates.length)} tone={targetRetailEligibleCandidates.length ? "good" : "neutral"} />
+          <DetailStat label="Over MSRP suppressed" value={String(targetSuppressedOverMsrpCandidates.length)} tone={targetSuppressedOverMsrpCandidates.length ? "bad" : "good"} />
+          <DetailStat label="Marketplace suppressed" value={String(targetSuppressedMarketplaceCandidates.length)} tone={targetSuppressedMarketplaceCandidates.length ? "bad" : "good"} />
+          <DetailStat label="Seller unknown" value={String(targetSellerUnknownCandidates.length)} tone={targetSellerUnknownCandidates.length ? "neutral" : "good"} />
           <DetailStat label="Approved today" value={String(approvedTargetCandidatesToday.length)} />
         </div>
         <div className="target-discovery-test">
@@ -14624,6 +14760,7 @@ function AlertsPanel({
     const productType = targetProductGroupLabel(product.productType || product.name);
     const identifier = buyableNowIdentifier(product);
     const identifierLabel = /target/i.test(product.retailerName) ? "TCIN" : /amazon/i.test(product.retailerName) ? "ASIN/SKU" : "SKU/Product ID";
+    const targetPolicy = isTargetRetailer(product) ? targetProductRetailPolicy(product) : null;
     return (
       <article className="target-buyable-card" key={product.id}>
         <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
@@ -14636,14 +14773,19 @@ function AlertsPanel({
             </div>
             <div className="tracker-drop-badges">
               <span className={`chip ${statusTone(status)}`}>{statusLabel}</span>
+              {targetPolicy ? <span className={`chip ${targetPolicy.alertEligibility === "eligible" ? "good" : "bad"}`}>{targetPolicy.alertEligibility === "eligible" ? "Retail/MSRP" : formatStatus(targetPolicy.alertEligibility)}</span> : null}
               {targetBuyableHighStock(product) ? <span className="chip good">High Stock</span> : null}
             </div>
           </div>
           <div className="target-buyable-meta">
             <span><b>Price</b>{price === null ? "Price unknown" : money(price)}</span>
+            {targetPolicy ? <span><b>Price status</b>{formatStatus(targetPolicy.priceStatus)}</span> : null}
             <span><b>{identifierLabel}</b>{identifier}</span>
             <span><b>Confidence</b>{confidence}%</span>
             <span><b>Last checked</b>{relativeTime(buyableNowDetectedAt(product))}</span>
+            {targetPolicy && targetPolicy.targetRetailMin !== null && targetPolicy.targetRetailMax !== null ? (
+              <span><b>MSRP range</b>{money(targetPolicy.targetRetailMin)}-{money(targetPolicy.targetRetailMax)}</span>
+            ) : null}
           </div>
           <div className="target-buyable-actions">
             {exactUrl ? (
@@ -14671,6 +14813,8 @@ function AlertsPanel({
             <dl>
               <div><dt>Verified URL</dt><dd>{exactUrl || "Exact product URL missing"}</dd></div>
               <div><dt>Identifiers</dt><dd>{product.upc || "UPC missing"} / {product.dpci || "DPCI missing"} / {product.sku || product.retailerProductId || "SKU missing"}</dd></div>
+              {targetPolicy ? <div><dt>Seller</dt><dd>{targetPolicy.sellerName || "Unknown seller"} ({formatStatus(targetPolicy.sellerType)})</dd></div> : null}
+              {targetPolicy ? <div><dt>Retail guardrail</dt><dd>{targetPolicy.targetRetailReason}</dd></div> : null}
               <div><dt>Monitor result</dt><dd>{product.lastMonitorResult || "No monitor result saved."}</dd></div>
               <div><dt>Duplicate suppression</dt><dd>Repeat checks use the product/event key before creating new Live Drops, but current buyable products stay visible here.</dd></div>
             </dl>
@@ -14692,6 +14836,7 @@ function AlertsPanel({
           <div className="row-actions">
             <span className="chip good">{buyableNowProducts.length} buyable</span>
             <span className="chip muted">{targetBuyableProducts.length} Target</span>
+            <span className={targetSuppressedBuyableProducts.length ? "chip watch" : "chip muted"}>{targetSuppressedBuyableProducts.length} suppressed</span>
             <span className="chip muted">Manual checkout only</span>
           </div>
         </div>
@@ -14699,6 +14844,7 @@ function AlertsPanel({
           <DetailStat label="Watched products" value={String(watchProducts.length)} />
           <DetailStat label="Buyable now" value={String(buyableNowProducts.length)} tone={buyableNowProducts.length ? "good" : "neutral"} />
           <DetailStat label="Target buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Suppressed / overpriced" value={String(suppressedBuyableNowProducts.length)} tone={suppressedBuyableNowProducts.length ? "bad" : "good"} />
           <DetailStat label="Sold out / watch only" value={String(soldOutWatchProducts.length)} />
           <DetailStat label="Needs QA" value={String(targetNeedsQaProducts.length)} tone={targetNeedsQaProducts.length ? "neutral" : "good"} />
         </div>
@@ -14734,6 +14880,30 @@ function AlertsPanel({
             </div>
           </div>
         )}
+        <details className="target-watch-only-section">
+          <summary>Suppressed / Overpriced ({suppressedBuyableNowProducts.length})</summary>
+          <p className="target-candidate-warning compact">These are buyable but not Target retail/MSRP. Marketplace and over-MSRP products are hidden from Buyable Now and Live Drops by default.</p>
+          <div className="target-watch-only-list">
+            {suppressedBuyableNowProducts.slice(0, 24).map((product) => {
+              const policy = targetProductRetailPolicy(product);
+              return (
+                <article key={product.id}>
+                  <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
+                  <div>
+                    <strong>{product.name}</strong>
+                    <span>{product.retailerName} - {targetProductGroupLabel(product.productType || product.name)} - {buyableNowIdentifier(product)}</span>
+                    <small>{formatStatus(policy.alertEligibility)} - {policy.targetRetailReason}</small>
+                  </div>
+                  <button className="mini-action" type="button" disabled={busy} onClick={() => runProductCheck(product)}>
+                    <RefreshCw size={13} />
+                    Check
+                  </button>
+                </article>
+              );
+            })}
+            {!suppressedBuyableNowProducts.length ? <span className="target-watch-only-empty">No buyable products are suppressed by Target retail rules.</span> : null}
+          </div>
+        </details>
         <details className="target-watch-only-section">
           <summary>Sold Out / Watch Only ({soldOutWatchProducts.length})</summary>
           <div className="target-watch-only-list">

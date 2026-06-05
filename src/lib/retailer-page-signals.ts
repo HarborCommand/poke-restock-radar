@@ -1,4 +1,5 @@
 import type { ProductStatus } from "@/types/radar";
+import { detectTargetSellerInfoFromText, type TargetFulfillmentType, type TargetSellerType } from "@/lib/target-retail-policy";
 
 export type RetailerAvailabilitySignal = {
   status: ProductStatus | null;
@@ -18,6 +19,10 @@ export type RetailerLiveSignal = {
   sku?: string | null;
   stockLevel?: "HIGH" | "LOW" | null;
   storeAvailabilityText?: string | null;
+  sellerName?: string | null;
+  sellerType?: TargetSellerType | null;
+  fulfillmentType?: TargetFulfillmentType | null;
+  sellerVerified?: boolean | null;
 };
 
 function htmlDecode(value: string) {
@@ -482,12 +487,17 @@ export async function fetchTargetRedskyLiveSignal(input: {
   const fulfillmentProduct =
     ((fulfillmentResponse?.data as Record<string, unknown> | undefined)?.product as Record<string, unknown> | undefined) ?? null;
   const fulfillment = (fulfillmentProduct?.fulfillment as Record<string, unknown> | undefined) ?? null;
+  const seller = detectTargetSellerInfoFromText({ product, fulfillmentProduct, fulfillment });
 
   return {
     price,
     title,
     imageUrl,
     source: "Target public Redsky API",
+    sellerName: seller.sellerName,
+    sellerType: seller.sellerType,
+    fulfillmentType: seller.fulfillmentType,
+    sellerVerified: seller.sellerVerified,
     availability: targetRedskyAvailability({
       fulfillment,
       fallback: input.fallbackAvailability,

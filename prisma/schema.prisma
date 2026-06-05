@@ -150,6 +150,18 @@ model Product {
   liveImageUrl              String?
   liveConfidenceScore       Int?
   liveBlockedType           String?
+  sellerName                String?
+  sellerType                String                 @default("unknown")
+  fulfillmentType           String                 @default("unknown")
+  sellerVerified            Boolean                @default(false)
+  priceStatus               String                 @default("unknown")
+  alertEligibility          String                 @default("needs_review")
+  expectedRetailPrice       Float?
+  maxAlertPrice             Float?
+  allowOverMsrp             Boolean                @default(false)
+  targetRetailMin           Float?
+  targetRetailMax           Float?
+  targetRetailReason        String?
   isDemoData                Boolean                @default(false)
   stockStatus               String                 @default("UNAVAILABLE")
   alertStatus               Boolean                @default(false)
@@ -199,6 +211,9 @@ model Product {
   @@index([verificationStatus])
   @@index([stockStatus])
   @@index([liveStockStatus])
+  @@index([sellerType])
+  @@index([priceStatus])
+  @@index([alertEligibility])
   @@index([isDemoData])
   @@index([archivedAt])
   @@index([lastCheckedAt])
@@ -485,6 +500,17 @@ model ProductDiscoveryCandidate {
   imageUrl          String?
   livePrice         Float?
   stockStatus       String?
+  sellerName        String?
+  sellerType        String                 @default("unknown")
+  fulfillmentType   String                 @default("unknown")
+  sellerVerified    Boolean                @default(false)
+  priceStatus       String                 @default("unknown")
+  alertEligibility  String                 @default("needs_review")
+  expectedRetailPrice Float?
+  maxAlertPrice     Float?
+  targetRetailMin   Float?
+  targetRetailMax   Float?
+  targetRetailReason String?
   enrichmentStatus  String                 @default("NEEDS_REVIEW")
   enrichmentReason  String?
   enrichedAt        DateTime?
@@ -505,6 +531,9 @@ model ProductDiscoveryCandidate {
   @@index([retailerProductId])
   @@index([upc])
   @@index([dpci])
+  @@index([sellerType])
+  @@index([priceStatus])
+  @@index([alertEligibility])
   @@index([enrichmentStatus])
   @@index([createdAt])
 }
