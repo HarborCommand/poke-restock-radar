@@ -287,8 +287,14 @@ test("alerts tab is rebuilt as a Discord-style tracker command center", () => {
   }
 
   assert.match(alertsPanel, /Discord-style feed/);
+  assert.match(alertsPanel, /Target action center/);
+  assert.match(alertsPanel, /Buyable Now/);
+  assert.match(alertsPanel, /Sold Out \/ Watch Only/);
+  assert.match(alertsPanel, /targetBuyableFilterOptions/);
+  assert.match(alertsPanel, /targetBuyableSortOptions/);
   assert.match(alertsPanel, /Go Buy/);
   assert.match(alertsPanel, /Add to Inventory/);
+  assert.match(alertsPanel, /Mark bought/);
   assert.match(alertsPanel, /Got It/);
   assert.match(alertsPanel, /Missed/);
   assert.match(alertsPanel, /Sold Out/);
@@ -333,6 +339,8 @@ test("tracker alert categories and archived local store cleanup are wired", () =
   assert.match(app, /Tracker setup/);
   assert.match(app, /Watching \{watchProducts\.length\} products/);
   assert.match(app, /tracker-side-rail/);
+  assert.match(app, /targetBuyableProductComparator/);
+  assert.match(app, /targetExactProductUrl/);
 });
 
 test("tracker matching helpers cover keywords, identifiers, mute, duplicate cooldown, and feedback", () => {
@@ -460,6 +468,8 @@ test("live drops are restricted to real product monitor alerts", () => {
   assert.match(liveDropHelper, /manual checkout only/);
   assert.match(alertsPanel, /\.filter\(\(record\) => trackerIsLiveDrop\(record\)\)/);
   assert.doesNotMatch(liveDropHelper, /tracker_sold_out/);
+  assert.match(alertsPanel, /Repeat Target checks use the product\/event key before creating new Live Drops/);
+  assert.match(alertsPanel, /Live Drops are created only when stock is proven buyable/);
 });
 
 test("admin-only tracker simulation and alert actions are wired", () => {

@@ -13426,6 +13426,229 @@ body .target-watchlist-summary-grid {
   padding: 10px;
 }
 
+body .target-buyable-panel,
+body .target-buyable-grid,
+body .target-buyable-card,
+body .target-buyable-body,
+body .target-live-summary-grid,
+body .target-watch-only-list {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+}
+
+body .target-buyable-panel {
+  gap: 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #f8fffb 0%, #ffffff 100%);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.055);
+  padding: 16px;
+}
+
+body .target-live-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: 10px;
+}
+
+body .target-buyable-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, auto);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+body .target-buyable-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+body .target-buyable-filter-bar button {
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 8px 11px;
+}
+
+body .target-buyable-filter-bar button.active {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #047857;
+}
+
+body .target-buyable-sort {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .target-buyable-sort select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 850;
+  padding: 9px 11px;
+}
+
+body .target-buyable-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(410px, 100%), 1fr));
+  gap: 12px;
+}
+
+body .target-buyable-card {
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  border: 1px solid #dcfce7;
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.045);
+}
+
+body .target-buyable-card .inventory-image-frame {
+  width: 96px;
+  height: 96px;
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+body .target-buyable-body {
+  gap: 10px;
+}
+
+body .target-buyable-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+}
+
+body .target-buyable-heading h3 {
+  margin: 2px 0 3px;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.25;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+body .target-buyable-heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+body .target-buyable-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+body .target-buyable-meta span {
+  display: grid;
+  gap: 2px;
+  border: 1px solid #edf2f7;
+  border-radius: 13px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 850;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+}
+
+body .target-buyable-meta b {
+  color: #94a3b8;
+  font-size: 0.64rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .target-buyable-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+body .tracker-empty-feed.compact {
+  padding: 12px;
+}
+
+body .target-watch-only-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+body .target-watch-only-section summary {
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+body .target-watch-only-list {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+body .target-watch-only-list article {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #edf2f7;
+  border-radius: 15px;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+body .target-watch-only-list .inventory-image-frame {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+body .target-watch-only-list strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.86rem;
+  line-height: 1.25;
+}
+
+body .target-watch-only-list span,
+body .target-watch-only-list small,
+body .target-watch-only-empty {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 body .target-discovery-test,
 body .target-discovery-diagnostics,
 body .target-discovery-debug-card {
@@ -14028,6 +14251,8 @@ body .tracker-scanner-grid {
   }
 
   body .tracker-drop-meta,
+  body .target-buyable-controls,
+  body .target-buyable-meta,
   body .tracker-scanner-grid,
   body .tracker-keyword-grid,
   body .tracker-watch-form-grid,
@@ -14054,6 +14279,9 @@ body .tracker-scanner-grid {
   body .tracker-stock-product,
   body .tracker-watch-preview-list article,
   body .tracker-watch-card,
+  body .target-buyable-card,
+  body .target-buyable-heading,
+  body .target-watch-only-list article,
   body .target-candidate-card,
   body .target-candidate-title,
   body .watchlist-qa-main,
@@ -14084,6 +14312,8 @@ body .tracker-scanner-grid {
   body .tracker-drop-meta,
   body .tracker-check-grid,
   body .tracker-check-grid .wide,
+  body .target-buyable-controls,
+  body .target-buyable-meta,
   body .tracker-scanner-grid,
   body .tracker-keyword-grid,
   body .tracker-watch-form-grid,
@@ -14108,6 +14338,11 @@ body .tracker-scanner-grid {
 
   body .tracker-inline-control {
     grid-template-columns: 1fr;
+  }
+
+  body .target-buyable-card .inventory-image-frame {
+    width: 100%;
+    height: 132px;
   }
 }
 

@@ -136,22 +136,22 @@ test("Pokemon TCG API set release becomes confirmed high-confidence expansion", 
 test("icv2 parser handles product-name-first calendar entries", () => {
   const releases = parseIcv2CalendarHtml(
     `
-      Pokemon TCG: Mega Evolution Pitch Black Booster Bundle Release Date: July 17, 2026
-      Pokemon TCG: Lumiose City Mini Tins Release Date: June 5, 2026
-      Mega Greninja ex Premium Collection Release Date: July 3, 2026
-      Pokemon TCG: Mega Evolution Pitch Black Premium Collection Street Date: July 24, 2026
+      Pokemon TCG: Mega Evolution Pitch Black Booster Bundle Release Date: July 17, 2027
+      Pokemon TCG: Lumiose City Mini Tins Release Date: June 5, 2027
+      Mega Greninja ex Premium Collection Release Date: July 3, 2027
+      Pokemon TCG: Mega Evolution Pitch Black Premium Collection Street Date: July 24, 2027
     `,
     "https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar"
   );
 
   assert.equal(releases.length, 4);
   assert.equal(releases[0].productName, "Pokemon TCG: Mega Evolution Pitch Black Booster Bundle");
-  assert.equal(releases[0].officialReleaseDate?.toISOString().slice(0, 10), "2026-07-17");
+  assert.equal(releases[0].officialReleaseDate?.toISOString().slice(0, 10), "2027-07-17");
   assert.ok(
     releases.some(
       (release) =>
         release.productName === "Mega Greninja ex Premium Collection" &&
-        release.officialReleaseDate?.toISOString().slice(0, 10) === "2026-07-03"
+        release.officialReleaseDate?.toISOString().slice(0, 10) === "2027-07-03"
     )
   );
   assert.ok(releases.every((release) => release.confidence === "MEDIUM"));
@@ -163,7 +163,7 @@ test("icv2 parser handles product-name-first calendar entries", () => {
 test("icv2 parser extracts clean product name from description-heavy lines", () => {
   const releases = parseIcv2CalendarHtml(
     `
-      coin-flip die, 2 coin condition markers, a deck box, a strategy sheet, and a code card for online play. Lumiose City Mini Tins Release Date: June 5, 2026
+      coin-flip die, 2 coin condition markers, a deck box, a strategy sheet, and a code card for online play. Lumiose City Mini Tins Release Date: June 5, 2027
     `,
     "https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar"
   );

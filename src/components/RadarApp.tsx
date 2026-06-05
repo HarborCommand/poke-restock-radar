@@ -151,6 +151,7 @@ type InventoryPurchasePrefill = {
   model?: string | null;
   msrp?: number | null;
   sku?: string | null;
+  dpci?: string | null;
   productId?: string | null;
   retailer?: string | null;
   exactProductUrl?: string | null;
@@ -320,6 +321,22 @@ const targetCandidateFilterOptions = [
 
 type TargetCandidateFilter = (typeof targetCandidateFilterOptions)[number];
 
+const targetBuyableFilterOptions = [
+  "All",
+  "ETBs",
+  "Booster Bundles",
+  "Blisters",
+  "Tins",
+  "Premium Collections",
+  "Under $20",
+  "Under $40",
+  "High Confidence"
+] as const;
+const targetBuyableSortOptions = ["Newest Detected", "High Stock First", "Product Type", "Price", "Confidence"] as const;
+
+type TargetBuyableFilter = (typeof targetBuyableFilterOptions)[number];
+type TargetBuyableSort = (typeof targetBuyableSortOptions)[number];
+
 function targetCandidateHasTcgSignal(candidate: ProductDiscoveryCandidateDTO) {
   const text = `${candidate.productName} ${candidate.productType || ""} ${candidate.category || ""} ${candidate.brand || ""} ${candidate.reason || ""}`.toLowerCase();
   return candidate.confidenceScore >= 70 && /pokemon|tcg|trading card|booster|elite trainer|blister|checklane|tin|collection|deck/.test(text);
@@ -348,6 +365,60 @@ function targetCandidateMatchesFilter(candidate: ProductDiscoveryCandidateDTO, f
   if (filter === "Missing DPCI") return !identifiers.dpci;
   if (filter === "Low Confidence") return candidate.confidenceScore < 70;
   return group === filter;
+}
+
+function targetBuyableStatus(product: ProductDTO) {
+  return product.liveStockStatus || product.stockStatus;
+}
+
+function targetBuyableDetectedAt(product: ProductDTO) {
+  return product.liveStockVerifiedAt || product.lastSuccessfulCheckedAt || product.lastCheckedAt || product.updatedAt;
+}
+
+function targetExactProductUrl(product: ProductDTO) {
+  const url = product.verifiedFinalUrl || product.url;
+  return /target\.com\/p\//i.test(url) ? url : "";
+}
+
+function targetBuyableHighStock(product: ProductDTO) {
+  const text = `${product.lastMonitorResult || ""} ${product.pendingAlertReason || ""} ${product.notes || ""}`.toLowerCase();
+  return Boolean(
+    text.includes("high stock") ||
+      text.includes("large stock") ||
+      text.includes("many stores") ||
+      (targetBuyableStatus(product) === "IN_STOCK" && (product.liveConfidenceScore ?? 0) >= 85)
+  );
+}
+
+function targetBuyableProductMatchesFilter(product: ProductDTO, filter: TargetBuyableFilter) {
+  const group = targetProductGroupLabel(product.productType || product.name);
+  const price = trackerProductPrice(product);
+  if (filter === "All") return true;
+  if (filter === "Under $20") return price !== null && price <= 20;
+  if (filter === "Under $40") return price !== null && price <= 40;
+  if (filter === "High Confidence") return (product.liveConfidenceScore ?? 0) >= 80;
+  return group === filter;
+}
+
+function targetBuyableProductComparator(sort: TargetBuyableSort) {
+  return (a: ProductDTO, b: ProductDTO) => {
+    const aTime = new Date(targetBuyableDetectedAt(a) || 0).getTime() || 0;
+    const bTime = new Date(targetBuyableDetectedAt(b) || 0).getTime() || 0;
+    const aHighStock = targetBuyableHighStock(a) ? 1 : 0;
+    const bHighStock = targetBuyableHighStock(b) ? 1 : 0;
+    const aPrice = trackerProductPrice(a);
+    const bPrice = trackerProductPrice(b);
+    const aConfidence = a.liveConfidenceScore ?? 0;
+    const bConfidence = b.liveConfidenceScore ?? 0;
+    const aType = targetProductGroupLabel(a.productType || a.name);
+    const bType = targetProductGroupLabel(b.productType || b.name);
+
+    if (sort === "High Stock First") return bHighStock - aHighStock || bTime - aTime || bConfidence - aConfidence;
+    if (sort === "Product Type") return aType.localeCompare(bType) || bTime - aTime || bConfidence - aConfidence;
+    if (sort === "Price") return (aPrice ?? Number.MAX_SAFE_INTEGER) - (bPrice ?? Number.MAX_SAFE_INTEGER) || bConfidence - aConfidence;
+    if (sort === "Confidence") return bConfidence - aConfidence || bTime - aTime || bHighStock - aHighStock;
+    return bTime - aTime || bHighStock - aHighStock || aType.localeCompare(bType) || (aPrice ?? 999999) - (bPrice ?? 999999) || bConfidence - aConfidence;
+  };
 }
 
 function formatStatus(value: string) {
@@ -6576,6 +6647,7 @@ function PurchaseFlow({
       exactProductUrl: selectedExisting?.exactProductUrl ?? prefill?.exactProductUrl ?? "",
       upc: selectedExisting?.upc ?? prefill?.upc ?? "",
       sku: selectedExisting?.sku ?? prefill?.sku ?? "",
+      dpci: selectedExisting?.dpci ?? prefill?.dpci ?? "",
       source: prefill?.source ?? selectedExisting?.source ?? ""
     }),
     [prefill, selectedExisting]
@@ -6619,6 +6691,7 @@ function PurchaseFlow({
       exactProductUrl: item.exactProductUrl ?? "",
       upc: item.upc ?? "",
       sku: item.sku ?? "",
+      dpci: item.dpci ?? "",
       source: item.source ?? ""
     };
   }
@@ -6641,6 +6714,7 @@ function PurchaseFlow({
       retailer: current.retailer || product?.retailer || "",
       exactProductUrl: current.exactProductUrl || product?.exactProductUrl || "",
       sku: current.sku || product?.sku || "",
+      dpci: current.dpci,
       source: current.source || product?.retailer || ""
     }));
   }
@@ -6885,7 +6959,7 @@ function PurchaseFlow({
               onChange={(event) => updateDraft("exactProductUrl", event.currentTarget.value)}
             />
             <TextInput name="sku" label="SKU / TCIN" value={draft.sku} onChange={(event) => updateDraft("sku", event.currentTarget.value)} />
-            <TextInput name="dpci" label="DPCI" defaultValue={selectedExisting?.dpci ?? ""} />
+            <TextInput name="dpci" label="DPCI" value={draft.dpci} onChange={(event) => updateDraft("dpci", event.currentTarget.value)} />
             <TextInput name="asin" label="ASIN" defaultValue={selectedExisting?.asin ?? ""} />
             <TextInput name="manufacturer" label="Manufacturer" value={draft.manufacturer} onChange={(event) => updateDraft("manufacturer", event.currentTarget.value)} />
             <TextInput name="model" label="Model" value={draft.model} onChange={(event) => updateDraft("model", event.currentTarget.value)} />
@@ -13313,6 +13387,8 @@ function AlertsPanel({
   const [hidePartialTargetCandidates, setHidePartialTargetCandidates] = useState(false);
   const [editingTargetCandidateId, setEditingTargetCandidateId] = useState<string | null>(null);
   const [targetCandidateFilter, setTargetCandidateFilter] = useState<TargetCandidateFilter>("All");
+  const [targetBuyableFilter, setTargetBuyableFilter] = useState<TargetBuyableFilter>("All");
+  const [targetBuyableSort, setTargetBuyableSort] = useState<TargetBuyableSort>("Newest Detected");
   const [selectedTargetCandidateIds, setSelectedTargetCandidateIds] = useState<Set<string>>(new Set());
   const [targetDiscoveryTestUrl, setTargetDiscoveryTestUrl] = useState("https://www.target.com/s?searchTerm=Pokemon+TCG");
   const [targetDiscoveryTestResult, setTargetDiscoveryTestResult] = useState<{
@@ -13411,8 +13487,11 @@ function AlertsPanel({
   const latestTargetDiscoverySource = targetDiscoverySources
     .filter((source) => source.lastCheckedAt)
     .sort((a, b) => new Date(b.lastCheckedAt || 0).getTime() - new Date(a.lastCheckedAt || 0).getTime())[0] ?? null;
-  const targetBuyableProducts = targetWatchProducts.filter((product) => ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus));
-  const targetSoldOutProducts = targetWatchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(product.stockStatus));
+  const targetBuyableProducts = targetWatchProducts.filter((product) => ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(targetBuyableStatus(product)));
+  const visibleTargetBuyableProducts = targetBuyableProducts
+    .filter((product) => targetBuyableProductMatchesFilter(product, targetBuyableFilter))
+    .sort(targetBuyableProductComparator(targetBuyableSort));
+  const targetSoldOutProducts = targetWatchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(targetBuyableStatus(product)));
   const targetBlockedProducts = targetWatchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError);
   const targetNeedsQaProducts = targetWatchProducts.filter((product) => !watchProductReadyForLiveAlerts(product));
   const watchPreviewProducts = watchProducts.slice(0, 5);
@@ -13473,7 +13552,30 @@ function AlertsPanel({
       exactProductUrl: product?.verifiedFinalUrl || product?.url || alert.actionUrl,
       imageUrl: trackerProductImage(product),
       source: "Tracker Alert",
-      upc: product?.upc || undefined
+      upc: product?.upc || undefined,
+      dpci: product?.dpci || undefined
+    };
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(INVENTORY_PREFILL_STORAGE_KEY, JSON.stringify(prefill));
+    }
+    setActiveTab("inventory");
+  }
+
+  function openTargetProductInventoryPrefill(product: ProductDTO, source = "Target Buyable Now") {
+    const prefill: InventoryPurchasePrefill = {
+      itemName: product.name,
+      brand: "Pokemon",
+      category: inventoryCategoryFromLookup(product.productType || product.name),
+      setName: product.setName || product.releaseName || null,
+      msrp: trackerProductPrice(product),
+      sku: product.sku || product.retailerProductId || null,
+      dpci: product.dpci || null,
+      productId: product.id,
+      retailer: "Target",
+      exactProductUrl: targetExactProductUrl(product) || product.verifiedFinalUrl || product.url,
+      imageUrl: trackerProductImage(product),
+      source,
+      upc: product.upc || undefined
     };
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(INVENTORY_PREFILL_STORAGE_KEY, JSON.stringify(prefill));
@@ -14387,6 +14489,145 @@ function AlertsPanel({
     );
   }
 
+  function renderTargetBuyableCard(product: ProductDTO) {
+    const price = trackerProductPrice(product);
+    const confidence = product.liveConfidenceScore ?? 0;
+    const status = targetBuyableStatus(product);
+    const exactUrl = targetExactProductUrl(product);
+    const productType = targetProductGroupLabel(product.productType || product.name);
+    const tcin = product.retailerProductId || product.sku || "Missing";
+    return (
+      <article className="target-buyable-card" key={product.id}>
+        <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
+        <div className="target-buyable-body">
+          <div className="target-buyable-heading">
+            <div>
+              <span className="tracker-channel">Target Buyable Now</span>
+              <h3>{product.name}</h3>
+              <p>{productType}</p>
+            </div>
+            <div className="tracker-drop-badges">
+              <span className={`chip ${statusTone(status)}`}>{formatStatus(status)}</span>
+              {targetBuyableHighStock(product) ? <span className="chip good">High Stock</span> : null}
+            </div>
+          </div>
+          <div className="target-buyable-meta">
+            <span><b>Price</b>{price === null ? "Price unknown" : money(price)}</span>
+            <span><b>TCIN</b>{tcin}</span>
+            <span><b>Confidence</b>{confidence}%</span>
+            <span><b>Last checked</b>{relativeTime(targetBuyableDetectedAt(product))}</span>
+          </div>
+          <div className="target-buyable-actions">
+            {exactUrl ? (
+              <a className="mini-action solid" href={exactUrl} target="_blank" rel="noreferrer">
+                Go Buy <ExternalLink size={13} />
+              </a>
+            ) : (
+              <button className="mini-action" type="button" disabled>Exact URL missing</button>
+            )}
+            <button className="mini-action" type="button" onClick={() => openTargetProductInventoryPrefill(product)}>
+              <ShoppingBag size={13} />
+              Add to Inventory
+            </button>
+            <button className="mini-action" type="button" onClick={() => openTargetProductInventoryPrefill(product, "Target Buyable Now - Mark bought")}>
+              <Check size={13} />
+              Mark bought
+            </button>
+            <button className="mini-action" type="button" disabled={busy || !product.monitorEnabled} onClick={() => toggleWatchProductMonitor(product)}>
+              <WifiOff size={13} />
+              {product.monitorEnabled ? "Mute" : "Muted"}
+            </button>
+          </div>
+          <details className="tracker-drop-details compact">
+            <summary>Details</summary>
+            <dl>
+              <div><dt>Verified URL</dt><dd>{exactUrl || "Exact Target /p/ URL missing"}</dd></div>
+              <div><dt>UPC / DPCI</dt><dd>{product.upc || "UPC missing"} / {product.dpci || "DPCI missing"}</dd></div>
+              <div><dt>Monitor result</dt><dd>{product.lastMonitorResult || "No monitor result saved."}</dd></div>
+              <div><dt>Duplicate suppression</dt><dd>Repeat Target checks use the product/event key before creating new Live Drops.</dd></div>
+            </dl>
+          </details>
+        </div>
+      </article>
+    );
+  }
+
+  function renderTargetBuyableNowSection() {
+    return (
+      <section className="target-buyable-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyeline">Target action center</p>
+            <h2>Buyable Now</h2>
+            <p>Current Target watch products whose latest check says in stock, preorder live, or add-to-cart available.</p>
+          </div>
+          <div className="row-actions">
+            <span className="chip good">{targetBuyableProducts.length} buyable</span>
+            <span className="chip muted">Manual checkout only</span>
+          </div>
+        </div>
+        <div className="target-live-summary-grid">
+          <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
+          <DetailStat label="Buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Sold out / watch only" value={String(targetSoldOutProducts.length)} />
+          <DetailStat label="Needs QA" value={String(targetNeedsQaProducts.length)} tone={targetNeedsQaProducts.length ? "neutral" : "good"} />
+        </div>
+        <div className="target-buyable-controls">
+          <div className="target-buyable-filter-bar" aria-label="Target buyable filters">
+            {targetBuyableFilterOptions.map((filter) => (
+              <button className={targetBuyableFilter === filter ? "active" : ""} key={filter} type="button" onClick={() => setTargetBuyableFilter(filter)}>
+                {filter}
+              </button>
+            ))}
+          </div>
+          <label className="target-buyable-sort">
+            Sort
+            <select value={targetBuyableSort} onChange={(event) => setTargetBuyableSort(event.currentTarget.value as TargetBuyableSort)}>
+              {targetBuyableSortOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {visibleTargetBuyableProducts.length ? (
+          <div className="target-buyable-grid">
+            {visibleTargetBuyableProducts.map(renderTargetBuyableCard)}
+          </div>
+        ) : (
+          <div className="tracker-empty-feed compact">
+            <div className="tracker-empty-copy">
+              <span className="tracker-empty-icon"><Bell size={18} /></span>
+              <div>
+                <h3>{targetBuyableProducts.length ? "No products match this filter" : "No Target products are buyable now"}</h3>
+                <p>Sold-out Target products stay in Watch Only below. Live Drops are created only when stock is proven buyable.</p>
+              </div>
+            </div>
+          </div>
+        )}
+        <details className="target-watch-only-section">
+          <summary>Sold Out / Watch Only ({targetSoldOutProducts.length})</summary>
+          <div className="target-watch-only-list">
+            {targetSoldOutProducts.slice(0, 16).map((product) => (
+              <article key={product.id}>
+                <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
+                <div>
+                  <strong>{product.name}</strong>
+                  <span>{targetProductGroupLabel(product.productType || product.name)} - TCIN {product.retailerProductId || product.sku || "missing"}</span>
+                  <small>{formatStatus(targetBuyableStatus(product))} - checked {relativeTime(targetBuyableDetectedAt(product))}</small>
+                </div>
+                <button className="mini-action" type="button" disabled={busy} onClick={() => runProductCheck(product)}>
+                  <RefreshCw size={13} />
+                  Check
+                </button>
+              </article>
+            ))}
+            {!targetSoldOutProducts.length ? <span className="target-watch-only-empty">No sold-out Target products in the watch-only list.</span> : null}
+          </div>
+        </details>
+      </section>
+    );
+  }
+
   function renderLiveDropCard(record: TrackerAlertRecord) {
     const { alert, product } = record;
     const price = trackerProductPrice(product);
@@ -14531,6 +14772,7 @@ function AlertsPanel({
               </button>
             ))}
           </section>
+          {renderTargetBuyableNowSection()}
           <section className="tracker-live-layout">
             <div className="tracker-feed">
               <div className="panel-header">
