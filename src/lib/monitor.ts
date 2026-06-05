@@ -767,6 +767,8 @@ function trackerEventKindForDetection(input: {
   nextStatus: ProductStatus;
   previousPrice: number | null;
 }) {
+  if (!detectionReadyForBuyAlerts(input.detection)) return null;
+
   const text = input.detection.detectedWords.join(" ").toLowerCase();
   const priceDrop =
     input.detection.price !== null &&
@@ -774,11 +776,10 @@ function trackerEventKindForDetection(input: {
     input.previousPrice > 0 &&
     input.detection.price < input.previousPrice;
 
-  if (priceDrop && input.detection.identityMatch.readyForAlert && !input.detection.blockedType && input.detection.confidenceScore >= 70) {
+  if (priceDrop) {
     return "price_drop" satisfies TrackerDropEventKind;
   }
 
-  if (!detectionReadyForBuyAlerts(input.detection)) return null;
   if (text.includes("high stock") || text.includes("available in many stores")) return "high_stock" satisfies TrackerDropEventKind;
   if (text.includes("low stock") || text.includes("limited stock") || text.includes("only a few left")) return "low_stock" satisfies TrackerDropEventKind;
   if (input.nextStatus === "PREORDER_LIVE") return "preorder_live" satisfies TrackerDropEventKind;

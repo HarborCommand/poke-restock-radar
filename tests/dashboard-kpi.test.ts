@@ -456,6 +456,7 @@ test("live drops are restricted to real product monitor alerts", () => {
   assert.match(liveDropHelper, /record\.alert\.entityType === "PRODUCT"/);
   assert.match(liveDropHelper, /Boolean\(record\.product\)/);
   assert.match(liveDropHelper, /explicitTrackerDrop/);
+  assert.match(liveDropHelper, /priceDropWithoutBuyableStock/);
   assert.match(liveDropHelper, /manual checkout only/);
   assert.match(alertsPanel, /\.filter\(\(record\) => trackerIsLiveDrop\(record\)\)/);
   assert.doesNotMatch(liveDropHelper, /tracker_sold_out/);
@@ -504,6 +505,11 @@ test("monitor creates explicit tracker online drop and system alert events", () 
 
   assert.match(monitor, /createTrackerOnlineDropAlert/);
   assert.match(monitor, /trackerEventKindForDetection/);
+  assert.ok(
+    monitor.indexOf("if (!detectionReadyForBuyAlerts(input.detection)) return null;") <
+      monitor.indexOf("return \"price_drop\" satisfies TrackerDropEventKind;"),
+    "price-drop tracker events must stay behind the buyable exact-product gate"
+  );
   assert.match(monitor, /fetchPokemonCenterLiveSignal/);
   assert.match(monitor, /pokemonCenterSignal/);
   assert.match(monitor, /tracker_online_drop:\$\{input\.product\.id\}/);

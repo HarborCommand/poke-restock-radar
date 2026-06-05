@@ -2709,7 +2709,12 @@ function trackerClassifyAlert(alert: DashboardDTO["alerts"][number], products: P
 function trackerIsLiveDrop(record: TrackerAlertRecord) {
   const text = trackerAlertText(record.alert, record.product);
   const explicitTrackerDrop = record.alert.dedupeKey?.startsWith("tracker_online_drop:") || text.includes("tracker_online_drop");
+  const buyableProductStatus = ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(
+    record.product?.liveStockStatus || record.product?.stockStatus || ""
+  );
+  const priceDropWithoutBuyableStock = record.statusLabel === "Price Drop" && !buyableProductStatus && !record.alert.dedupeKey?.includes(":simulated:");
   return (
+    !priceDropWithoutBuyableStock &&
     !record.isSystem &&
     record.category === "tracker_online_drop" &&
     record.alert.entityType === "PRODUCT" &&
