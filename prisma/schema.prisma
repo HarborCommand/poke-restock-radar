@@ -201,8 +201,11 @@ model Product {
   @@index([liveStockStatus])
   @@index([isDemoData])
   @@index([archivedAt])
+  @@index([lastCheckedAt])
+  @@index([lastSuccessfulCheckedAt])
   @@index([nextCheckAt])
   @@index([monitorEnabled])
+  @@index([retailerId, monitorEnabled, liveStockStatus])
 }
 
 model Store {
@@ -387,6 +390,9 @@ model Alert {
   @@index([read])
   @@index([priority])
   @@index([userId])
+  @@index([entityType])
+  @@index([entityType, productId])
+  @@index([timestamp])
   @@index([score])
   @@index([dedupeKey])
   @@index([falsePositiveAt])

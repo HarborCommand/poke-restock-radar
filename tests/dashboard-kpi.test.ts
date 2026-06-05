@@ -287,8 +287,11 @@ test("alerts tab is rebuilt as a Discord-style tracker command center", () => {
   }
 
   assert.match(alertsPanel, /Discord-style feed/);
-  assert.match(alertsPanel, /Target action center/);
+  assert.match(alertsPanel, /Live action center/);
   assert.match(alertsPanel, /Buyable Now/);
+  assert.match(alertsPanel, /Current watch products whose latest check says in stock, preorder live, add-to-cart available, or high\/low stock but still buyable/);
+  assert.match(alertsPanel, /No new drop alerts, but these products are currently buyable/);
+  assert.match(alertsPanel, /Duplicate suppression can prevent repeat alert spam/);
   assert.match(alertsPanel, /Sold Out \/ Watch Only/);
   assert.match(alertsPanel, /targetBuyableFilterOptions/);
   assert.match(alertsPanel, /targetBuyableSortOptions/);
@@ -340,7 +343,52 @@ test("tracker alert categories and archived local store cleanup are wired", () =
   assert.match(app, /Watching \{watchProducts\.length\} products/);
   assert.match(app, /tracker-side-rail/);
   assert.match(app, /targetBuyableProductComparator/);
+  assert.match(app, /productIsCurrentlyBuyable/);
+  assert.match(app, /buyableNowProducts/);
+  assert.match(app, /visibleBuyableNowProducts/);
+  assert.match(app, /buyableProductMatchesChannel/);
   assert.match(app, /targetExactProductUrl/);
+});
+
+test("alerts Buyable Now remains visible when duplicate suppression prevents new drop alerts", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+  const buyableHelper = app.slice(app.indexOf("function productIsCurrentlyBuyable"), app.indexOf("function targetBuyableHighStock"));
+
+  assert.match(buyableHelper, /SOLD_OUT/);
+  assert.match(buyableHelper, /UNAVAILABLE/);
+  assert.match(buyableHelper, /IN_STOCK/);
+  assert.match(buyableHelper, /ADD_TO_CART_AVAILABLE/);
+  assert.match(buyableHelper, /PREORDER_LIVE/);
+  assert.match(buyableHelper, /hasHighOrLowStockSignal/);
+  assert.match(buyableHelper, /hasBuyableAction/);
+  assert.match(alertsPanel, /liveDrops\.length \? \(/);
+  assert.match(alertsPanel, /: buyableNowProducts\.length \? \(/);
+  assert.match(alertsPanel, /No new drop alerts, but these products are currently buyable/);
+  assert.match(alertsPanel, /renderExampleLiveDropCard\(\)/);
+  const liveDropRender = alertsPanel.slice(alertsPanel.indexOf("{liveDrops.length ? ("), alertsPanel.indexOf("<aside className=\"tracker-side-rail\""));
+  assert.ok(
+    liveDropRender.indexOf(": buyableNowProducts.length ? (") < liveDropRender.indexOf("renderExampleLiveDropCard()"),
+    "example alert must be behind the current-buyable branch"
+  );
+});
+
+test("alerts long lists are paginated for performance", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+
+  assert.match(alertsPanel, /targetCandidateVisibleLimit/);
+  assert.match(alertsPanel, /watchlistVisibleLimit/);
+  assert.match(alertsPanel, /historyVisibleLimit/);
+  assert.match(alertsPanel, /systemVisibleLimit/);
+  assert.match(alertsPanel, /visibleTargetCandidates = useMemo/);
+  assert.match(alertsPanel, /visibleWatchProducts = useMemo/);
+  assert.match(alertsPanel, /visibleHistoryAlerts = useMemo/);
+  assert.match(alertsPanel, /visibleSystemAlerts = useMemo/);
+  assert.match(alertsPanel, /Load more candidates/);
+  assert.match(alertsPanel, /Load more watch products/);
+  assert.match(alertsPanel, /Load more alert history/);
+  assert.match(alertsPanel, /Load more system alerts/);
 });
 
 test("tracker matching helpers cover keywords, identifiers, mute, duplicate cooldown, and feedback", () => {
@@ -468,7 +516,7 @@ test("live drops are restricted to real product monitor alerts", () => {
   assert.match(liveDropHelper, /manual checkout only/);
   assert.match(alertsPanel, /\.filter\(\(record\) => trackerIsLiveDrop\(record\)\)/);
   assert.doesNotMatch(liveDropHelper, /tracker_sold_out/);
-  assert.match(alertsPanel, /Repeat Target checks use the product\/event key before creating new Live Drops/);
+  assert.match(alertsPanel, /Repeat checks use the product\/event key before creating new Live Drops, but current buyable products stay visible here/);
   assert.match(alertsPanel, /Live Drops are created only when stock is proven buyable/);
 });
 

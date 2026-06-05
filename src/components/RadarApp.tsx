@@ -368,11 +368,11 @@ function targetCandidateMatchesFilter(candidate: ProductDiscoveryCandidateDTO, f
 }
 
 function targetBuyableStatus(product: ProductDTO) {
-  return product.liveStockStatus || product.stockStatus;
+  return buyableNowStatus(product);
 }
 
 function targetBuyableDetectedAt(product: ProductDTO) {
-  return product.liveStockVerifiedAt || product.lastSuccessfulCheckedAt || product.lastCheckedAt || product.updatedAt;
+  return buyableNowDetectedAt(product);
 }
 
 function targetExactProductUrl(product: ProductDTO) {
@@ -380,8 +380,44 @@ function targetExactProductUrl(product: ProductDTO) {
   return /target\.com\/p\//i.test(url) ? url : "";
 }
 
+function exactProductUrl(product: ProductDTO) {
+  if (product.liveBlockedType || product.verificationStatus === "SEARCH_OR_CATEGORY_LINK" || product.verificationStatus === "POSSIBLE_MISMATCH") return "";
+  const url = product.verifiedFinalUrl || product.url || "";
+  if (/target/i.test(product.retailerName)) return targetExactProductUrl(product);
+  if (/bestbuy\.com\/site\//i.test(url)) return url;
+  if (/gamestop\.com\/.*(?:product|products)\//i.test(url)) return url;
+  if (/pokemoncenter\.com\/product\//i.test(url)) return url;
+  if (/amazon\.com\/(?:dp|gp\/product)\//i.test(url)) return url;
+  if (/walmart\.com\/ip\//i.test(url)) return url;
+  if (product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED") return url;
+  return "";
+}
+
+function buyableNowStatus(product: ProductDTO) {
+  return product.liveStockStatus || product.stockStatus;
+}
+
+function buyableNowDetectedAt(product: ProductDTO) {
+  return product.liveStockVerifiedAt || product.lastSuccessfulCheckedAt || product.lastCheckedAt || product.updatedAt;
+}
+
+function buyableNowSignalText(product: ProductDTO) {
+  return `${product.liveStockStatus || ""} ${product.stockStatus || ""} ${product.lastMonitorResult || ""} ${product.pendingAlertStatus || ""} ${product.pendingAlertReason || ""} ${product.notes || ""}`.toLowerCase();
+}
+
+function productIsCurrentlyBuyable(product: ProductDTO) {
+  if (product.archivedAt || product.liveBlockedType || product.lastMonitorError) return false;
+  const status = buyableNowStatus(product);
+  if (status === "SOLD_OUT" || status === "UNAVAILABLE") return false;
+  if (["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(status)) return true;
+  const text = buyableNowSignalText(product);
+  const hasHighOrLowStockSignal = /\b(high|low|limited|few)\s+stock\b/.test(text) || text.includes("only a few left");
+  const hasBuyableAction = text.includes("add to cart") || text.includes("buyable") || text.includes("available") || text.includes("preorder") || text.includes("in stock");
+  return hasHighOrLowStockSignal && hasBuyableAction && !text.includes("sold out") && !text.includes("out of stock");
+}
+
 function targetBuyableHighStock(product: ProductDTO) {
-  const text = `${product.lastMonitorResult || ""} ${product.pendingAlertReason || ""} ${product.notes || ""}`.toLowerCase();
+  const text = buyableNowSignalText(product);
   return Boolean(
     text.includes("high stock") ||
       text.includes("large stock") ||
@@ -419,6 +455,27 @@ function targetBuyableProductComparator(sort: TargetBuyableSort) {
     if (sort === "Confidence") return bConfidence - aConfidence || bTime - aTime || bHighStock - aHighStock;
     return bTime - aTime || bHighStock - aHighStock || aType.localeCompare(bType) || (aPrice ?? 999999) - (bPrice ?? 999999) || bConfidence - aConfidence;
   };
+}
+
+function buyableNowProductComparator(sort: TargetBuyableSort) {
+  return (a: ProductDTO, b: ProductDTO) => {
+    const targetSort = targetBuyableProductComparator(sort)(a, b);
+    if (targetSort !== 0) return targetSort;
+    return a.retailerName.localeCompare(b.retailerName) || a.name.localeCompare(b.name);
+  };
+}
+
+function buyableNowIdentifier(product: ProductDTO) {
+  if (/target/i.test(product.retailerName)) return product.retailerProductId || product.dpci || product.sku || product.upc || "Missing";
+  if (/amazon/i.test(product.retailerName)) return product.retailerProductId || product.sku || product.upc || "Missing";
+  return product.sku || product.retailerProductId || product.upc || product.dpci || "Missing";
+}
+
+function buyableNowStatusLabel(product: ProductDTO) {
+  const text = buyableNowSignalText(product);
+  if (text.includes("high stock")) return "High Stock";
+  if (text.includes("low stock") || text.includes("limited stock") || text.includes("only a few left")) return "Low Stock";
+  return formatStatus(buyableNowStatus(product));
 }
 
 function formatStatus(value: string) {
@@ -757,11 +814,6 @@ function watchProductWarnings(product: ProductDTO) {
   if (!product.alertStatus && !product.monitorEnabled) warnings.push("Alerts are disabled.");
   if (product.archivedAt) warnings.push("Product is archived.");
   return warnings;
-}
-
-function exactProductUrl(product: ProductDTO) {
-  if (product.liveBlockedType || product.verificationStatus !== "VERIFIED_EXACT") return null;
-  return product.verifiedFinalUrl || product.url;
 }
 
 function productDisplayStatus(product: ProductDTO) {
@@ -2811,6 +2863,22 @@ function trackerChannelMatches(record: TrackerAlertRecord, filter: string) {
   if (filter === "GameStop") return trackerAlertText(record.alert, record.product).includes("gamestop") || (record.product?.retailerName || "").toLowerCase().includes("gamestop");
   if (filter === "Pokemon Center") return trackerAlertText(record.alert, record.product).includes("pokemon center") || (record.product?.retailerName || "").toLowerCase().includes("pokemon center");
   return record.channel.toLowerCase().includes(filter.toLowerCase());
+}
+
+function buyableProductMatchesChannel(product: ProductDTO, filter: string) {
+  if (filter === "All") return true;
+  const retailer = product.retailerName.toLowerCase();
+  const text = buyableNowSignalText(product);
+  const label = buyableNowStatusLabel(product);
+  if (filter === "In Stock") return label === "In Stock" || buyableNowStatus(product) === "IN_STOCK";
+  if (filter === "Add To Cart") return label === "Add To Cart Available" || buyableNowStatus(product) === "ADD_TO_CART_AVAILABLE";
+  if (filter === "High Stock") return targetBuyableHighStock(product);
+  if (filter === "Low Stock") return label === "Low Stock" || text.includes("low stock") || text.includes("limited stock");
+  if (filter === "Preorders") return buyableNowStatus(product) === "PREORDER_LIVE" || text.includes("preorder");
+  if (filter === "Sold Out") return false;
+  if (filter === "Price Drops") return text.includes("price drop") || buyableNowStatus(product) === "PRICE_CHANGE";
+  if (filter === "Pokemon Center") return retailer.includes("pokemon center") || retailer.includes("pokemoncenter");
+  return retailer.includes(filter.toLowerCase());
 }
 
 function trackerWatchPrefillFromRecord(record: TrackerAlertRecord): WatchProductPrefill {
@@ -13389,6 +13457,10 @@ function AlertsPanel({
   const [targetCandidateFilter, setTargetCandidateFilter] = useState<TargetCandidateFilter>("All");
   const [targetBuyableFilter, setTargetBuyableFilter] = useState<TargetBuyableFilter>("All");
   const [targetBuyableSort, setTargetBuyableSort] = useState<TargetBuyableSort>("Newest Detected");
+  const [targetCandidateVisibleLimit, setTargetCandidateVisibleLimit] = useState(48);
+  const [watchlistVisibleLimit, setWatchlistVisibleLimit] = useState(40);
+  const [historyVisibleLimit, setHistoryVisibleLimit] = useState(40);
+  const [systemVisibleLimit, setSystemVisibleLimit] = useState(30);
   const [selectedTargetCandidateIds, setSelectedTargetCandidateIds] = useState<Set<string>>(new Set());
   const [targetDiscoveryTestUrl, setTargetDiscoveryTestUrl] = useState("https://www.target.com/s?searchTerm=Pokemon+TCG");
   const [targetDiscoveryTestResult, setTargetDiscoveryTestResult] = useState<{
@@ -13425,78 +13497,125 @@ function AlertsPanel({
       reason: string;
     }>;
   } | null>(null);
+
   const trackerAlerts = useMemo(
     () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
     [dashboard.alerts, dashboard.products]
   );
-  const liveDrops = trackerAlerts
-    .filter((record) => trackerIsLiveDrop(record))
-    .filter((record) => !record.isDeprecated)
-    .filter((record) => !isTestDashboardAlert(record.alert))
-    .filter((record) => trackerChannelMatches(record, channelFilter))
-    .sort((a, b) => new Date(b.alert.timestamp).getTime() - new Date(a.alert.timestamp).getTime());
-  const historyAlerts = trackerAlerts
-    .filter((record) => (showArchived ? true : !record.isDeprecated))
-    .sort((a, b) => new Date(b.alert.timestamp).getTime() - new Date(a.alert.timestamp).getTime());
-  const systemAlerts = trackerAlerts
-    .filter((record) => record.isSystem || record.alert.entityType === "SYSTEM")
-    .filter((record) => (showArchived ? true : !record.isDeprecated));
-  const watchProducts = dashboard.products.filter((product) => product.monitorEnabled && !product.archivedAt);
-  const watchProductsByRetailer = (retailerName: string) => watchProducts.filter((product) => product.retailerName.toLowerCase().includes(retailerName.toLowerCase()));
-  const filteredWatchProducts =
-    watchRetailerFilter === "All"
-      ? watchProducts
-      : watchProductsByRetailer(watchRetailerFilter);
-  const targetWatchProducts = watchProductsByRetailer("Target");
-  const gameStopWatchProducts = watchProductsByRetailer("GameStop");
-  const pokemonCenterWatchProducts = watchProductsByRetailer("Pokemon Center");
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const targetReadyProducts = targetWatchProducts.filter(watchProductReadyForLiveAlerts);
-  const targetDiscoverySources = dashboard.productDiscoverySources.filter((source) => /target/i.test(source.retailerName));
-  const targetDiscoveryCandidates = dashboard.productDiscoveryCandidates.filter((candidate) => /target/i.test(candidate.retailerName));
-  const pendingTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING");
-  const rejectedTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.status === "REJECTED_NON_TCG");
-  const approvedTargetCandidatesToday = targetDiscoveryCandidates.filter((candidate) => {
-    if (candidate.status !== "APPROVED" || !candidate.reviewedAt) return false;
-    return new Date(candidate.reviewedAt).getTime() >= todayStart.getTime();
-  });
-  const enrichedTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "ENRICHED");
-  const partialTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "PARTIAL");
-  const blockedTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "BLOCKED");
-  const missingTargetUpcCandidates = pendingTargetCandidates.filter((candidate) => !candidate.upc);
-  const missingTargetDpciCandidates = pendingTargetCandidates.filter((candidate) => !candidate.dpci);
-  const readyTargetCandidates = pendingTargetCandidates.filter(targetCandidateWatchReady);
-  const visibleTargetCandidates = targetDiscoveryCandidates
-    .filter((candidate) => candidate.status === "PENDING" || (showRejectedTargetCandidates && candidate.status === "REJECTED_NON_TCG"))
-    .filter((candidate) => (hidePartialTargetCandidates ? candidate.enrichmentStatus !== "PARTIAL" : true))
-    .filter((candidate) => targetCandidateMatchesFilter(candidate, targetCandidateFilter))
-    .slice(0, 48);
-  const visibleSelectableTargetCandidates = visibleTargetCandidates.filter((candidate) => candidate.status === "PENDING");
+  const liveDrops = useMemo(
+    () =>
+      trackerAlerts
+        .filter((record) => trackerIsLiveDrop(record))
+        .filter((record) => !record.isDeprecated)
+        .filter((record) => !isTestDashboardAlert(record.alert))
+        .filter((record) => trackerChannelMatches(record, channelFilter))
+        .sort((a, b) => new Date(b.alert.timestamp).getTime() - new Date(a.alert.timestamp).getTime()),
+    [channelFilter, trackerAlerts]
+  );
+  const historyAlerts = useMemo(
+    () =>
+      trackerAlerts
+        .filter((record) => (showArchived ? true : !record.isDeprecated))
+        .sort((a, b) => new Date(b.alert.timestamp).getTime() - new Date(a.alert.timestamp).getTime()),
+    [showArchived, trackerAlerts]
+  );
+  const visibleHistoryAlerts = useMemo(() => historyAlerts.slice(0, historyVisibleLimit), [historyAlerts, historyVisibleLimit]);
+  const systemAlerts = useMemo(
+    () =>
+      trackerAlerts
+        .filter((record) => record.isSystem || record.alert.entityType === "SYSTEM")
+        .filter((record) => (showArchived ? true : !record.isDeprecated)),
+    [showArchived, trackerAlerts]
+  );
+  const visibleSystemAlerts = useMemo(() => systemAlerts.slice(0, systemVisibleLimit), [systemAlerts, systemVisibleLimit]);
+  const watchProducts = useMemo(() => dashboard.products.filter((product) => product.monitorEnabled && !product.archivedAt), [dashboard.products]);
+  const watchProductsByRetailer = useCallback(
+    (retailerName: string) => watchProducts.filter((product) => product.retailerName.toLowerCase().includes(retailerName.toLowerCase())),
+    [watchProducts]
+  );
+  const filteredWatchProducts = useMemo(
+    () => (watchRetailerFilter === "All" ? watchProducts : watchProductsByRetailer(watchRetailerFilter)),
+    [watchProducts, watchProductsByRetailer, watchRetailerFilter]
+  );
+  const visibleWatchProducts = useMemo(() => filteredWatchProducts.slice(0, watchlistVisibleLimit), [filteredWatchProducts, watchlistVisibleLimit]);
+  const targetWatchProducts = useMemo(() => watchProductsByRetailer("Target"), [watchProductsByRetailer]);
+  const gameStopWatchProducts = useMemo(() => watchProductsByRetailer("GameStop"), [watchProductsByRetailer]);
+  const pokemonCenterWatchProducts = useMemo(() => watchProductsByRetailer("Pokemon Center"), [watchProductsByRetailer]);
+  const todayStartTime = useMemo(() => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  }, []);
+  const targetReadyProducts = useMemo(() => targetWatchProducts.filter(watchProductReadyForLiveAlerts), [targetWatchProducts]);
+  const targetDiscoverySources = useMemo(() => dashboard.productDiscoverySources.filter((source) => /target/i.test(source.retailerName)), [dashboard.productDiscoverySources]);
+  const targetDiscoveryCandidates = useMemo(() => dashboard.productDiscoveryCandidates.filter((candidate) => /target/i.test(candidate.retailerName)), [dashboard.productDiscoveryCandidates]);
+  const pendingTargetCandidates = useMemo(() => targetDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING"), [targetDiscoveryCandidates]);
+  const rejectedTargetCandidates = useMemo(() => targetDiscoveryCandidates.filter((candidate) => candidate.status === "REJECTED_NON_TCG"), [targetDiscoveryCandidates]);
+  const approvedTargetCandidatesToday = useMemo(
+    () =>
+      targetDiscoveryCandidates.filter((candidate) => {
+        if (candidate.status !== "APPROVED" || !candidate.reviewedAt) return false;
+        return new Date(candidate.reviewedAt).getTime() >= todayStartTime;
+      }),
+    [targetDiscoveryCandidates, todayStartTime]
+  );
+  const enrichedTargetCandidates = useMemo(() => targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "ENRICHED"), [targetDiscoveryCandidates]);
+  const partialTargetCandidates = useMemo(() => targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "PARTIAL"), [targetDiscoveryCandidates]);
+  const blockedTargetCandidates = useMemo(() => targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "BLOCKED"), [targetDiscoveryCandidates]);
+  const missingTargetUpcCandidates = useMemo(() => pendingTargetCandidates.filter((candidate) => !candidate.upc), [pendingTargetCandidates]);
+  const missingTargetDpciCandidates = useMemo(() => pendingTargetCandidates.filter((candidate) => !candidate.dpci), [pendingTargetCandidates]);
+  const readyTargetCandidates = useMemo(() => pendingTargetCandidates.filter(targetCandidateWatchReady), [pendingTargetCandidates]);
+  const filteredTargetCandidates = useMemo(
+    () =>
+      targetDiscoveryCandidates
+        .filter((candidate) => candidate.status === "PENDING" || (showRejectedTargetCandidates && candidate.status === "REJECTED_NON_TCG"))
+        .filter((candidate) => (hidePartialTargetCandidates ? candidate.enrichmentStatus !== "PARTIAL" : true))
+        .filter((candidate) => targetCandidateMatchesFilter(candidate, targetCandidateFilter)),
+    [hidePartialTargetCandidates, showRejectedTargetCandidates, targetCandidateFilter, targetDiscoveryCandidates]
+  );
+  const visibleTargetCandidates = useMemo(() => filteredTargetCandidates.slice(0, targetCandidateVisibleLimit), [filteredTargetCandidates, targetCandidateVisibleLimit]);
+  const visibleSelectableTargetCandidates = useMemo(() => visibleTargetCandidates.filter((candidate) => candidate.status === "PENDING"), [visibleTargetCandidates]);
   const selectedTargetCandidateCount = selectedTargetCandidateIds.size;
-  const exactProducts = watchProducts.filter((product) => product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED");
+  const exactProducts = useMemo(
+    () => watchProducts.filter((product) => product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED"),
+    [watchProducts]
+  );
   const needsExactLink = watchProducts.length - exactProducts.length;
-  const blockedChecks = dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length;
-  const failedChecks = dashboard.monitorLogs.filter((log) => log.status === "ERROR").length;
-  const deprecatedCount = trackerAlerts.filter((record) => record.isDeprecated).length;
-  const liveDropsToday = liveDrops.filter((record) => new Date(record.alert.timestamp).getTime() >= todayStart.getTime()).length;
-  const mutedArchivedCount = dashboard.alerts.filter((alert) => alert.suppressedAt || alert.falsePositiveAt).length + deprecatedCount;
+  const blockedChecks = useMemo(() => dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length, [dashboard.monitorLogs]);
+  const failedChecks = useMemo(() => dashboard.monitorLogs.filter((log) => log.status === "ERROR").length, [dashboard.monitorLogs]);
+  const deprecatedCount = useMemo(() => trackerAlerts.filter((record) => record.isDeprecated).length, [trackerAlerts]);
+  const liveDropsToday = useMemo(() => liveDrops.filter((record) => new Date(record.alert.timestamp).getTime() >= todayStartTime).length, [liveDrops, todayStartTime]);
+  const mutedArchivedCount = useMemo(() => dashboard.alerts.filter((alert) => alert.suppressedAt || alert.falsePositiveAt).length + deprecatedCount, [dashboard.alerts, deprecatedCount]);
   const latestMonitorLog = dashboard.monitorLogs[0] ?? null;
-  const targetProductIds = new Set(targetWatchProducts.map((product) => product.id));
-  const latestTargetMonitorLog = dashboard.monitorLogs.find((log) => Boolean(log.productId && targetProductIds.has(log.productId))) ?? null;
-  const latestTargetDiscoverySource = targetDiscoverySources
-    .filter((source) => source.lastCheckedAt)
-    .sort((a, b) => new Date(b.lastCheckedAt || 0).getTime() - new Date(a.lastCheckedAt || 0).getTime())[0] ?? null;
-  const targetBuyableProducts = targetWatchProducts.filter((product) => ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(targetBuyableStatus(product)));
-  const visibleTargetBuyableProducts = targetBuyableProducts
-    .filter((product) => targetBuyableProductMatchesFilter(product, targetBuyableFilter))
-    .sort(targetBuyableProductComparator(targetBuyableSort));
-  const targetSoldOutProducts = targetWatchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(targetBuyableStatus(product)));
-  const targetBlockedProducts = targetWatchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError);
-  const targetNeedsQaProducts = targetWatchProducts.filter((product) => !watchProductReadyForLiveAlerts(product));
-  const watchPreviewProducts = watchProducts.slice(0, 5);
-  const watchProductsWithIdentifiers = watchProducts.filter((product) => Boolean(product.sku || product.upc || product.dpci || product.retailerProductId));
-  const alertsEnabledProducts = watchProducts.filter((product) => product.alertStatus || product.monitorEnabled);
+  const targetProductIds = useMemo(() => new Set(targetWatchProducts.map((product) => product.id)), [targetWatchProducts]);
+  const latestTargetMonitorLog = useMemo(() => dashboard.monitorLogs.find((log) => Boolean(log.productId && targetProductIds.has(log.productId))) ?? null, [dashboard.monitorLogs, targetProductIds]);
+  const latestTargetDiscoverySource = useMemo(
+    () =>
+      targetDiscoverySources
+        .filter((source) => source.lastCheckedAt)
+        .sort((a, b) => new Date(b.lastCheckedAt || 0).getTime() - new Date(a.lastCheckedAt || 0).getTime())[0] ?? null,
+    [targetDiscoverySources]
+  );
+  const buyableNowProducts = useMemo(
+    () => watchProducts.filter(productIsCurrentlyBuyable).sort(buyableNowProductComparator(targetBuyableSort)),
+    [targetBuyableSort, watchProducts]
+  );
+  const visibleBuyableNowProducts = useMemo(
+    () =>
+      buyableNowProducts
+        .filter((product) => buyableProductMatchesChannel(product, channelFilter))
+        .filter((product) => targetBuyableProductMatchesFilter(product, targetBuyableFilter))
+        .slice(0, 48),
+    [buyableNowProducts, channelFilter, targetBuyableFilter]
+  );
+  const targetBuyableProducts = useMemo(() => targetWatchProducts.filter(productIsCurrentlyBuyable), [targetWatchProducts]);
+  const targetSoldOutProducts = useMemo(() => targetWatchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(targetBuyableStatus(product))), [targetWatchProducts]);
+  const soldOutWatchProducts = useMemo(() => watchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(buyableNowStatus(product))), [watchProducts]);
+  const targetBlockedProducts = useMemo(() => targetWatchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError), [targetWatchProducts]);
+  const targetNeedsQaProducts = useMemo(() => targetWatchProducts.filter((product) => !watchProductReadyForLiveAlerts(product)), [targetWatchProducts]);
+  const watchPreviewProducts = useMemo(() => watchProducts.slice(0, 5), [watchProducts]);
+  const watchProductsWithIdentifiers = useMemo(() => watchProducts.filter((product) => Boolean(product.sku || product.upc || product.dpci || product.retailerProductId)), [watchProducts]);
+  const alertsEnabledProducts = useMemo(() => watchProducts.filter((product) => product.alertStatus || product.monitorEnabled), [watchProducts]);
   const setupItems = [
     {
       label: "Add at least one watch product",
@@ -13571,8 +13690,8 @@ function AlertsPanel({
       sku: product.sku || product.retailerProductId || null,
       dpci: product.dpci || null,
       productId: product.id,
-      retailer: "Target",
-      exactProductUrl: targetExactProductUrl(product) || product.verifiedFinalUrl || product.url,
+      retailer: product.retailerName,
+      exactProductUrl: exactProductUrl(product) || product.verifiedFinalUrl || product.url,
       imageUrl: trackerProductImage(product),
       source,
       upc: product.upc || undefined
@@ -14452,7 +14571,14 @@ function AlertsPanel({
         {renderTargetWatchGroups()}
         <div className="target-candidate-list">
           {visibleTargetCandidates.length ? (
-            visibleTargetCandidates.map(renderTargetCandidateCard)
+            <>
+              {visibleTargetCandidates.map(renderTargetCandidateCard)}
+              {visibleTargetCandidates.length < filteredTargetCandidates.length ? (
+                <button className="mini-action load-more-action" type="button" onClick={() => setTargetCandidateVisibleLimit((current) => current + 48)}>
+                  Load more candidates ({filteredTargetCandidates.length - visibleTargetCandidates.length} remaining)
+                </button>
+              ) : null}
+            </>
           ) : (
             <EmptyState
               icon={PackageSearch}
@@ -14492,30 +14618,32 @@ function AlertsPanel({
   function renderTargetBuyableCard(product: ProductDTO) {
     const price = trackerProductPrice(product);
     const confidence = product.liveConfidenceScore ?? 0;
-    const status = targetBuyableStatus(product);
-    const exactUrl = targetExactProductUrl(product);
+    const status = buyableNowStatus(product);
+    const statusLabel = buyableNowStatusLabel(product);
+    const exactUrl = exactProductUrl(product);
     const productType = targetProductGroupLabel(product.productType || product.name);
-    const tcin = product.retailerProductId || product.sku || "Missing";
+    const identifier = buyableNowIdentifier(product);
+    const identifierLabel = /target/i.test(product.retailerName) ? "TCIN" : /amazon/i.test(product.retailerName) ? "ASIN/SKU" : "SKU/Product ID";
     return (
       <article className="target-buyable-card" key={product.id}>
         <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
         <div className="target-buyable-body">
           <div className="target-buyable-heading">
             <div>
-              <span className="tracker-channel">Target Buyable Now</span>
+              <span className="tracker-channel">{product.retailerName} Buyable Now</span>
               <h3>{product.name}</h3>
               <p>{productType}</p>
             </div>
             <div className="tracker-drop-badges">
-              <span className={`chip ${statusTone(status)}`}>{formatStatus(status)}</span>
+              <span className={`chip ${statusTone(status)}`}>{statusLabel}</span>
               {targetBuyableHighStock(product) ? <span className="chip good">High Stock</span> : null}
             </div>
           </div>
           <div className="target-buyable-meta">
             <span><b>Price</b>{price === null ? "Price unknown" : money(price)}</span>
-            <span><b>TCIN</b>{tcin}</span>
+            <span><b>{identifierLabel}</b>{identifier}</span>
             <span><b>Confidence</b>{confidence}%</span>
-            <span><b>Last checked</b>{relativeTime(targetBuyableDetectedAt(product))}</span>
+            <span><b>Last checked</b>{relativeTime(buyableNowDetectedAt(product))}</span>
           </div>
           <div className="target-buyable-actions">
             {exactUrl ? (
@@ -14529,7 +14657,7 @@ function AlertsPanel({
               <ShoppingBag size={13} />
               Add to Inventory
             </button>
-            <button className="mini-action" type="button" onClick={() => openTargetProductInventoryPrefill(product, "Target Buyable Now - Mark bought")}>
+            <button className="mini-action" type="button" onClick={() => openTargetProductInventoryPrefill(product, `${product.retailerName} Buyable Now - Mark bought`)}>
               <Check size={13} />
               Mark bought
             </button>
@@ -14541,10 +14669,10 @@ function AlertsPanel({
           <details className="tracker-drop-details compact">
             <summary>Details</summary>
             <dl>
-              <div><dt>Verified URL</dt><dd>{exactUrl || "Exact Target /p/ URL missing"}</dd></div>
-              <div><dt>UPC / DPCI</dt><dd>{product.upc || "UPC missing"} / {product.dpci || "DPCI missing"}</dd></div>
+              <div><dt>Verified URL</dt><dd>{exactUrl || "Exact product URL missing"}</dd></div>
+              <div><dt>Identifiers</dt><dd>{product.upc || "UPC missing"} / {product.dpci || "DPCI missing"} / {product.sku || product.retailerProductId || "SKU missing"}</dd></div>
               <div><dt>Monitor result</dt><dd>{product.lastMonitorResult || "No monitor result saved."}</dd></div>
-              <div><dt>Duplicate suppression</dt><dd>Repeat Target checks use the product/event key before creating new Live Drops.</dd></div>
+              <div><dt>Duplicate suppression</dt><dd>Repeat checks use the product/event key before creating new Live Drops, but current buyable products stay visible here.</dd></div>
             </dl>
           </details>
         </div>
@@ -14557,19 +14685,21 @@ function AlertsPanel({
       <section className="target-buyable-panel">
         <div className="panel-header">
           <div>
-            <p className="eyeline">Target action center</p>
+            <p className="eyeline">Live action center</p>
             <h2>Buyable Now</h2>
-            <p>Current Target watch products whose latest check says in stock, preorder live, or add-to-cart available.</p>
+            <p>Current watch products whose latest check says in stock, preorder live, add-to-cart available, or high/low stock but still buyable.</p>
           </div>
           <div className="row-actions">
-            <span className="chip good">{targetBuyableProducts.length} buyable</span>
+            <span className="chip good">{buyableNowProducts.length} buyable</span>
+            <span className="chip muted">{targetBuyableProducts.length} Target</span>
             <span className="chip muted">Manual checkout only</span>
           </div>
         </div>
         <div className="target-live-summary-grid">
-          <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
-          <DetailStat label="Buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
-          <DetailStat label="Sold out / watch only" value={String(targetSoldOutProducts.length)} />
+          <DetailStat label="Watched products" value={String(watchProducts.length)} />
+          <DetailStat label="Buyable now" value={String(buyableNowProducts.length)} tone={buyableNowProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Target buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Sold out / watch only" value={String(soldOutWatchProducts.length)} />
           <DetailStat label="Needs QA" value={String(targetNeedsQaProducts.length)} tone={targetNeedsQaProducts.length ? "neutral" : "good"} />
         </div>
         <div className="target-buyable-controls">
@@ -14589,31 +14719,31 @@ function AlertsPanel({
             </select>
           </label>
         </div>
-        {visibleTargetBuyableProducts.length ? (
+        {visibleBuyableNowProducts.length ? (
           <div className="target-buyable-grid">
-            {visibleTargetBuyableProducts.map(renderTargetBuyableCard)}
+            {visibleBuyableNowProducts.map(renderTargetBuyableCard)}
           </div>
         ) : (
           <div className="tracker-empty-feed compact">
             <div className="tracker-empty-copy">
               <span className="tracker-empty-icon"><Bell size={18} /></span>
               <div>
-                <h3>{targetBuyableProducts.length ? "No products match this filter" : "No Target products are buyable now"}</h3>
-                <p>Sold-out Target products stay in Watch Only below. Live Drops are created only when stock is proven buyable.</p>
+                <h3>{buyableNowProducts.length ? "No buyable products match this filter" : "No products are buyable now"}</h3>
+                <p>Sold-out products stay in Watch Only below. Live Drops are created only when stock is proven buyable.</p>
               </div>
             </div>
           </div>
         )}
         <details className="target-watch-only-section">
-          <summary>Sold Out / Watch Only ({targetSoldOutProducts.length})</summary>
+          <summary>Sold Out / Watch Only ({soldOutWatchProducts.length})</summary>
           <div className="target-watch-only-list">
-            {targetSoldOutProducts.slice(0, 16).map((product) => (
+            {soldOutWatchProducts.slice(0, 16).map((product) => (
               <article key={product.id}>
                 <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
                 <div>
                   <strong>{product.name}</strong>
-                  <span>{targetProductGroupLabel(product.productType || product.name)} - TCIN {product.retailerProductId || product.sku || "missing"}</span>
-                  <small>{formatStatus(targetBuyableStatus(product))} - checked {relativeTime(targetBuyableDetectedAt(product))}</small>
+                  <span>{product.retailerName} - {targetProductGroupLabel(product.productType || product.name)} - {buyableNowIdentifier(product)}</span>
+                  <small>{formatStatus(buyableNowStatus(product))} - checked {relativeTime(buyableNowDetectedAt(product))}</small>
                 </div>
                 <button className="mini-action" type="button" disabled={busy} onClick={() => runProductCheck(product)}>
                   <RefreshCw size={13} />
@@ -14621,7 +14751,7 @@ function AlertsPanel({
                 </button>
               </article>
             ))}
-            {!targetSoldOutProducts.length ? <span className="target-watch-only-empty">No sold-out Target products in the watch-only list.</span> : null}
+            {!soldOutWatchProducts.length ? <span className="target-watch-only-empty">No sold-out products in the watch-only list.</span> : null}
           </div>
         </details>
       </section>
@@ -14739,7 +14869,8 @@ function AlertsPanel({
         </div>
       </section>
       <section className="inventory-kpi-grid alerts-kpi-grid">
-        <InventoryKpiCard label="Live Drops Today" value={String(liveDropsToday)} detail={liveDropsToday ? "Fresh restocks" : "No drops today"} tone={liveDropsToday ? "good" : "neutral"} />
+        <InventoryKpiCard label="Live Drops Today" value={String(liveDropsToday)} detail={liveDropsToday ? "Fresh restocks" : "No new alert events"} tone={liveDropsToday ? "good" : "neutral"} />
+        <InventoryKpiCard label="Buyable Now" value={String(buyableNowProducts.length)} detail={buyableNowProducts.length ? "Current latest-check state" : "Nothing currently buyable"} tone={buyableNowProducts.length ? "good" : "neutral"} />
         <InventoryKpiCard label="Watch Products" value={String(watchProducts.length)} detail={watchProducts.length ? `${exactProducts.length} exact products` : "Add your first watch"} />
         <InventoryKpiCard label="Unread Alerts" value={String(dashboard.alertAnalytics.unreadAlerts)} detail={dashboard.alertAnalytics.unreadAlerts ? "Need review" : "Inbox clear"} tone={dashboard.alertAnalytics.unreadAlerts ? "watch" : "neutral"} />
         <InventoryKpiCard label="System Warnings" value={String(systemAlerts.length)} detail={systemAlerts.length ? "Provider or cron notices" : "No warnings"} tone={systemAlerts.length ? "watch" : "neutral"} />
@@ -14784,6 +14915,30 @@ function AlertsPanel({
               </div>
               {liveDrops.length ? (
                 liveDrops.map(renderLiveDropCard)
+              ) : buyableNowProducts.length ? (
+                <div className="tracker-empty-feed tracker-empty-feed-current">
+                  <div className="tracker-empty-copy">
+                    <span className="tracker-empty-icon"><Bell size={18} /></span>
+                    <div>
+                      <h3>No new drop alerts, but these products are currently buyable.</h3>
+                      <p>Duplicate suppression can prevent repeat alert spam. Use Buyable Now above for the latest checked products that are still actionable.</p>
+                    </div>
+                  </div>
+                  <div className="tracker-empty-actions">
+                    <button className="mini-action solid" type="button" onClick={() => setTargetBuyableFilter("All")}>
+                      <ShoppingBag size={14} />
+                      View Buyable Now
+                    </button>
+                    <button className="mini-action" type="button" onClick={() => setView("check")}>
+                      <Search size={14} />
+                      Run Check Now
+                    </button>
+                    <button className="mini-action" type="button" onClick={() => setView("watchlist")}>
+                      <Eye size={14} />
+                      View Watchlist
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div className="tracker-empty-feed">
                   <div className="tracker-empty-copy">
@@ -15001,7 +15156,14 @@ function AlertsPanel({
           ) : null}
           <div className="watchlist-qa-list">
             {filteredWatchProducts.length ? (
-              filteredWatchProducts.map(renderWatchlistQARow)
+              <>
+                {visibleWatchProducts.map(renderWatchlistQARow)}
+                {visibleWatchProducts.length < filteredWatchProducts.length ? (
+                  <button className="mini-action load-more-action" type="button" onClick={() => setWatchlistVisibleLimit((current) => current + 40)}>
+                    Load more watch products ({filteredWatchProducts.length - visibleWatchProducts.length} remaining)
+                  </button>
+                ) : null}
+              </>
             ) : watchRetailerFilter === "GameStop" ? (
               <EmptyState icon={Store} title="No GameStop products watched yet" detail="Add an exact GameStop product page, then run Check Now from this watchlist." action={
                 <div className="watchlist-retailer-empty-actions">
@@ -15100,20 +15262,27 @@ function AlertsPanel({
           </div>
           <div className="tracker-history-list">
             {historyAlerts.length ? (
-              historyAlerts.map((record) => (
-                <article className={record.alert.read ? "tracker-history-row read" : "tracker-history-row"} key={record.alert.id}>
-                  <span className={`chip ${record.statusTone}`}>{record.statusLabel}</span>
-                  <div>
-                    <strong>{record.alert.title}</strong>
-                    <p>{record.alert.reason}</p>
-                  </div>
-                  <span>{formatStatus(record.category)}</span>
-                  <span>{dateTime(record.alert.timestamp)}</span>
-                  {record.alert.actionUrl ? (
-                    <a className="mini-action" href={record.alert.actionUrl} target="_blank" rel="noreferrer">Go <ExternalLink size={13} /></a>
-                  ) : null}
-                </article>
-              ))
+              <>
+                {visibleHistoryAlerts.map((record) => (
+                  <article className={record.alert.read ? "tracker-history-row read" : "tracker-history-row"} key={record.alert.id}>
+                    <span className={`chip ${record.statusTone}`}>{record.statusLabel}</span>
+                    <div>
+                      <strong>{record.alert.title}</strong>
+                      <p>{record.alert.reason}</p>
+                    </div>
+                    <span>{formatStatus(record.category)}</span>
+                    <span>{dateTime(record.alert.timestamp)}</span>
+                    {record.alert.actionUrl ? (
+                      <a className="mini-action" href={record.alert.actionUrl} target="_blank" rel="noreferrer">Go <ExternalLink size={13} /></a>
+                    ) : null}
+                  </article>
+                ))}
+                {visibleHistoryAlerts.length < historyAlerts.length ? (
+                  <button className="mini-action load-more-action" type="button" onClick={() => setHistoryVisibleLimit((current) => current + 40)}>
+                    Load more alert history ({historyAlerts.length - visibleHistoryAlerts.length} remaining)
+                  </button>
+                ) : null}
+              </>
             ) : (
               <EmptyState icon={History} title="No alert history" detail="Tracker and system alerts will be preserved here." />
             )}
@@ -15179,7 +15348,8 @@ function AlertsPanel({
               </article>
             ))}
             {systemAlerts.length ? (
-              systemAlerts.map((record) => (
+              <>
+                {visibleSystemAlerts.map((record) => (
                 <article key={record.alert.id}>
                   <span className={`chip ${record.statusTone}`}>{record.statusLabel}</span>
                   <div>
@@ -15188,7 +15358,13 @@ function AlertsPanel({
                   </div>
                   {record.isDeprecated ? <span className="chip muted">Deprecated</span> : null}
                 </article>
-              ))
+                ))}
+                {visibleSystemAlerts.length < systemAlerts.length ? (
+                  <button className="mini-action load-more-action" type="button" onClick={() => setSystemVisibleLimit((current) => current + 30)}>
+                    Load more system alerts ({systemAlerts.length - visibleSystemAlerts.length} remaining)
+                  </button>
+                ) : null}
+              </>
             ) : !dashboard.dataQualityWarnings.length ? (
               <EmptyState icon={ShieldCheck} title="No system alerts" detail="Provider, cron, parser, push, and archived tracker notices will appear here." />
             ) : null}
