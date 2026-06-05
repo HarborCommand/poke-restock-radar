@@ -13486,6 +13486,14 @@ body .target-coverage-panel .panel-header p {
   max-width: 760px;
 }
 
+body .target-scan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 body .target-coverage-grid,
 body .discord-compare-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr));

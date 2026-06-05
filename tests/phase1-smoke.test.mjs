@@ -651,6 +651,8 @@ test("Phase 7 deployment readiness and health checks exist", () => {
 
   const env = readFileSync(join(root, ".env.example"), "utf8");
   assert.match(env, /CRON_SECRET/);
+  assert.match(env, /TARGET_MONITOR_CRON_ENABLED/);
+  assert.match(env, /TARGET_MONITOR_BATCH_SIZE/);
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   assert.match(app, /App Health/);

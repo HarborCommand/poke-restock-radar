@@ -485,7 +485,7 @@ export const backupImportSchema = z.object({
 });
 
 export const monitorRunSchema = z.object({
-  mode: z.enum(["due", "all"]).default("due")
+  mode: z.enum(["due", "all", "target_due", "target_priority"]).default("due")
 });
 
 export const productMonitorActionSchema = z.object({

@@ -13667,8 +13667,6 @@ function AlertsPanel({
     [watchProducts]
   );
   const needsExactLink = watchProducts.length - exactProducts.length;
-  const blockedChecks = useMemo(() => dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length, [dashboard.monitorLogs]);
-  const failedChecks = useMemo(() => dashboard.monitorLogs.filter((log) => log.status === "ERROR").length, [dashboard.monitorLogs]);
   const deprecatedCount = useMemo(() => trackerAlerts.filter((record) => record.isDeprecated).length, [trackerAlerts]);
   const liveDropsToday = useMemo(() => liveDrops.filter((record) => new Date(record.alert.timestamp).getTime() >= todayStartTime).length, [liveDrops, todayStartTime]);
   const mutedArchivedCount = useMemo(() => dashboard.alerts.filter((alert) => alert.suppressedAt || alert.falsePositiveAt).length + deprecatedCount, [dashboard.alerts, deprecatedCount]);
@@ -13786,6 +13784,30 @@ function AlertsPanel({
           body: JSON.stringify({ alertId: alert.id, action })
         }),
       { reload: false, success }
+    );
+  }
+
+  function runTargetBatch(mode: "target_due" | "target_priority", label: string, success: string) {
+    return runAction(
+      label,
+      () =>
+        requestJson("/api/radar/monitor/run", {
+          method: "POST",
+          body: JSON.stringify({ mode })
+        }),
+      { success }
+    );
+  }
+
+  function runDiscordComparedTargetProductNow() {
+    if (!discordComparison?.productId) return null;
+    return runAction(
+      `Checking product ${discordComparison.productId}`,
+      () =>
+        requestJson(`/api/radar/products/${discordComparison.productId}/check`, {
+          method: "POST"
+        }),
+      { success: "Compared Target product check finished" }
     );
   }
 
@@ -14842,13 +14864,16 @@ function AlertsPanel({
         </div>
         <div className="tracker-mini-stats">
           <span><b>{dashboard.scannerStatus.activeProductsScanned}</b>Active monitors</span>
-          <span><b>{targetWatchProducts.length}</b>Target watched</span>
+          <span><b>{dashboard.scannerStatus.targetProductsWatched || targetWatchProducts.length}</b>Target watched</span>
+          <span><b>{dashboard.scannerStatus.targetBatchSize}</b>Target batch size</span>
+          <span><b>{dashboard.scannerStatus.targetQueueRemaining}</b>Target queue</span>
+          <span><b>{dashboard.scannerStatus.targetStaleProducts}</b>Target stale</span>
           <span><b>{pendingTargetCandidates.length}</b>Target pending</span>
           <span><b>{targetReadyProducts.length}</b>Target ready</span>
           <span><b>{relativeTime(dashboard.scannerStatus.lastScanTime)}</b>Last scan</span>
-          <span><b>{relativeTime(dashboard.scannerStatus.nextScanEstimate)}</b>Next scan</span>
-          <span><b>{blockedChecks}</b>Blocked</span>
-          <span><b>{failedChecks}</b>Failed</span>
+          <span><b>{relativeTime(dashboard.scannerStatus.targetLastBatchRunAt)}</b>Target batch</span>
+          <span><b>{dashboard.scannerStatus.targetBlockedLastRun}</b>Target blocked</span>
+          <span><b>{dashboard.scannerStatus.targetErrorsLastRun}</b>Target failed</span>
         </div>
       </section>
     );
@@ -14936,25 +14961,65 @@ function AlertsPanel({
             <h3>Retail/MSRP watch quality</h3>
             <p>Discord may alert on products not watched by Poke Radar yet. Use Compare Discord Alert to see exactly why a drop did or did not appear.</p>
           </div>
-          <span className="chip muted">Scan every {targetScanIntervalMinutes}m</span>
+          <div className="row-actions">
+            <span className={`chip ${dashboard.scannerStatus.targetCronActive ? "good" : "watch"}`}>
+              {dashboard.scannerStatus.targetCronActive ? "Target cron fresh" : "Target cron stale"}
+            </span>
+            <span className="chip muted">Batch {dashboard.scannerStatus.targetBatchSize}</span>
+          </div>
         </div>
+        {isAdmin ? (
+          <div className="target-scan-actions">
+            <button
+              className="mini-action solid"
+              disabled={busy}
+              type="button"
+              onClick={() => runTargetBatch("target_due", "Running Target batch", "Target batch finished")}
+            >
+              <RefreshCw size={13} />
+              {busyLabel === "Running Target batch" ? "Running" : "Run Target Batch Now"}
+            </button>
+            <button
+              className="mini-action"
+              disabled={busy}
+              type="button"
+              onClick={() => runTargetBatch("target_priority", "Running high priority Target batch", "High priority Target batch finished")}
+            >
+              <Play size={13} />
+              {busyLabel === "Running high priority Target batch" ? "Running" : "Run High Priority Target Now"}
+            </button>
+            <button
+              className="mini-action"
+              disabled={busy || !discordComparison?.productId}
+              type="button"
+              onClick={runDiscordComparedTargetProductNow}
+              title={discordComparison?.productId ? "Run the currently compared Target product now" : "Compare a Discord Target alert first"}
+            >
+              <Radar size={13} />
+              Run One Product Now
+            </button>
+          </div>
+        ) : null}
         <div className="target-coverage-grid">
           <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
           <DetailStat label="Retail/MSRP eligible" value={String(targetRetailEligibleProducts.length)} tone={targetRetailEligibleProducts.length ? "good" : "neutral"} />
           <DetailStat label="Suppressed vendor / over-MSRP" value={String(targetSuppressedProducts.length)} tone={targetSuppressedProducts.length ? "bad" : "neutral"} />
           <DetailStat label="Sold out" value={String(targetSoldOutProducts.length)} />
           <DetailStat label="Currently buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
-          <DetailStat label="Not checked in 30m" value={String(targetStaleProducts.length)} tone={targetStaleProducts.length ? "neutral" : "good"} />
+          <DetailStat label="Not checked in 30m" value={String(dashboard.scannerStatus.targetStaleProducts || targetStaleProducts.length)} tone={(dashboard.scannerStatus.targetStaleProducts || targetStaleProducts.length) ? "neutral" : "good"} />
+          <DetailStat label="Queue remaining" value={String(dashboard.scannerStatus.targetQueueRemaining)} tone={dashboard.scannerStatus.targetQueueRemaining ? "neutral" : "good"} />
           <DetailStat label="Missing exact URL" value={String(targetMissingExactUrlProducts.length)} tone={targetMissingExactUrlProducts.length ? "bad" : "good"} />
           <DetailStat label="Missing TCIN / SKU" value={String(targetMissingIdentifierProducts.length)} tone={targetMissingIdentifierProducts.length ? "neutral" : "good"} />
         </div>
         <div className="target-scan-freshness">
-          <span><b>Last Target scan</b>{relativeTime(latestTargetMonitorLog?.startedAt)}</span>
-          <span><b>Next scan</b>{relativeTime(dashboard.scannerStatus.nextScanEstimate)}</span>
-          <span><b>Products checked this scan</b>{targetLogsInLatestScan.length ? String(targetLogsInLatestScan.length) : "Unknown"}</span>
+          <span><b>Cron last run</b>{relativeTime(dashboard.scannerStatus.lastScanTime)}</span>
+          <span><b>Last Target batch</b>{relativeTime(dashboard.scannerStatus.targetLastBatchRunAt || latestTargetMonitorLog?.startedAt)}</span>
+          <span><b>Next Target batch</b>{relativeTime(dashboard.scannerStatus.targetNextBatchAt || dashboard.scannerStatus.nextScanEstimate)}</span>
+          <span><b>Products checked this batch</b>{dashboard.scannerStatus.targetProductsCheckedLastRun ? String(dashboard.scannerStatus.targetProductsCheckedLastRun) : targetLogsInLatestScan.length ? String(targetLogsInLatestScan.length) : "Unknown"}</span>
           <span><b>Buyable found</b>{targetBuyableProducts.length}</span>
           <span><b>Sold out found</b>{targetSoldOutProducts.length}</span>
-          <span><b>Errors</b>{targetBlockedProducts.length}</span>
+          <span><b>Blocked/errors</b>{dashboard.scannerStatus.targetBlockedLastRun + dashboard.scannerStatus.targetErrorsLastRun}</span>
+          <span><b>Last error</b>{dashboard.scannerStatus.targetLastError || "None"}</span>
         </div>
       </section>
     );
@@ -15693,20 +15758,28 @@ function AlertsPanel({
           </div>
           <div className="tracker-scanner-grid">
             <DetailStat label="Active monitors" value={String(dashboard.scannerStatus.activeProductsScanned)} />
-            <DetailStat label="Target watched count" value={String(targetWatchProducts.length)} />
+            <DetailStat label="Target watched count" value={String(dashboard.scannerStatus.targetProductsWatched || targetWatchProducts.length)} />
             <DetailStat label="Pending Target candidates" value={String(pendingTargetCandidates.length)} tone={pendingTargetCandidates.length ? "neutral" : "good"} />
             <DetailStat label="Target ready count" value={String(targetReadyProducts.length)} tone={targetReadyProducts.length ? "good" : "neutral"} />
+            <DetailStat label="Target cron" value={dashboard.scannerStatus.targetCronActive ? "Fresh" : "Stale"} tone={dashboard.scannerStatus.targetCronActive ? "good" : "neutral"} />
+            <DetailStat label="Target batch size" value={String(dashboard.scannerStatus.targetBatchSize)} />
+            <DetailStat label="Target queue remaining" value={String(dashboard.scannerStatus.targetQueueRemaining)} tone={dashboard.scannerStatus.targetQueueRemaining ? "neutral" : "good"} />
+            <DetailStat label="Target stale >30m" value={String(dashboard.scannerStatus.targetStaleProducts)} tone={dashboard.scannerStatus.targetStaleProducts ? "neutral" : "good"} />
             <DetailStat label="Last scan" value={relativeTime(dashboard.scannerStatus.lastScanTime)} />
             <DetailStat label="Last Target discovery run" value={relativeTime(latestTargetDiscoverySource?.lastCheckedAt)} />
-            <DetailStat label="Last Target monitor run" value={relativeTime(latestTargetMonitorLog?.startedAt)} />
-            <DetailStat label="Next scan" value={relativeTime(dashboard.scannerStatus.nextScanEstimate)} />
+            <DetailStat label="Last Target batch run" value={relativeTime(dashboard.scannerStatus.targetLastBatchRunAt || latestTargetMonitorLog?.startedAt)} />
+            <DetailStat label="Next Target batch" value={relativeTime(dashboard.scannerStatus.targetNextBatchAt || dashboard.scannerStatus.nextScanEstimate)} />
+            <DetailStat label="Target checked last batch" value={String(dashboard.scannerStatus.targetProductsCheckedLastRun)} />
             <DetailStat label="Alerts today" value={String(dashboard.scannerStatus.liveRestocksDetectedToday)} tone="good" />
-            <DetailStat label="Blocked retailer count" value={String(blockedChecks)} tone="neutral" />
-            <DetailStat label="Failed checks" value={String(failedChecks)} tone={failedChecks ? "bad" : "neutral"} />
+            <DetailStat label="Target blocked last batch" value={String(dashboard.scannerStatus.targetBlockedLastRun)} tone="neutral" />
+            <DetailStat label="Target failed last batch" value={String(dashboard.scannerStatus.targetErrorsLastRun)} tone={dashboard.scannerStatus.targetErrorsLastRun ? "bad" : "neutral"} />
             <DetailStat label="Exact products verified" value={String(exactProducts.length)} />
             <DetailStat label="Need exact link" value={String(needsExactLink)} tone={needsExactLink ? "bad" : "good"} />
             <DetailStat label="Discovery pending" value={String(dashboard.scannerStatus.newFindsPendingReview)} />
           </div>
+          {dashboard.scannerStatus.targetLastError ? (
+            <div className="inline-warning">Last Target monitor issue: {dashboard.scannerStatus.targetLastError}</div>
+          ) : null}
           <div className="tracker-monitor-log-list">
             {dashboard.monitorLogs.slice(0, 8).map((log) => (
               <article key={log.id}>

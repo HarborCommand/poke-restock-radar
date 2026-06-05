@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { listAccessOverview } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
-import { runProductMonitorCheck } from "@/lib/monitor";
+import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMinutes } from "@/lib/monitor";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import {
@@ -2389,6 +2389,35 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const nextScan = [nextProductCheck, nextDiscoveryCheck]
     .filter((value): value is Date => Boolean(value))
     .sort((a, b) => a.getTime() - b.getTime())[0];
+  const nowTime = Date.now();
+  const targetProductsForStatus = products.filter((product) => product.monitorEnabled && !product.archivedAt && /target/i.test(product.retailer.name));
+  const targetProductIdsForStatus = new Set(targetProductsForStatus.map((product) => product.id));
+  const targetStaleCutoff = nowTime - 30 * 60 * 1000;
+  const targetCheckedAt = (product: (typeof targetProductsForStatus)[number]) =>
+    product.liveStockVerifiedAt ?? product.lastSuccessfulCheckedAt ?? product.lastCheckedAt;
+  const targetStaleProductCount = targetProductsForStatus.filter((product) => {
+    const checkedAt = targetCheckedAt(product);
+    return !checkedAt || checkedAt.getTime() < targetStaleCutoff;
+  }).length;
+  const targetQueueRemaining = targetProductsForStatus.filter((product) => {
+    const checkedAt = targetCheckedAt(product);
+    const stale = !checkedAt || checkedAt.getTime() < targetStaleCutoff;
+    return stale || !product.nextCheckAt || product.nextCheckAt.getTime() <= nowTime;
+  }).length;
+  const targetMonitorLogs = monitorLogs.filter((log) => log.productId && targetProductIdsForStatus.has(log.productId));
+  const targetLastBatchRun = targetMonitorLogs[0]?.startedAt ?? null;
+  const targetLastBatchStartedAt = targetLastBatchRun?.getTime() ?? 0;
+  const targetLogsInLastBatch = targetLastBatchStartedAt
+    ? targetMonitorLogs.filter((log) => Math.abs(log.startedAt.getTime() - targetLastBatchStartedAt) <= 10 * 60 * 1000)
+    : [];
+  const targetLastErrorLog = targetMonitorLogs.find((log) => log.status === "ERROR" || log.status === "BLOCKED");
+  const targetNextCheck = targetProductsForStatus
+    .map((product) => product.nextCheckAt)
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+  const targetNextBatchAt = targetQueueRemaining
+    ? new Date(nowTime + targetMonitorCadenceMinutes() * 60 * 1000)
+    : targetNextCheck ?? null;
   const scannerStatus: ScannerStatusDTO = {
     activeProductsScanned,
     activeDiscoverySourcesScanned,
@@ -2402,7 +2431,18 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     lastScanTime: monitorLogs[0]?.startedAt.toISOString() ?? null,
     nextScanEstimate: nextScan?.toISOString() ?? null,
     newFindsPendingReview: pendingDiscoveryCount,
-    liveRestocksDetectedToday
+    liveRestocksDetectedToday,
+    targetCronActive: Boolean(targetMonitorLogs.some((log) => log.runType === "DUE_JOB" && nowTime - log.startedAt.getTime() <= 20 * 60 * 1000)),
+    targetProductsWatched: targetProductsForStatus.length,
+    targetLastBatchRunAt: targetLastBatchRun?.toISOString() ?? null,
+    targetNextBatchAt: targetNextBatchAt?.toISOString() ?? null,
+    targetBatchSize: targetMonitorBatchSize(),
+    targetQueueRemaining,
+    targetProductsCheckedLastRun: targetLogsInLastBatch.length,
+    targetStaleProducts: targetStaleProductCount,
+    targetErrorsLastRun: targetLogsInLastBatch.filter((log) => log.status === "ERROR").length,
+    targetBlockedLastRun: targetLogsInLastBatch.filter((log) => log.status === "BLOCKED").length,
+    targetLastError: targetLastErrorLog?.error || targetLastErrorLog?.changeSummary || targetLastErrorLog?.blockedType || null
   };
   const setup = setupChecklist({
     productCount: productDTOs.length,

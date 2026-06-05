@@ -53,6 +53,7 @@ type Detection = {
 
 export const buyAvailableStatuses: ProductStatus[] = ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"];
 export { MONITOR_USER_AGENT, createMonitorLog, delay, hashPage, requestDelayMs };
+export type MonitorBatchMode = "due" | "all" | "target_due" | "target_priority";
 
 function detectionReadyForBuyAlerts(detection: Detection) {
   return (
@@ -97,6 +98,18 @@ function requestDelayMs() {
   const configured = Number(process.env.MONITOR_REQUEST_DELAY_MS || 1500);
   if (!Number.isFinite(configured)) return 1500;
   return Math.max(500, configured);
+}
+
+export function targetMonitorBatchSize() {
+  const configured = Number(process.env.TARGET_MONITOR_BATCH_SIZE || 18);
+  if (!Number.isFinite(configured)) return 18;
+  return Math.max(1, Math.min(30, Math.floor(configured)));
+}
+
+export function targetMonitorCadenceMinutes() {
+  const configured = Number(process.env.TARGET_MONITOR_CADENCE_MINUTES || 15);
+  if (!Number.isFinite(configured)) return 15;
+  return Math.max(10, Math.min(60, Math.floor(configured)));
 }
 
 function nextCheckAt(minutes: number) {
@@ -1448,7 +1461,190 @@ export async function runProductMonitorCheck(productId: string, runType: RunType
   }
 }
 
-export async function runProductMonitorBatch(mode: "due" | "all", runType: RunType = mode === "all" ? "MANUAL_ALL" : "DUE_JOB") {
+function emptyDiscoveryResult() {
+  return {
+    checked: 0,
+    changed: 0,
+    errors: 0,
+    blocked: 0,
+    pending: 0,
+    results: []
+  };
+}
+
+function checkedAtForTargetProduct(product: {
+  liveStockVerifiedAt: Date | null;
+  lastSuccessfulCheckedAt: Date | null;
+  lastCheckedAt: Date | null;
+}) {
+  return product.liveStockVerifiedAt ?? product.lastSuccessfulCheckedAt ?? product.lastCheckedAt;
+}
+
+function targetProductBatchScore(
+  product: {
+    name: string;
+    productType: string | null;
+    priority: string;
+    rating: string;
+    manualPriorityOverride: string | null;
+    notes: string | null;
+    nextCheckAt: Date | null;
+    alertEligibility: string;
+    sellerType: string;
+    liveBlockedType: string | null;
+    lastMonitorError: string | null;
+    liveStockStatus: string | null;
+    stockStatus: string;
+    liveStockVerifiedAt: Date | null;
+    lastSuccessfulCheckedAt: Date | null;
+    lastCheckedAt: Date | null;
+  },
+  now: Date
+) {
+  const checkedAt = checkedAtForTargetProduct(product);
+  const stale = !checkedAt || now.getTime() - checkedAt.getTime() > 30 * 60 * 1000;
+  const due = !product.nextCheckAt || product.nextCheckAt <= now;
+  const latestStatus = product.liveStockStatus ?? product.stockStatus;
+  const recentlyChecked = checkedAt ? now.getTime() - checkedAt.getTime() < 30 * 60 * 1000 : false;
+  const highPriorityText = `${product.name} ${product.productType ?? ""}`.toLowerCase();
+  let score = 0;
+
+  if (stale) score += 100;
+  if (due) score += 50;
+  if (product.alertEligibility === "eligible") score += 40;
+  if (product.priority === "HIGH" || product.rating === "BUY" || product.manualPriorityOverride === "BUY") score += 35;
+  if (/booster bundle|elite trainer|etb|sleeved|blister|tin|premium/.test(highPriorityText)) score += 25;
+  if (/discord/i.test(product.notes ?? "")) score += 20;
+  if (product.alertEligibility === "suppressed_marketplace" || product.alertEligibility === "suppressed_over_msrp") score -= 60;
+  if (product.sellerType === "marketplace") score -= 40;
+  if (product.liveBlockedType || product.lastMonitorError) score -= 25;
+  if (recentlyChecked && ["SOLD_OUT", "UNAVAILABLE"].includes(latestStatus)) score -= 20;
+
+  return score;
+}
+
+async function runTargetProductMonitorBatch(mode: "due" | "priority" | "all", runType: RunType = "DUE_JOB") {
+  const startedAt = new Date();
+  const batchSize = mode === "all" ? Number.MAX_SAFE_INTEGER : targetMonitorBatchSize();
+  const staleCutoff = new Date(startedAt.getTime() - 30 * 60 * 1000);
+  const targetProducts = (await prisma.product.findMany({
+    where: {
+      monitorEnabled: true,
+      archivedAt: null
+    },
+    include: { retailer: { select: { name: true } } }
+  })).filter((product) => /target/i.test(product.retailer.name));
+
+  const staleBefore = targetProducts.filter((product) => {
+    const checkedAt = checkedAtForTargetProduct(product);
+    return !checkedAt || checkedAt < staleCutoff;
+  }).length;
+
+  const candidates = targetProducts
+    .filter((product) => {
+      if (mode === "all") return true;
+      const checkedAt = checkedAtForTargetProduct(product);
+      const stale = !checkedAt || checkedAt < staleCutoff;
+      const due = !product.nextCheckAt || product.nextCheckAt <= startedAt;
+      if (mode === "priority") {
+        return (
+          stale ||
+          due ||
+          product.priority === "HIGH" ||
+          product.rating === "BUY" ||
+          product.manualPriorityOverride === "BUY" ||
+          /discord/i.test(product.notes ?? "")
+        );
+      }
+      return stale || due;
+    })
+    .sort((a, b) => {
+      const scoreDelta = targetProductBatchScore(b, startedAt) - targetProductBatchScore(a, startedAt);
+      if (scoreDelta !== 0) return scoreDelta;
+      const aChecked = checkedAtForTargetProduct(a)?.getTime() ?? 0;
+      const bChecked = checkedAtForTargetProduct(b)?.getTime() ?? 0;
+      return aChecked - bChecked;
+    });
+
+  const selected = candidates.slice(0, batchSize);
+  const results = [];
+  for (const product of selected) {
+    results.push(await runProductMonitorCheck(product.id, runType, true));
+    await delay(requestDelayMs());
+  }
+
+  const refreshedProducts = selected.length
+    ? await prisma.product.findMany({
+        where: {
+          id: { in: targetProducts.map((product) => product.id) },
+          monitorEnabled: true,
+          archivedAt: null
+        },
+        include: { retailer: { select: { name: true } } }
+      })
+    : targetProducts;
+  const staleAfter = refreshedProducts
+    .filter((product) => /target/i.test(product.retailer.name))
+    .filter((product) => {
+      const checkedAt = checkedAtForTargetProduct(product);
+      return !checkedAt || checkedAt < staleCutoff;
+    }).length;
+  const targetBatch = {
+    enabled: true,
+    mode,
+    batchSize: mode === "all" ? selected.length : targetMonitorBatchSize(),
+    totalWatched: targetProducts.length,
+    checked: results.length,
+    queueRemaining: Math.max(0, candidates.length - selected.length),
+    productsPending: Math.max(0, candidates.length - selected.length),
+    staleBefore,
+    staleAfter,
+    errors: results.filter((result) => result.status === "ERROR").length,
+    blocked: results.filter((result) => result.status === "BLOCKED").length,
+    lastRunAt: startedAt.toISOString(),
+    nextRunAt: new Date(startedAt.getTime() + targetMonitorCadenceMinutes() * 60 * 1000).toISOString()
+  };
+
+  if (results.length === 0) {
+    const log = await createMonitorLog({
+      runType,
+      status: "SKIPPED",
+      startedAt,
+      changeSummary: "No Target watch products were due for batched monitoring."
+    });
+    return {
+      checked: 0,
+      changed: 0,
+      errors: 0,
+      blocked: 0,
+      pending: 0,
+      results,
+      discovery: emptyDiscoveryResult(),
+      targetBatch,
+      logId: log.id
+    };
+  }
+
+  return {
+    checked: results.length,
+    changed: results.filter((result) => result.status === "CHANGED").length,
+    errors: targetBatch.errors,
+    blocked: targetBatch.blocked,
+    pending: results.filter((result) => result.status === "PENDING_CONFIRMATION").length,
+    results,
+    discovery: emptyDiscoveryResult(),
+    targetBatch
+  };
+}
+
+export async function runProductMonitorBatch(mode: MonitorBatchMode, runType: RunType = mode === "all" ? "MANUAL_ALL" : "DUE_JOB") {
+  if (mode === "target_due") {
+    return runTargetProductMonitorBatch("due", runType);
+  }
+  if (mode === "target_priority") {
+    return runTargetProductMonitorBatch("priority", runType);
+  }
+
   const now = new Date();
   const products = await prisma.product.findMany({
     where: {

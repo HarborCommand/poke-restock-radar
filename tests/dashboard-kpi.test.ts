@@ -388,6 +388,12 @@ test("alerts Target retail coverage and Discord comparison tools are wired", () 
   assert.match(alertsPanel, /targetMissingExactUrlProducts/);
   assert.match(alertsPanel, /targetMissingIdentifierProducts/);
   assert.match(alertsPanel, /targetLogsInLatestScan/);
+  assert.match(alertsPanel, /Run Target Batch Now/);
+  assert.match(alertsPanel, /Run High Priority Target Now/);
+  assert.match(alertsPanel, /Run One Product Now/);
+  assert.match(alertsPanel, /targetQueueRemaining/);
+  assert.match(alertsPanel, /targetStaleProducts/);
+  assert.match(alertsPanel, /targetProductsCheckedLastRun/);
   assert.match(alertsPanel, /Add from Discord Alert/);
   assert.match(alertsPanel, /Compare Discord Alert/);
   assert.match(alertsPanel, /compareTargetDiscordAlert/);
@@ -396,6 +402,28 @@ test("alerts Target retail coverage and Discord comparison tools are wired", () 
   assert.match(helper, /deduped_currently_buyable/);
   assert.match(helper, /sold_out_at_latest_check/);
   assert.match(helper, /targetUrlFromTcin/);
+});
+
+test("Target monitor cron uses safe batched freshness mode", () => {
+  const monitor = fs.readFileSync(new URL("../src/lib/monitor.ts", import.meta.url), "utf8");
+  const cron = fs.readFileSync(new URL("../src/app/api/radar/monitor/cron/route.ts", import.meta.url), "utf8");
+  const validation = fs.readFileSync(new URL("../src/lib/validation.ts", import.meta.url), "utf8");
+  const env = fs.readFileSync(new URL("../.env.example", import.meta.url), "utf8");
+  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
+
+  assert.match(validation, /target_due/);
+  assert.match(validation, /target_priority/);
+  assert.match(monitor, /targetMonitorBatchSize/);
+  assert.match(monitor, /targetMonitorCadenceMinutes/);
+  assert.match(monitor, /runTargetProductMonitorBatch/);
+  assert.match(monitor, /staleBefore/);
+  assert.match(monitor, /staleAfter/);
+  assert.match(cron, /TARGET_MONITOR_CRON_ENABLED/);
+  assert.match(cron, /target_due/);
+  assert.match(env, /TARGET_MONITOR_BATCH_SIZE/);
+  assert.match(env, /TARGET_MONITOR_CADENCE_MINUTES/);
+  assert.match(types, /targetQueueRemaining/);
+  assert.match(types, /targetProductsCheckedLastRun/);
 });
 
 test("alerts long lists are paginated for performance", () => {

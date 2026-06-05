@@ -22,13 +22,17 @@ function productMonitorCronEnabled() {
   return process.env.PRODUCT_MONITOR_CRON_ENABLED === "true";
 }
 
+function targetMonitorCronEnabled() {
+  return process.env.TARGET_MONITOR_CRON_ENABLED !== "false";
+}
+
 function pausedResponse() {
   return ok({
     status: "PAUSED",
     runType: "DUE_JOB",
     checked: 0,
     alertsCreated: 0,
-    reason: "Product monitor cron is paused while Products, Stores, and Cards UI modules are hidden. Set PRODUCT_MONITOR_CRON_ENABLED=true to re-enable scheduled product scans."
+    reason: "Monitor cron is paused. Target batching is disabled with TARGET_MONITOR_CRON_ENABLED=false, and legacy product scans require PRODUCT_MONITOR_CRON_ENABLED=true."
   });
 }
 
@@ -36,10 +40,10 @@ export async function GET(request: Request) {
   if (!cronAuthorized(request)) {
     return NextResponse.json({ error: "Monitor job secret required" }, { status: 401 });
   }
-  if (!productMonitorCronEnabled()) return pausedResponse();
+  if (!productMonitorCronEnabled() && !targetMonitorCronEnabled()) return pausedResponse();
 
   try {
-    return ok(await runProductMonitorBatch("due", "DUE_JOB"));
+    return ok(await runProductMonitorBatch(productMonitorCronEnabled() ? "due" : "target_due", "DUE_JOB"));
   } catch (error) {
     return badRequest(error);
   }
@@ -49,11 +53,16 @@ export async function POST(request: Request) {
   if (!cronAuthorized(request)) {
     return NextResponse.json({ error: "Monitor job secret required" }, { status: 401 });
   }
-  if (!productMonitorCronEnabled()) return pausedResponse();
+  if (!productMonitorCronEnabled() && !targetMonitorCronEnabled()) return pausedResponse();
 
   try {
     const input = monitorRunSchema.parse(await readJson(request));
-    return ok(await runProductMonitorBatch(input.mode, "DUE_JOB"));
+    const mode = productMonitorCronEnabled()
+      ? input.mode
+      : input.mode === "target_priority"
+        ? "target_priority"
+        : "target_due";
+    return ok(await runProductMonitorBatch(mode, "DUE_JOB"));
   } catch (error) {
     return badRequest(error);
   }

@@ -858,6 +858,17 @@ export type ScannerStatusDTO = {
   nextScanEstimate: string | null;
   newFindsPendingReview: number;
   liveRestocksDetectedToday: number;
+  targetCronActive: boolean;
+  targetProductsWatched: number;
+  targetLastBatchRunAt: string | null;
+  targetNextBatchAt: string | null;
+  targetBatchSize: number;
+  targetQueueRemaining: number;
+  targetProductsCheckedLastRun: number;
+  targetStaleProducts: number;
+  targetErrorsLastRun: number;
+  targetBlockedLastRun: number;
+  targetLastError: string | null;
 };
 
 export type ProductDiscoverySourceDTO = {
