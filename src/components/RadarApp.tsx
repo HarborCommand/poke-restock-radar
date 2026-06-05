@@ -258,10 +258,25 @@ function inventoryCategoryFromLookup(value?: string | null) {
 function candidateIdentifiersFromReason(candidate: ProductDiscoveryCandidateDTO) {
   const reason = candidate.reason || "";
   return {
-    dpci: reason.match(/\bDPCI\s+([0-9]{3}-[0-9]{2}-[0-9]{4}|[0-9-]{6,})/i)?.[1] ?? null,
-    upc: reason.match(/\bUPC\s+(\d{8,14})/i)?.[1] ?? null,
-    tcin: candidate.retailerProductId || (reason.match(/\bTCIN\s+(\d{5,})/i)?.[1] ?? null)
+    dpci: candidate.dpci || (reason.match(/\bDPCI\s+([0-9]{3}-[0-9]{2}-[0-9]{4}|[0-9-]{6,})/i)?.[1] ?? null),
+    upc: candidate.upc || (reason.match(/\bUPC\s+(\d{8,14})/i)?.[1] ?? null),
+    tcin: candidate.retailerProductId || (reason.match(/\bTCIN\s+(\d{5,})/i)?.[1] ?? null),
+    sku: candidate.sku || candidate.retailerProductId || (reason.match(/\bTCIN\s+(\d{5,})/i)?.[1] ?? null)
   };
+}
+
+function targetCandidateEnrichmentLabel(status: ProductDiscoveryCandidateDTO["enrichmentStatus"]) {
+  if (status === "ENRICHED") return "Enriched";
+  if (status === "PARTIAL") return "Partial";
+  if (status === "BLOCKED") return "Blocked";
+  return "Needs Review";
+}
+
+function targetCandidateEnrichmentTone(status: ProductDiscoveryCandidateDTO["enrichmentStatus"]) {
+  if (status === "ENRICHED") return "good";
+  if (status === "PARTIAL") return "watch";
+  if (status === "BLOCKED") return "bad";
+  return "muted";
 }
 
 function discoveryCandidateStatusLabel(status: ProductDiscoveryCandidateDTO["status"]) {
@@ -13243,6 +13258,8 @@ function AlertsPanel({
   const [editingWatchProductId, setEditingWatchProductId] = useState<string | null>(null);
   const [retailerStockResult, setRetailerStockResult] = useState<RetailerCheckStockResult | null>(null);
   const [showRejectedTargetCandidates, setShowRejectedTargetCandidates] = useState(false);
+  const [hidePartialTargetCandidates, setHidePartialTargetCandidates] = useState(false);
+  const [editingTargetCandidateId, setEditingTargetCandidateId] = useState<string | null>(null);
   const [targetDiscoveryTestUrl, setTargetDiscoveryTestUrl] = useState("https://www.target.com/s?searchTerm=Pokemon+TCG");
   const [targetDiscoveryTestResult, setTargetDiscoveryTestResult] = useState<{
     sourceUrl: string;
@@ -13255,8 +13272,28 @@ function AlertsPanel({
     candidatesCreatedCount: number;
     candidatesRejectedCount: number;
     zeroCandidateReason: string | null;
-    candidates: Array<{ productName: string; url: string; retailerProductId: string | null; confidenceScore: number; reason: string }>;
-    rejected: Array<{ productName: string; url: string; retailerProductId: string | null; confidenceScore: number; reason: string }>;
+    candidates: Array<{
+      productName: string;
+      url: string;
+      retailerProductId: string | null;
+      upc?: string | null;
+      dpci?: string | null;
+      productType?: string | null;
+      enrichmentStatus?: ProductDiscoveryCandidateDTO["enrichmentStatus"];
+      confidenceScore: number;
+      reason: string;
+    }>;
+    rejected: Array<{
+      productName: string;
+      url: string;
+      retailerProductId: string | null;
+      upc?: string | null;
+      dpci?: string | null;
+      productType?: string | null;
+      enrichmentStatus?: ProductDiscoveryCandidateDTO["enrichmentStatus"];
+      confidenceScore: number;
+      reason: string;
+    }>;
   } | null>(null);
   const trackerAlerts = useMemo(
     () => dashboard.alerts.map((alert) => trackerClassifyAlert(alert, dashboard.products)),
@@ -13283,21 +13320,34 @@ function AlertsPanel({
   const targetWatchProducts = watchProductsByRetailer("Target");
   const gameStopWatchProducts = watchProductsByRetailer("GameStop");
   const pokemonCenterWatchProducts = watchProductsByRetailer("Pokemon Center");
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
   const targetReadyProducts = targetWatchProducts.filter(watchProductReadyForLiveAlerts);
   const targetDiscoverySources = dashboard.productDiscoverySources.filter((source) => /target/i.test(source.retailerName));
   const targetDiscoveryCandidates = dashboard.productDiscoveryCandidates.filter((candidate) => /target/i.test(candidate.retailerName));
   const pendingTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING");
   const rejectedTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.status === "REJECTED_NON_TCG");
+  const approvedTargetCandidatesToday = targetDiscoveryCandidates.filter((candidate) => {
+    if (candidate.status !== "APPROVED" || !candidate.reviewedAt) return false;
+    return new Date(candidate.reviewedAt).getTime() >= todayStart.getTime();
+  });
+  const enrichedTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "ENRICHED");
+  const partialTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "PARTIAL");
+  const blockedTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "BLOCKED");
+  const missingTargetUpcCandidates = pendingTargetCandidates.filter((candidate) => !candidate.upc);
+  const missingTargetDpciCandidates = pendingTargetCandidates.filter((candidate) => !candidate.dpci);
+  const readyTargetCandidates = pendingTargetCandidates.filter((candidate) =>
+    Boolean(candidate.finalUrl || candidate.url) && Boolean(candidate.productName) && Boolean(candidate.retailerProductId) && Boolean(candidate.imageUrl)
+  );
   const visibleTargetCandidates = targetDiscoveryCandidates
     .filter((candidate) => candidate.status === "PENDING" || (showRejectedTargetCandidates && candidate.status === "REJECTED_NON_TCG"))
+    .filter((candidate) => (hidePartialTargetCandidates ? candidate.enrichmentStatus !== "PARTIAL" : true))
     .slice(0, 24);
   const exactProducts = watchProducts.filter((product) => product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED");
   const needsExactLink = watchProducts.length - exactProducts.length;
   const blockedChecks = dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length;
   const failedChecks = dashboard.monitorLogs.filter((log) => log.status === "ERROR").length;
   const deprecatedCount = trackerAlerts.filter((record) => record.isDeprecated).length;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
   const liveDropsToday = liveDrops.filter((record) => new Date(record.alert.timestamp).getTime() >= todayStart.getTime()).length;
   const mutedArchivedCount = dashboard.alerts.filter((alert) => alert.suppressedAt || alert.falsePositiveAt).length + deprecatedCount;
   const latestMonitorLog = dashboard.monitorLogs[0] ?? null;
@@ -13403,7 +13453,18 @@ function AlertsPanel({
     );
   }
 
-  function runTargetDiscoveryAction(action: "ensure_sources" | "run_now" | "approve_high_confidence" | "clear_rejected", label: string, success: string) {
+  function runTargetDiscoveryAction(
+    action:
+      | "ensure_sources"
+      | "run_now"
+      | "enrich_all_pending"
+      | "approve_high_confidence"
+      | "approve_high_confidence_enriched"
+      | "reject_all_non_tcg"
+      | "clear_rejected",
+    label: string,
+    success: string
+  ) {
     return runAction(
       label,
       () =>
@@ -13412,6 +13473,32 @@ function AlertsPanel({
           body: JSON.stringify({ action })
         }),
       { success }
+    );
+  }
+
+  function enrichTargetCandidate(candidate: ProductDiscoveryCandidateDTO) {
+    return runAction(
+      `Enriching target candidate ${candidate.id}`,
+      () => requestJson(`/api/radar/product-discovery/candidates/${candidate.id}/enrich`, { method: "POST" }),
+      { success: "Target candidate enriched" }
+    );
+  }
+
+  function saveTargetCandidateIdentifiers(candidate: ProductDiscoveryCandidateDTO, formData: FormData) {
+    return runAction(
+      `Saving target candidate identifiers ${candidate.id}`,
+      () =>
+        requestJson(`/api/radar/product-discovery/candidates/${candidate.id}/identifiers`, {
+          method: "POST",
+          body: JSON.stringify({
+            upc: String(formData.get("upc") || ""),
+            dpci: String(formData.get("dpci") || ""),
+            retailerProductId: String(formData.get("retailerProductId") || ""),
+            sku: String(formData.get("sku") || ""),
+            productType: String(formData.get("productType") || "")
+          })
+        }),
+      { success: "Candidate identifiers saved" }
     );
   }
 
@@ -13808,7 +13895,13 @@ function AlertsPanel({
     const approvalLabel = `Approving target candidate ${candidate.id}`;
     const rejectLabel = `Rejecting target candidate ${candidate.id}`;
     const ignoreLabel = `Ignoring target candidate ${candidate.id}`;
+    const enrichLabel = `Enriching target candidate ${candidate.id}`;
+    const saveIdentifiersLabel = `Saving target candidate identifiers ${candidate.id}`;
     const isRejected = candidate.status === "REJECTED_NON_TCG";
+    const editing = editingTargetCandidateId === candidate.id;
+    const exactUrl = /target\.com\/p\//i.test(candidate.finalUrl || candidate.url);
+    const requiredComplete = exactUrl && Boolean(candidate.productName) && Boolean(identifiers.tcin) && Boolean(candidate.imageUrl);
+    const missingIdentifiers = [identifiers.upc ? null : "UPC", identifiers.dpci ? null : "DPCI"].filter(Boolean).join("/");
     return (
       <article className={isRejected ? "target-candidate-card is-rejected" : "target-candidate-card"} key={candidate.id}>
         <InventoryFallbackImage imageUrl={candidate.imageUrl} label={candidate.productName} />
@@ -13820,6 +13913,10 @@ function AlertsPanel({
             </div>
             <div className="tracker-drop-badges">
               <span className={`chip ${discoveryCandidateStatusTone(candidate.status)}`}>{discoveryCandidateStatusLabel(candidate.status)}</span>
+              <span className={`chip ${targetCandidateEnrichmentTone(candidate.enrichmentStatus)}`}>{targetCandidateEnrichmentLabel(candidate.enrichmentStatus)}</span>
+              {exactUrl ? <span className="chip good">Exact URL</span> : <span className="chip bad">Needs URL</span>}
+              {!identifiers.upc ? <span className="chip watch">Missing UPC</span> : null}
+              {!identifiers.dpci ? <span className="chip watch">Missing DPCI</span> : null}
               <span className={candidate.confidenceScore >= 80 ? "chip good" : "chip watch"}>{candidate.confidenceScore}%</span>
             </div>
           </div>
@@ -13829,10 +13926,73 @@ function AlertsPanel({
             <span><b>TCIN</b>{identifiers.tcin || "Missing"}</span>
             <span><b>DPCI</b>{identifiers.dpci || "Not found"}</span>
             <span><b>UPC</b>{identifiers.upc || "Not found"}</span>
+            <span><b>SKU</b>{identifiers.sku || "Missing"}</span>
+            <span><b>Brand</b>{candidate.brand || "Unknown"}</span>
+            <span><b>Category</b>{candidate.category || "Unknown"}</span>
+            <span><b>Stock</b>{candidate.stockStatus ? formatStatus(candidate.stockStatus) : "Not checked"}</span>
             <span><b>Source</b>{candidate.sourceName}</span>
           </div>
+          <div className={requiredComplete ? "target-quality-checklist is-ready" : "target-quality-checklist"}>
+            <span><Check size={13} /> Exact URL {exactUrl ? "ready" : "missing"}</span>
+            <span><Check size={13} /> Title {candidate.productName ? "ready" : "missing"}</span>
+            <span><Check size={13} /> TCIN {identifiers.tcin ? "ready" : "missing"}</span>
+            <span><Check size={13} /> Image {candidate.imageUrl ? "ready" : "missing"}</span>
+            <span className={identifiers.upc ? "" : "is-warning"}>{identifiers.upc ? <Check size={13} /> : <AlertTriangle size={13} />} UPC {identifiers.upc ? "found" : "missing"}</span>
+            <span className={identifiers.dpci ? "" : "is-warning"}>{identifiers.dpci ? <Check size={13} /> : <AlertTriangle size={13} />} DPCI {identifiers.dpci ? "found" : "missing"}</span>
+          </div>
+          {candidate.enrichmentReason || missingIdentifiers ? (
+            <p className="target-candidate-warning">
+              {candidate.enrichmentReason || "Candidate needs enrichment before approval."}
+              {missingIdentifiers ? " UPC/DPCI missing - alerts can still work by TCIN/title, but identifier match is weaker." : ""}
+            </p>
+          ) : null}
           <p className="target-candidate-reason">{candidate.reason || "Found on public Target discovery source. Admin approval is required before monitoring."}</p>
+          {editing ? (
+            <form
+              className="target-candidate-edit-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveTargetCandidateIdentifiers(candidate, new FormData(event.currentTarget)).then(() => setEditingTargetCandidateId(null));
+              }}
+            >
+              <label>
+                UPC
+                <input name="upc" defaultValue={identifiers.upc || ""} placeholder="196214..." />
+              </label>
+              <label>
+                DPCI
+                <input name="dpci" defaultValue={identifiers.dpci || ""} placeholder="087-12-1234" />
+              </label>
+              <label>
+                TCIN
+                <input name="retailerProductId" defaultValue={identifiers.tcin || ""} placeholder="95280894" />
+              </label>
+              <label>
+                SKU/internal
+                <input name="sku" defaultValue={identifiers.sku || ""} placeholder="Target SKU or label" />
+              </label>
+              <label>
+                Product type
+                <input name="productType" defaultValue={candidate.productType || ""} placeholder="Booster Bundle" />
+              </label>
+              <div className="target-candidate-edit-actions">
+                <button className="mini-action" type="button" onClick={() => setEditingTargetCandidateId(null)}>
+                  Cancel
+                </button>
+                <button className="mini-action solid" type="submit" disabled={busy}>
+                  <Save size={13} />
+                  {busyLabel === saveIdentifiersLabel ? "Saving" : "Save Identifiers"}
+                </button>
+              </div>
+            </form>
+          ) : null}
           <div className="target-candidate-actions">
+            {!isRejected ? (
+              <button className="mini-action" type="button" disabled={busy} onClick={() => enrichTargetCandidate(candidate)}>
+                <RefreshCw size={13} />
+                {busyLabel === enrichLabel ? "Enriching" : "Enrich Now"}
+              </button>
+            ) : null}
             {!isRejected ? (
               <button className="mini-action solid" type="button" disabled={busy} onClick={() => reviewTargetCandidate(candidate, "approve")}>
                 <Check size={13} />
@@ -13848,6 +14008,12 @@ function AlertsPanel({
             <button className="mini-action" type="button" disabled={busy || isRejected} onClick={() => reviewTargetCandidate(candidate, "ignore")}>
               {busyLabel === ignoreLabel ? "Ignoring" : "Ignore"}
             </button>
+            {!isRejected ? (
+              <button className="mini-action" type="button" disabled={busy} onClick={() => setEditingTargetCandidateId(editing ? null : candidate.id)}>
+                <Settings size={13} />
+                Edit Identifiers
+              </button>
+            ) : null}
             <a className="mini-action" href={candidate.finalUrl || candidate.url} target="_blank" rel="noreferrer">
               Open Target Page <ExternalLink size={13} />
             </a>
@@ -13893,6 +14059,15 @@ function AlertsPanel({
             {busyLabel === "Running Target discovery" ? "Running" : "Run Target Discovery Now"}
           </button>
           <button
+            className="mini-action solid"
+            type="button"
+            disabled={busy}
+            onClick={() => runTargetDiscoveryAction("enrich_all_pending", "Enriching Target candidates", "Target candidates enriched")}
+          >
+            <RefreshCw size={13} />
+            {busyLabel === "Enriching Target candidates" ? "Enriching" : "Enrich All Pending"}
+          </button>
+          <button
             className="mini-action"
             type="button"
             disabled={busy}
@@ -13905,10 +14080,24 @@ function AlertsPanel({
             type="button"
             disabled={busy}
             onClick={() =>
-              runTargetDiscoveryAction("approve_high_confidence", "Approving high confidence Target candidates", "High-confidence Target candidates reviewed")
+              runTargetDiscoveryAction(
+                "approve_high_confidence_enriched",
+                "Approving enriched Target candidates",
+                "High-confidence enriched Target candidates reviewed"
+              )
             }
           >
-            Approve All High Confidence
+            Approve All High Confidence Enriched
+          </button>
+          <button
+            className="mini-action"
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              runTargetDiscoveryAction("reject_all_non_tcg", "Rejecting low-confidence Target candidates", "Low-confidence Target candidates rejected")
+            }
+          >
+            Reject All Non-TCG
           </button>
           <button
             className="mini-action"
@@ -13922,6 +14111,20 @@ function AlertsPanel({
             <input type="checkbox" checked={showRejectedTargetCandidates} onChange={(event) => setShowRejectedTargetCandidates(event.currentTarget.checked)} />
             Show Rejected
           </label>
+          <label className="checkbox-label inline">
+            <input type="checkbox" checked={hidePartialTargetCandidates} onChange={(event) => setHidePartialTargetCandidates(event.currentTarget.checked)} />
+            Hide Partial Candidates
+          </label>
+        </div>
+        <div className="target-discovery-summary-grid">
+          <DetailStat label="Total candidates" value={String(targetDiscoveryCandidates.length)} />
+          <DetailStat label="Enriched" value={String(enrichedTargetCandidates.length)} tone="good" />
+          <DetailStat label="Partial" value={String(partialTargetCandidates.length)} tone="neutral" />
+          <DetailStat label="Blocked" value={String(blockedTargetCandidates.length)} tone={blockedTargetCandidates.length ? "bad" : "neutral"} />
+          <DetailStat label="Missing UPC" value={String(missingTargetUpcCandidates.length)} tone={missingTargetUpcCandidates.length ? "neutral" : "good"} />
+          <DetailStat label="Missing DPCI" value={String(missingTargetDpciCandidates.length)} tone={missingTargetDpciCandidates.length ? "neutral" : "good"} />
+          <DetailStat label="Ready to approve" value={String(readyTargetCandidates.length)} tone={readyTargetCandidates.length ? "good" : "neutral"} />
+          <DetailStat label="Approved today" value={String(approvedTargetCandidatesToday.length)} />
         </div>
         <div className="target-discovery-test">
           <div>

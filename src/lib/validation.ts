@@ -317,6 +317,14 @@ export const productDiscoveryReviewSchema = z.object({
   notes: optionalTrimmed
 });
 
+export const productDiscoveryIdentifierSchema = z.object({
+  upc: optionalTrimmed,
+  dpci: optionalTrimmed,
+  retailerProductId: optionalTrimmed,
+  sku: optionalTrimmed,
+  productType: optionalTrimmed
+});
+
 export const storeCreateSchema = z.object({
   retailerId: z.string().min(1),
   storeName: z.string().trim().min(2),

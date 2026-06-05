@@ -29,6 +29,10 @@ test("Target search fixture extracts escaped product links without treating /s a
   assert.equal(result.rejected.length, 0);
   assert.equal(result.candidates[0].retailerProductId, "95298172");
   assert.equal(result.candidates[0].livePrice, 29.99);
+  assert.equal(result.candidates[0].productType, "Booster Bundle");
+  assert.equal(result.candidates[0].upc, "196214154162");
+  assert.equal(result.candidates[0].dpci, "087-12-1234");
+  assert.equal(result.candidates[0].enrichmentStatus, "ENRICHED");
   assert.match(result.candidates[0].reason, /DPCI 087-12-1234/);
   assert.ok(!result.candidates[0].url.includes("/s?"));
 });
@@ -57,7 +61,24 @@ test("Target discovery can create an exact product candidate from TCIN-only publ
   assert.equal(result.candidates.length, 1);
   assert.equal(result.candidates[0].url, "https://www.target.com/p/-/A-95280894");
   assert.equal(result.candidates[0].retailerProductId, "95280894");
+  assert.equal(result.candidates[0].upc, null);
+  assert.equal(result.candidates[0].dpci, null);
+  assert.equal(result.candidates[0].productType, "3-Pack Blister");
+  assert.equal(result.candidates[0].enrichmentStatus, "PARTIAL");
   assert.match(result.candidates[0].productName, /Three-Booster Blister/);
+});
+
+test("Target discovery classifies common Pokemon TCG sealed product types", () => {
+  const html = `
+    <a href="/p/pokemon-tcg-chaos-rising-sleeved-booster/-/A-10000001">Pokemon TCG Chaos Rising Sleeved Booster</a>
+    <a href="/p/pokemon-tcg-perfect-order-checklane-blister/-/A-10000002">Pokemon TCG Perfect Order Checklane Blister</a>
+    <a href="/p/pokemon-trading-card-game-mega-evolution-booster-pack/-/A-10000003">Pokemon Trading Card Game Mega Evolution Booster Pack</a>
+  `;
+  const result = previewTargetDiscoveryHtml({ sourceUrl, finalUrl: sourceUrl, httpStatus: 200, html });
+  assert.equal(result.candidates.length, 3);
+  assert.equal(result.candidates.find((candidate) => candidate.retailerProductId === "10000001")?.productType, "Sleeved Booster");
+  assert.equal(result.candidates.find((candidate) => candidate.retailerProductId === "10000002")?.productType, "Checklane Blister");
+  assert.equal(result.candidates.find((candidate) => candidate.retailerProductId === "10000003")?.productType, "Booster Pack");
 });
 
 test("Target discovery reports a clear zero-candidate reason when no product links are present", () => {

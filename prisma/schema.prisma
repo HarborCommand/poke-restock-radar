@@ -469,9 +469,19 @@ model ProductDiscoveryCandidate {
   productName       String
   productType       String?
   retailerProductId String?
+  sku               String?
+  upc               String?
+  dpci              String?
+  brand             String?
+  category          String?
+  description       String?
+  itemDetails       String?
   imageUrl          String?
   livePrice         Float?
   stockStatus       String?
+  enrichmentStatus  String                 @default("NEEDS_REVIEW")
+  enrichmentReason  String?
+  enrichedAt        DateTime?
   confidenceScore   Int                    @default(50)
   reason            String?
   status            String                 @default("PENDING")
@@ -487,6 +497,9 @@ model ProductDiscoveryCandidate {
   @@index([retailerId])
   @@index([status])
   @@index([retailerProductId])
+  @@index([upc])
+  @@index([dpci])
+  @@index([enrichmentStatus])
   @@index([createdAt])
 }
 

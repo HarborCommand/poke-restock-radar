@@ -3,10 +3,13 @@ import { requireAdmin, requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import {
+  approveHighConfidenceEnrichedTargetDiscoveryCandidates,
   approveHighConfidenceTargetDiscoveryCandidates,
   clearRejectedTargetDiscoveryCandidates,
+  enrichPendingTargetDiscoveryCandidates,
   ensureTargetDiscoverySources,
   listDashboard,
+  rejectNonTcgTargetDiscoveryCandidates,
   runTargetProductDiscoveryNow,
   testTargetDiscoveryUrl
 } from "@/lib/radar-service";
@@ -15,7 +18,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const targetDiscoveryActionSchema = z.object({
-  action: z.enum(["ensure_sources", "run_now", "approve_high_confidence", "clear_rejected", "test_url"]),
+  action: z.enum([
+    "ensure_sources",
+    "run_now",
+    "enrich_all_pending",
+    "approve_high_confidence",
+    "approve_high_confidence_enriched",
+    "reject_all_non_tcg",
+    "clear_rejected",
+    "test_url"
+  ]),
   url: z.string().url().optional()
 });
 
@@ -30,7 +42,10 @@ export async function POST(request: Request) {
     let result: unknown;
     if (input.action === "ensure_sources") result = await ensureTargetDiscoverySources();
     if (input.action === "run_now") result = await runTargetProductDiscoveryNow();
+    if (input.action === "enrich_all_pending") result = await enrichPendingTargetDiscoveryCandidates();
     if (input.action === "approve_high_confidence") result = await approveHighConfidenceTargetDiscoveryCandidates();
+    if (input.action === "approve_high_confidence_enriched") result = await approveHighConfidenceEnrichedTargetDiscoveryCandidates();
+    if (input.action === "reject_all_non_tcg") result = await rejectNonTcgTargetDiscoveryCandidates();
     if (input.action === "clear_rejected") result = await clearRejectedTargetDiscoveryCandidates();
     if (input.action === "test_url") {
       if (!input.url) throw new Error("Target discovery test URL is required.");

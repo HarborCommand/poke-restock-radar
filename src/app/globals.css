@@ -13373,6 +13373,14 @@ body .target-discovery-notes {
   gap: 8px;
 }
 
+body .target-discovery-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 body .target-discovery-test,
 body .target-discovery-diagnostics,
 body .target-discovery-debug-card {
@@ -13572,6 +13580,95 @@ body .target-candidate-reason {
   font-size: 0.82rem;
   font-weight: 750;
   line-height: 1.45;
+}
+
+body .target-quality-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #fde68a;
+  border-radius: 15px;
+  background: #fffbeb;
+  padding: 8px;
+}
+
+body .target-quality-checklist.is-ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+body .target-quality-checklist span,
+body .target-candidate-warning {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+body .target-quality-checklist span svg {
+  flex: 0 0 auto;
+}
+
+body .target-quality-checklist span.is-warning {
+  color: #a16207;
+}
+
+body .target-candidate-warning {
+  margin: 0;
+  align-items: flex-start;
+  border: 1px solid #fde68a;
+  border-radius: 14px;
+  background: #fffbeb;
+  padding: 9px 10px;
+}
+
+body .target-candidate-edit-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #bbf7d0;
+  border-radius: 16px;
+  background: #f0fdf4;
+  padding: 10px;
+}
+
+body .target-candidate-edit-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .target-candidate-edit-form input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 850;
+  padding: 9px 10px;
+}
+
+body .target-candidate-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  grid-column: 1 / -1;
 }
 
 body .watchlist-qa-card {

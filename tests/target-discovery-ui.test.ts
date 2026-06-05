@@ -27,7 +27,7 @@ test("Target discovery accepts card products and rejects Pokemon merch", () => {
     "https://www.target.com/p/pokemon-trading-card-game-mega-evolution-chaos-rising-three-booster-blister/-/A-95280894"
   );
   assert.equal(accepted.included, true);
-  assert.equal(accepted.productType, "Blister Pack");
+  assert.equal(accepted.productType, "3-Pack Blister");
   assert.ok(accepted.confidenceScore >= 70);
 
   const plush = evaluateTargetPokemonTcgCandidate(
@@ -55,15 +55,20 @@ test("Target discovery UI and routes expose approval workflow without buy-alerti
   assert.match(discovery, /Search\/category pages are discovery-only/);
   assert.match(discovery, /REJECTED_NON_TCG/);
   assert.match(service, /approval requires an exact/i);
-  assert.match(service, /verifyProductLink\(product\.id\)/);
+  assert.match(service, /verifyProductLink\(productWithCandidateData\.id\)/);
+  assert.match(service, /runProductMonitorCheck\(productWithCandidateData\.id/);
   assert.match(route, /run_now/);
+  assert.match(route, /enrich_all_pending/);
+  assert.match(route, /approve_high_confidence_enriched/);
   assert.match(route, /approve_high_confidence/);
   assert.match(route, /clear_rejected/);
   assert.match(app, /Target Pokemon TCG Discovery/);
   assert.match(app, /Run Target Discovery Now/);
-  assert.match(app, /Approve All High Confidence/);
+  assert.match(app, /Approve All High Confidence Enriched/);
+  assert.match(app, /Enrich All Pending/);
   assert.match(app, /Reject as Non-TCG/);
   assert.match(app, /Show Rejected/);
+  assert.match(app, /Hide Partial Candidates/);
   assert.match(app, /Add to Inventory/);
   assert.match(app, /Search pages are discovery-only|search pages are discovery-only/i);
   assert.match(app, /Pokemon Center and GameStop may block automated checks/);

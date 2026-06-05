@@ -2,10 +2,12 @@ import { Prisma } from "@prisma/client";
 import { listAccessOverview } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
+import { runProductMonitorCheck } from "@/lib/monitor";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import {
   TARGET_DISCOVERY_SEARCH_TERMS,
+  enrichTargetDiscoveryCandidateFromPage,
   previewTargetDiscoveryHtmlWithSearch,
   runProductDiscoveryCheck,
   targetDiscoverySourceUrl,
@@ -793,9 +795,19 @@ function productDiscoveryCandidateToDTO(
     productName: candidate.productName,
     productType: candidate.productType,
     retailerProductId: candidate.retailerProductId,
+    sku: candidate.sku,
+    upc: candidate.upc,
+    dpci: candidate.dpci,
+    brand: candidate.brand,
+    category: candidate.category,
+    description: candidate.description,
+    itemDetails: candidate.itemDetails,
     imageUrl: candidate.imageUrl,
     livePrice: candidate.livePrice,
     stockStatus: candidate.stockStatus as ProductStatus | null,
+    enrichmentStatus: (candidate.enrichmentStatus || "NEEDS_REVIEW") as ProductDiscoveryCandidateDTO["enrichmentStatus"],
+    enrichmentReason: candidate.enrichmentReason,
+    enrichedAt: candidate.enrichedAt?.toISOString() ?? null,
     confidenceScore: candidate.confidenceScore,
     reason: candidate.reason,
     status: candidate.status as ProductDiscoveryCandidateDTO["status"],
@@ -2746,6 +2758,110 @@ export async function approveHighConfidenceTargetDiscoveryCandidates() {
   return { reviewed: candidates.length, approved, failed: failures.length, failures };
 }
 
+export async function enrichTargetDiscoveryCandidate(candidateId: string) {
+  await enrichTargetDiscoveryCandidateFromPage(candidateId);
+  const candidate = await prisma.productDiscoveryCandidate.findUnique({
+    where: { id: candidateId },
+    include: productDiscoveryCandidateInclude
+  });
+  if (!candidate) throw new Error("Discovery candidate not found after enrichment");
+  return productDiscoveryCandidateToDTO(candidate);
+}
+
+export async function enrichPendingTargetDiscoveryCandidates() {
+  const target = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true } });
+  if (!target) throw new Error("Target retailer is missing");
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: {
+      retailerId: target.id,
+      status: "PENDING",
+      enrichmentStatus: { in: ["NEEDS_REVIEW", "PARTIAL"] }
+    },
+    orderBy: [{ confidenceScore: "desc" }, { createdAt: "desc" }],
+    take: Math.max(1, Math.min(25, Number(process.env.TARGET_DISCOVERY_ENRICH_LIMIT || 20)))
+  });
+
+  let enriched = 0;
+  let partial = 0;
+  let blocked = 0;
+  let failed = 0;
+  const failures: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const updated = await enrichTargetDiscoveryCandidateFromPage(candidate.id);
+      if (updated.enrichmentStatus === "ENRICHED") enriched += 1;
+      if (updated.enrichmentStatus === "PARTIAL") partial += 1;
+      if (updated.enrichmentStatus === "BLOCKED") blocked += 1;
+      if (candidates.length > 1) {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(500, Number(process.env.MONITOR_REQUEST_DELAY_MS || 1500))));
+      }
+    } catch (error) {
+      failed += 1;
+      failures.push(`${candidate.productName}: ${error instanceof Error ? error.message : "enrichment failed"}`);
+    }
+  }
+
+  return { checked: candidates.length, enriched, partial, blocked, failed, failures };
+}
+
+export async function approveHighConfidenceEnrichedTargetDiscoveryCandidates() {
+  const target = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true } });
+  if (!target) throw new Error("Target retailer is missing");
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: {
+      retailerId: target.id,
+      status: "PENDING",
+      confidenceScore: { gte: 80 },
+      retailerProductId: { not: null },
+      imageUrl: { not: null },
+      enrichmentStatus: { in: ["ENRICHED", "PARTIAL"] }
+    },
+    orderBy: [{ enrichmentStatus: "asc" }, { confidenceScore: "desc" }, { createdAt: "desc" }],
+    take: 20
+  });
+
+  let approved = 0;
+  const failures: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const missingIdentifiers = [candidate.upc ? null : "UPC", candidate.dpci ? null : "DPCI"].filter(Boolean).join("/");
+      await reviewProductDiscoveryCandidate(candidate.id, {
+        action: "approve",
+        priority: "MEDIUM",
+        rating: "WATCH",
+        checkFrequencyMinutes: 60,
+        notes: missingIdentifiers
+          ? `Approved from enriched Target discovery. ${missingIdentifiers} missing; alerts rely on TCIN/title until identifiers are added.`
+          : "Approved from enriched Target discovery."
+      });
+      approved += 1;
+    } catch (error) {
+      failures.push(`${candidate.productName}: ${error instanceof Error ? error.message : "approval failed"}`);
+    }
+  }
+
+  return { reviewed: candidates.length, approved, failed: failures.length, failures };
+}
+
+export async function rejectNonTcgTargetDiscoveryCandidates() {
+  const target = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true } });
+  if (!target) throw new Error("Target retailer is missing");
+  const result = await prisma.productDiscoveryCandidate.updateMany({
+    where: {
+      retailerId: target.id,
+      status: "PENDING",
+      confidenceScore: { lte: 35 }
+    },
+    data: {
+      status: "REJECTED_NON_TCG",
+      reviewedAt: new Date(),
+      ignoredAt: new Date(),
+      reason: "Bulk rejected by Target discovery QA because confidence was too low for Pokemon TCG."
+    }
+  });
+  return { rejected: result.count };
+}
+
 export async function clearRejectedTargetDiscoveryCandidates() {
   const target = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true } });
   if (!target) throw new Error("Target retailer is missing");
@@ -2753,6 +2869,48 @@ export async function clearRejectedTargetDiscoveryCandidates() {
     where: { retailerId: target.id, status: "REJECTED_NON_TCG" }
   });
   return { cleared: result.count };
+}
+
+export async function updateProductDiscoveryCandidateIdentifiers(
+  candidateId: string,
+  input: {
+    upc?: string | null;
+    dpci?: string | null;
+    retailerProductId?: string | null;
+    sku?: string | null;
+    productType?: string | null;
+  }
+) {
+  const candidate = await prisma.productDiscoveryCandidate.findUnique({
+    where: { id: candidateId },
+    include: productDiscoveryCandidateInclude
+  });
+  if (!candidate) throw new Error("Discovery candidate not found");
+  if (candidate.status !== "PENDING") throw new Error("Only pending discovery candidates can be edited.");
+  const upc = input.upc?.replace(/\D/g, "") || null;
+  const dpci = input.dpci?.trim() || null;
+  const retailerProductId = input.retailerProductId?.replace(/\D/g, "") || candidate.retailerProductId;
+  const sku = input.sku?.trim() || null;
+  const productType = input.productType?.trim() || null;
+  const requiredComplete = Boolean(candidate.url && candidate.productName && retailerProductId && candidate.imageUrl);
+  const recommendedComplete = Boolean((upc || candidate.upc) && (dpci || candidate.dpci) && (candidate.livePrice !== null && candidate.livePrice !== undefined) && (productType || candidate.productType));
+  const updated = await prisma.productDiscoveryCandidate.update({
+    where: { id: candidateId },
+    data: {
+      upc,
+      dpci,
+      retailerProductId,
+      sku,
+      productType,
+      enrichmentStatus: requiredComplete ? (recommendedComplete ? "ENRICHED" : "PARTIAL") : "NEEDS_REVIEW",
+      enrichmentReason: recommendedComplete
+        ? "Identifiers edited manually and candidate quality checklist is complete."
+        : "Identifiers edited manually. UPC/DPCI may still be missing; alerts can rely on TCIN/title with weaker matching.",
+      enrichedAt: new Date()
+    },
+    include: productDiscoveryCandidateInclude
+  });
+  return productDiscoveryCandidateToDTO(updated);
 }
 
 export async function reviewProductDiscoveryCandidate(
@@ -2826,6 +2984,9 @@ export async function reviewProductDiscoveryCandidate(
           .filter((part) => part.length >= 4)
           .slice(0, 8)
           .join(", "),
+        sku: candidate.sku || candidate.retailerProductId,
+        upc: candidate.upc,
+        dpci: candidate.dpci,
         retailerProductId: candidate.retailerProductId,
         retailPrice: candidate.livePrice,
         stockStatus: "UNAVAILABLE",
@@ -2835,18 +2996,45 @@ export async function reviewProductDiscoveryCandidate(
         monitorEnabled: true,
         checkFrequencyMinutes: input.checkFrequencyMinutes,
         nextCheckAt: new Date(),
-        notes: input.notes || `Approved from discovery source ${candidate.source.name}. Exact monitor must verify before alerts.`
+        notes:
+          input.notes ||
+          `Approved from discovery source ${candidate.source.name}. Exact monitor must verify before alerts.${
+            !candidate.upc || !candidate.dpci ? " UPC/DPCI missing; TCIN/title matching is weaker until identifiers are added." : ""
+          }`
       },
       include: productInclude
     }));
+  const productWithCandidateData = existingProduct
+    ? await prisma.product.update({
+        where: { id: existingProduct.id },
+        data: {
+          sku: existingProduct.sku || candidate.sku || candidate.retailerProductId,
+          upc: existingProduct.upc || candidate.upc,
+          dpci: existingProduct.dpci || candidate.dpci,
+          retailerProductId: existingProduct.retailerProductId || candidate.retailerProductId,
+          imageUrl: existingProduct.imageUrl || candidate.imageUrl,
+          retailPrice: existingProduct.retailPrice ?? candidate.livePrice,
+          productType: existingProduct.productType || candidate.productType,
+          notes:
+            existingProduct.notes ||
+            `Approved from discovery source ${candidate.source.name}. Exact monitor must verify before alerts.${
+              !candidate.upc || !candidate.dpci ? " UPC/DPCI missing; TCIN/title matching is weaker until identifiers are added." : ""
+            }`
+        },
+        include: productInclude
+      })
+    : product;
 
-  const verifiedProduct = await verifyProductLink(product.id).catch(() => productToDTO(product));
+  await verifyProductLink(productWithCandidateData.id).catch(() => productToDTO(productWithCandidateData));
+  await runProductMonitorCheck(productWithCandidateData.id, "MANUAL_PRODUCT", true).catch(() => null);
+  const refreshedProduct = await prisma.product.findUnique({ where: { id: productWithCandidateData.id }, include: productInclude });
+  const verifiedProduct = refreshedProduct ? productToDTO(refreshedProduct) : productToDTO(productWithCandidateData);
 
   const reviewed = await prisma.productDiscoveryCandidate.update({
     where: { id: candidateId },
     data: {
       status: "APPROVED",
-      approvedProductId: product.id,
+      approvedProductId: productWithCandidateData.id,
       reviewedAt: new Date()
     },
     include: productDiscoveryCandidateInclude
@@ -2855,9 +3043,9 @@ export async function reviewProductDiscoveryCandidate(
   if (!existingProduct) {
     await prisma.restockHistory.create({
       data: {
-        productId: product.id,
-        status: product.stockStatus,
-        price: product.retailPrice,
+        productId: productWithCandidateData.id,
+        status: productWithCandidateData.stockStatus,
+        price: productWithCandidateData.retailPrice,
         snapshotReason: "Discovery candidate approved as watched product"
       }
     });

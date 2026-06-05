@@ -86,9 +86,20 @@ type DiscoveryCandidateRecord = {
   url: string;
   label: string;
   retailerProductId: string | null;
+  sku?: string | null;
+  upc?: string | null;
+  dpci?: string | null;
+  brand?: string | null;
+  category?: string | null;
+  description?: string | null;
+  itemDetails?: string | null;
   imageUrl?: string | null;
   livePrice?: number | null;
   productType?: string | null;
+  stockStatus?: string | null;
+  enrichmentStatus?: "ENRICHED" | "PARTIAL" | "BLOCKED" | "NEEDS_REVIEW";
+  enrichmentReason?: string | null;
+  enrichedAt?: Date | null;
   confidenceScore?: number;
   reason?: string;
   status?: "PENDING" | "REJECTED_NON_TCG";
@@ -116,8 +127,18 @@ export type TargetDiscoveryPreviewCandidate = {
   productName: string;
   productType: string | null;
   retailerProductId: string | null;
+  sku: string | null;
+  upc: string | null;
+  dpci: string | null;
+  brand: string | null;
+  category: string | null;
+  description: string | null;
+  itemDetails: string | null;
   imageUrl: string | null;
   livePrice: number | null;
+  stockStatus: string | null;
+  enrichmentStatus: "ENRICHED" | "PARTIAL" | "BLOCKED" | "NEEDS_REVIEW";
+  enrichmentReason: string | null;
   confidenceScore: number;
   status: "PENDING" | "REJECTED_NON_TCG";
   reason: string;
@@ -307,14 +328,57 @@ function targetMetadataFromContext(html: string, candidate: DiscoveryCandidateRe
     parseTargetMoney(firstJsonishString(context, ["formatted_current_price", "current_retail", "price", "currentPrice"]));
   const dpci = firstJsonishString(context, ["dpci", "department_class_item"]);
   const upc = firstJsonishString(context, ["upc", "primary_barcode", "barcode"]);
+  const brand = firstJsonishString(context, ["brand", "brand_name", "primary_brand", "manufacturer"]);
+  const category = firstJsonishString(context, ["category", "category_name", "item_type", "product_type", "class_name"]);
+  const description = firstJsonishString(context, ["description", "long_description", "soft_bullets", "bullet_description"]);
+  const itemDetails = firstJsonishString(context, ["item_details", "details", "specifications", "bullet_descriptions"]);
 
   return {
     title,
     imageUrl: imageUrl ? decodeHtmlAttribute(imageUrl).replace(/\\\//g, "/").replace(/^\/\//, "https://") : null,
     price,
     dpci,
-    upc
+    upc,
+    brand,
+    category,
+    description,
+    itemDetails
   };
+}
+
+function normalizeIdentifier(value: string | null | undefined) {
+  const trimmed = (value || "").trim();
+  return trimmed || null;
+}
+
+function normalizedBarcode(value: string | null | undefined) {
+  const digits = (value || "").replace(/\D/g, "");
+  return digits.length >= 8 && digits.length <= 14 ? digits : null;
+}
+
+function targetEnrichmentStatus(candidate: DiscoveryCandidateRecord) {
+  if (candidate.enrichmentStatus === "BLOCKED") return "BLOCKED";
+  const exactUrl = Boolean(canonicalTargetProductUrl(candidate.url, candidate.url));
+  const requiredComplete = exactUrl && Boolean(candidate.label) && Boolean(candidate.retailerProductId) && Boolean(candidate.imageUrl);
+  if (!requiredComplete) return "NEEDS_REVIEW";
+  const hasRecommended = Boolean(candidate.livePrice !== null && candidate.livePrice !== undefined) && Boolean(candidate.productType);
+  const hasStrongIdentifier = Boolean(candidate.upc || candidate.dpci);
+  return hasRecommended && hasStrongIdentifier ? "ENRICHED" : "PARTIAL";
+}
+
+function targetEnrichmentReason(candidate: DiscoveryCandidateRecord) {
+  const missing: string[] = [];
+  if (!canonicalTargetProductUrl(candidate.url, candidate.url)) missing.push("exact Target /p/ URL");
+  if (!candidate.label) missing.push("title");
+  if (!candidate.retailerProductId) missing.push("TCIN");
+  if (!candidate.imageUrl) missing.push("image");
+  if (!candidate.upc) missing.push("UPC");
+  if (!candidate.dpci) missing.push("DPCI");
+  if (candidate.livePrice === null || candidate.livePrice === undefined) missing.push("price");
+  if (!candidate.productType) missing.push("product type");
+  return missing.length
+    ? `Missing ${missing.join(", ")}. UPC/DPCI are not fabricated when Target does not expose them publicly.`
+    : "Public Target product data filled required and recommended candidate fields.";
 }
 
 export function evaluateTargetPokemonTcgCandidate(name: string, url: string): TargetTcgCandidateEvaluation {
@@ -402,16 +466,24 @@ function candidateNameFromUrl(url: string) {
   }
 }
 
-function productTypeFromText(value: string) {
-  const text = value.toLowerCase();
-  if (text.includes("elite trainer") || text.includes(" etb")) return "ETB";
+function productTypeFromText(value: string | null | undefined) {
+  const text = normalizeDiscoveryText(value || "");
+  if (!text) return null;
+  if (text.includes("elite trainer") || /\betb\b/.test(text)) return "ETB";
+  if (text.includes("premium checklane")) return "Premium Checklane Blister";
+  if (text.includes("checklane")) return "Checklane Blister";
+  if (text.includes("3 pack") || text.includes("3-pack") || text.includes("three booster") || text.includes("three-booster")) return "3-Pack Blister";
+  if (text.includes("sleeved booster")) return "Sleeved Booster";
   if (text.includes("booster bundle")) return "Booster Bundle";
   if (text.includes("booster box") || text.includes("booster display")) return "Booster Box";
-  if (text.includes("sleeved booster")) return "Sleeved Booster";
-  if (text.includes("checklane") || text.includes("blister") || text.includes("3-pack") || text.includes("3 pack")) return "Blister Pack";
-  if (text.includes("collection")) return "Collection Box";
+  if (text.includes("booster pack") || text.includes("single booster") || text.includes("card pack")) return "Booster Pack";
+  if (text.includes("premium collection")) return "Premium Collection";
+  if (text.includes("collection box")) return "Collection Box";
+  if (text.includes("mini tin")) return "Mini Tin";
   if (text.includes("tin")) return "Tin";
+  if (text.includes("deck")) return "Deck";
   if (text.includes("build") && text.includes("battle")) return "Build & Battle Box";
+  if (text.includes("collection")) return "Collection Box";
   return null;
 }
 
@@ -484,14 +556,28 @@ function extractTargetProductCandidates(html: string, finalUrl: string) {
 
   return Array.from(candidates.values()).map((candidate) => {
     const metadata = targetMetadataFromContext(decodedHtml, candidate);
-    return {
+    const title = metadata.title || candidate.label || candidateNameFromUrl(candidate.url);
+    const productType = productTypeFromText(`${title} ${metadata.category || ""} ${metadata.description || ""} ${metadata.itemDetails || ""}`);
+    const enrichedCandidate: DiscoveryCandidateRecord = {
       ...candidate,
-      label: metadata.title || candidate.label || candidateNameFromUrl(candidate.url),
+      label: title,
       imageUrl: metadata.imageUrl,
       livePrice: metadata.price ?? null,
+      upc: normalizedBarcode(metadata.upc),
+      dpci: normalizeIdentifier(metadata.dpci),
+      brand: normalizeIdentifier(metadata.brand),
+      category: normalizeIdentifier(metadata.category),
+      description: normalizeIdentifier(metadata.description),
+      itemDetails: normalizeIdentifier(metadata.itemDetails),
+      productType
+    };
+    enrichedCandidate.enrichmentStatus = targetEnrichmentStatus(enrichedCandidate);
+    enrichedCandidate.enrichmentReason = targetEnrichmentReason(enrichedCandidate);
+    return {
+      ...enrichedCandidate,
       reason: [
-        metadata.dpci ? `DPCI ${metadata.dpci}` : null,
-        metadata.upc ? `UPC ${metadata.upc}` : null,
+        enrichedCandidate.dpci ? `DPCI ${enrichedCandidate.dpci}` : null,
+        enrichedCandidate.upc ? `UPC ${enrichedCandidate.upc}` : null,
         candidate.retailerProductId ? `TCIN ${candidate.retailerProductId}` : null
       ]
         .filter(Boolean)
@@ -613,25 +699,39 @@ function targetCandidateFromSearchProduct(product: Record<string, unknown>, fina
 
   const title = stringValue(description?.title) || stringValue(product.title) || candidateNameFromUrl(url);
   const imageUrl = stringValue(primaryImage?.url) || stringValue(imageInfo?.base_url);
-  const productType = stringValue(itemType?.name);
+  const itemTypeName = stringValue(itemType?.name);
   const brandName = stringValue(brand?.name);
   const currentPrice = numberValue(price?.current_retail) ?? numberValue(price?.formatted_current_price);
-  return {
+  const bullets = [
+    stringValue(description?.downstream_description),
+    stringValue(description?.soft_bullets),
+    stringValue(description?.bullet_description)
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const candidate: DiscoveryCandidateRecord = {
     url,
     label: normalizeSpace(title),
     retailerProductId: tcin,
+    brand: brandName,
+    category: itemTypeName,
+    description: bullets || null,
+    itemDetails: itemTypeName,
     imageUrl: imageUrl?.replace(/^\/\//, "https://") ?? null,
     livePrice: currentPrice,
-    productType: productType && /trading card/i.test(productType) ? productType : null,
+    productType: productTypeFromText(`${title} ${itemTypeName || ""} ${bullets}`) || (itemTypeName && /trading card/i.test(itemTypeName) ? "Other TCG" : null),
     reason: [
       "Target public search API",
       `TCIN ${tcin}`,
       brandName ? `brand ${brandName}` : null,
-      productType ? `type ${productType}` : null
+      itemTypeName ? `type ${itemTypeName}` : null
     ]
       .filter(Boolean)
       .join("; ")
   };
+  candidate.enrichmentStatus = targetEnrichmentStatus(candidate);
+  candidate.enrichmentReason = targetEnrichmentReason(candidate);
+  return candidate;
 }
 
 async function fetchTargetSearchCandidates(input: {
@@ -720,10 +820,34 @@ function enrichDiscoveryCandidate(
 
   const metadata = targetMetadataFromContext(html, candidate);
   const productName = metadata.title || candidate.label || candidateNameFromUrl(candidate.url);
-  const evaluation = evaluateTargetPokemonTcgCandidate(productName, candidate.url);
+  const productType =
+    productTypeFromText(`${productName} ${metadata.category || candidate.category || ""} ${metadata.description || candidate.description || ""} ${metadata.itemDetails || candidate.itemDetails || ""}`) ||
+    candidate.productType ||
+    null;
+  const evaluation = evaluateTargetPokemonTcgCandidate(`${productName} ${productType || ""}`, candidate.url);
+  const upc = normalizedBarcode(metadata.upc) || normalizedBarcode(candidate.upc);
+  const dpci = normalizeIdentifier(metadata.dpci) || normalizeIdentifier(candidate.dpci);
+  const enrichedCandidate: DiscoveryCandidateRecord = {
+    ...candidate,
+    label: productName,
+    imageUrl: metadata.imageUrl ?? candidate.imageUrl,
+    livePrice: metadata.price ?? candidate.livePrice ?? (isDirect ? detectRetailerPrice(html, retailerName) : null),
+    upc,
+    dpci,
+    brand: normalizeIdentifier(metadata.brand) || normalizeIdentifier(candidate.brand),
+    category: normalizeIdentifier(metadata.category) || normalizeIdentifier(candidate.category),
+    description: normalizeIdentifier(metadata.description) || normalizeIdentifier(candidate.description),
+    itemDetails: normalizeIdentifier(metadata.itemDetails) || normalizeIdentifier(candidate.itemDetails),
+    productType,
+    stockStatus: isDirect ? availability.status : candidate.stockStatus ?? null,
+    confidenceScore: evaluation.confidenceScore,
+    status: evaluation.included ? "PENDING" : "REJECTED_NON_TCG"
+  };
+  enrichedCandidate.enrichmentStatus = targetEnrichmentStatus(enrichedCandidate);
+  enrichedCandidate.enrichmentReason = targetEnrichmentReason(enrichedCandidate);
   const targetMetadataReason = [
-    metadata.dpci ? `DPCI ${metadata.dpci}` : null,
-    metadata.upc ? `UPC ${metadata.upc}` : null,
+    enrichedCandidate.dpci ? `DPCI ${enrichedCandidate.dpci}` : null,
+    enrichedCandidate.upc ? `UPC ${enrichedCandidate.upc}` : null,
     candidate.retailerProductId ? `TCIN ${candidate.retailerProductId}` : null,
     candidate.reason || null
   ]
@@ -731,14 +855,9 @@ function enrichDiscoveryCandidate(
     .join("; ");
 
   return {
-    ...candidate,
-    label: productName,
-    imageUrl: metadata.imageUrl ?? candidate.imageUrl,
-    livePrice: metadata.price ?? candidate.livePrice ?? (isDirect ? detectRetailerPrice(html, retailerName) : null),
-    productType: evaluation.productType,
-    confidenceScore: evaluation.confidenceScore,
+    ...enrichedCandidate,
     reason: targetMetadataReason ? `${evaluation.reason} ${targetMetadataReason}.` : evaluation.reason,
-    status: evaluation.included ? "PENDING" : "REJECTED_NON_TCG"
+    enrichmentReason: enrichedCandidate.enrichmentReason
   };
 }
 
@@ -757,8 +876,18 @@ function targetDiscoveryDebugResultFromRaw(input: {
       productName: candidate.label || candidateNameFromUrl(candidate.url),
       productType: candidate.productType ?? productTypeFromText(candidate.label),
       retailerProductId: candidate.retailerProductId,
+      sku: candidate.sku ?? null,
+      upc: candidate.upc ?? null,
+      dpci: candidate.dpci ?? null,
+      brand: candidate.brand ?? null,
+      category: candidate.category ?? null,
+      description: candidate.description ?? null,
+      itemDetails: candidate.itemDetails ?? null,
       imageUrl: candidate.imageUrl ?? null,
       livePrice: candidate.livePrice ?? null,
+      stockStatus: candidate.stockStatus ?? null,
+      enrichmentStatus: candidate.enrichmentStatus ?? targetEnrichmentStatus(candidate),
+      enrichmentReason: candidate.enrichmentReason ?? targetEnrichmentReason(candidate),
       confidenceScore: candidate.confidenceScore ?? 55,
       status: "PENDING",
       reason: candidate.reason ?? "Target Pokemon TCG candidate found."
@@ -770,8 +899,18 @@ function targetDiscoveryDebugResultFromRaw(input: {
       productName: candidate.label || candidateNameFromUrl(candidate.url),
       productType: candidate.productType ?? productTypeFromText(candidate.label),
       retailerProductId: candidate.retailerProductId,
+      sku: candidate.sku ?? null,
+      upc: candidate.upc ?? null,
+      dpci: candidate.dpci ?? null,
+      brand: candidate.brand ?? null,
+      category: candidate.category ?? null,
+      description: candidate.description ?? null,
+      itemDetails: candidate.itemDetails ?? null,
       imageUrl: candidate.imageUrl ?? null,
       livePrice: candidate.livePrice ?? null,
+      stockStatus: candidate.stockStatus ?? null,
+      enrichmentStatus: candidate.enrichmentStatus ?? targetEnrichmentStatus(candidate),
+      enrichmentReason: candidate.enrichmentReason ?? targetEnrichmentReason(candidate),
       confidenceScore: candidate.confidenceScore ?? 15,
       status: "REJECTED_NON_TCG",
       reason: candidate.reason ?? "Rejected as non-TCG Target result."
@@ -849,6 +988,160 @@ export async function previewTargetDiscoveryHtmlWithSearch(input: {
     blocked ? availability.reason : null,
     searchResult.reason || "no product links found; Target search page may be empty, redirected, blocked, or structure changed"
   );
+}
+
+export async function enrichTargetDiscoveryCandidateFromPage(candidateId: string) {
+  const startedAt = new Date();
+  const candidate = await prisma.productDiscoveryCandidate.findUnique({
+    where: { id: candidateId },
+    include: { retailer: { select: { name: true } }, source: { select: { name: true } } }
+  });
+  if (!candidate) throw new Error("Discovery candidate not found");
+  if (!candidate.retailer.name.toLowerCase().includes("target")) {
+    throw new Error("Only Target discovery candidates can be enriched by this action.");
+  }
+
+  const classification = classifyRetailerProductUrl(candidate.url, candidate.retailer.name);
+  if (classification.searchOrCategory || !classification.exactProductUrl) {
+    return prisma.productDiscoveryCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        enrichmentStatus: "NEEDS_REVIEW",
+        enrichmentReason: `Exact Target /p/ product URL is required before enrichment. ${classification.reason}`,
+        enrichedAt: new Date()
+      }
+    });
+  }
+
+  try {
+    const requestStarted = Date.now();
+    const response = await fetch(candidate.url, {
+      method: "GET",
+      redirect: "follow",
+      signal: AbortSignal.timeout(12000),
+      headers: {
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": DISCOVERY_USER_AGENT
+      }
+    });
+    const html = await response.text();
+    const finalUrl = response.url || candidate.url;
+    const availability = detectRetailerAvailability(html, "Target");
+    const blocked =
+      [401, 403, 429, 503].includes(response.status) ||
+      availability.detectedWords.some((word) => /blocked|captcha|robot|queue/i.test(word));
+
+    if (blocked) {
+      await createMonitorLog({
+        runType: "DISCOVERY_DUE",
+        status: "BLOCKED",
+        startedAt,
+        httpStatus: response.status,
+        finalUrl,
+        responseTimeMs: Date.now() - requestStarted,
+        detectedWords: availability.detectedWords,
+        confidenceScore: availability.confidenceScore,
+        reason: `Target candidate enrichment blocked for ${candidate.productName}: ${availability.reason}`,
+        blockedType: availability.detectedWords.some((word) => /captcha|robot/i.test(word)) ? "CAPTCHA_ROBOT_PAGE" : "PAGE_BLOCKED",
+        pageHash: hashPage(html)
+      });
+      return prisma.productDiscoveryCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          finalUrl,
+          stockStatus: "BLOCKED",
+          enrichmentStatus: "BLOCKED",
+          enrichmentReason: availability.reason,
+          enrichedAt: new Date()
+        }
+      });
+    }
+
+    if (!response.ok) throw new Error(`Target product page returned HTTP ${response.status}`);
+    const record = enrichDiscoveryCandidate(
+      {
+        url: candidate.url,
+        label: candidate.productName,
+        retailerProductId: candidate.retailerProductId || targetTcinFromUrl(candidate.url),
+        sku: candidate.sku,
+        upc: candidate.upc,
+        dpci: candidate.dpci,
+        brand: candidate.brand,
+        category: candidate.category,
+        description: candidate.description,
+        itemDetails: candidate.itemDetails,
+        imageUrl: candidate.imageUrl,
+        livePrice: candidate.livePrice,
+        productType: candidate.productType,
+        stockStatus: candidate.stockStatus,
+        confidenceScore: candidate.confidenceScore,
+        reason: candidate.reason ?? undefined
+      },
+      html,
+      "Target",
+      candidate.url,
+      availability
+    );
+    const updateData = {
+      finalUrl,
+      productName: record.label || candidate.productName,
+      productType: record.productType ?? candidate.productType,
+      retailerProductId: record.retailerProductId || candidate.retailerProductId || targetTcinFromUrl(candidate.url),
+      sku: record.sku ?? candidate.sku,
+      upc: record.upc ?? candidate.upc,
+      dpci: record.dpci ?? candidate.dpci,
+      brand: record.brand ?? candidate.brand,
+      category: record.category ?? candidate.category,
+      description: record.description ?? candidate.description,
+      itemDetails: record.itemDetails ?? candidate.itemDetails,
+      imageUrl: record.imageUrl ?? candidate.imageUrl,
+      livePrice: record.livePrice ?? candidate.livePrice,
+      stockStatus: record.stockStatus ?? availability.status,
+      confidenceScore: Math.max(record.confidenceScore ?? candidate.confidenceScore, candidate.confidenceScore),
+      reason: record.reason || candidate.reason,
+      enrichmentStatus: record.enrichmentStatus ?? targetEnrichmentStatus(record),
+      enrichmentReason: record.enrichmentReason ?? targetEnrichmentReason(record),
+      enrichedAt: new Date()
+    };
+    await createMonitorLog({
+      runType: "DISCOVERY_DUE",
+      status: "SUCCESS",
+      startedAt,
+      httpStatus: response.status,
+      finalUrl,
+      responseTimeMs: Date.now() - requestStarted,
+      detectedWords: [
+        "candidate enrichment",
+        updateData.enrichmentStatus,
+        updateData.upc ? "UPC found" : "UPC missing",
+        updateData.dpci ? "DPCI found" : "DPCI missing"
+      ],
+      confidenceScore: updateData.confidenceScore,
+      reason: `Target candidate enrichment for ${updateData.productName}: ${updateData.enrichmentReason}`,
+      pageHash: hashPage(html)
+    });
+    return prisma.productDiscoveryCandidate.update({
+      where: { id: candidate.id },
+      data: updateData
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Target candidate enrichment failed";
+    await createMonitorLog({
+      runType: "DISCOVERY_DUE",
+      status: "ERROR",
+      startedAt,
+      reason: `Target candidate enrichment failed for ${candidate.productName}`,
+      error: message
+    });
+    return prisma.productDiscoveryCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        enrichmentStatus: "NEEDS_REVIEW",
+        enrichmentReason: message,
+        enrichedAt: new Date()
+      }
+    });
+  }
 }
 
 async function createMonitorLog(input: {
@@ -1042,9 +1335,19 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
         productName: name,
         productType: candidate.productType ?? productTypeFromText(name),
         retailerProductId: candidate.retailerProductId,
+        sku: candidate.sku ?? null,
+        upc: candidate.upc ?? null,
+        dpci: candidate.dpci ?? null,
+        brand: candidate.brand ?? null,
+        category: candidate.category ?? null,
+        description: candidate.description ?? null,
+        itemDetails: candidate.itemDetails ?? null,
         imageUrl: candidate.imageUrl,
         livePrice: candidate.livePrice ?? null,
-        stockStatus: directCandidate?.url === finalCandidateUrl ? availability.status : null,
+        stockStatus: candidate.stockStatus ?? (directCandidate?.url === finalCandidateUrl ? availability.status : null),
+        enrichmentStatus: candidate.enrichmentStatus ?? "NEEDS_REVIEW",
+        enrichmentReason: candidate.enrichmentReason ?? null,
+        enrichedAt: candidate.enrichmentStatus ? new Date() : null,
         confidenceScore: candidate.confidenceScore ?? 55,
         reason: candidate.reason ?? "Found exact product link on a public discovery page. Admin review required before monitoring.",
         status: candidate.status ?? "PENDING"
