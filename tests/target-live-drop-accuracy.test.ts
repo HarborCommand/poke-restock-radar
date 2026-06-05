@@ -144,6 +144,30 @@ test("not watched Discord Target SKU returns Not Watched", () => {
   assert.equal(result.exactUrl, targetUrlFromTcin("1010423706"));
 });
 
+test("Target SKU mismatch does not fall back to a similar title match", () => {
+  const watchedWorldsDeck = targetProduct({
+    id: "target-worlds-yuya-okita",
+    name: "Pokemon TCG: 2025 World Championships Deck | Yuya Okita",
+    url: "https://www.target.com/p/-/A-99999999",
+    verifiedFinalUrl: "https://www.target.com/p/-/A-99999999",
+    sku: "99999999",
+    retailerProductId: "99999999",
+    liveTitle: "Pokemon TCG: 2025 World Championships Deck | Yuya Okita",
+    retailPrice: 35,
+    livePrice: 35
+  });
+  const result = compareTargetDiscordAlert(
+    { productName: "2025 World Championships Deck", skuOrTcin: "1010423706", price: 19.99 },
+    [watchedWorldsDeck],
+    [],
+    { now: new Date("2026-06-05T14:05:00.000Z") }
+  );
+
+  assert.equal(result.status, "not_watched");
+  assert.equal(result.watched, false);
+  assert.equal(result.matchedBy, null);
+});
+
 test("over-MSRP Target product is suppressed from Live Drops", () => {
   const product = targetProduct({
     livePrice: 69.99,

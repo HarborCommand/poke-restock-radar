@@ -110,12 +110,14 @@ function matchProduct(input: TargetDiscordAlertInput, products: ProductDTO[]) {
   if (inputVariants.length) {
     const byIdentifier = products.find((product) => productIdentifiers(product).some((identifier) => inputVariants.includes(identifier)));
     if (byIdentifier) return { product: byIdentifier, matchedBy: "SKU/TCIN" };
+    return { product: null, matchedBy: null };
   }
 
   const urlTcin = targetIdentifierFromUrl(input.productUrl);
   if (urlTcin) {
     const byUrl = products.find((product) => productIdentifiers(product).includes(urlTcin));
     if (byUrl) return { product: byUrl, matchedBy: "Target URL" };
+    return { product: null, matchedBy: null };
   }
 
   const words = titleWords(input.productName);
