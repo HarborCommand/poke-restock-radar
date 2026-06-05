@@ -288,11 +288,11 @@ test("alerts tab is rebuilt as a Discord-style tracker command center", () => {
 
   assert.match(alertsPanel, /Discord-style feed/);
   assert.match(alertsPanel, /Live action center/);
-  assert.match(alertsPanel, /Buyable Now/);
-  assert.match(alertsPanel, /Current watch products whose latest check says in stock, preorder live, add-to-cart available, or high\/low stock but still buyable/);
-  assert.match(alertsPanel, /No new drop alerts, but these products are currently buyable/);
+  assert.match(alertsPanel, /Target Retail In Stock Now/);
+  assert.match(alertsPanel, /Target watch products whose latest check says retail\/MSRP stock is buyable now/);
+  assert.match(alertsPanel, /No new drop alerts, but these Target products are currently buyable/);
   assert.match(alertsPanel, /Duplicate suppression can prevent repeat alert spam/);
-  assert.match(alertsPanel, /Sold Out \/ Watch Only/);
+  assert.match(alertsPanel, /Target Sold Out \/ Watch Only/);
   assert.match(alertsPanel, /targetBuyableFilterOptions/);
   assert.match(alertsPanel, /targetBuyableSortOptions/);
   assert.match(alertsPanel, /Go Buy/);
@@ -345,9 +345,10 @@ test("tracker alert categories and archived local store cleanup are wired", () =
   assert.match(app, /targetBuyableProductComparator/);
   assert.match(app, /productIsCurrentlyBuyable/);
   assert.match(app, /buyableNowProducts/);
-  assert.match(app, /visibleBuyableNowProducts/);
-  assert.match(app, /buyableProductMatchesChannel/);
+  assert.match(app, /targetRetailInStockProducts/);
+  assert.match(app, /visibleTargetRetailInStockProducts/);
   assert.match(app, /targetExactProductUrl/);
+  assert.match(app, /Target Retail In Stock Now/);
 });
 
 test("alerts Buyable Now remains visible when duplicate suppression prevents new drop alerts", () => {
@@ -363,14 +364,38 @@ test("alerts Buyable Now remains visible when duplicate suppression prevents new
   assert.match(buyableHelper, /hasHighOrLowStockSignal/);
   assert.match(buyableHelper, /hasBuyableAction/);
   assert.match(alertsPanel, /liveDrops\.length \? \(/);
-  assert.match(alertsPanel, /: buyableNowProducts\.length \? \(/);
-  assert.match(alertsPanel, /No new drop alerts, but these products are currently buyable/);
+  assert.match(alertsPanel, /: targetBuyableProducts\.length \? \(/);
+  assert.match(alertsPanel, /No new drop alerts, but these Target products are currently buyable/);
+  assert.match(alertsPanel, /Target Retail In Stock Now/);
   assert.match(alertsPanel, /renderExampleLiveDropCard\(\)/);
   const liveDropRender = alertsPanel.slice(alertsPanel.indexOf("{liveDrops.length ? ("), alertsPanel.indexOf("<aside className=\"tracker-side-rail\""));
   assert.ok(
-    liveDropRender.indexOf(": buyableNowProducts.length ? (") < liveDropRender.indexOf("renderExampleLiveDropCard()"),
+    liveDropRender.indexOf(": targetBuyableProducts.length ? (") < liveDropRender.indexOf("renderExampleLiveDropCard()"),
     "example alert must be behind the current-buyable branch"
   );
+});
+
+test("alerts Target retail coverage and Discord comparison tools are wired", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+  const helper = fs.readFileSync(new URL("../src/lib/target-discord-alert.ts", import.meta.url), "utf8");
+
+  assert.match(alertsPanel, /Target coverage/);
+  assert.match(alertsPanel, /Retail\/MSRP watch quality/);
+  assert.match(alertsPanel, /Discord may alert on products not watched by Poke Radar yet/);
+  assert.match(alertsPanel, /Target Retail In Stock Now/);
+  assert.match(alertsPanel, /targetStaleProducts/);
+  assert.match(alertsPanel, /targetMissingExactUrlProducts/);
+  assert.match(alertsPanel, /targetMissingIdentifierProducts/);
+  assert.match(alertsPanel, /targetLogsInLatestScan/);
+  assert.match(alertsPanel, /Add from Discord Alert/);
+  assert.match(alertsPanel, /Compare Discord Alert/);
+  assert.match(alertsPanel, /compareTargetDiscordAlert/);
+  assert.match(helper, /not_watched/);
+  assert.match(helper, /suppressed_over_msrp/);
+  assert.match(helper, /deduped_currently_buyable/);
+  assert.match(helper, /sold_out_at_latest_check/);
+  assert.match(helper, /targetUrlFromTcin/);
 });
 
 test("alerts long lists are paginated for performance", () => {
@@ -517,7 +542,7 @@ test("live drops are restricted to real product monitor alerts", () => {
   assert.match(alertsPanel, /\.filter\(\(record\) => trackerIsLiveDrop\(record\)\)/);
   assert.doesNotMatch(liveDropHelper, /tracker_sold_out/);
   assert.match(alertsPanel, /Repeat checks use the product\/event key before creating new Live Drops, but current buyable products stay visible here/);
-  assert.match(alertsPanel, /Live Drops are created only when stock is proven buyable/);
+  assert.match(alertsPanel, /Live Drops are created only when stock is proven buyable and retail\/MSRP eligible/);
 });
 
 test("admin-only tracker simulation and alert actions are wired", () => {

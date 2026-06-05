@@ -13462,6 +13462,112 @@ body .target-live-summary-grid {
   gap: 10px;
 }
 
+body .target-coverage-panel,
+body .target-discord-tools,
+body .discord-compare-result,
+body .target-discord-tool-card,
+body .target-scan-freshness,
+body .target-coverage-grid,
+body .discord-compare-grid {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+}
+
+body .target-coverage-panel {
+  gap: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  padding: 14px;
+}
+
+body .target-coverage-panel .panel-header p {
+  max-width: 760px;
+}
+
+body .target-coverage-grid,
+body .discord-compare-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr));
+  gap: 8px;
+}
+
+body .target-scan-freshness {
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+  gap: 8px;
+}
+
+body .target-scan-freshness span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1.3;
+  padding: 9px 11px;
+  overflow-wrap: anywhere;
+}
+
+body .target-scan-freshness b {
+  color: #94a3b8;
+  font-size: 0.64rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .target-discord-tools {
+  gap: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 20px;
+  background: #eff6ff;
+  padding: 12px;
+}
+
+body .target-discord-tools summary {
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+body .target-discord-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+body .target-discord-tool-card,
+body .discord-compare-result {
+  gap: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+body .target-discord-tool-card h3,
+body .discord-compare-result h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+body .target-discord-tool-card p,
+body .discord-compare-result p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
 body .target-buyable-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(190px, auto);

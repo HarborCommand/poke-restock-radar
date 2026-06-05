@@ -72,6 +72,7 @@ import {
 import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPolicyResult } from "@/lib/target-retail-policy";
+import { compareTargetDiscordAlert, targetUrlFromTcin, type TargetDiscordAlertInput, type TargetDiscordComparison } from "@/lib/target-discord-alert";
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
@@ -1500,6 +1501,7 @@ export function RadarApp() {
         {activeTab === "alerts" ? (
           <AlertsPanel
             dashboard={dashboard}
+            isAdmin={isAdmin}
             busy={busy}
             busyLabel={busyLabel}
             submit={submit}
@@ -2943,22 +2945,6 @@ function trackerChannelMatches(record: TrackerAlertRecord, filter: string) {
   if (filter === "GameStop") return trackerAlertText(record.alert, record.product).includes("gamestop") || (record.product?.retailerName || "").toLowerCase().includes("gamestop");
   if (filter === "Pokemon Center") return trackerAlertText(record.alert, record.product).includes("pokemon center") || (record.product?.retailerName || "").toLowerCase().includes("pokemon center");
   return record.channel.toLowerCase().includes(filter.toLowerCase());
-}
-
-function buyableProductMatchesChannel(product: ProductDTO, filter: string) {
-  if (filter === "All") return true;
-  const retailer = product.retailerName.toLowerCase();
-  const text = buyableNowSignalText(product);
-  const label = buyableNowStatusLabel(product);
-  if (filter === "In Stock") return label === "In Stock" || buyableNowStatus(product) === "IN_STOCK";
-  if (filter === "Add To Cart") return label === "Add To Cart Available" || buyableNowStatus(product) === "ADD_TO_CART_AVAILABLE";
-  if (filter === "High Stock") return targetBuyableHighStock(product);
-  if (filter === "Low Stock") return label === "Low Stock" || text.includes("low stock") || text.includes("limited stock");
-  if (filter === "Preorders") return buyableNowStatus(product) === "PREORDER_LIVE" || text.includes("preorder");
-  if (filter === "Sold Out") return false;
-  if (filter === "Price Drops") return text.includes("price drop") || buyableNowStatus(product) === "PRICE_CHANGE";
-  if (filter === "Pokemon Center") return retailer.includes("pokemon center") || retailer.includes("pokemoncenter");
-  return retailer.includes(filter.toLowerCase());
 }
 
 function trackerWatchPrefillFromRecord(record: TrackerAlertRecord): WatchProductPrefill {
@@ -13505,6 +13491,7 @@ function WatchProductIdentifierForm({
 
 function AlertsPanel({
   dashboard,
+  isAdmin,
   busy,
   busyLabel,
   submit,
@@ -13512,6 +13499,7 @@ function AlertsPanel({
   setActiveTab
 }: {
   dashboard: DashboardDTO;
+  isAdmin: boolean;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
@@ -13541,6 +13529,7 @@ function AlertsPanel({
   const [watchlistVisibleLimit, setWatchlistVisibleLimit] = useState(40);
   const [historyVisibleLimit, setHistoryVisibleLimit] = useState(40);
   const [systemVisibleLimit, setSystemVisibleLimit] = useState(30);
+  const [discordComparison, setDiscordComparison] = useState<TargetDiscordComparison | null>(null);
   const [selectedTargetCandidateIds, setSelectedTargetCandidateIds] = useState<Set<string>>(new Set());
   const [targetDiscoveryTestUrl, setTargetDiscoveryTestUrl] = useState("https://www.target.com/s?searchTerm=Pokemon+TCG");
   const [targetDiscoveryTestResult, setTargetDiscoveryTestResult] = useState<{
@@ -13701,31 +13690,61 @@ function AlertsPanel({
         .sort(buyableNowProductComparator(targetBuyableSort)),
     [targetBuyableSort, watchProducts]
   );
-  const suppressedBuyableNowProducts = useMemo(
-    () =>
-      watchProducts
-        .filter(productIsCurrentlyBuyable)
-        .filter(productRetailSuppressed)
-        .sort(buyableNowProductComparator(targetBuyableSort)),
-    [targetBuyableSort, watchProducts]
-  );
-  const visibleBuyableNowProducts = useMemo(
-    () =>
-      buyableNowProducts
-        .filter((product) => buyableProductMatchesChannel(product, channelFilter))
-        .filter((product) => targetBuyableProductMatchesFilter(product, targetBuyableFilter))
-        .slice(0, 48),
-    [buyableNowProducts, channelFilter, targetBuyableFilter]
-  );
+  const targetRetailEligibleProducts = useMemo(() => targetWatchProducts.filter(productRetailEligibleForBuyable), [targetWatchProducts]);
   const targetBuyableProducts = useMemo(() => targetWatchProducts.filter(productIsCurrentlyBuyable).filter(productRetailEligibleForBuyable), [targetWatchProducts]);
+  const targetRetailInStockProducts = useMemo(
+    () => targetBuyableProducts.slice().sort(targetBuyableProductComparator(targetBuyableSort)),
+    [targetBuyableProducts, targetBuyableSort]
+  );
+  const visibleTargetRetailInStockProducts = useMemo(
+    () => targetRetailInStockProducts.filter((product) => targetBuyableProductMatchesFilter(product, targetBuyableFilter)).slice(0, 48),
+    [targetBuyableFilter, targetRetailInStockProducts]
+  );
   const targetSuppressedBuyableProducts = useMemo(
     () => targetWatchProducts.filter(productIsCurrentlyBuyable).filter(productRetailSuppressed),
     [targetWatchProducts]
   );
+  const targetSuppressedProducts = useMemo(() => targetWatchProducts.filter(productRetailSuppressed), [targetWatchProducts]);
   const targetSoldOutProducts = useMemo(() => targetWatchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(targetBuyableStatus(product))), [targetWatchProducts]);
-  const soldOutWatchProducts = useMemo(() => watchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(buyableNowStatus(product))), [watchProducts]);
   const targetBlockedProducts = useMemo(() => targetWatchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError), [targetWatchProducts]);
   const targetNeedsQaProducts = useMemo(() => targetWatchProducts.filter((product) => !watchProductReadyForLiveAlerts(product)), [targetWatchProducts]);
+  const targetMissingExactUrlProducts = useMemo(() => targetWatchProducts.filter((product) => !targetExactProductUrl(product)), [targetWatchProducts]);
+  const targetMissingIdentifierProducts = useMemo(
+    () => targetWatchProducts.filter((product) => !product.retailerProductId && !product.sku && !product.dpci),
+    [targetWatchProducts]
+  );
+  const targetScanIntervalMinutes = useMemo(
+    () => targetWatchProducts.reduce((minimum, product) => Math.min(minimum, product.checkFrequencyMinutes || 60), 60),
+    [targetWatchProducts]
+  );
+  const targetFreshnessReferenceTime = new Date(
+    dashboard.health?.checkedAt || dashboard.scannerStatus.lastScanTime || latestTargetMonitorLog?.startedAt || "1970-01-01T00:00:00.000Z"
+  ).getTime();
+  const targetStaleProducts = useMemo(() => {
+    const cutoff = targetFreshnessReferenceTime - 30 * 60 * 1000;
+    return targetWatchProducts.filter((product) => {
+      const checkedAt = product.liveStockVerifiedAt || product.lastSuccessfulCheckedAt || product.lastCheckedAt;
+      return !checkedAt || new Date(checkedAt).getTime() < cutoff;
+    });
+  }, [targetFreshnessReferenceTime, targetWatchProducts]);
+  const targetLatestScanStartedAt = latestTargetMonitorLog?.startedAt ? new Date(latestTargetMonitorLog.startedAt).getTime() : 0;
+  const targetLogsInLatestScan = useMemo(
+    () =>
+      targetLatestScanStartedAt
+        ? dashboard.monitorLogs.filter((log) => {
+            if (!log.productId || !targetProductIds.has(log.productId)) return false;
+            const startedAt = new Date(log.startedAt).getTime();
+            return Math.abs(startedAt - targetLatestScanStartedAt) <= 90 * 1000;
+          })
+        : [],
+    [dashboard.monitorLogs, targetLatestScanStartedAt, targetProductIds]
+  );
+  const targetAlertComparisonProductIds = useMemo(() => new Set(targetBuyableProducts.map((product) => product.id)), [targetBuyableProducts]);
+  const targetRetailEligibleProductIds = useMemo(() => new Set(targetRetailEligibleProducts.map((product) => product.id)), [targetRetailEligibleProducts]);
+  const targetExactUrlByProductId = useMemo(
+    () => new Map(targetWatchProducts.map((product) => [product.id, targetExactProductUrl(product)])),
+    [targetWatchProducts]
+  );
   const watchPreviewProducts = useMemo(() => watchProducts.slice(0, 5), [watchProducts]);
   const watchProductsWithIdentifiers = useMemo(() => watchProducts.filter((product) => Boolean(product.sku || product.upc || product.dpci || product.retailerProductId)), [watchProducts]);
   const alertsEnabledProducts = useMemo(() => watchProducts.filter((product) => product.alertStatus || product.monitorEnabled), [watchProducts]);
@@ -13828,6 +13847,90 @@ function AlertsPanel({
       productType: retailerName === "All" ? "" : retailerName,
       requiredWords: retailerName === "Target" ? "Pokemon, TCG" : retailerName === "GameStop" || retailerName === "Pokemon Center" ? "Pokemon" : ""
     });
+  }
+
+  function discordAlertInputFromForm(form: HTMLFormElement): TargetDiscordAlertInput {
+    const data = formJson(form);
+    const priceText = formString(data.price);
+    return {
+      productName: formString(data.productName),
+      skuOrTcin: formString(data.skuOrTcin),
+      price: priceText ? Number(priceText) : null,
+      productUrl: formString(data.productUrl),
+      timestamp: formString(data.timestamp)
+    };
+  }
+
+  function compareDiscordAlertInput(input: TargetDiscordAlertInput) {
+    return compareTargetDiscordAlert(input, targetWatchProducts, dashboard.alerts, {
+      buyableProductIds: targetAlertComparisonProductIds,
+      retailEligibleProductIds: targetRetailEligibleProductIds,
+      exactUrlByProductId: targetExactUrlByProductId
+    });
+  }
+
+  function handleCompareDiscordAlert(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDiscordComparison(compareDiscordAlertInput(discordAlertInputFromForm(event.currentTarget)));
+  }
+
+  function handleAddDiscordWatchProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const input = discordAlertInputFromForm(form);
+    const comparison = compareDiscordAlertInput(input);
+    setDiscordComparison(comparison);
+    if (comparison.watched) return;
+
+    const targetRetailer = dashboard.retailers.find((retailer) => /target/i.test(retailer.name));
+    if (!targetRetailer) {
+      setDiscordComparison({
+        ...comparison,
+        reasons: [...comparison.reasons, "Target retailer is missing from app setup."]
+      });
+      return;
+    }
+
+    const tcin = input.skuOrTcin?.replace(/\D/g, "") || "";
+    const productUrl = input.productUrl || targetUrlFromTcin(tcin);
+    const name = input.productName?.trim();
+    if (!name || !productUrl) {
+      setDiscordComparison({
+        ...comparison,
+        reasons: [
+          ...comparison.reasons,
+          "Enter a product name and either an exact Target URL or TCIN/SKU so the watch product can be created."
+        ]
+      });
+      return;
+    }
+
+    return runAction(
+      "Adding Target watch product from Discord alert",
+      () =>
+        requestJson("/api/radar/products", {
+          method: "POST",
+          body: JSON.stringify({
+            retailerId: targetRetailer.id,
+            name,
+            url: productUrl,
+            sku: tcin || undefined,
+            retailerProductId: tcin || undefined,
+            imageUrl: formString(new FormData(form).get("imageUrl")) || undefined,
+            retailPrice: input.price ?? undefined,
+            productType: "Target Discord Alert",
+            expectedTitleKeywords: name,
+            stockStatus: "UNAVAILABLE",
+            priority: "HIGH",
+            rating: "WATCH",
+            monitorEnabled: true,
+            checkFrequencyMinutes: targetScanIntervalMinutes,
+            requiredWords: "Pokemon, TCG",
+            notes: "Added from Discord alert comparison. Exact Target check must prove buyable stock before Live Drops."
+          })
+        }),
+      { success: "Target watch product added from Discord alert" }
+    );
   }
 
   function seedGameStopWatchProduct() {
@@ -14824,28 +14927,147 @@ function AlertsPanel({
     );
   }
 
+  function renderTargetCoveragePanel() {
+    return (
+      <section className="target-coverage-panel">
+        <div className="panel-header compact">
+          <div>
+            <p className="eyeline">Target coverage</p>
+            <h3>Retail/MSRP watch quality</h3>
+            <p>Discord may alert on products not watched by Poke Radar yet. Use Compare Discord Alert to see exactly why a drop did or did not appear.</p>
+          </div>
+          <span className="chip muted">Scan every {targetScanIntervalMinutes}m</span>
+        </div>
+        <div className="target-coverage-grid">
+          <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
+          <DetailStat label="Retail/MSRP eligible" value={String(targetRetailEligibleProducts.length)} tone={targetRetailEligibleProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Suppressed vendor / over-MSRP" value={String(targetSuppressedProducts.length)} tone={targetSuppressedProducts.length ? "bad" : "neutral"} />
+          <DetailStat label="Sold out" value={String(targetSoldOutProducts.length)} />
+          <DetailStat label="Currently buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Not checked in 30m" value={String(targetStaleProducts.length)} tone={targetStaleProducts.length ? "neutral" : "good"} />
+          <DetailStat label="Missing exact URL" value={String(targetMissingExactUrlProducts.length)} tone={targetMissingExactUrlProducts.length ? "bad" : "good"} />
+          <DetailStat label="Missing TCIN / SKU" value={String(targetMissingIdentifierProducts.length)} tone={targetMissingIdentifierProducts.length ? "neutral" : "good"} />
+        </div>
+        <div className="target-scan-freshness">
+          <span><b>Last Target scan</b>{relativeTime(latestTargetMonitorLog?.startedAt)}</span>
+          <span><b>Next scan</b>{relativeTime(dashboard.scannerStatus.nextScanEstimate)}</span>
+          <span><b>Products checked this scan</b>{targetLogsInLatestScan.length ? String(targetLogsInLatestScan.length) : "Unknown"}</span>
+          <span><b>Buyable found</b>{targetBuyableProducts.length}</span>
+          <span><b>Sold out found</b>{targetSoldOutProducts.length}</span>
+          <span><b>Errors</b>{targetBlockedProducts.length}</span>
+        </div>
+      </section>
+    );
+  }
+
+  function renderDiscordComparisonResult() {
+    if (!discordComparison) return null;
+    return (
+      <article className="discord-compare-result">
+        <div>
+          <span className={`chip ${discordComparison.status === "not_watched" || discordComparison.status === "exact_url_missing" ? "watch" : discordComparison.retailEligible ? "good" : "bad"}`}>
+            {formatStatus(discordComparison.status)}
+          </span>
+          <h3>{discordComparison.productName || "Not watched by Poke Radar"}</h3>
+          <p>{discordComparison.reasons.join(" ")}</p>
+        </div>
+        <div className="discord-compare-grid">
+          <DetailStat label="Watched" value={discordComparison.watched ? "Yes" : "No"} tone={discordComparison.watched ? "good" : "bad"} />
+          <DetailStat label="Matched by" value={discordComparison.matchedBy || "No match"} />
+          <DetailStat label="Retail/MSRP eligible" value={discordComparison.retailEligible ? "Yes" : "No"} tone={discordComparison.retailEligible ? "good" : "bad"} />
+          <DetailStat label="Latest stock" value={discordComparison.latestStockStatus ? formatStatus(discordComparison.latestStockStatus) : "Unknown"} />
+          <DetailStat label="Live price" value={discordComparison.livePrice === null ? "Unknown" : money(discordComparison.livePrice)} />
+          <DetailStat label="Last checked" value={relativeTime(discordComparison.lastCheckedAt)} tone={discordComparison.stale ? "neutral" : "good"} />
+          <DetailStat label="Alert created" value={discordComparison.alertCreated ? "Yes" : "No"} tone={discordComparison.alertCreated ? "good" : "neutral"} />
+          <DetailStat label="Currently buyable" value={discordComparison.currentlyBuyable ? "Yes" : "No"} tone={discordComparison.currentlyBuyable ? "good" : "neutral"} />
+        </div>
+        <div className="target-buyable-actions">
+          {discordComparison.exactUrl ? (
+            <a className="mini-action" href={discordComparison.exactUrl} target="_blank" rel="noreferrer">
+              Open Target <ExternalLink size={13} />
+            </a>
+          ) : null}
+          {discordComparison.productId ? (
+            <button className="mini-action" type="button" onClick={() => setView("watchlist")}>
+              View Watch Product
+            </button>
+          ) : null}
+        </div>
+      </article>
+    );
+  }
+
+  function renderDiscordAlertTools() {
+    if (!isAdmin) return null;
+    return (
+      <details className="target-discord-tools">
+        <summary>Add or compare a Discord Target alert</summary>
+        <div className="target-discord-tool-grid">
+          <form className="target-discord-tool-card" onSubmit={handleAddDiscordWatchProduct}>
+            <div>
+              <p className="eyeline">Missing product detector</p>
+              <h3>Add from Discord Alert</h3>
+              <p>Paste the Target alert details. If the SKU/TCIN is not watched yet, Poke Radar creates an exact Target watch product for review.</p>
+            </div>
+            <TextInput name="productName" label="Product name" placeholder="Pokemon TCG Mega Evolution Chaos Rising Booster Bundle" required />
+            <div className="tracker-watch-form-grid">
+              <TextInput name="skuOrTcin" label="Target SKU / TCIN" placeholder="95298172" />
+              <TextInput name="price" label="Price" placeholder="29.99" type="number" step="0.01" />
+              <TextInput name="productUrl" label="Target URL if known" placeholder="https://www.target.com/p/-/A-95298172" wide />
+              <TextInput name="imageUrl" label="Image URL optional" placeholder="https://target.scene7.com/..." wide />
+            </div>
+            <button className="mini-action solid" disabled={busy} type="submit">
+              <Plus size={14} />
+              {busyLabel === "Adding Target watch product from Discord alert" ? "Adding" : "Add from Discord Alert"}
+            </button>
+          </form>
+          <form className="target-discord-tool-card" onSubmit={handleCompareDiscordAlert}>
+            <div>
+              <p className="eyeline">Admin diagnostics</p>
+              <h3>Compare Discord Alert</h3>
+              <p>Explains whether the Discord drop is watched, eligible, stale, deduped, sold out, or blocked by retail guardrails.</p>
+            </div>
+            <TextInput name="productName" label="Product name" placeholder="Pokemon TCG Mega Evolution Chaos Rising Booster Bundle" />
+            <div className="tracker-watch-form-grid">
+              <TextInput name="skuOrTcin" label="Target SKU / TCIN" placeholder="95298172" />
+              <TextInput name="price" label="Price" placeholder="29.99" type="number" step="0.01" />
+              <TextInput name="timestamp" label="Discord timestamp" placeholder="2026-06-05 10:42 AM" />
+              <TextInput name="productUrl" label="Target URL if known" placeholder="https://www.target.com/p/-/A-1010423706" wide />
+            </div>
+            <button className="mini-action" type="submit">
+              <Search size={14} />
+              Compare Discord Alert
+            </button>
+          </form>
+        </div>
+        {renderDiscordComparisonResult()}
+      </details>
+    );
+  }
+
   function renderTargetBuyableNowSection() {
     return (
       <section className="target-buyable-panel">
         <div className="panel-header">
           <div>
             <p className="eyeline">Live action center</p>
-            <h2>Buyable Now</h2>
-            <p>Current watch products whose latest check says in stock, preorder live, add-to-cart available, or high/low stock but still buyable.</p>
+            <h2>Target Retail In Stock Now</h2>
+            <p>Target watch products whose latest check says retail/MSRP stock is buyable now. This is independent from new Live Drop alert events.</p>
           </div>
           <div className="row-actions">
-            <span className="chip good">{buyableNowProducts.length} buyable</span>
-            <span className="chip muted">{targetBuyableProducts.length} Target</span>
+            <span className="chip good">{targetBuyableProducts.length} Target retail buyable</span>
             <span className={targetSuppressedBuyableProducts.length ? "chip watch" : "chip muted"}>{targetSuppressedBuyableProducts.length} suppressed</span>
             <span className="chip muted">Manual checkout only</span>
           </div>
         </div>
+        {renderTargetCoveragePanel()}
+        {renderDiscordAlertTools()}
         <div className="target-live-summary-grid">
-          <DetailStat label="Watched products" value={String(watchProducts.length)} />
-          <DetailStat label="Buyable now" value={String(buyableNowProducts.length)} tone={buyableNowProducts.length ? "good" : "neutral"} />
-          <DetailStat label="Target buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
-          <DetailStat label="Suppressed / overpriced" value={String(suppressedBuyableNowProducts.length)} tone={suppressedBuyableNowProducts.length ? "bad" : "good"} />
-          <DetailStat label="Sold out / watch only" value={String(soldOutWatchProducts.length)} />
+          <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
+          <DetailStat label="Target retail buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Retail/MSRP eligible" value={String(targetRetailEligibleProducts.length)} tone={targetRetailEligibleProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Suppressed / overpriced" value={String(targetSuppressedBuyableProducts.length)} tone={targetSuppressedBuyableProducts.length ? "bad" : "good"} />
+          <DetailStat label="Sold out / watch only" value={String(targetSoldOutProducts.length)} />
           <DetailStat label="Needs QA" value={String(targetNeedsQaProducts.length)} tone={targetNeedsQaProducts.length ? "neutral" : "good"} />
         </div>
         <div className="target-buyable-controls">
@@ -14865,26 +15087,26 @@ function AlertsPanel({
             </select>
           </label>
         </div>
-        {visibleBuyableNowProducts.length ? (
+        {visibleTargetRetailInStockProducts.length ? (
           <div className="target-buyable-grid">
-            {visibleBuyableNowProducts.map(renderTargetBuyableCard)}
+            {visibleTargetRetailInStockProducts.map(renderTargetBuyableCard)}
           </div>
         ) : (
           <div className="tracker-empty-feed compact">
             <div className="tracker-empty-copy">
               <span className="tracker-empty-icon"><Bell size={18} /></span>
               <div>
-                <h3>{buyableNowProducts.length ? "No buyable products match this filter" : "No products are buyable now"}</h3>
-                <p>Sold-out products stay in Watch Only below. Live Drops are created only when stock is proven buyable.</p>
+                <h3>{targetBuyableProducts.length ? "No Target products match this filter" : "No Target retail products are buyable now"}</h3>
+                <p>Sold-out products stay in Watch Only below. Live Drops are created only when stock is proven buyable and retail/MSRP eligible.</p>
               </div>
             </div>
           </div>
         )}
         <details className="target-watch-only-section">
-          <summary>Suppressed / Overpriced ({suppressedBuyableNowProducts.length})</summary>
+          <summary>Suppressed Target vendor / over-MSRP ({targetSuppressedBuyableProducts.length})</summary>
           <p className="target-candidate-warning compact">These are buyable but not Target retail/MSRP. Marketplace and over-MSRP products are hidden from Buyable Now and Live Drops by default.</p>
           <div className="target-watch-only-list">
-            {suppressedBuyableNowProducts.slice(0, 24).map((product) => {
+            {targetSuppressedBuyableProducts.slice(0, 24).map((product) => {
               const policy = targetProductRetailPolicy(product);
               return (
                 <article key={product.id}>
@@ -14901,13 +15123,13 @@ function AlertsPanel({
                 </article>
               );
             })}
-            {!suppressedBuyableNowProducts.length ? <span className="target-watch-only-empty">No buyable products are suppressed by Target retail rules.</span> : null}
+            {!targetSuppressedBuyableProducts.length ? <span className="target-watch-only-empty">No buyable products are suppressed by Target retail rules.</span> : null}
           </div>
         </details>
         <details className="target-watch-only-section">
-          <summary>Sold Out / Watch Only ({soldOutWatchProducts.length})</summary>
+          <summary>Target Sold Out / Watch Only ({targetSoldOutProducts.length})</summary>
           <div className="target-watch-only-list">
-            {soldOutWatchProducts.slice(0, 16).map((product) => (
+            {targetSoldOutProducts.slice(0, 16).map((product) => (
               <article key={product.id}>
                 <InventoryFallbackImage imageUrl={trackerProductImage(product)} label={product.name} />
                 <div>
@@ -14921,7 +15143,7 @@ function AlertsPanel({
                 </button>
               </article>
             ))}
-            {!soldOutWatchProducts.length ? <span className="target-watch-only-empty">No sold-out products in the watch-only list.</span> : null}
+            {!targetSoldOutProducts.length ? <span className="target-watch-only-empty">No sold-out Target products in the watch-only list.</span> : null}
           </div>
         </details>
       </section>
@@ -15085,19 +15307,19 @@ function AlertsPanel({
               </div>
               {liveDrops.length ? (
                 liveDrops.map(renderLiveDropCard)
-              ) : buyableNowProducts.length ? (
+              ) : targetBuyableProducts.length ? (
                 <div className="tracker-empty-feed tracker-empty-feed-current">
                   <div className="tracker-empty-copy">
                     <span className="tracker-empty-icon"><Bell size={18} /></span>
                     <div>
-                      <h3>No new drop alerts, but these products are currently buyable.</h3>
-                      <p>Duplicate suppression can prevent repeat alert spam. Use Buyable Now above for the latest checked products that are still actionable.</p>
+                      <h3>No new drop alerts, but these Target products are currently buyable.</h3>
+                      <p>Duplicate suppression can prevent repeat alert spam. Use Target Retail In Stock Now above for latest Target retail/MSRP products that are still actionable.</p>
                     </div>
                   </div>
                   <div className="tracker-empty-actions">
                     <button className="mini-action solid" type="button" onClick={() => setTargetBuyableFilter("All")}>
                       <ShoppingBag size={14} />
-                      View Buyable Now
+                      View Target Retail In Stock Now
                     </button>
                     <button className="mini-action" type="button" onClick={() => setView("check")}>
                       <Search size={14} />
