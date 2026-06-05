@@ -2758,6 +2758,62 @@ export async function approveHighConfidenceTargetDiscoveryCandidates() {
   return { reviewed: candidates.length, approved, failed: failures.length, failures };
 }
 
+function normalizedDiscoveryTitle(value: string | null | undefined) {
+  return (value || "")
+    .toLowerCase()
+    .replace(/pok(?:e|é)mon/g, "pokemon")
+    .replace(/&#?233;|&eacute;/g, "e")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function targetCandidateHasTcgSignal(candidate: Pick<Prisma.ProductDiscoveryCandidateGetPayload<{ include: typeof productDiscoveryCandidateInclude }>, "productName" | "productType" | "category" | "brand" | "reason" | "confidenceScore">) {
+  const text = `${candidate.productName} ${candidate.productType || ""} ${candidate.category || ""} ${candidate.brand || ""} ${candidate.reason || ""}`.toLowerCase();
+  if (candidate.confidenceScore >= 70 && /pokemon|tcg|trading card|booster|elite trainer|blister|checklane|tin|collection|deck/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
+function isTargetWatchReadyCandidate(candidate: Prisma.ProductDiscoveryCandidateGetPayload<{ include: typeof productDiscoveryCandidateInclude }>) {
+  if (!/target/i.test(candidate.retailer.name)) return false;
+  if (candidate.status !== "PENDING") return false;
+  if (candidate.confidenceScore < 70) return false;
+  const exactUrl = classifyRetailerProductUrl(candidate.finalUrl || candidate.url, candidate.retailer.name);
+  return Boolean(
+    exactUrl.exactProductUrl &&
+      !exactUrl.searchOrCategory &&
+      candidate.retailerProductId &&
+      candidate.productName &&
+      candidate.imageUrl &&
+      targetCandidateHasTcgSignal(candidate)
+  );
+}
+
+async function findExistingProductForDiscoveryCandidate(candidate: Prisma.ProductDiscoveryCandidateGetPayload<{ include: typeof productDiscoveryCandidateInclude }>) {
+  const directMatch = await prisma.product.findFirst({
+    where: {
+      retailerId: candidate.retailerId,
+      OR: [
+        { url: candidate.url },
+        ...(candidate.finalUrl ? [{ url: candidate.finalUrl }] : []),
+        ...(candidate.retailerProductId ? [{ retailerProductId: candidate.retailerProductId }] : [])
+      ]
+    },
+    include: productInclude
+  });
+  if (directMatch) return directMatch;
+
+  const normalizedCandidate = normalizedDiscoveryTitle(candidate.productName);
+  if (!normalizedCandidate) return null;
+  const retailerProducts = await prisma.product.findMany({
+    where: { retailerId: candidate.retailerId, archivedAt: null },
+    include: productInclude
+  });
+  return retailerProducts.find((product) => normalizedDiscoveryTitle(product.name) === normalizedCandidate) ?? null;
+}
+
 export async function enrichTargetDiscoveryCandidate(candidateId: string) {
   await enrichTargetDiscoveryCandidateFromPage(candidateId);
   const candidate = await prisma.productDiscoveryCandidate.findUnique({
@@ -2841,6 +2897,92 @@ export async function approveHighConfidenceEnrichedTargetDiscoveryCandidates() {
   }
 
   return { reviewed: candidates.length, approved, failed: failures.length, failures };
+}
+
+export async function approveWatchReadyTargetDiscoveryCandidates() {
+  const target = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true } });
+  if (!target) throw new Error("Target retailer is missing");
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: {
+      retailerId: target.id,
+      status: "PENDING",
+      confidenceScore: { gte: 70 },
+      retailerProductId: { not: null },
+      imageUrl: { not: null }
+    },
+    include: productDiscoveryCandidateInclude,
+    orderBy: [{ confidenceScore: "desc" }, { createdAt: "desc" }],
+    take: Math.max(1, Math.min(100, Number(process.env.TARGET_DISCOVERY_BULK_APPROVE_LIMIT || 100)))
+  });
+  const watchReady = candidates.filter(isTargetWatchReadyCandidate);
+
+  let approved = 0;
+  let reused = 0;
+  const failures: string[] = [];
+  for (const candidate of watchReady) {
+    try {
+      const before = await findExistingProductForDiscoveryCandidate(candidate);
+      await reviewProductDiscoveryCandidate(candidate.id, {
+        action: "approve",
+        priority: "MEDIUM",
+        rating: "WATCH",
+        checkFrequencyMinutes: 60,
+        notes: "Approved as Target Watch Ready. UPC/DPCI may be missing because Target does not expose them publicly; monitor relies on exact /p/ URL, TCIN, title, image, and live parser checks."
+      });
+      approved += 1;
+      if (before) reused += 1;
+    } catch (error) {
+      failures.push(`${candidate.productName}: ${error instanceof Error ? error.message : "approval failed"}`);
+    }
+  }
+
+  return { reviewed: watchReady.length, approved, reused, skipped: candidates.length - watchReady.length, failed: failures.length, failures };
+}
+
+export async function reviewSelectedTargetDiscoveryCandidates(
+  candidateIds: string[],
+  action: "approve" | "ignore" | "reject_non_tcg"
+) {
+  const ids = Array.from(new Set(candidateIds.map((id) => id.trim()).filter(Boolean))).slice(0, 100);
+  if (!ids.length) throw new Error("Select at least one discovery candidate.");
+
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: { id: { in: ids } },
+    include: productDiscoveryCandidateInclude,
+    orderBy: [{ confidenceScore: "desc" }, { createdAt: "desc" }]
+  });
+  if (!candidates.length) throw new Error("No selected discovery candidates were found.");
+
+  let approved = 0;
+  let rejected = 0;
+  let ignored = 0;
+  let reused = 0;
+  const failures: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const before = action === "approve" ? await findExistingProductForDiscoveryCandidate(candidate) : null;
+      await reviewProductDiscoveryCandidate(candidate.id, {
+        action,
+        priority: "MEDIUM",
+        rating: "WATCH",
+        checkFrequencyMinutes: 60,
+        notes:
+          action === "approve"
+            ? "Approved from selected Target discovery candidates. UPC/DPCI may be missing; exact URL and TCIN remain the primary identity."
+            : action === "reject_non_tcg"
+              ? "Rejected from selected Target discovery candidates."
+              : "Ignored from selected Target discovery candidates."
+      });
+      if (action === "approve") approved += 1;
+      if (action === "reject_non_tcg") rejected += 1;
+      if (action === "ignore") ignored += 1;
+      if (before) reused += 1;
+    } catch (error) {
+      failures.push(`${candidate.productName}: ${error instanceof Error ? error.message : "review failed"}`);
+    }
+  }
+
+  return { reviewed: candidates.length, approved, rejected, ignored, reused, failed: failures.length, failures };
 }
 
 export async function rejectNonTcgTargetDiscoveryCandidates() {
@@ -2953,22 +3095,14 @@ export async function reviewProductDiscoveryCandidate(
     return { candidate: productDiscoveryCandidateToDTO(ignored), product: null };
   }
 
-  const classification = classifyRetailerProductUrl(candidate.url, candidate.retailer.name);
+  const approvalUrl = candidate.finalUrl || candidate.url;
+  const classification = classifyRetailerProductUrl(approvalUrl, candidate.retailer.name);
   if (classification.searchOrCategory || !classification.exactProductUrl) {
     throw new Error(`Discovery approval requires an exact ${candidate.retailer.name} product URL. ${classification.reason}`);
   }
 
-  validateRetailerUrl(candidate.retailer.name, candidate.url);
-  const existingProduct = await prisma.product.findFirst({
-    where: {
-      retailerId: candidate.retailerId,
-      OR: [
-        { url: candidate.url },
-        ...(candidate.retailerProductId ? [{ retailerProductId: candidate.retailerProductId }] : [])
-      ]
-    },
-    include: productInclude
-  });
+  validateRetailerUrl(candidate.retailer.name, approvalUrl);
+  const existingProduct = await findExistingProductForDiscoveryCandidate(candidate);
 
   const product =
     existingProduct ??
@@ -2976,7 +3110,7 @@ export async function reviewProductDiscoveryCandidate(
       data: {
         retailerId: candidate.retailerId,
         name: candidate.productName,
-        url: candidate.url,
+        url: approvalUrl,
         productType: candidate.productType,
         imageUrl: candidate.imageUrl,
         expectedTitleKeywords: candidate.productName

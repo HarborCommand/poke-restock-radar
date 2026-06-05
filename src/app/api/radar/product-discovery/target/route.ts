@@ -5,11 +5,13 @@ import { badRequest, ok, readJson } from "@/lib/http";
 import {
   approveHighConfidenceEnrichedTargetDiscoveryCandidates,
   approveHighConfidenceTargetDiscoveryCandidates,
+  approveWatchReadyTargetDiscoveryCandidates,
   clearRejectedTargetDiscoveryCandidates,
   enrichPendingTargetDiscoveryCandidates,
   ensureTargetDiscoverySources,
   listDashboard,
   rejectNonTcgTargetDiscoveryCandidates,
+  reviewSelectedTargetDiscoveryCandidates,
   runTargetProductDiscoveryNow,
   testTargetDiscoveryUrl
 } from "@/lib/radar-service";
@@ -24,11 +26,16 @@ const targetDiscoveryActionSchema = z.object({
     "enrich_all_pending",
     "approve_high_confidence",
     "approve_high_confidence_enriched",
+    "approve_watch_ready",
+    "approve_selected",
+    "reject_selected",
+    "ignore_selected",
     "reject_all_non_tcg",
     "clear_rejected",
     "test_url"
   ]),
-  url: z.string().url().optional()
+  url: z.string().url().optional(),
+  candidateIds: z.array(z.string().trim().min(1)).max(100).optional()
 });
 
 export async function POST(request: Request) {
@@ -45,6 +52,10 @@ export async function POST(request: Request) {
     if (input.action === "enrich_all_pending") result = await enrichPendingTargetDiscoveryCandidates();
     if (input.action === "approve_high_confidence") result = await approveHighConfidenceTargetDiscoveryCandidates();
     if (input.action === "approve_high_confidence_enriched") result = await approveHighConfidenceEnrichedTargetDiscoveryCandidates();
+    if (input.action === "approve_watch_ready") result = await approveWatchReadyTargetDiscoveryCandidates();
+    if (input.action === "approve_selected") result = await reviewSelectedTargetDiscoveryCandidates(input.candidateIds || [], "approve");
+    if (input.action === "reject_selected") result = await reviewSelectedTargetDiscoveryCandidates(input.candidateIds || [], "reject_non_tcg");
+    if (input.action === "ignore_selected") result = await reviewSelectedTargetDiscoveryCandidates(input.candidateIds || [], "ignore");
     if (input.action === "reject_all_non_tcg") result = await rejectNonTcgTargetDiscoveryCandidates();
     if (input.action === "clear_rejected") result = await clearRejectedTargetDiscoveryCandidates();
     if (input.action === "test_url") {

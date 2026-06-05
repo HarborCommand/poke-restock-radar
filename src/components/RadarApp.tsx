@@ -303,6 +303,53 @@ function targetProductGroupLabel(productType?: string | null) {
   return "Other TCG";
 }
 
+const targetCandidateFilterOptions = [
+  "All",
+  "Watch Ready",
+  "Missing UPC",
+  "Missing DPCI",
+  "Booster Bundles",
+  "ETBs",
+  "Sleeved Boosters",
+  "Blisters",
+  "Premium Collections",
+  "Tins",
+  "Collection Boxes",
+  "Low Confidence"
+] as const;
+
+type TargetCandidateFilter = (typeof targetCandidateFilterOptions)[number];
+
+function targetCandidateHasTcgSignal(candidate: ProductDiscoveryCandidateDTO) {
+  const text = `${candidate.productName} ${candidate.productType || ""} ${candidate.category || ""} ${candidate.brand || ""} ${candidate.reason || ""}`.toLowerCase();
+  return candidate.confidenceScore >= 70 && /pokemon|tcg|trading card|booster|elite trainer|blister|checklane|tin|collection|deck/.test(text);
+}
+
+function targetCandidateWatchReady(candidate: ProductDiscoveryCandidateDTO) {
+  const identifiers = candidateIdentifiersFromReason(candidate);
+  const exactUrl = /target\.com\/p\//i.test(candidate.finalUrl || candidate.url);
+  return Boolean(
+    candidate.status === "PENDING" &&
+      exactUrl &&
+      identifiers.tcin &&
+      candidate.productName &&
+      candidate.imageUrl &&
+      candidate.confidenceScore >= 70 &&
+      targetCandidateHasTcgSignal(candidate)
+  );
+}
+
+function targetCandidateMatchesFilter(candidate: ProductDiscoveryCandidateDTO, filter: TargetCandidateFilter) {
+  const identifiers = candidateIdentifiersFromReason(candidate);
+  const group = targetProductGroupLabel(candidate.productType);
+  if (filter === "All") return true;
+  if (filter === "Watch Ready") return targetCandidateWatchReady(candidate);
+  if (filter === "Missing UPC") return !identifiers.upc;
+  if (filter === "Missing DPCI") return !identifiers.dpci;
+  if (filter === "Low Confidence") return candidate.confidenceScore < 70;
+  return group === filter;
+}
+
 function formatStatus(value: string) {
   return value
     .toLowerCase()
@@ -13260,6 +13307,8 @@ function AlertsPanel({
   const [showRejectedTargetCandidates, setShowRejectedTargetCandidates] = useState(false);
   const [hidePartialTargetCandidates, setHidePartialTargetCandidates] = useState(false);
   const [editingTargetCandidateId, setEditingTargetCandidateId] = useState<string | null>(null);
+  const [targetCandidateFilter, setTargetCandidateFilter] = useState<TargetCandidateFilter>("All");
+  const [selectedTargetCandidateIds, setSelectedTargetCandidateIds] = useState<Set<string>>(new Set());
   const [targetDiscoveryTestUrl, setTargetDiscoveryTestUrl] = useState("https://www.target.com/s?searchTerm=Pokemon+TCG");
   const [targetDiscoveryTestResult, setTargetDiscoveryTestResult] = useState<{
     sourceUrl: string;
@@ -13336,13 +13385,14 @@ function AlertsPanel({
   const blockedTargetCandidates = targetDiscoveryCandidates.filter((candidate) => candidate.enrichmentStatus === "BLOCKED");
   const missingTargetUpcCandidates = pendingTargetCandidates.filter((candidate) => !candidate.upc);
   const missingTargetDpciCandidates = pendingTargetCandidates.filter((candidate) => !candidate.dpci);
-  const readyTargetCandidates = pendingTargetCandidates.filter((candidate) =>
-    Boolean(candidate.finalUrl || candidate.url) && Boolean(candidate.productName) && Boolean(candidate.retailerProductId) && Boolean(candidate.imageUrl)
-  );
+  const readyTargetCandidates = pendingTargetCandidates.filter(targetCandidateWatchReady);
   const visibleTargetCandidates = targetDiscoveryCandidates
     .filter((candidate) => candidate.status === "PENDING" || (showRejectedTargetCandidates && candidate.status === "REJECTED_NON_TCG"))
     .filter((candidate) => (hidePartialTargetCandidates ? candidate.enrichmentStatus !== "PARTIAL" : true))
-    .slice(0, 24);
+    .filter((candidate) => targetCandidateMatchesFilter(candidate, targetCandidateFilter))
+    .slice(0, 48);
+  const visibleSelectableTargetCandidates = visibleTargetCandidates.filter((candidate) => candidate.status === "PENDING");
+  const selectedTargetCandidateCount = selectedTargetCandidateIds.size;
   const exactProducts = watchProducts.filter((product) => product.verificationStatus === "VERIFIED_EXACT" || product.verificationStatus === "UPC_MATCHED");
   const needsExactLink = watchProducts.length - exactProducts.length;
   const blockedChecks = dashboard.monitorLogs.filter((log) => log.status === "BLOCKED").length;
@@ -13356,6 +13406,10 @@ function AlertsPanel({
   const latestTargetDiscoverySource = targetDiscoverySources
     .filter((source) => source.lastCheckedAt)
     .sort((a, b) => new Date(b.lastCheckedAt || 0).getTime() - new Date(a.lastCheckedAt || 0).getTime())[0] ?? null;
+  const targetBuyableProducts = targetWatchProducts.filter((product) => ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus));
+  const targetSoldOutProducts = targetWatchProducts.filter((product) => ["SOLD_OUT", "UNAVAILABLE"].includes(product.stockStatus));
+  const targetBlockedProducts = targetWatchProducts.filter((product) => product.liveBlockedType || product.lastMonitorError);
+  const targetNeedsQaProducts = targetWatchProducts.filter((product) => !watchProductReadyForLiveAlerts(product));
   const watchPreviewProducts = watchProducts.slice(0, 5);
   const watchProductsWithIdentifiers = watchProducts.filter((product) => Boolean(product.sku || product.upc || product.dpci || product.retailerProductId));
   const alertsEnabledProducts = watchProducts.filter((product) => product.alertStatus || product.monitorEnabled);
@@ -13460,20 +13514,55 @@ function AlertsPanel({
       | "enrich_all_pending"
       | "approve_high_confidence"
       | "approve_high_confidence_enriched"
+      | "approve_watch_ready"
+      | "approve_selected"
+      | "reject_selected"
+      | "ignore_selected"
       | "reject_all_non_tcg"
       | "clear_rejected",
     label: string,
-    success: string
+    success: string,
+    candidateIds?: string[]
   ) {
     return runAction(
       label,
       () =>
         requestJson("/api/radar/product-discovery/target", {
           method: "POST",
-          body: JSON.stringify({ action })
+          body: JSON.stringify({ action, candidateIds })
         }),
       { success }
     );
+  }
+
+  function toggleTargetCandidateSelection(candidateId: string) {
+    setSelectedTargetCandidateIds((current) => {
+      const next = new Set(current);
+      if (next.has(candidateId)) next.delete(candidateId);
+      else next.add(candidateId);
+      return next;
+    });
+  }
+
+  function selectAllVisibleTargetCandidates() {
+    setSelectedTargetCandidateIds((current) => {
+      const next = new Set(current);
+      for (const candidate of visibleSelectableTargetCandidates) next.add(candidate.id);
+      return next;
+    });
+  }
+
+  function clearSelectedTargetCandidates() {
+    setSelectedTargetCandidateIds(new Set());
+  }
+
+  function reviewSelectedTargetCandidates(action: "approve_selected" | "reject_selected" | "ignore_selected") {
+    const ids = Array.from(selectedTargetCandidateIds);
+    const actionLabel =
+      action === "approve_selected" ? "Approving selected Target candidates" : action === "reject_selected" ? "Rejecting selected Target candidates" : "Ignoring selected Target candidates";
+    const success =
+      action === "approve_selected" ? "Selected Target candidates approved" : action === "reject_selected" ? "Selected Target candidates rejected" : "Selected Target candidates ignored";
+    return runTargetDiscoveryAction(action, actionLabel, success, ids).then(() => clearSelectedTargetCandidates());
   }
 
   function enrichTargetCandidate(candidate: ProductDiscoveryCandidateDTO) {
@@ -13899,11 +13988,12 @@ function AlertsPanel({
     const saveIdentifiersLabel = `Saving target candidate identifiers ${candidate.id}`;
     const isRejected = candidate.status === "REJECTED_NON_TCG";
     const editing = editingTargetCandidateId === candidate.id;
+    const selected = selectedTargetCandidateIds.has(candidate.id);
     const exactUrl = /target\.com\/p\//i.test(candidate.finalUrl || candidate.url);
-    const requiredComplete = exactUrl && Boolean(candidate.productName) && Boolean(identifiers.tcin) && Boolean(candidate.imageUrl);
+    const watchReady = targetCandidateWatchReady(candidate);
     const missingIdentifiers = [identifiers.upc ? null : "UPC", identifiers.dpci ? null : "DPCI"].filter(Boolean).join("/");
     return (
-      <article className={isRejected ? "target-candidate-card is-rejected" : "target-candidate-card"} key={candidate.id}>
+      <article className={`${isRejected ? "target-candidate-card is-rejected" : "target-candidate-card"} ${watchReady ? "is-watch-ready" : ""}`} key={candidate.id}>
         <InventoryFallbackImage imageUrl={candidate.imageUrl} label={candidate.productName} />
         <div className="target-candidate-main">
           <div className="target-candidate-title">
@@ -13912,8 +14002,19 @@ function AlertsPanel({
               <h3>{candidate.productName}</h3>
             </div>
             <div className="tracker-drop-badges">
+              {candidate.status === "PENDING" ? (
+                <label className="target-candidate-select">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => toggleTargetCandidateSelection(candidate.id)}
+                  />
+                  Select
+                </label>
+              ) : null}
               <span className={`chip ${discoveryCandidateStatusTone(candidate.status)}`}>{discoveryCandidateStatusLabel(candidate.status)}</span>
               <span className={`chip ${targetCandidateEnrichmentTone(candidate.enrichmentStatus)}`}>{targetCandidateEnrichmentLabel(candidate.enrichmentStatus)}</span>
+              {watchReady ? <span className="chip good">Watch Ready</span> : <span className="chip watch">Needs QA</span>}
               {exactUrl ? <span className="chip good">Exact URL</span> : <span className="chip bad">Needs URL</span>}
               {!identifiers.upc ? <span className="chip watch">Missing UPC</span> : null}
               {!identifiers.dpci ? <span className="chip watch">Missing DPCI</span> : null}
@@ -13924,29 +14025,14 @@ function AlertsPanel({
             <span><b>Type</b>{candidate.productType || "Other TCG"}</span>
             <span><b>Price</b>{candidate.livePrice === null ? "Unknown" : money(candidate.livePrice)}</span>
             <span><b>TCIN</b>{identifiers.tcin || "Missing"}</span>
-            <span><b>DPCI</b>{identifiers.dpci || "Not found"}</span>
-            <span><b>UPC</b>{identifiers.upc || "Not found"}</span>
-            <span><b>SKU</b>{identifiers.sku || "Missing"}</span>
-            <span><b>Brand</b>{candidate.brand || "Unknown"}</span>
-            <span><b>Category</b>{candidate.category || "Unknown"}</span>
-            <span><b>Stock</b>{candidate.stockStatus ? formatStatus(candidate.stockStatus) : "Not checked"}</span>
-            <span><b>Source</b>{candidate.sourceName}</span>
+            <span><b>Confidence</b>{candidate.confidenceScore}%</span>
+            <span><b>Status</b>{watchReady ? "Watch Ready" : "Needs QA"}</span>
           </div>
-          <div className={requiredComplete ? "target-quality-checklist is-ready" : "target-quality-checklist"}>
-            <span><Check size={13} /> Exact URL {exactUrl ? "ready" : "missing"}</span>
-            <span><Check size={13} /> Title {candidate.productName ? "ready" : "missing"}</span>
-            <span><Check size={13} /> TCIN {identifiers.tcin ? "ready" : "missing"}</span>
-            <span><Check size={13} /> Image {candidate.imageUrl ? "ready" : "missing"}</span>
-            <span className={identifiers.upc ? "" : "is-warning"}>{identifiers.upc ? <Check size={13} /> : <AlertTriangle size={13} />} UPC {identifiers.upc ? "found" : "missing"}</span>
-            <span className={identifiers.dpci ? "" : "is-warning"}>{identifiers.dpci ? <Check size={13} /> : <AlertTriangle size={13} />} DPCI {identifiers.dpci ? "found" : "missing"}</span>
-          </div>
-          {candidate.enrichmentReason || missingIdentifiers ? (
-            <p className="target-candidate-warning">
-              {candidate.enrichmentReason || "Candidate needs enrichment before approval."}
-              {missingIdentifiers ? " UPC/DPCI missing - alerts can still work by TCIN/title, but identifier match is weaker." : ""}
+          {missingIdentifiers ? (
+            <p className="target-candidate-warning compact">
+              {missingIdentifiers} missing. Target can still be watched with exact /p/ URL, TCIN, title, image, price, and live parser checks.
             </p>
           ) : null}
-          <p className="target-candidate-reason">{candidate.reason || "Found on public Target discovery source. Admin approval is required before monitoring."}</p>
           {editing ? (
             <form
               className="target-candidate-edit-form"
@@ -13996,27 +14082,53 @@ function AlertsPanel({
             {!isRejected ? (
               <button className="mini-action solid" type="button" disabled={busy} onClick={() => reviewTargetCandidate(candidate, "approve")}>
                 <Check size={13} />
-                {busyLabel === approvalLabel ? "Approving" : "Approve to Watchlist"}
+                {busyLabel === approvalLabel ? "Approving" : "Approve"}
               </button>
             ) : null}
             {!isRejected ? (
               <button className="mini-action" type="button" disabled={busy} onClick={() => reviewTargetCandidate(candidate, "reject_non_tcg")}>
                 <X size={13} />
-                {busyLabel === rejectLabel ? "Rejecting" : "Reject as Non-TCG"}
+                {busyLabel === rejectLabel ? "Rejecting" : "Reject"}
               </button>
             ) : null}
-            <button className="mini-action" type="button" disabled={busy || isRejected} onClick={() => reviewTargetCandidate(candidate, "ignore")}>
-              {busyLabel === ignoreLabel ? "Ignoring" : "Ignore"}
-            </button>
+            <a className="mini-action" href={candidate.finalUrl || candidate.url} target="_blank" rel="noreferrer">
+              Open <ExternalLink size={13} />
+            </a>
+          </div>
+          <details className="target-candidate-details">
+            <summary>Details</summary>
+            <div className="target-candidate-meta">
+              <span><b>DPCI</b>{identifiers.dpci || "Not found"}</span>
+              <span><b>UPC</b>{identifiers.upc || "Not found"}</span>
+              <span><b>SKU</b>{identifiers.sku || "Missing"}</span>
+              <span><b>Brand</b>{candidate.brand || "Unknown"}</span>
+              <span><b>Category</b>{candidate.category || "Unknown"}</span>
+              <span><b>Stock</b>{candidate.stockStatus ? formatStatus(candidate.stockStatus) : "Not checked"}</span>
+              <span><b>Source</b>{candidate.sourceName}</span>
+            </div>
+            <div className={watchReady ? "target-quality-checklist is-ready" : "target-quality-checklist"}>
+              <span><Check size={13} /> Exact URL {exactUrl ? "ready" : "missing"}</span>
+              <span><Check size={13} /> Title {candidate.productName ? "ready" : "missing"}</span>
+              <span><Check size={13} /> TCIN {identifiers.tcin ? "ready" : "missing"}</span>
+              <span><Check size={13} /> Image {candidate.imageUrl ? "ready" : "missing"}</span>
+              <span><Check size={13} /> Confidence {candidate.confidenceScore >= 70 ? "ready" : "low"}</span>
+              <span className={identifiers.upc ? "" : "is-warning"}>{identifiers.upc ? <Check size={13} /> : <AlertTriangle size={13} />} UPC {identifiers.upc ? "found" : "warning only"}</span>
+              <span className={identifiers.dpci ? "" : "is-warning"}>{identifiers.dpci ? <Check size={13} /> : <AlertTriangle size={13} />} DPCI {identifiers.dpci ? "found" : "warning only"}</span>
+            </div>
+            {candidate.enrichmentReason ? (
+              <p className="target-candidate-warning">{candidate.enrichmentReason}</p>
+            ) : null}
+            <p className="target-candidate-reason">{candidate.reason || "Found on public Target discovery source. Admin approval is required before monitoring."}</p>
+            <div className="target-candidate-actions">
+              <button className="mini-action" type="button" disabled={busy || isRejected} onClick={() => reviewTargetCandidate(candidate, "ignore")}>
+                {busyLabel === ignoreLabel ? "Ignoring" : "Ignore"}
+              </button>
             {!isRejected ? (
               <button className="mini-action" type="button" disabled={busy} onClick={() => setEditingTargetCandidateId(editing ? null : candidate.id)}>
                 <Settings size={13} />
                 Edit Identifiers
               </button>
             ) : null}
-            <a className="mini-action" href={candidate.finalUrl || candidate.url} target="_blank" rel="noreferrer">
-              Open Target Page <ExternalLink size={13} />
-            </a>
             <button className="mini-action" type="button" onClick={() => addTargetCandidateToInventory(candidate)}>
               <ShoppingBag size={13} />
               Add to Inventory
@@ -14027,7 +14139,8 @@ function AlertsPanel({
                 Manual Watch Form
               </button>
             ) : null}
-          </div>
+            </div>
+          </details>
         </div>
       </article>
     );
@@ -14081,13 +14194,13 @@ function AlertsPanel({
             disabled={busy}
             onClick={() =>
               runTargetDiscoveryAction(
-                "approve_high_confidence_enriched",
-                "Approving enriched Target candidates",
-                "High-confidence enriched Target candidates reviewed"
+                "approve_watch_ready",
+                "Approving watch-ready Target candidates",
+                "Watch-ready Target candidates approved"
               )
             }
           >
-            Approve All High Confidence Enriched
+            Approve All Watch Ready
           </button>
           <button
             className="mini-action"
@@ -14116,6 +14229,31 @@ function AlertsPanel({
             Hide Partial Candidates
           </label>
         </div>
+        <div className="target-discovery-selection-actions">
+          <span className="chip muted">{selectedTargetCandidateCount} selected</span>
+          <button className="mini-action" type="button" disabled={!visibleSelectableTargetCandidates.length} onClick={selectAllVisibleTargetCandidates}>
+            Select All Visible
+          </button>
+          <button className="mini-action solid" type="button" disabled={busy || !selectedTargetCandidateCount} onClick={() => reviewSelectedTargetCandidates("approve_selected")}>
+            Approve Selected
+          </button>
+          <button className="mini-action" type="button" disabled={busy || !selectedTargetCandidateCount} onClick={() => reviewSelectedTargetCandidates("reject_selected")}>
+            Reject Selected
+          </button>
+          <button className="mini-action" type="button" disabled={busy || !selectedTargetCandidateCount} onClick={() => reviewSelectedTargetCandidates("ignore_selected")}>
+            Ignore Selected
+          </button>
+          <button className="mini-action" type="button" disabled={!selectedTargetCandidateIds.size} onClick={clearSelectedTargetCandidates}>
+            Clear Selection
+          </button>
+        </div>
+        <div className="target-candidate-filter-bar" aria-label="Target candidate filters">
+          {targetCandidateFilterOptions.map((filter) => (
+            <button className={targetCandidateFilter === filter ? "active" : ""} key={filter} type="button" onClick={() => setTargetCandidateFilter(filter)}>
+              {filter}
+            </button>
+          ))}
+        </div>
         <div className="target-discovery-summary-grid">
           <DetailStat label="Total candidates" value={String(targetDiscoveryCandidates.length)} />
           <DetailStat label="Enriched" value={String(enrichedTargetCandidates.length)} tone="good" />
@@ -14123,7 +14261,7 @@ function AlertsPanel({
           <DetailStat label="Blocked" value={String(blockedTargetCandidates.length)} tone={blockedTargetCandidates.length ? "bad" : "neutral"} />
           <DetailStat label="Missing UPC" value={String(missingTargetUpcCandidates.length)} tone={missingTargetUpcCandidates.length ? "neutral" : "good"} />
           <DetailStat label="Missing DPCI" value={String(missingTargetDpciCandidates.length)} tone={missingTargetDpciCandidates.length ? "neutral" : "good"} />
-          <DetailStat label="Ready to approve" value={String(readyTargetCandidates.length)} tone={readyTargetCandidates.length ? "good" : "neutral"} />
+          <DetailStat label="Watch ready" value={String(readyTargetCandidates.length)} tone={readyTargetCandidates.length ? "good" : "neutral"} />
           <DetailStat label="Approved today" value={String(approvedTargetCandidatesToday.length)} />
         </div>
         <div className="target-discovery-test">
@@ -14195,6 +14333,14 @@ function AlertsPanel({
         <div className="target-discovery-notes">
           <span>Pokemon Center and GameStop may block automated checks; blocked pages become System Alerts, not Live Drops.</span>
           <span>Best Buy exact products can be watched, but store-level stock only appears when a safe public source supports it.</span>
+        </div>
+        <div className="target-watchlist-summary-grid">
+          <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
+          <DetailStat label="Ready for live alerts" value={String(targetReadyProducts.length)} tone={targetReadyProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Sold out/unavailable" value={String(targetSoldOutProducts.length)} />
+          <DetailStat label="Buyable now" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
+          <DetailStat label="Needs QA" value={String(targetNeedsQaProducts.length)} tone={targetNeedsQaProducts.length ? "neutral" : "good"} />
+          <DetailStat label="Blocked/errors" value={String(targetBlockedProducts.length)} tone={targetBlockedProducts.length ? "bad" : "good"} />
         </div>
         {renderTargetWatchGroups()}
         <div className="target-candidate-list">
