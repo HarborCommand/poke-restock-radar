@@ -141,6 +141,8 @@ Watched products must use exact product URLs such as Amazon `/dp/<ASIN>`, Target
 
 Target discovery now runs as the primary tracker intake. The app scans safe public Target search/category URLs, extracts exact `/p/` product pages, filters non-TCG items, suppresses marketplace or over-MSRP listings, auto-approves strong retail/MSRP candidates, and enables batched monitoring. Search/category pages still never trigger BUY alerts directly; only approved exact products can create Live Drops after the monitor proves buyable stock. Manual Discord import, manual candidate approval, and parser test tools are kept under Admin/Advanced for overrides and diagnostics.
 
+Best Buy discovery is the next conservative automatic intake. When `BESTBUY_API_KEY` is configured, Poke Radar uses the Best Buy Products API server-side to discover Pokemon TCG candidates with SKU, URL, image, price, and category data. Without a key it falls back to safe public Best Buy search/product pages and clearly reports the fallback. Best Buy candidates can auto-approve only when an exact product URL, SKU/product ID, title, image, Pokemon TCG classification, and conservative retail-price guardrail pass. Discovery itself never creates Buy alerts; only exact product monitors can create Live Drops after buyable stock is proven.
+
 Scanner status in the Products tab shows active watched products, last scan time, next scan estimate, pending new finds, and live restocks detected today.
 
 ## Phase 3 Card Investment Engine
@@ -263,6 +265,7 @@ Phase 7 adds Vercel deployment readiness:
 - `/api/radar/monitor/cron` supports Vercel's GET cron invocation and the existing POST/manual test flow.
 - Scheduled Target scans run by default through a safe batched `target_due` monitor path. Set `TARGET_MONITOR_BATCH_SIZE` (default `18`) and `TARGET_MONITOR_CADENCE_MINUTES` (default `15`, minimum `10`) to tune the Target queue without hammering Target.
 - Automatic Target discovery runs from the same cron route before the Target monitor batch when `TARGET_DISCOVERY_AUTO_ENABLED` is not `false`. Set `TARGET_DISCOVERY_CADENCE_MINUTES` (default `360`, minimum `120`), `TARGET_DISCOVERY_AUTO_SOURCE_LIMIT` (default `4`), and `TARGET_DISCOVERY_AUTO_APPROVE_LIMIT` (default `12`) to tune coverage. Keep `TARGET_DISCOVERY_RETAIL_ONLY_ENABLED=true` so marketplace and over-MSRP candidates are suppressed instead of watched.
+- Automatic Best Buy discovery also runs from `/api/radar/monitor/cron` when `BESTBUY_DISCOVERY_ENABLED` is not `false`. Set `BESTBUY_API_KEY` to use the official Products API path; leave it blank for public-page fallback only. Tune with `BESTBUY_DISCOVERY_CADENCE_MINUTES`, `BESTBUY_DISCOVERY_AUTO_SOURCE_LIMIT`, and `BESTBUY_DISCOVERY_AUTO_APPROVE_LIMIT`.
 - The legacy broad product/discovery scan stays opt-in while older Products, Stores, and Cards UI modules are hidden. Set `PRODUCT_MONITOR_CRON_ENABLED=true` only if you intentionally want `/api/radar/monitor/cron` to run the full due-product/discovery job instead of the Target batch. Set `TARGET_MONITOR_CRON_ENABLED=false` to pause Target batching.
 - Cron calls are protected by `MONITOR_JOB_SECRET`, with bearer-token compatibility for Vercel's `CRON_SECRET`.
 - `/api/health` reports app, database, cron, alert, push, email, and SMS readiness without exposing secret values.
@@ -634,6 +637,8 @@ Noise controls live in notification settings:
 - Per-user cooldown minutes suppress repeated product alerts.
 
 Use `npm run alert:smoke` with production credentials to verify login, in-app alert creation, route test alerts, and the alerts endpoint.
+
+Admin notification diagnostics include a `Notification Delivery Log` under Notification Settings. It records recent alert-created, push/email/SMS sent, skipped, failed, cooldown, quiet-hours, digest, watch-filter, and provider-missing outcomes without exposing provider secrets. Use it after Live Drop tests to confirm whether an alert was created, attempted, delivered, or intentionally skipped.
 
 ## Phase 17 Owner Guide
 

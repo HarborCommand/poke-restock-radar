@@ -1644,7 +1644,7 @@ function AdminControlPanel({
         </AdminSectionCard>
 
         <AdminSectionCard icon={Download} title="Backups" detail="JSON import/export, demo reset, and private recovery tools.">
-          <AdminTools busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+          <AdminTools dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         </AdminSectionCard>
 
         <AdminSectionCard icon={FileText} title="Archive" detail="Daily recaps, inventory workflow, and saved operational history.">
@@ -13611,6 +13611,7 @@ function AlertsPanel({
   );
   const visibleWatchProducts = useMemo(() => filteredWatchProducts.slice(0, watchlistVisibleLimit), [filteredWatchProducts, watchlistVisibleLimit]);
   const targetWatchProducts = useMemo(() => watchProductsByRetailer("Target"), [watchProductsByRetailer]);
+  const bestBuyWatchProducts = useMemo(() => watchProductsByRetailer("Best Buy"), [watchProductsByRetailer]);
   const gameStopWatchProducts = useMemo(() => watchProductsByRetailer("GameStop"), [watchProductsByRetailer]);
   const pokemonCenterWatchProducts = useMemo(() => watchProductsByRetailer("Pokemon Center"), [watchProductsByRetailer]);
   const todayStartTime = useMemo(() => {
@@ -13621,6 +13622,17 @@ function AlertsPanel({
   const targetReadyProducts = useMemo(() => targetWatchProducts.filter(watchProductReadyForLiveAlerts), [targetWatchProducts]);
   const targetDiscoverySources = useMemo(() => dashboard.productDiscoverySources.filter((source) => /target/i.test(source.retailerName)), [dashboard.productDiscoverySources]);
   const targetDiscoveryCandidates = useMemo(() => dashboard.productDiscoveryCandidates.filter((candidate) => /target/i.test(candidate.retailerName)), [dashboard.productDiscoveryCandidates]);
+  const bestBuyDiscoverySources = useMemo(() => dashboard.productDiscoverySources.filter((source) => /best buy/i.test(source.retailerName)), [dashboard.productDiscoverySources]);
+  const bestBuyDiscoveryCandidates = useMemo(() => dashboard.productDiscoveryCandidates.filter((candidate) => /best buy/i.test(candidate.retailerName)), [dashboard.productDiscoveryCandidates]);
+  const bestBuyPendingCandidates = useMemo(() => bestBuyDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING"), [bestBuyDiscoveryCandidates]);
+  const bestBuySuppressedCandidates = useMemo(
+    () =>
+      bestBuyDiscoveryCandidates.filter(
+        (candidate) => candidate.alertEligibility === "suppressed_over_msrp" || candidate.alertEligibility === "suppressed_marketplace" || candidate.priceStatus === "over_msrp"
+      ),
+    [bestBuyDiscoveryCandidates]
+  );
+  const bestBuyBuyableProducts = useMemo(() => bestBuyWatchProducts.filter(productIsCurrentlyBuyable), [bestBuyWatchProducts]);
   const pendingTargetCandidates = useMemo(() => targetDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING"), [targetDiscoveryCandidates]);
   const rejectedTargetCandidates = useMemo(() => targetDiscoveryCandidates.filter((candidate) => candidate.status === "REJECTED_NON_TCG"), [targetDiscoveryCandidates]);
   const approvedTargetCandidatesToday = useMemo(
@@ -14004,6 +14016,18 @@ function AlertsPanel({
         requestJson("/api/radar/product-discovery/target", {
           method: "POST",
           body: JSON.stringify({ action, candidateIds })
+        }),
+      { success }
+    );
+  }
+
+  function runBestBuyDiscoveryAction(action: "ensure_sources" | "run_auto_pipeline", label: string, success: string) {
+    return runAction(
+      label,
+      () =>
+        requestJson("/api/radar/product-discovery/best-buy", {
+          method: "POST",
+          body: JSON.stringify({ action })
         }),
       { success }
     );
@@ -15053,6 +15077,15 @@ function AlertsPanel({
             </button>
             <button
               className="mini-action"
+              disabled={busy}
+              type="button"
+              onClick={() => runTargetBatch("target_priority", "Running Target QA", "Target QA finished")}
+            >
+              <ShieldCheck size={13} />
+              {busyLabel === "Running Target QA" ? "Running" : "Run Target QA Now"}
+            </button>
+            <button
+              className="mini-action"
               disabled={busy || !discordComparison?.productId}
               type="button"
               onClick={runDiscordComparedTargetProductNow}
@@ -15076,6 +15109,8 @@ function AlertsPanel({
           <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
           <DetailStat label="Retail/MSRP eligible" value={String(targetRetailEligibleProducts.length)} tone={targetRetailEligibleProducts.length ? "good" : "neutral"} />
           <DetailStat label="Suppressed vendor / over-MSRP" value={String(dashboard.scannerStatus.targetDiscoverySuppressedCount || targetSuppressedProducts.length)} tone={(dashboard.scannerStatus.targetDiscoverySuppressedCount || targetSuppressedProducts.length) ? "bad" : "neutral"} />
+          <DetailStat label="Vendor / marketplace suppressed" value={String(dashboard.scannerStatus.targetDiscoveryMarketplaceSuppressedCount || targetSuppressedMarketplaceCandidates.length)} tone={(dashboard.scannerStatus.targetDiscoveryMarketplaceSuppressedCount || targetSuppressedMarketplaceCandidates.length) ? "bad" : "neutral"} />
+          <DetailStat label="Over-MSRP suppressed" value={String(dashboard.scannerStatus.targetDiscoveryOverMsrpSuppressedCount || targetSuppressedOverMsrpCandidates.length)} tone={(dashboard.scannerStatus.targetDiscoveryOverMsrpSuppressedCount || targetSuppressedOverMsrpCandidates.length) ? "bad" : "neutral"} />
           <DetailStat label="Sold out" value={String(targetSoldOutProducts.length)} />
           <DetailStat label="Currently buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
           <DetailStat label="Not checked in 30m" value={String(dashboard.scannerStatus.targetStaleProducts || targetStaleProducts.length)} tone={(dashboard.scannerStatus.targetStaleProducts || targetStaleProducts.length) ? "neutral" : "good"} />
@@ -15096,6 +15131,67 @@ function AlertsPanel({
           <span><b>Blocked/errors</b>{dashboard.scannerStatus.targetBlockedLastRun + dashboard.scannerStatus.targetErrorsLastRun}</span>
           <span><b>Last error</b>{dashboard.scannerStatus.targetLastError || "None"}</span>
         </div>
+      </section>
+    );
+  }
+
+  function renderBestBuyDiscoveryPanel() {
+    return (
+      <section className="target-coverage-panel bestbuy-coverage-panel">
+        <div className="panel-header compact">
+          <div>
+            <p className="eyeline">Best Buy discovery</p>
+            <h3>Conservative Best Buy watchlist expansion</h3>
+            <p>
+              Best Buy discovery creates exact-product candidates from the Products API when configured, or safe public pages otherwise. Candidates cannot create Buy alerts until an exact monitor proves stock.
+            </p>
+          </div>
+          <div className="row-actions">
+            <span className={`chip ${dashboard.scannerStatus.bestBuyDiscoveryEnabled ? "good" : "watch"}`}>
+              Discovery {dashboard.scannerStatus.bestBuyDiscoveryEnabled ? "ON" : "OFF"}
+            </span>
+            <span className={`chip ${dashboard.scannerStatus.bestBuyDiscoveryApiConfigured ? "good" : "watch"}`}>
+              {dashboard.scannerStatus.bestBuyDiscoveryApiConfigured ? "Products API configured" : "Public pages fallback"}
+            </span>
+          </div>
+        </div>
+        {isAdmin ? (
+          <div className="target-scan-actions">
+            <button
+              className="mini-action solid"
+              disabled={busy}
+              type="button"
+              onClick={() => runBestBuyDiscoveryAction("run_auto_pipeline", "Running Best Buy discovery", "Best Buy discovery finished")}
+            >
+              <RefreshCw size={13} />
+              {busyLabel === "Running Best Buy discovery" ? "Running" : "Run Best Buy Discovery Now"}
+            </button>
+            <button
+              className="mini-action"
+              disabled={busy}
+              type="button"
+              onClick={() => runBestBuyDiscoveryAction("ensure_sources", "Refreshing Best Buy sources", "Best Buy sources ready")}
+            >
+              <PackageSearch size={13} />
+              Refresh Sources
+            </button>
+          </div>
+        ) : null}
+        <div className="target-coverage-grid">
+          <DetailStat label="Sources" value={String(bestBuyDiscoverySources.length)} />
+          <DetailStat label="Products discovered today" value={String(dashboard.scannerStatus.bestBuyDiscoveryProductsToday)} />
+          <DetailStat label="Auto-approved today" value={String(dashboard.scannerStatus.bestBuyDiscoveryAutoApprovedToday)} tone={dashboard.scannerStatus.bestBuyDiscoveryAutoApprovedToday ? "good" : "neutral"} />
+          <DetailStat label="Needing review" value={String(dashboard.scannerStatus.bestBuyDiscoveryReviewQueueCount || bestBuyPendingCandidates.length)} tone={(dashboard.scannerStatus.bestBuyDiscoveryReviewQueueCount || bestBuyPendingCandidates.length) ? "neutral" : "good"} />
+          <DetailStat label="Suppressed" value={String(dashboard.scannerStatus.bestBuyDiscoverySuppressedCount || bestBuySuppressedCandidates.length)} tone={(dashboard.scannerStatus.bestBuyDiscoverySuppressedCount || bestBuySuppressedCandidates.length) ? "bad" : "neutral"} />
+          <DetailStat label="Watched total" value={String(dashboard.scannerStatus.bestBuyProductsWatched || bestBuyWatchProducts.length)} />
+          <DetailStat label="Buyable now" value={String(dashboard.scannerStatus.bestBuyBuyableNow || bestBuyBuyableProducts.length)} tone={(dashboard.scannerStatus.bestBuyBuyableNow || bestBuyBuyableProducts.length) ? "good" : "neutral"} />
+          <DetailStat label="Last scan" value={relativeTime(dashboard.scannerStatus.bestBuyDiscoveryLastRunAt)} />
+        </div>
+        {!dashboard.scannerStatus.bestBuyDiscoveryApiConfigured ? (
+          <p className="target-candidate-warning compact">
+            BESTBUY_API_KEY is not configured. Best Buy discovery will use public pages only and may find fewer candidates.
+          </p>
+        ) : null}
       </section>
     );
   }
@@ -15201,6 +15297,7 @@ function AlertsPanel({
           </div>
         </div>
         {renderTargetCoveragePanel()}
+        {renderBestBuyDiscoveryPanel()}
         {renderDiscordAlertTools()}
         <div className="target-live-summary-grid">
           <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
@@ -16601,6 +16698,37 @@ function NotificationSettingsPanel({
           {busyLabel === "Testing browser push" ? "Testing" : "Test Browser Push"}
         </button>
       </div>
+      <div className="push-panel notification-delivery-log">
+        <div className="push-status-grid">
+          <div>
+            <strong>Notification Delivery Log</strong>
+            <span>Recent alert delivery attempts, skips, quiet-hours blocks, and provider failures.</span>
+          </div>
+          <span className="chip good">{dashboard.notificationDeliveryLogs.length} recent</span>
+        </div>
+        <div className="compact-log-list">
+          {dashboard.notificationDeliveryLogs.length ? (
+            dashboard.notificationDeliveryLogs.slice(0, 10).map((log) => (
+              <div className="compact-log-row" key={log.id}>
+                <div>
+                  <strong>{formatStatus(log.channel)}</strong>
+                  <span>{log.detail || log.reason || "No detail saved"}</span>
+                </div>
+                <span className={`chip ${log.status === "sent" || log.status === "created" ? "good" : log.status === "failed" ? "bad" : "watch"}`}>
+                  {formatStatus(log.status)}
+                </span>
+                <span>{relativeTime(log.createdAt)}</span>
+              </div>
+            ))
+          ) : (
+            <div className="empty-state small">
+              <Bell size={20} />
+              <strong>No delivery log entries yet</strong>
+              <span>Send a test alert or wait for a Live Drop to record delivery attempts.</span>
+            </div>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
@@ -16833,11 +16961,13 @@ function AccessManagementPanel({
 }
 
 function AdminTools({
+  dashboard,
   busy,
   busyLabel,
   submit,
   runAction
 }: {
+  dashboard: DashboardDTO;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
@@ -16893,6 +17023,29 @@ function AdminTools({
           {busyLabel === "Resetting demo data" ? "Resetting" : "Reset Demo Data"}
         </button>
       </div>
+      <section className="push-panel admin-performance-panel">
+        <div className="panel-header compact">
+          <div>
+            <p className="eyeline">Performance</p>
+            <h3>Operational payload and scan health</h3>
+            <p>Lists are paginated in the UI; diagnostics and suppressed/archived data are lazy-opened behind details panels.</p>
+          </div>
+          <span className="chip muted">Admin only</span>
+        </div>
+        <div className="target-coverage-grid">
+          <DetailStat label="Products loaded" value={String(dashboard.products.length)} />
+          <DetailStat label="Inventory rows loaded" value={String(dashboard.inventory.length)} />
+          <DetailStat label="Alerts loaded" value={String(dashboard.alerts.length)} />
+          <DetailStat label="Discovery candidates loaded" value={String(dashboard.productDiscoveryCandidates.length)} />
+          <DetailStat label="Monitor logs loaded" value={String(dashboard.monitorLogs.length)} />
+          <DetailStat label="Last monitor duration" value={dashboard.monitorLogs[0]?.durationMs ? `${dashboard.monitorLogs[0].durationMs}ms` : "Unknown"} />
+          <DetailStat label="Target queue" value={String(dashboard.scannerStatus.targetQueueRemaining)} />
+          <DetailStat label="Best Buy watched" value={String(dashboard.scannerStatus.bestBuyProductsWatched)} />
+        </div>
+        <p className="target-candidate-warning compact">
+          API payload caps: inventory 200, discovery candidates 80, alerts 50, monitor logs 50. Use Load More buttons in heavy views instead of rendering every record at once.
+        </p>
+      </section>
       <form
         className="backup-form"
         onSubmit={(event) =>

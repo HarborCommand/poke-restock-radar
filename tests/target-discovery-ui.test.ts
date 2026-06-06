@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  BEST_BUY_DISCOVERY_SEARCH_TERMS,
   TARGET_DISCOVERY_SEARCH_TERMS,
+  bestBuyDiscoverySourceUrl,
   evaluateTargetPokemonTcgCandidate,
   targetDiscoverySourceUrl
 } from "../src/lib/product-discovery";
@@ -19,6 +21,8 @@ test("Target Pokemon TCG discovery defaults cover core product searches", () => 
     assert.ok(TARGET_DISCOVERY_SEARCH_TERMS.includes(term), `missing default Target search term ${term}`);
   }
   assert.equal(targetDiscoverySourceUrl("Pokemon TCG"), "https://www.target.com/s?searchTerm=Pokemon+TCG");
+  assert.ok(BEST_BUY_DISCOVERY_SEARCH_TERMS.includes("Pokemon TCG"));
+  assert.equal(bestBuyDiscoverySourceUrl("Pokemon TCG"), "https://www.bestbuy.com/site/searchpage.jsp?st=Pokemon+TCG");
 });
 
 test("Target discovery accepts card products and rejects Pokemon merch", () => {
@@ -101,6 +105,16 @@ test("Target discovery UI and routes expose approval workflow without buy-alerti
   assert.match(app, /Search pages are scanned automatically|search pages are scanned automatically/i);
   assert.match(app, /Pokemon Center and GameStop may block automated checks/);
   assert.match(app, /Best Buy exact products can be watched/);
+  assert.match(app, /Best Buy discovery/);
+  assert.match(app, /Run Best Buy Discovery Now/);
+  assert.match(app, /Products API configured/);
+  assert.match(app, /Public pages fallback/);
+  assert.match(app, /Run Target QA Now/);
+  assert.match(app, /Vendor \/ marketplace suppressed/);
+  assert.match(app, /Over-MSRP suppressed/);
+  assert.match(service, /ensureBestBuyDiscoverySources/);
+  assert.match(service, /runAutomaticBestBuyDiscoveryPipeline/);
+  assert.match(service, /Auto-approved Best Buy exact Pokemon TCG candidate/);
 });
 
 test("Target automatic discovery is wired into cron and configuration docs", () => {
@@ -111,11 +125,17 @@ test("Target automatic discovery is wired into cron and configuration docs", () 
 
   assert.match(cron, /runAutomaticTargetDiscoveryPipeline\(false\)/);
   assert.match(cron, /automaticTargetDiscovery/);
+  assert.match(cron, /runAutomaticBestBuyDiscoveryPipeline\(false\)/);
+  assert.match(cron, /automaticBestBuyDiscovery/);
   assert.match(env, /TARGET_DISCOVERY_AUTO_ENABLED="true"/);
   assert.match(env, /TARGET_DISCOVERY_AUTO_APPROVAL_ENABLED="true"/);
   assert.match(env, /TARGET_DISCOVERY_RETAIL_ONLY_ENABLED="true"/);
   assert.match(env, /TARGET_DISCOVERY_AUTO_SOURCE_LIMIT="4"/);
   assert.match(env, /TARGET_DISCOVERY_AUTO_APPROVE_LIMIT="12"/);
+  assert.match(env, /BESTBUY_DISCOVERY_ENABLED="true"/);
+  assert.match(env, /BESTBUY_API_KEY=""/);
   assert.match(readme, /Target discovery now runs as the primary tracker intake/);
+  assert.match(readme, /Best Buy discovery is the next conservative automatic intake/);
   assert.match(readme, /TARGET_DISCOVERY_CADENCE_MINUTES/);
+  assert.match(readme, /BESTBUY_DISCOVERY_CADENCE_MINUTES/);
 });

@@ -27,6 +27,65 @@ type DeliveryResult = {
   pushFailed: number;
 };
 
+async function recordDeliveryLog(input: {
+  alertId?: string | null;
+  userId?: string | null;
+  productId?: string | null;
+  channel: string;
+  status: string;
+  reason?: string | null;
+  detail?: string | null;
+  dedupeKey?: string | null;
+  priority?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+}) {
+  await prisma.notificationDeliveryLog
+    .create({
+      data: {
+        alertId: input.alertId ?? null,
+        userId: input.userId ?? null,
+        productId: input.productId ?? null,
+        channel: input.channel,
+        status: input.status,
+        reason: input.reason ?? null,
+        detail: input.detail ?? null,
+        dedupeKey: input.dedupeKey ?? null,
+        priority: input.priority ?? null,
+        entityType: input.entityType ?? null,
+        entityId: input.entityId ?? null
+      }
+    })
+    .catch(() => null);
+}
+
+async function recordAlertDelivery(
+  payload: AlertPayload,
+  input: {
+    alertId?: string | null;
+    userId?: string | null;
+    channel: string;
+    status: string;
+    reason?: string | null;
+    detail?: string | null;
+    dedupeKey?: string | null;
+  }
+) {
+  await recordDeliveryLog({
+    alertId: input.alertId,
+    userId: input.userId,
+    productId: payload.productId ?? null,
+    channel: input.channel,
+    status: input.status,
+    reason: input.reason,
+    detail: input.detail,
+    dedupeKey: input.dedupeKey,
+    priority: payload.priority,
+    entityType: payload.entityType,
+    entityId: payload.entityId ?? null
+  });
+}
+
 const priorityRank: Record<Priority, number> = {
   LOW: 0,
   MEDIUM: 1,
@@ -268,6 +327,14 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
         dedupeKey,
         explanation: `${explanation} Urgent-only mode suppressed it.`
       });
+      await recordAlertDelivery(payload, {
+        userId: user.id,
+        channel: "all",
+        status: "skipped",
+        reason: "urgent_only_mode",
+        detail: "Urgent-only mode suppressed a non-high-priority alert.",
+        dedupeKey
+      });
       continue;
     }
 
@@ -282,6 +349,14 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
         dedupeKey,
         explanation: `${explanation} Watch-only filters suppressed it.`
       });
+      await recordAlertDelivery(payload, {
+        userId: user.id,
+        channel: "all",
+        status: "skipped",
+        reason: "watch_only_filter",
+        detail: "Watch-only product or retailer filters suppressed this alert.",
+        dedupeKey
+      });
       continue;
     }
 
@@ -290,6 +365,14 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
       if (settings.sms) result.smsSkipped += 1;
       if (settings.browserPush) result.pushSkipped += 1;
       await createSuppressedAlert({ userId: user.id, payload, score, dedupeKey, explanation });
+      await recordAlertDelivery(payload, {
+        userId: user.id,
+        channel: "all",
+        status: "skipped",
+        reason: !priorityAllowed ? "priority_filter" : "quiet_hours",
+        detail: explanation,
+        dedupeKey
+      });
       continue;
     }
 
@@ -314,12 +397,21 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
           dedupeKey,
           explanation: `${explanation} Duplicate/cooldown suppression applied.`
         });
+        await recordAlertDelivery(payload, {
+          userId: user.id,
+          channel: "all",
+          status: "skipped",
+          reason: "duplicate_or_cooldown",
+          detail: "Duplicate suppression or product cooldown prevented repeat delivery.",
+          dedupeKey
+        });
         continue;
       }
     }
 
+    let inAppAlertId: string | null = null;
     if (settings.inApp) {
-      await prisma.alert.create({
+      const alert = await prisma.alert.create({
         data: {
           title: payload.title,
           reason: payload.reason,
@@ -335,34 +427,107 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
           cooldownUntil: cooldownMinutes ? new Date(Date.now() + cooldownMinutes * 60 * 1000) : null
         }
       });
+      inAppAlertId = alert.id;
       result.inAppCreated += 1;
+      await recordAlertDelivery(payload, {
+        alertId: alert.id,
+        userId: user.id,
+        channel: "in_app",
+        status: "created",
+        reason: "alert_created",
+        detail: "In-app alert created.",
+        dedupeKey
+      });
     }
 
     if (digestMode) {
       if (settings.email) result.emailSkipped += 1;
       if (settings.sms) result.smsSkipped += 1;
       if (settings.browserPush) result.pushSkipped += 1;
+      await recordAlertDelivery(payload, {
+        alertId: inAppAlertId,
+        userId: user.id,
+        channel: "all_external",
+        status: "skipped",
+        reason: "digest_mode",
+        detail: "Digest mode skipped immediate email, SMS, and push delivery.",
+        dedupeKey
+      });
       continue;
     }
 
     if (settings.email && settings.emailTo) {
       if (await sendEmail(settings.emailTo, payload.title, `${payload.reason}\n\n${payload.actionUrl || ""}`)) {
         result.emailSent += 1;
+        await recordAlertDelivery(payload, {
+          alertId: inAppAlertId,
+          userId: user.id,
+          channel: "email",
+          status: "sent",
+          reason: "sent",
+          detail: `Email sent to ${settings.emailTo}.`,
+          dedupeKey
+        });
       } else {
         result.emailSkipped += 1;
+        await recordAlertDelivery(payload, {
+          alertId: inAppAlertId,
+          userId: user.id,
+          channel: "email",
+          status: "skipped",
+          reason: "provider_not_configured",
+          detail: "Email was enabled but SMTP was not configured.",
+          dedupeKey
+        });
       }
     } else if (settings.email) {
       result.emailSkipped += 1;
+      await recordAlertDelivery(payload, {
+        alertId: inAppAlertId,
+        userId: user.id,
+        channel: "email",
+        status: "skipped",
+        reason: "missing_destination",
+        detail: "Email was enabled but no destination address was saved.",
+        dedupeKey
+      });
     }
 
     if (settings.sms && settings.phone) {
       if (await sendSms(settings.phone, `${payload.title}: ${payload.reason} ${payload.actionUrl || ""}`.slice(0, 1500))) {
         result.smsSent += 1;
+        await recordAlertDelivery(payload, {
+          alertId: inAppAlertId,
+          userId: user.id,
+          channel: "sms",
+          status: "sent",
+          reason: "sent",
+          detail: `SMS sent to ${settings.phone}.`,
+          dedupeKey
+        });
       } else {
         result.smsSkipped += 1;
+        await recordAlertDelivery(payload, {
+          alertId: inAppAlertId,
+          userId: user.id,
+          channel: "sms",
+          status: "skipped",
+          reason: "provider_not_configured",
+          detail: "SMS was enabled but Twilio was not configured.",
+          dedupeKey
+        });
       }
     } else if (settings.sms) {
       result.smsSkipped += 1;
+      await recordAlertDelivery(payload, {
+        alertId: inAppAlertId,
+        userId: user.id,
+        channel: "sms",
+        status: "skipped",
+        reason: "missing_destination",
+        detail: "SMS was enabled but no phone number was saved.",
+        dedupeKey
+      });
     }
 
     if (settings.browserPush && pushAllowed) {
@@ -370,8 +535,26 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
       result.pushSent += push.sent;
       result.pushSkipped += push.skipped;
       result.pushFailed += push.failed;
+      await recordAlertDelivery(payload, {
+        alertId: inAppAlertId,
+        userId: user.id,
+        channel: "browser_push",
+        status: push.sent > 0 ? "sent" : push.failed > 0 ? "failed" : "skipped",
+        reason: push.sent > 0 ? "sent" : push.failed > 0 ? "push_failed" : "no_active_subscription",
+        detail: `Browser push sent ${push.sent}, skipped ${push.skipped}, failed ${push.failed}.`,
+        dedupeKey
+      });
     } else if (settings.browserPush) {
       result.pushSkipped += 1;
+      await recordAlertDelivery(payload, {
+        alertId: inAppAlertId,
+        userId: user.id,
+        channel: "browser_push",
+        status: "skipped",
+        reason: "permission_not_allowed",
+        detail: "User role or permissions do not allow browser push alerts.",
+        dedupeKey
+      });
     }
   }
 

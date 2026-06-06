@@ -6,7 +6,9 @@ import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMin
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import {
+  BEST_BUY_DISCOVERY_SEARCH_TERMS,
   TARGET_DISCOVERY_SEARCH_TERMS,
+  bestBuyDiscoverySourceUrl,
   enrichTargetDiscoveryCandidateFromPage,
   previewTargetDiscoveryHtmlWithSearch,
   runProductDiscoveryCheck,
@@ -68,6 +70,7 @@ import type {
   DailyRecapDTO,
   MonitorAccuracyStatsDTO,
   MonitorLogDTO,
+  NotificationDeliveryLogDTO,
   NotificationSettingsDTO,
   OwnerLaunchChecklistItemDTO,
   Priority,
@@ -119,14 +122,25 @@ async function ensureProductionInventoryMetadataColumns() {
   if (process.env.NODE_ENV !== "production") return;
   inventoryMetadataSchemaReady ??= (async () => {
     const columns = [
-      ['"brand"', "TEXT"],
-      ['"description"', "TEXT"],
-      ['"manufacturer"', "TEXT"],
-      ['"model"', "TEXT"],
-      ['"msrp"', "DOUBLE PRECISION"]
+      ["brand", "TEXT"],
+      ["description", "TEXT"],
+      ["manufacturer", "TEXT"],
+      ["model", "TEXT"],
+      ["msrp", "DOUBLE PRECISION"]
     ];
+    const databaseUrl = process.env.DATABASE_URL || "";
+    const isSqlite = databaseUrl.startsWith("file:");
+    const existingColumnRows = isSqlite
+      ? await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("InventoryItem")`)
+      : await prisma.$queryRaw<Array<{ name: string }>>`
+          SELECT column_name AS name
+          FROM information_schema.columns
+          WHERE table_name = 'InventoryItem'
+        `;
+    const existingColumns = new Set(existingColumnRows.map((row) => row.name));
     for (const [columnName, columnType] of columns) {
-      await prisma.$executeRawUnsafe(`ALTER TABLE "InventoryItem" ADD COLUMN IF NOT EXISTS ${columnName} ${columnType}`);
+      if (existingColumns.has(columnName)) continue;
+      await prisma.$executeRawUnsafe(`ALTER TABLE "InventoryItem" ADD COLUMN "${columnName}" ${columnType}`);
     }
   })().catch((error) => {
     inventoryMetadataSchemaReady = null;
@@ -1376,6 +1390,26 @@ function notificationSettingsToDTO(
   };
 }
 
+function notificationDeliveryLogToDTO(
+  log: Prisma.NotificationDeliveryLogGetPayload<Record<string, never>>
+): NotificationDeliveryLogDTO {
+  return {
+    id: log.id,
+    alertId: log.alertId,
+    userId: log.userId,
+    productId: log.productId,
+    channel: log.channel,
+    status: log.status,
+    reason: log.reason,
+    detail: log.detail,
+    dedupeKey: log.dedupeKey,
+    priority: log.priority,
+    entityType: log.entityType,
+    entityId: log.entityId,
+    createdAt: log.createdAt.toISOString()
+  };
+}
+
 async function alertAnalytics(): Promise<AlertAnalyticsDTO> {
   const [totalAlerts, unreadAlerts, highPriorityAlerts, falsePositiveAlerts, suppressedAlerts, aggregate] =
     await Promise.all([
@@ -2315,6 +2349,13 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     orderBy: { timestamp: "desc" },
     take: 50
   });
+  const notificationDeliveryLogs =
+    currentUser.role === "ADMIN"
+      ? await prisma.notificationDeliveryLog.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 40
+        })
+      : [];
 
   const preferenceMap = new Map(storePreferences.map((preference) => [preference.storeId, preference]));
   const preferredZone = (currentUser.preferredZone || "MIAMI") as Zone;
@@ -2391,6 +2432,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     .sort((a, b) => a.getTime() - b.getTime())[0];
   const nowTime = Date.now();
   const targetProductsForStatus = products.filter((product) => product.monitorEnabled && !product.archivedAt && /target/i.test(product.retailer.name));
+  const bestBuyProductsForStatus = products.filter((product) => product.monitorEnabled && !product.archivedAt && /best buy/i.test(product.retailer.name));
   const targetProductIdsForStatus = new Set(targetProductsForStatus.map((product) => product.id));
   const targetStaleCutoff = nowTime - 30 * 60 * 1000;
   const targetCheckedAt = (product: (typeof targetProductsForStatus)[number]) =>
@@ -2419,6 +2461,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     ? new Date(nowTime + targetMonitorCadenceMinutes() * 60 * 1000)
     : targetNextCheck ?? null;
   const targetRetailerForDiscovery = retailers.find((retailer) => /target/i.test(retailer.name));
+  const bestBuyRetailerForDiscovery = retailers.find((retailer) => /best buy/i.test(retailer.name));
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const targetDiscoverySourcesForStatus = targetRetailerForDiscovery
@@ -2436,6 +2479,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     targetDiscoveryProductsToday,
     targetDiscoveryAutoApprovedToday,
     targetDiscoverySuppressedCount,
+    targetDiscoveryMarketplaceSuppressedCount,
+    targetDiscoveryOverMsrpSuppressedCount,
     targetDiscoveryReviewQueueCount,
     targetDiscoveryRejectedCount
   ] = targetRetailerForDiscovery
@@ -2459,6 +2504,18 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
         prisma.productDiscoveryCandidate.count({
           where: {
             retailerId: targetRetailerForDiscovery.id,
+            OR: [{ alertEligibility: "suppressed_marketplace" }, { sellerType: "marketplace" }, { priceStatus: "marketplace_price" }]
+          }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: {
+            retailerId: targetRetailerForDiscovery.id,
+            OR: [{ alertEligibility: "suppressed_over_msrp" }, { priceStatus: "over_msrp" }]
+          }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: {
+            retailerId: targetRetailerForDiscovery.id,
             status: "PENDING",
             OR: [
               { confidenceScore: { lt: 80 } },
@@ -2472,7 +2529,44 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
           where: { retailerId: targetRetailerForDiscovery.id, status: "REJECTED_NON_TCG" }
         })
       ])
-    : [0, 0, 0, 0, 0];
+    : [0, 0, 0, 0, 0, 0, 0];
+  const bestBuyDiscoverySourcesForStatus = bestBuyRetailerForDiscovery
+    ? productDiscoverySources.filter((source) => source.retailerId === bestBuyRetailerForDiscovery.id)
+    : [];
+  const bestBuyDiscoveryLastRun = bestBuyDiscoverySourcesForStatus
+    .map((source) => source.lastSuccessfulCheckedAt ?? source.lastCheckedAt)
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const [
+    bestBuyDiscoveryProductsToday,
+    bestBuyDiscoveryAutoApprovedToday,
+    bestBuyDiscoverySuppressedCount,
+    bestBuyDiscoveryReviewQueueCount
+  ] = bestBuyRetailerForDiscovery
+    ? await Promise.all([
+        prisma.productDiscoveryCandidate.count({
+          where: { retailerId: bestBuyRetailerForDiscovery.id, createdAt: { gte: todayStart } }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: { retailerId: bestBuyRetailerForDiscovery.id, status: "APPROVED", reviewedAt: { gte: todayStart } }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: {
+            retailerId: bestBuyRetailerForDiscovery.id,
+            OR: [{ alertEligibility: { in: ["suppressed_marketplace", "suppressed_over_msrp"] } }, { priceStatus: { in: ["over_msrp", "marketplace_price"] } }]
+          }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: {
+            retailerId: bestBuyRetailerForDiscovery.id,
+            status: "PENDING"
+          }
+        })
+      ])
+    : [0, 0, 0, 0];
+  const bestBuyBuyableNow = bestBuyProductsForStatus.filter((product) =>
+    ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.liveStockStatus || product.stockStatus)
+  ).length;
   const scannerStatus: ScannerStatusDTO = {
     activeProductsScanned,
     activeDiscoverySourcesScanned,
@@ -2506,8 +2600,20 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     targetDiscoveryProductsToday,
     targetDiscoveryAutoApprovedToday,
     targetDiscoverySuppressedCount,
+    targetDiscoveryMarketplaceSuppressedCount,
+    targetDiscoveryOverMsrpSuppressedCount,
     targetDiscoveryReviewQueueCount,
-    targetDiscoveryRejectedCount
+    targetDiscoveryRejectedCount,
+    bestBuyDiscoveryEnabled: bestBuyDiscoveryEnabled(),
+    bestBuyDiscoveryApiConfigured: Boolean(process.env.BESTBUY_API_KEY),
+    bestBuyDiscoveryAutoApprovalEnabled: bestBuyDiscoveryAutoApprovalEnabled(),
+    bestBuyDiscoveryLastRunAt: bestBuyDiscoveryLastRun?.toISOString() ?? null,
+    bestBuyDiscoveryProductsToday,
+    bestBuyDiscoveryAutoApprovedToday,
+    bestBuyDiscoverySuppressedCount,
+    bestBuyDiscoveryReviewQueueCount,
+    bestBuyProductsWatched: bestBuyProductsForStatus.length,
+    bestBuyBuyableNow
   };
   const setup = setupChecklist({
     productCount: productDTOs.length,
@@ -2598,6 +2704,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     productDiscoveryCandidates: productDiscoveryCandidates.map(productDiscoveryCandidateToDTO),
     alertAnalytics: alertStats,
     notificationSettings: notificationSettingsDTO,
+    notificationDeliveryLogs: notificationDeliveryLogs.map(notificationDeliveryLogToDTO),
     investmentSettings: investmentSettingsToDTO(investmentSettings),
     health,
     setupChecklist: setup,
@@ -2806,6 +2913,38 @@ export async function ensureTargetDiscoverySources() {
   return sources.map(productDiscoverySourceToDTO);
 }
 
+export async function ensureBestBuyDiscoverySources() {
+  const retailer = await prisma.retailer.findUnique({ where: { name: "Best Buy" }, select: { id: true, name: true } });
+  if (!retailer) throw new Error("Best Buy retailer is missing");
+  const sources = [];
+  for (const searchTerm of BEST_BUY_DISCOVERY_SEARCH_TERMS) {
+    const url = bestBuyDiscoverySourceUrl(searchTerm);
+    const existing = await prisma.productDiscoverySource.findFirst({
+      where: { retailerId: retailer.id, url },
+      include: productDiscoverySourceInclude
+    });
+    if (existing) {
+      sources.push(existing);
+      continue;
+    }
+    const source = await prisma.productDiscoverySource.create({
+      data: {
+        retailerId: retailer.id,
+        name: `Best Buy Discovery: ${searchTerm}`,
+        url,
+        notes:
+          "Default Best Buy Pokemon TCG discovery source. Search pages and API results create review candidates only; exact product monitors must prove stock before Live Drops.",
+        enabled: bestBuyDiscoveryEnabled(),
+        checkFrequencyMinutes: bestBuyDiscoveryCadenceMinutes(),
+        nextCheckAt: new Date()
+      },
+      include: productDiscoverySourceInclude
+    });
+    sources.push(source);
+  }
+  return sources.map(productDiscoverySourceToDTO);
+}
+
 export function targetDiscoveryAutoEnabled() {
   return process.env.TARGET_DISCOVERY_AUTO_ENABLED !== "false";
 }
@@ -2834,6 +2973,32 @@ function targetDiscoveryAutoApproveLimit() {
   const configured = Number(process.env.TARGET_DISCOVERY_AUTO_APPROVE_LIMIT || 12);
   if (!Number.isFinite(configured)) return 12;
   return Math.max(1, Math.min(40, Math.floor(configured)));
+}
+
+export function bestBuyDiscoveryEnabled() {
+  return process.env.BESTBUY_DISCOVERY_ENABLED !== "false";
+}
+
+export function bestBuyDiscoveryAutoApprovalEnabled() {
+  return process.env.BESTBUY_DISCOVERY_AUTO_APPROVAL_ENABLED !== "false";
+}
+
+function bestBuyDiscoveryCadenceMinutes() {
+  const configured = Number(process.env.BESTBUY_DISCOVERY_CADENCE_MINUTES || 720);
+  if (!Number.isFinite(configured)) return 720;
+  return Math.max(240, Math.min(1440, Math.floor(configured)));
+}
+
+function bestBuyDiscoverySourceRunLimit() {
+  const configured = Number(process.env.BESTBUY_DISCOVERY_AUTO_SOURCE_LIMIT || 3);
+  if (!Number.isFinite(configured)) return 3;
+  return Math.max(1, Math.min(8, Math.floor(configured)));
+}
+
+function bestBuyDiscoveryAutoApproveLimit() {
+  const configured = Number(process.env.BESTBUY_DISCOVERY_AUTO_APPROVE_LIMIT || 8);
+  if (!Number.isFinite(configured)) return 8;
+  return Math.max(1, Math.min(25, Math.floor(configured)));
 }
 
 export async function runTargetProductDiscoveryNow() {
@@ -3000,6 +3165,57 @@ async function autoApproveTargetDiscoveryCandidates(targetRetailerId: string) {
   return { reviewed: autoReady.length, approved, reused, skipped: candidates.length - autoReady.length, failed: failures.length, failures };
 }
 
+function isHighConfidenceBestBuyAutoApproveCandidate(candidate: Prisma.ProductDiscoveryCandidateGetPayload<{ include: typeof productDiscoveryCandidateInclude }>) {
+  const classification = classifyRetailerProductUrl(candidate.finalUrl || candidate.url, candidate.retailer.name);
+  if (!/best buy/i.test(candidate.retailer.name)) return false;
+  if (classification.searchOrCategory || !classification.exactProductUrl) return false;
+  if (!candidate.retailerProductId && !candidate.sku) return false;
+  if (!candidate.productName || !candidate.imageUrl) return false;
+  if (candidate.confidenceScore < 70) return false;
+  if (!targetCandidateHasTcgSignal(candidate)) return false;
+  if (candidate.alertEligibility === "suppressed_over_msrp" || candidate.priceStatus === "over_msrp") return false;
+  return true;
+}
+
+async function autoApproveBestBuyDiscoveryCandidates(bestBuyRetailerId: string) {
+  if (!bestBuyDiscoveryAutoApprovalEnabled()) return { reviewed: 0, approved: 0, reused: 0, skipped: 0, failed: 0, failures: [] as string[] };
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: {
+      retailerId: bestBuyRetailerId,
+      status: "PENDING"
+    },
+    orderBy: [{ confidenceScore: "desc" }, { updatedAt: "desc" }],
+    include: productDiscoveryCandidateInclude,
+    take: bestBuyDiscoveryAutoApproveLimit()
+  });
+  let approved = 0;
+  let reused = 0;
+  let skipped = 0;
+  const failures: string[] = [];
+  for (const candidate of candidates) {
+    if (!isHighConfidenceBestBuyAutoApproveCandidate(candidate)) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const before = await findExistingProductForDiscoveryCandidate(candidate);
+      await reviewProductDiscoveryCandidate(candidate.id, {
+        action: "approve",
+        priority: "MEDIUM",
+        rating: "WATCH",
+        checkFrequencyMinutes: 30,
+        notes:
+          "Auto-approved Best Buy exact Pokemon TCG candidate. SKU/title/image are present; exact monitor must prove buyable stock before Live Drops."
+      });
+      if (before) reused += 1;
+      else approved += 1;
+    } catch (error) {
+      failures.push(`${candidate.productName}: ${error instanceof Error ? error.message : "approval failed"}`);
+    }
+  }
+  return { reviewed: candidates.length, approved, reused, skipped, failed: failures.length, failures };
+}
+
 export async function runAutomaticTargetDiscoveryPipeline(force = false) {
   if (!targetDiscoveryAutoEnabled()) {
     return {
@@ -3050,6 +3266,42 @@ export async function runAutomaticTargetDiscoveryPipeline(force = false) {
     discovery,
     cleanup,
     approval
+  };
+}
+
+export async function runAutomaticBestBuyDiscoveryPipeline(force = false) {
+  if (!bestBuyDiscoveryEnabled()) {
+    return { enabled: false, reason: "BESTBUY_DISCOVERY_ENABLED=false", checked: 0, created: 0, approved: 0, skipped: 0 };
+  }
+  const bestBuy = await prisma.retailer.findUnique({ where: { name: "Best Buy" }, select: { id: true } });
+  if (!bestBuy) return { enabled: false, reason: "Best Buy retailer is missing", checked: 0, created: 0, approved: 0, skipped: 0 };
+  const sources = await ensureBestBuyDiscoverySources();
+  const now = new Date();
+  const selectedSources = sources
+    .filter((source) => source.enabled && (force || !source.nextCheckAt || new Date(source.nextCheckAt).getTime() <= now.getTime()))
+    .slice(0, force ? Math.max(1, Math.min(8, Number(process.env.BESTBUY_DISCOVERY_RUN_LIMIT || 5))) : bestBuyDiscoverySourceRunLimit());
+
+  const results = [];
+  for (const source of selectedSources) {
+    results.push(await runProductDiscoveryCheck(source.id, force));
+    if (results.length < selectedSources.length) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(750, Number(process.env.MONITOR_REQUEST_DELAY_MS || 1500))));
+    }
+  }
+  const approval = await autoApproveBestBuyDiscoveryCandidates(bestBuy.id);
+  return {
+    enabled: true,
+    apiConfigured: Boolean(process.env.BESTBUY_API_KEY),
+    source: process.env.BESTBUY_API_KEY ? "Best Buy Products API plus public pages" : "public Best Buy pages only",
+    checked: results.length,
+    totalSources: sources.length,
+    created: results.reduce((total, result) => total + result.created, 0),
+    found: results.reduce((total, result) => total + result.found, 0),
+    rejected: results.reduce((total, result) => total + ("rejected" in result ? Number(result.rejected || 0) : 0), 0),
+    blocked: results.filter((result) => result.status === "BLOCKED").length,
+    errors: results.filter((result) => result.status === "ERROR").length,
+    approval,
+    results
   };
 }
 
@@ -5376,7 +5628,7 @@ export async function updateInventoryStockLot(
     }
   });
   await syncInventoryItemTotalsFromLots(item.id);
-  return recomputeInventoryItem(item.id, currentUser);
+  return autoMatchInventoryItemMarket(currentUser, item.id);
 }
 
 export async function deleteInventoryStockLot(currentUser: SessionUser, itemId: string, lotId: string) {
@@ -7591,6 +7843,7 @@ async function clearRadarData(includeUsers: boolean) {
   await prisma.productPriorityScore.deleteMany();
   await prisma.productDiscoveryCandidate.deleteMany();
   await prisma.productDiscoverySource.deleteMany();
+  await prisma.notificationDeliveryLog.deleteMany();
   await prisma.monitorLog.deleteMany();
   await prisma.investmentReport.deleteMany();
   await prisma.passwordResetToken.deleteMany();
@@ -7966,6 +8219,7 @@ export async function exportBackup() {
       storeSightings: await prisma.storeSighting.findMany(),
       releases: await prisma.release.findMany(),
       alerts: await prisma.alert.findMany(),
+      notificationDeliveryLogs: await prisma.notificationDeliveryLog.findMany(),
       monitorLogs: await prisma.monitorLog.findMany(),
       restockHistory: await prisma.restockHistory.findMany(),
       cards: await prisma.card.findMany(),
@@ -8623,6 +8877,23 @@ export async function importBackup(payload: { tables: Record<string, unknown[]> 
       alertCooldownMinutes: row.alertCooldownMinutes === undefined ? 30 : Number(row.alertCooldownMinutes),
       createdAt: toDate(row.createdAt),
       updatedAt: toDate(row.updatedAt)
+    }))
+  });
+  await prisma.notificationDeliveryLog.createMany({
+    data: rows(tables, "notificationDeliveryLogs").map((row) => ({
+      id: String(row.id),
+      alertId: row.alertId ? String(row.alertId) : null,
+      userId: row.userId ? String(row.userId) : null,
+      productId: row.productId ? String(row.productId) : null,
+      channel: String(row.channel),
+      status: String(row.status),
+      reason: row.reason ? String(row.reason) : null,
+      detail: row.detail ? String(row.detail) : null,
+      dedupeKey: row.dedupeKey ? String(row.dedupeKey) : null,
+      priority: row.priority ? String(row.priority) : null,
+      entityType: row.entityType ? String(row.entityType) : null,
+      entityId: row.entityId ? String(row.entityId) : null,
+      createdAt: toDate(row.createdAt)
     }))
   });
   await prisma.browserPushSubscription.createMany({

@@ -432,6 +432,7 @@ test("Target monitor cron uses safe batched freshness mode", () => {
 
 test("alerts long lists are paginated for performance", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
   const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
 
   assert.match(alertsPanel, /targetCandidateVisibleLimit/);
@@ -446,6 +447,13 @@ test("alerts long lists are paginated for performance", () => {
   assert.match(alertsPanel, /Load more watch products/);
   assert.match(alertsPanel, /Load more alert history/);
   assert.match(alertsPanel, /Load more system alerts/);
+  assert.match(app, /Operational payload and scan health/);
+  assert.match(app, /API payload caps: inventory 200, discovery candidates 80, alerts 50, monitor logs 50/);
+  assert.match(app, /Notification Delivery Log/);
+  assert.match(types, /NotificationDeliveryLogDTO/);
+  assert.match(types, /notificationDeliveryLogs/);
+  assert.match(types, /bestBuyProductsWatched/);
+  assert.match(types, /bestBuyDiscoveryApiConfigured/);
 });
 
 test("tracker matching helpers cover keywords, identifiers, mute, duplicate cooldown, and feedback", () => {
@@ -635,6 +643,8 @@ test("monitor creates explicit tracker online drop and system alert events", () 
   assert.match(monitor, /kind: "error"/);
   assert.match(notifications, /payload\.dedupeKey/);
   assert.match(notifications, /payload\.score/);
+  assert.match(notifications, /recordAlertDelivery/);
+  assert.match(notifications, /quiet_hours/);
   assert.match(route, /export async function DELETE/);
   assert.match(route, /clearSimulatedTrackerAlerts/);
 });

@@ -37,6 +37,20 @@ export const TARGET_DISCOVERY_SEARCH_TERMS = [
   "Ascended Heroes Pokemon"
 ];
 
+export const BEST_BUY_DISCOVERY_SEARCH_TERMS = [
+  "Pokemon TCG",
+  "Pokemon trading cards",
+  "Pokemon booster bundle",
+  "Pokemon elite trainer box",
+  "Pokemon ETB",
+  "Pokemon sleeved booster",
+  "Pokemon blister",
+  "Pokemon premium collection",
+  "Pokemon tin",
+  "Pokemon collection box",
+  "Pokemon booster box"
+];
+
 export const TARGET_TCG_ALLOWED_KEYWORDS = [
   "trading card game",
   "tcg",
@@ -131,6 +145,20 @@ type TargetSearchConfig = {
   plpSearchPath: string;
   storeId: string;
   storeIds: string;
+};
+
+type BestBuyApiProduct = {
+  sku?: number | string | null;
+  name?: string | null;
+  salePrice?: number | string | null;
+  regularPrice?: number | string | null;
+  url?: string | null;
+  image?: string | null;
+  thumbnailImage?: string | null;
+  manufacturer?: string | null;
+  type?: string | null;
+  onlineAvailability?: boolean | null;
+  categoryPath?: Array<{ name?: string | null }> | null;
 };
 
 export type TargetTcgCandidateEvaluation = {
@@ -245,6 +273,12 @@ function normalizeDiscoveryText(value: string) {
 export function targetDiscoverySourceUrl(searchTerm: string) {
   const url = new URL("https://www.target.com/s");
   url.searchParams.set("searchTerm", searchTerm);
+  return url.toString();
+}
+
+export function bestBuyDiscoverySourceUrl(searchTerm: string) {
+  const url = new URL("https://www.bestbuy.com/site/searchpage.jsp");
+  url.searchParams.set("st", searchTerm);
   return url.toString();
 }
 
@@ -718,6 +752,130 @@ function targetSearchTermFromUrl(sourceUrl: string) {
   }
 }
 
+function bestBuySearchTermFromUrl(sourceUrl: string) {
+  try {
+    const url = new URL(sourceUrl);
+    return (
+      url.searchParams.get("st") ||
+      url.searchParams.get("search") ||
+      url.searchParams.get("q") ||
+      decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "")
+    );
+  } catch {
+    return "";
+  }
+}
+
+function bestBuySkuFromUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.match(/\/(\d{5,})(?:\.p)?$/i)?.[1] ?? parsed.searchParams.get("skuId") ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function bestBuyRetailThreshold(productType: string | null | undefined) {
+  const text = normalizeDiscoveryText(productType || "");
+  if (text.includes("sleeved") || text.includes("booster pack")) return 15;
+  if (text.includes("blister") || text.includes("checklane")) return 30;
+  if (text.includes("booster bundle")) return 50;
+  if (text.includes("elite trainer") || /\betb\b/.test(text)) return 90;
+  if (text.includes("premium") || text.includes("collection")) return 120;
+  if (text.includes("tin")) return 50;
+  if (text.includes("booster box")) return 250;
+  return 150;
+}
+
+function withBestBuyRetailPolicy(candidate: DiscoveryCandidateRecord): DiscoveryCandidateRecord {
+  const threshold = bestBuyRetailThreshold(candidate.productType);
+  const price = candidate.livePrice;
+  const overThreshold = typeof price === "number" && price > threshold;
+  const reason = overThreshold
+    ? `Best Buy price $${price.toFixed(2)} is above the conservative ${candidate.productType || "Pokemon TCG"} threshold of $${threshold.toFixed(2)}.`
+    : price === null || price === undefined
+      ? "Best Buy price not verified from discovery; exact monitor must parse price before Buy alerts."
+      : `Best Buy price $${price.toFixed(2)} is within the conservative retail/MSRP threshold.`;
+  return {
+    ...candidate,
+    sellerType: "unknown",
+    fulfillmentType: "unknown",
+    sellerVerified: false,
+    priceStatus: overThreshold ? "over_msrp" : price === null || price === undefined ? "unknown" : "near_retail",
+    alertEligibility: overThreshold ? "suppressed_over_msrp" : "eligible",
+    maxAlertPrice: threshold,
+    targetRetailReason: reason,
+    enrichmentReason: [candidate.enrichmentReason, reason].filter(Boolean).join(" ")
+  };
+}
+
+function bestBuyApiCandidateFromProduct(product: BestBuyApiProduct): DiscoveryCandidateRecord | null {
+  const sku = normalizeIdentifier(String(product.sku || ""));
+  const url = normalizeIdentifier(product.url || "");
+  const title = normalizeIdentifier(product.name || "");
+  if (!sku || !url || !title) return null;
+  const classification = classifyRetailerProductUrl(url, "Best Buy");
+  if (!classification.exactProductUrl || classification.searchOrCategory) return null;
+  const productType = productTypeFromText(`${title} ${product.categoryPath?.map((category) => category.name).join(" ") || ""}`);
+  const evaluation = evaluateTargetPokemonTcgCandidate(`${title} ${productType || ""}`, url);
+  const price = numberValue(product.salePrice) ?? numberValue(product.regularPrice);
+  const candidate: DiscoveryCandidateRecord = {
+    url,
+    label: title,
+    retailerProductId: sku,
+    sku,
+    brand: normalizeIdentifier(product.manufacturer || "Pokemon"),
+    category: normalizeIdentifier(product.categoryPath?.map((category) => category.name).filter(Boolean).join(" / ") || product.type || "Trading Cards"),
+    imageUrl: normalizeIdentifier(product.image || product.thumbnailImage || ""),
+    livePrice: price,
+    productType,
+    stockStatus: product.onlineAvailability ? "IN_STOCK" : "UNAVAILABLE",
+    enrichmentStatus: title && sku && (product.image || product.thumbnailImage) ? "PARTIAL" : "NEEDS_REVIEW",
+    enrichmentReason: "Best Buy Products API candidate. Exact product monitor must verify stock before Live Drops.",
+    confidenceScore: evaluation.included ? Math.max(78, evaluation.confidenceScore) : evaluation.confidenceScore,
+    reason: `Best Buy Products API; SKU ${sku}. ${evaluation.reason}`,
+    status: evaluation.included ? "PENDING" : "REJECTED_NON_TCG"
+  };
+  return withBestBuyRetailPolicy(candidate);
+}
+
+async function fetchBestBuyApiCandidates(searchTerm: string) {
+  const apiKey = process.env.BESTBUY_API_KEY;
+  if (!apiKey || !searchTerm.trim()) {
+    return { candidates: [] as DiscoveryCandidateRecord[], reason: apiKey ? "Best Buy search term missing" : "BESTBUY_API_KEY not configured; using public page discovery only" };
+  }
+  const safeSearch = searchTerm
+    .replace(/[()]/g, " ")
+    .split(/\s+/)
+    .filter((part) => part.length >= 2)
+    .slice(0, 6)
+    .join(" ");
+  const query = `((search=${encodeURIComponent(safeSearch)}))`;
+  const show = encodeURIComponent("sku,name,salePrice,regularPrice,url,image,thumbnailImage,manufacturer,type,onlineAvailability,categoryPath.name");
+  const url = `https://api.bestbuy.com/v1/products${query}?format=json&pageSize=25&show=${show}&apiKey=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(url, {
+    method: "GET",
+    redirect: "follow",
+    signal: AbortSignal.timeout(10000),
+    headers: {
+      Accept: "application/json",
+      "User-Agent": DISCOVERY_USER_AGENT
+    }
+  });
+  if (!response.ok) {
+    return { candidates: [] as DiscoveryCandidateRecord[], reason: `Best Buy Products API returned HTTP ${response.status}` };
+  }
+  const payload = (await response.json().catch(() => null)) as { products?: BestBuyApiProduct[] } | null;
+  const products = Array.isArray(payload?.products) ? payload.products : [];
+  return {
+    candidates: products.flatMap((product) => {
+      const candidate = bestBuyApiCandidateFromProduct(product);
+      return candidate ? [candidate] : [];
+    }),
+    reason: products.length ? `Best Buy Products API returned ${products.length} products` : "Best Buy Products API returned zero products"
+  };
+}
+
 function targetSearchPageParam(searchTerm: string) {
   const slug = searchTerm
     .toLowerCase()
@@ -891,15 +1049,29 @@ function enrichDiscoveryCandidate(
 ): DiscoveryCandidateRecord {
   const isDirect = directCandidateUrl === candidate.url;
   if (!retailerName.toLowerCase().includes("target")) {
-    return {
+    const evaluation = evaluateTargetPokemonTcgCandidate(`${candidate.label} ${candidate.productType || ""} ${candidate.category || ""}`, candidate.url);
+    const directPrice = isDirect ? detectRetailerPrice(html, retailerName) : null;
+    const productType = productTypeFromText(`${candidate.label} ${candidate.category || ""} ${candidate.description || ""}`) || candidate.productType;
+    const isBestBuy = retailerName.toLowerCase().includes("best buy");
+    const enriched: DiscoveryCandidateRecord = {
       ...candidate,
-      productType: productTypeFromText(candidate.label),
-      livePrice: isDirect ? detectRetailerPrice(html, retailerName) : null,
-      confidenceScore: isDirect ? Math.max(availability.confidenceScore, 60) : 55,
+      productType,
+      livePrice: candidate.livePrice ?? directPrice,
+      stockStatus: isDirect ? availability.status : candidate.stockStatus ?? null,
+      confidenceScore: Math.max(candidate.confidenceScore ?? 0, isDirect ? availability.confidenceScore : 0, evaluation.confidenceScore),
       reason: isDirect
         ? `Exact source URL found. ${availability.reason}`
-        : "Found exact product link on a public discovery page. Admin review required before monitoring.",
-      status: "PENDING"
+        : `${evaluation.reason} Found exact product link on a public discovery page. Admin review required before monitoring.`,
+      status: evaluation.included ? "PENDING" : "REJECTED_NON_TCG",
+      enrichmentStatus: candidate.enrichmentStatus ?? (candidate.label && candidate.retailerProductId && candidate.imageUrl ? "PARTIAL" : "NEEDS_REVIEW"),
+      enrichmentReason:
+        candidate.enrichmentReason ??
+        (candidate.retailerProductId
+          ? "Exact product URL and product ID were found. Exact monitor must verify title, price, and stock before alerts."
+          : "Product ID/SKU is missing; admin review required before monitoring.")
+    };
+    return {
+      ...(isBestBuy ? withBestBuyRetailPolicy(enriched) : enriched)
     };
   }
 
@@ -1388,6 +1560,7 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
 
     const directCandidate = sourceItselfCandidate(source.url, finalUrl, source.retailer.name);
     const isTargetDiscovery = source.retailer.name.toLowerCase().includes("target");
+    const isBestBuyDiscovery = source.retailer.name.toLowerCase().includes("best buy");
     const targetHtmlCandidates = isTargetDiscovery ? extractTargetProductCandidates(html, finalUrl) : [];
     const targetSearchResult =
       isTargetDiscovery && targetHtmlCandidates.length === 0 && !directCandidate
@@ -1398,16 +1571,21 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
             userAgent: DISCOVERY_USER_AGENT
           })
         : { candidates: [] as DiscoveryCandidateRecord[], reason: null as string | null };
+    const bestBuyApiResult =
+      isBestBuyDiscovery
+        ? await fetchBestBuyApiCandidates(bestBuySearchTermFromUrl(source.url))
+        : { candidates: [] as DiscoveryCandidateRecord[], reason: null as string | null };
     const rawCandidates: DiscoveryCandidateRecord[] = isTargetDiscovery
       ? [...(directCandidate ? [directCandidate] : []), ...targetHtmlCandidates, ...targetSearchResult.candidates]
       : [
           ...(directCandidate ? [directCandidate] : []),
+          ...bestBuyApiResult.candidates,
           ...extractLinks(html, finalUrl).flatMap((link) => {
             const classification = classifyRetailerProductUrl(link.url, source.retailer.name);
             if (!classification.exactProductUrl || classification.searchOrCategory) return [];
             const label = link.label || candidateNameFromUrl(link.url);
             if (!looksLikePokemonProduct(label, link.url)) return [];
-            return [{ ...link, label, retailerProductId: classification.retailerProductIdFromUrl }];
+            return [{ ...link, label, retailerProductId: classification.retailerProductIdFromUrl || (isBestBuyDiscovery ? bestBuySkuFromUrl(link.url) : null) }];
           })
         ];
 
@@ -1500,7 +1678,7 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
     const pendingCount = candidates.filter((candidate) => (candidate.status ?? "PENDING") === "PENDING").length;
     const zeroCandidateReason =
       rawCandidates.length === 0
-        ? targetSearchResult.reason || "no product links found; search page returned no exact product links or Target structure changed"
+        ? bestBuyApiResult.reason || targetSearchResult.reason || "no product links found; search page returned no exact product links or retailer structure changed"
         : candidates.length === 0
           ? "parsed links were not usable for this retailer"
           : pendingCount === 0 && rejected > 0
@@ -1518,6 +1696,7 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
       `${updated} updated`,
       `${skippedExistingProducts} already watched`,
       targetSearchResult.reason ? `target search: ${targetSearchResult.reason}` : null,
+      bestBuyApiResult.reason ? `best buy api: ${bestBuyApiResult.reason}` : null,
       zeroCandidateReason ? `zero reason: ${zeroCandidateReason}` : null
     ]
       .filter(Boolean)
@@ -1547,10 +1726,13 @@ export async function runProductDiscoveryCheck(sourceId: string, force = true) {
         `${pendingCount} TCG candidate links`,
         `${rejected} non-TCG excluded`,
         `${created} new candidates`,
+        ...(bestBuyApiResult.reason ? [bestBuyApiResult.reason] : []),
         ...(zeroCandidateReason ? [zeroCandidateReason] : [])
       ],
       confidenceScore: availability.confidenceScore,
-      reason: `${source.retailer.name} discovery debug: source ${source.url}; final ${finalUrl}; status ${response.status}; response length ${html.length}; blocked no; product links found ${rawCandidates.length}; candidates created ${created}; candidates rejected ${rejected}; ${zeroCandidateReason ? `reason ${zeroCandidateReason}.` : "candidate queue updated."} Search/category pages never trigger buy alerts.`,
+      reason: `${source.retailer.name} discovery debug: source ${source.url}; final ${finalUrl}; status ${response.status}; response length ${html.length}; blocked no; product links found ${rawCandidates.length}; candidates created ${created}; candidates rejected ${rejected}; ${
+        bestBuyApiResult.reason ? `Best Buy API: ${bestBuyApiResult.reason}. ` : ""
+      }${zeroCandidateReason ? `reason ${zeroCandidateReason}.` : "candidate queue updated."} Search/category pages never trigger buy alerts.`,
       pageHash: hashPage(html)
     });
 

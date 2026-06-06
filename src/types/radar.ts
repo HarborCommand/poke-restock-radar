@@ -877,8 +877,20 @@ export type ScannerStatusDTO = {
   targetDiscoveryProductsToday: number;
   targetDiscoveryAutoApprovedToday: number;
   targetDiscoverySuppressedCount: number;
+  targetDiscoveryMarketplaceSuppressedCount: number;
+  targetDiscoveryOverMsrpSuppressedCount: number;
   targetDiscoveryReviewQueueCount: number;
   targetDiscoveryRejectedCount: number;
+  bestBuyDiscoveryEnabled: boolean;
+  bestBuyDiscoveryApiConfigured: boolean;
+  bestBuyDiscoveryAutoApprovalEnabled: boolean;
+  bestBuyDiscoveryLastRunAt: string | null;
+  bestBuyDiscoveryProductsToday: number;
+  bestBuyDiscoveryAutoApprovedToday: number;
+  bestBuyDiscoverySuppressedCount: number;
+  bestBuyDiscoveryReviewQueueCount: number;
+  bestBuyProductsWatched: number;
+  bestBuyBuyableNow: number;
 };
 
 export type ProductDiscoverySourceDTO = {
@@ -959,6 +971,22 @@ export type NotificationSettingsDTO = {
   watchedRetailers: string | null;
   watchedProducts: string | null;
   alertCooldownMinutes: number;
+};
+
+export type NotificationDeliveryLogDTO = {
+  id: string;
+  alertId: string | null;
+  userId: string | null;
+  productId: string | null;
+  channel: string;
+  status: string;
+  reason: string | null;
+  detail: string | null;
+  dedupeKey: string | null;
+  priority: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  createdAt: string;
 };
 
 export type AppHealthDTO = {
@@ -1284,6 +1312,7 @@ export type DashboardDTO = {
   productDiscoveryCandidates: ProductDiscoveryCandidateDTO[];
   alertAnalytics: AlertAnalyticsDTO;
   notificationSettings: NotificationSettingsDTO;
+  notificationDeliveryLogs: NotificationDeliveryLogDTO[];
   investmentSettings: InvestmentSettingsDTO;
   health: AppHealthDTO | null;
   setupChecklist: SetupChecklistItemDTO[];

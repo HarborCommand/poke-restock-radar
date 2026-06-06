@@ -55,9 +55,32 @@ function cookiePairs(headers: Headers) {
   const cookies =
     typeof headerSource.getSetCookie === "function" ? headerSource.getSetCookie() : [headers.get("set-cookie")].filter(Boolean);
   return cookies.map((cookie) => {
-    const [pair] = cookie!.split(";");
+    const parts = cookie!.split(";").map((part) => part.trim());
+    const [pair, ...attributes] = parts;
     const [name, ...valueParts] = pair.split("=");
-    return { name, value: valueParts.join("=") };
+    const parsed: {
+      name: string;
+      value: string;
+      path?: string;
+      secure?: boolean;
+      httpOnly?: boolean;
+      sameSite?: "Strict" | "Lax" | "None";
+    } = { name, value: valueParts.join("=") };
+    for (const attribute of attributes) {
+      const [rawKey, ...rawValueParts] = attribute.split("=");
+      const key = rawKey.toLowerCase();
+      const value = rawValueParts.join("=");
+      if (key === "path" && value) parsed.path = value;
+      if (key === "secure") parsed.secure = true;
+      if (key === "httponly") parsed.httpOnly = true;
+      if (key === "samesite") {
+        const normalized = value.toLowerCase();
+        if (normalized === "strict") parsed.sameSite = "Strict";
+        if (normalized === "lax") parsed.sameSite = "Lax";
+        if (normalized === "none") parsed.sameSite = "None";
+      }
+    }
+    return parsed;
   });
 }
 
@@ -86,7 +109,20 @@ async function loginCookies() {
   }
   const cookies = cookiePairs(response.headers);
   if (!cookies.length) throw new Error("Viewport QA login did not return a session cookie.");
-  return cookies.map((cookie) => ({ ...cookie, url: baseUrl }));
+  return cookies.map((cookie) => {
+    const url = new URL(baseUrl);
+    if (cookie.name.startsWith("__Host-") && ["localhost", "127.0.0.1"].includes(url.hostname)) {
+      return {
+        ...cookie,
+        path: "/",
+        domain: url.hostname,
+        secure: true
+      };
+    }
+    const cookieWithoutPath = { ...cookie };
+    delete cookieWithoutPath.path;
+    return { ...cookieWithoutPath, url: baseUrl };
+  });
 }
 
 async function openAuthedPage(browser: Browser, viewport: (typeof viewports)[number], cookies: Awaited<ReturnType<typeof loginCookies>>) {

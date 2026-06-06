@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { runProductMonitorBatch } from "@/lib/monitor";
-import { runAutomaticTargetDiscoveryPipeline, targetDiscoveryAutoEnabled } from "@/lib/radar-service";
+import {
+  bestBuyDiscoveryEnabled,
+  runAutomaticBestBuyDiscoveryPipeline,
+  runAutomaticTargetDiscoveryPipeline,
+  targetDiscoveryAutoEnabled
+} from "@/lib/radar-service";
 import { monitorRunSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -45,8 +50,9 @@ export async function GET(request: Request) {
 
   try {
     const discovery = targetDiscoveryAutoEnabled() ? await runAutomaticTargetDiscoveryPipeline(false) : null;
+    const bestBuyDiscovery = bestBuyDiscoveryEnabled() ? await runAutomaticBestBuyDiscoveryPipeline(false) : null;
     const monitor = await runProductMonitorBatch(productMonitorCronEnabled() ? "due" : "target_due", "DUE_JOB");
-    return ok({ ...monitor, automaticTargetDiscovery: discovery });
+    return ok({ ...monitor, automaticTargetDiscovery: discovery, automaticBestBuyDiscovery: bestBuyDiscovery });
   } catch (error) {
     return badRequest(error);
   }
@@ -66,8 +72,9 @@ export async function POST(request: Request) {
         ? "target_priority"
         : "target_due";
     const discovery = targetDiscoveryAutoEnabled() ? await runAutomaticTargetDiscoveryPipeline(false) : null;
+    const bestBuyDiscovery = bestBuyDiscoveryEnabled() ? await runAutomaticBestBuyDiscoveryPipeline(false) : null;
     const monitor = await runProductMonitorBatch(mode, "DUE_JOB");
-    return ok({ ...monitor, automaticTargetDiscovery: discovery });
+    return ok({ ...monitor, automaticTargetDiscovery: discovery, automaticBestBuyDiscovery: bestBuyDiscovery });
   } catch (error) {
     return badRequest(error);
   }

@@ -413,6 +413,29 @@ model Alert {
   @@index([falsePositiveAt])
 }
 
+model NotificationDeliveryLog {
+  id          String   @id @default(cuid())
+  alertId     String?
+  userId      String?
+  productId   String?
+  channel     String
+  status      String
+  reason      String?
+  detail      String?
+  dedupeKey   String?
+  priority    String?
+  entityType  String?
+  entityId    String?
+  createdAt   DateTime @default(now())
+
+  @@index([alertId])
+  @@index([userId])
+  @@index([productId])
+  @@index([channel])
+  @@index([status])
+  @@index([createdAt])
+}
+
 model RestockHistory {
   id             String   @id @default(cuid())
   productId      String

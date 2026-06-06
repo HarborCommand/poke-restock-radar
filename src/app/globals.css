@@ -4366,6 +4366,55 @@ textarea {
   margin: 0;
 }
 
+.notification-delivery-log {
+  background:
+    linear-gradient(135deg, rgba(56, 215, 125, 0.06), rgba(90, 169, 255, 0.04)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.compact-log-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.compact-log-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.16);
+  padding: 10px;
+}
+
+.compact-log-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.compact-log-row strong {
+  font-size: 0.82rem;
+}
+
+.compact-log-row span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .compact-log-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}
+
 .health-grid {
   display: grid;
   grid-template-columns: 1fr;
