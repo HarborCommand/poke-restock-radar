@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   };
 }
 
-export default async function ShopProductPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function ProductAliasPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   return <StorefrontProductView slug={slug} />;
 }

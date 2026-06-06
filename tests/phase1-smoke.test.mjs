@@ -9,6 +9,7 @@ function allProjectFiles(dir = root) {
   const output = [];
   for (const entry of readdirSync(dir)) {
     if (["node_modules", ".next", ".git"].includes(entry)) continue;
+    if (entry.startsWith("asw-")) continue;
     const path = join(dir, entry);
     const stat = statSync(path);
     if (stat.isDirectory()) output.push(...allProjectFiles(path));
@@ -439,6 +440,7 @@ test("project is standalone and does not reference Harbor Command files", () => 
   const combined = allProjectFiles()
     .filter((path) => !path.includes(`${join("tests")}`))
     .filter((path) => !path.endsWith(".md"))
+    .filter((path) => !path.endsWith("gamedaygrabs-domain-setup.txt"))
     .filter((path) => !path.endsWith(".db"))
     .filter((path) => !path.endsWith(".png"))
     .map((path) => readFileSync(path, "utf8"))

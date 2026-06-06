@@ -16409,6 +16409,42 @@ body:has(.shop-shell) {
   margin: 0;
 }
 
+.distributor-checklist-heading {
+  background: rgba(255, 255, 255, 0.04);
+  padding: 14px 16px;
+}
+
+.storefront-domain-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.storefront-domain-grid article {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.22);
+  padding: 15px;
+}
+
+.storefront-domain-grid strong,
+.storefront-domain-grid small {
+  display: block;
+  min-width: 0;
+}
+
+.storefront-domain-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.storefront-domain-grid small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .distributor-check-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

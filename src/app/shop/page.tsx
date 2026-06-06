@@ -1,20 +1,17 @@
-import { ProductGrid, StorefrontHeader } from "@/components/StorefrontClient";
-import { getStorefrontSettings, listPublicStoreProducts } from "@/lib/storefront";
+import { StorefrontHomeView } from "@/components/StorefrontServerViews";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "GameDayGrabs LLC | Pokémon & Sports Card Shop",
-  description: "Premium Pokémon and sports card products for collectors, players, and fans."
+  title: "GameDayGrabs LLC | Pokemon & Sports Card Collectibles",
+  description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
+  openGraph: {
+    title: "GameDayGrabs LLC | Pokemon & Sports Card Collectibles",
+    description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
+    images: ["/icons/icon-512.png"]
+  }
 };
 
 export default async function ShopPage() {
-  const [settings, products] = await Promise.all([getStorefrontSettings(), listPublicStoreProducts()]);
-  return (
-    <main className="shop-shell">
-      <StorefrontHeader settings={settings} />
-      {settings.announcementBanner ? <section className="shop-announcement">{settings.announcementBanner}</section> : null}
-      <ProductGrid products={products} settings={settings} />
-    </main>
-  );
+  return <StorefrontHomeView />;
 }

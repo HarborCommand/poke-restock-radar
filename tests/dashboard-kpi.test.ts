@@ -308,6 +308,38 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(contactPage, /Contact/);
 });
 
+test("GameDayGrabs custom domain routes public storefront without exposing private root", () => {
+  const rootPage = fs.readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+  const routing = fs.readFileSync(new URL("../src/lib/storefront-routing.ts", import.meta.url), "utf8");
+  const appAlias = fs.readFileSync(new URL("../src/app/app/page.tsx", import.meta.url), "utf8");
+  const adminAlias = fs.readFileSync(new URL("../src/app/admin/page.tsx", import.meta.url), "utf8");
+  const dashboardAlias = fs.readFileSync(new URL("../src/app/dashboard/page.tsx", import.meta.url), "utf8");
+  const productAlias = fs.readFileSync(new URL("../src/app/product/[slug]/page.tsx", import.meta.url), "utf8");
+  const shopCartAlias = fs.readFileSync(new URL("../src/app/shop/cart/page.tsx", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const domainDocs = fs.readFileSync(new URL("../docs/gamedaygrabs-domain-setup.txt", import.meta.url), "utf8");
+
+  assert.match(routing, /gamedaygrabs\.com/);
+  assert.match(routing, /www\.gamedaygrabs\.com/);
+  assert.match(routing, /isGameDayGrabsHost/);
+  assert.match(rootPage, /headers/);
+  assert.match(rootPage, /StorefrontHomeView/);
+  assert.match(rootPage, /RadarApp/);
+  assert.match(rootPage, /GameDayGrabs LLC \| Pokemon & Sports Card Collectibles/);
+  assert.match(productAlias, /StorefrontProductView/);
+  assert.match(shopCartAlias, /redirect\("\/cart"\)/);
+  for (const privateAlias of [appAlias, adminAlias, dashboardAlias]) {
+    assert.match(privateAlias, /RadarApp/);
+  }
+  assert.match(app, /Storefront Status/);
+  assert.match(app, /gamedaygrabs\.com/);
+  assert.match(app, /Manual check pending/);
+  assert.match(app, /DNS records verified/);
+  assert.match(domainDocs, /Do not add gamedaygrabs\.com or www\.gamedaygrabs\.com to Harbor Command/);
+  assert.match(domainDocs, /Settings -> Domains/);
+  assert.match(domainDocs, /Public Data Safety/);
+});
+
 test("alerts tab is rebuilt as a Discord-style tracker command center", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));

@@ -14,3 +14,4 @@ tmp-*.png
 backups/
 *.dump
 src/generated/build-info.ts
+asw-*

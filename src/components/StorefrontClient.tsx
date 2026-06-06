@@ -149,7 +149,7 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
         <a className="gdg-icon-link" href="/shop#shop" aria-label="Search products">
           <Search size={18} />
         </a>
-        <Link className="gdg-icon-link optional" href="/" aria-label="Account">
+        <Link className="gdg-icon-link optional" href="/app" aria-label="Account">
           <User size={18} />
         </Link>
         <Link href="/cart" className="gdg-cart-link" aria-label={`Cart with ${count} items`}>

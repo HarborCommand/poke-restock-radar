@@ -1,0 +1,24 @@
+﻿GameDayGrabs Custom Domain Setup
+
+This is for the standalone poke-restock-radar Vercel project only.
+
+Do not add gamedaygrabs.com or www.gamedaygrabs.com to Harbor Command.
+
+Vercel Project
+1. Open the Vercel project named poke-restock-radar.
+2. Go to Settings -> Domains.
+3. Add gamedaygrabs.com.
+4. Add www.gamedaygrabs.com.
+5. Follow the exact DNS records Vercel shows.
+
+The apex domain usually uses an A record to the Vercel value shown. The www domain usually uses a CNAME to the Vercel target shown. Use the exact values shown in Vercel.
+
+Expected Routing
+- https://gamedaygrabs.com serves the public GameDayGrabs storefront at /.
+- https://www.gamedaygrabs.com serves the public GameDayGrabs storefront at /.
+- https://poke-restock-radar.vercel.app continues to serve the private Poke Radar app.
+- Public routes include /shop, /product/[slug], /shop/product/[slug], /cart, /shop/cart, /policies, and /contact.
+- Private routes such as /app, /dashboard, and /admin still require login before showing private inventory, scanner, market, supplier, receipt, or tracker data.
+
+Public Data Safety
+The public storefront must never expose cost basis, supplier/source, market value, profit, tracker data, UPC scanner history, receipts, or admin notes.

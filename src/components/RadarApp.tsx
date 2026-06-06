@@ -1612,10 +1612,10 @@ function AdminControlPanel({
         />
         <AdminActionCard
           icon={ShoppingBag}
-          title="Distributor Readiness"
-          detail={`${dashboard.storefrontSummary.activeProductCount} active products; storefront pages and inquiry flow checklist.`}
-          action="View Checklist"
-          onAction={() => document.getElementById("admin-distributor")?.scrollIntoView({ block: "center" })}
+          title="Storefront Status"
+          detail={`${dashboard.storefrontSummary.activeProductCount} active products; gamedaygrabs.com DNS and distributor checklist.`}
+          action="View Status"
+          onAction={() => document.getElementById("admin-storefront-status")?.scrollIntoView({ block: "center" })}
         />
       </section>
 
@@ -1640,7 +1640,7 @@ function AdminControlPanel({
           )}
         </AdminSectionCard>
 
-        <AdminSectionCard id="admin-distributor" icon={ShoppingBag} title="Distributor Readiness" detail="Public storefront checklist for distributor applications.">
+        <AdminSectionCard id="admin-storefront-status" icon={ShoppingBag} title="Storefront Status" detail="Custom domain, public shop, and distributor readiness.">
           <DistributorReadinessPanel dashboard={dashboard} setActiveTab={setActiveTab} />
         </AdminSectionCard>
 
@@ -1715,8 +1715,11 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
   const published = dashboard.inventory.filter((item) => item.publishToStore && item.storeStatus === "active" && item.quantityOwned > 0);
   const withImages = published.filter((item) => item.publicImages[0] || item.imageUrl);
   const settings = dashboard.storefrontSettings;
+  const publicUrl = "https://gamedaygrabs.com";
   const checks = [
-    { label: "Storefront live", detail: "/shop is public and does not require login.", complete: true },
+    { label: "Custom domain added to Vercel", detail: "Add gamedaygrabs.com and www.gamedaygrabs.com to the poke-restock-radar Vercel project.", complete: false },
+    { label: "DNS records verified", detail: "Manual DNS check in Vercel Settings > Domains after registrar records are added.", complete: false },
+    { label: "Storefront live", detail: `${publicUrl} serves the public shop after DNS is configured. /shop remains available.`, complete: true },
     { label: "Contact page live", detail: "/contact is available for customers and distributors.", complete: true },
     { label: "Policies page live", detail: "/policies shows shipping, return, pickup, and checkout notes.", complete: true },
     { label: "At least 5 published products", detail: `${published.length} active products published.`, complete: published.length >= 5 },
@@ -1730,18 +1733,56 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
     <div className="distributor-readiness-panel">
       <div className="distributor-readiness-hero">
         <div>
-          <span className="eyeline">Distributor Application Checklist</span>
+          <span className="eyeline">Storefront Status</span>
           <h3>{readyCount}/{checks.length} ready</h3>
-          <p>Use this to keep GameDayGrabs presentable for distributor review without exposing private inventory costs or tracker data.</p>
+          <p>Use this to keep gamedaygrabs.com and GameDayGrabs distributor readiness on track without exposing private costs, scanner data, receipts, or tracker details.</p>
         </div>
         <div className="inventory-header-actions">
+          <a className="mini-action" href={publicUrl} target="_blank" rel="noreferrer">
+            <ExternalLink size={14} />
+            Open Domain
+          </a>
           <a className="mini-action" href="/shop" target="_blank" rel="noreferrer">
             <ExternalLink size={14} />
-            Preview Storefront
+            Preview /shop
           </a>
           <button className="primary-action" type="button" onClick={() => setActiveTab("inventory")}>
             Publish Inventory
           </button>
+        </div>
+      </div>
+      <div className="storefront-domain-grid">
+        <article>
+          <span className="eyeline">Storefront domain</span>
+          <strong>gamedaygrabs.com</strong>
+          <small>Apex domain should be added to the Vercel project named poke-restock-radar.</small>
+        </article>
+        <article>
+          <span className="eyeline">WWW domain</span>
+          <strong>www.gamedaygrabs.com</strong>
+          <small>Use the CNAME record Vercel shows in Settings &gt; Domains.</small>
+        </article>
+        <article>
+          <span className="eyeline">DNS status</span>
+          <strong>Manual check pending</strong>
+          <small>Confirm the exact A/CNAME records inside Vercel after updating the registrar.</small>
+        </article>
+        <article>
+          <span className="eyeline">Checkout mode</span>
+          <strong>{settings.checkoutConfigured ? "Stripe Checkout" : "Request Invoice"}</strong>
+          <small>{settings.checkoutConfigured ? "Stripe keys are configured." : "Customers can request an invoice until Stripe is configured."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Published products</span>
+          <strong>{dashboard.storefrontSummary.activeProductCount}</strong>
+          <small>Only active public listings with available quantity are shown to customers.</small>
+        </article>
+      </div>
+      <div className="distributor-readiness-hero distributor-checklist-heading">
+        <div>
+          <span className="eyeline">Distributor Application Checklist</span>
+          <h3>Public shop proof</h3>
+          <p>These checks keep the storefront polished for distributor applications.</p>
         </div>
       </div>
       <div className="distributor-check-grid">
