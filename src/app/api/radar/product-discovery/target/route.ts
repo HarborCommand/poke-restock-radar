@@ -12,6 +12,7 @@ import {
   listDashboard,
   rejectNonTcgTargetDiscoveryCandidates,
   reviewSelectedTargetDiscoveryCandidates,
+  runAutomaticTargetDiscoveryPipeline,
   runTargetProductDiscoveryNow,
   testTargetDiscoveryUrl
 } from "@/lib/radar-service";
@@ -32,6 +33,7 @@ const targetDiscoveryActionSchema = z.object({
     "ignore_selected",
     "reject_all_non_tcg",
     "clear_rejected",
+    "run_auto_pipeline",
     "test_url"
   ]),
   url: z.string().url().optional(),
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
     if (input.action === "ignore_selected") result = await reviewSelectedTargetDiscoveryCandidates(input.candidateIds || [], "ignore");
     if (input.action === "reject_all_non_tcg") result = await rejectNonTcgTargetDiscoveryCandidates();
     if (input.action === "clear_rejected") result = await clearRejectedTargetDiscoveryCandidates();
+    if (input.action === "run_auto_pipeline") result = await runAutomaticTargetDiscoveryPipeline(true);
     if (input.action === "test_url") {
       if (!input.url) throw new Error("Target discovery test URL is required.");
       result = await testTargetDiscoveryUrl(input.url);

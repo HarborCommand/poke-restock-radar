@@ -869,6 +869,16 @@ export type ScannerStatusDTO = {
   targetErrorsLastRun: number;
   targetBlockedLastRun: number;
   targetLastError: string | null;
+  targetDiscoveryAutoEnabled: boolean;
+  targetDiscoveryAutoApprovalEnabled: boolean;
+  targetDiscoveryRetailOnlyEnabled: boolean;
+  targetDiscoveryLastRunAt: string | null;
+  targetDiscoveryNextRunAt: string | null;
+  targetDiscoveryProductsToday: number;
+  targetDiscoveryAutoApprovedToday: number;
+  targetDiscoverySuppressedCount: number;
+  targetDiscoveryReviewQueueCount: number;
+  targetDiscoveryRejectedCount: number;
 };
 
 export type ProductDiscoverySourceDTO = {

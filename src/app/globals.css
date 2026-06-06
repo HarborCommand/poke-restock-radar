@@ -13380,6 +13380,30 @@ body .target-candidate-actions {
   align-items: center;
 }
 
+body .target-advanced-tools {
+  min-width: min(100%, 280px);
+}
+
+body .target-advanced-tools summary {
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 950;
+  padding: 9px 12px;
+}
+
+body .target-advanced-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 body .target-discovery-selection-actions {
   border: 1px solid #dcfce7;
   border-radius: 16px;

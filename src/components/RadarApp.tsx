@@ -310,6 +310,7 @@ const targetCandidateFilterOptions = [
   "All",
   "Watch Ready",
   "Retail/MSRP only",
+  "Suppressed",
   "Suppressed Over MSRP",
   "Marketplace",
   "Seller Unknown",
@@ -372,6 +373,7 @@ function targetCandidateMatchesFilter(candidate: ProductDiscoveryCandidateDTO, f
   if (filter === "All") return true;
   if (filter === "Watch Ready") return targetCandidateWatchReady(candidate);
   if (filter === "Retail/MSRP only") return policy.alertEligibility === "eligible";
+  if (filter === "Suppressed") return policy.suppressed || candidate.status === "IGNORED";
   if (filter === "Suppressed Over MSRP") return policy.alertEligibility === "suppressed_over_msrp";
   if (filter === "Marketplace") return policy.alertEligibility === "suppressed_marketplace" || policy.sellerType === "marketplace";
   if (filter === "Seller Unknown") return policy.sellerType === "unknown";
@@ -13654,7 +13656,14 @@ function AlertsPanel({
   const filteredTargetCandidates = useMemo(
     () =>
       targetDiscoveryCandidates
-        .filter((candidate) => candidate.status === "PENDING" || (showRejectedTargetCandidates && candidate.status === "REJECTED_NON_TCG"))
+        .filter((candidate) => {
+          if (candidate.status === "PENDING") return true;
+          if (showRejectedTargetCandidates && candidate.status === "REJECTED_NON_TCG") return true;
+          if (["Suppressed", "Suppressed Over MSRP", "Marketplace"].includes(targetCandidateFilter)) {
+            return candidate.status === "IGNORED" || candidate.status === "REJECTED_NON_TCG";
+          }
+          return false;
+        })
         .filter((candidate) => (hidePartialTargetCandidates ? candidate.enrichmentStatus !== "PARTIAL" : true))
         .filter((candidate) => targetCandidateMatchesFilter(candidate, targetCandidateFilter)),
     [hidePartialTargetCandidates, showRejectedTargetCandidates, targetCandidateFilter, targetDiscoveryCandidates]
@@ -13983,7 +13992,8 @@ function AlertsPanel({
       | "reject_selected"
       | "ignore_selected"
       | "reject_all_non_tcg"
-      | "clear_rejected",
+      | "clear_rejected"
+      | "run_auto_pipeline",
     label: string,
     success: string,
     candidateIds?: string[]
@@ -14635,11 +14645,17 @@ function AlertsPanel({
         <div className="panel-header">
           <div>
             <p className="eyeline">Target Pokemon TCG Discovery</p>
-            <h2>Find cards, then approve exact products</h2>
-            <p>Target search pages are discovery-only. Buy alerts require an approved exact target.com/p product page that verifies product identity and stock.</p>
+            <h2>Automatic Target discovery</h2>
+            <p>Target search pages are scanned automatically. Strong retail/MSRP Pokemon TCG candidates are auto-approved into the watchlist, monitored in batches, and only alert when live stock is proven buyable.</p>
           </div>
           <div className="row-actions">
             <span className="chip muted">{targetDiscoverySources.length} sources</span>
+            <span className={`chip ${dashboard.scannerStatus.targetDiscoveryAutoEnabled ? "good" : "watch"}`}>
+              Auto Discovery {dashboard.scannerStatus.targetDiscoveryAutoEnabled ? "ON" : "OFF"}
+            </span>
+            <span className={`chip ${dashboard.scannerStatus.targetDiscoveryAutoApprovalEnabled ? "good" : "watch"}`}>
+              Auto Approval {dashboard.scannerStatus.targetDiscoveryAutoApprovalEnabled ? "ON" : "OFF"}
+            </span>
             <span className="chip watch">{pendingTargetCandidates.length} pending</span>
             <span className="chip muted">{rejectedTargetCandidates.length} rejected</span>
           </div>
@@ -14649,68 +14665,103 @@ function AlertsPanel({
             className="mini-action solid"
             type="button"
             disabled={busy}
-            onClick={() => runTargetDiscoveryAction("run_now", "Running Target discovery", "Target discovery finished")}
+            onClick={() => runTargetDiscoveryAction("run_auto_pipeline", "Running automatic Target pipeline", "Automatic Target discovery finished")}
           >
             <RefreshCw size={13} />
-            {busyLabel === "Running Target discovery" ? "Running" : "Run Target Discovery Now"}
+            {busyLabel === "Running automatic Target pipeline" ? "Running" : "Run Discovery Now"}
           </button>
           <button
-            className="mini-action solid"
+            className="mini-action"
             type="button"
             disabled={busy}
-            onClick={() => runTargetDiscoveryAction("enrich_all_pending", "Enriching Target candidates", "Target candidates enriched")}
+            onClick={() => runTargetBatch("target_due", "Running Target batch", "Target batch finished")}
           >
             <RefreshCw size={13} />
-            {busyLabel === "Enriching Target candidates" ? "Enriching" : "Enrich All Pending"}
+            {busyLabel === "Running Target batch" ? "Running" : "Run Monitor Now"}
           </button>
           <button
             className="mini-action"
             type="button"
-            disabled={busy}
-            onClick={() => runTargetDiscoveryAction("ensure_sources", "Refreshing Target sources", "Target discovery sources refreshed")}
+            onClick={() => setView("live")}
           >
-            Refresh Candidates
+            View Buyable Now
           </button>
           <button
             className="mini-action"
             type="button"
-            disabled={busy}
-            onClick={() =>
-              runTargetDiscoveryAction(
-                "approve_watch_ready",
-                "Approving watch-ready Target candidates",
-                "Watch-ready Target candidates approved"
-              )
-            }
+            onClick={() => setTargetCandidateFilter("Needs Review")}
           >
-            Approve All Watch Ready
+            View Review Queue
           </button>
-          <button
-            className="mini-action"
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              runTargetDiscoveryAction("reject_all_non_tcg", "Rejecting low-confidence Target candidates", "Low-confidence Target candidates rejected")
-            }
-          >
-            Reject All Non-TCG
-          </button>
-          <button
-            className="mini-action"
-            type="button"
-            disabled={busy}
-            onClick={() => runTargetDiscoveryAction("clear_rejected", "Clearing rejected Target candidates", "Rejected Target candidates cleared")}
-          >
-            Clear Rejected
-          </button>
-          <label className="checkbox-label inline">
-            <input type="checkbox" checked={showRejectedTargetCandidates} onChange={(event) => setShowRejectedTargetCandidates(event.currentTarget.checked)} />
-            Show Rejected
-          </label>
-          <label className="checkbox-label inline">
-            <input type="checkbox" checked={hidePartialTargetCandidates} onChange={(event) => setHidePartialTargetCandidates(event.currentTarget.checked)} />
-            Hide Partial Candidates
-          </label>
+          <details className="target-advanced-tools">
+            <summary>Advanced manual review tools</summary>
+            <div className="target-advanced-actions">
+              <button
+                className="mini-action"
+                type="button"
+                disabled={busy}
+                onClick={() => runTargetDiscoveryAction("run_now", "Running Target discovery", "Target discovery finished")}
+              >
+                {busyLabel === "Running Target discovery" ? "Running" : "Run Raw Discovery"}
+              </button>
+              <button
+                className="mini-action"
+                type="button"
+                disabled={busy}
+                onClick={() => runTargetDiscoveryAction("enrich_all_pending", "Enriching Target candidates", "Target candidates enriched")}
+              >
+                {busyLabel === "Enriching Target candidates" ? "Enriching" : "Enrich All Pending"}
+              </button>
+              <button
+                className="mini-action"
+                type="button"
+                disabled={busy}
+                onClick={() => runTargetDiscoveryAction("ensure_sources", "Refreshing Target sources", "Target discovery sources refreshed")}
+              >
+                Refresh Candidates
+              </button>
+              <button
+                className="mini-action"
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  runTargetDiscoveryAction(
+                    "approve_watch_ready",
+                    "Approving watch-ready Target candidates",
+                    "Watch-ready Target candidates approved"
+                  )
+                }
+              >
+                Approve All Watch Ready
+              </button>
+              <button
+                className="mini-action"
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  runTargetDiscoveryAction("reject_all_non_tcg", "Rejecting low-confidence Target candidates", "Low-confidence Target candidates rejected")
+                }
+              >
+                Reject All Non-TCG
+              </button>
+              <button
+                className="mini-action"
+                type="button"
+                disabled={busy}
+                onClick={() => runTargetDiscoveryAction("clear_rejected", "Clearing rejected Target candidates", "Rejected Target candidates cleared")}
+              >
+                Clear Rejected
+              </button>
+              <label className="checkbox-label inline">
+                <input type="checkbox" checked={showRejectedTargetCandidates} onChange={(event) => setShowRejectedTargetCandidates(event.currentTarget.checked)} />
+                Show Rejected
+              </label>
+              <label className="checkbox-label inline">
+                <input type="checkbox" checked={hidePartialTargetCandidates} onChange={(event) => setHidePartialTargetCandidates(event.currentTarget.checked)} />
+                Hide Partial Candidates
+              </label>
+            </div>
+          </details>
         </div>
         <div className="target-discovery-selection-actions">
           <span className="chip muted">{selectedTargetCandidateCount} selected</span>
@@ -14958,12 +15009,15 @@ function AlertsPanel({
         <div className="panel-header compact">
           <div>
             <p className="eyeline">Target coverage</p>
-            <h3>Retail/MSRP watch quality</h3>
-            <p>Discord may alert on products not watched by Poke Radar yet. Use Compare Discord Alert to see exactly why a drop did or did not appear.</p>
+            <h3>Automatic retail/MSRP coverage</h3>
+            <p>Poke Radar discovers public Target Pokemon TCG pages, suppresses marketplace or over-MSRP listings, auto-approves strong exact products, and scans them in safe batches.</p>
           </div>
           <div className="row-actions">
             <span className={`chip ${dashboard.scannerStatus.targetCronActive ? "good" : "watch"}`}>
               {dashboard.scannerStatus.targetCronActive ? "Target cron fresh" : "Target cron stale"}
+            </span>
+            <span className={`chip ${dashboard.scannerStatus.targetDiscoveryAutoEnabled ? "good" : "watch"}`}>
+              Auto Discovery {dashboard.scannerStatus.targetDiscoveryAutoEnabled ? "ON" : "OFF"}
             </span>
             <span className="chip muted">Batch {dashboard.scannerStatus.targetBatchSize}</span>
           </div>
@@ -14974,10 +15028,19 @@ function AlertsPanel({
               className="mini-action solid"
               disabled={busy}
               type="button"
+              onClick={() => runTargetDiscoveryAction("run_auto_pipeline", "Running automatic Target pipeline", "Automatic Target discovery finished")}
+            >
+              <RefreshCw size={13} />
+              {busyLabel === "Running automatic Target pipeline" ? "Running" : "Run Auto Discovery Now"}
+            </button>
+            <button
+              className="mini-action"
+              disabled={busy}
+              type="button"
               onClick={() => runTargetBatch("target_due", "Running Target batch", "Target batch finished")}
             >
               <RefreshCw size={13} />
-              {busyLabel === "Running Target batch" ? "Running" : "Run Target Batch Now"}
+              {busyLabel === "Running Target batch" ? "Running" : "Run Monitor Now"}
             </button>
             <button
               className="mini-action"
@@ -14998,21 +15061,33 @@ function AlertsPanel({
               <Radar size={13} />
               Run One Product Now
             </button>
+            <button className="mini-action" type="button" onClick={() => setTargetCandidateFilter("Suppressed")}>
+              View Suppressed
+            </button>
           </div>
         ) : null}
         <div className="target-coverage-grid">
+          <DetailStat label="Auto Discovery" value={dashboard.scannerStatus.targetDiscoveryAutoEnabled ? "ON" : "OFF"} tone={dashboard.scannerStatus.targetDiscoveryAutoEnabled ? "good" : "neutral"} />
+          <DetailStat label="Auto Approval" value={dashboard.scannerStatus.targetDiscoveryAutoApprovalEnabled ? "ON" : "OFF"} tone={dashboard.scannerStatus.targetDiscoveryAutoApprovalEnabled ? "good" : "neutral"} />
+          <DetailStat label="Retail Only" value={dashboard.scannerStatus.targetDiscoveryRetailOnlyEnabled ? "ON" : "OFF"} tone={dashboard.scannerStatus.targetDiscoveryRetailOnlyEnabled ? "good" : "neutral"} />
+          <DetailStat label="Last discovery run" value={relativeTime(dashboard.scannerStatus.targetDiscoveryLastRunAt)} />
+          <DetailStat label="Products discovered today" value={String(dashboard.scannerStatus.targetDiscoveryProductsToday)} />
+          <DetailStat label="Auto-approved today" value={String(dashboard.scannerStatus.targetDiscoveryAutoApprovedToday)} tone={dashboard.scannerStatus.targetDiscoveryAutoApprovedToday ? "good" : "neutral"} />
           <DetailStat label="Target watched" value={String(targetWatchProducts.length)} />
           <DetailStat label="Retail/MSRP eligible" value={String(targetRetailEligibleProducts.length)} tone={targetRetailEligibleProducts.length ? "good" : "neutral"} />
-          <DetailStat label="Suppressed vendor / over-MSRP" value={String(targetSuppressedProducts.length)} tone={targetSuppressedProducts.length ? "bad" : "neutral"} />
+          <DetailStat label="Suppressed vendor / over-MSRP" value={String(dashboard.scannerStatus.targetDiscoverySuppressedCount || targetSuppressedProducts.length)} tone={(dashboard.scannerStatus.targetDiscoverySuppressedCount || targetSuppressedProducts.length) ? "bad" : "neutral"} />
           <DetailStat label="Sold out" value={String(targetSoldOutProducts.length)} />
           <DetailStat label="Currently buyable" value={String(targetBuyableProducts.length)} tone={targetBuyableProducts.length ? "good" : "neutral"} />
           <DetailStat label="Not checked in 30m" value={String(dashboard.scannerStatus.targetStaleProducts || targetStaleProducts.length)} tone={(dashboard.scannerStatus.targetStaleProducts || targetStaleProducts.length) ? "neutral" : "good"} />
           <DetailStat label="Queue remaining" value={String(dashboard.scannerStatus.targetQueueRemaining)} tone={dashboard.scannerStatus.targetQueueRemaining ? "neutral" : "good"} />
+          <DetailStat label="Review queue" value={String(dashboard.scannerStatus.targetDiscoveryReviewQueueCount)} tone={dashboard.scannerStatus.targetDiscoveryReviewQueueCount ? "neutral" : "good"} />
           <DetailStat label="Missing exact URL" value={String(targetMissingExactUrlProducts.length)} tone={targetMissingExactUrlProducts.length ? "bad" : "good"} />
           <DetailStat label="Missing TCIN / SKU" value={String(targetMissingIdentifierProducts.length)} tone={targetMissingIdentifierProducts.length ? "neutral" : "good"} />
         </div>
         <div className="target-scan-freshness">
           <span><b>Cron last run</b>{relativeTime(dashboard.scannerStatus.lastScanTime)}</span>
+          <span><b>Last discovery run</b>{relativeTime(dashboard.scannerStatus.targetDiscoveryLastRunAt)}</span>
+          <span><b>Next discovery run</b>{relativeTime(dashboard.scannerStatus.targetDiscoveryNextRunAt)}</span>
           <span><b>Last Target batch</b>{relativeTime(dashboard.scannerStatus.targetLastBatchRunAt || latestTargetMonitorLog?.startedAt)}</span>
           <span><b>Next Target batch</b>{relativeTime(dashboard.scannerStatus.targetNextBatchAt || dashboard.scannerStatus.nextScanEstimate)}</span>
           <span><b>Products checked this batch</b>{dashboard.scannerStatus.targetProductsCheckedLastRun ? String(dashboard.scannerStatus.targetProductsCheckedLastRun) : targetLogsInLatestScan.length ? String(targetLogsInLatestScan.length) : "Unknown"}</span>
@@ -15066,13 +15141,13 @@ function AlertsPanel({
     if (!isAdmin) return null;
     return (
       <details className="target-discord-tools">
-        <summary>Add or compare a Discord Target alert</summary>
+        <summary>Advanced manual Target tools</summary>
         <div className="target-discord-tool-grid">
           <form className="target-discord-tool-card" onSubmit={handleAddDiscordWatchProduct}>
             <div>
-              <p className="eyeline">Missing product detector</p>
+              <p className="eyeline">Admin override only</p>
               <h3>Add from Discord Alert</h3>
-              <p>Paste the Target alert details. If the SKU/TCIN is not watched yet, Poke Radar creates an exact Target watch product for review.</p>
+              <p>Automatic Target discovery is the normal workflow. Use this only when a Discord alert needs a manual one-off comparison or watch-product override.</p>
             </div>
             <TextInput name="productName" label="Product name" placeholder="Pokemon TCG Mega Evolution Chaos Rising Booster Bundle" required />
             <div className="tracker-watch-form-grid">
@@ -15090,7 +15165,7 @@ function AlertsPanel({
             <div>
               <p className="eyeline">Admin diagnostics</p>
               <h3>Compare Discord Alert</h3>
-              <p>Explains whether the Discord drop is watched, eligible, stale, deduped, sold out, or blocked by retail guardrails.</p>
+              <p>Explains whether a manual Discord drop is watched, eligible, stale, deduped, sold out, or blocked by retail guardrails.</p>
             </div>
             <TextInput name="productName" label="Product name" placeholder="Pokemon TCG Mega Evolution Chaos Rising Booster Bundle" />
             <div className="tracker-watch-form-grid">

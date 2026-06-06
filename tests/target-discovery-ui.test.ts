@@ -66,8 +66,16 @@ test("Target discovery UI and routes expose approval workflow without buy-alerti
   assert.match(route, /approve_high_confidence_enriched/);
   assert.match(route, /approve_high_confidence/);
   assert.match(route, /clear_rejected/);
+  assert.match(route, /run_auto_pipeline/);
   assert.match(app, /Target Pokemon TCG Discovery/);
-  assert.match(app, /Run Target Discovery Now/);
+  assert.match(app, /Automatic Target discovery/);
+  assert.match(app, /Run Discovery Now/);
+  assert.match(app, /Run Monitor Now/);
+  assert.match(app, /Auto Discovery/);
+  assert.match(app, /Auto Approval/);
+  assert.match(app, /Retail Only/);
+  assert.match(app, /Advanced manual review tools/);
+  assert.match(app, /Advanced manual Target tools/);
   assert.match(app, /Approve All Watch Ready/);
   assert.match(app, /Approve Selected/);
   assert.match(app, /Reject Selected/);
@@ -83,9 +91,31 @@ test("Target discovery UI and routes expose approval workflow without buy-alerti
   assert.match(app, /Missing DPCI/);
   assert.match(app, /Watch ready/);
   assert.match(service, /normalizedDiscoveryTitle/);
+  assert.match(service, /runAutomaticTargetDiscoveryPipeline/);
+  assert.match(service, /TARGET_DISCOVERY_AUTO_APPROVAL_ENABLED/);
+  assert.match(service, /TARGET_DISCOVERY_RETAIL_ONLY_ENABLED/);
+  assert.match(service, /Auto-approved from Target discovery/);
   assert.match(service, /approveWatchReadyTargetDiscoveryCandidates/);
   assert.match(service, /findExistingProductForDiscoveryCandidate/);
-  assert.match(app, /Search pages are discovery-only|search pages are discovery-only/i);
+  assert.match(app, /Automatic Target discovery is the normal workflow/);
+  assert.match(app, /Search pages are scanned automatically|search pages are scanned automatically/i);
   assert.match(app, /Pokemon Center and GameStop may block automated checks/);
   assert.match(app, /Best Buy exact products can be watched/);
+});
+
+test("Target automatic discovery is wired into cron and configuration docs", () => {
+  const root = new URL("..", import.meta.url);
+  const cron = readFileSync(new URL("src/app/api/radar/monitor/cron/route.ts", root), "utf8");
+  const env = readFileSync(new URL(".env.example", root), "utf8");
+  const readme = readFileSync(new URL("README.md", root), "utf8");
+
+  assert.match(cron, /runAutomaticTargetDiscoveryPipeline\(false\)/);
+  assert.match(cron, /automaticTargetDiscovery/);
+  assert.match(env, /TARGET_DISCOVERY_AUTO_ENABLED="true"/);
+  assert.match(env, /TARGET_DISCOVERY_AUTO_APPROVAL_ENABLED="true"/);
+  assert.match(env, /TARGET_DISCOVERY_RETAIL_ONLY_ENABLED="true"/);
+  assert.match(env, /TARGET_DISCOVERY_AUTO_SOURCE_LIMIT="4"/);
+  assert.match(env, /TARGET_DISCOVERY_AUTO_APPROVE_LIMIT="12"/);
+  assert.match(readme, /Target discovery now runs as the primary tracker intake/);
+  assert.match(readme, /TARGET_DISCOVERY_CADENCE_MINUTES/);
 });

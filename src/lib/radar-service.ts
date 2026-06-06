@@ -2418,6 +2418,61 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const targetNextBatchAt = targetQueueRemaining
     ? new Date(nowTime + targetMonitorCadenceMinutes() * 60 * 1000)
     : targetNextCheck ?? null;
+  const targetRetailerForDiscovery = retailers.find((retailer) => /target/i.test(retailer.name));
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const targetDiscoverySourcesForStatus = targetRetailerForDiscovery
+    ? productDiscoverySources.filter((source) => source.retailerId === targetRetailerForDiscovery.id)
+    : [];
+  const targetDiscoveryLastRun = targetDiscoverySourcesForStatus
+    .map((source) => source.lastSuccessfulCheckedAt ?? source.lastCheckedAt)
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const targetDiscoveryNextRun = targetDiscoverySourcesForStatus
+    .map((source) => source.nextCheckAt)
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+  const [
+    targetDiscoveryProductsToday,
+    targetDiscoveryAutoApprovedToday,
+    targetDiscoverySuppressedCount,
+    targetDiscoveryReviewQueueCount,
+    targetDiscoveryRejectedCount
+  ] = targetRetailerForDiscovery
+    ? await Promise.all([
+        prisma.productDiscoveryCandidate.count({
+          where: { retailerId: targetRetailerForDiscovery.id, createdAt: { gte: todayStart } }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: { retailerId: targetRetailerForDiscovery.id, status: "APPROVED", reviewedAt: { gte: todayStart } }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: {
+            retailerId: targetRetailerForDiscovery.id,
+            OR: [
+              { alertEligibility: { in: ["suppressed_marketplace", "suppressed_over_msrp"] } },
+              { sellerType: "marketplace" },
+              { priceStatus: { in: ["over_msrp", "marketplace_price"] } }
+            ]
+          }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: {
+            retailerId: targetRetailerForDiscovery.id,
+            status: "PENDING",
+            OR: [
+              { confidenceScore: { lt: 80 } },
+              { alertEligibility: "needs_review" },
+              { imageUrl: null },
+              { retailerProductId: null }
+            ]
+          }
+        }),
+        prisma.productDiscoveryCandidate.count({
+          where: { retailerId: targetRetailerForDiscovery.id, status: "REJECTED_NON_TCG" }
+        })
+      ])
+    : [0, 0, 0, 0, 0];
   const scannerStatus: ScannerStatusDTO = {
     activeProductsScanned,
     activeDiscoverySourcesScanned,
@@ -2442,7 +2497,17 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     targetStaleProducts: targetStaleProductCount,
     targetErrorsLastRun: targetLogsInLastBatch.filter((log) => log.status === "ERROR").length,
     targetBlockedLastRun: targetLogsInLastBatch.filter((log) => log.status === "BLOCKED").length,
-    targetLastError: targetLastErrorLog?.error || targetLastErrorLog?.changeSummary || targetLastErrorLog?.blockedType || null
+    targetLastError: targetLastErrorLog?.error || targetLastErrorLog?.changeSummary || targetLastErrorLog?.blockedType || null,
+    targetDiscoveryAutoEnabled: targetDiscoveryAutoEnabled(),
+    targetDiscoveryAutoApprovalEnabled: targetDiscoveryAutoApprovalEnabled(),
+    targetDiscoveryRetailOnlyEnabled: targetDiscoveryRetailOnlyEnabled(),
+    targetDiscoveryLastRunAt: targetDiscoveryLastRun?.toISOString() ?? null,
+    targetDiscoveryNextRunAt: targetDiscoveryNextRun?.toISOString() ?? null,
+    targetDiscoveryProductsToday,
+    targetDiscoveryAutoApprovedToday,
+    targetDiscoverySuppressedCount,
+    targetDiscoveryReviewQueueCount,
+    targetDiscoveryRejectedCount
   };
   const setup = setupChecklist({
     productCount: productDTOs.length,
@@ -2729,9 +2794,9 @@ export async function ensureTargetDiscoverySources() {
         name: `Target Discovery: ${searchTerm}`,
         url,
         notes:
-          "Default Target Pokemon TCG discovery source. Search/category pages are review-only and never trigger buy alerts.",
+          "Default Target Pokemon TCG discovery source. Search/category pages are automatic discovery-only and never trigger buy alerts.",
         enabled: true,
-        checkFrequencyMinutes: 720,
+        checkFrequencyMinutes: targetDiscoveryCadenceMinutes(),
         nextCheckAt: new Date()
       },
       include: productDiscoverySourceInclude
@@ -2739,6 +2804,36 @@ export async function ensureTargetDiscoverySources() {
     sources.push(source);
   }
   return sources.map(productDiscoverySourceToDTO);
+}
+
+export function targetDiscoveryAutoEnabled() {
+  return process.env.TARGET_DISCOVERY_AUTO_ENABLED !== "false";
+}
+
+export function targetDiscoveryAutoApprovalEnabled() {
+  return process.env.TARGET_DISCOVERY_AUTO_APPROVAL_ENABLED !== "false";
+}
+
+export function targetDiscoveryRetailOnlyEnabled() {
+  return process.env.TARGET_DISCOVERY_RETAIL_ONLY_ENABLED !== "false";
+}
+
+function targetDiscoveryCadenceMinutes() {
+  const configured = Number(process.env.TARGET_DISCOVERY_CADENCE_MINUTES || 360);
+  if (!Number.isFinite(configured)) return 360;
+  return Math.max(120, Math.min(1440, Math.floor(configured)));
+}
+
+function targetDiscoverySourceRunLimit() {
+  const configured = Number(process.env.TARGET_DISCOVERY_AUTO_SOURCE_LIMIT || 4);
+  if (!Number.isFinite(configured)) return 4;
+  return Math.max(1, Math.min(10, Math.floor(configured)));
+}
+
+function targetDiscoveryAutoApproveLimit() {
+  const configured = Number(process.env.TARGET_DISCOVERY_AUTO_APPROVE_LIMIT || 12);
+  if (!Number.isFinite(configured)) return 12;
+  return Math.max(1, Math.min(40, Math.floor(configured)));
 }
 
 export async function runTargetProductDiscoveryNow() {
@@ -2761,6 +2856,200 @@ export async function runTargetProductDiscoveryNow() {
     blocked: results.filter((result) => result.status === "BLOCKED").length,
     errors: results.filter((result) => result.status === "ERROR").length,
     results
+  };
+}
+
+function isHighConfidenceTargetAutoApproveCandidate(candidate: Prisma.ProductDiscoveryCandidateGetPayload<{ include: typeof productDiscoveryCandidateInclude }>) {
+  if (!isTargetWatchReadyCandidate(candidate)) return false;
+  if (candidate.confidenceScore < 80) return false;
+  if (targetDiscoveryRetailOnlyEnabled() && candidate.alertEligibility !== "eligible") return false;
+  const policy = evaluateTargetRetailPolicy({
+    retailerName: candidate.retailer.name,
+    title: candidate.productName,
+    productType: candidate.productType,
+    price: candidate.livePrice,
+    sellerName: candidate.sellerName,
+    sellerType: candidate.sellerType,
+    fulfillmentType: candidate.fulfillmentType,
+    sellerVerified: candidate.sellerVerified,
+    confidenceScore: candidate.confidenceScore,
+    exactUrl: true,
+    isPokemonTcg: isPokemonTcgTargetText({ title: candidate.productName, productType: candidate.productType }),
+    expectedRetailPrice: candidate.expectedRetailPrice,
+    maxAlertPrice: candidate.maxAlertPrice
+  });
+  return policy.alertEligibility === "eligible" && policy.watchReady;
+}
+
+async function suppressRiskyTargetDiscoveryCandidates(targetRetailerId: string) {
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: {
+      retailerId: targetRetailerId,
+      status: "PENDING",
+      OR: [
+        { alertEligibility: { in: ["suppressed_marketplace", "suppressed_over_msrp"] } },
+        { sellerType: "marketplace" },
+        { priceStatus: { in: ["over_msrp", "marketplace_price"] } }
+      ]
+    },
+    include: productDiscoveryCandidateInclude,
+    take: 250
+  });
+
+  let suppressed = 0;
+  for (const candidate of candidates) {
+    const policy = evaluateTargetRetailPolicy({
+      retailerName: candidate.retailer.name,
+      title: candidate.productName,
+      productType: candidate.productType,
+      price: candidate.livePrice,
+      sellerName: candidate.sellerName,
+      sellerType: candidate.sellerType,
+      fulfillmentType: candidate.fulfillmentType,
+      sellerVerified: candidate.sellerVerified,
+      confidenceScore: candidate.confidenceScore,
+      exactUrl: true,
+      isPokemonTcg: isPokemonTcgTargetText({ title: candidate.productName, productType: candidate.productType }),
+      expectedRetailPrice: candidate.expectedRetailPrice,
+      maxAlertPrice: candidate.maxAlertPrice
+    });
+    if (!policy.suppressed) continue;
+    await prisma.productDiscoveryCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        status: "IGNORED",
+        reviewedAt: new Date(),
+        ignoredAt: new Date(),
+        alertEligibility: policy.alertEligibility,
+        priceStatus: policy.priceStatus,
+        targetRetailReason: policy.targetRetailReason,
+        reason: `Auto-suppressed by Target retail-only discovery. ${policy.targetRetailReason}`
+      }
+    });
+    suppressed += 1;
+  }
+
+  return suppressed;
+}
+
+async function ignoreDuplicateTargetDiscoveryCandidates(targetRetailerId: string) {
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: { retailerId: targetRetailerId, status: "PENDING" },
+    include: productDiscoveryCandidateInclude,
+    orderBy: [{ confidenceScore: "desc" }, { createdAt: "desc" }],
+    take: 250
+  });
+  let duplicates = 0;
+  for (const candidate of candidates) {
+    const existing = await findExistingProductForDiscoveryCandidate(candidate);
+    if (!existing) continue;
+    await prisma.productDiscoveryCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        status: "IGNORED",
+        approvedProductId: existing.id,
+        reviewedAt: new Date(),
+        ignoredAt: new Date(),
+        reason: `Auto-ignored duplicate Target candidate. Existing watch product already covers ${existing.name}.`
+      }
+    });
+    duplicates += 1;
+  }
+  return duplicates;
+}
+
+async function autoApproveTargetDiscoveryCandidates(targetRetailerId: string) {
+  if (!targetDiscoveryAutoApprovalEnabled()) return { reviewed: 0, approved: 0, reused: 0, skipped: 0, failed: 0, failures: [] as string[] };
+
+  const candidates = await prisma.productDiscoveryCandidate.findMany({
+    where: {
+      retailerId: targetRetailerId,
+      status: "PENDING",
+      confidenceScore: { gte: 80 },
+      retailerProductId: { not: null },
+      imageUrl: { not: null },
+      alertEligibility: "eligible"
+    },
+    include: productDiscoveryCandidateInclude,
+    orderBy: [{ confidenceScore: "desc" }, { createdAt: "desc" }],
+    take: targetDiscoveryAutoApproveLimit()
+  });
+  const autoReady = candidates.filter(isHighConfidenceTargetAutoApproveCandidate);
+
+  let approved = 0;
+  let reused = 0;
+  const failures: string[] = [];
+  for (const candidate of autoReady) {
+    try {
+      const before = await findExistingProductForDiscoveryCandidate(candidate);
+      await reviewProductDiscoveryCandidate(candidate.id, {
+        action: "approve",
+        priority: "MEDIUM",
+        rating: "WATCH",
+        checkFrequencyMinutes: targetMonitorCadenceMinutes(),
+        notes:
+          "Auto-approved from Target discovery. Candidate met exact /p/ URL, TCIN, title, image, Pokemon TCG, confidence >= 80, and retail/MSRP guardrails. UPC/DPCI may be missing when Target does not expose them publicly."
+      });
+      approved += 1;
+      if (before) reused += 1;
+    } catch (error) {
+      failures.push(`${candidate.productName}: ${error instanceof Error ? error.message : "auto-approval failed"}`);
+    }
+  }
+
+  return { reviewed: autoReady.length, approved, reused, skipped: candidates.length - autoReady.length, failed: failures.length, failures };
+}
+
+export async function runAutomaticTargetDiscoveryPipeline(force = false) {
+  if (!targetDiscoveryAutoEnabled()) {
+    return {
+      enabled: false,
+      discovery: { checked: 0, totalSources: 0, created: 0, found: 0, rejected: 0, blocked: 0, errors: 0, results: [] },
+      cleanup: { suppressed: 0, duplicates: 0 },
+      approval: { reviewed: 0, approved: 0, reused: 0, skipped: 0, failed: 0, failures: [] as string[] }
+    };
+  }
+
+  const target = await prisma.retailer.findUnique({ where: { name: "Target" }, select: { id: true } });
+  if (!target) throw new Error("Target retailer is missing");
+  const sources = await ensureTargetDiscoverySources();
+  const now = new Date();
+  const selectedSources = sources
+    .filter((source) => force || !source.nextCheckAt || new Date(source.nextCheckAt).getTime() <= now.getTime())
+    .slice(0, force ? Math.max(1, Math.min(10, Number(process.env.TARGET_DISCOVERY_RUN_LIMIT || 8))) : targetDiscoverySourceRunLimit());
+
+  const results = [];
+  for (const source of selectedSources) {
+    results.push(await runProductDiscoveryCheck(source.id, force));
+    if (results.length < selectedSources.length) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(750, Number(process.env.MONITOR_REQUEST_DELAY_MS || 1500))));
+    }
+  }
+
+  const cleanup = {
+    suppressed: await suppressRiskyTargetDiscoveryCandidates(target.id),
+    duplicates: await ignoreDuplicateTargetDiscoveryCandidates(target.id)
+  };
+  const approval = await autoApproveTargetDiscoveryCandidates(target.id);
+
+  const discovery = {
+    checked: results.length,
+    totalSources: sources.length,
+    created: results.reduce((total, result) => total + result.created, 0),
+    found: results.reduce((total, result) => total + result.found, 0),
+    rejected: results.reduce((total, result) => total + ("rejected" in result ? Number(result.rejected || 0) : 0), 0),
+    blocked: results.filter((result) => result.status === "BLOCKED").length,
+    errors: results.filter((result) => result.status === "ERROR").length,
+    results
+  };
+
+  return {
+    enabled: true,
+    autoApprovalEnabled: targetDiscoveryAutoApprovalEnabled(),
+    retailOnlyEnabled: targetDiscoveryRetailOnlyEnabled(),
+    discovery,
+    cleanup,
+    approval
   };
 }
 

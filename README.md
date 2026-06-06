@@ -139,7 +139,7 @@ The scanner supports Amazon, Target, Best Buy, Walmart, GameStop, and Pokemon Ce
 
 Watched products must use exact product URLs such as Amazon `/dp/<ASIN>`, Target `/p/.../-/A-TCIN`, Walmart `/ip/...`, Best Buy `/site/...`, GameStop product pages, and Pokemon Center `/product/...` pages. A BUY alert requires exact URL verification, product ID/title/image verification, and a proven buyable status (`IN_STOCK`, `PREORDER_LIVE`, or `ADD_TO_CART_AVAILABLE`). If the parser cannot prove that the product is buyable, it defaults to unavailable and does not alert.
 
-Discovery mode is separate. Admin can add safe public search/category URLs as discovery sources. Those pages only create candidate links in `Review New Finds`; they never trigger BUY alerts. Admin must approve a candidate before it becomes a watched exact product, and the normal exact-product monitor must verify it before urgent alerts can fire.
+Target discovery now runs as the primary tracker intake. The app scans safe public Target search/category URLs, extracts exact `/p/` product pages, filters non-TCG items, suppresses marketplace or over-MSRP listings, auto-approves strong retail/MSRP candidates, and enables batched monitoring. Search/category pages still never trigger BUY alerts directly; only approved exact products can create Live Drops after the monitor proves buyable stock. Manual Discord import, manual candidate approval, and parser test tools are kept under Admin/Advanced for overrides and diagnostics.
 
 Scanner status in the Products tab shows active watched products, last scan time, next scan estimate, pending new finds, and live restocks detected today.
 
@@ -262,6 +262,7 @@ Phase 7 adds Vercel deployment readiness:
 - `vercel.json` registers `/api/radar/monitor/cron` on a `*/5 * * * *` UTC schedule.
 - `/api/radar/monitor/cron` supports Vercel's GET cron invocation and the existing POST/manual test flow.
 - Scheduled Target scans run by default through a safe batched `target_due` monitor path. Set `TARGET_MONITOR_BATCH_SIZE` (default `18`) and `TARGET_MONITOR_CADENCE_MINUTES` (default `15`, minimum `10`) to tune the Target queue without hammering Target.
+- Automatic Target discovery runs from the same cron route before the Target monitor batch when `TARGET_DISCOVERY_AUTO_ENABLED` is not `false`. Set `TARGET_DISCOVERY_CADENCE_MINUTES` (default `360`, minimum `120`), `TARGET_DISCOVERY_AUTO_SOURCE_LIMIT` (default `4`), and `TARGET_DISCOVERY_AUTO_APPROVE_LIMIT` (default `12`) to tune coverage. Keep `TARGET_DISCOVERY_RETAIL_ONLY_ENABLED=true` so marketplace and over-MSRP candidates are suppressed instead of watched.
 - The legacy broad product/discovery scan stays opt-in while older Products, Stores, and Cards UI modules are hidden. Set `PRODUCT_MONITOR_CRON_ENABLED=true` only if you intentionally want `/api/radar/monitor/cron` to run the full due-product/discovery job instead of the Target batch. Set `TARGET_MONITOR_CRON_ENABLED=false` to pause Target batching.
 - Cron calls are protected by `MONITOR_JOB_SECRET`, with bearer-token compatibility for Vercel's `CRON_SECRET`.
 - `/api/health` reports app, database, cron, alert, push, email, and SMS readiness without exposing secret values.
@@ -297,6 +298,7 @@ Browser push env vars:
 
 Optional provider env vars:
 
+- Target auto-discovery: `TARGET_DISCOVERY_AUTO_ENABLED`, `TARGET_DISCOVERY_AUTO_APPROVAL_ENABLED`, `TARGET_DISCOVERY_RETAIL_ONLY_ENABLED`, `TARGET_DISCOVERY_CADENCE_MINUTES`, `TARGET_DISCOVERY_AUTO_SOURCE_LIMIT`, `TARGET_DISCOVERY_AUTO_APPROVE_LIMIT`
 - SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 - Twilio: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
 - eBay API comp refresh: `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_ENVIRONMENT`, `EBAY_MARKETPLACE_ID`

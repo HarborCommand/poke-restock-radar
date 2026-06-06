@@ -381,14 +381,18 @@ test("alerts Target retail coverage and Discord comparison tools are wired", () 
   const helper = fs.readFileSync(new URL("../src/lib/target-discord-alert.ts", import.meta.url), "utf8");
 
   assert.match(alertsPanel, /Target coverage/);
-  assert.match(alertsPanel, /Retail\/MSRP watch quality/);
-  assert.match(alertsPanel, /Discord may alert on products not watched by Poke Radar yet/);
+  assert.match(alertsPanel, /Automatic retail\/MSRP coverage/);
+  assert.match(alertsPanel, /Poke Radar discovers public Target Pokemon TCG pages/);
+  assert.match(alertsPanel, /Auto Discovery/);
+  assert.match(alertsPanel, /Auto Approval/);
+  assert.match(alertsPanel, /Retail Only/);
   assert.match(alertsPanel, /Target Retail In Stock Now/);
   assert.match(alertsPanel, /targetStaleProducts/);
   assert.match(alertsPanel, /targetMissingExactUrlProducts/);
   assert.match(alertsPanel, /targetMissingIdentifierProducts/);
   assert.match(alertsPanel, /targetLogsInLatestScan/);
-  assert.match(alertsPanel, /Run Target Batch Now/);
+  assert.match(alertsPanel, /Run Auto Discovery Now/);
+  assert.match(alertsPanel, /Run Monitor Now/);
   assert.match(alertsPanel, /Run High Priority Target Now/);
   assert.match(alertsPanel, /Run One Product Now/);
   assert.match(alertsPanel, /targetQueueRemaining/);

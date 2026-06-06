@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { runProductMonitorBatch } from "@/lib/monitor";
+import { runAutomaticTargetDiscoveryPipeline, targetDiscoveryAutoEnabled } from "@/lib/radar-service";
 import { monitorRunSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -43,7 +44,9 @@ export async function GET(request: Request) {
   if (!productMonitorCronEnabled() && !targetMonitorCronEnabled()) return pausedResponse();
 
   try {
-    return ok(await runProductMonitorBatch(productMonitorCronEnabled() ? "due" : "target_due", "DUE_JOB"));
+    const discovery = targetDiscoveryAutoEnabled() ? await runAutomaticTargetDiscoveryPipeline(false) : null;
+    const monitor = await runProductMonitorBatch(productMonitorCronEnabled() ? "due" : "target_due", "DUE_JOB");
+    return ok({ ...monitor, automaticTargetDiscovery: discovery });
   } catch (error) {
     return badRequest(error);
   }
@@ -62,7 +65,9 @@ export async function POST(request: Request) {
       : input.mode === "target_priority"
         ? "target_priority"
         : "target_due";
-    return ok(await runProductMonitorBatch(mode, "DUE_JOB"));
+    const discovery = targetDiscoveryAutoEnabled() ? await runAutomaticTargetDiscoveryPipeline(false) : null;
+    const monitor = await runProductMonitorBatch(mode, "DUE_JOB");
+    return ok({ ...monitor, automaticTargetDiscovery: discovery });
   } catch (error) {
     return badRequest(error);
   }
