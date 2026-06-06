@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ProductDetail, ProductGrid, StorefrontHeader } from "@/components/StorefrontClient";
+import { ProductDetail, ProductGrid, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getPublicStoreProduct, getStorefrontSettings, listPublicStoreProducts } from "@/lib/storefront";
 
 export async function StorefrontHomeView() {
@@ -9,6 +9,7 @@ export async function StorefrontHomeView() {
       <StorefrontHeader settings={settings} />
       {settings.announcementBanner ? <section className="shop-announcement">{settings.announcementBanner}</section> : null}
       <ProductGrid products={products} settings={settings} />
+      <StorefrontFooter settings={settings} />
     </main>
   );
 }
@@ -29,6 +30,7 @@ export async function StorefrontProductView({ slug }: { slug: string }) {
     <main className="shop-shell">
       <StorefrontHeader settings={settings} />
       <ProductDetail product={product} settings={settings} relatedProducts={relatedProducts} />
+      <StorefrontFooter settings={settings} />
     </main>
   );
 }

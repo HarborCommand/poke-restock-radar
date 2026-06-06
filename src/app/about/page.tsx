@@ -1,4 +1,4 @@
-import { StorefrontHeader } from "@/components/StorefrontClient";
+import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
 
 export const runtime = "nodejs";
@@ -44,6 +44,7 @@ export default async function AboutPage() {
           ))}
         </div>
       </section>
+      <StorefrontFooter settings={settings} />
     </main>
   );
 }

@@ -284,28 +284,48 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
   const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
   const bulkRoute = fs.readFileSync(new URL("../src/app/api/radar/inventory/store-listing/bulk/route.ts", import.meta.url), "utf8");
+  const contactRoute = fs.readFileSync(new URL("../src/app/api/storefront/contact/route.ts", import.meta.url), "utf8");
   const aboutPage = fs.readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
   const policiesPage = fs.readFileSync(new URL("../src/app/policies/page.tsx", import.meta.url), "utf8");
   const contactPage = fs.readFileSync(new URL("../src/app/contact/page.tsx", import.meta.url), "utf8");
 
   assert.match(validation, /inventoryBulkStorePublishSchema/);
+  assert.match(validation, /storefrontContactMessageSchema/);
+  assert.match(validation, /contact_message/);
   assert.match(storefront, /bulkPublishInventoryStoreListings/);
   assert.match(storefront, /generatedPublicDescription/);
   assert.match(storefront, /Public price missing/);
+  assert.match(storefront, /createContactMessage/);
+  assert.match(storefront, /sendStorefrontEmail/);
+  assert.match(storefront, /status: "contact_message"/);
+  assert.match(storefront, /inquiryCount/);
   assert.match(bulkRoute, /requireUser/);
   assert.match(bulkRoute, /storefront\.listing\.bulk_publish/);
+  assert.match(contactRoute, /storefrontContactMessageSchema/);
+  assert.match(contactRoute, /createContactMessage/);
   assert.match(app, /Storefront Publishing/);
   assert.match(app, /Publish Selected/);
   assert.match(app, /Publish All Eligible/);
   assert.match(app, /Listing Quality/);
   assert.match(app, /Distributor Application Checklist/);
+  assert.match(app, /Public contact email/);
+  assert.match(app, /Current public URL/);
+  assert.match(app, /Inquiry flow/);
+  assert.match(app, /Distributor readiness/);
   assert.match(app, /Preview Storefront/);
+  assert.match(client, /StorefrontFooter/);
+  assert.match(client, /StorefrontContactForm/);
+  assert.match(client, /\/api\/storefront\/contact/);
+  assert.match(client, /Contact email pending setup/);
+  assert.match(client, /Questions can be sent to/);
   assert.match(client, /href: "\/about"/);
   assert.match(client, /href: "\/policies"/);
   assert.match(client, /href: "\/contact"/);
   assert.match(aboutPage, /About GameDayGrabs LLC/);
   assert.match(policiesPage, /Store Policies/);
+  assert.match(policiesPage, /Contact/);
   assert.match(contactPage, /Contact/);
+  assert.match(contactPage, /StorefrontContactForm/);
 });
 
 test("GameDayGrabs custom domain routes public storefront without exposing private root", () => {
@@ -333,8 +353,10 @@ test("GameDayGrabs custom domain routes public storefront without exposing priva
   }
   assert.match(app, /Storefront Status/);
   assert.match(app, /gamedaygrabs\.com/);
+  assert.match(app, /Current public URL/);
+  assert.match(app, /Intended domain/);
+  assert.match(app, /Domain connected/);
   assert.match(app, /Manual check pending/);
-  assert.match(app, /DNS records verified/);
   assert.match(domainDocs, /Do not add gamedaygrabs\.com or www\.gamedaygrabs\.com to Harbor Command/);
   assert.match(domainDocs, /Settings -> Domains/);
   assert.match(domainDocs, /Public Data Safety/);

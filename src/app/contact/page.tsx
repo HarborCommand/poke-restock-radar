@@ -1,4 +1,4 @@
-import { StorefrontHeader } from "@/components/StorefrontClient";
+import { StorefrontContactForm, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
 
 export const runtime = "nodejs";
@@ -34,6 +34,10 @@ export default async function ContactPage() {
           {settings.contactEmail ? "Email Us" : "Browse Products"}
         </a>
       </section>
+      <section className="gdg-contact-page-card gdg-contact-form-card">
+        <StorefrontContactForm settings={settings} />
+      </section>
+      <StorefrontFooter settings={settings} />
     </main>
   );
 }

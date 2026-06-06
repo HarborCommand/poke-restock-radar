@@ -708,6 +708,13 @@ export const storefrontInvoiceRequestSchema = storefrontCheckoutSchema.extend({
   customerName: z.string().trim().min(2).max(120)
 });
 
+export const storefrontContactMessageSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email(),
+  subject: z.string().trim().min(2).max(160),
+  message: z.string().trim().min(10).max(2000)
+});
+
 export const storefrontSettingsSchema = z.object({
   storeName: z.string().trim().min(2).max(120),
   storeLogoUrl: optionalHttpUrl,
@@ -722,8 +729,8 @@ export const storefrontSettingsSchema = z.object({
 });
 
 export const orderFulfillmentUpdateSchema = z.object({
-  status: z.enum(["invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded"]).optional(),
-  fulfillmentStatus: z.enum(["unfulfilled", "packing", "shipped", "pickup_ready", "picked_up", "canceled"]).optional(),
+  status: z.enum(["contact_message", "invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded"]).optional(),
+  fulfillmentStatus: z.enum(["inquiry", "unfulfilled", "packing", "shipped", "pickup_ready", "picked_up", "canceled"]).optional(),
   trackingNumber: optionalTrimmed,
   carrier: optionalTrimmed,
   shippingCost: optionalMoney,

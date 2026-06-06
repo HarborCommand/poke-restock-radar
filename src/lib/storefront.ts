@@ -251,8 +251,39 @@ function orderNumber() {
   return `PR-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
+function inquiryNumber() {
+  return `GDG-INQ-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
+
 function estimateStripeFee(total: number) {
   return Math.round((total * 0.029 + 0.3) * 100) / 100;
+}
+
+function smtpReady() {
+  return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_FROM?.trim());
+}
+
+async function sendStorefrontEmail(to: string, subject: string, text: string) {
+  if (!smtpReady()) return false;
+  const { createTransport } = await import("nodemailer");
+  const transporter = createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === "true",
+    auth: process.env.SMTP_USER
+      ? {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS || ""
+        }
+      : undefined
+  });
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to,
+    subject,
+    text
+  });
+  return true;
 }
 
 function stripeImage(imageUrl: string | null | undefined) {
@@ -445,6 +476,76 @@ export async function createInvoiceRequest(input: {
     include: storefrontOrderInclude
   });
   return { order: storefrontOrderToDTO(order) };
+}
+
+export async function createContactMessage(input: {
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+}) {
+  const settings = await prisma.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
+  const contactEmail = settings?.contactEmail?.trim() || null;
+  const customer = await prisma.storefrontCustomer.upsert({
+    where: { email: input.email },
+    create: {
+      email: input.email,
+      name: input.name,
+      userId: settings?.userId ?? null
+    },
+    update: {
+      name: input.name
+    }
+  });
+  const noteLines = [
+    "Public storefront contact message.",
+    `Subject: ${input.subject}`,
+    `From: ${input.name} <${input.email}>`,
+    "",
+    input.message
+  ];
+  const order = await prisma.storefrontOrder.create({
+    data: {
+      orderNumber: inquiryNumber(),
+      userId: settings?.userId ?? null,
+      customerId: customer.id,
+      customerEmail: input.email,
+      customerName: input.name,
+      status: "contact_message",
+      paymentStatus: "not_applicable",
+      fulfillmentStatus: "inquiry",
+      notes: noteLines.join("\n")
+    },
+    include: storefrontOrderInclude
+  });
+
+  let emailSent = false;
+  let emailError: string | null = null;
+  if (contactEmail) {
+    try {
+      emailSent = await sendStorefrontEmail(
+        contactEmail,
+        `GameDayGrabs contact: ${input.subject}`,
+        `${input.name} <${input.email}> sent a storefront message.\n\n${input.message}\n\nInquiry: ${order.orderNumber}`
+      );
+    } catch (error) {
+      emailError = error instanceof Error ? error.message.slice(0, 240) : "SMTP send failed.";
+      await prisma.storefrontOrder.update({
+        where: { id: order.id },
+        data: { notes: `${order.notes}\n\nEmail delivery failed: ${emailError}` }
+      });
+    }
+  }
+
+  return {
+    order: storefrontOrderToDTO(order),
+    emailSent,
+    stored: true,
+    delivery: emailSent ? "email_sent" : emailError ? "stored_email_failed" : contactEmail ? "stored_smtp_missing" : "stored_contact_email_missing",
+    message: emailSent
+      ? "Thanks. Your message was sent to GameDayGrabs."
+      : "Thanks. Your message was saved and GameDayGrabs will review it."
+  };
 }
 
 function lotUnitCost(lot: { costPerUnit: number; totalCost: number; quantity: number }) {
@@ -720,16 +821,18 @@ export async function listStorefrontOrders(currentUser: SessionUser) {
 
 export async function storefrontSummary(currentUser: SessionUser): Promise<StorefrontSummaryDTO> {
   const where = currentUser.role === "ADMIN" ? {} : { userId: currentUser.id };
-  const [productCount, activeProductCount, pendingOrderCount, paidOrders] = await Promise.all([
+  const [productCount, activeProductCount, pendingOrderCount, inquiryCount, paidOrders] = await Promise.all([
     prisma.inventoryItem.count({ where: { ...(where as Prisma.InventoryItemWhereInput), publishToStore: true } }),
     prisma.inventoryItem.count({ where: { ...(where as Prisma.InventoryItemWhereInput), publishToStore: true, storeStatus: "active" } }),
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "pending_payment" } }),
+    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "contact_message" } }),
     prisma.storefrontOrder.findMany({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid" }, select: { total: true, netProfit: true } })
   ]);
   return {
     productCount,
     activeProductCount,
     pendingOrderCount,
+    inquiryCount,
     paidOrderCount: paidOrders.length,
     totalRevenue: paidOrders.reduce((sum, order) => sum + order.total, 0),
     netProfit: paidOrders.reduce((sum, order) => sum + order.netProfit, 0)

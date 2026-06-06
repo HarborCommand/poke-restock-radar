@@ -271,6 +271,7 @@ export type StorefrontSummaryDTO = {
   productCount: number;
   activeProductCount: number;
   pendingOrderCount: number;
+  inquiryCount: number;
   paidOrderCount: number;
   totalRevenue: number;
   netProfit: number;

@@ -1,4 +1,4 @@
-import { CheckoutSuccessClient, StorefrontHeader } from "@/components/StorefrontClient";
+import { CheckoutSuccessClient, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
 
 export const runtime = "nodejs";
@@ -14,6 +14,7 @@ export default async function CheckoutSuccessPage() {
     <main className="shop-shell">
       <StorefrontHeader settings={settings} />
       <CheckoutSuccessClient />
+      <StorefrontFooter settings={settings} />
     </main>
   );
 }

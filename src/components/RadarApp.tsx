@@ -1717,24 +1717,25 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
   const settings = dashboard.storefrontSettings;
   const publicUrl = "https://gamedaygrabs.com";
   const checks = [
-    { label: "Custom domain added to Vercel", detail: "Add gamedaygrabs.com and www.gamedaygrabs.com to the poke-restock-radar Vercel project.", complete: false },
-    { label: "DNS records verified", detail: "Manual DNS check in Vercel Settings > Domains after registrar records are added.", complete: false },
     { label: "Storefront live", detail: `${publicUrl} serves the public shop after DNS is configured. /shop remains available.`, complete: true },
     { label: "Contact page live", detail: "/contact is available for customers and distributors.", complete: true },
     { label: "Policies page live", detail: "/policies shows shipping, return, pickup, and checkout notes.", complete: true },
     { label: "At least 5 published products", detail: `${published.length} active products published.`, complete: published.length >= 5 },
     { label: "Published product images", detail: `${withImages.length}/${published.length || 0} active products have images.`, complete: published.length > 0 && withImages.length === published.length },
     { label: "Order/inquiry flow working", detail: settings.checkoutConfigured ? "Stripe Checkout configured." : "Request Invoice mode available.", complete: true },
-    { label: "Public email/contact visible", detail: settings.contactEmail || "Contact email not configured yet.", complete: Boolean(settings.contactEmail) }
+    { label: "Public contact email configured", detail: settings.contactEmail || "Contact email not configured yet.", complete: Boolean(settings.contactEmail) },
+    { label: "Domain connected", detail: "Recommended: add gamedaygrabs.com and www.gamedaygrabs.com to the Vercel project and verify DNS.", complete: false, optional: true }
   ];
-  const readyCount = checks.filter((check) => check.complete).length;
+  const requiredChecks = checks.filter((check) => !check.optional);
+  const readyCount = requiredChecks.filter((check) => check.complete).length;
+  const distributorReady = readyCount === requiredChecks.length;
 
   return (
     <div className="distributor-readiness-panel">
       <div className="distributor-readiness-hero">
         <div>
           <span className="eyeline">Storefront Status</span>
-          <h3>{readyCount}/{checks.length} ready</h3>
+          <h3>{readyCount}/{requiredChecks.length} distributor-ready</h3>
           <p>Use this to keep gamedaygrabs.com and GameDayGrabs distributor readiness on track without exposing private costs, scanner data, receipts, or tracker details.</p>
         </div>
         <div className="inventory-header-actions">
@@ -1753,7 +1754,12 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
       </div>
       <div className="storefront-domain-grid">
         <article>
-          <span className="eyeline">Storefront domain</span>
+          <span className="eyeline">Current public URL</span>
+          <strong>https://poke-restock-radar.vercel.app/shop</strong>
+          <small>Use this live shop URL until DNS is connected.</small>
+        </article>
+        <article>
+          <span className="eyeline">Intended domain</span>
           <strong>gamedaygrabs.com</strong>
           <small>Apex domain should be added to the Vercel project named poke-restock-radar.</small>
         </article>
@@ -1768,6 +1774,21 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
           <small>Confirm the exact A/CNAME records inside Vercel after updating the registrar.</small>
         </article>
         <article>
+          <span className="eyeline">Contact email</span>
+          <strong>{settings.contactEmail || "Not configured"}</strong>
+          <small>{settings.contactEmail ? "Shown on Contact, Policies, footer, and invoice confirmations." : "Add a public contact email in Store Settings."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Inquiry flow</span>
+          <strong>{dashboard.storefrontSummary.inquiryCount} stored inquiries</strong>
+          <small>{settings.checkoutConfigured ? "Stripe Checkout is active; contact form remains available." : "Request Invoice and contact forms store inquiries if SMTP is missing."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Policies status</span>
+          <strong>Live</strong>
+          <small>/policies shows shipping, returns, pickup, checkout, and contact details.</small>
+        </article>
+        <article>
           <span className="eyeline">Checkout mode</span>
           <strong>{settings.checkoutConfigured ? "Stripe Checkout" : "Request Invoice"}</strong>
           <small>{settings.checkoutConfigured ? "Stripe keys are configured." : "Customers can request an invoice until Stripe is configured."}</small>
@@ -1776,6 +1797,11 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
           <span className="eyeline">Published products</span>
           <strong>{dashboard.storefrontSummary.activeProductCount}</strong>
           <small>Only active public listings with available quantity are shown to customers.</small>
+        </article>
+        <article>
+          <span className="eyeline">Distributor readiness</span>
+          <strong>{distributorReady ? "Ready" : "Needs setup"}</strong>
+          <small>{distributorReady ? "Required checklist is complete. Domain connection remains recommended." : "Complete required checklist items before distributor review."}</small>
         </article>
       </div>
       <div className="distributor-readiness-hero distributor-checklist-heading">
@@ -1792,7 +1818,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
               <Check size={15} />
             </span>
             <div>
-              <strong>{check.label}</strong>
+              <strong>{check.label}{check.optional ? " (optional)" : ""}</strong>
               <small>{check.detail}</small>
             </div>
           </article>
@@ -5407,6 +5433,7 @@ function StorefrontOrdersPanel({
       <section className="inventory-kpi-grid">
         <InventoryKpiCard label="Published Products" value={String(stats.productCount)} detail={`${stats.activeProductCount} active`} />
         <InventoryKpiCard label="Pending Orders" value={String(stats.pendingOrderCount)} detail="Awaiting payment" tone={stats.pendingOrderCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Inquiries" value={String(stats.inquiryCount)} detail="Contact messages" tone={stats.inquiryCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Paid Orders" value={String(stats.paidOrderCount)} detail="All time" tone="good" />
         <InventoryKpiCard label="Store Revenue" value={money(stats.totalRevenue)} detail="Paid orders" tone="watch" />
         <InventoryKpiCard label="Store Profit" value={money(stats.netProfit)} detail="After cost estimates" tone={stats.netProfit >= 0 ? "good" : "bad"} />
@@ -5427,7 +5454,11 @@ function StorefrontOrdersPanel({
                   <button type="button" onClick={() => setSelectedOrderId(order.id)}>
                     <strong>{order.orderNumber}</strong>
                     <span>{order.customerEmail || "No customer email"} - {relativeTime(order.createdAt)}</span>
-                    <small>{order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")}</small>
+                    <small>
+                      {order.items.length
+                        ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
+                        : order.notes?.split("\n").find((line) => line.startsWith("Subject:"))?.replace("Subject:", "Contact:") || "Contact inquiry"}
+                    </small>
                   </button>
                   <span className={`chip compact-chip ${order.paymentStatus === "paid" ? "good" : "watch"}`}>{order.paymentStatus}</span>
                   <span className="storefront-order-total">{money(order.total)}</span>
@@ -5511,7 +5542,7 @@ function StorefrontSettingsCard({
         }
       >
         <TextInput name="storeName" label="Store name" defaultValue={settings.storeName} required />
-        <TextInput name="contactEmail" label="Contact email" type="email" defaultValue={settings.contactEmail ?? ""} />
+        <TextInput name="contactEmail" label="Public contact email" type="email" defaultValue={settings.contactEmail ?? ""} />
         <TextInput name="defaultShippingPrice" label="Flat-rate shipping" type="number" min="0" step="0.01" defaultValue={settings.defaultShippingPrice} />
         <TextInput name="freeShippingThreshold" label="Free shipping threshold" type="number" min="0" step="0.01" defaultValue={settings.freeShippingThreshold ?? ""} />
         <TextareaInput name="announcementBanner" label="Announcement banner" defaultValue={settings.announcementBanner ?? ""} />
@@ -5584,16 +5615,27 @@ function StorefrontOrderDetailsModal({
           <section>
             <h3>Items</h3>
             <div className="storefront-order-items">
-              {order.items.map((item) => (
-                <article className="storefront-order-item" key={item.id}>
-                  <span>{item.imageUrl ? <Image src={item.imageUrl} alt={item.publicTitle} width={72} height={72} unoptimized /> : <ShoppingBag size={22} />}</span>
+              {order.items.length ? (
+                order.items.map((item) => (
+                  <article className="storefront-order-item" key={item.id}>
+                    <span>{item.imageUrl ? <Image src={item.imageUrl} alt={item.publicTitle} width={72} height={72} unoptimized /> : <ShoppingBag size={22} />}</span>
+                    <div>
+                      <strong>{item.publicTitle}</strong>
+                      <small>Qty {item.quantity} - {money(item.unitPrice)} each</small>
+                    </div>
+                    <b>{money(item.lineTotal)}</b>
+                  </article>
+                ))
+              ) : (
+                <article className="storefront-order-item">
+                  <span><Mail size={22} /></span>
                   <div>
-                    <strong>{item.publicTitle}</strong>
-                    <small>Qty {item.quantity} - {money(item.unitPrice)} each</small>
+                    <strong>Storefront contact inquiry</strong>
+                    <small>No cart items. Read the message in Order notes.</small>
                   </div>
-                  <b>{money(item.lineTotal)}</b>
+                  <b>Message</b>
                 </article>
-              ))}
+              )}
             </div>
           </section>
           <section>
@@ -5624,13 +5666,13 @@ function StorefrontOrderDetailsModal({
                 name="status"
                 label="Order status"
                 defaultValue={order.status}
-                options={["invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded"].map(optionFromString)}
+                options={["contact_message", "invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded"].map(optionFromString)}
               />
               <SelectInput
                 name="fulfillmentStatus"
                 label="Fulfillment status"
                 defaultValue={order.fulfillmentStatus}
-                options={["unfulfilled", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
+                options={["inquiry", "unfulfilled", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
               />
               <TextInput name="carrier" label="Carrier" defaultValue={order.carrier ?? ""} />
               <TextInput name="trackingNumber" label="Tracking number" defaultValue={order.trackingNumber ?? ""} />

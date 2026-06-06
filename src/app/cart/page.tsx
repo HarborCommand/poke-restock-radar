@@ -1,4 +1,4 @@
-import { CartClient, StorefrontHeader } from "@/components/StorefrontClient";
+import { CartClient, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
 
 export const runtime = "nodejs";
@@ -14,6 +14,7 @@ export default async function CartPage() {
     <main className="shop-shell">
       <StorefrontHeader settings={settings} />
       <CartClient settings={settings} />
+      <StorefrontFooter settings={settings} />
     </main>
   );
 }

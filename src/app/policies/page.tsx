@@ -1,4 +1,4 @@
-import { StorefrontHeader } from "@/components/StorefrontClient";
+import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
 
 export const runtime = "nodejs";
@@ -37,7 +37,18 @@ export default async function PoliciesPage() {
           <h2>Checkout</h2>
           <p>{settings.checkoutConfigured ? "Secure Stripe Checkout is available for public orders." : "Request Invoice mode is active. No card is charged during invoice request."}</p>
         </article>
+        <article>
+          <h2>Contact</h2>
+          {settings.contactEmail ? (
+            <p>
+              Questions about an order or product? Email <a href={`mailto:${settings.contactEmail}`}>{settings.contactEmail}</a>.
+            </p>
+          ) : (
+            <p>Public contact email is pending setup. Use the Contact page form or Request Invoice flow for product questions.</p>
+          )}
+        </article>
       </section>
+      <StorefrontFooter settings={settings} />
     </main>
   );
 }

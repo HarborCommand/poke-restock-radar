@@ -16577,6 +16577,114 @@ body:has(.shop-shell) {
   font-weight: 850;
 }
 
+.gdg-contact-form-card {
+  align-items: stretch;
+}
+
+.gdg-contact-form {
+  display: grid;
+  width: 100%;
+  gap: 16px;
+}
+
+.gdg-contact-form h2,
+.gdg-contact-form p {
+  margin: 0;
+}
+
+.gdg-contact-form p {
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.gdg-contact-form label {
+  display: grid;
+  gap: 7px;
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.gdg-contact-form input,
+.gdg-contact-form textarea {
+  width: 100%;
+  border: 1px solid #dbe3ec;
+  border-radius: 16px;
+  background: #f8fafc;
+  color: #0b1220;
+  padding: 13px 14px;
+  font: inherit;
+  outline: none;
+}
+
+.gdg-contact-form textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.gdg-contact-form input:focus,
+.gdg-contact-form textarea:focus {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+.gdg-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) auto auto;
+  align-items: center;
+  gap: 22px;
+  width: min(1440px, 100%);
+  margin: 22px auto 0;
+  border: 1px solid #e5eaf0;
+  border-radius: 28px 28px 0 0;
+  background: #ffffff;
+  color: #0b1220;
+  padding: clamp(22px, 4vw, 34px);
+  box-shadow: 0 -10px 36px rgba(15, 23, 42, 0.04);
+}
+
+.gdg-footer p,
+.gdg-footer small {
+  margin: 0;
+  color: #64748b;
+}
+
+.gdg-footer-brand {
+  display: inline-block;
+  margin-bottom: 7px;
+  color: #080c14;
+  font-weight: 950;
+  text-decoration: none;
+}
+
+.gdg-footer-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  color: #16a34a;
+  font-weight: 850;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.gdg-footer-email.muted {
+  color: #64748b;
+}
+
+.gdg-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+}
+
+.gdg-footer nav a {
+  color: #334155;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 @media (max-width: 860px) {
   .inventory-publish-toolbar,
   .distributor-readiness-hero,

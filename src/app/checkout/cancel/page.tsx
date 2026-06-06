@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { StorefrontHeader } from "@/components/StorefrontClient";
+import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
 
 export const runtime = "nodejs";
@@ -23,6 +23,7 @@ export default async function CheckoutCancelPage() {
           <Link href="/shop" className="gdg-secondary-button">Keep Shopping</Link>
         </div>
       </section>
+      <StorefrontFooter settings={settings} />
     </main>
   );
 }

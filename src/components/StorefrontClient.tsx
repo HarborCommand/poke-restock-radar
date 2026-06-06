@@ -2,12 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   BadgeCheck,
   Check,
   ChevronRight,
   Heart,
+  Mail,
   Menu,
   Minus,
   Package,
@@ -161,6 +162,102 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
         </button>
       </div>
     </header>
+  );
+}
+
+export function StorefrontFooter({ settings }: { settings: StorefrontSettingsDTO }) {
+  const storeName = displayStoreName(settings);
+  return (
+    <footer className="gdg-footer">
+      <div>
+        <Link href="/shop" className="gdg-footer-brand">{storeName}</Link>
+        <p>Pokemon and sports card products for collectors, players, and families.</p>
+        {settings.contactEmail ? (
+          <a href={`mailto:${settings.contactEmail}`} className="gdg-footer-email">
+            <Mail size={15} />
+            {settings.contactEmail}
+          </a>
+        ) : (
+          <span className="gdg-footer-email muted">Contact email pending setup</span>
+        )}
+      </div>
+      <nav aria-label="Store footer navigation">
+        <Link href="/shop">Shop</Link>
+        <Link href="/policies">Policies</Link>
+        <Link href="/contact">Contact</Link>
+        <Link href="/about">About</Link>
+      </nav>
+      <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
+    </footer>
+  );
+}
+
+export function StorefrontContactForm({ settings }: { settings: StorefrontSettingsDTO }) {
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submitContact(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setBusy(true);
+    setStatus("");
+    setError("");
+    try {
+      const formData = new FormData(form);
+      const response = await fetch("/api/storefront/contact", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: String(formData.get("name") || ""),
+          email: String(formData.get("email") || ""),
+          subject: String(formData.get("subject") || ""),
+          message: String(formData.get("message") || "")
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Message could not be sent.");
+      setStatus(payload.message || "Thanks. Your message was saved.");
+      form.reset();
+    } catch (contactError) {
+      setError(contactError instanceof Error ? contactError.message : "Message could not be sent.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="gdg-contact-form" onSubmit={submitContact}>
+      <div>
+        <h2>Send a message</h2>
+        <p>
+          {settings.contactEmail
+            ? `Messages go to ${settings.contactEmail} when email is configured.`
+            : "Messages are saved as storefront inquiries until a public contact email is configured."}
+        </p>
+      </div>
+      <label>
+        Name
+        <input name="name" autoComplete="name" required minLength={2} maxLength={120} />
+      </label>
+      <label>
+        Email
+        <input name="email" type="email" autoComplete="email" required />
+      </label>
+      <label>
+        Subject
+        <input name="subject" required minLength={2} maxLength={160} placeholder="Inventory question" />
+      </label>
+      <label>
+        Message
+        <textarea name="message" required minLength={10} maxLength={2000} rows={6} placeholder="Tell us what you are looking for." />
+      </label>
+      <button className="gdg-primary-button wide" type="submit" disabled={busy}>
+        {busy ? "Sending..." : "Send Message"}
+      </button>
+      {status ? <p className="gdg-toast inline">{status}</p> : null}
+      {error ? <p className="gdg-error">{error}</p> : null}
+    </form>
   );
 }
 
@@ -659,7 +756,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
         if (!payload.checkoutUrl) throw new Error("Checkout could not start.");
         window.location.href = payload.checkoutUrl;
       } else {
-        setMessage(`Invoice request ${payload.order?.orderNumber || ""} was sent. GameDayGrabs will follow up to confirm availability and payment.`);
+        const contactText = settings.contactEmail ? ` Questions can be sent to ${settings.contactEmail}.` : "";
+        setMessage(`Invoice request ${payload.order?.orderNumber || ""} was sent. GameDayGrabs will follow up to confirm availability and payment.${contactText}`);
         setItems([]);
         setProducts([]);
         writeCart([]);
