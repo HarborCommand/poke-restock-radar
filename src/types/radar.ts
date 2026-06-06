@@ -226,6 +226,7 @@ export type StorefrontSettingsDTO = {
   defaultShippingPrice: number;
   freeShippingThreshold: number | null;
   socialLinks: string[];
+  checkoutConfigured: boolean;
 };
 
 export type StorefrontOrderItemDTO = {

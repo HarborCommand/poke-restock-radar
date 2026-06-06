@@ -598,7 +598,7 @@ const statements = [
   `CREATE TABLE IF NOT EXISTS "StorefrontSettings" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "userId" TEXT NOT NULL UNIQUE,
-    "storeName" TEXT NOT NULL DEFAULT 'Poke Radar Shop',
+    "storeName" TEXT NOT NULL DEFAULT 'GameDayGrabs LLC',
     "storeLogoUrl" TEXT,
     "contactEmail" TEXT,
     "returnPolicyText" TEXT,

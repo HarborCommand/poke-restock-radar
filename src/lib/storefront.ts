@@ -26,6 +26,14 @@ const storefrontOrderInclude = {
 type StorefrontInventoryItem = Prisma.InventoryItemGetPayload<{ include: typeof storefrontInventoryInclude }>;
 type StorefrontOrderWithItems = Prisma.StorefrontOrderGetPayload<{ include: typeof storefrontOrderInclude }>;
 
+function storefrontCheckoutConfigured() {
+  return Boolean(
+    process.env.STRIPE_SECRET_KEY?.trim() &&
+      process.env.STRIPE_WEBHOOK_SECRET?.trim() &&
+      (process.env.STORE_BASE_URL?.trim() || process.env.APP_URL?.trim())
+  );
+}
+
 function parseList(value: string | null | undefined) {
   if (!value) return [];
   try {
@@ -141,7 +149,7 @@ export async function releaseExpiredReservations() {
 export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
   const settings = await prisma.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
   return {
-    storeName: settings?.storeName ?? "Poke Radar Shop",
+    storeName: settings?.storeName ?? "GameDayGrabs LLC",
     storeLogoUrl: settings?.storeLogoUrl ?? null,
     contactEmail: settings?.contactEmail ?? null,
     returnPolicyText: settings?.returnPolicyText ?? null,
@@ -150,7 +158,8 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
     announcementBanner: settings?.announcementBanner ?? null,
     defaultShippingPrice: settings?.defaultShippingPrice ?? 5,
     freeShippingThreshold: settings?.freeShippingThreshold ?? null,
-    socialLinks: parseList(settings?.socialLinks)
+    socialLinks: parseList(settings?.socialLinks),
+    checkoutConfigured: storefrontCheckoutConfigured()
   };
 }
 
@@ -357,6 +366,62 @@ export async function createCheckoutSession(input: {
     data: { stripeCheckoutSessionId: session.id }
   });
   return { order: storefrontOrderToDTO(order), checkoutUrl: session.url };
+}
+
+export async function createInvoiceRequest(input: {
+  items: Array<{ id: string; quantity: number }>;
+  fulfillmentMethod: "shipping" | "pickup";
+  customerEmail: string;
+  customerName: string;
+}) {
+  const settings = await getStorefrontSettings();
+  const cart = await getCartProducts(input.items);
+  const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
+  const shippingCharged =
+    input.fulfillmentMethod === "pickup" || (settings.freeShippingThreshold !== null && subtotal >= settings.freeShippingThreshold)
+      ? 0
+      : settings.defaultShippingPrice;
+  const total = subtotal + shippingCharged;
+  const customer = await prisma.storefrontCustomer.upsert({
+    where: { email: input.customerEmail },
+    create: {
+      email: input.customerEmail,
+      name: input.customerName,
+      userId: cart[0]?.item.userId ?? null
+    },
+    update: {
+      name: input.customerName
+    }
+  });
+  const order = await prisma.storefrontOrder.create({
+    data: {
+      orderNumber: orderNumber(),
+      userId: cart[0]?.item.userId ?? null,
+      customerId: customer.id,
+      customerEmail: input.customerEmail,
+      customerName: input.customerName,
+      status: "invoice_requested",
+      paymentStatus: "invoice_requested",
+      fulfillmentStatus: "unfulfilled",
+      subtotal,
+      shippingCharged,
+      total,
+      notes: "Public storefront invoice request. Confirm availability and payment manually before fulfillment.",
+      items: {
+        create: cart.map(({ product, item, quantity }) => ({
+          inventoryItemId: item.id,
+          publicTitle: product.title,
+          publicSlug: product.slug,
+          imageUrl: product.imageUrl,
+          quantity,
+          unitPrice: product.price,
+          lineTotal: product.price * quantity
+        }))
+      }
+    },
+    include: storefrontOrderInclude
+  });
+  return { order: storefrontOrderToDTO(order) };
 }
 
 function lotUnitCost(lot: { costPerUnit: number; totalCost: number; quantity: number }) {

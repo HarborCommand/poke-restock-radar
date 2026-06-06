@@ -956,7 +956,7 @@ model BarcodeScan {
 model StorefrontSettings {
   id                    String   @id @default(cuid())
   userId                String   @unique
-  storeName             String   @default("Poke Radar Shop")
+  storeName             String   @default("GameDayGrabs LLC")
   storeLogoUrl          String?
   contactEmail          String?
   returnPolicyText      String?

@@ -5456,7 +5456,7 @@ function StorefrontOrderDetailsModal({
                 name="status"
                 label="Order status"
                 defaultValue={order.status}
-                options={["pending_payment", "paid", "packing", "shipped", "canceled", "refunded"].map(optionFromString)}
+                options={["invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded"].map(optionFromString)}
               />
               <SelectInput
                 name="fulfillmentStatus"
