@@ -107,6 +107,29 @@ function sellableQuantity(item: StorefrontInventoryItem) {
   return Math.min(owned, publicCap);
 }
 
+function publicCategoryForItem(item: Pick<StorefrontInventoryItem, "category" | "setName" | "itemName">) {
+  const raw = `${item.category || ""} ${item.setName || ""} ${item.itemName || ""}`.toLowerCase();
+  if (raw.includes("etb") || raw.includes("elite trainer")) return "Elite Trainer Boxes";
+  if (raw.includes("booster bundle")) return "Booster Bundles";
+  if (raw.includes("booster box")) return "Booster Boxes";
+  if (raw.includes("premium") || raw.includes("collection")) return "Premium Collections";
+  if (raw.includes("graded") || raw.includes("psa") || raw.includes("bgs")) return "Graded Cards";
+  if (raw.includes("single card") || raw.includes("raw card")) return "Single Cards";
+  if (raw.includes("sports")) return "Sports Cards";
+  return "Pokemon Sealed";
+}
+
+function generatedPublicDescription(item: Pick<StorefrontInventoryItem, "itemName" | "category" | "setName" | "brand">) {
+  const category = publicCategoryForItem(item);
+  const setText = item.setName ? ` from ${item.setName}` : "";
+  const brandText = item.brand ? `${item.brand} ` : "";
+  return `${brandText}${item.itemName}${setText} is available from GameDayGrabs LLC as part of our ${category} selection. Each listing is reviewed for clear images, customer-facing pricing, and available quantity before it appears in the public shop. Availability is subject to change until checkout or invoice confirmation.`;
+}
+
+function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | "targetSellPrice" | "msrp" | "currentMarketEstimate">) {
+  return item.publicPrice ?? item.targetSellPrice ?? item.msrp ?? item.currentMarketEstimate ?? null;
+}
+
 function publicImages(item: StorefrontInventoryItem) {
   const images = parseList(item.publicImages);
   if (item.imageUrl && !images.includes(item.imageUrl)) images.unshift(item.imageUrl);
@@ -586,7 +609,11 @@ export async function updateInventoryStoreListing(
   if (!item) throw new Error("Inventory item not found");
   const publicTitle = input.publicTitle || item.publicTitle || item.itemName;
   const publicSlug = input.publicSlug ? await uniqueSlug(input.publicSlug, item.id) : item.publicSlug || (input.publishToStore ? await uniqueSlug(publicTitle, item.id) : null);
-  if (input.storeStatus === "active" && (!input.publicPrice || input.publicPrice <= 0)) {
+  const publicDescription = input.publicDescription || item.publicDescription || generatedPublicDescription(item);
+  const publicImageList = stringifyList(input.publicImages) ?? stringifyList(publicImages(item));
+  const storefrontCategory = input.storefrontCategory || item.storefrontCategory || publicCategoryForItem(item);
+  const publicPrice = input.publicPrice ?? publicListingPrice(item) ?? undefined;
+  if (input.storeStatus === "active" && (!publicPrice || publicPrice <= 0)) {
     throw new Error("Set a public price before activating a store listing.");
   }
   if (input.storeStatus === "active" && sellableQuantity(item) <= 0 && !input.availableForSale) {
@@ -598,21 +625,87 @@ export async function updateInventoryStoreListing(
       publishToStore: input.publishToStore,
       publicSlug,
       publicTitle,
-      publicDescription: input.publicDescription,
-      publicPrice: input.publicPrice,
+      publicDescription,
+      publicPrice,
       compareAtPrice: input.compareAtPrice,
-      publicImages: stringifyList(input.publicImages),
+      publicImages: publicImageList,
       availableForSale: input.availableForSale,
       maxQuantityPerOrder: input.maxQuantityPerOrder,
       shippingProfile: input.shippingProfile,
       storeStatus: input.storeStatus,
       localPickupAvailable: input.localPickupAvailable,
       shippingAvailable: input.shippingAvailable,
-      storefrontCategory: input.storefrontCategory,
+      storefrontCategory,
       storefrontTags: stringifyList(input.storefrontTags)
     },
     include: storefrontInventoryInclude
   });
+}
+
+export async function bulkPublishInventoryStoreListings(
+  currentUser: SessionUser,
+  input: { mode: "selected" | "eligible"; itemIds?: string[] }
+) {
+  if (input.mode === "selected" && !input.itemIds?.length) {
+    throw new Error("Select at least one inventory product to publish.");
+  }
+  const scope: Prisma.InventoryItemWhereInput = { OR: [{ userId: null }, { userId: currentUser.id }] };
+  const items = await prisma.inventoryItem.findMany({
+    where: input.mode === "selected" ? { ...scope, id: { in: input.itemIds ?? [] } } : scope,
+    include: storefrontInventoryInclude,
+    orderBy: { updatedAt: "desc" },
+    take: 250
+  });
+  const updated: Array<{ id: string; itemName: string; publicSlug: string | null }> = [];
+  const skipped: Array<{ id: string; itemName: string; reason: string }> = [];
+
+  for (const item of items) {
+    const availableForSale = sellableQuantity(item);
+    const price = publicListingPrice(item);
+    const images = publicImages(item);
+    if (availableForSale <= 0) {
+      skipped.push({ id: item.id, itemName: item.itemName, reason: "No available quantity" });
+      continue;
+    }
+    if (!price || price <= 0) {
+      skipped.push({ id: item.id, itemName: item.itemName, reason: "Public price missing" });
+      continue;
+    }
+    if (!images.length) {
+      skipped.push({ id: item.id, itemName: item.itemName, reason: "Product image missing" });
+      continue;
+    }
+    const publicTitle = item.publicTitle || item.itemName;
+    const publicSlug = item.publicSlug || await uniqueSlug(publicTitle, item.id);
+    const result = await prisma.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        publishToStore: true,
+        publicSlug,
+        publicTitle,
+        publicDescription: item.publicDescription || generatedPublicDescription(item),
+        publicPrice: price,
+        publicImages: stringifyList(images),
+        availableForSale,
+        maxQuantityPerOrder: item.maxQuantityPerOrder || 4,
+        shippingProfile: item.shippingProfile || "standard",
+        storeStatus: "active",
+        localPickupAvailable: item.localPickupAvailable,
+        shippingAvailable: item.shippingAvailable,
+        storefrontCategory: item.storefrontCategory || publicCategoryForItem(item),
+        storefrontTags: item.storefrontTags || stringifyList([publicCategoryForItem(item), item.setName || "", item.brand || ""].filter(Boolean))
+      },
+      select: { id: true, itemName: true, publicSlug: true }
+    });
+    updated.push(result);
+  }
+
+  return {
+    updatedCount: updated.length,
+    skippedCount: skipped.length,
+    updated,
+    skipped
+  };
 }
 
 export async function listStorefrontOrders(currentUser: SessionUser) {

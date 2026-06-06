@@ -649,6 +649,11 @@ export const inventoryStoreListingSchema = z.object({
   storefrontTags: z.union([z.array(z.string().trim().min(1).max(80)), z.string().trim().max(500)]).optional()
 });
 
+export const inventoryBulkStorePublishSchema = z.object({
+  mode: z.enum(["selected", "eligible"]),
+  itemIds: z.array(z.string().trim().min(1)).max(250).optional()
+});
+
 export const inventoryStockLotUpdateSchema = z.object({
   quantity: z.coerce.number().int().min(1).max(1000),
   costPerUnit: requiredMoney,

@@ -128,9 +128,9 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
     { href: "/shop#pokemon", label: "Pokemon" },
     { href: "/shop#sports-cards", label: "Sports Cards" },
     { href: "/shop#new-arrivals", label: "New Arrivals" },
-    { href: "/shop#about", label: "About" },
-    { href: "/shop#policies", label: "Policies" },
-    { href: "/shop#contact", label: "Contact" }
+    { href: "/about", label: "About" },
+    { href: "/policies", label: "Policies" },
+    { href: "/contact", label: "Contact" }
   ];
 
   return (
@@ -577,7 +577,7 @@ export function ProductDetail({
         <p>{product.description || "This public listing is available from GameDayGrabs inventory. Availability is subject to change until checkout or invoice confirmation."}</p>
         <ul>
           <li>Ships with care from GameDayGrabs LLC.</li>
-          <li>Public storefront price is shown; private cost data is never displayed.</li>
+          <li>Availability is confirmed before payment or invoice fulfillment.</li>
           <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request invoice mode is active until checkout is configured."}</li>
         </ul>
       </section>

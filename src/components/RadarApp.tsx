@@ -1610,6 +1610,13 @@ function AdminControlPanel({
           action="View Health"
           onAction={() => document.getElementById("admin-health")?.scrollIntoView({ block: "center" })}
         />
+        <AdminActionCard
+          icon={ShoppingBag}
+          title="Distributor Readiness"
+          detail={`${dashboard.storefrontSummary.activeProductCount} active products; storefront pages and inquiry flow checklist.`}
+          action="View Checklist"
+          onAction={() => document.getElementById("admin-distributor")?.scrollIntoView({ block: "center" })}
+        />
       </section>
 
       <AdminDeprecatedModulesNotice />
@@ -1631,6 +1638,10 @@ function AdminControlPanel({
           ) : (
             <EmptyState icon={Activity} title="Health unavailable" detail="Health data will appear after the app loads system status." />
           )}
+        </AdminSectionCard>
+
+        <AdminSectionCard id="admin-distributor" icon={ShoppingBag} title="Distributor Readiness" detail="Public storefront checklist for distributor applications.">
+          <DistributorReadinessPanel dashboard={dashboard} setActiveTab={setActiveTab} />
         </AdminSectionCard>
 
         <AdminSectionCard icon={AlertTriangle} title="Data Quality" detail="Launch checklist, warnings, and calibration items.">
@@ -1698,6 +1709,61 @@ function AdminDeprecatedModulesNotice() {
 
 function ArchiveIcon() {
   return <FileText size={18} />;
+}
+
+function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
+  const published = dashboard.inventory.filter((item) => item.publishToStore && item.storeStatus === "active" && item.quantityOwned > 0);
+  const withImages = published.filter((item) => item.publicImages[0] || item.imageUrl);
+  const settings = dashboard.storefrontSettings;
+  const checks = [
+    { label: "Storefront live", detail: "/shop is public and does not require login.", complete: true },
+    { label: "Contact page live", detail: "/contact is available for customers and distributors.", complete: true },
+    { label: "Policies page live", detail: "/policies shows shipping, return, pickup, and checkout notes.", complete: true },
+    { label: "At least 5 published products", detail: `${published.length} active products published.`, complete: published.length >= 5 },
+    { label: "Published product images", detail: `${withImages.length}/${published.length || 0} active products have images.`, complete: published.length > 0 && withImages.length === published.length },
+    { label: "Order/inquiry flow working", detail: settings.checkoutConfigured ? "Stripe Checkout configured." : "Request Invoice mode available.", complete: true },
+    { label: "Public email/contact visible", detail: settings.contactEmail || "Contact email not configured yet.", complete: Boolean(settings.contactEmail) }
+  ];
+  const readyCount = checks.filter((check) => check.complete).length;
+
+  return (
+    <div className="distributor-readiness-panel">
+      <div className="distributor-readiness-hero">
+        <div>
+          <span className="eyeline">Distributor Application Checklist</span>
+          <h3>{readyCount}/{checks.length} ready</h3>
+          <p>Use this to keep GameDayGrabs presentable for distributor review without exposing private inventory costs or tracker data.</p>
+        </div>
+        <div className="inventory-header-actions">
+          <a className="mini-action" href="/shop" target="_blank" rel="noreferrer">
+            <ExternalLink size={14} />
+            Preview Storefront
+          </a>
+          <button className="primary-action" type="button" onClick={() => setActiveTab("inventory")}>
+            Publish Inventory
+          </button>
+        </div>
+      </div>
+      <div className="distributor-check-grid">
+        {checks.map((check) => (
+          <article className={check.complete ? "complete" : ""} key={check.label}>
+            <span>
+              <Check size={15} />
+            </span>
+            <div>
+              <strong>{check.label}</strong>
+              <small>{check.detail}</small>
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="distributor-link-row">
+        <a className="mini-action" href="/contact" target="_blank" rel="noreferrer">Open Contact</a>
+        <a className="mini-action" href="/policies" target="_blank" rel="noreferrer">Open Policies</a>
+        <button className="mini-action" type="button" onClick={() => setActiveTab("orders")}>Store Settings</button>
+      </div>
+    </div>
+  );
 }
 
 function AdminSectionCard({
@@ -4759,6 +4825,47 @@ function FieldStoreCard({
   );
 }
 
+function storefrontPublicCategory(item: InventoryItemDTO) {
+  const raw = `${item.category || ""} ${item.setName || ""} ${item.itemName || ""}`.toLowerCase();
+  if (raw.includes("etb") || raw.includes("elite trainer")) return "Elite Trainer Boxes";
+  if (raw.includes("booster bundle")) return "Booster Bundles";
+  if (raw.includes("booster box")) return "Booster Boxes";
+  if (raw.includes("premium") || raw.includes("collection")) return "Premium Collections";
+  if (raw.includes("graded") || raw.includes("psa") || raw.includes("bgs")) return "Graded Cards";
+  if (raw.includes("single card") || raw.includes("raw card")) return "Single Cards";
+  if (raw.includes("sports")) return "Sports Cards";
+  return "Pokemon Sealed";
+}
+
+function storefrontSuggestedPublicPrice(item: InventoryItemDTO) {
+  return item.publicPrice ?? item.targetSellPrice ?? item.msrp ?? item.currentMarketEstimate ?? null;
+}
+
+function storefrontSuggestedDescription(item: InventoryItemDTO) {
+  const category = item.storefrontCategory || storefrontPublicCategory(item);
+  const setText = item.setName ? ` from ${item.setName}` : "";
+  const brandText = item.brand ? `${item.brand} ` : "";
+  return `${brandText}${item.itemName}${setText} is available from GameDayGrabs LLC as part of our ${category} selection. Availability is subject to change until checkout or invoice confirmation.`;
+}
+
+function storefrontListingQuality(item: InventoryItemDTO) {
+  const price = storefrontSuggestedPublicPrice(item);
+  const availableForSale = item.availableForSale ?? item.quantityOwned;
+  const description = item.publicDescription || item.description || storefrontSuggestedDescription(item);
+  const category = item.storefrontCategory || storefrontPublicCategory(item);
+  return [
+    { key: "image", label: "Image exists", complete: Boolean(item.publicImages[0] || item.imageUrl) },
+    { key: "price", label: "Public price set", complete: Boolean(price && price > 0) },
+    { key: "quantity", label: "Quantity available", complete: availableForSale > 0 },
+    { key: "description", label: "Description exists", complete: Boolean(description.trim()) },
+    { key: "category", label: "Category set", complete: Boolean(category.trim()) }
+  ];
+}
+
+function storefrontListingEligible(item: InventoryItemDTO) {
+  return storefrontListingQuality(item).every((check) => check.complete);
+}
+
 function InventoryPanel({
   dashboard,
   busy,
@@ -4783,6 +4890,7 @@ function InventoryPanel({
   const [detailItemId, setDetailItemId] = useState<string>("");
   const [editItemId, setEditItemId] = useState<string>("");
   const [storeListingItemId, setStoreListingItemId] = useState<string>("");
+  const [selectedPublishIds, setSelectedPublishIds] = useState<string[]>([]);
   const [editStockLotTarget, setEditStockLotTarget] = useState<{ itemId: string; lotId: string } | null>(null);
   const [filters, setFilters] = useState({
     search: "",
@@ -4827,6 +4935,10 @@ function InventoryPanel({
   const summary = dashboard.inventorySummary;
   const allSales = useMemo(() => dashboard.inventory.flatMap((item) => item.sales), [dashboard.inventory]);
   const selectedItem = visibleItems.find((item) => item.id === selectedItemId) ?? visibleItems[0] ?? null;
+  const validSelectedPublishIds = useMemo(() => {
+    const existingIds = new Set(dashboard.inventory.map((item) => item.id));
+    return selectedPublishIds.filter((id) => existingIds.has(id));
+  }, [dashboard.inventory, selectedPublishIds]);
   const detailItem = dashboard.inventory.find((item) => item.id === detailItemId) ?? null;
   const editItem = dashboard.inventory.find((item) => item.id === editItemId) ?? null;
   const storeListingItem = dashboard.inventory.find((item) => item.id === storeListingItemId) ?? null;
@@ -4841,6 +4953,10 @@ function InventoryPanel({
     setAddProductChoiceOpen(false);
     setPurchaseFlowOpen(true);
   }, []);
+
+  function togglePublishSelection(itemId: string) {
+    setSelectedPublishIds((current) => current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]);
+  }
   const openBarcodeResult = useCallback(
     (result: UpcLookupResultDTO) => {
       if (result.matchedInventoryItem) {
@@ -5027,13 +5143,24 @@ function InventoryPanel({
             onViewSales={() => setView("sales")}
             selectedItem={selectedItem}
           />
+          <InventoryStorefrontPublishToolbar
+            busy={busy}
+            busyLabel={busyLabel}
+            items={visibleItems}
+            selectedIds={validSelectedPublishIds}
+            onClearSelection={() => setSelectedPublishIds([])}
+            onSelectAllVisible={() => setSelectedPublishIds(visibleItems.map((item) => item.id))}
+            runAction={runAction}
+          />
           <section className="inventory-management-grid">
             <div className="catalog-panel">
               <InventoryFilters filters={filters} itemCount={visibleItems.length} updateFilter={updateFilter} />
               <InventoryList
                 items={visibleItems}
                 selectedId={selectedItem?.id ?? ""}
+                selectedPublishIds={validSelectedPublishIds}
                 onSelect={(item) => setSelectedItemId(item.id)}
+                onTogglePublishSelect={togglePublishSelection}
                 onAddStock={(item) => {
                   openPurchaseFlow(item.id);
                 }}
@@ -6734,6 +6861,87 @@ function InventoryQuickActions({
   );
 }
 
+function InventoryStorefrontPublishToolbar({
+  items,
+  selectedIds,
+  busy,
+  busyLabel,
+  onSelectAllVisible,
+  onClearSelection,
+  runAction
+}: {
+  items: InventoryItemDTO[];
+  selectedIds: string[];
+  busy: boolean;
+  busyLabel: string | null;
+  onSelectAllVisible: () => void;
+  onClearSelection: () => void;
+  runAction: ActionHandler;
+}) {
+  const eligibleCount = items.filter(storefrontListingEligible).length;
+  const publishedCount = items.filter((item) => item.publishToStore && item.storeStatus === "active").length;
+  const needsQualityCount = items.length - eligibleCount;
+  const selectedLabel = selectedIds.length ? `${selectedIds.length} selected` : "No products selected";
+
+  function publishSelected() {
+    return runAction(
+      "Publishing selected store listings",
+      () =>
+        requestJson("/api/radar/inventory/store-listing/bulk", {
+          method: "POST",
+          body: JSON.stringify({ mode: "selected", itemIds: selectedIds })
+        }),
+      {
+        success: "Selected store listings published. Skipped products need price, image, or quantity."
+      }
+    );
+  }
+
+  function publishEligible() {
+    return runAction(
+      "Publishing all eligible store listings",
+      () =>
+        requestJson("/api/radar/inventory/store-listing/bulk", {
+          method: "POST",
+          body: JSON.stringify({ mode: "eligible" })
+        }),
+      {
+        confirm: "Publish every eligible inventory product with a public price, image, and available quantity?",
+        success: "Eligible store listings published."
+      }
+    );
+  }
+
+  return (
+    <section className="inventory-publish-toolbar" aria-label="Storefront publishing">
+      <div>
+        <span className="eyeline">Storefront Publishing</span>
+        <h3>Make real inventory visible in GameDayGrabs</h3>
+        <p>{publishedCount} active in this view - {eligibleCount} ready - {needsQualityCount} need price, image, or stock.</p>
+      </div>
+      <div className="inventory-publish-stats">
+        <span>{selectedLabel}</span>
+        <button className="mini-action" type="button" onClick={onSelectAllVisible} disabled={!items.length || busy}>
+          Select All Visible
+        </button>
+        <button className="mini-action" type="button" onClick={onClearSelection} disabled={!selectedIds.length || busy}>
+          Clear
+        </button>
+        <button className="mini-action" type="button" onClick={publishSelected} disabled={!selectedIds.length || busy}>
+          {busyLabel === "Publishing selected store listings" ? "Publishing" : "Publish Selected"}
+        </button>
+        <button className="primary-action" type="button" onClick={publishEligible} disabled={!eligibleCount || busy}>
+          {busyLabel === "Publishing all eligible store listings" ? "Publishing" : "Publish All Eligible"}
+        </button>
+        <a className="mini-action" href="/shop" target="_blank" rel="noreferrer">
+          <ExternalLink size={14} />
+          Preview Storefront
+        </a>
+      </div>
+    </section>
+  );
+}
+
 function PurchaseFlow({
   items,
   defaultItemId,
@@ -7195,7 +7403,9 @@ function InventoryFilters({
 function InventoryList({
   items,
   selectedId,
+  selectedPublishIds,
   onSelect,
+  onTogglePublishSelect,
   onAddStock,
   onRecordSale,
   onViewDetails,
@@ -7203,7 +7413,9 @@ function InventoryList({
 }: {
   items: InventoryItemDTO[];
   selectedId: string;
+  selectedPublishIds: string[];
   onSelect: (item: InventoryItemDTO) => void;
+  onTogglePublishSelect: (itemId: string) => void;
   onAddStock: (item: InventoryItemDTO) => void;
   onRecordSale: (item: InventoryItemDTO) => void;
   onViewDetails: (item: InventoryItemDTO) => void;
@@ -7229,13 +7441,28 @@ function InventoryList({
       </div>
       {items.map((item) => (
         <article className={selectedId === item.id ? "catalog-row selected" : "catalog-row"} key={item.id}>
-          <button className="catalog-product" type="button" onClick={() => onSelect(item)}>
-            <InventoryImage item={item} />
-            <span className="catalog-product-copy text-safe">
-              <strong className="catalog-product-title text-safe">{item.itemName}</strong>
-              <small className="text-safe">{formatStatus(item.category)} - {item.setName || item.retailer || "Source unknown"}</small>
-            </span>
-          </button>
+          <div className="catalog-product-wrap">
+            <label className="publish-select-box" title="Select for storefront publish">
+              <input
+                checked={selectedPublishIds.includes(item.id)}
+                onChange={() => onTogglePublishSelect(item.id)}
+                type="checkbox"
+              />
+              <span className="sr-only">Select {item.itemName} for storefront publishing</span>
+            </label>
+            <button className="catalog-product" type="button" onClick={() => onSelect(item)}>
+              <InventoryImage item={item} />
+              <span className="catalog-product-copy text-safe">
+                <strong className="catalog-product-title text-safe">{item.itemName}</strong>
+                <small className="text-safe">
+                  {formatStatus(item.category)} - {item.setName || item.retailer || "Source unknown"}
+                </small>
+                <small className={storefrontListingEligible(item) ? "publish-ready-note good" : "publish-ready-note"}>
+                  {storefrontListingEligible(item) ? "Store ready" : "Needs listing QA"}
+                </small>
+              </span>
+            </button>
+          </div>
           <span className="catalog-cell inventory-id-cell identifier-text" data-label="UPC / SKU">
             {item.upc || item.sku || item.dpci || item.asin || "Missing ID"}
           </span>
@@ -7704,6 +7931,17 @@ function StoreListingModal({
 }) {
   const [imageUrl, setImageUrl] = useState(item.publicImages[0] || item.imageUrl || "");
   const saveLabel = `Updating store listing ${item.id}`;
+  const suggestedPrice = storefrontSuggestedPublicPrice(item);
+  const suggestedCategory = item.storefrontCategory || storefrontPublicCategory(item);
+  const suggestedDescription = item.publicDescription || item.description || storefrontSuggestedDescription(item);
+  const availableForSale = item.availableForSale ?? item.quantityOwned;
+  const qualityChecks = [
+    { label: "Image exists", complete: Boolean(imageUrl || item.imageUrl) },
+    { label: "Public price set", complete: Boolean(suggestedPrice && suggestedPrice > 0) },
+    { label: "Quantity available", complete: availableForSale > 0 },
+    { label: "Description exists", complete: Boolean(suggestedDescription.trim()) },
+    { label: "Category set", complete: Boolean(suggestedCategory.trim()) }
+  ];
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-modal inventory-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit store listing ${item.itemName}`}>
@@ -7731,7 +7969,21 @@ function StoreListingModal({
             <ProductImagePreview imageUrl={imageUrl || item.imageUrl || ""} itemName={item.itemName} />
             <div>
               <strong>{item.publicTitle || item.itemName}</strong>
-              <span>{storeListingLabel(item)} - {item.quantityOwned} owned - {item.publicPrice !== null ? money(item.publicPrice) : "No public price"}</span>
+              <span>{storeListingLabel(item)} - {item.quantityOwned} owned - {suggestedPrice !== null ? money(suggestedPrice) : "No public price"}</span>
+            </div>
+          </section>
+          <section className="listing-quality-card">
+            <div>
+              <span>Listing Quality</span>
+              <h3>{qualityChecks.every((check) => check.complete) ? "Ready for storefront" : "Needs attention before public launch"}</h3>
+            </div>
+            <div className="listing-quality-grid">
+              {qualityChecks.map((check) => (
+                <span className={check.complete ? "complete" : ""} key={check.label}>
+                  <Check size={13} />
+                  {check.label}
+                </span>
+              ))}
             </div>
           </section>
           <section className="flow-step">
@@ -7754,7 +8006,7 @@ function StoreListingModal({
                 ]}
               />
               <TextInput name="publicSlug" label="Public URL slug" defaultValue={item.publicSlug ?? ""} />
-              <TextInput name="storefrontCategory" label="Store category" defaultValue={item.storefrontCategory || item.category} />
+              <TextInput name="storefrontCategory" label="Store category" defaultValue={suggestedCategory} />
             </div>
           </section>
           <section className="flow-step">
@@ -7762,12 +8014,12 @@ function StoreListingModal({
             <h3>Customer-facing product data</h3>
             <div className="form-grid compact">
               <TextInput name="publicTitle" label="Public title" defaultValue={item.publicTitle || item.itemName} required />
-              <TextInput name="publicPrice" label="Public price" type="number" min="0" step="0.01" defaultValue={item.publicPrice ?? item.targetSellPrice ?? ""} />
+              <TextInput name="publicPrice" label="Public price" type="number" min="0" step="0.01" defaultValue={suggestedPrice ?? ""} />
               <TextInput name="compareAtPrice" label="Compare at price" type="number" min="0" step="0.01" defaultValue={item.compareAtPrice ?? ""} />
-              <TextInput name="availableForSale" label="Available for sale" type="number" min="0" step="1" defaultValue={item.availableForSale ?? item.quantityOwned} />
+              <TextInput name="availableForSale" label="Available for sale" type="number" min="0" step="1" defaultValue={availableForSale} />
               <TextInput name="maxQuantityPerOrder" label="Max quantity/order" type="number" min="1" max="25" step="1" defaultValue={item.maxQuantityPerOrder || 4} />
               <TextInput name="storefrontTags" label="Tags" defaultValue={item.storefrontTags.join(", ")} />
-              <TextareaInput name="publicDescription" label="Public description" defaultValue={item.publicDescription || item.description || ""} wide />
+              <TextareaInput name="publicDescription" label="Public description" defaultValue={suggestedDescription} wide />
             </div>
           </section>
           <section className="flow-step">

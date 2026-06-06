@@ -278,6 +278,36 @@ test("public storefront does not expose internal market or profit data", () => {
   assert.doesNotMatch(storefront, /currentMarketEstimate|marketProfitLoss|TCGCSV|ROI|cost basis/i);
 });
 
+test("storefront publishing and distributor readiness workflow is wired", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const validation = fs.readFileSync(new URL("../src/lib/validation.ts", import.meta.url), "utf8");
+  const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
+  const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const bulkRoute = fs.readFileSync(new URL("../src/app/api/radar/inventory/store-listing/bulk/route.ts", import.meta.url), "utf8");
+  const aboutPage = fs.readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
+  const policiesPage = fs.readFileSync(new URL("../src/app/policies/page.tsx", import.meta.url), "utf8");
+  const contactPage = fs.readFileSync(new URL("../src/app/contact/page.tsx", import.meta.url), "utf8");
+
+  assert.match(validation, /inventoryBulkStorePublishSchema/);
+  assert.match(storefront, /bulkPublishInventoryStoreListings/);
+  assert.match(storefront, /generatedPublicDescription/);
+  assert.match(storefront, /Public price missing/);
+  assert.match(bulkRoute, /requireUser/);
+  assert.match(bulkRoute, /storefront\.listing\.bulk_publish/);
+  assert.match(app, /Storefront Publishing/);
+  assert.match(app, /Publish Selected/);
+  assert.match(app, /Publish All Eligible/);
+  assert.match(app, /Listing Quality/);
+  assert.match(app, /Distributor Application Checklist/);
+  assert.match(app, /Preview Storefront/);
+  assert.match(client, /href: "\/about"/);
+  assert.match(client, /href: "\/policies"/);
+  assert.match(client, /href: "\/contact"/);
+  assert.match(aboutPage, /About GameDayGrabs LLC/);
+  assert.match(policiesPage, /Store Policies/);
+  assert.match(contactPage, /Contact/);
+});
+
 test("alerts tab is rebuilt as a Discord-style tracker command center", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
