@@ -1,11 +1,15 @@
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
+import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Policies | GameDayGrabs LLC",
-  description: "Shipping, returns, pickup, and ordering policies for GameDayGrabs LLC."
+  description: "Shipping, returns, pickup, and ordering policies for GameDayGrabs LLC.",
+  other: {
+    "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
+  }
 };
 
 export default async function PoliciesPage() {

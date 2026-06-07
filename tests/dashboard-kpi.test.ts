@@ -282,6 +282,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const validation = fs.readFileSync(new URL("../src/lib/validation.ts", import.meta.url), "utf8");
   const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
+  const routing = fs.readFileSync(new URL("../src/lib/storefront-routing.ts", import.meta.url), "utf8");
   const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
   const bulkRoute = fs.readFileSync(new URL("../src/app/api/radar/inventory/store-listing/bulk/route.ts", import.meta.url), "utf8");
   const contactRoute = fs.readFileSync(new URL("../src/app/api/storefront/contact/route.ts", import.meta.url), "utf8");
@@ -297,6 +298,9 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(storefront, /Public price missing/);
   assert.match(storefront, /createContactMessage/);
   assert.match(storefront, /sendStorefrontEmail/);
+  assert.match(storefront, /storefrontContactEmail/);
+  assert.match(routing, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL = "gamedaygrabs@outlook\.com"/);
+  assert.match(routing, /LEGACY_PUBLIC_CONTACT_EMAIL = "ariverah7@gmail\.com"/);
   assert.match(storefront, /status: "contact_message"/);
   assert.match(storefront, /inquiryCount/);
   assert.match(bulkRoute, /requireUser/);
@@ -356,9 +360,15 @@ test("GameDayGrabs custom domain routes public storefront without exposing priva
   assert.match(app, /Current public URL/);
   assert.match(app, /Intended domain/);
   assert.match(app, /Domain connected/);
+  assert.match(app, /Public contact email = gamedaygrabs@outlook\.com/);
+  assert.match(app, /gamedaygrabs\.com connected/);
+  assert.match(app, /www\.gamedaygrabs\.com connected/);
+  assert.match(app, /Storefront root loads publicly/);
+  assert.match(app, /SSL active/);
   assert.match(app, /Manual check pending/);
   assert.match(domainDocs, /Do not add gamedaygrabs\.com or www\.gamedaygrabs\.com to Harbor Command/);
   assert.match(domainDocs, /Settings -> Domains/);
+  assert.match(domainDocs, /gamedaygrabs@outlook\.com/);
   assert.match(domainDocs, /Public Data Safety/);
 });
 

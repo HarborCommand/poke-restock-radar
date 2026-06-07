@@ -1716,6 +1716,8 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
   const withImages = published.filter((item) => item.publicImages[0] || item.imageUrl);
   const settings = dashboard.storefrontSettings;
   const publicUrl = "https://gamedaygrabs.com";
+  const publicContactEmail = "gamedaygrabs@outlook.com";
+  const contactEmailReady = settings.contactEmail?.toLowerCase() === publicContactEmail;
   const checks = [
     { label: "Storefront live", detail: `${publicUrl} serves the public shop after DNS is configured. /shop remains available.`, complete: true },
     { label: "Contact page live", detail: "/contact is available for customers and distributors.", complete: true },
@@ -1723,8 +1725,10 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
     { label: "At least 5 published products", detail: `${published.length} active products published.`, complete: published.length >= 5 },
     { label: "Published product images", detail: `${withImages.length}/${published.length || 0} active products have images.`, complete: published.length > 0 && withImages.length === published.length },
     { label: "Order/inquiry flow working", detail: settings.checkoutConfigured ? "Stripe Checkout configured." : "Request Invoice mode available.", complete: true },
-    { label: "Public contact email configured", detail: settings.contactEmail || "Contact email not configured yet.", complete: Boolean(settings.contactEmail) },
-    { label: "Domain connected", detail: "Recommended: add gamedaygrabs.com and www.gamedaygrabs.com to the Vercel project and verify DNS.", complete: false, optional: true }
+    { label: "Public contact email = gamedaygrabs@outlook.com", detail: settings.contactEmail || "Contact email not configured yet.", complete: contactEmailReady },
+    { label: "gamedaygrabs.com connected", detail: "Add the apex domain to Vercel Settings > Domains and verify DNS/SSL.", complete: false, optional: true },
+    { label: "www.gamedaygrabs.com connected", detail: "Add the www domain to Vercel Settings > Domains and verify DNS/SSL.", complete: false, optional: true },
+    { label: "Storefront root loads publicly", detail: "After DNS connects, https://gamedaygrabs.com should render the public storefront at /.", complete: false, optional: true }
   ];
   const requiredChecks = checks.filter((check) => !check.optional);
   const readyCount = requiredChecks.filter((check) => check.complete).length;
@@ -1772,6 +1776,26 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
           <span className="eyeline">DNS status</span>
           <strong>Manual check pending</strong>
           <small>Confirm the exact A/CNAME records inside Vercel after updating the registrar.</small>
+        </article>
+        <article>
+          <span className="eyeline">Domain configured</span>
+          <strong>Manual Vercel check</strong>
+          <small>Add gamedaygrabs.com and www.gamedaygrabs.com only to the poke-restock-radar Vercel project.</small>
+        </article>
+        <article>
+          <span className="eyeline">Domain connected</span>
+          <strong>Pending DNS</strong>
+          <small>Vercel must show both domains as valid before public launch.</small>
+        </article>
+        <article>
+          <span className="eyeline">SSL active</span>
+          <strong>Pending Vercel certificate</strong>
+          <small>Vercel will issue SSL after the DNS records validate.</small>
+        </article>
+        <article>
+          <span className="eyeline">Storefront root ready</span>
+          <strong>Host-aware routing enabled</strong>
+          <small>When DNS is connected, / on gamedaygrabs.com renders the public storefront.</small>
         </article>
         <article>
           <span className="eyeline">Contact email</span>
@@ -1827,6 +1851,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
       <div className="distributor-link-row">
         <a className="mini-action" href="/contact" target="_blank" rel="noreferrer">Open Contact</a>
         <a className="mini-action" href="/policies" target="_blank" rel="noreferrer">Open Policies</a>
+        <a className="mini-action" href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Open Vercel Domains</a>
         <button className="mini-action" type="button" onClick={() => setActiveTab("orders")}>Store Settings</button>
       </div>
     </div>

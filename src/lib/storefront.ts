@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { storefrontContactEmail } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
   SessionUser,
@@ -174,7 +175,7 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
   return {
     storeName: settings?.storeName ?? "GameDayGrabs LLC",
     storeLogoUrl: settings?.storeLogoUrl ?? null,
-    contactEmail: settings?.contactEmail ?? null,
+    contactEmail: storefrontContactEmail(settings?.contactEmail),
     returnPolicyText: settings?.returnPolicyText ?? null,
     shippingPolicyText: settings?.shippingPolicyText ?? null,
     localPickupInstructions: settings?.localPickupInstructions ?? null,
@@ -485,7 +486,7 @@ export async function createContactMessage(input: {
   message: string;
 }) {
   const settings = await prisma.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
-  const contactEmail = settings?.contactEmail?.trim() || null;
+  const contactEmail = storefrontContactEmail(settings?.contactEmail);
   const customer = await prisma.storefrontCustomer.upsert({
     where: { email: input.email },
     create: {

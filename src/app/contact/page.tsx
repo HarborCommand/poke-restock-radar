@@ -1,11 +1,15 @@
 import { StorefrontContactForm, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
+import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Contact | GameDayGrabs LLC",
-  description: "Contact GameDayGrabs LLC for inventory questions, invoice requests, and order help."
+  description: "Contact GameDayGrabs LLC for inventory questions, invoice requests, and order help.",
+  other: {
+    "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
+  }
 };
 
 export default async function ContactPage() {

@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { RadarApp } from "@/components/RadarApp";
 import { StorefrontHomeView } from "@/components/StorefrontServerViews";
-import { isGameDayGrabsHost } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, isGameDayGrabsHost } from "@/lib/storefront-routing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +16,9 @@ export async function generateMetadata() {
         title: "GameDayGrabs LLC | Pokemon & Sports Card Collectibles",
         description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
         images: ["/icons/icon-512.png"]
+      },
+      other: {
+        "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
       }
     };
   }

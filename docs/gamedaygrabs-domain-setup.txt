@@ -20,5 +20,23 @@ Expected Routing
 - Public routes include /shop, /product/[slug], /shop/product/[slug], /cart, /shop/cart, /policies, and /contact.
 - Private routes such as /app, /dashboard, and /admin still require login before showing private inventory, scanner, market, supplier, receipt, or tracker data.
 
+Domain Readiness Checklist
+- Add gamedaygrabs.com to Vercel Settings -> Domains for the poke-restock-radar project.
+- Add www.gamedaygrabs.com to Vercel Settings -> Domains for the same project.
+- Do not add either domain to Harbor Command.
+- Copy the exact DNS records Vercel shows into the domain registrar.
+- Wait for Vercel to show Domain configured, Connected, and SSL active.
+- Confirm https://gamedaygrabs.com loads the public storefront homepage.
+- Confirm https://www.gamedaygrabs.com loads the same public storefront.
+- Confirm /contact, /policies, /cart, and product pages work on the public domain.
+- Confirm /admin, /dashboard, and /app remain private and require login.
+
+Public Contact
+- Public storefront contact email: gamedaygrabs@outlook.com.
+- This public business email is shown on /contact, /policies, the storefront footer, and invoice request confirmations.
+- This does not change the private admin login email.
+- If SMTP is not configured, contact form messages are stored as storefront inquiries in Admin.
+- If SMTP is configured later, contact form messages are sent to gamedaygrabs@outlook.com.
+
 Public Data Safety
 The public storefront must never expose cost basis, supplier/source, market value, profit, tracker data, UPC scanner history, receipts, or admin notes.
