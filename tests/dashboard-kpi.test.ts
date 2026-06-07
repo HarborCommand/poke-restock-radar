@@ -287,6 +287,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
   const serverViews = fs.readFileSync(new URL("../src/components/StorefrontServerViews.tsx", import.meta.url), "utf8");
   const shopPage = fs.readFileSync(new URL("../src/app/shop/page.tsx", import.meta.url), "utf8");
+  const styles = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
   const settingsRoute = fs.readFileSync(new URL("../src/app/api/radar/storefront/settings/route.ts", import.meta.url), "utf8");
   const prismaSchema = fs.readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
   const bulkRoute = fs.readFileSync(new URL("../src/app/api/radar/inventory/store-listing/bulk/route.ts", import.meta.url), "utf8");
@@ -336,6 +337,10 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /StorefrontFooter/);
   assert.match(client, /StorefrontContactForm/);
   assert.match(client, /sportsCardsExternalUrl/);
+  assert.match(client, /gdg-gallery \$\{images\.length > 1 \? "has-thumbs" : "single-image"\}/);
+  assert.match(client, /Image coming soon/);
+  assert.match(styles, /\.gdg-gallery-main[\s\S]*aspect-ratio: 1 \/ 1/);
+  assert.match(styles, /\.gdg-gallery-main img[\s\S]*object-fit: contain/);
   assert.match(client, /target="_blank"/);
   assert.match(client, /rel="noopener noreferrer"/);
   assert.match(client, /ExternalLink/);

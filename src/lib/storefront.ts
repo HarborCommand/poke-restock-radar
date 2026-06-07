@@ -124,7 +124,7 @@ function generatedPublicDescription(item: Pick<StorefrontInventoryItem, "itemNam
   const category = publicCategoryForItem(item);
   const setText = item.setName ? ` from ${item.setName}` : "";
   const brandText = item.brand ? `${item.brand} ` : "";
-  return `${brandText}${item.itemName}${setText} is available from GameDayGrabs LLC as part of our ${category} selection. Each listing is reviewed for clear images, customer-facing pricing, and available quantity before it appears in the public shop. Availability is subject to change until checkout or invoice confirmation.`;
+  return `${brandText}${item.itemName}${setText} is available from GameDayGrabs LLC as part of our ${category} selection. This sealed product is listed with clear photos, current availability, and secure request-invoice checkout. Availability is subject to change until your order or invoice is confirmed.`;
 }
 
 function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | "targetSellPrice" | "msrp" | "currentMarketEstimate">) {

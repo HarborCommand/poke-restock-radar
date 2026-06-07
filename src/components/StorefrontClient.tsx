@@ -659,9 +659,16 @@ export function ProductDetail({
           <span>{product.category}</span>
         </nav>
         <div className="gdg-detail-grid">
-          <aside className="gdg-gallery">
+          <aside className={`gdg-gallery ${images.length > 1 ? "has-thumbs" : "single-image"}`}>
             <div className="gdg-gallery-main">
-              {selectedImage ? <Image src={selectedImage} alt={product.title} width={820} height={680} unoptimized /> : <Package size={42} />}
+              {selectedImage ? (
+                <Image src={selectedImage} alt={product.title} width={900} height={900} unoptimized />
+              ) : (
+                <div className="gdg-image-placeholder">
+                  <Package size={42} />
+                  <span>Image coming soon</span>
+                </div>
+              )}
             </div>
             {images.length > 1 ? (
               <div className="gdg-gallery-thumbs">
@@ -727,7 +734,7 @@ export function ProductDetail({
       <section className="gdg-description-section">
         <article>
           <h2>Product Details</h2>
-          <p>{product.description || "This public listing is available from GameDayGrabs inventory. Availability is subject to change until checkout or invoice confirmation."}</p>
+          <p>{product.description || "Available from GameDayGrabs LLC. This sealed product is listed with clear photos, current availability, and secure request-invoice checkout."}</p>
           <ul>
             <li>Category: {product.category}.</li>
             <li>Available quantity shown on this page is updated from published inventory.</li>
