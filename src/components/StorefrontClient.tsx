@@ -20,7 +20,6 @@ import {
   Star,
   Trash2,
   Truck,
-  User,
   X
 } from "lucide-react";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
@@ -33,6 +32,7 @@ const preferredCategories = [
   "Booster Bundles",
   "Elite Trainer Boxes",
   "Premium Collections",
+  "Sleeved Boosters",
   "Sports Cards",
   "Graded Cards"
 ];
@@ -127,7 +127,7 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
   const nav = [
     { href: "/shop#shop", label: "Shop" },
     { href: "/shop#pokemon", label: "Pokemon" },
-    { href: "/shop#sports-cards", label: "Sports Cards" },
+    { href: "/shop#shop", label: "Sports Cards" },
     { href: "/shop#new-arrivals", label: "New Arrivals" },
     { href: "/about", label: "About" },
     { href: "/policies", label: "Policies" },
@@ -150,9 +150,6 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
         <a className="gdg-icon-link" href="/shop#shop" aria-label="Search products">
           <Search size={18} />
         </a>
-        <Link className="gdg-icon-link optional" href="/app" aria-label="Account">
-          <User size={18} />
-        </Link>
         <Link href="/cart" className="gdg-cart-link" aria-label={`Cart with ${count} items`}>
           <ShoppingBag size={18} />
           {count ? <b>{count}</b> : null}
@@ -183,9 +180,12 @@ export function StorefrontFooter({ settings }: { settings: StorefrontSettingsDTO
       </div>
       <nav aria-label="Store footer navigation">
         <Link href="/shop">Shop</Link>
+        <Link href="/shop#pokemon">Pokemon</Link>
+        <Link href="/shop#shop">Sports Cards</Link>
+        <Link href="/shop#new-arrivals">New Arrivals</Link>
+        <Link href="/about">About</Link>
         <Link href="/policies">Policies</Link>
         <Link href="/contact">Contact</Link>
-        <Link href="/about">About</Link>
       </nav>
       <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
     </footer>
@@ -363,7 +363,15 @@ export function ProductGrid({ products, settings }: { products: PublicStoreProdu
           </div>
         </div>
         <div className="gdg-hero-stage" aria-label="Featured collectible products">
-          {heroProduct ? <ProductImage product={heroProduct} size="hero" /> : <div className="gdg-hero-placeholder">GameDayGrabs</div>}
+          {heroProduct ? (
+            <ProductImage product={heroProduct} size="hero" />
+          ) : (
+            <div className="gdg-hero-placeholder">
+              <span>GameDayGrabs</span>
+              <strong>Premium Card Shop</strong>
+              <small>Published products will appear here.</small>
+            </div>
+          )}
           {products[1] ? (
             <div className="gdg-floating-card">
               <ProductImage product={products[1]} size="thumb" />
@@ -377,8 +385,8 @@ export function ProductGrid({ products, settings }: { products: PublicStoreProdu
       <section className="gdg-trust-bar" aria-label="Store promises">
         {[
           { icon: <BadgeCheck size={19} />, title: "Authentic Products", text: "100% authentic guaranteed" },
+          { icon: <ShieldCheck size={19} />, title: "Secure Packaging", text: "Packed carefully for transit" },
           { icon: <Truck size={19} />, title: "Fast Shipping", text: "Secure & tracked delivery" },
-          { icon: <Star size={19} />, title: "Great Prices", text: "Competitive & fair pricing" },
           { icon: <ShieldCheck size={19} />, title: "Collector Trusted", text: "Reliable for collectors" }
         ].map((item) => (
           <div key={item.title}>
@@ -528,7 +536,7 @@ export function ProductGrid({ products, settings }: { products: PublicStoreProdu
         </div>
         <div className="gdg-value-grid">
           {[
-            { icon: <User size={18} />, title: "Family Owned", text: "Passionate about cards and our community." },
+            { icon: <Heart size={18} />, title: "Family Owned", text: "Passionate about cards and our community." },
             { icon: <BadgeCheck size={18} />, title: "Carefully Curated", text: "We only offer products we would collect ourselves." },
             { icon: <ShieldCheck size={18} />, title: "Safe & Secure", text: "Your information and orders are protected." },
             { icon: <Star size={18} />, title: "Top Rated Service", text: "Customer satisfaction is our priority." }
@@ -670,13 +678,32 @@ export function ProductDetail({
         </div>
       </section>
       <section className="gdg-description-section">
-        <h2>Product Description</h2>
-        <p>{product.description || "This public listing is available from GameDayGrabs inventory. Availability is subject to change until checkout or invoice confirmation."}</p>
-        <ul>
-          <li>Ships with care from GameDayGrabs LLC.</li>
-          <li>Availability is confirmed before payment or invoice fulfillment.</li>
-          <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request invoice mode is active until checkout is configured."}</li>
-        </ul>
+        <article>
+          <h2>Product Details</h2>
+          <p>{product.description || "This public listing is available from GameDayGrabs inventory. Availability is subject to change until checkout or invoice confirmation."}</p>
+          <ul>
+            <li>Category: {product.category}.</li>
+            <li>Available quantity shown on this page is updated from published inventory.</li>
+            <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request Invoice mode is active until online checkout is configured."}</li>
+          </ul>
+        </article>
+        <article>
+          <h2>Shipping & Handling</h2>
+          <p>{settings.shippingPolicyText || "Products are packed with care and shipped securely with tracking when shipping is selected."}</p>
+          <ul>
+            <li>Default shipping estimate: {money(settings.defaultShippingPrice)}.</li>
+            {settings.freeShippingThreshold ? <li>Free shipping threshold: {money(settings.freeShippingThreshold)}.</li> : null}
+            <li>Availability is confirmed before invoice payment or shipment.</li>
+          </ul>
+        </article>
+        <article>
+          <h2>Condition Policy</h2>
+          <p>{settings.returnPolicyText || "Sealed and collectible products are reviewed carefully before fulfillment. Returns are handled case by case, especially for sealed collectible items."}</p>
+          <ul>
+            <li>Public listings never include internal purchase notes or private inventory details.</li>
+            <li>Contact GameDayGrabs before returning any collectible product.</li>
+          </ul>
+        </article>
       </section>
       {relatedProducts.length ? (
         <section className="gdg-section">
@@ -704,6 +731,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const [message, setMessage] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerNotes, setCustomerNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -748,7 +777,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
       const response = await fetch(settings.checkoutConfigured ? "/api/storefront/checkout" : "/api/storefront/invoice-request", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items, fulfillmentMethod: "shipping", customerName, customerEmail })
+        body: JSON.stringify({ items, fulfillmentMethod: "shipping", customerName, customerEmail, customerPhone, customerNotes })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Request could not start.");
@@ -756,10 +785,11 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
         if (!payload.checkoutUrl) throw new Error("Checkout could not start.");
         window.location.href = payload.checkoutUrl;
       } else {
-        const contactText = settings.contactEmail ? ` Questions can be sent to ${settings.contactEmail}.` : "";
-        setMessage(`Invoice request ${payload.order?.orderNumber || ""} was sent. GameDayGrabs will follow up to confirm availability and payment.${contactText}`);
+        const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
+        setMessage(`Thanks - we received your request and will contact you shortly at ${contactEmail}.`);
         setItems([]);
         setProducts([]);
+        setCustomerNotes("");
         writeCart([]);
       }
     } catch (error) {
@@ -831,6 +861,14 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               Email
               <input value={customerEmail} onChange={(event) => setCustomerEmail(event.currentTarget.value)} placeholder="you@example.com" type="email" />
             </label>
+            <label>
+              Phone <span>optional</span>
+              <input value={customerPhone} onChange={(event) => setCustomerPhone(event.currentTarget.value)} placeholder="Optional phone number" type="tel" />
+            </label>
+            <label>
+              Notes <span>optional</span>
+              <textarea value={customerNotes} onChange={(event) => setCustomerNotes(event.currentTarget.value)} placeholder="Questions, pickup request, or products you are looking for." rows={4} />
+            </label>
             <button className="gdg-primary-button wide" type="button" disabled={busy || !customerEmail.trim() || !customerName.trim()} onClick={checkout}>
               {busy ? "Working..." : settings.checkoutConfigured ? "Checkout" : "Request Invoice"}
             </button>
@@ -867,8 +905,8 @@ export function CheckoutSuccessClient() {
         <Link href="/shop" className="gdg-primary-button">
           Back to Shop
         </Link>
-        <Link href="/" className="gdg-secondary-button">
-          Private Radar
+        <Link href="/contact" className="gdg-secondary-button">
+          Contact GameDayGrabs
         </Link>
       </div>
     </section>

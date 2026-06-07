@@ -1719,27 +1719,27 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
   const publicContactEmail = "gamedaygrabs@outlook.com";
   const contactEmailReady = settings.contactEmail?.toLowerCase() === publicContactEmail;
   const checks = [
-    { label: "Storefront live", detail: `${publicUrl} serves the public shop after DNS is configured. /shop remains available.`, complete: true },
-    { label: "Contact page live", detail: "/contact is available for customers and distributors.", complete: true },
-    { label: "Policies page live", detail: "/policies shows shipping, return, pickup, and checkout notes.", complete: true },
+    { label: "Custom domain connected", detail: "gamedaygrabs.com and www.gamedaygrabs.com must be valid in Vercel Domains.", complete: false },
+    { label: "Storefront root works", detail: "https://www.gamedaygrabs.com should render the public storefront at / after DNS connects.", complete: false },
+    { label: "Shop page works", detail: "/shop is live and remains available for previews.", complete: true },
+    { label: "Contact email visible", detail: settings.contactEmail || "Contact email not configured yet.", complete: contactEmailReady },
+    { label: "Contact form / inquiry works", detail: "Contact and Request Invoice save customer inquiries when SMTP is missing.", complete: true },
+    { label: "Policies page works", detail: "/policies shows shipping, returns, pickup, checkout, and contact details.", complete: true },
+    { label: "About page works", detail: "/about explains GameDayGrabs LLC for customers and distributors.", complete: true },
     { label: "At least 5 published products", detail: `${published.length} active products published.`, complete: published.length >= 5 },
     { label: "Published product images", detail: `${withImages.length}/${published.length || 0} active products have images.`, complete: published.length > 0 && withImages.length === published.length },
-    { label: "Order/inquiry flow working", detail: settings.checkoutConfigured ? "Stripe Checkout configured." : "Request Invoice mode available.", complete: true },
-    { label: "Public contact email = gamedaygrabs@outlook.com", detail: settings.contactEmail || "Contact email not configured yet.", complete: contactEmailReady },
-    { label: "gamedaygrabs.com connected", detail: "Add the apex domain to Vercel Settings > Domains and verify DNS/SSL.", complete: false, optional: true },
-    { label: "www.gamedaygrabs.com connected", detail: "Add the www domain to Vercel Settings > Domains and verify DNS/SSL.", complete: false, optional: true },
-    { label: "Storefront root loads publicly", detail: "After DNS connects, https://gamedaygrabs.com should render the public storefront at /.", complete: false, optional: true }
+    { label: "Request Invoice / cart works", detail: settings.checkoutConfigured ? "Stripe Checkout configured; cart remains active." : "Request Invoice mode available until Stripe is configured.", complete: true },
+    { label: "No private data exposed", detail: "Public pages hide costs, profit, market values, receipts, scanner history, and tracker data.", complete: true }
   ];
-  const requiredChecks = checks.filter((check) => !check.optional);
-  const readyCount = requiredChecks.filter((check) => check.complete).length;
-  const distributorReady = readyCount === requiredChecks.length;
+  const readyCount = checks.filter((check) => check.complete).length;
+  const distributorReady = readyCount === checks.length;
 
   return (
     <div className="distributor-readiness-panel">
       <div className="distributor-readiness-hero">
         <div>
           <span className="eyeline">Storefront Status</span>
-          <h3>{readyCount}/{requiredChecks.length} distributor-ready</h3>
+          <h3>{distributorReady ? "Ready" : "Needs Work"} - {readyCount}/{checks.length}</h3>
           <p>Use this to keep gamedaygrabs.com and GameDayGrabs distributor readiness on track without exposing private costs, scanner data, receipts, or tracker details.</p>
         </div>
         <div className="inventory-header-actions">
@@ -1824,8 +1824,8 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
         </article>
         <article>
           <span className="eyeline">Distributor readiness</span>
-          <strong>{distributorReady ? "Ready" : "Needs setup"}</strong>
-          <small>{distributorReady ? "Required checklist is complete. Domain connection remains recommended." : "Complete required checklist items before distributor review."}</small>
+          <strong>{distributorReady ? "Ready" : "Needs Work"}</strong>
+          <small>{distributorReady ? "All distributor checks are complete." : "Complete all checklist items before distributor review."}</small>
         </article>
       </div>
       <div className="distributor-readiness-hero distributor-checklist-heading">
@@ -1842,7 +1842,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
               <Check size={15} />
             </span>
             <div>
-              <strong>{check.label}{check.optional ? " (optional)" : ""}</strong>
+              <strong>{check.label}</strong>
               <small>{check.detail}</small>
             </div>
           </article>

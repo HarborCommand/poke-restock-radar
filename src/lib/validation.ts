@@ -705,7 +705,9 @@ export const storefrontCheckoutSchema = z.object({
 
 export const storefrontInvoiceRequestSchema = storefrontCheckoutSchema.extend({
   customerEmail: z.string().trim().email(),
-  customerName: z.string().trim().min(2).max(120)
+  customerName: z.string().trim().min(2).max(120),
+  customerPhone: optionalTrimmed,
+  customerNotes: optionalTrimmed
 });
 
 export const storefrontContactMessageSchema = z.object({

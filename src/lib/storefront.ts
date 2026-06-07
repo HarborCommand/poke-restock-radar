@@ -428,6 +428,8 @@ export async function createInvoiceRequest(input: {
   fulfillmentMethod: "shipping" | "pickup";
   customerEmail: string;
   customerName: string;
+  customerPhone?: string | null;
+  customerNotes?: string | null;
 }) {
   const settings = await getStorefrontSettings();
   const cart = await getCartProducts(input.items);
@@ -442,12 +444,20 @@ export async function createInvoiceRequest(input: {
     create: {
       email: input.customerEmail,
       name: input.customerName,
+      phone: input.customerPhone || null,
       userId: cart[0]?.item.userId ?? null
     },
     update: {
-      name: input.customerName
+      name: input.customerName,
+      phone: input.customerPhone || undefined
     }
   });
+  const noteLines = [
+    "Public storefront invoice request.",
+    "Confirm availability and payment manually before fulfillment.",
+    input.customerPhone ? `Customer phone: ${input.customerPhone}` : null,
+    input.customerNotes ? `Customer notes: ${input.customerNotes}` : null
+  ].filter(Boolean);
   const order = await prisma.storefrontOrder.create({
     data: {
       orderNumber: orderNumber(),
@@ -461,7 +471,7 @@ export async function createInvoiceRequest(input: {
       subtotal,
       shippingCharged,
       total,
-      notes: "Public storefront invoice request. Confirm availability and payment manually before fulfillment.",
+      notes: noteLines.join("\n"),
       items: {
         create: cart.map(({ product, item, quantity }) => ({
           inventoryItemId: item.id,

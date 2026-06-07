@@ -15392,6 +15392,63 @@ body:has(.shop-shell) {
   object-fit: contain;
 }
 
+.gdg-hero-placeholder {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(76%, 460px);
+  aspect-ratio: 4 / 3;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 34px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(240, 253, 244, 0.68)),
+    radial-gradient(circle at 75% 25%, rgba(34, 197, 94, 0.2), transparent 32%);
+  box-shadow:
+    0 34px 70px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  text-align: center;
+  transform: rotate(-2deg);
+}
+
+.gdg-hero-placeholder::before {
+  display: grid;
+  width: 84px;
+  height: 84px;
+  place-items: center;
+  border-radius: 28px;
+  background: #050505;
+  color: #ffffff;
+  content: "GG";
+  font-size: 1.6rem;
+  font-weight: 950;
+  letter-spacing: -0.08em;
+}
+
+.gdg-hero-placeholder span {
+  color: #16a34a;
+  font-size: 0.82rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gdg-hero-placeholder strong {
+  max-width: 280px;
+  color: #080c14;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 900;
+  letter-spacing: -0.06em;
+  line-height: 0.96;
+}
+
+.gdg-hero-placeholder small {
+  color: #64748b;
+  font-weight: 800;
+}
+
 .gdg-product-image-thumb {
   width: 72px;
   height: 72px;
@@ -15616,6 +15673,7 @@ body:has(.shop-shell) {
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
   min-width: 0;
+  min-height: 100%;
   border: 1px solid #e8edf3;
   border-radius: 22px;
   background: #ffffff;
@@ -15631,9 +15689,15 @@ body:has(.shop-shell) {
 .gdg-product-body {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .gdg-product-body h3 {
+  display: -webkit-box;
+  min-height: 2.56em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   margin: 0;
   color: #0f172a;
   font-size: 1rem;
@@ -15709,6 +15773,7 @@ body:has(.shop-shell) {
 .gdg-shop-filters select,
 .gdg-shop-toolbar select,
 .gdg-cart-summary input,
+.gdg-cart-summary textarea,
 .gdg-contact-strip input {
   width: 100%;
   border: 1px solid #e2e8f0;
@@ -15722,8 +15787,21 @@ body:has(.shop-shell) {
 .gdg-shop-filters label span,
 .gdg-shop-toolbar select,
 .gdg-cart-summary input,
+.gdg-cart-summary textarea,
 .gdg-contact-strip input {
   border-radius: 14px;
+}
+
+.gdg-cart-summary textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.gdg-cart-summary label span {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .gdg-shop-filters label span {
@@ -16017,7 +16095,23 @@ body:has(.shop-shell) {
 
 .gdg-description-section {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.gdg-description-section article {
+  display: grid;
+  align-content: start;
   gap: 12px;
+  min-width: 0;
+  border: 1px solid #e8edf3;
+  border-radius: 20px;
+  background: #fbfdff;
+  padding: 18px;
+}
+
+.gdg-description-section article > * {
+  min-width: 0;
 }
 
 .gdg-description-section ul {
@@ -16195,6 +16289,7 @@ body:has(.shop-shell) {
   .gdg-value-grid,
   .gdg-contact-strip,
   .gdg-policies,
+  .gdg-description-section,
   .gdg-product-trust {
     grid-template-columns: 1fr;
   }
@@ -16630,7 +16725,7 @@ body:has(.shop-shell) {
 
 .gdg-footer {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) auto auto;
+  grid-template-columns: minmax(260px, 1.2fr) minmax(240px, 0.9fr) auto;
   align-items: center;
   gap: 22px;
   width: min(1440px, 100%);
@@ -16673,8 +16768,8 @@ body:has(.shop-shell) {
 }
 
 .gdg-footer nav {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, max-content));
   justify-content: center;
   gap: 10px 16px;
 }
@@ -16689,8 +16784,18 @@ body:has(.shop-shell) {
   .inventory-publish-toolbar,
   .distributor-readiness-hero,
   .gdg-policy-page,
-  .gdg-contact-page-card {
+  .gdg-contact-page-card,
+  .gdg-footer {
     grid-template-columns: 1fr;
+  }
+
+  .gdg-footer {
+    align-items: start;
+  }
+
+  .gdg-footer nav {
+    grid-template-columns: repeat(2, minmax(0, max-content));
+    justify-content: start;
   }
 
   .inventory-publish-stats {
