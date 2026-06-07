@@ -79,6 +79,16 @@ function money(value: number | null | undefined) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
+function cleanPublicProductDescription(product: PublicStoreProductDTO) {
+  const fallback = "Available from GameDayGrabs LLC. This sealed product is listed with clear photos, current availability, and secure request-invoice checkout.";
+  const description = product.description?.trim();
+  if (!description) return fallback;
+  if (/reviewed for clear images|customer-facing pricing|invoice checkout confirmation/i.test(description)) {
+    return fallback;
+  }
+  return description;
+}
+
 function displayStoreName(settings: StorefrontSettingsDTO) {
   return settings.storeName && !/poke radar/i.test(settings.storeName) ? settings.storeName : "GameDayGrabs LLC";
 }
@@ -641,6 +651,7 @@ export function ProductDetail({
   const images = product.images.length ? product.images : product.imageUrl ? [product.imageUrl] : [];
   const [selectedImage, setSelectedImage] = useState(images[0] ?? null);
   const actionLabel = checkoutModeLabel(settings);
+  const publicDescription = cleanPublicProductDescription(product);
 
   function addProductToCart(redirect = false) {
     addToCart(product, quantity);
@@ -688,7 +699,7 @@ export function ProductDetail({
               {product.compareAtPrice ? <s>{money(product.compareAtPrice)}</s> : null}
               <span className={product.availableQuantity > 0 ? "gdg-stock in" : "gdg-stock out"}>{product.availableQuantity > 0 ? "In Stock" : "Sold Out"}</span>
             </div>
-            <p>{product.description || "Collector-grade product from GameDayGrabs public inventory."}</p>
+            <p>{publicDescription}</p>
             <small>Stock visible now: {product.availableQuantity} item{product.availableQuantity === 1 ? "" : "s"}.</small>
             <div className="gdg-quantity-control">
               <span>Quantity</span>
@@ -734,7 +745,7 @@ export function ProductDetail({
       <section className="gdg-description-section">
         <article>
           <h2>Product Details</h2>
-          <p>{product.description || "Available from GameDayGrabs LLC. This sealed product is listed with clear photos, current availability, and secure request-invoice checkout."}</p>
+          <p>{publicDescription}</p>
           <ul>
             <li>Category: {product.category}.</li>
             <li>Available quantity shown on this page is updated from published inventory.</li>

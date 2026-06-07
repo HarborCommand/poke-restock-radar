@@ -339,6 +339,8 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /sportsCardsExternalUrl/);
   assert.match(client, /gdg-gallery \$\{images\.length > 1 \? "has-thumbs" : "single-image"\}/);
   assert.match(client, /Image coming soon/);
+  assert.match(client, /cleanPublicProductDescription/);
+  assert.match(client, /reviewed for clear images\|customer-facing pricing\|invoice checkout confirmation/i);
   assert.match(styles, /\.gdg-gallery-main[\s\S]*aspect-ratio: 1 \/ 1/);
   assert.match(styles, /\.gdg-gallery-main img[\s\S]*object-fit: contain/);
   assert.match(client, /target="_blank"/);
