@@ -600,6 +600,7 @@ const statements = [
     "userId" TEXT NOT NULL UNIQUE,
     "storeName" TEXT NOT NULL DEFAULT 'GameDayGrabs LLC',
     "storeLogoUrl" TEXT,
+    "sportsCardsExternalUrl" TEXT,
     "contactEmail" TEXT,
     "returnPolicyText" TEXT,
     "shippingPolicyText" TEXT,
@@ -612,6 +613,7 @@ const statements = [
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "StorefrontSettings_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
+  `ALTER TABLE "StorefrontSettings" ADD COLUMN "sportsCardsExternalUrl" TEXT`,
   `CREATE TABLE IF NOT EXISTS "StorefrontCustomer" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "userId" TEXT,

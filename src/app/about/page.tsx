@@ -1,5 +1,6 @@
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
+import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,10 +10,10 @@ export const metadata = {
 };
 
 export default async function AboutPage() {
-  const settings = await getStorefrontSettings();
+  const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
     <main className="shop-shell">
-      <StorefrontHeader settings={settings} />
+      <StorefrontHeader settings={settings} homeHref={homeHref} />
       <section className="gdg-info-hero">
         <p className="gdg-overline">About GameDayGrabs LLC</p>
         <h1>Built for collectors, players, and families.</h1>
@@ -44,7 +45,7 @@ export default async function AboutPage() {
           ))}
         </div>
       </section>
-      <StorefrontFooter settings={settings} />
+      <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>
   );
 }

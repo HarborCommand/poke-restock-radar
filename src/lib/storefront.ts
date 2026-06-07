@@ -175,6 +175,7 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
   return {
     storeName: settings?.storeName ?? "GameDayGrabs LLC",
     storeLogoUrl: settings?.storeLogoUrl ?? null,
+    sportsCardsExternalUrl: settings?.sportsCardsExternalUrl ?? null,
     contactEmail: storefrontContactEmail(settings?.contactEmail),
     returnPolicyText: settings?.returnPolicyText ?? null,
     shippingPolicyText: settings?.shippingPolicyText ?? null,

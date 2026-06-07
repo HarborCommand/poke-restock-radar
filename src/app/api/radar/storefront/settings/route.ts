@@ -34,6 +34,7 @@ export async function PATCH(request: Request) {
       userId: user.id,
       storeName: input.storeName,
       storeLogoUrl: input.storeLogoUrl,
+      sportsCardsExternalUrl: input.sportsCardsExternalUrl ?? null,
       contactEmail: input.contactEmail,
       returnPolicyText: input.returnPolicyText,
       shippingPolicyText: input.shippingPolicyText,

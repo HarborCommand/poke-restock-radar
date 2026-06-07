@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
+import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,10 +11,10 @@ export const metadata = {
 };
 
 export default async function CheckoutCancelPage() {
-  const settings = await getStorefrontSettings();
+  const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
     <main className="shop-shell">
-      <StorefrontHeader settings={settings} />
+      <StorefrontHeader settings={settings} homeHref={homeHref} />
       <section className="gdg-result-card">
         <span>!</span>
         <h1>Your cart was not charged</h1>
@@ -23,7 +24,7 @@ export default async function CheckoutCancelPage() {
           <Link href="/shop" className="gdg-secondary-button">Keep Shopping</Link>
         </div>
       </section>
-      <StorefrontFooter settings={settings} />
+      <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>
   );
 }

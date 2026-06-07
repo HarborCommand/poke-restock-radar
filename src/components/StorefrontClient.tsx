@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Check,
   ChevronRight,
+  ExternalLink,
   Heart,
   Mail,
   Menu,
@@ -85,6 +86,14 @@ function checkoutModeLabel(settings: StorefrontSettingsDTO) {
   return settings.checkoutConfigured ? "Add to Cart" : "Request Invoice";
 }
 
+function sportsCardsLink(settings: StorefrontSettingsDTO) {
+  const externalUrl = settings.sportsCardsExternalUrl?.trim();
+  return {
+    href: externalUrl || "/shop?category=sports-cards",
+    external: Boolean(externalUrl)
+  };
+}
+
 function readCart(): CartItem[] {
   if (typeof window === "undefined") return [];
   try {
@@ -152,10 +161,11 @@ function ProductImage({
   );
 }
 
-export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO }) {
+export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: StorefrontSettingsDTO; homeHref?: string }) {
   const [count, setCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const storeName = displayStoreName(settings);
+  const sportsCards = sportsCardsLink(settings);
 
   useEffect(() => {
     const sync = () => setCount(readCart().reduce((sum, item) => sum + item.quantity, 0));
@@ -169,26 +179,33 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
   }, []);
 
   const nav = [
-    { href: "/shop", label: "Shop" },
-    { href: "/shop?category=pokemon", label: "Pokemon" },
-    { href: "/shop?category=sports-cards", label: "Sports Cards" },
-    { href: "/shop?sort=newest", label: "New Arrivals" },
-    { href: "/about", label: "About" },
-    { href: "/policies", label: "Policies" },
-    { href: "/contact", label: "Contact" }
+    { href: "/shop", label: "Shop", external: false },
+    { href: "/shop?category=pokemon", label: "Pokemon", external: false },
+    { href: sportsCards.href, label: "Sports Cards", external: sportsCards.external },
+    { href: "/shop?sort=newest", label: "New Arrivals", external: false },
+    { href: "/about", label: "About", external: false },
+    { href: "/policies", label: "Policies", external: false },
+    { href: "/contact", label: "Contact", external: false }
   ];
 
   return (
     <header className="gdg-header">
-      <Link href="/shop" className="gdg-brand" aria-label={`${storeName} home`}>
+      <Link href={homeHref} className="gdg-brand" aria-label={`${storeName} home`}>
         <span className="gdg-brand-text">GameDayGrabs<small>LLC</small></span>
       </Link>
       <nav className={`gdg-nav ${menuOpen ? "open" : ""}`} aria-label="Public shop navigation">
-        {nav.map((item) => (
-          <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)}>
-            {item.label}
-          </Link>
-        ))}
+        {nav.map((item) =>
+          item.external ? (
+            <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer" className="gdg-external-nav" onClick={() => setMenuOpen(false)}>
+              {item.label}
+              <ExternalLink size={12} aria-hidden="true" />
+            </a>
+          ) : (
+            <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)}>
+              {item.label}
+            </Link>
+          )
+        )}
       </nav>
       <div className="gdg-header-actions">
         <a className="gdg-icon-link" href="/shop" aria-label="Search products">
@@ -206,12 +223,13 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
   );
 }
 
-export function StorefrontFooter({ settings }: { settings: StorefrontSettingsDTO }) {
+export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: StorefrontSettingsDTO; homeHref?: string }) {
   const storeName = displayStoreName(settings);
+  const sportsCards = sportsCardsLink(settings);
   return (
     <footer className="gdg-footer">
       <div>
-        <Link href="/shop" className="gdg-footer-brand">{storeName}</Link>
+        <Link href={homeHref} className="gdg-footer-brand">{storeName}</Link>
         <p>Pokemon and sports card products for collectors, players, and families.</p>
         {settings.contactEmail ? (
           <a href={`mailto:${settings.contactEmail}`} className="gdg-footer-email">
@@ -225,7 +243,14 @@ export function StorefrontFooter({ settings }: { settings: StorefrontSettingsDTO
       <nav aria-label="Store footer navigation">
         <Link href="/shop">Shop</Link>
         <Link href="/shop?category=pokemon">Pokemon</Link>
-        <Link href="/shop?category=sports-cards">Sports Cards</Link>
+        {sportsCards.external ? (
+          <a href={sportsCards.href} target="_blank" rel="noopener noreferrer" className="gdg-external-nav">
+            Sports Cards
+            <ExternalLink size={12} aria-hidden="true" />
+          </a>
+        ) : (
+          <Link href={sportsCards.href}>Sports Cards</Link>
+        )}
         <Link href="/shop?sort=newest">New Arrivals</Link>
         <Link href="/about">About</Link>
         <Link href="/policies">Policies</Link>

@@ -720,6 +720,10 @@ export const storefrontContactMessageSchema = z.object({
 export const storefrontSettingsSchema = z.object({
   storeName: z.string().trim().min(2).max(120),
   storeLogoUrl: optionalHttpUrl,
+  sportsCardsExternalUrl: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? null : value),
+    httpUrl.nullable().optional()
+  ),
   contactEmail: z.preprocess((value) => (value === "" || value === null ? undefined : value), z.string().trim().email().optional()),
   returnPolicyText: z.string().trim().max(4000).optional(),
   shippingPolicyText: z.string().trim().max(4000).optional(),

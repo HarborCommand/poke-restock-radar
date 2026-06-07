@@ -218,6 +218,7 @@ export type PublicStoreProductDTO = {
 export type StorefrontSettingsDTO = {
   storeName: string;
   storeLogoUrl: string | null;
+  sportsCardsExternalUrl: string | null;
   contactEmail: string | null;
   returnPolicyText: string | null;
   shippingPolicyText: string | null;

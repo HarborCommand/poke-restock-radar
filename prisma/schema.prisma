@@ -958,6 +958,7 @@ model StorefrontSettings {
   userId                String   @unique
   storeName             String   @default("GameDayGrabs LLC")
   storeLogoUrl          String?
+  sportsCardsExternalUrl String?
   contactEmail          String?
   returnPolicyText      String?
   shippingPolicyText    String?

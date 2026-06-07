@@ -1,5 +1,6 @@
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
+import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 
 export const runtime = "nodejs";
@@ -13,10 +14,10 @@ export const metadata = {
 };
 
 export default async function PoliciesPage() {
-  const settings = await getStorefrontSettings();
+  const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
     <main className="shop-shell">
-      <StorefrontHeader settings={settings} />
+      <StorefrontHeader settings={settings} homeHref={homeHref} />
       <section className="gdg-info-hero compact">
         <p className="gdg-overline">Store Policies</p>
         <h1>Clear ordering, shipping, and pickup expectations.</h1>
@@ -52,7 +53,7 @@ export default async function PoliciesPage() {
           )}
         </article>
       </section>
-      <StorefrontFooter settings={settings} />
+      <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>
   );
 }

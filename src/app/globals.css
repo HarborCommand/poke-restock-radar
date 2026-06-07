@@ -15170,6 +15170,16 @@ body:has(.shop-shell) {
   color: #16a34a;
 }
 
+.gdg-external-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gdg-external-nav svg {
+  flex: 0 0 auto;
+}
+
 .gdg-header-actions {
   display: flex;
   align-items: center;

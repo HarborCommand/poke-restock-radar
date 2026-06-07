@@ -5568,6 +5568,11 @@ function StorefrontSettingsCard({
       >
         <TextInput name="storeName" label="Store name" defaultValue={settings.storeName} required />
         <TextInput name="contactEmail" label="Public contact email" type="email" defaultValue={settings.contactEmail ?? ""} />
+        <label className="wide-field">
+          Sports Cards external link
+          <input name="sportsCardsExternalUrl" type="url" defaultValue={settings.sportsCardsExternalUrl ?? ""} placeholder="https://www.ebay.com/str/your-store" />
+          <small>Use this while sports cards are sold through eBay.</small>
+        </label>
         <TextInput name="defaultShippingPrice" label="Flat-rate shipping" type="number" min="0" step="0.01" defaultValue={settings.defaultShippingPrice} />
         <TextInput name="freeShippingThreshold" label="Free shipping threshold" type="number" min="0" step="0.01" defaultValue={settings.freeShippingThreshold ?? ""} />
         <TextareaInput name="announcementBanner" label="Announcement banner" defaultValue={settings.announcementBanner ?? ""} />
