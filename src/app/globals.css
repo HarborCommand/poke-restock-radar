@@ -15871,6 +15871,27 @@ body:has(.shop-shell) {
   min-height: 180px;
 }
 
+.gdg-ebay-empty {
+  background: linear-gradient(145deg, #ffffff, #f4f9ff);
+  border-style: solid;
+}
+
+.gdg-ebay-empty .gdg-primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gdg-ebay-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  color: #047857;
+  background: #dcfce7;
+}
+
 .gdg-values,
 .gdg-contact-strip,
 .gdg-policies,

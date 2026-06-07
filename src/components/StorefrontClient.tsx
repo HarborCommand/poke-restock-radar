@@ -22,6 +22,7 @@ import {
   Truck,
   X
 } from "lucide-react";
+import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
@@ -87,7 +88,7 @@ function checkoutModeLabel(settings: StorefrontSettingsDTO) {
 }
 
 function sportsCardsLink(settings: StorefrontSettingsDTO) {
-  const externalUrl = settings.sportsCardsExternalUrl?.trim();
+  const externalUrl = settings.sportsCardsExternalUrl?.trim() || GAMEDAYGRABS_SPORTS_CARDS_URL;
   return {
     href: externalUrl || "/shop?category=sports-cards",
     external: Boolean(externalUrl)
@@ -395,6 +396,7 @@ export function ProductGrid({
   const [availability, setAvailability] = useState(() => (mode === "shop" ? availabilityFromParam(initialAvailability) : "in-stock"));
   const [sort, setSort] = useState(() => (mode === "shop" ? sortFromParam(initialSort) : "newest"));
   const [notice, setNotice] = useState("");
+  const sportsCards = sportsCardsLink(settings);
 
   const categories = useMemo(() => {
     const fromProducts = Array.from(new Set(products.map((product) => product.category).filter(Boolean)));
@@ -429,6 +431,8 @@ export function ProductGrid({
   function onAdded(product: PublicStoreProductDTO) {
     setNotice(`${product.title} added. ${settings.checkoutConfigured ? "Open cart to checkout." : "Open cart to request an invoice."}`);
   }
+
+  const isSportsCardsCategory = mode === "shop" && category === "Sports Cards" && sportsCards.external;
 
   return (
     <>
@@ -595,7 +599,19 @@ export function ProductGrid({
               </label>
             </div>
             <div className="gdg-product-grid">
-              {visibleProducts.length ? (
+              {isSportsCardsCategory ? (
+                <div className="gdg-empty gdg-ebay-empty">
+                  <span className="gdg-ebay-icon">
+                    <ExternalLink size={22} />
+                  </span>
+                  <h3>Sports card inventory is currently listed on our eBay store.</h3>
+                  <p>Open GameDayGrabs sports card listings on eBay while the internal sports card catalog is being prepared.</p>
+                  <a className="gdg-primary-button" href={sportsCards.href} target="_blank" rel="noopener noreferrer">
+                    Open eBay Store
+                    <ExternalLink size={14} aria-hidden="true" />
+                  </a>
+                </div>
+              ) : visibleProducts.length ? (
                 visibleProducts.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
               ) : (
                 <div className="gdg-empty">

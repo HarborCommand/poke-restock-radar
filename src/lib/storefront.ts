@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { storefrontContactEmail } from "@/lib/storefront-routing";
+import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
   SessionUser,
@@ -175,7 +175,7 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
   return {
     storeName: settings?.storeName ?? "GameDayGrabs LLC",
     storeLogoUrl: settings?.storeLogoUrl ?? null,
-    sportsCardsExternalUrl: settings?.sportsCardsExternalUrl ?? null,
+    sportsCardsExternalUrl: storefrontSportsCardsUrl(settings?.sportsCardsExternalUrl),
     contactEmail: storefrontContactEmail(settings?.contactEmail),
     returnPolicyText: settings?.returnPolicyText ?? null,
     shippingPolicyText: settings?.shippingPolicyText ?? null,

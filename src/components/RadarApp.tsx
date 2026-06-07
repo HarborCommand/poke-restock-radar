@@ -73,6 +73,7 @@ import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls 
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPolicyResult } from "@/lib/target-retail-policy";
 import { compareTargetDiscordAlert, targetUrlFromTcin, type TargetDiscordAlertInput, type TargetDiscordComparison } from "@/lib/target-discord-alert";
+import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
@@ -1801,6 +1802,11 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
           <span className="eyeline">Contact email</span>
           <strong>{settings.contactEmail || "Not configured"}</strong>
           <small>{settings.contactEmail ? "Shown on Contact, Policies, footer, and invoice confirmations." : "Add a public contact email in Store Settings."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Sports Cards external link</span>
+          <strong>{settings.sportsCardsExternalUrl ? "Configured" : "Not configured"}</strong>
+          <small>{settings.sportsCardsExternalUrl || GAMEDAYGRABS_SPORTS_CARDS_URL}</small>
         </article>
         <article>
           <span className="eyeline">Inquiry flow</span>
@@ -5570,7 +5576,7 @@ function StorefrontSettingsCard({
         <TextInput name="contactEmail" label="Public contact email" type="email" defaultValue={settings.contactEmail ?? ""} />
         <label className="wide-field">
           Sports Cards external link
-          <input name="sportsCardsExternalUrl" type="url" defaultValue={settings.sportsCardsExternalUrl ?? ""} placeholder="https://www.ebay.com/str/your-store" />
+          <input name="sportsCardsExternalUrl" type="url" defaultValue={settings.sportsCardsExternalUrl ?? GAMEDAYGRABS_SPORTS_CARDS_URL} placeholder={GAMEDAYGRABS_SPORTS_CARDS_URL} />
           <small>Use this while sports cards are sold through eBay.</small>
         </label>
         <TextInput name="defaultShippingPrice" label="Flat-rate shipping" type="number" min="0" step="0.01" defaultValue={settings.defaultShippingPrice} />

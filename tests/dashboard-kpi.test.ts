@@ -305,6 +305,9 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(storefront, /sendStorefrontEmail/);
   assert.match(storefront, /storefrontContactEmail/);
   assert.match(storefront, /sportsCardsExternalUrl/);
+  assert.match(routing, /GAMEDAYGRABS_SPORTS_CARDS_URL = "https:\/\/www\.ebay\.com\/str\/a1rbreaks"/);
+  assert.match(routing, /storefrontSportsCardsUrl/);
+  assert.match(storefront, /sportsCardsExternalUrl: storefrontSportsCardsUrl\(settings\?\.sportsCardsExternalUrl\)/);
   assert.match(routing, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL = "gamedaygrabs@outlook\.com"/);
   assert.match(routing, /LEGACY_PUBLIC_CONTACT_EMAIL = "ariverah7@gmail\.com"/);
   assert.match(storefrontNavigation, /isGameDayGrabsHost/);
@@ -324,6 +327,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(app, /Distributor Application Checklist/);
   assert.match(app, /Public contact email/);
   assert.match(app, /Sports Cards external link/);
+  assert.match(app, /settings\.sportsCardsExternalUrl \|\| GAMEDAYGRABS_SPORTS_CARDS_URL/);
   assert.match(app, /Use this while sports cards are sold through eBay/);
   assert.match(app, /Current public URL/);
   assert.match(app, /Inquiry flow/);
@@ -346,7 +350,9 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /categoryPreviewCards/);
   assert.match(client, /products\.slice\(0, 4\)/);
   assert.match(client, /href: "\/shop\?category=pokemon"/);
-  assert.match(client, /href: externalUrl \|\| "\/shop\?category=sports-cards"/);
+  assert.match(client, /GAMEDAYGRABS_SPORTS_CARDS_URL/);
+  assert.match(client, /Sports card inventory is currently listed on our eBay store/);
+  assert.match(client, /Open eBay Store/);
   assert.match(client, /href: "\/shop\?sort=newest"/);
   assert.match(client, /initialCategory/);
   assert.match(client, /initialSort/);
