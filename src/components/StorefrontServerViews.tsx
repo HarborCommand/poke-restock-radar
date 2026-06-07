@@ -2,13 +2,31 @@ import { notFound } from "next/navigation";
 import { ProductDetail, ProductGrid, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getPublicStoreProduct, getStorefrontSettings, listPublicStoreProducts } from "@/lib/storefront";
 
+type StorefrontShopViewParams = {
+  category?: string | null;
+  sort?: string | null;
+  availability?: string | null;
+};
+
 export async function StorefrontHomeView() {
   const [settings, products] = await Promise.all([getStorefrontSettings(), listPublicStoreProducts()]);
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} />
       {settings.announcementBanner ? <section className="shop-announcement">{settings.announcementBanner}</section> : null}
-      <ProductGrid products={products} settings={settings} />
+      <ProductGrid products={products} settings={settings} mode="home" />
+      <StorefrontFooter settings={settings} />
+    </main>
+  );
+}
+
+export async function StorefrontShopView({ category, sort, availability }: StorefrontShopViewParams = {}) {
+  const [settings, products] = await Promise.all([getStorefrontSettings(), listPublicStoreProducts()]);
+  return (
+    <main className="shop-shell">
+      <StorefrontHeader settings={settings} />
+      {settings.announcementBanner ? <section className="shop-announcement">{settings.announcementBanner}</section> : null}
+      <ProductGrid products={products} settings={settings} mode="shop" initialCategory={category} initialSort={sort} initialAvailability={availability} />
       <StorefrontFooter settings={settings} />
     </main>
   );

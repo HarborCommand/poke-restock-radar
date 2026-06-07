@@ -17,7 +17,6 @@ import {
   ShieldCheck,
   ShoppingBag,
   ShoppingCart,
-  Star,
   Trash2,
   Truck,
   X
@@ -36,6 +35,42 @@ const preferredCategories = [
   "Sports Cards",
   "Graded Cards"
 ];
+const homeCategories = [
+  "Pokemon Sealed",
+  "Booster Bundles",
+  "Elite Trainer Boxes",
+  "Premium Collections",
+  "Sports Cards",
+  "Graded Cards"
+];
+
+function categoryToSlug(category: string) {
+  return category
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function categoryFromParam(value: string | null | undefined) {
+  if (!value) return "all";
+  const normalized = categoryToSlug(value);
+  if (normalized === "pokemon") return "Pokemon Sealed";
+  const match = preferredCategories.find((entry) => categoryToSlug(entry) === normalized);
+  return match ?? "all";
+}
+
+function sortFromParam(value: string | null | undefined) {
+  return ["newest", "price-low", "price-high", "stock"].includes(value ?? "") ? String(value) : "newest";
+}
+
+function availabilityFromParam(value: string | null | undefined) {
+  return value === "all" || value === "sold-out" || value === "in-stock" ? value : "in-stock";
+}
+
+function categoryHref(category: string) {
+  return `/shop?category=${categoryToSlug(category)}`;
+}
 
 function money(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "TBD";
@@ -90,8 +125,17 @@ function categoryMatches(product: PublicStoreProductDTO, category: string) {
   return haystack.includes(normalized.replace(/s$/, ""));
 }
 
-function categoryImage(products: PublicStoreProductDTO[], category: string) {
-  return products.find((product) => categoryMatches(product, category) && product.imageUrl)?.imageUrl ?? products.find((product) => product.imageUrl)?.imageUrl ?? null;
+function categoryPreviewCards(products: PublicStoreProductDTO[], categories: string[]) {
+  const usedImages = new Set<string>();
+  return categories.slice(0, 6).map((category) => {
+    const imageUrl =
+      products.find((product) => {
+        if (!product.imageUrl || !categoryMatches(product, category) || usedImages.has(product.imageUrl)) return false;
+        usedImages.add(product.imageUrl);
+        return true;
+      })?.imageUrl ?? null;
+    return { category, imageUrl };
+  });
 }
 
 function ProductImage({
@@ -125,10 +169,10 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
   }, []);
 
   const nav = [
-    { href: "/shop#shop", label: "Shop" },
-    { href: "/shop#pokemon", label: "Pokemon" },
-    { href: "/shop#shop", label: "Sports Cards" },
-    { href: "/shop#new-arrivals", label: "New Arrivals" },
+    { href: "/shop", label: "Shop" },
+    { href: "/shop?category=pokemon", label: "Pokemon" },
+    { href: "/shop?category=sports-cards", label: "Sports Cards" },
+    { href: "/shop?sort=newest", label: "New Arrivals" },
     { href: "/about", label: "About" },
     { href: "/policies", label: "Policies" },
     { href: "/contact", label: "Contact" }
@@ -147,7 +191,7 @@ export function StorefrontHeader({ settings }: { settings: StorefrontSettingsDTO
         ))}
       </nav>
       <div className="gdg-header-actions">
-        <a className="gdg-icon-link" href="/shop#shop" aria-label="Search products">
+        <a className="gdg-icon-link" href="/shop" aria-label="Search products">
           <Search size={18} />
         </a>
         <Link href="/cart" className="gdg-cart-link" aria-label={`Cart with ${count} items`}>
@@ -180,9 +224,9 @@ export function StorefrontFooter({ settings }: { settings: StorefrontSettingsDTO
       </div>
       <nav aria-label="Store footer navigation">
         <Link href="/shop">Shop</Link>
-        <Link href="/shop#pokemon">Pokemon</Link>
-        <Link href="/shop#shop">Sports Cards</Link>
-        <Link href="/shop#new-arrivals">New Arrivals</Link>
+        <Link href="/shop?category=pokemon">Pokemon</Link>
+        <Link href="/shop?category=sports-cards">Sports Cards</Link>
+        <Link href="/shop?sort=newest">New Arrivals</Link>
         <Link href="/about">About</Link>
         <Link href="/policies">Policies</Link>
         <Link href="/contact">Contact</Link>
@@ -306,11 +350,25 @@ function ProductCard({
   );
 }
 
-export function ProductGrid({ products, settings }: { products: PublicStoreProductDTO[]; settings: StorefrontSettingsDTO }) {
+export function ProductGrid({
+  products,
+  settings,
+  mode = "shop",
+  initialCategory,
+  initialSort,
+  initialAvailability
+}: {
+  products: PublicStoreProductDTO[];
+  settings: StorefrontSettingsDTO;
+  mode?: "home" | "shop";
+  initialCategory?: string | null;
+  initialSort?: string | null;
+  initialAvailability?: string | null;
+}) {
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const [availability, setAvailability] = useState("in-stock");
-  const [sort, setSort] = useState("newest");
+  const [category, setCategory] = useState(() => (mode === "shop" ? categoryFromParam(initialCategory) : "all"));
+  const [availability, setAvailability] = useState(() => (mode === "shop" ? availabilityFromParam(initialAvailability) : "in-stock"));
+  const [sort, setSort] = useState(() => (mode === "shop" ? sortFromParam(initialSort) : "newest"));
   const [notice, setNotice] = useState("");
 
   const categories = useMemo(() => {
@@ -339,8 +397,9 @@ export function ProductGrid({ products, settings }: { products: PublicStoreProdu
       });
   }, [availability, category, products, query, sort]);
 
-  const newArrivals = products.slice(0, 6);
+  const newArrivals = products.slice(0, 4);
   const heroProduct = products.find((product) => product.imageUrl) ?? products[0];
+  const categoryCards = useMemo(() => categoryPreviewCards(products, homeCategories), [products]);
 
   function onAdded(product: PublicStoreProductDTO) {
     setNotice(`${product.title} added. ${settings.checkoutConfigured ? "Open cart to checkout." : "Open cart to request an invoice."}`);
@@ -348,54 +407,58 @@ export function ProductGrid({ products, settings }: { products: PublicStoreProdu
 
   return (
     <>
-      <section className="gdg-hero">
-        <div className="gdg-hero-copy">
-          <p className="gdg-overline">Pokemon & Sports Cards</p>
-          <h1>Collect. Play. Invest.</h1>
-          <p>Premium Pokemon and sports card products for collectors, players, and fans.</p>
-          <div className="gdg-hero-actions">
-            <a href="#shop" className="gdg-primary-button">
-              Shop Now
-            </a>
-            <a href="#new-arrivals" className="gdg-secondary-button">
-              New Arrivals
-            </a>
-          </div>
-        </div>
-        <div className="gdg-hero-stage" aria-label="Featured collectible products">
-          {heroProduct ? (
-            <ProductImage product={heroProduct} size="hero" />
-          ) : (
-            <div className="gdg-hero-placeholder">
-              <span>GameDayGrabs</span>
-              <strong>Premium Card Shop</strong>
-              <small>Published products will appear here.</small>
+      {mode === "home" ? (
+        <>
+          <section className="gdg-hero">
+            <div className="gdg-hero-copy">
+              <p className="gdg-overline">Pokemon & Sports Cards</p>
+              <h1>Collect. Play. Invest.</h1>
+              <p>Premium Pokemon and sports card products for collectors, players, and fans.</p>
+              <div className="gdg-hero-actions">
+                <Link href="/shop" className="gdg-primary-button">
+                  Shop Now
+                </Link>
+                <Link href="/shop?sort=newest" className="gdg-secondary-button">
+                  New Arrivals
+                </Link>
+              </div>
             </div>
-          )}
-          {products[1] ? (
-            <div className="gdg-floating-card">
-              <ProductImage product={products[1]} size="thumb" />
-              <span>{products[1].category}</span>
-              <b>{money(products[1].price)}</b>
+            <div className="gdg-hero-stage" aria-label="Featured collectible products">
+              {heroProduct ? (
+                <ProductImage product={heroProduct} size="hero" />
+              ) : (
+                <div className="gdg-hero-placeholder">
+                  <span>GameDayGrabs</span>
+                  <strong>Premium Card Shop</strong>
+                  <small>Published products will appear here.</small>
+                </div>
+              )}
+              {products[1] ? (
+                <div className="gdg-floating-card">
+                  <ProductImage product={products[1]} size="thumb" />
+                  <span>{products[1].category}</span>
+                  <b>{money(products[1].price)}</b>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
-      </section>
+          </section>
 
-      <section className="gdg-trust-bar" aria-label="Store promises">
-        {[
-          { icon: <BadgeCheck size={19} />, title: "Authentic Products", text: "100% authentic guaranteed" },
-          { icon: <ShieldCheck size={19} />, title: "Secure Packaging", text: "Packed carefully for transit" },
-          { icon: <Truck size={19} />, title: "Fast Shipping", text: "Secure & tracked delivery" },
-          { icon: <ShieldCheck size={19} />, title: "Collector Trusted", text: "Reliable for collectors" }
-        ].map((item) => (
-          <div key={item.title}>
-            <span>{item.icon}</span>
-            <strong>{item.title}</strong>
-            <small>{item.text}</small>
-          </div>
-        ))}
-      </section>
+          <section className="gdg-trust-bar" aria-label="Store promises">
+            {[
+              { icon: <BadgeCheck size={19} />, title: "Authentic Products", text: "100% authentic guaranteed" },
+              { icon: <ShieldCheck size={19} />, title: "Secure Packaging", text: "Packed carefully for transit" },
+              { icon: <Truck size={19} />, title: "Fast Shipping", text: "Secure & tracked delivery" },
+              { icon: <ShieldCheck size={19} />, title: "Collector Trusted", text: "Reliable for collectors" }
+            ].map((item) => (
+              <div key={item.title}>
+                <span>{item.icon}</span>
+                <strong>{item.title}</strong>
+                <small>{item.text}</small>
+              </div>
+            ))}
+          </section>
+        </>
+      ) : null}
 
       {notice ? (
         <p className="gdg-toast">
@@ -403,179 +466,122 @@ export function ProductGrid({ products, settings }: { products: PublicStoreProdu
         </p>
       ) : null}
 
-      <section className="gdg-section" id="pokemon">
-        <div className="gdg-section-header">
-          <div>
-            <h2>Shop By Category</h2>
-            <p>Choose the sealed products and cards you collect most.</p>
-          </div>
-          <a href="#shop">View all</a>
-        </div>
-        <div className="gdg-category-grid">
-          {preferredCategories.map((entry) => {
-            const imageUrl = categoryImage(products, entry);
-            return (
-              <button
-                type="button"
-                key={entry}
-                className="gdg-category-card"
-                onClick={() => {
-                  setCategory(entry);
-                  document.getElementById("shop")?.scrollIntoView({ behavior: "smooth" });
-                }}
-              >
-                <span className="gdg-category-image">
-                  {imageUrl ? <Image src={imageUrl} alt="" width={260} height={200} unoptimized /> : <Package size={26} />}
-                </span>
-                <b>{entry}</b>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="gdg-section" id="new-arrivals">
-        <div className="gdg-section-header">
-          <div>
-            <h2>New Arrivals</h2>
-            <p>Recently published products from available inventory.</p>
-          </div>
-          <a href="#shop">View all</a>
-        </div>
-        <div className="gdg-arrivals-row">
-          {newArrivals.length ? (
-            newArrivals.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
-          ) : (
-            <div className="gdg-empty compact">
-              <h3>No public listings yet</h3>
-              <p>Published inventory will appear here automatically.</p>
+      {mode === "home" ? (
+        <>
+          <section className="gdg-section">
+            <div className="gdg-section-header">
+              <div>
+                <h2>Shop By Category</h2>
+                <p>Choose the sealed products and cards you collect most.</p>
+              </div>
+              <Link href="/shop">View all</Link>
             </div>
-          )}
-        </div>
-      </section>
-
-      <section className="gdg-shop-area" id="shop">
-        <aside className="gdg-shop-filters">
-          <div>
-            <h2>Shop All Products</h2>
-            <p>Showing {visibleProducts.length} of {products.length} active listings.</p>
-          </div>
-          <label>
-            Search
-            <span>
-              <Search size={15} />
-              <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Product, category, tag..." />
-            </span>
-          </label>
-          <label>
-            Categories
-            <select value={category} onChange={(event) => setCategory(event.currentTarget.value)}>
-              {categories.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry === "all" ? "All Products" : entry}
-                </option>
+            <div className="gdg-category-grid">
+              {categoryCards.map(({ category: entry, imageUrl }) => (
+                <Link href={categoryHref(entry)} key={entry} className="gdg-category-card">
+                  <span className="gdg-category-image">
+                    {imageUrl ? <Image src={imageUrl} alt="" width={260} height={200} unoptimized /> : <Package size={26} />}
+                  </span>
+                  <b>{entry}</b>
+                </Link>
               ))}
-            </select>
-          </label>
-          <label>
-            Availability
-            <select value={availability} onChange={(event) => setAvailability(event.currentTarget.value)}>
-              <option value="in-stock">In Stock</option>
-              <option value="sold-out">Sold Out</option>
-              <option value="all">All</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="gdg-filter-clear"
-            onClick={() => {
-              setQuery("");
-              setCategory("all");
-              setAvailability("in-stock");
-              setSort("newest");
-            }}
-          >
-            Clear Filters
-          </button>
-        </aside>
-        <div className="gdg-shop-list">
-          <div className="gdg-shop-toolbar">
+            </div>
+          </section>
+
+          <section className="gdg-section">
+            <div className="gdg-section-header">
+              <div>
+                <h2>New Arrivals</h2>
+                <p>Recently published products from available inventory.</p>
+              </div>
+              <Link href="/shop?sort=newest">View All New Arrivals</Link>
+            </div>
+            <div className="gdg-arrivals-row">
+              {newArrivals.length ? (
+                newArrivals.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
+              ) : (
+                <div className="gdg-empty compact">
+                  <h3>No public listings yet</h3>
+                  <p>Published inventory will appear here automatically.</p>
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="gdg-shop-area" id="shop">
+          <aside className="gdg-shop-filters">
             <div>
-              <p>Shop</p>
-              <h2>All Products</h2>
+              <h2>Shop All Products</h2>
+              <p>Showing {visibleProducts.length} of {products.length} active listings.</p>
             </div>
             <label>
-              Sort By
-              <select value={sort} onChange={(event) => setSort(event.currentTarget.value)}>
-                <option value="newest">Newest</option>
-                <option value="price-low">Price: Low to High</option>
-                <option value="price-high">Price: High to Low</option>
-                <option value="stock">Most Available</option>
+              Search
+              <span>
+                <Search size={15} />
+                <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Product, category, tag..." />
+              </span>
+            </label>
+            <label>
+              Categories
+              <select value={category} onChange={(event) => setCategory(event.currentTarget.value)}>
+                {categories.map((entry) => (
+                  <option key={entry} value={entry}>
+                    {entry === "all" ? "All Products" : entry}
+                  </option>
+                ))}
               </select>
             </label>
-          </div>
-          <div className="gdg-product-grid">
-            {visibleProducts.length ? (
-              visibleProducts.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
-            ) : (
-              <div className="gdg-empty">
-                <h3>No matching products</h3>
-                <p>Try another category or check back for new public listings.</p>
+            <label>
+              Availability
+              <select value={availability} onChange={(event) => setAvailability(event.currentTarget.value)}>
+                <option value="in-stock">In Stock</option>
+                <option value="sold-out">Sold Out</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="gdg-filter-clear"
+              onClick={() => {
+                setQuery("");
+                setCategory("all");
+                setAvailability("in-stock");
+                setSort("newest");
+              }}
+            >
+              Clear Filters
+            </button>
+          </aside>
+          <div className="gdg-shop-list">
+            <div className="gdg-shop-toolbar">
+              <div>
+                <p>Shop</p>
+                <h2>{category === "all" ? "All Products" : category}</h2>
               </div>
-            )}
+              <label>
+                Sort By
+                <select value={sort} onChange={(event) => setSort(event.currentTarget.value)}>
+                  <option value="newest">Newest</option>
+                  <option value="price-low">Price: Low to High</option>
+                  <option value="price-high">Price: High to Low</option>
+                  <option value="stock">Most Available</option>
+                </select>
+              </label>
+            </div>
+            <div className="gdg-product-grid">
+              {visibleProducts.length ? (
+                visibleProducts.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
+              ) : (
+                <div className="gdg-empty">
+                  <h3>No matching products</h3>
+                  <p>Try another category or check back for new public listings.</p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section className="gdg-section gdg-values" id="about">
-        <div className="gdg-section-header">
-          <div>
-            <h2>Why Collectors Choose GameDayGrabs</h2>
-            <p>We are more than a store. We are part of the collecting community.</p>
-          </div>
-        </div>
-        <div className="gdg-value-grid">
-          {[
-            { icon: <Heart size={18} />, title: "Family Owned", text: "Passionate about cards and our community." },
-            { icon: <BadgeCheck size={18} />, title: "Carefully Curated", text: "We only offer products we would collect ourselves." },
-            { icon: <ShieldCheck size={18} />, title: "Safe & Secure", text: "Your information and orders are protected." },
-            { icon: <Star size={18} />, title: "Top Rated Service", text: "Customer satisfaction is our priority." }
-          ].map((item) => (
-            <article key={item.title}>
-              <span>{item.icon}</span>
-              <h3>{item.title}</h3>
-              <p>{item.text}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="gdg-contact-strip" id="contact">
-        <div>
-          <h2>Join the GameDayGrabs Community</h2>
-          <p>Get updates on new products, restocks, and collector offers.</p>
-        </div>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setNotice("Thanks. Newsletter capture will be connected from store settings.");
-          }}
-        >
-          <input type="email" placeholder="Enter your email" aria-label="Email address" />
-          <button type="submit">Subscribe</button>
-        </form>
-      </section>
-
-      <section className="gdg-policies" id="policies">
-        <article>
-          <h3>Shipping</h3>
-          <p>{settings.shippingPolicyText || "Orders ship securely with tracking. Availability is confirmed before payment or invoice fulfillment."}</p>
-        </article>
-        <article>
-          <h3>Returns</h3>
-          <p>{settings.returnPolicyText || "Sealed collectible products are reviewed case by case. Contact GameDayGrabs before returning any item."}</p>
-        </article>
-      </section>
+        </section>
+      )}
     </>
   );
 }
@@ -607,7 +613,7 @@ export function ProductDetail({
         <nav className="gdg-breadcrumb" aria-label="Breadcrumb">
           <Link href="/shop">Home</Link>
           <ChevronRight size={13} />
-          <Link href="/shop#shop">Shop</Link>
+          <Link href="/shop">Shop</Link>
           <ChevronRight size={13} />
           <span>{product.category}</span>
         </nav>
@@ -712,7 +718,7 @@ export function ProductDetail({
               <h2>Related Products</h2>
               <p>More published products from GameDayGrabs.</p>
             </div>
-            <Link href="/shop#shop">View all</Link>
+            <Link href="/shop">View all</Link>
           </div>
           <div className="gdg-arrivals-row">
             {relatedProducts.slice(0, 4).map((entry) => (

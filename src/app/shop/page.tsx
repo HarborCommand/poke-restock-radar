@@ -1,5 +1,5 @@
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_WWW_DOMAIN } from "@/lib/storefront-routing";
-import { StorefrontHomeView } from "@/components/StorefrontServerViews";
+import { StorefrontShopView } from "@/components/StorefrontServerViews";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +19,15 @@ export const metadata = {
   }
 };
 
-export default async function ShopPage() {
-  return <StorefrontHomeView />;
+type ShopPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
+
+export default async function ShopPage({ searchParams }: ShopPageProps) {
+  const params = searchParams ? await searchParams : {};
+  return <StorefrontShopView category={firstParam(params.category)} sort={firstParam(params.sort)} availability={firstParam(params.availability)} />;
 }

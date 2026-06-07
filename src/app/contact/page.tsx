@@ -34,7 +34,7 @@ export default async function ContactPage() {
           )}
           <p>Collector-focused Pokemon and sports card products for customers, players, and fans.</p>
         </div>
-        <a className="gdg-primary-button" href={settings.contactEmail ? `mailto:${settings.contactEmail}` : "/shop#shop"}>
+        <a className="gdg-primary-button" href={settings.contactEmail ? `mailto:${settings.contactEmail}` : "/shop"}>
           {settings.contactEmail ? "Email Us" : "Browse Products"}
         </a>
       </section>

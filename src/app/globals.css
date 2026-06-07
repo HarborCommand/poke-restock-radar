@@ -15635,8 +15635,10 @@ body:has(.shop-shell) {
   background: #ffffff;
   padding: 12px;
   color: #0f172a;
+  text-decoration: none;
   text-align: center;
   cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
 
 .gdg-category-card:hover,
