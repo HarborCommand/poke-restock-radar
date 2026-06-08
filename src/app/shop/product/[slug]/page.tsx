@@ -13,15 +13,15 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     metadataBase: new URL(`https://${GAMEDAYGRABS_WWW_DOMAIN}`),
     title,
-    description,
-    openGraph: {
-      title,
       description,
-      url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/shop/product/${slug}`,
-      siteName: "GameDayGrabs LLC",
-      images: product?.imageUrl ? [product.imageUrl] : ["/icons/icon-512.png"]
-    }
-  };
+      openGraph: {
+        title,
+        description,
+        url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/shop/product/${slug}`,
+        siteName: "GameDayGrabs LLC",
+        images: product?.imageUrl ? [product.imageUrl] : ["/brand/gamedaygrabs-logo-horizontal.png"]
+      }
+    };
 }
 
 export default async function ShopProductPage({ params }: { params: Promise<{ slug: string }> }) {

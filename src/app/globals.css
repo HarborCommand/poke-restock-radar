@@ -15134,20 +15134,14 @@ body:has(.shop-shell) {
   min-width: max-content;
 }
 
-.gdg-brand-text {
-  color: #090d16;
-  font-size: 1.16rem;
-  font-weight: 900;
-  letter-spacing: -0.04em;
-}
-
-.gdg-brand-text small {
-  margin-left: 2px;
-  color: #5c6675;
-  font-size: 0.48em;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  vertical-align: super;
+.gdg-brand-logo {
+  display: block;
+  width: clamp(180px, 22vw, 220px);
+  height: auto;
+  max-height: 56px;
+  min-height: 40px;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .gdg-nav {
@@ -16805,6 +16799,14 @@ body:has(.shop-shell) {
   text-decoration: none;
 }
 
+.gdg-footer-brand-logo {
+  width: clamp(150px, 20vw, 180px);
+  height: auto;
+  max-height: 38px;
+  object-fit: contain;
+  object-position: left center;
+}
+
 .gdg-footer-email {
   display: inline-flex;
   align-items: center;
@@ -16849,6 +16851,17 @@ body:has(.shop-shell) {
   .gdg-footer nav {
     grid-template-columns: repeat(2, minmax(0, max-content));
     justify-content: start;
+  }
+
+  .gdg-brand-logo {
+    width: clamp(140px, 40vw, 180px);
+    max-height: 42px;
+    min-height: 34px;
+  }
+
+  .gdg-footer-brand-logo {
+    width: clamp(130px, 48vw, 160px);
+    max-height: 34px;
   }
 
   .inventory-publish-stats {

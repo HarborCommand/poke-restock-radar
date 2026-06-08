@@ -18,7 +18,7 @@ export async function generateMetadata() {
         description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
         url: `https://${GAMEDAYGRABS_WWW_DOMAIN}`,
         siteName: "GameDayGrabs LLC",
-        images: ["/icons/icon-512.png"]
+        images: ["/brand/gamedaygrabs-logo-horizontal.png"]
       },
       other: {
         "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL

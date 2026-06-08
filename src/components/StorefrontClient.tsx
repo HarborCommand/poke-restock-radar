@@ -28,6 +28,7 @@ import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar
 type CartItem = { id: string; quantity: number };
 
 const cartKey = "poke-radar-cart";
+const storefrontLogoPath = "/brand/gamedaygrabs-logo-horizontal.png";
 const preferredCategories = [
   "Pokemon Sealed",
   "Booster Bundles",
@@ -202,7 +203,14 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
   return (
     <header className="gdg-header">
       <Link href={homeHref} className="gdg-brand" aria-label={`${storeName} home`}>
-        <span className="gdg-brand-text">GameDayGrabs<small>LLC</small></span>
+        <Image
+          src={storefrontLogoPath}
+          alt={`${storeName} home`}
+          width={220}
+          height={56}
+          className="gdg-brand-logo"
+          priority
+        />
       </Link>
       <nav className={`gdg-nav ${menuOpen ? "open" : ""}`} aria-label="Public shop navigation">
         {nav.map((item) =>
@@ -240,7 +248,10 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
   return (
     <footer className="gdg-footer">
       <div>
-        <Link href={homeHref} className="gdg-footer-brand">{storeName}</Link>
+        <Link href={homeHref} className="gdg-footer-brand">
+          <Image src={storefrontLogoPath} alt={`${storeName} logo`} width={180} height={44} className="gdg-footer-brand-logo" />
+          <span className="sr-only">{storeName}</span>
+        </Link>
         <p>Pokemon and sports card products for collectors, players, and families.</p>
         {settings.contactEmail ? (
           <a href={`mailto:${settings.contactEmail}`} className="gdg-footer-email">
