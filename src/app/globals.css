@@ -15358,6 +15358,7 @@ body:has(.shop-shell) {
 }
 
 .gdg-product-image {
+  position: relative;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -15394,6 +15395,71 @@ body:has(.shop-shell) {
 
 .gdg-product-image-hero img {
   object-fit: contain;
+}
+
+.gdg-image-badges {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.gdg-image-badges.gdg-image-badges-detail {
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  width: auto;
+}
+
+.gdg-product-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+}
+
+.gdg-product-badge-sold-out {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: rgba(0, 0, 0, 0.84);
+  color: #f8fafc;
+}
+
+.gdg-product-badge-new-arrival {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: rgba(251, 191, 36, 0.95);
+  color: #111827;
+}
+
+.gdg-product-badge-low-stock {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(254, 243, 199, 0.98);
+  color: #92400e;
+}
+
+.gdg-product-badge-limited-stock {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(191, 219, 254, 0.98);
+  color: #1e3a8a;
 }
 
 .gdg-hero-placeholder {
@@ -15985,6 +16051,7 @@ body:has(.shop-shell) {
 }
 
 .gdg-gallery-main {
+  position: relative;
   display: grid;
   width: 100%;
   min-width: 0;
@@ -16005,6 +16072,17 @@ body:has(.shop-shell) {
   max-width: 100%;
   max-height: 520px;
   object-fit: contain;
+}
+
+.gdg-soldout-notice {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 14px;
+  background: #fff1f2;
+  color: #7f1d1d;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-weight: 840;
 }
 
 .gdg-gallery-thumbs img {

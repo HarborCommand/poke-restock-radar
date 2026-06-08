@@ -159,7 +159,9 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     maxQuantityPerOrder: item.maxQuantityPerOrder,
     status: availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out",
     localPickupAvailable: item.localPickupAvailable,
-    shippingAvailable: item.shippingAvailable
+    shippingAvailable: item.shippingAvailable,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString()
   };
 }
 
@@ -726,10 +728,7 @@ export async function updateInventoryStoreListing(
   const storefrontCategory = input.storefrontCategory || item.storefrontCategory || publicCategoryForItem(item);
   const publicPrice = input.publicPrice ?? publicListingPrice(item) ?? undefined;
   const availableForSale = input.availableForSale === undefined ? item.availableForSale ?? sellableQuantity(item) : input.availableForSale;
-  const normalizedStoreStatus =
-    input.publishToStore && input.storeStatus === "active" && availableForSale <= 0
-      ? "sold_out"
-      : input.storeStatus;
+  const normalizedStoreStatus = input.publishToStore && availableForSale <= 0 ? "sold_out" : input.storeStatus;
 
   if (["active", "sold_out"].includes(normalizedStoreStatus) && (!publicPrice || publicPrice <= 0)) {
     throw new Error("Set a public price before activating a store listing.");

@@ -23,6 +23,13 @@ import {
   X
 } from "lucide-react";
 import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
+import {
+  storefrontImageBadges,
+  storefrontMatchesAvailability,
+  storefrontPrimaryActionDisabled,
+  isSoldOutProduct,
+  type StorefrontAvailabilityFilter
+} from "@/lib/storefront-badges";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
@@ -67,8 +74,11 @@ function sortFromParam(value: string | null | undefined) {
   return ["newest", "price-low", "price-high", "stock"].includes(value ?? "") ? String(value) : "newest";
 }
 
-function availabilityFromParam(value: string | null | undefined) {
-  return value === "all" || value === "sold-out" || value === "in-stock" ? value : "in-stock";
+function availabilityFromParam(value: string | null | undefined): StorefrontAvailabilityFilter {
+  if (value === "all" || value === "sold-out" || value === "in-stock") {
+    return value;
+  }
+  return "in-stock";
 }
 
 function categoryHref(category: string) {
@@ -161,13 +171,24 @@ function categoryPreviewCards(products: PublicStoreProductDTO[], categories: str
 
 function ProductImage({
   product,
-  size = "card"
+  size = "card",
+  showBadges = false
 }: {
-  product: Pick<PublicStoreProductDTO, "title" | "imageUrl">;
+  product: Pick<PublicStoreProductDTO, "title" | "imageUrl" | "availableQuantity" | "status" | "createdAt" | "updatedAt">;
   size?: "card" | "hero" | "thumb" | "detail";
+  showBadges?: boolean;
 }) {
+  const badges = showBadges ? storefrontImageBadges(product) : [];
+
   return (
-    <div className={`gdg-product-image gdg-product-image-${size}`}>
+    <div className={`gdg-product-image gdg-product-image-${size} gdg-product-media ${size === "detail" ? "gdg-product-image-detail-media" : ""}`}>
+      <div className="gdg-image-badges" aria-hidden="true">
+        {badges.map((badge) => (
+          <span key={badge.label} className={`gdg-product-badge gdg-product-badge-${badge.variant}`}>
+            {badge.label}
+          </span>
+        ))}
+      </div>
       {product.imageUrl ? <Image src={product.imageUrl} alt={product.title} width={720} height={540} unoptimized /> : <Package size={size === "thumb" ? 18 : 30} />}
     </div>
   );
@@ -362,10 +383,14 @@ function ProductCard({
   onAdded?: (product: PublicStoreProductDTO) => void;
 }) {
   const actionLabel = checkoutModeLabel(settings);
+  const actionDisabled = storefrontPrimaryActionDisabled(product);
+  const isSoldOut = isSoldOutProduct(product);
+  const actionText = actionDisabled ? "Sold Out" : actionLabel;
+
   return (
     <article className="gdg-product-card">
       <Link href={`/shop/product/${product.slug}`} className="gdg-product-media">
-        <ProductImage product={product} />
+        <ProductImage product={product} showBadges />
       </Link>
       <div className="gdg-product-body">
         <span className="gdg-product-category">{product.category}</span>
@@ -375,7 +400,7 @@ function ProductCard({
         <strong>{money(product.price)}</strong>
       </div>
       <footer>
-        <span className={product.availableQuantity > 0 ? "gdg-stock in" : "gdg-stock out"}>{product.availableQuantity > 0 ? "In Stock" : "Sold Out"}</span>
+        <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
         <div className="gdg-card-actions">
           <Link href={`/shop/product/${product.slug}`} className="gdg-secondary-button">
             View Product
@@ -383,13 +408,13 @@ function ProductCard({
           <button
             type="button"
             className="gdg-primary-button compact"
-            disabled={product.availableQuantity <= 0}
+            disabled={actionDisabled}
             onClick={() => {
               addToCart(product);
               onAdded?.(product);
             }}
           >
-            {actionLabel}
+            {actionText}
           </button>
         </div>
       </footer>
@@ -434,7 +459,7 @@ export function ProductGrid({
           product.category.toLowerCase().includes(normalizedQuery) ||
           product.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
         const matchesCategory = category === "all" || categoryMatches(product, category) || product.category === category;
-        const matchesAvailability = availability === "all" || (availability === "in-stock" ? product.availableQuantity > 0 : product.availableQuantity <= 0);
+        const matchesAvailability = storefrontMatchesAvailability(product, availability);
         return matchesQuery && matchesCategory && matchesAvailability;
       })
       .sort((left, right) => {
@@ -584,7 +609,10 @@ export function ProductGrid({
             </label>
             <label>
               Availability
-              <select value={availability} onChange={(event) => setAvailability(event.currentTarget.value)}>
+              <select
+                value={availability}
+                onChange={(event) => setAvailability(event.currentTarget.value as StorefrontAvailabilityFilter)}
+              >
                 <option value="in-stock">In Stock</option>
                 <option value="sold-out">Sold Out</option>
                 <option value="all">All</option>
@@ -661,7 +689,10 @@ export function ProductDetail({
   const [notice, setNotice] = useState("");
   const images = product.images.length ? product.images : product.imageUrl ? [product.imageUrl] : [];
   const [selectedImage, setSelectedImage] = useState(images[0] ?? null);
+  const isSoldOut = storefrontPrimaryActionDisabled(product);
   const actionLabel = checkoutModeLabel(settings);
+  const soldOutActionLabel = isSoldOut ? "Sold Out" : actionLabel;
+  const soldOutSecondaryLabel = isSoldOut ? "Sold Out" : settings.checkoutConfigured ? "Buy Now" : "Request Invoice Now";
   const publicDescription = cleanPublicProductDescription(product);
 
   function addProductToCart(redirect = false) {
@@ -683,6 +714,13 @@ export function ProductDetail({
         <div className="gdg-detail-grid">
           <aside className={`gdg-gallery ${images.length > 1 ? "has-thumbs" : "single-image"}`}>
             <div className="gdg-gallery-main">
+              <div className="gdg-image-badges gdg-image-badges-detail" aria-hidden="true">
+                {storefrontImageBadges(product).map((badge) => (
+                  <span key={badge.label} className={`gdg-product-badge gdg-product-badge-${badge.variant}`}>
+                    {badge.label}
+                  </span>
+                ))}
+              </div>
               {selectedImage ? (
                 <Image src={selectedImage} alt={product.title} width={900} height={900} unoptimized />
               ) : (
@@ -705,28 +743,43 @@ export function ProductDetail({
           <section className="gdg-detail-info">
             <span className="gdg-product-category">{product.category}</span>
             <h1>{product.title}</h1>
-            <div className="gdg-detail-price">
+              <div className="gdg-detail-price">
               <strong>{money(product.price)}</strong>
               {product.compareAtPrice ? <s>{money(product.compareAtPrice)}</s> : null}
-              <span className={product.availableQuantity > 0 ? "gdg-stock in" : "gdg-stock out"}>{product.availableQuantity > 0 ? "In Stock" : "Sold Out"}</span>
+              <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
             </div>
             <p>{publicDescription}</p>
             <small>Stock visible now: {product.availableQuantity} item{product.availableQuantity === 1 ? "" : "s"}.</small>
+            {isSoldOut ? <p className="gdg-soldout-notice">This item is currently sold out. Check back soon for restocks.</p> : null}
             <div className="gdg-quantity-control">
               <span>Quantity</span>
-              <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))}>
+              <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} disabled={isSoldOut}>
                 <Minus size={15} />
               </button>
               <b>{quantity}</b>
-              <button type="button" onClick={() => setQuantity((current) => Math.min(product.maxQuantityPerOrder, product.availableQuantity, current + 1))}>
+              <button
+                type="button"
+                disabled={isSoldOut}
+                onClick={() => setQuantity((current) => Math.min(product.maxQuantityPerOrder, product.availableQuantity, current + 1))}
+              >
                 <Plus size={15} />
               </button>
             </div>
-            <button className="gdg-primary-button wide" type="button" disabled={product.availableQuantity <= 0} onClick={() => addProductToCart(false)}>
-              {actionLabel}
+            <button
+              className="gdg-primary-button wide"
+              type="button"
+              disabled={isSoldOut}
+              onClick={() => addProductToCart(false)}
+            >
+              {soldOutActionLabel}
             </button>
-            <button className="gdg-secondary-button wide" type="button" disabled={product.availableQuantity <= 0} onClick={() => addProductToCart(true)}>
-              {settings.checkoutConfigured ? "Buy Now" : "Request Invoice Now"}
+            <button
+              className="gdg-secondary-button wide"
+              type="button"
+              disabled={isSoldOut}
+              onClick={() => addProductToCart(true)}
+            >
+              {soldOutSecondaryLabel}
             </button>
             <button className="gdg-wishlist-button" type="button">
               <Heart size={15} /> Add to Wishlist

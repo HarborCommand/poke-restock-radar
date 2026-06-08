@@ -213,6 +213,8 @@ export type PublicStoreProductDTO = {
   status: "active" | "sold_out";
   localPickupAvailable: boolean;
   shippingAvailable: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type StorefrontSettingsDTO = {

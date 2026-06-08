@@ -8055,6 +8055,8 @@ function StoreListingModal({
   submit: SubmitHandler;
   onClose: () => void;
 }) {
+  const [publishToStore, setPublishToStore] = useState(item.publishToStore);
+  const [storeStatus, setStoreStatus] = useState(item.storeStatus || "draft");
   const [imageUrl, setImageUrl] = useState(item.publicImages[0] || item.imageUrl || "");
   const saveLabel = `Updating store listing ${item.id}`;
   const suggestedPrice = storefrontSuggestedPublicPrice(item);
@@ -8068,6 +8070,7 @@ function StoreListingModal({
     { label: "Description exists", complete: Boolean(suggestedDescription.trim()) },
     { label: "Category set", complete: Boolean(suggestedCategory.trim()) }
   ];
+  const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-modal inventory-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit store listing ${item.itemName}`}>
@@ -8119,13 +8122,20 @@ function StoreListingModal({
             <h3>Storefront visibility</h3>
             <div className="form-grid compact">
               <label className="checkbox-label">
-                <input name="publishToStore" type="checkbox" value="true" defaultChecked={item.publishToStore} />
+                <input
+                  name="publishToStore"
+                  type="checkbox"
+                  value="true"
+                  checked={publishToStore}
+                  onChange={(event) => setPublishToStore(event.currentTarget.checked)}
+                />
                 Publish to public store
               </label>
               <SelectInput
                 name="storeStatus"
                 label="Store status"
-                defaultValue={item.storeStatus || "draft"}
+                defaultValue={storeStatus}
+                onChange={(event) => setStoreStatus(event.currentTarget.value as "draft" | "active" | "hidden" | "sold_out")}
                 options={[
                   { value: "draft", label: "Draft" },
                   { value: "active", label: "Active" },
@@ -8136,6 +8146,7 @@ function StoreListingModal({
               <TextInput name="publicSlug" label="Public URL slug" defaultValue={item.publicSlug ?? ""} />
               <TextInput name="storefrontCategory" label="Store category" defaultValue={suggestedCategory} />
             </div>
+            {showSoldOutPublishWarning ? <p className="form-helper publish-ready-note">This product will appear publicly with a Sold Out badge.</p> : null}
           </section>
           <section className="flow-step">
             <span>Listing</span>
