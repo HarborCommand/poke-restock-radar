@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       description,
       url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/product/${slug}`,
       siteName: "GameDayGrabs LLC",
-      images: product?.imageUrl ? [product.imageUrl] : ["/icons/icon-512.png"]
+      images: product?.imageUrl ? [product.imageUrl] : ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]
     }
   };
 }

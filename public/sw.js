@@ -1,5 +1,14 @@
-const CACHE_NAME = "poke-radar-sw-2026-06-03-live-drops-v4";
-const OFFLINE_ASSETS = ["/offline.html", "/manifest.webmanifest", "/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE_NAME = "poke-radar-sw-2026-06-07-gameday-icons-v1";
+const OFFLINE_ASSETS = [
+  "/offline.html",
+  "/manifest.webmanifest",
+  "/favicon.ico",
+  "/icon.png?v=gdg-icons-v1",
+  "/apple-touch-icon.png?v=gdg-icons-v1",
+  "/icons/icon-192.png?v=gdg-icons-v1",
+  "/icons/icon-512.png?v=gdg-icons-v1",
+  "/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"
+];
 
 async function notifyClients(message) {
   const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

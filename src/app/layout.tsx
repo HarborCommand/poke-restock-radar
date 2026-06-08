@@ -8,8 +8,25 @@ export const metadata: Metadata = {
   description: "Private Pokemon TCG restock, release, store, and grading opportunity radar.",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/icon.svg",
-    apple: "/icons/icon-192.png"
+    icon: [
+      {
+        url: "/icon.png?v=gdg-icons-v1",
+        sizes: "256x256",
+        type: "image/png"
+      },
+      {
+        url: "/icons/icon-192.png?v=gdg-icons-v1",
+        sizes: "192x192",
+        type: "image/png"
+      },
+      {
+        url: "/icons/icon-512.png?v=gdg-icons-v1",
+        sizes: "512x512",
+        type: "image/png"
+      }
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png?v=gdg-icons-v1"
   },
   appleWebApp: {
     capable: true,

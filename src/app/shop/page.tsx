@@ -12,7 +12,7 @@ export const metadata = {
     description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
     url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/shop`,
     siteName: "GameDayGrabs LLC",
-    images: ["/brand/gamedaygrabs-logo-horizontal.png"]
+    images: ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]
   },
   other: {
     "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
