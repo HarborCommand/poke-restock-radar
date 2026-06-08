@@ -1713,7 +1713,7 @@ function ArchiveIcon() {
 }
 
 function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
-  const published = dashboard.inventory.filter((item) => item.publishToStore && item.storeStatus === "active" && item.quantityOwned > 0);
+  const published = dashboard.inventory.filter((item) => item.publishToStore && (item.storeStatus === "active" || item.storeStatus === "sold_out"));
   const withImages = published.filter((item) => item.publicImages[0] || item.imageUrl);
   const settings = dashboard.storefrontSettings;
   const publicUrl = "https://gamedaygrabs.com";
@@ -1727,8 +1727,8 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
     { label: "Contact form / inquiry works", detail: "Contact and Request Invoice save customer inquiries when SMTP is missing.", complete: true },
     { label: "Policies page works", detail: "/policies shows shipping, returns, pickup, checkout, and contact details.", complete: true },
     { label: "About page works", detail: "/about explains GameDayGrabs LLC for customers and distributors.", complete: true },
-    { label: "At least 5 published products", detail: `${published.length} active products published.`, complete: published.length >= 5 },
-    { label: "Published product images", detail: `${withImages.length}/${published.length || 0} active products have images.`, complete: published.length > 0 && withImages.length === published.length },
+    { label: "At least 5 published products", detail: `${published.length} published products available publicly.`, complete: published.length >= 5 },
+    { label: "Published product images", detail: `${withImages.length}/${published.length || 0} published products have images.`, complete: published.length > 0 && withImages.length === published.length },
     { label: "Request Invoice / cart works", detail: settings.checkoutConfigured ? "Stripe Checkout configured; cart remains active." : "Request Invoice mode available until Stripe is configured.", complete: true },
     { label: "No private data exposed", detail: "Public pages hide costs, profit, market values, receipts, scanner history, and tracker data.", complete: true }
   ];
@@ -1826,7 +1826,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
         <article>
           <span className="eyeline">Published products</span>
           <strong>{dashboard.storefrontSummary.activeProductCount}</strong>
-          <small>Only active public listings with available quantity are shown to customers.</small>
+          <small>Published listing count includes active and sold-out storefront products.</small>
         </article>
         <article>
           <span className="eyeline">Distributor readiness</span>
@@ -4946,15 +4946,19 @@ function storefrontSuggestedDescription(item: InventoryItemDTO) {
   return `${brandText}${item.itemName}${setText} is available from GameDayGrabs LLC as part of our ${category} selection. Availability is subject to change until checkout or invoice confirmation.`;
 }
 
+function storefrontListingAvailableForSale(item: InventoryItemDTO) {
+  return item.availableForSale ?? item.quantityOwned;
+}
+
 function storefrontListingQuality(item: InventoryItemDTO) {
   const price = storefrontSuggestedPublicPrice(item);
-  const availableForSale = item.availableForSale ?? item.quantityOwned;
+  const availableForSale = storefrontListingAvailableForSale(item);
   const description = item.publicDescription || item.description || storefrontSuggestedDescription(item);
   const category = item.storefrontCategory || storefrontPublicCategory(item);
   return [
     { key: "image", label: "Image exists", complete: Boolean(item.publicImages[0] || item.imageUrl) },
     { key: "price", label: "Public price set", complete: Boolean(price && price > 0) },
-    { key: "quantity", label: "Quantity available", complete: availableForSale > 0 },
+    { key: "quantity", label: "Quantity available", complete: availableForSale >= 0 },
     { key: "description", label: "Description exists", complete: Boolean(description.trim()) },
     { key: "category", label: "Category set", complete: Boolean(category.trim()) }
   ];
@@ -6998,7 +7002,7 @@ function InventoryStorefrontPublishToolbar({
   runAction: ActionHandler;
 }) {
   const eligibleCount = items.filter(storefrontListingEligible).length;
-  const publishedCount = items.filter((item) => item.publishToStore && item.storeStatus === "active").length;
+  const publishedCount = items.filter((item) => item.publishToStore && (item.storeStatus === "active" || item.storeStatus === "sold_out")).length;
   const needsQualityCount = items.length - eligibleCount;
   const selectedLabel = selectedIds.length ? `${selectedIds.length} selected` : "No products selected";
 
@@ -7036,7 +7040,9 @@ function InventoryStorefrontPublishToolbar({
       <div>
         <span className="eyeline">Storefront Publishing</span>
         <h3>Make real inventory visible in GameDayGrabs</h3>
-        <p>{publishedCount} active in this view - {eligibleCount} ready - {needsQualityCount} need price, image, or stock.</p>
+        <p>
+          {publishedCount} listed in this view (active/sold out) - {eligibleCount} ready - {needsQualityCount} need price, image, description, or category.
+        </p>
       </div>
       <div className="inventory-publish-stats">
         <span>{selectedLabel}</span>
@@ -7657,13 +7663,14 @@ function inventoryStockStatusTone(item: InventoryItemDTO) {
 
 function storeListingLabel(item: InventoryItemDTO) {
   if (!item.publishToStore) return "Not Published";
-  if (item.storeStatus === "active" && item.quantityOwned <= 0) return "Sold Out";
+  if (item.storeStatus === "sold_out") return "Sold Out";
+  if (item.storeStatus === "active" && storefrontListingAvailableForSale(item) <= 0) return "Sold Out";
   return item.storeStatus.replace("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function storeListingTone(item: InventoryItemDTO) {
   if (!item.publishToStore || item.storeStatus === "hidden") return "neutral";
-  if (item.storeStatus === "active" && item.quantityOwned > 0) return "good";
+  if (item.storeStatus === "active" && storefrontListingAvailableForSale(item) > 0) return "good";
   if (item.storeStatus === "draft") return "watch";
   return "bad";
 }
@@ -8053,11 +8060,11 @@ function StoreListingModal({
   const suggestedPrice = storefrontSuggestedPublicPrice(item);
   const suggestedCategory = item.storefrontCategory || storefrontPublicCategory(item);
   const suggestedDescription = item.publicDescription || item.description || storefrontSuggestedDescription(item);
-  const availableForSale = item.availableForSale ?? item.quantityOwned;
+  const availableForSale = storefrontListingAvailableForSale(item);
   const qualityChecks = [
     { label: "Image exists", complete: Boolean(imageUrl || item.imageUrl) },
     { label: "Public price set", complete: Boolean(suggestedPrice && suggestedPrice > 0) },
-    { label: "Quantity available", complete: availableForSale > 0 },
+    { label: "Quantity available", complete: availableForSale >= 0 },
     { label: "Description exists", complete: Boolean(suggestedDescription.trim()) },
     { label: "Category set", complete: Boolean(suggestedCategory.trim()) }
   ];
@@ -8088,7 +8095,9 @@ function StoreListingModal({
             <ProductImagePreview imageUrl={imageUrl || item.imageUrl || ""} itemName={item.itemName} />
             <div>
               <strong>{item.publicTitle || item.itemName}</strong>
-              <span>{storeListingLabel(item)} - {item.quantityOwned} owned - {suggestedPrice !== null ? money(suggestedPrice) : "No public price"}</span>
+              <span>
+                {storeListingLabel(item)} · {storefrontListingAvailableForSale(item)} available - {suggestedPrice !== null ? money(suggestedPrice) : "No public price"}
+              </span>
             </div>
           </section>
           <section className="listing-quality-card">

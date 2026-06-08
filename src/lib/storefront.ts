@@ -205,7 +205,6 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
   return products
     .map(publicProductToDTO)
     .filter((product): product is PublicStoreProductDTO => Boolean(product))
-    .filter((product) => product.status === "active")
     .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))
     .filter((product) => !category || category === "all" || product.category.toLowerCase() === category);
 }
@@ -726,12 +725,16 @@ export async function updateInventoryStoreListing(
   const publicImageList = stringifyList(input.publicImages) ?? stringifyList(publicImages(item));
   const storefrontCategory = input.storefrontCategory || item.storefrontCategory || publicCategoryForItem(item);
   const publicPrice = input.publicPrice ?? publicListingPrice(item) ?? undefined;
-  if (input.storeStatus === "active" && (!publicPrice || publicPrice <= 0)) {
+  const availableForSale = input.availableForSale === undefined ? item.availableForSale ?? sellableQuantity(item) : input.availableForSale;
+  const normalizedStoreStatus =
+    input.publishToStore && input.storeStatus === "active" && availableForSale <= 0
+      ? "sold_out"
+      : input.storeStatus;
+
+  if (["active", "sold_out"].includes(normalizedStoreStatus) && (!publicPrice || publicPrice <= 0)) {
     throw new Error("Set a public price before activating a store listing.");
   }
-  if (input.storeStatus === "active" && sellableQuantity(item) <= 0 && !input.availableForSale) {
-    throw new Error("Add available inventory before activating this store listing.");
-  }
+
   return prisma.inventoryItem.update({
     where: { id: item.id },
     data: {
@@ -742,10 +745,10 @@ export async function updateInventoryStoreListing(
       publicPrice,
       compareAtPrice: input.compareAtPrice,
       publicImages: publicImageList,
-      availableForSale: input.availableForSale,
+      availableForSale,
       maxQuantityPerOrder: input.maxQuantityPerOrder,
       shippingProfile: input.shippingProfile,
-      storeStatus: input.storeStatus,
+      storeStatus: normalizedStoreStatus,
       localPickupAvailable: input.localPickupAvailable,
       shippingAvailable: input.shippingAvailable,
       storefrontCategory,
@@ -776,10 +779,6 @@ export async function bulkPublishInventoryStoreListings(
     const availableForSale = sellableQuantity(item);
     const price = publicListingPrice(item);
     const images = publicImages(item);
-    if (availableForSale <= 0) {
-      skipped.push({ id: item.id, itemName: item.itemName, reason: "No available quantity" });
-      continue;
-    }
     if (!price || price <= 0) {
       skipped.push({ id: item.id, itemName: item.itemName, reason: "Public price missing" });
       continue;
@@ -790,6 +789,7 @@ export async function bulkPublishInventoryStoreListings(
     }
     const publicTitle = item.publicTitle || item.itemName;
     const publicSlug = item.publicSlug || await uniqueSlug(publicTitle, item.id);
+    const storeStatus = availableForSale > 0 ? "active" : "sold_out";
     const result = await prisma.inventoryItem.update({
       where: { id: item.id },
       data: {
@@ -802,7 +802,7 @@ export async function bulkPublishInventoryStoreListings(
         availableForSale,
         maxQuantityPerOrder: item.maxQuantityPerOrder || 4,
         shippingProfile: item.shippingProfile || "standard",
-        storeStatus: "active",
+        storeStatus,
         localPickupAvailable: item.localPickupAvailable,
         shippingAvailable: item.shippingAvailable,
         storefrontCategory: item.storefrontCategory || publicCategoryForItem(item),
@@ -835,7 +835,13 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
   const where = currentUser.role === "ADMIN" ? {} : { userId: currentUser.id };
   const [productCount, activeProductCount, pendingOrderCount, inquiryCount, paidOrders] = await Promise.all([
     prisma.inventoryItem.count({ where: { ...(where as Prisma.InventoryItemWhereInput), publishToStore: true } }),
-    prisma.inventoryItem.count({ where: { ...(where as Prisma.InventoryItemWhereInput), publishToStore: true, storeStatus: "active" } }),
+    prisma.inventoryItem.count({
+      where: {
+        ...(where as Prisma.InventoryItemWhereInput),
+        publishToStore: true,
+        storeStatus: { in: ["active", "sold_out"] }
+      }
+    }),
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "pending_payment" } }),
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "contact_message" } }),
     prisma.storefrontOrder.findMany({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid" }, select: { total: true, netProfit: true } })
