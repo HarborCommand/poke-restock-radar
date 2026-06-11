@@ -13,6 +13,7 @@ test("sold out products are detectable for filters and actions", () => {
   const soldOutPublished = {
     status: "sold_out" as const,
     availableQuantity: 0,
+    publishedAt: "2026-06-01T10:00:00.000Z",
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-01T10:00:00.000Z"
   };
@@ -31,6 +32,7 @@ test("sold-out public product disables add-to-cart and request invoice actions",
   const soldOut = {
     status: "sold_out" as const,
     availableQuantity: 0,
+    publishedAt: "2026-06-01T10:00:00.000Z",
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-01T10:00:00.000Z"
   };
@@ -45,6 +47,7 @@ test("in-stock availability excludes sold-out products", () => {
   const activeProduct = {
     status: "active" as const,
     availableQuantity: 4,
+    publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
   };
@@ -52,6 +55,7 @@ test("in-stock availability excludes sold-out products", () => {
   const soldOut = {
     status: "sold_out" as const,
     availableQuantity: 0,
+    publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
   };
@@ -64,6 +68,7 @@ test("active in-stock products stay in-stock and are not disabled", () => {
   const activeProduct = {
     status: "active" as const,
     availableQuantity: 7,
+    publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
   };
@@ -74,18 +79,19 @@ test("active in-stock products stay in-stock and are not disabled", () => {
   assert.equal(storefrontImageBadges(activeProduct).length, 0);
 });
 
-test("new arrival badges appear for recently changed public products", () => {
-  const now = new Date("2026-06-08T12:00:00.000Z");
-  const createdAt = new Date(now.getTime() - NEW_ARRIVAL_DAYS * 24 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString();
+test("new arrival badges appear for recently published public products", () => {
+  const now = new Date();
+  const publishedAt = new Date(now.getTime() - NEW_ARRIVAL_DAYS * 24 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString();
 
   const newArrivalProduct = {
     status: "active" as const,
     availableQuantity: 12,
-    createdAt,
+    publishedAt,
+    createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-06-05T10:00:00.000Z"
   };
 
-  const badges = storefrontImageBadges(newArrivalProduct);
+  const badges = storefrontImageBadges(newArrivalProduct, NEW_ARRIVAL_DAYS);
   const labels = badges.map((badge) => badge.label);
   assert.equal(labels.includes("NEW ARRIVAL"), true);
   assert.equal(labels.includes("LOW STOCK"), false);
@@ -95,6 +101,7 @@ test("low quantity active products show LOW STOCK badge", () => {
   const lowQuantityProduct = {
     status: "active" as const,
     availableQuantity: 2,
+    publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
   };
@@ -106,6 +113,7 @@ test("limited quantity active products show LIMITED STOCK badge", () => {
   const limitedQuantityProduct = {
     status: "active" as const,
     availableQuantity: 4,
+    publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
   };
@@ -114,10 +122,11 @@ test("limited quantity active products show LIMITED STOCK badge", () => {
 });
 
 test("sold out with recent creation keeps SOLD OUT as priority and may include NEW ARRIVAL", () => {
-  const now = new Date("2026-06-08T12:00:00.000Z");
+  const now = new Date();
   const recentSoldOut = {
     status: "sold_out" as const,
     availableQuantity: 0,
+    publishedAt: now.toISOString(),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString()
   };

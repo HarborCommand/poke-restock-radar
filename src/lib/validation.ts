@@ -725,6 +725,16 @@ export const storefrontSettingsSchema = z.object({
     httpUrl.nullable().optional()
   ),
   contactEmail: z.preprocess((value) => (value === "" || value === null ? undefined : value), z.string().trim().email().optional()),
+  featuredHeroProductId: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? null : value),
+    z.string().trim().min(2).max(120).nullable().optional()
+  ),
+  homepageHeroMode: z.enum(["automatic_latest", "manual_product", "brand_only"]).default("automatic_latest"),
+  newArrivalDays: z.coerce.number().int().min(1).max(60).default(14),
+  showSoldOutInHero: z.preprocess(
+    (value) => (value === undefined ? undefined : value === true || value === "true" || value === "on" || value === "1"),
+    z.boolean().default(true)
+  ),
   returnPolicyText: z.string().trim().max(4000).optional(),
   shippingPolicyText: z.string().trim().max(4000).optional(),
   localPickupInstructions: z.string().trim().max(4000).optional(),

@@ -5557,6 +5557,12 @@ function StorefrontSettingsCard({
   submit: SubmitHandler;
 }) {
   const settings = dashboard.storefrontSettings;
+  const heroProductOptions = dashboard.inventory
+    .filter((item) => item.publishToStore && item.publicSlug && ["active", "sold_out"].includes(item.storeStatus))
+    .map((item) => ({
+      value: item.id,
+      label: `${item.publicTitle || item.itemName} - ${storefrontListingAvailableForSale(item) > 0 ? "In Stock" : "Sold Out"}`
+    }));
   return (
     <section className="dashboard-card storefront-settings-card">
       <div className="dashboard-card-header">
@@ -5578,6 +5584,35 @@ function StorefrontSettingsCard({
       >
         <TextInput name="storeName" label="Store name" defaultValue={settings.storeName} required />
         <TextInput name="contactEmail" label="Public contact email" type="email" defaultValue={settings.contactEmail ?? ""} />
+        <SelectInput
+          name="homepageHeroMode"
+          label="Homepage hero mode"
+          defaultValue={settings.homepageHeroMode}
+          options={[
+            { value: "automatic_latest", label: "Automatic latest product" },
+            { value: "manual_product", label: "Manual featured product" },
+            { value: "brand_only", label: "Brand only" }
+          ]}
+        />
+        <label className="wide-field">
+          Featured hero product
+          <select name="featuredHeroProductId" defaultValue={settings.featuredHeroProductId ?? ""}>
+            <option value="">Automatic latest product</option>
+            {heroProductOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <small>Used when homepage hero mode is set to Manual featured product.</small>
+        </label>
+        <TextInput name="newArrivalDays" label="New Arrival duration" type="number" min="1" max="60" step="1" defaultValue={settings.newArrivalDays} />
+        <p className="form-helper publish-ready-note">New Arrival products stay marked as new for {settings.newArrivalDays} days after being published.</p>
+        <input type="hidden" name="showSoldOutInHero" value="false" />
+        <label className="checkbox-label">
+          <input name="showSoldOutInHero" type="checkbox" value="true" defaultChecked={settings.showSoldOutInHero} />
+          Allow sold-out products in automatic homepage hero
+        </label>
         <label className="wide-field">
           Sports Cards external link
           <input name="sportsCardsExternalUrl" type="url" defaultValue={settings.sportsCardsExternalUrl ?? GAMEDAYGRABS_SPORTS_CARDS_URL} placeholder={GAMEDAYGRABS_SPORTS_CARDS_URL} />

@@ -13,14 +13,21 @@ export function isSoldOutProduct(product: Pick<PublicStoreProductDTO, "available
   return product.status === "sold_out" || product.availableQuantity <= 0;
 }
 
-export function isNewArrival(product: Pick<PublicStoreProductDTO, "createdAt" | "updatedAt">, now = new Date()) {
-  const created = new Date(product.createdAt).getTime();
-  const updated = new Date(product.updatedAt).getTime();
-  const timestamp = Math.max(created, updated);
+export function normalizedNewArrivalDays(days: number | null | undefined) {
+  if (!Number.isFinite(days ?? Number.NaN)) return NEW_ARRIVAL_DAYS;
+  return Math.min(60, Math.max(1, Math.round(days ?? NEW_ARRIVAL_DAYS)));
+}
+
+export function storefrontArrivalDate(product: Pick<PublicStoreProductDTO, "publishedAt" | "createdAt">) {
+  return product.publishedAt || product.createdAt;
+}
+
+export function isNewArrival(product: Pick<PublicStoreProductDTO, "publishedAt" | "createdAt">, now = new Date(), days = NEW_ARRIVAL_DAYS) {
+  const timestamp = new Date(storefrontArrivalDate(product)).getTime();
   if (Number.isNaN(timestamp)) {
     return false;
   }
-  return now.getTime() - timestamp <= NEW_ARRIVAL_DAYS * 24 * 60 * 60 * 1000;
+  return now.getTime() - timestamp <= normalizedNewArrivalDays(days) * 24 * 60 * 60 * 1000;
 }
 
 function stockBadge(product: Pick<PublicStoreProductDTO, "availableQuantity">): StorefrontImageBadge | null {
@@ -30,17 +37,17 @@ function stockBadge(product: Pick<PublicStoreProductDTO, "availableQuantity">): 
   return null;
 }
 
-export function storefrontImageBadges(product: Pick<PublicStoreProductDTO, "availableQuantity" | "status" | "createdAt" | "updatedAt">) {
+export function storefrontImageBadges(product: Pick<PublicStoreProductDTO, "availableQuantity" | "status" | "publishedAt" | "createdAt">, newArrivalDays = NEW_ARRIVAL_DAYS) {
   if (isSoldOutProduct(product)) {
     const badges: StorefrontImageBadge[] = [{ label: "SOLD OUT", variant: "sold-out" }];
-    if (isNewArrival(product)) {
+    if (isNewArrival(product, new Date(), newArrivalDays)) {
       badges.push({ label: "NEW ARRIVAL", variant: "new-arrival" });
     }
     return badges;
   }
 
   const badges: StorefrontImageBadge[] = [];
-  if (isNewArrival(product)) {
+  if (isNewArrival(product, new Date(), newArrivalDays)) {
     badges.push({ label: "NEW ARRIVAL", variant: "new-arrival" });
   }
 

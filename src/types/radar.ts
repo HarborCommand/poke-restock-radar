@@ -183,6 +183,7 @@ export type InventoryItemDTO = {
   shippingAvailable: boolean;
   storefrontCategory: string | null;
   storefrontTags: string[];
+  publishedAt: string | null;
   totalSalesGross: number;
   totalSalesNet: number;
   realizedProfitLoss: number;
@@ -213,6 +214,7 @@ export type PublicStoreProductDTO = {
   status: "active" | "sold_out";
   localPickupAvailable: boolean;
   shippingAvailable: boolean;
+  publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -222,6 +224,10 @@ export type StorefrontSettingsDTO = {
   storeLogoUrl: string | null;
   sportsCardsExternalUrl: string | null;
   contactEmail: string | null;
+  featuredHeroProductId: string | null;
+  homepageHeroMode: "automatic_latest" | "manual_product" | "brand_only";
+  newArrivalDays: number;
+  showSoldOutInHero: boolean;
   returnPolicyText: string | null;
   shippingPolicyText: string | null;
   localPickupInstructions: string | null;

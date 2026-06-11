@@ -1751,6 +1751,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     shippingAvailable: item.shippingAvailable,
     storefrontCategory: item.storefrontCategory,
     storefrontTags: parseJsonStringArray(item.storefrontTags),
+    publishedAt: item.publishedAt?.toISOString() ?? null,
     totalSalesGross,
     totalSalesNet,
     realizedProfitLoss,

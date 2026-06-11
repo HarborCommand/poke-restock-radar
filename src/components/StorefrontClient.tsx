@@ -28,8 +28,10 @@ import {
   storefrontMatchesAvailability,
   storefrontPrimaryActionDisabled,
   isSoldOutProduct,
+  isNewArrival,
   type StorefrontAvailabilityFilter
 } from "@/lib/storefront-badges";
+import { homepageArrivalSection, selectHomepageHeroProduct } from "@/lib/storefront-home";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
@@ -172,13 +174,15 @@ function categoryPreviewCards(products: PublicStoreProductDTO[], categories: str
 function ProductImage({
   product,
   size = "card",
-  showBadges = false
+  showBadges = false,
+  newArrivalDays = 14
 }: {
-  product: Pick<PublicStoreProductDTO, "title" | "imageUrl" | "availableQuantity" | "status" | "createdAt" | "updatedAt">;
+  product: Pick<PublicStoreProductDTO, "title" | "imageUrl" | "availableQuantity" | "status" | "publishedAt" | "createdAt">;
   size?: "card" | "hero" | "thumb" | "detail";
   showBadges?: boolean;
+  newArrivalDays?: number;
 }) {
-  const badges = showBadges ? storefrontImageBadges(product) : [];
+  const badges = showBadges ? storefrontImageBadges(product, newArrivalDays) : [];
 
   return (
     <div className={`gdg-product-image gdg-product-image-${size} gdg-product-media ${size === "detail" ? "gdg-product-image-detail-media" : ""}`}>
@@ -390,7 +394,7 @@ function ProductCard({
   return (
     <article className="gdg-product-card">
       <Link href={`/shop/product/${product.slug}`} className="gdg-product-media">
-        <ProductImage product={product} showBadges />
+        <ProductImage product={product} showBadges newArrivalDays={settings.newArrivalDays} />
       </Link>
       <div className="gdg-product-body">
         <span className="gdg-product-category">{product.category}</span>
@@ -470,8 +474,14 @@ export function ProductGrid({
       });
   }, [availability, category, products, query, sort]);
 
-  const newArrivals = products.slice(0, 4);
-  const heroProduct = products.find((product) => product.imageUrl) ?? products[0];
+  const arrivalSection = homepageArrivalSection(products, settings.newArrivalDays);
+  const heroProduct = selectHomepageHeroProduct(products, settings);
+  const heroProductBadges = heroProduct
+    ? [
+        ...(isSoldOutProduct(heroProduct) ? ["Sold Out"] : []),
+        ...(isNewArrival(heroProduct, new Date(), settings.newArrivalDays) ? ["New Arrival"] : ["Latest Release"])
+      ]
+    : [];
   const categoryCards = useMemo(() => categoryPreviewCards(products, homeCategories), [products]);
 
   function onAdded(product: PublicStoreProductDTO) {
@@ -497,10 +507,25 @@ export function ProductGrid({
                   New Arrivals
                 </Link>
               </div>
+              {heroProduct ? (
+                <div className="gdg-hero-feature">
+                  <div className="gdg-hero-badge-row">
+                    {heroProductBadges.map((badge) => (
+                      <span key={badge}>{badge}</span>
+                    ))}
+                  </div>
+                  <small>{heroProduct.category}</small>
+                  <strong>{heroProduct.title}</strong>
+                  <b>{money(heroProduct.price)}</b>
+                  <Link href={`/shop/product/${heroProduct.slug}`} className="gdg-secondary-button compact">
+                    View Product
+                  </Link>
+                </div>
+              ) : null}
             </div>
             <div className="gdg-hero-stage" aria-label="Featured collectible products">
               {heroProduct ? (
-                <ProductImage product={heroProduct} size="hero" />
+                <ProductImage product={heroProduct} size="hero" showBadges newArrivalDays={settings.newArrivalDays} />
               ) : (
                 <div className="gdg-hero-placeholder">
                   <span>GameDayGrabs</span>
@@ -566,14 +591,14 @@ export function ProductGrid({
           <section className="gdg-section">
             <div className="gdg-section-header">
               <div>
-                <h2>New Arrivals</h2>
-                <p>Recently published products from available inventory.</p>
+                <h2>{arrivalSection.title}</h2>
+                <p>{arrivalSection.detail}</p>
               </div>
               <Link href="/shop?sort=newest">View All New Arrivals</Link>
             </div>
             <div className="gdg-arrivals-row">
-              {newArrivals.length ? (
-                newArrivals.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
+              {arrivalSection.products.length ? (
+                arrivalSection.products.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
               ) : (
                 <div className="gdg-empty compact">
                   <h3>No public listings yet</h3>
@@ -715,7 +740,7 @@ export function ProductDetail({
           <aside className={`gdg-gallery ${images.length > 1 ? "has-thumbs" : "single-image"}`}>
             <div className="gdg-gallery-main">
               <div className="gdg-image-badges gdg-image-badges-detail" aria-hidden="true">
-                {storefrontImageBadges(product).map((badge) => (
+                {storefrontImageBadges(product, settings.newArrivalDays).map((badge) => (
                   <span key={badge.label} className={`gdg-product-badge gdg-product-badge-${badge.variant}`}>
                     {badge.label}
                   </span>

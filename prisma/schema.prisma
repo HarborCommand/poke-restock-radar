@@ -780,6 +780,7 @@ model InventoryItem {
   shippingAvailable      Boolean               @default(true)
   storefrontCategory     String?
   storefrontTags         String?
+  publishedAt            DateTime?
   expectedPlan           String?
   notes                  String?
   createdAt              DateTime              @default(now())
@@ -806,6 +807,7 @@ model InventoryItem {
   @@index([publishToStore])
   @@index([storeStatus])
   @@index([storefrontCategory])
+  @@index([publishedAt])
   @@index([purchasedAt])
 }
 
@@ -960,6 +962,10 @@ model StorefrontSettings {
   storeLogoUrl          String?
   sportsCardsExternalUrl String?
   contactEmail          String?
+  featuredHeroProductId String?
+  homepageHeroMode      String   @default("automatic_latest")
+  newArrivalDays        Int      @default(14)
+  showSoldOutInHero     Boolean  @default(true)
   returnPolicyText      String?
   shippingPolicyText    String?
   localPickupInstructions String?

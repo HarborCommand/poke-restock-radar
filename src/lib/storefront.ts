@@ -160,6 +160,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     status: availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out",
     localPickupAvailable: item.localPickupAvailable,
     shippingAvailable: item.shippingAvailable,
+    publishedAt: item.publishedAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString()
   };
@@ -179,6 +180,10 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
     storeLogoUrl: settings?.storeLogoUrl ?? null,
     sportsCardsExternalUrl: storefrontSportsCardsUrl(settings?.sportsCardsExternalUrl),
     contactEmail: storefrontContactEmail(settings?.contactEmail),
+    featuredHeroProductId: settings?.featuredHeroProductId ?? null,
+    homepageHeroMode: (settings?.homepageHeroMode === "manual_product" || settings?.homepageHeroMode === "brand_only" ? settings.homepageHeroMode : "automatic_latest") as StorefrontSettingsDTO["homepageHeroMode"],
+    newArrivalDays: Math.min(60, Math.max(1, settings?.newArrivalDays ?? 14)),
+    showSoldOutInHero: settings?.showSoldOutInHero ?? true,
     returnPolicyText: settings?.returnPolicyText ?? null,
     shippingPolicyText: settings?.shippingPolicyText ?? null,
     localPickupInstructions: settings?.localPickupInstructions ?? null,
@@ -208,7 +213,12 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
     .map(publicProductToDTO)
     .filter((product): product is PublicStoreProductDTO => Boolean(product))
     .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))
-    .filter((product) => !category || category === "all" || product.category.toLowerCase() === category);
+    .filter((product) => !category || category === "all" || product.category.toLowerCase() === category)
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.publishedAt ?? left.createdAt);
+      const rightTime = Date.parse(right.publishedAt ?? right.createdAt);
+      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+    });
 }
 
 export async function getPublicStoreProduct(slug: string) {
@@ -729,8 +739,10 @@ export async function updateInventoryStoreListing(
   const publicPrice = input.publicPrice ?? publicListingPrice(item) ?? undefined;
   const availableForSale = input.availableForSale === undefined ? item.availableForSale ?? sellableQuantity(item) : input.availableForSale;
   const normalizedStoreStatus = input.publishToStore && availableForSale <= 0 ? "sold_out" : input.storeStatus;
+  const isPublicStatus = ["active", "sold_out"].includes(normalizedStoreStatus);
+  const shouldStampPublishedAt = input.publishToStore && isPublicStatus && !item.publishedAt;
 
-  if (["active", "sold_out"].includes(normalizedStoreStatus) && (!publicPrice || publicPrice <= 0)) {
+  if (isPublicStatus && (!publicPrice || publicPrice <= 0)) {
     throw new Error("Set a public price before activating a store listing.");
   }
 
@@ -751,7 +763,8 @@ export async function updateInventoryStoreListing(
       localPickupAvailable: input.localPickupAvailable,
       shippingAvailable: input.shippingAvailable,
       storefrontCategory,
-      storefrontTags: stringifyList(input.storefrontTags)
+      storefrontTags: stringifyList(input.storefrontTags),
+      publishedAt: shouldStampPublishedAt ? new Date() : item.publishedAt
     },
     include: storefrontInventoryInclude
   });
@@ -805,7 +818,8 @@ export async function bulkPublishInventoryStoreListings(
         localPickupAvailable: item.localPickupAvailable,
         shippingAvailable: item.shippingAvailable,
         storefrontCategory: item.storefrontCategory || publicCategoryForItem(item),
-        storefrontTags: item.storefrontTags || stringifyList([publicCategoryForItem(item), item.setName || "", item.brand || ""].filter(Boolean))
+        storefrontTags: item.storefrontTags || stringifyList([publicCategoryForItem(item), item.setName || "", item.brand || ""].filter(Boolean)),
+        publishedAt: item.publishedAt ?? new Date()
       },
       select: { id: true, itemName: true, publicSlug: true }
     });

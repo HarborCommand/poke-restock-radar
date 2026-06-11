@@ -119,6 +119,7 @@ function item(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
     shippingAvailable: true,
     storefrontCategory: null,
     storefrontTags: [],
+    publishedAt: null,
     totalSalesGross: 0,
     totalSalesNet: 0,
     realizedProfitLoss: 0,
@@ -355,7 +356,8 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(shopPage, /StorefrontShopView/);
   assert.match(client, /homeCategories/);
   assert.match(client, /categoryPreviewCards/);
-  assert.match(client, /products\.slice\(0, 4\)/);
+  assert.match(client, /homepageArrivalSection/);
+  assert.match(client, /arrivalSection\.products/);
   assert.match(client, /href: "\/shop\?category=pokemon"/);
   assert.match(client, /GAMEDAYGRABS_SPORTS_CARDS_URL/);
   assert.match(client, /Sports card inventory is currently listed on our eBay store/);
