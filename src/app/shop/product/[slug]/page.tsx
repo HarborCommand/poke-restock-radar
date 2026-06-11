@@ -9,19 +9,19 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const product = await getPublicStoreProduct(slug);
   const title = product ? `${product.title} | GameDayGrabs LLC` : "Product | GameDayGrabs LLC";
-  const description = product?.description || "Shop premium Pokemon and sports card products from GameDayGrabs LLC.";
+  const description = product?.description || "Shop premium Pokémon and sports card products from GameDayGrabs LLC.";
   return {
     metadataBase: new URL(`https://${GAMEDAYGRABS_WWW_DOMAIN}`),
     title,
+    description,
+    openGraph: {
+      title,
       description,
-      openGraph: {
-        title,
-        description,
-        url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/shop/product/${slug}`,
-        siteName: "GameDayGrabs LLC",
-        images: product?.imageUrl ? [product.imageUrl] : ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]
-      }
-    };
+      url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/shop/product/${slug}`,
+      siteName: "GameDayGrabs LLC",
+      images: product?.imageUrl ? [product.imageUrl] : ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]
+    }
+  };
 }
 
 export default async function ShopProductPage({ params }: { params: Promise<{ slug: string }> }) {

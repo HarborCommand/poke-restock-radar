@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "About | GameDayGrabs LLC",
-  description: "Learn about GameDayGrabs LLC, a family-owned Pokemon and sports card shop."
+  description: "Learn about GameDayGrabs LLC, a family-owned Pokémon and sports card shop."
 };
 
 export default async function AboutPage() {
@@ -18,7 +18,7 @@ export default async function AboutPage() {
         <p className="gdg-overline">About GameDayGrabs LLC</p>
         <h1>Built for collectors, players, and families.</h1>
         <p>
-          GameDayGrabs LLC is a collector-focused shop for Pokemon sealed products, sports cards, graded cards,
+          GameDayGrabs LLC is a collector-focused shop for Pokémon sealed products, sports cards, graded cards,
           and curated collectibles. The storefront is designed to keep public inventory simple, accurate, and easy to
           request.
         </p>

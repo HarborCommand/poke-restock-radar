@@ -14,6 +14,10 @@ import {
 test("storefront copy cleanup fixes Pokemon encoding and missing punctuation spaces", () => {
   assert.equal(cleanStorefrontTitle("Pok?mon Trading Card Game: Mega Evolution"), "Pokémon Trading Card Game: Mega Evolution");
   assert.equal(normalizeStorefrontCopy("Great item.Ships fast.home?and ready"), "Great item. Ships fast. home and ready");
+  assert.equal(
+    normalizeStorefrontCopy("the city? s residents in the Pokemon TCG: Mega Evolution? Perfect Order expansion!"),
+    "the city's residents in the Pokémon TCG: Mega Evolution: Perfect Order expansion!"
+  );
 });
 
 test("messy public description gets a customer-facing fallback", () => {
@@ -35,6 +39,19 @@ test("clean public description is preserved with spelling cleanup", () => {
   });
 
   assert.equal(description, "Pokémon TCG booster bundle with sealed packs. Available while supplies last.");
+});
+
+test("fixable punctuation glitches are cleaned without replacing useful descriptions", () => {
+  const description = cleanStorefrontDescription({
+    title: "Pokemon Elite Trainer Box",
+    category: "Elite Trainer Boxes",
+    publicDescription:
+      "The pulse of the city beats in sync with the Pokemon and people who call it home and preserving the order of it all is Mega Zygarde ex. Peaceful days are ahead for the city? s residents in the Pokemon TCG: Mega Evolution? Perfect Order expansion!"
+  });
+
+  assert.match(description, /city's residents/);
+  assert.match(description, /Pokémon TCG: Mega Evolution: Perfect Order expansion/);
+  assert.doesNotMatch(description, /Available from GameDayGrabs LLC, this sealed Pokémon TCG product/);
 });
 
 test("sold-out copy is customer-facing and separate from private product data", () => {

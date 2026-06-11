@@ -11,11 +11,11 @@ export async function generateMetadata() {
   if (isGameDayGrabsHost(host)) {
     return {
       metadataBase: new URL(`https://${GAMEDAYGRABS_WWW_DOMAIN}`),
-      title: "GameDayGrabs LLC | Pokemon & Sports Card Collectibles",
-      description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
+      title: "GameDayGrabs LLC | Pokémon & Sports Card Collectibles",
+      description: "Family-owned online card shop specializing in Pokémon sealed products, sports cards, and collectibles.",
       openGraph: {
-        title: "GameDayGrabs LLC | Pokemon & Sports Card Collectibles",
-        description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
+        title: "GameDayGrabs LLC | Pokémon & Sports Card Collectibles",
+        description: "Family-owned online card shop specializing in Pokémon sealed products, sports cards, and collectibles.",
         url: `https://${GAMEDAYGRABS_WWW_DOMAIN}`,
         siteName: "GameDayGrabs LLC",
         images: ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]
@@ -27,7 +27,7 @@ export async function generateMetadata() {
   }
   return {
     title: "Poke Restock Radar",
-    description: "Private Pokemon TCG restock, release, inventory, and alert radar."
+    description: "Private Pokémon TCG restock, release, inventory, and alert radar."
   };
 }
 

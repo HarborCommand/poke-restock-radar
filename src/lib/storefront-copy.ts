@@ -25,11 +25,13 @@ const warningDescriptionPatterns = [
   /customer-facing pricing/i,
   /available quantity before it appears/i,
   /invoice checkout confirmation/i,
-  /home\?and/i
+  /home\?and/i,
+  /\w\?\s*s\b/i,
+  /Mega Evolution\?\s*/i
 ];
 
 const fallbackDescriptionPatterns = warningDescriptionPatterns.filter(
-  (pattern) => !/Pok/.test(pattern.source) && !/home/.test(pattern.source)
+  (pattern) => !/Pok/.test(pattern.source) && !/home|Mega Evolution|\\w\\\?/.test(pattern.source)
 );
 
 function decodeCommonMojibake(value: string) {
@@ -52,6 +54,8 @@ export function normalizeStorefrontCopy(value: string | null | undefined) {
   const normalized = decodeCommonMojibake(value)
     .replace(/home\?and/gi, "home and")
     .replace(/checkout\?confirmation/gi, "checkout confirmation")
+    .replace(/(\w)\?\s*s\b/g, "$1's")
+    .replace(/Mega Evolution\?\s*/gi, "Mega Evolution: ")
     .replace(/([.!?])(?=[A-Z0-9])/g, "$1 ")
     .replace(/[ \t]+/g, " ")
     .replace(/\s+([,.;:!?])/g, "$1")

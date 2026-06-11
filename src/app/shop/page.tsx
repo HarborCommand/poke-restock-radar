@@ -5,11 +5,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   metadataBase: new URL(`https://${GAMEDAYGRABS_WWW_DOMAIN}`),
-  title: "GameDayGrabs LLC | Pokemon & Sports Card Collectibles",
-  description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
+  title: "GameDayGrabs LLC | Pokémon & Sports Card Collectibles",
+  description: "Family-owned online card shop specializing in Pokémon sealed products, sports cards, and collectibles.",
   openGraph: {
-    title: "GameDayGrabs LLC | Pokemon & Sports Card Collectibles",
-    description: "Family-owned online card shop specializing in Pokemon sealed products, sports cards, and collectibles.",
+    title: "GameDayGrabs LLC | Pokémon & Sports Card Collectibles",
+    description: "Family-owned online card shop specializing in Pokémon sealed products, sports cards, and collectibles.",
     url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/shop`,
     siteName: "GameDayGrabs LLC",
     images: ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]

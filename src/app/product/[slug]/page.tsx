@@ -9,7 +9,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const product = await getPublicStoreProduct(slug);
   const title = product ? `${product.title} | GameDayGrabs LLC` : "Product | GameDayGrabs LLC";
-  const description = product?.description || "Shop premium Pokemon and sports card products from GameDayGrabs LLC.";
+  const description = product?.description || "Shop premium Pokémon and sports card products from GameDayGrabs LLC.";
   return {
     metadataBase: new URL(`https://${GAMEDAYGRABS_WWW_DOMAIN}`),
     title,

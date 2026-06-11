@@ -5,7 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   applicationName: "Poke Restock Radar",
   title: "Poke Restock Radar",
-  description: "Private Pokemon TCG restock, release, store, and grading opportunity radar.",
+  description: "Private Pokémon TCG restock, release, store, and grading opportunity radar.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [

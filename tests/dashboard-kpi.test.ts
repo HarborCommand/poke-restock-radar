@@ -408,7 +408,7 @@ test("GameDayGrabs custom domain routes public storefront without exposing priva
   assert.match(rootPage, /headers/);
   assert.match(rootPage, /StorefrontHomeView/);
   assert.match(rootPage, /RadarApp/);
-  assert.match(rootPage, /GameDayGrabs LLC \| Pokemon & Sports Card Collectibles/);
+  assert.match(rootPage, /GameDayGrabs LLC \| Pokémon & Sports Card Collectibles/);
   assert.match(productAlias, /StorefrontProductView/);
   assert.match(shopCartAlias, /redirect\("\/cart"\)/);
   for (const privateAlias of [appAlias, adminAlias, dashboardAlias]) {

@@ -33,7 +33,7 @@ export default async function ContactPage() {
           ) : (
             <p>Public contact email is not configured yet. Use the cart Request Invoice flow for product inquiries.</p>
           )}
-          <p>Collector-focused Pokemon and sports card products for customers, players, and fans.</p>
+          <p>Collector-focused Pokémon and sports card products for customers, players, and fans.</p>
         </div>
         <a className="gdg-primary-button" href={settings.contactEmail ? `mailto:${settings.contactEmail}` : "/shop"}>
           {settings.contactEmail ? "Email Us" : "Browse Products"}
