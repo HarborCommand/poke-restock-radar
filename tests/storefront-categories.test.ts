@@ -50,3 +50,22 @@ test("category preview cards use specific storefront matching rather than broad 
   assert.match(client, /storefrontCategoryMatches\(product, category\)/);
   assert.doesNotMatch(client, /function categoryMatches/);
 });
+
+test("homepage hero product image links to the same product page as View Product", () => {
+  const client = fs.readFileSync("src/components/StorefrontClient.tsx", "utf8");
+
+  assert.match(client, /className="gdg-hero-product-link"/);
+  assert.match(client, /aria-label=\{`View \$\{heroProduct\.title\}`\}/);
+  assert.match(client, /<Link href=\{`\/shop\/product\/\$\{heroProduct\.slug\}`\} className="gdg-hero-product-link"/);
+  assert.match(client, /<Link href=\{`\/shop\/product\/\$\{heroProduct\.slug\}`\} className="gdg-secondary-button compact"/);
+  assert.match(client, /gdg-hero-placeholder/);
+});
+
+test("homepage hero image has hover and keyboard focus affordances", () => {
+  const styles = fs.readFileSync("src/app/globals.css", "utf8");
+
+  assert.match(styles, /\.gdg-hero-product-link:hover[\s\S]*transform: translateY\(-4px\)/);
+  assert.match(styles, /\.gdg-hero-product-link:focus-visible[\s\S]*outline: 3px solid #16a34a/);
+  assert.match(styles, /\.gdg-hero-product-link:hover \.gdg-product-image-hero img[\s\S]*transform: scale\(1\.045\)/);
+  assert.match(styles, /\.gdg-hero-view-cue/);
+});

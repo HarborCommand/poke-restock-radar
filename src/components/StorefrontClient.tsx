@@ -618,7 +618,13 @@ export function ProductGrid({
             </div>
             <div className="gdg-hero-stage" aria-label="Featured collectible products">
               {heroProduct ? (
-                <ProductImage product={heroProduct} size="hero" showBadges newArrivalDays={settings.newArrivalDays} />
+                <Link href={`/shop/product/${heroProduct.slug}`} className="gdg-hero-product-link" aria-label={`View ${heroProduct.title}`}>
+                  <ProductImage product={heroProduct} size="hero" showBadges newArrivalDays={settings.newArrivalDays} />
+                  <span className="gdg-hero-view-cue">
+                    View product
+                    <ChevronRight size={13} aria-hidden="true" />
+                  </span>
+                </Link>
               ) : (
                 <div className="gdg-hero-placeholder">
                   <span>GameDayGrabs</span>
