@@ -73,6 +73,7 @@ import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls 
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPolicyResult } from "@/lib/target-retail-policy";
 import { compareTargetDiscordAlert, targetUrlFromTcin, type TargetDiscordAlertInput, type TargetDiscordComparison } from "@/lib/target-discord-alert";
+import { cleanStorefrontDescription, cleanStorefrontTitle, generatedStorefrontDescription, storefrontCopyWarnings } from "@/lib/storefront-copy";
 import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
 import { normalizeUPC } from "@/lib/upc";
 import type {
@@ -4941,9 +4942,13 @@ function storefrontSuggestedPublicPrice(item: InventoryItemDTO) {
 
 function storefrontSuggestedDescription(item: InventoryItemDTO) {
   const category = item.storefrontCategory || storefrontPublicCategory(item);
-  const setText = item.setName ? ` from ${item.setName}` : "";
-  const brandText = item.brand ? `${item.brand} ` : "";
-  return `${brandText}${item.itemName}${setText} is available from GameDayGrabs LLC as part of our ${category} selection. Availability is subject to change until checkout or invoice confirmation.`;
+  return generatedStorefrontDescription({
+    title: item.publicTitle || item.itemName,
+    itemName: item.itemName,
+    brand: item.brand,
+    category,
+    setName: item.setName
+  });
 }
 
 function storefrontListingAvailableForSale(item: InventoryItemDTO) {
@@ -4953,8 +4958,18 @@ function storefrontListingAvailableForSale(item: InventoryItemDTO) {
 function storefrontListingQuality(item: InventoryItemDTO) {
   const price = storefrontSuggestedPublicPrice(item);
   const availableForSale = storefrontListingAvailableForSale(item);
-  const description = item.publicDescription || item.description || storefrontSuggestedDescription(item);
   const category = item.storefrontCategory || storefrontPublicCategory(item);
+  const description = cleanStorefrontDescription({
+    title: item.publicTitle || item.itemName,
+    itemName: item.itemName,
+    brand: item.brand,
+    category,
+    setName: item.setName,
+    publicDescription: item.publicDescription,
+    description: item.description,
+    status: item.storeStatus,
+    availableQuantity: availableForSale
+  });
   return [
     { key: "image", label: "Image exists", complete: Boolean(item.publicImages[0] || item.imageUrl) },
     { key: "price", label: "Public price set", complete: Boolean(price && price > 0) },
@@ -8096,13 +8111,38 @@ function StoreListingModal({
   const saveLabel = `Updating store listing ${item.id}`;
   const suggestedPrice = storefrontSuggestedPublicPrice(item);
   const suggestedCategory = item.storefrontCategory || storefrontPublicCategory(item);
-  const suggestedDescription = item.publicDescription || item.description || storefrontSuggestedDescription(item);
   const availableForSale = storefrontListingAvailableForSale(item);
+  const generatedDescription = storefrontSuggestedDescription(item);
+  const initialDescription = cleanStorefrontDescription({
+    title: item.publicTitle || item.itemName,
+    itemName: item.itemName,
+    brand: item.brand,
+    category: suggestedCategory,
+    setName: item.setName,
+    publicDescription: item.publicDescription,
+    description: item.description,
+    status: storeStatus,
+    availableQuantity: availableForSale
+  });
+  const [publicDescription, setPublicDescription] = useState(initialDescription);
+  const cleanedDescriptionPreview = cleanStorefrontDescription({
+    title: item.publicTitle || item.itemName,
+    itemName: item.itemName,
+    brand: item.brand,
+    category: suggestedCategory,
+    setName: item.setName,
+    publicDescription,
+    description: null,
+    status: storeStatus,
+    availableQuantity: availableForSale
+  });
+  const descriptionWarnings = storefrontCopyWarnings(publicDescription);
   const qualityChecks = [
     { label: "Image exists", complete: Boolean(imageUrl || item.imageUrl) },
     { label: "Public price set", complete: Boolean(suggestedPrice && suggestedPrice > 0) },
     { label: "Quantity available", complete: availableForSale >= 0 },
-    { label: "Description exists", complete: Boolean(suggestedDescription.trim()) },
+    { label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
+    { label: "Description clean", complete: descriptionWarnings.length === 0 },
     { label: "Category set", complete: Boolean(suggestedCategory.trim()) }
   ];
   const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
@@ -8187,13 +8227,38 @@ function StoreListingModal({
             <span>Listing</span>
             <h3>Customer-facing product data</h3>
             <div className="form-grid compact">
-              <TextInput name="publicTitle" label="Public title" defaultValue={item.publicTitle || item.itemName} required />
+              <TextInput name="publicTitle" label="Public title" defaultValue={cleanStorefrontTitle(item.publicTitle || item.itemName)} required />
               <TextInput name="publicPrice" label="Public price" type="number" min="0" step="0.01" defaultValue={suggestedPrice ?? ""} />
               <TextInput name="compareAtPrice" label="Compare at price" type="number" min="0" step="0.01" defaultValue={item.compareAtPrice ?? ""} />
               <TextInput name="availableForSale" label="Available for sale" type="number" min="0" step="1" defaultValue={availableForSale} />
               <TextInput name="maxQuantityPerOrder" label="Max quantity/order" type="number" min="1" max="25" step="1" defaultValue={item.maxQuantityPerOrder || 4} />
               <TextInput name="storefrontTags" label="Tags" defaultValue={item.storefrontTags.join(", ")} />
-              <TextareaInput name="publicDescription" label="Public description" defaultValue={suggestedDescription} wide />
+              <TextareaInput
+                name="publicDescription"
+                label="Public description"
+                value={publicDescription}
+                onChange={(event) => setPublicDescription(event.currentTarget.value)}
+                rows={5}
+                wide
+              />
+              <div className="storefront-copy-preview wide-field">
+                <div>
+                  <strong>Preview cleaned description</strong>
+                  <button className="mini-action" type="button" onClick={() => setPublicDescription(generatedDescription)}>
+                    Regenerate description
+                  </button>
+                </div>
+                <p>{cleanedDescriptionPreview}</p>
+                {descriptionWarnings.length ? (
+                  <ul>
+                    {descriptionWarnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <small>Looks clean for public storefront use.</small>
+                )}
+              </div>
             </div>
           </section>
           <section className="flow-step">

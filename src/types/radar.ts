@@ -209,6 +209,7 @@ export type PublicStoreProductDTO = {
   images: string[];
   category: string;
   tags: string[];
+  condition: string | null;
   availableQuantity: number;
   maxQuantityPerOrder: number;
   status: "active" | "sold_out";

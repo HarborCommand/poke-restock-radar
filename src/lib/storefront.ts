@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { displayStorefrontCategory } from "@/lib/storefront-categories";
+import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
@@ -117,13 +118,6 @@ function publicCategoryForItem(item: Pick<StorefrontInventoryItem, "category" | 
   });
 }
 
-function generatedPublicDescription(item: Pick<StorefrontInventoryItem, "itemName" | "category" | "setName" | "brand">) {
-  const category = publicCategoryForItem(item);
-  const setText = item.setName ? ` from ${item.setName}` : "";
-  const brandText = item.brand ? `${item.brand} ` : "";
-  return `${brandText}${item.itemName}${setText} is available from GameDayGrabs LLC as part of our ${category} selection. This sealed product is listed with clear photos, current availability, and secure request-invoice checkout. Availability is subject to change until your order or invoice is confirmed.`;
-}
-
 function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | "targetSellPrice" | "msrp" | "currentMarketEstimate">) {
   return item.publicPrice ?? item.targetSellPrice ?? item.msrp ?? item.currentMarketEstimate ?? null;
 }
@@ -141,26 +135,40 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
   if (!item.publishToStore || !slug || price === null || price === undefined) return null;
   if (!["active", "sold_out"].includes(item.storeStatus)) return null;
   const images = publicImages(item);
+  const publicCategory = displayStorefrontCategory({
+    category: item.storefrontCategory || item.category,
+    title: item.publicTitle || item.itemName,
+    itemName: item.itemName,
+    setName: item.setName,
+    tags: parseList(item.storefrontTags)
+  });
+  const publicTitle = cleanStorefrontTitle(item.publicTitle || item.itemName);
+  const status = availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out";
   return {
     id: item.id,
     slug,
-    title: item.publicTitle || item.itemName,
-    description: item.publicDescription || item.description,
+    title: publicTitle,
+    description: cleanStorefrontDescription({
+      title: publicTitle,
+      itemName: item.itemName,
+      brand: item.brand,
+      category: publicCategory,
+      setName: item.setName,
+      publicDescription: item.publicDescription,
+      description: item.description,
+      status,
+      availableQuantity
+    }),
     price,
     compareAtPrice: item.compareAtPrice,
     imageUrl: images[0] ?? item.imageUrl,
     images,
-    category: displayStorefrontCategory({
-      category: item.storefrontCategory || item.category,
-      title: item.publicTitle || item.itemName,
-      itemName: item.itemName,
-      setName: item.setName,
-      tags: parseList(item.storefrontTags)
-    }),
+    category: publicCategory,
     tags: parseList(item.storefrontTags),
+    condition: cleanStorefrontTitle(item.condition),
     availableQuantity,
     maxQuantityPerOrder: item.maxQuantityPerOrder,
-    status: availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out",
+    status,
     localPickupAvailable: item.localPickupAvailable,
     shippingAvailable: item.shippingAvailable,
     publishedAt: item.publishedAt?.toISOString() ?? null,
@@ -734,11 +742,21 @@ export async function updateInventoryStoreListing(
     include: storefrontInventoryInclude
   });
   if (!item) throw new Error("Inventory item not found");
-  const publicTitle = input.publicTitle || item.publicTitle || item.itemName;
+  const publicTitle = cleanStorefrontTitle(input.publicTitle || item.publicTitle || item.itemName);
   const publicSlug = input.publicSlug ? await uniqueSlug(input.publicSlug, item.id) : item.publicSlug || (input.publishToStore ? await uniqueSlug(publicTitle, item.id) : null);
-  const publicDescription = input.publicDescription || item.publicDescription || generatedPublicDescription(item);
   const publicImageList = stringifyList(input.publicImages) ?? stringifyList(publicImages(item));
   const storefrontCategory = input.storefrontCategory || item.storefrontCategory || publicCategoryForItem(item);
+  const publicDescription = cleanStorefrontDescription({
+    title: publicTitle,
+    itemName: item.itemName,
+    brand: item.brand,
+    category: storefrontCategory,
+    setName: item.setName,
+    publicDescription: input.publicDescription ?? item.publicDescription,
+    description: item.description,
+    status: input.storeStatus,
+    availableQuantity: input.availableForSale ?? item.availableForSale
+  });
   const publicPrice = input.publicPrice ?? publicListingPrice(item) ?? undefined;
   const availableForSale = input.availableForSale === undefined ? item.availableForSale ?? sellableQuantity(item) : input.availableForSale;
   const normalizedStoreStatus = input.publishToStore && availableForSale <= 0 ? "sold_out" : input.storeStatus;
@@ -802,16 +820,27 @@ export async function bulkPublishInventoryStoreListings(
       skipped.push({ id: item.id, itemName: item.itemName, reason: "Product image missing" });
       continue;
     }
-    const publicTitle = item.publicTitle || item.itemName;
+    const publicTitle = cleanStorefrontTitle(item.publicTitle || item.itemName);
     const publicSlug = item.publicSlug || await uniqueSlug(publicTitle, item.id);
     const storeStatus = availableForSale > 0 ? "active" : "sold_out";
+    const storefrontCategory = item.storefrontCategory || publicCategoryForItem(item);
     const result = await prisma.inventoryItem.update({
       where: { id: item.id },
       data: {
         publishToStore: true,
         publicSlug,
         publicTitle,
-        publicDescription: item.publicDescription || generatedPublicDescription(item),
+        publicDescription: cleanStorefrontDescription({
+          title: publicTitle,
+          itemName: item.itemName,
+          brand: item.brand,
+          category: storefrontCategory,
+          setName: item.setName,
+          publicDescription: item.publicDescription,
+          description: item.description,
+          status: storeStatus,
+          availableQuantity: availableForSale
+        }),
         publicPrice: price,
         publicImages: stringifyList(images),
         availableForSale,
@@ -820,8 +849,8 @@ export async function bulkPublishInventoryStoreListings(
         storeStatus,
         localPickupAvailable: item.localPickupAvailable,
         shippingAvailable: item.shippingAvailable,
-        storefrontCategory: item.storefrontCategory || publicCategoryForItem(item),
-        storefrontTags: item.storefrontTags || stringifyList([publicCategoryForItem(item), item.setName || "", item.brand || ""].filter(Boolean)),
+        storefrontCategory,
+        storefrontTags: item.storefrontTags || stringifyList([storefrontCategory, item.setName || "", item.brand || ""].filter(Boolean)),
         publishedAt: item.publishedAt ?? new Date()
       },
       select: { id: true, itemName: true, publicSlug: true }

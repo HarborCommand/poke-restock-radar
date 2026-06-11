@@ -32,6 +32,7 @@ import {
   type StorefrontAvailabilityFilter
 } from "@/lib/storefront-badges";
 import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/storefront-categories";
+import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
 import { homepageArrivalSection, selectHomepageHeroProduct } from "@/lib/storefront-home";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
@@ -62,14 +63,14 @@ const homeCategories = [
 ];
 
 const categorySubtitles: Record<string, string> = {
-  "Pokemon Sealed": "Sealed Pokemon products",
+  "Pokemon Sealed": "Sealed Pokémon products",
   "Booster Bundles": "Compact pack bundles",
   "Booster Boxes": "Full display boxes",
   "Elite Trainer Boxes": "ETBs and trainer kits",
   "Premium Collections": "Collector boxes",
   "Sleeved Boosters": "Single pack products",
   "Blisters": "Blisters and checklanes",
-  "Tins": "Tins and Poke Balls",
+  "Tins": "Tins and Poké Balls",
   "Collection Boxes": "Boxed collections",
   "Sports Cards": "Shop on eBay",
   "Graded Cards": "Slabs and singles"
@@ -111,14 +112,8 @@ function money(value: number | null | undefined) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
-function cleanPublicProductDescription(product: PublicStoreProductDTO) {
-  const fallback = "Available from GameDayGrabs LLC. This sealed product is listed with clear photos, current availability, and secure request-invoice checkout.";
-  const description = product.description?.trim();
-  if (!description) return fallback;
-  if (/reviewed for clear images|customer-facing pricing|invoice checkout confirmation/i.test(description)) {
-    return fallback;
-  }
-  return description;
+function publicCategoryLabel(category: string) {
+  return cleanStorefrontTitle(category);
 }
 
 function displayStoreName(settings: StorefrontSettingsDTO) {
@@ -306,8 +301,9 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
   }, []);
 
   const nav = [
+    { href: homeHref, label: "Home", external: false },
     { href: "/shop", label: "Shop", external: false },
-    { href: "/shop?category=pokemon", label: "Pokemon", external: false },
+    { href: "/shop?category=pokemon", label: "Pokémon", external: false },
     { href: sportsCards.href, label: "Sports Cards", external: sportsCards.external },
     { href: "/shop?sort=newest", label: "New Arrivals", external: false },
     { href: "/about", label: "About", external: false },
@@ -367,7 +363,7 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
           <Image src={storefrontLogoPath} alt={`${storeName} logo`} width={180} height={44} className="gdg-footer-brand-logo" />
           <span className="sr-only">{storeName}</span>
         </Link>
-        <p>Pokemon and sports card products for collectors, players, and families.</p>
+        <p>Pokémon and sports card products for collectors, players, and families.</p>
         {settings.contactEmail ? (
           <a href={`mailto:${settings.contactEmail}`} className="gdg-footer-email">
             <Mail size={15} />
@@ -378,8 +374,9 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
         )}
       </div>
       <nav aria-label="Store footer navigation">
+        <Link href={homeHref}>Home</Link>
         <Link href="/shop">Shop</Link>
-        <Link href="/shop?category=pokemon">Pokemon</Link>
+        <Link href="/shop?category=pokemon">Pokémon</Link>
         {sportsCards.external ? (
           <a href={sportsCards.href} target="_blank" rel="noopener noreferrer" className="gdg-external-nav">
             Sports Cards
@@ -480,7 +477,8 @@ function ProductCard({
   const actionDisabled = storefrontPrimaryActionDisabled(product);
   const isSoldOut = isSoldOutProduct(product);
   const actionText = actionDisabled ? "Sold Out" : actionLabel;
-  const displayCategory = displayStorefrontCategory(product);
+  const displayCategory = publicCategoryLabel(displayStorefrontCategory(product));
+  const productTitle = cleanStorefrontTitle(product.title);
 
   return (
     <article className="gdg-product-card">
@@ -490,7 +488,7 @@ function ProductCard({
       <div className="gdg-product-body">
         <span className="gdg-product-category">{displayCategory}</span>
         <h3>
-          <Link href={`/shop/product/${product.slug}`}>{product.title}</Link>
+          <Link href={`/shop/product/${product.slug}`}>{productTitle}</Link>
         </h3>
         <strong>{money(product.price)}</strong>
       </div>
@@ -568,7 +566,8 @@ export function ProductGrid({
 
   const arrivalSection = homepageArrivalSection(products, settings.newArrivalDays);
   const heroProduct = selectHomepageHeroProduct(products, settings);
-  const heroCategory = heroProduct ? displayStorefrontCategory(heroProduct) : null;
+  const heroCategory = heroProduct ? publicCategoryLabel(displayStorefrontCategory(heroProduct)) : null;
+  const heroProductTitle = heroProduct ? cleanStorefrontTitle(heroProduct.title) : "";
   const heroProductBadges = heroProduct
     ? [
         ...(isSoldOutProduct(heroProduct) ? ["Sold Out"] : []),
@@ -578,7 +577,7 @@ export function ProductGrid({
   const categoryCards = useMemo(() => categoryPreviewCards(products, homeCategories), [products]);
 
   function onAdded(product: PublicStoreProductDTO) {
-    setNotice(`${product.title} added. ${settings.checkoutConfigured ? "Open cart to checkout." : "Open cart to request an invoice."}`);
+    setNotice(`${cleanStorefrontTitle(product.title)} added. ${settings.checkoutConfigured ? "Open cart to checkout." : "Open cart to request an invoice."}`);
   }
 
   const isSportsCardsCategory = mode === "shop" && category === "Sports Cards" && sportsCards.external;
@@ -589,9 +588,9 @@ export function ProductGrid({
         <>
           <section className="gdg-hero">
             <div className="gdg-hero-copy">
-              <p className="gdg-overline">Pokemon & Sports Cards</p>
+              <p className="gdg-overline">Pokémon & Sports Cards</p>
               <h1>Collect. Play. Invest.</h1>
-              <p>Premium Pokemon and sports card products for collectors, players, and fans.</p>
+              <p>Premium Pokémon and sports card products for collectors, players, and fans.</p>
               <div className="gdg-hero-actions">
                 <Link href="/shop" className="gdg-primary-button">
                   Shop Now
@@ -608,7 +607,7 @@ export function ProductGrid({
                     ))}
                   </div>
                   <small>{heroCategory}</small>
-                  <strong>{heroProduct.title}</strong>
+                  <strong>{heroProductTitle}</strong>
                   <b>{money(heroProduct.price)}</b>
                   <Link href={`/shop/product/${heroProduct.slug}`} className="gdg-secondary-button compact">
                     View Product
@@ -618,7 +617,7 @@ export function ProductGrid({
             </div>
             <div className="gdg-hero-stage" aria-label="Featured collectible products">
               {heroProduct ? (
-                <Link href={`/shop/product/${heroProduct.slug}`} className="gdg-hero-product-link" aria-label={`View ${heroProduct.title}`}>
+                <Link href={`/shop/product/${heroProduct.slug}`} className="gdg-hero-product-link" aria-label={`View ${heroProductTitle}`}>
                   <ProductImage product={heroProduct} size="hero" showBadges newArrivalDays={settings.newArrivalDays} />
                   <span className="gdg-hero-view-cue">
                     View product
@@ -678,7 +677,7 @@ export function ProductGrid({
                       <CategoryVisual category={entry} imageUrl={imageUrl} />
                     </span>
                     <span className="gdg-category-copy">
-                      <b>{entry}</b>
+                      <b>{publicCategoryLabel(entry)}</b>
                       <small>{subtitle}</small>
                     </span>
                     {link.external ? (
@@ -742,7 +741,7 @@ export function ProductGrid({
               <select value={category} onChange={(event) => setCategory(event.currentTarget.value)}>
                 {categories.map((entry) => (
                   <option key={entry} value={entry}>
-                    {entry === "all" ? "All Products" : entry}
+                    {entry === "all" ? "All Products" : publicCategoryLabel(entry)}
                   </option>
                 ))}
               </select>
@@ -834,8 +833,11 @@ export function ProductDetail({
   const actionLabel = checkoutModeLabel(settings);
   const soldOutActionLabel = isSoldOut ? "Sold Out" : actionLabel;
   const soldOutSecondaryLabel = isSoldOut ? "Sold Out" : settings.checkoutConfigured ? "Buy Now" : "Request Invoice Now";
-  const publicDescription = cleanPublicProductDescription(product);
-  const displayCategory = displayStorefrontCategory(product);
+  const publicDescription = cleanStorefrontDescription(product);
+  const displayCategory = publicCategoryLabel(displayStorefrontCategory(product));
+  const productTitle = cleanStorefrontTitle(product.title);
+  const conditionLabel = cleanStorefrontTitle(product.condition) || "Collector-ready condition";
+  const soldOutNote = storefrontSoldOutNote();
 
   function addProductToCart(redirect = false) {
     addToCart(product, quantity);
@@ -866,7 +868,7 @@ export function ProductDetail({
               {selectedImage && !failedImages.includes(selectedImage) ? (
                 <Image
                   src={selectedImage}
-                  alt={product.title}
+                  alt={productTitle}
                   width={900}
                   height={900}
                   unoptimized
@@ -891,15 +893,15 @@ export function ProductDetail({
           </aside>
           <section className="gdg-detail-info">
             <span className="gdg-product-category">{displayCategory}</span>
-            <h1>{product.title}</h1>
-              <div className="gdg-detail-price">
+            <h1>{productTitle}</h1>
+            <div className="gdg-detail-price">
               <strong>{money(product.price)}</strong>
               {product.compareAtPrice ? <s>{money(product.compareAtPrice)}</s> : null}
               <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
             </div>
             <p>{publicDescription}</p>
             <small>Stock visible now: {product.availableQuantity} item{product.availableQuantity === 1 ? "" : "s"}.</small>
-            {isSoldOut ? <p className="gdg-soldout-notice">This item is currently sold out. Check back soon for restocks.</p> : null}
+            {isSoldOut ? <p className="gdg-soldout-notice">{soldOutNote}</p> : null}
             <div className="gdg-quantity-control">
               <span>Quantity</span>
               <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} disabled={isSoldOut}>
@@ -957,11 +959,16 @@ export function ProductDetail({
       </section>
       <section className="gdg-description-section">
         <article>
-          <h2>Product Details</h2>
+          <h2>Product Description</h2>
           <p>{publicDescription}</p>
+          {isSoldOut ? <p>{soldOutNote}</p> : null}
+        </article>
+        <article>
+          <h2>Product Details</h2>
           <ul>
             <li>Category: {displayCategory}.</li>
-            <li>Available quantity shown on this page is updated from published inventory.</li>
+            <li>Condition: {conditionLabel}.</li>
+            <li>Availability: {isSoldOut ? "Sold Out" : `${product.availableQuantity} available`}.</li>
             <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request Invoice mode is active until online checkout is configured."}</li>
           </ul>
         </article>
@@ -978,7 +985,7 @@ export function ProductDetail({
           <h2>Condition Policy</h2>
           <p>{settings.returnPolicyText || "Sealed and collectible products are reviewed carefully before fulfillment. Returns are handled case by case, especially for sealed collectible items."}</p>
           <ul>
-            <li>Public listings never include internal purchase notes or private inventory details.</li>
+            <li>Listings show only customer-facing availability, condition, and checkout details.</li>
             <li>Contact GameDayGrabs before returning any collectible product.</li>
           </ul>
         </article>
@@ -1096,9 +1103,9 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
             {products.map((product) => (
               <article className="gdg-cart-line" key={product.id}>
                 <ProductImage product={product} size="thumb" />
-                <div>
-                  <h2>{product.title}</h2>
-                  <small>{displayStorefrontCategory(product)}</small>
+              <div>
+                  <h2>{cleanStorefrontTitle(product.title)}</h2>
+                  <small>{publicCategoryLabel(displayStorefrontCategory(product))}</small>
                   <div className="gdg-quantity-control compact">
                     <button type="button" onClick={() => updateQuantity(product.id, product.requestedQuantity - 1)}>
                       <Minus size={14} />
@@ -1110,7 +1117,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                   </div>
                 </div>
                 <strong>{money(product.price * product.requestedQuantity)}</strong>
-                <button className="gdg-icon-button" type="button" onClick={() => removeItem(product.id)} aria-label={`Remove ${product.title}`}>
+                <button className="gdg-icon-button" type="button" onClick={() => removeItem(product.id)} aria-label={`Remove ${cleanStorefrontTitle(product.title)}`}>
                   <Trash2 size={16} />
                 </button>
               </article>

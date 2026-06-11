@@ -55,10 +55,18 @@ test("homepage hero product image links to the same product page as View Product
   const client = fs.readFileSync("src/components/StorefrontClient.tsx", "utf8");
 
   assert.match(client, /className="gdg-hero-product-link"/);
-  assert.match(client, /aria-label=\{`View \$\{heroProduct\.title\}`\}/);
+  assert.match(client, /aria-label=\{`View \$\{heroProductTitle\}`\}/);
   assert.match(client, /<Link href=\{`\/shop\/product\/\$\{heroProduct\.slug\}`\} className="gdg-hero-product-link"/);
   assert.match(client, /<Link href=\{`\/shop\/product\/\$\{heroProduct\.slug\}`\} className="gdg-secondary-button compact"/);
   assert.match(client, /gdg-hero-placeholder/);
+});
+
+test("public header includes Home before Shop and mobile nav uses the same nav map", () => {
+  const client = fs.readFileSync("src/components/StorefrontClient.tsx", "utf8");
+
+  assert.match(client, /const nav = \[\s*\{ href: homeHref, label: "Home", external: false \},\s*\{ href: "\/shop", label: "Shop", external: false \}/);
+  assert.match(client, /className=\{`gdg-nav \$\{menuOpen \? "open" : ""\}`\}/);
+  assert.match(client, /label: "Pokémon"/);
 });
 
 test("homepage hero image has hover and keyboard focus affordances", () => {

@@ -17,6 +17,7 @@ function product(overrides: Partial<PublicStoreProductDTO> & { id: string; title
     images: overrides.images ?? [],
     category: overrides.category ?? "Pokemon Sealed",
     tags: overrides.tags ?? [],
+    condition: overrides.condition ?? "Sealed",
     availableQuantity: overrides.availableQuantity ?? 8,
     maxQuantityPerOrder: 4,
     status: overrides.status ?? "active",
