@@ -31,6 +31,7 @@ import {
   isNewArrival,
   type StorefrontAvailabilityFilter
 } from "@/lib/storefront-badges";
+import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/storefront-categories";
 import { homepageArrivalSection, selectHomepageHeroProduct } from "@/lib/storefront-home";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
@@ -41,9 +42,13 @@ const storefrontLogoPath = "/brand/gamedaygrabs-logo-horizontal.png";
 const preferredCategories = [
   "Pokemon Sealed",
   "Booster Bundles",
+  "Booster Boxes",
   "Elite Trainer Boxes",
   "Premium Collections",
   "Sleeved Boosters",
+  "Blisters",
+  "Tins",
+  "Collection Boxes",
   "Sports Cards",
   "Graded Cards"
 ];
@@ -59,8 +64,13 @@ const homeCategories = [
 const categorySubtitles: Record<string, string> = {
   "Pokemon Sealed": "Sealed Pokemon products",
   "Booster Bundles": "Compact pack bundles",
+  "Booster Boxes": "Full display boxes",
   "Elite Trainer Boxes": "ETBs and trainer kits",
   "Premium Collections": "Collector boxes",
+  "Sleeved Boosters": "Single pack products",
+  "Blisters": "Blisters and checklanes",
+  "Tins": "Tins and Poke Balls",
+  "Collection Boxes": "Boxed collections",
   "Sports Cards": "Shop on eBay",
   "Graded Cards": "Slabs and singles"
 };
@@ -157,23 +167,16 @@ function addToCart(product: PublicStoreProductDTO, quantity = 1) {
   writeCart(next);
 }
 
-function categoryMatches(product: PublicStoreProductDTO, category: string) {
-  const haystack = `${product.category} ${product.title} ${product.tags.join(" ")}`.toLowerCase();
-  const normalized = category.toLowerCase();
-  if (normalized === "pokemon sealed") return /pokemon|sealed|booster|trainer|collection|tin|blister/.test(haystack);
-  if (normalized === "elite trainer boxes") return /elite trainer|etb/.test(haystack);
-  if (normalized === "sports cards") return /sports|bowman|topps|panini|basketball|football|baseball/.test(haystack);
-  if (normalized === "graded cards") return /graded|psa|bgs|cgc/.test(haystack);
-  return haystack.includes(normalized.replace(/s$/, ""));
-}
-
 function categoryPreviewCards(products: PublicStoreProductDTO[], categories: string[]) {
   const usedImages = new Set<string>();
   return categories.slice(0, 6).map((category) => {
     const useProductImage = category !== "Sports Cards" && category !== "Graded Cards";
     const imageUrl = useProductImage
       ? (products.find((product) => {
-          if (!product.imageUrl || !categoryMatches(product, category) || usedImages.has(product.imageUrl)) return false;
+          if (!product.imageUrl || usedImages.has(product.imageUrl)) return false;
+          const specificCategory = displayStorefrontCategory(product);
+          if (category === "Pokemon Sealed" && specificCategory !== "Pokemon Sealed") return false;
+          if (category !== "Pokemon Sealed" && specificCategory !== category && !storefrontCategoryMatches(product, category)) return false;
           usedImages.add(product.imageUrl);
           return true;
         })?.imageUrl ?? null)
@@ -477,6 +480,7 @@ function ProductCard({
   const actionDisabled = storefrontPrimaryActionDisabled(product);
   const isSoldOut = isSoldOutProduct(product);
   const actionText = actionDisabled ? "Sold Out" : actionLabel;
+  const displayCategory = displayStorefrontCategory(product);
 
   return (
     <article className="gdg-product-card">
@@ -484,7 +488,7 @@ function ProductCard({
         <ProductImage product={product} showBadges newArrivalDays={settings.newArrivalDays} />
       </Link>
       <div className="gdg-product-body">
-        <span className="gdg-product-category">{product.category}</span>
+        <span className="gdg-product-category">{displayCategory}</span>
         <h3>
           <Link href={`/shop/product/${product.slug}`}>{product.title}</Link>
         </h3>
@@ -536,7 +540,7 @@ export function ProductGrid({
   const sportsCards = sportsCardsLink(settings);
 
   const categories = useMemo(() => {
-    const fromProducts = Array.from(new Set(products.map((product) => product.category).filter(Boolean)));
+    const fromProducts = Array.from(new Set(products.map((product) => displayStorefrontCategory(product)).filter(Boolean)));
     return ["all", ...preferredCategories, ...fromProducts.filter((entry) => !preferredCategories.includes(entry))];
   }, [products]);
 
@@ -548,8 +552,9 @@ export function ProductGrid({
           !normalizedQuery ||
           product.title.toLowerCase().includes(normalizedQuery) ||
           product.category.toLowerCase().includes(normalizedQuery) ||
+          displayStorefrontCategory(product).toLowerCase().includes(normalizedQuery) ||
           product.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
-        const matchesCategory = category === "all" || categoryMatches(product, category) || product.category === category;
+        const matchesCategory = category === "all" || storefrontCategoryMatches(product, category) || product.category === category;
         const matchesAvailability = storefrontMatchesAvailability(product, availability);
         return matchesQuery && matchesCategory && matchesAvailability;
       })
@@ -563,6 +568,7 @@ export function ProductGrid({
 
   const arrivalSection = homepageArrivalSection(products, settings.newArrivalDays);
   const heroProduct = selectHomepageHeroProduct(products, settings);
+  const heroCategory = heroProduct ? displayStorefrontCategory(heroProduct) : null;
   const heroProductBadges = heroProduct
     ? [
         ...(isSoldOutProduct(heroProduct) ? ["Sold Out"] : []),
@@ -601,7 +607,7 @@ export function ProductGrid({
                       <span key={badge}>{badge}</span>
                     ))}
                   </div>
-                  <small>{heroProduct.category}</small>
+                  <small>{heroCategory}</small>
                   <strong>{heroProduct.title}</strong>
                   <b>{money(heroProduct.price)}</b>
                   <Link href={`/shop/product/${heroProduct.slug}`} className="gdg-secondary-button compact">
@@ -620,13 +626,6 @@ export function ProductGrid({
                   <small>Published products will appear here.</small>
                 </div>
               )}
-              {products[1] ? (
-                <div className="gdg-floating-card">
-                  <ProductImage product={products[1]} size="thumb" />
-                  <span>{products[1].category}</span>
-                  <b>{money(products[1].price)}</b>
-                </div>
-              ) : null}
             </div>
           </section>
 
@@ -830,6 +829,7 @@ export function ProductDetail({
   const soldOutActionLabel = isSoldOut ? "Sold Out" : actionLabel;
   const soldOutSecondaryLabel = isSoldOut ? "Sold Out" : settings.checkoutConfigured ? "Buy Now" : "Request Invoice Now";
   const publicDescription = cleanPublicProductDescription(product);
+  const displayCategory = displayStorefrontCategory(product);
 
   function addProductToCart(redirect = false) {
     addToCart(product, quantity);
@@ -845,7 +845,7 @@ export function ProductDetail({
           <ChevronRight size={13} />
           <Link href="/shop">Shop</Link>
           <ChevronRight size={13} />
-          <span>{product.category}</span>
+          <span>{displayCategory}</span>
         </nav>
         <div className="gdg-detail-grid">
           <aside className={`gdg-gallery ${images.length > 1 ? "has-thumbs" : "single-image"}`}>
@@ -884,7 +884,7 @@ export function ProductDetail({
             ) : null}
           </aside>
           <section className="gdg-detail-info">
-            <span className="gdg-product-category">{product.category}</span>
+            <span className="gdg-product-category">{displayCategory}</span>
             <h1>{product.title}</h1>
               <div className="gdg-detail-price">
               <strong>{money(product.price)}</strong>
@@ -954,7 +954,7 @@ export function ProductDetail({
           <h2>Product Details</h2>
           <p>{publicDescription}</p>
           <ul>
-            <li>Category: {product.category}.</li>
+            <li>Category: {displayCategory}.</li>
             <li>Available quantity shown on this page is updated from published inventory.</li>
             <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request Invoice mode is active until online checkout is configured."}</li>
           </ul>
@@ -1092,7 +1092,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 <ProductImage product={product} size="thumb" />
                 <div>
                   <h2>{product.title}</h2>
-                  <small>{product.category}</small>
+                  <small>{displayStorefrontCategory(product)}</small>
                   <div className="gdg-quantity-control compact">
                     <button type="button" onClick={() => updateQuantity(product.id, product.requestedQuantity - 1)}>
                       <Minus size={14} />

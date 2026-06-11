@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
@@ -109,15 +110,11 @@ function sellableQuantity(item: StorefrontInventoryItem) {
 }
 
 function publicCategoryForItem(item: Pick<StorefrontInventoryItem, "category" | "setName" | "itemName">) {
-  const raw = `${item.category || ""} ${item.setName || ""} ${item.itemName || ""}`.toLowerCase();
-  if (raw.includes("etb") || raw.includes("elite trainer")) return "Elite Trainer Boxes";
-  if (raw.includes("booster bundle")) return "Booster Bundles";
-  if (raw.includes("booster box")) return "Booster Boxes";
-  if (raw.includes("premium") || raw.includes("collection")) return "Premium Collections";
-  if (raw.includes("graded") || raw.includes("psa") || raw.includes("bgs")) return "Graded Cards";
-  if (raw.includes("single card") || raw.includes("raw card")) return "Single Cards";
-  if (raw.includes("sports")) return "Sports Cards";
-  return "Pokemon Sealed";
+  return displayStorefrontCategory({
+    category: item.category,
+    itemName: item.itemName,
+    setName: item.setName
+  });
 }
 
 function generatedPublicDescription(item: Pick<StorefrontInventoryItem, "itemName" | "category" | "setName" | "brand">) {
@@ -153,7 +150,13 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     compareAtPrice: item.compareAtPrice,
     imageUrl: images[0] ?? item.imageUrl,
     images,
-    category: item.storefrontCategory || item.category,
+    category: displayStorefrontCategory({
+      category: item.storefrontCategory || item.category,
+      title: item.publicTitle || item.itemName,
+      itemName: item.itemName,
+      setName: item.setName,
+      tags: parseList(item.storefrontTags)
+    }),
     tags: parseList(item.storefrontTags),
     availableQuantity,
     maxQuantityPerOrder: item.maxQuantityPerOrder,
