@@ -183,6 +183,8 @@ function ProductImage({
   newArrivalDays?: number;
 }) {
   const badges = showBadges ? storefrontImageBadges(product, newArrivalDays) : [];
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const imageFailed = Boolean(product.imageUrl && failedImageUrl === product.imageUrl);
 
   return (
     <div className={`gdg-product-image gdg-product-image-${size} gdg-product-media ${size === "detail" ? "gdg-product-image-detail-media" : ""}`}>
@@ -193,7 +195,14 @@ function ProductImage({
           </span>
         ))}
       </div>
-      {product.imageUrl ? <Image src={product.imageUrl} alt={product.title} width={720} height={540} unoptimized /> : <Package size={size === "thumb" ? 18 : 30} />}
+      {product.imageUrl && !imageFailed ? (
+        <Image src={product.imageUrl} alt={product.title} width={720} height={540} unoptimized onError={() => setFailedImageUrl(product.imageUrl ?? null)} />
+      ) : (
+        <div className="gdg-image-placeholder">
+          <Package size={size === "thumb" ? 18 : 30} />
+          {size !== "thumb" ? <span>Image coming soon</span> : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -714,6 +723,7 @@ export function ProductDetail({
   const [notice, setNotice] = useState("");
   const images = product.images.length ? product.images : product.imageUrl ? [product.imageUrl] : [];
   const [selectedImage, setSelectedImage] = useState(images[0] ?? null);
+  const [failedImages, setFailedImages] = useState<string[]>([]);
   const isSoldOut = storefrontPrimaryActionDisabled(product);
   const actionLabel = checkoutModeLabel(settings);
   const soldOutActionLabel = isSoldOut ? "Sold Out" : actionLabel;
@@ -746,8 +756,15 @@ export function ProductDetail({
                   </span>
                 ))}
               </div>
-              {selectedImage ? (
-                <Image src={selectedImage} alt={product.title} width={900} height={900} unoptimized />
+              {selectedImage && !failedImages.includes(selectedImage) ? (
+                <Image
+                  src={selectedImage}
+                  alt={product.title}
+                  width={900}
+                  height={900}
+                  unoptimized
+                  onError={() => setFailedImages((current) => (current.includes(selectedImage) ? current : [...current, selectedImage]))}
+                />
               ) : (
                 <div className="gdg-image-placeholder">
                   <Package size={42} />
