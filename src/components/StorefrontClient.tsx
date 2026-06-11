@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   BadgeCheck,
   Check,
@@ -55,6 +55,15 @@ const homeCategories = [
   "Sports Cards",
   "Graded Cards"
 ];
+
+const categorySubtitles: Record<string, string> = {
+  "Pokemon Sealed": "Sealed Pokemon products",
+  "Booster Bundles": "Compact pack bundles",
+  "Elite Trainer Boxes": "ETBs and trainer kits",
+  "Premium Collections": "Collector boxes",
+  "Sports Cards": "Shop on eBay",
+  "Graded Cards": "Slabs and singles"
+};
 
 function categoryToSlug(category: string) {
   return category
@@ -161,14 +170,60 @@ function categoryMatches(product: PublicStoreProductDTO, category: string) {
 function categoryPreviewCards(products: PublicStoreProductDTO[], categories: string[]) {
   const usedImages = new Set<string>();
   return categories.slice(0, 6).map((category) => {
-    const imageUrl =
-      products.find((product) => {
-        if (!product.imageUrl || !categoryMatches(product, category) || usedImages.has(product.imageUrl)) return false;
-        usedImages.add(product.imageUrl);
-        return true;
-      })?.imageUrl ?? null;
-    return { category, imageUrl };
+    const useProductImage = category !== "Sports Cards" && category !== "Graded Cards";
+    const imageUrl = useProductImage
+      ? (products.find((product) => {
+          if (!product.imageUrl || !categoryMatches(product, category) || usedImages.has(product.imageUrl)) return false;
+          usedImages.add(product.imageUrl);
+          return true;
+        })?.imageUrl ?? null)
+      : null;
+    return { category, imageUrl, subtitle: categorySubtitles[category] ?? "Shop category", tone: categoryToSlug(category) };
   });
+}
+
+function CategoryVisual({ category, imageUrl }: { category: string; imageUrl: string | null }) {
+  if (imageUrl) {
+    return <Image src={imageUrl} alt="" width={260} height={200} unoptimized />;
+  }
+
+  if (category === "Sports Cards") {
+    return (
+      <span className="gdg-category-illustration gdg-category-illustration-sports" aria-hidden="true">
+        <span className="gdg-ebay-mark">
+          <b>e</b>
+          <b>B</b>
+          <b>a</b>
+          <b>y</b>
+        </span>
+        <span className="gdg-sports-card-stack">
+          <i />
+          <i />
+          <i />
+        </span>
+      </span>
+    );
+  }
+
+  if (category === "Graded Cards") {
+    return (
+      <span className="gdg-category-illustration gdg-category-illustration-graded" aria-hidden="true">
+        <span className="gdg-graded-slab">
+          <small>GRADED</small>
+          <b>10</b>
+          <i />
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span className={`gdg-category-illustration gdg-category-illustration-${categoryToSlug(category)}`} aria-hidden="true">
+      <Package size={30} />
+      <i />
+      <i />
+    </span>
+  );
 }
 
 function ProductImage({
@@ -184,7 +239,16 @@ function ProductImage({
 }) {
   const badges = showBadges ? storefrontImageBadges(product, newArrivalDays) : [];
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const imageFailed = Boolean(product.imageUrl && failedImageUrl === product.imageUrl);
+
+  useEffect(() => {
+    if (size !== "hero" || !product.imageUrl) return;
+    const image = imageRef.current;
+    if (image?.complete && image.naturalWidth <= 160 && image.naturalHeight <= 160) {
+      setFailedImageUrl(product.imageUrl);
+    }
+  }, [product.imageUrl, size]);
 
   return (
     <div className={`gdg-product-image gdg-product-image-${size} gdg-product-media ${size === "detail" ? "gdg-product-image-detail-media" : ""}`}>
@@ -196,7 +260,21 @@ function ProductImage({
         ))}
       </div>
       {product.imageUrl && !imageFailed ? (
-        <Image src={product.imageUrl} alt={product.title} width={720} height={540} unoptimized onError={() => setFailedImageUrl(product.imageUrl ?? null)} />
+        <Image
+          src={product.imageUrl}
+          alt={product.title}
+          width={720}
+          height={540}
+          unoptimized
+          ref={imageRef}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (size === "hero" && image.naturalWidth <= 160 && image.naturalHeight <= 160) {
+              setFailedImageUrl(product.imageUrl ?? null);
+            }
+          }}
+          onError={() => setFailedImageUrl(product.imageUrl ?? null)}
+        />
       ) : (
         <div className="gdg-image-placeholder">
           <Package size={size === "thumb" ? 18 : 30} />
@@ -586,14 +664,37 @@ export function ProductGrid({
               <Link href="/shop">View all</Link>
             </div>
             <div className="gdg-category-grid">
-              {categoryCards.map(({ category: entry, imageUrl }) => (
-                <Link href={categoryHref(entry)} key={entry} className="gdg-category-card">
-                  <span className="gdg-category-image">
-                    {imageUrl ? <Image src={imageUrl} alt="" width={260} height={200} unoptimized /> : <Package size={26} />}
-                  </span>
-                  <b>{entry}</b>
-                </Link>
-              ))}
+              {categoryCards.map(({ category: entry, imageUrl, subtitle, tone }) => {
+                const isSports = entry === "Sports Cards";
+                const link = isSports ? sportsCards : { href: categoryHref(entry), external: false };
+                const card = (
+                  <>
+                    <span className={`gdg-category-image gdg-category-image-${tone}`}>
+                      <CategoryVisual category={entry} imageUrl={imageUrl} />
+                    </span>
+                    <span className="gdg-category-copy">
+                      <b>{entry}</b>
+                      <small>{subtitle}</small>
+                    </span>
+                    {link.external ? (
+                      <span className="gdg-category-external">
+                        <ExternalLink size={12} aria-hidden="true" />
+                        Opens eBay
+                      </span>
+                    ) : null}
+                  </>
+                );
+
+                return link.external ? (
+                  <a key={entry} href={link.href} target="_blank" rel="noopener noreferrer" className="gdg-category-card">
+                    {card}
+                  </a>
+                ) : (
+                  <Link href={link.href} key={entry} className="gdg-category-card">
+                    {card}
+                  </Link>
+                );
+              })}
             </div>
           </section>
 
