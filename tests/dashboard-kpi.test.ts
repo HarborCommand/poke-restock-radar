@@ -1014,7 +1014,7 @@ test("admin health exposes build version and cache refresh controls", () => {
   assert.match(app, /APP_CACHE_CLEARED/);
   assert.match(health, /getBuildInfo/);
   assert.match(types, /serviceWorkerVersion/);
-  assert.match(serviceWorker, /poke-radar-sw-2026-06-07-gameday-icons-v1/);
+  assert.match(serviceWorker, /poke-radar-sw-2026-06-12-login-recovery-v1/);
   assert.match(serviceWorker, /CLEAR_APP_CACHE/);
   assert.match(serviceWorker, /SKIP_WAITING/);
   assert.match(packageJson, /"build:info"/);

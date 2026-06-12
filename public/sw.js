@@ -1,4 +1,4 @@
-const CACHE_NAME = "poke-radar-sw-2026-06-07-gameday-icons-v1";
+const CACHE_NAME = "poke-radar-sw-2026-06-12-login-recovery-v1";
 const OFFLINE_ASSETS = [
   "/offline.html",
   "/manifest.webmanifest",
