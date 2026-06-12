@@ -263,6 +263,23 @@ test("inventory admin modals use light layout and stock edit has live cost previ
   assert.match(css, /\.stock-cost-preview/);
 });
 
+test("admin modal checkboxes and sticky footers stay on light theme", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  const finalCleanup = css.slice(css.indexOf("Inventory admin visibility and white-modal cleanup"));
+  const editListing = app.slice(app.indexOf("function StoreListingModal"), app.indexOf("function InventoryMarketHero"));
+
+  assert.match(editListing, /Shipping available/);
+  assert.match(editListing, /Local pickup available/);
+  assert.match(editListing, /inventory-edit-actions/);
+  assert.match(finalCleanup, /body \.checkbox-label,[\s\S]*background: #ffffff !important/);
+  assert.match(finalCleanup, /body \.checkbox-label:has\(input:checked\),[\s\S]*background: #f0fdf4 !important/);
+  assert.match(finalCleanup, /body \.inventory-edit-actions,[\s\S]*background: linear-gradient\(180deg, rgba\(255, 255, 255, 0\.88\), #ffffff 38%\) !important/);
+  assert.match(finalCleanup, /body \.inventory-edit-actions \.primary-action[\s\S]*background: #22c55e !important/);
+  assert.doesNotMatch(finalCleanup, /background: linear-gradient\(180deg, rgba\(11, 14, 13/);
+  assert.doesNotMatch(finalCleanup, /background: #0b0e0d/);
+});
+
 test("market value and unrealized profit use real comps only", () => {
   const summary = summarizeInventory([
     item({

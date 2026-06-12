@@ -1,24 +1,24 @@
 :root {
-  color-scheme: dark;
-  --bg: #070808;
-  --bg-soft: #0d0f0e;
-  --panel: #111413;
-  --panel-strong: #181c1a;
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.14);
-  --text: #f5f7f4;
-  --muted: #a6afaa;
-  --subtle: #6f7974;
-  --green: #4fe08b;
-  --green-bg: rgba(79, 224, 139, 0.11);
-  --yellow: #eacb67;
-  --yellow-bg: rgba(234, 203, 103, 0.12);
-  --red: #ff7e73;
-  --red-bg: rgba(255, 126, 115, 0.12);
-  --blue: #87bbff;
-  --blue-bg: rgba(135, 187, 255, 0.1);
-  --shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
-  --radius: 10px;
+  color-scheme: light;
+  --bg: #f7f9fb;
+  --bg-soft: #f1f5f9;
+  --panel: #ffffff;
+  --panel-strong: #ffffff;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --text: #0f172a;
+  --muted: #64748b;
+  --subtle: #94a3b8;
+  --green: #22c55e;
+  --green-bg: #dcfce7;
+  --yellow: #f59e0b;
+  --yellow-bg: #fef3c7;
+  --red: #ef4444;
+  --red-bg: #fee2e2;
+  --blue: #3b82f6;
+  --blue-bg: #dbeafe;
+  --shadow: 0 16px 40px rgba(15, 23, 42, 0.07);
+  --radius: 12px;
 }
 
 /* Release Radar white operating layout */
@@ -18589,6 +18589,112 @@ body .inventory-modal textarea {
   color: #111827 !important;
 }
 
+body .checkbox-label,
+body .inventory-modal .checkbox-label,
+body .inventory-edit-form .checkbox-label,
+body .admin-tools .checkbox-label,
+body .admin-section-grid .checkbox-label,
+body .release-detail-modal .checkbox-label,
+body .barcode-scanner-modal .checkbox-label,
+body .record-sale-modal .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border: 1px solid #dbe3ea !important;
+  border-radius: 14px;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  padding: 10px 12px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+}
+
+body .checkbox-label:hover,
+body .inventory-modal .checkbox-label:hover,
+body .inventory-edit-form .checkbox-label:hover,
+body .admin-tools .checkbox-label:hover,
+body .admin-section-grid .checkbox-label:hover,
+body .release-detail-modal .checkbox-label:hover,
+body .barcode-scanner-modal .checkbox-label:hover,
+body .record-sale-modal .checkbox-label:hover {
+  border-color: #86efac !important;
+  background: #f8fffb !important;
+}
+
+body .checkbox-label:has(input:checked),
+body .inventory-modal .checkbox-label:has(input:checked),
+body .inventory-edit-form .checkbox-label:has(input:checked),
+body .admin-tools .checkbox-label:has(input:checked),
+body .admin-section-grid .checkbox-label:has(input:checked),
+body .release-detail-modal .checkbox-label:has(input:checked),
+body .barcode-scanner-modal .checkbox-label:has(input:checked),
+body .record-sale-modal .checkbox-label:has(input:checked) {
+  border-color: #86efac !important;
+  background: #f0fdf4 !important;
+  color: #064e3b !important;
+}
+
+body .checkbox-label input[type="checkbox"] {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  accent-color: #22c55e;
+}
+
+body .checkbox-label input[type="checkbox"]:focus-visible {
+  outline: 3px solid rgba(34, 197, 94, 0.28);
+  outline-offset: 2px;
+}
+
+body .checkbox-label:has(input:disabled) {
+  border-color: #e5e7eb !important;
+  background: #f8fafc !important;
+  color: #94a3b8 !important;
+}
+
+body .inventory-edit-actions,
+body .inventory-modal .inventory-edit-actions,
+body .sale-details-modal .inventory-edit-actions,
+body .purchase-details-modal .inventory-edit-actions,
+body .record-sale-modal .inventory-edit-actions {
+  position: sticky;
+  bottom: -1px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  margin: 8px calc(clamp(18px, 2.4vw, 28px) * -1) calc(clamp(18px, 2.4vw, 28px) * -1);
+  border-top: 1px solid #e5e7eb !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), #ffffff 38%) !important;
+  box-shadow: 0 -18px 34px rgba(15, 23, 42, 0.08);
+  padding: 14px clamp(18px, 2.4vw, 28px);
+  backdrop-filter: blur(14px);
+}
+
+body .inventory-edit-actions .mini-action:not(.danger),
+body .inventory-edit-actions .link-button,
+body .inventory-edit-actions a.mini-action {
+  border-color: #dbe3ea !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+body .inventory-edit-actions .primary-action {
+  border-color: transparent !important;
+  background: #22c55e !important;
+  color: #052e16 !important;
+}
+
+body .inventory-edit-actions .mini-action.danger,
+body .inventory-edit-actions .danger {
+  border-color: #fecaca !important;
+  background: #fff1f2 !important;
+  color: #b91c1c !important;
+}
+
 body .inventory-edit-form input:focus,
 body .inventory-edit-form select:focus,
 body .inventory-edit-form textarea:focus,
@@ -18622,5 +18728,24 @@ body .inventory-modal textarea:focus {
 
   body .inventory-details-header .icon-button {
     justify-self: start;
+  }
+
+  body .inventory-edit-actions,
+  body .inventory-modal .inventory-edit-actions,
+  body .sale-details-modal .inventory-edit-actions,
+  body .purchase-details-modal .inventory-edit-actions,
+  body .record-sale-modal .inventory-edit-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    margin-inline: -14px;
+    margin-bottom: -14px;
+    padding: 14px;
+  }
+
+  body .inventory-edit-actions .mini-action,
+  body .inventory-edit-actions .primary-action,
+  body .inventory-edit-actions a.mini-action {
+    width: 100%;
+    justify-content: center;
   }
 }
