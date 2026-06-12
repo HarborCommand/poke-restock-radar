@@ -1058,6 +1058,12 @@ function formJson(form: HTMLFormElement) {
   return Object.fromEntries(new FormData(form).entries());
 }
 
+function responseWarning(result: unknown) {
+  if (!result || typeof result !== "object") return null;
+  const warning = (result as { warning?: unknown }).warning;
+  return typeof warning === "string" && warning.trim().length > 0 ? warning.trim() : null;
+}
+
 function formString(value: FormDataEntryValue | null | undefined) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1323,7 +1329,7 @@ export function RadarApp() {
     setBusyLabel(label);
     setError(null);
     try {
-      await run(form);
+      const result = await run(form);
       if (options.reset !== false) form.reset();
       if (options.reauth) {
         if (options.success) showToast({ type: "success", message: options.success });
@@ -1331,7 +1337,8 @@ export function RadarApp() {
         return;
       }
       await loadDashboard();
-      if (options.success) showToast({ type: "success", message: options.success });
+      const warning = responseWarning(result);
+      if (options.success || warning) showToast({ type: "success", message: [options.success, warning].filter(Boolean).join(" ") });
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "Action failed";
       setError(message);
@@ -1346,9 +1353,10 @@ export function RadarApp() {
     setBusyLabel(label);
     setError(null);
     try {
-      await run();
+      const result = await run();
       if (options.reload !== false) await loadDashboard();
-      if (options.success) showToast({ type: "success", message: options.success });
+      const warning = responseWarning(result);
+      if (options.success || warning) showToast({ type: "success", message: [options.success, warning].filter(Boolean).join(" ") });
     } catch (actionError) {
       const message = actionError instanceof Error ? actionError.message : "Action failed";
       setError(message);
@@ -4374,7 +4382,7 @@ function ImageUploadInput({
   value,
   onValueChange,
   fieldName = "imageUrl",
-  label = "Product image",
+  label = "Product image URL",
   placeholder = "Paste verified product image URL"
 }: {
   defaultValue?: string;
@@ -4385,7 +4393,10 @@ function ImageUploadInput({
   placeholder?: string;
 }) {
   const [localValue, setLocalValue] = useState(defaultValue);
+  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
   const currentValue = value ?? localValue;
+  const isRawImageData = /^data:image\//i.test(currentValue.trim());
+  const currentUrlValue = isRawImageData ? "" : currentValue;
   const setCurrentValue = useCallback(
     (nextValue: string) => {
       if (value === undefined) setLocalValue(nextValue);
@@ -4393,31 +4404,43 @@ function ImageUploadInput({
     },
     [onValueChange, value]
   );
-  const isUploadedImage = currentValue.startsWith("data:");
+  function handleUrlChange(nextValue: string) {
+    if (/^data:image\//i.test(nextValue.trim())) {
+      setUploadWarning("Raw image data cannot be saved in this field. Paste a hosted image URL instead.");
+      setCurrentValue("");
+      return;
+    }
+    setUploadWarning(null);
+    setCurrentValue(nextValue);
+  }
   return (
     <label className="image-upload-field">
       {label}
-      <input name={fieldName} type="hidden" value={currentValue} />
+      <input name={fieldName} type="hidden" value={currentUrlValue} />
       <input
-        type="url"
-        value={isUploadedImage ? "" : currentValue}
-        onChange={(event) => setCurrentValue(event.currentTarget.value)}
+        type="text"
+        inputMode="url"
+        value={currentUrlValue}
+        onChange={(event) => handleUrlChange(event.currentTarget.value)}
         placeholder={placeholder}
       />
+      <span className="image-upload-helper">Paste an http/https image URL or a public app path. Raw/base64 uploads are not stored in this URL field.</span>
       <input
         type="file"
         accept="image/*"
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           if (!file) return;
-          const reader = new FileReader();
-          reader.onload = () => setCurrentValue(String(reader.result || ""));
-          reader.readAsDataURL(file);
+          setUploadWarning(
+            "Image file upload storage is not configured here yet. The product can still be saved without this file; paste a hosted image URL if you need a product image now."
+          );
+          event.currentTarget.value = "";
         }}
       />
+      {uploadWarning ? <span className="image-upload-warning">{uploadWarning}</span> : null}
       <span className="image-upload-actions">
-        {currentValue ? <span className="chip good">Image attached</span> : <span className="chip muted">Optional URL or upload</span>}
-        {currentValue ? (
+        {currentUrlValue ? <span className="chip good">Image URL attached</span> : <span className="chip muted">Optional hosted URL</span>}
+        {currentUrlValue ? (
           <button className="mini-action" type="button" onClick={() => setCurrentValue("")}>
             Remove image
           </button>

@@ -2,7 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { createInventoryItem, listDashboard } from "@/lib/radar-service";
-import { inventoryCreateSchema } from "@/lib/validation";
+import { inventoryCreateSchema, inventoryImageSanitizationMessage, sanitizeInventoryImagePayload } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -262,7 +262,8 @@ export async function POST(request: Request) {
   if (response) return response;
 
   try {
-    const input = inventoryCreateSchema.parse(await readJson(request));
+    const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));
+    const input = inventoryCreateSchema.parse(payload);
     const item = await createInventoryItem(user, input);
     await logAudit({
       user,
@@ -271,7 +272,8 @@ export async function POST(request: Request) {
       entityId: item.id,
       summary: `${user.email} logged inventory item ${item.itemName}.`
     });
-    return ok({ item }, 201);
+    const warning = inventoryImageSanitizationMessage(warnings);
+    return ok(warning ? { item, warning, warnings } : { item }, 201);
   } catch (error) {
     return badRequest(error);
   }

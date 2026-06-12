@@ -5148,11 +5148,24 @@ textarea {
   font-weight: 900;
 }
 
-.image-upload-field input[type="url"],
+.image-upload-field input[type="text"],
 .image-upload-field input[type="file"] {
   width: 100%;
   min-width: 0;
   max-width: 100%;
+}
+
+.image-upload-helper,
+.image-upload-warning {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.image-upload-warning {
+  color: #f8b24b;
 }
 
 .inventory-log-row {

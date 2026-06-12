@@ -2,7 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { updateInventoryStoreListing } from "@/lib/storefront";
-import { inventoryStoreListingSchema } from "@/lib/validation";
+import { inventoryImageSanitizationMessage, inventoryStoreListingSchema, sanitizeInventoryImagePayload } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +12,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
   if (response) return response;
   try {
     const { itemId } = await params;
-    const input = inventoryStoreListingSchema.parse(await readJson(request));
+    const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));
+    const input = inventoryStoreListingSchema.parse(payload);
     const item = await updateInventoryStoreListing(user, itemId, input);
     await logAudit({
       user,
@@ -21,7 +22,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
       entityId: item.id,
       summary: `${user.email} updated store listing ${item.publicTitle || item.itemName}.`
     });
-    return ok({ item });
+    const warning = inventoryImageSanitizationMessage(warnings);
+    return ok(warning ? { item, warning, warnings } : { item });
   } catch (error) {
     return badRequest(error);
   }

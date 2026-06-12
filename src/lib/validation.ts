@@ -90,6 +90,100 @@ const optionalHttpUrl = z.preprocess(
   httpUrl.optional()
 );
 
+export const MAX_PUBLIC_IMAGE_URL_LENGTH = 4096;
+
+export type ImageSanitizationWarning = {
+  field: string;
+  reason: "raw_data_url" | "too_long" | "invalid_url";
+};
+
+function isAllowedPublicImageUrl(value: string) {
+  if (value.startsWith("/") && !value.startsWith("//")) return value.length <= MAX_PUBLIC_IMAGE_URL_LENGTH;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && value.length <= MAX_PUBLIC_IMAGE_URL_LENGTH;
+  } catch {
+    return false;
+  }
+}
+
+export function sanitizePublicImageUrl(value: unknown, field = "imageUrl"): { value?: string; warning?: ImageSanitizationWarning } {
+  if (value === "" || value === null || value === undefined) return {};
+  if (typeof value !== "string") return { warning: { field, reason: "invalid_url" } };
+
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  if (/^data:image\//i.test(trimmed)) return { warning: { field, reason: "raw_data_url" } };
+  if (trimmed.length > MAX_PUBLIC_IMAGE_URL_LENGTH) return { warning: { field, reason: "too_long" } };
+  if (isAllowedPublicImageUrl(trimmed)) return { value: trimmed };
+
+  return { warning: { field, reason: "invalid_url" } };
+}
+
+function publicImageUrlSchema(field: string) {
+  return z.preprocess((value) => sanitizePublicImageUrl(value, field).value, z.string().trim().max(MAX_PUBLIC_IMAGE_URL_LENGTH).optional());
+}
+
+function publicImageUrlListSchema(field: string) {
+  return z.preprocess((value) => sanitizePublicImageUrlList(value, field).value, z.array(z.string().trim().max(MAX_PUBLIC_IMAGE_URL_LENGTH)).optional());
+}
+
+export function sanitizePublicImageUrlList(value: unknown, field = "publicImages"): { value?: string[]; warnings: ImageSanitizationWarning[] } {
+  const warnings: ImageSanitizationWarning[] = [];
+  if (value === "" || value === null || value === undefined) return { warnings };
+
+  const rawValues =
+    Array.isArray(value)
+      ? value
+      : typeof value === "string" && /^data:image\//i.test(value.trim())
+        ? [value]
+        : typeof value === "string"
+          ? value.split(/[\n,]/)
+          : [value];
+
+  const sanitized = rawValues
+    .map((entry) => {
+      const result = sanitizePublicImageUrl(entry, field);
+      if (result.warning) warnings.push(result.warning);
+      return result.value;
+    })
+    .filter((entry): entry is string => Boolean(entry));
+
+  return sanitized.length ? { value: sanitized, warnings } : { warnings };
+}
+
+export function sanitizeInventoryImagePayload(payload: unknown) {
+  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
+  const next: Record<string, unknown> = { ...source };
+  const warnings: ImageSanitizationWarning[] = [];
+
+  for (const field of ["imageUrl", "receiptImageUrl"] as const) {
+    if (!Object.prototype.hasOwnProperty.call(next, field)) continue;
+    const result = sanitizePublicImageUrl(next[field], field);
+    if (result.warning) warnings.push(result.warning);
+    if (result.value) next[field] = result.value;
+    else delete next[field];
+  }
+
+  if (Object.prototype.hasOwnProperty.call(next, "publicImages")) {
+    const result = sanitizePublicImageUrlList(next.publicImages, "publicImages");
+    warnings.push(...result.warnings);
+    if (result.value) next.publicImages = result.value;
+    else delete next.publicImages;
+  }
+
+  return { payload: next, warnings };
+}
+
+export function inventoryImageSanitizationMessage(warnings: ImageSanitizationWarning[]) {
+  if (!warnings.length) return null;
+  const fields = Array.from(new Set(warnings.map((warning) => warning.field))).join(", ");
+  const hasRawData = warnings.some((warning) => warning.reason === "raw_data_url" || warning.reason === "too_long");
+  return hasRawData
+    ? `${fields} was skipped because uploaded image data must be stored as a hosted URL. The product was saved without that image.`
+    : `${fields} was skipped because it was not a valid http/https URL or public path. The product was saved.`;
+}
+
 const optionalLatitude = z.preprocess(
   (value) => (value === "" || value === null || value === undefined ? undefined : value),
   z.coerce.number().min(-90).max(90).optional()
@@ -596,10 +690,7 @@ export const inventoryCreateSchema = z.object({
   msrp: optionalMoney,
   purchasedAt: boundedDate.default(() => new Date()),
   receiptNumber: optionalTrimmed,
-  receiptImageUrl: z.preprocess(
-    (value) => (value === "" || value === null || value === undefined ? undefined : value),
-    z.string().trim().max(250000).optional()
-  ),
+  receiptImageUrl: publicImageUrlSchema("receiptImageUrl"),
   orderNumber: optionalTrimmed,
   transactionId: optionalTrimmed,
   sourceStore: optionalTrimmed,
@@ -609,10 +700,7 @@ export const inventoryCreateSchema = z.object({
   sku: optionalTrimmed,
   dpci: optionalTrimmed,
   asin: optionalTrimmed,
-  imageUrl: z.preprocess(
-    (value) => (value === "" || value === null || value === undefined ? undefined : value),
-    z.string().trim().max(250000).optional()
-  ),
+  imageUrl: publicImageUrlSchema("imageUrl"),
   condition: optionalTrimmed,
   itemStatus: inventoryItemStatusSchema.default("sealed"),
   targetSellPrice: optionalMoney,
@@ -638,7 +726,7 @@ export const inventoryStoreListingSchema = z.object({
   publicDescription: z.string().trim().max(4000).optional(),
   publicPrice: optionalMoney,
   compareAtPrice: optionalMoney,
-  publicImages: z.union([z.array(z.string().trim().min(1).max(250000)), z.string().trim().max(250000)]).optional(),
+  publicImages: publicImageUrlListSchema("publicImages"),
   availableForSale: z.coerce.number().int().min(0).max(10000).optional(),
   maxQuantityPerOrder: z.coerce.number().int().min(1).max(25).default(4),
   shippingProfile: z.string().trim().min(1).max(80).default("standard"),
@@ -662,10 +750,7 @@ export const inventoryStockLotUpdateSchema = z.object({
   source: z.string().trim().min(2).max(120),
   purchasedAt: boundedDate.default(() => new Date()),
   receiptNumber: optionalTrimmed,
-  receiptImageUrl: z.preprocess(
-    (value) => (value === "" || value === null || value === undefined ? undefined : value),
-    z.string().trim().max(250000).optional()
-  ),
+  receiptImageUrl: publicImageUrlSchema("receiptImageUrl"),
   orderNumber: optionalTrimmed,
   transactionId: optionalTrimmed,
   sourceStore: optionalTrimmed,

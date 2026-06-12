@@ -2,7 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { deleteInventoryStockLot, updateInventoryStockLot } from "@/lib/radar-service";
-import { inventoryStockLotUpdateSchema } from "@/lib/validation";
+import { inventoryImageSanitizationMessage, inventoryStockLotUpdateSchema, sanitizeInventoryImagePayload } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +12,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
   if (response) return response;
   try {
     const { itemId, lotId } = await params;
-    const input = inventoryStockLotUpdateSchema.parse(await readJson(request));
+    const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));
+    const input = inventoryStockLotUpdateSchema.parse(payload);
     const item = await updateInventoryStockLot(user, itemId, lotId, input);
     await logAudit({
       user,
@@ -21,7 +22,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
       entityId: item.id,
       summary: `${user.email} updated a stock lot for ${item.itemName}.`
     });
-    return ok({ item });
+    const warning = inventoryImageSanitizationMessage(warnings);
+    return ok(warning ? { item, warning, warnings } : { item });
   } catch (error) {
     return badRequest(error);
   }

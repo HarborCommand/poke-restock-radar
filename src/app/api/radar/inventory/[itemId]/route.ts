@@ -3,7 +3,7 @@ import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { prisma } from "@/lib/db";
 import { updateInventoryItem } from "@/lib/radar-service";
-import { inventoryUpdateSchema } from "@/lib/validation";
+import { inventoryImageSanitizationMessage, inventoryUpdateSchema, sanitizeInventoryImagePayload } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +13,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
   if (response) return response;
   try {
     const { itemId } = await params;
-    const input = inventoryUpdateSchema.parse(await readJson(request));
+    const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));
+    const input = inventoryUpdateSchema.parse(payload);
     const item = await updateInventoryItem(user, itemId, input);
     await logAudit({
       user,
@@ -22,7 +23,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
       entityId: item.id,
       summary: `${user.email} updated inventory item ${item.itemName}.`
     });
-    return ok({ item });
+    const warning = inventoryImageSanitizationMessage(warnings);
+    return ok(warning ? { item, warning, warnings } : { item });
   } catch (error) {
     return badRequest(error);
   }
