@@ -9,12 +9,14 @@ export const metadata = {
   description: "Your GameDayGrabs order was received."
 };
 
-export default async function CheckoutSuccessPage() {
+export default async function CheckoutSuccessPage({ searchParams }: { searchParams: Promise<{ order?: string; number?: string }> }) {
+  const params = await searchParams;
+  const orderReference = params.number || params.order || "";
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />
-      <CheckoutSuccessClient />
+      <CheckoutSuccessClient orderReference={orderReference} />
       <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>
   );

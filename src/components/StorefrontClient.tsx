@@ -1174,7 +1174,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   );
 }
 
-export function CheckoutSuccessClient() {
+export function CheckoutSuccessClient({ orderReference = "" }: { orderReference?: string }) {
   useEffect(() => {
     writeCart([]);
   }, []);
@@ -1185,6 +1185,7 @@ export function CheckoutSuccessClient() {
         <Check size={22} />
       </span>
       <h1>Payment received</h1>
+      {orderReference ? <p className="gdg-order-reference">Order {orderReference}</p> : null}
       <p>Your order is being confirmed by Stripe. Inventory updates after the secure webhook confirms payment.</p>
       <div className="gdg-result-actions">
         <Link href="/shop" className="gdg-primary-button">

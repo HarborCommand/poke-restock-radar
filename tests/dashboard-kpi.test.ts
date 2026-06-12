@@ -461,6 +461,7 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   const sessionRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/session/route.ts", import.meta.url), "utf8");
   const oldCheckoutRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/route.ts", import.meta.url), "utf8");
   const webhookRoute = fs.readFileSync(new URL("../src/app/api/storefront/stripe/webhook/route.ts", import.meta.url), "utf8");
+  const successPage = fs.readFileSync(new URL("../src/app/checkout/success/page.tsx", import.meta.url), "utf8");
 
   assert.match(env, /STRIPE_CHECKOUT_ENABLED/);
   assert.match(env, /NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY/);
@@ -474,6 +475,7 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(storefront, /webhooks\.constructEvent/);
   assert.match(storefront, /checkout\.sessions\.create/);
   assert.match(storefront, /payment_intent_data/);
+  assert.match(storefront, /number=\$\{encodeURIComponent\(order\.orderNumber\)\}/);
   assert.match(storefront, /payment_intent\.payment_failed/);
   assert.match(storefront, /checkout\.session\.completed/);
   assert.match(storefront, /checkout\.session\.expired/);
@@ -484,6 +486,9 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(storefront, /reservations: order\.reservations\.map/);
   assert.match(client, /\/api\/storefront\/checkout\/session/);
   assert.match(client, /\/api\/storefront\/invoice-request/);
+  assert.match(client, /gdg-order-reference/);
+  assert.match(successPage, /searchParams/);
+  assert.match(successPage, /orderReference/);
   assert.match(app, /Stripe is configured in test mode/);
   assert.match(app, /Stripe Live Mode Readiness/);
   assert.match(app, /Estimated Stripe fee/);

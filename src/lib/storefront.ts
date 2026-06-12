@@ -509,7 +509,7 @@ export async function createCheckoutSession(input: {
       payment_intent_data: {
         metadata
       },
-      success_url: `${checkoutBaseUrl}/checkout/success?order=${order.id}`,
+      success_url: `${checkoutBaseUrl}/checkout/success?order=${order.id}&number=${encodeURIComponent(order.orderNumber)}`,
       cancel_url: `${checkoutBaseUrl}/checkout/cancel?order=${order.id}`
     });
     const updated = await prisma.storefrontOrder.update({
