@@ -36,9 +36,14 @@ export type EnvironmentReport = {
     };
     stripe: {
       configured: boolean;
+      checkoutEnabled: boolean;
+      publishableKeyConfigured: boolean;
       secretKeyConfigured: boolean;
       webhookSecretConfigured: boolean;
       storeBaseUrlConfigured: boolean;
+      checkoutSessionReady: boolean;
+      webhookReady: boolean;
+      missing: string[];
     };
     market: {
       priceChartingConfigured: boolean;
@@ -92,9 +97,17 @@ export function getEnvironmentReport(): EnvironmentReport {
   const configuredUpcProvider = hasEnv("UPC_LOOKUP_API_URL");
   const searchProvider = envValue("PRODUCT_SEARCH_PROVIDER");
   const searchFallbackConfigured = Boolean(searchProvider && hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY"));
+  const stripeCheckoutEnabled = envValue("STRIPE_CHECKOUT_ENABLED") === "true";
+  const stripePublishableConfigured = hasEnv("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY");
   const stripeSecretConfigured = hasEnv("STRIPE_SECRET_KEY");
   const stripeWebhookConfigured = hasEnv("STRIPE_WEBHOOK_SECRET");
   const storeBaseUrlConfigured = hasEnv("STORE_BASE_URL");
+  const stripeMissing = [
+    !stripeCheckoutEnabled ? "STRIPE_CHECKOUT_ENABLED" : null,
+    !stripePublishableConfigured ? "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY" : null,
+    !stripeSecretConfigured ? "STRIPE_SECRET_KEY" : null,
+    !stripeWebhookConfigured ? "STRIPE_WEBHOOK_SECRET" : null
+  ].filter((name): name is string => Boolean(name));
   const tcgcsvEnabled = envValue("TCGCSV_ENABLED") === "true";
   const priceChartingConfigured = hasEnv("PRICECHARTING_API_TOKEN");
   const tcgplayerConfigured = hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY"));
@@ -145,8 +158,11 @@ export function getEnvironmentReport(): EnvironmentReport {
   if (!searchFallbackConfigured) {
     warnings.push("Search fallback is not configured. Set PRODUCT_SEARCH_PROVIDER, PRODUCT_SEARCH_API_URL, and PRODUCT_SEARCH_API_KEY so UPC provider misses can fall through to product search.");
   }
-  if (!stripeSecretConfigured || !stripeWebhookConfigured || !storeBaseUrlConfigured) {
-    warnings.push("Storefront checkout is disabled until STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STORE_BASE_URL are set.");
+  if (stripeMissing.length > 0) {
+    warnings.push(`Storefront Stripe Checkout is disabled until ${stripeMissing.join(", ")} ${stripeMissing.length === 1 ? "is" : "are"} set.`);
+  }
+  if (!storeBaseUrlConfigured) {
+    warnings.push("STORE_BASE_URL is not set; Stripe success/cancel URLs will use the current storefront request origin when checkout starts.");
   }
   if (!tcgcsvEnabled) {
     warnings.push("TCGCSV market estimates are disabled. Set TCGCSV_ENABLED=true to use automatic inventory pricing.");
@@ -198,10 +214,15 @@ export function getEnvironmentReport(): EnvironmentReport {
         searchProvider
       },
       stripe: {
-        configured: stripeSecretConfigured && stripeWebhookConfigured && storeBaseUrlConfigured,
+        configured: stripeMissing.length === 0,
+        checkoutEnabled: stripeCheckoutEnabled,
+        publishableKeyConfigured: stripePublishableConfigured,
         secretKeyConfigured: stripeSecretConfigured,
         webhookSecretConfigured: stripeWebhookConfigured,
-        storeBaseUrlConfigured
+        storeBaseUrlConfigured,
+        checkoutSessionReady: stripeCheckoutEnabled && stripePublishableConfigured && stripeSecretConfigured,
+        webhookReady: stripeWebhookConfigured,
+        missing: stripeMissing
       },
       market: {
         priceChartingConfigured,

@@ -29,11 +29,17 @@ const storefrontOrderInclude = {
 type StorefrontInventoryItem = Prisma.InventoryItemGetPayload<{ include: typeof storefrontInventoryInclude }>;
 type StorefrontOrderWithItems = Prisma.StorefrontOrderGetPayload<{ include: typeof storefrontOrderInclude }>;
 
+function envValue(name: string) {
+  const value = process.env[name]?.trim();
+  return value && value.length > 0 ? value : null;
+}
+
 function storefrontCheckoutConfigured() {
   return Boolean(
-    process.env.STRIPE_SECRET_KEY?.trim() &&
-      process.env.STRIPE_WEBHOOK_SECRET?.trim() &&
-      (process.env.STORE_BASE_URL?.trim() || process.env.APP_URL?.trim())
+    envValue("STRIPE_CHECKOUT_ENABLED") === "true" &&
+      envValue("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY") &&
+      envValue("STRIPE_SECRET_KEY") &&
+      envValue("STRIPE_WEBHOOK_SECRET")
   );
 }
 
@@ -262,13 +268,52 @@ export async function getCartProducts(items: Array<{ id: string; quantity: numbe
 }
 
 function stripeClient() {
-  const key = process.env.STRIPE_SECRET_KEY?.trim();
+  const key = envValue("STRIPE_SECRET_KEY");
   if (!key) throw new Error("Stripe checkout is not configured. Set STRIPE_SECRET_KEY in Vercel.");
   return new Stripe(key);
 }
 
-function storeBaseUrl() {
-  return process.env.STORE_BASE_URL?.trim() || process.env.APP_URL?.trim() || "https://poke-restock-radar.vercel.app";
+export function storefrontStripeReadiness() {
+  const missing = [
+    envValue("STRIPE_CHECKOUT_ENABLED") !== "true" ? "STRIPE_CHECKOUT_ENABLED" : null,
+    !envValue("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY") ? "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY" : null,
+    !envValue("STRIPE_SECRET_KEY") ? "STRIPE_SECRET_KEY" : null,
+    !envValue("STRIPE_WEBHOOK_SECRET") ? "STRIPE_WEBHOOK_SECRET" : null
+  ].filter((name): name is string => Boolean(name));
+  return {
+    configured: missing.length === 0,
+    missing
+  };
+}
+
+function isAllowedStorefrontHost(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === "gamedaygrabs.com" ||
+    normalized === "www.gamedaygrabs.com" ||
+    normalized === "poke-restock-radar.vercel.app" ||
+    normalized.endsWith(".vercel.app") ||
+    normalized === "localhost" ||
+    normalized === "127.0.0.1"
+  );
+}
+
+export function storefrontCheckoutBaseUrl(requestUrl?: string | null) {
+  const configured = envValue("STORE_BASE_URL");
+  if (configured) return configured.replace(/\/$/, "");
+
+  if (requestUrl) {
+    try {
+      const parsed = new URL(requestUrl);
+      if ((parsed.protocol === "https:" || parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") && isAllowedStorefrontHost(parsed.hostname)) {
+        return parsed.origin;
+      }
+    } catch {
+      // Fall through to APP_URL/default.
+    }
+  }
+
+  return envValue("APP_URL")?.replace(/\/$/, "") || "https://poke-restock-radar.vercel.app";
 }
 
 function orderNumber() {
@@ -361,7 +406,12 @@ export async function createCheckoutSession(input: {
   fulfillmentMethod: "shipping" | "pickup";
   customerEmail?: string;
   customerName?: string;
-}) {
+}, options: { requestUrl?: string | null } = {}) {
+  const readiness = storefrontStripeReadiness();
+  if (!readiness.configured) {
+    throw new Error(`Stripe Checkout is not ready. Missing: ${readiness.missing.join(", ")}. Use Request Invoice until these are configured.`);
+  }
+  const checkoutBaseUrl = storefrontCheckoutBaseUrl(options.requestUrl);
   const settings = await getStorefrontSettings();
   const cart = await getCartProducts(input.items);
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
@@ -401,49 +451,71 @@ export async function createCheckoutSession(input: {
     },
     include: storefrontOrderInclude
   });
-  const stripe = stripeClient();
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer_email: input.customerEmail,
-    line_items: [
-      ...order.items.map((item) => ({
-        quantity: item.quantity,
-        price_data: {
-          currency: "usd",
-          unit_amount: Math.round(item.unitPrice * 100),
-          product_data: {
-            name: item.publicTitle,
-            images: stripeImage(item.imageUrl)
-          }
-        }
-      })),
-      ...(shippingCharged > 0
-        ? [
-            {
-              quantity: 1,
-              price_data: {
-                currency: "usd",
-                unit_amount: Math.round(shippingCharged * 100),
-                product_data: { name: "Shipping" }
-              }
+  const metadata = {
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    inventoryProductIds: order.items.map((item) => item.inventoryItemId).join(","),
+    quantities: order.items.map((item) => item.quantity).join(",")
+  };
+  try {
+    const stripe = stripeClient();
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer_email: input.customerEmail,
+      line_items: [
+        ...order.items.map((item) => ({
+          quantity: item.quantity,
+          price_data: {
+            currency: "usd",
+            unit_amount: Math.round(item.unitPrice * 100),
+            product_data: {
+              name: item.publicTitle,
+              images: stripeImage(item.imageUrl)
             }
-          ]
-        : [])
-    ],
-    metadata: {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      inventoryProductIds: order.items.map((item) => item.inventoryItemId).join(","),
-      quantities: order.items.map((item) => item.quantity).join(",")
-    },
-    success_url: `${storeBaseUrl()}/checkout/success?order=${order.id}`,
-    cancel_url: `${storeBaseUrl()}/checkout/cancel?order=${order.id}`
-  });
-  await prisma.storefrontOrder.update({
-    where: { id: order.id },
-    data: { stripeCheckoutSessionId: session.id }
-  });
-  return { order: storefrontOrderToDTO(order), checkoutUrl: session.url };
+          }
+        })),
+        ...(shippingCharged > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "usd",
+                  unit_amount: Math.round(shippingCharged * 100),
+                  product_data: { name: "Shipping" }
+                }
+              }
+            ]
+          : [])
+      ],
+      metadata,
+      payment_intent_data: {
+        metadata
+      },
+      success_url: `${checkoutBaseUrl}/checkout/success?order=${order.id}`,
+      cancel_url: `${checkoutBaseUrl}/checkout/cancel?order=${order.id}`
+    });
+    const updated = await prisma.storefrontOrder.update({
+      where: { id: order.id },
+      data: { stripeCheckoutSessionId: session.id },
+      include: storefrontOrderInclude
+    });
+    return { order: storefrontOrderToDTO(updated), checkoutUrl: session.url };
+  } catch (error) {
+    await prisma.stockReservation.updateMany({
+      where: { orderId: order.id, status: "reserved" },
+      data: { status: "released", releasedAt: new Date() }
+    });
+    await prisma.storefrontOrder.update({
+      where: { id: order.id },
+      data: {
+        status: "canceled",
+        paymentStatus: "failed",
+        canceledAt: new Date(),
+        notes: `Stripe Checkout session creation failed: ${error instanceof Error ? error.message.slice(0, 240) : "unknown error"}`
+      }
+    });
+    throw error;
+  }
 }
 
 export async function createInvoiceRequest(input: {
@@ -583,8 +655,8 @@ export async function createContactMessage(input: {
 }
 
 function lotUnitCost(lot: { costPerUnit: number; totalCost: number; quantity: number }) {
-  if (lot.costPerUnit > 0) return lot.costPerUnit;
-  return lot.quantity > 0 ? lot.totalCost / lot.quantity : 0;
+  if (lot.quantity > 0 && lot.totalCost > 0) return lot.totalCost / lot.quantity;
+  return lot.costPerUnit;
 }
 
 async function createStorefrontSale(order: StorefrontOrderWithItems) {
@@ -619,7 +691,7 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
         quantitySold: orderItem.quantity,
         soldPricePerItem: orderItem.unitPrice,
         grossSale: orderItem.lineTotal,
-        platform: "other",
+        platform: "website",
         fees: allocatedStripeFee,
         shippingCost: 0,
         netSale,
@@ -655,16 +727,46 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
   });
 }
 
+async function releaseOrderReservations(orderId: string) {
+  await prisma.stockReservation.updateMany({
+    where: { orderId, status: "reserved" },
+    data: { status: "released", releasedAt: new Date() }
+  });
+}
+
+async function markStorefrontOrderPaymentFailed(order: StorefrontOrderWithItems, paymentStatus: "failed" | "expired", note?: string) {
+  if (order.paymentStatus === "paid") return;
+  await releaseOrderReservations(order.id);
+  await prisma.storefrontOrder.update({
+    where: { id: order.id },
+    data: {
+      status: "canceled",
+      paymentStatus,
+      canceledAt: new Date(),
+      notes: note ? [order.notes, note].filter(Boolean).join("\n") : order.notes
+    }
+  });
+}
+
+async function orderForStripeEvent(event: Stripe.Event) {
+  const object = event.data.object;
+  const metadata = "metadata" in object ? object.metadata : null;
+  const orderId = typeof metadata?.orderId === "string" ? metadata.orderId : null;
+  if (orderId) {
+    return prisma.storefrontOrder.findUnique({ where: { id: orderId }, include: storefrontOrderInclude });
+  }
+  if (event.type === "payment_intent.payment_failed" && "id" in object && typeof object.id === "string") {
+    return prisma.storefrontOrder.findFirst({ where: { stripePaymentIntentId: object.id }, include: storefrontOrderInclude });
+  }
+  return null;
+}
+
 export async function handleStripeWebhook(rawBody: string, signature: string | null) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  const secret = envValue("STRIPE_WEBHOOK_SECRET");
   if (!secret) throw new Error("Stripe webhook secret is not configured.");
   if (!signature) throw new Error("Missing Stripe webhook signature.");
   const event = stripeClient().webhooks.constructEvent(rawBody, signature, secret);
-  const session = event.data.object as Stripe.Checkout.Session;
-  const orderId = typeof session.metadata?.orderId === "string" ? session.metadata.orderId : null;
-  let order = orderId
-    ? await prisma.storefrontOrder.findUnique({ where: { id: orderId }, include: storefrontOrderInclude })
-    : null;
+  let order = await orderForStripeEvent(event);
   try {
     await prisma.paymentEvent.create({
       data: {
@@ -681,6 +783,7 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
     throw error;
   }
   if (event.type === "checkout.session.completed" && order && order.paymentStatus !== "paid") {
+    const session = event.data.object as Stripe.Checkout.Session;
     const customerEmail = session.customer_details?.email ?? session.customer_email ?? order.customerEmail;
     const customerName = session.customer_details?.name ?? order.customerName;
     const customer =
@@ -703,15 +806,15 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
     order = await prisma.storefrontOrder.findUnique({ where: { id: order.id }, include: storefrontOrderInclude });
     if (order) await createStorefrontSale(order);
   }
-  if ((event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") && order) {
-    await prisma.stockReservation.updateMany({
-      where: { orderId: order.id, status: "reserved" },
-      data: { status: "released", releasedAt: new Date() }
-    });
-    await prisma.storefrontOrder.update({
-      where: { id: order.id },
-      data: { status: "canceled", paymentStatus: "failed", canceledAt: new Date() }
-    });
+  if (event.type === "checkout.session.expired" && order) {
+    await markStorefrontOrderPaymentFailed(order, "expired", "Stripe Checkout session expired before payment completed.");
+  }
+  if ((event.type === "checkout.session.async_payment_failed" || event.type === "payment_intent.payment_failed") && order) {
+    const failureMessage =
+      event.type === "payment_intent.payment_failed"
+        ? ((event.data.object as Stripe.PaymentIntent).last_payment_error?.message ?? "Stripe payment failed.")
+        : "Stripe asynchronous payment failed.";
+    await markStorefrontOrderPaymentFailed(order, "failed", failureMessage);
   }
   return { ok: true };
 }

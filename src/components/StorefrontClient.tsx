@@ -1059,7 +1059,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch(settings.checkoutConfigured ? "/api/storefront/checkout" : "/api/storefront/invoice-request", {
+      const response = await fetch(settings.checkoutConfigured ? "/api/storefront/checkout/session" : "/api/storefront/invoice-request", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ items, fulfillmentMethod: "shipping", customerName, customerEmail, customerPhone, customerNotes })

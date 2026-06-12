@@ -453,6 +453,36 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(contactPage, /StorefrontContactForm/);
 });
 
+test("Stripe Checkout preparation uses session route, webhook verification, and invoice fallback", () => {
+  const env = fs.readFileSync(new URL("../src/lib/env.ts", import.meta.url), "utf8");
+  const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
+  const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const sessionRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/session/route.ts", import.meta.url), "utf8");
+  const oldCheckoutRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/route.ts", import.meta.url), "utf8");
+  const webhookRoute = fs.readFileSync(new URL("../src/app/api/storefront/stripe/webhook/route.ts", import.meta.url), "utf8");
+
+  assert.match(env, /STRIPE_CHECKOUT_ENABLED/);
+  assert.match(env, /NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY/);
+  assert.match(env, /checkoutSessionReady/);
+  assert.match(env, /webhookReady/);
+  assert.match(storefront, /storefrontStripeReadiness/);
+  assert.match(storefront, /STRIPE_WEBHOOK_SECRET/);
+  assert.match(storefront, /webhooks\.constructEvent/);
+  assert.match(storefront, /checkout\.sessions\.create/);
+  assert.match(storefront, /payment_intent_data/);
+  assert.match(storefront, /payment_intent\.payment_failed/);
+  assert.match(storefront, /checkout\.session\.completed/);
+  assert.match(storefront, /checkout\.session\.expired/);
+  assert.match(storefront, /releaseOrderReservations/);
+  assert.match(storefront, /platform: "website"/);
+  assert.match(storefront, /lot\.totalCost \/ lot\.quantity/);
+  assert.match(client, /\/api\/storefront\/checkout\/session/);
+  assert.match(client, /\/api\/storefront\/invoice-request/);
+  assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
+  assert.match(oldCheckoutRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
+  assert.match(webhookRoute, /handleStripeWebhook/);
+});
+
 test("GameDayGrabs custom domain routes public storefront without exposing private root", () => {
   const rootPage = fs.readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
   const routing = fs.readFileSync(new URL("../src/lib/storefront-routing.ts", import.meta.url), "utf8");

@@ -1091,9 +1091,14 @@ export type AppHealthDTO = {
     };
     stripe: {
       configured: boolean;
+      checkoutEnabled: boolean;
+      publishableKeyConfigured: boolean;
       secretKeyConfigured: boolean;
       webhookSecretConfigured: boolean;
       storeBaseUrlConfigured: boolean;
+      checkoutSessionReady: boolean;
+      webhookReady: boolean;
+      missing: string[];
     };
   };
 };
