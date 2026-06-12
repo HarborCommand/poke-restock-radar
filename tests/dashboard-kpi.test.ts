@@ -231,6 +231,37 @@ test("inventory sale editing and stock lot editing recalculate realized profit",
   assert.match(saleUpdateRoute, /updateInventorySale/);
 });
 
+test("inventory mutations reveal or explain saved rows after refresh", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+
+  assert.match(app, /type InventoryMutationIntent/);
+  assert.match(app, /inventoryItemMatchesFilters\(item, filters\)/);
+  assert.match(app, /findMutatedInventoryItem\(dashboard\.inventory, pendingInventoryMutation\)/);
+  assert.match(app, /Inventory saved, but hidden by current filters/);
+  assert.match(app, /Clear filters and show item/);
+  assert.match(app, /id=\{`inventory-row-\$\{item\.id\}`\}/);
+  assert.match(app, /data-highlighted=\{highlightedId === item\.id/);
+  assert.match(css, /\.catalog-row\.inventory-row-highlighted/);
+  assert.match(css, /scroll-margin-top: 120px/);
+});
+
+test("inventory admin modals use light layout and stock edit has live cost preview", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+
+  assert.match(app, /stock-cost-preview/);
+  assert.match(app, /Calculated total/);
+  assert.match(app, /Effective total/);
+  assert.match(app, /Average cost/);
+  assert.match(app, /remainingAfterSoldLock/);
+  assert.match(app, /Public storefront listings never expose cost basis/);
+  assert.match(css, /body \.inventory-details-modal/);
+  assert.match(css, /body \.inventory-modal,[\s\S]*background: #ffffff !important/);
+  assert.match(css, /\.inventory-detail-section,[\s\S]*background: #ffffff !important/);
+  assert.match(css, /\.stock-cost-preview/);
+});
+
 test("market value and unrealized profit use real comps only", () => {
   const summary = summarizeInventory([
     item({

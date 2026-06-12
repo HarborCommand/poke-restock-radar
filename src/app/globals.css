@@ -18061,3 +18061,323 @@ body:has(.shop-shell) {
     font-size: clamp(2.6rem, 13vw, 4.8rem);
   }
 }
+
+/* Inventory admin visibility and white-modal cleanup.
+   This is intentionally last so legacy dark admin panels cannot leak into active inventory workflows. */
+body .inventory-save-notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid #bbf7d0;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f0fdf4, #ffffff);
+  color: #111827;
+  padding: 16px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+body .inventory-save-notice.is-hidden-by-filter {
+  border-color: #fde68a;
+  background: linear-gradient(135deg, #fffbeb, #ffffff);
+}
+
+body .inventory-save-notice h3,
+body .inventory-save-notice p {
+  margin: 0;
+}
+
+body .inventory-save-notice h3 {
+  color: #0f172a;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+body .inventory-save-notice p,
+body .inventory-mutation-diagnostics {
+  color: #64748b;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+body .inventory-save-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .inventory-save-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+body .inventory-mutation-diagnostics {
+  margin-top: 10px;
+}
+
+body .inventory-mutation-diagnostics div,
+body .inventory-mutation-diagnostics {
+  display: grid;
+  gap: 4px;
+}
+
+body .catalog-row.inventory-row-highlighted,
+body .catalog-row[data-highlighted="true"] {
+  border-color: #22c55e !important;
+  background: #f0fdf4 !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18), 0 18px 46px rgba(22, 163, 74, 0.14);
+  scroll-margin-top: 120px;
+}
+
+body .inventory-modal-backdrop,
+body .modal-backdrop {
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  background: rgba(15, 23, 42, 0.24) !important;
+  padding: clamp(14px, 3vw, 28px);
+  backdrop-filter: blur(10px);
+}
+
+body .inventory-modal,
+body .inventory-details-modal,
+body .inventory-detail-modal,
+body .inventory-edit-modal,
+body .record-sale-modal,
+body .stock-lot-edit-modal,
+body .barcode-scanner-modal,
+body .barcode-result-modal,
+body .sale-details-modal,
+body .purchase-details-modal,
+body .purchase-detail-modal,
+body .release-detail-modal {
+  border: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.18) !important;
+}
+
+body .inventory-modal,
+body .inventory-details-modal,
+body .inventory-edit-modal {
+  width: min(1100px, calc(100vw - 32px));
+  max-height: calc(100svh - 32px);
+  overflow: auto;
+  border-radius: 28px;
+  padding: clamp(18px, 2.4vw, 28px);
+}
+
+body .inventory-details-header {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 16px;
+}
+
+body .inventory-details-header .inventory-image-frame,
+body .inventory-details-header .product-image-preview {
+  width: 96px;
+  height: 96px;
+  border-radius: 20px;
+  background: #f8fafc;
+}
+
+body .inventory-details-title {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+body .inventory-details-title h2,
+body .inventory-modal h2,
+body .inventory-edit-modal h2 {
+  margin: 0;
+  color: #0f172a !important;
+  font-size: clamp(1.35rem, 2vw, 1.9rem);
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  overflow-wrap: normal !important;
+}
+
+body .inventory-details-title p,
+body .edit-card-heading span,
+body .inventory-edit-preview span {
+  color: #64748b !important;
+}
+
+body .inventory-detail-badges,
+body .storefront-quality-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body .inventory-details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+body .inventory-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 16px;
+}
+
+body .inventory-detail-section,
+body .flow-step,
+body .inventory-edit-preview,
+body .sale-detail-card,
+body .purchase-detail-card,
+body .release-detail-card {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 20px;
+  background: #ffffff !important;
+  color: #111827 !important;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
+}
+
+body .inventory-detail-section,
+body .flow-step {
+  padding: 16px;
+}
+
+body .inventory-detail-section h3,
+body .flow-step h3 {
+  margin: 0 0 12px;
+  color: #0f172a !important;
+  letter-spacing: -0.02em;
+}
+
+body .detail-stat,
+body .compact-ledger-list article,
+body .stock-lot-row,
+body .compact-sale-row {
+  border-color: #e5e7eb !important;
+  background: #f8fafc !important;
+  color: #111827 !important;
+}
+
+body .detail-stat small,
+body .detail-line-list span,
+body .compact-ledger-list small,
+body .form-helper {
+  color: #64748b !important;
+}
+
+body .detail-stat strong,
+body .detail-line-list strong,
+body .compact-ledger-list strong {
+  color: #0f172a !important;
+}
+
+body .storefront-quality-list span {
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+body .storefront-quality-list span.good {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+body .storefront-quality-list span.watch {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+body .stock-cost-preview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+body .stock-cost-preview span {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: #f8fbff;
+  padding: 12px;
+}
+
+body .stock-cost-preview small {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+body .stock-cost-preview strong {
+  color: #0f172a;
+  font-size: 1.05rem;
+}
+
+body .inventory-edit-form input,
+body .inventory-edit-form select,
+body .inventory-edit-form textarea,
+body .inventory-modal input,
+body .inventory-modal select,
+body .inventory-modal textarea {
+  border-color: #dbe3ea !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+}
+
+body .inventory-edit-form input:focus,
+body .inventory-edit-form select:focus,
+body .inventory-edit-form textarea:focus,
+body .inventory-modal input:focus,
+body .inventory-modal select:focus,
+body .inventory-modal textarea:focus {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12) !important;
+  outline: none;
+}
+
+@media (max-width: 760px) {
+  body .inventory-save-notice,
+  body .inventory-details-header,
+  body .inventory-details-grid,
+  body .stock-cost-preview {
+    grid-template-columns: 1fr;
+  }
+
+  body .inventory-save-notice {
+    align-items: stretch;
+  }
+
+  body .inventory-save-notice-actions {
+    justify-content: stretch;
+  }
+
+  body .inventory-save-notice-actions > * {
+    flex: 1 1 100%;
+  }
+
+  body .inventory-details-header .icon-button {
+    justify-self: start;
+  }
+}

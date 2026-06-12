@@ -5147,6 +5147,120 @@ function storefrontListingEligible(item: InventoryItemDTO) {
   return storefrontListingQuality(item).every((check) => check.complete);
 }
 
+type InventoryFiltersState = {
+  search: string;
+  category: string;
+  source: string;
+  listingStatus: string;
+  sort: string;
+};
+
+type InventoryMutationReason =
+  | "purchase_added"
+  | "stock_added"
+  | "sale_recorded"
+  | "product_updated"
+  | "listing_updated"
+  | "stock_lot_updated"
+  | "stock_lot_removed";
+
+type InventoryMutationIntent = {
+  beforeIds: string[];
+  expectedItemId?: string;
+  expectedUpc?: string;
+  expectedName?: string;
+  message: string;
+  reason: InventoryMutationReason;
+  submittedAt: string;
+};
+
+type InventoryMutationNoticeState = {
+  itemId: string;
+  itemName: string;
+  message: string;
+  hiddenByFilters: boolean;
+  reason: InventoryMutationReason;
+  submittedAt: string;
+  refetchedAt: string;
+  filters: InventoryFiltersState;
+};
+
+const defaultInventoryFilters: InventoryFiltersState = {
+  search: "",
+  category: "ALL",
+  source: "",
+  listingStatus: "ALL",
+  sort: "date"
+};
+
+function inventoryRecentTimestamp(item: InventoryItemDTO) {
+  return Math.max(
+    Date.parse(item.updatedAt || "") || 0,
+    Date.parse(item.purchasedAt || "") || 0,
+    Date.parse(item.createdAt || "") || 0
+  );
+}
+
+function inventoryItemMatchesFilters(item: InventoryItemDTO, filters: InventoryFiltersState) {
+  const search = filters.search.toLowerCase().trim();
+  const source = filters.source.toLowerCase().trim();
+  if (
+    search &&
+    !item.itemName.toLowerCase().includes(search) &&
+    !(item.upc || "").toLowerCase().includes(search) &&
+    !(item.sku || "").toLowerCase().includes(search) &&
+    !(item.setName || "").toLowerCase().includes(search)
+  ) {
+    return false;
+  }
+  if (filters.category !== "ALL" && item.category !== filters.category) return false;
+  if (source && !item.source.toLowerCase().includes(source) && !(item.sourceStore || "").toLowerCase().includes(source)) return false;
+  if (filters.listingStatus !== "ALL" && item.listingStatus !== filters.listingStatus) return false;
+  return true;
+}
+
+function sortInventoryItemsForFilters(items: InventoryItemDTO[], filters: InventoryFiltersState) {
+  return [...items].sort((a, b) => {
+    if (filters.sort === "quantity") return b.quantityOwned - a.quantityOwned;
+    if (filters.sort === "sales") return b.quantitySold - a.quantitySold;
+    if (filters.sort === "name") return a.itemName.localeCompare(b.itemName);
+    return inventoryRecentTimestamp(b) - inventoryRecentTimestamp(a);
+  });
+}
+
+function activeInventoryFilterLabels(filters: InventoryFiltersState) {
+  return [
+    filters.search.trim() ? `search "${filters.search.trim()}"` : "",
+    filters.category !== "ALL" ? `category ${formatStatus(filters.category)}` : "",
+    filters.source.trim() ? `source "${filters.source.trim()}"` : "",
+    filters.listingStatus !== "ALL" ? `status ${formatStatus(filters.listingStatus)}` : ""
+  ].filter(Boolean);
+}
+
+function findMutatedInventoryItem(items: InventoryItemDTO[], mutation: InventoryMutationIntent) {
+  if (mutation.expectedItemId) {
+    const exact = items.find((item) => item.id === mutation.expectedItemId);
+    if (exact) return exact;
+  }
+  if (mutation.expectedUpc) {
+    const byUpc = items.find((item) => item.upc === mutation.expectedUpc);
+    if (byUpc) return byUpc;
+  }
+  const created = items.find((item) => !mutation.beforeIds.includes(item.id));
+  if (created) return created;
+  if (mutation.expectedName) {
+    const expectedName = mutation.expectedName.toLowerCase().trim();
+    const byName = items.find((item) => item.itemName.toLowerCase().trim() === expectedName);
+    if (byName) return byName;
+  }
+  return null;
+}
+
+function formStringValue(formData: FormData, name: string) {
+  const value = formData.get(name);
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function InventoryPanel({
   dashboard,
   busy,
@@ -5173,39 +5287,14 @@ function InventoryPanel({
   const [storeListingItemId, setStoreListingItemId] = useState<string>("");
   const [selectedPublishIds, setSelectedPublishIds] = useState<string[]>([]);
   const [editStockLotTarget, setEditStockLotTarget] = useState<{ itemId: string; lotId: string } | null>(null);
-  const [filters, setFilters] = useState({
-    search: "",
-    category: "ALL",
-    source: "",
-    listingStatus: "ALL",
-    sort: "date"
-  });
+  const [filters, setFilters] = useState<InventoryFiltersState>(defaultInventoryFilters);
+  const [pendingInventoryMutation, setPendingInventoryMutation] = useState<InventoryMutationIntent | null>(null);
+  const [inventoryNotice, setInventoryNotice] = useState<InventoryMutationNoticeState | null>(null);
+  const [highlightedItemId, setHighlightedItemId] = useState("");
+  const highlightTimerRef = useRef<number | null>(null);
+  const rowScrollTimerRef = useRef<number | null>(null);
   const visibleItems = useMemo(() => {
-    const search = filters.search.toLowerCase().trim();
-    return dashboard.inventory
-      .filter(
-        (item) =>
-          !search ||
-          item.itemName.toLowerCase().includes(search) ||
-          (item.upc || "").toLowerCase().includes(search) ||
-          (item.sku || "").toLowerCase().includes(search) ||
-          (item.setName || "").toLowerCase().includes(search)
-      )
-      .filter((item) => filters.category === "ALL" || item.category === filters.category)
-      .filter(
-        (item) =>
-          !filters.source ||
-          item.source.toLowerCase().includes(filters.source.toLowerCase()) ||
-          (item.sourceStore || "").toLowerCase().includes(filters.source.toLowerCase())
-      )
-      .filter((item) => filters.listingStatus === "ALL" || item.listingStatus === filters.listingStatus)
-      .sort((a, b) => {
-        if (filters.sort === "quantity") return b.quantityOwned - a.quantityOwned;
-        if (filters.sort === "sales") return b.quantitySold - a.quantitySold;
-        if (filters.sort === "name") return a.itemName.localeCompare(b.itemName);
-        if (filters.sort === "date") return new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime();
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      });
+    return sortInventoryItemsForFilters(dashboard.inventory.filter((item) => inventoryItemMatchesFilters(item, filters)), filters);
   }, [dashboard.inventory, filters]);
 
   function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
@@ -5233,6 +5322,89 @@ function InventoryPanel({
     setPurchasePrefill(prefill);
     setAddProductChoiceOpen(false);
     setPurchaseFlowOpen(true);
+  }, []);
+
+  const scheduleInventoryRowReveal = useCallback((itemId: string) => {
+    if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    if (rowScrollTimerRef.current) window.clearTimeout(rowScrollTimerRef.current);
+    setHighlightedItemId(itemId);
+    rowScrollTimerRef.current = window.setTimeout(() => {
+      document.getElementById(`inventory-row-${itemId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 120);
+    highlightTimerRef.current = window.setTimeout(() => setHighlightedItemId(""), 5000);
+  }, []);
+
+  function inventoryMutationFromForm(
+    form: HTMLFormElement,
+    reason: InventoryMutationReason,
+    message: string,
+    expectedItemId = ""
+  ): InventoryMutationIntent {
+    const formData = new FormData(form);
+    return {
+      beforeIds: dashboard.inventory.map((item) => item.id),
+      expectedItemId: expectedItemId || formStringValue(formData, "existingInventoryItemId"),
+      expectedUpc: formStringValue(formData, "upc"),
+      expectedName: formStringValue(formData, "itemName") || formStringValue(formData, "publicTitle"),
+      message,
+      reason,
+      submittedAt: new Date().toISOString()
+    };
+  }
+
+  function inventoryMutationForItem(reason: InventoryMutationReason, message: string, item: InventoryItemDTO): InventoryMutationIntent {
+    return {
+      beforeIds: dashboard.inventory.map((existingItem) => existingItem.id),
+      expectedItemId: item.id,
+      expectedUpc: item.upc ?? "",
+      expectedName: item.itemName,
+      message,
+      reason,
+      submittedAt: new Date().toISOString()
+    };
+  }
+
+  function clearFiltersAndRevealItem(itemId: string) {
+    setFilters(defaultInventoryFilters);
+    setView("items");
+    setSelectedItemId(itemId);
+    setInventoryNotice((current) => current ? { ...current, hiddenByFilters: false, filters: defaultInventoryFilters } : current);
+    scheduleInventoryRowReveal(itemId);
+  }
+
+  useEffect(() => {
+    if (!pendingInventoryMutation) return;
+    const item = findMutatedInventoryItem(dashboard.inventory, pendingInventoryMutation);
+    if (!item) return;
+    const hiddenByFilters = !inventoryItemMatchesFilters(item, filters);
+    const resolutionTimer = window.setTimeout(() => {
+      setView("items");
+      setSelectedItemId(item.id);
+      setInventoryNotice({
+        itemId: item.id,
+        itemName: item.itemName,
+        message: pendingInventoryMutation.message,
+        hiddenByFilters,
+        reason: pendingInventoryMutation.reason,
+        submittedAt: pendingInventoryMutation.submittedAt,
+        refetchedAt: new Date().toISOString(),
+        filters
+      });
+      setPendingInventoryMutation(null);
+      if (!hiddenByFilters) {
+        scheduleInventoryRowReveal(item.id);
+      } else {
+        setHighlightedItemId("");
+      }
+    }, 0);
+    return () => window.clearTimeout(resolutionTimer);
+  }, [dashboard.inventory, filters, pendingInventoryMutation, scheduleInventoryRowReveal]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+      if (rowScrollTimerRef.current) window.clearTimeout(rowScrollTimerRef.current);
+    };
   }, []);
 
   function togglePublishSelection(itemId: string) {
@@ -5433,12 +5605,20 @@ function InventoryPanel({
             onSelectAllVisible={() => setSelectedPublishIds(visibleItems.map((item) => item.id))}
             runAction={runAction}
           />
+          {inventoryNotice ? (
+            <InventoryMutationNotice
+              notice={inventoryNotice}
+              onClearFilters={() => clearFiltersAndRevealItem(inventoryNotice.itemId)}
+              onDismiss={() => setInventoryNotice(null)}
+            />
+          ) : null}
           <section className="inventory-management-grid">
             <div className="catalog-panel">
               <InventoryFilters filters={filters} itemCount={visibleItems.length} updateFilter={updateFilter} />
               <InventoryList
                 items={visibleItems}
                 selectedId={selectedItem?.id ?? ""}
+                highlightedId={highlightedItemId}
                 selectedPublishIds={validSelectedPublishIds}
                 onSelect={(item) => setSelectedItemId(item.id)}
                 onTogglePublishSelect={togglePublishSelection}
@@ -5499,7 +5679,18 @@ function InventoryPanel({
               busy={busy}
               busyLabel={busyLabel}
               submit={async (event, label, run, options) => {
+                const form = event.currentTarget;
+                const formData = new FormData(form);
+                const existingItemId = formStringValue(formData, "existingInventoryItemId") || purchaseDefaultItemId;
+                const reason: InventoryMutationReason = existingItemId ? "stock_added" : "purchase_added";
+                const mutation = inventoryMutationFromForm(
+                  form,
+                  reason,
+                  existingItemId ? "Stock saved. Inventory refreshed and the existing product is selected." : "Inventory product saved. Catalog refreshed with the new product selected.",
+                  existingItemId
+                );
                 await submit(event, label, run, options);
+                setPendingInventoryMutation(mutation);
                 setPurchaseFlowOpen(false);
                 setPurchasePrefill(null);
               }}
@@ -5513,7 +5704,9 @@ function InventoryPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={async (event, label, run, options) => {
+            const mutation = inventoryMutationForItem("sale_recorded", "Sale recorded. Inventory quantity and profit totals refreshed.", saleItem);
             await submit(event, label, run, options);
+            setPendingInventoryMutation(mutation);
             setSaleItemId("");
           }}
           onClose={() => setSaleItemId("")}
@@ -5551,8 +5744,9 @@ function InventoryPanel({
             setDetailItemId("");
             setEditStockLotTarget({ itemId: item.id, lotId: lot.id });
           }}
-          onDeleteStockLot={(item, lot) =>
-            runAction(
+          onDeleteStockLot={(item, lot) => {
+            const mutation = inventoryMutationForItem("stock_lot_removed", "Stock lot removed. Inventory quantity and average cost refreshed.", item);
+            return runAction(
               `Removing stock lot ${lot.id}`,
               () =>
                 requestJson(`/api/radar/inventory/${item.id}/stock-lots/${lot.id}`, {
@@ -5563,8 +5757,8 @@ function InventoryPanel({
                   "Remove this stock lot? This is for fixing mistaken stock entries. Lots with recorded sales cannot be removed.",
                 success: "Stock lot removed"
               }
-            )
-          }
+            ).then(() => setPendingInventoryMutation(mutation));
+          }}
           onClose={() => setDetailItemId("")}
         />
       ) : null}
@@ -5575,7 +5769,9 @@ function InventoryPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={async (event, label, run, options) => {
+            const mutation = inventoryMutationForItem("stock_lot_updated", "Stock lot updated. Average cost and inventory totals refreshed.", editStockItem);
             await submit(event, label, run, options);
+            setPendingInventoryMutation(mutation);
             setEditStockLotTarget(null);
           }}
           onClose={() => setEditStockLotTarget(null)}
@@ -5586,7 +5782,12 @@ function InventoryPanel({
           item={editItem}
           busy={busy}
           busyLabel={busyLabel}
-          submit={submit}
+          submit={async (event, label, run, options) => {
+            const mutation = inventoryMutationFromForm(event.currentTarget, "product_updated", "Product updated. Catalog row refreshed.", editItem.id);
+            await submit(event, label, run, options);
+            setPendingInventoryMutation(mutation);
+            setEditItemId("");
+          }}
           onClose={() => setEditItemId("")}
         />
       ) : null}
@@ -5596,7 +5797,9 @@ function InventoryPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={async (event, label, run, options) => {
+            const mutation = inventoryMutationFromForm(event.currentTarget, "listing_updated", "Store listing saved. Catalog status refreshed.", storeListingItem.id);
             await submit(event, label, run, options);
+            setPendingInventoryMutation(mutation);
             setStoreListingItemId("");
           }}
           onClose={() => setStoreListingItemId("")}
@@ -6137,6 +6340,51 @@ function InventoryKpiCard({
       <strong>{value}</strong>
       <small>{detail}</small>
     </article>
+  );
+}
+
+function InventoryMutationNotice({
+  notice,
+  onClearFilters,
+  onDismiss
+}: {
+  notice: InventoryMutationNoticeState;
+  onClearFilters: () => void;
+  onDismiss: () => void;
+}) {
+  const activeFilters = activeInventoryFilterLabels(notice.filters);
+  return (
+    <section className={`inventory-save-notice ${notice.hiddenByFilters ? "is-hidden-by-filter" : "is-visible"}`} aria-live="polite">
+      <div>
+        <span className="inventory-save-badge">
+          <Check size={14} />
+          Saved
+        </span>
+        <h3>{notice.hiddenByFilters ? "Inventory saved, but hidden by current filters." : notice.message}</h3>
+        <p>
+          {notice.itemName} was refreshed after the save.
+          {notice.hiddenByFilters && activeFilters.length ? ` Active filters: ${activeFilters.join(", ")}.` : ""}
+        </p>
+        <details className="inventory-mutation-diagnostics">
+          <summary>Save diagnostics</summary>
+          <span>reason: {notice.reason}</span>
+          <span>item id: {notice.itemId}</span>
+          <span>submitted: {dateTime(notice.submittedAt)}</span>
+          <span>dashboard refetched: {dateTime(notice.refetchedAt)}</span>
+          <span>row visibility: {notice.hiddenByFilters ? "hidden by active filters" : "visible in catalog"}</span>
+        </details>
+      </div>
+      <div className="inventory-save-notice-actions">
+        {notice.hiddenByFilters ? (
+          <button className="primary-action" type="button" onClick={onClearFilters}>
+            Clear filters and show item
+          </button>
+        ) : null}
+        <button className="mini-action" type="button" onClick={onDismiss}>
+          Dismiss
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -7877,7 +8125,7 @@ function InventoryFilters({
   itemCount,
   updateFilter
 }: {
-  filters: { search: string; category: string; source: string; listingStatus: string; sort: string };
+  filters: InventoryFiltersState;
   itemCount: number;
   updateFilter: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
 }) {
@@ -7918,6 +8166,7 @@ function InventoryFilters({
 function InventoryList({
   items,
   selectedId,
+  highlightedId,
   selectedPublishIds,
   onSelect,
   onTogglePublishSelect,
@@ -7928,6 +8177,7 @@ function InventoryList({
 }: {
   items: InventoryItemDTO[];
   selectedId: string;
+  highlightedId: string;
   selectedPublishIds: string[];
   onSelect: (item: InventoryItemDTO) => void;
   onTogglePublishSelect: (itemId: string) => void;
@@ -7955,7 +8205,17 @@ function InventoryList({
         <span>Actions</span>
       </div>
       {items.map((item) => (
-        <article className={selectedId === item.id ? "catalog-row selected" : "catalog-row"} key={item.id}>
+        <article
+          className={[
+            "catalog-row",
+            selectedId === item.id ? "selected" : "",
+            highlightedId === item.id ? "inventory-row-highlighted" : ""
+          ].filter(Boolean).join(" ")}
+          data-highlighted={highlightedId === item.id ? "true" : undefined}
+          data-inventory-row-id={item.id}
+          id={`inventory-row-${item.id}`}
+          key={item.id}
+        >
           <div className="catalog-product-wrap">
             <label className="publish-select-box" title="Select for storefront publish">
               <input
@@ -8085,14 +8345,22 @@ function InventoryDetailsModal({
   onDeleteStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
   onClose: () => void;
 }) {
+  const listingQuality = storefrontListingQuality(item);
+  const listingAvailable = storefrontListingAvailableForSale(item);
+  const listingDetailTone = storeListingTone(item) === "good" ? "good" : storeListingTone(item) === "bad" ? "bad" : "neutral";
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`${item.itemName} inventory details`}>
         <header className="inventory-details-header">
           <InventoryImage item={item} />
-          <div>
+          <div className="inventory-details-title">
             <h2>{item.itemName}</h2>
             <p>{formatStatus(item.category)} - {item.setName || item.retailer || "Set and retailer not saved"}</p>
+            <div className="inventory-detail-badges">
+              <span className={`chip compact-chip ${inventoryStockStatusTone(item)}`}>{inventoryStockStatusLabel(item)}</span>
+              <span className={`chip compact-chip ${storeListingTone(item)}`}>{storeListingLabel(item)}</span>
+              {item.realizedRoiPercent !== null ? <span className="chip compact-chip good">ROI {percent(item.realizedRoiPercent)}</span> : null}
+            </div>
           </div>
           <button className="icon-button" type="button" aria-label="Close inventory details" onClick={onClose}>
             <X size={18} />
@@ -8141,6 +8409,7 @@ function InventoryDetailsModal({
               <DetailStat label="Target Sell Price" value={item.targetSellPrice !== null ? money(item.targetSellPrice) : "Not set"} />
               <DetailStat label="Actual Sales" value={money(item.totalSalesGross)} />
               <DetailStat label="Realized Profit" value={item.sales.length ? money(item.realizedProfitLoss) : "No sales yet"} tone={(item.realizedProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
+              <DetailStat label="Realized ROI" value={item.realizedRoiPercent !== null ? percent(item.realizedRoiPercent) : "No sales yet"} />
             </div>
             <div className="detail-line-list">
               <span>Status: <strong>{inventoryStockStatusLabel(item)}</strong></span>
@@ -8149,6 +8418,24 @@ function InventoryDetailsModal({
               {item.description ? <span>{item.description}</span> : null}
               <span>UPC {item.upc || "Missing"} - SKU {item.sku || "Missing"} - DPCI {item.dpci || "Missing"} - ASIN {item.asin || "Missing"}</span>
             </div>
+          </section>
+
+          <section className="inventory-detail-section">
+            <h3>Storefront Listing</h3>
+            <div className="detail-stat-grid">
+              <DetailStat label="Publish status" value={storeListingLabel(item)} tone={listingDetailTone} />
+              <DetailStat label="Public price" value={item.publicPrice !== null ? money(item.publicPrice) : "Not set"} />
+              <DetailStat label="Available online" value={String(listingAvailable)} />
+              <DetailStat label="Category" value={item.storefrontCategory || storefrontPublicCategory(item)} />
+            </div>
+            <div className="storefront-quality-list">
+              {listingQuality.map((check) => (
+                <span className={check.complete ? "good" : "watch"} key={check.key}>
+                  {check.complete ? "Ready" : "Needs"} - {check.label}
+                </span>
+              ))}
+            </div>
+            <p className="form-helper">Public storefront listings never expose cost basis, source receipts, supplier notes, market value, or tracker data.</p>
           </section>
 
           <section className="inventory-detail-section">
@@ -8209,6 +8496,27 @@ function InventoryEditStockLotModal({
 }) {
   const saveLabel = `Updating stock lot ${lot.id}`;
   const soldFromLot = Math.max(0, lot.quantity - lot.remainingQuantity);
+  const initialCalculatedLotTotal = lot.quantity * lot.costPerUnit + (lot.purchaseExtraCost ?? 0);
+  const [totalCostTouched, setTotalCostTouched] = useState(Math.abs(lot.totalCost - initialCalculatedLotTotal) > 0.01);
+  const [stockDraft, setStockDraft] = useState({
+    quantity: String(lot.quantity),
+    costPerUnit: String(lot.costPerUnit),
+    purchaseExtraCost: lot.purchaseExtraCost === null || lot.purchaseExtraCost === undefined ? "" : String(lot.purchaseExtraCost),
+    totalCost: String(lot.totalCost)
+  });
+  const draftQuantity = Math.max(0, Number(stockDraft.quantity) || 0);
+  const draftUnitCost = Math.max(0, Number(stockDraft.costPerUnit) || 0);
+  const draftExtraCost = Math.max(0, Number(stockDraft.purchaseExtraCost) || 0);
+  const calculatedTotalCost = draftQuantity * draftUnitCost + draftExtraCost;
+  const totalCostFieldValue = totalCostTouched ? stockDraft.totalCost : calculatedTotalCost.toFixed(2);
+  const overrideTotalCost = totalCostFieldValue.trim() ? Math.max(0, Number(totalCostFieldValue) || 0) : null;
+  const effectiveTotalCost = overrideTotalCost ?? calculatedTotalCost;
+  const effectiveAverageCost = draftQuantity > 0 ? effectiveTotalCost / draftQuantity : 0;
+  const remainingAfterSoldLock = Math.max(0, draftQuantity - soldFromLot);
+
+  function updateStockDraft(name: keyof typeof stockDraft, value: string) {
+    setStockDraft((current) => ({ ...current, [name]: value }));
+  }
 
   return (
     <div className="inventory-modal-backdrop" role="presentation">
@@ -8255,11 +8563,66 @@ function InventoryEditStockLotModal({
               To remove a mistaken unsold lot completely, use Remove Stock Lot from Product Details. If any units were sold,
               quantity cannot go below the sold count.
             </p>
+            <div className="stock-cost-preview" aria-label="Live stock cost preview">
+              <span>
+                <small>Calculated total</small>
+                <strong>{money(calculatedTotalCost)}</strong>
+              </span>
+              <span>
+                <small>Effective total</small>
+                <strong>{money(effectiveTotalCost)}</strong>
+              </span>
+              <span>
+                <small>Average cost</small>
+                <strong>{money(effectiveAverageCost)}</strong>
+              </span>
+              <span>
+                <small>Remaining after sold lock</small>
+                <strong>{remainingAfterSoldLock}</strong>
+              </span>
+            </div>
             <div className="form-grid compact">
-              <TextInput name="quantity" label="Quantity purchased" type="number" min={String(Math.max(1, soldFromLot))} max="1000" defaultValue={lot.quantity} required />
-              <TextInput name="costPerUnit" label="Cost per unit" type="number" min="0" step="0.01" defaultValue={lot.costPerUnit} required />
-              <TextInput name="purchaseExtraCost" label="Tax / shipping" type="number" min="0" step="0.01" defaultValue={lot.purchaseExtraCost ?? ""} />
-              <TextInput name="totalCost" label="Total cost override" type="number" min="0" step="0.01" defaultValue={lot.totalCost} />
+              <TextInput
+                name="quantity"
+                label="Quantity purchased"
+                type="number"
+                min={String(Math.max(1, soldFromLot))}
+                max="1000"
+                value={stockDraft.quantity}
+                onChange={(event) => updateStockDraft("quantity", event.currentTarget.value)}
+                required
+              />
+              <TextInput
+                name="costPerUnit"
+                label="Cost per unit"
+                type="number"
+                min="0"
+                step="0.01"
+                value={stockDraft.costPerUnit}
+                onChange={(event) => updateStockDraft("costPerUnit", event.currentTarget.value)}
+                required
+              />
+              <TextInput
+                name="purchaseExtraCost"
+                label="Tax / shipping"
+                type="number"
+                min="0"
+                step="0.01"
+                value={stockDraft.purchaseExtraCost}
+                onChange={(event) => updateStockDraft("purchaseExtraCost", event.currentTarget.value)}
+              />
+              <TextInput
+                name="totalCost"
+                label="Total cost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={totalCostFieldValue}
+                onChange={(event) => {
+                  setTotalCostTouched(true);
+                  updateStockDraft("totalCost", event.currentTarget.value);
+                }}
+              />
               <TextInput name="source" label="Source / store" defaultValue={lot.source} required />
               <TextInput name="purchasedAt" label="Purchase date" type="date" defaultValue={toDateInput(lot.purchasedAt)} required />
             </div>
