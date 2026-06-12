@@ -1717,9 +1717,24 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
   const published = dashboard.inventory.filter((item) => item.publishToStore && (item.storeStatus === "active" || item.storeStatus === "sold_out"));
   const withImages = published.filter((item) => item.publicImages[0] || item.imageUrl);
   const settings = dashboard.storefrontSettings;
+  const stripe = dashboard.health?.providers.stripe;
+  const paidWebhookOrder = dashboard.storefrontOrders.find((order) => order.paymentStatus === "paid" && order.paymentEvents.some((event) => event.eventType === "checkout.session.completed"));
+  const inventoryFinalizedOrder = dashboard.storefrontOrders.find(
+    (order) => order.paymentStatus === "paid" && order.reservations.length > 0 && order.reservations.every((reservation) => reservation.status === "completed")
+  );
+  const saleProfitOrder = dashboard.storefrontOrders.find(
+    (order) => order.paymentStatus === "paid" && (order.costBasis > 0 || order.netProfit !== 0 || order.items.some((item) => item.costBasis > 0 || item.profitLoss !== 0))
+  );
   const publicUrl = "https://gamedaygrabs.com";
   const publicContactEmail = "gamedaygrabs@outlook.com";
   const contactEmailReady = settings.contactEmail?.toLowerCase() === publicContactEmail;
+  const stripeModeLabel = !stripe
+    ? "Health unavailable"
+    : stripe.testMode
+      ? "Test mode"
+      : stripe.publishableKeyMode === "live" && stripe.secretKeyMode === "live"
+        ? "Live mode"
+        : "Review keys";
   const checks = [
     { label: "Custom domain connected", detail: "gamedaygrabs.com and www.gamedaygrabs.com must be valid in Vercel Domains.", complete: false },
     { label: "Storefront root works", detail: "https://www.gamedaygrabs.com should render the public storefront at / after DNS connects.", complete: false },
@@ -1732,6 +1747,48 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
     { label: "Published product images", detail: `${withImages.length}/${published.length || 0} published products have images.`, complete: published.length > 0 && withImages.length === published.length },
     { label: "Request Invoice / cart works", detail: settings.checkoutConfigured ? "Stripe Checkout configured; cart remains active." : "Request Invoice mode available until Stripe is configured.", complete: true },
     { label: "No private data exposed", detail: "Public pages hide costs, profit, market values, receipts, scanner history, and tracker data.", complete: true }
+  ];
+  const liveModeChecks = [
+    {
+      label: "Stripe test checkout passed",
+      detail: paidWebhookOrder ? `Latest verified paid order ${paidWebhookOrder.orderNumber}.` : "Run one Stripe test Checkout and confirm the webhook event.",
+      complete: Boolean(paidWebhookOrder)
+    },
+    {
+      label: "Webhook received completed event",
+      detail: paidWebhookOrder ? "checkout.session.completed is stored in Admin Orders." : "Waiting for a stored checkout.session.completed event.",
+      complete: Boolean(paidWebhookOrder)
+    },
+    {
+      label: "Inventory decreased",
+      detail: inventoryFinalizedOrder ? `Reservation completed for ${inventoryFinalizedOrder.orderNumber}.` : "Paid order reservations should become completed after webhook finalization.",
+      complete: Boolean(inventoryFinalizedOrder)
+    },
+    {
+      label: "Paid order created",
+      detail: `${dashboard.storefrontSummary.paidOrderCount} paid storefront order${dashboard.storefrontSummary.paidOrderCount === 1 ? "" : "s"} recorded.`,
+      complete: dashboard.storefrontSummary.paidOrderCount > 0
+    },
+    {
+      label: "Sale/profit record created",
+      detail: saleProfitOrder ? `Cost/profit values are present for ${saleProfitOrder.orderNumber}.` : "Paid order should show cost basis and estimated net profit.",
+      complete: Boolean(saleProfitOrder)
+    },
+    {
+      label: "Sold-out guard works",
+      detail: "Cart and invoice routes enforce available quantity before checkout.",
+      complete: true
+    },
+    {
+      label: "Fulfillment workflow ready",
+      detail: "Admin Orders supports packing, shipped, tracking, actual shipping cost, cancel/refund note placeholders.",
+      complete: true
+    },
+    {
+      label: "Live Stripe keys not yet configured",
+      detail: stripe?.testMode ? "Stripe is configured in test mode." : stripe ? `Publishable ${stripe.publishableKeyMode}; secret ${stripe.secretKeyMode}.` : "Health data unavailable.",
+      complete: Boolean(stripe?.testMode)
+    }
   ];
   const readyCount = checks.filter((check) => check.complete).length;
   const distributorReady = readyCount === checks.length;
@@ -1822,7 +1879,17 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
         <article>
           <span className="eyeline">Checkout mode</span>
           <strong>{settings.checkoutConfigured ? "Stripe Checkout" : "Request Invoice"}</strong>
-          <small>{settings.checkoutConfigured ? "Stripe keys are configured." : "Customers can request an invoice until Stripe is configured."}</small>
+          <small>{settings.checkoutConfigured ? "Stripe keys are configured; Request Invoice remains available when checkout is disabled." : "Customers can request an invoice until Stripe is configured."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Stripe mode</span>
+          <strong>{stripeModeLabel}</strong>
+          <small>{stripe?.testMode ? "Stripe is configured in test mode. This admin-only warning is not shown on the public storefront." : "Switch to live keys only after the live readiness checklist passes."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Stripe base URL</span>
+          <strong>{stripe?.storeBaseUrl || "Not detected"}</strong>
+          <small>{stripe?.storeBaseUrlConfigured ? "Checkout success and cancel URLs use this storefront base URL." : "Set STORE_BASE_URL before accepting Stripe Checkout payments."}</small>
         </article>
         <article>
           <span className="eyeline">Published products</span>
@@ -1844,6 +1911,26 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
       </div>
       <div className="distributor-check-grid">
         {checks.map((check) => (
+          <article className={check.complete ? "complete" : ""} key={check.label}>
+            <span>
+              <Check size={15} />
+            </span>
+            <div>
+              <strong>{check.label}</strong>
+              <small>{check.detail}</small>
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="distributor-readiness-hero distributor-checklist-heading">
+        <div>
+          <span className="eyeline">Stripe Live Mode Readiness</span>
+          <h3>Checkout launch controls</h3>
+          <p>Use this admin-only checklist before replacing Stripe test keys with live keys.</p>
+        </div>
+      </div>
+      <div className="distributor-check-grid">
+        {liveModeChecks.map((check) => (
           <article className={check.complete ? "complete" : ""} key={check.label}>
             <span>
               <Check size={15} />
@@ -5680,6 +5767,8 @@ function StorefrontOrderDetailsModal({
   onClose: () => void;
 }) {
   const saveLabel = `Updating order ${order.id}`;
+  const completedPaymentEvent = order.paymentEvents.find((event) => event.eventType === "checkout.session.completed");
+  const inventoryFinalized = order.paymentStatus === "paid" && order.reservations.length > 0 && order.reservations.every((reservation) => reservation.status === "completed");
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`Order ${order.orderNumber}`}>
@@ -5728,6 +5817,7 @@ function StorefrontOrderDetailsModal({
                     <div>
                       <strong>{item.publicTitle}</strong>
                       <small>Qty {item.quantity} - {money(item.unitPrice)} each</small>
+                      <small>Cost basis {money(item.costBasis)} - Profit {money(item.profitLoss)}</small>
                     </div>
                     <b>{money(item.lineTotal)}</b>
                   </article>
@@ -5750,9 +5840,59 @@ function StorefrontOrderDetailsModal({
               <DetailStat label="Subtotal" value={money(order.subtotal)} />
               <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
               <DetailStat label="Total paid" value={money(order.total)} tone="good" />
+              <DetailStat label="Estimated Stripe fee" value={money(order.stripeFeeEstimate)} />
+              <DetailStat label="Actual shipping cost" value={money(order.shippingCost)} />
               <DetailStat label="Cost basis" value={money(order.costBasis)} />
-              <DetailStat label="Net profit" value={money(order.netProfit)} tone={order.netProfit >= 0 ? "good" : "bad"} />
+              <DetailStat label="Estimated net profit" value={money(order.netProfit)} tone={order.netProfit >= 0 ? "good" : "bad"} />
               <DetailStat label="ROI" value={percent(order.roiPercent)} />
+            </div>
+            <p className="form-helper publish-ready-note">Stripe fee is estimated until exact Stripe balance transaction fees are imported. Profit uses paid order totals, stock lot cost basis, estimated fees, and actual shipping cost when entered.</p>
+          </section>
+          <section>
+            <h3>Payment Verification</h3>
+            <div className="detail-stat-grid">
+              <DetailStat label="Payment status" value={order.paymentStatus} tone={order.paymentStatus === "paid" ? "good" : "bad"} />
+              <DetailStat label="Webhook event" value={completedPaymentEvent ? "Received" : "Not stored"} tone={completedPaymentEvent ? "good" : "bad"} />
+              <DetailStat label="Stripe session" value={order.stripeCheckoutSessionId ? "Stored" : "Missing"} tone={order.stripeCheckoutSessionId ? "good" : "bad"} />
+              <DetailStat label="Payment intent" value={order.stripePaymentIntentId ? "Stored" : "Missing"} tone={order.stripePaymentIntentId ? "good" : "bad"} />
+              <DetailStat label="Inventory finalization" value={inventoryFinalized ? "Complete" : "Review"} tone={inventoryFinalized ? "good" : "bad"} />
+              <DetailStat label="Paid at" value={order.paidAt ? dateTime(order.paidAt) : "Not paid"} tone={order.paidAt ? "good" : "bad"} />
+            </div>
+            <div className="compact-ledger-list">
+              {order.paymentEvents.length ? (
+                order.paymentEvents.slice(0, 4).map((event) => (
+                  <article key={event.id}>
+                    <strong>{event.eventType}</strong>
+                    <span>{dateTime(event.receivedAt)}</span>
+                    <small>Stored Stripe webhook event</small>
+                  </article>
+                ))
+              ) : (
+                <article>
+                  <strong>No Stripe events stored</strong>
+                  <span>Webhook has not been recorded for this order.</span>
+                </article>
+              )}
+            </div>
+          </section>
+          <section>
+            <h3>Inventory Reservations</h3>
+            <div className="compact-ledger-list">
+              {order.reservations.length ? (
+                order.reservations.map((reservation) => (
+                  <article key={reservation.id}>
+                    <strong>{reservation.status}</strong>
+                    <span>Qty {reservation.quantity}</span>
+                    <span>Expires {dateTime(reservation.expiresAt)}</span>
+                    <small>{reservation.releasedAt ? `Released ${dateTime(reservation.releasedAt)}` : "Reserved stock lifecycle"}</small>
+                  </article>
+                ))
+              ) : (
+                <article>
+                  <strong>No reservation rows</strong>
+                  <span>Invoice/contact orders do not reserve stock.</span>
+                </article>
+              )}
             </div>
           </section>
           <section className="wide">

@@ -252,6 +252,21 @@ export type StorefrontOrderItemDTO = {
   profitLoss: number;
 };
 
+export type StorefrontOrderReservationDTO = {
+  id: string;
+  inventoryItemId: string;
+  quantity: number;
+  status: string;
+  expiresAt: string;
+  releasedAt: string | null;
+};
+
+export type StorefrontOrderPaymentEventDTO = {
+  id: string;
+  eventType: string;
+  receivedAt: string;
+};
+
 export type StorefrontOrderDTO = {
   id: string;
   orderNumber: string;
@@ -272,9 +287,13 @@ export type StorefrontOrderDTO = {
   trackingNumber: string | null;
   carrier: string | null;
   notes: string | null;
+  stripeCheckoutSessionId: string | null;
+  stripePaymentIntentId: string | null;
   paidAt: string | null;
   createdAt: string;
   items: StorefrontOrderItemDTO[];
+  reservations: StorefrontOrderReservationDTO[];
+  paymentEvents: StorefrontOrderPaymentEventDTO[];
 };
 
 export type StorefrontSummaryDTO = {
@@ -1096,6 +1115,10 @@ export type AppHealthDTO = {
       secretKeyConfigured: boolean;
       webhookSecretConfigured: boolean;
       storeBaseUrlConfigured: boolean;
+      storeBaseUrl: string | null;
+      publishableKeyMode: "test" | "live" | "missing" | "unknown";
+      secretKeyMode: "test" | "live" | "missing" | "unknown";
+      testMode: boolean;
       checkoutSessionReady: boolean;
       webhookReady: boolean;
       missing: string[];

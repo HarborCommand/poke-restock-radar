@@ -41,6 +41,10 @@ export type EnvironmentReport = {
       secretKeyConfigured: boolean;
       webhookSecretConfigured: boolean;
       storeBaseUrlConfigured: boolean;
+      storeBaseUrl: string | null;
+      publishableKeyMode: "test" | "live" | "missing" | "unknown";
+      secretKeyMode: "test" | "live" | "missing" | "unknown";
+      testMode: boolean;
       checkoutSessionReady: boolean;
       webhookReady: boolean;
       missing: string[];
@@ -62,6 +66,13 @@ function envValue(name: string) {
 
 function hasEnv(name: string) {
   return envValue(name) !== null;
+}
+
+function stripeKeyMode(value: string | null, keyType: "pk" | "sk") {
+  if (!value) return "missing";
+  if (value.startsWith(`${keyType}_test_`)) return "test";
+  if (value.startsWith(`${keyType}_live_`)) return "live";
+  return "unknown";
 }
 
 function databaseProvider(databaseUrl: string | null): EnvironmentReport["databaseProvider"] {
@@ -98,10 +109,16 @@ export function getEnvironmentReport(): EnvironmentReport {
   const searchProvider = envValue("PRODUCT_SEARCH_PROVIDER");
   const searchFallbackConfigured = Boolean(searchProvider && hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY"));
   const stripeCheckoutEnabled = envValue("STRIPE_CHECKOUT_ENABLED") === "true";
-  const stripePublishableConfigured = hasEnv("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY");
-  const stripeSecretConfigured = hasEnv("STRIPE_SECRET_KEY");
+  const stripePublishableKey = envValue("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY");
+  const stripeSecretKey = envValue("STRIPE_SECRET_KEY");
+  const stripePublishableConfigured = Boolean(stripePublishableKey);
+  const stripeSecretConfigured = Boolean(stripeSecretKey);
   const stripeWebhookConfigured = hasEnv("STRIPE_WEBHOOK_SECRET");
-  const storeBaseUrlConfigured = hasEnv("STORE_BASE_URL");
+  const storeBaseUrl = envValue("STORE_BASE_URL");
+  const storeBaseUrlConfigured = Boolean(storeBaseUrl);
+  const stripePublishableKeyMode = stripeKeyMode(stripePublishableKey, "pk");
+  const stripeSecretKeyMode = stripeKeyMode(stripeSecretKey, "sk");
+  const stripeTestMode = stripePublishableKeyMode === "test" || stripeSecretKeyMode === "test";
   const stripeMissing = [
     !stripeCheckoutEnabled ? "STRIPE_CHECKOUT_ENABLED" : null,
     !stripePublishableConfigured ? "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY" : null,
@@ -220,6 +237,10 @@ export function getEnvironmentReport(): EnvironmentReport {
         secretKeyConfigured: stripeSecretConfigured,
         webhookSecretConfigured: stripeWebhookConfigured,
         storeBaseUrlConfigured,
+        storeBaseUrl,
+        publishableKeyMode: stripePublishableKeyMode,
+        secretKeyMode: stripeSecretKeyMode,
+        testMode: stripeTestMode,
         checkoutSessionReady: stripeCheckoutEnabled && stripePublishableConfigured && stripeSecretConfigured,
         webhookReady: stripeWebhookConfigured,
         missing: stripeMissing

@@ -23,7 +23,10 @@ const storefrontInventoryInclude = {
 
 const storefrontOrderInclude = {
   items: true,
-  customer: true
+  customer: true,
+  reservations: true,
+  paymentEvents: { orderBy: { receivedAt: "desc" } },
+  fulfillment: true
 } satisfies Prisma.StorefrontOrderInclude;
 
 type StorefrontInventoryItem = Prisma.InventoryItemGetPayload<{ include: typeof storefrontInventoryInclude }>;
@@ -395,9 +398,24 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     trackingNumber: order.trackingNumber,
     carrier: order.carrier,
     notes: order.notes,
+    stripeCheckoutSessionId: order.stripeCheckoutSessionId,
+    stripePaymentIntentId: order.stripePaymentIntentId,
     paidAt: order.paidAt?.toISOString() ?? null,
     createdAt: order.createdAt.toISOString(),
-    items: order.items.map(orderItemToDTO)
+    items: order.items.map(orderItemToDTO),
+    reservations: order.reservations.map((reservation) => ({
+      id: reservation.id,
+      inventoryItemId: reservation.inventoryItemId,
+      quantity: reservation.quantity,
+      status: reservation.status,
+      expiresAt: reservation.expiresAt.toISOString(),
+      releasedAt: reservation.releasedAt?.toISOString() ?? null
+    })),
+    paymentEvents: order.paymentEvents.map((event) => ({
+      id: event.id,
+      eventType: event.eventType,
+      receivedAt: event.receivedAt.toISOString()
+    }))
   };
 }
 

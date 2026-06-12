@@ -457,6 +457,7 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   const env = fs.readFileSync(new URL("../src/lib/env.ts", import.meta.url), "utf8");
   const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
   const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const sessionRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/session/route.ts", import.meta.url), "utf8");
   const oldCheckoutRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/route.ts", import.meta.url), "utf8");
   const webhookRoute = fs.readFileSync(new URL("../src/app/api/storefront/stripe/webhook/route.ts", import.meta.url), "utf8");
@@ -465,6 +466,9 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(env, /NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY/);
   assert.match(env, /checkoutSessionReady/);
   assert.match(env, /webhookReady/);
+  assert.match(env, /publishableKeyMode/);
+  assert.match(env, /secretKeyMode/);
+  assert.match(env, /testMode/);
   assert.match(storefront, /storefrontStripeReadiness/);
   assert.match(storefront, /STRIPE_WEBHOOK_SECRET/);
   assert.match(storefront, /webhooks\.constructEvent/);
@@ -476,8 +480,14 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(storefront, /releaseOrderReservations/);
   assert.match(storefront, /platform: "website"/);
   assert.match(storefront, /lot\.totalCost \/ lot\.quantity/);
+  assert.match(storefront, /paymentEvents: \{ orderBy: \{ receivedAt: "desc" \} \}/);
+  assert.match(storefront, /reservations: order\.reservations\.map/);
   assert.match(client, /\/api\/storefront\/checkout\/session/);
   assert.match(client, /\/api\/storefront\/invoice-request/);
+  assert.match(app, /Stripe is configured in test mode/);
+  assert.match(app, /Stripe Live Mode Readiness/);
+  assert.match(app, /Estimated Stripe fee/);
+  assert.match(app, /checkout\.session\.completed is stored in Admin Orders/);
   assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
   assert.match(oldCheckoutRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
   assert.match(webhookRoute, /handleStripeWebhook/);
