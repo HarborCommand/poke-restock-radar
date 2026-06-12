@@ -1215,6 +1215,39 @@ a {
   border-radius: var(--radius);
 }
 
+.app-load-error-card {
+  display: grid;
+  width: min(100%, 540px);
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(18, 21, 20, 0.92);
+  box-shadow: var(--shadow);
+  padding: clamp(22px, 4vw, 34px);
+}
+
+.app-load-error-card h1 {
+  margin: 0;
+  font-size: clamp(1.65rem, 3vw, 2.15rem);
+  line-height: 1.05;
+}
+
+.app-load-error-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.app-load-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.app-load-error-actions > * {
+  flex: 1 1 150px;
+}
+
 .login-copy {
   display: grid;
   gap: 8px;

@@ -1041,16 +1041,31 @@ function saveBrowserLocation(dashboard: DashboardDTO, runAction: ActionHandler) 
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
+    credentials: options?.credentials ?? "same-origin",
     headers: {
       "Content-Type": "application/json",
       ...(options?.headers || {})
     }
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: Record<string, unknown> = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { error: text };
+    }
+  }
   if (!response.ok) {
     const issue = Array.isArray(data.issues) && data.issues[0] ? `${data.issues[0].path}: ${data.issues[0].message}` : "";
-    throw new Error(issue || data.error || "Request failed");
+    const serverError =
+      typeof data.error === "string"
+        ? data.error
+        : typeof data.message === "string"
+          ? data.message
+          : "";
+    const detail = typeof data.detail === "string" && data.detail !== serverError ? ` ${data.detail}` : "";
+    throw new Error(issue || `${serverError || `Request failed (${response.status})`}${detail}`.trim());
   }
   return data as T;
 }
@@ -1307,7 +1322,13 @@ export function RadarApp() {
         body: JSON.stringify(data)
       });
       setUser(result.user);
-      await loadDashboard();
+      try {
+        await loadDashboard();
+      } catch (dashboardError) {
+        const message = dashboardError instanceof Error ? dashboardError.message : "Could not load private dashboard";
+        setError(`Signed in, but the dashboard could not load. ${message}`);
+        showToast({ type: "error", message: `Signed in, but dashboard load failed. ${message}` });
+      }
     } catch (loginError) {
       const message = loginError instanceof Error ? loginError.message : "Login failed";
       setError(message);
@@ -1382,6 +1403,55 @@ export function RadarApp() {
           <span>Loading private radar</span>
         </div>
       </main>
+    );
+  }
+
+  if (user && !dashboard) {
+    return (
+      <>
+        <main className="screen center-screen">
+          <section className="login-card app-load-error-card" aria-live="polite">
+            <div className="brand-mark">
+              <Radar size={28} />
+            </div>
+            <span className="eyebrow">Signed In</span>
+            <h1>Dashboard Load Failed</h1>
+            <p>
+              Your sign-in was accepted, but the private dashboard did not finish loading. This is usually a server data
+              load issue, not a password problem.
+            </p>
+            {error ? <p className="form-error">{error}</p> : null}
+            <div className="app-load-error-actions">
+              <button
+                className="primary-action"
+                disabled={busy}
+                onClick={async () => {
+                  setBusyLabel("Loading dashboard");
+                  try {
+                    await loadDashboard();
+                  } catch (loadError) {
+                    const message = loadError instanceof Error ? loadError.message : "Could not load private dashboard";
+                    setError(message);
+                    showToast({ type: "error", message });
+                  } finally {
+                    setBusyLabel(null);
+                  }
+                }}
+                type="button"
+              >
+                Retry Dashboard
+              </button>
+              <button className="secondary-action" disabled={busy} onClick={refreshAppCacheAndReload} type="button">
+                Refresh App Cache
+              </button>
+              <button className="ghost-action" disabled={busy} onClick={logout} type="button">
+                Sign Out
+              </button>
+            </div>
+          </section>
+        </main>
+        <ToastViewport toast={toast} onClose={() => setToast(null)} />
+      </>
     );
   }
 
