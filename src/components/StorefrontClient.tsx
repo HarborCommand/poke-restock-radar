@@ -7,19 +7,27 @@ import {
   BadgeCheck,
   Check,
   ChevronRight,
+  CreditCard,
   ExternalLink,
   Heart,
+  Lock,
   Mail,
   Menu,
+  MessageCircle,
   Minus,
   Package,
+  Phone,
   Plus,
   Search,
   ShieldCheck,
   ShoppingBag,
   ShoppingCart,
+  Sparkles,
+  Star,
   Trash2,
   Truck,
+  Trophy,
+  User,
   X
 } from "lucide-react";
 import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
@@ -1010,6 +1018,26 @@ export function ProductDetail({
   );
 }
 
+function cartStockState(product: PublicStoreProductDTO & { requestedQuantity: number }) {
+  if (isSoldOutProduct(product) || product.availableQuantity <= 0) {
+    return { label: "Sold Out", tone: "out", detail: "Remove this item to continue." };
+  }
+  if (product.requestedQuantity > product.availableQuantity) {
+    return { label: "Stock Changed", tone: "warn", detail: `Only ${product.availableQuantity} available now.` };
+  }
+  if (product.availableQuantity <= 2) {
+    return { label: "Low Stock", tone: "warn", detail: "Almost gone." };
+  }
+  if (product.availableQuantity <= 5) {
+    return { label: "Limited Stock", tone: "limited", detail: "Small batch available." };
+  }
+  return { label: "In Stock - Ready to Ship", tone: "in", detail: "Ready for secure checkout." };
+}
+
+function cartHasBlockingStockIssue(products: Array<PublicStoreProductDTO & { requestedQuantity: number }>) {
+  return products.some((product) => isSoldOutProduct(product) || product.availableQuantity <= 0 || product.requestedQuantity > product.availableQuantity);
+}
+
 export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const [items, setItems] = useState<CartItem[]>(() => readCart());
   const [products, setProducts] = useState<Array<PublicStoreProductDTO & { requestedQuantity: number }>>([]);
@@ -1054,6 +1082,37 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
 
   const subtotal = products.reduce((sum, product) => sum + product.price * product.requestedQuantity, 0);
   const shipping = subtotal > 0 && (settings.freeShippingThreshold === null || subtotal < settings.freeShippingThreshold) ? settings.defaultShippingPrice : 0;
+  const total = subtotal + shipping;
+  const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
+  const freeShippingRemaining = settings.freeShippingThreshold !== null ? Math.max(0, settings.freeShippingThreshold - subtotal) : null;
+  const freeShippingProgress =
+    settings.freeShippingThreshold !== null && settings.freeShippingThreshold > 0
+      ? Math.min(100, Math.max(0, (subtotal / settings.freeShippingThreshold) * 100))
+      : 0;
+  const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
+  const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.availableQuantity <= 0);
+  const overQuantityProducts = products.filter((product) => product.requestedQuantity > product.availableQuantity && product.availableQuantity > 0);
+  const checkoutDisabled = busy || !customerEmail.trim() || !customerName.trim() || hasBlockingStockIssue;
+  const successMessage = message.toLowerCase().includes("received");
+  const cartIsLoading = items.length > 0 && !products.length && !message;
+
+  function removeSoldOutItems() {
+    const blockedIds = new Set(soldOutProducts.map((product) => product.id));
+    const next = items.filter((item) => !blockedIds.has(item.id));
+    setItems(next);
+    writeCart(next);
+  }
+
+  function syncChangedQuantities() {
+    const next = items.map((item) => {
+      const product = products.find((entry) => entry.id === item.id);
+      if (!product) return item;
+      return { ...item, quantity: Math.min(product.availableQuantity, product.maxQuantityPerOrder, Math.max(1, item.quantity)) };
+    });
+    setItems(next);
+    writeCart(next);
+    setMessage("Quantity updated because available stock changed.");
+  }
 
   async function checkout() {
     setBusy(true);
@@ -1070,7 +1129,6 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
         if (!payload.checkoutUrl) throw new Error("Checkout could not start.");
         window.location.href = payload.checkoutUrl;
       } else {
-        const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
         setMessage(`Thanks - we received your request and will contact you shortly at ${contactEmail}.`);
         setItems([]);
         setProducts([]);
@@ -1088,86 +1146,229 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     <section className="gdg-cart-page">
       <div className="gdg-cart-header">
         <div>
-          <p className="gdg-overline">Cart</p>
-          <h1>{settings.checkoutConfigured ? "Secure checkout" : "Request an invoice"}</h1>
-          <p>{settings.checkoutConfigured ? "Review your items before Stripe Checkout." : "Checkout is in invoice mode. Submit your cart and GameDayGrabs will confirm payment details."}</p>
+          <h1>Your Pok&eacute;mon Picks Are Almost Yours! <Sparkles size={28} aria-hidden="true" /></h1>
+          <p>Review your cart and complete secure checkout.</p>
         </div>
         <Link href="/shop" className="gdg-secondary-button">
           Continue Shopping
         </Link>
       </div>
-      {message ? <p className={message.includes("sent") ? "gdg-toast" : "gdg-error"}>{message}</p> : null}
-      {products.length ? (
+      <div className="gdg-checkout-hero">
+        <div className="gdg-checkout-trust-row" aria-label="Checkout trust points">
+          <article>
+            <ShieldCheck size={24} />
+            <div>
+              <strong>Secure Checkout</strong>
+              <small>Your info is protected</small>
+            </div>
+          </article>
+          <article>
+            <Truck size={24} />
+            <div>
+              <strong>Fast Shipping</strong>
+              <small>Packed and shipped quickly</small>
+            </div>
+          </article>
+          <article>
+            <Package size={24} />
+            <div>
+              <strong>Carefully Packaged</strong>
+              <small>Handled like a collection</small>
+            </div>
+          </article>
+          <article>
+            <BadgeCheck size={24} />
+            <div>
+              <strong>100% Authentic</strong>
+              <small>Real products only</small>
+            </div>
+          </article>
+        </div>
+        <div className="gdg-cart-hero-visual" aria-hidden="true">
+          <Sparkles size={22} />
+          <ShoppingBag size={54} />
+          <Star size={18} />
+        </div>
+      </div>
+      {message ? <p className={successMessage ? "gdg-toast" : "gdg-error"}>{message}</p> : null}
+      {cartIsLoading ? (
+        <div className="gdg-empty gdg-cart-empty compact">
+          <span>
+            <ShoppingCart size={30} />
+          </span>
+          <h2>Loading your cart...</h2>
+          <p>Checking current product availability before checkout.</p>
+        </div>
+      ) : products.length ? (
         <div className="gdg-cart-grid">
-          <div className="gdg-cart-lines">
-            {products.map((product) => (
-              <article className="gdg-cart-line" key={product.id}>
-                <ProductImage product={product} size="thumb" />
-              <div>
-                  <h2>{cleanStorefrontTitle(product.title)}</h2>
-                  <small>{publicCategoryLabel(displayStorefrontCategory(product))}</small>
-                  <div className="gdg-quantity-control compact">
-                    <button type="button" onClick={() => updateQuantity(product.id, product.requestedQuantity - 1)}>
-                      <Minus size={14} />
-                    </button>
-                    <b>{product.requestedQuantity}</b>
-                    <button type="button" onClick={() => updateQuantity(product.id, product.requestedQuantity + 1)}>
-                      <Plus size={14} />
-                    </button>
-                  </div>
+          <div className="gdg-cart-main">
+            {hasBlockingStockIssue ? (
+              <div className="gdg-cart-stock-warning">
+                <div>
+                  <strong>Quantity updated because available stock changed.</strong>
+                  <small>Review the highlighted item before checkout.</small>
                 </div>
-                <strong>{money(product.price * product.requestedQuantity)}</strong>
-                <button className="gdg-icon-button" type="button" onClick={() => removeItem(product.id)} aria-label={`Remove ${cleanStorefrontTitle(product.title)}`}>
-                  <Trash2 size={16} />
-                </button>
-              </article>
-            ))}
+                <div className="gdg-card-actions">
+                  {overQuantityProducts.length ? (
+                    <button className="gdg-secondary-button" type="button" onClick={syncChangedQuantities}>
+                      Update quantities
+                    </button>
+                  ) : null}
+                  {soldOutProducts.length ? (
+                    <button className="gdg-secondary-button" type="button" onClick={removeSoldOutItems}>
+                      Remove sold-out item
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            <div className="gdg-cart-lines">
+              {products.map((product) => {
+                const stock = cartStockState(product);
+                const title = cleanStorefrontTitle(product.title);
+                const maxQuantity = Math.min(product.availableQuantity, product.maxQuantityPerOrder);
+                return (
+                  <article className={`gdg-cart-line ${stock.tone === "out" || stock.tone === "warn" ? "attention" : ""}`} key={product.id}>
+                    <ProductImage product={product} size="thumb" />
+                    <div className="gdg-cart-line-copy">
+                      <h2>{title}</h2>
+                      <small>{publicCategoryLabel(displayStorefrontCategory(product))}</small>
+                      <span className={`gdg-cart-stock ${stock.tone}`}>
+                        <Check size={13} />
+                        {stock.label}
+                      </span>
+                      <small>{stock.detail}</small>
+                      <div className="gdg-quantity-control compact" aria-label={`Quantity for ${title}`}>
+                        <button type="button" disabled={product.requestedQuantity <= 1} onClick={() => updateQuantity(product.id, product.requestedQuantity - 1)} aria-label={`Decrease ${title} quantity`}>
+                          <Minus size={14} />
+                        </button>
+                        <b>{product.requestedQuantity}</b>
+                        <button type="button" disabled={product.availableQuantity <= 0 || product.requestedQuantity >= maxQuantity} onClick={() => updateQuantity(product.id, product.requestedQuantity + 1)} aria-label={`Increase ${title} quantity`}>
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="gdg-cart-line-price">
+                      <strong>{money(product.price * product.requestedQuantity)}</strong>
+                      <small>{money(product.price)} each</small>
+                    </div>
+                    <button className="gdg-icon-button" type="button" onClick={() => removeItem(product.id)} aria-label={`Remove ${title}`}>
+                      <Trash2 size={16} />
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="gdg-cart-assurance">
+              <ShieldCheck size={28} />
+              <p><strong>Every order is backed by our Authenticity Guarantee.</strong> 100% real Pok&eacute;mon products, packed carefully for collectors.</p>
+            </div>
+            <div className="gdg-cart-small-business">
+              <Trophy size={28} />
+              <p><strong>{`You're supporting a small business!`}</strong> Thank you for helping GameDayGrabs grow.</p>
+              <Heart size={18} />
+            </div>
           </div>
-          <aside className="gdg-cart-summary">
-            <h2>Order Summary</h2>
-            <span>
-              <b>Subtotal</b>
-              {money(subtotal)}
-            </span>
-            <span>
-              <b>Shipping estimate</b>
-              {money(shipping)}
-            </span>
-            <span>
-              <b>Tax</b>
-              Calculated after confirmation
-            </span>
-            <strong>{money(subtotal + shipping)}</strong>
+          <aside className="gdg-cart-summary gdg-checkout-panel">
+            <div className="gdg-summary-heading">
+              <Sparkles size={20} />
+              <h2>Order Summary</h2>
+            </div>
+            <div className="gdg-summary-rows">
+              <span>
+                <b>Subtotal</b>
+                {money(subtotal)}
+              </span>
+              <span>
+                <b>Shipping estimate</b>
+                {money(shipping)}
+              </span>
+              <span>
+                <b>Tax</b>
+                <em>Calculated after confirmation</em>
+              </span>
+              <strong>
+                <b>Total</b>
+                {money(total)}
+              </strong>
+            </div>
+            {settings.freeShippingThreshold !== null && freeShippingRemaining !== null && subtotal > 0 ? (
+              <div className="gdg-free-shipping">
+                <strong>{freeShippingRemaining > 0 ? `You\u2019re only ${money(freeShippingRemaining)} away from free shipping!` : "Free shipping unlocked!"}</strong>
+                <span><i style={{ width: `${freeShippingProgress}%` }} /></span>
+                <small>Secure shipping with tracking.</small>
+              </div>
+            ) : (
+              <div className="gdg-free-shipping muted">
+                <strong>Orders are packed securely and shipped with tracking.</strong>
+                <small>Questions? Email {contactEmail}.</small>
+              </div>
+            )}
             <label>
               Name
-              <input value={customerName} onChange={(event) => setCustomerName(event.currentTarget.value)} placeholder="Your name" />
+              <span className="gdg-checkout-field">
+                <User size={17} />
+                <input value={customerName} onChange={(event) => setCustomerName(event.currentTarget.value)} placeholder="Your name" />
+              </span>
             </label>
             <label>
               Email
-              <input value={customerEmail} onChange={(event) => setCustomerEmail(event.currentTarget.value)} placeholder="you@example.com" type="email" />
+              <span className="gdg-checkout-field">
+                <Mail size={17} />
+                <input value={customerEmail} onChange={(event) => setCustomerEmail(event.currentTarget.value)} placeholder="you@example.com" type="email" />
+              </span>
             </label>
             <label>
               Phone <span>optional</span>
-              <input value={customerPhone} onChange={(event) => setCustomerPhone(event.currentTarget.value)} placeholder="Optional phone number" type="tel" />
+              <span className="gdg-checkout-field">
+                <Phone size={17} />
+                <input value={customerPhone} onChange={(event) => setCustomerPhone(event.currentTarget.value)} placeholder="Optional phone number" type="tel" />
+              </span>
             </label>
             <label>
               Notes <span>optional</span>
-              <textarea value={customerNotes} onChange={(event) => setCustomerNotes(event.currentTarget.value)} placeholder="Questions, pickup request, or products you are looking for." rows={4} />
+              <span className="gdg-checkout-field textarea">
+                <MessageCircle size={17} />
+                <textarea value={customerNotes} onChange={(event) => setCustomerNotes(event.currentTarget.value)} placeholder="Questions, pickup request, or anything we should know?" rows={4} />
+              </span>
             </label>
-            <button className="gdg-primary-button wide" type="button" disabled={busy || !customerEmail.trim() || !customerName.trim()} onClick={checkout}>
-              {busy ? "Working..." : settings.checkoutConfigured ? "Checkout" : "Request Invoice"}
+            {hasBlockingStockIssue ? <p className="gdg-summary-warning">Please remove sold-out items or update changed quantities before checkout.</p> : null}
+            <button className="gdg-primary-button wide gdg-checkout-button" type="button" disabled={checkoutDisabled} onClick={checkout}>
+              <Lock size={17} />
+              <span>
+                {busy ? "Working..." : settings.checkoutConfigured ? "Proceed to Checkout" : "Request Invoice"}
+                <small>{settings.checkoutConfigured ? "Secure Stripe Checkout" : "No card is charged today"}</small>
+              </span>
+              <ChevronRight size={18} />
             </button>
-            <small>{settings.checkoutConfigured ? "Stripe handles payment securely." : "No card is charged. Inventory is confirmed before invoice payment."}</small>
+            <div className="gdg-payment-row" aria-label="Accepted payment note">
+              <CreditCard size={16} />
+              <small>{settings.checkoutConfigured ? "Cards accepted securely through Stripe." : `We will contact you shortly at ${contactEmail}.`}</small>
+            </div>
+            <div className="gdg-payment-icons" aria-hidden="true">
+              <span>VISA</span>
+              <span>MC</span>
+              <span>AMEX</span>
+              <span>DISC</span>
+              <span>Pay</span>
+            </div>
           </aside>
         </div>
       ) : (
-        <div className="gdg-empty">
-          <ShoppingCart size={30} />
-          <h2>Your cart is empty</h2>
-          <p>Add a product to start a checkout or invoice request.</p>
-          <Link href="/shop" className="gdg-primary-button">
-            Back to Shop
-          </Link>
+        <div className="gdg-empty gdg-cart-empty">
+          <span>
+            <ShoppingCart size={34} />
+          </span>
+          <h2>Your cart is waiting for something awesome.</h2>
+          <p>Browse Pok&eacute;mon sealed products, sports cards, and collectibles.</p>
+          <div className="gdg-card-actions">
+            <Link href="/shop?category=pokemon" className="gdg-primary-button">
+              Shop Pok&eacute;mon
+            </Link>
+            <Link href="/shop?sort=newest" className="gdg-secondary-button">
+              View New Arrivals
+            </Link>
+          </div>
         </div>
       )}
     </section>

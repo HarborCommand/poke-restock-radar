@@ -498,6 +498,51 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(webhookRoute, /handleStripeWebhook/);
 });
 
+test("GameDayGrabs cart checkout is polished while preserving server-side guards", () => {
+  const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
+  const cartRoute = fs.readFileSync(new URL("../src/app/api/storefront/cart/route.ts", import.meta.url), "utf8");
+  const sessionRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/session/route.ts", import.meta.url), "utf8");
+  const invoiceRoute = fs.readFileSync(new URL("../src/app/api/storefront/invoice-request/route.ts", import.meta.url), "utf8");
+
+  assert.match(client, /Your Pok&eacute;mon Picks Are Almost Yours/);
+  assert.match(client, /Review your cart and complete secure checkout/);
+  assert.match(client, /Secure Checkout/);
+  assert.match(client, /Fast Shipping/);
+  assert.match(client, /Carefully Packaged/);
+  assert.match(client, /100% Authentic/);
+  assert.match(client, /Proceed to Checkout/);
+  assert.match(client, /Secure Stripe Checkout/);
+  assert.match(client, /Request Invoice/);
+  assert.match(client, /No card is charged today/);
+  assert.match(client, /Your cart is waiting for something awesome/);
+  assert.match(client, /Shop Pok&eacute;mon/);
+  assert.match(client, /Remove sold-out item/);
+  assert.match(client, /Quantity updated because available stock changed/);
+  assert.match(client, /cartHasBlockingStockIssue/);
+  assert.match(client, /checkoutDisabled/);
+  assert.match(client, /\/api\/storefront\/checkout\/session/);
+  assert.match(client, /\/api\/storefront\/invoice-request/);
+  assert.doesNotMatch(client, /Card Element|card number|cost basis|supplier notes|admin notes/i);
+
+  assert.match(css, /gdg-checkout-trust-row/);
+  assert.match(css, /gdg-checkout-panel/);
+  assert.match(css, /gdg-cart-line-price/);
+  assert.match(css, /gdg-free-shipping/);
+  assert.match(css, /@media \(max-width: 820px\)/);
+  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) minmax\(340px, 420px\)/);
+
+  assert.match(cartRoute, /getCartProducts\(input\.items, \{ strict: false \}\)/);
+  assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
+  assert.match(invoiceRoute, /createInvoiceRequest\(input\)/);
+  assert.match(storefront, /export async function getCartProducts\(items: Array<\{ id: string; quantity: number \}>, options: \{ strict\?: boolean \} = \{\}\)/);
+  assert.match(storefront, /const strict = options\.strict \?\? true/);
+  assert.match(storefront, /if \(strict && product\.status !== "active"\)/);
+  assert.match(storefront, /if \(strict && requestedQuantity > product\.availableQuantity\)/);
+  assert.match(storefront, /unit_amount: Math\.round\(item\.unitPrice \* 100\)/);
+});
+
 test("admin orders dashboard and fulfillment center surface Stripe and invoice events", () => {
   const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");

@@ -262,7 +262,8 @@ export async function getPublicStoreProduct(slug: string) {
   return item ? publicProductToDTO(item) : null;
 }
 
-export async function getCartProducts(items: Array<{ id: string; quantity: number }>) {
+export async function getCartProducts(items: Array<{ id: string; quantity: number }>, options: { strict?: boolean } = {}) {
+  const strict = options.strict ?? true;
   await releaseExpiredReservations();
   const requested = new Map(items.map((item) => [item.id, item.quantity]));
   const products = await prisma.inventoryItem.findMany({
@@ -274,10 +275,11 @@ export async function getCartProducts(items: Array<{ id: string; quantity: numbe
   }
   return products.map((item) => {
     const product = publicProductToDTO(item);
-    if (!product || product.status !== "active") throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
+    if (!product) throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
     const requestedQuantity = requested.get(item.id) ?? 0;
-    if (requestedQuantity > product.availableQuantity) throw new Error(`Only ${product.availableQuantity} available for ${product.title}.`);
-    if (requestedQuantity > product.maxQuantityPerOrder) throw new Error(`Max ${product.maxQuantityPerOrder} per order for ${product.title}.`);
+    if (strict && product.status !== "active") throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
+    if (strict && requestedQuantity > product.availableQuantity) throw new Error(`Only ${product.availableQuantity} available for ${product.title}.`);
+    if (strict && requestedQuantity > product.maxQuantityPerOrder) throw new Error(`Max ${product.maxQuantityPerOrder} per order for ${product.title}.`);
     return { item, product, quantity: requestedQuantity };
   });
 }

@@ -13,7 +13,7 @@ const cartSchema = z.object({
 export async function POST(request: Request) {
   try {
     const input = cartSchema.parse(await readJson(request));
-    const cart = await getCartProducts(input.items);
+    const cart = await getCartProducts(input.items, { strict: false });
     return ok({
       items: cart.map(({ product, quantity }) => ({
         ...product,
