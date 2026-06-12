@@ -312,6 +312,7 @@ export type InventorySaleDTO = {
   inventoryItemId: string;
   itemName: string;
   quantitySold: number;
+  actualSalePrice: number;
   soldPricePerItem: number;
   grossSale: number;
   platform: string;
@@ -319,6 +320,7 @@ export type InventorySaleDTO = {
   shippingCost: number;
   netSale: number;
   costBasis: number;
+  stockLotSource: string;
   profitLoss: number;
   roiPercent: number | null;
   soldAt: string;

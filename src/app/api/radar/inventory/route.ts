@@ -48,14 +48,14 @@ export async function GET(request: Request) {
     });
   }
   if (format === "sales-csv") {
-    const headers = ["soldDate", "itemName", "quantitySold", "soldPricePerItem", "grossSale", "platform", "fees", "shippingCost", "netSale", "costBasis", "profitLoss", "roiPercent"];
+    const headers = ["soldDate", "itemName", "quantitySold", "actualSalePrice", "grossSale", "platform", "fees", "shippingCost", "netSale", "costBasis", "profitLoss", "roiPercent"];
     const rows = dashboard.inventory.flatMap((item) =>
       item.sales.map((sale) =>
         [
           sale.soldAt,
           item.itemName,
           sale.quantitySold,
-          sale.soldPricePerItem,
+          sale.actualSalePrice,
           sale.grossSale,
           sale.platform,
           sale.fees,

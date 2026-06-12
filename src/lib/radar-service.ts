@@ -1505,13 +1505,15 @@ function inventoryStockLotToDTO(lot: Prisma.InventoryStockLotGetPayload<Record<s
 
 function inventorySaleToDTO(
   sale: Prisma.InventorySaleGetPayload<Record<string, never>>,
-  itemName = ""
+  itemName = "",
+  stockLotSource = "FIFO stock lots"
 ): InventorySaleDTO {
   return {
     id: sale.id,
     inventoryItemId: sale.inventoryItemId,
     itemName,
     quantitySold: sale.quantitySold,
+    actualSalePrice: sale.soldPricePerItem,
     soldPricePerItem: sale.soldPricePerItem,
     grossSale: sale.grossSale,
     platform: sale.platform,
@@ -1519,6 +1521,7 @@ function inventorySaleToDTO(
     shippingCost: sale.shippingCost,
     netSale: sale.netSale,
     costBasis: sale.costBasis,
+    stockLotSource,
     profitLoss: sale.profitLoss,
     roiPercent: sale.roiPercent,
     soldAt: sale.soldAt.toISOString(),
@@ -1593,16 +1596,45 @@ function inventoryEffectiveTotalCost(item: Pick<InventoryItemWithInclude, "cost"
 }
 
 function inventoryEffectiveAverageCost(item: Pick<InventoryItemWithInclude, "cost" | "quantity" | "purchaseExtraCost" | "totalCost" | "msrp">) {
-  if (item.cost > 0) return item.cost;
   const totalCost = inventoryEffectiveTotalCost(item);
-  if (item.quantity > 0) return totalCost / item.quantity;
+  if (item.quantity > 0 && totalCost > 0) return totalCost / item.quantity;
+  if (item.cost > 0) return item.cost;
   return item.cost > 0 ? item.cost : inventoryMsrpFallbackCost(item) ?? item.cost;
 }
 
 function inventoryLotUnitCost(item: Pick<InventoryItemWithInclude, "msrp">, lot: { costPerUnit: number; totalCost: number; quantity: number }) {
-  if (lot.costPerUnit > 0) return lot.costPerUnit;
   if (lot.totalCost > 0 && lot.quantity > 0) return lot.totalCost / lot.quantity;
+  if (lot.costPerUnit > 0) return lot.costPerUnit;
   return inventoryMsrpFallbackCost(item) ?? lot.costPerUnit;
+}
+
+export function inventoryLotUnitCostForTest(lot: { costPerUnit: number; totalCost: number; quantity: number }, msrp?: number | null) {
+  return inventoryLotUnitCost({ msrp: msrp ?? null }, lot);
+}
+
+type InventorySaleProfitInput = {
+  actualSalePrice: number;
+  quantitySold: number;
+  costBasis: number;
+  fees?: number;
+  shippingCost?: number;
+  targetSellPrice?: number | null;
+  publicStorePrice?: number | null;
+};
+
+export function calculateInventorySaleProfitForTest(input: InventorySaleProfitInput) {
+  const grossSale = input.actualSalePrice * input.quantitySold;
+  const fees = input.fees ?? 0;
+  const shippingCost = input.shippingCost ?? 0;
+  const netSale = grossSale - fees - shippingCost;
+  const profitLoss = netSale - input.costBasis;
+  return {
+    grossSale,
+    netSale,
+    costBasis: input.costBasis,
+    profitLoss,
+    roiPercent: input.costBasis > 0 ? (profitLoss / input.costBasis) * 100 : null
+  };
 }
 
 function inventoryOwnedCostBasis(item: InventoryItemWithInclude) {
@@ -1759,7 +1791,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     businessProfitLoss: marketProfitLoss === null ? realizedProfitLoss : realizedProfitLoss + marketProfitLoss,
     lastThreeComps: marketPriceRecords.map(inventoryMarketCompToDTO),
     stockLots: item.stockLots.map(inventoryStockLotToDTO),
-    sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName)),
+    sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName, inventorySaleStockLotSource(item))),
     expectedPlan: item.expectedPlan,
     notes: item.notes,
     createdAt: item.createdAt.toISOString(),
@@ -5280,6 +5312,88 @@ async function syncInventoryItemTotalsFromLots(itemId: string) {
   });
 }
 
+async function recalculateInventorySalesAndLots(itemId: string) {
+  const item = await prisma.inventoryItem.findUnique({
+    where: { id: itemId },
+    include: { stockLots: true, sales: true }
+  });
+  if (!item) throw new Error("Inventory item not found");
+
+  const sortedLots = [...item.stockLots].sort((a, b) => a.purchasedAt.getTime() - b.purchasedAt.getTime() || a.createdAt.getTime() - b.createdAt.getTime());
+  const sortedSales = [...item.sales].sort((a, b) => a.soldAt.getTime() - b.soldAt.getTime() || a.createdAt.getTime() - b.createdAt.getTime());
+  const virtualRemaining = new Map(sortedLots.map((lot) => [lot.id, lot.quantity]));
+  const fallbackAverageCost = inventoryEffectiveAverageCost(item);
+  const operations: Prisma.PrismaPromise<unknown>[] = [];
+  let totalProfitLoss = 0;
+
+  for (const sale of sortedSales) {
+    const grossSale = sale.quantitySold * sale.soldPricePerItem;
+    const fees = sale.fees ?? 0;
+    const shippingCost = sale.shippingCost ?? 0;
+    const netSale = grossSale - fees - shippingCost;
+    let remainingToAllocate = sale.quantitySold;
+    let costBasis = 0;
+
+    for (const lot of sortedLots) {
+      if (remainingToAllocate <= 0) break;
+      const availableFromLot = virtualRemaining.get(lot.id) ?? 0;
+      if (availableFromLot <= 0) continue;
+      const quantityFromLot = Math.min(remainingToAllocate, availableFromLot);
+      costBasis += quantityFromLot * inventoryLotUnitCost(item, lot);
+      virtualRemaining.set(lot.id, availableFromLot - quantityFromLot);
+      remainingToAllocate -= quantityFromLot;
+    }
+
+    if (remainingToAllocate > 0) costBasis += remainingToAllocate * fallbackAverageCost;
+
+    const profitLoss = netSale - costBasis;
+    const roiPercent = costBasis > 0 ? (profitLoss / costBasis) * 100 : null;
+    totalProfitLoss += profitLoss;
+    operations.push(
+      prisma.inventorySale.update({
+        where: { id: sale.id },
+        data: {
+          grossSale,
+          netSale,
+          costBasis,
+          profitLoss,
+          roiPercent
+        }
+      })
+    );
+  }
+
+  for (const lot of sortedLots) {
+    operations.push(
+      prisma.inventoryStockLot.update({
+        where: { id: lot.id },
+        data: { remainingQuantity: virtualRemaining.get(lot.id) ?? lot.remainingQuantity }
+      })
+    );
+  }
+
+  const totalSold = sortedSales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+  const latestSale = sortedSales.at(-1);
+  operations.push(
+    prisma.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        listingStatus: totalSold >= item.quantity && item.quantity > 0 ? "sold" : item.listingStatus === "not_listed" && totalSold > 0 ? "held" : item.listingStatus,
+        soldPrice: latestSale?.soldPricePerItem ?? item.soldPrice,
+        soldAt: latestSale?.soldAt ?? item.soldAt,
+        buyerPlatform: latestSale?.platform ?? item.buyerPlatform,
+        netProfitAfterFees: totalProfitLoss
+      }
+    })
+  );
+
+  if (operations.length) await prisma.$transaction(operations);
+}
+
+function inventorySaleStockLotSource(item: Pick<InventoryItemWithInclude, "stockLots">) {
+  return item.stockLots.length ? "FIFO stock lots" : "Legacy product average cost";
+}
+
 function purchaseCostFromMsrp(cost: number, msrp?: number | null) {
   return cost > 0 ? cost : msrp && msrp > 0 ? msrp : cost;
 }
@@ -5551,7 +5665,7 @@ export async function addInventoryStockLot(
   const existingUnitCostTotal = item.stockLots.length
     ? item.stockLots.reduce((sum, lot) => sum + inventoryLotUnitCost(item, lot) * lot.quantity, 0)
     : item.cost * item.quantity;
-  const nextAverageUnitCost = nextQuantity > 0 ? (existingUnitCostTotal + unitCost * input.quantity) / nextQuantity : item.cost;
+  const nextAverageUnitCost = nextQuantity > 0 ? (existingUnitCostTotal + lotTotal) / nextQuantity : item.cost;
   await prisma.inventoryItem.update({
     where: { id: item.id },
     data: {
@@ -5572,6 +5686,7 @@ export async function addInventoryStockLot(
       currentMarketEstimate: input.currentMarketEstimate ?? item.currentMarketEstimate
     }
   });
+  if (item.sales.length) await recalculateInventorySalesAndLots(item.id);
   return autoMatchInventoryItemMarket(currentUser, item.id);
 }
 
@@ -5629,6 +5744,7 @@ export async function updateInventoryStockLot(
     }
   });
   await syncInventoryItemTotalsFromLots(item.id);
+  await recalculateInventorySalesAndLots(item.id);
   return autoMatchInventoryItemMarket(currentUser, item.id);
 }
 
@@ -5856,6 +5972,7 @@ export async function createInventorySale(
   itemId: string,
   input: {
     quantitySold: number;
+    actualSalePrice?: number;
     soldPricePerItem: number;
     platform: string;
     fees?: number;
@@ -5876,7 +5993,8 @@ export async function createInventorySale(
     throw new Error(`Only ${quantityOwned} available to sell.`);
   }
   const averageCost = inventoryEffectiveAverageCost(item);
-  const grossSale = input.quantitySold * input.soldPricePerItem;
+  const actualSalePrice = input.actualSalePrice ?? input.soldPricePerItem;
+  const grossSale = input.quantitySold * actualSalePrice;
   const fees = input.fees ?? 0;
   const shippingCost = input.shippingCost ?? 0;
   const netSale = grossSale - fees - shippingCost;
@@ -5895,12 +6013,12 @@ export async function createInventorySale(
   if (remainingToAllocate > 0) costBasis += remainingToAllocate * averageCost;
   const profitLoss = netSale - costBasis;
   const roiPercent = costBasis > 0 ? (profitLoss / costBasis) * 100 : null;
-  const sale = await prisma.inventorySale.create({
+  await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
       userId: currentUser.id,
       quantitySold: input.quantitySold,
-      soldPricePerItem: input.soldPricePerItem,
+      soldPricePerItem: actualSalePrice,
       grossSale,
       platform: input.platform,
       fees,
@@ -5913,27 +6031,62 @@ export async function createInventorySale(
       notes: input.notes
     }
   });
-  let quantityToDeduct = input.quantitySold;
-  for (const lot of lotsToUpdate) {
-    if (quantityToDeduct <= 0) break;
-    const quantityFromLot = Math.min(quantityToDeduct, lot.remainingQuantity);
-    quantityToDeduct -= quantityFromLot;
-    await prisma.inventoryStockLot.update({
-      where: { id: lot.id },
-      data: { remainingQuantity: lot.remainingQuantity - quantityFromLot }
-    });
+  await recalculateInventorySalesAndLots(item.id);
+  return recomputeInventoryItem(item.id, currentUser);
+}
+
+export async function updateInventorySale(
+  currentUser: SessionUser,
+  itemId: string,
+  saleId: string,
+  input: {
+    quantitySold?: number;
+    actualSalePrice?: number;
+    soldPricePerItem?: number;
+    platform?: string;
+    fees?: number;
+    shippingCost?: number;
+    soldAt?: Date;
+    notes?: string;
   }
-  const totalSold = soldSoFar + input.quantitySold;
-  await prisma.inventoryItem.update({
-    where: { id: item.id },
+) {
+  const item = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: { stockLots: true, sales: true }
+  });
+  if (!item) throw new Error("Inventory item not found");
+  const sale = item.sales.find((record) => record.id === saleId);
+  if (!sale) throw new Error("Sale not found");
+
+  const quantitySold = input.quantitySold ?? sale.quantitySold;
+  const totalAvailable = item.stockLots.length ? item.stockLots.reduce((sum, lot) => sum + lot.quantity, 0) : item.quantity;
+  const soldByOtherSales = item.sales.filter((record) => record.id !== sale.id).reduce((sum, record) => sum + record.quantitySold, 0);
+  if (soldByOtherSales + quantitySold > totalAvailable) {
+    throw new Error(`Only ${Math.max(0, totalAvailable - soldByOtherSales)} available for this sale after other recorded sales.`);
+  }
+
+  const actualSalePrice = input.actualSalePrice ?? input.soldPricePerItem ?? sale.soldPricePerItem;
+  const fees = input.fees ?? sale.fees;
+  const shippingCost = input.shippingCost ?? sale.shippingCost;
+  const grossSale = quantitySold * actualSalePrice;
+  const netSale = grossSale - fees - shippingCost;
+
+  await prisma.inventorySale.update({
+    where: { id: sale.id },
     data: {
-      listingStatus: totalSold >= item.quantity ? "sold" : item.listingStatus === "not_listed" ? "held" : item.listingStatus,
-      soldPrice: input.soldPricePerItem,
-      soldAt: input.soldAt,
-      buyerPlatform: input.platform,
-      netProfitAfterFees: item.sales.reduce((sum, existingSale) => sum + existingSale.profitLoss, 0) + sale.profitLoss
+      quantitySold,
+      soldPricePerItem: actualSalePrice,
+      grossSale,
+      platform: input.platform ?? sale.platform,
+      fees,
+      shippingCost,
+      netSale,
+      soldAt: input.soldAt ?? sale.soldAt,
+      notes: input.notes
     }
   });
+
+  await recalculateInventorySalesAndLots(item.id);
   return recomputeInventoryItem(item.id, currentUser);
 }
 

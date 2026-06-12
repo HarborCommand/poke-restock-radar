@@ -683,12 +683,47 @@ export const upcLookupSchema = z.object({
 
 export const inventorySaleCreateSchema = z.object({
   quantitySold: z.coerce.number().int().min(1).max(1000),
-  soldPricePerItem: requiredMoney,
-  platform: z.enum(["ebay", "facebook", "whatnot", "friend", "local", "other"]).default("ebay"),
+  actualSalePrice: optionalMoney,
+  soldPricePerItem: optionalMoney,
+  platform: z.enum(["ebay", "facebook", "whatnot", "website", "friend", "local", "other"]).default("ebay"),
   fees: optionalMoney.default(0),
   shippingCost: optionalMoney.default(0),
   soldAt: boundedDate.default(() => new Date()),
   notes: optionalTrimmed
+}).transform((input, context) => {
+  const actualSalePrice = input.actualSalePrice ?? input.soldPricePerItem;
+  if (actualSalePrice === undefined || actualSalePrice === null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["actualSalePrice"],
+      message: "Actual sale price is required."
+    });
+    return z.NEVER;
+  }
+  return {
+    ...input,
+    actualSalePrice,
+    soldPricePerItem: actualSalePrice
+  };
+});
+
+export const inventorySaleUpdateSchema = z.object({
+  quantitySold: z.coerce.number().int().min(1).max(1000).optional(),
+  actualSalePrice: optionalMoney,
+  soldPricePerItem: optionalMoney,
+  platform: z.enum(["ebay", "facebook", "whatnot", "website", "friend", "local", "other"]).optional(),
+  fees: optionalMoney,
+  shippingCost: optionalMoney,
+  soldAt: boundedDate.optional(),
+  notes: optionalTrimmed
+}).transform((input) => {
+  const actualSalePrice = input.actualSalePrice ?? input.soldPricePerItem;
+  return {
+    ...input,
+    ...(actualSalePrice === undefined || actualSalePrice === null
+      ? {}
+      : { actualSalePrice, soldPricePerItem: actualSalePrice })
+  };
 });
 
 export const storefrontCartItemSchema = z.object({

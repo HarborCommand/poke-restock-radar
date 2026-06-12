@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { inventoryCompStatsForTest, summarizeInventory } from "../src/lib/radar-service";
+import {
+  calculateInventorySaleProfitForTest,
+  inventoryCompStatsForTest,
+  inventoryLotUnitCostForTest,
+  summarizeInventory
+} from "../src/lib/radar-service";
 import { inferTcgcsvProductType, normalizeTcgcsvProductText } from "../src/lib/tcgcsv-market";
 import type { InventoryItemDTO, InventorySaleDTO } from "../src/types/radar";
 
@@ -11,6 +16,7 @@ function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
     inventoryItemId: "item-1",
     itemName: "Test Product",
     quantitySold: 1,
+    actualSalePrice: 20,
     soldPricePerItem: 20,
     grossSale: 20,
     platform: "local",
@@ -18,6 +24,7 @@ function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
     shippingCost: 0,
     netSale: 20,
     costBasis: 10,
+    stockLotSource: "FIFO stock lots",
     profitLoss: 10,
     roiPercent: 100,
     soldAt: new Date().toISOString(),
@@ -167,6 +174,61 @@ test("sale reduces remaining inventory value and realized profit comes from sale
   assert.equal(summary.inventoryCostBasis, 20);
   assert.equal(summary.totalSalesNet, 18);
   assert.equal(summary.realizedProfitLoss, 8);
+});
+
+test("inventory sale profit uses actual sale price instead of target price", () => {
+  const result = calculateInventorySaleProfitForTest({
+    actualSalePrice: 90,
+    quantitySold: 1,
+    costBasis: 80.74,
+    targetSellPrice: 95,
+    publicStorePrice: 95
+  });
+
+  assert.equal(result.grossSale, 90);
+  assert.equal(Number(result.profitLoss.toFixed(2)), 9.26);
+});
+
+test("inventory sale profit includes full stock lot cost basis when tax and shipping are part of the lot", () => {
+  const result = calculateInventorySaleProfitForTest({
+    actualSalePrice: 90,
+    quantitySold: 1,
+    costBasis: 96.49,
+    targetSellPrice: 95,
+    publicStorePrice: 95
+  });
+
+  assert.equal(result.grossSale, 90);
+  assert.equal(Number(result.profitLoss.toFixed(2)), -6.49);
+});
+
+test("stock lot total cost overrides raw unit cost for sale cost basis", () => {
+  const unitCost = inventoryLotUnitCostForTest({
+    costPerUnit: 80.74,
+    totalCost: 96.49,
+    quantity: 1
+  });
+
+  assert.equal(Number(unitCost.toFixed(2)), 96.49);
+});
+
+test("inventory sale editing and stock lot editing recalculate realized profit", () => {
+  const service = fs.readFileSync(new URL("../src/lib/radar-service.ts", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const saleUpdateRoute = fs.readFileSync(new URL("../src/app/api/radar/inventory/[itemId]/sales/[saleId]/route.ts", import.meta.url), "utf8");
+
+  assert.match(service, /export async function updateInventorySale/);
+  assert.match(service, /await recalculateInventorySalesAndLots\(item\.id\)/);
+  assert.match(service, /await syncInventoryItemTotalsFromLots\(item\.id\);[\s\S]*await recalculateInventorySalesAndLots\(item\.id\);/);
+  assert.match(service, /const grossSale = input\.actualSalePrice \* input\.quantitySold/);
+  assert.match(service, /targetSellPrice\?: number \| null/);
+  assert.match(service, /publicStorePrice\?: number \| null/);
+  assert.match(app, /label="Actual sale price"/);
+  assert.match(app, /Actual Sale Price/);
+  assert.match(app, /Stock Lot Source/);
+  assert.match(app, /Profit uses actual recorded sale price and stock lot cost basis/);
+  assert.match(saleUpdateRoute, /inventorySaleUpdateSchema/);
+  assert.match(saleUpdateRoute, /updateInventorySale/);
 });
 
 test("market value and unrealized profit use real comps only", () => {

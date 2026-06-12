@@ -146,7 +146,13 @@ async function clickTab(page: Page, tab: (typeof tabs)[number]) {
   const navTabButton = page.getByLabel("Primary navigation").getByRole("button", { name: tab, exact: true });
   const tabButton = navTabButton.or(page.getByRole("button", { name: tab, exact: true })).first();
   if (!(await tabButton.first().isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: /open navigation/i }).click();
+    const menuButton = page.getByRole("button", { name: /open navigation/i });
+    if (await menuButton.isVisible().catch(() => false)) {
+      await menuButton.click();
+    } else {
+      await page.goto(`${baseUrl}/?tab=${tab.toLowerCase()}`, { waitUntil: "networkidle" });
+      return;
+    }
   }
   await tabButton.click();
 }

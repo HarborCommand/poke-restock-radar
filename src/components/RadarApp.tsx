@@ -244,7 +244,7 @@ const inventoryPlanOptions = [
   { value: "Grade first", label: "Grade first" },
   { value: "Rip/open", label: "Rip/open" }
 ];
-const salePlatforms = ["ebay", "facebook", "whatnot", "friend", "local", "other"];
+const salePlatforms = ["local", "ebay", "whatnot", "website", "facebook", "friend", "other"];
 
 function inventoryCategoryFromLookup(value?: string | null) {
   const normalized = (value || "").toLowerCase();
@@ -1501,7 +1501,7 @@ export function RadarApp() {
         {activeTab === "orders" ? (
           <StorefrontOrdersPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
-        {activeTab === "sales" ? <SalesPanel dashboard={dashboard} /> : null}
+        {activeTab === "sales" ? <SalesPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} /> : null}
         {activeTab === "alerts" ? (
           <AlertsPanel
             dashboard={dashboard}
@@ -2657,7 +2657,17 @@ function KeywordsPanel({ dashboard }: { dashboard: DashboardDTO }) {
   );
 }
 
-function SalesPanel({ dashboard }: { dashboard: DashboardDTO }) {
+function SalesPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+}) {
   const sales = dashboard.inventory.flatMap((item) => item.sales);
   return (
     <section className="sales-page">
@@ -2666,6 +2676,9 @@ function SalesPanel({ dashboard }: { dashboard: DashboardDTO }) {
         sales={sales}
         selectedItem={dashboard.inventory[0] ?? null}
         summary={dashboard.inventorySummary}
+        busy={busy}
+        busyLabel={busyLabel}
+        submit={submit}
         onRecordSale={() => undefined}
       />
     </section>
@@ -5298,6 +5311,9 @@ function InventoryPanel({
           sales={allSales}
           selectedItem={selectedItem}
           summary={summary}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
           onRecordSale={() => selectedItem && setSaleItemId(selectedItem.id)}
         />
       ) : null}
@@ -7608,9 +7624,9 @@ function InventoryList({
         <span>Quantity</span>
         <span>Avg Cost</span>
         <span>Total Cost</span>
-        <span>Sell Price</span>
+        <span title="Target/listing price only. Realized profit uses actual recorded sale price and stock lot cost basis.">Sell Price</span>
         <span>Sold</span>
-        <span>Profit / Loss</span>
+        <span title="Profit uses actual recorded sale price and stock lot cost basis.">Realized Profit</span>
         <span>Status</span>
         <span>Actions</span>
       </div>
@@ -7653,7 +7669,8 @@ function InventoryList({
             className={`catalog-cell strong ${
               (item.realizedProfitLoss ?? 0) >= 0 ? "profit-good" : "profit-bad"
             }`}
-            data-label="Profit / Loss"
+            data-label="Realized Profit"
+            title="Profit uses actual recorded sale price and stock lot cost basis."
           >
             {item.sales.length ? money(item.realizedProfitLoss) : "—"}
           </span>
@@ -7797,8 +7814,9 @@ function InventoryDetailsModal({
               <DetailStat label="Sold" value={String(item.quantitySold)} />
               <DetailStat label="Average Cost" value={money(item.averageCost)} />
               <DetailStat label="Total Cost Basis" value={money(item.averageCost * item.quantityOwned)} />
-              <DetailStat label="Sales" value={money(item.totalSalesGross)} />
-              <DetailStat label="Profit / Loss" value={item.sales.length ? money(item.realizedProfitLoss) : "No sales yet"} tone={(item.realizedProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
+              <DetailStat label="Target Sell Price" value={item.targetSellPrice !== null ? money(item.targetSellPrice) : "Not set"} />
+              <DetailStat label="Actual Sales" value={money(item.totalSalesGross)} />
+              <DetailStat label="Realized Profit" value={item.sales.length ? money(item.realizedProfitLoss) : "No sales yet"} tone={(item.realizedProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
             </div>
             <div className="detail-line-list">
               <span>Status: <strong>{inventoryStockStatusLabel(item)}</strong></span>
@@ -8598,7 +8616,7 @@ function SelectedSalesPanel({
               <div className="lot-row lot-head">
                 <span>Sold</span>
                 <span>Qty</span>
-                <span>Sold Price</span>
+                <span>Actual Sale Price</span>
                 <span>Platform</span>
                 <span>Fees</span>
                 <span>Ship</span>
@@ -8609,7 +8627,7 @@ function SelectedSalesPanel({
                 <div className="lot-row sale-row" key={sale.id}>
                   <span>{shortDate(sale.soldAt)}</span>
                   <span>{sale.quantitySold}</span>
-                  <span>{money(sale.soldPricePerItem)}</span>
+                  <span>{money(sale.actualSalePrice)}</span>
                   <strong>{formatStatus(sale.platform)}</strong>
                   <span>{money(sale.fees)}</span>
                   <span>{money(sale.shippingCost)}</span>
@@ -8688,7 +8706,7 @@ function RecordSaleForm({
   const [shipping, setShipping] = useState(0);
   const gross = quantity * price;
   const net = gross - fees - shipping;
-  const costBasis = item.averageCost * quantity;
+  const costBasis = inventorySaleCostBasisPreview(item, quantity);
   const profit = net - costBasis;
   const roi = costBasis > 0 ? (profit / costBasis) * 100 : null;
   return (
@@ -8716,8 +8734,8 @@ function RecordSaleForm({
           required
         />
         <TextInput
-          name="soldPricePerItem"
-          label="Sold price per item"
+          name="actualSalePrice"
+          label="Actual sale price"
           type="number"
           min="0"
           step="0.01"
@@ -8750,7 +8768,7 @@ function RecordSaleForm({
       <div className="sale-preview">
         <span>Gross {money(gross)}</span>
         <span>Net {money(net)}</span>
-        <span>Cost basis {money(costBasis)}</span>
+        <span>Cost basis {money(costBasis)} ({item.stockLots.length ? "FIFO stock lots" : "average cost"})</span>
         <strong>P/L {money(profit)} ({percent(roi)})</strong>
       </div>
       <button className="mini-action solid" disabled={busy || item.quantityOwned <= 0} type="submit">
@@ -9012,15 +9030,22 @@ function SalesLog({
   sales,
   selectedItem,
   summary,
+  busy,
+  busyLabel,
+  submit,
   onRecordSale
 }: {
   items: InventoryItemDTO[];
   sales: InventorySaleDTO[];
   selectedItem: InventoryItemDTO | null;
   summary: DashboardDTO["inventorySummary"];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
   onRecordSale: () => void;
 }) {
   const [selectedSaleId, setSelectedSaleId] = useState<string>("");
+  const [editSaleId, setEditSaleId] = useState<string>("");
   const [filters, setFilters] = useState({
     search: "",
     platform: "ALL",
@@ -9069,6 +9094,7 @@ function SalesLog({
     [filters, itemById, sorted]
   );
   const selectedSaleRow = saleRows.find(({ sale }) => sale.id === selectedSaleId) ?? null;
+  const editSaleRow = saleRows.find(({ sale }) => sale.id === editSaleId) ?? null;
   const averageSalePrice = summary.itemsSold > 0 ? summary.totalSalesGross / summary.itemsSold : 0;
 
   function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
@@ -9156,7 +9182,22 @@ function SalesLog({
         <SaleDetailsModal
           item={selectedSaleRow.item}
           sale={selectedSaleRow.sale}
+          onEdit={() => setEditSaleId(selectedSaleRow.sale.id)}
           onClose={() => setSelectedSaleId("")}
+        />
+      ) : null}
+      {editSaleRow ? (
+        <EditSaleModal
+          item={editSaleRow.item}
+          sale={editSaleRow.sale}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={async (event, label, run, options) => {
+            await submit(event, label, run, options);
+            setEditSaleId("");
+            setSelectedSaleId("");
+          }}
+          onClose={() => setEditSaleId("")}
         />
       ) : null}
     </section>
@@ -9266,7 +9307,7 @@ function SaleCard({
       </div>
       <div className="sale-money-grid">
         <span>
-          <small>Sale Price</small>
+          <small>Actual Sale</small>
           <strong>{money(sale.grossSale)}</strong>
         </span>
         <span>
@@ -9298,10 +9339,12 @@ function SaleCard({
 function SaleDetailsModal({
   item,
   sale,
+  onEdit,
   onClose
 }: {
   item: InventoryItemDTO | null;
   sale: InventorySaleDTO;
+  onEdit: () => void;
   onClose: () => void;
 }) {
   const tone = saleProfitTone(sale);
@@ -9320,7 +9363,7 @@ function SaleDetailsModal({
         </div>
         <div className="sale-detail-hero">
           <span>
-            <small>Sale Price</small>
+            <small>Actual Sale</small>
             <strong>{money(sale.grossSale)}</strong>
           </span>
           <span>
@@ -9336,8 +9379,9 @@ function SaleDetailsModal({
           <DetailStat label="Sale Date" value={dateTime(sale.soldAt)} />
           <DetailStat label="Platform" value={formatStatus(sale.platform || "Unknown platform")} />
           <DetailStat label="Quantity Sold" value={String(sale.quantitySold)} />
-          <DetailStat label="Price Per Item" value={money(sale.soldPricePerItem)} />
+          <DetailStat label="Actual Sale Price" value={money(sale.actualSalePrice)} />
           <DetailStat label="Cost Basis" value={sale.costBasis ? money(sale.costBasis) : "Cost not set"} />
+          <DetailStat label="Stock Lot Source" value={sale.stockLotSource} />
           <DetailStat label="Fees" value={money(sale.fees)} />
           <DetailStat label="Shipping" value={money(sale.shippingCost)} />
           <DetailStat label="ROI" value={percent(sale.roiPercent)} tone={tone === "bad" ? "bad" : tone === "good" ? "good" : "neutral"} />
@@ -9351,10 +9395,125 @@ function SaleDetailsModal({
           </div>
         </section>
         <div className="inventory-edit-actions">
+          <button className="mini-action" type="button" onClick={onEdit}>
+            <Settings size={14} />
+            Edit Sale
+          </button>
           <button className="primary-action" type="button" onClick={onClose}>
             Close
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function EditSaleModal({
+  item,
+  sale,
+  busy,
+  busyLabel,
+  submit,
+  onClose
+}: {
+  item: InventoryItemDTO | null;
+  sale: InventorySaleDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  onClose: () => void;
+}) {
+  const [quantity, setQuantity] = useState(sale.quantitySold);
+  const [price, setPrice] = useState(sale.actualSalePrice);
+  const [fees, setFees] = useState(sale.fees ?? 0);
+  const [shipping, setShipping] = useState(sale.shippingCost ?? 0);
+  const maxQuantity = (item?.quantityOwned ?? 0) + sale.quantitySold;
+  const costBasis = quantity === sale.quantitySold ? sale.costBasis : item ? item.averageCost * quantity : sale.costBasis;
+  const gross = quantity * price;
+  const net = gross - fees - shipping;
+  const profit = net - costBasis;
+  const roi = costBasis > 0 ? (profit / costBasis) * 100 : null;
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal record-sale-modal" role="dialog" aria-modal="true" aria-label={`Edit sale for ${sale.itemName}`}>
+        <div className="edit-card-heading">
+          <div>
+            <h2>Edit Sale</h2>
+            <span>Realized profit is recalculated from actual sale price and FIFO stock lot cost basis.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close edit sale" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form
+          className="record-sale-form"
+          onSubmit={(event) =>
+            submit(
+              event,
+              `Updating sale ${sale.id}`,
+              (form) =>
+                requestJson(`/api/radar/inventory/${sale.inventoryItemId}/sales/${sale.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify(formJson(form))
+                }),
+              { reset: false, success: "Sale updated" }
+            )
+          }
+        >
+          <div className="form-grid compact">
+            <TextInput
+              name="quantitySold"
+              label="Quantity sold"
+              type="number"
+              min="1"
+              max={maxQuantity}
+              value={String(quantity)}
+              onChange={(event) => setQuantity(Math.min(maxQuantity, Math.max(1, Number(event.currentTarget.value) || 1)))}
+              required
+            />
+            <TextInput
+              name="actualSalePrice"
+              label="Actual sale price"
+              type="number"
+              min="0"
+              step="0.01"
+              value={String(price)}
+              onChange={(event) => setPrice(Math.max(0, Number(event.currentTarget.value) || 0))}
+              required
+            />
+            <SelectInput name="platform" label="Platform" defaultValue={sale.platform || "local"} options={salePlatforms.map(optionFromString)} />
+            <TextInput
+              name="fees"
+              label="Fees"
+              type="number"
+              min="0"
+              step="0.01"
+              value={String(fees)}
+              onChange={(event) => setFees(Math.max(0, Number(event.currentTarget.value) || 0))}
+            />
+            <TextInput
+              name="shippingCost"
+              label="Shipping cost"
+              type="number"
+              min="0"
+              step="0.01"
+              value={String(shipping)}
+              onChange={(event) => setShipping(Math.max(0, Number(event.currentTarget.value) || 0))}
+            />
+            <TextInput name="soldAt" label="Sale date" type="date" defaultValue={toDateInput(sale.soldAt)} required />
+            <TextareaInput name="notes" label="Notes" defaultValue={sale.notes ?? ""} wide />
+          </div>
+          <div className="sale-preview">
+            <span>Gross {money(gross)}</span>
+            <span>Net {money(net)}</span>
+            <span>Cost basis {money(costBasis)}</span>
+            <strong>P/L {money(profit)} ({percent(roi)})</strong>
+          </div>
+          <button className="mini-action solid" disabled={busy} type="submit">
+            <Save size={14} />
+            {busyLabel === `Updating sale ${sale.id}` ? "Saving" : "Save Sale"}
+          </button>
+        </form>
       </div>
     </div>
   );
@@ -17222,6 +17381,23 @@ function NotificationSettingsPanel({
       </div>
     </section>
   );
+}
+
+function inventorySaleCostBasisPreview(item: InventoryItemDTO, quantitySold: number) {
+  let remaining = quantitySold;
+  let costBasis = 0;
+  const lots = [...item.stockLots]
+    .filter((lot) => lot.remainingQuantity > 0)
+    .sort((a, b) => new Date(a.purchasedAt).getTime() - new Date(b.purchasedAt).getTime() || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  for (const lot of lots) {
+    if (remaining <= 0) break;
+    const quantityFromLot = Math.min(remaining, lot.remainingQuantity);
+    const lotUnitCost = lot.totalCost > 0 && lot.quantity > 0 ? lot.totalCost / lot.quantity : lot.costPerUnit || item.averageCost;
+    costBasis += quantityFromLot * lotUnitCost;
+    remaining -= quantityFromLot;
+  }
+  if (remaining > 0) costBasis += remaining * item.averageCost;
+  return costBasis;
 }
 
 function AccessManagementPanel({
