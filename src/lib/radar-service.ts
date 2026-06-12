@@ -63,6 +63,7 @@ import type {
   InvestmentReportItemDTO,
   InventoryItemDTO,
   InventoryMarketCompDTO,
+  InventoryProductImageDTO,
   InventorySaleDTO,
   InventoryStockLotDTO,
   InventorySummaryDTO,
@@ -147,6 +148,63 @@ async function ensureProductionInventoryMetadataColumns() {
     throw error;
   });
   await inventoryMetadataSchemaReady;
+}
+
+let inventoryImageSchemaReady: Promise<void> | null = null;
+
+async function ensureInventoryProductImageTable() {
+  inventoryImageSchemaReady ??= (async () => {
+    const databaseUrl = process.env.DATABASE_URL || "";
+    const isSqlite = databaseUrl.startsWith("file:");
+    if (isSqlite) {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "InventoryProductImage" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "inventoryItemId" TEXT NOT NULL,
+          "url" TEXT NOT NULL,
+          "altText" TEXT,
+          "sortOrder" INTEGER NOT NULL DEFAULT 0,
+          "isPrimary" BOOLEAN NOT NULL DEFAULT false,
+          "source" TEXT NOT NULL DEFAULT 'manual',
+          "showInStore" BOOLEAN NOT NULL DEFAULT true,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "InventoryProductImage_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `);
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_url_key" ON "InventoryProductImage"("inventoryItemId", "url")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_idx" ON "InventoryProductImage"("inventoryItemId")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_sortOrder_idx" ON "InventoryProductImage"("inventoryItemId", "sortOrder")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryProductImage_isPrimary_idx" ON "InventoryProductImage"("isPrimary")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryProductImage_showInStore_idx" ON "InventoryProductImage"("showInStore")`);
+      return;
+    }
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "InventoryProductImage" (
+        "id" TEXT NOT NULL,
+        "inventoryItemId" TEXT NOT NULL,
+        "url" TEXT NOT NULL,
+        "altText" TEXT,
+        "sortOrder" INTEGER NOT NULL DEFAULT 0,
+        "isPrimary" BOOLEAN NOT NULL DEFAULT false,
+        "source" TEXT NOT NULL DEFAULT 'manual',
+        "showInStore" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "InventoryProductImage_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "InventoryProductImage_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_url_key" ON "InventoryProductImage"("inventoryItemId", "url")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_idx" ON "InventoryProductImage"("inventoryItemId")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_sortOrder_idx" ON "InventoryProductImage"("inventoryItemId", "sortOrder")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryProductImage_isPrimary_idx" ON "InventoryProductImage"("isPrimary")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryProductImage_showInStore_idx" ON "InventoryProductImage"("showInStore")`);
+  })().catch((error) => {
+    inventoryImageSchemaReady = null;
+    throw error;
+  });
+  await inventoryImageSchemaReady;
 }
 
 const productDiscoverySourceInclude = {
@@ -286,6 +344,9 @@ const inventoryItemInclude = {
   },
   sales: {
     orderBy: { soldAt: "desc" as const }
+  },
+  productImages: {
+    orderBy: [{ isPrimary: "desc" as const }, { sortOrder: "asc" as const }, { createdAt: "asc" as const }]
   }
 } satisfies Prisma.InventoryItemInclude;
 
@@ -1481,6 +1542,140 @@ function barcodeScanToDTO(scan: Prisma.BarcodeScanGetPayload<Record<string, neve
   };
 }
 
+function inventoryProductImageToDTO(image: Prisma.InventoryProductImageGetPayload<Record<string, never>>): InventoryProductImageDTO {
+  return {
+    id: image.id,
+    inventoryItemId: image.inventoryItemId,
+    url: image.url,
+    altText: image.altText,
+    sortOrder: image.sortOrder,
+    isPrimary: image.isPrimary,
+    source: image.source as InventoryProductImageDTO["source"],
+    showInStore: image.showInStore,
+    createdAt: image.createdAt.toISOString(),
+    updatedAt: image.updatedAt.toISOString()
+  };
+}
+
+function orderedInventoryProductImages(images: Prisma.InventoryProductImageGetPayload<Record<string, never>>[]) {
+  return [...images].sort((left, right) => {
+    if (left.isPrimary !== right.isPrimary) return left.isPrimary ? -1 : 1;
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
+    return left.createdAt.getTime() - right.createdAt.getTime();
+  });
+}
+
+function uniqueImageUrls(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  return values
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .filter((value) => {
+      if (seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+}
+
+async function syncInventoryImageFields(itemId: string) {
+  const images = await prisma.inventoryProductImage.findMany({
+    where: { inventoryItemId: itemId },
+    orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }]
+  });
+  let ordered = orderedInventoryProductImages(images);
+  if (ordered.length) {
+    const desiredPrimary = ordered.find((image) => image.isPrimary) ?? ordered[0];
+    const primaryCount = ordered.filter((image) => image.isPrimary).length;
+    if (primaryCount !== 1) {
+      await prisma.inventoryProductImage.updateMany({
+        where: { inventoryItemId: itemId, id: { not: desiredPrimary.id } },
+        data: { isPrimary: false }
+      });
+      await prisma.inventoryProductImage.update({ where: { id: desiredPrimary.id }, data: { isPrimary: true } });
+      ordered = ordered.map((image) => ({ ...image, isPrimary: image.id === desiredPrimary.id }));
+    }
+  }
+  const primary = ordered.find((image) => image.isPrimary) ?? ordered[0] ?? null;
+  const publicUrls = ordered.filter((image) => image.showInStore).map((image) => image.url);
+  await prisma.inventoryItem.update({
+    where: { id: itemId },
+    data: {
+      imageUrl: primary?.url ?? null,
+      publicImages: publicUrls.length ? JSON.stringify(publicUrls) : null
+    }
+  });
+}
+
+async function ensureInventoryProductImage(
+  itemId: string,
+  input: {
+    url?: string | null;
+    altText?: string | null;
+    isPrimary?: boolean;
+    sortOrder?: number;
+    source?: InventoryProductImageDTO["source"];
+    showInStore?: boolean;
+  }
+) {
+  const url = input.url?.trim();
+  if (!url) return null;
+  const existingImages = await prisma.inventoryProductImage.findMany({
+    where: { inventoryItemId: itemId },
+    orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }]
+  });
+  const existing = existingImages.find((image) => image.url === url) ?? null;
+  const shouldBePrimary = Boolean(input.isPrimary) || !existingImages.some((image) => image.isPrimary);
+  if (shouldBePrimary) {
+    await prisma.inventoryProductImage.updateMany({ where: { inventoryItemId: itemId }, data: { isPrimary: false } });
+  }
+  const nextSortOrder = input.sortOrder ?? existing?.sortOrder ?? existingImages.length;
+  const data = {
+    altText: input.altText ?? existing?.altText ?? null,
+    sortOrder: nextSortOrder,
+    isPrimary: shouldBePrimary || Boolean(existing?.isPrimary),
+    source: input.source ?? (existing?.source as InventoryProductImageDTO["source"] | undefined) ?? "manual",
+    showInStore: input.showInStore ?? existing?.showInStore ?? true
+  };
+  const image = existing
+    ? await prisma.inventoryProductImage.update({ where: { id: existing.id }, data })
+    : await prisma.inventoryProductImage.create({
+        data: {
+          inventoryItemId: itemId,
+          url,
+          ...data
+        }
+      });
+  await syncInventoryImageFields(itemId);
+  return image;
+}
+
+async function backfillInventoryProductImages(currentUser: SessionUser) {
+  const candidates = await prisma.inventoryItem.findMany({
+    where: {
+      AND: [
+        { OR: [{ userId: null }, { userId: currentUser.id }] },
+        { productImages: { none: {} } },
+        { OR: [{ imageUrl: { not: null } }, { publicImages: { not: null } }] }
+      ]
+    },
+    select: { id: true, itemName: true, imageUrl: true, publicImages: true },
+    take: 200
+  });
+  for (const item of candidates) {
+    const urls = uniqueImageUrls([item.imageUrl, ...parseJsonStringArray(item.publicImages)]);
+    for (const [index, url] of urls.entries()) {
+      await ensureInventoryProductImage(item.id, {
+        url,
+        altText: `${item.itemName} image ${index + 1}`,
+        isPrimary: index === 0,
+        sortOrder: index,
+        source: "url",
+        showInStore: true
+      });
+    }
+  }
+}
+
 function inventoryStockLotToDTO(lot: Prisma.InventoryStockLotGetPayload<Record<string, never>>): InventoryStockLotDTO {
   return {
     id: lot.id,
@@ -1692,6 +1887,19 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   const netMarketValue = grossMarketValue === null ? null : grossMarketValue - (item.estimatedEbayFee ?? 0) - (item.estimatedShippingCost ?? 0);
   const marketProfitLoss = netMarketValue === null ? null : netMarketValue - ownedCostBasis;
   const marketRoiPercent = marketProfitLoss === null || ownedCostBasis <= 0 ? null : (marketProfitLoss / ownedCostBasis) * 100;
+  const orderedProductImages = orderedInventoryProductImages(item.productImages);
+  const primaryImageUrl =
+    orderedProductImages.find((image) => image.isPrimary)?.url ??
+    orderedProductImages[0]?.url ??
+    item.imageUrl ??
+    item.product?.liveImageUrl ??
+    item.product?.imageUrl ??
+    null;
+  const publicImageUrls = uniqueImageUrls([
+    ...orderedProductImages.filter((image) => image.showInStore).map((image) => image.url),
+    ...parseJsonStringArray(item.publicImages),
+    primaryImageUrl
+  ]);
   return {
     id: item.id,
     itemType: item.itemType,
@@ -1730,7 +1938,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     sku: item.sku,
     dpci: item.dpci,
     asin: item.asin,
-    imageUrl: item.imageUrl || item.product?.liveImageUrl || item.product?.imageUrl || null,
+    imageUrl: primaryImageUrl,
     condition: item.condition,
     itemStatus: item.itemStatus,
     targetSellPrice: item.targetSellPrice,
@@ -1774,7 +1982,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     publicDescription: item.publicDescription,
     publicPrice: item.publicPrice,
     compareAtPrice: item.compareAtPrice,
-    publicImages: parseJsonStringArray(item.publicImages),
+    publicImages: publicImageUrls,
     availableForSale: item.availableForSale,
     maxQuantityPerOrder: item.maxQuantityPerOrder,
     shippingProfile: item.shippingProfile,
@@ -1790,6 +1998,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     realizedRoiPercent: realizedRoiPercent > 0 ? (realizedProfitLoss / realizedRoiPercent) * 100 : null,
     businessProfitLoss: marketProfitLoss === null ? realizedProfitLoss : realizedProfitLoss + marketProfitLoss,
     lastThreeComps: marketPriceRecords.map(inventoryMarketCompToDTO),
+    productImages: orderedProductImages.map(inventoryProductImageToDTO),
     stockLots: item.stockLots.map(inventoryStockLotToDTO),
     sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName, inventorySaleStockLotSource(item))),
     expectedPlan: item.expectedPlan,
@@ -2282,8 +2491,10 @@ async function refreshProductPriorityScores(
 
 export async function listDashboard(currentUser: SessionUser): Promise<DashboardDTO> {
   await ensureProductionInventoryMetadataColumns();
+  await ensureInventoryProductImageTable();
   await autoLinkInventoryProducts(currentUser);
   await backfillMissingMsrpInventoryCosts(currentUser);
+  await backfillInventoryProductImages(currentUser);
   const [
     retailers,
     products,
@@ -5504,6 +5715,7 @@ export async function createInventoryItem(
     notes?: string;
   }
 ) {
+  await ensureInventoryProductImageTable();
   if (input.existingInventoryItemId) {
     return addInventoryStockLot(currentUser, input.existingInventoryItemId, input);
   }
@@ -5589,6 +5801,16 @@ export async function createInventoryItem(
     },
     include: inventoryItemInclude
   });
+  if (linkedInput.imageUrl) {
+    await ensureInventoryProductImage(item.id, {
+      url: linkedInput.imageUrl,
+      altText: `${linkedInput.itemName} product image`,
+      isPrimary: true,
+      sortOrder: 0,
+      source: linkedProduct ? "retailer" : linkedInput.upc ? "upc_lookup" : "url",
+      showInStore: true
+    });
+  }
   await prisma.inventoryStockLot.create({
     data: {
       inventoryItemId: item.id,
@@ -5634,6 +5856,7 @@ export async function addInventoryStockLot(
     msrp?: number;
   }
 ) {
+  await ensureInventoryProductImageTable();
   const item = await prisma.inventoryItem.findFirst({
     where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
     include: inventoryItemInclude
@@ -5686,6 +5909,14 @@ export async function addInventoryStockLot(
       currentMarketEstimate: input.currentMarketEstimate ?? item.currentMarketEstimate
     }
   });
+  if (input.imageUrl) {
+    await ensureInventoryProductImage(item.id, {
+      url: input.imageUrl,
+      altText: `${item.itemName} product image`,
+      source: "upc_lookup",
+      showInStore: true
+    });
+  }
   if (item.sales.length) await recalculateInventorySalesAndLots(item.id);
   return autoMatchInventoryItemMarket(currentUser, item.id);
 }
@@ -5805,6 +6036,7 @@ export async function updateInventoryItem(
   itemId: string,
   input: Partial<Parameters<typeof createInventoryItem>[1]>
 ) {
+  await ensureInventoryProductImageTable();
   const existing = await prisma.inventoryItem.findFirst({
     where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
     include: inventoryItemInclude
@@ -5890,6 +6122,15 @@ export async function updateInventoryItem(
       ...productData
     }
   });
+  const nextImageUrl = input.imageUrl ?? (productData.imageUrl as string | undefined);
+  if (nextImageUrl) {
+    await ensureInventoryProductImage(itemId, {
+      url: nextImageUrl,
+      altText: `${input.itemName ?? existing.itemName} product image`,
+      source: productData.imageUrl ? "retailer" : input.upc ? "upc_lookup" : "url",
+      showInStore: true
+    });
+  }
   if (shouldBackfillMsrpCost) {
     for (const lot of existing.stockLots) {
       if (lot.costPerUnit > 0 || lot.totalCost > 0) continue;
@@ -5914,6 +6155,94 @@ export async function updateInventoryItem(
     "cardId"
   ].some((field) => Object.prototype.hasOwnProperty.call(input, field));
   return marketIdentityChanged ? autoMatchInventoryItemMarket(currentUser, itemId) : recomputeInventoryItem(itemId, currentUser);
+}
+
+async function findInventoryItemForImageEdit(currentUser: SessionUser, itemId: string) {
+  await ensureInventoryProductImageTable();
+  const item = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    select: { id: true, itemName: true }
+  });
+  if (!item) throw new Error("Inventory item not found");
+  return item;
+}
+
+async function inventoryItemDTOById(currentUser: SessionUser, itemId: string) {
+  const item = await prisma.inventoryItem.findFirst({
+    where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+    include: inventoryItemInclude
+  });
+  if (!item) throw new Error("Inventory item not found");
+  return inventoryItemToDTO(item);
+}
+
+export async function attachInventoryProductImage(
+  currentUser: SessionUser,
+  itemId: string,
+  input: {
+    url: string;
+    altText?: string | null;
+    sortOrder?: number;
+    isPrimary?: boolean;
+    source?: InventoryProductImageDTO["source"];
+    showInStore?: boolean;
+  }
+) {
+  const item = await findInventoryItemForImageEdit(currentUser, itemId);
+  const image = await ensureInventoryProductImage(item.id, {
+    url: input.url,
+    altText: input.altText ?? `${item.itemName} product image`,
+    sortOrder: input.sortOrder,
+    isPrimary: input.isPrimary,
+    source: input.source ?? "manual",
+    showInStore: input.showInStore
+  });
+  if (!image) throw new Error("Product image URL is required.");
+  return inventoryItemDTOById(currentUser, item.id);
+}
+
+export async function updateInventoryProductImage(
+  currentUser: SessionUser,
+  itemId: string,
+  imageId: string,
+  input: {
+    altText?: string | null;
+    sortOrder?: number;
+    isPrimary?: boolean;
+    showInStore?: boolean;
+  }
+) {
+  await findInventoryItemForImageEdit(currentUser, itemId);
+  const image = await prisma.inventoryProductImage.findFirst({
+    where: { id: imageId, inventoryItemId: itemId }
+  });
+  if (!image) throw new Error("Product image not found");
+  if (input.isPrimary) {
+    await prisma.inventoryProductImage.updateMany({ where: { inventoryItemId: itemId }, data: { isPrimary: false } });
+  }
+  await prisma.inventoryProductImage.update({
+    where: { id: image.id },
+    data: {
+      altText: input.altText,
+      sortOrder: input.sortOrder,
+      isPrimary: input.isPrimary,
+      showInStore: input.showInStore
+    }
+  });
+  await syncInventoryImageFields(itemId);
+  return inventoryItemDTOById(currentUser, itemId);
+}
+
+export async function deleteInventoryProductImage(currentUser: SessionUser, itemId: string, imageId: string) {
+  await findInventoryItemForImageEdit(currentUser, itemId);
+  const image = await prisma.inventoryProductImage.findFirst({
+    where: { id: imageId, inventoryItemId: itemId }
+  });
+  if (!image) throw new Error("Product image not found");
+  await prisma.inventoryProductImage.delete({ where: { id: image.id } });
+  await syncInventoryImageFields(itemId);
+  const item = await inventoryItemDTOById(currentUser, itemId);
+  return { item, deletedImage: inventoryProductImageToDTO(image) };
 }
 
 export async function createInventoryMarketComp(

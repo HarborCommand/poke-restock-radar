@@ -133,6 +133,7 @@ function item(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
     realizedRoiPercent: null,
     businessProfitLoss: 0,
     lastThreeComps: [],
+    productImages: [],
     stockLots: [],
     sales: [],
     expectedPlan: "Hold",

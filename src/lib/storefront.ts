@@ -18,7 +18,10 @@ const reservationMinutes = 15;
 const storefrontInventoryInclude = {
   stockLots: true,
   sales: true,
-  stockReservations: true
+  stockReservations: true,
+  productImages: {
+    orderBy: [{ isPrimary: "desc" as const }, { sortOrder: "asc" as const }, { createdAt: "asc" as const }]
+  }
 } satisfies Prisma.InventoryItemInclude;
 
 const storefrontOrderInclude = {
@@ -144,9 +147,23 @@ function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | 
 }
 
 function publicImages(item: StorefrontInventoryItem) {
-  const images = parseList(item.publicImages);
-  if (item.imageUrl && !images.includes(item.imageUrl)) images.unshift(item.imageUrl);
-  return images;
+  const galleryImages = item.productImages
+    .filter((image) => image.showInStore)
+    .sort((left, right) => {
+      if (left.isPrimary !== right.isPrimary) return left.isPrimary ? -1 : 1;
+      if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
+      return left.createdAt.getTime() - right.createdAt.getTime();
+    })
+    .map((image) => image.url);
+  const seen = new Set<string>();
+  return [...galleryImages, ...parseList(item.publicImages), item.imageUrl]
+    .map((image) => image?.trim())
+    .filter((image): image is string => Boolean(image))
+    .filter((image) => {
+      if (seen.has(image)) return false;
+      seen.add(image);
+      return true;
+    });
 }
 
 export function publicProductToDTO(item: StorefrontInventoryItem): PublicStoreProductDTO | null {

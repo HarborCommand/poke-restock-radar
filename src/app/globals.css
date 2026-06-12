@@ -18320,6 +18320,203 @@ body .storefront-quality-list span.watch {
   color: #b45309;
 }
 
+body .product-image-manager {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+body .product-image-manager-head,
+body .product-image-legacy-import,
+body .product-image-add-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+body .product-image-manager-head {
+  justify-content: space-between;
+}
+
+body .product-image-manager-head > div,
+body .product-image-legacy-import > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+body .product-image-manager-head strong,
+body .product-image-legacy-import strong {
+  color: #0f172a;
+  font-size: 0.96rem;
+}
+
+body .product-image-manager-head span:not(.chip),
+body .product-image-legacy-import span {
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+body .product-image-add-row {
+  align-items: end;
+  flex-wrap: wrap;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+body .product-image-add-row label:not(.product-image-upload-button) {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 6px;
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+body .product-image-upload-button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+body .product-image-upload-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+body .product-image-grid,
+body .inventory-detail-image-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+body .product-image-tile,
+body .inventory-detail-image-gallery figure,
+body .product-image-legacy-import,
+body .product-image-manager > .product-image-empty,
+body .inventory-detail-section > .product-image-empty {
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+body .product-image-tile {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+}
+
+body .product-image-tile.primary {
+  border-color: rgba(34, 197, 94, 0.44);
+  box-shadow: 0 14px 34px rgba(34, 197, 94, 0.12);
+}
+
+body .product-image-tile-preview,
+body .inventory-detail-image-gallery figure {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #ffffff, #f1f5f9);
+  overflow: hidden;
+}
+
+body .product-image-tile-preview img,
+body .inventory-detail-image-gallery img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 12px;
+}
+
+body .product-image-tile-badges,
+body .inventory-detail-image-gallery figcaption {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+
+body .image-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #ffffff;
+  padding: 4px 8px;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+}
+
+body .image-badge.primary {
+  background: #16a34a;
+}
+
+body .image-badge.store {
+  background: #0ea5e9;
+}
+
+body .image-badge.muted {
+  background: rgba(100, 116, 139, 0.82);
+}
+
+body .product-image-tile-body {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+body .product-image-tile-body label {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+body .product-image-tile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+body .product-image-manager > .product-image-empty,
+body .inventory-detail-section > .product-image-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  color: #64748b;
+}
+
+body .inventory-detail-image-gallery figure {
+  margin: 0;
+}
+
+body .inventory-detail-image-gallery figcaption {
+  margin: 0;
+}
+
 body .stock-cost-preview {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

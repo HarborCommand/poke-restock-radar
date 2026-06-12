@@ -88,6 +88,7 @@ import type {
   InvestmentReportItemDTO,
   Priority,
   InventoryItemDTO,
+  InventoryProductImageDTO,
   MarketMatchCandidateDTO,
   InventorySaleDTO,
   InventoryStockLotDTO,
@@ -4383,7 +4384,8 @@ function ImageUploadInput({
   onValueChange,
   fieldName = "imageUrl",
   label = "Product image URL",
-  placeholder = "Paste verified product image URL"
+  placeholder = "Paste verified product image URL",
+  uploadFolder = "products"
 }: {
   defaultValue?: string;
   value?: string;
@@ -4391,9 +4393,11 @@ function ImageUploadInput({
   fieldName?: string;
   label?: string;
   placeholder?: string;
+  uploadFolder?: "products" | "receipts";
 }) {
   const [localValue, setLocalValue] = useState(defaultValue);
   const [uploadWarning, setUploadWarning] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const currentValue = value ?? localValue;
   const isRawImageData = /^data:image\//i.test(currentValue.trim());
   const currentUrlValue = isRawImageData ? "" : currentValue;
@@ -4413,6 +4417,28 @@ function ImageUploadInput({
     setUploadWarning(null);
     setCurrentValue(nextValue);
   }
+  async function uploadImageFile(file: File) {
+    setUploading(true);
+    setUploadWarning(null);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("folder", uploadFolder);
+      const response = await fetch("/api/radar/inventory/images/upload", {
+        method: "POST",
+        body: formData
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Image upload failed.");
+      if (!payload.url || typeof payload.url !== "string") throw new Error("Upload did not return an image URL.");
+      setCurrentValue(payload.url);
+      setUploadWarning("Image uploaded and attached.");
+    } catch (error) {
+      setUploadWarning(error instanceof Error ? error.message : "Image upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
   return (
     <label className="image-upload-field">
       {label}
@@ -4424,29 +4450,338 @@ function ImageUploadInput({
         onChange={(event) => handleUrlChange(event.currentTarget.value)}
         placeholder={placeholder}
       />
-      <span className="image-upload-helper">Paste an http/https image URL or a public app path. Raw/base64 uploads are not stored in this URL field.</span>
+      <span className="image-upload-helper">Paste an http/https image URL, public app path, or upload an image file. Raw/base64 image text is not saved.</span>
       <input
         type="file"
         accept="image/*"
+        disabled={uploading}
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           if (!file) return;
-          setUploadWarning(
-            "Image file upload storage is not configured here yet. The product can still be saved without this file; paste a hosted image URL if you need a product image now."
-          );
+          void uploadImageFile(file);
           event.currentTarget.value = "";
         }}
       />
       {uploadWarning ? <span className="image-upload-warning">{uploadWarning}</span> : null}
       <span className="image-upload-actions">
-        {currentUrlValue ? <span className="chip good">Image URL attached</span> : <span className="chip muted">Optional hosted URL</span>}
+        {uploading ? <span className="chip muted">Uploading image</span> : currentUrlValue ? <span className="chip good">Image URL attached</span> : <span className="chip muted">Optional image</span>}
         {currentUrlValue ? (
-          <button className="mini-action" type="button" onClick={() => setCurrentValue("")}>
+          <button className="mini-action" type="button" disabled={uploading} onClick={() => setCurrentValue("")}>
             Remove image
           </button>
         ) : null}
       </span>
     </label>
+  );
+}
+
+function InventoryProductImageCard({
+  image,
+  index,
+  count,
+  busy,
+  onPatch,
+  onMove,
+  onDelete
+}: {
+  image: InventoryProductImageDTO;
+  index: number;
+  count: number;
+  busy: boolean;
+  onPatch: (image: InventoryProductImageDTO, input: Partial<Pick<InventoryProductImageDTO, "altText" | "sortOrder" | "isPrimary" | "showInStore">>) => Promise<void>;
+  onMove: (image: InventoryProductImageDTO, direction: -1 | 1) => Promise<void>;
+  onDelete: (image: InventoryProductImageDTO) => Promise<void>;
+}) {
+  const [altText, setAltText] = useState(image.altText ?? "");
+  return (
+    <article className={image.isPrimary ? "product-image-tile primary" : "product-image-tile"}>
+      <div className="product-image-tile-preview">
+        <Image src={image.url} alt={image.altText || "Inventory product image"} width={320} height={320} unoptimized />
+        <div className="product-image-tile-badges">
+          {image.isPrimary ? <span className="image-badge primary">Primary</span> : null}
+          <span className="image-badge">{image.source.replaceAll("_", " ")}</span>
+          {image.showInStore ? <span className="image-badge store">Storefront</span> : <span className="image-badge muted">Private</span>}
+        </div>
+      </div>
+      <div className="product-image-tile-body">
+        <label>
+          Alt text
+          <input value={altText} maxLength={180} onChange={(event) => setAltText(event.currentTarget.value)} placeholder="Describe this product image" />
+        </label>
+        <div className="product-image-tile-actions">
+          {!image.isPrimary ? (
+            <button className="mini-action" type="button" disabled={busy} onClick={() => onPatch(image, { isPrimary: true })}>
+              <Star size={13} />
+              Set primary
+            </button>
+          ) : null}
+          <button className="mini-action" type="button" disabled={busy || index === 0} onClick={() => onMove(image, -1)}>
+            Move up
+          </button>
+          <button className="mini-action" type="button" disabled={busy || index >= count - 1} onClick={() => onMove(image, 1)}>
+            Move down
+          </button>
+          <button className="mini-action" type="button" disabled={busy} onClick={() => onPatch(image, { showInStore: !image.showInStore })}>
+            {image.showInStore ? "Hide public" : "Show public"}
+          </button>
+          <button className="mini-action" type="button" disabled={busy || altText === (image.altText ?? "")} onClick={() => onPatch(image, { altText })}>
+            Save alt
+          </button>
+          <button className="mini-action danger" type="button" disabled={busy} onClick={() => onDelete(image)}>
+            <Trash2 size={13} />
+            Delete
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ProductImageGalleryManager({
+  item,
+  runAction,
+  context = "catalog"
+}: {
+  item: InventoryItemDTO;
+  runAction?: ActionHandler;
+  context?: "catalog" | "storefront";
+}) {
+  const [images, setImages] = useState(item.productImages);
+  const [newImageUrl, setNewImageUrl] = useState("");
+  const [newImageAlt, setNewImageAlt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const sortedImages = useMemo(
+    () =>
+      [...images].sort((left, right) => {
+        if (left.isPrimary !== right.isPrimary) return left.isPrimary ? -1 : 1;
+        if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
+        return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+      }),
+    [images]
+  );
+  const legacyImageNeedsImport = Boolean(item.imageUrl && !sortedImages.some((image) => image.url === item.imageUrl));
+
+  async function refreshAfterChange(message: string) {
+    setStatus(message);
+    if (runAction) {
+      await runAction("Refreshing product images", () => Promise.resolve({ ok: true }), { success: message });
+    }
+  }
+
+  async function applyUpdatedItem(result: { item: InventoryItemDTO }, message: string) {
+    setImages(result.item.productImages);
+    await refreshAfterChange(message);
+  }
+
+  async function attachImage(input: { url: string; altText?: string; source?: InventoryProductImageDTO["source"]; isPrimary?: boolean }) {
+    const url = input.url.trim();
+    if (!url) return;
+    const result = await requestJson<{ item: InventoryItemDTO }>(`/api/radar/inventory/${item.id}/images`, {
+      method: "POST",
+      body: JSON.stringify({
+        url,
+        altText: input.altText || `${item.itemName} product image`,
+        sortOrder: sortedImages.length,
+        isPrimary: input.isPrimary ?? sortedImages.length === 0,
+        showInStore: true,
+        source: input.source ?? "manual"
+      })
+    });
+    await applyUpdatedItem(result, "Product image gallery updated.");
+  }
+
+  async function handleAddUrl() {
+    setBusy(true);
+    try {
+      await attachImage({ url: newImageUrl, altText: newImageAlt, source: "url" });
+      setNewImageUrl("");
+      setNewImageAlt("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not add image URL.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUpload(files: FileList | null) {
+    if (!files?.length) return;
+    setBusy(true);
+    try {
+      let latestItem: InventoryItemDTO | null = null;
+      const uploadFiles = Array.from(files);
+      for (const [uploadIndex, file] of uploadFiles.entries()) {
+        const formData = new FormData();
+        formData.set("file", file);
+        formData.set("folder", "products");
+        const uploadResponse = await fetch("/api/radar/inventory/images/upload", { method: "POST", body: formData });
+        const uploadPayload = await uploadResponse.json().catch(() => ({}));
+        if (!uploadResponse.ok || typeof uploadPayload.url !== "string") {
+          throw new Error(uploadPayload.error || `Could not upload ${file.name}.`);
+        }
+        const result: { item: InventoryItemDTO } = await requestJson<{ item: InventoryItemDTO }>(`/api/radar/inventory/${item.id}/images`, {
+          method: "POST",
+          body: JSON.stringify({
+            url: uploadPayload.url,
+            altText: `${item.itemName} product image`,
+            sortOrder: sortedImages.length + uploadIndex,
+            isPrimary: !latestItem && sortedImages.length === 0,
+            showInStore: true,
+            source: "uploaded"
+          })
+        });
+        latestItem = result.item;
+        setImages(result.item.productImages);
+      }
+      if (latestItem) await applyUpdatedItem({ item: latestItem }, "Uploaded product images.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Image upload failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function patchImage(
+    image: InventoryProductImageDTO,
+    input: Partial<Pick<InventoryProductImageDTO, "altText" | "sortOrder" | "isPrimary" | "showInStore">>
+  ) {
+    setBusy(true);
+    try {
+      const result = await requestJson<{ item: InventoryItemDTO }>(`/api/radar/inventory/${item.id}/images/${image.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input)
+      });
+      await applyUpdatedItem(result, "Product image updated.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update product image.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function moveImage(image: InventoryProductImageDTO, direction: -1 | 1) {
+    const currentIndex = sortedImages.findIndex((entry) => entry.id === image.id);
+    const target = sortedImages[currentIndex + direction];
+    if (!target) return;
+    setBusy(true);
+    try {
+      await requestJson<{ item: InventoryItemDTO }>(`/api/radar/inventory/${item.id}/images/${target.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: image.sortOrder })
+      });
+      const result = await requestJson<{ item: InventoryItemDTO }>(`/api/radar/inventory/${item.id}/images/${image.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: target.sortOrder })
+      });
+      await applyUpdatedItem(result, "Product image order updated.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not reorder product images.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteImage(image: InventoryProductImageDTO) {
+    if (!window.confirm("Delete this product image? Uploaded files may also be removed from storage.")) return;
+    setBusy(true);
+    try {
+      const result = await requestJson<{ item: InventoryItemDTO }>(`/api/radar/inventory/${item.id}/images/${image.id}`, { method: "DELETE" });
+      await applyUpdatedItem(result, "Product image deleted.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not delete product image.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="product-image-manager">
+      <div className="product-image-manager-head">
+        <div>
+          <strong>Product Images</strong>
+          <span>
+            {context === "storefront"
+              ? "Choose which gallery images appear publicly. Costs, receipts, and notes are never exposed."
+              : "Upload, paste URLs, set the primary image, and manage storefront visibility."}
+          </span>
+        </div>
+        <span className={sortedImages.length ? "chip good" : "chip muted"}>{sortedImages.length ? `${sortedImages.length} image${sortedImages.length === 1 ? "" : "s"}` : "No gallery images"}</span>
+      </div>
+      {legacyImageNeedsImport ? (
+        <div className="product-image-legacy-import">
+          <ProductImagePreview imageUrl={item.imageUrl ?? ""} itemName={item.itemName} />
+          <div>
+            <strong>Current image is not in the gallery yet.</strong>
+            <span>Import it once so it can be reordered, set primary, or used on the storefront.</span>
+          </div>
+          <button
+            className="mini-action"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              attachImage({ url: item.imageUrl ?? "", source: "url", isPrimary: true })
+                .catch((error) => setStatus(error instanceof Error ? error.message : "Could not import the current image."))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Import current image
+          </button>
+        </div>
+      ) : null}
+      <div className="product-image-add-row">
+        <label>
+          Image URL
+          <input value={newImageUrl} onChange={(event) => setNewImageUrl(event.currentTarget.value)} placeholder="Paste product image URL" inputMode="url" />
+        </label>
+        <label>
+          Alt text
+          <input value={newImageAlt} onChange={(event) => setNewImageAlt(event.currentTarget.value)} placeholder="Optional public image description" />
+        </label>
+        <button className="mini-action" type="button" disabled={busy || !newImageUrl.trim()} onClick={() => void handleAddUrl()}>
+          <Plus size={14} />
+          Add URL
+        </button>
+        <label className="mini-action product-image-upload-button">
+          <Upload size={14} />
+          Upload Images
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            disabled={busy}
+            onChange={(event) => {
+              void handleUpload(event.currentTarget.files);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+      </div>
+      <p className="form-helper">Uploads use Vercel Blob when `BLOB_READ_WRITE_TOKEN` is configured. Retailer and UPC images are stored as public URLs, not copied unless uploaded here.</p>
+      {sortedImages.length ? (
+        <div className="product-image-grid">
+          {sortedImages.map((image, index) => (
+            <InventoryProductImageCard
+              key={`${image.id}-${image.updatedAt}`}
+              image={image}
+              index={index}
+              count={sortedImages.length}
+              busy={busy}
+              onPatch={patchImage}
+              onMove={moveImage}
+              onDelete={deleteImage}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="product-image-empty">
+          <PackageSearch size={18} />
+          <span>Add at least one image to make the product and storefront listing easier to scan.</span>
+        </div>
+      )}
+      {status ? <p className="image-upload-warning">{status}</p> : null}
+    </div>
   );
 }
 
@@ -5811,6 +6146,7 @@ function InventoryPanel({
             setPendingInventoryMutation(mutation);
             setEditItemId("");
           }}
+          runAction={runAction}
           onClose={() => setEditItemId("")}
         />
       ) : null}
@@ -5825,6 +6161,7 @@ function InventoryPanel({
             setPendingInventoryMutation(mutation);
             setStoreListingItemId("");
           }}
+          runAction={runAction}
           onClose={() => setStoreListingItemId("")}
         />
       ) : null}
@@ -8055,6 +8392,7 @@ function PurchaseFlow({
               label="Receipt image"
               placeholder="Paste receipt image URL or upload photo"
               defaultValue={selectedExisting?.receiptImageUrl ?? ""}
+              uploadFolder="receipts"
             />
             <TextInput name="receiptNumber" label="Receipt number" defaultValue={selectedExisting?.receiptNumber ?? ""} />
             <TextInput name="orderNumber" label="Order number" defaultValue={selectedExisting?.orderNumber ?? ""} />
@@ -8371,6 +8709,20 @@ function InventoryDetailsModal({
   const listingQuality = storefrontListingQuality(item);
   const listingAvailable = storefrontListingAvailableForSale(item);
   const listingDetailTone = storeListingTone(item) === "good" ? "good" : storeListingTone(item) === "bad" ? "bad" : "neutral";
+  const detailImages = item.productImages.length
+    ? item.productImages
+    : item.imageUrl
+      ? [
+          {
+            id: "legacy-image",
+            url: item.imageUrl,
+            altText: `${item.itemName} product image`,
+            isPrimary: true,
+            source: "url",
+            showInStore: true
+          }
+        ]
+      : [];
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`${item.itemName} inventory details`}>
@@ -8459,6 +8811,29 @@ function InventoryDetailsModal({
               ))}
             </div>
             <p className="form-helper">Public storefront listings never expose cost basis, source receipts, supplier notes, market value, or tracker data.</p>
+          </section>
+
+          <section className="inventory-detail-section">
+            <h3>Product Images</h3>
+            {detailImages.length ? (
+              <div className="inventory-detail-image-gallery">
+                {detailImages.map((image) => (
+                  <figure key={image.id}>
+                    <Image src={image.url} alt={image.altText || `${item.itemName} product image`} width={320} height={320} unoptimized />
+                    <figcaption>
+                      {image.isPrimary ? <span className="image-badge primary">Primary</span> : null}
+                      <span className="image-badge">{image.source.replaceAll("_", " ")}</span>
+                      {image.showInStore ? <span className="image-badge store">Public</span> : <span className="image-badge muted">Private</span>}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : (
+              <div className="product-image-empty">
+                <PackageSearch size={18} />
+                <span>No product images saved yet.</span>
+              </div>
+            )}
           </section>
 
           <section className="inventory-detail-section">
@@ -8660,6 +9035,7 @@ function InventoryEditStockLotModal({
                 label="Receipt image"
                 placeholder="Paste receipt image URL or upload photo"
                 defaultValue={lot.receiptImageUrl ?? ""}
+                uploadFolder="receipts"
               />
               <TextInput name="receiptNumber" label="Receipt number" defaultValue={lot.receiptNumber ?? ""} />
               <TextInput name="orderNumber" label="Order number" defaultValue={lot.orderNumber ?? ""} />
@@ -8690,15 +9066,16 @@ function InventoryEditProductModal({
   busy,
   busyLabel,
   submit,
+  runAction,
   onClose
 }: {
   item: InventoryItemDTO;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  runAction?: ActionHandler;
   onClose: () => void;
 }) {
-  const [imageUrl, setImageUrl] = useState(item.imageUrl ?? "");
   const saveLabel = `Updating inventory item ${item.id}`;
 
   return (
@@ -8726,7 +9103,7 @@ function InventoryEditProductModal({
           }
         >
           <section className="inventory-edit-preview">
-            <ProductImagePreview imageUrl={imageUrl} itemName={item.itemName} />
+            <ProductImagePreview imageUrl={item.imageUrl ?? ""} itemName={item.itemName} />
             <div>
               <strong>{item.itemName}</strong>
               <span>
@@ -8764,11 +9141,9 @@ function InventoryEditProductModal({
           </section>
 
           <section className="flow-step">
-            <span>Image</span>
-            <h3>Product image</h3>
-            <div className="form-grid compact">
-              <ImageUploadInput defaultValue={item.imageUrl ?? ""} value={imageUrl} onValueChange={setImageUrl} />
-            </div>
+            <span>Images</span>
+            <h3>Product image gallery</h3>
+            <ProductImageGalleryManager item={item} runAction={runAction} />
           </section>
 
           <section className="flow-step">
@@ -8796,6 +9171,7 @@ function InventoryEditProductModal({
                 label="Receipt image"
                 placeholder="Paste receipt image URL or upload photo"
                 defaultValue={item.receiptImageUrl ?? ""}
+                uploadFolder="receipts"
               />
               <TextInput name="receiptNumber" label="Receipt number" defaultValue={item.receiptNumber ?? ""} />
               <TextInput name="orderNumber" label="Order number" defaultValue={item.orderNumber ?? ""} />
@@ -8825,17 +9201,19 @@ function StoreListingModal({
   busy,
   busyLabel,
   submit,
+  runAction,
   onClose
 }: {
   item: InventoryItemDTO;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  runAction?: ActionHandler;
   onClose: () => void;
 }) {
   const [publishToStore, setPublishToStore] = useState(item.publishToStore);
   const [storeStatus, setStoreStatus] = useState(item.storeStatus || "draft");
-  const [imageUrl, setImageUrl] = useState(item.publicImages[0] || item.imageUrl || "");
+  const primaryPublicImageUrl = item.publicImages[0] || item.imageUrl || "";
   const saveLabel = `Updating store listing ${item.id}`;
   const suggestedPrice = storefrontSuggestedPublicPrice(item);
   const suggestedCategory = item.storefrontCategory || storefrontPublicCategory(item);
@@ -8866,7 +9244,7 @@ function StoreListingModal({
   });
   const descriptionWarnings = storefrontCopyWarnings(publicDescription);
   const qualityChecks = [
-    { label: "Image exists", complete: Boolean(imageUrl || item.imageUrl) },
+    { label: "Image exists", complete: Boolean(primaryPublicImageUrl) },
     { label: "Public price set", complete: Boolean(suggestedPrice && suggestedPrice > 0) },
     { label: "Quantity available", complete: availableForSale >= 0 },
     { label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
@@ -8898,7 +9276,7 @@ function StoreListingModal({
           }
         >
           <section className="inventory-edit-preview">
-            <ProductImagePreview imageUrl={imageUrl || item.imageUrl || ""} itemName={item.itemName} />
+            <ProductImagePreview imageUrl={primaryPublicImageUrl} itemName={item.itemName} />
             <div>
               <strong>{item.publicTitle || item.itemName}</strong>
               <span>
@@ -8992,14 +9370,8 @@ function StoreListingModal({
           <section className="flow-step">
             <span>Images and shipping</span>
             <h3>Public image and delivery options</h3>
+            <ProductImageGalleryManager item={item} runAction={runAction} context="storefront" />
             <div className="form-grid compact">
-              <ImageUploadInput
-                fieldName="publicImages"
-                label="Public image URL"
-                defaultValue={imageUrl}
-                value={imageUrl}
-                onValueChange={setImageUrl}
-              />
               <TextInput name="shippingProfile" label="Shipping profile" defaultValue={item.shippingProfile || "standard"} />
               <label className="checkbox-label">
                 <input name="shippingAvailable" type="checkbox" value="true" defaultChecked={item.shippingAvailable} />

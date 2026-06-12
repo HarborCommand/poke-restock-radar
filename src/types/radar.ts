@@ -190,6 +190,7 @@ export type InventoryItemDTO = {
   realizedRoiPercent: number | null;
   businessProfitLoss: number | null;
   lastThreeComps: InventoryMarketCompDTO[];
+  productImages: InventoryProductImageDTO[];
   stockLots: InventoryStockLotDTO[];
   sales: InventorySaleDTO[];
   expectedPlan: string | null;
@@ -343,6 +344,19 @@ export type InventoryStockLotDTO = {
   sourceStore: string | null;
   paymentMethod: string | null;
   createdAt: string;
+};
+
+export type InventoryProductImageDTO = {
+  id: string;
+  inventoryItemId: string;
+  url: string;
+  altText: string | null;
+  sortOrder: number;
+  isPrimary: boolean;
+  source: "uploaded" | "url" | "upc_lookup" | "retailer" | "manual";
+  showInStore: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type InventorySaleDTO = {
@@ -1141,6 +1155,11 @@ export type AppHealthDTO = {
       checkoutSessionReady: boolean;
       webhookReady: boolean;
       missing: string[];
+    };
+    blob: {
+      configured: boolean;
+      readWriteTokenConfigured: boolean;
+      maxUploadSizeMb: number;
     };
   };
 };

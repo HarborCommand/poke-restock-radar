@@ -5,6 +5,8 @@ import test from "node:test";
 import {
   inventoryCreateSchema,
   inventoryImageSanitizationMessage,
+  inventoryProductImageCreateSchema,
+  inventoryProductImageUpdateSchema,
   inventoryStockLotUpdateSchema,
   inventoryStoreListingSchema,
   sanitizeInventoryImagePayload,
@@ -93,4 +95,55 @@ test("shared image input does not write selected files as base64 data URLs", () 
   const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
   assert.doesNotMatch(appSource, /readAsDataURL/);
   assert.doesNotMatch(appSource, /new FileReader\(\)/);
+});
+
+test("product image gallery schema validates source, primary, and storefront visibility", () => {
+  const parsed = inventoryProductImageCreateSchema.parse({
+    url: "https://example.com/gallery-image.webp",
+    altText: "Front of booster bundle",
+    sortOrder: "2",
+    isPrimary: "true",
+    showInStore: "false",
+    source: "uploaded"
+  });
+
+  assert.equal(parsed.url, "https://example.com/gallery-image.webp");
+  assert.equal(parsed.sortOrder, 2);
+  assert.equal(parsed.isPrimary, true);
+  assert.equal(parsed.showInStore, false);
+  assert.equal(parsed.source, "uploaded");
+
+  const updated = inventoryProductImageUpdateSchema.parse({
+    altText: "Back of box",
+    sortOrder: "1",
+    isPrimary: "true",
+    showInStore: "true"
+  });
+  assert.equal(updated.sortOrder, 1);
+  assert.equal(updated.isPrimary, true);
+});
+
+test("product image gallery model and API routes are wired", () => {
+  const schema = readFileSync("prisma/schema.prisma", "utf8");
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const service = readFileSync("src/lib/radar-service.ts", "utf8");
+  const storefront = readFileSync("src/lib/storefront.ts", "utf8");
+  const uploadRoute = readFileSync("src/app/api/radar/inventory/images/upload/route.ts", "utf8");
+  const attachRoute = readFileSync("src/app/api/radar/inventory/[itemId]/images/route.ts", "utf8");
+  const imageRoute = readFileSync("src/app/api/radar/inventory/[itemId]/images/[imageId]/route.ts", "utf8");
+
+  assert.match(schema, /model InventoryProductImage/);
+  assert.match(schema, /@@unique\(\[inventoryItemId, url\]\)/);
+  assert.match(uploadRoute, /BLOB_READ_WRITE_TOKEN/);
+  assert.match(uploadRoute, /@vercel\/blob/);
+  assert.match(attachRoute, /attachInventoryProductImage/);
+  assert.match(imageRoute, /updateInventoryProductImage/);
+  assert.match(imageRoute, /deleteInventoryProductImage/);
+  assert.match(service, /backfillInventoryProductImages/);
+  assert.match(service, /syncInventoryImageFields/);
+  assert.match(storefront, /productImages/);
+  assert.match(storefront, /filter\(\(image\) => image\.showInStore\)/);
+  assert.match(appSource, /ProductImageGalleryManager/);
+  assert.match(appSource, /Upload Images/);
+  assert.match(appSource, /Set primary/);
 });

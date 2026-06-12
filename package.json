@@ -40,6 +40,7 @@
   "dependencies": {
     "@ericblade/quagga2": "^1.12.1",
     "@prisma/client": "6.19.3",
+    "@vercel/blob": "^2.4.0",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.22.0",
     "bcryptjs": "3.0.2",

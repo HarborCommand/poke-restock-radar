@@ -49,6 +49,11 @@ export type EnvironmentReport = {
       webhookReady: boolean;
       missing: string[];
     };
+    blob: {
+      configured: boolean;
+      readWriteTokenConfigured: boolean;
+      maxUploadSizeMb: number;
+    };
     market: {
       priceChartingConfigured: boolean;
       tcgplayerConfigured: boolean;
@@ -114,6 +119,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const stripePublishableConfigured = Boolean(stripePublishableKey);
   const stripeSecretConfigured = Boolean(stripeSecretKey);
   const stripeWebhookConfigured = hasEnv("STRIPE_WEBHOOK_SECRET");
+  const blobReadWriteTokenConfigured = hasEnv("BLOB_READ_WRITE_TOKEN");
   const storeBaseUrl = envValue("STORE_BASE_URL");
   const storeBaseUrlConfigured = Boolean(storeBaseUrl);
   const stripePublishableKeyMode = stripeKeyMode(stripePublishableKey, "pk");
@@ -244,6 +250,11 @@ export function getEnvironmentReport(): EnvironmentReport {
         checkoutSessionReady: stripeCheckoutEnabled && stripePublishableConfigured && stripeSecretConfigured,
         webhookReady: stripeWebhookConfigured,
         missing: stripeMissing
+      },
+      blob: {
+        configured: blobReadWriteTokenConfigured,
+        readWriteTokenConfigured: blobReadWriteTokenConfigured,
+        maxUploadSizeMb: 10
       },
       market: {
         priceChartingConfigured,

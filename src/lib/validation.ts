@@ -19,6 +19,7 @@ export const inventoryItemStatusSchema = z.enum(["sealed", "opened", "graded", "
 export const inventoryListingStatusSchema = z.enum(["not_listed", "listed", "sold", "held"]);
 export const inventoryRecommendationSchema = z.enum(["HOLD", "SELL_NOW", "LIST_HIGH", "GRADE_FIRST", "RIP_OPEN", "AVOID_BUYING_MORE"]);
 export const storeStatusSchema = z.enum(["draft", "active", "hidden", "sold_out"]);
+export const inventoryProductImageSourceSchema = z.enum(["uploaded", "url", "upc_lookup", "retailer", "manual"]);
 export const eraSchema = z.enum(["MODERN", "VINTAGE"]);
 export const zoneSchema = z.enum(["MIAMI", "FORT_LAUDERDALE", "ORLANDO", "TAMPA", "JACKSONVILLE", "CUSTOM"]);
 export const productVerificationStatusSchema = z.enum([
@@ -740,6 +741,31 @@ export const inventoryStoreListingSchema = z.object({
 export const inventoryBulkStorePublishSchema = z.object({
   mode: z.enum(["selected", "eligible"]),
   itemIds: z.array(z.string().trim().min(1)).max(250).optional()
+});
+
+export const inventoryProductImageCreateSchema = z.object({
+  url: publicImageUrlSchema("url"),
+  altText: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : value),
+    z.string().trim().max(180).optional()
+  ),
+  sortOrder: z.coerce.number().int().min(0).max(1000).default(0),
+  isPrimary: checkboxBoolean.default(false),
+  showInStore: checkboxBooleanDefaultTrue.default(true),
+  source: inventoryProductImageSourceSchema.default("manual")
+}).refine((input) => Boolean(input.url), {
+  path: ["url"],
+  message: "Use a valid http/https image URL or public path."
+});
+
+export const inventoryProductImageUpdateSchema = z.object({
+  altText: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : value),
+    z.string().trim().max(180).optional()
+  ),
+  sortOrder: z.coerce.number().int().min(0).max(1000).optional(),
+  isPrimary: checkboxBoolean.optional(),
+  showInStore: checkboxBoolean.optional()
 });
 
 export const inventoryStockLotUpdateSchema = z.object({

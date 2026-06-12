@@ -794,6 +794,7 @@ model InventoryItem {
   barcodeScans           BarcodeScan[]
   storefrontOrderItems   StorefrontOrderItem[]
   stockReservations      StockReservation[]
+  productImages          InventoryProductImage[]
 
   @@index([userId])
   @@index([productId])
@@ -809,6 +810,26 @@ model InventoryItem {
   @@index([storefrontCategory])
   @@index([publishedAt])
   @@index([purchasedAt])
+}
+
+model InventoryProductImage {
+  id              String        @id @default(cuid())
+  inventoryItemId String
+  url             String
+  altText         String?
+  sortOrder       Int           @default(0)
+  isPrimary       Boolean       @default(false)
+  source          String        @default("manual")
+  showInStore     Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([inventoryItemId, url])
+  @@index([inventoryItemId])
+  @@index([inventoryItemId, sortOrder])
+  @@index([isPrimary])
+  @@index([showInStore])
 }
 
 model TcgcsvProduct {

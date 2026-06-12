@@ -523,6 +523,19 @@ const statements = [
     CONSTRAINT "InventoryItem_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "InventoryItem_cardId_fkey" FOREIGN KEY ("cardId") REFERENCES "Card" ("id") ON DELETE SET NULL ON UPDATE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS "InventoryProductImage" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "inventoryItemId" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "altText" TEXT,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "isPrimary" BOOLEAN NOT NULL DEFAULT false,
+    "source" TEXT NOT NULL DEFAULT 'manual',
+    "showInStore" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "InventoryProductImage_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
   `CREATE TABLE IF NOT EXISTS "InventoryStockLot" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "inventoryItemId" TEXT NOT NULL,
@@ -1107,6 +1120,11 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS "InventoryItem_storeStatus_idx" ON "InventoryItem"("storeStatus")`,
   `CREATE INDEX IF NOT EXISTS "InventoryItem_storefrontCategory_idx" ON "InventoryItem"("storefrontCategory")`,
   `CREATE INDEX IF NOT EXISTS "InventoryItem_purchasedAt_idx" ON "InventoryItem"("purchasedAt")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_url_key" ON "InventoryProductImage"("inventoryItemId", "url")`,
+  `CREATE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_idx" ON "InventoryProductImage"("inventoryItemId")`,
+  `CREATE INDEX IF NOT EXISTS "InventoryProductImage_inventoryItemId_sortOrder_idx" ON "InventoryProductImage"("inventoryItemId", "sortOrder")`,
+  `CREATE INDEX IF NOT EXISTS "InventoryProductImage_isPrimary_idx" ON "InventoryProductImage"("isPrimary")`,
+  `CREATE INDEX IF NOT EXISTS "InventoryProductImage_showInStore_idx" ON "InventoryProductImage"("showInStore")`,
   `CREATE INDEX IF NOT EXISTS "InventoryStockLot_inventoryItemId_idx" ON "InventoryStockLot"("inventoryItemId")`,
   `CREATE INDEX IF NOT EXISTS "InventoryStockLot_purchasedAt_idx" ON "InventoryStockLot"("purchasedAt")`,
   `CREATE INDEX IF NOT EXISTS "InventoryStockLot_remainingQuantity_idx" ON "InventoryStockLot"("remainingQuantity")`,
