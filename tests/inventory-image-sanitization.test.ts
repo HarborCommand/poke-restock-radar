@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  extractPublicImageUrlFromHtml,
+  isLikelyDirectProductImageUrl
+} from "../src/lib/image-url-resolver";
+
+import {
   inventoryCreateSchema,
   inventoryImageSanitizationMessage,
   inventoryProductImageCreateSchema,
@@ -30,6 +35,23 @@ test("inventory image URLs keep normal hosted URLs and public paths", () => {
   assert.equal(relative.value, "/brand/gamedaygrabs-icon.png");
   assert.equal(hosted.warning, undefined);
   assert.equal(relative.warning, undefined);
+});
+
+test("product page image resolver extracts direct, og, and json-ld images", () => {
+  assert.equal(isLikelyDirectProductImageUrl("https://example.com/card-product.webp?width=800"), true);
+  assert.equal(isLikelyDirectProductImageUrl("https://example.com/product-page"), false);
+
+  const ogImage = extractPublicImageUrlFromHtml(
+    `<html><head><meta property="og:image" content="/images/pokemon-box.png"></head></html>`,
+    "https://example.com/products/pokemon-box"
+  );
+  assert.equal(ogImage, "https://example.com/images/pokemon-box.png");
+
+  const jsonLdImage = extractPublicImageUrlFromHtml(
+    `<script type="application/ld+json">{"@type":"Product","image":["https://cdn.example.com/box.jpg"]}</script>`,
+    "https://example.com/products/pokemon-box"
+  );
+  assert.equal(jsonLdImage, "https://cdn.example.com/box.jpg");
 });
 
 test("inventory create strips raw base64 image data and still validates", () => {
@@ -129,6 +151,7 @@ test("product image gallery model and API routes are wired", () => {
   const service = readFileSync("src/lib/radar-service.ts", "utf8");
   const storefront = readFileSync("src/lib/storefront.ts", "utf8");
   const uploadRoute = readFileSync("src/app/api/radar/inventory/images/upload/route.ts", "utf8");
+  const resolveRoute = readFileSync("src/app/api/radar/inventory/images/resolve-url/route.ts", "utf8");
   const attachRoute = readFileSync("src/app/api/radar/inventory/[itemId]/images/route.ts", "utf8");
   const imageRoute = readFileSync("src/app/api/radar/inventory/[itemId]/images/[imageId]/route.ts", "utf8");
 
@@ -136,6 +159,9 @@ test("product image gallery model and API routes are wired", () => {
   assert.match(schema, /@@unique\(\[inventoryItemId, url\]\)/);
   assert.match(uploadRoute, /BLOB_READ_WRITE_TOKEN/);
   assert.match(uploadRoute, /@vercel\/blob/);
+  assert.match(uploadRoute, /image\/jpeg/);
+  assert.doesNotMatch(uploadRoute, /image\/gif/);
+  assert.match(resolveRoute, /extractPublicImageUrlFromHtml/);
   assert.match(attachRoute, /attachInventoryProductImage/);
   assert.match(imageRoute, /updateInventoryProductImage/);
   assert.match(imageRoute, /deleteInventoryProductImage/);
@@ -148,4 +174,6 @@ test("product image gallery model and API routes are wired", () => {
   assert.match(appSource, /ProductImageGalleryManager/);
   assert.match(appSource, /Upload Images/);
   assert.match(appSource, /Set primary/);
+  assert.match(appSource, /images\/resolve-url/);
+  assert.match(appSource, /Product Image Uploads/);
 });

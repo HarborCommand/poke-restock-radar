@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const maxUploadBytes = 10 * 1024 * 1024;
-const allowedContentTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const allowedContentTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function safeFilename(value: string, contentType: string) {
   const cleaned = value
@@ -15,7 +15,7 @@ function safeFilename(value: string, contentType: string) {
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
-  const fallbackExtension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : contentType === "image/gif" ? "gif" : "jpg";
+  const fallbackExtension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
   const withName = cleaned || `product-image.${fallbackExtension}`;
   return /\.[a-z0-9]+$/i.test(withName) ? withName : `${withName}.${fallbackExtension}`;
 }
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       throw new Error("Choose an image file to upload.");
     }
     if (!allowedContentTypes.has(file.type)) {
-      throw new Error("Upload a JPG, PNG, WebP, or GIF image.");
+      throw new Error("Upload a JPG, PNG, or WebP image.");
     }
     if (file.size <= 0) {
       throw new Error("The selected image is empty.");

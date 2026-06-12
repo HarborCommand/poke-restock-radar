@@ -1805,6 +1805,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
   const withImages = published.filter((item) => item.publicImages[0] || item.imageUrl);
   const settings = dashboard.storefrontSettings;
   const stripe = dashboard.health?.providers.stripe;
+  const blob = dashboard.health?.providers.blob;
   const paidWebhookOrder = dashboard.storefrontOrders.find((order) => order.paymentStatus === "paid" && order.paymentEvents.some((event) => event.eventType === "checkout.session.completed"));
   const inventoryFinalizedOrder = dashboard.storefrontOrders.find(
     (order) => order.paymentStatus === "paid" && order.reservations.length > 0 && order.reservations.every((reservation) => reservation.status === "completed")
@@ -1967,6 +1968,16 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
           <span className="eyeline">Checkout mode</span>
           <strong>{settings.checkoutConfigured ? "Stripe Checkout" : "Request Invoice"}</strong>
           <small>{settings.checkoutConfigured ? "Stripe keys are configured; Request Invoice remains available when checkout is disabled." : "Customers can request an invoice until Stripe is configured."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Product image uploads</span>
+          <strong>{blob?.configured ? "Enabled" : "Disabled"}</strong>
+          <small>{blob?.configured ? `Vercel Blob accepts JPG, PNG, and WebP uploads up to ${blob.maxUploadSizeMb} MB.` : "Set BLOB_READ_WRITE_TOKEN to enable uploaded product gallery images."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Blob storage</span>
+          <strong>{blob?.readWriteTokenConfigured ? "Connected" : "Missing"}</strong>
+          <small>{blob?.readWriteTokenConfigured ? "Public product gallery uploads are backed by Vercel Blob." : "Blob token is not detected by the deployed app."}</small>
         </article>
         <article>
           <span className="eyeline">Checkout enabled</span>
@@ -4523,7 +4534,7 @@ function ImageUploadInput({
       <span className="image-upload-helper">Paste an http/https image URL, public app path, or upload an image file. Raw/base64 image text is not saved.</span>
       <input
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         disabled={uploading}
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
@@ -4662,10 +4673,27 @@ function ProductImageGalleryManager({
     await applyUpdatedItem(result, "Product image gallery updated.");
   }
 
+  async function resolveImageUrl(sourceUrl: string) {
+    const result = await requestJson<{ found: boolean; imageUrl?: string; message?: string; source?: string }>("/api/radar/inventory/images/resolve-url", {
+      method: "POST",
+      body: JSON.stringify({ url: sourceUrl })
+    });
+    if (!result.found || !result.imageUrl) {
+      throw new Error(result.message || "Could not find an image from that page. Paste a direct image URL or upload an image.");
+    }
+    return result;
+  }
+
   async function handleAddUrl() {
     setBusy(true);
     try {
-      await attachImage({ url: newImageUrl, altText: newImageAlt, source: "url" });
+      const trimmedUrl = newImageUrl.trim();
+      if (trimmedUrl.startsWith("/") && !trimmedUrl.startsWith("//")) {
+        await attachImage({ url: trimmedUrl, altText: newImageAlt, source: "url" });
+      } else {
+        const resolved = await resolveImageUrl(trimmedUrl);
+        await attachImage({ url: resolved.imageUrl ?? trimmedUrl, altText: newImageAlt, source: resolved.source === "direct_image" ? "url" : "retailer" });
+      }
       setNewImageUrl("");
       setNewImageAlt("");
     } catch (error) {
@@ -4802,8 +4830,8 @@ function ProductImageGalleryManager({
       ) : null}
       <div className="product-image-add-row">
         <label>
-          Image URL
-          <input value={newImageUrl} onChange={(event) => setNewImageUrl(event.currentTarget.value)} placeholder="Paste product image URL" inputMode="url" />
+          Image URL or product page
+          <input value={newImageUrl} onChange={(event) => setNewImageUrl(event.currentTarget.value)} placeholder="Paste direct image URL or product page URL" inputMode="url" />
         </label>
         <label>
           Alt text
@@ -4818,7 +4846,7 @@ function ProductImageGalleryManager({
           Upload Images
           <input
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             multiple
             disabled={busy}
             onChange={(event) => {
@@ -4828,7 +4856,7 @@ function ProductImageGalleryManager({
           />
         </label>
       </div>
-      <p className="form-helper">Uploads use Vercel Blob when `BLOB_READ_WRITE_TOKEN` is configured. Retailer and UPC images are stored as public URLs, not copied unless uploaded here.</p>
+      <p className="form-helper">Uploads use Vercel Blob when `BLOB_READ_WRITE_TOKEN` is configured. JPG, PNG, and WebP files are accepted. Pasted product pages are inspected for public product images; receipts remain private admin attachments.</p>
       {sortedImages.length ? (
         <div className="product-image-grid">
           {sortedImages.map((image, index) => (
@@ -18023,6 +18051,24 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
           } ${configuredText(
             health.providers.upc.searchFallbackConfigured
           ).toLowerCase()}`}
+        />
+        <HealthCard
+          icon={Upload}
+          title="Product Image Uploads"
+          value={health.providers.blob.configured ? "Enabled" : "Disabled"}
+          tone={health.providers.blob.configured ? "OK" : "WARN"}
+          detail={`Vercel Blob ${configuredText(health.providers.blob.readWriteTokenConfigured).toLowerCase()} - max ${health.providers.blob.maxUploadSizeMb} MB`}
+        />
+        <HealthCard
+          icon={PackageSearch}
+          title="Blob Storage"
+          value={health.providers.blob.readWriteTokenConfigured ? "Connected" : "Missing"}
+          tone={health.providers.blob.readWriteTokenConfigured ? "OK" : "WARN"}
+          detail={
+            health.providers.blob.readWriteTokenConfigured
+              ? "Product gallery uploads store files in Vercel Blob."
+              : "Set BLOB_READ_WRITE_TOKEN to enable uploaded product images."
+          }
         />
       </div>
       <div className="monitor-status">
