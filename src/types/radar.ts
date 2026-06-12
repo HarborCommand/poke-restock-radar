@@ -245,6 +245,10 @@ export type StorefrontOrderItemDTO = {
   publicTitle: string;
   publicSlug: string | null;
   imageUrl: string | null;
+  upc: string | null;
+  sku: string | null;
+  dpci: string | null;
+  tcin: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -272,9 +276,16 @@ export type StorefrontOrderDTO = {
   orderNumber: string;
   customerEmail: string | null;
   customerName: string | null;
+  customerPhone: string | null;
   status: string;
   paymentStatus: string;
   fulfillmentStatus: string;
+  source: "stripe_checkout" | "request_invoice" | "contact_message" | "manual";
+  sourceLabel: string;
+  itemCount: number;
+  needsFulfillment: boolean;
+  isNewPaidOrder: boolean;
+  statusBadge: string;
   subtotal: number;
   shippingCharged: number;
   tax: number;
@@ -291,9 +302,11 @@ export type StorefrontOrderDTO = {
   stripePaymentIntentId: string | null;
   paidAt: string | null;
   createdAt: string;
+  updatedAt: string;
   items: StorefrontOrderItemDTO[];
   reservations: StorefrontOrderReservationDTO[];
   paymentEvents: StorefrontOrderPaymentEventDTO[];
+  timeline: Array<{ label: string; at: string | null; detail: string }>;
 };
 
 export type StorefrontSummaryDTO = {
@@ -302,6 +315,12 @@ export type StorefrontSummaryDTO = {
   pendingOrderCount: number;
   inquiryCount: number;
   paidOrderCount: number;
+  newPaidOrderCount: number;
+  ordersToShipCount: number;
+  todaySales: number;
+  todayPaidOrderCount: number;
+  lastPaidOrderAt: string | null;
+  lastWebhookAt: string | null;
   totalRevenue: number;
   netProfit: number;
 };

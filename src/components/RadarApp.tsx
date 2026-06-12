@@ -1130,13 +1130,15 @@ function SidebarNavGroup({
   tabs,
   activeTab,
   onSelect,
-  onClose
+  onClose,
+  badgeCounts = {}
 }: {
   title: string;
   tabs: NavTab[];
   activeTab: Tab;
   onSelect: (tab: Tab) => void;
   onClose: () => void;
+  badgeCounts?: Partial<Record<Tab, number>>;
 }) {
   return (
     <div className="sidebar-nav-group">
@@ -1155,6 +1157,7 @@ function SidebarNavGroup({
           >
             <Icon size={16} />
             <span>{tab.label}</span>
+            {(badgeCounts[tab.id] ?? 0) > 0 ? <b className="sidebar-nav-badge">{badgeCounts[tab.id]}</b> : null}
           </button>
         );
       })}
@@ -1390,6 +1393,10 @@ export function RadarApp() {
     );
   }
 
+  const sidebarBadgeCounts: Partial<Record<Tab, number>> = {
+    orders: dashboard.storefrontSummary.newPaidOrderCount + dashboard.storefrontSummary.ordersToShipCount
+  };
+
   return (
     <main className="screen app-shell">
       <aside className={sidebarOpen ? "app-sidebar open" : "app-sidebar"} aria-label="Primary navigation">
@@ -1410,6 +1417,7 @@ export function RadarApp() {
               activeTab={activeTab}
               onSelect={setActiveTab}
               onClose={() => setSidebarOpen(false)}
+              badgeCounts={sidebarBadgeCounts}
             />
           ))}
         </nav>
@@ -1882,14 +1890,44 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
           <small>{settings.checkoutConfigured ? "Stripe keys are configured; Request Invoice remains available when checkout is disabled." : "Customers can request an invoice until Stripe is configured."}</small>
         </article>
         <article>
+          <span className="eyeline">Checkout enabled</span>
+          <strong>{stripe?.checkoutEnabled ? "Enabled" : "Disabled"}</strong>
+          <small>{stripe?.checkoutSessionReady ? "Stripe Checkout sessions can be created." : "Request Invoice remains the customer fallback until checkout is ready."}</small>
+        </article>
+        <article>
           <span className="eyeline">Stripe mode</span>
           <strong>{stripeModeLabel}</strong>
           <small>{stripe?.testMode ? "Stripe is configured in test mode. This admin-only warning is not shown on the public storefront." : "Switch to live keys only after the live readiness checklist passes."}</small>
         </article>
         <article>
+          <span className="eyeline">Webhook active</span>
+          <strong>{stripe?.webhookReady ? "Configured" : "Missing secret"}</strong>
+          <small>{stripe?.webhookReady ? "Stripe webhook signature verification is ready." : "Set STRIPE_WEBHOOK_SECRET before relying on paid order fulfillment."}</small>
+        </article>
+        <article>
           <span className="eyeline">Stripe base URL</span>
           <strong>{stripe?.storeBaseUrl || "Not detected"}</strong>
           <small>{stripe?.storeBaseUrlConfigured ? "Checkout success and cancel URLs use this storefront base URL." : "Set STORE_BASE_URL before accepting Stripe Checkout payments."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Last webhook received</span>
+          <strong>{dashboard.storefrontSummary.lastWebhookAt ? relativeTime(dashboard.storefrontSummary.lastWebhookAt) : "None yet"}</strong>
+          <small>{dashboard.storefrontSummary.lastWebhookAt ? dateTime(dashboard.storefrontSummary.lastWebhookAt) : "No Stripe webhook events are stored yet."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Last paid order</span>
+          <strong>{dashboard.storefrontSummary.lastPaidOrderAt ? relativeTime(dashboard.storefrontSummary.lastPaidOrderAt) : "None yet"}</strong>
+          <small>{dashboard.storefrontSummary.lastPaidOrderAt ? dateTime(dashboard.storefrontSummary.lastPaidOrderAt) : "No paid storefront orders are recorded yet."}</small>
+        </article>
+        <article>
+          <span className="eyeline">Orders needing fulfillment</span>
+          <strong>{dashboard.storefrontSummary.ordersToShipCount}</strong>
+          <small>Paid orders that are not shipped, picked up, or canceled.</small>
+        </article>
+        <article>
+          <span className="eyeline">Invoice requests pending</span>
+          <strong>{dashboard.storefrontSummary.inquiryCount}</strong>
+          <small>Request Invoice and contact-message inquiries waiting for follow-up.</small>
         </article>
         <article>
           <span className="eyeline">Published products</span>
@@ -2248,6 +2286,8 @@ function DashboardPanel({
 }) {
   const liveAlert = dashboard.alerts.find((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !alert.read) ?? null;
   const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert)).slice(0, 5);
+  const newPaidOrders = dashboard.storefrontOrders.filter((order) => order.isNewPaidOrder);
+  const latestNewPaidOrder = newPaidOrders[0] ?? null;
   const profitValue = (item: InventoryItemDTO) => item.marketProfitLoss ?? item.businessProfitLoss ?? 0;
   const productsInStock = dashboard.inventory.filter((item) => item.quantityOwned > 0).length;
   const needsAttention =
@@ -2316,7 +2356,31 @@ function DashboardPanel({
           <ChevronRight size={14} />
         </button>
       </section>
+      {latestNewPaidOrder ? (
+        <section className="dashboard-order-alert">
+          <div>
+            <span className="eyeline">New order received</span>
+            <h2>{latestNewPaidOrder.orderNumber}</h2>
+            <p>
+              {latestNewPaidOrder.customerName || latestNewPaidOrder.customerEmail || "Customer"} paid {money(latestNewPaidOrder.total)} for {latestNewPaidOrder.itemCount} item{latestNewPaidOrder.itemCount === 1 ? "" : "s"} {latestNewPaidOrder.paidAt ? relativeTime(latestNewPaidOrder.paidAt) : "recently"}.
+            </p>
+          </div>
+          <button className="primary-action" type="button" onClick={() => setActiveTab("orders")}>
+            View Order
+            <ChevronRight size={16} />
+          </button>
+        </section>
+      ) : null}
       <DashboardAlertBanner alert={liveAlert} setActiveTab={setActiveTab} />
+      <section className="inventory-kpi-grid dashboard-order-kpis" aria-label="Storefront order summary">
+        <InventoryKpiCard label="New Paid Orders" value={String(dashboard.storefrontSummary.newPaidOrderCount)} detail="Ready for fulfillment" tone={dashboard.storefrontSummary.newPaidOrderCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Pending Payment" value={String(dashboard.storefrontSummary.pendingOrderCount)} detail="Checkout started" tone={dashboard.storefrontSummary.pendingOrderCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Invoice Requests" value={String(dashboard.storefrontSummary.inquiryCount)} detail="Needs follow-up" tone={dashboard.storefrontSummary.inquiryCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Orders To Ship" value={String(dashboard.storefrontSummary.ordersToShipCount)} detail="Paid and not shipped" tone={dashboard.storefrontSummary.ordersToShipCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Today's Sales" value={money(dashboard.storefrontSummary.todaySales)} detail={`${dashboard.storefrontSummary.todayPaidOrderCount} paid today`} tone="good" />
+        <InventoryKpiCard label="Store Revenue" value={money(dashboard.storefrontSummary.totalRevenue)} detail="Paid orders" tone="watch" />
+        <InventoryKpiCard label="Store Profit" value={money(dashboard.storefrontSummary.netProfit)} detail="Estimated after costs" tone={dashboard.storefrontSummary.netProfit >= 0 ? "good" : "bad"} />
+      </section>
       <section className="dashboard-metric-grid" aria-label="Dashboard summary">
         <DashboardMetricCard
           icon={Boxes}
@@ -5542,6 +5606,34 @@ function InventoryPanel({
   );
 }
 
+type StorefrontOrderTab = "new" | "pending" | "paid" | "packing" | "shipped" | "invoice_requests" | "canceled";
+
+function storefrontOrdersForTab(orders: StorefrontOrderDTO[], tab: StorefrontOrderTab) {
+  if (tab === "new") return orders.filter((order) => order.isNewPaidOrder);
+  if (tab === "pending") return orders.filter((order) => order.status === "pending_payment" || order.paymentStatus === "pending");
+  if (tab === "paid") return orders.filter((order) => order.paymentStatus === "paid");
+  if (tab === "packing") return orders.filter((order) => order.status === "packing" || order.fulfillmentStatus === "packing");
+  if (tab === "shipped") return orders.filter((order) => order.status === "shipped" || order.fulfillmentStatus === "shipped");
+  if (tab === "invoice_requests") return orders.filter((order) => order.status === "invoice_requested" || order.status === "contact_message");
+  return orders.filter((order) => ["canceled", "refunded"].includes(order.status) || ["failed", "expired"].includes(order.paymentStatus));
+}
+
+function storefrontOrderTabs(orders: StorefrontOrderDTO[]) {
+  const definitions: Array<{ id: StorefrontOrderTab; label: string }> = [
+    { id: "new", label: "New" },
+    { id: "pending", label: "Pending Payment" },
+    { id: "paid", label: "Paid" },
+    { id: "packing", label: "Packing" },
+    { id: "shipped", label: "Shipped" },
+    { id: "invoice_requests", label: "Invoice Requests" },
+    { id: "canceled", label: "Canceled / Expired" }
+  ];
+  return definitions.map((definition) => ({
+    ...definition,
+    count: storefrontOrdersForTab(orders, definition.id).length
+  }));
+}
+
 function StorefrontOrdersPanel({
   dashboard,
   busy,
@@ -5556,8 +5648,11 @@ function StorefrontOrdersPanel({
   runAction: ActionHandler;
 }) {
   const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [activeOrderTab, setActiveOrderTab] = useState<StorefrontOrderTab>("new");
   const selectedOrder = dashboard.storefrontOrders.find((order) => order.id === selectedOrderId) ?? null;
   const stats = dashboard.storefrontSummary;
+  const orderTabs = storefrontOrderTabs(dashboard.storefrontOrders);
+  const visibleOrders = storefrontOrdersForTab(dashboard.storefrontOrders, activeOrderTab);
 
   return (
     <>
@@ -5585,8 +5680,11 @@ function StorefrontOrdersPanel({
 
       <section className="inventory-kpi-grid">
         <InventoryKpiCard label="Published Products" value={String(stats.productCount)} detail={`${stats.activeProductCount} active`} />
+        <InventoryKpiCard label="New Paid Orders" value={String(stats.newPaidOrderCount)} detail="Needs fulfillment" tone={stats.newPaidOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Pending Orders" value={String(stats.pendingOrderCount)} detail="Awaiting payment" tone={stats.pendingOrderCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Inquiries" value={String(stats.inquiryCount)} detail="Contact messages" tone={stats.inquiryCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Invoice Requests" value={String(stats.inquiryCount)} detail="Needs follow-up" tone={stats.inquiryCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Orders To Ship" value={String(stats.ordersToShipCount)} detail="Paid and not shipped" tone={stats.ordersToShipCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Today's Sales" value={money(stats.todaySales)} detail={`${stats.todayPaidOrderCount} paid today`} tone="good" />
         <InventoryKpiCard label="Paid Orders" value={String(stats.paidOrderCount)} detail="All time" tone="good" />
         <InventoryKpiCard label="Store Revenue" value={money(stats.totalRevenue)} detail="Paid orders" tone="watch" />
         <InventoryKpiCard label="Store Profit" value={money(stats.netProfit)} detail="After cost estimates" tone={stats.netProfit >= 0 ? "good" : "bad"} />
@@ -5596,24 +5694,39 @@ function StorefrontOrdersPanel({
         <section className="dashboard-card storefront-orders-card">
           <div className="dashboard-card-header">
             <div>
-              <h3>Order Queue</h3>
-              <span>{dashboard.storefrontOrders.length} recent orders</span>
+              <h3>Fulfillment Center</h3>
+              <span>{visibleOrders.length} {activeOrderTab.replace("_", " ")} order{visibleOrders.length === 1 ? "" : "s"}</span>
             </div>
           </div>
+          <div className="order-tab-bar" role="tablist" aria-label="Order views">
+            {orderTabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={activeOrderTab === tab.id ? "active" : ""}
+                type="button"
+                onClick={() => setActiveOrderTab(tab.id)}
+              >
+                {tab.label}
+                <span>{tab.count}</span>
+              </button>
+            ))}
+          </div>
           <div className="storefront-order-list">
-            {dashboard.storefrontOrders.length ? (
-              dashboard.storefrontOrders.map((order) => (
-                <article className="storefront-order-row" key={order.id}>
+            {visibleOrders.length ? (
+              visibleOrders.map((order) => (
+                <article className={`storefront-order-row ${order.needsFulfillment ? "needs-fulfillment" : ""}`} key={order.id}>
                   <button type="button" onClick={() => setSelectedOrderId(order.id)}>
                     <strong>{order.orderNumber}</strong>
-                    <span>{order.customerEmail || "No customer email"} - {relativeTime(order.createdAt)}</span>
+                    <span>{order.customerName || "Customer"} - {order.customerEmail || "No customer email"} - {dateTime(order.createdAt)}</span>
                     <small>
                       {order.items.length
                         ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
                         : order.notes?.split("\n").find((line) => line.startsWith("Subject:"))?.replace("Subject:", "Contact:") || "Contact inquiry"}
                     </small>
+                    <small>{order.sourceLabel} - {order.itemCount} item{order.itemCount === 1 ? "" : "s"}</small>
                   </button>
-                  <span className={`chip compact-chip ${order.paymentStatus === "paid" ? "good" : "watch"}`}>{order.paymentStatus}</span>
+                  <span className={`chip compact-chip ${order.paymentStatus === "paid" ? "good" : order.status === "canceled" ? "bad" : "watch"}`}>{order.statusBadge}</span>
+                  <span className={`chip compact-chip ${order.needsFulfillment ? "watch" : "neutral"}`}>{formatStatus(order.fulfillmentStatus)}</span>
                   <span className="storefront-order-total">{money(order.total)}</span>
                   <div className="catalog-actions">
                     <button
@@ -5634,6 +5747,24 @@ function StorefrontOrdersPanel({
                     >
                       Packing
                     </button>
+                    <button
+                      className="mini-action"
+                      disabled={busy}
+                      type="button"
+                      onClick={() =>
+                        runAction(
+                          `Marking ${order.orderNumber} shipped`,
+                          () =>
+                            requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ status: "shipped", fulfillmentStatus: "shipped" })
+                            }),
+                          { success: "Order marked shipped" }
+                        )
+                      }
+                    >
+                      Shipped
+                    </button>
                     <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>
                       Details
                     </button>
@@ -5641,7 +5772,7 @@ function StorefrontOrdersPanel({
                 </article>
               ))
             ) : (
-              <EmptyState icon={ShoppingBag} title="No orders yet" detail="Published products will appear in your store when active." />
+              <EmptyState icon={ShoppingBag} title="No orders in this view" detail="Orders will appear here when storefront customers check out or request invoices." />
             )}
           </div>
         </section>
@@ -5801,12 +5932,51 @@ function StorefrontOrderDetailsModal({
           >
             Mark Packing
           </button>
+          <button
+            className="mini-action"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              runAction(
+                `Marking ${order.orderNumber} shipped`,
+                () =>
+                  requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ status: "shipped", fulfillmentStatus: "shipped" })
+                  }),
+                { success: "Order marked shipped" }
+              )
+            }
+          >
+            Mark Shipped
+          </button>
           <button className="mini-action" type="button" onClick={() => window.print()}>
             <Printer size={14} />
             Packing Slip
           </button>
         </section>
         <div className="inventory-details-grid">
+          <section>
+            <h3>Customer</h3>
+            <div className="detail-stat-grid">
+              <DetailStat label="Name" value={order.customerName || "Not saved"} />
+              <DetailStat label="Email" value={order.customerEmail || "Not saved"} />
+              <DetailStat label="Phone" value={order.customerPhone || "Not collected"} />
+              <DetailStat label="Shipping address" value="Not collected yet" />
+              <DetailStat label="Billing address" value="Stripe hosted" />
+            </div>
+          </section>
+          <section>
+            <h3>Order</h3>
+            <div className="detail-stat-grid">
+              <DetailStat label="Source" value={order.sourceLabel} />
+              <DetailStat label="Order status" value={formatStatus(order.status)} />
+              <DetailStat label="Payment" value={formatStatus(order.paymentStatus)} tone={order.paymentStatus === "paid" ? "good" : "bad"} />
+              <DetailStat label="Fulfillment" value={formatStatus(order.fulfillmentStatus)} />
+              <DetailStat label="Stripe session" value={order.stripeCheckoutSessionId ? "Stored" : "Not stored"} tone={order.stripeCheckoutSessionId ? "good" : "bad"} />
+              <DetailStat label="Payment intent" value={order.stripePaymentIntentId ? "Stored" : "Not stored"} tone={order.stripePaymentIntentId ? "good" : "bad"} />
+            </div>
+          </section>
           <section>
             <h3>Items</h3>
             <div className="storefront-order-items">
@@ -5817,6 +5987,8 @@ function StorefrontOrderDetailsModal({
                     <div>
                       <strong>{item.publicTitle}</strong>
                       <small>Qty {item.quantity} - {money(item.unitPrice)} each</small>
+                      <small>UPC {item.upc || "missing"} - SKU/TCIN {item.sku || item.tcin || "missing"} - DPCI {item.dpci || "missing"}</small>
+                      <small>Inventory item {item.inventoryItemId}</small>
                       <small>Cost basis {money(item.costBasis)} - Profit {money(item.profitLoss)}</small>
                     </div>
                     <b>{money(item.lineTotal)}</b>
@@ -5893,6 +6065,18 @@ function StorefrontOrderDetailsModal({
                   <span>Invoice/contact orders do not reserve stock.</span>
                 </article>
               )}
+            </div>
+          </section>
+          <section>
+            <h3>Timeline</h3>
+            <div className="compact-ledger-list">
+              {order.timeline.map((entry) => (
+                <article key={entry.label}>
+                  <strong>{entry.label}</strong>
+                  <span>{entry.at ? dateTime(entry.at) : "Pending"}</span>
+                  <small>{entry.detail}</small>
+                </article>
+              ))}
             </div>
           </section>
           <section className="wide">

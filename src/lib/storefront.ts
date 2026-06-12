@@ -22,7 +22,18 @@ const storefrontInventoryInclude = {
 } satisfies Prisma.InventoryItemInclude;
 
 const storefrontOrderInclude = {
-  items: true,
+  items: {
+    include: {
+      inventoryItem: {
+        select: {
+          upc: true,
+          sku: true,
+          dpci: true,
+          exactProductUrl: true
+        }
+      }
+    }
+  },
   customer: true,
   reservations: true,
   paymentEvents: { orderBy: { receivedAt: "desc" } },
@@ -31,6 +42,7 @@ const storefrontOrderInclude = {
 
 type StorefrontInventoryItem = Prisma.InventoryItemGetPayload<{ include: typeof storefrontInventoryInclude }>;
 type StorefrontOrderWithItems = Prisma.StorefrontOrderGetPayload<{ include: typeof storefrontOrderInclude }>;
+type StorefrontOrderItemWithInventory = StorefrontOrderWithItems["items"][number];
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -362,13 +374,17 @@ function stripeImage(imageUrl: string | null | undefined) {
   return imageUrl && /^https?:\/\//i.test(imageUrl) ? [imageUrl] : undefined;
 }
 
-function orderItemToDTO(item: Prisma.StorefrontOrderItemGetPayload<Record<string, never>>): StorefrontOrderItemDTO {
+function orderItemToDTO(item: StorefrontOrderItemWithInventory): StorefrontOrderItemDTO {
   return {
     id: item.id,
     inventoryItemId: item.inventoryItemId,
     publicTitle: item.publicTitle,
     publicSlug: item.publicSlug,
     imageUrl: item.imageUrl,
+    upc: item.inventoryItem.upc,
+    sku: item.inventoryItem.sku,
+    dpci: item.inventoryItem.dpci,
+    tcin: item.inventoryItem.sku,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
     lineTotal: item.lineTotal,
@@ -377,15 +393,56 @@ function orderItemToDTO(item: Prisma.StorefrontOrderItemGetPayload<Record<string
   };
 }
 
+function orderSource(order: StorefrontOrderWithItems): StorefrontOrderDTO["source"] {
+  if (order.stripeCheckoutSessionId || order.paymentStatus === "paid" || order.paymentStatus === "failed" || order.paymentStatus === "expired") return "stripe_checkout";
+  if (order.status === "invoice_requested" || order.paymentStatus === "invoice_requested") return "request_invoice";
+  if (order.status === "contact_message") return "contact_message";
+  return "manual";
+}
+
+function orderStatusBadge(order: StorefrontOrderWithItems) {
+  if (order.status === "contact_message") return "Inquiry";
+  if (order.status === "invoice_requested") return "Invoice Request";
+  if (order.paymentStatus === "expired" || order.status === "canceled") return "Expired";
+  if (order.paymentStatus === "paid" && order.fulfillmentStatus === "unfulfilled") return "Needs Shipping";
+  if (order.paymentStatus === "paid") return "Paid";
+  if (order.paymentStatus === "pending") return "New";
+  return order.status;
+}
+
+function orderTimeline(order: StorefrontOrderWithItems): StorefrontOrderDTO["timeline"] {
+  const completedEvent = order.paymentEvents.find((event) => event.eventType === "checkout.session.completed");
+  return [
+    { label: "Order created", at: order.createdAt.toISOString(), detail: "Storefront order was created." },
+    { label: "Checkout started", at: order.stripeCheckoutSessionId ? order.createdAt.toISOString() : null, detail: order.stripeCheckoutSessionId ? "Stripe Checkout session was created." : "No Stripe Checkout session for this order." },
+    { label: "Payment completed", at: completedEvent?.receivedAt.toISOString() ?? order.paidAt?.toISOString() ?? null, detail: completedEvent ? "Stripe webhook checkout.session.completed was received." : "Payment completion webhook has not been stored." },
+    { label: "Inventory reduced", at: order.reservations.some((reservation) => reservation.status === "completed") ? order.paidAt?.toISOString() ?? null : null, detail: order.reservations.some((reservation) => reservation.status === "completed") ? "Stock reservation completed after payment." : "Inventory has not been finalized for this order." },
+    { label: "Sale created", at: order.items.some((item) => item.costBasis > 0 || item.profitLoss !== 0) ? order.paidAt?.toISOString() ?? null : null, detail: order.items.some((item) => item.costBasis > 0 || item.profitLoss !== 0) ? "Inventory sale/profit values are attached to order items." : "No sale/profit allocation stored yet." },
+    { label: "Packing", at: order.fulfillmentStatus === "packing" || order.status === "packing" ? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "packing" || order.status === "packing" ? "Order is marked packing." : "Not marked packing yet." },
+    { label: "Shipped", at: order.fulfillmentStatus === "shipped" ? order.fulfillment?.shippedAt?.toISOString() ?? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "shipped" ? "Order is marked shipped." : "Not shipped yet." }
+  ];
+}
+
 export function storefrontOrderToDTO(order: StorefrontOrderWithItems): StorefrontOrderDTO {
+  const source = orderSource(order);
+  const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const needsFulfillment = order.paymentStatus === "paid" && !["shipped", "picked_up", "canceled"].includes(order.fulfillmentStatus);
+  const isNewPaidOrder = order.paymentStatus === "paid" && order.fulfillmentStatus === "unfulfilled";
   return {
     id: order.id,
     orderNumber: order.orderNumber,
     customerEmail: order.customerEmail ?? order.customer?.email ?? null,
     customerName: order.customerName ?? order.customer?.name ?? null,
+    customerPhone: order.customer?.phone ?? null,
     status: order.status,
     paymentStatus: order.paymentStatus,
     fulfillmentStatus: order.fulfillmentStatus,
+    source,
+    sourceLabel: source === "stripe_checkout" ? "Stripe Checkout" : source === "request_invoice" ? "Request Invoice" : source === "contact_message" ? "Contact Message" : "Manual",
+    itemCount,
+    needsFulfillment,
+    isNewPaidOrder,
+    statusBadge: orderStatusBadge(order),
     subtotal: order.subtotal,
     shippingCharged: order.shippingCharged,
     tax: order.tax,
@@ -402,6 +459,7 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     stripePaymentIntentId: order.stripePaymentIntentId,
     paidAt: order.paidAt?.toISOString() ?? null,
     createdAt: order.createdAt.toISOString(),
+    updatedAt: order.updatedAt.toISOString(),
     items: order.items.map(orderItemToDTO),
     reservations: order.reservations.map((reservation) => ({
       id: reservation.id,
@@ -415,7 +473,8 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
       id: event.id,
       eventType: event.eventType,
       receivedAt: event.receivedAt.toISOString()
-    }))
+    })),
+    timeline: orderTimeline(order)
   };
 }
 
@@ -599,6 +658,13 @@ export async function createInvoiceRequest(input: {
     },
     include: storefrontOrderInclude
   });
+  await createStorefrontOrderAlert(order, {
+    type: "invoice_request",
+    title: "New invoice request",
+    reason: `Customer requested an invoice for ${order.orderNumber}. Review availability and contact the customer.`,
+    priority: "MEDIUM",
+    score: 82
+  });
   return { order: storefrontOrderToDTO(order) };
 }
 
@@ -677,6 +743,36 @@ function lotUnitCost(lot: { costPerUnit: number; totalCost: number; quantity: nu
   return lot.costPerUnit;
 }
 
+async function createStorefrontOrderAlert(
+  order: Pick<StorefrontOrderWithItems, "id" | "orderNumber" | "userId" | "customerEmail" | "customerName" | "total">,
+  input: {
+    type: "paid" | "invoice_request" | "payment_failed" | "checkout_expired" | "inventory_issue" | "sold_out_after_order";
+    title: string;
+    reason: string;
+    priority?: "LOW" | "MEDIUM" | "HIGH";
+    score?: number;
+  }
+) {
+  const dedupeKey = `storefront-order:${order.id}:${input.type}`;
+  const existing = await prisma.alert.findFirst({ where: { dedupeKey } });
+  if (existing) return existing;
+  return prisma.alert.create({
+    data: {
+      title: input.title,
+      reason: input.reason,
+      priority: input.priority ?? "HIGH",
+      entityType: "STOREFRONT_ORDER",
+      entityId: order.id,
+      actionUrl: "/?tab=orders",
+      read: false,
+      score: input.score ?? 90,
+      dedupeKey,
+      explanation: `Order ${order.orderNumber} for ${order.customerName || order.customerEmail || "customer"} totals $${order.total.toFixed(2)}.`,
+      userId: order.userId
+    }
+  });
+}
+
 async function createStorefrontSale(order: StorefrontOrderWithItems) {
   let orderCostBasis = 0;
   for (const orderItem of order.items) {
@@ -697,7 +793,16 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
         data: { remainingQuantity: lot.remainingQuantity - quantityFromLot }
       });
     }
-    if (remainingToAllocate > 0) costBasis += remainingToAllocate * inventory.cost;
+    if (remainingToAllocate > 0) {
+      costBasis += remainingToAllocate * inventory.cost;
+      await createStorefrontOrderAlert(order, {
+        type: "inventory_issue",
+        title: "Inventory allocation issue",
+        reason: `${remainingToAllocate} unit${remainingToAllocate === 1 ? "" : "s"} for ${orderItem.publicTitle} were sold without enough remaining stock lots. Review cost basis and stock immediately.`,
+        priority: "HIGH",
+        score: 95
+      });
+    }
     const allocatedShipping = order.subtotal > 0 ? (orderItem.lineTotal / order.subtotal) * order.shippingCharged : 0;
     const allocatedStripeFee = order.subtotal > 0 ? (orderItem.lineTotal / order.subtotal) * order.stripeFeeEstimate : 0;
     const netSale = orderItem.lineTotal + allocatedShipping - allocatedStripeFee;
@@ -743,6 +848,13 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
     where: { orderId: order.id, status: "reserved" },
     data: { status: "completed" }
   });
+  await createStorefrontOrderAlert(order, {
+    type: "paid",
+    title: "New paid order",
+    reason: `Stripe Checkout paid order ${order.orderNumber} is ready for fulfillment.`,
+    priority: "HIGH",
+    score: 96
+  });
 }
 
 async function releaseOrderReservations(orderId: string) {
@@ -763,6 +875,13 @@ async function markStorefrontOrderPaymentFailed(order: StorefrontOrderWithItems,
       canceledAt: new Date(),
       notes: note ? [order.notes, note].filter(Boolean).join("\n") : order.notes
     }
+  });
+  await createStorefrontOrderAlert(order, {
+    type: paymentStatus === "expired" ? "checkout_expired" : "payment_failed",
+    title: paymentStatus === "expired" ? "Checkout expired" : "Payment failed",
+    reason: note || (paymentStatus === "expired" ? "Stripe Checkout expired before payment completed." : "Stripe payment failed."),
+    priority: "MEDIUM",
+    score: 75
   });
 }
 
@@ -999,7 +1118,9 @@ export async function listStorefrontOrders(currentUser: SessionUser) {
 
 export async function storefrontSummary(currentUser: SessionUser): Promise<StorefrontSummaryDTO> {
   const where = currentUser.role === "ADMIN" ? {} : { userId: currentUser.id };
-  const [productCount, activeProductCount, pendingOrderCount, inquiryCount, paidOrders] = await Promise.all([
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const [productCount, activeProductCount, pendingOrderCount, inquiryCount, newPaidOrderCount, ordersToShipCount, paidOrders, todayPaidOrders, lastPaidOrder, lastWebhook] = await Promise.all([
     prisma.inventoryItem.count({ where: { ...(where as Prisma.InventoryItemWhereInput), publishToStore: true } }),
     prisma.inventoryItem.count({
       where: {
@@ -1009,8 +1130,17 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
       }
     }),
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "pending_payment" } }),
-    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "contact_message" } }),
-    prisma.storefrontOrder.findMany({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid" }, select: { total: true, netProfit: true } })
+    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: { in: ["invoice_requested", "contact_message"] } } }),
+    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid", fulfillmentStatus: "unfulfilled" } }),
+    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid", fulfillmentStatus: { in: ["unfulfilled", "packing", "pickup_ready"] } } }),
+    prisma.storefrontOrder.findMany({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid" }, select: { total: true, netProfit: true, paidAt: true } }),
+    prisma.storefrontOrder.findMany({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid", paidAt: { gte: todayStart } }, select: { total: true } }),
+    prisma.storefrontOrder.findFirst({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid" }, orderBy: { paidAt: "desc" }, select: { paidAt: true } }),
+    prisma.paymentEvent.findFirst({
+      where: currentUser.role === "ADMIN" ? {} : { order: { userId: currentUser.id } },
+      orderBy: { receivedAt: "desc" },
+      select: { receivedAt: true }
+    })
   ]);
   return {
     productCount,
@@ -1018,6 +1148,12 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     pendingOrderCount,
     inquiryCount,
     paidOrderCount: paidOrders.length,
+    newPaidOrderCount,
+    ordersToShipCount,
+    todaySales: todayPaidOrders.reduce((sum, order) => sum + order.total, 0),
+    todayPaidOrderCount: todayPaidOrders.length,
+    lastPaidOrderAt: lastPaidOrder?.paidAt?.toISOString() ?? null,
+    lastWebhookAt: lastWebhook?.receivedAt.toISOString() ?? null,
     totalRevenue: paidOrders.reduce((sum, order) => sum + order.total, 0),
     netProfit: paidOrders.reduce((sum, order) => sum + order.netProfit, 0)
   };

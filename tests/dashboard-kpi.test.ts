@@ -498,6 +498,65 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(webhookRoute, /handleStripeWebhook/);
 });
 
+test("admin orders dashboard and fulfillment center surface Stripe and invoice events", () => {
+  const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
+  const ordersRoute = fs.readFileSync(new URL("../src/app/api/radar/storefront/orders/route.ts", import.meta.url), "utf8");
+  const orderUpdateRoute = fs.readFileSync(new URL("../src/app/api/radar/storefront/orders/[orderId]/route.ts", import.meta.url), "utf8");
+
+  assert.match(storefront, /createStorefrontOrderAlert/);
+  assert.match(storefront, /title: "New paid order"/);
+  assert.match(storefront, /title: "New invoice request"/);
+  assert.match(storefront, /paymentStatus === "expired" \? "checkout_expired" : "payment_failed"/);
+  assert.match(storefront, /type: "inventory_issue"/);
+  assert.match(storefront, /entityType: "STOREFRONT_ORDER"/);
+  assert.match(storefront, /actionUrl: "\/\?tab=orders"/);
+  assert.match(storefront, /status: "paid"/);
+  assert.match(storefront, /fulfillmentStatus: "unfulfilled"/);
+  assert.match(storefront, /newPaidOrderCount/);
+  assert.match(storefront, /ordersToShipCount/);
+  assert.match(storefront, /lastWebhookAt/);
+  assert.match(storefront, /lastPaidOrderAt/);
+  assert.match(storefront, /checkout\.session\.completed/);
+  assert.match(storefront, /payment_intent\.payment_failed/);
+
+  for (const label of ["New Paid Orders", "Pending Payment", "Invoice Requests", "Orders To Ship", "Today's Sales", "Store Revenue", "Store Profit"]) {
+    assert.match(app, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing dashboard/order card ${label}`);
+  }
+  for (const tab of ["New", "Pending Payment", "Paid", "Packing", "Shipped", "Invoice Requests", "Canceled / Expired"]) {
+    assert.match(app, new RegExp(tab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing fulfillment tab ${tab}`);
+  }
+  assert.match(app, /New order received/);
+  assert.match(app, /sidebar-nav-badge/);
+  assert.match(app, /Fulfillment Center/);
+  assert.match(app, /needs-fulfillment/);
+  assert.match(app, /Mark Packing/);
+  assert.match(app, /Mark Shipped/);
+  assert.match(app, /Customer/);
+  assert.match(app, /Stripe session/);
+  assert.match(app, /Payment intent/);
+  assert.match(app, /Timeline/);
+  assert.match(app, /Cost basis/);
+  assert.match(app, /Estimated Stripe fee/);
+  assert.match(app, /Webhook active/);
+  assert.match(app, /Last webhook received/);
+  assert.match(app, /Last paid order/);
+  assert.match(app, /Orders needing fulfillment/);
+  assert.match(app, /Invoice requests pending/);
+
+  assert.match(types, /isNewPaidOrder: boolean/);
+  assert.match(types, /needsFulfillment: boolean/);
+  assert.match(types, /sourceLabel: string/);
+  assert.match(types, /timeline: Array/);
+  assert.match(types, /lastWebhookAt: string \| null/);
+
+  assert.match(ordersRoute, /requireUser/);
+  assert.match(orderUpdateRoute, /requireUser/);
+  assert.match(orderUpdateRoute, /orderFulfillmentUpdateSchema/);
+  assert.match(orderUpdateRoute, /storefront\.order\.updated/);
+});
+
 test("GameDayGrabs custom domain routes public storefront without exposing private root", () => {
   const rootPage = fs.readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
   const routing = fs.readFileSync(new URL("../src/lib/storefront-routing.ts", import.meta.url), "utf8");
