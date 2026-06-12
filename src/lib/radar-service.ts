@@ -31,7 +31,7 @@ import { marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText } from "@/lib/target-retail-policy";
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
-import { productCreateSchema, releaseCreateSchema, storeCreateSchema } from "@/lib/validation";
+import { productCreateSchema, releaseCreateSchema, sanitizePublicImageUrl, storeCreateSchema } from "@/lib/validation";
 import { createTrackerOnlineDropAlert } from "@/lib/monitor";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, testEbayConnection } from "@/lib/ebay";
 import {
@@ -1568,7 +1568,7 @@ function orderedInventoryProductImages(images: Prisma.InventoryProductImageGetPa
 function uniqueImageUrls(values: Array<string | null | undefined>) {
   const seen = new Set<string>();
   return values
-    .map((value) => value?.trim())
+    .map((value) => sanitizePublicImageUrl(value).value)
     .filter((value): value is string => Boolean(value))
     .filter((value) => {
       if (seen.has(value)) return false;
@@ -1617,7 +1617,7 @@ async function ensureInventoryProductImage(
     showInStore?: boolean;
   }
 ) {
-  const url = input.url?.trim();
+  const url = sanitizePublicImageUrl(input.url, "url").value;
   if (!url) return null;
   const existingImages = await prisma.inventoryProductImage.findMany({
     where: { inventoryItemId: itemId },
@@ -1663,6 +1663,13 @@ async function backfillInventoryProductImages(currentUser: SessionUser) {
   });
   for (const item of candidates) {
     const urls = uniqueImageUrls([item.imageUrl, ...parseJsonStringArray(item.publicImages)]);
+    if (!urls.length) {
+      await prisma.inventoryItem.update({
+        where: { id: item.id },
+        data: { imageUrl: null, publicImages: null }
+      });
+      continue;
+    }
     for (const [index, url] of urls.entries()) {
       await ensureInventoryProductImage(item.id, {
         url,
