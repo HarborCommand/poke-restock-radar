@@ -273,12 +273,27 @@ export type StorefrontOrderPaymentEventDTO = {
   receivedAt: string;
 };
 
+export type StorefrontAddressDTO = {
+  name: string | null;
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  country: string | null;
+};
+
 export type StorefrontOrderDTO = {
   id: string;
   orderNumber: string;
   customerEmail: string | null;
   customerName: string | null;
   customerPhone: string | null;
+  stripeCustomerId: string | null;
+  customerOrderCount: number | null;
+  customerTotalSpent: number | null;
+  shippingAddress: StorefrontAddressDTO | null;
+  billingAddress: StorefrontAddressDTO | null;
   status: string;
   paymentStatus: string;
   fulfillmentStatus: string;

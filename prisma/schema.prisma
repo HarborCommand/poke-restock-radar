@@ -414,19 +414,19 @@ model Alert {
 }
 
 model NotificationDeliveryLog {
-  id          String   @id @default(cuid())
-  alertId     String?
-  userId      String?
-  productId   String?
-  channel     String
-  status      String
-  reason      String?
-  detail      String?
-  dedupeKey   String?
-  priority    String?
-  entityType  String?
-  entityId    String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  alertId    String?
+  userId     String?
+  productId  String?
+  channel    String
+  status     String
+  reason     String?
+  detail     String?
+  dedupeKey  String?
+  priority   String?
+  entityType String?
+  entityId   String?
+  createdAt  DateTime @default(now())
 
   @@index([alertId])
   @@index([userId])
@@ -505,48 +505,48 @@ model ProductDiscoverySource {
 }
 
 model ProductDiscoveryCandidate {
-  id                String                 @id @default(cuid())
-  sourceId          String
-  retailerId        String
-  url               String
-  finalUrl          String?
-  productName       String
-  productType       String?
-  retailerProductId String?
-  sku               String?
-  upc               String?
-  dpci              String?
-  brand             String?
-  category          String?
-  description       String?
-  itemDetails       String?
-  imageUrl          String?
-  livePrice         Float?
-  stockStatus       String?
-  sellerName        String?
-  sellerType        String                 @default("unknown")
-  fulfillmentType   String                 @default("unknown")
-  sellerVerified    Boolean                @default(false)
-  priceStatus       String                 @default("unknown")
-  alertEligibility  String                 @default("needs_review")
+  id                  String                 @id @default(cuid())
+  sourceId            String
+  retailerId          String
+  url                 String
+  finalUrl            String?
+  productName         String
+  productType         String?
+  retailerProductId   String?
+  sku                 String?
+  upc                 String?
+  dpci                String?
+  brand               String?
+  category            String?
+  description         String?
+  itemDetails         String?
+  imageUrl            String?
+  livePrice           Float?
+  stockStatus         String?
+  sellerName          String?
+  sellerType          String                 @default("unknown")
+  fulfillmentType     String                 @default("unknown")
+  sellerVerified      Boolean                @default(false)
+  priceStatus         String                 @default("unknown")
+  alertEligibility    String                 @default("needs_review")
   expectedRetailPrice Float?
-  maxAlertPrice     Float?
-  targetRetailMin   Float?
-  targetRetailMax   Float?
-  targetRetailReason String?
-  enrichmentStatus  String                 @default("NEEDS_REVIEW")
-  enrichmentReason  String?
-  enrichedAt        DateTime?
-  confidenceScore   Int                    @default(50)
-  reason            String?
-  status            String                 @default("PENDING")
-  approvedProductId String?
-  reviewedAt        DateTime?
-  ignoredAt         DateTime?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  source            ProductDiscoverySource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  retailer          Retailer               @relation(fields: [retailerId], references: [id], onDelete: Cascade)
+  maxAlertPrice       Float?
+  targetRetailMin     Float?
+  targetRetailMax     Float?
+  targetRetailReason  String?
+  enrichmentStatus    String                 @default("NEEDS_REVIEW")
+  enrichmentReason    String?
+  enrichedAt          DateTime?
+  confidenceScore     Int                    @default(50)
+  reason              String?
+  status              String                 @default("PENDING")
+  approvedProductId   String?
+  reviewedAt          DateTime?
+  ignoredAt           DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  source              ProductDiscoverySource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  retailer            Retailer               @relation(fields: [retailerId], references: [id], onDelete: Cascade)
 
   @@index([sourceId])
   @@index([retailerId])
@@ -704,97 +704,97 @@ model InvestmentSettings {
 }
 
 model InventoryItem {
-  id                     String                @id @default(cuid())
-  userId                 String?
-  itemType               String
-  itemName               String
-  category               String                @default("sealed_packs")
-  setName                String?
-  productId              String?
-  cardId                 String?
-  cost                   Float
-  quantity               Int                   @default(1)
-  totalCost              Float?
-  purchaseExtraCost      Float?
-  source                 String
-  retailer               String?
-  brand                  String?
-  description            String?
-  manufacturer           String?
-  model                  String?
-  msrp                   Float?
-  purchasedAt            DateTime
-  receiptNumber          String?
-  receiptImageUrl        String?
-  orderNumber            String?
-  transactionId          String?
-  sourceStore            String?
-  paymentMethod          String?
-  exactProductUrl        String?
-  upc                    String?
-  sku                    String?
-  dpci                   String?
-  asin                   String?
-  imageUrl               String?
-  condition              String?
-  itemStatus             String                @default("sealed")
-  targetSellPrice        Float?
-  minimumAcceptablePrice Float?
-  listingPlatform        String?
-  listingStatus          String                @default("not_listed")
-  soldPrice              Float?
-  soldAt                 DateTime?
-  buyerPlatform          String?
-  currentMarketEstimate  Float?
-  marketAverageSalePrice Float?
-  marketCompCount        Int                   @default(0)
-  marketLastRefreshedAt  DateTime?
-  marketConfidence       String                @default("LOW")
-  marketProvider         String?
-  marketProviderProductId String?
-  marketProviderProductName String?
-  marketProviderMatchStatus String             @default("UNMATCHED")
-  marketProviderConfidenceScore Int            @default(0)
-  marketProviderMatchReason String?
-  marketProviderMatchedAt DateTime?
-  marketProviderLastPricedAt DateTime?
-  estimatedEbayFee       Float?
-  estimatedShippingCost  Float?
-  estimatedNetProfit     Float?
-  roiPercent             Float?
-  recommendedAction      String                @default("HOLD")
-  recommendationReason   String?
-  netProfitAfterFees     Float?
-  publishToStore         Boolean               @default(false)
-  publicSlug             String?               @unique
-  publicTitle            String?
-  publicDescription      String?
-  publicPrice            Float?
-  compareAtPrice         Float?
-  publicImages           String?
-  availableForSale       Int?
-  maxQuantityPerOrder    Int                   @default(4)
-  shippingProfile        String                @default("standard")
-  storeStatus            String                @default("draft")
-  localPickupAvailable   Boolean               @default(true)
-  shippingAvailable      Boolean               @default(true)
-  storefrontCategory     String?
-  storefrontTags         String?
-  publishedAt            DateTime?
-  expectedPlan           String?
-  notes                  String?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
-  user                   User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
-  product                Product?              @relation(fields: [productId], references: [id], onDelete: SetNull)
-  card                   Card?                 @relation(fields: [cardId], references: [id], onDelete: SetNull)
-  marketComps            InventoryMarketComp[]
-  stockLots              InventoryStockLot[]
-  sales                  InventorySale[]
-  barcodeScans           BarcodeScan[]
-  storefrontOrderItems   StorefrontOrderItem[]
-  stockReservations      StockReservation[]
-  productImages          InventoryProductImage[]
+  id                            String                  @id @default(cuid())
+  userId                        String?
+  itemType                      String
+  itemName                      String
+  category                      String                  @default("sealed_packs")
+  setName                       String?
+  productId                     String?
+  cardId                        String?
+  cost                          Float
+  quantity                      Int                     @default(1)
+  totalCost                     Float?
+  purchaseExtraCost             Float?
+  source                        String
+  retailer                      String?
+  brand                         String?
+  description                   String?
+  manufacturer                  String?
+  model                         String?
+  msrp                          Float?
+  purchasedAt                   DateTime
+  receiptNumber                 String?
+  receiptImageUrl               String?
+  orderNumber                   String?
+  transactionId                 String?
+  sourceStore                   String?
+  paymentMethod                 String?
+  exactProductUrl               String?
+  upc                           String?
+  sku                           String?
+  dpci                          String?
+  asin                          String?
+  imageUrl                      String?
+  condition                     String?
+  itemStatus                    String                  @default("sealed")
+  targetSellPrice               Float?
+  minimumAcceptablePrice        Float?
+  listingPlatform               String?
+  listingStatus                 String                  @default("not_listed")
+  soldPrice                     Float?
+  soldAt                        DateTime?
+  buyerPlatform                 String?
+  currentMarketEstimate         Float?
+  marketAverageSalePrice        Float?
+  marketCompCount               Int                     @default(0)
+  marketLastRefreshedAt         DateTime?
+  marketConfidence              String                  @default("LOW")
+  marketProvider                String?
+  marketProviderProductId       String?
+  marketProviderProductName     String?
+  marketProviderMatchStatus     String                  @default("UNMATCHED")
+  marketProviderConfidenceScore Int                     @default(0)
+  marketProviderMatchReason     String?
+  marketProviderMatchedAt       DateTime?
+  marketProviderLastPricedAt    DateTime?
+  estimatedEbayFee              Float?
+  estimatedShippingCost         Float?
+  estimatedNetProfit            Float?
+  roiPercent                    Float?
+  recommendedAction             String                  @default("HOLD")
+  recommendationReason          String?
+  netProfitAfterFees            Float?
+  publishToStore                Boolean                 @default(false)
+  publicSlug                    String?                 @unique
+  publicTitle                   String?
+  publicDescription             String?
+  publicPrice                   Float?
+  compareAtPrice                Float?
+  publicImages                  String?
+  availableForSale              Int?
+  maxQuantityPerOrder           Int                     @default(4)
+  shippingProfile               String                  @default("standard")
+  storeStatus                   String                  @default("draft")
+  localPickupAvailable          Boolean                 @default(true)
+  shippingAvailable             Boolean                 @default(true)
+  storefrontCategory            String?
+  storefrontTags                String?
+  publishedAt                   DateTime?
+  expectedPlan                  String?
+  notes                         String?
+  createdAt                     DateTime                @default(now())
+  updatedAt                     DateTime                @updatedAt
+  user                          User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  product                       Product?                @relation(fields: [productId], references: [id], onDelete: SetNull)
+  card                          Card?                   @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  marketComps                   InventoryMarketComp[]
+  stockLots                     InventoryStockLot[]
+  sales                         InventorySale[]
+  barcodeScans                  BarcodeScan[]
+  storefrontOrderItems          StorefrontOrderItem[]
+  stockReservations             StockReservation[]
+  productImages                 InventoryProductImage[]
 
   @@index([userId])
   @@index([productId])
@@ -833,26 +833,26 @@ model InventoryProductImage {
 }
 
 model TcgcsvProduct {
-  id                 String    @id @default(cuid())
-  tcgcsvProductId    String    @unique
-  categoryId         Int       @default(3)
-  groupId            Int
-  groupName          String
-  productName        String
-  cleanProductName   String?
-  normalizedName     String
-  imageUrl           String?
-  productUrl         String?
-  extendedData       String?
-  marketPrice        Float?
-  lowPrice           Float?
-  midPrice           Float?
-  highPrice          Float?
-  directLowPrice     Float?
-  subTypeName        String?
-  lastSyncedAt       DateTime  @default(now())
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id               String   @id @default(cuid())
+  tcgcsvProductId  String   @unique
+  categoryId       Int      @default(3)
+  groupId          Int
+  groupName        String
+  productName      String
+  cleanProductName String?
+  normalizedName   String
+  imageUrl         String?
+  productUrl       String?
+  extendedData     String?
+  marketPrice      Float?
+  lowPrice         Float?
+  midPrice         Float?
+  highPrice        Float?
+  directLowPrice   Float?
+  subTypeName      String?
+  lastSyncedAt     DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([categoryId])
   @@index([groupId])
@@ -862,18 +862,18 @@ model TcgcsvProduct {
 }
 
 model TcgcsvSyncLog {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   status         String
-  startedAt      DateTime @default(now())
+  startedAt      DateTime  @default(now())
   finishedAt     DateTime?
-  groupsFetched  Int      @default(0)
-  productsCached Int      @default(0)
-  pricesCached   Int      @default(0)
-  itemsMatched   Int      @default(0)
-  itemsReview    Int      @default(0)
+  groupsFetched  Int       @default(0)
+  productsCached Int       @default(0)
+  pricesCached   Int       @default(0)
+  itemsMatched   Int       @default(0)
+  itemsReview    Int       @default(0)
   error          String?
   message        String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   @@index([startedAt])
   @@index([status])
@@ -977,39 +977,50 @@ model BarcodeScan {
 }
 
 model StorefrontSettings {
-  id                    String   @id @default(cuid())
-  userId                String   @unique
-  storeName             String   @default("GameDayGrabs LLC")
-  storeLogoUrl          String?
-  sportsCardsExternalUrl String?
-  contactEmail          String?
-  featuredHeroProductId String?
-  homepageHeroMode      String   @default("automatic_latest")
-  newArrivalDays        Int      @default(14)
-  showSoldOutInHero     Boolean  @default(true)
-  returnPolicyText      String?
-  shippingPolicyText    String?
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  storeName               String   @default("GameDayGrabs LLC")
+  storeLogoUrl            String?
+  sportsCardsExternalUrl  String?
+  contactEmail            String?
+  featuredHeroProductId   String?
+  homepageHeroMode        String   @default("automatic_latest")
+  newArrivalDays          Int      @default(14)
+  showSoldOutInHero       Boolean  @default(true)
+  returnPolicyText        String?
+  shippingPolicyText      String?
   localPickupInstructions String?
-  announcementBanner    String?
-  defaultShippingPrice  Float    @default(5)
-  freeShippingThreshold Float?
-  socialLinks           String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  announcementBanner      String?
+  defaultShippingPrice    Float    @default(5)
+  freeShippingThreshold   Float?
+  socialLinks             String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model StorefrontCustomer {
-  id             String            @id @default(cuid())
-  userId         String?
-  email          String            @unique
-  name           String?
-  phone          String?
-  stripeCustomerId String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-  orders         StorefrontOrder[]
+  id                        String            @id @default(cuid())
+  userId                    String?
+  email                     String            @unique
+  name                      String?
+  phone                     String?
+  stripeCustomerId          String?
+  firstOrderAt              DateTime?
+  lastOrderAt               DateTime?
+  totalOrders               Int               @default(0)
+  totalSpent                Float             @default(0)
+  defaultShippingName       String?
+  defaultShippingLine1      String?
+  defaultShippingLine2      String?
+  defaultShippingCity       String?
+  defaultShippingState      String?
+  defaultShippingPostalCode String?
+  defaultShippingCountry    String?
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+  user                      User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orders                    StorefrontOrder[]
 
   @@index([userId])
   @@index([email])
@@ -1017,40 +1028,55 @@ model StorefrontCustomer {
 }
 
 model StorefrontOrder {
-  id                  String                @id @default(cuid())
-  orderNumber         String                @unique
-  userId              String?
-  customerId          String?
-  customerEmail       String?
-  customerName        String?
-  status              String                @default("pending_payment")
-  paymentStatus       String                @default("pending")
-  fulfillmentStatus   String                @default("unfulfilled")
-  stripeCheckoutSessionId String?           @unique
-  stripePaymentIntentId String?
-  subtotal            Float                 @default(0)
-  shippingCharged     Float                 @default(0)
-  tax                 Float                 @default(0)
-  total               Float                 @default(0)
-  stripeFeeEstimate   Float                 @default(0)
-  shippingCost        Float                 @default(0)
-  costBasis           Float                 @default(0)
-  netProfit           Float                 @default(0)
-  roiPercent          Float?
-  trackingNumber      String?
-  carrier             String?
-  notes               String?
-  paidAt              DateTime?
-  canceledAt          DateTime?
-  refundedAt          DateTime?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  user                User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
-  customer            StorefrontCustomer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  items               StorefrontOrderItem[]
-  reservations        StockReservation[]
-  paymentEvents       PaymentEvent[]
-  fulfillment         Fulfillment?
+  id                      String                @id @default(cuid())
+  orderNumber             String                @unique
+  userId                  String?
+  customerId              String?
+  customerEmail           String?
+  customerName            String?
+  customerPhone           String?
+  shippingName            String?
+  shippingLine1           String?
+  shippingLine2           String?
+  shippingCity            String?
+  shippingState           String?
+  shippingPostalCode      String?
+  shippingCountry         String?
+  billingName             String?
+  billingLine1            String?
+  billingLine2            String?
+  billingCity             String?
+  billingState            String?
+  billingPostalCode       String?
+  billingCountry          String?
+  status                  String                @default("pending_payment")
+  paymentStatus           String                @default("pending")
+  fulfillmentStatus       String                @default("unfulfilled")
+  stripeCheckoutSessionId String?               @unique
+  stripePaymentIntentId   String?
+  subtotal                Float                 @default(0)
+  shippingCharged         Float                 @default(0)
+  tax                     Float                 @default(0)
+  total                   Float                 @default(0)
+  stripeFeeEstimate       Float                 @default(0)
+  shippingCost            Float                 @default(0)
+  costBasis               Float                 @default(0)
+  netProfit               Float                 @default(0)
+  roiPercent              Float?
+  trackingNumber          String?
+  carrier                 String?
+  notes                   String?
+  paidAt                  DateTime?
+  canceledAt              DateTime?
+  refundedAt              DateTime?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  user                    User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customer                StorefrontCustomer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items                   StorefrontOrderItem[]
+  reservations            StockReservation[]
+  paymentEvents           PaymentEvent[]
+  fulfillment             Fulfillment?
 
   @@index([userId])
   @@index([customerId])
@@ -1070,9 +1096,9 @@ model StorefrontOrderItem {
   quantity        Int
   unitPrice       Float
   lineTotal       Float
-  costBasis       Float          @default(0)
-  profitLoss      Float          @default(0)
-  createdAt       DateTime       @default(now())
+  costBasis       Float           @default(0)
+  profitLoss      Float           @default(0)
+  createdAt       DateTime        @default(now())
   order           StorefrontOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem   @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
@@ -1099,14 +1125,14 @@ model StockReservation {
 }
 
 model PaymentEvent {
-  id             String          @id @default(cuid())
-  orderId        String?
-  provider       String          @default("stripe")
-  eventId        String          @unique
-  eventType      String
-  payload        String?
-  receivedAt     DateTime        @default(now())
-  order          StorefrontOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  id         String           @id @default(cuid())
+  orderId    String?
+  provider   String           @default("stripe")
+  eventId    String           @unique
+  eventType  String
+  payload    String?
+  receivedAt DateTime         @default(now())
+  order      StorefrontOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([eventType])

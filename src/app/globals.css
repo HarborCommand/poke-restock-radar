@@ -7150,6 +7150,15 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.storefront-address-lines {
+  display: grid;
+  gap: 2px;
+}
+
+.storefront-address-lines span {
+  display: block;
+}
+
 .detail-stat.good strong {
   color: var(--green);
 }
@@ -17364,6 +17373,23 @@ body:has(.shop-shell) {
   color: var(--gdg-gold-dark);
 }
 
+.gdg-checkout-trust-copy {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 14px;
+  background: rgba(255, 253, 247, 0.78);
+  color: #475569;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.gdg-checkout-trust-copy strong {
+  color: #0f172a;
+  font-weight: 900;
+}
+
 .gdg-payment-icons {
   display: flex;
   flex-wrap: wrap;
@@ -17373,8 +17399,8 @@ body:has(.shop-shell) {
 
 .gdg-payment-icons span {
   display: inline-flex;
-  width: 54px;
-  height: 28px;
+  width: 62px;
+  height: 30px;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
@@ -17383,8 +17409,11 @@ body:has(.shop-shell) {
 
 .gdg-payment-icons svg {
   display: block;
-  width: 54px;
-  height: 24px;
+  width: 58px;
+  max-width: 58px;
+  height: auto;
+  max-height: 22px;
+  object-fit: contain;
 }
 
 .gdg-payment-icons rect {

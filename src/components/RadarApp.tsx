@@ -559,6 +559,34 @@ function formatStatus(value: string) {
     .join(" ");
 }
 
+function formatStorefrontAddressLines(address: StorefrontOrderDTO["shippingAddress"] | StorefrontOrderDTO["billingAddress"]) {
+  if (!address) return ["Not provided"];
+  const lines = [
+    address.name,
+    [address.line1, address.line2].filter(Boolean).join(" "),
+    [address.city, address.state, address.postalCode].filter(Boolean).join(", "),
+    address.country
+  ]
+    .filter(Boolean)
+    .map((line) => String(line).trim())
+    .filter(Boolean);
+  return lines.length ? lines : ["Not provided"];
+}
+
+function StorefrontAddressLines({
+  address
+}: {
+  address: StorefrontOrderDTO["shippingAddress"] | StorefrontOrderDTO["billingAddress"];
+}) {
+  return (
+    <span className="storefront-address-lines">
+      {formatStorefrontAddressLines(address).map((line, index) => (
+        <span key={`${line}-${index}`}>{line}</span>
+      ))}
+    </span>
+  );
+}
+
 function formatGradeType(value: string) {
   return value === "BGS_BLACK_LABEL" ? "BGS Black Label" : formatStatus(value);
 }
@@ -6568,7 +6596,7 @@ function StorefrontOrderDetailsModal({
           <div className="storefront-order-avatar"><ShoppingBag size={24} /></div>
           <div>
             <h2>{order.orderNumber}</h2>
-            <p>{order.customerName || "Customer"} - {order.customerEmail || "email not saved"}</p>
+            <p>{order.customerName || "Customer"} - {order.customerEmail || "Not provided"}</p>
           </div>
           <button className="icon-button" type="button" aria-label="Close order details" onClick={onClose}>
             <X size={18} />
@@ -6620,11 +6648,14 @@ function StorefrontOrderDetailsModal({
           <section>
             <h3>Customer</h3>
             <div className="detail-stat-grid">
-              <DetailStat label="Name" value={order.customerName || "Not saved"} />
-              <DetailStat label="Email" value={order.customerEmail || "Not saved"} />
-              <DetailStat label="Phone" value={order.customerPhone || "Not collected"} />
-              <DetailStat label="Shipping address" value="Not collected yet" />
-              <DetailStat label="Billing address" value="Stripe hosted" />
+              <DetailStat label="Name" value={order.customerName || "Not provided"} />
+              <DetailStat label="Email" value={order.customerEmail || "Not provided"} />
+              <DetailStat label="Phone" value={order.customerPhone || "Not provided"} />
+              <DetailStat label="Shipping address" value={<StorefrontAddressLines address={order.shippingAddress} />} />
+              <DetailStat label="Billing address" value={<StorefrontAddressLines address={order.billingAddress} />} />
+              <DetailStat label="Stripe customer" value={order.stripeCustomerId || "Not provided"} tone={order.stripeCustomerId ? "good" : "neutral"} />
+              <DetailStat label="Order history" value={order.customerOrderCount !== null ? `${order.customerOrderCount} order${order.customerOrderCount === 1 ? "" : "s"}` : "Not available"} />
+              <DetailStat label="Customer spent" value={order.customerTotalSpent !== null ? money(order.customerTotalSpent) : "Not available"} />
             </div>
           </section>
           <section>
@@ -9594,7 +9625,7 @@ function DetailStat({
   tone = "neutral"
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   tone?: "neutral" | "good" | "bad";
 }) {
   return (

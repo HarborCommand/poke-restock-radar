@@ -550,7 +550,7 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(env, /testMode/);
   assert.match(storefront, /storefrontStripeReadiness/);
   assert.match(storefront, /STRIPE_WEBHOOK_SECRET/);
-  assert.match(storefront, /webhooks\.constructEvent/);
+  assert.match(storefront, /webhooks\.constructEvent\(rawBody, signature, secret\)/);
   assert.match(storefront, /checkout\.sessions\.create/);
   assert.match(storefront, /payment_intent_data/);
   assert.match(storefront, /number=\$\{encodeURIComponent\(order\.orderNumber\)\}/);
@@ -562,6 +562,9 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(storefront, /lot\.totalCost \/ lot\.quantity/);
   assert.match(storefront, /paymentEvents: \{ orderBy: \{ receivedAt: "desc" \} \}/);
   assert.match(storefront, /reservations: order\.reservations\.map/);
+  assert.match(storefront, /safeStripeEventPayload/);
+  assert.match(storefront, /upsertSafePaymentEvent/);
+  assert.doesNotMatch(storefront, /payload: rawBody/);
   assert.match(client, /\/api\/storefront\/checkout\/session/);
   assert.match(client, /\/api\/storefront\/invoice-request/);
   assert.match(client, /gdg-order-reference/);
@@ -573,6 +576,8 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(app, /checkout\.session\.completed is stored in Admin Orders/);
   assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
   assert.match(oldCheckoutRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
+  assert.match(webhookRoute, /const rawBody = await request\.text\(\)/);
+  assert.match(webhookRoute, /request\.headers\.get\("stripe-signature"\)/);
   assert.match(webhookRoute, /handleStripeWebhook/);
 });
 
@@ -592,6 +597,9 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /100% Authentic/);
   assert.match(client, /Proceed to Checkout/);
   assert.match(client, /Secure payment powered by Stripe/);
+  assert.match(client, /No account required/);
+  assert.match(client, /Stripe securely handles payment/);
+  assert.match(client, /We use your email and shipping address only to process your order/);
   assert.match(client, /Request Invoice/);
   assert.match(client, /No card is charged today/);
   assert.match(client, /PaymentNetworkBadges/);
@@ -624,6 +632,8 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(css, /gdg-payment-icons \.mastercard circle:first-of-type/);
   assert.match(css, /gdg-payment-icons \.amex rect/);
   assert.match(css, /gdg-payment-icons \.discover path/);
+  assert.match(css, /gdg-checkout-trust-copy/);
+  assert.match(css, /gdg-payment-icons svg \{[\s\S]*width: 58px;[\s\S]*height: auto;[\s\S]*max-height: 22px;[\s\S]*object-fit: contain;/);
   assert.doesNotMatch(css, /background: linear-gradient\(135deg, #5b21b6, #9333ea\)/);
   assert.doesNotMatch(css, /gdg-payment-icons span \{\s*display: inline-flex;\s*min-width: 38px/s);
   assert.match(css, /@media \(max-width: 820px\)/);
@@ -637,12 +647,24 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(storefront, /if \(strict && product\.status !== "active"\)/);
   assert.match(storefront, /if \(strict && requestedQuantity > product\.availableQuantity\)/);
   assert.match(storefront, /unit_amount: Math\.round\(item\.unitPrice \* 100\)/);
+  assert.match(storefront, /customer_email: input\.customerEmail/);
+  assert.match(storefront, /customer_creation: "always"/);
+  assert.match(storefront, /phone_number_collection: \{ enabled: true \}/);
+  assert.match(storefront, /billing_address_collection: "auto"/);
+  assert.match(storefront, /const stripeShippingAllowedCountries = \["US"\]/);
+  assert.match(storefront, /shipping_address_collection: \{\s*allowed_countries: stripeShippingAllowedCountries\s*\}/);
+  assert.doesNotMatch(storefront, /shipping_address_collection:\s*\n\s*input\.fulfillmentMethod/);
+  assert.doesNotMatch(storefront, /payment_method_data|card_number|cvc|cvv/i);
 });
 
 test("admin orders dashboard and fulfillment center surface Stripe and invoice events", () => {
   const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
   const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
+  const schema = fs.readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
+  const migration = fs.readFileSync(new URL("../prisma/migrations/20260613110511_checkout_customer_records/migration.sql", import.meta.url), "utf8");
+  const sqliteInit = fs.readFileSync(new URL("../prisma/init-sqlite.ts", import.meta.url), "utf8");
   const ordersRoute = fs.readFileSync(new URL("../src/app/api/radar/storefront/orders/route.ts", import.meta.url), "utf8");
   const orderUpdateRoute = fs.readFileSync(new URL("../src/app/api/radar/storefront/orders/[orderId]/route.ts", import.meta.url), "utf8");
 
@@ -661,6 +683,26 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(storefront, /lastPaidOrderAt/);
   assert.match(storefront, /checkout\.session\.completed/);
   assert.match(storefront, /payment_intent\.payment_failed/);
+  assert.match(storefront, /stripeCustomerId/);
+  assert.match(storefront, /customerPhone/);
+  assert.match(storefront, /shippingLine1/);
+  assert.match(storefront, /billingLine1/);
+  assert.match(storefront, /session\.payment_status !== "paid"/);
+  assert.match(storefront, /skipped: "checkout_session_not_paid"/);
+  assert.match(storefront, /const wasPaid = order\.paymentStatus === "paid"/);
+  assert.match(storefront, /!wasPaid && order\.paymentStatus !== "paid"/);
+  assert.match(storefront, /syncStorefrontCustomerTotals/);
+  assert.match(storefront, /totalOrders: paidOrders\.length/);
+  assert.match(storefront, /totalSpent: paidOrders\.reduce/);
+  assert.match(storefront, /normalizedCustomerEmail/);
+  assert.match(storefront, /customerEmail: normalizedCustomerEmail/);
+  assert.match(storefront, /amountTotal: numberValue\(object\.amount_total\)/);
+  assert.match(storefront, /currency: stringValue\(object\.currency\)\?\.toLowerCase\(\) \?\? null/);
+  assert.match(storefront, /shippingDetails\?\./);
+  assert.match(storefront, /billingAddress\?\./);
+  assert.doesNotMatch(storefront, /totalOrders: \{ increment: 1 \}/);
+  assert.doesNotMatch(storefront, /totalSpent: \{ increment: order\.total \}/);
+  assert.doesNotMatch(storefront, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 
   for (const label of ["New Paid Orders", "Pending Payment", "Invoice Requests", "Orders To Ship", "Today's Sales", "Store Revenue", "Store Profit"]) {
     assert.match(app, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing dashboard/order card ${label}`);
@@ -675,6 +717,11 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(app, /Mark Packing/);
   assert.match(app, /Mark Shipped/);
   assert.match(app, /Customer/);
+  assert.match(app, /Shipping address/);
+  assert.match(app, /Billing address/);
+  assert.match(app, /Stripe customer/);
+  assert.match(app, /Order history/);
+  assert.match(app, /Customer spent/);
   assert.match(app, /Stripe session/);
   assert.match(app, /Payment intent/);
   assert.match(app, /Timeline/);
@@ -685,12 +732,44 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(app, /Last paid order/);
   assert.match(app, /Orders needing fulfillment/);
   assert.match(app, /Invoice requests pending/);
+  assert.match(app, /function formatStorefrontAddressLines/);
+  assert.match(app, /return \["Not provided"\]/);
+  assert.match(app, /className="storefront-address-lines"/);
+  assert.match(app, /formatStorefrontAddressLines\(address\)\.map/);
+  assert.match(css, /storefront-address-lines \{[\s\S]*display: grid;[\s\S]*gap: 2px;/);
+
+  const orderModal = app.slice(app.indexOf("function StorefrontOrderDetailsModal"), app.indexOf("function DetailStat"));
+  const customerSection = orderModal.slice(orderModal.indexOf("<h3>Customer</h3>"), orderModal.indexOf("<h3>Order</h3>"));
+  assert.match(customerSection, /value=\{order\.customerEmail \|\| "Not provided"\}/);
+  assert.match(customerSection, /value=\{order\.customerPhone \|\| "Not provided"\}/);
+  assert.match(customerSection, /value=\{order\.stripeCustomerId \|\| "Not provided"\}/);
+  assert.match(customerSection, /<StorefrontAddressLines address=\{order\.shippingAddress\} \/>/);
+  assert.match(customerSection, /<StorefrontAddressLines address=\{order\.billingAddress\} \/>/);
+  assert.doesNotMatch(customerSection, /Not saved|Not collected|Not stored|formatStorefrontAddress|JSON\.stringify|<pre|<code/);
+  assert.doesNotMatch(orderModal, /email not saved/);
 
   assert.match(types, /isNewPaidOrder: boolean/);
   assert.match(types, /needsFulfillment: boolean/);
   assert.match(types, /sourceLabel: string/);
+  assert.match(types, /type StorefrontAddressDTO/);
+  assert.match(types, /shippingAddress: StorefrontAddressDTO \| null/);
+  assert.match(types, /billingAddress: StorefrontAddressDTO \| null/);
+  assert.match(types, /stripeCustomerId: string \| null/);
+  assert.match(types, /customerOrderCount: number \| null/);
   assert.match(types, /timeline: Array/);
   assert.match(types, /lastWebhookAt: string \| null/);
+
+  for (const field of ["customerPhone", "shippingLine1", "billingLine1", "firstOrderAt", "lastOrderAt", "totalOrders", "totalSpent", "defaultShippingLine1"]) {
+    assert.match(schema, new RegExp(field), `missing schema field ${field}`);
+    assert.match(migration, new RegExp(field), `missing migration field ${field}`);
+    assert.match(sqliteInit, new RegExp(field), `missing sqlite init field ${field}`);
+  }
+  assert.match(schema, /stripeCheckoutSessionId String\?\s+@unique/);
+  assert.match(schema, /email\s+String\s+@unique/);
+  assert.match(schema, /stripeCustomerId\s+String\?/);
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "StorefrontOrder_stripeCheckoutSessionId_key"/);
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "PaymentEvent_eventId_key"/);
+  assert.doesNotMatch(migration, /DROP TABLE|DELETE FROM|TRUNCATE|ALTER TABLE .* DROP/i);
 
   assert.match(ordersRoute, /requireUser/);
   assert.match(orderUpdateRoute, /requireUser/);

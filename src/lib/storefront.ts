@@ -15,6 +15,7 @@ import type {
 } from "@/types/radar";
 
 const reservationMinutes = 15;
+const stripeShippingAllowedCountries = ["US"] satisfies Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[];
 
 const storefrontInventoryInclude = {
   stockLots: true,
@@ -608,6 +609,27 @@ function orderTimeline(order: StorefrontOrderWithItems): StorefrontOrderDTO["tim
   ];
 }
 
+function orderAddress(fields: {
+  name?: string | null;
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+}) {
+  if (!fields.line1 && !fields.city && !fields.postalCode && !fields.country) return null;
+  return {
+    name: fields.name ?? null,
+    line1: fields.line1 ?? null,
+    line2: fields.line2 ?? null,
+    city: fields.city ?? null,
+    state: fields.state ?? null,
+    postalCode: fields.postalCode ?? null,
+    country: fields.country ?? null
+  };
+}
+
 export function storefrontOrderToDTO(order: StorefrontOrderWithItems): StorefrontOrderDTO {
   const source = orderSource(order);
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -618,7 +640,28 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     orderNumber: order.orderNumber,
     customerEmail: order.customerEmail ?? order.customer?.email ?? null,
     customerName: order.customerName ?? order.customer?.name ?? null,
-    customerPhone: order.customer?.phone ?? null,
+    customerPhone: order.customerPhone ?? order.customer?.phone ?? null,
+    stripeCustomerId: order.customer?.stripeCustomerId ?? null,
+    customerOrderCount: order.customer?.totalOrders ?? null,
+    customerTotalSpent: order.customer?.totalSpent ?? null,
+    shippingAddress: orderAddress({
+      name: order.shippingName,
+      line1: order.shippingLine1,
+      line2: order.shippingLine2,
+      city: order.shippingCity,
+      state: order.shippingState,
+      postalCode: order.shippingPostalCode,
+      country: order.shippingCountry
+    }),
+    billingAddress: orderAddress({
+      name: order.billingName,
+      line1: order.billingLine1,
+      line2: order.billingLine2,
+      city: order.billingCity,
+      state: order.billingState,
+      postalCode: order.billingPostalCode,
+      country: order.billingCountry
+    }),
     status: order.status,
     paymentStatus: order.paymentStatus,
     fulfillmentStatus: order.fulfillmentStatus,
@@ -724,6 +767,12 @@ export async function createCheckoutSession(input: {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: input.customerEmail,
+      customer_creation: "always",
+      phone_number_collection: { enabled: true },
+      billing_address_collection: "auto",
+      shipping_address_collection: {
+        allowed_countries: stripeShippingAllowedCountries
+      },
       line_items: [
         ...order.items.map((item) => ({
           quantity: item.quantity,
@@ -822,6 +871,7 @@ export async function createInvoiceRequest(input: {
       customerId: customer.id,
       customerEmail: input.customerEmail,
       customerName: input.customerName,
+      customerPhone: input.customerPhone || null,
       status: "invoice_requested",
       paymentStatus: "invoice_requested",
       fulfillmentStatus: "unfulfilled",
@@ -1050,7 +1100,7 @@ async function releaseOrderReservations(orderId: string) {
 }
 
 async function markStorefrontOrderPaymentFailed(order: StorefrontOrderWithItems, paymentStatus: "failed" | "expired", note?: string) {
-  if (order.paymentStatus === "paid") return;
+  if (order.paymentStatus === "paid" || order.paymentStatus === paymentStatus) return;
   await releaseOrderReservations(order.id);
   await prisma.storefrontOrder.update({
     where: { id: order.id },
@@ -1077,10 +1127,218 @@ async function orderForStripeEvent(event: Stripe.Event) {
   if (orderId) {
     return prisma.storefrontOrder.findUnique({ where: { id: orderId }, include: storefrontOrderInclude });
   }
+  if (event.type.startsWith("checkout.session.") && "id" in object && typeof object.id === "string") {
+    return prisma.storefrontOrder.findFirst({ where: { stripeCheckoutSessionId: object.id }, include: storefrontOrderInclude });
+  }
   if (event.type === "payment_intent.payment_failed" && "id" in object && typeof object.id === "string") {
     return prisma.storefrontOrder.findFirst({ where: { stripePaymentIntentId: object.id }, include: storefrontOrderInclude });
   }
   return null;
+}
+
+type StripeAddressLike = {
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+};
+
+type StripeShippingLike = {
+  name?: string | null;
+  phone?: string | null;
+  address?: StripeAddressLike | null;
+};
+
+type StripeCheckoutSessionWithCollected = Stripe.Checkout.Session & {
+  shipping_details?: StripeShippingLike | null;
+  collected_information?: { shipping_details?: StripeShippingLike | null } | null;
+};
+
+type CheckoutCustomerSnapshot = {
+  customerEmail: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  stripeCustomerId: string | null;
+  stripePaymentIntentId: string | null;
+  shippingDetails: StripeShippingLike | null;
+  shippingAddress: StripeAddressLike | null;
+  billingAddress: StripeAddressLike | null;
+};
+
+function stripeId(value: string | { id?: string | null } | null | undefined) {
+  if (typeof value === "string") return value;
+  return value?.id ?? null;
+}
+
+function normalizedCustomerEmail(value: string | null | undefined) {
+  const email = value?.trim().toLowerCase();
+  return email && email.includes("@") ? email : null;
+}
+
+function stripeAddressIsPresent(address: StripeAddressLike | null | undefined) {
+  return Boolean(address?.line1 || address?.city || address?.postal_code || address?.country);
+}
+
+function recordValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stripeIdFromUnknown(value: unknown) {
+  if (typeof value === "string") return value;
+  const record = recordValue(value);
+  return stringValue(record?.id);
+}
+
+function safeStripeEventPayload(event: Stripe.Event, orderId: string | null) {
+  const object = event.data.object as unknown as Record<string, unknown>;
+  const customerDetails = recordValue(object.customer_details);
+  const safePayload = {
+    provider: "stripe",
+    eventId: event.id,
+    eventType: event.type,
+    objectId: stringValue(object.id),
+    objectType: stringValue(object.object),
+    orderId,
+    checkoutSessionId: event.type.startsWith("checkout.session.") ? stringValue(object.id) : null,
+    paymentIntentId: stripeIdFromUnknown(object.payment_intent) ?? stringValue(object.id),
+    stripeCustomerId: stripeIdFromUnknown(object.customer),
+    paymentStatus: stringValue(object.payment_status),
+    checkoutStatus: stringValue(object.status),
+    customerEmail: normalizedCustomerEmail(stringValue(customerDetails?.email) ?? stringValue(object.customer_email)),
+    customerPhone: stringValue(customerDetails?.phone),
+    amountTotal: numberValue(object.amount_total),
+    amount: numberValue(object.amount),
+    currency: stringValue(object.currency)?.toLowerCase() ?? null
+  };
+  return JSON.stringify(safePayload);
+}
+
+async function upsertSafePaymentEvent(event: Stripe.Event, orderId: string | null) {
+  return prisma.paymentEvent.upsert({
+    where: { eventId: event.id },
+    create: {
+      orderId,
+      eventId: event.id,
+      eventType: event.type,
+      payload: safeStripeEventPayload(event, orderId)
+    },
+    update: {
+      ...(orderId ? { orderId } : {}),
+      eventType: event.type,
+      payload: safeStripeEventPayload(event, orderId)
+    }
+  });
+}
+
+function checkoutCustomerSnapshot(session: Stripe.Checkout.Session, order: StorefrontOrderWithItems): CheckoutCustomerSnapshot {
+  const sessionWithCollected = session as StripeCheckoutSessionWithCollected;
+  const shippingDetails = sessionWithCollected.shipping_details ?? sessionWithCollected.collected_information?.shipping_details ?? null;
+  const shippingAddress = shippingDetails?.address ?? null;
+  const billingAddress = (session.customer_details?.address ?? null) as StripeAddressLike | null;
+  const customerEmail = normalizedCustomerEmail(session.customer_details?.email ?? session.customer_email ?? order.customerEmail);
+  const customerName = session.customer_details?.name ?? shippingDetails?.name ?? order.customerName;
+  const customerPhone = session.customer_details?.phone ?? shippingDetails?.phone ?? order.customerPhone ?? null;
+  return {
+    customerEmail,
+    customerName,
+    customerPhone,
+    stripeCustomerId: stripeId(session.customer),
+    stripePaymentIntentId: stripeId(session.payment_intent),
+    shippingDetails,
+    shippingAddress,
+    billingAddress
+  };
+}
+
+function storefrontCustomerShippingSnapshot(snapshot: CheckoutCustomerSnapshot) {
+  return {
+    defaultShippingName: snapshot.shippingDetails?.name ?? snapshot.customerName ?? null,
+    defaultShippingLine1: snapshot.shippingAddress?.line1 ?? null,
+    defaultShippingLine2: snapshot.shippingAddress?.line2 ?? null,
+    defaultShippingCity: snapshot.shippingAddress?.city ?? null,
+    defaultShippingState: snapshot.shippingAddress?.state ?? null,
+    defaultShippingPostalCode: snapshot.shippingAddress?.postal_code ?? null,
+    defaultShippingCountry: snapshot.shippingAddress?.country ?? null
+  };
+}
+
+async function syncStorefrontCustomerTotals(customerId: string, customerEmail: string) {
+  const paidOrders = await prisma.storefrontOrder.findMany({
+    where: { customerEmail, paymentStatus: "paid" },
+    select: { total: true, paidAt: true, createdAt: true }
+  });
+  const paidDates = paidOrders
+    .map((order) => order.paidAt ?? order.createdAt)
+    .sort((left, right) => left.getTime() - right.getTime());
+  await prisma.storefrontCustomer.update({
+    where: { id: customerId },
+    data: {
+      totalOrders: paidOrders.length,
+      totalSpent: paidOrders.reduce((sum, order) => sum + order.total, 0),
+      firstOrderAt: paidDates[0] ?? null,
+      lastOrderAt: paidDates.at(-1) ?? null
+    }
+  });
+}
+
+async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, session: Stripe.Checkout.Session) {
+  const snapshot = checkoutCustomerSnapshot(session, order);
+  const customer = snapshot.customerEmail
+    ? await prisma.storefrontCustomer.upsert({
+        where: { email: snapshot.customerEmail },
+        create: {
+          email: snapshot.customerEmail,
+          name: snapshot.customerName,
+          phone: snapshot.customerPhone,
+          stripeCustomerId: snapshot.stripeCustomerId,
+          userId: order.userId,
+          ...storefrontCustomerShippingSnapshot(snapshot)
+        },
+        update: {
+          name: snapshot.customerName ?? undefined,
+          phone: snapshot.customerPhone ?? undefined,
+          stripeCustomerId: snapshot.stripeCustomerId ?? undefined,
+          ...(stripeAddressIsPresent(snapshot.shippingAddress) ? storefrontCustomerShippingSnapshot(snapshot) : {})
+        }
+      })
+    : null;
+  const updated = await prisma.storefrontOrder.update({
+    where: { id: order.id },
+    data: {
+      customerId: customer?.id ?? order.customerId,
+      customerEmail: snapshot.customerEmail,
+      customerName: snapshot.customerName,
+      customerPhone: snapshot.customerPhone,
+      shippingName: snapshot.shippingDetails?.name ?? snapshot.customerName ?? null,
+      shippingLine1: snapshot.shippingAddress?.line1 ?? null,
+      shippingLine2: snapshot.shippingAddress?.line2 ?? null,
+      shippingCity: snapshot.shippingAddress?.city ?? null,
+      shippingState: snapshot.shippingAddress?.state ?? null,
+      shippingPostalCode: snapshot.shippingAddress?.postal_code ?? null,
+      shippingCountry: snapshot.shippingAddress?.country ?? null,
+      billingName: session.customer_details?.name ?? snapshot.customerName ?? null,
+      billingLine1: snapshot.billingAddress?.line1 ?? null,
+      billingLine2: snapshot.billingAddress?.line2 ?? null,
+      billingCity: snapshot.billingAddress?.city ?? null,
+      billingState: snapshot.billingAddress?.state ?? null,
+      billingPostalCode: snapshot.billingAddress?.postal_code ?? null,
+      billingCountry: snapshot.billingAddress?.country ?? null,
+      stripeCheckoutSessionId: session.id,
+      stripePaymentIntentId: snapshot.stripePaymentIntentId ?? order.stripePaymentIntentId
+    },
+    include: storefrontOrderInclude
+  });
+  return { customer, order: updated, customerEmail: snapshot.customerEmail };
 }
 
 export async function handleStripeWebhook(rawBody: string, signature: string | null) {
@@ -1089,44 +1347,17 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
   if (!signature) throw new Error("Missing Stripe webhook signature.");
   const event = stripeClient().webhooks.constructEvent(rawBody, signature, secret);
   let order = await orderForStripeEvent(event);
-  try {
-    await prisma.paymentEvent.create({
-      data: {
-        orderId: order?.id,
-        eventId: event.id,
-        eventType: event.type,
-        payload: rawBody
-      }
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return { ok: true, duplicate: true };
-    }
-    throw error;
-  }
-  if (event.type === "checkout.session.completed" && order && order.paymentStatus !== "paid") {
+  await upsertSafePaymentEvent(event, order?.id ?? null);
+  if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    const customerEmail = session.customer_details?.email ?? session.customer_email ?? order.customerEmail;
-    const customerName = session.customer_details?.name ?? order.customerName;
-    const customer =
-      customerEmail
-        ? await prisma.storefrontCustomer.upsert({
-            where: { email: customerEmail },
-            create: { email: customerEmail, name: customerName, userId: order.userId },
-            update: { name: customerName ?? undefined }
-          })
-        : null;
-    await prisma.storefrontOrder.update({
-      where: { id: order.id },
-      data: {
-        customerId: customer?.id ?? order.customerId,
-        customerEmail,
-        customerName,
-        stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : order.stripePaymentIntentId
-      }
-    });
-    order = await prisma.storefrontOrder.findUnique({ where: { id: order.id }, include: storefrontOrderInclude });
-    if (order) await createStorefrontSale(order);
+    if (!order) return { ok: true, skipped: "order_not_found" };
+    if (session.payment_status !== "paid") return { ok: true, skipped: "checkout_session_not_paid" };
+    const wasPaid = order.paymentStatus === "paid";
+    const persisted = await persistPaidCheckoutSession(order, session);
+    order = persisted.order;
+    if (!wasPaid && order.paymentStatus !== "paid") await createStorefrontSale(order);
+    if (persisted.customer && persisted.customerEmail) await syncStorefrontCustomerTotals(persisted.customer.id, persisted.customerEmail);
+    return { ok: true };
   }
   if (event.type === "checkout.session.expired" && order) {
     await markStorefrontOrderPaymentFailed(order, "expired", "Stripe Checkout session expired before payment completed.");

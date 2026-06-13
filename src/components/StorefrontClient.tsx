@@ -1444,6 +1444,13 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <CreditCard size={16} />
               <small>{isStripeCheckout ? "Cards accepted securely through Stripe." : `We will contact you shortly at ${contactEmail}.`}</small>
             </div>
+            {isStripeCheckout ? (
+              <div className="gdg-checkout-trust-copy">
+                <strong>No account required.</strong>
+                <span>Stripe securely handles payment.</span>
+                <span>We use your email and shipping address only to process your order.</span>
+              </div>
+            ) : null}
             {isStripeCheckout ? <PaymentNetworkBadges /> : null}
           </aside>
         </div>
