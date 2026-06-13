@@ -16860,11 +16860,16 @@ body:has(.shop-shell) {
 }
 
 .gdg-cart-page {
+  --gdg-gold: #d4af37;
+  --gdg-gold-dark: #9a6a05;
+  --gdg-gold-deep: #5d3b00;
+  --gdg-gold-pale: #fff7df;
+  --gdg-gold-border: #f1d58a;
   position: relative;
   overflow: hidden;
   border: 0;
   background:
-    radial-gradient(circle at 52% 0%, rgba(22, 163, 74, 0.1), transparent 32%),
+    radial-gradient(circle at 52% 0%, rgba(212, 175, 55, 0.13), transparent 32%),
     radial-gradient(circle at 4% 16%, rgba(255, 255, 255, 0.95), transparent 34%),
     linear-gradient(180deg, #ffffff 0%, #fbfdff 70%, #ffffff 100%);
   box-shadow: none;
@@ -16910,7 +16915,7 @@ body:has(.shop-shell) {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   overflow: hidden;
-  border: 1px solid rgba(22, 163, 74, 0.14);
+  border: 1px solid rgba(212, 175, 55, 0.28);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
@@ -16927,17 +16932,17 @@ body:has(.shop-shell) {
 }
 
 .gdg-checkout-trust-row article:not(:last-child) {
-  border-right: 1px solid rgba(22, 163, 74, 0.1);
+  border-right: 1px solid rgba(212, 175, 55, 0.18);
 }
 
 .gdg-checkout-trust-row svg {
   width: 38px;
   height: 38px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #052e1a, #16a34a);
-  color: #ffffff;
+  background: linear-gradient(135deg, #090806, #34250b 52%, var(--gdg-gold));
+  color: #fff8df;
   padding: 8px;
-  box-shadow: 0 12px 24px rgba(22, 163, 74, 0.18);
+  box-shadow: 0 12px 24px rgba(166, 111, 0, 0.18);
 }
 
 .gdg-checkout-trust-row strong,
@@ -17110,11 +17115,11 @@ body:has(.shop-shell) {
 }
 
 .gdg-cart-assurance {
-  border: 1px solid #bbf7d0;
+  border: 1px solid var(--gdg-gold-border);
   background:
-    radial-gradient(circle at 96% 50%, rgba(16, 185, 129, 0.1), transparent 13%),
-    #ecfdf5;
-  color: #065f46;
+    radial-gradient(circle at 96% 50%, rgba(212, 175, 55, 0.14), transparent 13%),
+    var(--gdg-gold-pale);
+  color: var(--gdg-gold-deep);
 }
 
 .gdg-cart-small-business {
@@ -17198,7 +17203,7 @@ body:has(.shop-shell) {
 }
 
 .gdg-summary-heading svg {
-  color: #16a34a;
+  color: var(--gdg-gold-dark);
 }
 
 .gdg-summary-heading h2 {
@@ -17231,22 +17236,23 @@ body:has(.shop-shell) {
 
 .gdg-summary-rows strong {
   padding-top: 4px;
-  color: #059669;
+  color: var(--gdg-gold-dark);
   font-size: 1.15rem;
 }
 
 .gdg-free-shipping {
   display: grid;
   gap: 9px;
-  border: 1px solid rgba(22, 163, 74, 0.14);
+  border: 1px solid rgba(212, 175, 55, 0.28);
   border-radius: 16px;
-  background: #ecfdf5;
-  color: #065f46;
+  background: var(--gdg-gold-pale);
+  color: var(--gdg-gold-deep);
   padding: 12px 14px;
 }
 
 .gdg-free-shipping.muted {
-  background: #f8fafc;
+  border-color: rgba(212, 175, 55, 0.22);
+  background: linear-gradient(180deg, #fffdf7, #fff7df);
   color: #334155;
 }
 
@@ -17255,14 +17261,14 @@ body:has(.shop-shell) {
   overflow: hidden;
   height: 12px;
   border-radius: 999px;
-  background: #d1fae5;
+  background: #f6e6b5;
 }
 
 .gdg-free-shipping i {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #16a34a, #f59e0b);
+  background: linear-gradient(90deg, #0b0b0c, var(--gdg-gold));
 }
 
 .gdg-invoice-form-card label {
@@ -17321,9 +17327,15 @@ body:has(.shop-shell) {
   justify-items: start;
   gap: 10px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #050505, #0f2f1f 58%, #16a34a);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.22);
+  border: 1px solid rgba(212, 175, 55, 0.34);
+  background: linear-gradient(135deg, #050505, #17140d 54%, #6f4b05);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.24), inset 0 1px 0 rgba(255, 247, 223, 0.22);
   text-align: left;
+}
+
+.gdg-checkout-button > svg,
+.gdg-checkout-button > svg:last-child {
+  color: #f7d76e;
 }
 
 .gdg-checkout-button > span {
@@ -17332,7 +17344,7 @@ body:has(.shop-shell) {
 }
 
 .gdg-checkout-button small {
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(255, 247, 223, 0.78);
   font-size: 0.78rem;
 }
 
@@ -17348,31 +17360,95 @@ body:has(.shop-shell) {
   color: #64748b;
 }
 
+.gdg-payment-row svg {
+  color: var(--gdg-gold-dark);
+}
+
 .gdg-payment-icons {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .gdg-payment-icons span {
   display: inline-flex;
-  min-width: 38px;
+  width: 54px;
+  height: 28px;
+  align-items: center;
   justify-content: center;
-  border: 1px solid #dbe3ed;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #1f2937;
-  padding: 4px 6px;
-  font-size: 0.62rem;
-  font-weight: 950;
+  border-radius: 8px;
+  filter: drop-shadow(0 4px 8px rgba(15, 23, 42, 0.08));
+}
+
+.gdg-payment-icons svg {
+  display: block;
+  width: 54px;
+  height: 24px;
+}
+
+.gdg-payment-icons rect {
+  fill: #ffffff;
+  stroke: #d7dee8;
+  stroke-width: 1.4;
+}
+
+.gdg-payment-icons text {
+  dominant-baseline: middle;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-anchor: middle;
+}
+
+.gdg-payment-icons .visa text {
+  fill: #1a3c8b;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.gdg-payment-icons .mastercard circle:first-of-type {
+  fill: #eb001b;
+}
+
+.gdg-payment-icons .mastercard circle:last-of-type {
+  fill: #f79e1b;
+  fill-opacity: 0.9;
+}
+
+.gdg-payment-icons .mastercard text {
+  fill: #111827;
+  font-size: 7px;
+}
+
+.gdg-payment-icons .amex rect {
+  fill: #2e77bc;
+  stroke: #2e77bc;
+}
+
+.gdg-payment-icons .amex text {
+  fill: #ffffff;
+  font-size: 11px;
+}
+
+.gdg-payment-icons .discover path {
+  fill: none;
+  stroke: #f59e0b;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.gdg-payment-icons .discover text {
+  fill: #111827;
+  font-size: 7px;
 }
 
 .gdg-cart-empty {
   min-height: 430px;
   border-style: solid;
   background:
-    radial-gradient(circle at 50% 22%, rgba(22, 163, 74, 0.1), transparent 28%),
+    radial-gradient(circle at 50% 22%, rgba(212, 175, 55, 0.12), transparent 28%),
     #ffffff;
 }
 
@@ -17382,9 +17458,9 @@ body:has(.shop-shell) {
   height: 74px;
   place-items: center;
   border-radius: 24px;
-  background: linear-gradient(135deg, #dcfce7, #ffffff);
-  color: #16a34a;
-  box-shadow: 0 18px 40px rgba(22, 163, 74, 0.12);
+  background: linear-gradient(135deg, #fff7df, #ffffff);
+  color: var(--gdg-gold-dark);
+  box-shadow: 0 18px 40px rgba(166, 111, 0, 0.12);
 }
 
 .gdg-result-card {
@@ -17610,11 +17686,11 @@ body:has(.shop-shell) {
   }
 
   .gdg-checkout-trust-row article:nth-child(odd) {
-    border-right: 1px solid rgba(22, 163, 74, 0.1);
+    border-right: 1px solid rgba(212, 175, 55, 0.18);
   }
 
   .gdg-checkout-trust-row article:nth-child(-n + 2) {
-    border-bottom: 1px solid rgba(22, 163, 74, 0.1);
+    border-bottom: 1px solid rgba(212, 175, 55, 0.18);
   }
 
   .gdg-cart-line {
@@ -17652,7 +17728,7 @@ body:has(.shop-shell) {
   .gdg-checkout-trust-row article:nth-child(odd),
   .gdg-checkout-trust-row article:nth-child(-n + 2) {
     border-right: 0;
-    border-bottom: 1px solid rgba(22, 163, 74, 0.1);
+    border-bottom: 1px solid rgba(212, 175, 55, 0.18);
   }
 
   .gdg-checkout-trust-row article:last-child {

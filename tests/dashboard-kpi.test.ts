@@ -594,6 +594,11 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Secure payment powered by Stripe/);
   assert.match(client, /Request Invoice/);
   assert.match(client, /No card is charged today/);
+  assert.match(client, /PaymentNetworkBadges/);
+  assert.match(client, /Visa accepted/);
+  assert.match(client, /Mastercard accepted/);
+  assert.match(client, /American Express accepted/);
+  assert.match(client, /Discover accepted/);
   assert.match(client, /isStripeCheckout/);
   assert.match(client, /gdg-invoice-form-card/);
   assert.match(client, /requestPayload/);
@@ -613,8 +618,14 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(css, /gdg-invoice-form-card/);
   assert.match(css, /gdg-cart-line-price/);
   assert.match(css, /gdg-free-shipping/);
-  assert.match(css, /background: linear-gradient\(135deg, #050505, #0f2f1f 58%, #16a34a\)/);
+  assert.match(css, /--gdg-gold: #d4af37/);
+  assert.match(css, /background: linear-gradient\(135deg, #050505, #17140d 54%, #6f4b05\)/);
+  assert.match(css, /gdg-payment-icons \.visa text/);
+  assert.match(css, /gdg-payment-icons \.mastercard circle:first-of-type/);
+  assert.match(css, /gdg-payment-icons \.amex rect/);
+  assert.match(css, /gdg-payment-icons \.discover path/);
   assert.doesNotMatch(css, /background: linear-gradient\(135deg, #5b21b6, #9333ea\)/);
+  assert.doesNotMatch(css, /gdg-payment-icons span \{\s*display: inline-flex;\s*min-width: 38px/s);
   assert.match(css, /@media \(max-width: 820px\)/);
   assert.match(css, /grid-template-columns: minmax\(0, 1fr\) minmax\(300px, 360px\)/);
 

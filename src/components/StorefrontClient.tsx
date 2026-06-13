@@ -127,6 +127,40 @@ function publicCategoryLabel(category: string) {
   return cleanStorefrontTitle(category);
 }
 
+function PaymentNetworkBadges() {
+  return (
+    <div className="gdg-payment-icons" aria-label="Accepted card network indicators">
+      <span className="visa" role="img" aria-label="Visa accepted">
+        <svg viewBox="0 0 74 28" aria-hidden="true" focusable="false">
+          <rect width="74" height="28" rx="7" />
+          <text x="37" y="18">VISA</text>
+        </svg>
+      </span>
+      <span className="mastercard" role="img" aria-label="Mastercard accepted">
+        <svg viewBox="0 0 74 28" aria-hidden="true" focusable="false">
+          <rect width="74" height="28" rx="7" />
+          <circle cx="31" cy="14" r="8" />
+          <circle cx="43" cy="14" r="8" />
+          <text x="37" y="23">MC</text>
+        </svg>
+      </span>
+      <span className="amex" role="img" aria-label="American Express accepted">
+        <svg viewBox="0 0 74 28" aria-hidden="true" focusable="false">
+          <rect width="74" height="28" rx="7" />
+          <text x="37" y="18">AMEX</text>
+        </svg>
+      </span>
+      <span className="discover" role="img" aria-label="Discover accepted">
+        <svg viewBox="0 0 74 28" aria-hidden="true" focusable="false">
+          <rect width="74" height="28" rx="7" />
+          <path d="M7 22C22 8 49 7 67 22" />
+          <text x="37" y="18">DISCOVER</text>
+        </svg>
+      </span>
+    </div>
+  );
+}
+
 function displayStoreName(settings: StorefrontSettingsDTO) {
   return settings.storeName && !/poke radar/i.test(settings.storeName) ? settings.storeName : "GameDayGrabs LLC";
 }
@@ -299,8 +333,8 @@ function ProductImage({
   return (
     <div className={`gdg-product-image gdg-product-image-${size} gdg-product-media ${size === "detail" ? "gdg-product-image-detail-media" : ""}`}>
       <div className="gdg-image-badges" aria-hidden="true">
-        {badges.map((badge) => (
-          <span key={badge.label} className={`gdg-product-badge gdg-product-badge-${badge.variant}`}>
+        {badges.map((badge, index) => (
+          <span key={`${badge.variant}-${badge.label}-${index}`} className={`gdg-product-badge gdg-product-badge-${badge.variant}`}>
             {badge.label}
           </span>
         ))}
@@ -367,12 +401,12 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
       <nav className={`gdg-nav ${menuOpen ? "open" : ""}`} aria-label="Public shop navigation">
         {nav.map((item) =>
           item.external ? (
-            <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer" className="gdg-external-nav" onClick={() => setMenuOpen(false)}>
+            <a key={`${item.label}-${item.href}`} href={item.href} target="_blank" rel="noopener noreferrer" className="gdg-external-nav" onClick={() => setMenuOpen(false)}>
               {item.label}
               <ExternalLink size={12} aria-hidden="true" />
             </a>
           ) : (
-            <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)}>
+            <Link key={`${item.label}-${item.href}`} href={item.href} onClick={() => setMenuOpen(false)}>
               {item.label}
             </Link>
           )
@@ -643,8 +677,8 @@ export function ProductGrid({
               {heroProduct ? (
                 <div className="gdg-hero-feature">
                   <div className="gdg-hero-badge-row">
-                    {heroProductBadges.map((badge) => (
-                      <span key={badge}>{badge}</span>
+                    {heroProductBadges.map((badge, index) => (
+                      <span key={`${badge}-${index}`}>{badge}</span>
                     ))}
                   </div>
                   <small>{heroCategory}</small>
@@ -902,8 +936,8 @@ export function ProductDetail({
           <aside className={`gdg-gallery ${images.length > 1 ? "has-thumbs" : "single-image"}`}>
             <div className="gdg-gallery-main">
               <div className="gdg-image-badges gdg-image-badges-detail" aria-hidden="true">
-                {storefrontImageBadges(product, settings.newArrivalDays).map((badge) => (
-                  <span key={badge.label} className={`gdg-product-badge gdg-product-badge-${badge.variant}`}>
+                {storefrontImageBadges(product, settings.newArrivalDays).map((badge, index) => (
+                  <span key={`${badge.variant}-${badge.label}-${index}`} className={`gdg-product-badge gdg-product-badge-${badge.variant}`}>
                     {badge.label}
                   </span>
                 ))}
@@ -1410,15 +1444,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <CreditCard size={16} />
               <small>{isStripeCheckout ? "Cards accepted securely through Stripe." : `We will contact you shortly at ${contactEmail}.`}</small>
             </div>
-            {isStripeCheckout ? (
-              <div className="gdg-payment-icons" aria-hidden="true">
-                <span>VISA</span>
-                <span>MC</span>
-                <span>AMEX</span>
-                <span>DISC</span>
-                <span>Pay</span>
-              </div>
-            ) : null}
+            {isStripeCheckout ? <PaymentNetworkBadges /> : null}
           </aside>
         </div>
       ) : (
