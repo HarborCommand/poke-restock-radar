@@ -317,6 +317,18 @@ export type StorefrontOrderDTO = {
   notes: string | null;
   stripeCheckoutSessionId: string | null;
   stripePaymentIntentId: string | null;
+  refundStatus: string | null;
+  refundedAmount: number;
+  refundableAmount: number;
+  refundCurrency: string;
+  stripeRefundId: string | null;
+  refundReason: string | null;
+  refundNote: string | null;
+  stockReturnStatus: string | null;
+  stockReturnedAt: string | null;
+  customerCancellationEmailStatus: string | null;
+  customerCancellationEmailSentAt: string | null;
+  canCancelOrRefund: boolean;
   paidAt: string | null;
   createdAt: string;
   updatedAt: string;

@@ -17144,6 +17144,18 @@ body:has(.shop-shell) {
   color: #9a3412;
 }
 
+.gdg-cart-stock-warning-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.gdg-stock-remove-button {
+  border-color: #fed7aa;
+  background: #ffffff;
+  color: #7c2d12;
+  white-space: nowrap;
+}
+
 .gdg-cart-assurance p,
 .gdg-cart-small-business p,
 .gdg-cart-stock-warning strong,

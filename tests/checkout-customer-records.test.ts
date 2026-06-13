@@ -43,6 +43,25 @@ test("Stripe Checkout session creation collects customer contact and address det
   assert.doesNotMatch(sessionCreateParams, /payment_method_data|card_number|cardNumber|cvc|cvv/i);
 });
 
+test("Stripe Checkout session creation only creates temporary stock reservations", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const createCheckoutSession = sourceSlice(
+    storefront,
+    "export async function createCheckoutSession",
+    "export async function createInvoiceRequest"
+  );
+
+  assert.match(createCheckoutSession, /const cart = await getCartProducts\(input\.items\)/);
+  assert.match(createCheckoutSession, /reservations: \{\s*create: cart\.map/);
+  assert.match(createCheckoutSession, /expiresAt: new Date\(Date\.now\(\) \+ reservationMinutes \* 60 \* 1000\)/);
+  assert.match(createCheckoutSession, /cancel_url: `\$\{checkoutBaseUrl\}\/checkout\/cancel\?order=\$\{order\.id\}`/);
+  assert.doesNotMatch(createCheckoutSession, /prisma\.inventorySale\.create/);
+  assert.doesNotMatch(createCheckoutSession, /prisma\.inventoryStockLot\.update/);
+  assert.doesNotMatch(createCheckoutSession, /remainingQuantity:\s*lot\.remainingQuantity -/);
+  assert.doesNotMatch(createCheckoutSession, /quantitySold:/);
+  assert.doesNotMatch(createCheckoutSession, /paymentStatus: "paid"/);
+});
+
 test("Stripe webhook handlers verify raw request bodies before trusting events", () => {
   const storefront = readProjectFile("src/lib/storefront.ts");
   const currentWebhookRoute = readProjectFile("src/app/api/storefront/webhook/stripe/route.ts");
@@ -90,10 +109,67 @@ test("checkout.session.completed only persists paid orders", () => {
   assert.match(handleStripeWebhook, /return \{ ok: true, skipped: "checkout_session_not_paid" \}/);
 });
 
+test("paid checkout completion is the permanent inventory decrement path", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const createStorefrontSale = sourceSlice(storefront, "async function createStorefrontSale", "async function releaseOrderReservations");
+  const handleStripeWebhook = sourceSlice(
+    storefront,
+    "export async function handleStripeWebhook",
+    "export async function updateInventoryStoreListing"
+  );
+
+  assert.match(handleStripeWebhook, /const event = stripeClient\(\)\.webhooks\.constructEvent\(rawBody, signature, secret\)/);
+  assert.match(handleStripeWebhook, /if \(session\.payment_status !== "paid"\) return \{ ok: true, skipped: "checkout_session_not_paid" \}/);
+  assert.match(handleStripeWebhook, /const wasPaid = order\.paymentStatus === "paid"/);
+  assert.match(handleStripeWebhook, /if \(!wasPaid && order\.paymentStatus !== "paid"\) await createStorefrontSale\(order\)/);
+  assert.match(createStorefrontSale, /prisma\.\$transaction/);
+  assert.match(createStorefrontSale, /tx\.storefrontOrder\.updateMany/);
+  assert.match(createStorefrontSale, /where: \{ id: order\.id, paymentStatus: \{ not: "paid" \} \}/);
+  assert.match(createStorefrontSale, /if \(claimed\.count === 0\) return \{ created: false/);
+  assert.match(createStorefrontSale, /tx\.inventoryStockLot\.update/);
+  assert.match(createStorefrontSale, /remainingQuantity: lot\.remainingQuantity - quantityFromLot/);
+  assert.match(createStorefrontSale, /tx\.inventorySale\.create/);
+  assert.match(createStorefrontSale, /quantitySold: orderItem\.quantity/);
+  assert.match(createStorefrontSale, /tx\.stockReservation\.updateMany/);
+  assert.match(createStorefrontSale, /data: \{ status: "completed" \}/);
+});
+
+test("unpaid, expired, or canceled checkouts release reservations without recording paid inventory sales", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const cancelPage = readProjectFile("src/app/checkout/cancel/page.tsx");
+  const releaseOrderReservations = sourceSlice(storefront, "async function releaseOrderReservations", "async function markStorefrontOrderPaymentFailed");
+  const markStorefrontOrderPaymentFailed = sourceSlice(
+    storefront,
+    "async function markStorefrontOrderPaymentFailed",
+    "export async function releaseUnpaidCheckoutOrder"
+  );
+  const releaseUnpaidCheckoutOrder = sourceSlice(storefront, "export async function releaseUnpaidCheckoutOrder", "async function orderForStripeEvent");
+  const handleStripeWebhook = sourceSlice(
+    storefront,
+    "export async function handleStripeWebhook",
+    "export async function updateInventoryStoreListing"
+  );
+
+  assert.match(releaseOrderReservations, /prisma\.stockReservation\.updateMany/);
+  assert.match(releaseOrderReservations, /where: \{ orderId, status: "reserved" \}/);
+  assert.match(releaseOrderReservations, /data: \{ status: "released", releasedAt: new Date\(\) \}/);
+  assert.match(markStorefrontOrderPaymentFailed, /if \(order\.paymentStatus === "paid" \|\| order\.paymentStatus === paymentStatus\) return/);
+  assert.match(markStorefrontOrderPaymentFailed, /await releaseOrderReservations\(order\.id\)/);
+  assert.match(handleStripeWebhook, /event\.type === "checkout\.session\.expired"/);
+  assert.match(handleStripeWebhook, /markStorefrontOrderPaymentFailed\(order, "expired"/);
+  assert.match(handleStripeWebhook, /event\.type === "checkout\.session\.async_payment_failed" \|\| event\.type === "payment_intent\.payment_failed"/);
+  assert.match(handleStripeWebhook, /markStorefrontOrderPaymentFailed\(order, "failed"/);
+  assert.match(releaseUnpaidCheckoutOrder, /if \(order\.paymentStatus === "paid"\) return \{ ok: true, released: false, reason: "already_paid" \}/);
+  assert.match(releaseUnpaidCheckoutOrder, /await markStorefrontOrderPaymentFailed\(order, "failed", "Stripe Checkout was canceled before payment completed\."\)/);
+  assert.doesNotMatch(releaseUnpaidCheckoutOrder, /prisma\.inventorySale\.create|prisma\.inventoryStockLot\.update|paymentStatus: "paid"/);
+  assert.match(cancelPage, /releaseUnpaidCheckoutOrder\(params\.order\)/);
+});
+
 test("duplicate Stripe sessions and events do not duplicate orders or customer totals", () => {
   const storefront = readProjectFile("src/lib/storefront.ts");
   const schema = readProjectFile("prisma/schema.prisma");
   const orderForStripeEvent = sourceSlice(storefront, "async function orderForStripeEvent", "type StripeAddressLike");
+  const createStorefrontSale = sourceSlice(storefront, "async function createStorefrontSale", "async function releaseOrderReservations");
   const persistPaidCheckoutSession = sourceSlice(storefront, "async function persistPaidCheckoutSession", "export async function handleStripeWebhook");
   const syncStorefrontCustomerTotals = sourceSlice(storefront, "async function syncStorefrontCustomerTotals", "async function persistPaidCheckoutSession");
   const upsertSafePaymentEvent = sourceSlice(storefront, "async function upsertSafePaymentEvent", "function checkoutCustomerSnapshot");
@@ -103,7 +179,7 @@ test("duplicate Stripe sessions and events do not duplicate orders or customer t
     "export async function updateInventoryStoreListing"
   );
 
-  assert.match(schema, /stripeCheckoutSessionId String\?\s+@unique/);
+  assert.match(schema, /stripeCheckoutSessionId\s+String\?\s+@unique/);
   assert.match(schema, /eventId\s+String\s+@unique/);
   assert.match(orderForStripeEvent, /stripeCheckoutSessionId: object\.id/);
   assert.match(persistPaidCheckoutSession, /prisma\.storefrontOrder\.update\(\{\s*where: \{ id: order\.id \}/);
@@ -112,6 +188,9 @@ test("duplicate Stripe sessions and events do not duplicate orders or customer t
   assert.match(upsertSafePaymentEvent, /where: \{ eventId: event\.id \}/);
   assert.match(handleStripeWebhook, /const wasPaid = order\.paymentStatus === "paid"/);
   assert.match(handleStripeWebhook, /if \(!wasPaid && order\.paymentStatus !== "paid"\) await createStorefrontSale\(order\)/);
+  assert.match(createStorefrontSale, /tx\.storefrontOrder\.updateMany/);
+  assert.match(createStorefrontSale, /where: \{ id: order\.id, paymentStatus: \{ not: "paid" \} \}/);
+  assert.match(createStorefrontSale, /if \(claimed\.count === 0\) return \{ created: false/);
   assert.match(syncStorefrontCustomerTotals, /where: \{ customerEmail, paymentStatus: "paid" \}/);
   assert.match(syncStorefrontCustomerTotals, /totalOrders: paidOrders\.length/);
   assert.match(syncStorefrontCustomerTotals, /totalSpent: paidOrders\.reduce\(\(sum, order\) => sum \+ order\.total, 0\)/);
@@ -184,4 +263,90 @@ test("checkout customer records never persist raw card or payment method details
   assert.match(safeStripeEventPayload, /provider: "stripe"/);
   assert.match(safeStripeEventPayload, /stripeCustomerId: stripeIdFromUnknown\(object\.customer\)/);
   assert.match(safeStripeEventPayload, /customerPhone: stringValue\(customerDetails\?\.phone\)/);
+});
+
+test("admin cancel refund flow stores safe refund metadata and uses Stripe Refund API", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const schema = readProjectFile("prisma/schema.prisma");
+  const validation = readProjectFile("src/lib/validation.ts");
+  const route = readProjectFile("src/app/api/radar/storefront/orders/[orderId]/cancel-refund/route.ts");
+  const cancelOrRefund = sourceSlice(storefront, "export async function cancelOrRefundStorefrontOrder", "export async function updateStorefrontOrder");
+
+  for (const field of [
+    "refundStatus",
+    "refundedAmount",
+    "refundCurrency",
+    "stripeRefundId",
+    "refundReason",
+    "refundNote",
+    "stockReturnStatus",
+    "stockReturnedAt",
+    "customerCancellationEmailStatus",
+    "customerCancellationEmailSentAt"
+  ]) {
+    assert.match(schema, new RegExp(`${field}\\s+`), `missing refund field ${field}`);
+  }
+  assert.match(validation, /storefrontOrderCancelRefundSchema/);
+  assert.match(validation, /refundType: z\.enum\(\["full", "partial", "none"\]\)/);
+  assert.match(validation, /partialRefundAmount/);
+  assert.match(route, /requireUser/);
+  assert.match(route, /storefrontOrderCancelRefundSchema\.parse/);
+  assert.match(route, /cancelOrRefundStorefrontOrder\(user, orderId, input\)/);
+  assert.match(cancelOrRefund, /stripeClient\(\)\.refunds\.create/);
+  assert.match(cancelOrRefund, /payment_intent: order\.stripePaymentIntentId/);
+  assert.match(cancelOrRefund, /amount: refundCents/);
+  assert.match(cancelOrRefund, /idempotencyKey: `storefront-cancel-refund:\$\{input\.idempotencyKey\}`/);
+  assert.match(cancelOrRefund, /if \(refundCents > remainingRefundableCents\) throw new Error\("Refund amount exceeds the remaining refundable order total\."\)/);
+  assert.match(cancelOrRefund, /if \(input\.refundType === "none" && isPaidStripeOrder\)/);
+  assert.match(cancelOrRefund, /if \(input\.refundType !== "none" && !isPaidStripeOrder\)/);
+  assert.doesNotMatch(cancelOrRefund, /payment_method_details|payment_method_data|card_number|cvc|cvv/i);
+});
+
+test("admin cancel refund flow is idempotent and returns inventory once", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const cancelOrRefund = sourceSlice(storefront, "export async function cancelOrRefundStorefrontOrder", "export async function updateStorefrontOrder");
+  const returnOrderInventory = sourceSlice(storefront, "async function returnOrderInventory", "export async function cancelOrRefundStorefrontOrder");
+
+  assert.match(cancelOrRefund, /const requestEventId = `admin\.cancel_refund:\$\{input\.idempotencyKey\}`/);
+  assert.match(cancelOrRefund, /prisma\.paymentEvent\.findUnique\(\{ where: \{ eventId: requestEventId \} \}\)/);
+  assert.match(cancelOrRefund, /prisma\.\$transaction/);
+  assert.match(cancelOrRefund, /const duplicate = await tx\.paymentEvent\.findUnique/);
+  assert.match(cancelOrRefund, /!current\.stockReturnedAt/);
+  assert.match(returnOrderInventory, /data: \{ status: "returned"/);
+  assert.match(returnOrderInventory, /tx\.inventoryStockLot\.update/);
+  assert.match(returnOrderInventory, /remainingQuantity: \{ increment: orderItem\.quantity \}/);
+  assert.match(returnOrderInventory, /tx\.inventoryItem\.update/);
+  assert.match(returnOrderInventory, /quantity: \{ increment: orderItem\.quantity \}/);
+  assert.match(cancelOrRefund, /eventType: "admin\.cancel_refund\.started"/);
+  assert.match(cancelOrRefund, /eventType: "admin\.refund\.created"/);
+  assert.match(cancelOrRefund, /eventType: "admin\.inventory\.returned"/);
+});
+
+test("admin orders UI exposes cancel refund modal without replacing fulfillment actions", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const types = readProjectFile("src/types/radar.ts");
+  const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontCancelRefundModal");
+  const cancelModal = sourceSlice(app, "function StorefrontCancelRefundModal", "function InventoryKpiCard");
+
+  assert.match(types, /refundStatus: string \| null/);
+  assert.match(types, /refundedAmount: number/);
+  assert.match(types, /refundableAmount: number/);
+  assert.match(types, /canCancelOrRefund: boolean/);
+  assert.match(orderModal, /Mark Packing/);
+  assert.match(orderModal, /Mark Shipped/);
+  assert.match(orderModal, /Packing Slip/);
+  assert.match(orderModal, /order\.canCancelOrRefund/);
+  assert.match(orderModal, /Cancel \/ Refund/);
+  assert.match(cancelModal, /Cancellation reason/);
+  assert.match(cancelModal, /Out of stock/);
+  assert.match(cancelModal, /Customer requested cancellation/);
+  assert.match(cancelModal, /Fraud \/ suspicious order/);
+  assert.match(cancelModal, /Full refund/);
+  assert.match(cancelModal, /Partial refund/);
+  assert.match(cancelModal, /No refund/);
+  assert.match(cancelModal, /Return purchased items to stock/);
+  assert.match(cancelModal, /Send cancellation email to customer/);
+  assert.match(cancelModal, /\/api\/radar\/storefront\/orders\/\$\{order\.id\}\/cancel-refund/);
+  assert.match(cancelModal, /idempotencyKey/);
+  assert.doesNotMatch(cancelModal, /payment_method_details|payment_method_data|card_number|cvv/i);
 });

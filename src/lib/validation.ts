@@ -863,6 +863,26 @@ export const storefrontContactMessageSchema = z.object({
   message: z.string().trim().min(10).max(2000)
 });
 
+export const storefrontOrderCancelRefundSchema = z
+  .object({
+    reason: z.enum(["out_of_stock", "customer_requested", "address_issue", "fraud_suspicious", "duplicate_order", "other"]),
+    adminNote: optionalTrimmed,
+    refundType: z.enum(["full", "partial", "none"]),
+    partialRefundAmount: optionalMoney,
+    returnItemsToStock: checkboxBoolean,
+    sendCustomerEmail: checkboxBoolean,
+    idempotencyKey: z.string().trim().min(8).max(120)
+  })
+  .superRefine((input, context) => {
+    if (input.refundType === "partial" && (!input.partialRefundAmount || input.partialRefundAmount <= 0)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["partialRefundAmount"],
+        message: "Enter a partial refund amount greater than $0."
+      });
+    }
+  });
+
 export const storefrontSettingsSchema = z.object({
   storeName: z.string().trim().min(2).max(120),
   storeLogoUrl: optionalHttpUrl,

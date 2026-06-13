@@ -528,6 +528,28 @@ function estimateStripeFee(total: number) {
   return Math.round((total * 0.029 + 0.3) * 100) / 100;
 }
 
+const cancellationReasonLabels = {
+  out_of_stock: "Out of stock",
+  customer_requested: "Customer requested cancellation",
+  address_issue: "Address issue",
+  fraud_suspicious: "Fraud / suspicious order",
+  duplicate_order: "Duplicate order",
+  other: "Other"
+} as const;
+
+type StorefrontCancellationReason = keyof typeof cancellationReasonLabels;
+type StorefrontRefundType = "full" | "partial" | "none";
+
+type StorefrontCancelRefundInput = {
+  reason: StorefrontCancellationReason;
+  adminNote?: string;
+  refundType: StorefrontRefundType;
+  partialRefundAmount?: number | null;
+  returnItemsToStock: boolean;
+  sendCustomerEmail: boolean;
+  idempotencyKey: string;
+};
+
 function smtpReady() {
   return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_FROM?.trim());
 }
@@ -553,6 +575,112 @@ async function sendStorefrontEmail(to: string, subject: string, text: string) {
     text
   });
   return true;
+}
+
+function moneyFromCents(cents: number) {
+  return Math.round(cents) / 100;
+}
+
+function centsFromMoney(amount: number) {
+  return Math.round(amount * 100);
+}
+
+function orderRefundedCents(order: Pick<StorefrontOrderWithItems, "refundedAmount">) {
+  return centsFromMoney(order.refundedAmount || 0);
+}
+
+function orderTotalCents(order: Pick<StorefrontOrderWithItems, "total">) {
+  return centsFromMoney(order.total || 0);
+}
+
+function orderRemainingRefundableCents(order: Pick<StorefrontOrderWithItems, "total" | "refundedAmount">) {
+  return Math.max(0, orderTotalCents(order) - orderRefundedCents(order));
+}
+
+function orderCanCancelOrRefund(order: StorefrontOrderWithItems) {
+  return !(
+    ["canceled", "refunded", "partially_refunded", "refund_pending"].includes(order.status) ||
+    ["refunded", "partially_refunded", "refund_pending"].includes(order.paymentStatus) ||
+    Boolean(order.canceledAt && order.refundStatus)
+  );
+}
+
+function orderInventoryWasFinalized(order: StorefrontOrderWithItems) {
+  return (
+    order.paymentStatus === "paid" ||
+    order.reservations.some((reservation) => reservation.status === "completed") ||
+    order.items.some((item) => item.costBasis > 0 || item.profitLoss !== 0)
+  );
+}
+
+function refundPaymentStatus(stripeRefundStatus: string | null, newRefundedCents: number, totalCents: number) {
+  if (stripeRefundStatus === "failed" || stripeRefundStatus === "canceled") return "refund_failed";
+  if (stripeRefundStatus && stripeRefundStatus !== "succeeded") return "refund_pending";
+  return newRefundedCents >= totalCents ? "refunded" : "partially_refunded";
+}
+
+function refundEventPayload(input: {
+  order: StorefrontOrderWithItems;
+  reason: StorefrontCancellationReason;
+  adminNote?: string;
+  refundType: StorefrontRefundType;
+  refundAmount: number;
+  stripeRefundId?: string | null;
+  stripeRefundStatus?: string | null;
+  returnItemsToStock: boolean;
+  stockReturnStatus: string;
+  customerEmailStatus: string;
+}) {
+  return JSON.stringify({
+    provider: "admin",
+    orderId: input.order.id,
+    orderNumber: input.order.orderNumber,
+    reason: input.reason,
+    reasonLabel: cancellationReasonLabels[input.reason],
+    adminNote: input.adminNote || null,
+    refundType: input.refundType,
+    refundAmount: input.refundAmount,
+    currency: "usd",
+    stripeRefundId: input.stripeRefundId || null,
+    stripeRefundStatus: input.stripeRefundStatus || null,
+    returnItemsToStock: input.returnItemsToStock,
+    stockReturnStatus: input.stockReturnStatus,
+    customerEmailStatus: input.customerEmailStatus
+  });
+}
+
+async function sendStorefrontCancellationEmail(input: {
+  order: StorefrontOrderWithItems;
+  reason: StorefrontCancellationReason;
+  adminNote?: string;
+  refundAmount: number;
+  contactEmail: string;
+}) {
+  const to = input.order.customerEmail ?? input.order.customer?.email ?? null;
+  if (!to) return "missing_customer_email";
+  const reasonLabel = cancellationReasonLabels[input.reason];
+  const refundLine =
+    input.refundAmount > 0
+      ? `Refund amount: $${input.refundAmount.toFixed(2)}. Refund timing depends on your bank or card issuer.`
+      : "No Stripe refund was issued for this order.";
+  const text = [
+    "GameDayGrabs order cancellation",
+    "",
+    `Order: ${input.order.orderNumber}`,
+    `Reason: ${reasonLabel}`,
+    input.adminNote ? `Note: ${input.adminNote}` : null,
+    refundLine,
+    "",
+    `Questions? Contact ${input.contactEmail}.`
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+  try {
+    const sent = await sendStorefrontEmail(to, `GameDayGrabs order ${input.order.orderNumber} cancellation`, text);
+    return sent ? "sent" : "not_configured";
+  } catch {
+    return "failed";
+  }
 }
 
 function stripeImage(imageUrl: string | null | undefined) {
@@ -589,7 +717,12 @@ function orderSource(order: StorefrontOrderWithItems): StorefrontOrderDTO["sourc
 function orderStatusBadge(order: StorefrontOrderWithItems) {
   if (order.status === "contact_message") return "Inquiry";
   if (order.status === "invoice_requested") return "Invoice Request";
-  if (order.paymentStatus === "expired" || order.status === "canceled") return "Expired";
+  if (order.paymentStatus === "refund_failed" || order.status === "refund_failed") return "Refund Failed";
+  if (order.paymentStatus === "refund_pending" || order.status === "refund_pending") return "Refund Pending";
+  if (order.paymentStatus === "partially_refunded" || order.status === "partially_refunded") return "Partially Refunded";
+  if (order.paymentStatus === "refunded" || order.status === "refunded") return "Refunded";
+  if (order.status === "canceled") return "Canceled";
+  if (order.paymentStatus === "expired") return "Expired";
   if (order.paymentStatus === "paid" && order.fulfillmentStatus === "unfulfilled") return "Needs Shipping";
   if (order.paymentStatus === "paid") return "Paid";
   if (order.paymentStatus === "pending") return "New";
@@ -598,12 +731,21 @@ function orderStatusBadge(order: StorefrontOrderWithItems) {
 
 function orderTimeline(order: StorefrontOrderWithItems): StorefrontOrderDTO["timeline"] {
   const completedEvent = order.paymentEvents.find((event) => event.eventType === "checkout.session.completed");
+  const cancellationStarted = order.paymentEvents.find((event) => event.eventType === "admin.cancel_refund.started");
+  const refundCreated = order.paymentEvents.find((event) => event.eventType === "admin.refund.created");
+  const notificationEvent = order.paymentEvents.find((event) => event.eventType.startsWith("admin.cancellation_email."));
   return [
     { label: "Order created", at: order.createdAt.toISOString(), detail: "Storefront order was created." },
     { label: "Checkout started", at: order.stripeCheckoutSessionId ? order.createdAt.toISOString() : null, detail: order.stripeCheckoutSessionId ? "Stripe Checkout session was created." : "No Stripe Checkout session for this order." },
     { label: "Payment completed", at: completedEvent?.receivedAt.toISOString() ?? order.paidAt?.toISOString() ?? null, detail: completedEvent ? "Stripe webhook checkout.session.completed was received." : "Payment completion webhook has not been stored." },
     { label: "Inventory reduced", at: order.reservations.some((reservation) => reservation.status === "completed") ? order.paidAt?.toISOString() ?? null : null, detail: order.reservations.some((reservation) => reservation.status === "completed") ? "Stock reservation completed after payment." : "Inventory has not been finalized for this order." },
     { label: "Sale created", at: order.items.some((item) => item.costBasis > 0 || item.profitLoss !== 0) ? order.paidAt?.toISOString() ?? null : null, detail: order.items.some((item) => item.costBasis > 0 || item.profitLoss !== 0) ? "Inventory sale/profit values are attached to order items." : "No sale/profit allocation stored yet." },
+    { label: "Cancellation started", at: cancellationStarted?.receivedAt.toISOString() ?? order.canceledAt?.toISOString() ?? null, detail: order.refundReason ? `Reason: ${order.refundReason}.` : "No cancellation has been started." },
+    { label: "Refund created", at: refundCreated?.receivedAt.toISOString() ?? order.refundedAt?.toISOString() ?? null, detail: order.refundedAmount > 0 ? `Refund total recorded: $${order.refundedAmount.toFixed(2)}.` : "No Stripe refund recorded." },
+    { label: "Refund status", at: order.refundedAt?.toISOString() ?? null, detail: order.refundStatus ? `Refund status: ${order.refundStatus}.` : "No refund status recorded." },
+    { label: "Inventory returned", at: order.stockReturnedAt?.toISOString() ?? null, detail: order.stockReturnStatus ? `Stock return status: ${order.stockReturnStatus}.` : "Stock has not been returned for this order." },
+    { label: "Customer notified", at: order.customerCancellationEmailSentAt?.toISOString() ?? notificationEvent?.receivedAt.toISOString() ?? null, detail: order.customerCancellationEmailStatus ? `Email status: ${order.customerCancellationEmailStatus}.` : "No cancellation email recorded." },
+    { label: "Admin note/reason", at: cancellationStarted?.receivedAt.toISOString() ?? null, detail: [order.refundReason ? `Reason: ${order.refundReason}` : null, order.refundNote ? `Note: ${order.refundNote}` : null].filter(Boolean).join(" - ") || "No admin cancellation note recorded." },
     { label: "Packing", at: order.fulfillmentStatus === "packing" || order.status === "packing" ? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "packing" || order.status === "packing" ? "Order is marked packing." : "Not marked packing yet." },
     { label: "Shipped", at: order.fulfillmentStatus === "shipped" ? order.fulfillment?.shippedAt?.toISOString() ?? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "shipped" ? "Order is marked shipped." : "Not shipped yet." }
   ];
@@ -635,6 +777,7 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const needsFulfillment = order.paymentStatus === "paid" && !["shipped", "picked_up", "canceled"].includes(order.fulfillmentStatus);
   const isNewPaidOrder = order.paymentStatus === "paid" && order.fulfillmentStatus === "unfulfilled";
+  const refundableAmount = moneyFromCents(orderRemainingRefundableCents(order));
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -685,6 +828,18 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     notes: order.notes,
     stripeCheckoutSessionId: order.stripeCheckoutSessionId,
     stripePaymentIntentId: order.stripePaymentIntentId,
+    refundStatus: order.refundStatus,
+    refundedAmount: order.refundedAmount,
+    refundableAmount,
+    refundCurrency: order.refundCurrency,
+    stripeRefundId: order.stripeRefundId,
+    refundReason: order.refundReason,
+    refundNote: order.refundNote,
+    stockReturnStatus: order.stockReturnStatus,
+    stockReturnedAt: order.stockReturnedAt?.toISOString() ?? null,
+    customerCancellationEmailStatus: order.customerCancellationEmailStatus,
+    customerCancellationEmailSentAt: order.customerCancellationEmailSentAt?.toISOString() ?? null,
+    canCancelOrRefund: orderCanCancelOrRefund(order),
     paidAt: order.paidAt?.toISOString() ?? null,
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
@@ -1009,80 +1164,103 @@ async function createStorefrontOrderAlert(
 }
 
 async function createStorefrontSale(order: StorefrontOrderWithItems) {
-  let orderCostBasis = 0;
-  for (const orderItem of order.items) {
-    const inventory = await prisma.inventoryItem.findUnique({
-      where: { id: orderItem.inventoryItemId },
-      include: { stockLots: { orderBy: { purchasedAt: "asc" } }, sales: true }
-    });
-    if (!inventory) continue;
-    let remainingToAllocate = orderItem.quantity;
-    let costBasis = 0;
-    for (const lot of inventory.stockLots.filter((stockLot) => stockLot.remainingQuantity > 0)) {
-      if (remainingToAllocate <= 0) break;
-      const quantityFromLot = Math.min(remainingToAllocate, lot.remainingQuantity);
-      costBasis += quantityFromLot * lotUnitCost(lot);
-      remainingToAllocate -= quantityFromLot;
-      await prisma.inventoryStockLot.update({
-        where: { id: lot.id },
-        data: { remainingQuantity: lot.remainingQuantity - quantityFromLot }
-      });
-    }
-    if (remainingToAllocate > 0) {
-      costBasis += remainingToAllocate * inventory.cost;
-      await createStorefrontOrderAlert(order, {
-        type: "inventory_issue",
-        title: "Inventory allocation issue",
-        reason: `${remainingToAllocate} unit${remainingToAllocate === 1 ? "" : "s"} for ${orderItem.publicTitle} were sold without enough remaining stock lots. Review cost basis and stock immediately.`,
-        priority: "HIGH",
-        score: 95
-      });
-    }
-    const allocatedShipping = order.subtotal > 0 ? (orderItem.lineTotal / order.subtotal) * order.shippingCharged : 0;
-    const allocatedStripeFee = order.subtotal > 0 ? (orderItem.lineTotal / order.subtotal) * order.stripeFeeEstimate : 0;
-    const netSale = orderItem.lineTotal + allocatedShipping - allocatedStripeFee;
-    const profitLoss = netSale - costBasis;
-    await prisma.inventorySale.create({
+  const paidAt = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.storefrontOrder.updateMany({
+      where: { id: order.id, paymentStatus: { not: "paid" } },
       data: {
-        inventoryItemId: inventory.id,
-        userId: inventory.userId,
-        quantitySold: orderItem.quantity,
-        soldPricePerItem: orderItem.unitPrice,
-        grossSale: orderItem.lineTotal,
-        platform: "website",
-        fees: allocatedStripeFee,
-        shippingCost: 0,
-        netSale,
-        costBasis,
-        profitLoss,
-        roiPercent: costBasis > 0 ? (profitLoss / costBasis) * 100 : null,
-        soldAt: new Date(),
-        notes: `Storefront order ${order.orderNumber}`
+        status: "paid",
+        paymentStatus: "paid",
+        fulfillmentStatus: "unfulfilled",
+        paidAt
       }
     });
-    await prisma.storefrontOrderItem.update({
-      where: { id: orderItem.id },
-      data: { costBasis, profitLoss }
-    });
-    orderCostBasis += costBasis;
-  }
-  const netProfit = order.total - order.stripeFeeEstimate - order.shippingCost - orderCostBasis;
-  await prisma.storefrontOrder.update({
-    where: { id: order.id },
-    data: {
-      status: "paid",
-      paymentStatus: "paid",
-      fulfillmentStatus: "unfulfilled",
-      costBasis: orderCostBasis,
-      netProfit,
-      roiPercent: orderCostBasis > 0 ? (netProfit / orderCostBasis) * 100 : null,
-      paidAt: new Date()
+    if (claimed.count === 0) return { created: false, allocationIssues: [] as string[] };
+
+    let orderCostBasis = 0;
+    const allocationIssues: string[] = [];
+    for (const orderItem of order.items) {
+      const inventory = await tx.inventoryItem.findUnique({
+        where: { id: orderItem.inventoryItemId },
+        include: { stockLots: { orderBy: { purchasedAt: "asc" } }, sales: true }
+      });
+      if (!inventory) continue;
+      let remainingToAllocate = orderItem.quantity;
+      let costBasis = 0;
+      for (const lot of inventory.stockLots.filter((stockLot) => stockLot.remainingQuantity > 0)) {
+        if (remainingToAllocate <= 0) break;
+        const quantityFromLot = Math.min(remainingToAllocate, lot.remainingQuantity);
+        costBasis += quantityFromLot * lotUnitCost(lot);
+        remainingToAllocate -= quantityFromLot;
+        await tx.inventoryStockLot.update({
+          where: { id: lot.id },
+          data: { remainingQuantity: lot.remainingQuantity - quantityFromLot }
+        });
+      }
+      if (remainingToAllocate > 0) {
+        costBasis += remainingToAllocate * inventory.cost;
+        allocationIssues.push(
+          `${remainingToAllocate} unit${remainingToAllocate === 1 ? "" : "s"} for ${orderItem.publicTitle} were sold without enough remaining stock lots. Review cost basis and stock immediately.`
+        );
+      }
+      const allocatedShipping = order.subtotal > 0 ? (orderItem.lineTotal / order.subtotal) * order.shippingCharged : 0;
+      const allocatedStripeFee = order.subtotal > 0 ? (orderItem.lineTotal / order.subtotal) * order.stripeFeeEstimate : 0;
+      const netSale = orderItem.lineTotal + allocatedShipping - allocatedStripeFee;
+      const profitLoss = netSale - costBasis;
+      await tx.inventorySale.create({
+        data: {
+          inventoryItemId: inventory.id,
+          userId: inventory.userId,
+          quantitySold: orderItem.quantity,
+          soldPricePerItem: orderItem.unitPrice,
+          grossSale: orderItem.lineTotal,
+          platform: "website",
+          fees: allocatedStripeFee,
+          shippingCost: 0,
+          netSale,
+          costBasis,
+          profitLoss,
+          roiPercent: costBasis > 0 ? (profitLoss / costBasis) * 100 : null,
+          soldAt: paidAt,
+          notes: `Storefront order ${order.orderNumber}`
+        }
+      });
+      await tx.storefrontOrderItem.update({
+        where: { id: orderItem.id },
+        data: { costBasis, profitLoss }
+      });
+      orderCostBasis += costBasis;
     }
+    const netProfit = order.total - order.stripeFeeEstimate - order.shippingCost - orderCostBasis;
+    await tx.storefrontOrder.update({
+      where: { id: order.id },
+      data: {
+        status: "paid",
+        paymentStatus: "paid",
+        fulfillmentStatus: "unfulfilled",
+        costBasis: orderCostBasis,
+        netProfit,
+        roiPercent: orderCostBasis > 0 ? (netProfit / orderCostBasis) * 100 : null,
+        paidAt
+      }
+    });
+    await tx.stockReservation.updateMany({
+      where: { orderId: order.id, status: "reserved" },
+      data: { status: "completed" }
+    });
+    return { created: true, allocationIssues };
   });
-  await prisma.stockReservation.updateMany({
-    where: { orderId: order.id, status: "reserved" },
-    data: { status: "completed" }
-  });
+
+  if (!result.created) return;
+  for (const reason of result.allocationIssues) {
+    await createStorefrontOrderAlert(order, {
+      type: "inventory_issue",
+      title: "Inventory allocation issue",
+      reason,
+      priority: "HIGH",
+      score: 95
+    });
+  }
   await createStorefrontOrderAlert(order, {
     type: "paid",
     title: "New paid order",
@@ -1093,7 +1271,7 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
 }
 
 async function releaseOrderReservations(orderId: string) {
-  await prisma.stockReservation.updateMany({
+  return prisma.stockReservation.updateMany({
     where: { orderId, status: "reserved" },
     data: { status: "released", releasedAt: new Date() }
   });
@@ -1118,6 +1296,25 @@ async function markStorefrontOrderPaymentFailed(order: StorefrontOrderWithItems,
     priority: "MEDIUM",
     score: 75
   });
+}
+
+export async function releaseUnpaidCheckoutOrder(orderId: string | null | undefined) {
+  if (!orderId) return { ok: false, released: false, reason: "missing_order_id" };
+  const order = await prisma.storefrontOrder.findUnique({
+    where: { id: orderId },
+    include: storefrontOrderInclude
+  });
+  if (!order) return { ok: false, released: false, reason: "order_not_found" };
+  if (!order.stripeCheckoutSessionId) return { ok: true, released: false, reason: "not_stripe_checkout" };
+  if (order.paymentStatus === "paid") return { ok: true, released: false, reason: "already_paid" };
+
+  if (order.status === "canceled" || order.paymentStatus === "failed" || order.paymentStatus === "expired") {
+    const released = await releaseOrderReservations(order.id);
+    return { ok: true, released: released.count > 0, reason: "already_canceled" };
+  }
+
+  await markStorefrontOrderPaymentFailed(order, "failed", "Stripe Checkout was canceled before payment completed.");
+  return { ok: true, released: true, reason: "checkout_canceled" };
 }
 
 async function orderForStripeEvent(event: Stripe.Event) {
@@ -1573,6 +1770,239 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     totalRevenue: paidOrders.reduce((sum, order) => sum + order.total, 0),
     netProfit: paidOrders.reduce((sum, order) => sum + order.netProfit, 0)
   };
+}
+
+async function returnOrderInventory(tx: Prisma.TransactionClient, order: StorefrontOrderWithItems) {
+  let returnedQuantity = 0;
+  for (const orderItem of order.items) {
+    const inventory = await tx.inventoryItem.findUnique({
+      where: { id: orderItem.inventoryItemId },
+      include: { stockLots: { orderBy: { purchasedAt: "asc" } } }
+    });
+    if (!inventory) continue;
+    if (inventory.stockLots.length) {
+      await tx.inventoryStockLot.update({
+        where: { id: inventory.stockLots[0].id },
+        data: { remainingQuantity: { increment: orderItem.quantity } }
+      });
+    } else {
+      await tx.inventoryItem.update({
+        where: { id: inventory.id },
+        data: { quantity: { increment: orderItem.quantity } }
+      });
+    }
+    returnedQuantity += orderItem.quantity;
+  }
+  await tx.stockReservation.updateMany({
+    where: { orderId: order.id, status: "completed" },
+    data: { status: "returned", releasedAt: new Date() }
+  });
+  return returnedQuantity;
+}
+
+export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, orderId: string, input: StorefrontCancelRefundInput) {
+  const requestEventId = `admin.cancel_refund:${input.idempotencyKey}`;
+  const existingRequest = await prisma.paymentEvent.findUnique({ where: { eventId: requestEventId } });
+  if (existingRequest) {
+    const existingOrder = await prisma.storefrontOrder.findFirst({
+      where: { id: orderId, ...(currentUser.role === "ADMIN" ? {} : { userId: currentUser.id }) },
+      include: storefrontOrderInclude
+    });
+    if (!existingOrder) throw new Error("Order not found");
+    return storefrontOrderToDTO(existingOrder);
+  }
+
+  const order = await prisma.storefrontOrder.findFirst({
+    where: { id: orderId, ...(currentUser.role === "ADMIN" ? {} : { userId: currentUser.id }) },
+    include: storefrontOrderInclude
+  });
+  if (!order) throw new Error("Order not found");
+  if (!orderCanCancelOrRefund(order)) throw new Error("This order is already canceled, refunded, or refunding.");
+
+  const isPaidStripeOrder = order.paymentStatus === "paid" && Boolean(order.stripePaymentIntentId);
+  if (input.refundType === "none" && isPaidStripeOrder) {
+    throw new Error("Paid Stripe orders must use a full or partial refund.");
+  }
+  if (input.refundType !== "none" && !isPaidStripeOrder) {
+    throw new Error("Stripe refund is only available for paid Stripe orders with a stored PaymentIntent.");
+  }
+
+  const remainingRefundableCents = orderRemainingRefundableCents(order);
+  const refundCents =
+    input.refundType === "full"
+      ? remainingRefundableCents
+      : input.refundType === "partial"
+        ? centsFromMoney(input.partialRefundAmount ?? 0)
+        : 0;
+  if (input.refundType !== "none" && refundCents <= 0) throw new Error("No refundable balance remains for this order.");
+  if (refundCents > remainingRefundableCents) throw new Error("Refund amount exceeds the remaining refundable order total.");
+
+  const stripeRefund =
+    refundCents > 0
+      ? await stripeClient().refunds.create(
+          {
+            payment_intent: order.stripePaymentIntentId ?? undefined,
+            amount: refundCents,
+            metadata: {
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              reason: input.reason
+            }
+          },
+          { idempotencyKey: `storefront-cancel-refund:${input.idempotencyKey}` }
+        )
+      : null;
+  const stripeRefundStatus = stripeRefund?.status ?? null;
+  const totalCents = orderTotalCents(order);
+  const newRefundedCents = orderRefundedCents(order) + refundCents;
+  const paymentStatus =
+    refundCents > 0 ? refundPaymentStatus(stripeRefundStatus, newRefundedCents, totalCents) : "not_applicable";
+  const refundStatus = refundCents > 0 ? paymentStatus : "not_applicable";
+  const refundedAt = refundCents > 0 && paymentStatus !== "refund_pending" && paymentStatus !== "refund_failed" ? new Date() : null;
+  const reasonLabel = cancellationReasonLabels[input.reason];
+  const requestedEmailStatus = input.sendCustomerEmail ? "pending" : "not_requested";
+
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    const duplicate = await tx.paymentEvent.findUnique({ where: { eventId: requestEventId } });
+    if (duplicate) {
+      const current = await tx.storefrontOrder.findUnique({ where: { id: order.id }, include: storefrontOrderInclude });
+      if (!current) throw new Error("Order not found");
+      return current;
+    }
+
+    const current = await tx.storefrontOrder.findUnique({ where: { id: order.id }, include: storefrontOrderInclude });
+    if (!current) throw new Error("Order not found");
+    if (!orderCanCancelOrRefund(current)) throw new Error("This order is already canceled, refunded, or refunding.");
+    if (refundCents > orderRemainingRefundableCents(current)) {
+      throw new Error("Refund amount exceeds the remaining refundable order total.");
+    }
+
+    const shouldReturnStock = input.returnItemsToStock && orderInventoryWasFinalized(current) && !current.stockReturnedAt;
+    const returnedQuantity = shouldReturnStock ? await returnOrderInventory(tx, current) : 0;
+    const stockReturnStatus = input.returnItemsToStock
+      ? current.stockReturnedAt
+        ? "already_returned"
+        : shouldReturnStock
+          ? "returned"
+          : "not_applicable"
+      : "not_returned";
+    const cancellationNote = [
+      `Cancellation reason: ${reasonLabel}`,
+      input.adminNote ? `Admin note: ${input.adminNote}` : null,
+      refundCents > 0 ? `Refund requested: $${moneyFromCents(refundCents).toFixed(2)}` : "Refund requested: none",
+      `Inventory handling: ${stockReturnStatus}`,
+      `Customer email: ${requestedEmailStatus}`
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const updated = await tx.storefrontOrder.update({
+      where: { id: current.id },
+      data: {
+        status: paymentStatus === "not_applicable" ? "canceled" : paymentStatus,
+        paymentStatus,
+        fulfillmentStatus: "canceled",
+        canceledAt: current.canceledAt ?? new Date(),
+        refundedAt,
+        refundStatus,
+        refundedAmount: moneyFromCents(newRefundedCents),
+        refundCurrency: "usd",
+        stripeRefundId: stripeRefund?.id ?? current.stripeRefundId,
+        refundReason: reasonLabel,
+        refundNote: input.adminNote,
+        stockReturnStatus,
+        stockReturnedAt: shouldReturnStock ? new Date() : current.stockReturnedAt,
+        customerCancellationEmailStatus: requestedEmailStatus,
+        notes: [current.notes, cancellationNote].filter(Boolean).join("\n\n")
+      },
+      include: storefrontOrderInclude
+    });
+
+    const payload = refundEventPayload({
+      order: current,
+      reason: input.reason,
+      adminNote: input.adminNote,
+      refundType: input.refundType,
+      refundAmount: moneyFromCents(refundCents),
+      stripeRefundId: stripeRefund?.id ?? null,
+      stripeRefundStatus,
+      returnItemsToStock: input.returnItemsToStock,
+      stockReturnStatus,
+      customerEmailStatus: requestedEmailStatus
+    });
+    await tx.paymentEvent.create({
+      data: {
+        orderId: current.id,
+        provider: "admin",
+        eventId: requestEventId,
+        eventType: "admin.cancel_refund.started",
+        payload
+      }
+    });
+    if (refundCents > 0) {
+      await tx.paymentEvent.create({
+        data: {
+          orderId: current.id,
+          provider: "stripe",
+          eventId: `admin.refund:${input.idempotencyKey}`,
+          eventType: "admin.refund.created",
+          payload
+        }
+      });
+    }
+    if (returnedQuantity > 0) {
+      await tx.paymentEvent.create({
+        data: {
+          orderId: current.id,
+          provider: "admin",
+          eventId: `admin.inventory_return:${input.idempotencyKey}`,
+          eventType: "admin.inventory.returned",
+          payload: JSON.stringify({ orderId: current.id, orderNumber: current.orderNumber, returnedQuantity })
+        }
+      });
+    }
+    return updated;
+  });
+
+  let finalOrder = updatedOrder;
+  if (input.sendCustomerEmail) {
+    const settings = await getStorefrontSettings();
+    const emailStatus = await sendStorefrontCancellationEmail({
+      order: updatedOrder,
+      reason: input.reason,
+      adminNote: input.adminNote,
+      refundAmount: moneyFromCents(refundCents),
+      contactEmail: settings.contactEmail || "gamedaygrabs@outlook.com"
+    });
+    finalOrder = await prisma.storefrontOrder.update({
+      where: { id: updatedOrder.id },
+      data: {
+        customerCancellationEmailStatus: emailStatus,
+        customerCancellationEmailSentAt: emailStatus === "sent" ? new Date() : updatedOrder.customerCancellationEmailSentAt
+      },
+      include: storefrontOrderInclude
+    });
+    await prisma.paymentEvent.upsert({
+      where: { eventId: `admin.cancellation_email:${input.idempotencyKey}` },
+      create: {
+        orderId: updatedOrder.id,
+        provider: "admin",
+        eventId: `admin.cancellation_email:${input.idempotencyKey}`,
+        eventType: `admin.cancellation_email.${emailStatus}`,
+        payload: JSON.stringify({ orderId: updatedOrder.id, orderNumber: updatedOrder.orderNumber, emailStatus })
+      },
+      update: {
+        eventType: `admin.cancellation_email.${emailStatus}`,
+        payload: JSON.stringify({ orderId: updatedOrder.id, orderNumber: updatedOrder.orderNumber, emailStatus })
+      }
+    });
+  }
+  const customerEmail = finalOrder.customerEmail ?? finalOrder.customer?.email ?? null;
+  if (finalOrder.customer && customerEmail) await syncStorefrontCustomerTotals(finalOrder.customer.id, customerEmail);
+  const refreshed = await prisma.storefrontOrder.findUnique({
+    where: { id: finalOrder.id },
+    include: storefrontOrderInclude
+  });
+  return storefrontOrderToDTO(refreshed ?? finalOrder);
 }
 
 export async function updateStorefrontOrder(

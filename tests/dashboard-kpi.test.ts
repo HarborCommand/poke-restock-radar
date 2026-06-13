@@ -614,9 +614,17 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Your cart is waiting for something awesome/);
   assert.match(client, /Shop Pok&eacute;mon/);
   assert.match(client, /Remove sold-out item/);
+  assert.match(client, /Remove sold-out items/);
+  assert.match(client, /Cart availability changed\./);
+  assert.match(client, /Remove sold-out items or update changed quantities before checkout\./);
+  assert.match(client, /Remove this sold-out item to continue checkout\./);
   assert.match(client, /Quantity updated because available stock changed/);
   assert.match(client, /cartHasBlockingStockIssue/);
+  assert.match(client, /return products\.some\(\(product\) => isSoldOutProduct\(product\) \|\| product\.availableQuantity <= 0 \|\| product\.requestedQuantity > product\.availableQuantity\)/);
   assert.match(client, /checkoutDisabled/);
+  assert.match(client, /const checkoutDisabled = busy \|\| hasBlockingStockIssue/);
+  assert.match(client, /setProducts\(products\.filter\(\(product\) => !blockedIds\.has\(product\.id\)\)\)/);
+  assert.match(client, /disabled=\{product\.availableQuantity <= 0 \|\| product\.requestedQuantity >= maxQuantity\}/);
   assert.match(client, /\/api\/storefront\/checkout\/session/);
   assert.match(client, /\/api\/storefront\/invoice-request/);
   assert.doesNotMatch(client, /Card Element|card number|cost basis|supplier notes|admin notes/i);
@@ -633,6 +641,8 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(css, /gdg-payment-icons \.amex rect/);
   assert.match(css, /gdg-payment-icons \.discover path/);
   assert.match(css, /gdg-checkout-trust-copy/);
+  assert.match(css, /gdg-cart-stock-warning-copy/);
+  assert.match(css, /gdg-stock-remove-button/);
   assert.match(css, /gdg-payment-icons svg \{[\s\S]*width: 58px;[\s\S]*height: auto;[\s\S]*max-height: 22px;[\s\S]*object-fit: contain;/);
   assert.doesNotMatch(css, /background: linear-gradient\(135deg, #5b21b6, #9333ea\)/);
   assert.doesNotMatch(css, /gdg-payment-icons span \{\s*display: inline-flex;\s*min-width: 38px/s);
@@ -764,7 +774,7 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
     assert.match(migration, new RegExp(field), `missing migration field ${field}`);
     assert.match(sqliteInit, new RegExp(field), `missing sqlite init field ${field}`);
   }
-  assert.match(schema, /stripeCheckoutSessionId String\?\s+@unique/);
+  assert.match(schema, /stripeCheckoutSessionId\s+String\?\s+@unique/);
   assert.match(schema, /email\s+String\s+@unique/);
   assert.match(schema, /stripeCustomerId\s+String\?/);
   assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "StorefrontOrder_stripeCheckoutSessionId_key"/);

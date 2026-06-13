@@ -6304,7 +6304,7 @@ function storefrontOrdersForTab(orders: StorefrontOrderDTO[], tab: StorefrontOrd
   if (tab === "packing") return orders.filter((order) => order.status === "packing" || order.fulfillmentStatus === "packing");
   if (tab === "shipped") return orders.filter((order) => order.status === "shipped" || order.fulfillmentStatus === "shipped");
   if (tab === "invoice_requests") return orders.filter((order) => order.status === "invoice_requested" || order.status === "contact_message");
-  return orders.filter((order) => ["canceled", "refunded"].includes(order.status) || ["failed", "expired"].includes(order.paymentStatus));
+  return orders.filter((order) => ["canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.status) || ["failed", "expired", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.paymentStatus));
 }
 
 function storefrontOrderTabs(orders: StorefrontOrderDTO[]) {
@@ -6589,6 +6589,12 @@ function StorefrontOrderDetailsModal({
   const saveLabel = `Updating order ${order.id}`;
   const completedPaymentEvent = order.paymentEvents.find((event) => event.eventType === "checkout.session.completed");
   const inventoryFinalized = order.paymentStatus === "paid" && order.reservations.length > 0 && order.reservations.every((reservation) => reservation.status === "completed");
+  const [cancelRefundOpen, setCancelRefundOpen] = useState(false);
+  const [cancelRefundKey, setCancelRefundKey] = useState("");
+  const openCancelRefund = () => {
+    setCancelRefundKey(globalThis.crypto?.randomUUID?.() ?? `cancel-refund-${order.id}-${Date.now()}`);
+    setCancelRefundOpen(true);
+  };
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`Order ${order.orderNumber}`}>
@@ -6643,6 +6649,12 @@ function StorefrontOrderDetailsModal({
             <Printer size={14} />
             Packing Slip
           </button>
+          {order.canCancelOrRefund ? (
+            <button className="mini-action danger" disabled={busy} type="button" onClick={openCancelRefund}>
+              <RotateCcw size={14} />
+              Cancel / Refund
+            </button>
+          ) : null}
         </section>
         <div className="inventory-details-grid">
           <section>
@@ -6667,6 +6679,13 @@ function StorefrontOrderDetailsModal({
               <DetailStat label="Fulfillment" value={formatStatus(order.fulfillmentStatus)} />
               <DetailStat label="Stripe session" value={order.stripeCheckoutSessionId ? "Stored" : "Not stored"} tone={order.stripeCheckoutSessionId ? "good" : "bad"} />
               <DetailStat label="Payment intent" value={order.stripePaymentIntentId ? "Stored" : "Not stored"} tone={order.stripePaymentIntentId ? "good" : "bad"} />
+              <DetailStat label="Refund status" value={order.refundStatus ? formatStatus(order.refundStatus) : "Not refunded"} tone={order.refundStatus && order.refundStatus !== "not_applicable" ? "bad" : "neutral"} />
+              <DetailStat label="Refunded amount" value={money(order.refundedAmount)} />
+              <DetailStat label="Refundable remaining" value={money(order.refundableAmount)} />
+              <DetailStat label="Stripe refund" value={order.stripeRefundId ? "Stored" : "Not stored"} tone={order.stripeRefundId ? "good" : "neutral"} />
+              <DetailStat label="Refund reason" value={order.refundReason || "Not provided"} />
+              <DetailStat label="Stock returned" value={order.stockReturnStatus ? formatStatus(order.stockReturnStatus) : "Not returned"} tone={order.stockReturnedAt ? "good" : "neutral"} />
+              <DetailStat label="Customer notification" value={order.customerCancellationEmailStatus ? formatStatus(order.customerCancellationEmailStatus) : "Not sent"} tone={order.customerCancellationEmailSentAt ? "good" : "neutral"} />
             </div>
           </section>
           <section>
@@ -6788,7 +6807,7 @@ function StorefrontOrderDetailsModal({
                 name="status"
                 label="Order status"
                 defaultValue={order.status}
-                options={["contact_message", "invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded"].map(optionFromString)}
+                options={["contact_message", "invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].map(optionFromString)}
               />
               <SelectInput
                 name="fulfillmentStatus"
@@ -6807,6 +6826,119 @@ function StorefrontOrderDetailsModal({
             </form>
           </section>
         </div>
+      </div>
+      {cancelRefundOpen ? (
+        <StorefrontCancelRefundModal
+          busy={busy}
+          busyLabel={busyLabel}
+          idempotencyKey={cancelRefundKey}
+          onClose={() => setCancelRefundOpen(false)}
+          order={order}
+          submit={submit}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function StorefrontCancelRefundModal({
+  order,
+  busy,
+  busyLabel,
+  idempotencyKey,
+  submit,
+  onClose
+}: {
+  order: StorefrontOrderDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  idempotencyKey: string;
+  submit: SubmitHandler;
+  onClose: () => void;
+}) {
+  const [refundType, setRefundType] = useState(order.paymentStatus === "paid" ? "full" : "none");
+  const inventoryFinalized = order.paymentStatus === "paid" && order.reservations.some((reservation) => reservation.status === "completed");
+  const actionLabel = `Canceling/refunding ${order.orderNumber}`;
+  return (
+    <div className="inventory-modal-backdrop order-cancel-refund-backdrop" role="presentation">
+      <div className="inventory-modal order-cancel-refund-modal" role="dialog" aria-modal="true" aria-label={`Cancel or refund ${order.orderNumber}`}>
+        <header className="inventory-details-header">
+          <div className="storefront-order-avatar"><RotateCcw size={24} /></div>
+          <div>
+            <h2>Cancel / Refund</h2>
+            <p>{order.orderNumber} - remaining refundable {money(order.refundableAmount)}</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close cancel refund" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <form
+          className="form-grid compact"
+          onSubmit={(event) =>
+            submit(
+              event,
+              actionLabel,
+              (form) =>
+                requestJson(`/api/radar/storefront/orders/${order.id}/cancel-refund`, {
+                  method: "POST",
+                  body: JSON.stringify(formJson(form))
+                }),
+              { reset: false, success: "Order cancellation/refund saved" }
+            )
+          }
+        >
+          <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+          <SelectInput
+            name="reason"
+            label="Cancellation reason"
+            defaultValue="customer_requested"
+            options={[
+              { value: "out_of_stock", label: "Out of stock" },
+              { value: "customer_requested", label: "Customer requested cancellation" },
+              { value: "address_issue", label: "Address issue" },
+              { value: "fraud_suspicious", label: "Fraud / suspicious order" },
+              { value: "duplicate_order", label: "Duplicate order" },
+              { value: "other", label: "Other" }
+            ]}
+          />
+          <label>
+            Refund type
+            <select name="refundType" value={refundType} onChange={(event) => setRefundType(event.currentTarget.value)}>
+              <option value="full">Full refund</option>
+              <option value="partial">Partial refund</option>
+              <option value="none" disabled={order.paymentStatus === "paid"}>No refund</option>
+            </select>
+          </label>
+          {refundType === "partial" ? (
+            <TextInput name="partialRefundAmount" label="Partial refund amount" type="number" min="0.01" max={order.refundableAmount || undefined} step="0.01" />
+          ) : (
+            <input name="partialRefundAmount" type="hidden" value="" />
+          )}
+          <TextareaInput name="adminNote" label="Admin note / explanation" wide />
+          <input name="returnItemsToStock" type="hidden" value="false" />
+          <label className="checkbox-label wide-field">
+            <input name="returnItemsToStock" type="checkbox" value="true" defaultChecked={inventoryFinalized} disabled={!inventoryFinalized} />
+            Return purchased items to stock
+          </label>
+          {!inventoryFinalized ? <p className="form-helper publish-ready-note wide-field">Inventory was not finalized for this order, so stock return is not applicable.</p> : null}
+          <input name="sendCustomerEmail" type="hidden" value="false" />
+          <label className="checkbox-label wide-field">
+            <input name="sendCustomerEmail" type="checkbox" value="true" defaultChecked={Boolean(order.customerEmail)} />
+            Send cancellation email to customer
+          </label>
+          <p className="form-helper publish-ready-note wide-field">
+            Stripe-paid orders refund through the stored PaymentIntent. No card numbers, CVC, or raw payment details are stored here.
+          </p>
+          <div className="inventory-edit-actions wide-field">
+            <button className="mini-action" type="button" onClick={onClose}>
+              Keep Order
+            </button>
+            <button className="primary-action danger" disabled={busy || !idempotencyKey} type="submit">
+              <RotateCcw size={16} />
+              {busyLabel === actionLabel ? "Processing" : "Confirm Cancel / Refund"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

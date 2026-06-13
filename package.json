@@ -33,9 +33,9 @@
     "db:seed": "prisma db seed",
     "prisma:postgres": "tsx scripts/prepare-postgres-schema.ts",
     "db:push:prod": "npm run prisma:postgres && prisma db push --schema .prisma-postgres/schema.prisma",
-    "db:migrate:prod": "npm run prisma:postgres && prisma migrate deploy --schema .prisma-postgres/schema.prisma",
+    "db:migrate:prod": "npm run prisma:postgres && tsx scripts/migrate-postgres-production.ts",
     "db:seed:prod": "npm run prisma:postgres && prisma db seed --schema .prisma-postgres/schema.prisma",
-    "vercel-build": "npm run prisma:postgres && prisma db push --accept-data-loss --schema .prisma-postgres/schema.prisma && prisma generate --schema .prisma-postgres/schema.prisma && next build",
+    "vercel-build": "npm run prisma:postgres && tsx scripts/migrate-postgres-production.ts && prisma generate --schema .prisma-postgres/schema.prisma && next build",
     "postinstall": "prisma generate"
   },
   "dependencies": {

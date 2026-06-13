@@ -46,6 +46,19 @@ test("Phase 1 package scripts are present", () => {
   }
 });
 
+test("production deploy path uses migrations instead of destructive schema push", () => {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.equal(
+    pkg.scripts["db:migrate:prod"],
+    "npm run prisma:postgres && tsx scripts/migrate-postgres-production.ts"
+  );
+  assert.equal(
+    pkg.scripts["vercel-build"],
+    "npm run prisma:postgres && tsx scripts/migrate-postgres-production.ts && prisma generate --schema .prisma-postgres/schema.prisma && next build"
+  );
+  assert.doesNotMatch(pkg.scripts["vercel-build"], /db push|accept-data-loss/);
+});
+
 test("required data models exist", () => {
   const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
   const models = [

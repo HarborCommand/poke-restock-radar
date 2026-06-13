@@ -1089,7 +1089,7 @@ export function ProductDetail({
 
 function cartStockState(product: PublicStoreProductDTO & { requestedQuantity: number }) {
   if (isSoldOutProduct(product) || product.availableQuantity <= 0) {
-    return { label: "Sold Out", tone: "out", detail: "Remove this item to continue." };
+    return { label: "Sold Out", tone: "out", detail: "Remove this sold-out item to continue checkout." };
   }
   if (product.requestedQuantity > product.availableQuantity) {
     return { label: "Stock Changed", tone: "warn", detail: `Only ${product.availableQuantity} available now.` };
@@ -1167,7 +1167,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   function removeSoldOutItems() {
     const blockedIds = new Set(soldOutProducts.map((product) => product.id));
     const next = items.filter((item) => !blockedIds.has(item.id));
-    if (!next.length) setProducts([]);
+    setProducts(products.filter((product) => !blockedIds.has(product.id)));
+    setMessage("");
     writeCart(next);
   }
 
@@ -1292,9 +1293,9 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
           <div className="gdg-cart-main">
             {hasBlockingStockIssue ? (
               <div className="gdg-cart-stock-warning">
-                <div>
-                  <strong>Quantity updated because available stock changed.</strong>
-                  <small>Review the highlighted item before checkout.</small>
+                <div className="gdg-cart-stock-warning-copy">
+                  <strong>Cart availability changed.</strong>
+                  <small>Remove sold-out items or update changed quantities before checkout.</small>
                 </div>
                 <div className="gdg-card-actions">
                   {overQuantityProducts.length ? (
@@ -1303,8 +1304,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     </button>
                   ) : null}
                   {soldOutProducts.length ? (
-                    <button className="gdg-secondary-button" type="button" onClick={removeSoldOutItems}>
-                      Remove sold-out item
+                    <button className="gdg-secondary-button gdg-stock-remove-button" type="button" onClick={removeSoldOutItems}>
+                      {soldOutProducts.length === 1 ? "Remove sold-out item" : "Remove sold-out items"}
                     </button>
                   ) : null}
                 </div>
