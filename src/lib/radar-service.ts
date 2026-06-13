@@ -842,6 +842,81 @@ function alertToDTO(alert: Prisma.AlertGetPayload<Record<string, never>>): Alert
   };
 }
 
+const inactiveStorefrontOrderStatusesForAlerts = new Set(["canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"]);
+
+function storefrontOrderNoLongerNeedsFulfillmentAlert(order: Pick<StorefrontOrderDTO, "status" | "paymentStatus" | "fulfillmentStatus">) {
+  return (
+    inactiveStorefrontOrderStatusesForAlerts.has(order.status) ||
+    inactiveStorefrontOrderStatusesForAlerts.has(order.paymentStatus) ||
+    order.fulfillmentStatus === "canceled"
+  );
+}
+
+function isStorefrontPaidFulfillmentAlert(alert: Pick<AlertDTO, "entityType" | "dedupeKey" | "title" | "reason">) {
+  return (
+    alert.entityType === "STOREFRONT_ORDER" &&
+    (alert.dedupeKey?.endsWith(":paid") || (alert.title === "New paid order" && /ready for fulfillment/i.test(alert.reason)))
+  );
+}
+
+export function filterDashboardAlertsForStorefrontOrderStatus(alerts: AlertDTO[], storefrontOrders: StorefrontOrderDTO[]) {
+  const inactiveStorefrontOrderIds = new Set(inactiveStorefrontOrderIdsForPaidFulfillmentAlerts(storefrontOrders));
+  return alerts.filter((alert) => {
+    if (!alert.entityId || !inactiveStorefrontOrderIds.has(alert.entityId)) return true;
+    return !isStorefrontPaidFulfillmentAlert(alert);
+  });
+}
+
+function inactiveStorefrontOrderIdsForPaidFulfillmentAlerts(storefrontOrders: StorefrontOrderDTO[]) {
+  return storefrontOrders
+    .filter(storefrontOrderNoLongerNeedsFulfillmentAlert)
+    .map((order) => order.id);
+}
+
+function staleStorefrontPaidFulfillmentAlertWhere(orderIds: string[]): Prisma.AlertWhereInput {
+  if (!orderIds.length) return {};
+  return {
+    NOT: {
+      AND: [
+        { entityType: "STOREFRONT_ORDER" },
+        { entityId: { in: orderIds } },
+        {
+          OR: [
+            { dedupeKey: { endsWith: ":paid" } },
+            {
+              AND: [
+                { title: "New paid order" },
+                { reason: { contains: "ready for fulfillment" } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+}
+
+async function alertAnalytics(inactiveStorefrontOrderIds: string[]): Promise<AlertAnalyticsDTO> {
+  const where = staleStorefrontPaidFulfillmentAlertWhere(inactiveStorefrontOrderIds);
+  const [totalAlerts, unreadAlerts, highPriorityAlerts, falsePositiveAlerts, suppressedAlerts, aggregate] =
+    await Promise.all([
+      prisma.alert.count({ where }),
+      prisma.alert.count({ where: { ...where, read: false } }),
+      prisma.alert.count({ where: { ...where, priority: "HIGH" } }),
+      prisma.alert.count({ where: { ...where, falsePositiveAt: { not: null } } }),
+      prisma.alert.count({ where: { ...where, suppressedAt: { not: null } } }),
+      prisma.alert.aggregate({ where, _avg: { score: true } })
+    ]);
+  return {
+    totalAlerts,
+    unreadAlerts,
+    highPriorityAlerts,
+    falsePositiveAlerts,
+    suppressedAlerts,
+    averageScore: Math.round(aggregate._avg.score ?? 0)
+  };
+}
+
 function retailerToDTO(retailer: Prisma.RetailerGetPayload<Record<string, never>>): RetailerDTO {
   return {
     id: retailer.id,
@@ -1470,26 +1545,6 @@ function notificationDeliveryLogToDTO(
     entityType: log.entityType,
     entityId: log.entityId,
     createdAt: log.createdAt.toISOString()
-  };
-}
-
-async function alertAnalytics(): Promise<AlertAnalyticsDTO> {
-  const [totalAlerts, unreadAlerts, highPriorityAlerts, falsePositiveAlerts, suppressedAlerts, aggregate] =
-    await Promise.all([
-      prisma.alert.count(),
-      prisma.alert.count({ where: { read: false } }),
-      prisma.alert.count({ where: { priority: "HIGH" } }),
-      prisma.alert.count({ where: { falsePositiveAt: { not: null } } }),
-      prisma.alert.count({ where: { suppressedAt: { not: null } } }),
-      prisma.alert.aggregate({ _avg: { score: true } })
-    ]);
-  return {
-    totalAlerts,
-    unreadAlerts,
-    highPriorityAlerts,
-    falsePositiveAlerts,
-    suppressedAlerts,
-    averageScore: Math.round(aggregate._avg.score ?? 0)
   };
 }
 
@@ -2764,7 +2819,6 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const releaseDTOs = calendarReleases.map((release) => releaseToDTO(release, releaseMetrics(release, products, cards)));
   const health = currentUser.role === "ADMIN" ? await getAppHealth(currentUser) : null;
   const accuracyStats = await monitorAccuracyStats();
-  const alertStats = await alertAnalytics();
   const notificationSettingsDTO = notificationSettingsToDTO(notificationSettings);
   const pendingDiscoveryCount = productDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING").length;
   const activeDiscoverySourcesScanned = productDiscoverySources.filter((source) => source.enabled).length;
@@ -3003,6 +3057,9 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     getStorefrontSettings()
   ]);
   const inventoryWithSalesAdjustments = applyStorefrontOrderAdjustmentsToInventory(inventoryDTOs, storefrontOrders);
+  const inactivePaidAlertOrderIds = inactiveStorefrontOrderIdsForPaidFulfillmentAlerts(storefrontOrders);
+  const dashboardAlerts = filterDashboardAlertsForStorefrontOrderStatus(alertDTOs, storefrontOrders);
+  const alertStats = await alertAnalytics(inactivePaidAlertOrderIds);
 
   return {
     currentUser,
@@ -3014,7 +3071,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     dailyPlan: {
       topProducts: productDTOs.filter((product) => (product.priorityScore?.score ?? 0) >= 40).slice(0, 5),
       storesToCheck: checkTodayStores.slice(0, 5),
-      latestAlerts: alertDTOs.slice(0, 5),
+      latestAlerts: dashboardAlerts.slice(0, 5),
       newestReleases: releaseDTOs.slice(0, 5),
       bestCards: cardDTOs.slice(0, 5)
     },
@@ -3046,7 +3103,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     marketProviders,
     marketMatchReview,
     marketSyncLogs: marketSyncLogsFromInventory(inventoryDTOs),
-    alerts: alertDTOs,
+    alerts: dashboardAlerts,
     monitorLogs: monitorLogDTOs,
     monitorAccuracyStats: accuracyStats,
     scannerStatus,
@@ -3065,7 +3122,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       actionableProducts: productDTOs.filter((product) =>
         ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus)
       ).length,
-      unreadAlerts: alertDTOs.filter((alert) => !alert.read).length,
+      unreadAlerts: dashboardAlerts.filter((alert) => !alert.read).length,
       highProbabilityStores: storeDTOs.filter((store) => store.prediction.probability === "HIGH").length,
       profitablePsa10Cards: cardDTOs.filter((card) => card.psa10EstimatedProfit > 0).length
     }

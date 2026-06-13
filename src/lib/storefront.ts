@@ -1149,7 +1149,7 @@ function lotUnitCost(lot: { costPerUnit: number; totalCost: number; quantity: nu
 async function createStorefrontOrderAlert(
   order: Pick<StorefrontOrderWithItems, "id" | "orderNumber" | "userId" | "customerEmail" | "customerName" | "total">,
   input: {
-    type: "paid" | "invoice_request" | "payment_failed" | "checkout_expired" | "inventory_issue" | "sold_out_after_order";
+    type: "paid" | "invoice_request" | "payment_failed" | "checkout_expired" | "inventory_issue" | "sold_out_after_order" | "canceled" | "refunded" | "partially_refunded";
     title: string;
     reason: string;
     priority?: "LOW" | "MEDIUM" | "HIGH";
@@ -1173,6 +1173,54 @@ async function createStorefrontOrderAlert(
       explanation: `Order ${order.orderNumber} for ${order.customerName || order.customerEmail || "customer"} totals $${order.total.toFixed(2)}.`,
       userId: order.userId
     }
+  });
+}
+
+function canceledOrRefundedOrderAlertInput(order: Pick<StorefrontOrderWithItems, "orderNumber" | "status" | "paymentStatus" | "fulfillmentStatus">) {
+  if (order.paymentStatus === "refunded" || order.status === "refunded") {
+    return {
+      type: "refunded" as const,
+      title: "Order refunded",
+      reason: `Storefront order ${order.orderNumber} was refunded and removed from active fulfillment alerts.`
+    };
+  }
+  if (order.paymentStatus === "partially_refunded" || order.status === "partially_refunded") {
+    return {
+      type: "partially_refunded" as const,
+      title: "Order partially refunded",
+      reason: `Storefront order ${order.orderNumber} was partially refunded and removed from active fulfillment alerts.`
+    };
+  }
+  if (order.status === "canceled" || order.fulfillmentStatus === "canceled") {
+    return {
+      type: "canceled" as const,
+      title: "Order canceled",
+      reason: `Storefront order ${order.orderNumber} was canceled and removed from active fulfillment alerts.`
+    };
+  }
+  return null;
+}
+
+async function reconcileCanceledOrRefundedOrderAlerts(order: StorefrontOrderWithItems) {
+  const statusAlert = canceledOrRefundedOrderAlertInput(order);
+  if (!statusAlert) return;
+  const now = new Date();
+  await prisma.alert.updateMany({
+    where: {
+      dedupeKey: `storefront-order:${order.id}:paid`,
+      suppressedAt: null
+    },
+    data: {
+      read: true,
+      suppressedAt: now,
+      cooldownUntil: now,
+      explanation: `Order ${order.orderNumber} is no longer an active paid fulfillment order.`
+    }
+  });
+  await createStorefrontOrderAlert(order, {
+    ...statusAlert,
+    priority: "MEDIUM",
+    score: 72
   });
 }
 
@@ -2017,6 +2065,7 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
   }
   const customerEmail = finalOrder.customerEmail ?? finalOrder.customer?.email ?? null;
   if (finalOrder.customer && customerEmail) await syncStorefrontCustomerTotals(finalOrder.customer.id, customerEmail);
+  await reconcileCanceledOrRefundedOrderAlerts(finalOrder);
   const refreshed = await prisma.storefrontOrder.findUnique({
     where: { id: finalOrder.id },
     include: storefrontOrderInclude

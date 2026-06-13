@@ -306,6 +306,7 @@ test("admin cancel refund flow is idempotent and returns inventory once", () => 
   const storefront = readProjectFile("src/lib/storefront.ts");
   const cancelOrRefund = sourceSlice(storefront, "export async function cancelOrRefundStorefrontOrder", "export async function updateStorefrontOrder");
   const returnOrderInventory = sourceSlice(storefront, "async function returnOrderInventory", "export async function cancelOrRefundStorefrontOrder");
+  const alertLifecycle = sourceSlice(storefront, "function canceledOrRefundedOrderAlertInput", "async function createStorefrontSale");
 
   assert.match(cancelOrRefund, /const requestEventId = `admin\.cancel_refund:\$\{input\.idempotencyKey\}`/);
   assert.match(cancelOrRefund, /prisma\.paymentEvent\.findUnique\(\{ where: \{ eventId: requestEventId \} \}\)/);
@@ -320,6 +321,13 @@ test("admin cancel refund flow is idempotent and returns inventory once", () => 
   assert.match(cancelOrRefund, /eventType: "admin\.cancel_refund\.started"/);
   assert.match(cancelOrRefund, /eventType: "admin\.refund\.created"/);
   assert.match(cancelOrRefund, /eventType: "admin\.inventory\.returned"/);
+  assert.match(cancelOrRefund, /await reconcileCanceledOrRefundedOrderAlerts\(finalOrder\)/);
+  assert.match(alertLifecycle, /dedupeKey: `storefront-order:\$\{order\.id\}:paid`/);
+  assert.match(alertLifecycle, /suppressedAt: now/);
+  assert.match(alertLifecycle, /title: "Order refunded"/);
+  assert.match(alertLifecycle, /title: "Order canceled"/);
+  assert.match(alertLifecycle, /title: "Order partially refunded"/);
+  assert.match(alertLifecycle, /priority: "MEDIUM"/);
 });
 
 test("admin orders UI exposes cancel refund modal without replacing fulfillment actions", () => {
@@ -404,11 +412,17 @@ test("refunded storefront orders are netted out of sales and revenue summaries",
   assert.match(storefrontSummary, /todaySales: todayPaidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);
   assert.match(storefrontSummary, /totalRevenue: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);
   assert.match(storefrontSummary, /netProfit: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetProfitAfterRefund\(order\), 0\)/);
+  assert.match(storefrontSummary, /paymentStatus: "paid", fulfillmentStatus: \{ in: \["unfulfilled", "packing", "pickup_ready"\] \}/);
   assert.match(service, /export function applyStorefrontOrderAdjustmentsToInventory/);
   assert.match(service, /function storefrontOrderNumberFromSaleNotes/);
   assert.match(service, /saleStatus === "refunded" \|\| saleStatus === "canceled"/);
   assert.match(service, /const activeGrossSale = isFullyInactive \? 0/);
   assert.match(service, /totalSalesGross = allSales\.reduce\(\(sum, sale\) => sum \+ saleActiveGross\(sale\), 0\)/);
+  assert.match(service, /export function filterDashboardAlertsForStorefrontOrderStatus/);
+  assert.match(service, /isStorefrontPaidFulfillmentAlert/);
+  assert.match(service, /alert\.dedupeKey\?\.endsWith\(":paid"\)/);
+  assert.match(service, /latestAlerts: dashboardAlerts\.slice\(0, 5\)/);
+  assert.match(service, /alerts: dashboardAlerts/);
   assert.match(salesLog, /label="Active Sales"/);
   assert.match(salesLog, /saleState: "ALL"/);
   assert.match(salesLog, /label: "Refunded \/ canceled"/);
@@ -420,6 +434,12 @@ test("refunded storefront orders are netted out of sales and revenue summaries",
   assert.match(saleDetails, /Net revenue after refund/);
   assert.match(saleDetails, /Refund status/);
   assert.match(inventoryRoute, /activeQuantitySold/);
+  assert.match(inventoryRoute, /originalSaleAmount/);
+  assert.match(inventoryRoute, /refundedAmount/);
   assert.match(inventoryRoute, /netRevenueAfterRefund/);
+  assert.match(inventoryRoute, /netProfitAfterRefund/);
+  assert.match(inventoryRoute, /saleStatus/);
+  assert.match(inventoryRoute, /storefrontOrderNumber/);
+  assert.match(inventoryRoute, /sale\.activeProfitLoss/);
   assert.doesNotMatch([storefrontSummary, salesLog, saleCard, saleDetails, inventoryRoute].join("\n"), /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 });

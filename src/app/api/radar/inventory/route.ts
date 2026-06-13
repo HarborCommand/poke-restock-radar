@@ -63,6 +63,7 @@ export async function GET(request: Request) {
       "activeNetSale",
       "costBasis",
       "activeProfitLoss",
+      "netProfitAfterRefund",
       "roiPercent",
       "saleStatus",
       "storefrontOrderNumber"
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
           sale.shippingCost,
           sale.activeNetSale,
           sale.costBasis,
+          sale.activeProfitLoss,
           sale.activeProfitLoss,
           sale.roiPercent,
           sale.saleStatus,

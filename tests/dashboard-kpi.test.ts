@@ -4,12 +4,13 @@ import test from "node:test";
 import {
   applyStorefrontOrderAdjustmentsToInventory,
   calculateInventorySaleProfitForTest,
+  filterDashboardAlertsForStorefrontOrderStatus,
   inventoryCompStatsForTest,
   inventoryLotUnitCostForTest,
   summarizeInventory
 } from "../src/lib/radar-service";
 import { inferTcgcsvProductType, normalizeTcgcsvProductText } from "../src/lib/tcgcsv-market";
-import type { InventoryItemDTO, InventorySaleDTO, StorefrontOrderDTO } from "../src/types/radar";
+import type { AlertDTO, InventoryItemDTO, InventorySaleDTO, StorefrontOrderDTO } from "../src/types/radar";
 
 function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
   const base: InventorySaleDTO = {
@@ -239,6 +240,28 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
   };
 }
 
+function dashboardAlert(overrides: Partial<AlertDTO> = {}): AlertDTO {
+  const now = new Date().toISOString();
+  return {
+    id: "alert-1",
+    title: "New paid order",
+    reason: "Stripe Checkout paid order GDG-1001 is ready for fulfillment.",
+    priority: "HIGH",
+    timestamp: now,
+    entityType: "STOREFRONT_ORDER",
+    entityId: "order-1",
+    actionUrl: "/?tab=orders",
+    read: false,
+    score: 96,
+    dedupeKey: "storefront-order:order-1:paid",
+    explanation: null,
+    falsePositiveAt: null,
+    suppressedAt: null,
+    cooldownUntil: null,
+    ...overrides
+  };
+}
+
 test("inventory with no market comps keeps cost basis but marks market as not collected", () => {
   const summary = summarizeInventory([item({ totalCost: 30, quantityOwned: 3, averageCost: 10, marketCompCount: 0 })]);
 
@@ -388,6 +411,43 @@ test("canceled unpaid orders do not create active sales totals", () => {
   assert.equal(summary.totalSalesGross, 0);
   assert.equal(summary.realizedProfitLoss, 0);
   assert.equal(summary.itemsSold, 0);
+});
+
+test("refunded storefront orders suppress stale paid fulfillment dashboard alerts", () => {
+  const alerts = [
+    dashboardAlert({
+      id: "paid-alert",
+      title: "New paid order",
+      reason: "Stripe Checkout paid order GDG-1001 is ready for fulfillment.",
+      dedupeKey: "storefront-order:order-1:paid"
+    }),
+    dashboardAlert({
+      id: "refund-alert",
+      title: "Order refunded",
+      reason: "Storefront order GDG-1001 was refunded and removed from active fulfillment alerts.",
+      priority: "MEDIUM",
+      dedupeKey: "storefront-order:order-1:refunded"
+    }),
+    dashboardAlert({
+      id: "product-alert",
+      title: "Product restocked",
+      reason: "A watched product is in stock.",
+      entityType: "PRODUCT",
+      entityId: "product-1",
+      dedupeKey: "product:product-1:restock"
+    })
+  ];
+
+  const filtered = filterDashboardAlertsForStorefrontOrderStatus(alerts, [
+    storefrontOrder({
+      status: "refunded",
+      paymentStatus: "refunded",
+      fulfillmentStatus: "canceled"
+    })
+  ]);
+
+  assert.deepEqual(filtered.map((alert) => alert.id), ["refund-alert", "product-alert"]);
+  assert.doesNotMatch(filtered.map((alert) => `${alert.title} ${alert.reason}`).join("\n"), /New paid order|ready for fulfillment/);
 });
 
 test("inventory sale profit uses actual sale price instead of target price", () => {
