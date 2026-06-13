@@ -165,7 +165,7 @@ function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | 
 }
 
 function publicImages(item: StorefrontInventoryItem) {
-  return getProductImageUrls(item, { publicOnly: true });
+  return getProductImageUrls(item);
 }
 
 export function publicProductToDTO(item: StorefrontInventoryItem): PublicStoreProductDTO | null {
@@ -184,7 +184,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
   });
   const publicTitle = cleanStorefrontTitle(item.publicTitle || item.itemName);
   const status = availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out";
-  const primaryImageUrl = getPrimaryProductImage(item, { publicOnly: true });
+  const primaryImageUrl = getPrimaryProductImage(item);
   return {
     id: item.id,
     slug,
@@ -398,7 +398,7 @@ function stripeImage(imageUrl: string | null | undefined) {
 }
 
 function orderItemToDTO(item: StorefrontOrderItemWithInventory): StorefrontOrderItemDTO {
-  const resolvedImageUrl = item.imageUrl ?? getPrimaryProductImage(item.inventoryItem, { publicOnly: true });
+  const resolvedImageUrl = item.imageUrl ?? getPrimaryProductImage(item.inventoryItem);
   return {
     id: item.id,
     inventoryItemId: item.inventoryItemId,
