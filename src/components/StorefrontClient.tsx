@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 import {
   BadgeCheck,
   Check,
@@ -47,6 +47,9 @@ import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar
 type CartItem = { id: string; quantity: number };
 
 const cartKey = "poke-radar-cart";
+const emptyCartSnapshot: CartItem[] = [];
+let cartSnapshotRaw = "[]";
+let cartSnapshotCache: CartItem[] = emptyCartSnapshot;
 const storefrontLogoPath = "/brand/gamedaygrabs-logo-horizontal.png";
 const preferredCategories = [
   "Pokemon Sealed",
@@ -157,22 +160,50 @@ function productImageUrl(product: Pick<PublicStoreProductDTO, "primaryImageUrl" 
 }
 
 function readCart(): CartItem[] {
+  return getCartSnapshot();
+}
+
+function getCartSnapshot(): CartItem[] {
   if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(cartKey) || "[]";
+  if (raw === cartSnapshotRaw) return cartSnapshotCache;
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(cartKey) || "[]");
+    const parsed = JSON.parse(raw);
+    cartSnapshotRaw = raw;
     if (Array.isArray(parsed)) {
-      return parsed
+      cartSnapshotCache = parsed
         .map((item) => ({ id: String(item.id || ""), quantity: Number(item.quantity || 0) }))
         .filter((item) => item.id && item.quantity > 0);
+      return cartSnapshotCache;
     }
   } catch {
-    return [];
+    cartSnapshotRaw = raw;
+    cartSnapshotCache = emptyCartSnapshot;
+    return cartSnapshotCache;
   }
-  return [];
+  cartSnapshotCache = emptyCartSnapshot;
+  return cartSnapshotCache;
+}
+
+function getServerCartSnapshot(): CartItem[] {
+  return emptyCartSnapshot;
+}
+
+function subscribeCart(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", callback);
+  window.addEventListener("poke-radar-cart", callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener("poke-radar-cart", callback);
+  };
 }
 
 function writeCart(items: CartItem[]) {
-  window.localStorage.setItem(cartKey, JSON.stringify(items));
+  const raw = JSON.stringify(items);
+  cartSnapshotRaw = raw;
+  cartSnapshotCache = items;
+  window.localStorage.setItem(cartKey, raw);
   window.dispatchEvent(new CustomEvent("poke-radar-cart", { detail: items }));
 }
 
@@ -1043,7 +1074,7 @@ function cartHasBlockingStockIssue(products: Array<PublicStoreProductDTO & { req
 }
 
 export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
-  const [items, setItems] = useState<CartItem[]>(() => readCart());
+  const items = useSyncExternalStore(subscribeCart, getCartSnapshot, getServerCartSnapshot);
   const [products, setProducts] = useState<Array<PublicStoreProductDTO & { requestedQuantity: number }>>([]);
   const [message, setMessage] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -1073,13 +1104,11 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     const product = products.find((entry) => entry.id === productId);
     const nextQuantity = product ? Math.min(product.availableQuantity, product.maxQuantityPerOrder, Math.max(1, quantity)) : Math.max(1, quantity);
     const next = items.map((item) => (item.id === productId ? { ...item, quantity: nextQuantity } : item));
-    setItems(next);
     writeCart(next);
   }
 
   function removeItem(productId: string) {
     const next = items.filter((item) => item.id !== productId);
-    setItems(next);
     if (!next.length) setProducts([]);
     writeCart(next);
   }
@@ -1093,17 +1122,18 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     settings.freeShippingThreshold !== null && settings.freeShippingThreshold > 0
       ? Math.min(100, Math.max(0, (subtotal / settings.freeShippingThreshold) * 100))
       : 0;
+  const isStripeCheckout = settings.checkoutConfigured;
   const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
   const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.availableQuantity <= 0);
   const overQuantityProducts = products.filter((product) => product.requestedQuantity > product.availableQuantity && product.availableQuantity > 0);
-  const checkoutDisabled = busy || !customerEmail.trim() || !customerName.trim() || hasBlockingStockIssue;
+  const checkoutDisabled = busy || hasBlockingStockIssue || (!isStripeCheckout && (!customerEmail.trim() || !customerName.trim()));
   const successMessage = message.toLowerCase().includes("received");
   const cartIsLoading = items.length > 0 && !products.length && !message;
 
   function removeSoldOutItems() {
     const blockedIds = new Set(soldOutProducts.map((product) => product.id));
     const next = items.filter((item) => !blockedIds.has(item.id));
-    setItems(next);
+    if (!next.length) setProducts([]);
     writeCart(next);
   }
 
@@ -1113,7 +1143,6 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
       if (!product) return item;
       return { ...item, quantity: Math.min(product.availableQuantity, product.maxQuantityPerOrder, Math.max(1, item.quantity)) };
     });
-    setItems(next);
     writeCart(next);
     setMessage("Quantity updated because available stock changed.");
   }
@@ -1122,19 +1151,40 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch(settings.checkoutConfigured ? "/api/storefront/checkout/session" : "/api/storefront/invoice-request", {
+      const requestPayload: {
+        items: CartItem[];
+        fulfillmentMethod: "shipping";
+        customerEmail?: string;
+        customerName?: string;
+        customerPhone?: string;
+        customerNotes?: string;
+      } = {
+        items,
+        fulfillmentMethod: "shipping"
+      };
+
+      if (isStripeCheckout) {
+        if (customerEmail.trim()) requestPayload.customerEmail = customerEmail.trim();
+        if (customerName.trim()) requestPayload.customerName = customerName.trim();
+      } else {
+        requestPayload.customerEmail = customerEmail.trim();
+        requestPayload.customerName = customerName.trim();
+        if (customerPhone.trim()) requestPayload.customerPhone = customerPhone.trim();
+        if (customerNotes.trim()) requestPayload.customerNotes = customerNotes.trim();
+      }
+
+      const response = await fetch(isStripeCheckout ? "/api/storefront/checkout/session" : "/api/storefront/invoice-request", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items, fulfillmentMethod: "shipping", customerName, customerEmail, customerPhone, customerNotes })
+        body: JSON.stringify(requestPayload)
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Request could not start.");
-      if (settings.checkoutConfigured) {
-        if (!payload.checkoutUrl) throw new Error("Checkout could not start.");
-        window.location.href = payload.checkoutUrl;
+      const responsePayload = await response.json();
+      if (!response.ok) throw new Error(responsePayload.error || "Request could not start.");
+      if (isStripeCheckout) {
+        if (!responsePayload.checkoutUrl) throw new Error("Checkout could not start.");
+        window.location.href = responsePayload.checkoutUrl;
       } else {
         setMessage(`Thanks - we received your request and will contact you shortly at ${contactEmail}.`);
-        setItems([]);
         setProducts([]);
         setCustomerNotes("");
         writeCart([]);
@@ -1272,10 +1322,49 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <p><strong>{`You're supporting a small business!`}</strong> Thank you for helping GameDayGrabs grow.</p>
               <Heart size={18} />
             </div>
+            {!isStripeCheckout ? (
+              <div className="gdg-invoice-form-card">
+                <div>
+                  <span className="gdg-section-kicker">Request invoice</span>
+                  <h2>Tell us where to send your invoice.</h2>
+                  <p>No card is charged today. We will confirm availability and contact you at {contactEmail}.</p>
+                </div>
+                <div className="gdg-invoice-form-grid">
+                  <label>
+                    Name
+                    <span className="gdg-checkout-field">
+                      <User size={17} />
+                      <input value={customerName} onChange={(event) => setCustomerName(event.currentTarget.value)} placeholder="Your name" />
+                    </span>
+                  </label>
+                  <label>
+                    Email
+                    <span className="gdg-checkout-field">
+                      <Mail size={17} />
+                      <input value={customerEmail} onChange={(event) => setCustomerEmail(event.currentTarget.value)} placeholder="you@example.com" type="email" />
+                    </span>
+                  </label>
+                  <label>
+                    Phone <span>optional</span>
+                    <span className="gdg-checkout-field">
+                      <Phone size={17} />
+                      <input value={customerPhone} onChange={(event) => setCustomerPhone(event.currentTarget.value)} placeholder="Optional phone number" type="tel" />
+                    </span>
+                  </label>
+                  <label className="wide">
+                    Notes <span>optional</span>
+                    <span className="gdg-checkout-field textarea">
+                      <MessageCircle size={17} />
+                      <textarea value={customerNotes} onChange={(event) => setCustomerNotes(event.currentTarget.value)} placeholder="Questions, pickup request, or anything we should know?" rows={3} />
+                    </span>
+                  </label>
+                </div>
+              </div>
+            ) : null}
           </div>
           <aside className="gdg-cart-summary gdg-checkout-panel">
             <div className="gdg-summary-heading">
-              <Sparkles size={20} />
+              <ShieldCheck size={20} />
               <h2>Order Summary</h2>
             </div>
             <div className="gdg-summary-rows">
@@ -1308,54 +1397,28 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 <small>Questions? Email {contactEmail}.</small>
               </div>
             )}
-            <label>
-              Name
-              <span className="gdg-checkout-field">
-                <User size={17} />
-                <input value={customerName} onChange={(event) => setCustomerName(event.currentTarget.value)} placeholder="Your name" />
-              </span>
-            </label>
-            <label>
-              Email
-              <span className="gdg-checkout-field">
-                <Mail size={17} />
-                <input value={customerEmail} onChange={(event) => setCustomerEmail(event.currentTarget.value)} placeholder="you@example.com" type="email" />
-              </span>
-            </label>
-            <label>
-              Phone <span>optional</span>
-              <span className="gdg-checkout-field">
-                <Phone size={17} />
-                <input value={customerPhone} onChange={(event) => setCustomerPhone(event.currentTarget.value)} placeholder="Optional phone number" type="tel" />
-              </span>
-            </label>
-            <label>
-              Notes <span>optional</span>
-              <span className="gdg-checkout-field textarea">
-                <MessageCircle size={17} />
-                <textarea value={customerNotes} onChange={(event) => setCustomerNotes(event.currentTarget.value)} placeholder="Questions, pickup request, or anything we should know?" rows={4} />
-              </span>
-            </label>
             {hasBlockingStockIssue ? <p className="gdg-summary-warning">Please remove sold-out items or update changed quantities before checkout.</p> : null}
             <button className="gdg-primary-button wide gdg-checkout-button" type="button" disabled={checkoutDisabled} onClick={checkout}>
               <Lock size={17} />
               <span>
-                {busy ? "Working..." : settings.checkoutConfigured ? "Proceed to Checkout" : "Request Invoice"}
-                <small>{settings.checkoutConfigured ? "Secure Stripe Checkout" : "No card is charged today"}</small>
+                {busy ? "Working..." : isStripeCheckout ? "Proceed to Checkout" : "Request Invoice"}
+                <small>{isStripeCheckout ? "Secure payment powered by Stripe." : "No card is charged today."}</small>
               </span>
               <ChevronRight size={18} />
             </button>
             <div className="gdg-payment-row" aria-label="Accepted payment note">
               <CreditCard size={16} />
-              <small>{settings.checkoutConfigured ? "Cards accepted securely through Stripe." : `We will contact you shortly at ${contactEmail}.`}</small>
+              <small>{isStripeCheckout ? "Cards accepted securely through Stripe." : `We will contact you shortly at ${contactEmail}.`}</small>
             </div>
-            <div className="gdg-payment-icons" aria-hidden="true">
-              <span>VISA</span>
-              <span>MC</span>
-              <span>AMEX</span>
-              <span>DISC</span>
-              <span>Pay</span>
-            </div>
+            {isStripeCheckout ? (
+              <div className="gdg-payment-icons" aria-hidden="true">
+                <span>VISA</span>
+                <span>MC</span>
+                <span>AMEX</span>
+                <span>DISC</span>
+                <span>Pay</span>
+              </div>
+            ) : null}
           </aside>
         </div>
       ) : (

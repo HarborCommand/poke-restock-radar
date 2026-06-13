@@ -591,9 +591,13 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Carefully Packaged/);
   assert.match(client, /100% Authentic/);
   assert.match(client, /Proceed to Checkout/);
-  assert.match(client, /Secure Stripe Checkout/);
+  assert.match(client, /Secure payment powered by Stripe/);
   assert.match(client, /Request Invoice/);
   assert.match(client, /No card is charged today/);
+  assert.match(client, /isStripeCheckout/);
+  assert.match(client, /gdg-invoice-form-card/);
+  assert.match(client, /requestPayload/);
+  assert.match(client, /if \(customerEmail\.trim\(\)\) requestPayload\.customerEmail/);
   assert.match(client, /Your cart is waiting for something awesome/);
   assert.match(client, /Shop Pok&eacute;mon/);
   assert.match(client, /Remove sold-out item/);
@@ -606,10 +610,13 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
 
   assert.match(css, /gdg-checkout-trust-row/);
   assert.match(css, /gdg-checkout-panel/);
+  assert.match(css, /gdg-invoice-form-card/);
   assert.match(css, /gdg-cart-line-price/);
   assert.match(css, /gdg-free-shipping/);
+  assert.match(css, /background: linear-gradient\(135deg, #050505, #0f2f1f 58%, #16a34a\)/);
+  assert.doesNotMatch(css, /background: linear-gradient\(135deg, #5b21b6, #9333ea\)/);
   assert.match(css, /@media \(max-width: 820px\)/);
-  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) minmax\(340px, 420px\)/);
+  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) minmax\(300px, 360px\)/);
 
   assert.match(cartRoute, /getCartProducts\(input\.items, \{ strict: false \}\)/);
   assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
