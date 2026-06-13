@@ -74,6 +74,18 @@ const storefrontOrderInclude = {
 type StorefrontInventoryItem = Prisma.InventoryItemGetPayload<{ include: typeof storefrontInventoryInclude }>;
 type StorefrontOrderWithItems = Prisma.StorefrontOrderGetPayload<{ include: typeof storefrontOrderInclude }>;
 type StorefrontOrderItemWithInventory = StorefrontOrderWithItems["items"][number];
+type StoredProductImageFallback = {
+  id: string;
+  name: string;
+  url: string;
+  verifiedFinalUrl: string | null;
+  sku: string | null;
+  upc: string | null;
+  dpci: string | null;
+  retailerProductId: string | null;
+  imageUrl: string | null;
+  liveImageUrl: string | null;
+};
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -198,17 +210,83 @@ function targetTcinImageFallbacks(item: StorefrontInventoryItem) {
   ]);
 }
 
-function publicImages(item: StorefrontInventoryItem) {
-  return uniqueProductImageUrls([...getProductImageUrls(item), ...targetTcinImageFallbacks(item)]);
+function normalizedKey(value: string | null | undefined) {
+  return value?.trim().toLowerCase() || null;
 }
 
-export function publicProductToDTO(item: StorefrontInventoryItem): PublicStoreProductDTO | null {
+function storedProductMatchesItem(product: StoredProductImageFallback, item: StorefrontInventoryItem) {
+  const itemUrls = [item.exactProductUrl].map(normalizedKey).filter(Boolean);
+  const productUrls = [product.url, product.verifiedFinalUrl].map(normalizedKey).filter(Boolean);
+  if (itemUrls.length && productUrls.some((url) => itemUrls.includes(url))) return true;
+
+  const itemIdentifiers = [item.sku, item.upc, item.dpci].map(normalizedKey).filter(Boolean);
+  const productIdentifiers = [product.sku, product.upc, product.dpci, product.retailerProductId].map(normalizedKey).filter(Boolean);
+  if (itemIdentifiers.length && productIdentifiers.some((identifier) => itemIdentifiers.includes(identifier))) return true;
+
+  const itemTitles = [item.publicTitle, item.itemName].map(normalizedKey).filter(Boolean);
+  return itemTitles.includes(normalizedKey(product.name));
+}
+
+async function watchedProductImageFallbackMap(items: StorefrontInventoryItem[]) {
+  const urls = [...new Set(items.flatMap((item) => [item.exactProductUrl].map(normalizedKey).filter((value): value is string => Boolean(value))))];
+  const identifiers = [
+    ...new Set(
+      items
+        .flatMap((item) => [item.sku, item.upc, item.dpci].map(normalizedKey))
+        .filter((value): value is string => Boolean(value))
+    )
+  ];
+  const titles = [
+    ...new Set(
+      items
+        .flatMap((item) => [item.publicTitle, item.itemName].map((value) => value?.trim()).filter((value): value is string => Boolean(value)))
+        .filter((value) => value.length >= 4)
+    )
+  ];
+  const clauses: Prisma.ProductWhereInput[] = [];
+  if (urls.length) clauses.push({ OR: [{ url: { in: urls } }, { verifiedFinalUrl: { in: urls } }] });
+  if (identifiers.length) clauses.push({ OR: [{ sku: { in: identifiers } }, { upc: { in: identifiers } }, { dpci: { in: identifiers } }, { retailerProductId: { in: identifiers } }] });
+  if (titles.length) clauses.push({ name: { in: titles } });
+  if (!clauses.length) return new Map<string, string[]>();
+
+  const storedProducts = await prisma.product.findMany({
+    where: { OR: clauses },
+    select: {
+      id: true,
+      name: true,
+      url: true,
+      verifiedFinalUrl: true,
+      sku: true,
+      upc: true,
+      dpci: true,
+      retailerProductId: true,
+      imageUrl: true,
+      liveImageUrl: true
+    },
+    take: 500
+  });
+  const result = new Map<string, string[]>();
+  for (const item of items) {
+    const imageUrls = storedProducts
+      .filter((product) => storedProductMatchesItem(product, item))
+      .flatMap((product) => [product.liveImageUrl, product.imageUrl]);
+    const urlsForItem = uniqueProductImageUrls(imageUrls);
+    if (urlsForItem.length) result.set(item.id, urlsForItem);
+  }
+  return result;
+}
+
+function publicImages(item: StorefrontInventoryItem, extraFallbacks: string[] = []) {
+  return uniqueProductImageUrls([...getProductImageUrls(item), ...extraFallbacks, ...targetTcinImageFallbacks(item)]);
+}
+
+export function publicProductToDTO(item: StorefrontInventoryItem, options: { imageFallbacks?: string[] } = {}): PublicStoreProductDTO | null {
   const price = item.publicPrice;
   const availableQuantity = sellableQuantity(item);
   const slug = item.publicSlug;
   if (!item.publishToStore || !slug || price === null || price === undefined) return null;
   if (!["active", "sold_out"].includes(item.storeStatus)) return null;
-  const images = publicImages(item);
+  const images = publicImages(item, options.imageFallbacks);
   const publicCategory = displayStorefrontCategory({
     category: item.storefrontCategory || item.category,
     title: item.publicTitle || item.itemName,
@@ -218,7 +296,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
   });
   const publicTitle = cleanStorefrontTitle(item.publicTitle || item.itemName);
   const status = availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out";
-  const primaryImageUrl = getPrimaryProductImage(item);
+  const primaryImageUrl = images[0] ?? getPrimaryProductImage(item);
   return {
     id: item.id,
     slug,
@@ -296,8 +374,9 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
   });
   const q = input?.q?.trim().toLowerCase();
   const category = input?.category?.trim().toLowerCase();
+  const imageFallbacks = await watchedProductImageFallbackMap(products);
   return products
-    .map(publicProductToDTO)
+    .map((item) => publicProductToDTO(item, { imageFallbacks: imageFallbacks.get(item.id) }))
     .filter((product): product is PublicStoreProductDTO => Boolean(product))
     .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))
     .filter((product) => !category || category === "all" || product.category.toLowerCase() === category)
@@ -314,7 +393,9 @@ export async function getPublicStoreProduct(slug: string) {
     where: { publicSlug: slug, publishToStore: true, storeStatus: { in: ["active", "sold_out"] } },
     include: storefrontInventoryInclude
   });
-  return item ? publicProductToDTO(item) : null;
+  if (!item) return null;
+  const imageFallbacks = await watchedProductImageFallbackMap([item]);
+  return publicProductToDTO(item, { imageFallbacks: imageFallbacks.get(item.id) });
 }
 
 export async function getCartProducts(items: Array<{ id: string; quantity: number }>, options: { strict?: boolean } = {}) {
@@ -328,8 +409,9 @@ export async function getCartProducts(items: Array<{ id: string; quantity: numbe
   if (products.length !== requested.size) {
     throw new Error("One or more cart items are no longer available.");
   }
+  const imageFallbacks = await watchedProductImageFallbackMap(products);
   return products.map((item) => {
-    const product = publicProductToDTO(item);
+    const product = publicProductToDTO(item, { imageFallbacks: imageFallbacks.get(item.id) });
     if (!product) throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
     const requestedQuantity = requested.get(item.id) ?? 0;
     if (strict && product.status !== "active") throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
