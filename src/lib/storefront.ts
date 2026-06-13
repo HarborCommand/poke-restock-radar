@@ -220,7 +220,10 @@ const knownPokemonUpcImageFallbacks: Record<string, string[]> = {
     "https://www.spellenrijk.nl/resize/chaos-rising-flygon-premium-blister_126626975883988135747785.png/200/200/True/pokemon-chaos-rising-premium-checklane-blister-flygon.png"
   ],
   "196214140585": ["https://c.cdnmp.net/406833049/p/t/1/pokemon-tcg-chaos-rising-premium-checklane-blister-pawmot~902421.jpg"],
-  "196214136649": ["https://rollntrade.com/wp-content/uploads/2026/03/Meganium-PCB.webp"]
+  "196214136649": [
+    "https://storage.googleapis.com/images.pricecharting.com/awn4x7p7gjzktwjk/240.jpg",
+    "https://rollntrade.com/wp-content/uploads/2026/03/Meganium-PCB.webp"
+  ]
 };
 
 function productBarcodeCandidates(item: StorefrontInventoryItem) {
