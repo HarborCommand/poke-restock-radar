@@ -280,6 +280,35 @@ test("admin modal checkboxes and sticky footers stay on light theme", () => {
   assert.doesNotMatch(finalCleanup, /background: #0b0e0d/);
 });
 
+test("private admin app source styles do not keep old dark layout surfaces", () => {
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  const adminCss = css.slice(0, css.indexOf("GameDayGrabs public storefront"));
+
+  assert.match(adminCss, /body \{[\s\S]*linear-gradient\(180deg, #f7f9fb 0%, #f8fafc 46%, #eef4f8 100%\)/);
+  assert.match(adminCss, /input,[\s\S]*textarea \{[\s\S]*background: #ffffff/);
+  assert.match(adminCss, /\.inventory-modal \{[\s\S]*background: #ffffff/);
+  assert.match(adminCss, /\.inventory-details-modal \{[\s\S]*#ffffff/);
+  assert.match(adminCss, /\.admin-drawer \{[\s\S]*#ffffff/);
+  assert.match(adminCss, /\.barcode-camera-panel,[\s\S]*background: #f8fafc/);
+  assert.match(adminCss, /\.inventory-choice-card \{[\s\S]*background: #ffffff/);
+  assert.match(adminCss, /\.sale-product-preview \{[\s\S]*background: #f8fafc/);
+  assert.doesNotMatch(adminCss, /linear-gradient\(180deg, #090b0a/);
+  assert.doesNotMatch(adminCss, /background:\s*(#0a0c0b|#0b0e0d|#050505|#080808|#0f1115|#111827|#0f172a)/);
+  assert.doesNotMatch(adminCss, /background:\s*rgba\(0,\s*0,\s*0/);
+  assert.doesNotMatch(adminCss, /background:\s*rgba\((18,\s*21,\s*20|9,\s*15,\s*18|7,\s*8,\s*8|9,\s*11,\s*10|5,\s*7,\s*7|8,\s*10,\s*9)/);
+});
+
+test("inventory catalog row actions fit inside the operating screen", () => {
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  const catalogCleanup = css.slice(css.indexOf("body .app-main-inventory .catalog-row"));
+
+  assert.match(catalogCleanup, /minmax\(240px, 2\.1fr\)/);
+  assert.match(catalogCleanup, /minmax\(92px, 0\.58fr\) !important/);
+  assert.match(catalogCleanup, /body \.catalog-action-trigger \{[\s\S]*min-width: 0/);
+  assert.match(css, /@media \(max-width: 900px\) \{[\s\S]*body \.app-main-inventory \.catalog-row,[\s\S]*grid-template-columns: minmax\(0, 1fr\) !important/);
+  assert.doesNotMatch(catalogCleanup, /minmax\(300px, 2\.25fr\)[\s\S]*minmax\(112px, 0\.64fr\) !important/);
+});
+
 test("market value and unrealized profit use real comps only", () => {
   const summary = summarizeInventory([
     item({
