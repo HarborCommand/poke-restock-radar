@@ -95,6 +95,7 @@ import type {
   BarcodeScanDTO,
   StoreDTO,
   StoreVisitResult,
+  StorefrontOrderDTO,
   UpcLookupDebugDTO,
   UpcLookupFailureDTO,
   UpcLookupProductDTO,
@@ -1719,26 +1720,122 @@ function inventorySaleToDTO(
   itemName = "",
   stockLotSource = "FIFO stock lots"
 ): InventorySaleDTO {
+  const storefrontOrderNumber = storefrontOrderNumberFromSaleNotes(sale.notes);
   return {
     id: sale.id,
     inventoryItemId: sale.inventoryItemId,
     itemName,
     quantitySold: sale.quantitySold,
+    activeQuantitySold: sale.quantitySold,
     actualSalePrice: sale.soldPricePerItem,
     soldPricePerItem: sale.soldPricePerItem,
     grossSale: sale.grossSale,
+    activeGrossSale: sale.grossSale,
     platform: sale.platform,
     fees: sale.fees,
     shippingCost: sale.shippingCost,
     netSale: sale.netSale,
+    activeNetSale: sale.netSale,
     costBasis: sale.costBasis,
     stockLotSource,
     profitLoss: sale.profitLoss,
+    activeProfitLoss: sale.profitLoss,
     roiPercent: sale.roiPercent,
+    saleStatus: "active",
+    storefrontOrderNumber,
+    storefrontOrderStatus: null,
+    refundStatus: null,
+    refundedAmount: 0,
+    netRevenueAfterRefund: sale.grossSale,
     soldAt: sale.soldAt.toISOString(),
     notes: sale.notes,
     createdAt: sale.createdAt.toISOString()
   };
+}
+
+function storefrontOrderNumberFromSaleNotes(notes: string | null | undefined) {
+  return notes?.match(/(?:^|\n)Storefront order\s+([A-Z0-9-]+)/i)?.[1] ?? null;
+}
+
+function saleActiveGross(sale: InventorySaleDTO) {
+  return sale.activeGrossSale ?? sale.grossSale;
+}
+
+function saleActiveNet(sale: InventorySaleDTO) {
+  return sale.activeNetSale ?? sale.netSale;
+}
+
+function saleActiveProfit(sale: InventorySaleDTO) {
+  return sale.activeProfitLoss ?? sale.profitLoss;
+}
+
+function saleActiveQuantity(sale: InventorySaleDTO) {
+  return sale.activeQuantitySold ?? sale.quantitySold;
+}
+
+function storefrontOrderSaleStatus(order: StorefrontOrderDTO): InventorySaleDTO["saleStatus"] {
+  if (order.paymentStatus === "refunded" || order.status === "refunded") return "refunded";
+  if (order.paymentStatus === "partially_refunded" || order.status === "partially_refunded") return "partially_refunded";
+  if (order.status === "canceled" || order.fulfillmentStatus === "canceled" || ["failed", "expired"].includes(order.paymentStatus)) return "canceled";
+  return "active";
+}
+
+function storefrontSaleRefundAllocation(sale: InventorySaleDTO, order: StorefrontOrderDTO) {
+  if (order.refundedAmount <= 0) return 0;
+  const orderSubtotal = order.subtotal > 0 ? order.subtotal : order.items.reduce((sum, item) => sum + item.lineTotal, 0);
+  if (orderSubtotal <= 0) return Math.min(sale.grossSale, order.refundedAmount);
+  return Math.min(sale.grossSale, order.refundedAmount * (sale.grossSale / orderSubtotal));
+}
+
+function applyStorefrontOrderToSale(sale: InventorySaleDTO, order: StorefrontOrderDTO): InventorySaleDTO {
+  const saleStatus = storefrontOrderSaleStatus(order);
+  const refundedAmount = Number(storefrontSaleRefundAllocation(sale, order).toFixed(2));
+  const isFullyInactive = saleStatus === "refunded" || saleStatus === "canceled";
+  const activeGrossSale = isFullyInactive ? 0 : Number(Math.max(0, sale.grossSale - refundedAmount).toFixed(2));
+  const activeNetSale = isFullyInactive ? 0 : Number(Math.max(0, sale.netSale - refundedAmount).toFixed(2));
+  const activeProfitLoss = isFullyInactive ? 0 : Number((activeNetSale - sale.costBasis).toFixed(2));
+  return {
+    ...sale,
+    activeQuantitySold: isFullyInactive ? 0 : sale.quantitySold,
+    activeGrossSale,
+    activeNetSale,
+    activeProfitLoss,
+    saleStatus,
+    storefrontOrderNumber: order.orderNumber,
+    storefrontOrderStatus: order.status,
+    refundStatus: order.refundStatus,
+    refundedAmount,
+    netRevenueAfterRefund: activeGrossSale
+  };
+}
+
+function recomputeInventoryItemSaleTotals(item: InventoryItemDTO): InventoryItemDTO {
+  const totalSalesGross = item.sales.reduce((sum, sale) => sum + saleActiveGross(sale), 0);
+  const totalSalesNet = item.sales.reduce((sum, sale) => sum + saleActiveNet(sale), 0);
+  const realizedProfitLoss = item.sales.reduce((sum, sale) => sum + saleActiveProfit(sale), 0);
+  const realizedCostBasis = item.sales.reduce((sum, sale) => sum + (saleActiveQuantity(sale) > 0 ? sale.costBasis : 0), 0);
+  const businessProfitLoss = item.marketProfitLoss === null ? realizedProfitLoss : realizedProfitLoss + item.marketProfitLoss;
+  return {
+    ...item,
+    quantitySold: item.sales.reduce((sum, sale) => sum + saleActiveQuantity(sale), 0),
+    totalSalesGross,
+    totalSalesNet,
+    realizedProfitLoss,
+    realizedRoiPercent: realizedCostBasis > 0 ? (realizedProfitLoss / realizedCostBasis) * 100 : null,
+    businessProfitLoss
+  };
+}
+
+export function applyStorefrontOrderAdjustmentsToInventory(items: InventoryItemDTO[], orders: StorefrontOrderDTO[]) {
+  const ordersByNumber = new Map(orders.map((order) => [order.orderNumber, order]));
+  return items.map((item) => {
+    const sales = item.sales.map((sale) => {
+      const orderNumber = sale.storefrontOrderNumber ?? storefrontOrderNumberFromSaleNotes(sale.notes);
+      const order = orderNumber ? ordersByNumber.get(orderNumber) : null;
+      return order && sale.platform === "website" ? applyStorefrontOrderToSale(sale, order) : sale;
+    });
+    return recomputeInventoryItemSaleTotals({ ...item, sales });
+  });
 }
 
 type InventoryItemWithInclude = Prisma.InventoryItemGetPayload<{ include: typeof inventoryItemInclude }>;
@@ -1882,10 +1979,11 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   const quantitySold = inventoryQuantitySold(item);
   const quantityOwned = inventoryQuantityOwned(item);
   const averageCost = inventoryOwnedAverageCost(item);
-  const totalSalesGross = item.sales.reduce((sum, sale) => sum + sale.grossSale, 0);
-  const totalSalesNet = item.sales.reduce((sum, sale) => sum + sale.netSale, 0);
-  const realizedProfitLoss = item.sales.reduce((sum, sale) => sum + sale.profitLoss, 0);
-  const realizedRoiPercent = item.sales.reduce((sum, sale) => sum + sale.costBasis, 0);
+  const sales = item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName, inventorySaleStockLotSource(item)));
+  const totalSalesGross = sales.reduce((sum, sale) => sum + saleActiveGross(sale), 0);
+  const totalSalesNet = sales.reduce((sum, sale) => sum + saleActiveNet(sale), 0);
+  const realizedProfitLoss = sales.reduce((sum, sale) => sum + saleActiveProfit(sale), 0);
+  const realizedRoiPercent = sales.reduce((sum, sale) => sum + sale.costBasis, 0);
   const ownedCostBasis = inventoryOwnedCostBasis(item);
   const marketPriceRecords = item.marketComps.filter((comp) => isSoldMarketCompSource(comp.sourceQuality));
   const compStats = inventoryCompStats(marketPriceRecords);
@@ -2007,7 +2105,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     lastThreeComps: marketPriceRecords.map(inventoryMarketCompToDTO),
     productImages: orderedProductImages.map(inventoryProductImageToDTO),
     stockLots: item.stockLots.map(inventoryStockLotToDTO),
-    sales: item.sales.map((sale) => inventorySaleToDTO(sale, item.itemName, inventorySaleStockLotSource(item))),
+    sales,
     expectedPlan: item.expectedPlan,
     notes: item.notes,
     createdAt: item.createdAt.toISOString(),
@@ -2027,9 +2125,9 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
   const marketItems = items.filter((item) => item.quantityOwned > 0 && item.marketCompCount > 0 && item.grossMarketValue !== null);
   const marketValue = marketItems.length ? marketItems.reduce((sum, item) => sum + (item.grossMarketValue ?? 0), 0) : null;
   const currentInventoryValue = marketValue ?? 0;
-  const totalSalesGross = allSales.reduce((sum, sale) => sum + sale.grossSale, 0);
-  const totalSalesNet = allSales.reduce((sum, sale) => sum + sale.netSale, 0);
-  const realizedProfitLoss = allSales.reduce((sum, sale) => sum + sale.profitLoss, 0);
+  const totalSalesGross = allSales.reduce((sum, sale) => sum + saleActiveGross(sale), 0);
+  const totalSalesNet = allSales.reduce((sum, sale) => sum + saleActiveNet(sale), 0);
+  const realizedProfitLoss = allSales.reduce((sum, sale) => sum + saleActiveProfit(sale), 0);
   const unrealizedProfitLoss = marketItems.length
     ? marketItems.reduce((sum, item) => sum + ((item.grossMarketValue ?? 0) - item.quantityOwned * item.averageCost), 0)
     : null;
@@ -2041,8 +2139,8 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
   for (const sale of allSales) {
     const platform = sale.platform || "other";
     const current = profitByPlatformMap.get(platform) ?? { profit: 0, sales: 0 };
-    current.profit += sale.profitLoss;
-    current.sales += sale.grossSale;
+    current.profit += saleActiveProfit(sale);
+    current.sales += saleActiveGross(sale);
     profitByPlatformMap.set(platform, current);
   }
   const withProfit = items.filter((item) => item.businessProfitLoss !== null || item.estimatedNetProfit !== null);
@@ -2066,11 +2164,11 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
     netProfitLoss,
     totalRoiPercent: totalCost > 0 ? (netProfitLoss / totalCost) * 100 : null,
     itemsOwned: items.reduce((sum, item) => sum + item.quantityOwned, 0),
-    itemsSold: allSales.reduce((sum, sale) => sum + sale.quantitySold, 0),
+    itemsSold: allSales.reduce((sum, sale) => sum + saleActiveQuantity(sale), 0),
     spendingThisWeek: items.filter((item) => isAfter(item.purchasedAt, weekStart)).reduce((sum, item) => sum + item.totalCost, 0),
     spendingThisMonth: items.filter((item) => isAfter(item.purchasedAt, monthStart)).reduce((sum, item) => sum + item.totalCost, 0),
-    salesThisWeek: allSales.filter((sale) => isAfter(sale.soldAt, weekStart)).reduce((sum, sale) => sum + sale.grossSale, 0),
-    salesThisMonth: allSales.filter((sale) => isAfter(sale.soldAt, monthStart)).reduce((sum, sale) => sum + sale.grossSale, 0),
+    salesThisWeek: allSales.filter((sale) => isAfter(sale.soldAt, weekStart)).reduce((sum, sale) => sum + saleActiveGross(sale), 0),
+    salesThisMonth: allSales.filter((sale) => isAfter(sale.soldAt, monthStart)).reduce((sum, sale) => sum + saleActiveGross(sale), 0),
     profitByPlatform: [...profitByPlatformMap.entries()].map(([platform, values]) => ({ platform, ...values })),
     quantityByCategory: [...quantityByCategoryMap.entries()].map(([category, quantity]) => ({ category, quantity })),
     bestItem: sortedByProfit[0] ?? null,
@@ -2904,6 +3002,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     storefrontSummary(currentUser),
     getStorefrontSettings()
   ]);
+  const inventoryWithSalesAdjustments = applyStorefrontOrderAdjustmentsToInventory(inventoryDTOs, storefrontOrders);
 
   return {
     currentUser,
@@ -2919,8 +3018,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       newestReleases: releaseDTOs.slice(0, 5),
       bestCards: cardDTOs.slice(0, 5)
     },
-    inventory: inventoryDTOs,
-    inventorySummary: summarizeInventory(inventoryDTOs),
+    inventory: inventoryWithSalesAdjustments,
+    inventorySummary: summarizeInventory(inventoryWithSalesAdjustments),
     storefrontOrders,
     storefrontSummary: storefrontStats,
     storefrontSettings,

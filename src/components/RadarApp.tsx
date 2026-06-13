@@ -134,11 +134,18 @@ type Tab =
   | "settings"
   | "admin";
 type Toast = { type: "error" | "success"; message: string };
+type SubmitOptions<T> = {
+  reset?: boolean;
+  success?: string;
+  reauth?: boolean;
+  onSuccess?: (result: T) => void | Promise<void>;
+  onError?: (message: string) => void;
+};
 type SubmitHandler = <T>(
   event: FormEvent<HTMLFormElement>,
   label: string,
   run: (form: HTMLFormElement) => Promise<T>,
-  options?: { reset?: boolean; success?: string; reauth?: boolean }
+  options?: SubmitOptions<T>
 ) => Promise<void>;
 type ActionHandler = <T>(
   label: string,
@@ -614,6 +621,10 @@ function dataSourceLabel(value: string | null | undefined) {
 function money(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "TBD";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+}
+
+function storefrontOrderNetRevenue(order: StorefrontOrderDTO) {
+  return Math.max(0, order.total - order.refundedAmount);
 }
 
 function percent(value: number | null | undefined) {
@@ -1383,15 +1394,18 @@ export function RadarApp() {
       if (options.reset !== false) form.reset();
       if (options.reauth) {
         if (options.success) showToast({ type: "success", message: options.success });
+        await options.onSuccess?.(result);
         await logout();
         return;
       }
       await loadDashboard();
+      await options.onSuccess?.(result);
       const warning = responseWarning(result);
       if (options.success || warning) showToast({ type: "success", message: [options.success, warning].filter(Boolean).join(" ") });
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "Action failed";
       setError(message);
+      options.onError?.(message);
       showToast({ type: "error", message });
     } finally {
       setBusyLabel(null);
@@ -2495,9 +2509,9 @@ function DashboardPanel({
         <InventoryKpiCard label="Pending Payment" value={String(dashboard.storefrontSummary.pendingOrderCount)} detail="Checkout started" tone={dashboard.storefrontSummary.pendingOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Invoice Requests" value={String(dashboard.storefrontSummary.inquiryCount)} detail="Needs follow-up" tone={dashboard.storefrontSummary.inquiryCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Orders To Ship" value={String(dashboard.storefrontSummary.ordersToShipCount)} detail="Paid and not shipped" tone={dashboard.storefrontSummary.ordersToShipCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Today's Sales" value={money(dashboard.storefrontSummary.todaySales)} detail={`${dashboard.storefrontSummary.todayPaidOrderCount} paid today`} tone="good" />
-        <InventoryKpiCard label="Store Revenue" value={money(dashboard.storefrontSummary.totalRevenue)} detail="Paid orders" tone="watch" />
-        <InventoryKpiCard label="Store Profit" value={money(dashboard.storefrontSummary.netProfit)} detail="Estimated after costs" tone={dashboard.storefrontSummary.netProfit >= 0 ? "good" : "bad"} />
+        <InventoryKpiCard label="Today's Net Sales" value={money(dashboard.storefrontSummary.todaySales)} detail={`${dashboard.storefrontSummary.todayPaidOrderCount} active paid today`} tone="good" />
+        <InventoryKpiCard label="Store Revenue" value={money(dashboard.storefrontSummary.totalRevenue)} detail="Net after refunds" tone="watch" />
+        <InventoryKpiCard label="Store Profit" value={money(dashboard.storefrontSummary.netProfit)} detail="Net after refunds and costs" tone={dashboard.storefrontSummary.netProfit >= 0 ? "good" : "bad"} />
       </section>
       <section className="dashboard-metric-grid" aria-label="Dashboard summary">
         <DashboardMetricCard
@@ -2518,7 +2532,7 @@ function DashboardPanel({
           icon={CircleDollarSign}
           label="Total Profit"
           value={money(dashboard.inventorySummary.realizedProfitLoss)}
-          detail="Recorded sales only"
+          detail="Active sales after refunds"
           tone={dashboard.inventorySummary.realizedProfitLoss >= 0 ? "green" : "amber"}
         />
         <DashboardMetricCard
@@ -2961,7 +2975,7 @@ function ProfitLossPanel({ dashboard }: { dashboard: DashboardDTO }) {
       <SectionIntro title="Profit & Loss" detail="Cost basis, sales, and profit using recorded inventory data only." />
       <section className="inventory-kpi-grid">
         <InventoryKpiCard label="Total Spent" value={money(summary.totalSpent)} detail="Purchase lots and extra costs" />
-        <InventoryKpiCard label="Total Sales" value={money(summary.totalSalesGross)} detail={`${summary.itemsSold} sold`} tone="good" />
+        <InventoryKpiCard label="Active Sales" value={money(summary.totalSalesGross)} detail={`${summary.itemsSold} active sold`} tone="good" />
         <InventoryKpiCard label="Realized Profit" value={money(summary.realizedProfitLoss)} detail="Sales minus cost basis" tone={summary.realizedProfitLoss >= 0 ? "good" : "bad"} />
         <InventoryKpiCard label="Inventory Cost" value={money(summary.inventoryCostBasis)} detail={`${summary.itemsOwned} items owned`} />
       </section>
@@ -6043,7 +6057,7 @@ function InventoryPanel({
         <InventoryKpiCard label="Total Products" value={String(dashboard.inventory.length)} detail="Unique products" />
         <InventoryKpiCard label="Items Owned" value={String(summary.itemsOwned)} detail="Total quantity" />
         <InventoryKpiCard label="Total Spent" value={money(summary.totalSpent)} detail="Cost basis" />
-        <InventoryKpiCard label="Total Sales" value={money(summary.totalSalesGross)} detail="Revenue" tone="watch" />
+        <InventoryKpiCard label="Active Sales" value={money(summary.totalSalesGross)} detail="Net after refunds" tone="watch" />
         <InventoryKpiCard
           label="Net Profit / Loss"
           value={money(summary.netProfitLoss)}
@@ -6373,10 +6387,10 @@ function StorefrontOrdersPanel({
         <InventoryKpiCard label="Pending Orders" value={String(stats.pendingOrderCount)} detail="Awaiting payment" tone={stats.pendingOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Invoice Requests" value={String(stats.inquiryCount)} detail="Needs follow-up" tone={stats.inquiryCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Orders To Ship" value={String(stats.ordersToShipCount)} detail="Paid and not shipped" tone={stats.ordersToShipCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Today's Sales" value={money(stats.todaySales)} detail={`${stats.todayPaidOrderCount} paid today`} tone="good" />
+        <InventoryKpiCard label="Today's Net Sales" value={money(stats.todaySales)} detail={`${stats.todayPaidOrderCount} active paid today`} tone="good" />
         <InventoryKpiCard label="Paid Orders" value={String(stats.paidOrderCount)} detail="All time" tone="good" />
-        <InventoryKpiCard label="Store Revenue" value={money(stats.totalRevenue)} detail="Paid orders" tone="watch" />
-        <InventoryKpiCard label="Store Profit" value={money(stats.netProfit)} detail="After cost estimates" tone={stats.netProfit >= 0 ? "good" : "bad"} />
+        <InventoryKpiCard label="Store Revenue" value={money(stats.totalRevenue)} detail="Net after refunds" tone="watch" />
+        <InventoryKpiCard label="Store Profit" value={money(stats.netProfit)} detail="Net after refunds and costs" tone={stats.netProfit >= 0 ? "good" : "bad"} />
       </section>
 
       <section className="storefront-admin-grid">
@@ -6649,7 +6663,7 @@ function StorefrontOrderDetailsModal({
             <Printer size={14} />
             Packing Slip
           </button>
-          {order.canCancelOrRefund ? (
+          {order.canCancelOrRefund && !(order.paymentStatus === "paid" && order.refundableAmount <= 0) ? (
             <button className="mini-action danger" disabled={busy} type="button" onClick={openCancelRefund}>
               <RotateCcw size={14} />
               Cancel / Refund
@@ -6723,6 +6737,8 @@ function StorefrontOrderDetailsModal({
               <DetailStat label="Subtotal" value={money(order.subtotal)} />
               <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
               <DetailStat label="Total paid" value={money(order.total)} tone="good" />
+              <DetailStat label="Refunded amount" value={money(order.refundedAmount)} tone={order.refundedAmount > 0 ? "bad" : "neutral"} />
+              <DetailStat label="Net revenue" value={money(storefrontOrderNetRevenue(order))} tone={storefrontOrderNetRevenue(order) > 0 ? "good" : "neutral"} />
               <DetailStat label="Estimated Stripe fee" value={money(order.stripeFeeEstimate)} />
               <DetailStat label="Actual shipping cost" value={money(order.shippingCost)} />
               <DetailStat label="Cost basis" value={money(order.costBasis)} />
@@ -6857,91 +6873,177 @@ function StorefrontCancelRefundModal({
   onClose: () => void;
 }) {
   const [refundType, setRefundType] = useState(order.paymentStatus === "paid" ? "full" : "none");
+  const [successOrder, setSuccessOrder] = useState<StorefrontOrderDTO | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const submittedRef = useRef(false);
   const inventoryFinalized = order.paymentStatus === "paid" && order.reservations.some((reservation) => reservation.status === "completed");
   const actionLabel = `Canceling/refunding ${order.orderNumber}`;
+  const processing = busyLabel === actionLabel;
+  const hasNoRefundableBalance = order.paymentStatus === "paid" && order.refundableAmount <= 0;
+  const resultOrder = successOrder ?? order;
+  const refundActionText = refundType === "none" ? "Canceling order..." : "Processing refund...";
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (submittedRef.current) {
+      event.preventDefault();
+      return;
+    }
+    submittedRef.current = true;
+    setLocalError(null);
+    await submit<{ order: StorefrontOrderDTO }>(
+      event,
+      actionLabel,
+      (form) =>
+        requestJson(`/api/radar/storefront/orders/${order.id}/cancel-refund`, {
+          method: "POST",
+          body: JSON.stringify(formJson(form))
+        }),
+      {
+        reset: false,
+        success: "Order cancellation/refund saved",
+        onSuccess: (result) => setSuccessOrder(result.order),
+        onError: (message) => {
+          submittedRef.current = false;
+          setLocalError(message);
+        }
+      }
+    );
+  }
+
   return (
     <div className="inventory-modal-backdrop order-cancel-refund-backdrop" role="presentation">
       <div className="inventory-modal order-cancel-refund-modal" role="dialog" aria-modal="true" aria-label={`Cancel or refund ${order.orderNumber}`}>
         <header className="inventory-details-header">
-          <div className="storefront-order-avatar"><RotateCcw size={24} /></div>
+          <div className="storefront-order-avatar">{successOrder ? <Check size={24} /> : <RotateCcw size={24} />}</div>
           <div>
-            <h2>Cancel / Refund</h2>
-            <p>{order.orderNumber} - remaining refundable {money(order.refundableAmount)}</p>
+            <h2>{successOrder ? "Order canceled" : "Cancel / Refund"}</h2>
+            <p>{order.orderNumber} - remaining refundable {money(resultOrder.refundableAmount)}</p>
           </div>
           <button className="icon-button" type="button" aria-label="Close cancel refund" onClick={onClose}>
             <X size={18} />
           </button>
         </header>
-        <form
-          className="form-grid compact"
-          onSubmit={(event) =>
-            submit(
-              event,
-              actionLabel,
-              (form) =>
-                requestJson(`/api/radar/storefront/orders/${order.id}/cancel-refund`, {
-                  method: "POST",
-                  body: JSON.stringify(formJson(form))
-                }),
-              { reset: false, success: "Order cancellation/refund saved" }
-            )
-          }
-        >
-          <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
-          <SelectInput
-            name="reason"
-            label="Cancellation reason"
-            defaultValue="customer_requested"
-            options={[
-              { value: "out_of_stock", label: "Out of stock" },
-              { value: "customer_requested", label: "Customer requested cancellation" },
-              { value: "address_issue", label: "Address issue" },
-              { value: "fraud_suspicious", label: "Fraud / suspicious order" },
-              { value: "duplicate_order", label: "Duplicate order" },
-              { value: "other", label: "Other" }
-            ]}
-          />
-          <label>
-            Refund type
-            <select name="refundType" value={refundType} onChange={(event) => setRefundType(event.currentTarget.value)}>
-              <option value="full">Full refund</option>
-              <option value="partial">Partial refund</option>
-              <option value="none" disabled={order.paymentStatus === "paid"}>No refund</option>
-            </select>
-          </label>
-          {refundType === "partial" ? (
-            <TextInput name="partialRefundAmount" label="Partial refund amount" type="number" min="0.01" max={order.refundableAmount || undefined} step="0.01" />
-          ) : (
-            <input name="partialRefundAmount" type="hidden" value="" />
-          )}
-          <TextareaInput name="adminNote" label="Admin note / explanation" wide />
-          <input name="returnItemsToStock" type="hidden" value="false" />
-          <label className="checkbox-label wide-field">
-            <input name="returnItemsToStock" type="checkbox" value="true" defaultChecked={inventoryFinalized} disabled={!inventoryFinalized} />
-            Return purchased items to stock
-          </label>
-          {!inventoryFinalized ? <p className="form-helper publish-ready-note wide-field">Inventory was not finalized for this order, so stock return is not applicable.</p> : null}
-          <input name="sendCustomerEmail" type="hidden" value="false" />
-          <label className="checkbox-label wide-field">
-            <input name="sendCustomerEmail" type="checkbox" value="true" defaultChecked={Boolean(order.customerEmail)} />
-            Send cancellation email to customer
-          </label>
-          <p className="form-helper publish-ready-note wide-field">
-            Stripe-paid orders refund through the stored PaymentIntent. No card numbers, CVC, or raw payment details are stored here.
-          </p>
-          <div className="inventory-edit-actions wide-field">
-            <button className="mini-action" type="button" onClick={onClose}>
-              Keep Order
-            </button>
-            <button className="primary-action danger" disabled={busy || !idempotencyKey} type="submit">
-              <RotateCcw size={16} />
-              {busyLabel === actionLabel ? "Processing" : "Confirm Cancel / Refund"}
-            </button>
+        {successOrder ? (
+          <div className="cancel-refund-success-state">
+            <p className="form-success">Refund and order updates were completed.</p>
+            <div className="detail-stat-grid">
+              <DetailStat label="Refund status" value={cancelRefundResultLabel(refundType, successOrder)} tone={successOrder.stripeRefundId || refundType === "none" ? "good" : "neutral"} />
+              <DetailStat label="Refund amount" value={money(Math.max(0, successOrder.refundedAmount - order.refundedAmount))} />
+              <DetailStat label="Inventory result" value={stockReturnResultLabel(successOrder.stockReturnStatus)} tone={successOrder.stockReturnStatus === "returned" || successOrder.stockReturnStatus === "already_returned" ? "good" : "neutral"} />
+              <DetailStat label="Customer email result" value={customerEmailResultLabel(successOrder.customerCancellationEmailStatus)} tone={successOrder.customerCancellationEmailStatus === "sent" ? "good" : successOrder.customerCancellationEmailStatus === "failed" ? "bad" : "neutral"} />
+            </div>
+            <p className="form-helper publish-ready-note">
+              Updated order status: {formatStatus(successOrder.status)}. Remaining refundable: {money(successOrder.refundableAmount)}.
+            </p>
+            <div className="inventory-edit-actions">
+              <button className="primary-action" type="button" onClick={onClose}>
+                Done — View Updated Order
+              </button>
+            </div>
           </div>
-        </form>
+        ) : hasNoRefundableBalance ? (
+          <div className="cancel-refund-empty-state">
+            <p className="form-success">This order has no refundable balance remaining.</p>
+            <p className="form-helper publish-ready-note">
+              Review the updated order detail for the final refund, inventory, and customer notification status.
+            </p>
+            <div className="inventory-edit-actions">
+              <button className="primary-action" type="button" onClick={onClose}>
+                View Updated Order
+              </button>
+              <button className="mini-action" type="button" onClick={onClose}>
+                Close
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form className="form-grid compact" onSubmit={handleSubmit}>
+            <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+            {localError ? (
+              <p className="form-error wide-field" role="alert">
+                {localError}
+              </p>
+            ) : null}
+            <SelectInput
+              name="reason"
+              label="Cancellation reason"
+              defaultValue="customer_requested"
+              options={[
+                { value: "out_of_stock", label: "Out of stock" },
+                { value: "customer_requested", label: "Customer requested cancellation" },
+                { value: "address_issue", label: "Address issue" },
+                { value: "fraud_suspicious", label: "Fraud / suspicious order" },
+                { value: "duplicate_order", label: "Duplicate order" },
+                { value: "other", label: "Other" }
+              ]}
+            />
+            <label>
+              Refund type
+              <select name="refundType" value={refundType} onChange={(event) => setRefundType(event.currentTarget.value)}>
+                <option value="full">Full refund</option>
+                <option value="partial">Partial refund</option>
+                <option value="none" disabled={order.paymentStatus === "paid"}>No refund</option>
+              </select>
+            </label>
+            {refundType === "partial" ? (
+              <TextInput name="partialRefundAmount" label="Partial refund amount" type="number" min="0.01" max={order.refundableAmount || undefined} step="0.01" />
+            ) : (
+              <input name="partialRefundAmount" type="hidden" value="" />
+            )}
+            <TextareaInput name="adminNote" label="Admin note / explanation" wide />
+            <input name="returnItemsToStock" type="hidden" value="false" />
+            <label className="checkbox-label wide-field">
+              <input name="returnItemsToStock" type="checkbox" value="true" defaultChecked={inventoryFinalized} disabled={!inventoryFinalized} />
+              Return purchased items to stock
+            </label>
+            {!inventoryFinalized ? <p className="form-helper publish-ready-note wide-field">Inventory was not finalized for this order, so stock return is not applicable.</p> : null}
+            <input name="sendCustomerEmail" type="hidden" value="false" />
+            <label className="checkbox-label wide-field">
+              <input name="sendCustomerEmail" type="checkbox" value="true" defaultChecked={Boolean(order.customerEmail)} />
+              Send cancellation email to customer
+            </label>
+            <p className="form-helper publish-ready-note wide-field">
+              Stripe-paid orders refund through the stored PaymentIntent. No sensitive payment details are stored here.
+            </p>
+            <div className="inventory-edit-actions wide-field">
+              <button className="mini-action" disabled={processing} type="button" onClick={onClose}>
+                Keep Order
+              </button>
+              <button className="primary-action danger" disabled={busy || processing || submittedRef.current || !idempotencyKey} type="submit">
+                <RotateCcw size={16} />
+                {processing ? refundActionText : "Confirm Cancel / Refund"}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
+}
+
+function cancelRefundResultLabel(refundType: string, order: StorefrontOrderDTO) {
+  if (refundType === "full") return "Full refund created";
+  if (refundType === "partial") return "Partial refund created";
+  if (!order.stripeRefundId && order.refundedAmount <= 0) return "No refund required";
+  return order.refundStatus ? formatStatus(order.refundStatus) : "No refund required";
+}
+
+function stockReturnResultLabel(status: string | null) {
+  if (status === "returned") return "Items returned to stock";
+  if (status === "already_returned") return "Items already returned to stock";
+  if (status === "not_returned") return "Stock not returned";
+  if (status === "not_applicable") return "Stock return not applicable";
+  return "Stock return not applicable";
+}
+
+function customerEmailResultLabel(status: string | null) {
+  if (status === "sent") return "Cancellation email sent";
+  if (status === "not_configured") return "Email not configured";
+  if (status === "missing_customer_email") return "No customer email on file";
+  if (status === "failed") return "Email failed";
+  if (status === "not_requested") return "Email not requested";
+  if (status === "pending") return "Email pending";
+  return "Email not requested";
 }
 
 function InventoryKpiCard({
@@ -9821,8 +9923,8 @@ function CompactSalesList({ item }: { item: InventoryItemDTO }) {
         <article key={sale.id}>
           <strong>{shortDate(sale.soldAt)}</strong>
           <span>{formatStatus(sale.platform)}</span>
-          <span>Qty {sale.quantitySold} - net {money(sale.netSale)}</span>
-          <b className={sale.profitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.profitLoss)}</b>
+          <span>Qty {sale.quantitySold} - net {money(sale.netRevenueAfterRefund)}</span>
+          <b className={sale.activeProfitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.activeProfitLoss)}</b>
           <small>ROI {percent(sale.roiPercent)}</small>
         </article>
       ))}
@@ -9965,6 +10067,7 @@ function SelectedSalesPanel({
                 <span>Ship</span>
                 <span>Net Profit</span>
                 <span>ROI</span>
+                <span>Status</span>
               </div>
               {item.sales.map((sale) => (
                 <div className="lot-row sale-row" key={sale.id}>
@@ -9974,8 +10077,9 @@ function SelectedSalesPanel({
                   <strong>{formatStatus(sale.platform)}</strong>
                   <span>{money(sale.fees)}</span>
                   <span>{money(sale.shippingCost)}</span>
-                  <span className={sale.profitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.profitLoss)}</span>
+                  <span className={sale.activeProfitLoss >= 0 ? "profit-good" : "profit-bad"}>{money(sale.activeProfitLoss)}</span>
                   <span>{percent(sale.roiPercent)}</span>
+                  <span>{saleLifecycleLabel(sale)}</span>
                 </div>
               ))}
               <div className="lot-summary">
@@ -10393,6 +10497,7 @@ function SalesLog({
     search: "",
     platform: "ALL",
     profitStatus: "ALL",
+    saleState: "ALL",
     fromDate: "",
     toDate: ""
   });
@@ -10430,6 +10535,8 @@ function SalesLog({
           }
           if (filters.platform !== "ALL" && sale.platform !== filters.platform) return false;
           if (filters.profitStatus !== "ALL" && status !== filters.profitStatus) return false;
+          if (filters.saleState === "ACTIVE" && !saleCountsAsActive(sale)) return false;
+          if (filters.saleState === "REFUNDED_CANCELED" && sale.saleStatus === "active") return false;
           if (fromDate && soldAt < fromDate) return false;
           if (toDate && soldAt > toDate) return false;
           return true;
@@ -10465,16 +10572,16 @@ function SalesLog({
       </div>
 
       <div className="sales-summary-grid">
-        <SalesSummaryCard label="Total Sales" value={money(summary.totalSalesGross)} detail={`This month ${money(summary.salesThisMonth)}`} icon={CircleDollarSign} tone="neutral" />
-        <SalesSummaryCard label="Items Sold" value={String(summary.itemsSold)} detail={`${sales.length} recorded sales`} icon={PackageSearch} tone="neutral" />
+        <SalesSummaryCard label="Active Sales" value={money(summary.totalSalesGross)} detail={`This month ${money(summary.salesThisMonth)}`} icon={CircleDollarSign} tone="neutral" />
+        <SalesSummaryCard label="Items Sold" value={String(summary.itemsSold)} detail={`${sales.length} historical records`} icon={PackageSearch} tone="neutral" />
         <SalesSummaryCard
           label="Net Profit"
           value={money(summary.realizedProfitLoss)}
-          detail="After cost basis"
+          detail="After refunds and cost basis"
           icon={Activity}
           tone={summary.realizedProfitLoss >= 0 ? "good" : "bad"}
         />
-        <SalesSummaryCard label="Avg Sale Price" value={money(averageSalePrice)} detail="Gross per item sold" icon={Trophy} tone="watch" />
+        <SalesSummaryCard label="Avg Sale Price" value={money(averageSalePrice)} detail="Active gross per item sold" icon={Trophy} tone="watch" />
       </div>
 
       <div className="sales-filter-bar">
@@ -10496,6 +10603,17 @@ function SalesLog({
             { value: "PROFIT", label: "Profit" },
             { value: "LOSS", label: "Loss" },
             { value: "BREAKEVEN", label: "Break-even" }
+          ]}
+        />
+        <SelectInput
+          name="saleState"
+          label="Sale status"
+          value={filters.saleState}
+          onChange={updateFilter}
+          options={[
+            { value: "ALL", label: "All" },
+            { value: "ACTIVE", label: "Active sales" },
+            { value: "REFUNDED_CANCELED", label: "Refunded / canceled" }
           ]}
         />
         <TextInput name="fromDate" label="From" type="date" value={filters.fromDate} onChange={updateFilter} />
@@ -10548,8 +10666,8 @@ function SalesLog({
 }
 
 function saleProfitStatus(sale: InventorySaleDTO) {
-  if (sale.profitLoss > 0.005) return "PROFIT";
-  if (sale.profitLoss < -0.005) return "LOSS";
+  if (sale.activeProfitLoss > 0.005) return "PROFIT";
+  if (sale.activeProfitLoss < -0.005) return "LOSS";
   return "BREAKEVEN";
 }
 
@@ -10558,6 +10676,23 @@ function saleProfitStatusLabel(sale: InventorySaleDTO) {
   if (status === "PROFIT") return "Profitable";
   if (status === "LOSS") return "Loss";
   return "Break-even";
+}
+
+function saleCountsAsActive(sale: InventorySaleDTO) {
+  return !["refunded", "canceled"].includes(sale.saleStatus) && sale.activeGrossSale > 0;
+}
+
+function saleLifecycleLabel(sale: InventorySaleDTO) {
+  if (sale.saleStatus === "refunded") return "Refunded";
+  if (sale.saleStatus === "partially_refunded") return "Partially Refunded";
+  if (sale.saleStatus === "canceled") return "Canceled";
+  return saleProfitStatusLabel(sale);
+}
+
+function saleLifecycleTone(sale: InventorySaleDTO) {
+  if (sale.saleStatus === "refunded" || sale.saleStatus === "canceled") return "bad";
+  if (sale.saleStatus === "partially_refunded") return "watch";
+  return saleProfitTone(sale);
 }
 
 function saleProfitTone(sale: InventorySaleDTO) {
@@ -10627,7 +10762,7 @@ function SaleCard({
   sale: InventorySaleDTO;
   onViewDetails: () => void;
 }) {
-  const tone = saleProfitTone(sale);
+  const tone = saleLifecycleTone(sale);
   const productMeta = item
     ? `${saleIdentifier(item)} - ${formatStatus(item.category)}`
     : "UPC/SKU not saved - category unknown";
@@ -10640,6 +10775,7 @@ function SaleCard({
           <span>{productMeta}</span>
           <small>
             Sold {shortDate(sale.soldAt)} - {formatStatus(sale.platform || "unknown_platform")} - Qty {sale.quantitySold}
+            {sale.storefrontOrderNumber ? ` - ${sale.storefrontOrderNumber}` : ""}
           </small>
         </div>
       </div>
@@ -10650,27 +10786,27 @@ function SaleCard({
       </div>
       <div className="sale-money-grid">
         <span>
-          <small>Actual Sale</small>
+          <small>Original Sale</small>
           <strong>{money(sale.grossSale)}</strong>
         </span>
         <span>
-          <small>Cost</small>
-          <strong>{sale.costBasis ? money(sale.costBasis) : "Cost not set"}</strong>
+          <small>Refunded</small>
+          <strong>{money(sale.refundedAmount)}</strong>
         </span>
         <span>
-          <small>Fees / Ship</small>
-          <strong>{money((sale.fees ?? 0) + (sale.shippingCost ?? 0))}</strong>
+          <small>Net Revenue</small>
+          <strong>{money(sale.netRevenueAfterRefund)}</strong>
         </span>
         <span>
           <small>Net Profit</small>
           <strong className={tone === "good" ? "profit-good" : tone === "bad" ? "profit-bad" : "profit-watch"}>
-            {sale.profitLoss >= 0 ? "+" : ""}
-            {money(sale.profitLoss)}
+            {sale.activeProfitLoss >= 0 ? "+" : ""}
+            {money(sale.activeProfitLoss)}
           </strong>
         </span>
       </div>
       <div className="sale-status-cell">
-        <span className={`sale-status-badge ${tone}`}>{saleProfitStatusLabel(sale)}</span>
+        <span className={`sale-status-badge ${tone}`}>{saleLifecycleLabel(sale)}</span>
         <button className="mini-action" type="button" onClick={onViewDetails}>
           View Details
         </button>
@@ -10690,7 +10826,7 @@ function SaleDetailsModal({
   onEdit: () => void;
   onClose: () => void;
 }) {
-  const tone = saleProfitTone(sale);
+  const tone = saleLifecycleTone(sale);
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-modal sale-details-modal" role="dialog" aria-modal="true" aria-label={`${sale.itemName} sale details`}>
@@ -10706,23 +10842,32 @@ function SaleDetailsModal({
         </div>
         <div className="sale-detail-hero">
           <span>
-            <small>Actual Sale</small>
+            <small>Original Sale</small>
             <strong>{money(sale.grossSale)}</strong>
+          </span>
+          <span>
+            <small>Net Revenue</small>
+            <strong>{money(sale.netRevenueAfterRefund)}</strong>
           </span>
           <span>
             <small>Net Profit / Loss</small>
             <strong className={tone === "good" ? "profit-good" : tone === "bad" ? "profit-bad" : "profit-watch"}>
-              {sale.profitLoss >= 0 ? "+" : ""}
-              {money(sale.profitLoss)}
+              {sale.activeProfitLoss >= 0 ? "+" : ""}
+              {money(sale.activeProfitLoss)}
             </strong>
           </span>
-          <span className={`sale-status-badge ${tone}`}>{saleProfitStatusLabel(sale)}</span>
+          <span className={`sale-status-badge ${tone}`}>{saleLifecycleLabel(sale)}</span>
         </div>
         <div className="sale-detail-grid">
           <DetailStat label="Sale Date" value={dateTime(sale.soldAt)} />
           <DetailStat label="Platform" value={formatStatus(sale.platform || "Unknown platform")} />
           <DetailStat label="Quantity Sold" value={String(sale.quantitySold)} />
           <DetailStat label="Actual Sale Price" value={money(sale.actualSalePrice)} />
+          <DetailStat label="Original sale amount" value={money(sale.grossSale)} />
+          <DetailStat label="Refunded amount" value={money(sale.refundedAmount)} tone={sale.refundedAmount > 0 ? "bad" : "neutral"} />
+          <DetailStat label="Net revenue after refund" value={money(sale.netRevenueAfterRefund)} tone={saleCountsAsActive(sale) ? "good" : "neutral"} />
+          <DetailStat label="Refund status" value={sale.refundStatus ? formatStatus(sale.refundStatus) : saleLifecycleLabel(sale)} tone={tone === "bad" ? "bad" : "neutral"} />
+          <DetailStat label="Storefront order" value={sale.storefrontOrderNumber || "Not linked"} />
           <DetailStat label="Cost Basis" value={sale.costBasis ? money(sale.costBasis) : "Cost not set"} />
           <DetailStat label="Stock Lot Source" value={sale.stockLotSource} />
           <DetailStat label="Fees" value={money(sale.fees)} />

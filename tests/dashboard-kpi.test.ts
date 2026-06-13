@@ -2,35 +2,54 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import {
+  applyStorefrontOrderAdjustmentsToInventory,
   calculateInventorySaleProfitForTest,
   inventoryCompStatsForTest,
   inventoryLotUnitCostForTest,
   summarizeInventory
 } from "../src/lib/radar-service";
 import { inferTcgcsvProductType, normalizeTcgcsvProductText } from "../src/lib/tcgcsv-market";
-import type { InventoryItemDTO, InventorySaleDTO } from "../src/types/radar";
+import type { InventoryItemDTO, InventorySaleDTO, StorefrontOrderDTO } from "../src/types/radar";
 
 function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
-  return {
+  const base: InventorySaleDTO = {
     id: "sale-1",
     inventoryItemId: "item-1",
     itemName: "Test Product",
     quantitySold: 1,
+    activeQuantitySold: 1,
     actualSalePrice: 20,
     soldPricePerItem: 20,
     grossSale: 20,
+    activeGrossSale: 20,
     platform: "local",
     fees: 0,
     shippingCost: 0,
     netSale: 20,
+    activeNetSale: 20,
     costBasis: 10,
     stockLotSource: "FIFO stock lots",
     profitLoss: 10,
+    activeProfitLoss: 10,
     roiPercent: 100,
+    saleStatus: "active",
+    storefrontOrderNumber: null,
+    storefrontOrderStatus: null,
+    refundStatus: null,
+    refundedAmount: 0,
+    netRevenueAfterRefund: 20,
     soldAt: new Date().toISOString(),
     notes: null,
-    createdAt: new Date().toISOString(),
-    ...overrides
+    createdAt: new Date().toISOString()
+  };
+  const merged = { ...base, ...overrides };
+  return {
+    ...merged,
+    activeQuantitySold: overrides.activeQuantitySold ?? merged.quantitySold,
+    activeGrossSale: overrides.activeGrossSale ?? merged.grossSale,
+    activeNetSale: overrides.activeNetSale ?? merged.netSale,
+    activeProfitLoss: overrides.activeProfitLoss ?? merged.profitLoss,
+    netRevenueAfterRefund: overrides.netRevenueAfterRefund ?? merged.grossSale
   };
 }
 
@@ -144,6 +163,82 @@ function item(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
   };
 }
 
+function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): StorefrontOrderDTO {
+  const now = new Date().toISOString();
+  return {
+    id: "order-1",
+    orderNumber: "GDG-1001",
+    customerEmail: "buyer@example.com",
+    customerName: "Test Buyer",
+    customerPhone: null,
+    stripeCustomerId: "cus_test",
+    customerOrderCount: 1,
+    customerTotalSpent: 100,
+    shippingAddress: null,
+    billingAddress: null,
+    status: "paid",
+    paymentStatus: "paid",
+    fulfillmentStatus: "unfulfilled",
+    source: "stripe_checkout",
+    sourceLabel: "Stripe Checkout",
+    itemCount: 1,
+    needsFulfillment: true,
+    isNewPaidOrder: true,
+    statusBadge: "Paid",
+    subtotal: 100,
+    shippingCharged: 0,
+    tax: 0,
+    total: 100,
+    stripeFeeEstimate: 5,
+    shippingCost: 0,
+    costBasis: 60,
+    netProfit: 35,
+    roiPercent: 58.33,
+    trackingNumber: null,
+    carrier: null,
+    notes: null,
+    stripeCheckoutSessionId: "cs_test",
+    stripePaymentIntentId: "pi_test",
+    refundStatus: null,
+    refundedAmount: 0,
+    refundableAmount: 100,
+    refundCurrency: "usd",
+    stripeRefundId: null,
+    refundReason: null,
+    refundNote: null,
+    stockReturnStatus: null,
+    stockReturnedAt: null,
+    customerCancellationEmailStatus: null,
+    customerCancellationEmailSentAt: null,
+    canCancelOrRefund: true,
+    paidAt: now,
+    createdAt: now,
+    updatedAt: now,
+    items: [
+      {
+        id: "order-item-1",
+        inventoryItemId: "item-1",
+        publicTitle: "Test Product",
+        publicSlug: "test-product",
+        imageUrl: null,
+        upc: null,
+        sku: null,
+        dpci: null,
+        tcin: null,
+        quantity: 1,
+        unitPrice: 100,
+        lineTotal: 100,
+        costBasis: 60,
+        profitLoss: 35
+      }
+    ],
+    reservations: [],
+    paymentEvents: [],
+    timeline: [],
+    ...overrides
+  };
+}
+
 test("inventory with no market comps keeps cost basis but marks market as not collected", () => {
   const summary = summarizeInventory([item({ totalCost: 30, quantityOwned: 3, averageCost: 10, marketCompCount: 0 })]);
 
@@ -175,6 +270,124 @@ test("sale reduces remaining inventory value and realized profit comes from sale
   assert.equal(summary.inventoryCostBasis, 20);
   assert.equal(summary.totalSalesNet, 18);
   assert.equal(summary.realizedProfitLoss, 8);
+});
+
+test("fully refunded storefront sales stay in history but are excluded from active sales totals", () => {
+  const adjusted = applyStorefrontOrderAdjustmentsToInventory(
+    [
+      item({
+        quantityOwned: 3,
+        quantitySold: 1,
+        sales: [
+          sale({
+            grossSale: 100,
+            netSale: 95,
+            costBasis: 60,
+            profitLoss: 35,
+            platform: "website",
+            notes: "Storefront order GDG-1001"
+          })
+        ]
+      })
+    ],
+    [
+      storefrontOrder({
+        status: "refunded",
+        paymentStatus: "refunded",
+        fulfillmentStatus: "canceled",
+        refundedAmount: 100,
+        refundableAmount: 0,
+        refundStatus: "refunded"
+      })
+    ]
+  );
+  const adjustedSale = adjusted[0].sales[0];
+  const summary = summarizeInventory(adjusted);
+
+  assert.equal(adjustedSale.saleStatus, "refunded");
+  assert.equal(adjustedSale.grossSale, 100);
+  assert.equal(adjustedSale.activeGrossSale, 0);
+  assert.equal(adjustedSale.netRevenueAfterRefund, 0);
+  assert.equal(summary.totalSalesGross, 0);
+  assert.equal(summary.totalSalesNet, 0);
+  assert.equal(summary.realizedProfitLoss, 0);
+  assert.equal(summary.itemsSold, 0);
+});
+
+test("partially refunded storefront sales count only remaining net revenue and adjusted profit", () => {
+  const adjusted = applyStorefrontOrderAdjustmentsToInventory(
+    [
+      item({
+        sales: [
+          sale({
+            grossSale: 100,
+            netSale: 95,
+            costBasis: 60,
+            profitLoss: 35,
+            platform: "website",
+            notes: "Storefront order GDG-1001"
+          })
+        ]
+      })
+    ],
+    [
+      storefrontOrder({
+        status: "partially_refunded",
+        paymentStatus: "partially_refunded",
+        fulfillmentStatus: "canceled",
+        refundedAmount: 25,
+        refundableAmount: 75,
+        refundStatus: "partially_refunded"
+      })
+    ]
+  );
+  const adjustedSale = adjusted[0].sales[0];
+  const summary = summarizeInventory(adjusted);
+
+  assert.equal(adjustedSale.saleStatus, "partially_refunded");
+  assert.equal(adjustedSale.refundedAmount, 25);
+  assert.equal(adjustedSale.activeGrossSale, 75);
+  assert.equal(adjustedSale.activeNetSale, 70);
+  assert.equal(adjustedSale.activeProfitLoss, 10);
+  assert.equal(summary.totalSalesGross, 75);
+  assert.equal(summary.totalSalesNet, 70);
+  assert.equal(summary.realizedProfitLoss, 10);
+  assert.equal(summary.itemsSold, 1);
+});
+
+test("canceled unpaid orders do not create active sales totals", () => {
+  const adjusted = applyStorefrontOrderAdjustmentsToInventory(
+    [
+      item({
+        sales: [
+          sale({
+            grossSale: 40,
+            netSale: 38,
+            costBasis: 25,
+            profitLoss: 13,
+            platform: "website",
+            notes: "Storefront order GDG-1001"
+          })
+        ]
+      })
+    ],
+    [
+      storefrontOrder({
+        status: "canceled",
+        paymentStatus: "failed",
+        fulfillmentStatus: "canceled",
+        refundedAmount: 0,
+        refundableAmount: 0,
+        refundStatus: "not_applicable"
+      })
+    ]
+  );
+  const summary = summarizeInventory(adjusted);
+
+  assert.equal(adjusted[0].sales[0].saleStatus, "canceled");
+  assert.equal(summary.totalSalesGross, 0);
+  assert.equal(summary.realizedProfitLoss, 0);
+  assert.equal(summary.itemsSold, 0);
 });
 
 test("inventory sale profit uses actual sale price instead of target price", () => {
@@ -702,8 +915,8 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(storefront, /const wasPaid = order\.paymentStatus === "paid"/);
   assert.match(storefront, /!wasPaid && order\.paymentStatus !== "paid"/);
   assert.match(storefront, /syncStorefrontCustomerTotals/);
-  assert.match(storefront, /totalOrders: paidOrders\.length/);
-  assert.match(storefront, /totalSpent: paidOrders\.reduce/);
+  assert.match(storefront, /totalOrders: paidOrders\.filter\(\(order\) => storefrontOrderNetRevenue\(order\) > 0\)\.length/);
+  assert.match(storefront, /totalSpent: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);
   assert.match(storefront, /normalizedCustomerEmail/);
   assert.match(storefront, /customerEmail: normalizedCustomerEmail/);
   assert.match(storefront, /amountTotal: numberValue\(object\.amount_total\)/);
@@ -714,7 +927,7 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.doesNotMatch(storefront, /totalSpent: \{ increment: order\.total \}/);
   assert.doesNotMatch(storefront, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 
-  for (const label of ["New Paid Orders", "Pending Payment", "Invoice Requests", "Orders To Ship", "Today's Sales", "Store Revenue", "Store Profit"]) {
+  for (const label of ["New Paid Orders", "Pending Payment", "Invoice Requests", "Orders To Ship", "Today's Net Sales", "Store Revenue", "Store Profit"]) {
     assert.match(app, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing dashboard/order card ${label}`);
   }
   for (const tab of ["New", "Pending Payment", "Paid", "Packing", "Shipped", "Invoice Requests", "Canceled / Expired"]) {

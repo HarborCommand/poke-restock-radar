@@ -191,9 +191,9 @@ test("duplicate Stripe sessions and events do not duplicate orders or customer t
   assert.match(createStorefrontSale, /tx\.storefrontOrder\.updateMany/);
   assert.match(createStorefrontSale, /where: \{ id: order\.id, paymentStatus: \{ not: "paid" \} \}/);
   assert.match(createStorefrontSale, /if \(claimed\.count === 0\) return \{ created: false/);
-  assert.match(syncStorefrontCustomerTotals, /where: \{ customerEmail, paymentStatus: "paid" \}/);
-  assert.match(syncStorefrontCustomerTotals, /totalOrders: paidOrders\.length/);
-  assert.match(syncStorefrontCustomerTotals, /totalSpent: paidOrders\.reduce\(\(sum, order\) => sum \+ order\.total, 0\)/);
+  assert.match(syncStorefrontCustomerTotals, /paymentStatus: \{ in: activeRevenuePaymentStatuses \}/);
+  assert.match(syncStorefrontCustomerTotals, /totalOrders: paidOrders\.filter\(\(order\) => storefrontOrderNetRevenue\(order\) > 0\)\.length/);
+  assert.match(syncStorefrontCustomerTotals, /totalSpent: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);
   assert.doesNotMatch(syncStorefrontCustomerTotals, /increment:/);
 });
 
@@ -349,4 +349,77 @@ test("admin orders UI exposes cancel refund modal without replacing fulfillment 
   assert.match(cancelModal, /\/api\/radar\/storefront\/orders\/\$\{order\.id\}\/cancel-refund/);
   assert.match(cancelModal, /idempotencyKey/);
   assert.doesNotMatch(cancelModal, /payment_method_details|payment_method_data|card_number|cvv/i);
+});
+
+test("admin cancel refund modal confirms success and prevents duplicate submissions", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const submitHelper = sourceSlice(app, "const submit: SubmitHandler", "const runAction: ActionHandler");
+  const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontCancelRefundModal");
+  const cancelModal = sourceSlice(app, "function StorefrontCancelRefundModal", "function InventoryKpiCard");
+
+  assert.match(submitHelper, /await loadDashboard\(\);\s+await options\.onSuccess\?\.\(result\);/);
+  assert.match(submitHelper, /options\.onError\?\.\(message\);/);
+  assert.match(orderModal, /order\.canCancelOrRefund && !\(order\.paymentStatus === "paid" && order\.refundableAmount <= 0\)/);
+  assert.match(cancelModal, /const \[successOrder, setSuccessOrder\] = useState<StorefrontOrderDTO \| null>\(null\)/);
+  assert.match(cancelModal, /const \[localError, setLocalError\] = useState<string \| null>\(null\)/);
+  assert.match(cancelModal, /const submittedRef = useRef\(false\)/);
+  assert.match(cancelModal, /if \(submittedRef\.current\)/);
+  assert.match(cancelModal, /submittedRef\.current = true/);
+  assert.match(cancelModal, /disabled=\{busy \|\| processing \|\| submittedRef\.current \|\| !idempotencyKey\}/);
+  assert.match(cancelModal, /Processing refund\.\.\./);
+  assert.match(cancelModal, /Canceling order\.\.\./);
+  assert.match(cancelModal, /onSuccess: \(result\) => setSuccessOrder\(result\.order\)/);
+  assert.match(cancelModal, /onError: \(message\) => \{\s+submittedRef\.current = false;\s+setLocalError\(message\);/);
+  assert.match(cancelModal, /role="alert"/);
+  assert.match(cancelModal, /Order canceled/);
+  assert.match(cancelModal, /Refund and order updates were completed\./);
+  assert.match(cancelModal, /Full refund created/);
+  assert.match(cancelModal, /Partial refund created/);
+  assert.match(cancelModal, /No refund required/);
+  assert.match(cancelModal, /Items returned to stock/);
+  assert.match(cancelModal, /Stock not returned/);
+  assert.match(cancelModal, /Stock return not applicable/);
+  assert.match(cancelModal, /Cancellation email sent/);
+  assert.match(cancelModal, /Email not configured/);
+  assert.match(cancelModal, /No customer email on file/);
+  assert.match(cancelModal, /Email failed/);
+  assert.match(cancelModal, /Done — View Updated Order/);
+  assert.match(cancelModal, /This order has no refundable balance remaining\./);
+  assert.doesNotMatch(cancelModal, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
+});
+
+test("refunded storefront orders are netted out of sales and revenue summaries", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const service = readProjectFile("src/lib/radar-service.ts");
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const inventoryRoute = readProjectFile("src/app/api/radar/inventory/route.ts");
+  const storefrontSummary = sourceSlice(storefront, "export async function storefrontSummary", "async function returnOrderInventory");
+  const salesLog = sourceSlice(app, "function SalesLog", "function saleProfitStatus");
+  const saleCard = sourceSlice(app, "function SaleCard", "function SaleDetailsModal");
+  const saleDetails = sourceSlice(app, "function SaleDetailsModal", "function EditSaleModal");
+
+  assert.match(storefront, /const activeRevenuePaymentStatuses = \["paid", "partially_refunded"\]/);
+  assert.match(storefront, /function storefrontOrderNetRevenue/);
+  assert.match(storefront, /function storefrontOrderNetProfitAfterRefund/);
+  assert.match(storefrontSummary, /todaySales: todayPaidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);
+  assert.match(storefrontSummary, /totalRevenue: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);
+  assert.match(storefrontSummary, /netProfit: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetProfitAfterRefund\(order\), 0\)/);
+  assert.match(service, /export function applyStorefrontOrderAdjustmentsToInventory/);
+  assert.match(service, /function storefrontOrderNumberFromSaleNotes/);
+  assert.match(service, /saleStatus === "refunded" \|\| saleStatus === "canceled"/);
+  assert.match(service, /const activeGrossSale = isFullyInactive \? 0/);
+  assert.match(service, /totalSalesGross = allSales\.reduce\(\(sum, sale\) => sum \+ saleActiveGross\(sale\), 0\)/);
+  assert.match(salesLog, /label="Active Sales"/);
+  assert.match(salesLog, /saleState: "ALL"/);
+  assert.match(salesLog, /label: "Refunded \/ canceled"/);
+  assert.match(saleCard, /Original Sale/);
+  assert.match(saleCard, /Refunded/);
+  assert.match(saleCard, /Net Revenue/);
+  assert.match(saleCard, /saleLifecycleLabel\(sale\)/);
+  assert.match(saleDetails, /Original sale amount/);
+  assert.match(saleDetails, /Net revenue after refund/);
+  assert.match(saleDetails, /Refund status/);
+  assert.match(inventoryRoute, /activeQuantitySold/);
+  assert.match(inventoryRoute, /netRevenueAfterRefund/);
+  assert.doesNotMatch([storefrontSummary, salesLog, saleCard, saleDetails, inventoryRoute].join("\n"), /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 });

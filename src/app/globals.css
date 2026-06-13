@@ -6832,7 +6832,7 @@ textarea {
 
 .lot-row.sale-row,
 .sales-log-panel .lot-row {
-  grid-template-columns: 76px 46px repeat(5, minmax(68px, 0.7fr)) 56px;
+  grid-template-columns: 76px 46px repeat(5, minmax(68px, 0.7fr)) 56px minmax(96px, 0.8fr);
 }
 
 .lot-head {
@@ -18875,6 +18875,17 @@ body .inventory-edit-actions .danger {
   border-color: #fecaca !important;
   background: #fff1f2 !important;
   color: #b91c1c !important;
+}
+
+body .cancel-refund-success-state,
+body .cancel-refund-empty-state {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+body .cancel-refund-success-state .detail-stat-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 body .inventory-edit-form input:focus,

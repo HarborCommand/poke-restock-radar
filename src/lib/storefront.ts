@@ -597,6 +597,19 @@ function orderRemainingRefundableCents(order: Pick<StorefrontOrderWithItems, "to
   return Math.max(0, orderTotalCents(order) - orderRefundedCents(order));
 }
 
+const activeRevenuePaymentStatuses = ["paid", "partially_refunded"];
+
+function storefrontOrderNetRevenue(order: Pick<StorefrontOrderWithItems, "total" | "refundedAmount">) {
+  return Math.max(0, order.total - (order.refundedAmount || 0));
+}
+
+function storefrontOrderNetProfitAfterRefund(order: Pick<StorefrontOrderWithItems, "total" | "refundedAmount" | "stripeFeeEstimate" | "shippingCost" | "costBasis" | "netProfit">) {
+  if (!order.refundedAmount) return order.netProfit;
+  const netRevenue = storefrontOrderNetRevenue(order);
+  if (netRevenue <= 0) return 0;
+  return netRevenue - order.stripeFeeEstimate - order.shippingCost - order.costBasis;
+}
+
 function orderCanCancelOrRefund(order: StorefrontOrderWithItems) {
   return !(
     ["canceled", "refunded", "partially_refunded", "refund_pending"].includes(order.status) ||
@@ -1222,7 +1235,7 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
           profitLoss,
           roiPercent: costBasis > 0 ? (profitLoss / costBasis) * 100 : null,
           soldAt: paidAt,
-          notes: `Storefront order ${order.orderNumber}`
+          notes: [`Storefront order ${order.orderNumber}`, `Storefront order id: ${order.id}`].join("\n")
         }
       });
       await tx.storefrontOrderItem.update({
@@ -1471,8 +1484,8 @@ function storefrontCustomerShippingSnapshot(snapshot: CheckoutCustomerSnapshot) 
 
 async function syncStorefrontCustomerTotals(customerId: string, customerEmail: string) {
   const paidOrders = await prisma.storefrontOrder.findMany({
-    where: { customerEmail, paymentStatus: "paid" },
-    select: { total: true, paidAt: true, createdAt: true }
+    where: { customerEmail, paymentStatus: { in: activeRevenuePaymentStatuses } },
+    select: { total: true, refundedAmount: true, paidAt: true, createdAt: true }
   });
   const paidDates = paidOrders
     .map((order) => order.paidAt ?? order.createdAt)
@@ -1480,8 +1493,8 @@ async function syncStorefrontCustomerTotals(customerId: string, customerEmail: s
   await prisma.storefrontCustomer.update({
     where: { id: customerId },
     data: {
-      totalOrders: paidOrders.length,
-      totalSpent: paidOrders.reduce((sum, order) => sum + order.total, 0),
+      totalOrders: paidOrders.filter((order) => storefrontOrderNetRevenue(order) > 0).length,
+      totalSpent: paidOrders.reduce((sum, order) => sum + storefrontOrderNetRevenue(order), 0),
       firstOrderAt: paidDates[0] ?? null,
       lastOrderAt: paidDates.at(-1) ?? null
     }
@@ -1746,9 +1759,15 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: { in: ["invoice_requested", "contact_message"] } } }),
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid", fulfillmentStatus: "unfulfilled" } }),
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid", fulfillmentStatus: { in: ["unfulfilled", "packing", "pickup_ready"] } } }),
-    prisma.storefrontOrder.findMany({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid" }, select: { total: true, netProfit: true, paidAt: true } }),
-    prisma.storefrontOrder.findMany({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid", paidAt: { gte: todayStart } }, select: { total: true } }),
-    prisma.storefrontOrder.findFirst({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid" }, orderBy: { paidAt: "desc" }, select: { paidAt: true } }),
+    prisma.storefrontOrder.findMany({
+      where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: { in: activeRevenuePaymentStatuses } },
+      select: { total: true, refundedAmount: true, stripeFeeEstimate: true, shippingCost: true, costBasis: true, netProfit: true, paidAt: true }
+    }),
+    prisma.storefrontOrder.findMany({
+      where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: { in: activeRevenuePaymentStatuses }, paidAt: { gte: todayStart } },
+      select: { total: true, refundedAmount: true }
+    }),
+    prisma.storefrontOrder.findFirst({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: { in: activeRevenuePaymentStatuses } }, orderBy: { paidAt: "desc" }, select: { paidAt: true } }),
     prisma.paymentEvent.findFirst({
       where: currentUser.role === "ADMIN" ? {} : { order: { userId: currentUser.id } },
       orderBy: { receivedAt: "desc" },
@@ -1760,15 +1779,15 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     activeProductCount,
     pendingOrderCount,
     inquiryCount,
-    paidOrderCount: paidOrders.length,
+    paidOrderCount: paidOrders.filter((order) => storefrontOrderNetRevenue(order) > 0).length,
     newPaidOrderCount,
     ordersToShipCount,
-    todaySales: todayPaidOrders.reduce((sum, order) => sum + order.total, 0),
-    todayPaidOrderCount: todayPaidOrders.length,
+    todaySales: todayPaidOrders.reduce((sum, order) => sum + storefrontOrderNetRevenue(order), 0),
+    todayPaidOrderCount: todayPaidOrders.filter((order) => storefrontOrderNetRevenue(order) > 0).length,
     lastPaidOrderAt: lastPaidOrder?.paidAt?.toISOString() ?? null,
     lastWebhookAt: lastWebhook?.receivedAt.toISOString() ?? null,
-    totalRevenue: paidOrders.reduce((sum, order) => sum + order.total, 0),
-    netProfit: paidOrders.reduce((sum, order) => sum + order.netProfit, 0)
+    totalRevenue: paidOrders.reduce((sum, order) => sum + storefrontOrderNetRevenue(order), 0),
+    netProfit: paidOrders.reduce((sum, order) => sum + storefrontOrderNetProfitAfterRefund(order), 0)
   };
 }
 

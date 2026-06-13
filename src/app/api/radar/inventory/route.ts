@@ -48,22 +48,45 @@ export async function GET(request: Request) {
     });
   }
   if (format === "sales-csv") {
-    const headers = ["soldDate", "itemName", "quantitySold", "actualSalePrice", "grossSale", "platform", "fees", "shippingCost", "netSale", "costBasis", "profitLoss", "roiPercent"];
+    const headers = [
+      "soldDate",
+      "itemName",
+      "quantitySold",
+      "activeQuantitySold",
+      "actualSalePrice",
+      "originalSaleAmount",
+      "refundedAmount",
+      "netRevenueAfterRefund",
+      "platform",
+      "fees",
+      "shippingCost",
+      "activeNetSale",
+      "costBasis",
+      "activeProfitLoss",
+      "roiPercent",
+      "saleStatus",
+      "storefrontOrderNumber"
+    ];
     const rows = dashboard.inventory.flatMap((item) =>
       item.sales.map((sale) =>
         [
           sale.soldAt,
           item.itemName,
           sale.quantitySold,
+          sale.activeQuantitySold,
           sale.actualSalePrice,
           sale.grossSale,
+          sale.refundedAmount,
+          sale.netRevenueAfterRefund,
           sale.platform,
           sale.fees,
           sale.shippingCost,
-          sale.netSale,
+          sale.activeNetSale,
           sale.costBasis,
-          sale.profitLoss,
-          sale.roiPercent
+          sale.activeProfitLoss,
+          sale.roiPercent,
+          sale.saleStatus,
+          sale.storefrontOrderNumber
         ]
           .map(csvCell)
           .join(",")
