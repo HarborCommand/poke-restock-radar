@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
-import { getPrimaryProductImage, getProductImageUrls } from "@/lib/product-images";
+import { getPrimaryProductImage, getProductImageUrls, uniqueProductImageUrls } from "@/lib/product-images";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
@@ -26,7 +26,12 @@ const storefrontInventoryInclude = {
   product: {
     select: {
       liveImageUrl: true,
-      imageUrl: true
+      imageUrl: true,
+      url: true,
+      verifiedFinalUrl: true,
+      sku: true,
+      dpci: true,
+      retailerProductId: true
     }
   }
 } satisfies Prisma.InventoryItemInclude;
@@ -48,7 +53,12 @@ const storefrontOrderInclude = {
           product: {
             select: {
               liveImageUrl: true,
-              imageUrl: true
+              imageUrl: true,
+              url: true,
+              verifiedFinalUrl: true,
+              sku: true,
+              dpci: true,
+              retailerProductId: true
             }
           }
         }
@@ -164,8 +174,32 @@ function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | 
   return item.publicPrice ?? item.targetSellPrice ?? item.msrp ?? item.currentMarketEstimate ?? null;
 }
 
+function targetTcinImageFallbacks(item: StorefrontInventoryItem) {
+  const possibleTargetUrls = [item.exactProductUrl, item.product?.url, item.product?.verifiedFinalUrl].filter((value): value is string => Boolean(value));
+  const isTargetProduct = possibleTargetUrls.some((value) => /target\.com/i.test(value));
+  if (!isTargetProduct) return [];
+
+  const identifiers = [
+    item.sku,
+    item.dpci,
+    item.product?.sku,
+    item.product?.dpci,
+    item.product?.retailerProductId,
+    ...possibleTargetUrls.flatMap((value) => {
+      const tcinFromPath = value.match(/\/A-(\d{6,})/i)?.[1] ?? null;
+      const tcinFromQuery = value.match(/[?&](?:preselect|tcin|sku)=(\d{6,})/i)?.[1] ?? null;
+      return [tcinFromPath, tcinFromQuery];
+    })
+  ];
+  const tcins = [...new Set(identifiers.map((value) => (value && /^\d{6,}$/.test(value.trim()) ? value.trim() : null)).filter((value): value is string => Boolean(value)))];
+  return tcins.flatMap((tcin) => [
+    `https://target.scene7.com/is/image/Target/GUEST_${tcin}`,
+    `https://target.scene7.com/is/image/Target/GUEST_${tcin}?wid=800&hei=800&qlt=80&fmt=webp`
+  ]);
+}
+
 function publicImages(item: StorefrontInventoryItem) {
-  return getProductImageUrls(item);
+  return uniqueProductImageUrls([...getProductImageUrls(item), ...targetTcinImageFallbacks(item)]);
 }
 
 export function publicProductToDTO(item: StorefrontInventoryItem): PublicStoreProductDTO | null {
