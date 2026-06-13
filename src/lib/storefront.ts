@@ -30,6 +30,7 @@ const storefrontInventoryInclude = {
       url: true,
       verifiedFinalUrl: true,
       sku: true,
+      upc: true,
       dpci: true,
       retailerProductId: true
     }
@@ -57,6 +58,7 @@ const storefrontOrderInclude = {
               url: true,
               verifiedFinalUrl: true,
               sku: true,
+              upc: true,
               dpci: true,
               retailerProductId: true
             }
@@ -210,6 +212,21 @@ function targetTcinImageFallbacks(item: StorefrontInventoryItem) {
   ]);
 }
 
+function upcCoverImageFallbacks(item: StorefrontInventoryItem) {
+  const candidateCodes = [item.upc, item.sku, item.product?.upc]
+    .flatMap((value) => {
+      const digits = value?.replace(/\D/g, "") ?? "";
+      if (digits.length === 13 && digits.startsWith("0")) return [digits, digits.slice(1)];
+      return [digits];
+    })
+    .filter((value): value is string => value.length === 12 || value.length === 13);
+  const codes = [...new Set(candidateCodes)];
+  return codes.flatMap((code) => {
+    const coverPath = `${code.slice(0, 1)}/${code.slice(1, 3)}/${code.slice(3, 6)}/${code.slice(6, 9)}/${code}.jpg`;
+    return [1, 2, 3, 4].map((host) => `https://covers${host}.booksamillion.com/covers/gift/${coverPath}`);
+  });
+}
+
 function normalizedKey(value: string | null | undefined) {
   return value?.trim().toLowerCase() || null;
 }
@@ -277,7 +294,7 @@ async function watchedProductImageFallbackMap(items: StorefrontInventoryItem[]) 
 }
 
 function publicImages(item: StorefrontInventoryItem, extraFallbacks: string[] = []) {
-  return uniqueProductImageUrls([...getProductImageUrls(item), ...extraFallbacks, ...targetTcinImageFallbacks(item)]);
+  return uniqueProductImageUrls([...getProductImageUrls(item), ...extraFallbacks, ...targetTcinImageFallbacks(item), ...upcCoverImageFallbacks(item)]);
 }
 
 export function publicProductToDTO(item: StorefrontInventoryItem, options: { imageFallbacks?: string[] } = {}): PublicStoreProductDTO | null {
