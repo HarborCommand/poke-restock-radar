@@ -212,15 +212,34 @@ function targetTcinImageFallbacks(item: StorefrontInventoryItem) {
   ]);
 }
 
-function upcCoverImageFallbacks(item: StorefrontInventoryItem) {
-  const candidateCodes = [item.upc, item.sku, item.product?.upc]
+const knownPokemonUpcImageFallbacks: Record<string, string[]> = {
+  "196214155787": [
+    "https://cdn11.bigcommerce.com/s-karer354/images/stencil/1280x1280/products/296360/1121259/lumiose-city-mini-tin-264181539__60569.1780614126.jpg?c=2"
+  ],
+  "196214140615": [
+    "https://www.spellenrijk.nl/resize/chaos-rising-flygon-premium-blister_126626975883988135747785.png/200/200/True/pokemon-chaos-rising-premium-checklane-blister-flygon.png"
+  ],
+  "196214140585": ["https://c.cdnmp.net/406833049/p/t/1/pokemon-tcg-chaos-rising-premium-checklane-blister-pawmot~902421.jpg"],
+  "196214136649": ["https://rollntrade.com/wp-content/uploads/2026/03/Meganium-PCB.webp"]
+};
+
+function productBarcodeCandidates(item: StorefrontInventoryItem) {
+  return [item.upc, item.sku, item.product?.upc]
     .flatMap((value) => {
       const digits = value?.replace(/\D/g, "") ?? "";
       if (digits.length === 13 && digits.startsWith("0")) return [digits, digits.slice(1)];
       return [digits];
     })
     .filter((value): value is string => value.length === 12 || value.length === 13);
-  const codes = [...new Set(candidateCodes)];
+}
+
+function knownUpcImageFallbacks(item: StorefrontInventoryItem) {
+  const codes = [...new Set(productBarcodeCandidates(item))];
+  return codes.flatMap((code) => knownPokemonUpcImageFallbacks[code] ?? []);
+}
+
+function upcCoverImageFallbacks(item: StorefrontInventoryItem) {
+  const codes = [...new Set(productBarcodeCandidates(item))];
   return codes.flatMap((code) => {
     const coverPath = `${code.slice(0, 1)}/${code.slice(1, 3)}/${code.slice(3, 6)}/${code.slice(6, 9)}/${code}.jpg`;
     return [1, 2, 3, 4].map((host) => `https://covers${host}.booksamillion.com/covers/gift/${coverPath}`);
@@ -294,7 +313,13 @@ async function watchedProductImageFallbackMap(items: StorefrontInventoryItem[]) 
 }
 
 function publicImages(item: StorefrontInventoryItem, extraFallbacks: string[] = []) {
-  return uniqueProductImageUrls([...getProductImageUrls(item), ...extraFallbacks, ...targetTcinImageFallbacks(item), ...upcCoverImageFallbacks(item)]);
+  return uniqueProductImageUrls([
+    ...getProductImageUrls(item),
+    ...extraFallbacks,
+    ...targetTcinImageFallbacks(item),
+    ...knownUpcImageFallbacks(item),
+    ...upcCoverImageFallbacks(item)
+  ]);
 }
 
 export function publicProductToDTO(item: StorefrontInventoryItem, options: { imageFallbacks?: string[] } = {}): PublicStoreProductDTO | null {
