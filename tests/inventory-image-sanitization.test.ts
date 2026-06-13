@@ -167,10 +167,11 @@ test("product image gallery model and API routes are wired", () => {
   assert.match(imageRoute, /deleteInventoryProductImage/);
   assert.match(service, /backfillInventoryProductImages/);
   assert.match(service, /sanitizePublicImageUrl/);
-  assert.match(service, /imageUrl: null, publicImages: null/);
+  assert.doesNotMatch(service, /imageUrl: null, publicImages: null/);
+  assert.match(service, /source: "existing_image_url"/);
   assert.match(service, /syncInventoryImageFields/);
   assert.match(storefront, /productImages/);
-  assert.match(storefront, /filter\(\(image\) => image\.showInStore\)/);
+  assert.match(storefront, /getProductImageUrls/);
   assert.match(appSource, /ProductImageGalleryManager/);
   assert.match(appSource, /Upload Images/);
   assert.match(appSource, /Set primary/);

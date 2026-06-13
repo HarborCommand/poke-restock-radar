@@ -14,6 +14,7 @@ function product(overrides: Partial<PublicStoreProductDTO> & { id: string; title
     price: overrides.price ?? 29.99,
     compareAtPrice: null,
     imageUrl: overrides.imageUrl ?? `https://example.com/${overrides.id}.png`,
+    primaryImageUrl: overrides.primaryImageUrl ?? overrides.imageUrl ?? `https://example.com/${overrides.id}.png`,
     images: overrides.images ?? [],
     category: overrides.category ?? "Pokemon Sealed",
     tags: overrides.tags ?? [],

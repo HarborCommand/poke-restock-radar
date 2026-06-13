@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
+import { getPrimaryProductImage, getProductImageUrls } from "@/lib/product-images";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
@@ -21,6 +22,12 @@ const storefrontInventoryInclude = {
   stockReservations: true,
   productImages: {
     orderBy: [{ isPrimary: "desc" as const }, { sortOrder: "asc" as const }, { createdAt: "asc" as const }]
+  },
+  product: {
+    select: {
+      liveImageUrl: true,
+      imageUrl: true
+    }
   }
 } satisfies Prisma.InventoryItemInclude;
 
@@ -32,7 +39,18 @@ const storefrontOrderInclude = {
           upc: true,
           sku: true,
           dpci: true,
-          exactProductUrl: true
+          exactProductUrl: true,
+          imageUrl: true,
+          publicImages: true,
+          productImages: {
+            orderBy: [{ isPrimary: "desc" as const }, { sortOrder: "asc" as const }, { createdAt: "asc" as const }]
+          },
+          product: {
+            select: {
+              liveImageUrl: true,
+              imageUrl: true
+            }
+          }
         }
       }
     }
@@ -147,23 +165,7 @@ function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | 
 }
 
 function publicImages(item: StorefrontInventoryItem) {
-  const galleryImages = item.productImages
-    .filter((image) => image.showInStore)
-    .sort((left, right) => {
-      if (left.isPrimary !== right.isPrimary) return left.isPrimary ? -1 : 1;
-      if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
-      return left.createdAt.getTime() - right.createdAt.getTime();
-    })
-    .map((image) => image.url);
-  const seen = new Set<string>();
-  return [...galleryImages, ...parseList(item.publicImages), item.imageUrl]
-    .map((image) => image?.trim())
-    .filter((image): image is string => Boolean(image))
-    .filter((image) => {
-      if (seen.has(image)) return false;
-      seen.add(image);
-      return true;
-    });
+  return getProductImageUrls(item, { publicOnly: true });
 }
 
 export function publicProductToDTO(item: StorefrontInventoryItem): PublicStoreProductDTO | null {
@@ -182,6 +184,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
   });
   const publicTitle = cleanStorefrontTitle(item.publicTitle || item.itemName);
   const status = availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out";
+  const primaryImageUrl = getPrimaryProductImage(item, { publicOnly: true });
   return {
     id: item.id,
     slug,
@@ -199,7 +202,8 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     }),
     price,
     compareAtPrice: item.compareAtPrice,
-    imageUrl: images[0] ?? item.imageUrl,
+    imageUrl: primaryImageUrl,
+    primaryImageUrl,
     images,
     category: publicCategory,
     tags: parseList(item.storefrontTags),
@@ -394,12 +398,13 @@ function stripeImage(imageUrl: string | null | undefined) {
 }
 
 function orderItemToDTO(item: StorefrontOrderItemWithInventory): StorefrontOrderItemDTO {
+  const resolvedImageUrl = item.imageUrl ?? getPrimaryProductImage(item.inventoryItem, { publicOnly: true });
   return {
     id: item.id,
     inventoryItemId: item.inventoryItemId,
     publicTitle: item.publicTitle,
     publicSlug: item.publicSlug,
-    imageUrl: item.imageUrl,
+    imageUrl: resolvedImageUrl,
     upc: item.inventoryItem.upc,
     sku: item.inventoryItem.sku,
     dpci: item.inventoryItem.dpci,

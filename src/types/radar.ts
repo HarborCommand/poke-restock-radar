@@ -207,6 +207,7 @@ export type PublicStoreProductDTO = {
   price: number;
   compareAtPrice: number | null;
   imageUrl: string | null;
+  primaryImageUrl: string | null;
   images: string[];
   category: string;
   tags: string[];
@@ -353,7 +354,7 @@ export type InventoryProductImageDTO = {
   altText: string | null;
   sortOrder: number;
   isPrimary: boolean;
-  source: "uploaded" | "url" | "upc_lookup" | "retailer" | "manual";
+  source: "uploaded" | "url" | "upc_lookup" | "retailer" | "manual" | "existing_image_url";
   showInStore: boolean;
   createdAt: string;
   updatedAt: string;

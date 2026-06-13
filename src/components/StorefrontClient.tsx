@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   BadgeCheck,
   Check,
@@ -140,6 +140,22 @@ function sportsCardsLink(settings: StorefrontSettingsDTO) {
   };
 }
 
+function productImageCandidates(product: Pick<PublicStoreProductDTO, "primaryImageUrl" | "imageUrl" | "images">) {
+  const seen = new Set<string>();
+  return [product.primaryImageUrl, product.imageUrl, ...(product.images ?? [])]
+    .map((image) => image?.trim())
+    .filter((image): image is string => Boolean(image))
+    .filter((image) => {
+      if (seen.has(image)) return false;
+      seen.add(image);
+      return true;
+    });
+}
+
+function productImageUrl(product: Pick<PublicStoreProductDTO, "primaryImageUrl" | "imageUrl" | "images">) {
+  return productImageCandidates(product)[0] ?? null;
+}
+
 function readCart(): CartItem[] {
   if (typeof window === "undefined") return [];
   try {
@@ -174,17 +190,18 @@ function categoryPreviewCards(products: PublicStoreProductDTO[], categories: str
   const usedImages = new Set<string>();
   return categories.slice(0, 6).map((category) => {
     const useProductImage = category !== "Sports Cards" && category !== "Graded Cards";
-    const imageUrl = useProductImage
+    const matchedProduct = useProductImage
       ? (products.find((product) => {
-          if (!product.imageUrl || usedImages.has(product.imageUrl)) return false;
+          const image = productImageUrl(product);
+          if (!image || usedImages.has(image)) return false;
           const specificCategory = displayStorefrontCategory(product);
           if (category === "Pokemon Sealed" && specificCategory !== "Pokemon Sealed") return false;
           if (category !== "Pokemon Sealed" && specificCategory !== category && !storefrontCategoryMatches(product, category)) return false;
-          usedImages.add(product.imageUrl);
+          usedImages.add(image);
           return true;
-        })?.imageUrl ?? null)
+        }) ?? null)
       : null;
-    return { category, imageUrl, subtitle: categorySubtitles[category] ?? "Shop category", tone: categoryToSlug(category) };
+    return { category, imageUrl: matchedProduct ? productImageUrl(matchedProduct) : null, subtitle: categorySubtitles[category] ?? "Shop category", tone: categoryToSlug(category) };
   });
 }
 
@@ -238,23 +255,15 @@ function ProductImage({
   showBadges = false,
   newArrivalDays = 14
 }: {
-  product: Pick<PublicStoreProductDTO, "title" | "imageUrl" | "availableQuantity" | "status" | "publishedAt" | "createdAt">;
+  product: Pick<PublicStoreProductDTO, "title" | "primaryImageUrl" | "imageUrl" | "images" | "availableQuantity" | "status" | "publishedAt" | "createdAt">;
   size?: "card" | "hero" | "thumb" | "detail";
   showBadges?: boolean;
   newArrivalDays?: number;
 }) {
   const badges = showBadges ? storefrontImageBadges(product, newArrivalDays) : [];
-  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const imageFailed = Boolean(product.imageUrl && failedImageUrl === product.imageUrl);
-
-  useEffect(() => {
-    if (size !== "hero" || !product.imageUrl) return;
-    const image = imageRef.current;
-    if (image?.complete && image.naturalWidth <= 160 && image.naturalHeight <= 160) {
-      setFailedImageUrl(product.imageUrl);
-    }
-  }, [product.imageUrl, size]);
+  const imageCandidates = productImageCandidates(product);
+  const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
+  const imageUrl = imageCandidates.find((candidate) => !failedImageUrls.includes(candidate)) ?? null;
 
   return (
     <div className={`gdg-product-image gdg-product-image-${size} gdg-product-media ${size === "detail" ? "gdg-product-image-detail-media" : ""}`}>
@@ -265,21 +274,14 @@ function ProductImage({
           </span>
         ))}
       </div>
-      {product.imageUrl && !imageFailed ? (
+      {imageUrl ? (
         <Image
-          src={product.imageUrl}
+          src={imageUrl}
           alt={product.title}
           width={720}
           height={540}
           unoptimized
-          ref={imageRef}
-          onLoad={(event) => {
-            const image = event.currentTarget;
-            if (size === "hero" && image.naturalWidth <= 160 && image.naturalHeight <= 160) {
-              setFailedImageUrl(product.imageUrl ?? null);
-            }
-          }}
-          onError={() => setFailedImageUrl(product.imageUrl ?? null)}
+          onError={() => setFailedImageUrls((current) => (current.includes(imageUrl) ? current : [...current, imageUrl]))}
         />
       ) : (
         <div className="gdg-image-placeholder">
@@ -834,7 +836,7 @@ export function ProductDetail({
 }) {
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState("");
-  const images = product.images.length ? product.images : product.imageUrl ? [product.imageUrl] : [];
+  const images = productImageCandidates(product);
   const [selectedImage, setSelectedImage] = useState(images[0] ?? null);
   const [failedImages, setFailedImages] = useState<string[]>([]);
   const isSoldOut = storefrontPrimaryActionDisabled(product);
@@ -846,6 +848,8 @@ export function ProductDetail({
   const productTitle = cleanStorefrontTitle(product.title);
   const conditionLabel = cleanStorefrontTitle(product.condition) || "Collector-ready condition";
   const soldOutNote = storefrontSoldOutNote();
+  const preferredSelectedImage = selectedImage && images.includes(selectedImage) ? selectedImage : (images[0] ?? null);
+  const visibleSelectedImage = preferredSelectedImage && !failedImages.includes(preferredSelectedImage) ? preferredSelectedImage : (images.find((image) => !failedImages.includes(image)) ?? null);
 
   function addProductToCart(redirect = false) {
     addToCart(product, quantity);
@@ -873,14 +877,14 @@ export function ProductDetail({
                   </span>
                 ))}
               </div>
-              {selectedImage && !failedImages.includes(selectedImage) ? (
+              {visibleSelectedImage ? (
                 <Image
-                  src={selectedImage}
+                  src={visibleSelectedImage}
                   alt={productTitle}
                   width={900}
                   height={900}
                   unoptimized
-                  onError={() => setFailedImages((current) => (current.includes(selectedImage) ? current : [...current, selectedImage]))}
+                  onError={() => setFailedImages((current) => (current.includes(visibleSelectedImage) ? current : [...current, visibleSelectedImage]))}
                 />
               ) : (
                 <div className="gdg-image-placeholder">

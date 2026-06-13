@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMinutes } from "@/lib/monitor";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
+import { getPrimaryProductImage, getProductImageUrls, uniqueProductImageUrls } from "@/lib/product-images";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import {
   BEST_BUY_DISCOVERY_SEARCH_TERMS,
@@ -1566,18 +1567,14 @@ function orderedInventoryProductImages(images: Prisma.InventoryProductImageGetPa
 }
 
 function uniqueImageUrls(values: Array<string | null | undefined>) {
-  const seen = new Set<string>();
-  return values
-    .map((value) => sanitizePublicImageUrl(value).value)
-    .filter((value): value is string => Boolean(value))
-    .filter((value) => {
-      if (seen.has(value)) return false;
-      seen.add(value);
-      return true;
-    });
+  return uniqueProductImageUrls(values);
 }
 
 async function syncInventoryImageFields(itemId: string) {
+  const item = await prisma.inventoryItem.findUnique({
+    where: { id: itemId },
+    select: { imageUrl: true, publicImages: true }
+  });
   const images = await prisma.inventoryProductImage.findMany({
     where: { inventoryItemId: itemId },
     orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }]
@@ -1596,12 +1593,16 @@ async function syncInventoryImageFields(itemId: string) {
     }
   }
   const primary = ordered.find((image) => image.isPrimary) ?? ordered[0] ?? null;
-  const publicUrls = ordered.filter((image) => image.showInStore).map((image) => image.url);
+  const publicUrls = uniqueImageUrls([
+    ...ordered.filter((image) => image.showInStore).map((image) => image.url),
+    item?.imageUrl,
+    ...parseJsonStringArray(item?.publicImages)
+  ]);
   await prisma.inventoryItem.update({
     where: { id: itemId },
     data: {
-      imageUrl: primary?.url ?? null,
-      publicImages: publicUrls.length ? JSON.stringify(publicUrls) : null
+      imageUrl: primary?.url ?? item?.imageUrl ?? publicUrls[0] ?? null,
+      publicImages: publicUrls.length ? JSON.stringify(publicUrls) : item?.publicImages ?? null
     }
   });
 }
@@ -1654,31 +1655,39 @@ async function backfillInventoryProductImages(currentUser: SessionUser) {
     where: {
       AND: [
         { OR: [{ userId: null }, { userId: currentUser.id }] },
-        { productImages: { none: {} } },
         { OR: [{ imageUrl: { not: null } }, { publicImages: { not: null } }] }
       ]
     },
-    select: { id: true, itemName: true, imageUrl: true, publicImages: true },
+    select: {
+      id: true,
+      itemName: true,
+      imageUrl: true,
+      publicImages: true,
+      productImages: {
+        orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }]
+      }
+    },
     take: 200
   });
   for (const item of candidates) {
     const urls = uniqueImageUrls([item.imageUrl, ...parseJsonStringArray(item.publicImages)]);
-    if (!urls.length) {
-      await prisma.inventoryItem.update({
-        where: { id: item.id },
-        data: { imageUrl: null, publicImages: null }
-      });
-      continue;
-    }
+    if (!urls.length) continue;
+    const existingUrls = new Set(item.productImages.map((image) => image.url));
+    let hasPrimary = item.productImages.some((image) => image.isPrimary);
+    let createdCount = 0;
     for (const [index, url] of urls.entries()) {
+      if (existingUrls.has(url)) continue;
       await ensureInventoryProductImage(item.id, {
         url,
-        altText: `${item.itemName} image ${index + 1}`,
-        isPrimary: index === 0,
-        sortOrder: index,
-        source: "url",
+        altText: `${item.itemName} product image`,
+        isPrimary: !hasPrimary && createdCount === 0,
+        sortOrder: item.productImages.length + index,
+        source: "existing_image_url",
         showInStore: true
       });
+      existingUrls.add(url);
+      hasPrimary = true;
+      createdCount += 1;
     }
   }
 }
@@ -1895,18 +1904,9 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   const marketProfitLoss = netMarketValue === null ? null : netMarketValue - ownedCostBasis;
   const marketRoiPercent = marketProfitLoss === null || ownedCostBasis <= 0 ? null : (marketProfitLoss / ownedCostBasis) * 100;
   const orderedProductImages = orderedInventoryProductImages(item.productImages);
-  const primaryImageUrl =
-    orderedProductImages.find((image) => image.isPrimary)?.url ??
-    orderedProductImages[0]?.url ??
-    item.imageUrl ??
-    item.product?.liveImageUrl ??
-    item.product?.imageUrl ??
-    null;
-  const publicImageUrls = uniqueImageUrls([
-    ...orderedProductImages.filter((image) => image.showInStore).map((image) => image.url),
-    ...parseJsonStringArray(item.publicImages),
-    primaryImageUrl
-  ]);
+  const imageInput = { ...item, productImages: orderedProductImages };
+  const primaryImageUrl = getPrimaryProductImage(imageInput);
+  const publicImageUrls = getProductImageUrls(imageInput, { publicOnly: true });
   return {
     id: item.id,
     itemType: item.itemType,
