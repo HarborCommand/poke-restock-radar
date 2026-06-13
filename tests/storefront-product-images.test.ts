@@ -68,7 +68,7 @@ test("storefront DTO includes UPC-A fallback for leading-zero EAN-13", () => {
   assert.ok(dto.images.includes("https://covers1.booksamillion.com/covers/gift/1/96/214/136/196214136946.jpg"));
 });
 
-test("storefront DTO uses known public UPC image repair before generic cover guesses", () => {
+test("storefront DTO uses known public UPC image repair without generic cover guesses", () => {
   const dto = publicProductToDTO(storefrontItem({ upc: "196214155787" }));
 
   assert.ok(dto);
@@ -76,5 +76,5 @@ test("storefront DTO uses known public UPC image repair before generic cover gue
     dto.primaryImageUrl,
     "https://cdn11.bigcommerce.com/s-karer354/images/stencil/1280x1280/products/296360/1121259/lumiose-city-mini-tin-264181539__60569.1780614126.jpg?c=2"
   );
-  assert.equal(dto.images[1], "https://covers1.booksamillion.com/covers/gift/1/96/214/155/196214155787.jpg");
+  assert.equal(dto.images.length, 1);
 });

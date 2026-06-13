@@ -242,7 +242,7 @@ function knownUpcImageFallbacks(item: StorefrontInventoryItem) {
 }
 
 function upcCoverImageFallbacks(item: StorefrontInventoryItem) {
-  const codes = [...new Set(productBarcodeCandidates(item))];
+  const codes = [...new Set(productBarcodeCandidates(item))].filter((code) => !knownPokemonUpcImageFallbacks[code]?.length);
   return codes.flatMap((code) => {
     const coverPath = `${code.slice(0, 1)}/${code.slice(1, 3)}/${code.slice(3, 6)}/${code.slice(6, 9)}/${code}.jpg`;
     return [1, 2, 3, 4].map((host) => `https://covers${host}.booksamillion.com/covers/gift/${coverPath}`);
