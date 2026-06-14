@@ -6555,13 +6555,8 @@ function StorefrontOrdersPanel({
   const selectedOrder = dashboard.storefrontOrders.find((order) => order.id === selectedOrderId) ?? null;
   const stats = dashboard.storefrontSummary;
   const orderTabs = storefrontOrderTabs(dashboard.storefrontOrders);
-  const defaultOrderTab = storefrontDefaultOrderTab(dashboard.storefrontOrders);
   const visibleOrders = storefrontOrdersForTab(dashboard.storefrontOrders, activeOrderTab);
   const emptyState = storefrontOrderEmptyState(activeOrderTab);
-
-  useEffect(() => {
-    if (visibleOrders.length === 0 && activeOrderTab !== defaultOrderTab) setActiveOrderTab(defaultOrderTab);
-  }, [activeOrderTab, defaultOrderTab, visibleOrders.length]);
 
   return (
     <>

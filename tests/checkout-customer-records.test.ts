@@ -494,11 +494,15 @@ test("Admin Orders treats canceled refunded and expired orders as a muted archiv
   assert.match(orderTabs, /\["failed", "expired"\]\.includes\(order\.paymentStatus\)/);
   assert.match(orderTabs, /tab === "pending"[\s\S]*!storefrontOrderIsCanceledOrRefunded\(order\)/);
   assert.match(ordersPanel, /const \[activeOrderTab, setActiveOrderTab\] = useState<StorefrontOrderTab>\(\(\) => storefrontDefaultOrderTab\(dashboard\.storefrontOrders\)\)/);
+  assert.doesNotMatch(ordersPanel, /visibleOrders\.length === 0[\s\S]*setActiveOrderTab\(defaultOrderTab\)/);
   assert.match(ordersPanel, /className=\{`\$\{activeOrderTab === tab\.id \? "active" : ""\} \$\{tab\.id === "canceled" \? "archive-tab" : ""\}`\.trim\(\)\}/);
   assert.match(ordersPanel, /const archived = storefrontOrderIsCanceledOrRefunded\(order\)/);
   assert.match(ordersPanel, /const canFulfill = storefrontOrderCanFulfill\(order\)/);
   assert.match(ordersPanel, /\{canFulfill \? \(/);
   assert.match(ordersPanel, /Historical order\. No fulfillment action needed\./);
+  assert.match(app, /No paid orders to ship\./);
+  assert.match(app, /No new orders\./);
+  assert.match(app, /Canceled and expired orders are kept here for history\./);
   assert.match(app, /function storefrontOrderNetLabel[\s\S]*Original/);
   assert.match(ordersPanel, /storefrontOrderNetLabel\(order\)/);
   assert.match(ordersPanel, /Open Store Settings/);
