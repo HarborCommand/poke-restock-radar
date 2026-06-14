@@ -4413,7 +4413,8 @@ function productImageQaLabels(url?: string | null) {
     product_page_url: "Use a direct image URL",
     preorder_or_promo_marker: "Review pre-order or promo image",
     watermark_or_badge_marker: "Review watermark or badge",
-    low_resolution_marker: "Review low-resolution image"
+    low_resolution_marker: "Review low-resolution image",
+    fallback_source_marker: "Replace old fallback image"
   };
   return productImageQualityWarnings(url).map((warning) => labels[warning] ?? "Review image");
 }

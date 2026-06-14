@@ -3,7 +3,8 @@ export type ProductImageQualityWarning =
   | "product_page_url"
   | "preorder_or_promo_marker"
   | "watermark_or_badge_marker"
-  | "low_resolution_marker";
+  | "low_resolution_marker"
+  | "fallback_source_marker";
 
 const productPagePatterns = [
   { host: "bestbuy.com", path: /^\/(product|site)\// },
@@ -38,6 +39,25 @@ function hasLowResolutionMarker(value: string) {
     /(?:^|[/?&=._-])(?:1[0-9]{2}|2[0-9]{2})\.(?:jpg|jpeg|png|webp)(?:[?&#]|$)/.test(value) ||
     /[?&](?:wid|width|w|hei|height|h)=(?:[1-9][0-9]|1[0-9]{2}|2[0-9]{2})(?:[&#]|$)/.test(value)
   );
+}
+
+function hasKnownFallbackSourceMarker(value: string) {
+  try {
+    const parsed = parseImageUrl(value);
+    if (!parsed) return false;
+    const host = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    return (
+      (host.endsWith("booksamillion.com") && pathname.includes("/covers/gift/")) ||
+      host.includes("pricecharting.com") ||
+      host.endsWith("spellenrijk.nl") ||
+      host.endsWith("cdnmp.net") ||
+      host.endsWith("rollntrade.com") ||
+      host.endsWith("target.scene7.com")
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function isProductImageUrlRenderable(url: string | null | undefined) {
@@ -80,6 +100,7 @@ export function productImageQualityWarnings(url: string | null | undefined): Pro
   if (/\bpre[-_\s]?order\b|\bpreorder\b|coming[-_\s]?soon/.test(decoded)) warnings.push("preorder_or_promo_marker");
   if (/\bwatermark\b|\bbadge\b|\bsticker\b|\bpromo\b|\bretailer[-_\s]?logo\b/.test(decoded)) warnings.push("watermark_or_badge_marker");
   if (hasLowResolutionMarker(decoded)) warnings.push("low_resolution_marker");
+  if (hasKnownFallbackSourceMarker(value)) warnings.push("fallback_source_marker");
 
   return [...new Set(warnings)];
 }
