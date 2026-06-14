@@ -154,15 +154,8 @@ function quantityOwned(item: StorefrontInventoryItem) {
   return item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - quantitySold(item));
 }
 
-function activeReservedQuantity(item: Pick<StorefrontInventoryItem, "stockReservations">) {
-  const now = new Date();
-  return item.stockReservations
-    .filter((reservation) => reservation.status === "reserved" && reservation.expiresAt > now)
-    .reduce((sum, reservation) => sum + reservation.quantity, 0);
-}
-
 function sellableQuantity(item: StorefrontInventoryItem) {
-  const owned = Math.max(0, quantityOwned(item) - activeReservedQuantity(item));
+  const owned = quantityOwned(item);
   const publicCap = item.availableForSale === null || item.availableForSale === undefined ? owned : Math.max(0, item.availableForSale);
   return Math.min(owned, publicCap);
 }
@@ -274,7 +267,6 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
 }
 
 export async function listPublicStoreProducts(input?: { q?: string; category?: string }) {
-  await releaseExpiredReservations();
   const products = await prisma.inventoryItem.findMany({
     where: {
       publishToStore: true,
@@ -300,7 +292,6 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
 }
 
 export async function getPublicStoreProduct(slug: string) {
-  await releaseExpiredReservations();
   const item = await prisma.inventoryItem.findFirst({
     where: { publicSlug: slug, publishToStore: true, storeStatus: { in: ["active", "sold_out"] } },
     include: storefrontInventoryInclude
@@ -311,7 +302,6 @@ export async function getPublicStoreProduct(slug: string) {
 
 export async function getCartProducts(items: Array<{ id: string; quantity: number }>, options: { strict?: boolean } = {}) {
   const strict = options.strict ?? true;
-  await releaseExpiredReservations();
   const requested = new Map(items.map((item) => [item.id, item.quantity]));
   const products = await prisma.inventoryItem.findMany({
     where: { id: { in: [...requested.keys()] } },
@@ -776,6 +766,7 @@ export async function createCheckoutSession(input: {
   }
   const checkoutBaseUrl = storefrontCheckoutBaseUrl(options.requestUrl);
   const settings = await getStorefrontSettings();
+  await releaseExpiredReservations();
   const cart = await getCartProducts(input.items);
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
   const shippingCalculation = calculateCartShipping(

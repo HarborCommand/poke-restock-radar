@@ -64,6 +64,31 @@ test("Stripe Checkout session creation only creates temporary stock reservations
   assert.doesNotMatch(createCheckoutSession, /paymentStatus: "paid"/);
 });
 
+test("cart availability refresh is read-only and unpaid reservations do not appear as sold stock", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const sellableQuantity = sourceSlice(storefront, "function sellableQuantity", "function publicCategoryForItem");
+  const listPublicStoreProducts = sourceSlice(storefront, "export async function listPublicStoreProducts", "export async function getPublicStoreProduct");
+  const getPublicStoreProduct = sourceSlice(storefront, "export async function getPublicStoreProduct", "export async function getCartProducts");
+  const getCartProducts = sourceSlice(storefront, "export async function getCartProducts", "function stripeClient");
+  const createCheckoutSession = sourceSlice(
+    storefront,
+    "export async function createCheckoutSession",
+    "export async function createInvoiceRequest"
+  );
+
+  assert.match(sellableQuantity, /const owned = quantityOwned\(item\)/);
+  assert.doesNotMatch(sellableQuantity, /activeReservedQuantity|stockReservations|StockReservation/);
+
+  for (const readPath of [listPublicStoreProducts, getPublicStoreProduct, getCartProducts]) {
+    assert.doesNotMatch(readPath, /releaseExpiredReservations\(\)/);
+    assert.doesNotMatch(readPath, /prisma\.stockReservation\.(create|update|updateMany|upsert|delete|deleteMany)/);
+    assert.doesNotMatch(readPath, /prisma\.inventorySale\.create|prisma\.inventoryStockLot\.update|quantitySold:|remainingQuantity:\s*lot\.remainingQuantity -/);
+  }
+
+  assert.match(createCheckoutSession, /await releaseExpiredReservations\(\);\s+const cart = await getCartProducts\(input\.items\)/);
+  assert.doesNotMatch(getCartProducts, /reservations:\s*\{\s*create/);
+});
+
 test("Stripe webhook handlers verify raw request bodies before trusting events", () => {
   const storefront = readProjectFile("src/lib/storefront.ts");
   const currentWebhookRoute = readProjectFile("src/app/api/storefront/webhook/stripe/route.ts");

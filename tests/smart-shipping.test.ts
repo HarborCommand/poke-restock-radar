@@ -88,6 +88,7 @@ test("shipping calculator does not depend on the old flat five dollar setting", 
   assert.doesNotMatch(source, /defaultShippingPrice/);
   assert.doesNotMatch(source, /settings\.defaultShippingPrice/);
   assert.doesNotMatch(source, /amount:\s*5(?:\.00)?(?:[,;\n])/);
+  assert.doesNotMatch(source, /prisma|inventoryItem\.(update|updateMany|upsert)|inventorySale|stockReservation/i);
 });
 
 test("smart shipping schema and order snapshots are wired without raw payment details", () => {
