@@ -27,6 +27,15 @@ const baseInventoryPayload = {
   purchasedAt: "2026-06-12"
 };
 
+function sourceSlice(source: string, startNeedle: string, endNeedle?: string) {
+  const start = source.indexOf(startNeedle);
+  assert.notEqual(start, -1, `missing source start: ${startNeedle}`);
+  if (!endNeedle) return source.slice(start);
+  const end = source.indexOf(endNeedle, start + startNeedle.length);
+  assert.notEqual(end, -1, `missing source end: ${endNeedle}`);
+  return source.slice(start, end);
+}
+
 test("inventory image URLs keep normal hosted URLs and public paths", () => {
   const hosted = sanitizePublicImageUrl(" https://example.com/product.png ");
   const relative = sanitizePublicImageUrl("/brand/gamedaygrabs-icon.png");
@@ -183,6 +192,7 @@ test("listing image manager keeps public image controls readable", () => {
   const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
   const css = readFileSync("src/app/globals.css", "utf8");
   const managerSource = appSource.slice(appSource.indexOf("function ProductImageGalleryManager"), appSource.indexOf("function StoreStack"));
+  const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
 
   assert.match(managerSource, /Product images/);
   assert.match(managerSource, /Add clean product images for the public storefront\. Costs, receipts, and notes are never exposed\./);
@@ -204,7 +214,111 @@ test("listing image manager keeps public image controls readable", () => {
   assert.match(css, /body \.product-image-manager > \.product-image-empty,[\s\S]*grid-area: auto/);
   assert.match(css, /body \.product-image-manager > \.product-image-empty \{[\s\S]*text-align: left/);
   assert.match(css, /body \.product-image-empty-state span \{[\s\S]*display: block[\s\S]*width: auto[\s\S]*height: auto[\s\S]*background: transparent/);
-  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.product-image-add-row,[\s\S]*body \.product-image-add-fields \{[\s\S]*grid-template-columns: 1fr/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.product-image-add-row,[\s\S]*body \.product-image-add-fields,[\s\S]*grid-template-columns: 1fr/);
+  assert.ok(
+    listingModal.indexOf("<ProductImageGalleryManager item={item} runAction={runAction} context=\"storefront\" />") < listingModal.indexOf("shipping-profile-card"),
+    "image manager should stay before the shipping profile card"
+  );
+});
+
+test("admin listing editor renders a clean shipping profile card", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
+
+  assert.match(listingModal, /className="shipping-profile-card"/);
+  assert.match(listingModal, /<strong>Shipping profile<\/strong>/);
+  assert.match(listingModal, /Used to estimate customer shipping at checkout\./);
+  assert.match(listingModal, /Leave blank to use the safe default profile, but complete this for more accurate shipping\./);
+  assert.match(listingModal, /Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment\./);
+  assert.match(listingModal, /Needs shipping profile/);
+  assert.match(listingModal, /Shipping profile set/);
+
+  for (const field of [
+    "shippingProfile",
+    "packageWeightOz",
+    "packageLengthIn",
+    "packageWidthIn",
+    "packageHeightIn",
+    "freeShippingEligible",
+    "localPickupAvailable",
+    "requiresBox",
+    "insuranceRecommended"
+  ]) {
+    assert.match(listingModal, new RegExp(`name="${field}"`), `missing shipping field ${field}`);
+  }
+
+  for (const label of [
+    "Single card / light item",
+    "Sealed pack small",
+    "Small box",
+    "Medium box",
+    "Large box",
+    "Heavy box",
+    "Local pickup only / eligible",
+    "Weight in ounces",
+    "Length in inches",
+    "Width in inches",
+    "Height in inches",
+    "Free shipping eligible",
+    "Local pickup eligible",
+    "Requires box",
+    "Insurance recommended"
+  ]) {
+    assert.match(listingModal, new RegExp(label.replace(/[/.]/g, "\\$&")), `missing shipping label ${label}`);
+  }
+
+  assert.match(css, /body \.shipping-profile-card \{[\s\S]*display: grid[\s\S]*border: 1px solid #e5e7eb/);
+  assert.match(css, /body \.shipping-profile-card-head \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(css, /body \.shipping-package-grid,[\s\S]*body \.shipping-option-grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /body \.shipping-toggle-card \{[\s\S]*grid-template-columns: auto minmax\(0, 1fr\)/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.shipping-profile-card-head,[\s\S]*body \.shipping-package-grid,[\s\S]*body \.shipping-option-grid \{[\s\S]*grid-template-columns: 1fr/);
+});
+
+test("store listing save path persists shipping metadata without stock quantity mutation", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const validation = readFileSync("src/lib/validation.ts", "utf8");
+  const storefront = readFileSync("src/lib/storefront.ts", "utf8");
+  const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
+  const listingSchema = sourceSlice(validation, "export const inventoryStoreListingSchema", "export const inventoryBulkStorePublishSchema");
+  const updateListing = sourceSlice(storefront, "export async function updateInventoryStoreListing", "export async function bulkPublishInventoryStoreListings");
+
+  assert.match(listingModal, /body: JSON\.stringify\(formJson\(form\)\)/);
+  for (const field of ["packageWeightOz", "packageLengthIn", "packageWidthIn", "packageHeightIn", "freeShippingEligible", "requiresBox", "insuranceRecommended"]) {
+    assert.match(listingSchema, new RegExp(`${field}:`), `schema should accept ${field}`);
+    assert.match(updateListing, new RegExp(`${field}: input\\.${field}`), `save path should persist ${field}`);
+  }
+
+  const parsed = inventoryStoreListingSchema.parse({
+    publishToStore: true,
+    publicTitle: "Pokemon Test Booster Bundle",
+    publicPrice: 25,
+    publicImages: ["https://example.com/public-product.png"],
+    availableForSale: 1,
+    maxQuantityPerOrder: 4,
+    shippingProfile: "small_box",
+    packageWeightOz: "12.5",
+    packageLengthIn: "10",
+    packageWidthIn: "7",
+    packageHeightIn: "4",
+    freeShippingEligible: "true",
+    localPickupAvailable: "true",
+    shippingAvailable: "true",
+    requiresBox: "true",
+    insuranceRecommended: "true",
+    storeStatus: "active"
+  });
+
+  assert.equal(parsed.packageWeightOz, 12.5);
+  assert.equal(parsed.packageLengthIn, 10);
+  assert.equal(parsed.packageWidthIn, 7);
+  assert.equal(parsed.packageHeightIn, 4);
+  assert.equal(parsed.freeShippingEligible, true);
+  assert.equal(parsed.localPickupAvailable, true);
+  assert.equal(parsed.requiresBox, true);
+  assert.equal(parsed.insuranceRecommended, true);
+  assert.doesNotMatch(updateListing, /\bquantity:\s*input\./);
+  assert.doesNotMatch(updateListing, /inventoryStockLot|inventorySale|remainingQuantity|quantitySold/);
 });
 
 test("admin and storefront image surfaces handle broken or unsafe product images cleanly", () => {

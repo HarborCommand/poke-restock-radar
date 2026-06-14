@@ -38,8 +38,10 @@ test("Stripe Checkout session creation collects customer contact and address det
   assert.match(sessionCreateParams, /phone_number_collection: \{ enabled: true \}/);
   assert.match(sessionCreateParams, /billing_address_collection: "auto"/);
   assert.match(sessionCreateParams, /shipping_address_collection: \{\s*allowed_countries: stripeShippingAllowedCountries\s*\}/);
+  assert.match(sessionCreateParams, /shipping_options: checkoutShippingOptions/);
   assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
   assert.match(legacyCheckoutRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
+  assert.doesNotMatch(sessionCreateParams, /product_data: \{ name: "Shipping" \}/);
   assert.doesNotMatch(sessionCreateParams, /payment_method_data|card_number|cardNumber|cvc|cvv/i);
 });
 
@@ -214,6 +216,8 @@ test("verified paid sessions persist safe customer and address snapshots with nu
   assert.match(persistPaidCheckoutSession, /shippingName: snapshot\.shippingDetails\?\.name \?\? snapshot\.customerName \?\? null/);
   assert.match(persistPaidCheckoutSession, /shippingLine1: snapshot\.shippingAddress\?\.line1 \?\? null/);
   assert.match(persistPaidCheckoutSession, /shippingCity: snapshot\.shippingAddress\?\.city \?\? null/);
+  assert.match(persistPaidCheckoutSession, /shippingCharged,/);
+  assert.match(persistPaidCheckoutSession, /shippingMethodLabel: shippingSnapshot\.shippingMethodLabel/);
   assert.match(persistPaidCheckoutSession, /billingName: session\.customer_details\?\.name \?\? snapshot\.customerName \?\? null/);
   assert.match(persistPaidCheckoutSession, /billingLine1: snapshot\.billingAddress\?\.line1 \?\? null/);
   assert.match(persistPaidCheckoutSession, /billingCity: snapshot\.billingAddress\?\.city \?\? null/);
@@ -247,6 +251,49 @@ test("Admin Orders renders saved customer and address data instead of old placeh
   assert.match(customerSection, /<StorefrontAddressLines address=\{order\.shippingAddress\} \/>/);
   assert.match(customerSection, /<StorefrontAddressLines address=\{order\.billingAddress\} \/>/);
   assert.doesNotMatch(customerSection, /email not saved|Not saved|Not collected|Not stored|JSON\.stringify|<pre|<code/);
+});
+
+test("Admin Orders renders an operational shipping section without raw payment details", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontCancelRefundModal");
+  const shippingSection = sourceSlice(orderModal, '<section className="storefront-shipping-section">', "<section>");
+  const storefrontSummary = sourceSlice(storefront, "export async function storefrontSummary", "async function returnOrderInventory");
+
+  assert.match(app, /function formatShippingPackageWeight/);
+  assert.match(app, /function formatShippingPackageProfile/);
+  assert.match(app, /function formatShippingPackageDimensions/);
+  assert.match(app, /function storefrontOrderShippingProfitLoss/);
+  assert.match(app, /order\.shippingCharged - order\.shippingCost/);
+  assert.match(app, /function storefrontOrderShippingReadiness/);
+
+  assert.match(shippingSection, /<h3>Shipping<\/h3>/);
+  assert.match(shippingSection, /Shipping method selected/);
+  assert.match(shippingSection, /Shipping charged to customer/);
+  assert.match(shippingSection, /Package weight snapshot/);
+  assert.match(shippingSection, /Package profile snapshot/);
+  assert.match(shippingSection, /Package dimensions snapshot/);
+  assert.match(shippingSection, /Actual shipping cost/);
+  assert.match(shippingSection, /Shipping profit\/loss/);
+  assert.match(shippingSection, /Carrier/);
+  assert.match(shippingSection, /Tracking number/);
+  assert.match(shippingSection, /Fulfillment status/);
+  assert.match(shippingSection, /name="shippingCost"/);
+  assert.match(shippingSection, /name="carrier"/);
+  assert.match(shippingSection, /name="trackingNumber"/);
+  assert.match(shippingSection, /name="fulfillmentStatus"/);
+  assert.match(orderModal, /disabled=\{busy \|\| !order\.needsFulfillment\}/);
+  assert.match(orderModal, /Only active paid orders can be marked shipped/);
+  assert.doesNotMatch(shippingSection, /JSON\.stringify\(order|<pre|<code|payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
+
+  assert.match(css, /storefront-shipping-section/);
+  assert.match(css, /storefront-shipping-form/);
+  assert.match(css, /storefront-shipping-head,[\s\S]*storefront-shipping-form \{[\s\S]*grid-template-columns: 1fr/);
+
+  assert.match(storefrontSummary, /ordersToShipCount/);
+  assert.match(storefrontSummary, /paymentStatus: "paid", fulfillmentStatus: \{ in: \["unfulfilled", "packing", "pickup_ready"\] \}/);
+  assert.doesNotMatch(storefrontSummary, /prisma\.storefrontOrder\.count\(\{ where: \{ [^}]*paymentStatus: \{ in: activeRevenuePaymentStatuses \}/);
 });
 
 test("checkout customer records never persist raw card or payment method details", () => {

@@ -43,6 +43,7 @@ import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/stor
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
 import { homepageArrivalSection, selectHomepageHeroProduct } from "@/lib/storefront-home";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
+import { calculateCartShipping } from "@/lib/shipping";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
@@ -918,6 +919,10 @@ export function ProductDetail({
   const visibleGalleryImages = images.filter((image) => !failedImages.includes(image));
   const preferredSelectedImage = selectedImage && images.includes(selectedImage) ? selectedImage : (images[0] ?? null);
   const visibleSelectedImage = preferredSelectedImage && visibleGalleryImages.includes(preferredSelectedImage) ? preferredSelectedImage : (visibleGalleryImages[0] ?? null);
+  const productShippingEstimate = calculateCartShipping([{ ...product, requestedQuantity: 1 }], {
+    subtotal: product.price,
+    freeShippingThreshold: settings.freeShippingThreshold
+  });
 
   function addProductToCart(redirect = false) {
     addToCart(product, quantity);
@@ -1063,7 +1068,7 @@ export function ProductDetail({
           <h2>Shipping & Handling</h2>
           <p>{settings.shippingPolicyText || "Products are packed with care and shipped securely with tracking when shipping is selected."}</p>
           <ul>
-            <li>Default shipping estimate: {money(settings.defaultShippingPrice)}.</li>
+            <li>Shipping estimate: {money(productShippingEstimate.defaultShippingOption?.amount ?? 0)}.</li>
             {settings.freeShippingThreshold ? <li>Free shipping threshold: {money(settings.freeShippingThreshold)}.</li> : null}
             <li>Availability is confirmed before invoice payment or shipment.</li>
           </ul>
@@ -1158,8 +1163,11 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   }
 
   const subtotal = products.reduce((sum, product) => sum + product.price * product.requestedQuantity, 0);
-  const shipping = subtotal > 0 && (settings.freeShippingThreshold === null || subtotal < settings.freeShippingThreshold) ? settings.defaultShippingPrice : 0;
+  const shippingEstimate = calculateCartShipping(products, { subtotal, freeShippingThreshold: settings.freeShippingThreshold });
+  const shippingOption = shippingEstimate.defaultShippingOption;
+  const shipping = shippingOption?.amount ?? 0;
   const total = subtotal + shipping;
+  const shippingSummary = shippingOption ? `Estimated ${money(shipping)}` : "Final shipping shown before payment";
   const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
   const freeShippingRemaining = settings.freeShippingThreshold !== null ? Math.max(0, settings.freeShippingThreshold - subtotal) : null;
   const freeShippingProgress =
@@ -1418,17 +1426,22 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 {money(subtotal)}
               </span>
               <span>
-                <b>Shipping estimate</b>
-                {money(shipping)}
+                <b>Shipping calculated at checkout</b>
+                <em>{shippingSummary}</em>
               </span>
               <span>
                 <b>Tax</b>
                 <em>Calculated after confirmation</em>
               </span>
               <strong>
-                <b>Total</b>
+                <b>Estimated total</b>
                 {money(total)}
               </strong>
+            </div>
+            <div className="gdg-shipping-checkout-note">
+              <Truck size={16} />
+              <span>Shipping is estimated from product weight and package size.</span>
+              <span>Final shipping is shown before payment.</span>
             </div>
             {settings.freeShippingThreshold !== null && freeShippingRemaining !== null && subtotal > 0 ? (
               <div className="gdg-free-shipping">

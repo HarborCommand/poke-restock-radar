@@ -775,6 +775,13 @@ model InventoryItem {
   availableForSale              Int?
   maxQuantityPerOrder           Int                     @default(4)
   shippingProfile               String                  @default("standard")
+  packageWeightOz               Float?
+  packageLengthIn               Float?
+  packageWidthIn                Float?
+  packageHeightIn               Float?
+  freeShippingEligible          Boolean                 @default(false)
+  requiresBox                   Boolean                 @default(false)
+  insuranceRecommended          Boolean                 @default(false)
   storeStatus                   String                  @default("draft")
   localPickupAvailable          Boolean                 @default(true)
   shippingAvailable             Boolean                 @default(true)
@@ -1056,6 +1063,11 @@ model StorefrontOrder {
   stripePaymentIntentId           String?
   subtotal                        Float                 @default(0)
   shippingCharged                 Float                 @default(0)
+  shippingMethodLabel             String?
+  shippingRateSource              String?
+  shippingPackageWeightOz         Float?
+  shippingPackageProfile          String?
+  shippingWarnings                String?
   tax                             Float                 @default(0)
   total                           Float                 @default(0)
   stripeFeeEstimate               Float                 @default(0)

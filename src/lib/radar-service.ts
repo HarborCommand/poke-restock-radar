@@ -5,6 +5,7 @@ import { getAppHealth } from "@/lib/health";
 import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMinutes } from "@/lib/monitor";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { getSavedProductImageUrls, uniqueProductImageUrls } from "@/lib/product-images";
+import { itemNeedsShippingProfile } from "@/lib/shipping";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import {
   BEST_BUY_DISCOVERY_SEARCH_TERMS,
@@ -2146,6 +2147,15 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     availableForSale: item.availableForSale,
     maxQuantityPerOrder: item.maxQuantityPerOrder,
     shippingProfile: item.shippingProfile,
+    packageWeightOz: item.packageWeightOz,
+    packageLengthIn: item.packageLengthIn,
+    packageWidthIn: item.packageWidthIn,
+    packageHeightIn: item.packageHeightIn,
+    freeShippingEligible: item.freeShippingEligible,
+    localPickupEligible: item.localPickupAvailable,
+    requiresBox: item.requiresBox,
+    insuranceRecommended: item.insuranceRecommended,
+    needsShippingProfile: itemNeedsShippingProfile(item),
     storeStatus: item.storeStatus as InventoryItemDTO["storeStatus"],
     localPickupAvailable: item.localPickupAvailable,
     shippingAvailable: item.shippingAvailable,

@@ -141,6 +141,15 @@ function item(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
     availableForSale: null,
     maxQuantityPerOrder: 10,
     shippingProfile: "standard",
+    packageWeightOz: null,
+    packageLengthIn: null,
+    packageWidthIn: null,
+    packageHeightIn: null,
+    freeShippingEligible: false,
+    localPickupEligible: false,
+    requiresBox: false,
+    insuranceRecommended: false,
+    needsShippingProfile: true,
     storeStatus: "draft",
     localPickupAvailable: false,
     shippingAvailable: true,
@@ -188,6 +197,11 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     statusBadge: "Paid",
     subtotal: 100,
     shippingCharged: 0,
+    shippingMethodLabel: null,
+    shippingRateSource: null,
+    shippingPackageWeightOz: null,
+    shippingPackageProfile: null,
+    shippingWarnings: [],
     tax: 0,
     total: 100,
     stripeFeeEstimate: 5,
@@ -543,7 +557,7 @@ test("admin modal checkboxes and sticky footers stay on light theme", () => {
   const editListing = app.slice(app.indexOf("function StoreListingModal"), app.indexOf("function InventoryMarketHero"));
 
   assert.match(editListing, /Shipping available/);
-  assert.match(editListing, /Local pickup available/);
+  assert.match(editListing, /Local pickup eligible/);
   assert.match(editListing, /inventory-edit-actions/);
   assert.match(finalCleanup, /body \.checkbox-label,[\s\S]*background: #ffffff !important/);
   assert.match(finalCleanup, /body \.checkbox-label:has\(input:checked\),[\s\S]*background: #f0fdf4 !important/);
@@ -872,6 +886,9 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /100% Authentic/);
   assert.match(client, /Proceed to Checkout/);
   assert.match(client, /Secure payment powered by Stripe/);
+  assert.match(client, /Shipping calculated at checkout/);
+  assert.match(client, /Shipping is estimated from product weight and package size\./);
+  assert.match(client, /Final shipping is shown before payment\./);
   assert.match(client, /No account required/);
   assert.match(client, /Stripe securely handles payment/);
   assert.match(client, /We use your email and shipping address only to process your order/);
@@ -916,6 +933,7 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(css, /gdg-payment-icons \.amex rect/);
   assert.match(css, /gdg-payment-icons \.discover path/);
   assert.match(css, /gdg-checkout-trust-copy/);
+  assert.match(css, /gdg-shipping-checkout-note/);
   assert.match(css, /gdg-cart-stock-warning-copy/);
   assert.match(css, /gdg-stock-remove-button/);
   assert.match(css, /gdg-payment-icons svg \{[\s\S]*width: 58px;[\s\S]*height: auto;[\s\S]*max-height: 22px;[\s\S]*object-fit: contain;/);
@@ -938,6 +956,8 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(storefront, /billing_address_collection: "auto"/);
   assert.match(storefront, /const stripeShippingAllowedCountries = \["US"\]/);
   assert.match(storefront, /shipping_address_collection: \{\s*allowed_countries: stripeShippingAllowedCountries\s*\}/);
+  assert.match(storefront, /shipping_options: checkoutShippingOptions/);
+  assert.doesNotMatch(storefront, /product_data: \{ name: "Shipping" \}/);
   assert.doesNotMatch(storefront, /shipping_address_collection:\s*\n\s*input\.fulfillmentMethod/);
   assert.doesNotMatch(storefront, /payment_method_data|card_number|cvc|cvv/i);
 });

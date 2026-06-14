@@ -5,6 +5,7 @@ import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
+import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
@@ -226,7 +227,17 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     maxQuantityPerOrder: item.maxQuantityPerOrder,
     status,
     localPickupAvailable: item.localPickupAvailable,
+    localPickupEligible: item.localPickupAvailable,
     shippingAvailable: item.shippingAvailable,
+    shippingProfile: item.shippingProfile,
+    packageWeightOz: item.packageWeightOz,
+    packageLengthIn: item.packageLengthIn,
+    packageWidthIn: item.packageWidthIn,
+    packageHeightIn: item.packageHeightIn,
+    freeShippingEligible: item.freeShippingEligible,
+    requiresBox: item.requiresBox,
+    insuranceRecommended: item.insuranceRecommended,
+    needsShippingProfile: itemNeedsShippingProfile(item),
     publishedAt: item.publishedAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString()
@@ -436,6 +447,27 @@ function moneyFromCents(cents: number) {
 
 function centsFromMoney(amount: number) {
   return Math.round(amount * 100);
+}
+
+function stripeShippingOptions(shippingCalculation: ShippingCalculation): Stripe.Checkout.SessionCreateParams.ShippingOption[] {
+  return shippingCalculation.shippingOptions.map((option) => ({
+    shipping_rate_data: {
+      type: "fixed_amount",
+      display_name: option.label,
+      fixed_amount: {
+        amount: centsFromMoney(option.amount),
+        currency: "usd"
+      },
+      metadata: {
+        shippingOptionId: option.id,
+        shippingOptionLabel: option.label,
+        shippingRateSource: option.rateSource,
+        shippingPackageProfile: option.profile,
+        shippingPackageWeightOz: String(shippingCalculation.totalWeightOz),
+        shippingWarnings: stringifyList(shippingCalculation.warnings) ?? ""
+      }
+    }
+  }));
 }
 
 function orderRefundedCents(order: Pick<StorefrontOrderWithItems, "refundedAmount">) {
@@ -682,6 +714,11 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     statusBadge: orderStatusBadge(order),
     subtotal: order.subtotal,
     shippingCharged: order.shippingCharged,
+    shippingMethodLabel: order.shippingMethodLabel,
+    shippingRateSource: order.shippingRateSource,
+    shippingPackageWeightOz: order.shippingPackageWeightOz,
+    shippingPackageProfile: order.shippingPackageProfile,
+    shippingWarnings: parseList(order.shippingWarnings),
     tax: order.tax,
     total: order.total,
     stripeFeeEstimate: order.stripeFeeEstimate,
@@ -741,10 +778,21 @@ export async function createCheckoutSession(input: {
   const settings = await getStorefrontSettings();
   const cart = await getCartProducts(input.items);
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
-  const shippingCharged =
-    input.fulfillmentMethod === "pickup" || (settings.freeShippingThreshold !== null && subtotal >= settings.freeShippingThreshold)
-      ? 0
-      : settings.defaultShippingPrice;
+  const shippingCalculation = calculateCartShipping(
+    cart.map(({ item, quantity }) => ({ ...item, quantity })),
+    { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod }
+  );
+  const selectedShipping = shippingCalculation.defaultShippingOption;
+  if (!selectedShipping) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");
+  if (input.fulfillmentMethod === "shipping" && selectedShipping.id === "local_pickup") {
+    throw new Error("Shipping is not available for one or more cart items. Use Request Invoice for manual review.");
+  }
+  if (input.fulfillmentMethod === "pickup" && selectedShipping.id !== "local_pickup") {
+    throw new Error("Local pickup is not available for one or more cart items.");
+  }
+  const checkoutShippingOptions = stripeShippingOptions(shippingCalculation);
+  if (!checkoutShippingOptions.length) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");
+  const shippingCharged = selectedShipping.amount;
   const total = subtotal + shippingCharged;
   const order = await prisma.storefrontOrder.create({
     data: {
@@ -754,6 +802,11 @@ export async function createCheckoutSession(input: {
       customerName: input.customerName,
       subtotal,
       shippingCharged,
+      shippingMethodLabel: selectedShipping.label,
+      shippingRateSource: selectedShipping.rateSource,
+      shippingPackageWeightOz: shippingCalculation.totalWeightOz,
+      shippingPackageProfile: shippingCalculation.packageProfile,
+      shippingWarnings: stringifyList(shippingCalculation.warnings),
       total,
       stripeFeeEstimate: estimateStripeFee(total),
       items: {
@@ -794,6 +847,7 @@ export async function createCheckoutSession(input: {
       shipping_address_collection: {
         allowed_countries: stripeShippingAllowedCountries
       },
+      shipping_options: checkoutShippingOptions,
       line_items: [
         ...order.items.map((item) => ({
           quantity: item.quantity,
@@ -805,19 +859,7 @@ export async function createCheckoutSession(input: {
               images: stripeImage(item.imageUrl)
             }
           }
-        })),
-        ...(shippingCharged > 0
-          ? [
-              {
-                quantity: 1,
-                price_data: {
-                  currency: "usd",
-                  unit_amount: Math.round(shippingCharged * 100),
-                  product_data: { name: "Shipping" }
-                }
-              }
-            ]
-          : [])
+        }))
       ],
       metadata,
       payment_intent_data: {
@@ -861,10 +903,19 @@ export async function createInvoiceRequest(input: {
   const settings = await getStorefrontSettings();
   const cart = await getCartProducts(input.items);
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
-  const shippingCharged =
-    input.fulfillmentMethod === "pickup" || (settings.freeShippingThreshold !== null && subtotal >= settings.freeShippingThreshold)
-      ? 0
-      : settings.defaultShippingPrice;
+  const shippingCalculation = calculateCartShipping(
+    cart.map(({ item, quantity }) => ({ ...item, quantity })),
+    { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod }
+  );
+  const selectedShipping = shippingCalculation.defaultShippingOption;
+  if (!selectedShipping) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");
+  if (input.fulfillmentMethod === "shipping" && selectedShipping.id === "local_pickup") {
+    throw new Error("Shipping is not available for one or more cart items.");
+  }
+  if (input.fulfillmentMethod === "pickup" && selectedShipping.id !== "local_pickup") {
+    throw new Error("Local pickup is not available for one or more cart items.");
+  }
+  const shippingCharged = selectedShipping.amount;
   const total = subtotal + shippingCharged;
   const customer = await prisma.storefrontCustomer.upsert({
     where: { email: input.customerEmail },
@@ -898,6 +949,11 @@ export async function createInvoiceRequest(input: {
       fulfillmentStatus: "unfulfilled",
       subtotal,
       shippingCharged,
+      shippingMethodLabel: selectedShipping.label,
+      shippingRateSource: selectedShipping.rateSource,
+      shippingPackageWeightOz: shippingCalculation.totalWeightOz,
+      shippingPackageProfile: shippingCalculation.packageProfile,
+      shippingWarnings: stringifyList(shippingCalculation.warnings),
       total,
       notes: noteLines.join("\n"),
       items: {
@@ -1267,6 +1323,16 @@ type StripeCheckoutSessionWithCollected = Stripe.Checkout.Session & {
   collected_information?: { shipping_details?: StripeShippingLike | null } | null;
 };
 
+type StripeCheckoutSessionWithShipping = Stripe.Checkout.Session & {
+  shipping_cost?: {
+    amount_total?: number | null;
+    shipping_rate?: string | Stripe.ShippingRate | null;
+  } | null;
+  total_details?: {
+    amount_shipping?: number | null;
+  } | null;
+};
+
 type CheckoutCustomerSnapshot = {
   customerEmail: string | null;
   customerName: string | null;
@@ -1276,6 +1342,15 @@ type CheckoutCustomerSnapshot = {
   shippingDetails: StripeShippingLike | null;
   shippingAddress: StripeAddressLike | null;
   billingAddress: StripeAddressLike | null;
+};
+
+type CheckoutShippingSnapshot = {
+  shippingCharged: number | null;
+  shippingMethodLabel: string | null;
+  shippingRateSource: string | null;
+  shippingPackageWeightOz: number | null;
+  shippingPackageProfile: string | null;
+  shippingWarnings: string[];
 };
 
 function stripeId(value: string | { id?: string | null } | null | undefined) {
@@ -1383,6 +1458,58 @@ function storefrontCustomerShippingSnapshot(snapshot: CheckoutCustomerSnapshot) 
   };
 }
 
+function stripeShippingRateSnapshot(rate: Stripe.ShippingRate | null, fallback: CheckoutShippingSnapshot): CheckoutShippingSnapshot {
+  if (!rate) return fallback;
+  const metadata = rate.metadata ?? {};
+  const weight = Number(metadata.shippingPackageWeightOz);
+  const metadataWarnings = parseList(metadata.shippingWarnings);
+  return {
+    shippingCharged: fallback.shippingCharged,
+    shippingMethodLabel: metadata.shippingOptionLabel || rate.display_name || fallback.shippingMethodLabel,
+    shippingRateSource: "stripe_checkout",
+    shippingPackageWeightOz: Number.isFinite(weight) ? weight : fallback.shippingPackageWeightOz,
+    shippingPackageProfile: metadata.shippingPackageProfile || fallback.shippingPackageProfile,
+    shippingWarnings: metadataWarnings.length ? metadataWarnings : fallback.shippingWarnings
+  };
+}
+
+async function checkoutShippingSnapshot(session: Stripe.Checkout.Session, order: StorefrontOrderWithItems): Promise<CheckoutShippingSnapshot> {
+  const sessionWithShipping = session as StripeCheckoutSessionWithShipping;
+  const shippingCost = sessionWithShipping.shipping_cost ?? null;
+  const shippingCents =
+    typeof shippingCost?.amount_total === "number"
+      ? shippingCost.amount_total
+      : typeof sessionWithShipping.total_details?.amount_shipping === "number"
+        ? sessionWithShipping.total_details.amount_shipping
+        : null;
+  let snapshot: CheckoutShippingSnapshot = {
+    shippingCharged: shippingCents === null ? null : moneyFromCents(shippingCents),
+    shippingMethodLabel: order.shippingMethodLabel,
+    shippingRateSource: shippingCents === null ? order.shippingRateSource : "stripe_checkout",
+    shippingPackageWeightOz: order.shippingPackageWeightOz,
+    shippingPackageProfile: order.shippingPackageProfile,
+    shippingWarnings: parseList(order.shippingWarnings)
+  };
+
+  const shippingRate = shippingCost?.shipping_rate ?? null;
+  if (shippingRate && typeof shippingRate !== "string") {
+    return stripeShippingRateSnapshot(shippingRate, snapshot);
+  }
+  if (typeof shippingRate === "string") {
+    try {
+      const rate = await stripeClient().shippingRates.retrieve(shippingRate);
+      snapshot = stripeShippingRateSnapshot(rate, snapshot);
+    } catch {
+      snapshot = {
+        ...snapshot,
+        shippingRateSource: "stripe_checkout",
+        shippingWarnings: [...snapshot.shippingWarnings, "Stripe shipping rate details were not retrieved; using the checkout shipping amount."]
+      };
+    }
+  }
+  return snapshot;
+}
+
 async function syncStorefrontCustomerTotals(customerId: string, customerEmail: string) {
   const paidOrders = await prisma.storefrontOrder.findMany({
     where: { customerEmail, paymentStatus: { in: activeRevenuePaymentStatuses } },
@@ -1404,6 +1531,9 @@ async function syncStorefrontCustomerTotals(customerId: string, customerEmail: s
 
 async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, session: Stripe.Checkout.Session) {
   const snapshot = checkoutCustomerSnapshot(session, order);
+  const shippingSnapshot = await checkoutShippingSnapshot(session, order);
+  const shippingCharged = shippingSnapshot.shippingCharged ?? order.shippingCharged;
+  const total = typeof session.amount_total === "number" ? moneyFromCents(session.amount_total) : order.subtotal + shippingCharged + order.tax;
   const customer = snapshot.customerEmail
     ? await prisma.storefrontCustomer.upsert({
         where: { email: snapshot.customerEmail },
@@ -1445,7 +1575,15 @@ async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, sessi
       billingPostalCode: snapshot.billingAddress?.postal_code ?? null,
       billingCountry: snapshot.billingAddress?.country ?? null,
       stripeCheckoutSessionId: session.id,
-      stripePaymentIntentId: snapshot.stripePaymentIntentId ?? order.stripePaymentIntentId
+      stripePaymentIntentId: snapshot.stripePaymentIntentId ?? order.stripePaymentIntentId,
+      shippingCharged,
+      shippingMethodLabel: shippingSnapshot.shippingMethodLabel,
+      shippingRateSource: shippingSnapshot.shippingRateSource ?? "stripe_checkout",
+      shippingPackageWeightOz: shippingSnapshot.shippingPackageWeightOz,
+      shippingPackageProfile: shippingSnapshot.shippingPackageProfile,
+      shippingWarnings: stringifyList(shippingSnapshot.shippingWarnings),
+      total,
+      stripeFeeEstimate: estimateStripeFee(total)
     },
     include: storefrontOrderInclude
   });
@@ -1497,6 +1635,13 @@ export async function updateInventoryStoreListing(
     availableForSale?: number;
     maxQuantityPerOrder: number;
     shippingProfile: string;
+    packageWeightOz?: number | null;
+    packageLengthIn?: number | null;
+    packageWidthIn?: number | null;
+    packageHeightIn?: number | null;
+    freeShippingEligible?: boolean;
+    requiresBox?: boolean;
+    insuranceRecommended?: boolean;
     storeStatus: "draft" | "active" | "hidden" | "sold_out";
     localPickupAvailable: boolean;
     shippingAvailable: boolean;
@@ -1547,6 +1692,13 @@ export async function updateInventoryStoreListing(
       availableForSale,
       maxQuantityPerOrder: input.maxQuantityPerOrder,
       shippingProfile: input.shippingProfile,
+      packageWeightOz: input.packageWeightOz,
+      packageLengthIn: input.packageLengthIn,
+      packageWidthIn: input.packageWidthIn,
+      packageHeightIn: input.packageHeightIn,
+      freeShippingEligible: input.freeShippingEligible,
+      requiresBox: input.requiresBox,
+      insuranceRecommended: input.insuranceRecommended,
       storeStatus: normalizedStoreStatus,
       localPickupAvailable: input.localPickupAvailable,
       shippingAvailable: input.shippingAvailable,
@@ -1613,6 +1765,13 @@ export async function bulkPublishInventoryStoreListings(
         availableForSale,
         maxQuantityPerOrder: item.maxQuantityPerOrder || 4,
         shippingProfile: item.shippingProfile || "standard",
+        packageWeightOz: item.packageWeightOz,
+        packageLengthIn: item.packageLengthIn,
+        packageWidthIn: item.packageWidthIn,
+        packageHeightIn: item.packageHeightIn,
+        freeShippingEligible: item.freeShippingEligible,
+        requiresBox: item.requiresBox,
+        insuranceRecommended: item.insuranceRecommended,
         storeStatus,
         localPickupAvailable: item.localPickupAvailable,
         shippingAvailable: item.shippingAvailable,

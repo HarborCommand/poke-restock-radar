@@ -595,6 +595,52 @@ function StorefrontAddressLines({
   );
 }
 
+function formatShippingPackageWeight(order: StorefrontOrderDTO) {
+  return typeof order.shippingPackageWeightOz === "number" ? `${order.shippingPackageWeightOz} oz` : "Not captured";
+}
+
+function formatShippingPackageProfile(order: StorefrontOrderDTO) {
+  return order.shippingPackageProfile ? formatStatus(order.shippingPackageProfile) : "Not captured";
+}
+
+function formatShippingPackageDimensions(order: StorefrontOrderDTO) {
+  const dimensions = order as StorefrontOrderDTO & {
+    shippingPackageLengthIn?: number | null;
+    shippingPackageWidthIn?: number | null;
+    shippingPackageHeightIn?: number | null;
+  };
+  const length = dimensions.shippingPackageLengthIn;
+  const width = dimensions.shippingPackageWidthIn;
+  const height = dimensions.shippingPackageHeightIn;
+  return typeof length === "number" && typeof width === "number" && typeof height === "number"
+    ? `${length} x ${width} x ${height} in`
+    : "Not captured";
+}
+
+function storefrontOrderShippingProfitLoss(order: StorefrontOrderDTO) {
+  return Math.round((order.shippingCharged - order.shippingCost) * 100) / 100;
+}
+
+function moneyDelta(value: number) {
+  if (value > 0) return `+${money(value)}`;
+  return money(value);
+}
+
+function storefrontOrderIsCanceledOrRefunded(order: StorefrontOrderDTO) {
+  return (
+    ["canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.status) ||
+    ["canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.paymentStatus) ||
+    order.fulfillmentStatus === "canceled"
+  );
+}
+
+function storefrontOrderShippingReadiness(order: StorefrontOrderDTO) {
+  if (storefrontOrderIsCanceledOrRefunded(order)) return "Not ready to ship";
+  if (order.fulfillmentStatus === "shipped") return "Shipped";
+  if (order.needsFulfillment) return "Ready for fulfillment";
+  return "Not ready to ship";
+}
+
 function formatGradeType(value: string) {
   return value === "BGS_BLACK_LABEL" ? "BGS Black Label" : formatStatus(value);
 }
@@ -6703,6 +6749,10 @@ function StorefrontOrderDetailsModal({
   const saveLabel = `Updating order ${order.id}`;
   const completedPaymentEvent = order.paymentEvents.find((event) => event.eventType === "checkout.session.completed");
   const inventoryFinalized = order.paymentStatus === "paid" && order.reservations.length > 0 && order.reservations.every((reservation) => reservation.status === "completed");
+  const shippingProfitLoss = storefrontOrderShippingProfitLoss(order);
+  const shippingProfitTone = shippingProfitLoss >= 0 ? "good" : "bad";
+  const shippingActionsLocked = storefrontOrderIsCanceledOrRefunded(order);
+  const shippingReadiness = storefrontOrderShippingReadiness(order);
   const [cancelRefundOpen, setCancelRefundOpen] = useState(false);
   const [cancelRefundKey, setCancelRefundKey] = useState("");
   const openCancelRefund = () => {
@@ -6725,7 +6775,8 @@ function StorefrontOrderDetailsModal({
         <section className="inventory-details-actions">
           <button
             className="mini-action"
-            disabled={busy}
+            disabled={busy || !order.needsFulfillment}
+            title={order.needsFulfillment ? "Mark this paid order as packing." : "Only active paid orders can be marked packing."}
             type="button"
             onClick={() =>
               runAction(
@@ -6743,7 +6794,8 @@ function StorefrontOrderDetailsModal({
           </button>
           <button
             className="mini-action"
-            disabled={busy}
+            disabled={busy || !order.needsFulfillment}
+            title={order.needsFulfillment ? "Mark this paid order as shipped." : "Only active paid orders can be marked shipped."}
             type="button"
             onClick={() =>
               runAction(
@@ -6802,6 +6854,54 @@ function StorefrontOrderDetailsModal({
               <DetailStat label="Customer notification" value={order.customerCancellationEmailStatus ? formatStatus(order.customerCancellationEmailStatus) : "Not sent"} tone={order.customerCancellationEmailSentAt ? "good" : "neutral"} />
             </div>
           </section>
+          <section className="storefront-shipping-section">
+            <div className="storefront-shipping-head">
+              <div>
+                <h3>Shipping</h3>
+                <p>Selected checkout shipping, fulfillment details, and actual shipment cost.</p>
+              </div>
+              <span className={`chip compact-chip ${order.needsFulfillment ? "watch" : "neutral"}`}>{shippingReadiness}</span>
+            </div>
+            <div className="detail-stat-grid storefront-shipping-metrics">
+              <DetailStat label="Shipping method selected" value={order.shippingMethodLabel || "Not captured"} />
+              <DetailStat label="Shipping charged to customer" value={money(order.shippingCharged)} tone={order.shippingCharged > 0 ? "good" : "neutral"} />
+              <DetailStat label="Package weight snapshot" value={formatShippingPackageWeight(order)} />
+              <DetailStat label="Package profile snapshot" value={formatShippingPackageProfile(order)} />
+              <DetailStat label="Package dimensions snapshot" value={formatShippingPackageDimensions(order)} />
+              <DetailStat label="Actual shipping cost" value={money(order.shippingCost)} />
+              <DetailStat label="Shipping profit/loss" value={moneyDelta(shippingProfitLoss)} tone={shippingProfitTone} />
+              <DetailStat label="Carrier" value={order.carrier || "Not provided"} />
+              <DetailStat label="Tracking number" value={order.trackingNumber || "Not provided"} />
+              <DetailStat label="Fulfillment status" value={formatStatus(order.fulfillmentStatus)} tone={shippingActionsLocked ? "bad" : order.needsFulfillment ? "good" : "neutral"} />
+              <DetailStat label="Shipping warnings" value={order.shippingWarnings.length ? order.shippingWarnings.join(" ") : "None"} />
+            </div>
+            <form
+              className="form-grid compact storefront-shipping-form"
+              onSubmit={(event) =>
+                submit(
+                  event,
+                  saveLabel,
+                  (form) => requestJson(`/api/radar/storefront/orders/${order.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
+                  { reset: false, success: "Shipping updated" }
+                )
+              }
+            >
+              <SelectInput
+                name="fulfillmentStatus"
+                label="Fulfillment status"
+                defaultValue={order.fulfillmentStatus}
+                disabled={shippingActionsLocked}
+                options={["inquiry", "unfulfilled", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
+              />
+              <TextInput name="carrier" label="Carrier" defaultValue={order.carrier ?? ""} />
+              <TextInput name="trackingNumber" label="Tracking number" defaultValue={order.trackingNumber ?? ""} />
+              <TextInput name="shippingCost" label="Actual shipping cost" type="number" min="0" step="0.01" defaultValue={order.shippingCost || ""} />
+              <button className="primary-action" disabled={busy} type="submit">
+                <Save size={16} />
+                {busyLabel === saveLabel ? "Saving" : "Save Shipping"}
+              </button>
+            </form>
+          </section>
           <section>
             <h3>Items</h3>
             <div className="storefront-order-items">
@@ -6835,12 +6935,10 @@ function StorefrontOrderDetailsModal({
             <h3>Totals</h3>
             <div className="detail-stat-grid">
               <DetailStat label="Subtotal" value={money(order.subtotal)} />
-              <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
               <DetailStat label="Total paid" value={money(order.total)} tone="good" />
               <DetailStat label="Refunded amount" value={money(order.refundedAmount)} tone={order.refundedAmount > 0 ? "bad" : "neutral"} />
               <DetailStat label="Net revenue" value={money(storefrontOrderNetRevenue(order))} tone={storefrontOrderNetRevenue(order) > 0 ? "good" : "neutral"} />
               <DetailStat label="Estimated Stripe fee" value={money(order.stripeFeeEstimate)} />
-              <DetailStat label="Actual shipping cost" value={money(order.shippingCost)} />
               <DetailStat label="Cost basis" value={money(order.costBasis)} />
               <DetailStat label="Estimated net profit" value={money(order.netProfit)} tone={order.netProfit >= 0 ? "good" : "bad"} />
               <DetailStat label="ROI" value={percent(order.roiPercent)} />
@@ -6906,7 +7004,7 @@ function StorefrontOrderDetailsModal({
               ))}
             </div>
           </section>
-          <section className="wide">
+          <section className="storefront-order-notes-section">
             <h3>Fulfillment</h3>
             <form
               className="form-grid compact"
@@ -6925,15 +7023,6 @@ function StorefrontOrderDetailsModal({
                 defaultValue={order.status}
                 options={["contact_message", "invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].map(optionFromString)}
               />
-              <SelectInput
-                name="fulfillmentStatus"
-                label="Fulfillment status"
-                defaultValue={order.fulfillmentStatus}
-                options={["inquiry", "unfulfilled", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
-              />
-              <TextInput name="carrier" label="Carrier" defaultValue={order.carrier ?? ""} />
-              <TextInput name="trackingNumber" label="Tracking number" defaultValue={order.trackingNumber ?? ""} />
-              <TextInput name="shippingCost" label="Actual shipping cost" type="number" min="0" step="0.01" defaultValue={order.shippingCost || ""} />
               <TextareaInput name="notes" label="Order notes" defaultValue={order.notes ?? ""} wide />
               <button className="primary-action" disabled={busy} type="submit">
                 <Save size={16} />
@@ -9680,7 +9769,8 @@ function StoreListingModal({
     { label: "Quantity available", complete: availableForSale >= 0 },
     { label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
     { label: "Description clean", complete: descriptionWarnings.length === 0 },
-    { label: "Category set", complete: Boolean(suggestedCategory.trim()) }
+    { label: "Category set", complete: Boolean(suggestedCategory.trim()) },
+    { label: "Shipping profile set", complete: !item.needsShippingProfile }
   ];
   const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
   return (
@@ -9802,16 +9892,75 @@ function StoreListingModal({
             <span>Images and shipping</span>
             <h3>Public image and delivery options</h3>
             <ProductImageGalleryManager item={item} runAction={runAction} context="storefront" />
-            <div className="form-grid compact">
-              <TextInput name="shippingProfile" label="Shipping profile" defaultValue={item.shippingProfile || "standard"} />
-              <label className="checkbox-label">
-                <input name="shippingAvailable" type="checkbox" value="true" defaultChecked={item.shippingAvailable} />
-                Shipping available
-              </label>
-              <label className="checkbox-label">
-                <input name="localPickupAvailable" type="checkbox" value="true" defaultChecked={item.localPickupAvailable} />
-                Local pickup available
-              </label>
+            <div className="shipping-profile-card">
+              <div className="shipping-profile-card-head">
+                <div>
+                  <strong>Shipping profile</strong>
+                  <span>Used to estimate customer shipping at checkout.</span>
+                </div>
+                {item.needsShippingProfile ? <span className="shipping-profile-status">Needs shipping profile</span> : <span className="shipping-profile-status complete">Profile ready</span>}
+              </div>
+              <p className="shipping-profile-helper">Leave blank to use the safe default profile, but complete this for more accurate shipping. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
+              <div className="shipping-profile-fields">
+                <SelectInput
+                  name="shippingProfile"
+                  label="Shipping profile"
+                  defaultValue={item.shippingProfile || "standard"}
+                  options={[
+                    { value: "standard", label: "Safe default profile" },
+                    { value: "single_card_or_light_item", label: "Single card / light item" },
+                    { value: "sealed_pack_small", label: "Sealed pack small" },
+                    { value: "small_box", label: "Small box" },
+                    { value: "medium_box", label: "Medium box" },
+                    { value: "large_box", label: "Large box" },
+                    { value: "heavy_box", label: "Heavy box" },
+                    { value: "local_pickup", label: "Local pickup only / eligible" }
+                  ]}
+                />
+                <div className="shipping-package-grid">
+                  <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0" step="0.1" defaultValue={item.packageWeightOz ?? ""} />
+                  <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0" step="0.1" defaultValue={item.packageLengthIn ?? ""} />
+                  <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0" step="0.1" defaultValue={item.packageWidthIn ?? ""} />
+                  <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0" step="0.1" defaultValue={item.packageHeightIn ?? ""} />
+                </div>
+                <div className="shipping-option-grid">
+                  <label className="shipping-toggle-card">
+                    <input name="shippingAvailable" type="checkbox" value="true" defaultChecked={item.shippingAvailable} />
+                    <span>
+                      <strong>Shipping available</strong>
+                      <small>Allow this listing to be shipped.</small>
+                    </span>
+                  </label>
+                  <label className="shipping-toggle-card">
+                    <input name="localPickupAvailable" type="checkbox" value="true" defaultChecked={item.localPickupAvailable} />
+                    <span>
+                      <strong>Local pickup eligible</strong>
+                      <small>Allow a local pickup option when available.</small>
+                    </span>
+                  </label>
+                  <label className="shipping-toggle-card">
+                    <input name="freeShippingEligible" type="checkbox" value="true" defaultChecked={item.freeShippingEligible} />
+                    <span>
+                      <strong>Free shipping eligible</strong>
+                      <small>Can participate in future free-shipping rules.</small>
+                    </span>
+                  </label>
+                  <label className="shipping-toggle-card">
+                    <input name="requiresBox" type="checkbox" value="true" defaultChecked={item.requiresBox} />
+                    <span>
+                      <strong>Requires box</strong>
+                      <small>Use boxed-package handling for fragile or sealed items.</small>
+                    </span>
+                  </label>
+                  <label className="shipping-toggle-card">
+                    <input name="insuranceRecommended" type="checkbox" value="true" defaultChecked={item.insuranceRecommended} />
+                    <span>
+                      <strong>Insurance recommended</strong>
+                      <small>Flag higher-value shipments for admin review.</small>
+                    </span>
+                  </label>
+                </div>
+              </div>
             </div>
           </section>
           <div className="inventory-edit-actions">
