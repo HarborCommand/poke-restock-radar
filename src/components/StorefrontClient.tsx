@@ -1443,6 +1443,11 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <span>Shipping is estimated from product weight and package size.</span>
               <span>Final shipping is shown before payment.</span>
             </div>
+            <div className="gdg-shipping-checkout-note">
+              <Lock size={16} />
+              <span>Items are not reserved until checkout starts.</span>
+              <span>Availability is confirmed before payment.</span>
+            </div>
             {settings.freeShippingThreshold !== null && freeShippingRemaining !== null && subtotal > 0 ? (
               <div className="gdg-free-shipping">
                 <strong>{freeShippingRemaining > 0 ? `You\u2019re only ${money(freeShippingRemaining)} away from free shipping!` : "Free shipping unlocked!"}</strong>
@@ -1459,8 +1464,14 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
             <button className="gdg-primary-button wide gdg-checkout-button" type="button" disabled={checkoutDisabled} onClick={checkout}>
               <Lock size={17} />
               <span>
-                {busy ? "Working..." : isStripeCheckout ? "Proceed to Checkout" : "Request Invoice"}
-                <small>{isStripeCheckout ? "Secure payment powered by Stripe." : "No card is charged today."}</small>
+                {busy ? (isStripeCheckout ? "Holding items..." : "Working...") : isStripeCheckout ? "Proceed to Checkout" : "Request Invoice"}
+                <small>
+                  {busy && isStripeCheckout
+                    ? "Your items are held for 15 minutes while you complete checkout."
+                    : isStripeCheckout
+                      ? "Secure payment powered by Stripe."
+                      : "No card is charged today."}
+                </small>
               </span>
               <ChevronRight size={18} />
             </button>

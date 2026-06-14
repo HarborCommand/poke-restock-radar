@@ -1130,19 +1130,21 @@ model StorefrontOrderItem {
 }
 
 model StockReservation {
-  id              String           @id @default(cuid())
-  inventoryItemId String
-  orderId         String?
-  quantity        Int
-  status          String           @default("reserved")
-  expiresAt       DateTime
-  createdAt       DateTime         @default(now())
-  releasedAt      DateTime?
-  inventoryItem   InventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
-  order           StorefrontOrder? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id                      String           @id @default(cuid())
+  inventoryItemId         String
+  orderId                 String?
+  stripeCheckoutSessionId String?
+  quantity                Int
+  status                  String           @default("reserved")
+  expiresAt               DateTime
+  createdAt               DateTime         @default(now())
+  releasedAt              DateTime?
+  inventoryItem           InventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  order                   StorefrontOrder? @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([inventoryItemId])
   @@index([orderId])
+  @@index([stripeCheckoutSessionId])
   @@index([status])
   @@index([expiresAt])
 }

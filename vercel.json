@@ -7,6 +7,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/radar/storefront/reservations/expire",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/radar/releases/sync/cron",
       "schedule": "0 10 * * *"
     },

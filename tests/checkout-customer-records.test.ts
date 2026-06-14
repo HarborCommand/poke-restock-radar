@@ -52,10 +52,25 @@ test("Stripe Checkout session creation only creates temporary stock reservations
     "export async function createCheckoutSession",
     "export async function createInvoiceRequest"
   );
+  const sessionCreateParams = sourceSlice(
+    createCheckoutSession,
+    "const session = await stripe.checkout.sessions.create({",
+    "    });"
+  );
 
   assert.match(createCheckoutSession, /const cart = await getCartProducts\(input\.items\)/);
-  assert.match(createCheckoutSession, /reservations: \{\s*create: cart\.map/);
-  assert.match(createCheckoutSession, /expiresAt: new Date\(Date\.now\(\) \+ reservationMinutes \* 60 \* 1000\)/);
+  assert.match(storefront, /const reservationMinutes = 15/);
+  assert.match(storefront, /const stripeCheckoutExpirationMinutes = 30/);
+  assert.match(storefront, /function checkoutReservationExpiresAt\(now = new Date\(\)\)/);
+  assert.match(storefront, /function stripeCheckoutSessionExpiresAt\(now = new Date\(\)\)/);
+  assert.match(storefront, /async function createCheckoutReservations/);
+  assert.match(createCheckoutSession, /const checkoutStartedAt = new Date\(\)/);
+  assert.match(createCheckoutSession, /const reservationExpiresAt = checkoutReservationExpiresAt\(checkoutStartedAt\)/);
+  assert.match(createCheckoutSession, /await createCheckoutReservations\(tx, created\.id, cart, reservationExpiresAt\)/);
+  assert.match(createCheckoutSession, /internalReservationExpiresAt: reservationExpiresAt\.toISOString\(\)/);
+  assert.match(createCheckoutSession, /internalReservationMinutes: String\(reservationMinutes\)/);
+  assert.match(sessionCreateParams, /expires_at: stripeCheckoutSessionExpiresAt\(checkoutStartedAt\)/);
+  assert.match(createCheckoutSession, /data: \{ stripeCheckoutSessionId: session\.id \}/);
   assert.match(createCheckoutSession, /cancel_url: `\$\{checkoutBaseUrl\}\/checkout\/cancel\?order=\$\{order\.id\}`/);
   assert.doesNotMatch(createCheckoutSession, /prisma\.inventorySale\.create/);
   assert.doesNotMatch(createCheckoutSession, /prisma\.inventoryStockLot\.update/);
@@ -69,7 +84,7 @@ test("cart availability refresh is read-only and unpaid reservations do not appe
   const sellableQuantity = sourceSlice(storefront, "function sellableQuantity", "function publicCategoryForItem");
   const listPublicStoreProducts = sourceSlice(storefront, "export async function listPublicStoreProducts", "export async function getPublicStoreProduct");
   const getPublicStoreProduct = sourceSlice(storefront, "export async function getPublicStoreProduct", "export async function getCartProducts");
-  const getCartProducts = sourceSlice(storefront, "export async function getCartProducts", "function stripeClient");
+  const getCartProducts = sourceSlice(storefront, "export async function getCartProducts", "function checkoutReservationExpiresAt");
   const createCheckoutSession = sourceSlice(
     storefront,
     "export async function createCheckoutSession",
@@ -85,7 +100,8 @@ test("cart availability refresh is read-only and unpaid reservations do not appe
     assert.doesNotMatch(readPath, /prisma\.inventorySale\.create|prisma\.inventoryStockLot\.update|quantitySold:|remainingQuantity:\s*lot\.remainingQuantity -/);
   }
 
-  assert.match(createCheckoutSession, /await releaseExpiredReservations\(\);\s+const cart = await getCartProducts\(input\.items\)/);
+  assert.match(createCheckoutSession, /await cleanupExpiredReservationsForCheckoutOnly\(checkoutStartedAt\);\s+const cart = await getCartProducts\(input\.items\)/);
+  assert.match(createCheckoutSession, /validateCheckoutReservationAvailability\(cart, checkoutStartedAt\)/);
   assert.doesNotMatch(getCartProducts, /reservations:\s*\{\s*create/);
 });
 
@@ -157,8 +173,12 @@ test("paid checkout completion is the permanent inventory decrement path", () =>
   assert.match(createStorefrontSale, /remainingQuantity: lot\.remainingQuantity - quantityFromLot/);
   assert.match(createStorefrontSale, /tx\.inventorySale\.create/);
   assert.match(createStorefrontSale, /quantitySold: orderItem\.quantity/);
-  assert.match(createStorefrontSale, /tx\.stockReservation\.updateMany/);
-  assert.match(createStorefrontSale, /data: \{ status: "completed" \}/);
+  assert.match(createStorefrontSale, /completeReservationsForSessionInTransaction\(tx, order\.stripeCheckoutSessionId, order\.id\)/);
+  assert.match(storefront, /export async function completeReservationsForSession\(stripeCheckoutSessionId: string \| null \| undefined, orderId\?: string \| null\)/);
+  assert.match(storefront, /data: \{ status: "completed" \}/);
+  assert.match(createStorefrontSale, /status: "inventory_review"/);
+  assert.match(createStorefrontSale, /fulfillmentStatus: "review_required"/);
+  assert.match(createStorefrontSale, /Paid order needs inventory review/);
 });
 
 test("unpaid, expired, or canceled checkouts release reservations without recording paid inventory sales", () => {
@@ -177,11 +197,11 @@ test("unpaid, expired, or canceled checkouts release reservations without record
     "export async function updateInventoryStoreListing"
   );
 
-  assert.match(releaseOrderReservations, /prisma\.stockReservation\.updateMany/);
-  assert.match(releaseOrderReservations, /where: \{ orderId, status: "reserved" \}/);
-  assert.match(releaseOrderReservations, /data: \{ status: "released", releasedAt: new Date\(\) \}/);
-  assert.match(markStorefrontOrderPaymentFailed, /if \(order\.paymentStatus === "paid" \|\| order\.paymentStatus === paymentStatus\) return/);
-  assert.match(markStorefrontOrderPaymentFailed, /await releaseOrderReservations\(order\.id\)/);
+  assert.match(releaseOrderReservations, /return releaseReservationsForSession\(null, orderId\)/);
+  assert.match(storefront, /export async function releaseReservationsForSession\(stripeCheckoutSessionId: string \| null \| undefined, orderId\?: string \| null, now = new Date\(\)\)/);
+  assert.match(storefront, /data: \{ status: "released", releasedAt: now \}/);
+  assert.match(markStorefrontOrderPaymentFailed, /if \(order\.paymentStatus === "paid"\) return \{ released: 0, skipped: "already_paid" as const \}/);
+  assert.match(markStorefrontOrderPaymentFailed, /await releaseReservationsForSession\(order\.stripeCheckoutSessionId, order\.id\)/);
   assert.match(handleStripeWebhook, /event\.type === "checkout\.session\.expired"/);
   assert.match(handleStripeWebhook, /markStorefrontOrderPaymentFailed\(order, "expired"/);
   assert.match(handleStripeWebhook, /event\.type === "checkout\.session\.async_payment_failed" \|\| event\.type === "payment_intent\.payment_failed"/);
@@ -190,6 +210,30 @@ test("unpaid, expired, or canceled checkouts release reservations without record
   assert.match(releaseUnpaidCheckoutOrder, /await markStorefrontOrderPaymentFailed\(order, "failed", "Stripe Checkout was canceled before payment completed\."\)/);
   assert.doesNotMatch(releaseUnpaidCheckoutOrder, /prisma\.inventorySale\.create|prisma\.inventoryStockLot\.update|paymentStatus: "paid"/);
   assert.match(cancelPage, /releaseUnpaidCheckoutOrder\(params\.order\)/);
+  assert.match(cancelPage, /Your checkout session expired\. Your items were released back to inventory\. You can start checkout again if they are still available\./);
+});
+
+test("15-minute checkout holds are expired by a protected reservation cron without touching real stock", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const route = readProjectFile("src/app/api/radar/storefront/reservations/expire/route.ts");
+  const vercel = readProjectFile("vercel.json");
+  const expireHelper = sourceSlice(storefront, "export async function expireOpenStripeSessionsForExpiredReservations", "export async function releaseUnpaidCheckoutOrder");
+
+  assert.match(expireHelper, /where: \{ status: "reserved", expiresAt: \{ lte: now \} \}/);
+  assert.match(expireHelper, /stripe\.checkout\.sessions\.retrieve\(group\.stripeCheckoutSessionId\)/);
+  assert.match(expireHelper, /session\.status === "open"/);
+  assert.match(expireHelper, /stripe\.checkout\.sessions\.expire\(group\.stripeCheckoutSessionId\)/);
+  assert.match(expireHelper, /markStorefrontOrderPaymentFailed\(order, "expired", "GameDayGrabs 15-minute checkout reservation expired\."\)/);
+  assert.match(expireHelper, /releaseReservationsForSession\(group\.stripeCheckoutSessionId, group\.orderId\)/);
+  assert.doesNotMatch(expireHelper, /inventoryStockLot\.update|inventoryItem\.update|inventorySale\.create|quantitySold|remainingQuantity:\s*lot\.remainingQuantity -/);
+
+  assert.match(route, /MONITOR_JOB_SECRET/);
+  assert.match(route, /CRON_SECRET/);
+  assert.match(route, /expireOpenStripeSessionsForExpiredReservations/);
+  assert.match(route, /export async function GET/);
+  assert.match(route, /export async function POST/);
+  assert.match(vercel, /"path": "\/api\/radar\/storefront\/reservations\/expire"/);
+  assert.match(vercel, /"schedule": "\*\/5 \* \* \* \*"/);
 });
 
 test("duplicate Stripe sessions and events do not duplicate orders or customer totals", () => {

@@ -17,6 +17,7 @@ import type {
 } from "@/types/radar";
 
 const reservationMinutes = 15;
+const stripeCheckoutExpirationMinutes = 30;
 const stripeShippingAllowedCountries = ["US"] satisfies Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[];
 
 const storefrontInventoryInclude = {
@@ -79,6 +80,10 @@ const storefrontOrderInclude = {
 type StorefrontInventoryItem = Prisma.InventoryItemGetPayload<{ include: typeof storefrontInventoryInclude }>;
 type StorefrontOrderWithItems = Prisma.StorefrontOrderGetPayload<{ include: typeof storefrontOrderInclude }>;
 type StorefrontOrderItemWithInventory = StorefrontOrderWithItems["items"][number];
+type ReservationSessionKey = {
+  stripeCheckoutSessionId?: string | null;
+  orderId?: string | null;
+};
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -237,11 +242,15 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
   };
 }
 
-export async function releaseExpiredReservations() {
-  await prisma.stockReservation.updateMany({
-    where: { status: "reserved", expiresAt: { lte: new Date() } },
-    data: { status: "released", releasedAt: new Date() }
+export async function cleanupExpiredReservationsForCheckoutOnly(now = new Date()) {
+  return prisma.stockReservation.updateMany({
+    where: { status: "reserved", expiresAt: { lte: now } },
+    data: { status: "released", releasedAt: now }
   });
+}
+
+export async function releaseExpiredReservations() {
+  return cleanupExpiredReservationsForCheckoutOnly();
 }
 
 export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
@@ -318,6 +327,99 @@ export async function getCartProducts(items: Array<{ id: string; quantity: numbe
     if (strict && requestedQuantity > product.availableQuantity) throw new Error(`Only ${product.availableQuantity} available for ${product.title}.`);
     if (strict && requestedQuantity > product.maxQuantityPerOrder) throw new Error(`Max ${product.maxQuantityPerOrder} per order for ${product.title}.`);
     return { item, product, quantity: requestedQuantity };
+  });
+}
+
+function checkoutReservationExpiresAt(now = new Date()) {
+  return new Date(now.getTime() + reservationMinutes * 60 * 1000);
+}
+
+function stripeCheckoutSessionExpiresAt(now = new Date()) {
+  return Math.floor((now.getTime() + stripeCheckoutExpirationMinutes * 60 * 1000) / 1000);
+}
+
+function activeReservedQuantityFromItem(item: StorefrontInventoryItem, now = new Date()) {
+  return item.stockReservations
+    .filter((reservation) => reservation.status === "reserved" && reservation.expiresAt > now)
+    .reduce((sum, reservation) => sum + reservation.quantity, 0);
+}
+
+export async function getActiveReservedQuantity(inventoryItemId: string, now = new Date()) {
+  const aggregate = await prisma.stockReservation.aggregate({
+    where: {
+      inventoryItemId,
+      status: "reserved",
+      expiresAt: { gt: now }
+    },
+    _sum: { quantity: true }
+  });
+  return aggregate._sum.quantity ?? 0;
+}
+
+function checkoutAvailableQuantity(item: StorefrontInventoryItem, now = new Date()) {
+  return Math.max(0, sellableQuantity(item) - activeReservedQuantityFromItem(item, now));
+}
+
+type CheckoutCartEntry = Awaited<ReturnType<typeof getCartProducts>>[number];
+
+function validateCheckoutReservationAvailability(cart: CheckoutCartEntry[], now = new Date()) {
+  for (const { item, product, quantity } of cart) {
+    const availableAfterActiveReservations = checkoutAvailableQuantity(item, now);
+    if (quantity > availableAfterActiveReservations) {
+      throw new Error("This item is temporarily held in another checkout. Please try again shortly.");
+    }
+    if (quantity > sellableQuantity(item)) {
+      throw new Error(`Only ${product.availableQuantity} available for ${product.title}.`);
+    }
+  }
+}
+
+async function createCheckoutReservations(tx: Prisma.TransactionClient, orderId: string, cart: CheckoutCartEntry[], expiresAt: Date) {
+  return tx.stockReservation.createMany({
+    data: cart.map(({ item, quantity }) => ({
+      inventoryItemId: item.id,
+      orderId,
+      quantity,
+      expiresAt
+    }))
+  });
+}
+
+function reservationSessionWhere(input: ReservationSessionKey, statuses = ["reserved"]) {
+  const selectors: Prisma.StockReservationWhereInput[] = [];
+  if (input.stripeCheckoutSessionId) selectors.push({ stripeCheckoutSessionId: input.stripeCheckoutSessionId });
+  if (input.orderId) selectors.push({ orderId: input.orderId });
+  if (!selectors.length) return null;
+  return {
+    status: statuses.length === 1 ? statuses[0] : { in: statuses },
+    OR: selectors
+  } satisfies Prisma.StockReservationWhereInput;
+}
+
+async function completeReservationsForSessionInTransaction(tx: Prisma.TransactionClient, stripeCheckoutSessionId: string | null | undefined, orderId?: string | null) {
+  const where = reservationSessionWhere({ stripeCheckoutSessionId, orderId }, ["reserved", "released"]);
+  if (!where) return { count: 0 };
+  return tx.stockReservation.updateMany({
+    where,
+    data: { status: "completed" }
+  });
+}
+
+export async function completeReservationsForSession(stripeCheckoutSessionId: string | null | undefined, orderId?: string | null) {
+  const where = reservationSessionWhere({ stripeCheckoutSessionId, orderId }, ["reserved", "released"]);
+  if (!where) return { count: 0 };
+  return prisma.stockReservation.updateMany({
+    where,
+    data: { status: "completed" }
+  });
+}
+
+export async function releaseReservationsForSession(stripeCheckoutSessionId: string | null | undefined, orderId?: string | null, now = new Date()) {
+  const where = reservationSessionWhere({ stripeCheckoutSessionId, orderId });
+  if (!where) return { count: 0 };
+  return prisma.stockReservation.updateMany({
+    where,
+    data: { status: "released", releasedAt: now }
   });
 }
 
@@ -608,6 +710,7 @@ function orderStatusBadge(order: StorefrontOrderWithItems) {
   if (order.paymentStatus === "refund_failed" || order.status === "refund_failed") return "Refund Failed";
   if (order.paymentStatus === "refund_pending" || order.status === "refund_pending") return "Refund Pending";
   if (order.paymentStatus === "partially_refunded" || order.status === "partially_refunded") return "Partially Refunded";
+  if (order.status === "inventory_review" || order.fulfillmentStatus === "review_required") return "Inventory Review";
   if (order.paymentStatus === "refunded" || order.status === "refunded") return "Refunded";
   if (order.status === "canceled") return "Canceled";
   if (order.paymentStatus === "expired") return "Expired";
@@ -740,6 +843,7 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     reservations: order.reservations.map((reservation) => ({
       id: reservation.id,
       inventoryItemId: reservation.inventoryItemId,
+      stripeCheckoutSessionId: reservation.stripeCheckoutSessionId,
       quantity: reservation.quantity,
       status: reservation.status,
       expiresAt: reservation.expiresAt.toISOString(),
@@ -766,8 +870,11 @@ export async function createCheckoutSession(input: {
   }
   const checkoutBaseUrl = storefrontCheckoutBaseUrl(options.requestUrl);
   const settings = await getStorefrontSettings();
-  await releaseExpiredReservations();
+  const checkoutStartedAt = new Date();
+  const reservationExpiresAt = checkoutReservationExpiresAt(checkoutStartedAt);
+  await cleanupExpiredReservationsForCheckoutOnly(checkoutStartedAt);
   const cart = await getCartProducts(input.items);
+  validateCheckoutReservationAvailability(cart, checkoutStartedAt);
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
   const shippingCalculation = calculateCartShipping(
     cart.map(({ item, quantity }) => ({ ...item, quantity })),
@@ -785,50 +892,52 @@ export async function createCheckoutSession(input: {
   if (!checkoutShippingOptions.length) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");
   const shippingCharged = selectedShipping.amount;
   const total = subtotal + shippingCharged;
-  const order = await prisma.storefrontOrder.create({
-    data: {
-      orderNumber: orderNumber(),
-      userId: cart[0]?.item.userId ?? null,
-      customerEmail: input.customerEmail,
-      customerName: input.customerName,
-      subtotal,
-      shippingCharged,
-      shippingMethodLabel: selectedShipping.label,
-      shippingRateSource: selectedShipping.rateSource,
-      shippingPackageWeightOz: shippingCalculation.totalWeightOz,
-      shippingPackageProfile: shippingCalculation.packageProfile,
-      shippingWarnings: stringifyList(shippingCalculation.warnings),
-      total,
-      stripeFeeEstimate: estimateStripeFee(total),
-      items: {
-        create: cart.map(({ product, item, quantity }) => ({
-          inventoryItemId: item.id,
-          publicTitle: product.title,
-          publicSlug: product.slug,
-          imageUrl: product.imageUrl,
-          quantity,
-          unitPrice: product.price,
-          lineTotal: product.price * quantity
-        }))
-      },
-      reservations: {
-        create: cart.map(({ item, quantity }) => ({
-          inventoryItemId: item.id,
-          quantity,
-          expiresAt: new Date(Date.now() + reservationMinutes * 60 * 1000)
-        }))
+  const order = await prisma.$transaction(async (tx) => {
+    const created = await tx.storefrontOrder.create({
+      data: {
+        orderNumber: orderNumber(),
+        userId: cart[0]?.item.userId ?? null,
+        customerEmail: input.customerEmail,
+        customerName: input.customerName,
+        subtotal,
+        shippingCharged,
+        shippingMethodLabel: selectedShipping.label,
+        shippingRateSource: selectedShipping.rateSource,
+        shippingPackageWeightOz: shippingCalculation.totalWeightOz,
+        shippingPackageProfile: shippingCalculation.packageProfile,
+        shippingWarnings: stringifyList(shippingCalculation.warnings),
+        total,
+        stripeFeeEstimate: estimateStripeFee(total),
+        items: {
+          create: cart.map(({ product, item, quantity }) => ({
+            inventoryItemId: item.id,
+            publicTitle: product.title,
+            publicSlug: product.slug,
+            imageUrl: product.imageUrl,
+            quantity,
+            unitPrice: product.price,
+            lineTotal: product.price * quantity
+          }))
+        }
       }
-    },
-    include: storefrontOrderInclude
+    });
+    await createCheckoutReservations(tx, created.id, cart, reservationExpiresAt);
+    return tx.storefrontOrder.findUniqueOrThrow({
+      where: { id: created.id },
+      include: storefrontOrderInclude
+    });
   });
   const metadata = {
     orderId: order.id,
     orderNumber: order.orderNumber,
     inventoryProductIds: order.items.map((item) => item.inventoryItemId).join(","),
-    quantities: order.items.map((item) => item.quantity).join(",")
+    quantities: order.items.map((item) => item.quantity).join(","),
+    internalReservationExpiresAt: reservationExpiresAt.toISOString(),
+    internalReservationMinutes: String(reservationMinutes)
   };
+  const stripe = stripeClient();
+  let createdSession: Stripe.Checkout.Session | null = null;
   try {
-    const stripe = stripeClient();
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: input.customerEmail,
@@ -839,6 +948,7 @@ export async function createCheckoutSession(input: {
         allowed_countries: stripeShippingAllowedCountries
       },
       shipping_options: checkoutShippingOptions,
+      expires_at: stripeCheckoutSessionExpiresAt(checkoutStartedAt),
       line_items: [
         ...order.items.map((item) => ({
           quantity: item.quantity,
@@ -859,17 +969,28 @@ export async function createCheckoutSession(input: {
       success_url: `${checkoutBaseUrl}/checkout/success?order=${order.id}&number=${encodeURIComponent(order.orderNumber)}`,
       cancel_url: `${checkoutBaseUrl}/checkout/cancel?order=${order.id}`
     });
-    const updated = await prisma.storefrontOrder.update({
-      where: { id: order.id },
-      data: { stripeCheckoutSessionId: session.id },
-      include: storefrontOrderInclude
+    createdSession = session;
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.stockReservation.updateMany({
+        where: { orderId: order.id, status: "reserved" },
+        data: { stripeCheckoutSessionId: session.id }
+      });
+      return tx.storefrontOrder.update({
+        where: { id: order.id },
+        data: { stripeCheckoutSessionId: session.id },
+        include: storefrontOrderInclude
+      });
     });
     return { order: storefrontOrderToDTO(updated), checkoutUrl: session.url };
   } catch (error) {
-    await prisma.stockReservation.updateMany({
-      where: { orderId: order.id, status: "reserved" },
-      data: { status: "released", releasedAt: new Date() }
-    });
+    if (createdSession?.id) {
+      try {
+        await stripe.checkout.sessions.expire(createdSession.id);
+      } catch {
+        // The session may already be complete or expired; local holds are still released below.
+      }
+    }
+    await releaseReservationsForSession(createdSession?.id ?? null, order.id);
     await prisma.storefrontOrder.update({
       where: { id: order.id },
       data: {
@@ -1136,10 +1257,59 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
         paidAt
       }
     });
-    if (claimed.count === 0) return { created: false, allocationIssues: [] as string[] };
+    if (claimed.count === 0) return { created: false, allocationIssues: [] as string[], inventoryReviewIssues: [] as string[], lateReservationWarnings: [] as string[] };
 
     let orderCostBasis = 0;
     const allocationIssues: string[] = [];
+    const inventoryReviewIssues: string[] = [];
+    const lateReservationWarnings: string[] = [];
+    const reservationWasActiveAtPayment =
+      order.reservations.length === 0 || order.reservations.some((reservation) => reservation.status === "reserved" && reservation.expiresAt > paidAt);
+
+    for (const orderItem of order.items) {
+      const inventory = await tx.inventoryItem.findUnique({
+        where: { id: orderItem.inventoryItemId },
+        include: { stockLots: true, sales: true }
+      });
+      if (!inventory) {
+        inventoryReviewIssues.push(`${orderItem.publicTitle} is no longer present in inventory. Review before fulfillment.`);
+        continue;
+      }
+      const availableForFinalization = inventory.stockLots.length
+        ? inventory.stockLots.reduce((sum, lot) => sum + Math.max(0, lot.remainingQuantity), 0)
+        : Math.max(0, inventory.quantity - inventory.sales.reduce((sum, sale) => sum + sale.quantitySold, 0));
+      if (orderItem.quantity > availableForFinalization) {
+        inventoryReviewIssues.push(
+          `${orderItem.publicTitle} paid after the checkout hold was unavailable. Requested ${orderItem.quantity}, available ${availableForFinalization}.`
+        );
+      }
+    }
+
+    if (inventoryReviewIssues.length) {
+      await tx.storefrontOrder.update({
+        where: { id: order.id },
+        data: {
+          status: "inventory_review",
+          paymentStatus: "paid",
+          fulfillmentStatus: "review_required",
+          paidAt,
+          notes: [
+            order.notes,
+            "Payment completed, but stock could not be safely finalized without review. Do not fulfill until inventory is reconciled."
+          ]
+            .filter(Boolean)
+            .join("\n")
+        }
+      });
+      return { created: false, allocationIssues, inventoryReviewIssues, lateReservationWarnings };
+    }
+
+    if (!reservationWasActiveAtPayment) {
+      lateReservationWarnings.push(
+        `Storefront order ${order.orderNumber} completed payment after the 15-minute reservation window. Stock was still available and was finalized.`
+      );
+    }
+
     for (const orderItem of order.items) {
       const inventory = await tx.inventoryItem.findUnique({
         where: { id: orderItem.inventoryItemId },
@@ -1205,13 +1375,19 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
         paidAt
       }
     });
-    await tx.stockReservation.updateMany({
-      where: { orderId: order.id, status: "reserved" },
-      data: { status: "completed" }
-    });
-    return { created: true, allocationIssues };
+    await completeReservationsForSessionInTransaction(tx, order.stripeCheckoutSessionId, order.id);
+    return { created: true, allocationIssues, inventoryReviewIssues, lateReservationWarnings };
   });
 
+  for (const reason of result.inventoryReviewIssues) {
+    await createStorefrontOrderAlert(order, {
+      type: "inventory_issue",
+      title: "Paid order needs inventory review",
+      reason,
+      priority: "HIGH",
+      score: 98
+    });
+  }
   if (!result.created) return;
   for (const reason of result.allocationIssues) {
     await createStorefrontOrderAlert(order, {
@@ -1220,6 +1396,15 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
       reason,
       priority: "HIGH",
       score: 95
+    });
+  }
+  for (const reason of result.lateReservationWarnings) {
+    await createStorefrontOrderAlert(order, {
+      type: "inventory_issue",
+      title: "Late checkout completion",
+      reason,
+      priority: "MEDIUM",
+      score: 82
     });
   }
   await createStorefrontOrderAlert(order, {
@@ -1232,15 +1417,13 @@ async function createStorefrontSale(order: StorefrontOrderWithItems) {
 }
 
 async function releaseOrderReservations(orderId: string) {
-  return prisma.stockReservation.updateMany({
-    where: { orderId, status: "reserved" },
-    data: { status: "released", releasedAt: new Date() }
-  });
+  return releaseReservationsForSession(null, orderId);
 }
 
 async function markStorefrontOrderPaymentFailed(order: StorefrontOrderWithItems, paymentStatus: "failed" | "expired", note?: string) {
-  if (order.paymentStatus === "paid" || order.paymentStatus === paymentStatus) return;
-  await releaseOrderReservations(order.id);
+  if (order.paymentStatus === "paid") return { released: 0, skipped: "already_paid" as const };
+  const released = await releaseReservationsForSession(order.stripeCheckoutSessionId, order.id);
+  if (order.paymentStatus === paymentStatus) return { released: released.count, skipped: "already_marked" as const };
   await prisma.storefrontOrder.update({
     where: { id: order.id },
     data: {
@@ -1257,6 +1440,87 @@ async function markStorefrontOrderPaymentFailed(order: StorefrontOrderWithItems,
     priority: "MEDIUM",
     score: 75
   });
+  return { released: released.count, skipped: null };
+}
+
+export async function expireOpenStripeSessionsForExpiredReservations(now = new Date()) {
+  const expiredReservations = await prisma.stockReservation.findMany({
+    where: { status: "reserved", expiresAt: { lte: now } },
+    select: {
+      orderId: true,
+      stripeCheckoutSessionId: true,
+      order: {
+        select: {
+          id: true,
+          stripeCheckoutSessionId: true
+        }
+      }
+    }
+  });
+  const groups = new Map<string, { orderId: string | null; stripeCheckoutSessionId: string | null }>();
+  for (const reservation of expiredReservations) {
+    const orderId = reservation.orderId ?? reservation.order?.id ?? null;
+    const stripeCheckoutSessionId = reservation.stripeCheckoutSessionId ?? reservation.order?.stripeCheckoutSessionId ?? null;
+    const key = stripeCheckoutSessionId ?? `order:${orderId ?? "unlinked"}`;
+    groups.set(key, { orderId, stripeCheckoutSessionId });
+  }
+
+  const summary = {
+    checkedReservations: expiredReservations.length,
+    checkedSessions: groups.size,
+    expiredStripeSessions: 0,
+    releasedReservations: 0,
+    completedSessionsSkipped: 0,
+    errors: [] as string[]
+  };
+  let stripe: Stripe | null = null;
+
+  for (const group of groups.values()) {
+    const order = group.orderId
+      ? await prisma.storefrontOrder.findUnique({ where: { id: group.orderId }, include: storefrontOrderInclude })
+      : group.stripeCheckoutSessionId
+        ? await prisma.storefrontOrder.findFirst({ where: { stripeCheckoutSessionId: group.stripeCheckoutSessionId }, include: storefrontOrderInclude })
+        : null;
+
+    if (order?.paymentStatus === "paid") {
+      await completeReservationsForSession(group.stripeCheckoutSessionId, order.id);
+      summary.completedSessionsSkipped += 1;
+      continue;
+    }
+
+    if (!group.stripeCheckoutSessionId) {
+      const released = await releaseReservationsForSession(null, group.orderId);
+      summary.releasedReservations += released.count;
+      continue;
+    }
+
+    try {
+      stripe ??= stripeClient();
+      const session = await stripe.checkout.sessions.retrieve(group.stripeCheckoutSessionId);
+      if (session.status === "complete" || session.payment_status === "paid") {
+        summary.completedSessionsSkipped += 1;
+        continue;
+      }
+      if (session.status === "open") {
+        await stripe.checkout.sessions.expire(group.stripeCheckoutSessionId);
+        summary.expiredStripeSessions += 1;
+      }
+
+      if (order) {
+        const result = await markStorefrontOrderPaymentFailed(order, "expired", "GameDayGrabs 15-minute checkout reservation expired.");
+        summary.releasedReservations += result.released;
+      } else {
+        const released = await releaseReservationsForSession(group.stripeCheckoutSessionId, group.orderId);
+        summary.releasedReservations += released.count;
+      }
+    } catch (error) {
+      summary.errors.push(
+        `Could not expire Stripe Checkout Session ${group.stripeCheckoutSessionId}: ${error instanceof Error ? error.message : "unknown error"}`
+      );
+    }
+  }
+
+  return summary;
 }
 
 export async function releaseUnpaidCheckoutOrder(orderId: string | null | undefined) {

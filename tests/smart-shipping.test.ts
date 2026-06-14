@@ -146,6 +146,8 @@ test("storefront checkout passes smart shipping options to Stripe instead of a f
   assert.match(client, /Shipping calculated at checkout/);
   assert.match(client, /Shipping is estimated from product weight and package size\./);
   assert.match(client, /Final shipping is shown before payment\./);
+  assert.match(client, /Items are not reserved until checkout starts\./);
+  assert.match(client, /Availability is confirmed before payment\./);
   assert.doesNotMatch(client, /<b>Shipping estimate<\/b>\s*\{money\(shipping\)\}/);
 });
 

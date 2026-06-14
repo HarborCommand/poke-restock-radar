@@ -280,6 +280,7 @@ export type StorefrontOrderItemDTO = {
 export type StorefrontOrderReservationDTO = {
   id: string;
   inventoryItemId: string;
+  stripeCheckoutSessionId: string | null;
   quantity: number;
   status: string;
   expiresAt: string;

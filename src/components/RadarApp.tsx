@@ -756,6 +756,19 @@ function dateTime(value: string | null | undefined) {
   }).format(date);
 }
 
+function reservationLifecycleLabel(reservation: StorefrontOrderDTO["reservations"][number]) {
+  if (reservation.status === "completed") return "Completed after paid webhook finalization";
+  if (reservation.status === "released" && reservation.releasedAt) return `Released ${dateTime(reservation.releasedAt)}`;
+  if (reservation.status === "released") return "Released";
+  if (reservation.status === "reserved" && new Date(reservation.expiresAt).getTime() <= Date.now()) return "Expired hold awaiting release job";
+  if (reservation.status === "reserved") return "Active 15-minute checkout hold";
+  return "Reservation lifecycle";
+}
+
+function reservationStripeSessionLabel(reservation: StorefrontOrderDTO["reservations"][number]) {
+  return reservation.stripeCheckoutSessionId ? `Stripe session ${reservation.stripeCheckoutSessionId.slice(0, 12)}...` : "Stripe session pending";
+}
+
 function calendarDate(value: string | null | undefined) {
   if (!value) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
@@ -6891,7 +6904,7 @@ function StorefrontOrderDetailsModal({
                 label="Fulfillment status"
                 defaultValue={order.fulfillmentStatus}
                 disabled={shippingActionsLocked}
-                options={["inquiry", "unfulfilled", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
+                options={["inquiry", "unfulfilled", "review_required", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
               />
               <TextInput name="carrier" label="Carrier" defaultValue={order.carrier ?? ""} />
               <TextInput name="trackingNumber" label="Tracking number" defaultValue={order.trackingNumber ?? ""} />
@@ -6981,7 +6994,8 @@ function StorefrontOrderDetailsModal({
                     <strong>{reservation.status}</strong>
                     <span>Qty {reservation.quantity}</span>
                     <span>Expires {dateTime(reservation.expiresAt)}</span>
-                    <small>{reservation.releasedAt ? `Released ${dateTime(reservation.releasedAt)}` : "Reserved stock lifecycle"}</small>
+                    <span>{reservationStripeSessionLabel(reservation)}</span>
+                    <small>{reservationLifecycleLabel(reservation)}</small>
                   </article>
                 ))
               ) : (
@@ -7021,7 +7035,7 @@ function StorefrontOrderDetailsModal({
                 name="status"
                 label="Order status"
                 defaultValue={order.status}
-                options={["contact_message", "invoice_requested", "pending_payment", "paid", "packing", "shipped", "canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].map(optionFromString)}
+                options={["contact_message", "invoice_requested", "pending_payment", "paid", "inventory_review", "packing", "shipped", "canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].map(optionFromString)}
               />
               <TextareaInput name="notes" label="Order notes" defaultValue={order.notes ?? ""} wide />
               <button className="primary-action" disabled={busy} type="submit">

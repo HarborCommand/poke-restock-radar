@@ -21,8 +21,8 @@ export default async function CheckoutCancelPage({ searchParams }: { searchParam
     releaseResult.reason === "already_paid"
       ? "Payment has already been confirmed for this order. Contact GameDayGrabs if this looks incorrect."
       : releaseResult.released || releaseResult.reason === "checkout_canceled" || releaseResult.reason === "already_canceled"
-        ? "Your cart was not charged, and reserved stock has been released."
-        : "Reserved stock is released automatically if checkout expires or payment is not completed.";
+        ? "Your checkout session expired. Your items were released back to inventory. You can start checkout again if they are still available."
+        : "Items are released automatically if checkout expires or payment is not completed.";
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />
