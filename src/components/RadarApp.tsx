@@ -629,9 +629,13 @@ function moneyDelta(value: number) {
 function storefrontOrderIsCanceledOrRefunded(order: StorefrontOrderDTO) {
   return (
     ["canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.status) ||
-    ["canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.paymentStatus) ||
+    ["canceled", "failed", "expired", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.paymentStatus) ||
     order.fulfillmentStatus === "canceled"
   );
+}
+
+function storefrontOrderCanFulfill(order: StorefrontOrderDTO) {
+  return order.paymentStatus === "paid" && order.needsFulfillment && !storefrontOrderIsCanceledOrRefunded(order);
 }
 
 function storefrontOrderShippingReadiness(order: StorefrontOrderDTO) {
@@ -6471,13 +6475,49 @@ function InventoryPanel({
 type StorefrontOrderTab = "new" | "pending" | "paid" | "packing" | "shipped" | "invoice_requests" | "canceled";
 
 function storefrontOrdersForTab(orders: StorefrontOrderDTO[], tab: StorefrontOrderTab) {
-  if (tab === "new") return orders.filter((order) => order.isNewPaidOrder);
-  if (tab === "pending") return orders.filter((order) => order.status === "pending_payment" || order.paymentStatus === "pending");
-  if (tab === "paid") return orders.filter((order) => order.paymentStatus === "paid");
-  if (tab === "packing") return orders.filter((order) => order.status === "packing" || order.fulfillmentStatus === "packing");
-  if (tab === "shipped") return orders.filter((order) => order.status === "shipped" || order.fulfillmentStatus === "shipped");
+  if (tab === "new") return orders.filter((order) => order.isNewPaidOrder && !storefrontOrderIsCanceledOrRefunded(order));
+  if (tab === "pending") return orders.filter((order) => (order.status === "pending_payment" || order.paymentStatus === "pending") && !storefrontOrderIsCanceledOrRefunded(order));
+  if (tab === "paid") return orders.filter((order) => order.paymentStatus === "paid" && !storefrontOrderIsCanceledOrRefunded(order));
+  if (tab === "packing") return orders.filter((order) => (order.status === "packing" || order.fulfillmentStatus === "packing") && !storefrontOrderIsCanceledOrRefunded(order));
+  if (tab === "shipped") return orders.filter((order) => (order.status === "shipped" || order.fulfillmentStatus === "shipped") && !storefrontOrderIsCanceledOrRefunded(order));
   if (tab === "invoice_requests") return orders.filter((order) => order.status === "invoice_requested" || order.status === "contact_message");
-  return orders.filter((order) => ["canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.status) || ["failed", "expired", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.paymentStatus));
+  return orders.filter((order) => storefrontOrderIsCanceledOrRefunded(order) || ["failed", "expired"].includes(order.paymentStatus));
+}
+
+function storefrontDefaultOrderTab(orders: StorefrontOrderDTO[]): StorefrontOrderTab {
+  for (const tab of ["new", "paid", "packing", "pending", "invoice_requests", "shipped"] as StorefrontOrderTab[]) {
+    if (storefrontOrdersForTab(orders, tab).length > 0) return tab;
+  }
+  return "new";
+}
+
+function storefrontOrderTabDetail(tab: StorefrontOrderTab) {
+  if (tab === "canceled") return "Historical canceled, refunded, and expired orders. No fulfillment action is needed.";
+  if (tab === "new") return "New paid orders that need fulfillment.";
+  if (tab === "pending") return "Checkout-started or invoice orders still awaiting payment.";
+  if (tab === "paid") return "Active paid orders that are still operational.";
+  if (tab === "packing") return "Orders currently being packed.";
+  if (tab === "shipped") return "Completed shipments and pickup-ready orders.";
+  return "Invoice and contact requests that need follow-up.";
+}
+
+function storefrontOrderEmptyState(tab: StorefrontOrderTab) {
+  if (tab === "paid") return { title: "No paid orders to ship.", detail: "Paid orders will appear here after Stripe confirms payment." };
+  if (tab === "new") return { title: "No new orders.", detail: "New paid orders will appear here when fulfillment is needed." };
+  if (tab === "pending") return { title: "No pending payment orders.", detail: "Only still-valid checkout or invoice orders appear here." };
+  if (tab === "canceled") return { title: "No archived orders.", detail: "Canceled and expired orders are kept here for history." };
+  return { title: "No orders in this view.", detail: "Orders will appear here when their status matches this view." };
+}
+
+function storefrontOrderPaymentTone(order: StorefrontOrderDTO) {
+  if (["refunded", "canceled", "failed", "expired", "refund_failed"].includes(order.paymentStatus) || storefrontOrderIsCanceledOrRefunded(order)) return "bad";
+  if (["partially_refunded", "refund_pending", "pending"].includes(order.paymentStatus)) return "watch";
+  return order.paymentStatus === "paid" ? "good" : "neutral";
+}
+
+function storefrontOrderNetLabel(order: StorefrontOrderDTO) {
+  if (!storefrontOrderIsCanceledOrRefunded(order) && order.refundedAmount <= 0) return money(order.total);
+  return `Original ${money(order.total)} - Refunded ${money(order.refundedAmount)} - Net ${money(storefrontOrderNetRevenue(order))}`;
 }
 
 function storefrontOrderTabs(orders: StorefrontOrderDTO[]) {
@@ -6510,11 +6550,18 @@ function StorefrontOrdersPanel({
   runAction: ActionHandler;
 }) {
   const [selectedOrderId, setSelectedOrderId] = useState("");
-  const [activeOrderTab, setActiveOrderTab] = useState<StorefrontOrderTab>("new");
+  const [activeOrderTab, setActiveOrderTab] = useState<StorefrontOrderTab>(() => storefrontDefaultOrderTab(dashboard.storefrontOrders));
+  const [storeSettingsOpen, setStoreSettingsOpen] = useState(false);
   const selectedOrder = dashboard.storefrontOrders.find((order) => order.id === selectedOrderId) ?? null;
   const stats = dashboard.storefrontSummary;
   const orderTabs = storefrontOrderTabs(dashboard.storefrontOrders);
+  const defaultOrderTab = storefrontDefaultOrderTab(dashboard.storefrontOrders);
   const visibleOrders = storefrontOrdersForTab(dashboard.storefrontOrders, activeOrderTab);
+  const emptyState = storefrontOrderEmptyState(activeOrderTab);
+
+  useEffect(() => {
+    if (visibleOrders.length === 0 && activeOrderTab !== defaultOrderTab) setActiveOrderTab(defaultOrderTab);
+  }, [activeOrderTab, defaultOrderTab, visibleOrders.length]);
 
   return (
     <>
@@ -6524,6 +6571,10 @@ function StorefrontOrdersPanel({
           <p>Manage storefront sales, fulfillment, shipping, and profit.</p>
         </div>
         <div className="inventory-header-actions">
+          <button className="mini-action" type="button" onClick={() => setStoreSettingsOpen((open) => !open)}>
+            <Settings size={14} />
+            Store Settings
+          </button>
           <a className="mini-action" href="/shop" target="_blank" rel="noreferrer">
             <ExternalLink size={14} />
             View Store
@@ -6552,19 +6603,19 @@ function StorefrontOrdersPanel({
         <InventoryKpiCard label="Store Profit" value={money(stats.netProfit)} detail="Net after refunds and costs" tone={stats.netProfit >= 0 ? "good" : "bad"} />
       </section>
 
-      <section className="storefront-admin-grid">
+      <section className="storefront-admin-grid fulfillment-focused">
         <section className="dashboard-card storefront-orders-card">
           <div className="dashboard-card-header">
             <div>
               <h3>Fulfillment Center</h3>
-              <span>{visibleOrders.length} {activeOrderTab.replace("_", " ")} order{visibleOrders.length === 1 ? "" : "s"}</span>
+              <span>Manage paid, pending, and invoice orders. {storefrontOrderTabDetail(activeOrderTab)}</span>
             </div>
           </div>
           <div className="order-tab-bar" role="tablist" aria-label="Order views">
             {orderTabs.map((tab) => (
               <button
                 key={tab.id}
-                className={activeOrderTab === tab.id ? "active" : ""}
+                className={`${activeOrderTab === tab.id ? "active" : ""} ${tab.id === "canceled" ? "archive-tab" : ""}`.trim()}
                 type="button"
                 onClick={() => setActiveOrderTab(tab.id)}
               >
@@ -6575,72 +6626,97 @@ function StorefrontOrdersPanel({
           </div>
           <div className="storefront-order-list">
             {visibleOrders.length ? (
-              visibleOrders.map((order) => (
-                <article className={`storefront-order-row ${order.needsFulfillment ? "needs-fulfillment" : ""}`} key={order.id}>
-                  <button type="button" onClick={() => setSelectedOrderId(order.id)}>
-                    <strong>{order.orderNumber}</strong>
-                    <span>{order.customerName || "Customer"} - {order.customerEmail || "No customer email"} - {dateTime(order.createdAt)}</span>
-                    <small>
-                      {order.items.length
-                        ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
-                        : order.notes?.split("\n").find((line) => line.startsWith("Subject:"))?.replace("Subject:", "Contact:") || "Contact inquiry"}
-                    </small>
-                    <small>{order.sourceLabel} - {order.itemCount} item{order.itemCount === 1 ? "" : "s"}</small>
-                  </button>
-                  <span className={`chip compact-chip ${order.paymentStatus === "paid" ? "good" : order.status === "canceled" ? "bad" : "watch"}`}>{order.statusBadge}</span>
-                  <span className={`chip compact-chip ${order.needsFulfillment ? "watch" : "neutral"}`}>{formatStatus(order.fulfillmentStatus)}</span>
-                  <span className="storefront-order-total">{money(order.total)}</span>
-                  <div className="catalog-actions">
-                    <button
-                      className="mini-action"
-                      disabled={busy}
-                      type="button"
-                      onClick={() =>
-                        runAction(
-                          `Marking ${order.orderNumber} packing`,
-                          () =>
-                            requestJson(`/api/radar/storefront/orders/${order.id}`, {
-                              method: "PATCH",
-                              body: JSON.stringify({ status: "packing", fulfillmentStatus: "packing" })
-                            }),
-                          { success: "Order marked packing" }
-                        )
-                      }
-                    >
-                      Packing
+              visibleOrders.map((order) => {
+                const archived = storefrontOrderIsCanceledOrRefunded(order);
+                const canFulfill = storefrontOrderCanFulfill(order);
+                const itemSummary = order.items.length
+                  ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
+                  : order.notes?.split("\n").find((line) => line.startsWith("Subject:"))?.replace("Subject:", "Contact:") || "Contact inquiry";
+                return (
+                  <article className={`storefront-order-row ${canFulfill ? "needs-fulfillment" : ""} ${archived ? "archived" : ""}`} key={order.id}>
+                    <button type="button" onClick={() => setSelectedOrderId(order.id)}>
+                      <strong>{order.orderNumber}</strong>
+                      <span>{order.customerName || "Customer"} - {order.customerEmail || "No customer email"} - {dateTime(order.createdAt)}</span>
+                      <small>{itemSummary}</small>
+                      <small>
+                        {order.shippingMethodLabel || order.sourceLabel}
+                        {order.shippingCharged ? ` - ${money(order.shippingCharged)} shipping` : ""}
+                        {" - "}
+                        {order.itemCount} item{order.itemCount === 1 ? "" : "s"}
+                      </small>
                     </button>
-                    <button
-                      className="mini-action"
-                      disabled={busy}
-                      type="button"
-                      onClick={() =>
-                        runAction(
-                          `Marking ${order.orderNumber} shipped`,
-                          () =>
-                            requestJson(`/api/radar/storefront/orders/${order.id}`, {
-                              method: "PATCH",
-                              body: JSON.stringify({ status: "shipped", fulfillmentStatus: "shipped" })
-                            }),
-                          { success: "Order marked shipped" }
-                        )
-                      }
-                    >
-                      Shipped
-                    </button>
-                    <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>
-                      Details
-                    </button>
-                  </div>
-                </article>
-              ))
+                    <div className="storefront-order-status-stack">
+                      <span className={`chip compact-chip ${archived ? "bad" : order.needsFulfillment ? "watch" : "neutral"}`}>{order.statusBadge}</span>
+                      <span className={`chip compact-chip ${storefrontOrderPaymentTone(order)}`}>{formatStatus(order.paymentStatus)}</span>
+                      <span className={`chip compact-chip ${canFulfill ? "watch" : "neutral"}`}>{formatStatus(order.fulfillmentStatus)}</span>
+                    </div>
+                    <span className="storefront-order-total">{storefrontOrderNetLabel(order)}</span>
+                    <div className="catalog-actions storefront-order-actions">
+                      {canFulfill ? (
+                        <>
+                          <button
+                            className="mini-action"
+                            disabled={busy}
+                            type="button"
+                            onClick={() =>
+                              runAction(
+                                `Marking ${order.orderNumber} packing`,
+                                () =>
+                                  requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                                    method: "PATCH",
+                                    body: JSON.stringify({ status: "packing", fulfillmentStatus: "packing" })
+                                  }),
+                                { success: "Order marked packing" }
+                              )
+                            }
+                          >
+                            Packing
+                          </button>
+                          <button
+                            className="mini-action"
+                            disabled={busy}
+                            type="button"
+                            onClick={() =>
+                              runAction(
+                                `Marking ${order.orderNumber} shipped`,
+                                () =>
+                                  requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                                    method: "PATCH",
+                                    body: JSON.stringify({ status: "shipped", fulfillmentStatus: "shipped" })
+                                  }),
+                                { success: "Order marked shipped" }
+                              )
+                            }
+                          >
+                            Shipped
+                          </button>
+                        </>
+                      ) : null}
+                      <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>
+                        Details
+                      </button>
+                    </div>
+                    {archived ? <small className="archive-order-note">Historical order. No fulfillment action needed.</small> : null}
+                  </article>
+                );
+              })
             ) : (
-              <EmptyState icon={ShoppingBag} title="No orders in this view" detail="Orders will appear here when storefront customers check out or request invoices." />
+              <EmptyState icon={activeOrderTab === "canceled" ? History : ShoppingBag} title={emptyState.title} detail={emptyState.detail} />
             )}
           </div>
         </section>
-
-        <StorefrontSettingsCard dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} />
       </section>
+
+      <section className="storefront-settings-collapsible" aria-label="Store settings shortcut">
+        <div>
+          <strong>Store Settings</strong>
+          <span>Public policies and storefront branding are collapsed so fulfillment can use the full page width.</span>
+        </div>
+        <button className="mini-action" type="button" aria-expanded={storeSettingsOpen} onClick={() => setStoreSettingsOpen((open) => !open)}>
+          {storeSettingsOpen ? "Hide Store Settings" : "Open Store Settings"}
+        </button>
+      </section>
+      {storeSettingsOpen ? <StorefrontSettingsCard dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} /> : null}
 
       {selectedOrder ? (
         <StorefrontOrderDetailsModal
@@ -6766,6 +6842,7 @@ function StorefrontOrderDetailsModal({
   const shippingProfitTone = shippingProfitLoss >= 0 ? "good" : "bad";
   const shippingActionsLocked = storefrontOrderIsCanceledOrRefunded(order);
   const shippingReadiness = storefrontOrderShippingReadiness(order);
+  const canFulfillOrder = storefrontOrderCanFulfill(order);
   const [cancelRefundOpen, setCancelRefundOpen] = useState(false);
   const [cancelRefundKey, setCancelRefundKey] = useState("");
   const openCancelRefund = () => {
@@ -6786,44 +6863,50 @@ function StorefrontOrderDetailsModal({
           </button>
         </header>
         <section className="inventory-details-actions">
-          <button
-            className="mini-action"
-            disabled={busy || !order.needsFulfillment}
-            title={order.needsFulfillment ? "Mark this paid order as packing." : "Only active paid orders can be marked packing."}
-            type="button"
-            onClick={() =>
-              runAction(
-                `Marking ${order.orderNumber} packing`,
-                () =>
-                  requestJson(`/api/radar/storefront/orders/${order.id}`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ status: "packing", fulfillmentStatus: "packing" })
-                  }),
-                { success: "Order marked packing" }
-              )
-            }
-          >
-            Mark Packing
-          </button>
-          <button
-            className="mini-action"
-            disabled={busy || !order.needsFulfillment}
-            title={order.needsFulfillment ? "Mark this paid order as shipped." : "Only active paid orders can be marked shipped."}
-            type="button"
-            onClick={() =>
-              runAction(
-                `Marking ${order.orderNumber} shipped`,
-                () =>
-                  requestJson(`/api/radar/storefront/orders/${order.id}`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ status: "shipped", fulfillmentStatus: "shipped" })
-                  }),
-                { success: "Order marked shipped" }
-              )
-            }
-          >
-            Mark Shipped
-          </button>
+          {canFulfillOrder ? (
+            <>
+              <button
+                className="mini-action"
+                disabled={busy}
+                title="Mark this paid order as packing."
+                type="button"
+                onClick={() =>
+                  runAction(
+                    `Marking ${order.orderNumber} packing`,
+                    () =>
+                      requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ status: "packing", fulfillmentStatus: "packing" })
+                      }),
+                    { success: "Order marked packing" }
+                  )
+                }
+              >
+                Mark Packing
+              </button>
+              <button
+                className="mini-action"
+                disabled={busy}
+                title="Mark this paid order as shipped."
+                type="button"
+                onClick={() =>
+                  runAction(
+                    `Marking ${order.orderNumber} shipped`,
+                    () =>
+                      requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ status: "shipped", fulfillmentStatus: "shipped" })
+                      }),
+                    { success: "Order marked shipped" }
+                  )
+                }
+              >
+                Mark Shipped
+              </button>
+            </>
+          ) : (
+            <span className="fulfillment-locked-note">{storefrontOrderIsCanceledOrRefunded(order) ? "Historical order - no fulfillment action needed." : "Only active paid orders can be marked packing or shipped."}</span>
+          )}
           <button className="mini-action" type="button" onClick={() => window.print()}>
             <Printer size={14} />
             Packing Slip

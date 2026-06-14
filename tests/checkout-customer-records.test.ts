@@ -352,8 +352,9 @@ test("Admin Orders renders an operational shipping section without raw payment d
   assert.match(shippingSection, /name="carrier"/);
   assert.match(shippingSection, /name="trackingNumber"/);
   assert.match(shippingSection, /name="fulfillmentStatus"/);
-  assert.match(orderModal, /disabled=\{busy \|\| !order\.needsFulfillment\}/);
-  assert.match(orderModal, /Only active paid orders can be marked shipped/);
+  assert.match(orderModal, /const canFulfillOrder = storefrontOrderCanFulfill\(order\)/);
+  assert.match(orderModal, /\{canFulfillOrder \? \(/);
+  assert.match(orderModal, /Only active paid orders can be marked packing or shipped/);
   assert.doesNotMatch(shippingSection, /JSON\.stringify\(order|<pre|<code|payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 
   assert.match(css, /storefront-shipping-section/);
@@ -456,9 +457,12 @@ test("admin orders UI exposes cancel refund modal without replacing fulfillment 
   assert.match(types, /refundedAmount: number/);
   assert.match(types, /refundableAmount: number/);
   assert.match(types, /canCancelOrRefund: boolean/);
+  assert.match(orderModal, /const canFulfillOrder = storefrontOrderCanFulfill\(order\)/);
   assert.match(orderModal, /Mark Packing/);
   assert.match(orderModal, /Mark Shipped/);
   assert.match(orderModal, /Packing Slip/);
+  assert.match(orderModal, /\{canFulfillOrder \? \(/);
+  assert.match(orderModal, /Only active paid orders can be marked packing or shipped/);
   assert.match(orderModal, /order\.canCancelOrRefund/);
   assert.match(orderModal, /Cancel \/ Refund/);
   assert.match(cancelModal, /Cancellation reason/);
@@ -473,6 +477,44 @@ test("admin orders UI exposes cancel refund modal without replacing fulfillment 
   assert.match(cancelModal, /\/api\/radar\/storefront\/orders\/\$\{order\.id\}\/cancel-refund/);
   assert.match(cancelModal, /idempotencyKey/);
   assert.doesNotMatch(cancelModal, /payment_method_details|payment_method_data|card_number|cvv/i);
+});
+
+test("Admin Orders treats canceled refunded and expired orders as a muted archive", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const ordersPanel = sourceSlice(app, "function StorefrontOrdersPanel", "function StorefrontSettingsCard");
+  const orderTabs = sourceSlice(app, "function storefrontOrdersForTab", "function storefrontOrderTabs");
+  const updateStorefrontOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(updated);");
+
+  assert.match(app, /function storefrontOrderCanFulfill\(order: StorefrontOrderDTO\)/);
+  assert.match(app, /function storefrontDefaultOrderTab/);
+  assert.match(app, /function storefrontOrderEmptyState/);
+  assert.match(orderTabs, /storefrontOrderIsCanceledOrRefunded\(order\)/);
+  assert.match(orderTabs, /\["failed", "expired"\]\.includes\(order\.paymentStatus\)/);
+  assert.match(orderTabs, /tab === "pending"[\s\S]*!storefrontOrderIsCanceledOrRefunded\(order\)/);
+  assert.match(ordersPanel, /const \[activeOrderTab, setActiveOrderTab\] = useState<StorefrontOrderTab>\(\(\) => storefrontDefaultOrderTab\(dashboard\.storefrontOrders\)\)/);
+  assert.match(ordersPanel, /className=\{`\$\{activeOrderTab === tab\.id \? "active" : ""\} \$\{tab\.id === "canceled" \? "archive-tab" : ""\}`\.trim\(\)\}/);
+  assert.match(ordersPanel, /const archived = storefrontOrderIsCanceledOrRefunded\(order\)/);
+  assert.match(ordersPanel, /const canFulfill = storefrontOrderCanFulfill\(order\)/);
+  assert.match(ordersPanel, /\{canFulfill \? \(/);
+  assert.match(ordersPanel, /Historical order\. No fulfillment action needed\./);
+  assert.match(app, /function storefrontOrderNetLabel[\s\S]*Original/);
+  assert.match(ordersPanel, /storefrontOrderNetLabel\(order\)/);
+  assert.match(ordersPanel, /Open Store Settings/);
+  assert.match(ordersPanel, /storeSettingsOpen \? <StorefrontSettingsCard/);
+  assert.doesNotMatch(sourceSlice(ordersPanel, '<section className="storefront-admin-grid fulfillment-focused">', "</section>"), /StorefrontSettingsCard/);
+
+  assert.match(css, /storefront-admin-grid\.fulfillment-focused/);
+  assert.match(css, /storefront-order-row\.archived/);
+  assert.match(css, /storefront-settings-collapsible/);
+  assert.match(css, /body \.storefront-admin-grid \{\s*grid-template-columns: minmax\(0, 1fr\) !important;/);
+
+  assert.match(storefront, /function orderIsClosedForFulfillment/);
+  assert.match(updateStorefrontOrder, /requestsActiveFulfillment/);
+  assert.match(updateStorefrontOrder, /Canceled, refunded, or expired orders cannot be marked packing or shipped\./);
+  assert.match(updateStorefrontOrder, /Only paid orders can be marked packing or shipped\./);
+  assert.doesNotMatch(ordersPanel, /card_number|cardNumber|payment_method_details|payment_method_data|cvc|cvv/i);
 });
 
 test("admin cancel refund modal confirms success and prevents duplicate submissions", () => {

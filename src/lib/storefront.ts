@@ -595,6 +595,14 @@ function orderCanCancelOrRefund(order: StorefrontOrderWithItems) {
   );
 }
 
+function orderIsClosedForFulfillment(order: Pick<StorefrontOrderWithItems, "status" | "paymentStatus" | "fulfillmentStatus">) {
+  return (
+    ["canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.status) ||
+    ["failed", "expired", "refunded", "partially_refunded", "refund_pending", "refund_failed"].includes(order.paymentStatus) ||
+    order.fulfillmentStatus === "canceled"
+  );
+}
+
 function orderInventoryWasFinalized(order: StorefrontOrderWithItems) {
   return (
     order.paymentStatus === "paid" ||
@@ -2356,6 +2364,15 @@ export async function updateStorefrontOrder(
     where: { id: orderId, ...(currentUser.role === "ADMIN" ? {} : { userId: currentUser.id }) }
   });
   if (!order) throw new Error("Order not found");
+  const requestsActiveFulfillment =
+    ["packing", "shipped"].includes(input.status ?? "") ||
+    ["packing", "shipped"].includes(input.fulfillmentStatus ?? "");
+  if (requestsActiveFulfillment && orderIsClosedForFulfillment(order)) {
+    throw new Error("Canceled, refunded, or expired orders cannot be marked packing or shipped.");
+  }
+  if (requestsActiveFulfillment && order.paymentStatus !== "paid") {
+    throw new Error("Only paid orders can be marked packing or shipped.");
+  }
   const updated = await prisma.storefrontOrder.update({
     where: { id: order.id },
     data: {
