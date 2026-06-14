@@ -373,6 +373,60 @@ test("Admin Orders renders an operational shipping section without raw payment d
   assert.doesNotMatch(storefrontSummary, /prisma\.storefrontOrder\.count\(\{ where: \{ [^}]*paymentStatus: \{ in: activeRevenuePaymentStatuses \}/);
 });
 
+test("archived order detail is read-only while active fulfillment controls are preserved", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontPackingSlip");
+  const shippingSection = sourceSlice(orderModal, '<section className="storefront-shipping-section">', "<section>");
+  const fulfillmentSection = sourceSlice(orderModal, '<section className="storefront-order-notes-section">', "</section>");
+  const updateStorefrontOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(finalOrder);");
+
+  assert.match(app, /function storefrontOrderDetailIsReadOnly\(order: StorefrontOrderDTO\)/);
+  assert.match(app, /const reviewLocked = order\.status === "inventory_review" \|\| order\.fulfillmentStatus === "review_required"/);
+  assert.match(app, /storefrontOrderIsCanceledOrRefunded\(order\) \|\| \(reviewLocked && !storefrontOrderCanFulfill\(order\)\)/);
+  assert.match(app, /function storefrontOrderReadOnlyDetailMessage/);
+  assert.match(app, /This order is canceled\/refunded\/expired and is kept for history\./);
+  assert.match(orderModal, /const orderDetailReadOnly = storefrontOrderDetailIsReadOnly\(order\)/);
+  assert.match(orderModal, /const readOnlyDetailMessage = storefrontOrderReadOnlyDetailMessage\(order\)/);
+
+  assert.match(orderModal, /const canFulfillOrder = storefrontOrderCanFulfill\(order\)/);
+  assert.match(orderModal, /const canShowPackingSlip = order\.items\.length > 0 && \(canFulfillOrder \|\| orderDetailReadOnly \|\| order\.fulfillmentStatus === "shipped"\)/);
+  assert.match(orderModal, /orderDetailReadOnly \? "View Historical Packing Slip" : "Print\/View Packing Slip"/);
+  assert.match(orderModal, /orderDetailReadOnly \? "View Historical Packing Slip Preview" : "View Packing Slip Preview"/);
+  assert.match(orderModal, /\{canFulfillOrder \? \(/);
+  assert.match(orderModal, /Mark Packing/);
+  assert.match(orderModal, /Mark Shipped/);
+
+  assert.match(orderModal, /className="storefront-archived-detail-card"/);
+  assert.match(orderModal, /Archived order/);
+  assert.match(orderModal, /Fulfillment not available/);
+  assert.match(orderModal, /<p>\{readOnlyDetailMessage\}<\/p>/);
+  assert.match(orderModal, /Shipping method/);
+  assert.match(orderModal, /Shipping charged/);
+  assert.match(orderModal, /Refunded amount/);
+  assert.match(orderModal, /Net revenue/);
+
+  assert.match(shippingSection, /\{orderDetailReadOnly \? \([\s\S]*className="storefront-shipping-readonly-summary"[\s\S]*Shipping and fulfillment are read-only for this historical order\.[\s\S]*\) : \([\s\S]*<form/);
+  assert.match(shippingSection, /name="fulfillmentStatus"/);
+  assert.match(shippingSection, /name="carrier"/);
+  assert.match(shippingSection, /name="trackingNumber"/);
+  assert.match(shippingSection, /name="shippingCost"/);
+  assert.match(shippingSection, /Save Shipping/);
+  assert.match(fulfillmentSection, /\{orderDetailReadOnly \? \([\s\S]*className="storefront-fulfillment-readonly-summary"[\s\S]*Order status[\s\S]*Fulfillment status[\s\S]*Order notes[\s\S]*\) : \([\s\S]*<form/);
+  assert.match(fulfillmentSection, /name="status"/);
+  assert.match(fulfillmentSection, /name="notes"/);
+  assert.match(fulfillmentSection, /Save Fulfillment/);
+
+  assert.match(updateStorefrontOrder, /Canceled, refunded, or expired orders cannot be marked packing or shipped\./);
+  assert.match(updateStorefrontOrder, /Only paid orders can be marked packing or shipped\./);
+  assert.match(updateStorefrontOrder, /Carrier and tracking number are required before marking an order shipped\./);
+  assert.match(css, /storefront-archived-detail-card/);
+  assert.match(css, /storefront-shipping-readonly-summary/);
+  assert.match(css, /storefront-fulfillment-readonly-summary/);
+  assert.doesNotMatch(orderModal, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
+});
+
 test("packing slip renders safe order data and excludes payment details", () => {
   const app = readProjectFile("src/components/RadarApp.tsx");
   const css = readProjectFile("src/app/globals.css");

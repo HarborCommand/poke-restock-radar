@@ -639,6 +639,18 @@ function storefrontOrderCanFulfill(order: StorefrontOrderDTO) {
   return order.paymentStatus === "paid" && order.needsFulfillment && !storefrontOrderIsCanceledOrRefunded(order);
 }
 
+function storefrontOrderDetailIsReadOnly(order: StorefrontOrderDTO) {
+  const reviewLocked = order.status === "inventory_review" || order.fulfillmentStatus === "review_required";
+  return storefrontOrderIsCanceledOrRefunded(order) || (reviewLocked && !storefrontOrderCanFulfill(order));
+}
+
+function storefrontOrderReadOnlyDetailMessage(order: StorefrontOrderDTO) {
+  if (storefrontOrderIsCanceledOrRefunded(order)) {
+    return "This order is canceled/refunded/expired and is kept for history.";
+  }
+  return "Fulfillment is not available until this order is eligible for active paid shipment work.";
+}
+
 function storefrontOrderHasShipmentDetails(order: StorefrontOrderDTO) {
   return Boolean(order.carrier?.trim() && order.trackingNumber?.trim());
 }
@@ -6919,8 +6931,12 @@ function StorefrontOrderDetailsModal({
   const shippingActionsLocked = storefrontOrderIsCanceledOrRefunded(order);
   const shippingReadiness = storefrontOrderShippingReadiness(order);
   const canFulfillOrder = storefrontOrderCanFulfill(order);
+  const orderDetailReadOnly = storefrontOrderDetailIsReadOnly(order);
+  const readOnlyDetailMessage = storefrontOrderReadOnlyDetailMessage(order);
   const shipmentDetailsSaved = storefrontOrderHasShipmentDetails(order);
-  const canShowPackingSlip = order.items.length > 0 && !shippingActionsLocked;
+  const canShowPackingSlip = order.items.length > 0 && (canFulfillOrder || orderDetailReadOnly || order.fulfillmentStatus === "shipped");
+  const packingSlipLabel = orderDetailReadOnly ? "View Historical Packing Slip" : "Print/View Packing Slip";
+  const packingSlipPreviewLabel = orderDetailReadOnly ? "View Historical Packing Slip Preview" : "View Packing Slip Preview";
   const [cancelRefundOpen, setCancelRefundOpen] = useState(false);
   const [cancelRefundKey, setCancelRefundKey] = useState("");
   const openCancelRefund = () => {
@@ -6995,7 +7011,7 @@ function StorefrontOrderDetailsModal({
           {canShowPackingSlip ? (
             <button className="mini-action" type="button" onClick={() => window.print()}>
               <Printer size={14} />
-              Print/View Packing Slip
+              {packingSlipLabel}
             </button>
           ) : null}
           {order.canCancelOrRefund && !(order.paymentStatus === "paid" && order.refundableAmount <= 0) ? (
@@ -7010,7 +7026,7 @@ function StorefrontOrderDetailsModal({
             <details className="packing-slip-preview-shell">
               <summary>
                 <Printer size={14} />
-                View Packing Slip Preview
+                {packingSlipPreviewLabel}
               </summary>
               <StorefrontPackingSlip order={order} />
             </details>
@@ -7018,6 +7034,21 @@ function StorefrontOrderDetailsModal({
               <StorefrontPackingSlip order={order} />
             </div>
           </>
+        ) : null}
+        {orderDetailReadOnly ? (
+          <section className="storefront-archived-detail-card" aria-label="Archived order fulfillment status">
+            <div>
+              <span className="chip compact-chip neutral">Archived order</span>
+              <h3>Fulfillment not available</h3>
+              <p>{readOnlyDetailMessage}</p>
+            </div>
+            <div className="detail-stat-grid">
+              <DetailStat label="Shipping method" value={order.shippingMethodLabel || "Not captured"} />
+              <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
+              <DetailStat label="Refunded amount" value={money(order.refundedAmount)} tone={order.refundedAmount > 0 ? "bad" : "neutral"} />
+              <DetailStat label="Net revenue" value={money(storefrontOrderNetRevenue(order))} tone={storefrontOrderNetRevenue(order) > 0 ? "good" : "neutral"} />
+            </div>
+          </section>
         ) : null}
         <div className="inventory-details-grid">
           <section>
@@ -7094,33 +7125,40 @@ function StorefrontOrderDetailsModal({
               <DetailStat label="Fulfillment status" value={formatStatus(order.fulfillmentStatus)} tone={shippingActionsLocked ? "bad" : order.needsFulfillment ? "good" : "neutral"} />
               <DetailStat label="Shipping warnings" value={order.shippingWarnings.length ? order.shippingWarnings.join(" ") : "None"} />
             </div>
-            <form
-              className="form-grid compact storefront-shipping-form"
-              onSubmit={(event) =>
-                submit(
-                  event,
-                  saveLabel,
-                  (form) => requestJson(`/api/radar/storefront/orders/${order.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
-                  { reset: false, success: "Shipping updated" }
-                )
-              }
-            >
-              <SelectInput
-                name="fulfillmentStatus"
-                label="Fulfillment status"
-                defaultValue={order.fulfillmentStatus}
-                disabled={shippingActionsLocked}
-                options={["inquiry", "unfulfilled", "review_required", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
-              />
-              <TextInput name="carrier" label="Carrier" defaultValue={order.carrier ?? ""} />
-              <TextInput name="trackingNumber" label="Tracking number" defaultValue={order.trackingNumber ?? ""} />
-              <TextInput name="shippingCost" label="Actual shipping cost" type="number" min="0" step="0.01" defaultValue={order.shippingCost || ""} />
-              <p className="form-helper publish-ready-note wide-field">Mark Shipped requires carrier and tracking number. To ship from this form, select Shipped and include both fields.</p>
-              <button className="primary-action" disabled={busy} type="submit">
-                <Save size={16} />
-                {busyLabel === saveLabel ? "Saving" : "Save Shipping"}
-              </button>
-            </form>
+            {orderDetailReadOnly ? (
+              <div className="storefront-shipping-readonly-summary">
+                <strong>Shipping and fulfillment are read-only for this historical order.</strong>
+                <p>Carrier, tracking, actual shipping cost, and shipment status are preserved for audit history and cannot be edited here.</p>
+              </div>
+            ) : (
+              <form
+                className="form-grid compact storefront-shipping-form"
+                onSubmit={(event) =>
+                  submit(
+                    event,
+                    saveLabel,
+                    (form) => requestJson(`/api/radar/storefront/orders/${order.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
+                    { reset: false, success: "Shipping updated" }
+                  )
+                }
+              >
+                <SelectInput
+                  name="fulfillmentStatus"
+                  label="Fulfillment status"
+                  defaultValue={order.fulfillmentStatus}
+                  disabled={shippingActionsLocked}
+                  options={["inquiry", "unfulfilled", "review_required", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
+                />
+                <TextInput name="carrier" label="Carrier" defaultValue={order.carrier ?? ""} />
+                <TextInput name="trackingNumber" label="Tracking number" defaultValue={order.trackingNumber ?? ""} />
+                <TextInput name="shippingCost" label="Actual shipping cost" type="number" min="0" step="0.01" defaultValue={order.shippingCost || ""} />
+                <p className="form-helper publish-ready-note wide-field">Mark Shipped requires carrier and tracking number. To ship from this form, select Shipped and include both fields.</p>
+                <button className="primary-action" disabled={busy} type="submit">
+                  <Save size={16} />
+                  {busyLabel === saveLabel ? "Saving" : "Save Shipping"}
+                </button>
+              </form>
+            )}
           </section>
           <section>
             <h3>Items</h3>
@@ -7227,29 +7265,37 @@ function StorefrontOrderDetailsModal({
           </section>
           <section className="storefront-order-notes-section">
             <h3>Fulfillment</h3>
-            <form
-              className="form-grid compact"
-              onSubmit={(event) =>
-                submit(
-                  event,
-                  saveLabel,
-                  (form) => requestJson(`/api/radar/storefront/orders/${order.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
-                  { reset: false, success: "Order updated" }
-                )
-              }
-            >
-              <SelectInput
-                name="status"
-                label="Order status"
-                defaultValue={order.status}
-                options={["contact_message", "invoice_requested", "pending_payment", "paid", "inventory_review", "packing", "shipped", "canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].map(optionFromString)}
-              />
-              <TextareaInput name="notes" label="Order notes" defaultValue={order.notes ?? ""} wide />
-              <button className="primary-action" disabled={busy} type="submit">
-                <Save size={16} />
-                {busyLabel === saveLabel ? "Saving" : "Save Fulfillment"}
-              </button>
-            </form>
+            {orderDetailReadOnly ? (
+              <div className="storefront-fulfillment-readonly-summary">
+                <DetailStat label="Order status" value={formatStatus(order.status)} />
+                <DetailStat label="Fulfillment status" value={formatStatus(order.fulfillmentStatus)} />
+                <DetailStat label="Order notes" value={order.notes || "Not provided"} />
+              </div>
+            ) : (
+              <form
+                className="form-grid compact"
+                onSubmit={(event) =>
+                  submit(
+                    event,
+                    saveLabel,
+                    (form) => requestJson(`/api/radar/storefront/orders/${order.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
+                    { reset: false, success: "Order updated" }
+                  )
+                }
+              >
+                <SelectInput
+                  name="status"
+                  label="Order status"
+                  defaultValue={order.status}
+                  options={["contact_message", "invoice_requested", "pending_payment", "paid", "inventory_review", "packing", "shipped", "canceled", "refunded", "partially_refunded", "refund_pending", "refund_failed"].map(optionFromString)}
+                />
+                <TextareaInput name="notes" label="Order notes" defaultValue={order.notes ?? ""} wide />
+                <button className="primary-action" disabled={busy} type="submit">
+                  <Save size={16} />
+                  {busyLabel === saveLabel ? "Saving" : "Save Fulfillment"}
+                </button>
+              </form>
+            )}
           </section>
         </div>
       </div>
