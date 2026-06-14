@@ -98,6 +98,7 @@ import type {
   ProductDiscoverySourceDTO,
   ProductStatus,
   ProductVerificationStatus,
+  ProviderHealthStatus,
   Rating,
   ReleaseDTO,
   RetailerDTO,
@@ -636,6 +637,10 @@ function storefrontOrderIsCanceledOrRefunded(order: StorefrontOrderDTO) {
 
 function storefrontOrderCanFulfill(order: StorefrontOrderDTO) {
   return order.paymentStatus === "paid" && order.needsFulfillment && !storefrontOrderIsCanceledOrRefunded(order);
+}
+
+function storefrontOrderHasShipmentDetails(order: StorefrontOrderDTO) {
+  return Boolean(order.carrier?.trim() && order.trackingNumber?.trim());
 }
 
 function storefrontOrderShippingReadiness(order: StorefrontOrderDTO) {
@@ -5808,11 +5813,75 @@ function storefrontListingEligible(item: InventoryItemDTO) {
   return storefrontListingQuality(item).every((check) => check.complete);
 }
 
+function positiveInventoryNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+const completedShippingProfileValues = new Set([
+  "single_card_or_light_item",
+  "sealed_pack_small",
+  "small_box",
+  "medium_box",
+  "large_box",
+  "heavy_box",
+  "local_pickup"
+]);
+
+function inventoryShippingProfileValue(item: InventoryItemDTO) {
+  return (item.shippingProfile || "").trim().toLowerCase();
+}
+
+function inventoryShippingLocalPickupOnly(item: InventoryItemDTO) {
+  return item.shippingAvailable === false && item.localPickupAvailable;
+}
+
+function inventoryUsesFallbackShipping(item: InventoryItemDTO) {
+  const profile = inventoryShippingProfileValue(item);
+  return !profile || profile === "standard" || !completedShippingProfileValues.has(profile);
+}
+
+function inventoryMissingShippingWeight(item: InventoryItemDTO) {
+  return !positiveInventoryNumber(item.packageWeightOz);
+}
+
+function inventoryMissingShippingDimensions(item: InventoryItemDTO) {
+  return (
+    !positiveInventoryNumber(item.packageLengthIn) ||
+    !positiveInventoryNumber(item.packageWidthIn) ||
+    !positiveInventoryNumber(item.packageHeightIn)
+  );
+}
+
+function inventoryShippingProfileComplete(item: InventoryItemDTO) {
+  if (inventoryUsesFallbackShipping(item)) return false;
+  if (inventoryShippingLocalPickupOnly(item)) return true;
+  return !inventoryMissingShippingWeight(item) && !inventoryMissingShippingDimensions(item);
+}
+
+function inventoryShippingProfileBadges(item: InventoryItemDTO) {
+  if (inventoryShippingProfileComplete(item)) {
+    return [{ label: "Shipping profile ready", tone: "good" as const }];
+  }
+
+  const badges = [{ label: "Needs shipping profile", tone: "warning" as const }];
+  if (inventoryUsesFallbackShipping(item)) {
+    badges.push({ label: "Uses fallback shipping", tone: "warning" as const });
+  }
+  if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingWeight(item)) {
+    badges.push({ label: "Missing weight", tone: "warning" as const });
+  }
+  if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingDimensions(item)) {
+    badges.push({ label: "Missing dimensions", tone: "warning" as const });
+  }
+  return badges;
+}
+
 type InventoryFiltersState = {
   search: string;
   category: string;
   source: string;
   listingStatus: string;
+  shippingProfileStatus: string;
   sort: string;
 };
 
@@ -5851,6 +5920,7 @@ const defaultInventoryFilters: InventoryFiltersState = {
   category: "ALL",
   source: "",
   listingStatus: "ALL",
+  shippingProfileStatus: "ALL",
   sort: "date"
 };
 
@@ -5877,6 +5947,8 @@ function inventoryItemMatchesFilters(item: InventoryItemDTO, filters: InventoryF
   if (filters.category !== "ALL" && item.category !== filters.category) return false;
   if (source && !item.source.toLowerCase().includes(source) && !(item.sourceStore || "").toLowerCase().includes(source)) return false;
   if (filters.listingStatus !== "ALL" && item.listingStatus !== filters.listingStatus) return false;
+  if (filters.shippingProfileStatus === "NEEDS_SHIPPING_PROFILE" && inventoryShippingProfileComplete(item)) return false;
+  if (filters.shippingProfileStatus === "PROFILE_READY" && !inventoryShippingProfileComplete(item)) return false;
   return true;
 }
 
@@ -5894,7 +5966,8 @@ function activeInventoryFilterLabels(filters: InventoryFiltersState) {
     filters.search.trim() ? `search "${filters.search.trim()}"` : "",
     filters.category !== "ALL" ? `category ${formatStatus(filters.category)}` : "",
     filters.source.trim() ? `source "${filters.source.trim()}"` : "",
-    filters.listingStatus !== "ALL" ? `status ${formatStatus(filters.listingStatus)}` : ""
+    filters.listingStatus !== "ALL" ? `status ${formatStatus(filters.listingStatus)}` : "",
+    filters.shippingProfileStatus !== "ALL" ? `shipping ${formatStatus(filters.shippingProfileStatus)}` : ""
   ].filter(Boolean);
 }
 
@@ -6624,6 +6697,7 @@ function StorefrontOrdersPanel({
               visibleOrders.map((order) => {
                 const archived = storefrontOrderIsCanceledOrRefunded(order);
                 const canFulfill = storefrontOrderCanFulfill(order);
+                const canMarkShipped = canFulfill && storefrontOrderHasShipmentDetails(order);
                 const itemSummary = order.items.length
                   ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
                   : order.notes?.split("\n").find((line) => line.startsWith("Subject:"))?.replace("Subject:", "Contact:") || "Contact inquiry";
@@ -6669,7 +6743,8 @@ function StorefrontOrdersPanel({
                           </button>
                           <button
                             className="mini-action"
-                            disabled={busy}
+                            disabled={busy || !canMarkShipped}
+                            title={canMarkShipped ? "Mark this order shipped." : "Enter carrier and tracking number before marking shipped."}
                             type="button"
                             onClick={() =>
                               runAction(
@@ -6677,7 +6752,13 @@ function StorefrontOrdersPanel({
                                 () =>
                                   requestJson(`/api/radar/storefront/orders/${order.id}`, {
                                     method: "PATCH",
-                                    body: JSON.stringify({ status: "shipped", fulfillmentStatus: "shipped" })
+                                    body: JSON.stringify({
+                                      status: "shipped",
+                                      fulfillmentStatus: "shipped",
+                                      carrier: order.carrier,
+                                      trackingNumber: order.trackingNumber,
+                                      shippingCost: order.shippingCost
+                                    })
                                   }),
                                 { success: "Order marked shipped" }
                               )
@@ -6838,6 +6919,8 @@ function StorefrontOrderDetailsModal({
   const shippingActionsLocked = storefrontOrderIsCanceledOrRefunded(order);
   const shippingReadiness = storefrontOrderShippingReadiness(order);
   const canFulfillOrder = storefrontOrderCanFulfill(order);
+  const shipmentDetailsSaved = storefrontOrderHasShipmentDetails(order);
+  const canShowPackingSlip = order.items.length > 0 && !shippingActionsLocked;
   const [cancelRefundOpen, setCancelRefundOpen] = useState(false);
   const [cancelRefundKey, setCancelRefundKey] = useState("");
   const openCancelRefund = () => {
@@ -6881,8 +6964,8 @@ function StorefrontOrderDetailsModal({
               </button>
               <button
                 className="mini-action"
-                disabled={busy}
-                title="Mark this paid order as shipped."
+                disabled={busy || !shipmentDetailsSaved}
+                title={shipmentDetailsSaved ? "Mark this paid order as shipped." : "Enter carrier and tracking number before marking shipped."}
                 type="button"
                 onClick={() =>
                   runAction(
@@ -6890,7 +6973,13 @@ function StorefrontOrderDetailsModal({
                     () =>
                       requestJson(`/api/radar/storefront/orders/${order.id}`, {
                         method: "PATCH",
-                        body: JSON.stringify({ status: "shipped", fulfillmentStatus: "shipped" })
+                        body: JSON.stringify({
+                          status: "shipped",
+                          fulfillmentStatus: "shipped",
+                          carrier: order.carrier,
+                          trackingNumber: order.trackingNumber,
+                          shippingCost: order.shippingCost
+                        })
                       }),
                     { success: "Order marked shipped" }
                   )
@@ -6898,14 +6987,17 @@ function StorefrontOrderDetailsModal({
               >
                 Mark Shipped
               </button>
+              {!shipmentDetailsSaved ? <span className="fulfillment-locked-note">Enter carrier and tracking number before marking shipped.</span> : null}
             </>
           ) : (
             <span className="fulfillment-locked-note">{storefrontOrderIsCanceledOrRefunded(order) ? "Historical order - no fulfillment action needed." : "Only active paid orders can be marked packing or shipped."}</span>
           )}
-          <button className="mini-action" type="button" onClick={() => window.print()}>
-            <Printer size={14} />
-            Packing Slip
-          </button>
+          {canShowPackingSlip ? (
+            <button className="mini-action" type="button" onClick={() => window.print()}>
+              <Printer size={14} />
+              Print/View Packing Slip
+            </button>
+          ) : null}
           {order.canCancelOrRefund && !(order.paymentStatus === "paid" && order.refundableAmount <= 0) ? (
             <button className="mini-action danger" disabled={busy} type="button" onClick={openCancelRefund}>
               <RotateCcw size={14} />
@@ -6913,6 +7005,20 @@ function StorefrontOrderDetailsModal({
             </button>
           ) : null}
         </section>
+        {canShowPackingSlip ? (
+          <>
+            <details className="packing-slip-preview-shell">
+              <summary>
+                <Printer size={14} />
+                View Packing Slip Preview
+              </summary>
+              <StorefrontPackingSlip order={order} />
+            </details>
+            <div className="packing-slip-print" aria-hidden="true">
+              <StorefrontPackingSlip order={order} />
+            </div>
+          </>
+        ) : null}
         <div className="inventory-details-grid">
           <section>
             <h3>Customer</h3>
@@ -6945,6 +7051,27 @@ function StorefrontOrderDetailsModal({
               <DetailStat label="Customer notification" value={order.customerCancellationEmailStatus ? formatStatus(order.customerCancellationEmailStatus) : "Not sent"} tone={order.customerCancellationEmailSentAt ? "good" : "neutral"} />
             </div>
           </section>
+          <section className="storefront-email-section">
+            <h3>Email notifications</h3>
+            {order.customerEmailNotifications.length ? (
+              <div className="storefront-email-log">
+                {order.customerEmailNotifications.map((notification) => (
+                  <article key={notification.id}>
+                    <div>
+                      <strong>{notification.label}</strong>
+                      <span>{notification.recipient || order.customerEmail || "No customer email on file"}</span>
+                    </div>
+                    <span className={`chip compact-chip ${emailStatusTone(notification.status)}`}>{emailStatusLabel(notification.status)}</span>
+                    <small>Sent: {notification.sentAt ? dateTime(notification.sentAt) : "Not sent"}</small>
+                    <small>Updated: {dateTime(notification.updatedAt)}</small>
+                    {notification.failureReason ? <small>Reason: {notification.failureReason}</small> : null}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="form-helper publish-ready-note">No customer lifecycle emails recorded yet.</p>
+            )}
+          </section>
           <section className="storefront-shipping-section">
             <div className="storefront-shipping-head">
               <div>
@@ -6963,6 +7090,7 @@ function StorefrontOrderDetailsModal({
               <DetailStat label="Shipping profit/loss" value={moneyDelta(shippingProfitLoss)} tone={shippingProfitTone} />
               <DetailStat label="Carrier" value={order.carrier || "Not provided"} />
               <DetailStat label="Tracking number" value={order.trackingNumber || "Not provided"} />
+              <DetailStat label="Shipped at" value={order.shippedAt ? dateTime(order.shippedAt) : "Not shipped"} />
               <DetailStat label="Fulfillment status" value={formatStatus(order.fulfillmentStatus)} tone={shippingActionsLocked ? "bad" : order.needsFulfillment ? "good" : "neutral"} />
               <DetailStat label="Shipping warnings" value={order.shippingWarnings.length ? order.shippingWarnings.join(" ") : "None"} />
             </div>
@@ -6987,6 +7115,7 @@ function StorefrontOrderDetailsModal({
               <TextInput name="carrier" label="Carrier" defaultValue={order.carrier ?? ""} />
               <TextInput name="trackingNumber" label="Tracking number" defaultValue={order.trackingNumber ?? ""} />
               <TextInput name="shippingCost" label="Actual shipping cost" type="number" min="0" step="0.01" defaultValue={order.shippingCost || ""} />
+              <p className="form-helper publish-ready-note wide-field">Mark Shipped requires carrier and tracking number. To ship from this form, select Shipped and include both fields.</p>
               <button className="primary-action" disabled={busy} type="submit">
                 <Save size={16} />
                 {busyLabel === saveLabel ? "Saving" : "Save Shipping"}
@@ -7135,6 +7264,83 @@ function StorefrontOrderDetailsModal({
         />
       ) : null}
     </div>
+  );
+}
+
+function StorefrontPackingSlip({ order }: { order: StorefrontOrderDTO }) {
+  const shippingLines = formatStorefrontAddressLines(order.shippingAddress);
+  const checklist = [
+    "Verify item title and quantity",
+    "Inspect packaging condition",
+    "Add protective packing material",
+    "Confirm shipping address on label",
+    "Seal package before handoff"
+  ];
+  return (
+    <section className="packing-slip-card" aria-label={`Packing slip for ${order.orderNumber}`}>
+      <header className="packing-slip-header">
+        <div className="packing-slip-brand">
+          <span>GDG</span>
+          <div>
+            <strong>GameDayGrabs</strong>
+            <small>Packing Slip</small>
+          </div>
+        </div>
+        <div className="packing-slip-order-meta">
+          <strong>{order.orderNumber}</strong>
+          <span>Order date: {dateTime(order.createdAt)}</span>
+          <span>Shipping: {order.shippingMethodLabel || "Not captured"}</span>
+        </div>
+      </header>
+      <section className="packing-slip-grid">
+        <div>
+          <h4>Ship to</h4>
+          <strong>{order.customerName || order.shippingAddress?.name || "Customer"}</strong>
+          <div className="packing-slip-address">
+            {shippingLines.map((line) => (
+              <span key={line}>{line}</span>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h4>Package</h4>
+          <span>Weight: {formatShippingPackageWeight(order)}</span>
+          <span>Profile: {formatShippingPackageProfile(order)}</span>
+          <span>Dimensions: {formatShippingPackageDimensions(order)}</span>
+        </div>
+      </section>
+      <section>
+        <h4>Items to pack</h4>
+        <div className="packing-slip-items">
+          {order.items.map((item) => {
+            const identifiers = [
+              item.sku ? `SKU ${item.sku}` : null,
+              item.upc ? `UPC ${item.upc}` : null
+            ].filter(Boolean);
+            return (
+              <article key={item.id}>
+                <strong>{item.publicTitle}</strong>
+                <span>{identifiers.length ? identifiers.join(" - ") : "No SKU/UPC saved"}</span>
+                <b>Qty {item.quantity}</b>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+      <section className="packing-slip-checklist">
+        <h4>Packing checklist</h4>
+        {checklist.map((item) => (
+          <label key={item}>
+            <span aria-hidden="true" />
+            {item}
+          </label>
+        ))}
+      </section>
+      <section className="packing-slip-notes">
+        <h4>Internal note area</h4>
+        <div aria-hidden="true" />
+      </section>
+    </section>
   );
 }
 
@@ -7322,9 +7528,24 @@ function customerEmailResultLabel(status: string | null) {
   if (status === "not_configured") return "Email not configured";
   if (status === "missing_customer_email") return "No customer email on file";
   if (status === "failed") return "Email failed";
-  if (status === "not_requested") return "Email not requested";
-  if (status === "pending") return "Email pending";
+  if (status === "skipped" || status === "not_requested") return "Email skipped";
   return "Email not requested";
+}
+
+function emailStatusLabel(status: string | null) {
+  if (status === "sent") return "Sent";
+  if (status === "not_configured") return "Not configured";
+  if (status === "missing_customer_email") return "Missing email";
+  if (status === "failed") return "Failed";
+  if (status === "skipped") return "Skipped";
+  return status ? formatStatus(status) : "Not recorded";
+}
+
+function emailStatusTone(status: string | null) {
+  if (status === "sent") return "good";
+  if (status === "failed") return "bad";
+  if (status === "not_configured" || status === "missing_customer_email") return "watch";
+  return "neutral";
 }
 
 function InventoryKpiCard({
@@ -9150,6 +9371,17 @@ function InventoryFilters({
         <TextInput name="search" label="Search" value={filters.search} onChange={updateFilter} />
         <SelectInput name="category" label="Category" value={filters.category} onChange={updateFilter} options={[{ value: "ALL", label: "All Categories" }, ...inventoryCategories.map(optionFromString)]} />
         <SelectInput name="listingStatus" label="Status" value={filters.listingStatus} onChange={updateFilter} options={[{ value: "ALL", label: "All Statuses" }, ...listingStatuses.map(optionFromString)]} />
+        <SelectInput
+          name="shippingProfileStatus"
+          label="Shipping profile"
+          value={filters.shippingProfileStatus}
+          onChange={updateFilter}
+          options={[
+            { value: "ALL", label: "All Shipping Profiles" },
+            { value: "NEEDS_SHIPPING_PROFILE", label: "Needs shipping profile" },
+            { value: "PROFILE_READY", label: "Profile ready" }
+          ]}
+        />
         <TextInput name="source" label="Source/Retailer" value={filters.source} onChange={updateFilter} />
         <SelectInput
           name="sort"
@@ -9240,6 +9472,13 @@ function InventoryList({
                 <small className={storefrontListingEligible(item) ? "publish-ready-note good" : "publish-ready-note"}>
                   {storefrontListingEligible(item) ? "Store ready" : "Needs listing QA"}
                 </small>
+                <span className="inventory-shipping-badges" aria-label="Shipping profile status">
+                  {inventoryShippingProfileBadges(item).map((badge) => (
+                    <small className={`publish-ready-note ${badge.tone === "good" ? "good" : "shipping-needed"}`} key={badge.label}>
+                      {badge.label}
+                    </small>
+                  ))}
+                </span>
               </span>
             </button>
           </div>
@@ -9862,7 +10101,7 @@ function StoreListingModal({
     { label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
     { label: "Description clean", complete: descriptionWarnings.length === 0 },
     { label: "Category set", complete: Boolean(suggestedCategory.trim()) },
-    { label: "Shipping profile set", complete: !item.needsShippingProfile }
+    { label: "Shipping profile set", complete: inventoryShippingProfileComplete(item) }
   ];
   const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
   return (
@@ -9990,9 +10229,16 @@ function StoreListingModal({
                   <strong>Shipping profile</strong>
                   <span>Used to estimate customer shipping at checkout.</span>
                 </div>
-                {item.needsShippingProfile ? <span className="shipping-profile-status">Needs shipping profile</span> : <span className="shipping-profile-status complete">Profile ready</span>}
+                {inventoryShippingProfileComplete(item) ? <span className="shipping-profile-status complete">Profile ready</span> : <span className="shipping-profile-status">Needs shipping profile</span>}
               </div>
-              <p className="shipping-profile-helper">Leave blank to use the safe default profile, but complete this for more accurate shipping. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
+              <p className="shipping-profile-helper">Use packed shipping weight, including box or mailer. Leave blank only if you want the safe fallback rate. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
+              <div className="shipping-profile-issue-list" aria-label="Shipping profile checklist">
+                {inventoryShippingProfileBadges(item).map((badge) => (
+                  <span className={`shipping-profile-chip ${badge.tone === "good" ? "good" : "warning"}`} key={badge.label}>
+                    {badge.label}
+                  </span>
+                ))}
+              </div>
               <div className="shipping-profile-fields">
                 <SelectInput
                   name="shippingProfile"
@@ -18470,6 +18716,31 @@ function activeText(value: boolean) {
   return value ? "Active" : "Inactive";
 }
 
+function providerHealthTone(status: ProviderHealthStatus | undefined) {
+  return status === "misconfigured" ? "WARN" : "OK";
+}
+
+function providerHealthLabel(status: ProviderHealthStatus | undefined) {
+  switch (status) {
+    case "configured":
+      return "Configured";
+    case "misconfigured":
+      return "Misconfigured";
+    case "disabled":
+      return "Disabled";
+    case "optional_not_configured":
+      return "Optional";
+    default:
+      return "Unknown";
+  }
+}
+
+function optionalProviderSetupTone(status: ProviderHealthStatus | undefined, userEnabled: boolean, active: boolean) {
+  if (active) return "OK";
+  if (status === "misconfigured") return "WARN";
+  return userEnabled ? "WARN" : "OK";
+}
+
 function HealthCard({
   icon: Icon,
   title,
@@ -18547,8 +18818,8 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
       detail: `Public key ${configuredText(health.providers.push.publicKeyConfigured).toLowerCase()}; private key ${configuredText(
         health.providers.push.privateKeyConfigured
       ).toLowerCase()}`,
-      status: health.providers.push.configured ? "Ready" : "Optional",
-      tone: health.providers.push.configured ? "OK" : "WARN"
+      status: providerHealthLabel(health.providers.push.healthStatus),
+      tone: providerHealthTone(health.providers.push.healthStatus)
     },
     {
       label: "Backup and restore path",
@@ -18637,57 +18908,57 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
         <HealthCard
           icon={Wifi}
           title="Browser Push"
-          value={configuredText(health.providers.push.configured)}
-          tone={health.providers.push.configured ? "OK" : "WARN"}
+          value={providerHealthLabel(health.providers.push.healthStatus)}
+          tone={providerHealthTone(health.providers.push.healthStatus)}
           detail={`Public ${configuredText(health.providers.push.publicKeyConfigured).toLowerCase()}, private ${configuredText(
             health.providers.push.privateKeyConfigured
-          ).toLowerCase()}`}
+          ).toLowerCase()} - ${health.providers.push.message}`}
         />
         <HealthCard
           icon={Mail}
           title="Email Alerts"
-          value={configuredText(health.providers.email.configured)}
-          tone={health.providers.email.configured ? "OK" : "WARN"}
+          value={providerHealthLabel(health.providers.email.healthStatus)}
+          tone={providerHealthTone(health.providers.email.healthStatus)}
           detail={`SMTP host ${configuredText(health.providers.email.smtpHostConfigured).toLowerCase()}, from ${configuredText(
             health.providers.email.smtpFromConfigured
-          ).toLowerCase()}`}
+          ).toLowerCase()} - ${health.providers.email.message}`}
         />
         <HealthCard
           icon={Smartphone}
           title="SMS Alerts"
-          value={configuredText(health.providers.sms.configured)}
-          tone={health.providers.sms.configured ? "OK" : "WARN"}
+          value={providerHealthLabel(health.providers.sms.healthStatus)}
+          tone={providerHealthTone(health.providers.sms.healthStatus)}
           detail={`Twilio SID ${configuredText(health.providers.sms.accountSidConfigured).toLowerCase()}, from ${configuredText(
             health.providers.sms.fromNumberConfigured
-          ).toLowerCase()}`}
+          ).toLowerCase()} - ${health.providers.sms.message}`}
         />
         <HealthCard
           icon={PackageSearch}
           title="UPC Lookup"
-          value={health.providers.upc.searchFallbackConfigured ? "Search Ready" : "UPC Only"}
-          tone={health.providers.upc.searchFallbackConfigured ? "OK" : "WARN"}
+          value={health.providers.upc.searchFallbackConfigured ? "Search Ready" : providerHealthLabel(health.providers.upc.searchFallbackHealthStatus)}
+          tone={providerHealthTone(health.providers.upc.searchFallbackHealthStatus)}
           detail={`Public UPC ${configuredText(health.providers.upc.publicUpcProvider).toLowerCase()}, search ${
             health.providers.upc.searchProvider || "provider missing"
           } ${configuredText(
             health.providers.upc.searchFallbackConfigured
-          ).toLowerCase()}`}
+          ).toLowerCase()} - ${health.providers.upc.searchFallbackMessage}`}
         />
         <HealthCard
           icon={Upload}
           title="Product Image Uploads"
-          value={health.providers.blob.configured ? "Enabled" : "Disabled"}
-          tone={health.providers.blob.configured ? "OK" : "WARN"}
-          detail={`Vercel Blob ${configuredText(health.providers.blob.readWriteTokenConfigured).toLowerCase()} - max ${health.providers.blob.maxUploadSizeMb} MB`}
+          value={providerHealthLabel(health.providers.blob.healthStatus)}
+          tone={providerHealthTone(health.providers.blob.healthStatus)}
+          detail={`Vercel Blob ${configuredText(health.providers.blob.readWriteTokenConfigured).toLowerCase()} - max ${health.providers.blob.maxUploadSizeMb} MB - ${health.providers.blob.message}`}
         />
         <HealthCard
           icon={PackageSearch}
           title="Blob Storage"
-          value={health.providers.blob.readWriteTokenConfigured ? "Connected" : "Missing"}
-          tone={health.providers.blob.readWriteTokenConfigured ? "OK" : "WARN"}
+          value={providerHealthLabel(health.providers.blob.healthStatus)}
+          tone={providerHealthTone(health.providers.blob.healthStatus)}
           detail={
             health.providers.blob.readWriteTokenConfigured
               ? "Product gallery uploads store files in Vercel Blob."
-              : "Set BLOB_READ_WRITE_TOKEN to enable uploaded product images."
+              : "Set BLOB_READ_WRITE_TOKEN to enable uploaded product images, or leave Blob disabled."
           }
         />
       </div>
@@ -18738,9 +19009,6 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
             <ul>
               {health.environment.coreMissing.length ? (
                 <li>Missing required env vars: {health.environment.coreMissing.join(", ")}</li>
-              ) : null}
-              {health.environment.featureMissing.length ? (
-                <li>Missing push env vars: {health.environment.featureMissing.join(", ")}</li>
               ) : null}
               {health.environment.warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
@@ -18874,7 +19142,7 @@ function NotificationSettingsPanel({
           icon={Wifi}
           title="Browser Push Setup"
           value={activeText(browserPushActive)}
-          tone={browserPushActive ? "OK" : health?.providers.push.configured ? "WARN" : "ERROR"}
+          tone={optionalProviderSetupTone(health?.providers.push.healthStatus, settings.browserPush, browserPushActive)}
           detail={`VAPID ${configuredText(Boolean(health?.providers.push.configured)).toLowerCase()}, user ${
             settings.browserPush ? "enabled" : "disabled"
           }, permission ${pushPermission}, subscription ${hasPushSubscription ? "saved" : "missing"}`}
@@ -18883,7 +19151,7 @@ function NotificationSettingsPanel({
           icon={Mail}
           title="Email Setup"
           value={activeText(emailActive)}
-          tone={emailActive ? "OK" : health?.providers.email.configured ? "WARN" : "ERROR"}
+          tone={optionalProviderSetupTone(health?.providers.email.healthStatus, Boolean(settings.email), emailActive)}
           detail={`SMTP ${configuredText(Boolean(health?.providers.email.configured)).toLowerCase()}, user ${
             settings.email ? "enabled" : "disabled"
           }, destination ${settings.emailTo || "missing"}`}
@@ -18892,7 +19160,7 @@ function NotificationSettingsPanel({
           icon={Smartphone}
           title="SMS Setup"
           value={activeText(smsActive)}
-          tone={smsActive ? "OK" : health?.providers.sms.configured ? "WARN" : "ERROR"}
+          tone={optionalProviderSetupTone(health?.providers.sms.healthStatus, Boolean(settings.sms), smsActive)}
           detail={`Twilio ${configuredText(Boolean(health?.providers.sms.configured)).toLowerCase()}, user ${
             settings.sms ? "enabled" : "disabled"
           }, phone ${settings.phone || "missing"}`}

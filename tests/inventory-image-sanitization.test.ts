@@ -229,10 +229,16 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(listingModal, /className="shipping-profile-card"/);
   assert.match(listingModal, /<strong>Shipping profile<\/strong>/);
   assert.match(listingModal, /Used to estimate customer shipping at checkout\./);
-  assert.match(listingModal, /Leave blank to use the safe default profile, but complete this for more accurate shipping\./);
+  assert.match(listingModal, /Use packed shipping weight, including box or mailer\./);
+  assert.match(listingModal, /Leave blank only if you want the safe fallback rate\./);
   assert.match(listingModal, /Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment\./);
+  assert.match(listingModal, /shipping-profile-issue-list/);
+  assert.match(listingModal, /inventoryShippingProfileBadges\(item\)\.map/);
   assert.match(listingModal, /Needs shipping profile/);
   assert.match(listingModal, /Shipping profile set/);
+  assert.match(appSource, /Uses fallback shipping/);
+  assert.match(appSource, /Missing weight/);
+  assert.match(appSource, /Missing dimensions/);
 
   for (const field of [
     "shippingProfile",
@@ -270,9 +276,49 @@ test("admin listing editor renders a clean shipping profile card", () => {
 
   assert.match(css, /body \.shipping-profile-card \{[\s\S]*display: grid[\s\S]*border: 1px solid #e5e7eb/);
   assert.match(css, /body \.shipping-profile-card-head \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(css, /body \.shipping-profile-issue-list \{[\s\S]*align-items: center/);
+  assert.match(css, /body \.shipping-profile-chip \{[\s\S]*white-space: nowrap/);
   assert.match(css, /body \.shipping-package-grid,[\s\S]*body \.shipping-option-grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /body \.shipping-toggle-card \{[\s\S]*grid-template-columns: auto minmax\(0, 1fr\)/);
   assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.shipping-profile-card-head,[\s\S]*body \.shipping-package-grid,[\s\S]*body \.shipping-option-grid \{[\s\S]*grid-template-columns: 1fr/);
+});
+
+test("admin inventory can find products that need shipping profiles", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const filterState = sourceSlice(appSource, "type InventoryFiltersState", "type InventoryMutationReason");
+  const filterLogic = sourceSlice(appSource, "function inventoryItemMatchesFilters", "function sortInventoryItemsForFilters");
+  const filtersComponent = sourceSlice(appSource, "function InventoryFilters", "function InventoryList");
+  const listComponent = sourceSlice(appSource, "function InventoryList", "function InventoryDetailsModal");
+
+  assert.match(appSource, /function inventoryShippingProfileComplete\(item: InventoryItemDTO\)/);
+  assert.match(appSource, /function inventoryUsesFallbackShipping\(item: InventoryItemDTO\)/);
+  assert.match(appSource, /function inventoryMissingShippingWeight\(item: InventoryItemDTO\)/);
+  assert.match(appSource, /function inventoryMissingShippingDimensions\(item: InventoryItemDTO\)/);
+  assert.match(appSource, /function inventoryShippingProfileBadges\(item: InventoryItemDTO\)/);
+  assert.match(appSource, /completedShippingProfileValues/);
+  assert.match(appSource, /positiveInventoryNumber\(item\.packageWeightOz\)/);
+  assert.match(appSource, /positiveInventoryNumber\(item\.packageLengthIn\)/);
+  assert.match(appSource, /positiveInventoryNumber\(item\.packageWidthIn\)/);
+  assert.match(appSource, /positiveInventoryNumber\(item\.packageHeightIn\)/);
+  assert.match(filterState, /shippingProfileStatus: string/);
+  assert.match(appSource, /shippingProfileStatus: "ALL"/);
+  assert.match(filterLogic, /filters\.shippingProfileStatus === "NEEDS_SHIPPING_PROFILE" && inventoryShippingProfileComplete\(item\)/);
+  assert.match(filterLogic, /filters\.shippingProfileStatus === "PROFILE_READY" && !inventoryShippingProfileComplete\(item\)/);
+  assert.match(filtersComponent, /name="shippingProfileStatus"/);
+  assert.match(filtersComponent, /All Shipping Profiles/);
+  assert.match(filtersComponent, /Needs shipping profile/);
+  assert.match(filtersComponent, /Profile ready/);
+  assert.match(listComponent, /inventoryShippingProfileBadges\(item\)\.map/);
+  assert.match(listComponent, /aria-label="Shipping profile status"/);
+  assert.match(appSource, /Needs shipping profile/);
+  assert.match(appSource, /Uses fallback shipping/);
+  assert.match(appSource, /Missing weight/);
+  assert.match(appSource, /Missing dimensions/);
+  assert.match(listComponent, /shipping-needed/);
+  assert.match(css, /\.inventory-shipping-badges,[\s\S]*\.shipping-profile-issue-list \{[\s\S]*flex-wrap: wrap/);
+  assert.match(css, /\.publish-ready-note\.shipping-needed \{[\s\S]*color: var\(--warning\)/);
+  assert.doesNotMatch(filterLogic, /quantityOwned\s*[+\-]=|quantitySold\s*[+\-]=|remainingQuantity/);
 });
 
 test("store listing save path persists shipping metadata without stock quantity mutation", () => {

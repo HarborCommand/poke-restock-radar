@@ -495,6 +495,18 @@ const cancellationReasonLabels = {
 
 type StorefrontCancellationReason = keyof typeof cancellationReasonLabels;
 type StorefrontRefundType = "full" | "partial" | "none";
+type CustomerEmailStatus = "sent" | "not_configured" | "missing_customer_email" | "failed" | "skipped";
+type CustomerEmailKind = "order_confirmation" | "refund_cancellation" | "shipment" | "checkout_expired" | "local_pickup";
+
+const customerEmailKindLabels: Record<CustomerEmailKind, string> = {
+  order_confirmation: "Order confirmation",
+  refund_cancellation: "Refund/cancellation",
+  shipment: "Shipping/tracking",
+  checkout_expired: "Expired checkout",
+  local_pickup: "Local pickup"
+};
+
+const defaultStorefrontContactEmail = "gamedaygrabs@outlook.com";
 
 type StorefrontCancelRefundInput = {
   reason: StorefrontCancellationReason;
@@ -531,6 +543,218 @@ async function sendStorefrontEmail(to: string, subject: string, text: string) {
     text
   });
   return true;
+}
+
+function customerEmailEventType(kind: CustomerEmailKind, status: CustomerEmailStatus) {
+  return `customer_email.${kind}.${status}`;
+}
+
+function customerEmailEventId(kind: CustomerEmailKind, orderId: string, key = "default") {
+  return `customer_email.${kind}:${orderId}:${key}`;
+}
+
+function sanitizedEmailFailure(error: unknown) {
+  if (!error) return null;
+  return "SMTP send failed.";
+}
+
+function orderItemSummaryLines(order: StorefrontOrderWithItems) {
+  if (!order.items.length) return ["No line items were stored for this order."];
+  return order.items.map((item) => `${item.quantity} x ${item.publicTitle} - $${item.lineTotal.toFixed(2)}`);
+}
+
+function orderAddressSummaryLines(order: StorefrontOrderWithItems) {
+  const lines = [
+    order.shippingName || order.customerName || null,
+    order.shippingLine1,
+    order.shippingLine2,
+    [order.shippingCity, order.shippingState, order.shippingPostalCode].filter(Boolean).join(", "),
+    order.shippingCountry
+  ].filter((line): line is string => Boolean(line && line.trim()));
+  return lines.length ? lines : ["Shipping address was not captured."];
+}
+
+function trackingUrlFor(carrier: string | null | undefined, trackingNumber: string | null | undefined) {
+  const tracking = trackingNumber?.trim();
+  if (!tracking) return null;
+  const encoded = encodeURIComponent(tracking);
+  const normalizedCarrier = (carrier || "").trim().toLowerCase();
+  if (normalizedCarrier.includes("usps")) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encoded}`;
+  if (normalizedCarrier.includes("ups")) return `https://www.ups.com/track?tracknum=${encoded}`;
+  if (normalizedCarrier.includes("fedex")) return `https://www.fedex.com/fedextrack/?trknbr=${encoded}`;
+  return null;
+}
+
+function customerEmailEventPayload(input: {
+  order: StorefrontOrderWithItems;
+  kind: CustomerEmailKind;
+  status: CustomerEmailStatus;
+  recipient: string | null;
+  sentAt?: Date | null;
+  failureReason?: string | null;
+  detail?: string | null;
+}) {
+  return JSON.stringify({
+    provider: "email",
+    kind: input.kind,
+    label: customerEmailKindLabels[input.kind],
+    status: input.status,
+    orderId: input.order.id,
+    orderNumber: input.order.orderNumber,
+    recipient: input.recipient,
+    sentAt: input.sentAt?.toISOString() ?? null,
+    failureReason: input.failureReason ?? null,
+    detail: input.detail ?? null
+  });
+}
+
+function parseCustomerEmailEventStatus(event: { eventType: string; payload: string | null }): CustomerEmailStatus {
+  const fallback = event.eventType.split(".").at(-1);
+  try {
+    const parsed = JSON.parse(event.payload || "{}") as { status?: unknown; emailStatus?: unknown };
+    const status = typeof parsed.status === "string" ? parsed.status : typeof parsed.emailStatus === "string" ? parsed.emailStatus : fallback;
+    if (["sent", "not_configured", "missing_customer_email", "failed", "skipped"].includes(status || "")) {
+      return status as CustomerEmailStatus;
+    }
+  } catch {
+    // Fall through to the event type suffix.
+  }
+  if (["sent", "not_configured", "missing_customer_email", "failed", "skipped"].includes(fallback || "")) {
+    return fallback as CustomerEmailStatus;
+  }
+  return "skipped";
+}
+
+async function createCustomerEmailEventClaim(input: {
+  eventId: string;
+  order: StorefrontOrderWithItems;
+  kind: CustomerEmailKind;
+  recipient: string | null;
+}) {
+  try {
+    await prisma.paymentEvent.create({
+      data: {
+        orderId: input.order.id,
+        provider: "email",
+        eventId: input.eventId,
+        eventType: customerEmailEventType(input.kind, "skipped"),
+        payload: customerEmailEventPayload({
+          order: input.order,
+          kind: input.kind,
+          status: "skipped",
+          recipient: input.recipient,
+          detail: "Email notification queued."
+        })
+      }
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false;
+    throw error;
+  }
+}
+
+async function completeCustomerEmailEvent(input: {
+  eventId: string;
+  order: StorefrontOrderWithItems;
+  kind: CustomerEmailKind;
+  status: CustomerEmailStatus;
+  recipient: string | null;
+  sentAt?: Date | null;
+  failureReason?: string | null;
+  detail?: string | null;
+}) {
+  await prisma.paymentEvent.update({
+    where: { eventId: input.eventId },
+    data: {
+      eventType: customerEmailEventType(input.kind, input.status),
+      payload: customerEmailEventPayload(input)
+    }
+  });
+}
+
+async function sendCustomerEmailNotificationOnce(input: {
+  order: StorefrontOrderWithItems;
+  kind: CustomerEmailKind;
+  eventId: string;
+  subject?: string;
+  text?: string;
+  recipient?: string | null;
+  skippedDetail?: string;
+}) {
+  const existing = await prisma.paymentEvent.findUnique({ where: { eventId: input.eventId } });
+  if (existing) return parseCustomerEmailEventStatus(existing);
+
+  const recipient = input.recipient ?? input.order.customerEmail ?? input.order.customer?.email ?? null;
+  const claimed = await createCustomerEmailEventClaim({ eventId: input.eventId, order: input.order, kind: input.kind, recipient });
+  if (!claimed) {
+    const current = await prisma.paymentEvent.findUnique({ where: { eventId: input.eventId } });
+    return current ? parseCustomerEmailEventStatus(current) : "skipped";
+  }
+
+  if (input.skippedDetail) {
+    await completeCustomerEmailEvent({
+      eventId: input.eventId,
+      order: input.order,
+      kind: input.kind,
+      status: "skipped",
+      recipient,
+      detail: input.skippedDetail
+    });
+    return "skipped";
+  }
+  if (!recipient) {
+    await completeCustomerEmailEvent({ eventId: input.eventId, order: input.order, kind: input.kind, status: "missing_customer_email", recipient });
+    return "missing_customer_email";
+  }
+  if (!smtpReady()) {
+    await completeCustomerEmailEvent({ eventId: input.eventId, order: input.order, kind: input.kind, status: "not_configured", recipient });
+    return "not_configured";
+  }
+  try {
+    const sent = await sendStorefrontEmail(recipient, input.subject || "GameDayGrabs order update", input.text || "GameDayGrabs order update");
+    const status: CustomerEmailStatus = sent ? "sent" : "not_configured";
+    const sentAt = status === "sent" ? new Date() : null;
+    await completeCustomerEmailEvent({ eventId: input.eventId, order: input.order, kind: input.kind, status, recipient, sentAt });
+    return status;
+  } catch (error) {
+    await completeCustomerEmailEvent({
+      eventId: input.eventId,
+      order: input.order,
+      kind: input.kind,
+      status: "failed",
+      recipient,
+      failureReason: sanitizedEmailFailure(error)
+    });
+    return "failed";
+  }
+}
+
+async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithItems) {
+  const settings = await getStorefrontSettings();
+  const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
+  const text = [
+    "Thanks for your order.",
+    "",
+    "GameDayGrabs received your payment.",
+    `Order: ${order.orderNumber}`,
+    "",
+    "Items:",
+    ...orderItemSummaryLines(order),
+    "",
+    `Shipping method: ${order.shippingMethodLabel || "Not captured"}`,
+    `Amount paid: $${order.total.toFixed(2)}`,
+    "You'll receive tracking once your order ships.",
+    "",
+    `Questions? Contact ${contactEmail}.`
+  ].join("\n");
+  return sendCustomerEmailNotificationOnce({
+    order,
+    kind: "order_confirmation",
+    eventId: customerEmailEventId("order_confirmation", order.id),
+    subject: `GameDayGrabs order ${order.orderNumber} confirmation`,
+    text
+  });
 }
 
 function moneyFromCents(cents: number) {
@@ -653,9 +877,9 @@ async function sendStorefrontCancellationEmail(input: {
   adminNote?: string;
   refundAmount: number;
   contactEmail: string;
+  idempotencyKey: string;
 }) {
   const to = input.order.customerEmail ?? input.order.customer?.email ?? null;
-  if (!to) return "missing_customer_email";
   const reasonLabel = cancellationReasonLabels[input.reason];
   const refundLine =
     input.refundAmount > 0
@@ -673,12 +897,74 @@ async function sendStorefrontCancellationEmail(input: {
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
-  try {
-    const sent = await sendStorefrontEmail(to, `GameDayGrabs order ${input.order.orderNumber} cancellation`, text);
-    return sent ? "sent" : "not_configured";
-  } catch {
-    return "failed";
-  }
+  return sendCustomerEmailNotificationOnce({
+    order: input.order,
+    kind: "refund_cancellation",
+    eventId: customerEmailEventId("refund_cancellation", input.order.id, input.idempotencyKey),
+    subject: `GameDayGrabs order ${input.order.orderNumber} cancellation`,
+    text,
+    recipient: to
+  });
+}
+
+async function sendStorefrontShipmentEmail(order: StorefrontOrderWithItems) {
+  const settings = await getStorefrontSettings();
+  const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
+  const trackingUrl = trackingUrlFor(order.carrier, order.trackingNumber);
+  const text = [
+    "Your GameDayGrabs order has shipped.",
+    "",
+    `Order: ${order.orderNumber}`,
+    `Carrier: ${order.carrier || "Not provided"}`,
+    `Tracking number: ${order.trackingNumber || "Not provided"}`,
+    trackingUrl ? `Tracking link: ${trackingUrl}` : null,
+    "",
+    "Shipping address:",
+    ...orderAddressSummaryLines(order),
+    "",
+    `Questions? Contact ${contactEmail}.`
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+  return sendCustomerEmailNotificationOnce({
+    order,
+    kind: "shipment",
+    eventId: customerEmailEventId("shipment", order.id),
+    subject: `GameDayGrabs order ${order.orderNumber} shipped`,
+    text
+  });
+}
+
+async function sendStorefrontLocalPickupEmail(order: StorefrontOrderWithItems) {
+  const settings = await getStorefrontSettings();
+  const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
+  const text = [
+    "Your GameDayGrabs order is ready for local pickup.",
+    "",
+    `Order: ${order.orderNumber}`,
+    "Please contact GameDayGrabs to coordinate pickup timing.",
+    "",
+    "Items:",
+    ...orderItemSummaryLines(order),
+    "",
+    `Questions? Contact ${contactEmail}.`
+  ].join("\n");
+  return sendCustomerEmailNotificationOnce({
+    order,
+    kind: "local_pickup",
+    eventId: customerEmailEventId("local_pickup", order.id),
+    subject: `GameDayGrabs order ${order.orderNumber} pickup instructions`,
+    text
+  });
+}
+
+async function recordExpiredCheckoutEmailSkipped(order: StorefrontOrderWithItems, detail: string) {
+  return sendCustomerEmailNotificationOnce({
+    order,
+    kind: "checkout_expired",
+    eventId: customerEmailEventId("checkout_expired", order.id),
+    skippedDetail: detail
+  });
 }
 
 function stripeImage(imageUrl: string | null | undefined) {
@@ -728,11 +1014,69 @@ function orderStatusBadge(order: StorefrontOrderWithItems) {
   return order.status;
 }
 
+function customerEmailNotifications(order: StorefrontOrderWithItems): StorefrontOrderDTO["customerEmailNotifications"] {
+  const notifications = order.paymentEvents
+    .filter((event) => event.eventType.startsWith("customer_email.") || event.eventType.startsWith("admin.cancellation_email."))
+    .map((event) => {
+      const record = (() => {
+        try {
+          return JSON.parse(event.payload || "{}") as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })();
+      const inferredKind = event.eventType.startsWith("admin.cancellation_email.")
+        ? "refund_cancellation"
+        : event.eventType.split(".")[1] || "order_update";
+      const kind = typeof record.kind === "string" ? record.kind : inferredKind;
+      const status = customerEmailEventStatusFromRecord(record, event);
+      const sentAt = typeof record.sentAt === "string" ? record.sentAt : status === "sent" ? event.receivedAt.toISOString() : null;
+      const failureReason =
+        typeof record.failureReason === "string" && record.failureReason.trim() ? record.failureReason.trim().slice(0, 160) : null;
+      return {
+        id: event.id,
+        kind,
+        label:
+          typeof record.label === "string" && record.label.trim()
+            ? record.label
+            : customerEmailKindLabels[kind as CustomerEmailKind] ?? "Customer email",
+        status,
+        recipient: typeof record.recipient === "string" && record.recipient.trim() ? record.recipient.trim() : null,
+        sentAt,
+        updatedAt: event.receivedAt.toISOString(),
+        failureReason
+      };
+    });
+
+  if (order.customerCancellationEmailStatus && !notifications.some((notification) => notification.kind === "refund_cancellation")) {
+    notifications.push({
+      id: `legacy-cancellation-email-${order.id}`,
+      kind: "refund_cancellation",
+      label: customerEmailKindLabels.refund_cancellation,
+      status: order.customerCancellationEmailStatus,
+      recipient: order.customerEmail ?? order.customer?.email ?? null,
+      sentAt: order.customerCancellationEmailSentAt?.toISOString() ?? null,
+      updatedAt: order.customerCancellationEmailSentAt?.toISOString() ?? order.updatedAt.toISOString(),
+      failureReason: null
+    });
+  }
+  return notifications.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function customerEmailEventStatusFromRecord(record: Record<string, unknown>, event: { eventType: string; payload: string | null }) {
+  const status = typeof record.status === "string" ? record.status : typeof record.emailStatus === "string" ? record.emailStatus : null;
+  if (status && ["sent", "not_configured", "missing_customer_email", "failed", "skipped"].includes(status)) return status;
+  return parseCustomerEmailEventStatus(event);
+}
+
 function orderTimeline(order: StorefrontOrderWithItems): StorefrontOrderDTO["timeline"] {
   const completedEvent = order.paymentEvents.find((event) => event.eventType === "checkout.session.completed");
   const cancellationStarted = order.paymentEvents.find((event) => event.eventType === "admin.cancel_refund.started");
   const refundCreated = order.paymentEvents.find((event) => event.eventType === "admin.refund.created");
-  const notificationEvent = order.paymentEvents.find((event) => event.eventType.startsWith("admin.cancellation_email."));
+  const emailNotifications = customerEmailNotifications(order);
+  const confirmationEmail = emailNotifications.find((notification) => notification.kind === "order_confirmation");
+  const cancellationEmail = emailNotifications.find((notification) => notification.kind === "refund_cancellation");
+  const shipmentEmail = emailNotifications.find((notification) => notification.kind === "shipment");
   return [
     { label: "Order created", at: order.createdAt.toISOString(), detail: "Storefront order was created." },
     { label: "Checkout started", at: order.stripeCheckoutSessionId ? order.createdAt.toISOString() : null, detail: order.stripeCheckoutSessionId ? "Stripe Checkout session was created." : "No Stripe Checkout session for this order." },
@@ -743,10 +1087,12 @@ function orderTimeline(order: StorefrontOrderWithItems): StorefrontOrderDTO["tim
     { label: "Refund created", at: refundCreated?.receivedAt.toISOString() ?? order.refundedAt?.toISOString() ?? null, detail: order.refundedAmount > 0 ? `Refund total recorded: $${order.refundedAmount.toFixed(2)}.` : "No Stripe refund recorded." },
     { label: "Refund status", at: order.refundedAt?.toISOString() ?? null, detail: order.refundStatus ? `Refund status: ${order.refundStatus}.` : "No refund status recorded." },
     { label: "Inventory returned", at: order.stockReturnedAt?.toISOString() ?? null, detail: order.stockReturnStatus ? `Stock return status: ${order.stockReturnStatus}.` : "Stock has not been returned for this order." },
-    { label: "Customer notified", at: order.customerCancellationEmailSentAt?.toISOString() ?? notificationEvent?.receivedAt.toISOString() ?? null, detail: order.customerCancellationEmailStatus ? `Email status: ${order.customerCancellationEmailStatus}.` : "No cancellation email recorded." },
+    { label: "Order confirmation email", at: confirmationEmail?.sentAt ?? confirmationEmail?.updatedAt ?? null, detail: confirmationEmail ? `Email status: ${confirmationEmail.status}.` : "No order confirmation email recorded." },
+    { label: "Customer notified", at: order.customerCancellationEmailSentAt?.toISOString() ?? cancellationEmail?.sentAt ?? cancellationEmail?.updatedAt ?? null, detail: order.customerCancellationEmailStatus ? `Email status: ${order.customerCancellationEmailStatus}.` : cancellationEmail ? `Email status: ${cancellationEmail.status}.` : "No cancellation email recorded." },
     { label: "Admin note/reason", at: cancellationStarted?.receivedAt.toISOString() ?? null, detail: [order.refundReason ? `Reason: ${order.refundReason}` : null, order.refundNote ? `Note: ${order.refundNote}` : null].filter(Boolean).join(" - ") || "No admin cancellation note recorded." },
     { label: "Packing", at: order.fulfillmentStatus === "packing" || order.status === "packing" ? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "packing" || order.status === "packing" ? "Order is marked packing." : "Not marked packing yet." },
-    { label: "Shipped", at: order.fulfillmentStatus === "shipped" ? order.fulfillment?.shippedAt?.toISOString() ?? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "shipped" ? "Order is marked shipped." : "Not shipped yet." }
+    { label: "Shipped", at: order.fulfillmentStatus === "shipped" ? order.fulfillment?.shippedAt?.toISOString() ?? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "shipped" ? "Order is marked shipped." : "Not shipped yet." },
+    { label: "Shipping email", at: shipmentEmail?.sentAt ?? shipmentEmail?.updatedAt ?? null, detail: shipmentEmail ? `Email status: ${shipmentEmail.status}.` : "No shipping email recorded." }
   ];
 }
 
@@ -845,6 +1191,7 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     customerCancellationEmailSentAt: order.customerCancellationEmailSentAt?.toISOString() ?? null,
     canCancelOrRefund: orderCanCancelOrRefund(order),
     paidAt: order.paidAt?.toISOString() ?? null,
+    shippedAt: order.fulfillment?.shippedAt?.toISOString() ?? null,
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
     items: order.items.map(orderItemToDTO),
@@ -862,6 +1209,7 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
       eventType: event.eventType,
       receivedAt: event.receivedAt.toISOString()
     })),
+    customerEmailNotifications: customerEmailNotifications(order),
     timeline: orderTimeline(order)
   };
 }
@@ -1448,6 +1796,12 @@ async function markStorefrontOrderPaymentFailed(order: StorefrontOrderWithItems,
     priority: "MEDIUM",
     score: 75
   });
+  await recordExpiredCheckoutEmailSkipped(
+    order,
+    paymentStatus === "expired"
+      ? "Expired unpaid checkout sessions are not emailed automatically."
+      : "Failed unpaid checkout sessions are not emailed automatically."
+  );
   return { released: released.count, skipped: null };
 }
 
@@ -1868,6 +2222,7 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
     const persisted = await persistPaidCheckoutSession(order, session);
     order = persisted.order;
     if (!wasPaid && order.paymentStatus !== "paid") await createStorefrontSale(order);
+    if (!wasPaid) await sendStorefrontOrderConfirmationEmail(order);
     if (persisted.customer && persisted.customerEmail) await syncStorefrontCustomerTotals(persisted.customer.id, persisted.customerEmail);
     return { ok: true };
   }
@@ -2202,7 +2557,7 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
   const refundStatus = refundCents > 0 ? paymentStatus : "not_applicable";
   const refundedAt = refundCents > 0 && paymentStatus !== "refund_pending" && paymentStatus !== "refund_failed" ? new Date() : null;
   const reasonLabel = cancellationReasonLabels[input.reason];
-  const requestedEmailStatus = input.sendCustomerEmail ? "pending" : "not_requested";
+  const requestedEmailStatus = "skipped";
 
   const updatedOrder = await prisma.$transaction(async (tx) => {
     const duplicate = await tx.paymentEvent.findUnique({ where: { eventId: requestEventId } });
@@ -2313,29 +2668,23 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
       reason: input.reason,
       adminNote: input.adminNote,
       refundAmount: moneyFromCents(refundCents),
-      contactEmail: settings.contactEmail || "gamedaygrabs@outlook.com"
+      contactEmail: settings.contactEmail || defaultStorefrontContactEmail,
+      idempotencyKey: input.idempotencyKey
     });
     finalOrder = await prisma.storefrontOrder.update({
       where: { id: updatedOrder.id },
       data: {
         customerCancellationEmailStatus: emailStatus,
-        customerCancellationEmailSentAt: emailStatus === "sent" ? new Date() : updatedOrder.customerCancellationEmailSentAt
+        customerCancellationEmailSentAt: emailStatus === "sent" ? updatedOrder.customerCancellationEmailSentAt ?? new Date() : updatedOrder.customerCancellationEmailSentAt
       },
       include: storefrontOrderInclude
     });
-    await prisma.paymentEvent.upsert({
-      where: { eventId: `admin.cancellation_email:${input.idempotencyKey}` },
-      create: {
-        orderId: updatedOrder.id,
-        provider: "admin",
-        eventId: `admin.cancellation_email:${input.idempotencyKey}`,
-        eventType: `admin.cancellation_email.${emailStatus}`,
-        payload: JSON.stringify({ orderId: updatedOrder.id, orderNumber: updatedOrder.orderNumber, emailStatus })
-      },
-      update: {
-        eventType: `admin.cancellation_email.${emailStatus}`,
-        payload: JSON.stringify({ orderId: updatedOrder.id, orderNumber: updatedOrder.orderNumber, emailStatus })
-      }
+  } else {
+    await sendCustomerEmailNotificationOnce({
+      order: updatedOrder,
+      kind: "refund_cancellation",
+      eventId: customerEmailEventId("refund_cancellation", updatedOrder.id, input.idempotencyKey),
+      skippedDetail: "Admin chose not to send a cancellation email."
     });
   }
   const customerEmail = finalOrder.customerEmail ?? finalOrder.customer?.email ?? null;
@@ -2373,11 +2722,19 @@ export async function updateStorefrontOrder(
   if (requestsActiveFulfillment && order.paymentStatus !== "paid") {
     throw new Error("Only paid orders can be marked packing or shipped.");
   }
+  const requestsShippedStatus = input.status === "shipped" || input.fulfillmentStatus === "shipped";
+  const nextCarrier = input.carrier !== undefined ? input.carrier?.trim() ?? "" : order.carrier?.trim() ?? "";
+  const nextTrackingNumber = input.trackingNumber !== undefined ? input.trackingNumber?.trim() ?? "" : order.trackingNumber?.trim() ?? "";
+  if (requestsShippedStatus && (!nextCarrier || !nextTrackingNumber)) {
+    throw new Error("Carrier and tracking number are required before marking an order shipped.");
+  }
+  const nextFulfillmentStatus = input.fulfillmentStatus ?? (input.status === "packing" || input.status === "shipped" ? input.status : undefined);
+  const nextOrderStatus = input.status ?? (input.fulfillmentStatus === "packing" || input.fulfillmentStatus === "shipped" ? input.fulfillmentStatus : undefined);
   const updated = await prisma.storefrontOrder.update({
     where: { id: order.id },
     data: {
-      status: input.status,
-      fulfillmentStatus: input.fulfillmentStatus,
+      status: nextOrderStatus,
+      fulfillmentStatus: nextFulfillmentStatus,
       trackingNumber: input.trackingNumber,
       carrier: input.carrier,
       shippingCost: input.shippingCost,
@@ -2390,19 +2747,35 @@ export async function updateStorefrontOrder(
     where: { orderId: order.id },
     create: {
       orderId: order.id,
-      status: input.fulfillmentStatus ?? order.fulfillmentStatus,
+      status: nextFulfillmentStatus ?? order.fulfillmentStatus,
       carrier: input.carrier,
       trackingNumber: input.trackingNumber,
       notes: input.notes,
-      shippedAt: input.fulfillmentStatus === "shipped" ? new Date() : undefined
+      shippedAt: nextFulfillmentStatus === "shipped" ? new Date() : undefined
     },
     update: {
-      status: input.fulfillmentStatus,
+      status: nextFulfillmentStatus,
       carrier: input.carrier,
       trackingNumber: input.trackingNumber,
       notes: input.notes,
-      shippedAt: input.fulfillmentStatus === "shipped" ? new Date() : undefined
+      shippedAt: nextFulfillmentStatus === "shipped" ? new Date() : undefined
     }
   });
-  return storefrontOrderToDTO(updated);
+  const refreshed = await prisma.storefrontOrder.findUnique({
+    where: { id: order.id },
+    include: storefrontOrderInclude
+  });
+  let finalOrder = refreshed ?? updated;
+  if (nextFulfillmentStatus === "shipped") {
+    await sendStorefrontShipmentEmail(finalOrder);
+  }
+  if (nextFulfillmentStatus === "pickup_ready") {
+    await sendStorefrontLocalPickupEmail(finalOrder);
+  }
+  const withEmailEvents = await prisma.storefrontOrder.findUnique({
+    where: { id: order.id },
+    include: storefrontOrderInclude
+  });
+  finalOrder = withEmailEvents ?? finalOrder;
+  return storefrontOrderToDTO(finalOrder);
 }

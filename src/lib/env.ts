@@ -1,3 +1,11 @@
+export type ProviderHealthStatus = "configured" | "optional_not_configured" | "misconfigured" | "disabled";
+
+type ProviderHealthMetadata = {
+  healthStatus: ProviderHealthStatus;
+  envVars: string[];
+  message: string;
+};
+
 export type EnvironmentReport = {
   nodeEnv: string;
   appUrl: string | null;
@@ -12,35 +20,40 @@ export type EnvironmentReport = {
       vercelCronSecretConfigured: boolean;
       requestDelayMs: number;
     };
-    push: {
+    push: ProviderHealthMetadata & {
       configured: boolean;
       publicKeyConfigured: boolean;
       privateKeyConfigured: boolean;
       subjectConfigured: boolean;
     };
-    email: {
+    email: ProviderHealthMetadata & {
       configured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
     };
-    sms: {
+    sms: ProviderHealthMetadata & {
       configured: boolean;
       accountSidConfigured: boolean;
+      authTokenConfigured: boolean;
       fromNumberConfigured: boolean;
     };
     upc: {
       configuredUpcProvider: boolean;
       publicUpcProvider: boolean;
       searchFallbackConfigured: boolean;
+      searchFallbackHealthStatus: ProviderHealthStatus;
+      searchFallbackEnvVars: string[];
+      searchFallbackMessage: string;
       searchProvider: string | null;
     };
-    stripe: {
+    stripe: ProviderHealthMetadata & {
       configured: boolean;
       checkoutEnabled: boolean;
       publishableKeyConfigured: boolean;
       secretKeyConfigured: boolean;
       webhookSecretConfigured: boolean;
       storeBaseUrlConfigured: boolean;
+      storeBaseUrlHealthStatus: ProviderHealthStatus;
       storeBaseUrl: string | null;
       publishableKeyMode: "test" | "live" | "missing" | "unknown";
       secretKeyMode: "test" | "live" | "missing" | "unknown";
@@ -49,12 +62,12 @@ export type EnvironmentReport = {
       webhookReady: boolean;
       missing: string[];
     };
-    blob: {
+    blob: ProviderHealthMetadata & {
       configured: boolean;
       readWriteTokenConfigured: boolean;
       maxUploadSizeMb: number;
     };
-    market: {
+    market: ProviderHealthMetadata & {
       priceChartingConfigured: boolean;
       tcgplayerConfigured: boolean;
       tcgcsvEnabled: boolean;
@@ -71,6 +84,15 @@ function envValue(name: string) {
 
 function hasEnv(name: string) {
   return envValue(name) !== null;
+}
+
+function anyEnv(names: string[]) {
+  return names.some((name) => hasEnv(name));
+}
+
+function optionalProviderHealth(configured: boolean, partiallyConfigured: boolean): ProviderHealthStatus {
+  if (configured) return "configured";
+  return partiallyConfigured ? "misconfigured" : "optional_not_configured";
 }
 
 function stripeKeyMode(value: string | null, keyType: "pk" | "sk") {
@@ -100,6 +122,22 @@ export function getEnvironmentReport(): EnvironmentReport {
   const dbProvider = databaseProvider(databaseUrl);
   const isProduction = nodeEnv === "production";
   const isVercel = hasEnv("VERCEL");
+  const pushEnvVars = ["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"];
+  const emailEnvVars = ["SMTP_HOST", "SMTP_FROM", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS"];
+  const smsEnvVars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"];
+  const searchEnvVars = ["PRODUCT_SEARCH_PROVIDER", "PRODUCT_SEARCH_API_URL", "PRODUCT_SEARCH_API_KEY"];
+  const stripeEnvVars = ["STRIPE_CHECKOUT_ENABLED", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STORE_BASE_URL"];
+  const blobEnvVars = ["BLOB_READ_WRITE_TOKEN"];
+  const marketEnvVars = [
+    "TCGCSV_ENABLED",
+    "PRICECHARTING_API_TOKEN",
+    "TCGPLAYER_ACCESS_TOKEN",
+    "TCGPLAYER_PUBLIC_KEY",
+    "TCGPLAYER_PRIVATE_KEY",
+    "EBAY_CLIENT_ID",
+    "EBAY_CLIENT_SECRET",
+    "EBAY_MARKETPLACE_ID"
+  ];
   const smtpHostConfigured = hasEnv("SMTP_HOST");
   const smtpFromConfigured = hasEnv("SMTP_FROM");
   const accountSidConfigured = hasEnv("TWILIO_ACCOUNT_SID");
@@ -113,6 +151,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const configuredUpcProvider = hasEnv("UPC_LOOKUP_API_URL");
   const searchProvider = envValue("PRODUCT_SEARCH_PROVIDER");
   const searchFallbackConfigured = Boolean(searchProvider && hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY"));
+  const supportedSearchProvider = !searchProvider || ["serpapi", "google_shopping", "custom"].includes(searchProvider.toLowerCase());
   const stripeCheckoutEnabled = envValue("STRIPE_CHECKOUT_ENABLED") === "true";
   const stripePublishableKey = envValue("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY");
   const stripeSecretKey = envValue("STRIPE_SECRET_KEY");
@@ -135,6 +174,32 @@ export function getEnvironmentReport(): EnvironmentReport {
   const priceChartingConfigured = hasEnv("PRICECHARTING_API_TOKEN");
   const tcgplayerConfigured = hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY"));
   const ebaySoldConfigured = hasEnv("EBAY_CLIENT_ID") && hasEnv("EBAY_CLIENT_SECRET") && hasEnv("EBAY_MARKETPLACE_ID");
+  const pushConfigured = publicKeyConfigured && privateKeyConfigured && subjectConfigured;
+  const emailConfigured = smtpHostConfigured && smtpFromConfigured;
+  const smsConfigured = accountSidConfigured && authTokenConfigured && fromNumberConfigured;
+  const pushHealthStatus = optionalProviderHealth(pushConfigured, anyEnv(pushEnvVars));
+  const emailHealthStatus = optionalProviderHealth(emailConfigured, anyEnv(emailEnvVars));
+  const smsHealthStatus = optionalProviderHealth(smsConfigured, anyEnv(smsEnvVars));
+  const searchFallbackHealthStatus =
+    searchFallbackConfigured && supportedSearchProvider
+      ? "configured"
+      : anyEnv(searchEnvVars)
+        ? "misconfigured"
+        : "optional_not_configured";
+  const stripePartiallyConfigured = stripeCheckoutEnabled || stripePublishableConfigured || stripeSecretConfigured || stripeWebhookConfigured;
+  const stripeHealthStatus: ProviderHealthStatus =
+    stripeMissing.length === 0
+      ? "configured"
+      : stripePartiallyConfigured
+        ? "misconfigured"
+        : "disabled";
+  const storeBaseUrlHealthStatus: ProviderHealthStatus = storeBaseUrlConfigured ? "configured" : "optional_not_configured";
+  const blobHealthStatus = optionalProviderHealth(blobReadWriteTokenConfigured, anyEnv(blobEnvVars));
+  const marketPartiallyConfigured =
+    anyEnv(marketEnvVars.filter((name) => name !== "TCGCSV_ENABLED")) ||
+    (hasEnv("TCGCSV_ENABLED") && envValue("TCGCSV_ENABLED") !== "false");
+  const marketConfigured = tcgcsvEnabled || priceChartingConfigured || tcgplayerConfigured || ebaySoldConfigured;
+  const marketHealthStatus = optionalProviderHealth(marketConfigured, marketPartiallyConfigured);
 
   const coreRequired = ["DATABASE_URL", "APP_URL"];
   if (isProduction || isVercel) {
@@ -150,7 +215,8 @@ export function getEnvironmentReport(): EnvironmentReport {
   const coreMissing = coreRequired.filter((name) => !hasEnv(name));
 
   const featureRequired = ["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"];
-  const featureMissing = featureRequired.filter((name) => !hasEnv(name));
+  const missingPushFeatureEnv = featureRequired.filter((name) => !hasEnv(name));
+  const featureMissing = pushHealthStatus === "misconfigured" ? missingPushFeatureEnv : [];
   const warnings: string[] = [];
 
   if (isProduction && dbProvider !== "postgres") {
@@ -169,26 +235,27 @@ export function getEnvironmentReport(): EnvironmentReport {
       warnings.push("For Vercel Cron, keep CRON_SECRET equal to MONITOR_JOB_SECRET.");
     }
   }
-  if (featureMissing.length > 0) {
-    warnings.push("Browser push is not fully configured until VAPID env vars are set.");
+  if (pushHealthStatus === "misconfigured") {
+    warnings.push("Browser push env vars are partially configured. Set NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT together or leave browser push disabled.");
   }
-  if (!smtpHostConfigured || !smtpFromConfigured) {
-    warnings.push("SMTP email alerts are disabled until SMTP_HOST and SMTP_FROM are set.");
+  if (emailHealthStatus === "misconfigured") {
+    warnings.push("SMTP email is partially configured. Set SMTP_HOST and SMTP_FROM together, with credentials if your provider requires them, or leave email disabled.");
   }
-  if (!accountSidConfigured || !authTokenConfigured || !fromNumberConfigured) {
-    warnings.push("Twilio SMS alerts are disabled until Twilio credentials and from number are set.");
+  if (smsHealthStatus === "misconfigured") {
+    warnings.push("Twilio SMS is partially configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER together or leave SMS disabled.");
   }
-  if (!searchFallbackConfigured) {
-    warnings.push("Search fallback is not configured. Set PRODUCT_SEARCH_PROVIDER, PRODUCT_SEARCH_API_URL, and PRODUCT_SEARCH_API_KEY so UPC provider misses can fall through to product search.");
+  if (searchFallbackHealthStatus === "misconfigured") {
+    warnings.push(
+      supportedSearchProvider
+        ? "Product search fallback is partially configured. Set PRODUCT_SEARCH_PROVIDER, PRODUCT_SEARCH_API_URL, and PRODUCT_SEARCH_API_KEY together or leave it disabled."
+        : "PRODUCT_SEARCH_PROVIDER is not supported. Use serpapi, google_shopping, or custom."
+    );
   }
-  if (stripeMissing.length > 0) {
+  if (stripeHealthStatus === "misconfigured") {
     warnings.push(`Storefront Stripe Checkout is disabled until ${stripeMissing.join(", ")} ${stripeMissing.length === 1 ? "is" : "are"} set.`);
   }
-  if (!storeBaseUrlConfigured) {
-    warnings.push("STORE_BASE_URL is not set; Stripe success/cancel URLs will use the current storefront request origin when checkout starts.");
-  }
-  if (!tcgcsvEnabled) {
-    warnings.push("TCGCSV market estimates are disabled. Set TCGCSV_ENABLED=true to use automatic inventory pricing.");
+  if (marketHealthStatus === "misconfigured") {
+    warnings.push("Market pricing providers are partially configured. Complete the selected provider env vars or leave automatic pricing disabled.");
   }
   const activeProvider = tcgcsvEnabled
     ? "TCGCSV"
@@ -215,34 +282,76 @@ export function getEnvironmentReport(): EnvironmentReport {
         requestDelayMs: monitorRequestDelayMs()
       },
       push: {
-        configured: publicKeyConfigured && privateKeyConfigured && subjectConfigured,
+        configured: pushConfigured,
+        healthStatus: pushHealthStatus,
+        envVars: pushEnvVars,
+        message:
+          pushHealthStatus === "configured"
+            ? "Browser push can deliver notifications."
+            : pushHealthStatus === "misconfigured"
+              ? "Browser push is partially configured."
+              : "Browser push is optional and not configured.",
         publicKeyConfigured,
         privateKeyConfigured,
         subjectConfigured
       },
       email: {
-        configured: smtpHostConfigured && smtpFromConfigured,
+        configured: emailConfigured,
+        healthStatus: emailHealthStatus,
+        envVars: emailEnvVars,
+        message:
+          emailHealthStatus === "configured"
+            ? "SMTP email is configured for email notifications."
+            : emailHealthStatus === "misconfigured"
+              ? "SMTP email has partial configuration."
+              : "SMTP email is optional and not configured.",
         smtpHostConfigured,
         smtpFromConfigured
       },
       sms: {
-        configured: accountSidConfigured && authTokenConfigured && fromNumberConfigured,
+        configured: smsConfigured,
+        healthStatus: smsHealthStatus,
+        envVars: smsEnvVars,
+        message:
+          smsHealthStatus === "configured"
+            ? "Twilio SMS is configured for SMS notifications."
+            : smsHealthStatus === "misconfigured"
+              ? "Twilio SMS has partial configuration."
+              : "Twilio SMS is optional and not configured.",
         accountSidConfigured,
+        authTokenConfigured,
         fromNumberConfigured
       },
       upc: {
         configuredUpcProvider,
         publicUpcProvider: true,
         searchFallbackConfigured,
+        searchFallbackHealthStatus,
+        searchFallbackEnvVars: searchEnvVars,
+        searchFallbackMessage:
+          searchFallbackHealthStatus === "configured"
+            ? "Product search fallback is configured for UPC provider misses."
+            : searchFallbackHealthStatus === "misconfigured"
+              ? "Product search fallback has partial or unsupported configuration."
+              : "Product search fallback is optional and not configured.",
         searchProvider
       },
       stripe: {
         configured: stripeMissing.length === 0,
+        healthStatus: stripeHealthStatus,
+        envVars: stripeEnvVars,
+        message:
+          stripeHealthStatus === "configured"
+            ? "Stripe Checkout and webhook secrets are configured."
+            : stripeHealthStatus === "misconfigured"
+              ? "Stripe Checkout is enabled or partially configured but missing required env vars."
+              : "Stripe Checkout is disabled; Request Invoice fallback remains available.",
         checkoutEnabled: stripeCheckoutEnabled,
         publishableKeyConfigured: stripePublishableConfigured,
         secretKeyConfigured: stripeSecretConfigured,
         webhookSecretConfigured: stripeWebhookConfigured,
         storeBaseUrlConfigured,
+        storeBaseUrlHealthStatus,
         storeBaseUrl,
         publishableKeyMode: stripePublishableKeyMode,
         secretKeyMode: stripeSecretKeyMode,
@@ -253,10 +362,26 @@ export function getEnvironmentReport(): EnvironmentReport {
       },
       blob: {
         configured: blobReadWriteTokenConfigured,
+        healthStatus: blobHealthStatus,
+        envVars: blobEnvVars,
+        message:
+          blobHealthStatus === "configured"
+            ? "Vercel Blob uploads are configured for product gallery images."
+            : blobHealthStatus === "misconfigured"
+              ? "Vercel Blob upload configuration is incomplete."
+              : "Vercel Blob uploads are optional and not configured.",
         readWriteTokenConfigured: blobReadWriteTokenConfigured,
         maxUploadSizeMb: 10
       },
       market: {
+        healthStatus: marketHealthStatus,
+        envVars: marketEnvVars,
+        message:
+          marketHealthStatus === "configured"
+            ? "At least one market pricing provider is configured."
+            : marketHealthStatus === "misconfigured"
+              ? "Market pricing provider configuration is incomplete."
+              : "Market pricing providers are optional and not configured.",
         priceChartingConfigured,
         tcgplayerConfigured,
         tcgcsvEnabled,

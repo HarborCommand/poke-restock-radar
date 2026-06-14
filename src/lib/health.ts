@@ -8,6 +8,19 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+export function appHealthStatusFromChecks(input: {
+  databaseOk: boolean;
+  coreMissing: string[];
+  authReady: boolean;
+  adminUserCount: number;
+  configuredAdminEmailExists: boolean;
+  warnings: string[];
+}): AppHealthDTO["status"] {
+  if (!input.databaseOk || input.coreMissing.length > 0 || !input.authReady || input.adminUserCount === 0) return "ERROR";
+  if (input.warnings.length > 0 || !input.configuredAdminEmailExists) return "WARN";
+  return "OK";
+}
+
 export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealthDTO> {
   const env = getEnvironmentReport();
   const authConfig = authRuntimeConfig();
@@ -112,12 +125,14 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
     }
   }
 
-  const status: AppHealthDTO["status"] =
-    !database.ok || env.coreMissing.length > 0 || !auth.authReady || auth.adminUserCount === 0
-      ? "ERROR"
-      : env.warnings.length > 0 || !auth.configuredAdminEmailExists
-        ? "WARN"
-        : "OK";
+  const status = appHealthStatusFromChecks({
+    databaseOk: database.ok,
+    coreMissing: env.coreMissing,
+    authReady: auth.authReady,
+    adminUserCount: auth.adminUserCount,
+    configuredAdminEmailExists: auth.configuredAdminEmailExists,
+    warnings: env.warnings
+  });
 
   return {
     status,

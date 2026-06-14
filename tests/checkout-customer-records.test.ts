@@ -347,14 +347,21 @@ test("Admin Orders renders an operational shipping section without raw payment d
   assert.match(shippingSection, /Shipping profit\/loss/);
   assert.match(shippingSection, /Carrier/);
   assert.match(shippingSection, /Tracking number/);
+  assert.match(shippingSection, /Shipped at/);
   assert.match(shippingSection, /Fulfillment status/);
   assert.match(shippingSection, /name="shippingCost"/);
   assert.match(shippingSection, /name="carrier"/);
   assert.match(shippingSection, /name="trackingNumber"/);
   assert.match(shippingSection, /name="fulfillmentStatus"/);
+  assert.match(shippingSection, /Mark Shipped requires carrier and tracking number/);
   assert.match(orderModal, /const canFulfillOrder = storefrontOrderCanFulfill\(order\)/);
+  assert.match(orderModal, /const shipmentDetailsSaved = storefrontOrderHasShipmentDetails\(order\)/);
+  assert.match(orderModal, /Print\/View Packing Slip/);
+  assert.match(orderModal, /View Packing Slip Preview/);
+  assert.match(orderModal, /<StorefrontPackingSlip order=\{order\} \/>/);
   assert.match(orderModal, /\{canFulfillOrder \? \(/);
   assert.match(orderModal, /Only active paid orders can be marked packing or shipped/);
+  assert.match(orderModal, /Enter carrier and tracking number before marking shipped\./);
   assert.doesNotMatch(shippingSection, /JSON\.stringify\(order|<pre|<code|payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 
   assert.match(css, /storefront-shipping-section/);
@@ -364,6 +371,35 @@ test("Admin Orders renders an operational shipping section without raw payment d
   assert.match(storefrontSummary, /ordersToShipCount/);
   assert.match(storefrontSummary, /paymentStatus: "paid", fulfillmentStatus: \{ in: \["unfulfilled", "packing", "pickup_ready"\] \}/);
   assert.doesNotMatch(storefrontSummary, /prisma\.storefrontOrder\.count\(\{ where: \{ [^}]*paymentStatus: \{ in: activeRevenuePaymentStatuses \}/);
+});
+
+test("packing slip renders safe order data and excludes payment details", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const types = readProjectFile("src/types/radar.ts");
+  const packingSlip = sourceSlice(app, "function StorefrontPackingSlip", "function StorefrontCancelRefundModal");
+
+  assert.match(types, /shippedAt: string \| null/);
+  assert.match(packingSlip, /GameDayGrabs/);
+  assert.match(packingSlip, /Packing Slip/);
+  assert.match(packingSlip, /order\.orderNumber/);
+  assert.match(packingSlip, /dateTime\(order\.createdAt\)/);
+  assert.match(packingSlip, /Ship to/);
+  assert.match(packingSlip, /order\.customerName/);
+  assert.match(packingSlip, /formatStorefrontAddressLines\(order\.shippingAddress\)/);
+  assert.match(packingSlip, /Items to pack/);
+  assert.match(packingSlip, /item\.publicTitle/);
+  assert.match(packingSlip, /SKU \$\{item\.sku\}/);
+  assert.match(packingSlip, /UPC \$\{item\.upc\}/);
+  assert.match(packingSlip, /Qty \{item\.quantity\}/);
+  assert.match(packingSlip, /Packing checklist/);
+  assert.match(packingSlip, /Internal note area/);
+  assert.doesNotMatch(packingSlip, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|stripePaymentIntentId|stripeCheckoutSessionId/i);
+
+  assert.match(css, /packing-slip-preview-shell/);
+  assert.match(css, /packing-slip-print/);
+  assert.match(css, /packing-slip-card/);
+  assert.match(css, /body:has\(\.packing-slip-print\)[\s\S]*\.packing-slip-print/);
 });
 
 test("checkout customer records never persist raw card or payment method details", () => {
@@ -380,6 +416,48 @@ test("checkout customer records never persist raw card or payment method details
   assert.match(safeStripeEventPayload, /provider: "stripe"/);
   assert.match(safeStripeEventPayload, /stripeCustomerId: stripeIdFromUnknown\(object\.customer\)/);
   assert.match(safeStripeEventPayload, /customerPhone: stringValue\(customerDetails\?\.phone\)/);
+});
+
+test("customer lifecycle emails are idempotent and visible without payment details", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const types = readProjectFile("src/types/radar.ts");
+  const webhook = sourceSlice(storefront, "export async function handleStripeWebhook", "export async function updateInventoryStoreListing");
+  const cancelOrRefund = sourceSlice(storefront, "export async function cancelOrRefundStorefrontOrder", "export async function updateStorefrontOrder");
+  const updateOrder = sourceSlice(storefront, "export async function updateStorefrontOrder");
+  const emailHelpers = sourceSlice(storefront, "type CustomerEmailStatus", "function stripeImage");
+  const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontPackingSlip");
+
+  assert.match(types, /export type StorefrontEmailNotificationDTO/);
+  assert.match(types, /customerEmailNotifications: StorefrontEmailNotificationDTO\[\]/);
+  assert.match(emailHelpers, /type CustomerEmailStatus = "sent" \| "not_configured" \| "missing_customer_email" \| "failed" \| "skipped"/);
+  assert.match(emailHelpers, /function customerEmailEventId/);
+  assert.match(emailHelpers, /sendCustomerEmailNotificationOnce/);
+  assert.match(emailHelpers, /prisma\.paymentEvent\.create/);
+  assert.match(emailHelpers, /Prisma\.PrismaClientKnownRequestError/);
+  assert.match(emailHelpers, /SMTP send failed\./);
+  assert.match(emailHelpers, /GameDayGrabs received your payment/);
+  assert.match(emailHelpers, /You'll receive tracking once your order ships\./);
+  assert.match(emailHelpers, /Refund timing depends on your bank or card issuer/);
+  assert.match(emailHelpers, /Your GameDayGrabs order has shipped/);
+  assert.match(emailHelpers, /Your GameDayGrabs order is ready for local pickup/);
+  assert.match(webhook, /if \(!wasPaid\) await sendStorefrontOrderConfirmationEmail\(order\)/);
+  assert.match(cancelOrRefund, /customerEmailEventId\("refund_cancellation", updatedOrder\.id, input\.idempotencyKey\)/);
+  assert.match(cancelOrRefund, /skippedDetail: "Admin chose not to send a cancellation email\."/);
+  assert.match(updateOrder, /nextFulfillmentStatus === "shipped"/);
+  assert.match(updateOrder, /await sendStorefrontShipmentEmail\(finalOrder\)/);
+  assert.match(updateOrder, /nextFulfillmentStatus === "pickup_ready"/);
+  assert.match(updateOrder, /await sendStorefrontLocalPickupEmail\(finalOrder\)/);
+  assert.match(storefront, /recordExpiredCheckoutEmailSkipped/);
+  assert.match(orderModal, /Email notifications/);
+  assert.match(orderModal, /order\.customerEmailNotifications\.map/);
+  assert.match(orderModal, /notification\.failureReason/);
+  assert.match(app, /function emailStatusLabel/);
+  assert.match(app, /function emailStatusTone/);
+  assert.match(css, /storefront-email-section/);
+  assert.match(css, /storefront-email-log/);
+  assert.doesNotMatch(emailHelpers + orderModal, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
 });
 
 test("admin cancel refund flow stores safe refund metadata and uses Stripe Refund API", () => {
@@ -485,7 +563,7 @@ test("Admin Orders treats canceled refunded and expired orders as a muted archiv
   const storefront = readProjectFile("src/lib/storefront.ts");
   const ordersPanel = sourceSlice(app, "function StorefrontOrdersPanel", "function StorefrontSettingsCard");
   const orderTabs = sourceSlice(app, "function storefrontOrdersForTab", "function storefrontOrderTabs");
-  const updateStorefrontOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(updated);");
+  const updateStorefrontOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(finalOrder);");
 
   assert.match(app, /function storefrontOrderCanFulfill\(order: StorefrontOrderDTO\)/);
   assert.match(app, /function storefrontDefaultOrderTab/);
@@ -518,6 +596,13 @@ test("Admin Orders treats canceled refunded and expired orders as a muted archiv
   assert.match(updateStorefrontOrder, /requestsActiveFulfillment/);
   assert.match(updateStorefrontOrder, /Canceled, refunded, or expired orders cannot be marked packing or shipped\./);
   assert.match(updateStorefrontOrder, /Only paid orders can be marked packing or shipped\./);
+  assert.match(updateStorefrontOrder, /requestsShippedStatus/);
+  assert.match(updateStorefrontOrder, /nextCarrier/);
+  assert.match(updateStorefrontOrder, /nextTrackingNumber/);
+  assert.match(updateStorefrontOrder, /Carrier and tracking number are required before marking an order shipped\./);
+  assert.match(updateStorefrontOrder, /nextFulfillmentStatus/);
+  assert.match(updateStorefrontOrder, /nextOrderStatus/);
+  assert.match(updateStorefrontOrder, /const refreshed = await prisma\.storefrontOrder\.findUnique/);
   assert.doesNotMatch(ordersPanel, /card_number|cardNumber|payment_method_details|payment_method_data|cvc|cvv/i);
 });
 

@@ -293,6 +293,17 @@ export type StorefrontOrderPaymentEventDTO = {
   receivedAt: string;
 };
 
+export type StorefrontEmailNotificationDTO = {
+  id: string;
+  kind: string;
+  label: string;
+  status: string;
+  recipient: string | null;
+  sentAt: string | null;
+  updatedAt: string;
+  failureReason: string | null;
+};
+
 export type StorefrontAddressDTO = {
   name: string | null;
   line1: string | null;
@@ -355,11 +366,13 @@ export type StorefrontOrderDTO = {
   customerCancellationEmailSentAt: string | null;
   canCancelOrRefund: boolean;
   paidAt: string | null;
+  shippedAt: string | null;
   createdAt: string;
   updatedAt: string;
   items: StorefrontOrderItemDTO[];
   reservations: StorefrontOrderReservationDTO[];
   paymentEvents: StorefrontOrderPaymentEventDTO[];
+  customerEmailNotifications: StorefrontEmailNotificationDTO[];
   timeline: Array<{ label: string; at: string | null; detail: string }>;
 };
 
@@ -1118,6 +1131,14 @@ export type NotificationDeliveryLogDTO = {
   createdAt: string;
 };
 
+export type ProviderHealthStatus = "configured" | "optional_not_configured" | "misconfigured" | "disabled";
+
+type ProviderHealthMetadataDTO = {
+  healthStatus: ProviderHealthStatus;
+  envVars: string[];
+  message: string;
+};
+
 export type AppHealthDTO = {
   status: "OK" | "WARN" | "ERROR";
   checkedAt: string;
@@ -1182,35 +1203,40 @@ export type AppHealthDTO = {
       vercelCronSecretConfigured: boolean;
       requestDelayMs: number;
     };
-    push: {
+    push: ProviderHealthMetadataDTO & {
       configured: boolean;
       publicKeyConfigured: boolean;
       privateKeyConfigured: boolean;
       subjectConfigured: boolean;
     };
-    email: {
+    email: ProviderHealthMetadataDTO & {
       configured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
     };
-    sms: {
+    sms: ProviderHealthMetadataDTO & {
       configured: boolean;
       accountSidConfigured: boolean;
+      authTokenConfigured: boolean;
       fromNumberConfigured: boolean;
     };
     upc: {
       configuredUpcProvider: boolean;
       publicUpcProvider: boolean;
       searchFallbackConfigured: boolean;
+      searchFallbackHealthStatus: ProviderHealthStatus;
+      searchFallbackEnvVars: string[];
+      searchFallbackMessage: string;
       searchProvider: string | null;
     };
-    stripe: {
+    stripe: ProviderHealthMetadataDTO & {
       configured: boolean;
       checkoutEnabled: boolean;
       publishableKeyConfigured: boolean;
       secretKeyConfigured: boolean;
       webhookSecretConfigured: boolean;
       storeBaseUrlConfigured: boolean;
+      storeBaseUrlHealthStatus: ProviderHealthStatus;
       storeBaseUrl: string | null;
       publishableKeyMode: "test" | "live" | "missing" | "unknown";
       secretKeyMode: "test" | "live" | "missing" | "unknown";
@@ -1219,10 +1245,17 @@ export type AppHealthDTO = {
       webhookReady: boolean;
       missing: string[];
     };
-    blob: {
+    blob: ProviderHealthMetadataDTO & {
       configured: boolean;
       readWriteTokenConfigured: boolean;
       maxUploadSizeMb: number;
+    };
+    market: ProviderHealthMetadataDTO & {
+      priceChartingConfigured: boolean;
+      tcgplayerConfigured: boolean;
+      tcgcsvEnabled: boolean;
+      ebaySoldConfigured: boolean;
+      activeProvider: string | null;
     };
   };
 };

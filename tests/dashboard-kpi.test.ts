@@ -227,6 +227,7 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     customerCancellationEmailSentAt: null,
     canCancelOrRefund: true,
     paidAt: now,
+    shippedAt: null,
     createdAt: now,
     updatedAt: now,
     items: [
@@ -249,6 +250,7 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     ],
     reservations: [],
     paymentEvents: [],
+    customerEmailNotifications: [],
     timeline: [],
     ...overrides
   };
