@@ -67,12 +67,18 @@ export function orderedProductGalleryImages(images: ProductImageCandidate[] | nu
     });
 }
 
-export function getProductImageUrls(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {
+export function getSavedProductImageUrls(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {
   const galleryImages = orderedProductGalleryImages(product.productImages, options).map((image) => image.url ?? null);
   return uniqueProductImageUrls([
     ...galleryImages,
     product.imageUrl,
-    ...parseProductImageList(product.publicImages),
+    ...parseProductImageList(product.publicImages)
+  ]);
+}
+
+export function getProductImageUrls(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {
+  return uniqueProductImageUrls([
+    ...getSavedProductImageUrls(product, options),
     product.liveImageUrl,
     product.retailerImageUrl,
     product.product?.liveImageUrl,

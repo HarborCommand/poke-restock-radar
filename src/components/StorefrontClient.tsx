@@ -42,6 +42,7 @@ import {
 import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
 import { homepageArrivalSection, selectHomepageHeroProduct } from "@/lib/storefront-home";
+import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
@@ -182,6 +183,7 @@ function productImageCandidates(product: Pick<PublicStoreProductDTO, "primaryIma
   return [product.primaryImageUrl, product.imageUrl, ...(product.images ?? [])]
     .map((image) => image?.trim())
     .filter((image): image is string => Boolean(image))
+    .filter(isStorefrontDisplayImageUrl)
     .filter((image) => {
       if (seen.has(image)) return false;
       seen.add(image);
@@ -913,8 +915,9 @@ export function ProductDetail({
   const productTitle = cleanStorefrontTitle(product.title);
   const conditionLabel = cleanStorefrontTitle(product.condition) || "Collector-ready condition";
   const soldOutNote = storefrontSoldOutNote();
+  const visibleGalleryImages = images.filter((image) => !failedImages.includes(image));
   const preferredSelectedImage = selectedImage && images.includes(selectedImage) ? selectedImage : (images[0] ?? null);
-  const visibleSelectedImage = preferredSelectedImage && !failedImages.includes(preferredSelectedImage) ? preferredSelectedImage : (images.find((image) => !failedImages.includes(image)) ?? null);
+  const visibleSelectedImage = preferredSelectedImage && visibleGalleryImages.includes(preferredSelectedImage) ? preferredSelectedImage : (visibleGalleryImages[0] ?? null);
 
   function addProductToCart(redirect = false) {
     addToCart(product, quantity);
@@ -933,7 +936,7 @@ export function ProductDetail({
           <span>{displayCategory}</span>
         </nav>
         <div className="gdg-detail-grid">
-          <aside className={`gdg-gallery ${images.length > 1 ? "has-thumbs" : "single-image"}`}>
+          <aside className={`gdg-gallery ${visibleGalleryImages.length > 1 ? "has-thumbs" : "single-image"}`}>
             <div className="gdg-gallery-main">
               <div className="gdg-image-badges gdg-image-badges-detail" aria-hidden="true">
                 {storefrontImageBadges(product, settings.newArrivalDays).map((badge, index) => (
@@ -958,11 +961,18 @@ export function ProductDetail({
                 </div>
               )}
             </div>
-            {images.length > 1 ? (
+            {visibleGalleryImages.length > 1 ? (
               <div className="gdg-gallery-thumbs">
-                {images.slice(0, 5).map((image) => (
-                  <button type="button" key={image} className={image === selectedImage ? "active" : ""} onClick={() => setSelectedImage(image)}>
-                    <Image src={image} alt="" width={82} height={82} unoptimized />
+                {visibleGalleryImages.slice(0, 5).map((image) => (
+                  <button type="button" key={image} className={image === visibleSelectedImage ? "active" : ""} onClick={() => setSelectedImage(image)}>
+                    <Image
+                      src={image}
+                      alt=""
+                      width={82}
+                      height={82}
+                      unoptimized
+                      onError={() => setFailedImages((current) => (current.includes(image) ? current : [...current, image]))}
+                    />
                   </button>
                 ))}
               </div>

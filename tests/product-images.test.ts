@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getPrimaryProductImage, getProductImageUrls } from "../src/lib/product-images";
+import { getPrimaryProductImage, getProductImageUrls, getSavedProductImageUrls } from "../src/lib/product-images";
+import { isProductImageUrlRenderable, isStorefrontDisplayImageUrl, productImageQualityWarnings } from "../src/lib/product-image-quality";
 
 test("product with gallery primary uses gallery primary", () => {
   const product = {
@@ -55,6 +56,7 @@ test("public image field and linked product images are fallback candidates", () 
     "https://example.com/live.png",
     "https://example.com/product.png"
   ]);
+  assert.deepEqual(getSavedProductImageUrls(product, { publicOnly: true }), ["https://example.com/public-a.png"]);
 });
 
 test("blob gallery primary wins over legacy imageUrl fallback", () => {
@@ -66,4 +68,21 @@ test("blob gallery primary wins over legacy imageUrl fallback", () => {
   };
 
   assert.equal(getPrimaryProductImage(product, { publicOnly: true }), "https://abc.public.blob.vercel-storage.com/uploaded.png");
+});
+
+test("product image quality warnings identify URLs that need manual image QA", () => {
+  assert.deepEqual(productImageQualityWarnings("https://target.com/p/pokemon-box/A-123456"), ["product_page_url"]);
+  assert.deepEqual(productImageQualityWarnings("https://cdn.example.com/pokemon-pre-order-badge.png"), [
+    "preorder_or_promo_marker",
+    "watermark_or_badge_marker"
+  ]);
+  assert.deepEqual(productImageQualityWarnings("https://example.com/products/pokemon-box/240.jpg"), ["low_resolution_marker"]);
+  assert.equal(isProductImageUrlRenderable("https://target.com/p/pokemon-box/A-123456"), false);
+});
+
+test("storefront display image filter allows clean images and rejects unsafe fallbacks", () => {
+  assert.equal(isStorefrontDisplayImageUrl("https://cdn.example.com/products/pokemon-box-1280.webp"), true);
+  assert.equal(isStorefrontDisplayImageUrl("https://example.com/products/pokemon-box/240.jpg"), false);
+  assert.equal(isStorefrontDisplayImageUrl("https://cdn.example.com/pokemon-preorder-overlay.png"), false);
+  assert.equal(isStorefrontDisplayImageUrl("data:image/png;base64,AAA"), false);
 });

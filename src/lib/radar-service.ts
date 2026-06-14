@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMinutes } from "@/lib/monitor";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
-import { getPrimaryProductImage, getProductImageUrls, uniqueProductImageUrls } from "@/lib/product-images";
+import { getSavedProductImageUrls, uniqueProductImageUrls } from "@/lib/product-images";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import {
   BEST_BUY_DISCOVERY_SEARCH_TERMS,
@@ -2058,8 +2058,8 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   const marketRoiPercent = marketProfitLoss === null || ownedCostBasis <= 0 ? null : (marketProfitLoss / ownedCostBasis) * 100;
   const orderedProductImages = orderedInventoryProductImages(item.productImages);
   const imageInput = { ...item, productImages: orderedProductImages };
-  const primaryImageUrl = getPrimaryProductImage(imageInput);
-  const publicImageUrls = getProductImageUrls(imageInput, { publicOnly: true });
+  const primaryImageUrl = getSavedProductImageUrls(imageInput)[0] ?? null;
+  const publicImageUrls = getSavedProductImageUrls(imageInput, { publicOnly: true });
   return {
     id: item.id,
     itemType: item.itemType,

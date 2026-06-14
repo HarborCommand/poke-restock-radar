@@ -74,6 +74,7 @@ import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPolicyResult } from "@/lib/target-retail-policy";
 import { compareTargetDiscordAlert, targetUrlFromTcin, type TargetDiscordAlertInput, type TargetDiscordComparison } from "@/lib/target-discord-alert";
 import { cleanStorefrontDescription, cleanStorefrontTitle, generatedStorefrontDescription, storefrontCopyWarnings } from "@/lib/storefront-copy";
+import { isProductImageUrlRenderable, isStorefrontDisplayImageUrl, productImageQualityWarnings } from "@/lib/product-image-quality";
 import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
 import { normalizeUPC } from "@/lib/upc";
 import type {
@@ -1844,7 +1845,7 @@ function ArchiveIcon() {
 
 function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
   const published = dashboard.inventory.filter((item) => item.publishToStore && (item.storeStatus === "active" || item.storeStatus === "sold_out"));
-  const withImages = published.filter((item) => item.publicImages[0] || item.imageUrl);
+  const withImages = published.filter((item) => storefrontImageCandidatesForItem(item).length > 0);
   const settings = dashboard.storefrontSettings;
   const stripe = dashboard.health?.providers.stripe;
   const blob = dashboard.health?.providers.blob;
@@ -4399,36 +4400,39 @@ function ProductImage({ product }: { product: ProductDTO }) {
 }
 
 function isRenderableImageUrl(url?: string | null) {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    if (!["http:", "https:", "data:", "blob:"].includes(parsed.protocol)) return false;
-    if (parsed.protocol === "data:" || parsed.protocol === "blob:") return true;
+  return isProductImageUrlRenderable(url);
+}
 
-    const host = parsed.hostname.toLowerCase();
-    const pathname = parsed.pathname.toLowerCase();
-    const productPagePatterns = [
-      { host: "bestbuy.com", path: /^\/(product|site)\// },
-      { host: "target.com", path: /^\/p\// },
-      { host: "walmart.com", path: /^\/ip\// },
-      { host: "amazon.com", path: /^\/(dp|gp\/product)\// },
-      { host: "pokemoncenter.com", path: /^\/product\// },
-      { host: "gamestop.com", path: /^\/.+\/products?\// }
-    ];
-    if (productPagePatterns.some((pattern) => host.endsWith(pattern.host) && pattern.path.test(pathname))) return false;
-    return true;
-  } catch {
-    return false;
-  }
+function storefrontImageCandidatesForItem(item: InventoryItemDTO) {
+  return [item.publicImages[0], item.imageUrl].filter((image): image is string => Boolean(image && isStorefrontDisplayImageUrl(image)));
+}
+
+function productImageQaLabels(url?: string | null) {
+  const labels: Record<string, string> = {
+    invalid_url: "Invalid image URL",
+    product_page_url: "Use a direct image URL",
+    preorder_or_promo_marker: "Review pre-order or promo image",
+    watermark_or_badge_marker: "Review watermark or badge",
+    low_resolution_marker: "Review low-resolution image"
+  };
+  return productImageQualityWarnings(url).map((warning) => labels[warning] ?? "Review image");
+}
+
+function ProductImageUnavailable({ label = "Product image unavailable", compact = true }: { label?: string; compact?: boolean }) {
+  return (
+    <>
+      <PackageSearch size={compact ? 18 : 22} />
+      <span className={compact ? "sr-only" : ""}>{label}</span>
+    </>
+  );
 }
 
 function InventoryImage({ item }: { item: InventoryItemDTO }) {
   const [imageFailure, setImageFailure] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
-  const initials = item.retailer?.slice(0, 2).toUpperCase() || item.category.slice(0, 2).toUpperCase();
   const imageUrl =
     isRenderableImageUrl(item.imageUrl) && !(imageFailure.failed && imageFailure.url === item.imageUrl) ? item.imageUrl : null;
   return (
-    <div className={imageUrl ? "inventory-image-frame has-image" : "inventory-image-frame"}>
+    <div className={imageUrl ? "inventory-image-frame has-image" : "inventory-image-frame"} aria-label={imageUrl ? undefined : "Product image unavailable"}>
       {imageUrl ? (
         <Image
           src={imageUrl}
@@ -4444,7 +4448,7 @@ function InventoryImage({ item }: { item: InventoryItemDTO }) {
           }}
         />
       ) : (
-        <span>{initials}</span>
+        <ProductImageUnavailable />
       )}
     </div>
   );
@@ -4453,19 +4457,12 @@ function InventoryImage({ item }: { item: InventoryItemDTO }) {
 function InventoryFallbackImage({ imageUrl, label }: { imageUrl: string | null | undefined; label: string }) {
   const [failed, setFailed] = useState(false);
   const renderable = isRenderableImageUrl(imageUrl) && !failed;
-  const initials = label
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
   return (
-    <div className={renderable ? "inventory-image-frame has-image" : "inventory-image-frame"}>
+    <div className={renderable ? "inventory-image-frame has-image" : "inventory-image-frame"} aria-label={renderable ? undefined : "Product image unavailable"}>
       {renderable && imageUrl ? (
         <Image src={imageUrl} alt={`${label} image`} width={76} height={76} loading="lazy" unoptimized onError={() => setFailed(true)} />
       ) : (
-        <span>{initials || "TCG"}</span>
+        <ProductImageUnavailable />
       )}
     </div>
   );
@@ -4497,6 +4494,78 @@ function ProductImagePreview({ imageUrl, itemName }: { imageUrl: string; itemNam
           if (image.naturalWidth < 16 || image.naturalHeight < 16) setImageFailure({ url: imageUrl, failed: true });
         }}
       />
+    </div>
+  );
+}
+
+type InventoryDetailImageCandidate = Pick<InventoryProductImageDTO, "id" | "url" | "altText" | "isPrimary" | "source" | "showInStore">;
+
+function inventoryDetailImageCandidates(item: InventoryItemDTO): InventoryDetailImageCandidate[] {
+  if (item.productImages.length) return item.productImages;
+  if (!item.imageUrl) return [];
+  return [
+    {
+      id: "legacy-image",
+      url: item.imageUrl,
+      altText: `${item.itemName} product image`,
+      isPrimary: true,
+      source: "url",
+      showInStore: true
+    }
+  ];
+}
+
+function InventoryDetailImageFigure({ image, itemName }: { image: InventoryDetailImageCandidate; itemName: string }) {
+  const [failed, setFailed] = useState(false);
+  const renderable = isRenderableImageUrl(image.url) && !failed;
+  const qaLabels = productImageQaLabels(image.url);
+  return (
+    <figure>
+      {renderable ? (
+        <Image
+          src={image.url}
+          alt={image.altText || `${itemName} product image`}
+          width={320}
+          height={320}
+          unoptimized
+          onError={() => setFailed(true)}
+          onLoad={(event) => {
+            const imageElement = event.currentTarget;
+            if (imageElement.naturalWidth < 16 || imageElement.naturalHeight < 16) setFailed(true);
+          }}
+        />
+      ) : (
+        <div className="product-image-preview empty">
+          <ProductImageUnavailable label="Image unavailable. Add a replacement URL or upload a clean product photo." compact={false} />
+        </div>
+      )}
+      <figcaption>
+        {image.isPrimary ? <span className="image-badge primary">Primary</span> : null}
+        <span className="image-badge">{image.source.replaceAll("_", " ")}</span>
+        {image.showInStore ? <span className="image-badge store">Public</span> : <span className="image-badge muted">Private</span>}
+        {qaLabels.map((label) => (
+          <span className="image-badge muted" key={label}>{label}</span>
+        ))}
+      </figcaption>
+    </figure>
+  );
+}
+
+function InventoryDetailImageGallery({ item }: { item: InventoryItemDTO }) {
+  const detailImages = inventoryDetailImageCandidates(item);
+  if (!detailImages.length) {
+    return (
+      <div className="product-image-empty">
+        <ProductImageUnavailable label="No product images saved yet." compact={false} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="inventory-detail-image-gallery">
+      {detailImages.map((image) => (
+        <InventoryDetailImageFigure key={image.id} image={image} itemName={item.itemName} />
+      ))}
     </div>
   );
 }
@@ -4616,14 +4685,37 @@ function InventoryProductImageCard({
   onDelete: (image: InventoryProductImageDTO) => Promise<void>;
 }) {
   const [altText, setAltText] = useState(image.altText ?? "");
+  const [failed, setFailed] = useState(false);
+  const renderable = isRenderableImageUrl(image.url) && !failed;
+  const qaLabels = productImageQaLabels(image.url);
   return (
     <article className={image.isPrimary ? "product-image-tile primary" : "product-image-tile"}>
       <div className="product-image-tile-preview">
-        <Image src={image.url} alt={image.altText || "Inventory product image"} width={320} height={320} unoptimized />
+        {renderable ? (
+          <Image
+            src={image.url}
+            alt={image.altText || "Inventory product image"}
+            width={320}
+            height={320}
+            unoptimized
+            onError={() => setFailed(true)}
+            onLoad={(event) => {
+              const imageElement = event.currentTarget;
+              if (imageElement.naturalWidth < 16 || imageElement.naturalHeight < 16) setFailed(true);
+            }}
+          />
+        ) : (
+          <div className="product-image-preview empty">
+            <ProductImageUnavailable label="Image unavailable. Add a replacement URL or upload a clean product photo." compact={false} />
+          </div>
+        )}
         <div className="product-image-tile-badges">
           {image.isPrimary ? <span className="image-badge primary">Primary</span> : null}
           <span className="image-badge">{image.source.replaceAll("_", " ")}</span>
           {image.showInStore ? <span className="image-badge store">Storefront</span> : <span className="image-badge muted">Private</span>}
+          {qaLabels.map((label) => (
+            <span className="image-badge muted" key={label}>{label}</span>
+          ))}
         </div>
       </div>
       <div className="product-image-tile-body">
@@ -5633,7 +5725,7 @@ function storefrontListingQuality(item: InventoryItemDTO) {
     availableQuantity: availableForSale
   });
   return [
-    { key: "image", label: "Image exists", complete: Boolean(item.publicImages[0] || item.imageUrl) },
+    { key: "image", label: "Storefront-safe image exists", complete: storefrontImageCandidatesForItem(item).length > 0 },
     { key: "price", label: "Public price set", complete: Boolean(price && price > 0) },
     { key: "quantity", label: "Quantity available", complete: availableForSale >= 0 },
     { key: "description", label: "Description exists", complete: Boolean(description.trim()) },
@@ -9072,20 +9164,6 @@ function InventoryDetailsModal({
   const listingQuality = storefrontListingQuality(item);
   const listingAvailable = storefrontListingAvailableForSale(item);
   const listingDetailTone = storeListingTone(item) === "good" ? "good" : storeListingTone(item) === "bad" ? "bad" : "neutral";
-  const detailImages = item.productImages.length
-    ? item.productImages
-    : item.imageUrl
-      ? [
-          {
-            id: "legacy-image",
-            url: item.imageUrl,
-            altText: `${item.itemName} product image`,
-            isPrimary: true,
-            source: "url",
-            showInStore: true
-          }
-        ]
-      : [];
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`${item.itemName} inventory details`}>
@@ -9178,25 +9256,7 @@ function InventoryDetailsModal({
 
           <section className="inventory-detail-section">
             <h3>Product Images</h3>
-            {detailImages.length ? (
-              <div className="inventory-detail-image-gallery">
-                {detailImages.map((image) => (
-                  <figure key={image.id}>
-                    <Image src={image.url} alt={image.altText || `${item.itemName} product image`} width={320} height={320} unoptimized />
-                    <figcaption>
-                      {image.isPrimary ? <span className="image-badge primary">Primary</span> : null}
-                      <span className="image-badge">{image.source.replaceAll("_", " ")}</span>
-                      {image.showInStore ? <span className="image-badge store">Public</span> : <span className="image-badge muted">Private</span>}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            ) : (
-              <div className="product-image-empty">
-                <PackageSearch size={18} />
-                <span>No product images saved yet.</span>
-              </div>
-            )}
+            <InventoryDetailImageGallery item={item} />
           </section>
 
           <section className="inventory-detail-section">
@@ -9576,7 +9636,7 @@ function StoreListingModal({
 }) {
   const [publishToStore, setPublishToStore] = useState(item.publishToStore);
   const [storeStatus, setStoreStatus] = useState(item.storeStatus || "draft");
-  const primaryPublicImageUrl = item.publicImages[0] || item.imageUrl || "";
+  const primaryPublicImageUrl = storefrontImageCandidatesForItem(item)[0] || "";
   const saveLabel = `Updating store listing ${item.id}`;
   const suggestedPrice = storefrontSuggestedPublicPrice(item);
   const suggestedCategory = item.storefrontCategory || storefrontPublicCategory(item);
@@ -9607,7 +9667,7 @@ function StoreListingModal({
   });
   const descriptionWarnings = storefrontCopyWarnings(publicDescription);
   const qualityChecks = [
-    { label: "Image exists", complete: Boolean(primaryPublicImageUrl) },
+    { label: "Storefront-safe image exists", complete: Boolean(primaryPublicImageUrl) },
     { label: "Public price set", complete: Boolean(suggestedPrice && suggestedPrice > 0) },
     { label: "Quantity available", complete: availableForSale >= 0 },
     { label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
@@ -10708,19 +10768,22 @@ function saleIdentifier(item: InventoryItemDTO | null) {
 }
 
 function SaleProductThumb({ item, sale }: { item: InventoryItemDTO | null; sale: InventorySaleDTO }) {
-  const imageUrl = item?.imageUrl && isRenderableImageUrl(item.imageUrl) ? item.imageUrl : null;
-  const initials = (item?.brand || sale.itemName || "No image")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word.charAt(0).toUpperCase())
-    .join("");
+  const [failed, setFailed] = useState(false);
+  const imageUrl = item?.imageUrl && isRenderableImageUrl(item.imageUrl) && !failed ? item.imageUrl : null;
   return (
-    <div className={imageUrl ? "sale-product-thumb has-image" : "sale-product-thumb"}>
+    <div className={imageUrl ? "sale-product-thumb has-image" : "sale-product-thumb"} aria-label={imageUrl ? undefined : "Product image unavailable"}>
       {imageUrl ? (
-        <Image src={imageUrl} alt={`${sale.itemName} sold item image`} width={72} height={72} loading="lazy" unoptimized />
+        <Image
+          src={imageUrl}
+          alt={`${sale.itemName} sold item image`}
+          width={72}
+          height={72}
+          loading="lazy"
+          unoptimized
+          onError={() => setFailed(true)}
+        />
       ) : (
-        <span>{initials || "No image"}</span>
+        <ProductImageUnavailable />
       )}
     </div>
   );

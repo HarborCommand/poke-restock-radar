@@ -3,7 +3,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
-import { getPrimaryProductImage, getProductImageUrls, uniqueProductImageUrls } from "@/lib/product-images";
+import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
+import { getSavedProductImageUrls } from "@/lib/product-images";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
@@ -77,18 +78,6 @@ const storefrontOrderInclude = {
 type StorefrontInventoryItem = Prisma.InventoryItemGetPayload<{ include: typeof storefrontInventoryInclude }>;
 type StorefrontOrderWithItems = Prisma.StorefrontOrderGetPayload<{ include: typeof storefrontOrderInclude }>;
 type StorefrontOrderItemWithInventory = StorefrontOrderWithItems["items"][number];
-type StoredProductImageFallback = {
-  id: string;
-  name: string;
-  url: string;
-  verifiedFinalUrl: string | null;
-  sku: string | null;
-  upc: string | null;
-  dpci: string | null;
-  retailerProductId: string | null;
-  imageUrl: string | null;
-  liveImageUrl: string | null;
-};
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -189,150 +178,17 @@ function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | 
   return item.publicPrice ?? item.targetSellPrice ?? item.msrp ?? item.currentMarketEstimate ?? null;
 }
 
-function targetTcinImageFallbacks(item: StorefrontInventoryItem) {
-  const possibleTargetUrls = [item.exactProductUrl, item.product?.url, item.product?.verifiedFinalUrl].filter((value): value is string => Boolean(value));
-  const isTargetProduct = possibleTargetUrls.some((value) => /target\.com/i.test(value));
-  if (!isTargetProduct) return [];
-
-  const identifiers = [
-    item.sku,
-    item.dpci,
-    item.product?.sku,
-    item.product?.dpci,
-    item.product?.retailerProductId,
-    ...possibleTargetUrls.flatMap((value) => {
-      const tcinFromPath = value.match(/\/A-(\d{6,})/i)?.[1] ?? null;
-      const tcinFromQuery = value.match(/[?&](?:preselect|tcin|sku)=(\d{6,})/i)?.[1] ?? null;
-      return [tcinFromPath, tcinFromQuery];
-    })
-  ];
-  const tcins = [...new Set(identifiers.map((value) => (value && /^\d{6,}$/.test(value.trim()) ? value.trim() : null)).filter((value): value is string => Boolean(value)))];
-  return tcins.flatMap((tcin) => [
-    `https://target.scene7.com/is/image/Target/GUEST_${tcin}`,
-    `https://target.scene7.com/is/image/Target/GUEST_${tcin}?wid=800&hei=800&qlt=80&fmt=webp`
-  ]);
+function publicImages(item: StorefrontInventoryItem) {
+  return getSavedProductImageUrls(item, { publicOnly: true }).filter(isStorefrontDisplayImageUrl);
 }
 
-const knownPokemonUpcImageFallbacks: Record<string, string[]> = {
-  "196214155787": [
-    "https://cdn11.bigcommerce.com/s-karer354/images/stencil/1280x1280/products/296360/1121259/lumiose-city-mini-tin-264181539__60569.1780614126.jpg?c=2"
-  ],
-  "196214140615": [
-    "https://www.spellenrijk.nl/resize/chaos-rising-flygon-premium-blister_126626975883988135747785.png/200/200/True/pokemon-chaos-rising-premium-checklane-blister-flygon.png"
-  ],
-  "196214140585": ["https://c.cdnmp.net/406833049/p/t/1/pokemon-tcg-chaos-rising-premium-checklane-blister-pawmot~902421.jpg"],
-  "196214136649": [
-    "https://storage.googleapis.com/images.pricecharting.com/awn4x7p7gjzktwjk/240.jpg",
-    "https://rollntrade.com/wp-content/uploads/2026/03/Meganium-PCB.webp"
-  ]
-};
-
-function productBarcodeCandidates(item: StorefrontInventoryItem) {
-  return [item.upc, item.sku, item.product?.upc]
-    .flatMap((value) => {
-      const digits = value?.replace(/\D/g, "") ?? "";
-      if (digits.length === 13 && digits.startsWith("0")) return [digits, digits.slice(1)];
-      return [digits];
-    })
-    .filter((value): value is string => value.length === 12 || value.length === 13);
-}
-
-function knownUpcImageFallbacks(item: StorefrontInventoryItem) {
-  const codes = [...new Set(productBarcodeCandidates(item))];
-  return codes.flatMap((code) => knownPokemonUpcImageFallbacks[code] ?? []);
-}
-
-function upcCoverImageFallbacks(item: StorefrontInventoryItem) {
-  const codes = [...new Set(productBarcodeCandidates(item))].filter((code) => !knownPokemonUpcImageFallbacks[code]?.length);
-  return codes.flatMap((code) => {
-    const coverPath = `${code.slice(0, 1)}/${code.slice(1, 3)}/${code.slice(3, 6)}/${code.slice(6, 9)}/${code}.jpg`;
-    return [1, 2, 3, 4].map((host) => `https://covers${host}.booksamillion.com/covers/gift/${coverPath}`);
-  });
-}
-
-function normalizedKey(value: string | null | undefined) {
-  return value?.trim().toLowerCase() || null;
-}
-
-function storedProductMatchesItem(product: StoredProductImageFallback, item: StorefrontInventoryItem) {
-  const itemUrls = [item.exactProductUrl].map(normalizedKey).filter(Boolean);
-  const productUrls = [product.url, product.verifiedFinalUrl].map(normalizedKey).filter(Boolean);
-  if (itemUrls.length && productUrls.some((url) => itemUrls.includes(url))) return true;
-
-  const itemIdentifiers = [item.sku, item.upc, item.dpci].map(normalizedKey).filter(Boolean);
-  const productIdentifiers = [product.sku, product.upc, product.dpci, product.retailerProductId].map(normalizedKey).filter(Boolean);
-  if (itemIdentifiers.length && productIdentifiers.some((identifier) => itemIdentifiers.includes(identifier))) return true;
-
-  const itemTitles = [item.publicTitle, item.itemName].map(normalizedKey).filter(Boolean);
-  return itemTitles.includes(normalizedKey(product.name));
-}
-
-async function watchedProductImageFallbackMap(items: StorefrontInventoryItem[]) {
-  const urls = [...new Set(items.flatMap((item) => [item.exactProductUrl].map(normalizedKey).filter((value): value is string => Boolean(value))))];
-  const identifiers = [
-    ...new Set(
-      items
-        .flatMap((item) => [item.sku, item.upc, item.dpci].map(normalizedKey))
-        .filter((value): value is string => Boolean(value))
-    )
-  ];
-  const titles = [
-    ...new Set(
-      items
-        .flatMap((item) => [item.publicTitle, item.itemName].map((value) => value?.trim()).filter((value): value is string => Boolean(value)))
-        .filter((value) => value.length >= 4)
-    )
-  ];
-  const clauses: Prisma.ProductWhereInput[] = [];
-  if (urls.length) clauses.push({ OR: [{ url: { in: urls } }, { verifiedFinalUrl: { in: urls } }] });
-  if (identifiers.length) clauses.push({ OR: [{ sku: { in: identifiers } }, { upc: { in: identifiers } }, { dpci: { in: identifiers } }, { retailerProductId: { in: identifiers } }] });
-  if (titles.length) clauses.push({ name: { in: titles } });
-  if (!clauses.length) return new Map<string, string[]>();
-
-  const storedProducts = await prisma.product.findMany({
-    where: { OR: clauses },
-    select: {
-      id: true,
-      name: true,
-      url: true,
-      verifiedFinalUrl: true,
-      sku: true,
-      upc: true,
-      dpci: true,
-      retailerProductId: true,
-      imageUrl: true,
-      liveImageUrl: true
-    },
-    take: 500
-  });
-  const result = new Map<string, string[]>();
-  for (const item of items) {
-    const imageUrls = storedProducts
-      .filter((product) => storedProductMatchesItem(product, item))
-      .flatMap((product) => [product.liveImageUrl, product.imageUrl]);
-    const urlsForItem = uniqueProductImageUrls(imageUrls);
-    if (urlsForItem.length) result.set(item.id, urlsForItem);
-  }
-  return result;
-}
-
-function publicImages(item: StorefrontInventoryItem, extraFallbacks: string[] = []) {
-  return uniqueProductImageUrls([
-    ...getProductImageUrls(item),
-    ...extraFallbacks,
-    ...targetTcinImageFallbacks(item),
-    ...knownUpcImageFallbacks(item),
-    ...upcCoverImageFallbacks(item)
-  ]);
-}
-
-export function publicProductToDTO(item: StorefrontInventoryItem, options: { imageFallbacks?: string[] } = {}): PublicStoreProductDTO | null {
+export function publicProductToDTO(item: StorefrontInventoryItem): PublicStoreProductDTO | null {
   const price = item.publicPrice;
   const availableQuantity = sellableQuantity(item);
   const slug = item.publicSlug;
   if (!item.publishToStore || !slug || price === null || price === undefined) return null;
   if (!["active", "sold_out"].includes(item.storeStatus)) return null;
-  const images = publicImages(item, options.imageFallbacks);
+  const images = publicImages(item);
   const publicCategory = displayStorefrontCategory({
     category: item.storefrontCategory || item.category,
     title: item.publicTitle || item.itemName,
@@ -342,7 +198,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem, options: { ima
   });
   const publicTitle = cleanStorefrontTitle(item.publicTitle || item.itemName);
   const status = availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out";
-  const primaryImageUrl = images[0] ?? getPrimaryProductImage(item);
+  const primaryImageUrl = images[0] ?? null;
   return {
     id: item.id,
     slug,
@@ -420,9 +276,8 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
   });
   const q = input?.q?.trim().toLowerCase();
   const category = input?.category?.trim().toLowerCase();
-  const imageFallbacks = await watchedProductImageFallbackMap(products);
   return products
-    .map((item) => publicProductToDTO(item, { imageFallbacks: imageFallbacks.get(item.id) }))
+    .map((item) => publicProductToDTO(item))
     .filter((product): product is PublicStoreProductDTO => Boolean(product))
     .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))
     .filter((product) => !category || category === "all" || product.category.toLowerCase() === category)
@@ -440,8 +295,7 @@ export async function getPublicStoreProduct(slug: string) {
     include: storefrontInventoryInclude
   });
   if (!item) return null;
-  const imageFallbacks = await watchedProductImageFallbackMap([item]);
-  return publicProductToDTO(item, { imageFallbacks: imageFallbacks.get(item.id) });
+  return publicProductToDTO(item);
 }
 
 export async function getCartProducts(items: Array<{ id: string; quantity: number }>, options: { strict?: boolean } = {}) {
@@ -455,9 +309,8 @@ export async function getCartProducts(items: Array<{ id: string; quantity: numbe
   if (products.length !== requested.size) {
     throw new Error("One or more cart items are no longer available.");
   }
-  const imageFallbacks = await watchedProductImageFallbackMap(products);
   return products.map((item) => {
-    const product = publicProductToDTO(item, { imageFallbacks: imageFallbacks.get(item.id) });
+    const product = publicProductToDTO(item);
     if (!product) throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
     const requestedQuantity = requested.get(item.id) ?? 0;
     if (strict && product.status !== "active") throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
@@ -701,7 +554,7 @@ function stripeImage(imageUrl: string | null | undefined) {
 }
 
 function orderItemToDTO(item: StorefrontOrderItemWithInventory): StorefrontOrderItemDTO {
-  const resolvedImageUrl = item.imageUrl ?? getPrimaryProductImage(item.inventoryItem);
+  const resolvedImageUrl = item.imageUrl ?? getSavedProductImageUrls(item.inventoryItem, { publicOnly: true }).find(isStorefrontDisplayImageUrl) ?? null;
   return {
     id: item.id,
     inventoryItemId: item.inventoryItemId,

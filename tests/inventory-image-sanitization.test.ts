@@ -171,10 +171,44 @@ test("product image gallery model and API routes are wired", () => {
   assert.match(service, /source: "existing_image_url"/);
   assert.match(service, /syncInventoryImageFields/);
   assert.match(storefront, /productImages/);
-  assert.match(storefront, /getProductImageUrls/);
+  assert.match(storefront, /getSavedProductImageUrls/);
   assert.match(appSource, /ProductImageGalleryManager/);
   assert.match(appSource, /Upload Images/);
   assert.match(appSource, /Set primary/);
   assert.match(appSource, /images\/resolve-url/);
   assert.match(appSource, /Product Image Uploads/);
+});
+
+test("admin and storefront image surfaces handle broken or unsafe product images cleanly", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const clientSource = readFileSync("src/components/StorefrontClient.tsx", "utf8");
+  const storefront = readFileSync("src/lib/storefront.ts", "utf8");
+
+  assert.match(appSource, /ProductImageUnavailable/);
+  assert.match(appSource, /function InventoryDetailImageGallery/);
+  assert.match(appSource, /function InventoryDetailImageFigure/);
+  assert.match(appSource, /productImageQaLabels/);
+  assert.match(appSource, /Storefront-safe image exists/);
+  assert.match(appSource, /Image unavailable\. Add a replacement URL or upload a clean product photo\./);
+  assert.match(appSource, /onError=\{\(\) => setFailed\(true\)\}/);
+  assert.match(appSource, /source: "uploaded"/);
+  assert.match(appSource, /Set primary/);
+  assert.match(appSource, /showInStore: true/);
+
+  const inventoryImageSource = appSource.slice(
+    appSource.indexOf("function InventoryImage"),
+    appSource.indexOf("function InventoryFallbackImage")
+  );
+  const saleThumbSource = appSource.slice(
+    appSource.indexOf("function SaleProductThumb"),
+    appSource.indexOf("function SalesSummaryCard")
+  );
+  assert.doesNotMatch(inventoryImageSource, /initials/);
+  assert.doesNotMatch(saleThumbSource, /initials/);
+
+  assert.match(clientSource, /isStorefrontDisplayImageUrl/);
+  assert.match(clientSource, /visibleGalleryImages/);
+  assert.match(clientSource, /onError=\{\(\) => setFailedImages/);
+  assert.match(storefront, /\.filter\(isStorefrontDisplayImageUrl\)/);
+  assert.match(storefront, /const primaryImageUrl = images\[0\] \?\? null/);
 });

@@ -752,7 +752,9 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /StorefrontFooter/);
   assert.match(client, /StorefrontContactForm/);
   assert.match(client, /sportsCardsExternalUrl/);
-  assert.match(client, /gdg-gallery \$\{images\.length > 1 \? "has-thumbs" : "single-image"\}/);
+  assert.match(client, /gdg-gallery \$\{visibleGalleryImages\.length > 1 \? "has-thumbs" : "single-image"\}/);
+  assert.match(client, /visibleGalleryImages = images\.filter/);
+  assert.match(client, /gdg-gallery-thumbs[\s\S]*onError=\{\(\) => setFailedImages/);
   assert.match(client, /Image coming soon/);
   assert.match(client, /cleanStorefrontDescription/);
   assert.match(client, /storefrontSoldOutNote/);
