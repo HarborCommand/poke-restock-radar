@@ -4932,10 +4932,10 @@ function ProductImageGalleryManager({
     <div className="product-image-manager">
       <div className="product-image-manager-head">
         <div>
-          <strong>Product Images</strong>
+          <strong>Product images</strong>
           <span>
             {context === "storefront"
-              ? "Choose which gallery images appear publicly. Costs, receipts, and notes are never exposed."
+              ? "Add clean product images for the public storefront. Costs, receipts, and notes are never exposed."
               : "Upload, paste URLs, set the primary image, and manage storefront visibility."}
           </span>
         </div>
@@ -4963,35 +4963,6 @@ function ProductImageGalleryManager({
           </button>
         </div>
       ) : null}
-      <div className="product-image-add-row">
-        <label>
-          Image URL or product page
-          <input value={newImageUrl} onChange={(event) => setNewImageUrl(event.currentTarget.value)} placeholder="Paste direct image URL or product page URL" inputMode="url" />
-        </label>
-        <label>
-          Alt text
-          <input value={newImageAlt} onChange={(event) => setNewImageAlt(event.currentTarget.value)} placeholder="Optional public image description" />
-        </label>
-        <button className="mini-action" type="button" disabled={busy || !newImageUrl.trim()} onClick={() => void handleAddUrl()}>
-          <Plus size={14} />
-          Add URL
-        </button>
-        <label className="mini-action product-image-upload-button">
-          <Upload size={14} />
-          Upload Images
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            disabled={busy}
-            onChange={(event) => {
-              void handleUpload(event.currentTarget.files);
-              event.currentTarget.value = "";
-            }}
-          />
-        </label>
-      </div>
-      <p className="form-helper">Uploads use Vercel Blob when `BLOB_READ_WRITE_TOKEN` is configured. JPG, PNG, and WebP files are accepted. Pasted product pages are inspected for public product images; receipts remain private admin attachments.</p>
       {sortedImages.length ? (
         <div className="product-image-grid">
           {sortedImages.map((image, index) => (
@@ -5008,11 +4979,47 @@ function ProductImageGalleryManager({
           ))}
         </div>
       ) : (
-        <div className="product-image-empty">
+        <div className="product-image-empty product-image-empty-state">
           <PackageSearch size={18} />
-          <span>Add at least one image to make the product and storefront listing easier to scan.</span>
+          <div>
+            <strong>No product images yet</strong>
+            <span>Upload an image or paste a direct image URL.</span>
+          </div>
         </div>
       )}
+      <div className="product-image-add-row">
+        <div className="product-image-add-fields">
+          <label className="product-image-url-field">
+            Image URL or product page
+            <input value={newImageUrl} onChange={(event) => setNewImageUrl(event.currentTarget.value)} placeholder="Paste direct image URL or product page URL" inputMode="url" />
+          </label>
+          <label className="product-image-alt-field">
+            Alt text
+            <input value={newImageAlt} onChange={(event) => setNewImageAlt(event.currentTarget.value)} placeholder="Optional public image description" />
+          </label>
+        </div>
+        <div className="product-image-add-actions">
+          <button className="mini-action" type="button" disabled={busy || !newImageUrl.trim()} onClick={() => void handleAddUrl()}>
+            <Plus size={14} />
+            Add URL
+          </button>
+          <label className="mini-action product-image-upload-button">
+            <Upload size={14} />
+            Upload Images
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              disabled={busy}
+              onChange={(event) => {
+                void handleUpload(event.currentTarget.files);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+        </div>
+      </div>
+      <p className="form-helper product-image-upload-note">Uploads use Vercel Blob when `BLOB_READ_WRITE_TOKEN` is configured. JPG, PNG, and WebP files are accepted. Pasted product pages are inspected for public product images; receipts remain private admin attachments.</p>
       {status ? <p className="image-upload-warning">{status}</p> : null}
     </div>
   );

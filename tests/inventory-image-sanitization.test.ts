@@ -179,6 +179,31 @@ test("product image gallery model and API routes are wired", () => {
   assert.match(appSource, /Product Image Uploads/);
 });
 
+test("listing image manager keeps public image controls readable", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const managerSource = appSource.slice(appSource.indexOf("function ProductImageGalleryManager"), appSource.indexOf("function StoreStack"));
+
+  assert.match(managerSource, /Product images/);
+  assert.match(managerSource, /Add clean product images for the public storefront\. Costs, receipts, and notes are never exposed\./);
+  assert.match(managerSource, /No product images yet/);
+  assert.match(managerSource, /Upload an image or paste a direct image URL\./);
+  assert.match(managerSource, /product-image-add-fields/);
+  assert.match(managerSource, /product-image-add-actions/);
+  assert.match(managerSource, /product-image-upload-note/);
+  assert.ok(
+    managerSource.indexOf("product-image-empty") < managerSource.indexOf("product-image-add-row"),
+    "gallery or empty state should render before URL/upload controls"
+  );
+  assert.match(css, /body \.product-image-manager \{[\s\S]*border: 1px solid #e5e7eb/);
+  assert.match(css, /body \.product-image-manager-head \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(css, /body \.product-image-add-row \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(css, /body \.product-image-add-fields \{[\s\S]*grid-template-columns: minmax\(260px, 1\.45fr\) minmax\(220px, 1fr\)/);
+  assert.match(css, /body \.product-image-add-actions \{[\s\S]*min-width: max-content/);
+  assert.match(css, /body \.product-image-add-actions \.mini-action,[\s\S]*white-space: nowrap/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.product-image-add-row,[\s\S]*body \.product-image-add-fields \{[\s\S]*grid-template-columns: 1fr/);
+});
+
 test("admin and storefront image surfaces handle broken or unsafe product images cleanly", () => {
   const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
   const clientSource = readFileSync("src/components/StorefrontClient.tsx", "utf8");
