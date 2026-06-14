@@ -201,6 +201,9 @@ test("listing image manager keeps public image controls readable", () => {
   assert.match(css, /body \.product-image-add-fields \{[\s\S]*grid-template-columns: minmax\(260px, 1\.45fr\) minmax\(220px, 1fr\)/);
   assert.match(css, /body \.product-image-add-actions \{[\s\S]*min-width: max-content/);
   assert.match(css, /body \.product-image-add-actions \.mini-action,[\s\S]*white-space: nowrap/);
+  assert.match(css, /body \.product-image-manager > \.product-image-empty,[\s\S]*grid-area: auto/);
+  assert.match(css, /body \.product-image-manager > \.product-image-empty \{[\s\S]*text-align: left/);
+  assert.match(css, /body \.product-image-empty-state span \{[\s\S]*display: block[\s\S]*width: auto[\s\S]*height: auto[\s\S]*background: transparent/);
   assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.product-image-add-row,[\s\S]*body \.product-image-add-fields \{[\s\S]*grid-template-columns: 1fr/);
 });
 

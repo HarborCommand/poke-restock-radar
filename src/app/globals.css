@@ -18781,11 +18781,21 @@ body .product-image-manager > .product-image-empty,
 body .inventory-detail-section > .product-image-empty {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
+  grid-area: auto;
   align-items: center;
   gap: 12px;
   min-width: 0;
+  width: 100%;
+  height: auto;
+  max-height: none;
   padding: 18px;
   color: #64748b;
+}
+
+body .product-image-manager > .product-image-empty {
+  align-content: center;
+  justify-items: start;
+  text-align: left;
 }
 
 body .product-image-empty-state > div {
@@ -18800,9 +18810,18 @@ body .product-image-empty-state strong {
 }
 
 body .product-image-empty-state span {
+  display: block;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #64748b;
   font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0;
   line-height: 1.4;
+  text-align: left;
 }
 
 body .inventory-detail-image-gallery figure {
