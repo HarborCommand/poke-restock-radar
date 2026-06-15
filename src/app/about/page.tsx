@@ -1,41 +1,46 @@
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
+import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "About | GameDayGrabs LLC",
-  description: "Learn about GameDayGrabs LLC, a family-owned Pokémon and sports card shop."
+  description: "Learn about GameDayGrabs LLC, a collector-focused Pokemon TCG shop."
 };
 
 export default async function AboutPage() {
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
+  const contactEmail = settings.contactEmail || GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL;
+
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />
       <section className="gdg-info-hero">
         <p className="gdg-overline">About GameDayGrabs LLC</p>
-        <h1>Built for collectors, players, and families.</h1>
+        <h1>Built for Pok&eacute;mon collectors.</h1>
         <p>
-          GameDayGrabs LLC is a collector-focused shop for Pokémon sealed products, sports cards, graded cards,
-          and curated collectibles. The storefront is designed to keep public inventory simple, accurate, and easy to
-          request.
+          GameDayGrabs is a collector-focused Pok&eacute;mon TCG shop built around accurate listings, real inventory,
+          secure checkout, and careful packaging. Our goal is simple: make it easy to buy sealed Pok&eacute;mon products
+          with confidence.
         </p>
       </section>
       <section className="gdg-section gdg-values">
         <div className="gdg-section-header">
           <div>
-            <h2>Why Collectors Choose GameDayGrabs</h2>
-            <p>Professional service without clutter or guesswork.</p>
+            <h2>Collector-first service</h2>
+            <p>Clear listings, secure payment, and practical fulfillment without unnecessary friction.</p>
           </div>
         </div>
         <div className="gdg-value-grid">
           {[
-            ["Family Owned", "A small business built around collecting, playing, and sharing the hobby."],
-            ["Carefully Curated", "Public listings show only products selected and published from real inventory."],
-            ["Safe & Secure", "Invoice and checkout flows are handled clearly before fulfillment."],
-            ["Collector Friendly", "Product pages are built to be readable, mobile friendly, and easy to review."]
+            ["Accurate Listings", "Products are listed with current availability so customers can shop from real public inventory."],
+            ["Secure Checkout", "Checkout is handled securely, with Stripe available for card payments when enabled."],
+            ["Careful Packaging", "Orders are packed with care so sealed products arrive protected and easy to review."],
+            ["Practical Fulfillment", "Orders move through a clear fulfillment process without overpromising delivery timing."],
+            ["Order Help", "Customers can contact GameDayGrabs for order questions, pickup coordination, or product help."],
+            ["Contact", `Email ${contactEmail} for help with an order or product question.`]
           ].map(([title, text]) => (
             <article key={title}>
               <span>{title.slice(0, 1)}</span>

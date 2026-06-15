@@ -822,6 +822,45 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(contactPage, /StorefrontContactForm/);
 });
 
+test("GameDayGrabs About and Policies pages use current customer policy copy", () => {
+  const aboutPage = fs.readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
+  const policiesPage = fs.readFileSync(new URL("../src/app/policies/page.tsx", import.meta.url), "utf8");
+  const routing = fs.readFileSync(new URL("../src/lib/storefront-routing.ts", import.meta.url), "utf8");
+  const combined = `${aboutPage}\n${policiesPage}`;
+
+  assert.match(aboutPage, /About GameDayGrabs/);
+  assert.match(aboutPage, /Built for Pok&eacute;mon collectors/);
+  assert.match(aboutPage, /accurate listings, real inventory/);
+  assert.match(aboutPage, /secure checkout, and careful packaging/);
+  assert.match(aboutPage, /Email \$\{contactEmail\} for help with an order or product question/);
+
+  assert.match(policiesPage, /Shipping Policy/);
+  assert.match(policiesPage, /Shipping is calculated from product weight and package size/);
+  assert.match(policiesPage, /Final shipping is shown before payment/);
+  assert.match(policiesPage, /Local Pickup Policy/);
+  assert.match(policiesPage, /Local pickup is only available when shown at checkout/);
+  assert.match(policiesPage, /Cancellations \/ Refunds/);
+  assert.match(policiesPage, /Refund timing depends on the customer's bank or card issuer/);
+  assert.match(policiesPage, /Returns \/ Product Issues/);
+  assert.match(policiesPage, /Payment Security/);
+  assert.match(policiesPage, /Stripe securely handles payment/);
+  assert.match(policiesPage, /GameDayGrabs does not store card numbers or CVC/);
+  assert.match(policiesPage, /Inventory \/ Checkout Holds/);
+  assert.match(policiesPage, /Checkout holds items for 15 minutes while payment is completed/);
+  assert.match(policiesPage, /Abandoned or expired checkout sessions release the hold/);
+  assert.match(policiesPage, /Inventory is finalized only after successful payment/);
+  assert.match(policiesPage, /Product Availability \/ Preorders/);
+  assert.match(policiesPage, /If a product is sold out, checkout is blocked/);
+  assert.match(policiesPage, /Privacy \/ Customer Information/);
+  assert.match(policiesPage, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
+  assert.match(routing, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL = "gamedaygrabs@outlook\.com"/);
+
+  assert.doesNotMatch(policiesPage, /Default shipping|defaultShippingPrice|flat shipping|flat \$5|\$5\.00/i);
+  assert.doesNotMatch(combined, /eBay feedback|feedback screenshots|feedback links|Customer Feedback|reviews from eBay/i);
+  assert.doesNotMatch(combined, /payment_method_details|payment_method_data|card_number|cardNumber|cvv|JSON\.stringify|raw Stripe object/i);
+  assert.doesNotMatch(combined, /same[- ]day shipping|same[- ]day delivery/i);
+});
+
 test("Stripe Checkout preparation uses session route, webhook verification, and invoice fallback", () => {
   const env = fs.readFileSync(new URL("../src/lib/env.ts", import.meta.url), "utf8");
   const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
