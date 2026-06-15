@@ -290,14 +290,29 @@ export async function POST(request: Request) {
     const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));
     const input = inventoryCreateSchema.parse(payload);
     const item = await createInventoryItem(user, input);
+    const stockAddedToExistingItem = Boolean(input.existingInventoryItemId);
     await logAudit({
       user,
-      action: "inventory.created",
+      action: stockAddedToExistingItem ? "inventory.stock_added" : "inventory.created",
       entityType: "INVENTORY",
       entityId: item.id,
-      summary: `${user.email} logged inventory item ${item.itemName}.`
+      summary: stockAddedToExistingItem
+        ? `${user.email} added ${input.quantity} stock unit${input.quantity === 1 ? "" : "s"} to ${item.itemName}. On hand is now ${item.quantityOwned}.`
+        : `${user.email} logged inventory item ${item.itemName}.`,
+      metadata: stockAddedToExistingItem
+        ? {
+            actionType: "add_stock",
+            quantityAdded: input.quantity,
+            newOnHand: item.quantityOwned,
+            source: input.source,
+            note: input.notes ?? null
+          }
+        : null
     });
-    const warning = inventoryImageSanitizationMessage(warnings);
+    const warning = [
+      inventoryImageSanitizationMessage(warnings),
+      stockAddedToExistingItem ? `On hand is now ${item.quantityOwned}.` : null
+    ].filter(Boolean).join(" ");
     return ok(warning ? { item, warning, warnings } : { item }, 201);
   } catch (error) {
     return badRequest(error);

@@ -5823,6 +5823,9 @@ function storefrontListingStockWarnings(item: InventoryItemDTO) {
       `Stock mismatch detected: manual listing quantity ${manualAvailable} exceeds on-hand stock ${Math.max(0, item.quantityOwned)}. Available online is capped at ${availableForSale}.`
     );
   }
+  if (Math.max(0, item.quantityOwned) > 0 && manualAvailable === 0) {
+    warnings.push("On hand exists, but online availability is capped at 0.");
+  }
   if (item.publishToStore && item.storeStatus === "active" && availableForSale <= 0) {
     warnings.push("Listing is active but currently sold out.");
   }
@@ -5957,6 +5960,8 @@ type InventoryMutationNoticeState = {
   itemId: string;
   itemName: string;
   message: string;
+  onHand: number;
+  availableOnline: number;
   hiddenByFilters: boolean;
   reason: InventoryMutationReason;
   submittedAt: string;
@@ -6167,6 +6172,8 @@ function InventoryPanel({
         itemId: item.id,
         itemName: item.itemName,
         message: pendingInventoryMutation.message,
+        onHand: item.quantityOwned,
+        availableOnline: storefrontListingAvailableForSale(item),
         hiddenByFilters,
         reason: pendingInventoryMutation.reason,
         submittedAt: pendingInventoryMutation.submittedAt,
@@ -6475,7 +6482,7 @@ function InventoryPanel({
                 const mutation = inventoryMutationFromForm(
                   form,
                   reason,
-                  existingItemId ? "Stock saved. Inventory refreshed and the existing product is selected." : "Inventory product saved. Catalog refreshed with the new product selected.",
+                  existingItemId ? "Stock updated. On-hand and listing availability refreshed." : "Inventory product saved. Catalog refreshed with the new product selected.",
                   existingItemId
                 );
                 await submit(event, label, run, options);
@@ -6568,10 +6575,14 @@ function InventoryPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={async (event, label, run, options) => {
-            const mutation = inventoryMutationForItem("stock_lot_updated", "Stock lot updated. Average cost and inventory totals refreshed.", editStockItem);
+            const mutation = inventoryMutationForItem("stock_lot_updated", "Stock updated. On-hand and listing availability refreshed.", editStockItem);
             await submit(event, label, run, options);
             setPendingInventoryMutation(mutation);
             setEditStockLotTarget(null);
+          }}
+          onAddStock={(item) => {
+            setEditStockLotTarget(null);
+            openPurchaseFlow(item.id);
           }}
           onClose={() => setEditStockLotTarget(null)}
         />
@@ -7686,7 +7697,7 @@ function InventoryMutationNotice({
         </span>
         <h3>{notice.hiddenByFilters ? "Inventory saved, but hidden by current filters." : notice.message}</h3>
         <p>
-          {notice.itemName} was refreshed after the save.
+          {notice.itemName} was refreshed after the save. On hand is now {notice.onHand}. Available online is {notice.availableOnline}.
           {notice.hiddenByFilters && activeFilters.length ? ` Active filters: ${activeFilters.join(", ")}.` : ""}
         </p>
         <details className="inventory-mutation-diagnostics">
@@ -9063,6 +9074,7 @@ function PurchaseFlow({
   const totalCost = quantity * price + extraCost;
   const selectedExisting = items.find((item) => item.id === selectedExistingId) ?? null;
   const flowKey = selectedExisting?.id ?? prefill?.upc ?? "new";
+  const projectedOnHand = selectedExisting ? selectedExisting.quantityOwned + quantity : quantity;
   const initialDraft = useMemo(
     () => ({
       itemName: selectedExisting?.itemName ?? prefill?.itemName ?? "",
@@ -9190,7 +9202,7 @@ function PurchaseFlow({
             event,
             "Adding inventory item",
             (form) => requestJson("/api/radar/inventory", { method: "POST", body: JSON.stringify(formJson(form)) }),
-            { reset: true, success: "Purchase added" }
+            { reset: true, success: selectedExisting ? "Stock updated" : "Purchase added" }
           )
         }
       >
@@ -9244,6 +9256,12 @@ function PurchaseFlow({
                 </span>
                 <h4>{selectedExisting.itemName}</h4>
                 <p>UPC {selectedExisting.upc || draft.upc || "Missing"} - {formatStatus(selectedExisting.category)} - {selectedExisting.setName || selectedExisting.retailer || "Set not saved"}</p>
+                <p className="stock-correction-help">
+                  Add Stock creates a new stock lot and increases real on-hand quantity. Use it for newly found units or physical count corrections.
+                </p>
+                <p className="stock-correction-preview">
+                  On hand: {selectedExisting.quantityOwned} to {projectedOnHand}
+                </p>
               </div>
               <TextInput
                 name="quantity"
@@ -9879,6 +9897,7 @@ function InventoryEditStockLotModal({
   busy,
   busyLabel,
   submit,
+  onAddStock,
   onClose
 }: {
   item: InventoryItemDTO;
@@ -9886,6 +9905,7 @@ function InventoryEditStockLotModal({
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  onAddStock: (item: InventoryItemDTO) => void;
   onClose: () => void;
 }) {
   const saveLabel = `Adjusting stock lot ${lot.id}`;
@@ -9907,6 +9927,9 @@ function InventoryEditStockLotModal({
   const effectiveTotalCost = overrideTotalCost ?? calculatedTotalCost;
   const effectiveAverageCost = draftQuantity > 0 ? effectiveTotalCost / draftQuantity : 0;
   const remainingAfterSoldLock = Math.max(0, draftQuantity - soldFromLot);
+  const projectedOnHand = Math.max(0, item.quantityOwned - lot.remainingQuantity + remainingAfterSoldLock);
+  const stockQuantityWillChange = projectedOnHand !== item.quantityOwned || remainingAfterSoldLock !== lot.remainingQuantity;
+  const depletedLot = lot.remainingQuantity <= 0;
 
   function updateStockDraft(name: keyof typeof stockDraft, value: string) {
     setStockDraft((current) => ({ ...current, [name]: value }));
@@ -9946,7 +9969,7 @@ function InventoryEditStockLotModal({
                   method: "PATCH",
                   body: JSON.stringify(formJson(form))
                 }),
-              { reset: false, success: "Stock lot updated" }
+              { reset: false }
             )
           }
         >
@@ -9957,7 +9980,35 @@ function InventoryEditStockLotModal({
               To remove a mistaken unsold lot completely, use Remove Stock Lot from Product Details. If any units were sold,
               quantity cannot go below the sold count.
             </p>
+            {depletedLot ? (
+              <div className="inventory-warning-list stock-adjustment-warning" role="status">
+                <span>This lot is depleted. To add physical units, use Add Stock or create a correction lot.</span>
+                <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
+                  Add Stock
+                </button>
+              </div>
+            ) : null}
             <div className="stock-cost-preview" aria-label="Live stock cost preview">
+              <span>
+                <small>Current on hand</small>
+                <strong>{item.quantityOwned}</strong>
+              </span>
+              <span>
+                <small>Selected lot starting</small>
+                <strong>{lot.quantity}</strong>
+              </span>
+              <span>
+                <small>Selected lot remaining</small>
+                <strong>{lot.remainingQuantity}</strong>
+              </span>
+              <span>
+                <small>Sold / allocated</small>
+                <strong>{soldFromLot}</strong>
+              </span>
+              <span>
+                <small>Projected on hand</small>
+                <strong>{projectedOnHand}</strong>
+              </span>
               <span>
                 <small>Calculated total</small>
                 <strong>{money(calculatedTotalCost)}</strong>
@@ -9975,6 +10026,7 @@ function InventoryEditStockLotModal({
                 <strong>{remainingAfterSoldLock}</strong>
               </span>
             </div>
+            {!stockQuantityWillChange ? <p className="form-helper">No stock quantity changed.</p> : null}
             <div className="form-grid compact">
               <SelectInput
                 name="adjustmentReason"

@@ -5696,6 +5696,46 @@ async function syncInventoryItemTotalsFromLots(itemId: string) {
   });
 }
 
+function onHandFromStockSource(item: { quantity: number; stockLots: Array<{ remainingQuantity: number }>; sales: Array<{ quantitySold: number }> }) {
+  if (item.stockLots.length) return item.stockLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
+  const quantitySold = item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+  return Math.max(0, item.quantity - quantitySold);
+}
+
+async function syncInventoryStoreStatusAfterStockChange(itemId: string) {
+  const item = await prisma.inventoryItem.findUnique({
+    where: { id: itemId },
+    select: {
+      id: true,
+      quantity: true,
+      publishToStore: true,
+      storeStatus: true,
+      availableForSale: true,
+      stockLots: { select: { remainingQuantity: true } },
+      sales: { select: { quantitySold: true } }
+    }
+  });
+  if (!item || !item.publishToStore) return;
+
+  const onHand = Math.max(0, onHandFromStockSource(item));
+  const publicCap = item.availableForSale === null || item.availableForSale === undefined ? onHand : Math.max(0, item.availableForSale);
+  const availableOnline = Math.min(onHand, publicCap);
+  let nextStoreStatus: string | null = null;
+
+  if (onHand <= 0 && item.storeStatus === "active") {
+    nextStoreStatus = "sold_out";
+  } else if (onHand > 0 && availableOnline > 0 && item.storeStatus === "sold_out") {
+    nextStoreStatus = "active";
+  }
+
+  if (nextStoreStatus) {
+    await prisma.inventoryItem.update({
+      where: { id: item.id },
+      data: { storeStatus: nextStoreStatus }
+    });
+  }
+}
+
 async function recalculateInventorySalesAndLots(itemId: string) {
   const item = await prisma.inventoryItem.findUnique({
     where: { id: itemId },
@@ -6091,6 +6131,7 @@ export async function addInventoryStockLot(
     });
   }
   if (item.sales.length) await recalculateInventorySalesAndLots(item.id);
+  await syncInventoryStoreStatusAfterStockChange(item.id);
   return autoMatchInventoryItemMarket(currentUser, item.id);
 }
 
@@ -6123,6 +6164,7 @@ export async function updateInventoryStockLot(
   if (!item) throw new Error("Inventory item not found");
   const lot = item.stockLots.find((stockLot) => stockLot.id === lotId);
   if (!lot) throw new Error("Stock lot not found");
+  const previousOnHand = item.stockLots.reduce((sum, stockLot) => sum + stockLot.remainingQuantity, 0);
 
   const soldFromLot = Math.max(0, lot.quantity - lot.remainingQuantity);
   if (input.quantity < soldFromLot) {
@@ -6130,8 +6172,11 @@ export async function updateInventoryStockLot(
   }
 
   const nextTotalCost = input.totalCost ?? input.costPerUnit * input.quantity + (input.purchaseExtraCost ?? 0);
+  const nextRemainingBeforeRecalculation = Math.max(0, input.quantity - soldFromLot);
   const adjustmentAuditNote = [
     `Adjustment reason: ${input.adjustmentReason.replace(/_/g, " ")}`,
+    `Lot quantity: ${lot.quantity} -> ${input.quantity}`,
+    `Lot remaining: ${lot.remainingQuantity} -> ${nextRemainingBeforeRecalculation}`,
     input.adjustmentNote ? `Note: ${input.adjustmentNote}` : null
   ].filter(Boolean).join("\n");
   const nextNotes = [input.notes, adjustmentAuditNote].filter((value) => value?.trim()).join("\n\n") || null;
@@ -6144,7 +6189,7 @@ export async function updateInventoryStockLot(
       costPerUnit: input.costPerUnit,
       purchaseExtraCost: input.purchaseExtraCost,
       totalCost: nextTotalCost,
-      remainingQuantity: input.quantity - soldFromLot,
+      remainingQuantity: nextRemainingBeforeRecalculation,
       notes: nextNotes,
       receiptNumber: input.receiptNumber,
       receiptImageUrl: input.receiptImageUrl,
@@ -6156,7 +6201,23 @@ export async function updateInventoryStockLot(
   });
   await syncInventoryItemTotalsFromLots(item.id);
   await recalculateInventorySalesAndLots(item.id);
-  return autoMatchInventoryItemMarket(currentUser, item.id);
+  await syncInventoryStoreStatusAfterStockChange(item.id);
+  const nextItem = await autoMatchInventoryItemMarket(currentUser, item.id);
+  const nextLot = nextItem.stockLots.find((stockLot) => stockLot.id === lot.id);
+  const nextLotRemaining = nextLot?.remainingQuantity ?? nextRemainingBeforeRecalculation;
+  return {
+    item: nextItem,
+    adjustment: {
+      previousOnHand,
+      nextOnHand: nextItem.quantityOwned,
+      previousLotQuantity: lot.quantity,
+      nextLotQuantity: input.quantity,
+      previousLotRemaining: lot.remainingQuantity,
+      nextLotRemaining,
+      soldFromLot,
+      stockQuantityChanged: previousOnHand !== nextItem.quantityOwned || lot.remainingQuantity !== nextLotRemaining
+    }
+  };
 }
 
 export async function deleteInventoryStockLot(currentUser: SessionUser, itemId: string, lotId: string) {
@@ -6173,6 +6234,7 @@ export async function deleteInventoryStockLot(currentUser: SessionUser, itemId: 
 
   await prisma.inventoryStockLot.delete({ where: { id: lot.id } });
   await syncInventoryItemTotalsFromLots(item.id);
+  await syncInventoryStoreStatusAfterStockChange(item.id);
   return recomputeInventoryItem(item.id, currentUser);
 }
 

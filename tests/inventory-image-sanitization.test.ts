@@ -371,6 +371,7 @@ test("store listing save path persists shipping metadata without stock quantity 
 test("admin inventory storefront availability is capped by on-hand stock", () => {
   const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
   const storefront = readFileSync("src/lib/storefront.ts", "utf8");
+  const service = readFileSync("src/lib/radar-service.ts", "utf8");
   const helperSource = sourceSlice(appSource, "function storefrontListingAvailableForSale", "function positiveInventoryNumber");
   const detailsModal = sourceSlice(appSource, "function InventoryDetailsModal", "function InventoryEditStockLotModal");
   const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
@@ -380,6 +381,7 @@ test("admin inventory storefront availability is capped by on-hand stock", () =>
   assert.match(helperSource, /return Math\.min\(onHand, publicCap\)/);
   assert.match(helperSource, /function storefrontListingHasStockMismatch/);
   assert.match(helperSource, /Stock mismatch detected: manual listing quantity/);
+  assert.match(helperSource, /On hand exists, but online availability is capped at 0\./);
   assert.match(helperSource, /Listing is active but currently sold out\./);
   assert.match(helperSource, /Sold out online/);
   assert.match(detailsModal, /DetailStat label="On hand"/);
@@ -394,6 +396,9 @@ test("admin inventory storefront availability is capped by on-hand stock", () =>
   assert.match(updateListing, /const requestedAvailableForSale/);
   assert.match(updateListing, /const availableForSale = Math\.min\(onHandQuantity, requestedAvailableForSale\)/);
   assert.match(updateListing, /input\.publishToStore && availableForSale <= 0 \? "sold_out"/);
+  assert.match(service, /async function syncInventoryStoreStatusAfterStockChange/);
+  assert.match(service, /availableOnline > 0 && item\.storeStatus === "sold_out"/);
+  assert.match(service, /onHand <= 0 && item\.storeStatus === "active"/);
 });
 
 test("inventory row actions and stock lot details make sold-out corrections obvious", () => {
@@ -466,10 +471,44 @@ test("stock lot adjustment requires a reason and records the audit context", () 
   assert.match(modal, /Lost item/);
   assert.match(modal, /Returned to supplier/);
   assert.match(modal, /name="adjustmentNote"/);
+  assert.match(modal, /Current on hand/);
+  assert.match(modal, /Selected lot starting/);
+  assert.match(modal, /Selected lot remaining/);
+  assert.match(modal, /Sold \/ allocated/);
+  assert.match(modal, /Projected on hand/);
+  assert.match(modal, /This lot is depleted\. To add physical units, use Add Stock or create a correction lot\./);
+  assert.match(modal, /No stock quantity changed\./);
   assert.match(updateLot, /Adjustment reason:/);
+  assert.match(updateLot, /Lot quantity: \$\{lot\.quantity\} -> \$\{input\.quantity\}/);
+  assert.match(updateLot, /Lot remaining: \$\{lot\.remainingQuantity\} -> \$\{nextRemainingBeforeRecalculation\}/);
+  assert.match(updateLot, /stockQuantityChanged:/);
   assert.match(updateLot, /nextNotes/);
   assert.match(route, /inventory\.stock_lot\.updated/);
   assert.match(route, /Reason: \$\{adjustmentReasonLabel\(input\.adjustmentReason\)\}/);
+  assert.match(route, /previousOnHand: adjustment\.previousOnHand/);
+  assert.match(route, /newOnHand: adjustment\.nextOnHand/);
+  assert.match(route, /No stock quantity changed\./);
+  assert.match(route, /Stock updated\. On hand is now \$\{adjustment\.nextOnHand\}\./);
+});
+
+test("add stock reports real on-hand quantity and records stock-added audit metadata", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const route = readFileSync("src/app/api/radar/inventory/route.ts", "utf8");
+  const service = readFileSync("src/lib/radar-service.ts", "utf8");
+  const purchaseFlow = sourceSlice(appSource, "function PurchaseFlow", "function InventoryFilters");
+  const notice = sourceSlice(appSource, "function InventoryMutationNotice", "function AddProductChoiceModal");
+
+  assert.match(purchaseFlow, /Add Stock creates a new stock lot and increases real on-hand quantity/);
+  assert.match(purchaseFlow, /On hand: \{selectedExisting\.quantityOwned\} to \{projectedOnHand\}/);
+  assert.match(purchaseFlow, /success: selectedExisting \? "Stock updated" : "Purchase added"/);
+  assert.match(notice, /On hand is now \{notice\.onHand\}/);
+  assert.match(notice, /Available online is \{notice\.availableOnline\}/);
+  assert.match(route, /stockAddedToExistingItem/);
+  assert.match(route, /inventory\.stock_added/);
+  assert.match(route, /quantityAdded: input\.quantity/);
+  assert.match(route, /newOnHand: item\.quantityOwned/);
+  assert.match(route, /On hand is now \$\{item\.quantityOwned\}\./);
+  assert.match(service, /await syncInventoryStoreStatusAfterStockChange\(item\.id\);[\s\S]*return autoMatchInventoryItemMarket\(currentUser, item\.id\);/);
 });
 
 test("admin and storefront image surfaces handle broken or unsafe product images cleanly", () => {

@@ -18985,6 +18985,15 @@ body .inventory-warning-list span {
   line-height: 1.4;
 }
 
+body .stock-adjustment-warning {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+body .stock-adjustment-warning .mini-action {
+  white-space: nowrap;
+}
+
 body .stock-lot-groups,
 body .stock-lot-group {
   display: grid;
@@ -19475,7 +19484,7 @@ body .inventory-detail-image-gallery figcaption {
 
 body .stock-cost-preview {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
   margin: 14px 0;
 }
@@ -19645,6 +19654,7 @@ body .inventory-modal textarea:focus {
   body .inventory-details-header,
   body .inventory-details-grid,
   body .stock-cost-preview,
+  body .stock-adjustment-warning,
   body .product-image-manager-head,
   body .product-image-legacy-import,
   body .product-image-add-row,
