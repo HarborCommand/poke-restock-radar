@@ -2276,6 +2276,11 @@ export async function updateInventoryStoreListing(
   const publicSlug = input.publicSlug ? await uniqueSlug(input.publicSlug, item.id) : item.publicSlug || (input.publishToStore ? await uniqueSlug(publicTitle, item.id) : null);
   const publicImageList = stringifyList(input.publicImages) ?? stringifyList(publicImages(item));
   const storefrontCategory = input.storefrontCategory || item.storefrontCategory || publicCategoryForItem(item);
+  const onHandQuantity = Math.max(0, quantityOwned(item));
+  const requestedAvailableForSale =
+    input.availableForSale === undefined ? item.availableForSale ?? onHandQuantity : Math.max(0, input.availableForSale);
+  const availableForSale = Math.min(onHandQuantity, requestedAvailableForSale);
+  const normalizedStoreStatus = input.publishToStore && availableForSale <= 0 ? "sold_out" : input.storeStatus;
   const publicDescription = cleanStorefrontDescription({
     title: publicTitle,
     itemName: item.itemName,
@@ -2284,12 +2289,10 @@ export async function updateInventoryStoreListing(
     setName: item.setName,
     publicDescription: input.publicDescription ?? item.publicDescription,
     description: item.description,
-    status: input.storeStatus,
-    availableQuantity: input.availableForSale ?? item.availableForSale
+    status: normalizedStoreStatus,
+    availableQuantity: availableForSale
   });
   const publicPrice = input.publicPrice ?? publicListingPrice(item) ?? undefined;
-  const availableForSale = input.availableForSale === undefined ? item.availableForSale ?? sellableQuantity(item) : input.availableForSale;
-  const normalizedStoreStatus = input.publishToStore && availableForSale <= 0 ? "sold_out" : input.storeStatus;
   const isPublicStatus = ["active", "sold_out"].includes(normalizedStoreStatus);
   const shouldStampPublishedAt = input.publishToStore && isPublicStatus && !item.publishedAt;
 

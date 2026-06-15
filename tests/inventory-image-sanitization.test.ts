@@ -113,6 +113,7 @@ test("receipt image upload data does not block stock lot edits", () => {
     totalCost: 20.97,
     source: "Target",
     purchasedAt: "2026-06-12",
+    adjustmentReason: "physical_count_correction",
     receiptImageUrl: "data:image/jpeg;base64,AAA"
   });
 
@@ -365,6 +366,110 @@ test("store listing save path persists shipping metadata without stock quantity 
   assert.equal(parsed.insuranceRecommended, true);
   assert.doesNotMatch(updateListing, /\bquantity:\s*input\./);
   assert.doesNotMatch(updateListing, /inventoryStockLot|inventorySale|remainingQuantity|quantitySold/);
+});
+
+test("admin inventory storefront availability is capped by on-hand stock", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const storefront = readFileSync("src/lib/storefront.ts", "utf8");
+  const helperSource = sourceSlice(appSource, "function storefrontListingAvailableForSale", "function positiveInventoryNumber");
+  const detailsModal = sourceSlice(appSource, "function InventoryDetailsModal", "function InventoryEditStockLotModal");
+  const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
+  const updateListing = sourceSlice(storefront, "export async function updateInventoryStoreListing", "export async function bulkPublishInventoryStoreListings");
+
+  assert.match(helperSource, /const onHand = Math\.max\(0, item\.quantityOwned\)/);
+  assert.match(helperSource, /return Math\.min\(onHand, publicCap\)/);
+  assert.match(helperSource, /function storefrontListingHasStockMismatch/);
+  assert.match(helperSource, /Stock mismatch detected: manual listing quantity/);
+  assert.match(helperSource, /Listing is active but currently sold out\./);
+  assert.match(helperSource, /Sold out online/);
+  assert.match(detailsModal, /DetailStat label="On hand"/);
+  assert.match(detailsModal, /DetailStat label="Available online"/);
+  assert.match(detailsModal, /Manual listing cap/);
+  assert.match(detailsModal, /storefrontListingStockWarnings\(item\)/);
+  assert.match(detailsModal, /storefrontListingPublicStatus\(item\)/);
+  assert.match(listingModal, /max=\{String\(Math\.max\(0, item\.quantityOwned\)\)\}/);
+  assert.match(listingModal, /Available online is capped by on-hand stock/);
+  assert.match(listingModal, /manualAvailableForSale/);
+  assert.match(updateListing, /const onHandQuantity = Math\.max\(0, quantityOwned\(item\)\)/);
+  assert.match(updateListing, /const requestedAvailableForSale/);
+  assert.match(updateListing, /const availableForSale = Math\.min\(onHandQuantity, requestedAvailableForSale\)/);
+  assert.match(updateListing, /input\.publishToStore && availableForSale <= 0 \? "sold_out"/);
+});
+
+test("inventory row actions and stock lot details make sold-out corrections obvious", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const listComponent = sourceSlice(appSource, "function InventoryList", "function inventoryStockStatusLabel");
+  const actionMenu = sourceSlice(listComponent, "<div className=\"catalog-action-menu\"", "</div>");
+  const detailsModal = sourceSlice(appSource, "function InventoryDetailsModal", "function InventoryEditStockLotModal");
+  const lotsComponent = sourceSlice(appSource, "function CompactLotsList", "function CompactSalesList");
+
+  assert.match(listComponent, /inventory-row-primary-action/);
+  assert.match(listComponent, /item\.quantityOwned <= 0/);
+  assert.ok(actionMenu.indexOf("View Details") < actionMenu.indexOf("Add Stock"), "View Details should be first in the action menu");
+  assert.ok(actionMenu.indexOf("Add Stock") < actionMenu.indexOf("Adjust Stock"), "Add Stock should come before Adjust Stock");
+  assert.ok(actionMenu.indexOf("Adjust Stock") < actionMenu.indexOf("Record Sale"), "Adjust Stock should come before Record Sale");
+  assert.ok(actionMenu.indexOf("Edit Product") < actionMenu.indexOf("Edit Listing"), "Edit Product should come before Edit Listing");
+  assert.match(detailsModal, /Adjust Stock/);
+  assert.match(lotsComponent, /Active stock lots/);
+  assert.match(lotsComponent, /Depleted stock lots/);
+  assert.match(lotsComponent, /remainingQuantity > 0/);
+  assert.match(lotsComponent, /remainingQuantity <= 0/);
+  assert.match(lotsComponent, /Starting qty/);
+  assert.match(lotsComponent, /Remaining cost/);
+  assert.match(lotsComponent, /stock-lot-depleted/);
+  assert.match(lotsComponent, /Edit Lot/);
+  assert.match(lotsComponent, /Adjust Lot/);
+  assert.match(css, /body \.inventory-row-primary-action/);
+  assert.match(css, /body \.stock-lot-group\.depleted/);
+  assert.match(css, /body \.compact-ledger-list article\.stock-lot-depleted/);
+});
+
+test("stock lot adjustment requires a reason and records the audit context", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const validation = readFileSync("src/lib/validation.ts", "utf8");
+  const service = readFileSync("src/lib/radar-service.ts", "utf8");
+  const route = readFileSync("src/app/api/radar/inventory/[itemId]/stock-lots/[lotId]/route.ts", "utf8");
+  const modal = sourceSlice(appSource, "function InventoryEditStockLotModal", "function InventoryEditProductModal");
+  const schema = sourceSlice(validation, "export const inventoryStockLotUpdateSchema", "export const upcLookupSchema");
+  const updateLot = sourceSlice(service, "export async function updateInventoryStockLot", "export async function deleteInventoryStockLot");
+
+  assert.throws(() =>
+    inventoryStockLotUpdateSchema.parse({
+      quantity: 3,
+      costPerUnit: 6.99,
+      totalCost: 20.97,
+      source: "Target",
+      purchasedAt: "2026-06-12"
+    })
+  );
+
+  const parsed = inventoryStockLotUpdateSchema.parse({
+    quantity: 3,
+    costPerUnit: 6.99,
+    totalCost: 20.97,
+    source: "Target",
+    purchasedAt: "2026-06-12",
+    adjustmentReason: "damaged_item",
+    adjustmentNote: "Box crushed during storage."
+  });
+
+  assert.equal(parsed.adjustmentReason, "damaged_item");
+  assert.equal(parsed.adjustmentNote, "Box crushed during storage.");
+  assert.match(validation, /physical_count_correction/);
+  assert.match(validation, /duplicate_entry_correction/);
+  assert.match(schema, /adjustmentReason: inventoryStockAdjustmentReasonSchema/);
+  assert.match(modal, /<h2>Adjust Stock<\/h2>/);
+  assert.match(modal, /name="adjustmentReason"/);
+  assert.match(modal, /Physical count correction/);
+  assert.match(modal, /Damaged item/);
+  assert.match(modal, /Lost item/);
+  assert.match(modal, /Returned to supplier/);
+  assert.match(modal, /name="adjustmentNote"/);
+  assert.match(updateLot, /Adjustment reason:/);
+  assert.match(updateLot, /nextNotes/);
+  assert.match(route, /inventory\.stock_lot\.updated/);
+  assert.match(route, /Reason: \$\{adjustmentReasonLabel\(input\.adjustmentReason\)\}/);
 });
 
 test("admin and storefront image surfaces handle broken or unsafe product images cleanly", () => {

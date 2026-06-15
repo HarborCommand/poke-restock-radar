@@ -6111,6 +6111,8 @@ export async function updateInventoryStockLot(
     transactionId?: string;
     sourceStore?: string;
     paymentMethod?: string;
+    adjustmentReason: string;
+    adjustmentNote?: string;
     notes?: string;
   }
 ) {
@@ -6128,6 +6130,11 @@ export async function updateInventoryStockLot(
   }
 
   const nextTotalCost = input.totalCost ?? input.costPerUnit * input.quantity + (input.purchaseExtraCost ?? 0);
+  const adjustmentAuditNote = [
+    `Adjustment reason: ${input.adjustmentReason.replace(/_/g, " ")}`,
+    input.adjustmentNote ? `Note: ${input.adjustmentNote}` : null
+  ].filter(Boolean).join("\n");
+  const nextNotes = [input.notes, adjustmentAuditNote].filter((value) => value?.trim()).join("\n\n") || null;
   await prisma.inventoryStockLot.update({
     where: { id: lot.id },
     data: {
@@ -6138,7 +6145,7 @@ export async function updateInventoryStockLot(
       purchaseExtraCost: input.purchaseExtraCost,
       totalCost: nextTotalCost,
       remainingQuantity: input.quantity - soldFromLot,
-      notes: input.notes,
+      notes: nextNotes,
       receiptNumber: input.receiptNumber,
       receiptImageUrl: input.receiptImageUrl,
       orderNumber: input.orderNumber,

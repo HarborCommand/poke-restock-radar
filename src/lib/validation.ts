@@ -775,6 +775,16 @@ export const inventoryProductImageUpdateSchema = z.object({
   showInStore: checkboxBoolean.optional()
 });
 
+const inventoryStockAdjustmentReasonSchema = z.enum([
+  "physical_count_correction",
+  "damaged_item",
+  "lost_item",
+  "personal_use",
+  "returned_to_supplier",
+  "duplicate_entry_correction",
+  "other"
+]);
+
 export const inventoryStockLotUpdateSchema = z.object({
   quantity: z.coerce.number().int().min(1).max(1000),
   costPerUnit: requiredMoney,
@@ -788,6 +798,8 @@ export const inventoryStockLotUpdateSchema = z.object({
   transactionId: optionalTrimmed,
   sourceStore: optionalTrimmed,
   paymentMethod: optionalTrimmed,
+  adjustmentReason: inventoryStockAdjustmentReasonSchema,
+  adjustmentNote: optionalTrimmed,
   notes: optionalTrimmed
 });
 

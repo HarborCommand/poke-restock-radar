@@ -2509,7 +2509,7 @@ function DashboardPanel({
     dashboard.storefrontSummary.pendingOrderCount;
   const watchlistItems = dashboard.inventory
     .filter((item) => item.quantityOwned > 0 || item.publishToStore)
-    .sort((a, b) => (b.quantityOwned + (b.availableForSale ?? 0)) - (a.quantityOwned + (a.availableForSale ?? 0)))
+    .sort((a, b) => (b.quantityOwned + storefrontListingAvailableForSale(b)) - (a.quantityOwned + storefrontListingAvailableForSale(a)))
     .slice(0, 5);
   const bestPerforming = dashboard.inventory
     .filter((item) => item.businessProfitLoss !== 0 || item.marketProfitLoss !== null)
@@ -5794,7 +5794,39 @@ function storefrontSuggestedDescription(item: InventoryItemDTO) {
 }
 
 function storefrontListingAvailableForSale(item: InventoryItemDTO) {
-  return item.availableForSale ?? item.quantityOwned;
+  const onHand = Math.max(0, item.quantityOwned);
+  const publicCap = item.availableForSale === null || item.availableForSale === undefined ? onHand : Math.max(0, item.availableForSale);
+  return Math.min(onHand, publicCap);
+}
+
+function storefrontListingManualAvailableForSale(item: InventoryItemDTO) {
+  return item.availableForSale;
+}
+
+function storefrontListingHasStockMismatch(item: InventoryItemDTO) {
+  return item.availableForSale !== null && item.availableForSale !== undefined && item.availableForSale > Math.max(0, item.quantityOwned);
+}
+
+function storefrontListingPublicStatus(item: InventoryItemDTO) {
+  const availableForSale = storefrontListingAvailableForSale(item);
+  if (availableForSale <= 0) return "Sold Out";
+  if (availableForSale <= 2) return "Low Stock";
+  return "In Stock";
+}
+
+function storefrontListingStockWarnings(item: InventoryItemDTO) {
+  const warnings: string[] = [];
+  const availableForSale = storefrontListingAvailableForSale(item);
+  const manualAvailable = storefrontListingManualAvailableForSale(item);
+  if (storefrontListingHasStockMismatch(item)) {
+    warnings.push(
+      `Stock mismatch detected: manual listing quantity ${manualAvailable} exceeds on-hand stock ${Math.max(0, item.quantityOwned)}. Available online is capped at ${availableForSale}.`
+    );
+  }
+  if (item.publishToStore && item.storeStatus === "active" && availableForSale <= 0) {
+    warnings.push("Listing is active but currently sold out.");
+  }
+  return warnings;
 }
 
 function storefrontListingQuality(item: InventoryItemDTO) {
@@ -5815,7 +5847,7 @@ function storefrontListingQuality(item: InventoryItemDTO) {
   return [
     { key: "image", label: "Storefront-safe image exists", complete: storefrontImageCandidatesForItem(item).length > 0 },
     { key: "price", label: "Public price set", complete: Boolean(price && price > 0) },
-    { key: "quantity", label: "Quantity available", complete: availableForSale >= 0 },
+    { key: "quantity", label: availableForSale > 0 ? "Quantity available" : "Sold out online", complete: availableForSale > 0 },
     { key: "description", label: "Description exists", complete: Boolean(description.trim()) },
     { key: "category", label: "Category set", complete: Boolean(category.trim()) }
   ];
@@ -5823,6 +5855,11 @@ function storefrontListingQuality(item: InventoryItemDTO) {
 
 function storefrontListingEligible(item: InventoryItemDTO) {
   return storefrontListingQuality(item).every((check) => check.complete);
+}
+
+function storefrontListingQualityText(check: { key: string; label: string; complete: boolean }) {
+  if (check.key === "quantity" && !check.complete) return "Sold out online";
+  return `${check.complete ? "Ready" : "Needs"} - ${check.label}`;
 }
 
 function positiveInventoryNumber(value: number | null | undefined) {
@@ -6371,10 +6408,16 @@ function InventoryPanel({
                 onAddStock={(item) => {
                   openPurchaseFlow(item.id);
                 }}
+                onAdjustStock={(item) => {
+                  const lot = item.stockLots[0];
+                  if (lot) setEditStockLotTarget({ itemId: item.id, lotId: lot.id });
+                  else openPurchaseFlow(item.id);
+                }}
                 onRecordSale={(item) => {
                   setSaleItemId(item.id);
                 }}
                 onViewDetails={(item) => setDetailItemId(item.id)}
+                onEditProduct={(item) => setEditItemId(item.id)}
                 onEditListing={(item) => setStoreListingItemId(item.id)}
               />
             </div>
@@ -6473,6 +6516,16 @@ function InventoryPanel({
         <InventoryDetailsModal
           item={detailItem}
           onAddStock={(item) => openPurchaseFlow(item.id)}
+          onAdjustStock={(item) => {
+            const lot = item.stockLots[0];
+            if (lot) {
+              setDetailItemId("");
+              setEditStockLotTarget({ itemId: item.id, lotId: lot.id });
+            } else {
+              setDetailItemId("");
+              openPurchaseFlow(item.id);
+            }
+          }}
           onRecordSale={(item) => {
             setDetailItemId("");
             setSelectedItemId(item.id);
@@ -9454,8 +9507,10 @@ function InventoryList({
   onSelect,
   onTogglePublishSelect,
   onAddStock,
+  onAdjustStock,
   onRecordSale,
   onViewDetails,
+  onEditProduct,
   onEditListing
 }: {
   items: InventoryItemDTO[];
@@ -9465,8 +9520,10 @@ function InventoryList({
   onSelect: (item: InventoryItemDTO) => void;
   onTogglePublishSelect: (itemId: string) => void;
   onAddStock: (item: InventoryItemDTO) => void;
+  onAdjustStock: (item: InventoryItemDTO) => void;
   onRecordSale: (item: InventoryItemDTO) => void;
   onViewDetails: (item: InventoryItemDTO) => void;
+  onEditProduct: (item: InventoryItemDTO) => void;
   onEditListing: (item: InventoryItemDTO) => void;
 }) {
   if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
@@ -9553,23 +9610,37 @@ function InventoryList({
             <span className={`chip compact-chip ${storeListingTone(item)}`}>{storeListingLabel(item)}</span>
           </span>
           <div className="catalog-actions">
+            {item.quantityOwned <= 0 ? (
+              <button className="mini-action solid inventory-row-primary-action" type="button" onClick={() => onAddStock(item)}>
+                <Plus size={14} />
+                Add Stock
+              </button>
+            ) : null}
             <details className="catalog-action-menu-wrap">
               <summary className="catalog-action-trigger">
                 Actions
                 <MoreHorizontal size={15} />
               </summary>
               <div className="catalog-action-menu" role="menu">
+                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onViewDetails(item); }}>
+                  <FileText size={14} />
+                  View Details
+                </button>
                 <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onAddStock(item); }}>
                   <Plus size={14} />
                   Add Stock
+                </button>
+                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onAdjustStock(item); }}>
+                  <History size={14} />
+                  Adjust Stock
                 </button>
                 <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onRecordSale(item); }}>
                   <CircleDollarSign size={14} />
                   Record Sale
                 </button>
-                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onViewDetails(item); }}>
-                  <FileText size={14} />
-                  View Details
+                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onEditProduct(item); }}>
+                  <Settings size={14} />
+                  Edit Product
                 </button>
                 <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onEditListing(item); }}>
                   <Store size={14} />
@@ -9619,6 +9690,7 @@ function storeListingTone(item: InventoryItemDTO) {
 function InventoryDetailsModal({
   item,
   onAddStock,
+  onAdjustStock,
   onRecordSale,
   onEditProduct,
   onEditListing,
@@ -9628,6 +9700,7 @@ function InventoryDetailsModal({
 }: {
   item: InventoryItemDTO;
   onAddStock: (item: InventoryItemDTO) => void;
+  onAdjustStock: (item: InventoryItemDTO) => void;
   onRecordSale: (item: InventoryItemDTO) => void;
   onEditProduct: (item: InventoryItemDTO) => void;
   onEditListing: (item: InventoryItemDTO) => void;
@@ -9637,6 +9710,8 @@ function InventoryDetailsModal({
 }) {
   const listingQuality = storefrontListingQuality(item);
   const listingAvailable = storefrontListingAvailableForSale(item);
+  const manualListingAvailable = storefrontListingManualAvailableForSale(item);
+  const listingWarnings = storefrontListingStockWarnings(item);
   const listingDetailTone = storeListingTone(item) === "good" ? "good" : storeListingTone(item) === "bad" ? "bad" : "neutral";
   return (
     <div className="inventory-modal-backdrop" role="presentation">
@@ -9649,6 +9724,12 @@ function InventoryDetailsModal({
             <div className="inventory-detail-badges">
               <span className={`chip compact-chip ${inventoryStockStatusTone(item)}`}>{inventoryStockStatusLabel(item)}</span>
               <span className={`chip compact-chip ${storeListingTone(item)}`}>{storeListingLabel(item)}</span>
+              <span className={`chip compact-chip ${listingAvailable > 0 ? "good" : "bad"}`}>{storefrontListingPublicStatus(item)}</span>
+              {inventoryShippingProfileBadges(item).map((badge) => (
+                <span className={`chip compact-chip ${badge.tone === "good" ? "good" : "watch"}`} key={badge.label}>
+                  {badge.label}
+                </span>
+              ))}
               {item.realizedRoiPercent !== null ? <span className="chip compact-chip good">ROI {percent(item.realizedRoiPercent)}</span> : null}
             </div>
           </div>
@@ -9661,6 +9742,10 @@ function InventoryDetailsModal({
           <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
             <Plus size={14} />
             Add Stock
+          </button>
+          <button className="mini-action" type="button" onClick={() => onAdjustStock(item)}>
+            <History size={14} />
+            Adjust Stock
           </button>
           <button className="mini-action" type="button" onClick={() => onRecordSale(item)}>
             <CircleDollarSign size={14} />
@@ -9692,7 +9777,8 @@ function InventoryDetailsModal({
           <section className="inventory-detail-section">
             <h3>Overview</h3>
             <div className="detail-stat-grid">
-              <DetailStat label="Owned" value={String(item.quantityOwned)} />
+              <DetailStat label="On hand" value={String(item.quantityOwned)} />
+              <DetailStat label="Available online" value={String(listingAvailable)} tone={listingAvailable > 0 ? "good" : "bad"} />
               <DetailStat label="Sold" value={String(item.quantitySold)} />
               <DetailStat label="Average Cost" value={money(item.averageCost)} />
               <DetailStat label="Total Cost Basis" value={money(item.averageCost * item.quantityOwned)} />
@@ -9703,6 +9789,11 @@ function InventoryDetailsModal({
             </div>
             <div className="detail-line-list">
               <span>Status: <strong>{inventoryStockStatusLabel(item)}</strong></span>
+              <span>Public status: <strong>{storefrontListingPublicStatus(item)}</strong></span>
+              <span>
+                Manual listing cap:{" "}
+                {manualListingAvailable === null || manualListingAvailable === undefined ? "Not set; using on-hand stock" : manualListingAvailable}
+              </span>
               <span>Linked product: {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
               <span>Brand {item.brand || "Missing"} - Model {item.model || "Missing"} - MSRP {money(item.msrp)}</span>
               {item.description ? <span>{item.description}</span> : null}
@@ -9716,12 +9807,20 @@ function InventoryDetailsModal({
               <DetailStat label="Publish status" value={storeListingLabel(item)} tone={listingDetailTone} />
               <DetailStat label="Public price" value={item.publicPrice !== null ? money(item.publicPrice) : "Not set"} />
               <DetailStat label="Available online" value={String(listingAvailable)} />
+              <DetailStat label="Public status" value={storefrontListingPublicStatus(item)} tone={listingAvailable > 0 ? "good" : "bad"} />
               <DetailStat label="Category" value={item.storefrontCategory || storefrontPublicCategory(item)} />
             </div>
+            {listingWarnings.length ? (
+              <div className="inventory-warning-list" role="status">
+                {listingWarnings.map((warning) => (
+                  <span key={warning}>{warning}</span>
+                ))}
+              </div>
+            ) : null}
             <div className="storefront-quality-list">
               {listingQuality.map((check) => (
                 <span className={check.complete ? "good" : "watch"} key={check.key}>
-                  {check.complete ? "Ready" : "Needs"} - {check.label}
+                  {storefrontListingQualityText(check)}
                 </span>
               ))}
             </div>
@@ -9789,7 +9888,7 @@ function InventoryEditStockLotModal({
   submit: SubmitHandler;
   onClose: () => void;
 }) {
-  const saveLabel = `Updating stock lot ${lot.id}`;
+  const saveLabel = `Adjusting stock lot ${lot.id}`;
   const soldFromLot = Math.max(0, lot.quantity - lot.remainingQuantity);
   const initialCalculatedLotTotal = lot.quantity * lot.costPerUnit + (lot.purchaseExtraCost ?? 0);
   const [totalCostTouched, setTotalCostTouched] = useState(Math.abs(lot.totalCost - initialCalculatedLotTotal) > 0.01);
@@ -9815,13 +9914,13 @@ function InventoryEditStockLotModal({
 
   return (
     <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-modal inventory-edit-modal stock-lot-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit stock for ${item.itemName}`}>
+      <div className="inventory-modal inventory-edit-modal stock-lot-edit-modal" role="dialog" aria-modal="true" aria-label={`Adjust stock for ${item.itemName}`}>
         <div className="edit-card-heading">
           <div>
-            <h2>Edit Stock</h2>
-            <span>Fix a purchase lot quantity, cost, source, or receipt without changing product details.</span>
+            <h2>Adjust Stock</h2>
+            <span>Correct a purchase lot quantity, cost, source, or receipt with a required audit reason.</span>
           </div>
-          <button className="icon-button" type="button" aria-label="Close edit stock" onClick={onClose}>
+          <button className="icon-button" type="button" aria-label="Close adjust stock" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -9877,6 +9976,23 @@ function InventoryEditStockLotModal({
               </span>
             </div>
             <div className="form-grid compact">
+              <SelectInput
+                name="adjustmentReason"
+                label="Adjustment reason"
+                required
+                defaultValue=""
+                options={[
+                  { value: "", label: "Choose a reason" },
+                  { value: "physical_count_correction", label: "Physical count correction" },
+                  { value: "damaged_item", label: "Damaged item" },
+                  { value: "lost_item", label: "Lost item" },
+                  { value: "personal_use", label: "Personal use" },
+                  { value: "returned_to_supplier", label: "Returned to supplier" },
+                  { value: "duplicate_entry_correction", label: "Duplicate entry correction" },
+                  { value: "other", label: "Other" }
+                ]}
+              />
+              <TextareaInput name="adjustmentNote" label="Adjustment note" placeholder="Optional context for the inventory audit trail." />
               <TextInput
                 name="quantity"
                 label="Quantity purchased"
@@ -9949,7 +10065,7 @@ function InventoryEditStockLotModal({
             </button>
             <button className="primary-action" disabled={busy} type="submit">
               <Save size={16} />
-              {busyLabel === saveLabel ? "Saving" : "Save Stock"}
+              {busyLabel === saveLabel ? "Saving" : "Save Adjustment"}
             </button>
           </div>
         </form>
@@ -10115,6 +10231,8 @@ function StoreListingModal({
   const suggestedPrice = storefrontSuggestedPublicPrice(item);
   const suggestedCategory = item.storefrontCategory || storefrontPublicCategory(item);
   const availableForSale = storefrontListingAvailableForSale(item);
+  const manualAvailableForSale = storefrontListingManualAvailableForSale(item);
+  const listingStockWarnings = storefrontListingStockWarnings(item);
   const generatedDescription = storefrontSuggestedDescription(item);
   const initialDescription = cleanStorefrontDescription({
     title: item.publicTitle || item.itemName,
@@ -10141,13 +10259,13 @@ function StoreListingModal({
   });
   const descriptionWarnings = storefrontCopyWarnings(publicDescription);
   const qualityChecks = [
-    { label: "Storefront-safe image exists", complete: Boolean(primaryPublicImageUrl) },
-    { label: "Public price set", complete: Boolean(suggestedPrice && suggestedPrice > 0) },
-    { label: "Quantity available", complete: availableForSale >= 0 },
-    { label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
-    { label: "Description clean", complete: descriptionWarnings.length === 0 },
-    { label: "Category set", complete: Boolean(suggestedCategory.trim()) },
-    { label: "Shipping profile set", complete: inventoryShippingProfileComplete(item) }
+    { key: "image", label: "Storefront-safe image exists", complete: Boolean(primaryPublicImageUrl) },
+    { key: "price", label: "Public price set", complete: Boolean(suggestedPrice && suggestedPrice > 0) },
+    { key: "quantity", label: availableForSale > 0 ? "Quantity available" : "Sold out online", complete: availableForSale > 0 },
+    { key: "description", label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
+    { key: "description-clean", label: "Description clean", complete: descriptionWarnings.length === 0 },
+    { key: "category", label: "Category set", complete: Boolean(suggestedCategory.trim()) },
+    { key: "shipping", label: "Shipping profile set", complete: inventoryShippingProfileComplete(item) }
   ];
   const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
   return (
@@ -10178,7 +10296,7 @@ function StoreListingModal({
             <div>
               <strong>{item.publicTitle || item.itemName}</strong>
               <span>
-                {storeListingLabel(item)} · {storefrontListingAvailableForSale(item)} available - {suggestedPrice !== null ? money(suggestedPrice) : "No public price"}
+                {storeListingLabel(item)} · {availableForSale} available online - {suggestedPrice !== null ? money(suggestedPrice) : "No public price"}
               </span>
             </div>
           </section>
@@ -10191,7 +10309,7 @@ function StoreListingModal({
               {qualityChecks.map((check) => (
                 <span className={check.complete ? "complete" : ""} key={check.label}>
                   <Check size={13} />
-                  {check.label}
+                  {storefrontListingQualityText(check)}
                 </span>
               ))}
             </div>
@@ -10226,6 +10344,13 @@ function StoreListingModal({
               <TextInput name="storefrontCategory" label="Store category" defaultValue={suggestedCategory} />
             </div>
             {showSoldOutPublishWarning ? <p className="form-helper publish-ready-note">This product will appear publicly with a Sold Out badge.</p> : null}
+            {listingStockWarnings.length ? (
+              <div className="inventory-warning-list" role="status">
+                {listingStockWarnings.map((warning) => (
+                  <span key={warning}>{warning}</span>
+                ))}
+              </div>
+            ) : null}
           </section>
           <section className="flow-step">
             <span>Listing</span>
@@ -10234,9 +10359,13 @@ function StoreListingModal({
               <TextInput name="publicTitle" label="Public title" defaultValue={cleanStorefrontTitle(item.publicTitle || item.itemName)} required />
               <TextInput name="publicPrice" label="Public price" type="number" min="0" step="0.01" defaultValue={suggestedPrice ?? ""} />
               <TextInput name="compareAtPrice" label="Compare at price" type="number" min="0" step="0.01" defaultValue={item.compareAtPrice ?? ""} />
-              <TextInput name="availableForSale" label="Available for sale" type="number" min="0" step="1" defaultValue={availableForSale} />
+              <TextInput name="availableForSale" label="Available for sale" type="number" min="0" max={String(Math.max(0, item.quantityOwned))} step="1" defaultValue={availableForSale} />
               <TextInput name="maxQuantityPerOrder" label="Max quantity/order" type="number" min="1" max="25" step="1" defaultValue={item.maxQuantityPerOrder || 4} />
               <TextInput name="storefrontTags" label="Tags" defaultValue={item.storefrontTags.join(", ")} />
+              <p className="form-helper wide-field">
+                Available online is capped by on-hand stock. On hand: {item.quantityOwned}. Manual cap:{" "}
+                {manualAvailableForSale === null || manualAvailableForSale === undefined ? "not set" : manualAvailableForSale}.
+              </p>
               <TextareaInput
                 name="publicDescription"
                 label="Public description"
@@ -10481,38 +10610,101 @@ function CompactLotsList({
   onDeleteLot?: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
 }) {
   if (!item.stockLots.length) return <EmptyState icon={History} title="No lots yet" detail="Add stock to create purchase batches." />;
+  const activeLots = item.stockLots.filter((lot) => lot.remainingQuantity > 0);
+  const depletedLots = item.stockLots.filter((lot) => lot.remainingQuantity <= 0);
   return (
-    <div className="compact-ledger-list">
-      {item.stockLots.map((lot) => (
-        <article key={lot.id}>
-          <strong>{shortDate(lot.purchasedAt)}</strong>
-          <span>{lot.sourceStore || lot.source}</span>
-          <span>Qty {lot.quantity} - remaining {lot.remainingQuantity}</span>
-          <b>{money(lot.totalCost)}</b>
-          <small>{lot.receiptNumber || lot.orderNumber || "No receipt saved"}</small>
-          {onEditLot || onDeleteLot ? (
-            <div className="compact-ledger-actions">
-              {onEditLot ? (
-                <button className="mini-action" type="button" onClick={() => onEditLot(item, lot)}>
-                  Edit Stock
-                </button>
-              ) : null}
-              {onDeleteLot ? (
-                <button
-                  className="mini-action danger"
-                  type="button"
-                  disabled={lot.remainingQuantity !== lot.quantity}
-                  title={lot.remainingQuantity !== lot.quantity ? "Lots with recorded sales cannot be removed." : "Remove this stock lot"}
-                  onClick={() => onDeleteLot(item, lot)}
-                >
-                  Remove
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </article>
-      ))}
+    <div className="stock-lot-groups">
+      <CompactStockLotGroup
+        item={item}
+        lots={activeLots}
+        title="Active stock lots"
+        emptyDetail="No active stock lots. Use Add Stock or adjust a lot after a physical count."
+        onEditLot={onEditLot}
+        onDeleteLot={onDeleteLot}
+      />
+      <CompactStockLotGroup
+        item={item}
+        lots={depletedLots}
+        title="Depleted stock lots"
+        emptyDetail="No depleted lots yet."
+        muted
+        onEditLot={onEditLot}
+        onDeleteLot={onDeleteLot}
+      />
     </div>
+  );
+}
+
+function CompactStockLotGroup({
+  item,
+  lots,
+  title,
+  emptyDetail,
+  muted = false,
+  onEditLot,
+  onDeleteLot
+}: {
+  item: InventoryItemDTO;
+  lots: InventoryStockLotDTO[];
+  title: string;
+  emptyDetail: string;
+  muted?: boolean;
+  onEditLot?: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+  onDeleteLot?: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+}) {
+  return (
+    <section className={`stock-lot-group ${muted ? "depleted" : ""}`}>
+      <div className="stock-lot-group-heading">
+        <strong>{title}</strong>
+        <span>{lots.length} lot{lots.length === 1 ? "" : "s"}</span>
+      </div>
+      {lots.length ? (
+        <div className="compact-ledger-list">
+          {lots.map((lot) => {
+            const averageLotCost = lot.quantity > 0 ? lot.totalCost / lot.quantity : lot.costPerUnit;
+            const remainingCost = averageLotCost * lot.remainingQuantity;
+            return (
+              <article className={muted ? "stock-lot-depleted" : ""} key={lot.id}>
+                <strong>{shortDate(lot.purchasedAt)}</strong>
+                <span>{lot.sourceStore || lot.source || "Source unknown"}</span>
+                <span>Starting qty {lot.quantity}</span>
+                <span>Remaining {lot.remainingQuantity}</span>
+                <span>Unit cost {money(averageLotCost)}</span>
+                <b>Remaining cost {money(remainingCost)}</b>
+                <small>{lot.receiptNumber || lot.orderNumber || "No receipt saved"}</small>
+                {onEditLot || onDeleteLot ? (
+                  <div className="compact-ledger-actions">
+                    {onEditLot ? (
+                      <>
+                        <button className="mini-action" type="button" onClick={() => onEditLot(item, lot)}>
+                          Edit Lot
+                        </button>
+                        <button className="mini-action" type="button" onClick={() => onEditLot(item, lot)}>
+                          Adjust Lot
+                        </button>
+                      </>
+                    ) : null}
+                    {onDeleteLot ? (
+                      <button
+                        className="mini-action danger"
+                        type="button"
+                        disabled={lot.remainingQuantity !== lot.quantity}
+                        title={lot.remainingQuantity !== lot.quantity ? "Lots with recorded sales cannot be removed." : "Remove this mistaken stock lot"}
+                        onClick={() => onDeleteLot(item, lot)}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="form-helper">{emptyDetail}</p>
+      )}
+    </section>
   );
 }
 

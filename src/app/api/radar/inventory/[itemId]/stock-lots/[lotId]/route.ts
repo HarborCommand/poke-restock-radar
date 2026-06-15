@@ -7,6 +7,10 @@ import { inventoryImageSanitizationMessage, inventoryStockLotUpdateSchema, sanit
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function adjustmentReasonLabel(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ itemId: string; lotId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
@@ -20,7 +24,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
       action: "inventory.stock_lot.updated",
       entityType: "INVENTORY",
       entityId: item.id,
-      summary: `${user.email} updated a stock lot for ${item.itemName}.`
+      summary: `${user.email} adjusted a stock lot for ${item.itemName}. Reason: ${adjustmentReasonLabel(input.adjustmentReason)}.`
     });
     const warning = inventoryImageSanitizationMessage(warnings);
     return ok(warning ? { item, warning, warnings } : { item });

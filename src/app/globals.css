@@ -12651,14 +12651,15 @@ body .catalog-actions {
   position: relative;
   justify-content: flex-start !important;
   flex-wrap: nowrap !important;
-  gap: 0 !important;
+  gap: 6px !important;
   overflow: visible !important;
   z-index: 20;
 }
 
 body .catalog-action-menu-wrap {
   position: relative;
-  width: 100%;
+  flex: 1 1 112px;
+  min-width: 112px;
   z-index: 21;
 }
 
@@ -12704,8 +12705,8 @@ body .catalog-action-menu {
   z-index: 230;
   display: grid;
   gap: 4px;
-  width: 230px;
-  max-width: min(230px, calc(100vw - 32px));
+  width: 260px;
+  max-width: min(260px, calc(100vw - 32px));
   padding: 8px;
   border: 1px solid #dbe3ea;
   border-radius: 16px;
@@ -12736,6 +12737,12 @@ body .catalog-action-menu button:hover,
 body .catalog-action-menu a:hover {
   background: #f0fdf4;
   color: #15803d;
+}
+
+body .inventory-row-primary-action {
+  min-width: 104px;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 body .app-footer {
@@ -18958,6 +18965,65 @@ body .storefront-quality-list span.good {
 body .storefront-quality-list span.watch {
   background: #fef3c7;
   color: #b45309;
+}
+
+body .inventory-warning-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+body .inventory-warning-list span {
+  display: block;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 9px 11px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+body .stock-lot-groups,
+body .stock-lot-group {
+  display: grid;
+  gap: 10px;
+}
+
+body .stock-lot-group {
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+body .stock-lot-group.depleted {
+  background: #f8fafc;
+}
+
+body .stock-lot-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body .stock-lot-group-heading strong {
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+body .stock-lot-group-heading span {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+body .compact-ledger-list article.stock-lot-depleted {
+  border-style: dashed !important;
+  background: #f1f5f9 !important;
+  opacity: 0.78;
 }
 
 body .product-image-manager {
