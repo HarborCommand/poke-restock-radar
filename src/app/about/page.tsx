@@ -1,4 +1,4 @@
-import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
+import { MarketplaceFeedbackSection, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
@@ -50,6 +50,7 @@ export default async function AboutPage() {
           ))}
         </div>
       </section>
+      <MarketplaceFeedbackSection variant="about" />
       <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>
   );

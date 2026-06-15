@@ -41,6 +41,7 @@ import {
 } from "@/lib/storefront-badges";
 import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
+import { GAMEDAYGRABS_EBAY_FEEDBACK_URL, storefrontFeedback } from "@/lib/storefront-feedback";
 import { homepageArrivalSection, selectHomepageHeroProduct } from "@/lib/storefront-home";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { calculateCartShipping } from "@/lib/shipping";
@@ -473,6 +474,61 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
   );
 }
 
+function marketplaceFeedbackBadgeIcon(label: string) {
+  if (label === "Carefully packed") return <Package size={16} aria-hidden="true" />;
+  if (label === "Fast shipping") return <Truck size={16} aria-hidden="true" />;
+  if (label === "Accurate listings") return <BadgeCheck size={16} aria-hidden="true" />;
+  return <MessageCircle size={16} aria-hidden="true" />;
+}
+
+export function MarketplaceFeedbackSection({ variant = "home" }: { variant?: "home" | "about" }) {
+  const isAbout = variant === "about";
+  const snippets = isAbout ? storefrontFeedback.snippets.slice(0, 3) : storefrontFeedback.snippets;
+  const title = isAbout ? storefrontFeedback.aboutTitle : storefrontFeedback.homepageTitle;
+  const body = isAbout ? storefrontFeedback.aboutBody : storefrontFeedback.homepageBody;
+  const trustBadges = isAbout ? storefrontFeedback.trustBadges.slice(0, 3) : storefrontFeedback.trustBadges;
+
+  return (
+    <section
+      className={`gdg-feedback-panel${isAbout ? " compact" : ""}`}
+      aria-labelledby={isAbout ? "gdg-about-feedback-title" : "gdg-home-feedback-title"}
+    >
+      <div className="gdg-feedback-heading">
+        <p className="gdg-overline">Customer feedback</p>
+        <h2 id={isAbout ? "gdg-about-feedback-title" : "gdg-home-feedback-title"}>{title}</h2>
+        <p>{body}</p>
+      </div>
+      <div className="gdg-feedback-badges" aria-label="Feedback themes">
+        {trustBadges.map((badge) => (
+          <span key={badge}>
+            {marketplaceFeedbackBadgeIcon(badge)}
+            {badge}
+          </span>
+        ))}
+      </div>
+      <div className="gdg-feedback-grid">
+        {snippets.map((snippet) => (
+          <article key={snippet} className="gdg-feedback-card">
+            <span className="gdg-feedback-quote" aria-hidden="true">
+              "
+            </span>
+            <p>{snippet}</p>
+            <small>{storefrontFeedback.sourceLabel}</small>
+            <b>{storefrontFeedback.attribution}</b>
+          </article>
+        ))}
+      </div>
+      <div className="gdg-feedback-actions">
+        <a className="gdg-primary-button" href={GAMEDAYGRABS_EBAY_FEEDBACK_URL} target="_blank" rel="noopener noreferrer">
+          {storefrontFeedback.ctaLabel}
+          <ExternalLink size={14} aria-hidden="true" />
+        </a>
+        <p>{storefrontFeedback.disclaimer}</p>
+      </div>
+    </section>
+  );
+}
+
 export function StorefrontContactForm({ settings }: { settings: StorefrontSettingsDTO }) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -726,6 +782,8 @@ export function ProductGrid({
               </div>
             ))}
           </section>
+
+          <MarketplaceFeedbackSection />
         </>
       ) : null}
 

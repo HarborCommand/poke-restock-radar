@@ -856,9 +856,64 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   assert.match(routing, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL = "gamedaygrabs@outlook\.com"/);
 
   assert.doesNotMatch(policiesPage, /Default shipping|defaultShippingPrice|flat shipping|flat \$5|\$5\.00/i);
-  assert.doesNotMatch(combined, /eBay feedback|feedback screenshots|feedback links|Customer Feedback|reviews from eBay/i);
+  assert.doesNotMatch(policiesPage, /eBay feedback|feedback screenshots|feedback links|Customer Feedback|reviews from eBay/i);
   assert.doesNotMatch(combined, /payment_method_details|payment_method_data|card_number|cardNumber|cvv|JSON\.stringify|raw Stripe object/i);
   assert.doesNotMatch(combined, /same[- ]day shipping|same[- ]day delivery/i);
+});
+
+test("GameDayGrabs marketplace feedback section uses curated safe social proof", () => {
+  const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const aboutPage = fs.readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
+  const feedback = fs.readFileSync(new URL("../src/lib/storefront-feedback.ts", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  const componentStart = client.indexOf("export function MarketplaceFeedbackSection");
+  const componentEnd = client.indexOf("export function StorefrontContactForm");
+  assert.notEqual(componentStart, -1);
+  assert.notEqual(componentEnd, -1);
+  const feedbackComponent = client.slice(componentStart, componentEnd);
+  const trustBarIndex = client.indexOf('<section className="gdg-trust-bar"');
+  const feedbackIndex = client.indexOf("<MarketplaceFeedbackSection />");
+  const shopByCategoryIndex = client.indexOf("<h2>Shop By Category</h2>");
+
+  assert.notEqual(trustBarIndex, -1);
+  assert.notEqual(feedbackIndex, -1);
+  assert.notEqual(shopByCategoryIndex, -1);
+  assert.ok(trustBarIndex < feedbackIndex);
+  assert.ok(feedbackIndex < shopByCategoryIndex);
+  assert.match(aboutPage, /MarketplaceFeedbackSection, StorefrontFooter, StorefrontHeader/);
+  assert.match(aboutPage, /<MarketplaceFeedbackSection variant="about" \/>/);
+
+  assert.match(feedback, /GAMEDAYGRABS_EBAY_FEEDBACK_URL = "https:\/\/feedback\.ebay\.com\/fdbk\/feedback_profile\/gamedaygrabs_llc"/);
+  assert.match(feedback, /Trusted by collectors/);
+  assert.match(feedback, /Marketplace feedback/);
+  assert.match(feedback, /Carefully packed/);
+  assert.match(feedback, /Fast shipping/);
+  assert.match(feedback, /Accurate listings/);
+  assert.match(feedback, /Marketplace feedback/);
+  assert.match(feedback, /Source: eBay seller feedback/);
+  assert.match(feedback, /Marketplace buyer/);
+  assert.match(feedback, /View verified eBay feedback/);
+  assert.match(feedback, /GameDayGrabs is not affiliated with, endorsed by, or sponsored by eBay/);
+  assert.match(feedback, /Great seller! Well packaged, quick shipping! I wouldn't hesitate to purchase from seller again!/);
+  assert.match(feedback, /Condition and quality as described\. Beautiful card\. Very prompt shipping\. Would buy from again\./);
+  assert.match(feedback, /Fast shipping, product as described\. Would do business again\./);
+  assert.match(feedback, /Quick shipper! Perfectly packaged!/);
+  assert.match(feedback, /Thank you for the fast shipping and the great packaging\. Items came as described and the value was great\./);
+  assert.match(feedback, /The packaging was of good quality and wrapped well\. Condition of the box was great\./);
+
+  assert.match(feedbackComponent, /storefrontFeedback\.snippets\.slice\(0, 3\)/);
+  assert.match(feedbackComponent, /href=\{GAMEDAYGRABS_EBAY_FEEDBACK_URL\}/);
+  assert.match(feedbackComponent, /target="_blank"/);
+  assert.match(feedbackComponent, /rel="noopener noreferrer"/);
+  assert.match(css, /gdg-feedback-panel/);
+  assert.match(css, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+
+  assert.doesNotMatch(feedback + feedbackComponent, /eBayLogo|ebay-logo|logo.*eBay|screenshot|feedback screenshot/i);
+  assert.doesNotMatch(feedback + feedbackComponent, /scrape|crawler|auto-import|fetch\(|seller score|feedback percentage|feedbackPercent|sellerScore|positive feedback/i);
+  assert.doesNotMatch(feedback, /buyerName|username|order number|address|private message|item id|itemId|\$\d/i);
+  assert.doesNotMatch(feedback + feedbackComponent, /endorsed by eBay[^.]|sponsored by eBay[^.]|owned by eBay|verified seller/i);
+  assert.doesNotMatch(feedback + feedbackComponent, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe object/i);
 });
 
 test("Stripe Checkout preparation uses session route, webhook verification, and invoice fallback", () => {
