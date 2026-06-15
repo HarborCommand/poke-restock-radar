@@ -734,6 +734,7 @@ export const inventoryStoreListingSchema = z.object({
   compareAtPrice: optionalMoney,
   publicImages: publicImageUrlListSchema("publicImages"),
   availableForSale: z.coerce.number().int().min(0).max(10000).optional(),
+  purchaseLimitEnabled: checkboxBoolean.default(false),
   maxQuantityPerOrder: optionalPurchaseLimit,
   shippingProfile: z.string().trim().min(1).max(80).default("standard"),
   packageWeightOz: optionalMoney,

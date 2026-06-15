@@ -2,9 +2,23 @@ import type { PublicStoreProductDTO } from "@/types/radar";
 
 type LimitProduct = Pick<PublicStoreProductDTO, "availableQuantity" | "maxQuantityPerOrder" | "status">;
 
+export const DEFAULT_STOREFRONT_PURCHASE_LIMIT = 4;
+
 export function storefrontPurchaseLimit(product: Pick<PublicStoreProductDTO, "maxQuantityPerOrder">) {
   const limit = product.maxQuantityPerOrder;
   return typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : null;
+}
+
+export function storefrontConfiguredPurchaseLimit(
+  product: Pick<PublicStoreProductDTO, "maxQuantityPerOrder"> & { purchaseLimitEnabled?: boolean | null }
+) {
+  const limit = storefrontPurchaseLimit(product);
+  if (limit === null) return null;
+  if (product.purchaseLimitEnabled) return limit;
+
+  // Backward compatibility for listings where the numeric limit was set before
+  // the explicit enable flag was saved. The old default was 4.
+  return limit !== DEFAULT_STOREFRONT_PURCHASE_LIMIT ? limit : null;
 }
 
 export function storefrontEffectiveMaxQuantity(product: Pick<PublicStoreProductDTO, "availableQuantity" | "maxQuantityPerOrder">) {

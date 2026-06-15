@@ -6,7 +6,11 @@ import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefro
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
 import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
-import { storefrontEffectiveMaxQuantity, storefrontPurchaseLimit } from "@/lib/storefront-purchase-limits";
+import {
+  DEFAULT_STOREFRONT_PURCHASE_LIMIT,
+  storefrontConfiguredPurchaseLimit,
+  storefrontEffectiveMaxQuantity
+} from "@/lib/storefront-purchase-limits";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
@@ -223,7 +227,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     tags: parseList(item.storefrontTags),
     condition: cleanStorefrontTitle(item.condition),
     availableQuantity,
-    maxQuantityPerOrder: item.purchaseLimitEnabled ? storefrontPurchaseLimit(item) : null,
+    maxQuantityPerOrder: storefrontConfiguredPurchaseLimit(item),
     status,
     localPickupAvailable: item.localPickupAvailable,
     localPickupEligible: item.localPickupAvailable,
@@ -2253,6 +2257,7 @@ export async function updateInventoryStoreListing(
     compareAtPrice?: number;
     publicImages?: unknown;
     availableForSale?: number;
+    purchaseLimitEnabled?: boolean;
     maxQuantityPerOrder?: number | null;
     shippingProfile: string;
     packageWeightOz?: number | null;
@@ -2283,8 +2288,11 @@ export async function updateInventoryStoreListing(
     input.availableForSale === undefined ? item.availableForSale ?? onHandQuantity : Math.max(0, input.availableForSale);
   const availableForSale = Math.min(onHandQuantity, requestedAvailableForSale);
   const normalizedStoreStatus = input.publishToStore && availableForSale <= 0 ? "sold_out" : input.storeStatus;
-  const purchaseLimitEnabled = input.maxQuantityPerOrder !== null && input.maxQuantityPerOrder !== undefined;
-  const maxQuantityPerOrder = purchaseLimitEnabled ? input.maxQuantityPerOrder ?? item.maxQuantityPerOrder : item.maxQuantityPerOrder;
+  const enteredPurchaseLimit = input.maxQuantityPerOrder ?? null;
+  const purchaseLimitEnabled = Boolean(input.purchaseLimitEnabled || enteredPurchaseLimit !== null);
+  const maxQuantityPerOrder = purchaseLimitEnabled
+    ? enteredPurchaseLimit ?? item.maxQuantityPerOrder ?? DEFAULT_STOREFRONT_PURCHASE_LIMIT
+    : DEFAULT_STOREFRONT_PURCHASE_LIMIT;
   const publicDescription = cleanStorefrontDescription({
     title: publicTitle,
     itemName: item.itemName,

@@ -75,6 +75,7 @@ import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPo
 import { compareTargetDiscordAlert, targetUrlFromTcin, type TargetDiscordAlertInput, type TargetDiscordComparison } from "@/lib/target-discord-alert";
 import { cleanStorefrontDescription, cleanStorefrontTitle, generatedStorefrontDescription, storefrontCopyWarnings } from "@/lib/storefront-copy";
 import { isProductImageUrlRenderable, isStorefrontDisplayImageUrl, productImageQualityWarnings } from "@/lib/product-image-quality";
+import { DEFAULT_STOREFRONT_PURCHASE_LIMIT } from "@/lib/storefront-purchase-limits";
 import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
 import { normalizeUPC } from "@/lib/upc";
 import type {
@@ -10286,6 +10287,7 @@ function StoreListingModal({
   const manualAvailableForSale = storefrontListingManualAvailableForSale(item);
   const listingStockWarnings = storefrontListingStockWarnings(item);
   const generatedDescription = storefrontSuggestedDescription(item);
+  const purchaseLimitActive = item.purchaseLimitEnabled || item.maxQuantityPerOrder !== DEFAULT_STOREFRONT_PURCHASE_LIMIT;
   const initialDescription = cleanStorefrontDescription({
     title: item.publicTitle || item.itemName,
     itemName: item.itemName,
@@ -10412,13 +10414,20 @@ function StoreListingModal({
               <TextInput name="publicPrice" label="Public price" type="number" min="0" step="0.01" defaultValue={suggestedPrice ?? ""} />
               <TextInput name="compareAtPrice" label="Compare at price" type="number" min="0" step="0.01" defaultValue={item.compareAtPrice ?? ""} />
               <TextInput name="availableForSale" label="Available for sale" type="number" min="0" max={String(Math.max(0, item.quantityOwned))} step="1" defaultValue={availableForSale} />
-              <TextInput name="maxQuantityPerOrder" label="Purchase limit per order" type="number" min="1" max="25" step="1" defaultValue={item.purchaseLimitEnabled ? item.maxQuantityPerOrder : ""} />
+              <label className="shipping-toggle-card wide-field">
+                <input name="purchaseLimitEnabled" type="checkbox" value="true" defaultChecked={purchaseLimitActive} />
+                <span>
+                  <strong>Enable purchase limit</strong>
+                  <small>Leave disabled for no purchase limit.</small>
+                </span>
+              </label>
+              <TextInput name="maxQuantityPerOrder" label="Max quantity per order" type="number" min="1" max="25" step="1" defaultValue={purchaseLimitActive ? item.maxQuantityPerOrder : ""} />
               <TextInput name="storefrontTags" label="Tags" defaultValue={item.storefrontTags.join(", ")} />
               <p className="form-helper wide-field">
                 Available online is capped by on-hand stock. On hand: {item.quantityOwned}. Manual cap:{" "}
                 {manualAvailableForSale === null || manualAvailableForSale === undefined ? "not set" : manualAvailableForSale}.
               </p>
-              <p className="form-helper wide-field">Optional buyer-facing purchase limit. Leave blank for no limit.</p>
+              <p className="form-helper wide-field">Optional buyer-facing purchase limit. Entering a max quantity enables the limit; leave blank and disabled for no limit.</p>
               <TextareaInput
                 name="publicDescription"
                 label="Public description"

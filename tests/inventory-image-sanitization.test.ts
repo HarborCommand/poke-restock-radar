@@ -331,15 +331,21 @@ test("store listing save path persists shipping metadata without stock quantity 
   const updateListing = sourceSlice(storefront, "export async function updateInventoryStoreListing", "export async function bulkPublishInventoryStoreListings");
 
   assert.match(listingModal, /body: JSON\.stringify\(formJson\(form\)\)/);
-  for (const field of ["maxQuantityPerOrder", "packageWeightOz", "packageLengthIn", "packageWidthIn", "packageHeightIn", "freeShippingEligible", "requiresBox", "insuranceRecommended"]) {
+  for (const field of ["purchaseLimitEnabled", "maxQuantityPerOrder", "packageWeightOz", "packageLengthIn", "packageWidthIn", "packageHeightIn", "freeShippingEligible", "requiresBox", "insuranceRecommended"]) {
     assert.match(listingSchema, new RegExp(`${field}:`), `schema should accept ${field}`);
     if (field === "maxQuantityPerOrder") {
       assert.match(updateListing, /maxQuantityPerOrder,/);
+    } else if (field === "purchaseLimitEnabled") {
+      assert.match(updateListing, /purchaseLimitEnabled,/);
     } else {
       assert.match(updateListing, new RegExp(`${field}: input\\.${field}`), `save path should persist ${field}`);
     }
   }
-  assert.match(updateListing, /purchaseLimitEnabled,/);
+  assert.match(listingModal, /name="purchaseLimitEnabled"/);
+  assert.match(listingModal, /Enable purchase limit/);
+  assert.match(listingModal, /Entering a max quantity enables the limit/);
+  assert.match(updateListing, /const purchaseLimitEnabled = Boolean\(input\.purchaseLimitEnabled \|\| enteredPurchaseLimit !== null\)/);
+  assert.match(updateListing, /: DEFAULT_STOREFRONT_PURCHASE_LIMIT/);
 
   const parsed = inventoryStoreListingSchema.parse({
     publishToStore: true,
@@ -347,6 +353,7 @@ test("store listing save path persists shipping metadata without stock quantity 
     publicPrice: 25,
     publicImages: ["https://example.com/public-product.png"],
     availableForSale: 1,
+    purchaseLimitEnabled: "true",
     maxQuantityPerOrder: 4,
     shippingProfile: "small_box",
     packageWeightOz: "12.5",
@@ -366,6 +373,7 @@ test("store listing save path persists shipping metadata without stock quantity 
   assert.equal(parsed.packageWidthIn, 7);
   assert.equal(parsed.packageHeightIn, 4);
   assert.equal(parsed.freeShippingEligible, true);
+  assert.equal(parsed.purchaseLimitEnabled, true);
   assert.equal(parsed.localPickupAvailable, true);
   assert.equal(parsed.requiresBox, true);
   assert.equal(parsed.insuranceRecommended, true);
@@ -376,6 +384,7 @@ test("store listing save path persists shipping metadata without stock quantity 
     shippingProfile: "standard",
     storeStatus: "draft"
   });
+  assert.equal(blankLimit.purchaseLimitEnabled, false);
   assert.equal(blankLimit.maxQuantityPerOrder, null);
   assert.doesNotMatch(updateListing, /\bquantity:\s*input\./);
   assert.doesNotMatch(updateListing, /inventoryStockLot|inventorySale|remainingQuantity|quantitySold/);

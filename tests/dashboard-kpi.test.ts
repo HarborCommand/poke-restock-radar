@@ -9,7 +9,12 @@ import {
   inventoryLotUnitCostForTest,
   summarizeInventory
 } from "../src/lib/radar-service";
-import { storefrontAvailabilityLabel, storefrontEffectiveMaxQuantity, storefrontPurchaseLimitLabel } from "../src/lib/storefront-purchase-limits";
+import {
+  storefrontAvailabilityLabel,
+  storefrontConfiguredPurchaseLimit,
+  storefrontEffectiveMaxQuantity,
+  storefrontPurchaseLimitLabel
+} from "../src/lib/storefront-purchase-limits";
 import { inferTcgcsvProductType, normalizeTcgcsvProductText } from "../src/lib/tcgcsv-market";
 import type { AlertDTO, InventoryItemDTO, InventorySaleDTO, StorefrontOrderDTO } from "../src/types/radar";
 
@@ -982,6 +987,9 @@ test("storefront availability and purchase limits stay buyer-facing", () => {
   assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: null }), null);
   assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: 1 }), "Limit 1 per order");
   assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: 2 }), "Maximum 2 per order");
+  assert.equal(storefrontConfiguredPurchaseLimit({ maxQuantityPerOrder: 1, purchaseLimitEnabled: false }), 1);
+  assert.equal(storefrontConfiguredPurchaseLimit({ maxQuantityPerOrder: 4, purchaseLimitEnabled: false }), null);
+  assert.equal(storefrontConfiguredPurchaseLimit({ maxQuantityPerOrder: 1, purchaseLimitEnabled: true }), 1);
   assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 9, maxQuantityPerOrder: null }), 9);
   assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 9, maxQuantityPerOrder: 2 }), 2);
   assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 1, maxQuantityPerOrder: 4 }), 1);
@@ -993,12 +1001,13 @@ test("storefront availability and purchase limits stay buyer-facing", () => {
   assert.match(client, /Limit reached for this item\./);
   assert.match(client, /disabled=\{isSoldOut \|\| quantity >= effectiveMaxQuantity\}/);
   assert.match(client, /storefrontEffectiveMaxQuantity\(product\)/);
-  assert.match(storefront, /maxQuantityPerOrder: item\.purchaseLimitEnabled \? storefrontPurchaseLimit\(item\) : null/);
+  assert.match(storefront, /maxQuantityPerOrder: storefrontConfiguredPurchaseLimit\(item\)/);
   assert.match(storefront, /const effectiveMaxQuantity = storefrontEffectiveMaxQuantity\(product\)/);
   assert.match(storefront, /if \(strict && requestedQuantity > effectiveMaxQuantity\)/);
   assert.match(storefront, /Purchase limit reached for \$\{product\.title\}/);
-  assert.match(app, /label="Purchase limit per order"/);
-  assert.match(app, /Optional buyer-facing purchase limit\. Leave blank for no limit\./);
+  assert.match(app, /Enable purchase limit/);
+  assert.match(app, /label="Max quantity per order"/);
+  assert.match(app, /Entering a max quantity enables the limit; leave blank and disabled for no limit\./);
   assert.match(app, /DetailStat label="On hand"/);
   assert.match(schema, /purchaseLimitEnabled\s+Boolean\s+@default\(false\)/);
   assert.match(migration, /ADD COLUMN "purchaseLimitEnabled" BOOLEAN NOT NULL DEFAULT false/);
