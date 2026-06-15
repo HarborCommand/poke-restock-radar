@@ -237,9 +237,13 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(listingModal, /inventoryShippingProfileBadges\(item\)\.map/);
   assert.match(listingModal, /Needs shipping profile/);
   assert.match(listingModal, /Shipping profile set/);
+  assert.match(listingModal, /Complete before relying on storefront estimates/);
+  assert.match(listingModal, /Measure the packed shipment, choose the closest package profile, and confirm whether local pickup should be offered/);
   assert.match(appSource, /Uses fallback shipping/);
   assert.match(appSource, /Missing weight/);
   assert.match(appSource, /Missing dimensions/);
+  assert.match(appSource, /Local pickup only/);
+  assert.match(appSource, /Shipping disabled/);
 
   for (const field of [
     "shippingProfile",
@@ -278,6 +282,7 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(css, /body \.shipping-profile-card \{[\s\S]*display: grid[\s\S]*border: 1px solid #e5e7eb/);
   assert.match(css, /body \.shipping-profile-card-head \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
   assert.match(css, /body \.shipping-profile-issue-list \{[\s\S]*align-items: center/);
+  assert.match(css, /body \.shipping-profile-guidance \{[\s\S]*display: grid[\s\S]*background: #fffbeb/);
   assert.match(css, /body \.shipping-profile-chip \{[\s\S]*white-space: nowrap/);
   assert.match(css, /body \.shipping-package-grid,[\s\S]*body \.shipping-option-grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /body \.shipping-toggle-card \{[\s\S]*grid-template-columns: auto minmax\(0, 1fr\)/);
@@ -316,6 +321,8 @@ test("admin inventory can find products that need shipping profiles", () => {
   assert.match(appSource, /Uses fallback shipping/);
   assert.match(appSource, /Missing weight/);
   assert.match(appSource, /Missing dimensions/);
+  assert.match(listComponent, /Open Edit Listing to complete packed weight, dimensions, and profile/);
+  assert.match(css, /\.shipping-metadata-action \{[\s\S]*flex-basis: 100%/);
   assert.match(listComponent, /shipping-needed/);
   assert.match(css, /\.inventory-shipping-badges,[\s\S]*\.shipping-profile-issue-list \{[\s\S]*flex-wrap: wrap/);
   assert.match(css, /\.publish-ready-note\.shipping-needed \{[\s\S]*color: var\(--warning\)/);

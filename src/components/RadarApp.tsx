@@ -5911,20 +5911,24 @@ function inventoryShippingProfileComplete(item: InventoryItemDTO) {
   return !inventoryMissingShippingWeight(item) && !inventoryMissingShippingDimensions(item);
 }
 
-function inventoryShippingProfileBadges(item: InventoryItemDTO) {
-  if (inventoryShippingProfileComplete(item)) {
-    return [{ label: "Shipping profile ready", tone: "good" as const }];
-  }
+function inventoryShippingProfileBadges(item: InventoryItemDTO): Array<{ label: string; tone: "good" | "warning" }> {
+  const badges: Array<{ label: string; tone: "good" | "warning" }> = inventoryShippingProfileComplete(item)
+    ? [{ label: "Shipping profile ready", tone: "good" }]
+    : [{ label: "Needs shipping profile", tone: "warning" }];
 
-  const badges = [{ label: "Needs shipping profile", tone: "warning" as const }];
   if (inventoryUsesFallbackShipping(item)) {
-    badges.push({ label: "Uses fallback shipping", tone: "warning" as const });
+    badges.push({ label: "Uses fallback shipping", tone: "warning" });
   }
   if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingWeight(item)) {
-    badges.push({ label: "Missing weight", tone: "warning" as const });
+    badges.push({ label: "Missing weight", tone: "warning" });
   }
   if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingDimensions(item)) {
-    badges.push({ label: "Missing dimensions", tone: "warning" as const });
+    badges.push({ label: "Missing dimensions", tone: "warning" });
+  }
+  if (inventoryShippingLocalPickupOnly(item)) {
+    badges.push({ label: "Local pickup only", tone: "good" });
+  } else if (item.shippingAvailable === false) {
+    badges.push({ label: "Shipping disabled", tone: "warning" });
   }
   return badges;
 }
@@ -7160,6 +7164,7 @@ function StorefrontOrderDetailsModal({
                     <span className={`chip compact-chip ${emailStatusTone(notification.status)}`}>{emailStatusLabel(notification.status)}</span>
                     <small>Sent: {notification.sentAt ? dateTime(notification.sentAt) : "Not sent"}</small>
                     <small>Updated: {dateTime(notification.updatedAt)}</small>
+                    {notification.detail ? <small>Detail: {notification.detail}</small> : null}
                     {notification.failureReason ? <small>Reason: {notification.failureReason}</small> : null}
                   </article>
                 ))}
@@ -9600,6 +9605,9 @@ function InventoryList({
                       {badge.label}
                     </small>
                   ))}
+                  {!inventoryShippingProfileComplete(item) ? (
+                    <small className="shipping-metadata-action">Open Edit Listing to complete packed weight, dimensions, and profile.</small>
+                  ) : null}
                 </span>
               </span>
             </button>
@@ -10476,6 +10484,12 @@ function StoreListingModal({
                   </span>
                 ))}
               </div>
+              {!inventoryShippingProfileComplete(item) ? (
+                <div className="shipping-profile-guidance">
+                  <strong>Complete before relying on storefront estimates.</strong>
+                  <p>Measure the packed shipment, choose the closest package profile, and confirm whether local pickup should be offered.</p>
+                </div>
+              ) : null}
               <div className="shipping-profile-fields">
                 <SelectInput
                   name="shippingProfile"

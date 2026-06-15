@@ -9,6 +9,7 @@ const specificCategoryMatchers: Array<{ category: string; pattern: RegExp }> = [
   { category: "Blisters", pattern: /\b(blister|checklane|check lane|3-pack|three-booster|three booster)\b/i },
   { category: "Tins", pattern: /\b(poke ball tin|pokeball tin|mini tin|tin)\b/i },
   { category: "Collection Boxes", pattern: /\bcollection box\b/i },
+  { category: "Accessories", pattern: /\b(accessory|accessories|binder|sleeve|toploader|top loader|deck box|playmat|storage)\b/i },
   { category: "Graded Cards", pattern: /\b(graded|psa|bgs|cgc|slab)\b/i },
   { category: "Sports Cards", pattern: /\b(sports|bowman|topps|panini|basketball|football|baseball)\b/i }
 ];
@@ -77,5 +78,6 @@ export function storefrontCategoryMatches(
   if (specific === category) return true;
   if (normalized === "sports cards") return /\b(sports|bowman|topps|panini|basketball|football|baseball)\b/.test(text);
   if (normalized === "graded cards") return /\b(graded|psa|bgs|cgc|slab)\b/.test(text);
+  if (normalized === "accessories") return /\b(accessory|accessories|binder|sleeve|toploader|top loader|deck box|playmat|storage)\b/.test(text);
   return text.includes(normalized.replace(/s$/, ""));
 }

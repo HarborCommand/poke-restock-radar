@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs";
 
 import { storefrontImageBadges } from "../src/lib/storefront-badges";
-import { homepageArrivalSection, selectHomepageHeroProduct } from "../src/lib/storefront-home";
+import {
+  homepageAlmostGoneSection,
+  homepageArrivalSection,
+  homepageCollectorPicksSection,
+  selectHomepageHeroProduct
+} from "../src/lib/storefront-home";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "../src/types/radar";
 
 function product(overrides: Partial<PublicStoreProductDTO> & { id: string; title?: string }): PublicStoreProductDTO {
@@ -121,4 +127,59 @@ test("New Arrivals section limits to four products", () => {
 
   assert.equal(section.title, "New Arrivals");
   assert.equal(section.products.length, 4);
+});
+
+test("New Arrivals section excludes sold-out products from active homepage shopping", () => {
+  const now = new Date().toISOString();
+  const active = product({ id: "active", publishedAt: now });
+  const soldOut = product({ id: "sold-out", publishedAt: now, availableQuantity: 0, status: "sold_out" });
+
+  const section = homepageArrivalSection([soldOut, active], 14);
+
+  assert.deepEqual(section.products.map((entry) => entry.id), ["active"]);
+});
+
+test("Almost Gone uses low stock active products without sold-out products or exact-count copy", () => {
+  const products = [
+    product({ id: "sold-out", availableQuantity: 0, status: "sold_out" }),
+    product({ id: "low-two", availableQuantity: 2 }),
+    product({ id: "low-one", availableQuantity: 1 }),
+    product({ id: "regular", availableQuantity: 6 })
+  ];
+
+  const section = homepageAlmostGoneSection(products);
+
+  assert.equal(section.title, "Almost Gone");
+  assert.deepEqual(section.products.map((entry) => entry.id), ["low-one", "low-two"]);
+  assert.doesNotMatch(`${section.title} ${section.detail}`, /\b1\b|\b2\b|\bavailableQuantity\b|stock count/i);
+});
+
+test("Collector Picks uses active product categories without fake best-seller claims", () => {
+  const section = homepageCollectorPicksSection([
+    product({ id: "sold-out-premium", category: "Premium Collections", availableQuantity: 0, status: "sold_out" }),
+    product({ id: "premium", category: "Premium Collections" }),
+    product({ id: "tin", category: "Tins" }),
+    product({ id: "generic", category: "Other" })
+  ]);
+
+  assert.equal(section.title, "Collector Picks");
+  assert.deepEqual(section.products.map((entry) => entry.id), ["premium", "tin"]);
+  assert.doesNotMatch(`${section.title} ${section.detail}`, /best.?seller|most popular|top rated/i);
+});
+
+test("homepage merchandising UI renders category links and safe product-card links", () => {
+  const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+
+  assert.match(client, /HomepageProductSection/);
+  assert.match(client, /homepageAlmostGoneSection\(products\)/);
+  assert.match(client, /homepageCollectorPicksSection\(products\)/);
+  for (const category of ["Pokemon Sealed", "Booster Bundles", "Tins", "Premium Collections", "Blisters", "Accessories"]) {
+    assert.match(client, new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(client, /href=\{`\/shop\/product\/\$\{product\.slug\}`\}/);
+  assert.doesNotMatch(client, /availableQuantity\}.*gdg-product-card|exact stock|stock count/i);
+  assert.doesNotMatch(client, /card_number|cardNumber|cvc|cvv|payment_method_details|payment_method_data|raw Stripe/i);
+  assert.match(css, /gdg-home-product-row/);
+  assert.match(css, /gdg-support-strip/);
 });

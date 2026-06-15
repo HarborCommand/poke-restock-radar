@@ -1,0 +1,117 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import {
+  storefrontProductFeedItems,
+  storefrontProductFeedXml
+} from "../src/lib/storefront-product-feed";
+import { productCanonicalUrl } from "../src/lib/storefront-seo";
+import type { PublicStoreProductDTO } from "../src/types/radar";
+
+function product(overrides: Partial<PublicStoreProductDTO> = {}): PublicStoreProductDTO {
+  return {
+    id: "private-db-id",
+    slug: "pokemon-feed-product",
+    title: "Pokemon Feed Product",
+    description: "Factory sealed Pokemon product for collectors.",
+    price: 24.99,
+    compareAtPrice: null,
+    imageUrl: "https://cdn.example.com/feed-product.jpg",
+    primaryImageUrl: "https://cdn.example.com/feed-product.jpg",
+    images: ["https://cdn.example.com/feed-product.jpg"],
+    category: "Booster Bundles",
+    tags: ["Pokemon"],
+    condition: "New sealed",
+    brand: "Pokemon",
+    manufacturer: "The Pokemon Company",
+    sku: "GDG-FEED-1",
+    upc: "123456789012",
+    availableQuantity: 4,
+    maxQuantityPerOrder: null,
+    status: "active",
+    localPickupAvailable: true,
+    localPickupEligible: true,
+    shippingAvailable: true,
+    shippingProfile: "small_box",
+    packageWeightOz: 12,
+    packageLengthIn: 8,
+    packageWidthIn: 5,
+    packageHeightIn: 3,
+    freeShippingEligible: false,
+    requiresBox: true,
+    insuranceRecommended: false,
+    needsShippingProfile: false,
+    publishedAt: "2026-06-15T00:00:00.000Z",
+    createdAt: "2026-06-15T00:00:00.000Z",
+    updatedAt: "2026-06-15T00:00:00.000Z",
+    ...overrides
+  };
+}
+
+test("Google Merchant product feed renders public active storefront products", () => {
+  const xml = storefrontProductFeedXml([product()]);
+
+  assert.match(xml, /<rss version="2\.0" xmlns:g="http:\/\/base\.google\.com\/ns\/1\.0">/);
+  assert.match(xml, /<g:id>pokemon-feed-product<\/g:id>/);
+  assert.match(xml, /<title>Pok.mon Feed Product<\/title>/);
+  assert.match(xml, /<description>Factory sealed Pokemon product for collectors\.<\/description>/);
+  assert.match(xml, new RegExp(`<link>${productCanonicalUrl("pokemon-feed-product").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</link>`));
+  assert.match(xml, /<g:image_link>https:\/\/cdn\.example\.com\/feed-product\.jpg<\/g:image_link>/);
+  assert.match(xml, /<g:availability>in stock<\/g:availability>/);
+  assert.match(xml, /<g:price>24\.99 USD<\/g:price>/);
+  assert.match(xml, /<g:condition>new<\/g:condition>/);
+  assert.match(xml, /<g:brand>Pokemon<\/g:brand>/);
+  assert.match(xml, /<g:gtin>123456789012<\/g:gtin>/);
+  assert.match(xml, /<g:shipping_weight>12 oz<\/g:shipping_weight>/);
+});
+
+test("Google Merchant product feed excludes unavailable and image-missing products by default", () => {
+  const active = product({ slug: "active-product" });
+  const soldOut = product({ slug: "sold-out-product", status: "sold_out", availableQuantity: 0 });
+  const noImage = product({ slug: "missing-image-product", imageUrl: null, primaryImageUrl: null, images: [] });
+
+  const items = storefrontProductFeedItems([active, soldOut, noImage]);
+  assert.deepEqual(items.map((item) => item.id), ["active-product"]);
+
+  const xml = storefrontProductFeedXml([active, soldOut, noImage]);
+  assert.match(xml, /active-product/);
+  assert.doesNotMatch(xml, /sold-out-product/);
+  assert.doesNotMatch(xml, /missing-image-product/);
+});
+
+test("Google Merchant product feed can render sold-out availability only when explicitly allowed", () => {
+  const xml = storefrontProductFeedXml(
+    [product({ slug: "sold-out-product", status: "sold_out", availableQuantity: 0 })],
+    { includeUnavailable: true }
+  );
+
+  assert.match(xml, /<g:id>sold-out-product<\/g:id>/);
+  assert.match(xml, /<g:availability>out of stock<\/g:availability>/);
+  assert.doesNotMatch(xml, /<g:availability>in stock<\/g:availability>/);
+});
+
+test("Google Merchant product feed avoids private inventory, payment, and admin fields", () => {
+  const xml = storefrontProductFeedXml([product()]);
+  assert.doesNotMatch(xml, /private-db-id/);
+  assert.doesNotMatch(xml, /costBasis|supplier|receipt|stockLots|quantityOwned|admin|targetSellPrice/i);
+  assert.doesNotMatch(xml, /card_number|cardNumber|cvc|cvv|payment_method_details|payment_method_data|raw Stripe/i);
+});
+
+test("Google Merchant feed endpoint and robots are wired for crawler access", () => {
+  const route = fs.readFileSync(new URL("../src/app/product-feed.xml/route.ts", import.meta.url), "utf8");
+  const robots = fs.readFileSync(new URL("../src/app/robots.ts", import.meta.url), "utf8");
+  const sitemap = fs.readFileSync(new URL("../src/app/sitemap.ts", import.meta.url), "utf8");
+
+  assert.match(route, /listPublicStoreProducts/);
+  assert.match(route, /storefrontProductFeedXml/);
+  assert.match(route, /application\/xml/);
+  assert.doesNotMatch(route, /listDashboard|requireUser|InventoryItem|costBasis|stockLots/);
+
+  assert.match(robots, /"\/product-feed\.xml"/);
+  assert.match(robots, /sitemap/);
+  assert.doesNotMatch(robots, /disallow:[\s\S]*"\/product-feed\.xml"/i);
+
+  assert.match(sitemap, /listPublicStoreProducts/);
+  assert.match(sitemap, /productCanonicalUrl\(product\.slug\)/);
+  assert.doesNotMatch(sitemap, /\/admin|\/app|\/dashboard|\/api\//);
+});

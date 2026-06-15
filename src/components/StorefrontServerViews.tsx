@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ProductDetail, ProductGrid, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { getPublicStoreProduct, getStorefrontSettings, listPublicStoreProducts } from "@/lib/storefront";
+import { storefrontJsonLdScript, storefrontProductJsonLd } from "@/lib/storefront-seo";
 
 type StorefrontShopViewParams = {
   category?: string | null;
@@ -48,6 +49,10 @@ export async function StorefrontProductView({ slug }: { slug: string }) {
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: storefrontJsonLdScript(storefrontProductJsonLd(product)) }}
+      />
       <ProductDetail product={product} settings={settings} relatedProducts={relatedProducts} />
       <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>

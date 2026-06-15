@@ -1,7 +1,16 @@
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 import { isNewArrival, isSoldOutProduct, storefrontArrivalDate } from "@/lib/storefront-badges";
+import { displayStorefrontCategory } from "@/lib/storefront-categories";
 
 type HeroSettings = Pick<StorefrontSettingsDTO, "featuredHeroProductId" | "homepageHeroMode" | "showSoldOutInHero">;
+
+export type HomepageMerchandisingSection = {
+  title: string;
+  detail: string;
+  href: string;
+  linkLabel: string;
+  products: PublicStoreProductDTO[];
+};
 
 export function storefrontProductTime(product: Pick<PublicStoreProductDTO, "publishedAt" | "createdAt">) {
   const timestamp = Date.parse(storefrontArrivalDate(product));
@@ -10,6 +19,16 @@ export function storefrontProductTime(product: Pick<PublicStoreProductDTO, "publ
 
 export function sortStorefrontProductsNewest(products: PublicStoreProductDTO[]) {
   return [...products].sort((left, right) => storefrontProductTime(right) - storefrontProductTime(left));
+}
+
+function activeStorefrontProducts(products: PublicStoreProductDTO[]) {
+  return products.filter((product) => !isSoldOutProduct(product));
+}
+
+function byNewestThenTitle(left: PublicStoreProductDTO, right: PublicStoreProductDTO) {
+  const timeDiff = storefrontProductTime(right) - storefrontProductTime(left);
+  if (timeDiff !== 0) return timeDiff;
+  return left.title.localeCompare(right.title);
 }
 
 export function selectHomepageHeroProduct(products: PublicStoreProductDTO[], settings: HeroSettings) {
@@ -34,19 +53,71 @@ export function selectHomepageHeroProduct(products: PublicStoreProductDTO[], set
 }
 
 export function homepageArrivalSection(products: PublicStoreProductDTO[], newArrivalDays: number, now = new Date()) {
-  const sorted = sortStorefrontProductsNewest(products);
+  const sorted = activeStorefrontProducts(products).sort(byNewestThenTitle);
   const newArrivals = sorted.filter((product) => isNewArrival(product, now, newArrivalDays)).slice(0, 4);
   if (newArrivals.length) {
     return {
       title: "New Arrivals",
-      detail: "Recently published products from available inventory.",
+      detail: "Freshly added products from GameDayGrabs.",
+      href: "/shop?sort=newest",
+      linkLabel: "View All New Arrivals",
       products: newArrivals
-    };
+    } satisfies HomepageMerchandisingSection;
   }
 
   return {
     title: "Recently Added",
     detail: "The latest published products from GameDayGrabs.",
+    href: "/shop?sort=newest",
+    linkLabel: "View All Recently Added",
     products: sorted.slice(0, 4)
-  };
+  } satisfies HomepageMerchandisingSection;
+}
+
+export function homepageAlmostGoneSection(products: PublicStoreProductDTO[]) {
+  const almostGone = activeStorefrontProducts(products)
+    .filter((product) => product.availableQuantity <= 2)
+    .sort((left, right) => {
+      const quantityDiff = left.availableQuantity - right.availableQuantity;
+      if (quantityDiff !== 0) return quantityDiff;
+      return byNewestThenTitle(left, right);
+    })
+    .slice(0, 4);
+
+  return {
+    title: "Almost Gone",
+    detail: "Small batches available now. Exact stock may change at checkout.",
+    href: "/shop?sort=stock",
+    linkLabel: "Shop Low Stock",
+    products: almostGone
+  } satisfies HomepageMerchandisingSection;
+}
+
+function collectorPickScore(product: PublicStoreProductDTO) {
+  const category = displayStorefrontCategory(product);
+  if (category === "Premium Collections") return 0;
+  if (category === "Elite Trainer Boxes") return 1;
+  if (category === "Booster Bundles") return 2;
+  if (category === "Tins") return 3;
+  if (category === "Blisters") return 4;
+  return 5;
+}
+
+export function homepageCollectorPicksSection(products: PublicStoreProductDTO[]) {
+  const picks = activeStorefrontProducts(products)
+    .filter((product) => ["Premium Collections", "Elite Trainer Boxes", "Booster Bundles", "Tins", "Blisters"].includes(displayStorefrontCategory(product)))
+    .sort((left, right) => {
+      const scoreDiff = collectorPickScore(left) - collectorPickScore(right);
+      if (scoreDiff !== 0) return scoreDiff;
+      return byNewestThenTitle(left, right);
+    })
+    .slice(0, 4);
+
+  return {
+    title: "Collector Picks",
+    detail: "Active sealed products and premium releases collectors often scan first.",
+    href: "/shop?category=pokemon",
+    linkLabel: "Shop Collector Picks",
+    products: picks
+  } satisfies HomepageMerchandisingSection;
 }

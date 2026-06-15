@@ -71,9 +71,12 @@ test("admin listing editor exposes preview, regenerate, and risky-copy warnings"
 test("public detail copy sections are present and private terms are not rendered as guidance", () => {
   const client = fs.readFileSync("src/components/StorefrontClient.tsx", "utf8");
 
-  for (const heading of ["Product Description", "Product Details", "Shipping & Handling", "Condition Policy"]) {
+  for (const heading of ["Product Description", "What&apos;s included", "Product condition", "Product Details", "Shipping summary", "Checkout hold", "Product issue support"]) {
     assert.match(client, new RegExp(`<h2>${heading}</h2>`));
   }
+  assert.match(client, /Shipping is calculated from product weight and package size/);
+  assert.match(client, /Final shipping is shown before payment/);
+  assert.match(client, /Items are held for 15 minutes once checkout starts/);
   assert.match(client, /Listings show only customer-facing availability, condition, and checkout details/);
   assert.doesNotMatch(client, /internal purchase notes|private inventory details/i);
 });

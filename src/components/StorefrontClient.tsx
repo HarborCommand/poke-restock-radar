@@ -42,7 +42,13 @@ import {
 import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
 import { GAMEDAYGRABS_EBAY_FEEDBACK_URL, storefrontFeedback } from "@/lib/storefront-feedback";
-import { homepageArrivalSection, selectHomepageHeroProduct } from "@/lib/storefront-home";
+import {
+  homepageAlmostGoneSection,
+  homepageArrivalSection,
+  homepageCollectorPicksSection,
+  selectHomepageHeroProduct,
+  type HomepageMerchandisingSection
+} from "@/lib/storefront-home";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { calculateCartShipping } from "@/lib/shipping";
 import {
@@ -70,16 +76,17 @@ const preferredCategories = [
   "Blisters",
   "Tins",
   "Collection Boxes",
+  "Accessories",
   "Sports Cards",
   "Graded Cards"
 ];
 const homeCategories = [
   "Pokemon Sealed",
   "Booster Bundles",
-  "Elite Trainer Boxes",
+  "Tins",
   "Premium Collections",
-  "Sports Cards",
-  "Graded Cards"
+  "Blisters",
+  "Accessories"
 ];
 
 const categorySubtitles: Record<string, string> = {
@@ -92,6 +99,7 @@ const categorySubtitles: Record<string, string> = {
   "Blisters": "Blisters and checklanes",
   "Tins": "Tins and Poké Balls",
   "Collection Boxes": "Boxed collections",
+  "Accessories": "Storage and collector gear",
   "Sports Cards": "Shop on eBay",
   "Graded Cards": "Slabs and singles"
 };
@@ -134,6 +142,23 @@ function money(value: number | null | undefined) {
 
 function publicCategoryLabel(category: string) {
   return cleanStorefrontTitle(category);
+}
+
+function productHasSealedSignal(product: PublicStoreProductDTO, displayCategory: string, conditionLabel: string) {
+  return /\b(sealed|new|booster|box|bundle|tin|collection|blister|pack)\b/i.test(
+    `${product.title} ${displayCategory} ${conditionLabel}`
+  );
+}
+
+function productIncludedBullets(product: PublicStoreProductDTO, displayCategory: string, conditionLabel: string) {
+  const bullets = [
+    `${displayCategory} product listed by GameDayGrabs.`,
+    productHasSealedSignal(product, displayCategory, conditionLabel)
+      ? "Sealed product details are based on the listing information."
+      : `${conditionLabel}.`,
+    "Public listing photos and title identify the item offered."
+  ];
+  return Array.from(new Set(bullets));
 }
 
 function PaymentNetworkBadges() {
@@ -657,6 +682,65 @@ function ProductCard({
   );
 }
 
+function HomepageProductSection({
+  section,
+  settings,
+  onAdded,
+  emptyTitle,
+  emptyDetail
+}: {
+  section: HomepageMerchandisingSection;
+  settings: StorefrontSettingsDTO;
+  onAdded: (product: PublicStoreProductDTO) => void;
+  emptyTitle?: string;
+  emptyDetail?: string;
+}) {
+  return (
+    <section className="gdg-section gdg-home-product-section">
+      <div className="gdg-section-header">
+        <div>
+          <h2>{section.title}</h2>
+          <p>{section.detail}</p>
+        </div>
+        <Link href={section.href}>{section.linkLabel}</Link>
+      </div>
+      <div className="gdg-home-product-row">
+        {section.products.length ? (
+          section.products.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
+        ) : (
+          <div className="gdg-empty compact">
+            <h3>{emptyTitle ?? "No matching products yet"}</h3>
+            <p>{emptyDetail ?? "Check back as new public listings are added."}</p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function HomepageSupportStrip() {
+  const points = [
+    { icon: <Truck size={19} aria-hidden="true" />, title: "Smart shipping", text: "Shipping is estimated from product weight and package size." },
+    { icon: <Package size={19} aria-hidden="true" />, title: "Careful packaging", text: "Orders are packed with collector condition in mind." },
+    { icon: <ShieldCheck size={19} aria-hidden="true" />, title: "Secure checkout", text: "Stripe handles payment securely; card details stay with Stripe." },
+    { icon: <MessageCircle size={19} aria-hidden="true" />, title: "Order support", text: "Questions go directly to GameDayGrabs support." }
+  ];
+
+  return (
+    <section className="gdg-section gdg-support-strip" aria-label="Shipping and support">
+      {points.map((point) => (
+        <article key={point.title}>
+          <span>{point.icon}</span>
+          <div>
+            <h3>{point.title}</h3>
+            <p>{point.text}</p>
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
 export function ProductGrid({
   products,
   settings,
@@ -706,7 +790,9 @@ export function ProductGrid({
       });
   }, [availability, category, products, query, sort]);
 
-  const arrivalSection = homepageArrivalSection(products, settings.newArrivalDays);
+  const arrivalSection = useMemo(() => homepageArrivalSection(products, settings.newArrivalDays), [products, settings.newArrivalDays]);
+  const almostGoneSection = useMemo(() => homepageAlmostGoneSection(products), [products]);
+  const collectorPicksSection = useMemo(() => homepageCollectorPicksSection(products), [products]);
   const heroProduct = selectHomepageHeroProduct(products, settings);
   const heroCategory = heroProduct ? publicCategoryLabel(displayStorefrontCategory(heroProduct)) : null;
   const heroProductTitle = heroProduct ? cleanStorefrontTitle(heroProduct.title) : "";
@@ -803,11 +889,19 @@ export function ProductGrid({
 
       {mode === "home" ? (
         <>
+          <HomepageProductSection
+            section={arrivalSection}
+            settings={settings}
+            onAdded={onAdded}
+            emptyTitle="No public listings yet"
+            emptyDetail="Published inventory will appear here automatically."
+          />
+
           <section className="gdg-section">
             <div className="gdg-section-header">
               <div>
                 <h2>Shop By Category</h2>
-                <p>Choose the sealed products and cards you collect most.</p>
+                <p>Jump straight to the product type you collect most.</p>
               </div>
               <Link href="/shop">View all</Link>
             </div>
@@ -846,25 +940,15 @@ export function ProductGrid({
             </div>
           </section>
 
-          <section className="gdg-section">
-            <div className="gdg-section-header">
-              <div>
-                <h2>{arrivalSection.title}</h2>
-                <p>{arrivalSection.detail}</p>
-              </div>
-              <Link href="/shop?sort=newest">View All New Arrivals</Link>
-            </div>
-            <div className="gdg-arrivals-row">
-              {arrivalSection.products.length ? (
-                arrivalSection.products.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
-              ) : (
-                <div className="gdg-empty compact">
-                  <h3>No public listings yet</h3>
-                  <p>Published inventory will appear here automatically.</p>
-                </div>
-              )}
-            </div>
-          </section>
+          {almostGoneSection.products.length ? (
+            <HomepageProductSection section={almostGoneSection} settings={settings} onAdded={onAdded} />
+          ) : null}
+
+          {collectorPicksSection.products.length ? (
+            <HomepageProductSection section={collectorPicksSection} settings={settings} onAdded={onAdded} />
+          ) : null}
+
+          <HomepageSupportStrip />
         </>
       ) : (
         <section className="gdg-shop-area" id="shop">
@@ -981,6 +1065,8 @@ export function ProductDetail({
   const displayCategory = publicCategoryLabel(displayStorefrontCategory(product));
   const productTitle = cleanStorefrontTitle(product.title);
   const conditionLabel = cleanStorefrontTitle(product.condition) || "Collector-ready condition";
+  const includedBullets = productIncludedBullets(product, displayCategory, conditionLabel);
+  const sealedSignal = productHasSealedSignal(product, displayCategory, conditionLabel);
   const soldOutNote = storefrontSoldOutNote();
   const visibleGalleryImages = images.filter((image) => !failedImages.includes(image));
   const preferredSelectedImage = selectedImage && images.includes(selectedImage) ? selectedImage : (images[0] ?? null);
@@ -1055,7 +1141,7 @@ export function ProductDetail({
               </div>
             ) : null}
           </aside>
-          <section className="gdg-detail-info">
+          <section className="gdg-detail-info gdg-purchase-panel">
             <span className="gdg-product-category">{displayCategory}</span>
             <h1>{productTitle}</h1>
             <div className="gdg-detail-price">
@@ -1064,8 +1150,11 @@ export function ProductDetail({
               <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{availabilityLabel}</span>
             </div>
             <p>{publicDescription}</p>
-            <small>{availabilityDetail}</small>
-            {purchaseLimitLabel ? <small>{purchaseLimitLabel}.</small> : null}
+            <div className="gdg-product-status-list" aria-label="Product availability and purchase limits">
+              <span>{availabilityDetail}</span>
+              {purchaseLimitLabel ? <span>{purchaseLimitLabel}.</span> : null}
+              <span>Condition: {conditionLabel}.</span>
+            </div>
             {isSoldOut ? <p className="gdg-soldout-notice">{soldOutNote}</p> : null}
             <div className="gdg-quantity-control">
               <span>Quantity</span>
@@ -1082,25 +1171,24 @@ export function ProductDetail({
               </button>
             </div>
             {quantityLimitReached ? <small className="gdg-limit-helper">Limit reached for this item.</small> : null}
-            <button
-              className="gdg-primary-button wide"
-              type="button"
-              disabled={isSoldOut}
-              onClick={() => addProductToCart(false)}
-            >
-              {soldOutActionLabel}
-            </button>
-            <button
-              className="gdg-secondary-button wide"
-              type="button"
-              disabled={isSoldOut}
-              onClick={() => addProductToCart(true)}
-            >
-              {soldOutSecondaryLabel}
-            </button>
-            <button className="gdg-wishlist-button" type="button">
-              <Heart size={15} /> Add to Wishlist
-            </button>
+            <div className="gdg-detail-actions">
+              <button
+                className="gdg-primary-button wide"
+                type="button"
+                disabled={isSoldOut}
+                onClick={() => addProductToCart(false)}
+              >
+                {soldOutActionLabel}
+              </button>
+              <button
+                className="gdg-secondary-button wide"
+                type="button"
+                disabled={isSoldOut}
+                onClick={() => addProductToCart(true)}
+              >
+                {soldOutSecondaryLabel}
+              </button>
+            </div>
             {notice ? (
               <p className="gdg-toast inline">
                 <Check size={16} /> {notice}
@@ -1109,9 +1197,9 @@ export function ProductDetail({
             <div className="gdg-product-trust">
               {[
                 ["Authentic", "100% authentic products"],
-                ["Fast Shipping", "Secure & tracked"],
-                ["Easy Returns", "Case-by-case support"],
-                ["Secure Checkout", "Safe & protected"]
+                ["Carefully packaged", "Packed with protection"],
+                ["Secure checkout", "Stripe handles payment"],
+                ["Order support", "Questions answered by GameDayGrabs"]
               ].map(([title, text]) => (
                 <span key={title}>
                   <ShieldCheck size={15} />
@@ -1123,11 +1211,27 @@ export function ProductDetail({
           </section>
         </div>
       </section>
-      <section className="gdg-description-section">
-        <article>
+      <section className="gdg-description-section gdg-product-detail-sections">
+        <article className="gdg-detail-card-wide">
           <h2>Product Description</h2>
           <p>{publicDescription}</p>
           {isSoldOut ? <p>{soldOutNote}</p> : null}
+        </article>
+        <article>
+          <h2>What&apos;s included</h2>
+          <ul>
+            {includedBullets.map((bullet) => (
+              <li key={bullet}>{bullet}</li>
+            ))}
+          </ul>
+        </article>
+        <article>
+          <h2>Product condition</h2>
+          <p>Condition details are based on the listing information.</p>
+          <ul>
+            <li>Condition: {conditionLabel}.</li>
+            {sealedSignal ? <li>Sealed/new status is shown when available in the listing.</li> : null}
+          </ul>
         </article>
         <article>
           <h2>Product Details</h2>
@@ -1140,16 +1244,25 @@ export function ProductDetail({
           </ul>
         </article>
         <article>
-          <h2>Shipping & Handling</h2>
-          <p>{settings.shippingPolicyText || "Products are packed with care and shipped securely with tracking when shipping is selected."}</p>
+          <h2>Shipping summary</h2>
+          <p>Shipping is calculated from product weight and package size.</p>
           <ul>
             <li>Shipping estimate: {money(productShippingEstimate.defaultShippingOption?.amount ?? 0)}.</li>
+            <li>Final shipping is shown before payment.</li>
+            {product.localPickupEligible ? <li>Local pickup may be available for this item.</li> : null}
             {settings.freeShippingThreshold ? <li>Free shipping threshold: {money(settings.freeShippingThreshold)}.</li> : null}
-            <li>Availability is confirmed before invoice payment or shipment.</li>
           </ul>
         </article>
         <article>
-          <h2>Condition Policy</h2>
+          <h2>Checkout hold</h2>
+          <p>Items are held for 15 minutes once checkout starts.</p>
+          <ul>
+            <li>Availability is confirmed before payment.</li>
+            <li>If checkout expires, the hold releases automatically.</li>
+          </ul>
+        </article>
+        <article>
+          <h2>Product issue support</h2>
           <p>{settings.returnPolicyText || "Sealed and collectible products are reviewed carefully before fulfillment. Returns are handled case by case, especially for sealed collectible items."}</p>
           <ul>
             <li>Listings show only customer-facing availability, condition, and checkout details.</li>

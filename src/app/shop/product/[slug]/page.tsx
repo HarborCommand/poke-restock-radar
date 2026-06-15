@@ -1,6 +1,12 @@
 import { StorefrontProductView } from "@/components/StorefrontServerViews";
 import { getPublicStoreProduct } from "@/lib/storefront";
-import { GAMEDAYGRABS_WWW_DOMAIN } from "@/lib/storefront-routing";
+import {
+  GAMEDAYGRABS_CANONICAL_ORIGIN,
+  GAMEDAYGRABS_OG_FALLBACK_IMAGE,
+  GAMEDAYGRABS_SEO_SITE_NAME,
+  productCanonicalUrl,
+  storefrontProductMetadata
+} from "@/lib/storefront-seo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,18 +14,30 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const product = await getPublicStoreProduct(slug);
-  const title = product ? `${product.title} | GameDayGrabs LLC` : "Product | GameDayGrabs LLC";
-  const description = product?.description || "Shop premium Pokémon and sports card products from GameDayGrabs LLC.";
+  if (product) return storefrontProductMetadata(product);
+
+  const title = `Product | ${GAMEDAYGRABS_SEO_SITE_NAME}`;
+  const description = "Shop premium Pokemon and sports card products from GameDayGrabs.";
+  const canonicalUrl = productCanonicalUrl(slug);
   return {
-    metadataBase: new URL(`https://${GAMEDAYGRABS_WWW_DOMAIN}`),
+    metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
     title,
     description,
+    alternates: {
+      canonical: canonicalUrl
+    },
     openGraph: {
       title,
       description,
-      url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/shop/product/${slug}`,
-      siteName: "GameDayGrabs LLC",
-      images: product?.imageUrl ? [product.imageUrl] : ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]
+      url: canonicalUrl,
+      siteName: GAMEDAYGRABS_SEO_SITE_NAME,
+      images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
     }
   };
 }

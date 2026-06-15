@@ -222,6 +222,10 @@ export type PublicStoreProductDTO = {
   category: string;
   tags: string[];
   condition: string | null;
+  brand?: string | null;
+  manufacturer?: string | null;
+  sku?: string | null;
+  upc?: string | null;
   availableQuantity: number;
   maxQuantityPerOrder: number | null;
   status: "active" | "sold_out";
@@ -303,6 +307,7 @@ export type StorefrontEmailNotificationDTO = {
   sentAt: string | null;
   updatedAt: string;
   failureReason: string | null;
+  detail: string | null;
 };
 
 export type StorefrontAddressDTO = {

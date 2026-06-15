@@ -226,6 +226,10 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     category: publicCategory,
     tags: parseList(item.storefrontTags),
     condition: cleanStorefrontTitle(item.condition),
+    brand: cleanStorefrontTitle(item.brand) || null,
+    manufacturer: cleanStorefrontTitle(item.manufacturer) || null,
+    sku: item.sku,
+    upc: item.upc,
     availableQuantity,
     maxQuantityPerOrder: storefrontConfiguredPurchaseLimit(item),
     status,
@@ -710,18 +714,40 @@ async function sendCustomerEmailNotificationOnce(input: {
     return "skipped";
   }
   if (!recipient) {
-    await completeCustomerEmailEvent({ eventId: input.eventId, order: input.order, kind: input.kind, status: "missing_customer_email", recipient });
+    await completeCustomerEmailEvent({
+      eventId: input.eventId,
+      order: input.order,
+      kind: input.kind,
+      status: "missing_customer_email",
+      recipient,
+      detail: "No customer email is saved for this order."
+    });
     return "missing_customer_email";
   }
   if (!smtpReady()) {
-    await completeCustomerEmailEvent({ eventId: input.eventId, order: input.order, kind: input.kind, status: "not_configured", recipient });
+    await completeCustomerEmailEvent({
+      eventId: input.eventId,
+      order: input.order,
+      kind: input.kind,
+      status: "not_configured",
+      recipient,
+      detail: "SMTP is not configured. Set SMTP_HOST and SMTP_FROM to send customer emails."
+    });
     return "not_configured";
   }
   try {
     const sent = await sendStorefrontEmail(recipient, input.subject || "GameDayGrabs order update", input.text || "GameDayGrabs order update");
     const status: CustomerEmailStatus = sent ? "sent" : "not_configured";
     const sentAt = status === "sent" ? new Date() : null;
-    await completeCustomerEmailEvent({ eventId: input.eventId, order: input.order, kind: input.kind, status, recipient, sentAt });
+    await completeCustomerEmailEvent({
+      eventId: input.eventId,
+      order: input.order,
+      kind: input.kind,
+      status,
+      recipient,
+      sentAt,
+      detail: status === "sent" ? "Email sent to customer." : "SMTP is not configured."
+    });
     return status;
   } catch (error) {
     await completeCustomerEmailEvent({
@@ -730,7 +756,8 @@ async function sendCustomerEmailNotificationOnce(input: {
       kind: input.kind,
       status: "failed",
       recipient,
-      failureReason: sanitizedEmailFailure(error)
+      failureReason: sanitizedEmailFailure(error),
+      detail: "Email delivery failed without blocking the order workflow."
     });
     return "failed";
   }
@@ -759,6 +786,31 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     kind: "order_confirmation",
     eventId: customerEmailEventId("order_confirmation", order.id),
     subject: `GameDayGrabs order ${order.orderNumber} confirmation`,
+    text
+  });
+}
+
+async function sendStorefrontCheckoutExpiredEmail(order: StorefrontOrderWithItems, reason: string) {
+  const settings = await getStorefrontSettings();
+  const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
+  const text = [
+    "Your GameDayGrabs checkout expired.",
+    "",
+    `Order: ${order.orderNumber}`,
+    "No payment was collected for this checkout.",
+    reason,
+    "",
+    "Items:",
+    ...orderItemSummaryLines(order),
+    "",
+    "If you still want these items, start checkout again while inventory is available.",
+    `Questions? Contact ${contactEmail}.`
+  ].join("\n");
+  return sendCustomerEmailNotificationOnce({
+    order,
+    kind: "checkout_expired",
+    eventId: customerEmailEventId("checkout_expired", order.id),
+    subject: `GameDayGrabs checkout ${order.orderNumber} expired`,
     text
   });
 }
@@ -892,7 +944,7 @@ async function sendStorefrontCancellationEmail(input: {
       ? `Refund amount: $${input.refundAmount.toFixed(2)}. Refund timing depends on your bank or card issuer.`
       : "No Stripe refund was issued for this order.";
   const text = [
-    "GameDayGrabs order cancellation",
+    "GameDayGrabs order cancellation/refund update",
     "",
     `Order: ${input.order.orderNumber}`,
     `Reason: ${reasonLabel}`,
@@ -907,7 +959,7 @@ async function sendStorefrontCancellationEmail(input: {
     order: input.order,
     kind: "refund_cancellation",
     eventId: customerEmailEventId("refund_cancellation", input.order.id, input.idempotencyKey),
-    subject: `GameDayGrabs order ${input.order.orderNumber} cancellation`,
+    subject: `GameDayGrabs order ${input.order.orderNumber} cancellation/refund update`,
     text,
     recipient: to
   });
@@ -944,11 +996,12 @@ async function sendStorefrontShipmentEmail(order: StorefrontOrderWithItems) {
 async function sendStorefrontLocalPickupEmail(order: StorefrontOrderWithItems) {
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
+  const pickupInstructions = settings.localPickupInstructions?.trim();
   const text = [
     "Your GameDayGrabs order is ready for local pickup.",
     "",
     `Order: ${order.orderNumber}`,
-    "Please contact GameDayGrabs to coordinate pickup timing.",
+    pickupInstructions || "Please contact GameDayGrabs to coordinate pickup timing.",
     "",
     "Items:",
     ...orderItemSummaryLines(order),
@@ -1039,6 +1092,7 @@ function customerEmailNotifications(order: StorefrontOrderWithItems): Storefront
       const sentAt = typeof record.sentAt === "string" ? record.sentAt : status === "sent" ? event.receivedAt.toISOString() : null;
       const failureReason =
         typeof record.failureReason === "string" && record.failureReason.trim() ? record.failureReason.trim().slice(0, 160) : null;
+      const detail = typeof record.detail === "string" && record.detail.trim() ? record.detail.trim().slice(0, 200) : null;
       return {
         id: event.id,
         kind,
@@ -1050,7 +1104,8 @@ function customerEmailNotifications(order: StorefrontOrderWithItems): Storefront
         recipient: typeof record.recipient === "string" && record.recipient.trim() ? record.recipient.trim() : null,
         sentAt,
         updatedAt: event.receivedAt.toISOString(),
-        failureReason
+        failureReason,
+        detail
       };
     });
 
@@ -1063,7 +1118,8 @@ function customerEmailNotifications(order: StorefrontOrderWithItems): Storefront
       recipient: order.customerEmail ?? order.customer?.email ?? null,
       sentAt: order.customerCancellationEmailSentAt?.toISOString() ?? null,
       updatedAt: order.customerCancellationEmailSentAt?.toISOString() ?? order.updatedAt.toISOString(),
-      failureReason: null
+      failureReason: null,
+      detail: null
     });
   }
   return notifications.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -1802,12 +1858,11 @@ async function markStorefrontOrderPaymentFailed(order: StorefrontOrderWithItems,
     priority: "MEDIUM",
     score: 75
   });
-  await recordExpiredCheckoutEmailSkipped(
-    order,
-    paymentStatus === "expired"
-      ? "Expired unpaid checkout sessions are not emailed automatically."
-      : "Failed unpaid checkout sessions are not emailed automatically."
-  );
+  if (paymentStatus === "expired") {
+    await sendStorefrontCheckoutExpiredEmail(order, "Stripe Checkout expired before payment completed.");
+  } else {
+    await recordExpiredCheckoutEmailSkipped(order, "Failed unpaid checkout sessions are not emailed automatically.");
+  }
   return { released: released.count, skipped: null };
 }
 

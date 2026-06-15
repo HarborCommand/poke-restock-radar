@@ -16801,10 +16801,63 @@ body:has(.shop-shell) {
 }
 
 .gdg-arrivals-row,
+.gdg-home-product-row,
 .gdg-product-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
+}
+
+.gdg-home-product-section {
+  padding-top: clamp(16px, 2.4vw, 24px);
+  padding-bottom: clamp(16px, 2.4vw, 24px);
+}
+
+.gdg-support-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.gdg-support-strip article {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+  border: 1px solid #e8edf3;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  padding: 16px;
+}
+
+.gdg-support-strip article > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 15px;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.gdg-support-strip h3,
+.gdg-support-strip p {
+  margin: 0;
+}
+
+.gdg-support-strip h3 {
+  color: #0f172a;
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.gdg-support-strip p {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 720;
+  line-height: 1.35;
 }
 
 .gdg-product-card {
@@ -17220,9 +17273,9 @@ body:has(.shop-shell) {
 .gdg-detail-info h1 {
   margin: 0;
   color: #080c14;
-  font-size: clamp(2.1rem, 4vw, 3.8rem);
-  letter-spacing: -0.055em;
-  line-height: 1.02;
+  font-size: clamp(2rem, 3.2vw, 3.2rem);
+  letter-spacing: 0;
+  line-height: 1.08;
 }
 
 .gdg-detail-price {
@@ -17277,16 +17330,27 @@ body:has(.shop-shell) {
   font-weight: 800;
 }
 
-.gdg-wishlist-button {
-  display: inline-flex;
-  width: max-content;
-  align-items: center;
+.gdg-product-status-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
   gap: 8px;
-  border: 0;
-  background: transparent;
-  color: #64748b;
+}
+
+.gdg-product-status-list span {
+  min-width: 0;
+  border: 1px solid #e8edf3;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #334155;
+  padding: 10px 12px;
+  font-size: 0.88rem;
   font-weight: 850;
-  cursor: pointer;
+}
+
+.gdg-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .gdg-product-trust {
@@ -17313,8 +17377,12 @@ body:has(.shop-shell) {
 
 .gdg-description-section {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 16px;
+}
+
+.gdg-product-detail-sections {
+  align-items: stretch;
 }
 
 .gdg-description-section article {
@@ -17335,6 +17403,10 @@ body:has(.shop-shell) {
 .gdg-description-section ul {
   margin: 0;
   padding-left: 20px;
+}
+
+.gdg-detail-card-wide {
+  grid-column: span 2;
 }
 
 .gdg-cart-page,
@@ -18090,6 +18162,10 @@ body:has(.shop-shell) {
     grid-template-columns: 1fr;
   }
 
+  .gdg-support-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .gdg-shop-filters {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -18161,6 +18237,7 @@ body:has(.shop-shell) {
   }
 
   .gdg-trust-bar,
+  .gdg-support-strip,
   .gdg-feedback-grid,
   .gdg-value-grid,
   .gdg-contact-strip,
@@ -18211,11 +18288,21 @@ body:has(.shop-shell) {
   }
 
   .gdg-gallery-thumbs button {
-    width: 100%;
+    width: 72px;
+    flex: 0 0 72px;
   }
 
   .gdg-gallery-main {
     min-height: 320px;
+  }
+
+  .gdg-detail-card-wide,
+  .gdg-detail-actions {
+    grid-column: auto;
+  }
+
+  .gdg-detail-actions {
+    grid-template-columns: 1fr;
   }
 
   .gdg-cart-line {
@@ -18232,6 +18319,7 @@ body:has(.shop-shell) {
 @media (max-width: 520px) {
   .gdg-category-grid,
   .gdg-product-grid,
+  .gdg-home-product-row,
   .gdg-arrivals-row {
     grid-template-columns: 1fr;
   }
@@ -18445,6 +18533,14 @@ body:has(.shop-shell) {
 
 .inventory-shipping-badges {
   align-items: center;
+}
+
+.shipping-metadata-action {
+  flex-basis: 100%;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1.35;
 }
 
 .listing-quality-card {
@@ -19529,6 +19625,29 @@ body .shipping-profile-helper {
 
 body .shipping-profile-issue-list {
   align-items: center;
+}
+
+body .shipping-profile-guidance {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #fde68a;
+  border-radius: 16px;
+  background: #fffbeb;
+  padding: 12px;
+}
+
+body .shipping-profile-guidance strong {
+  color: #78350f;
+  font-size: 0.83rem;
+}
+
+body .shipping-profile-guidance p {
+  margin: 0;
+  color: #92400e;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.45;
 }
 
 body .shipping-profile-chip {

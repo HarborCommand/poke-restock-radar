@@ -796,7 +796,10 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /homeCategories/);
   assert.match(client, /categoryPreviewCards/);
   assert.match(client, /homepageArrivalSection/);
-  assert.match(client, /arrivalSection\.products/);
+  assert.match(client, /homepageAlmostGoneSection/);
+  assert.match(client, /homepageCollectorPicksSection/);
+  assert.match(client, /HomepageProductSection/);
+  assert.match(client, /HomepageSupportStrip/);
   assert.match(client, /href: "\/shop\?category=pokemon"/);
   assert.match(client, /GAMEDAYGRABS_SPORTS_CARDS_URL/);
   assert.match(client, /Sports card inventory is currently listed on our eBay store/);
@@ -807,7 +810,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /availabilityFromParam/);
   assert.match(shopPage, /searchParams/);
   assert.match(shopPage, /firstParam\(params\.category\)/);
-  assert.match(client, /View All New Arrivals/);
+  assert.match(client, /section\.linkLabel/);
   assert.doesNotMatch(client, /\/shop#/);
   assert.match(client, /Contact email pending setup/);
   assert.match(client, /Thanks - we received your request and will contact you shortly/);
@@ -816,8 +819,9 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /Secure Packaging/);
   assert.match(client, /Sleeved Boosters/);
   assert.match(client, /Product Details/);
-  assert.match(client, /Shipping & Handling/);
-  assert.match(client, /Condition Policy/);
+  assert.match(client, /What&apos;s included/);
+  assert.match(client, /Shipping summary/);
+  assert.match(client, /Checkout hold/);
   assert.doesNotMatch(client, /href="\/app"|href=\{`\/app/);
   assert.match(client, /href: "\/about"/);
   assert.match(client, /href: "\/policies"/);
