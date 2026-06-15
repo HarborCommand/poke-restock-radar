@@ -774,6 +774,7 @@ model InventoryItem {
   publicImages                  String?
   availableForSale              Int?
   maxQuantityPerOrder           Int                     @default(4)
+  purchaseLimitEnabled          Boolean                 @default(false)
   shippingProfile               String                  @default("standard")
   packageWeightOz               Float?
   packageLengthIn               Float?

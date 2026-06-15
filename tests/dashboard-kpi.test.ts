@@ -9,6 +9,7 @@ import {
   inventoryLotUnitCostForTest,
   summarizeInventory
 } from "../src/lib/radar-service";
+import { storefrontAvailabilityLabel, storefrontEffectiveMaxQuantity, storefrontPurchaseLimitLabel } from "../src/lib/storefront-purchase-limits";
 import { inferTcgcsvProductType, normalizeTcgcsvProductText } from "../src/lib/tcgcsv-market";
 import type { AlertDTO, InventoryItemDTO, InventorySaleDTO, StorefrontOrderDTO } from "../src/types/radar";
 
@@ -140,6 +141,7 @@ function item(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
     publicImages: [],
     availableForSale: null,
     maxQuantityPerOrder: 10,
+    purchaseLimitEnabled: false,
     shippingProfile: "standard",
     packageWeightOz: null,
     packageLengthIn: null,
@@ -966,6 +968,44 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(webhookRoute, /handleStripeWebhook/);
 });
 
+test("storefront availability and purchase limits stay buyer-facing", () => {
+  const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const schema = fs.readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
+  const migration = fs.readFileSync(new URL("../prisma/migrations/20260615103000_storefront_purchase_limits/migration.sql", import.meta.url), "utf8");
+
+  assert.equal(storefrontAvailabilityLabel({ availableQuantity: 8, status: "active" }), "In Stock");
+  assert.equal(storefrontAvailabilityLabel({ availableQuantity: 4, status: "active" }), "Low Stock");
+  assert.equal(storefrontAvailabilityLabel({ availableQuantity: 2, status: "active" }), "Almost gone");
+  assert.equal(storefrontAvailabilityLabel({ availableQuantity: 0, status: "sold_out" }), "Sold Out");
+  assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: null }), null);
+  assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: 1 }), "Limit 1 per order");
+  assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: 2 }), "Maximum 2 per order");
+  assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 9, maxQuantityPerOrder: null }), 9);
+  assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 9, maxQuantityPerOrder: 2 }), 2);
+  assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 1, maxQuantityPerOrder: 4 }), 1);
+
+  assert.doesNotMatch(client, /Stock visible now|visible stock|stock visible|\$\{product\.availableQuantity\} available|Only \$\{product\.availableQuantity\}/i);
+  assert.match(client, /storefrontAvailabilityLabel\(product\)/);
+  assert.match(client, /storefrontAvailabilityDetail\(product\)/);
+  assert.match(client, /storefrontPurchaseLimitLabel\(product\)/);
+  assert.match(client, /Limit reached for this item\./);
+  assert.match(client, /disabled=\{isSoldOut \|\| quantity >= effectiveMaxQuantity\}/);
+  assert.match(client, /storefrontEffectiveMaxQuantity\(product\)/);
+  assert.match(storefront, /maxQuantityPerOrder: item\.purchaseLimitEnabled \? storefrontPurchaseLimit\(item\) : null/);
+  assert.match(storefront, /const effectiveMaxQuantity = storefrontEffectiveMaxQuantity\(product\)/);
+  assert.match(storefront, /if \(strict && requestedQuantity > effectiveMaxQuantity\)/);
+  assert.match(storefront, /Purchase limit reached for \$\{product\.title\}/);
+  assert.match(app, /label="Purchase limit per order"/);
+  assert.match(app, /Optional buyer-facing purchase limit\. Leave blank for no limit\./);
+  assert.match(app, /DetailStat label="On hand"/);
+  assert.match(schema, /purchaseLimitEnabled\s+Boolean\s+@default\(false\)/);
+  assert.match(migration, /ADD COLUMN "purchaseLimitEnabled" BOOLEAN NOT NULL DEFAULT false/);
+  assert.doesNotMatch(client, /per person/i);
+  assert.doesNotMatch(client, /card number|CVC|raw Stripe|payment method details/i);
+});
+
 test("GameDayGrabs cart checkout is polished while preserving server-side guards", () => {
   const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
   const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
@@ -1009,9 +1049,9 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Cart availability changed\./);
   assert.match(client, /Remove sold-out items or update changed quantities before checkout\./);
   assert.match(client, /Remove this sold-out item to continue checkout\./);
-  assert.match(client, /Quantity updated because available stock changed/);
+  assert.match(client, /Quantity updated because availability or purchase limits changed/);
   assert.match(client, /cartHasBlockingStockIssue/);
-  assert.match(client, /return products\.some\(\(product\) => isSoldOutProduct\(product\) \|\| product\.availableQuantity <= 0 \|\| product\.requestedQuantity > product\.availableQuantity\)/);
+  assert.match(client, /return products\.some\(\(product\) => isSoldOutProduct\(product\) \|\| product\.availableQuantity <= 0 \|\| product\.requestedQuantity > storefrontEffectiveMaxQuantity\(product\)\)/);
   assert.match(client, /checkoutDisabled/);
   assert.match(client, /const checkoutDisabled = busy \|\| hasBlockingStockIssue/);
   assert.match(client, /setProducts\(products\.filter\(\(product\) => !blockedIds\.has\(product\.id\)\)\)/);
@@ -1048,6 +1088,7 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(storefront, /const strict = options\.strict \?\? true/);
   assert.match(storefront, /if \(strict && product\.status !== "active"\)/);
   assert.match(storefront, /if \(strict && requestedQuantity > product\.availableQuantity\)/);
+  assert.match(storefront, /if \(strict && requestedQuantity > effectiveMaxQuantity\)/);
   assert.match(storefront, /unit_amount: Math\.round\(item\.unitPrice \* 100\)/);
   assert.match(storefront, /customer_email: input\.customerEmail/);
   assert.match(storefront, /customer_creation: "always"/);

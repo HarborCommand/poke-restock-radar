@@ -177,6 +177,7 @@ export type InventoryItemDTO = {
   publicImages: string[];
   availableForSale: number | null;
   maxQuantityPerOrder: number;
+  purchaseLimitEnabled: boolean;
   shippingProfile: string;
   packageWeightOz: number | null;
   packageLengthIn: number | null;
@@ -222,7 +223,7 @@ export type PublicStoreProductDTO = {
   tags: string[];
   condition: string | null;
   availableQuantity: number;
-  maxQuantityPerOrder: number;
+  maxQuantityPerOrder: number | null;
   status: "active" | "sold_out";
   localPickupAvailable: boolean;
   localPickupEligible: boolean;

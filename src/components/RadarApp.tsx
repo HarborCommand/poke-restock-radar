@@ -10412,12 +10412,13 @@ function StoreListingModal({
               <TextInput name="publicPrice" label="Public price" type="number" min="0" step="0.01" defaultValue={suggestedPrice ?? ""} />
               <TextInput name="compareAtPrice" label="Compare at price" type="number" min="0" step="0.01" defaultValue={item.compareAtPrice ?? ""} />
               <TextInput name="availableForSale" label="Available for sale" type="number" min="0" max={String(Math.max(0, item.quantityOwned))} step="1" defaultValue={availableForSale} />
-              <TextInput name="maxQuantityPerOrder" label="Max quantity/order" type="number" min="1" max="25" step="1" defaultValue={item.maxQuantityPerOrder || 4} />
+              <TextInput name="maxQuantityPerOrder" label="Purchase limit per order" type="number" min="1" max="25" step="1" defaultValue={item.purchaseLimitEnabled ? item.maxQuantityPerOrder : ""} />
               <TextInput name="storefrontTags" label="Tags" defaultValue={item.storefrontTags.join(", ")} />
               <p className="form-helper wide-field">
                 Available online is capped by on-hand stock. On hand: {item.quantityOwned}. Manual cap:{" "}
                 {manualAvailableForSale === null || manualAvailableForSale === undefined ? "not set" : manualAvailableForSale}.
               </p>
+              <p className="form-helper wide-field">Optional buyer-facing purchase limit. Leave blank for no limit.</p>
               <TextareaInput
                 name="publicDescription"
                 label="Public description"

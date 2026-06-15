@@ -223,6 +223,11 @@ const optionalMoney = z.preprocess(
   z.coerce.number().nonnegative().max(100000).optional()
 );
 
+const optionalPurchaseLimit = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? null : value),
+  z.coerce.number().int().min(1).max(25).nullable().optional()
+);
+
 const requiredMoney = z.coerce.number().nonnegative().max(100000);
 
 const boundedDate = z.coerce
@@ -729,7 +734,7 @@ export const inventoryStoreListingSchema = z.object({
   compareAtPrice: optionalMoney,
   publicImages: publicImageUrlListSchema("publicImages"),
   availableForSale: z.coerce.number().int().min(0).max(10000).optional(),
-  maxQuantityPerOrder: z.coerce.number().int().min(1).max(25).default(4),
+  maxQuantityPerOrder: optionalPurchaseLimit,
   shippingProfile: z.string().trim().min(1).max(80).default("standard"),
   packageWeightOz: optionalMoney,
   packageLengthIn: optionalMoney,

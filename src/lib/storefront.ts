@@ -6,6 +6,7 @@ import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefro
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
 import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
+import { storefrontEffectiveMaxQuantity, storefrontPurchaseLimit } from "@/lib/storefront-purchase-limits";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
   PublicStoreProductDTO,
@@ -222,7 +223,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     tags: parseList(item.storefrontTags),
     condition: cleanStorefrontTitle(item.condition),
     availableQuantity,
-    maxQuantityPerOrder: item.maxQuantityPerOrder,
+    maxQuantityPerOrder: item.purchaseLimitEnabled ? storefrontPurchaseLimit(item) : null,
     status,
     localPickupAvailable: item.localPickupAvailable,
     localPickupEligible: item.localPickupAvailable,
@@ -323,9 +324,10 @@ export async function getCartProducts(items: Array<{ id: string; quantity: numbe
     const product = publicProductToDTO(item);
     if (!product) throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
     const requestedQuantity = requested.get(item.id) ?? 0;
+    const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
     if (strict && product.status !== "active") throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
-    if (strict && requestedQuantity > product.availableQuantity) throw new Error(`Only ${product.availableQuantity} available for ${product.title}.`);
-    if (strict && requestedQuantity > product.maxQuantityPerOrder) throw new Error(`Max ${product.maxQuantityPerOrder} per order for ${product.title}.`);
+    if (strict && requestedQuantity > product.availableQuantity) throw new Error(`Reduce the quantity for ${product.title} before checkout.`);
+    if (strict && requestedQuantity > effectiveMaxQuantity) throw new Error(`Purchase limit reached for ${product.title}.`);
     return { item, product, quantity: requestedQuantity };
   });
 }
@@ -369,7 +371,7 @@ function validateCheckoutReservationAvailability(cart: CheckoutCartEntry[], now 
       throw new Error("This item is temporarily held in another checkout. Please try again shortly.");
     }
     if (quantity > sellableQuantity(item)) {
-      throw new Error(`Only ${product.availableQuantity} available for ${product.title}.`);
+      throw new Error(`Reduce the quantity for ${product.title} before checkout.`);
     }
   }
 }
@@ -2251,7 +2253,7 @@ export async function updateInventoryStoreListing(
     compareAtPrice?: number;
     publicImages?: unknown;
     availableForSale?: number;
-    maxQuantityPerOrder: number;
+    maxQuantityPerOrder?: number | null;
     shippingProfile: string;
     packageWeightOz?: number | null;
     packageLengthIn?: number | null;
@@ -2281,6 +2283,8 @@ export async function updateInventoryStoreListing(
     input.availableForSale === undefined ? item.availableForSale ?? onHandQuantity : Math.max(0, input.availableForSale);
   const availableForSale = Math.min(onHandQuantity, requestedAvailableForSale);
   const normalizedStoreStatus = input.publishToStore && availableForSale <= 0 ? "sold_out" : input.storeStatus;
+  const purchaseLimitEnabled = input.maxQuantityPerOrder !== null && input.maxQuantityPerOrder !== undefined;
+  const maxQuantityPerOrder = purchaseLimitEnabled ? input.maxQuantityPerOrder ?? item.maxQuantityPerOrder : item.maxQuantityPerOrder;
   const publicDescription = cleanStorefrontDescription({
     title: publicTitle,
     itemName: item.itemName,
@@ -2311,7 +2315,8 @@ export async function updateInventoryStoreListing(
       compareAtPrice: input.compareAtPrice,
       publicImages: publicImageList,
       availableForSale,
-      maxQuantityPerOrder: input.maxQuantityPerOrder,
+      maxQuantityPerOrder,
+      purchaseLimitEnabled,
       shippingProfile: input.shippingProfile,
       packageWeightOz: input.packageWeightOz,
       packageLengthIn: input.packageLengthIn,
@@ -2385,6 +2390,7 @@ export async function bulkPublishInventoryStoreListings(
         publicImages: stringifyList(images),
         availableForSale,
         maxQuantityPerOrder: item.maxQuantityPerOrder || 4,
+        purchaseLimitEnabled: item.purchaseLimitEnabled,
         shippingProfile: item.shippingProfile || "standard",
         packageWeightOz: item.packageWeightOz,
         packageLengthIn: item.packageLengthIn,

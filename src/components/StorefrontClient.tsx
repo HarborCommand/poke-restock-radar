@@ -45,6 +45,12 @@ import { GAMEDAYGRABS_EBAY_FEEDBACK_URL, storefrontFeedback } from "@/lib/storef
 import { homepageArrivalSection, selectHomepageHeroProduct } from "@/lib/storefront-home";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { calculateCartShipping } from "@/lib/shipping";
+import {
+  storefrontAvailabilityDetail,
+  storefrontAvailabilityLabel,
+  storefrontEffectiveMaxQuantity,
+  storefrontPurchaseLimitLabel
+} from "@/lib/storefront-purchase-limits";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
@@ -248,7 +254,9 @@ function writeCart(items: CartItem[]) {
 function addToCart(product: PublicStoreProductDTO, quantity = 1) {
   const cart = readCart();
   const existing = cart.find((item) => item.id === product.id);
-  const nextQuantity = Math.min(product.maxQuantityPerOrder, product.availableQuantity, (existing?.quantity ?? 0) + quantity);
+  const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
+  if (effectiveMaxQuantity <= 0) return;
+  const nextQuantity = Math.min(effectiveMaxQuantity, Math.max(1, (existing?.quantity ?? 0) + quantity));
   const next = existing
     ? cart.map((item) => (item.id === product.id ? { ...item, quantity: nextQuantity } : item))
     : [...cart, { id: product.id, quantity: nextQuantity }];
@@ -977,12 +985,18 @@ export function ProductDetail({
   const visibleGalleryImages = images.filter((image) => !failedImages.includes(image));
   const preferredSelectedImage = selectedImage && images.includes(selectedImage) ? selectedImage : (images[0] ?? null);
   const visibleSelectedImage = preferredSelectedImage && visibleGalleryImages.includes(preferredSelectedImage) ? preferredSelectedImage : (visibleGalleryImages[0] ?? null);
+  const availabilityLabel = storefrontAvailabilityLabel(product);
+  const availabilityDetail = storefrontAvailabilityDetail(product);
+  const purchaseLimitLabel = storefrontPurchaseLimitLabel(product);
+  const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
+  const quantityLimitReached = !isSoldOut && effectiveMaxQuantity > 0 && quantity >= effectiveMaxQuantity;
   const productShippingEstimate = calculateCartShipping([{ ...product, requestedQuantity: 1 }], {
     subtotal: product.price,
     freeShippingThreshold: settings.freeShippingThreshold
   });
 
   function addProductToCart(redirect = false) {
+    if (isSoldOut || effectiveMaxQuantity <= 0) return;
     addToCart(product, quantity);
     setNotice(settings.checkoutConfigured ? "Added to cart." : "Added to invoice request.");
     if (redirect) window.location.href = "/cart";
@@ -1047,10 +1061,11 @@ export function ProductDetail({
             <div className="gdg-detail-price">
               <strong>{money(product.price)}</strong>
               {product.compareAtPrice ? <s>{money(product.compareAtPrice)}</s> : null}
-              <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
+              <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{availabilityLabel}</span>
             </div>
             <p>{publicDescription}</p>
-            <small>Stock visible now: {product.availableQuantity} item{product.availableQuantity === 1 ? "" : "s"}.</small>
+            <small>{availabilityDetail}</small>
+            {purchaseLimitLabel ? <small>{purchaseLimitLabel}.</small> : null}
             {isSoldOut ? <p className="gdg-soldout-notice">{soldOutNote}</p> : null}
             <div className="gdg-quantity-control">
               <span>Quantity</span>
@@ -1060,12 +1075,13 @@ export function ProductDetail({
               <b>{quantity}</b>
               <button
                 type="button"
-                disabled={isSoldOut}
-                onClick={() => setQuantity((current) => Math.min(product.maxQuantityPerOrder, product.availableQuantity, current + 1))}
+                disabled={isSoldOut || quantity >= effectiveMaxQuantity}
+                onClick={() => setQuantity((current) => Math.min(effectiveMaxQuantity, current + 1))}
               >
                 <Plus size={15} />
               </button>
             </div>
+            {quantityLimitReached ? <small className="gdg-limit-helper">Limit reached for this item.</small> : null}
             <button
               className="gdg-primary-button wide"
               type="button"
@@ -1118,7 +1134,8 @@ export function ProductDetail({
           <ul>
             <li>Category: {displayCategory}.</li>
             <li>Condition: {conditionLabel}.</li>
-            <li>Availability: {isSoldOut ? "Sold Out" : `${product.availableQuantity} available`}.</li>
+            <li>Availability: {availabilityLabel}.</li>
+            {purchaseLimitLabel ? <li>{purchaseLimitLabel}.</li> : null}
             <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request Invoice mode is active until online checkout is configured."}</li>
           </ul>
         </article>
@@ -1164,20 +1181,23 @@ function cartStockState(product: PublicStoreProductDTO & { requestedQuantity: nu
   if (isSoldOutProduct(product) || product.availableQuantity <= 0) {
     return { label: "Sold Out", tone: "out", detail: "Remove this sold-out item to continue checkout." };
   }
-  if (product.requestedQuantity > product.availableQuantity) {
-    return { label: "Stock Changed", tone: "warn", detail: `Only ${product.availableQuantity} available now.` };
+  const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
+  if (product.requestedQuantity > effectiveMaxQuantity) {
+    const purchaseLimit = storefrontPurchaseLimitLabel(product);
+    return { label: purchaseLimit ? "Purchase Limit" : "Stock Changed", tone: "warn", detail: "Update quantity before checkout." };
   }
+  const purchaseLimit = storefrontPurchaseLimitLabel(product);
   if (product.availableQuantity <= 2) {
-    return { label: "Low Stock", tone: "warn", detail: "Almost gone." };
+    return { label: "Almost gone", tone: "warn", detail: purchaseLimit ?? "Almost gone." };
   }
   if (product.availableQuantity <= 5) {
-    return { label: "Limited Stock", tone: "limited", detail: "Small batch available." };
+    return { label: "Low Stock", tone: "limited", detail: purchaseLimit ?? "Small batch available." };
   }
-  return { label: "In Stock - Ready to Ship", tone: "in", detail: "Ready for secure checkout." };
+  return { label: "In Stock", tone: "in", detail: purchaseLimit ?? "Ready for secure checkout." };
 }
 
 function cartHasBlockingStockIssue(products: Array<PublicStoreProductDTO & { requestedQuantity: number }>) {
-  return products.some((product) => isSoldOutProduct(product) || product.availableQuantity <= 0 || product.requestedQuantity > product.availableQuantity);
+  return products.some((product) => isSoldOutProduct(product) || product.availableQuantity <= 0 || product.requestedQuantity > storefrontEffectiveMaxQuantity(product));
 }
 
 export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
@@ -1209,7 +1229,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
 
   function updateQuantity(productId: string, quantity: number) {
     const product = products.find((entry) => entry.id === productId);
-    const nextQuantity = product ? Math.min(product.availableQuantity, product.maxQuantityPerOrder, Math.max(1, quantity)) : Math.max(1, quantity);
+    const nextQuantity = product ? Math.min(storefrontEffectiveMaxQuantity(product), Math.max(1, quantity)) : Math.max(1, quantity);
     const next = items.map((item) => (item.id === productId ? { ...item, quantity: nextQuantity } : item));
     writeCart(next);
   }
@@ -1235,7 +1255,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const isStripeCheckout = settings.checkoutConfigured;
   const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
   const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.availableQuantity <= 0);
-  const overQuantityProducts = products.filter((product) => product.requestedQuantity > product.availableQuantity && product.availableQuantity > 0);
+  const overQuantityProducts = products.filter((product) => product.requestedQuantity > storefrontEffectiveMaxQuantity(product) && product.availableQuantity > 0);
   const checkoutDisabled = busy || hasBlockingStockIssue || (!isStripeCheckout && (!customerEmail.trim() || !customerName.trim()));
   const successMessage = message.toLowerCase().includes("received");
   const cartIsLoading = items.length > 0 && !products.length && !message;
@@ -1252,10 +1272,10 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     const next = items.map((item) => {
       const product = products.find((entry) => entry.id === item.id);
       if (!product) return item;
-      return { ...item, quantity: Math.min(product.availableQuantity, product.maxQuantityPerOrder, Math.max(1, item.quantity)) };
+      return { ...item, quantity: Math.min(storefrontEffectiveMaxQuantity(product), Math.max(1, item.quantity)) };
     });
     writeCart(next);
-    setMessage("Quantity updated because available stock changed.");
+    setMessage("Quantity updated because availability or purchase limits changed.");
   }
 
   async function checkout() {
@@ -1391,7 +1411,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               {products.map((product) => {
                 const stock = cartStockState(product);
                 const title = cleanStorefrontTitle(product.title);
-                const maxQuantity = Math.min(product.availableQuantity, product.maxQuantityPerOrder);
+                const maxQuantity = storefrontEffectiveMaxQuantity(product);
                 return (
                   <article className={`gdg-cart-line ${stock.tone === "out" || stock.tone === "warn" ? "attention" : ""}`} key={product.id}>
                     <ProductImage product={product} size="thumb" />

@@ -17272,6 +17272,11 @@ body:has(.shop-shell) {
   cursor: pointer;
 }
 
+.gdg-limit-helper {
+  display: block;
+  font-weight: 800;
+}
+
 .gdg-wishlist-button {
   display: inline-flex;
   width: max-content;

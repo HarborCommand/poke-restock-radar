@@ -331,10 +331,15 @@ test("store listing save path persists shipping metadata without stock quantity 
   const updateListing = sourceSlice(storefront, "export async function updateInventoryStoreListing", "export async function bulkPublishInventoryStoreListings");
 
   assert.match(listingModal, /body: JSON\.stringify\(formJson\(form\)\)/);
-  for (const field of ["packageWeightOz", "packageLengthIn", "packageWidthIn", "packageHeightIn", "freeShippingEligible", "requiresBox", "insuranceRecommended"]) {
+  for (const field of ["maxQuantityPerOrder", "packageWeightOz", "packageLengthIn", "packageWidthIn", "packageHeightIn", "freeShippingEligible", "requiresBox", "insuranceRecommended"]) {
     assert.match(listingSchema, new RegExp(`${field}:`), `schema should accept ${field}`);
-    assert.match(updateListing, new RegExp(`${field}: input\\.${field}`), `save path should persist ${field}`);
+    if (field === "maxQuantityPerOrder") {
+      assert.match(updateListing, /maxQuantityPerOrder,/);
+    } else {
+      assert.match(updateListing, new RegExp(`${field}: input\\.${field}`), `save path should persist ${field}`);
+    }
   }
+  assert.match(updateListing, /purchaseLimitEnabled,/);
 
   const parsed = inventoryStoreListingSchema.parse({
     publishToStore: true,
@@ -364,6 +369,14 @@ test("store listing save path persists shipping metadata without stock quantity 
   assert.equal(parsed.localPickupAvailable, true);
   assert.equal(parsed.requiresBox, true);
   assert.equal(parsed.insuranceRecommended, true);
+
+  const blankLimit = inventoryStoreListingSchema.parse({
+    publishToStore: false,
+    maxQuantityPerOrder: "",
+    shippingProfile: "standard",
+    storeStatus: "draft"
+  });
+  assert.equal(blankLimit.maxQuantityPerOrder, null);
   assert.doesNotMatch(updateListing, /\bquantity:\s*input\./);
   assert.doesNotMatch(updateListing, /inventoryStockLot|inventorySale|remainingQuantity|quantitySold/);
 });

@@ -2146,6 +2146,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     publicImages: publicImageUrls,
     availableForSale: item.availableForSale,
     maxQuantityPerOrder: item.maxQuantityPerOrder,
+    purchaseLimitEnabled: item.purchaseLimitEnabled,
     shippingProfile: item.shippingProfile,
     packageWeightOz: item.packageWeightOz,
     packageLengthIn: item.packageLengthIn,
