@@ -1293,7 +1293,7 @@ function ownerLaunchChecklist(input: {
         ? externalChannelEnabled
           ? "Email or SMS provider is configured and enabled for this user"
           : "Provider exists; enable email or SMS in notification settings"
-        : "Add SMTP or Twilio env vars if you want non-browser backup alerts",
+        : "Add email provider or Twilio env vars if you want non-browser backup alerts",
       complete: externalProviderConfigured && externalChannelEnabled,
       severity: externalProviderConfigured ? "MEDIUM" : "LOW",
       tab: "alerts"

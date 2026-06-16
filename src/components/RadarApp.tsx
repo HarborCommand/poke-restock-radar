@@ -1952,7 +1952,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
     { label: "Storefront root works", detail: "https://www.gamedaygrabs.com should render the public storefront at / after DNS connects.", complete: false },
     { label: "Shop page works", detail: "/shop is live and remains available for previews.", complete: true },
     { label: "Contact email visible", detail: settings.contactEmail || "Contact email not configured yet.", complete: contactEmailReady },
-    { label: "Contact form / inquiry works", detail: "Contact and Request Invoice save customer inquiries when SMTP is missing.", complete: true },
+    { label: "Contact form / inquiry works", detail: "Contact and Request Invoice save customer inquiries when email delivery is not configured.", complete: true },
     { label: "Policies page works", detail: "/policies shows shipping, returns, pickup, checkout, and contact details.", complete: true },
     { label: "About page works", detail: "/about explains GameDayGrabs LLC for customers and distributors.", complete: true },
     { label: "At least 5 published products", detail: `${published.length} published products available publicly.`, complete: published.length >= 5 },
@@ -2081,7 +2081,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
         <article>
           <span className="eyeline">Inquiry flow</span>
           <strong>{dashboard.storefrontSummary.inquiryCount} stored inquiries</strong>
-          <small>{settings.checkoutConfigured ? "Stripe Checkout is active; contact form remains available." : "Request Invoice and contact forms store inquiries if SMTP is missing."}</small>
+          <small>{settings.checkoutConfigured ? "Stripe Checkout is active; contact form remains available." : "Request Invoice and contact forms store inquiries if email delivery is missing."}</small>
         </article>
         <article>
           <span className="eyeline">Policies status</span>
@@ -19323,8 +19323,10 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
           title="Email Alerts"
           value={providerHealthLabel(health.providers.email.healthStatus)}
           tone={providerHealthTone(health.providers.email.healthStatus)}
-          detail={`SMTP host ${configuredText(health.providers.email.smtpHostConfigured).toLowerCase()}, from ${configuredText(
-            health.providers.email.smtpFromConfigured
+          detail={`Provider ${health.providers.email.provider}, Resend key ${configuredText(
+            health.providers.email.resendApiKeyConfigured
+          ).toLowerCase()}, from ${configuredText(health.providers.email.emailFromConfigured).toLowerCase()}, reply-to ${configuredText(
+            health.providers.email.emailReplyToConfigured
           ).toLowerCase()} - ${health.providers.email.message}`}
         />
         <HealthCard
@@ -19556,7 +19558,7 @@ function NotificationSettingsPanel({
           title="Email Setup"
           value={activeText(emailActive)}
           tone={optionalProviderSetupTone(health?.providers.email.healthStatus, Boolean(settings.email), emailActive)}
-          detail={`SMTP ${configuredText(Boolean(health?.providers.email.configured)).toLowerCase()}, user ${
+          detail={`Provider ${health?.providers.email.provider || "none"} ${configuredText(Boolean(health?.providers.email.configured)).toLowerCase()}, user ${
             settings.email ? "enabled" : "disabled"
           }, destination ${settings.emailTo || "missing"}`}
         />

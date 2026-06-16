@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { emailProviderConfigured } from "@/lib/email-provider";
 import { getEnvironmentReport } from "@/lib/env";
 import { authRuntimeConfig } from "@/lib/auth";
 import { getBuildInfo } from "@/lib/build-info";
@@ -70,7 +71,7 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
     configuredAdminEmailPresent: Boolean(process.env.ADMIN_EMAIL?.trim()),
     configuredAdminEmailExists: false,
     lastAdminLoginAt: null,
-    passwordResetEmailConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM)
+    passwordResetEmailConfigured: emailProviderConfigured()
   };
 
   if (database.ok) {

@@ -1,3 +1,5 @@
+import { emailProviderConfig, type EmailProviderKind } from "@/lib/email-provider";
+
 export type ProviderHealthStatus = "configured" | "optional_not_configured" | "misconfigured" | "disabled";
 
 type ProviderHealthMetadata = {
@@ -28,6 +30,12 @@ export type EnvironmentReport = {
     };
     email: ProviderHealthMetadata & {
       configured: boolean;
+      provider: EmailProviderKind;
+      resendConfigured: boolean;
+      resendApiKeyConfigured: boolean;
+      emailFromConfigured: boolean;
+      emailReplyToConfigured: boolean;
+      smtpConfigured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
     };
@@ -123,7 +131,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const isProduction = nodeEnv === "production";
   const isVercel = hasEnv("VERCEL");
   const pushEnvVars = ["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"];
-  const emailEnvVars = ["SMTP_HOST", "SMTP_FROM", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS"];
+  const emailEnvVars = ["RESEND_API_KEY", "EMAIL_FROM", "EMAIL_REPLY_TO", "SMTP_HOST", "SMTP_FROM", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS"];
   const smsEnvVars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"];
   const searchEnvVars = ["PRODUCT_SEARCH_PROVIDER", "PRODUCT_SEARCH_API_URL", "PRODUCT_SEARCH_API_KEY"];
   const stripeEnvVars = ["STRIPE_CHECKOUT_ENABLED", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STORE_BASE_URL"];
@@ -138,8 +146,7 @@ export function getEnvironmentReport(): EnvironmentReport {
     "EBAY_CLIENT_SECRET",
     "EBAY_MARKETPLACE_ID"
   ];
-  const smtpHostConfigured = hasEnv("SMTP_HOST");
-  const smtpFromConfigured = hasEnv("SMTP_FROM");
+  const emailProvider = emailProviderConfig();
   const accountSidConfigured = hasEnv("TWILIO_ACCOUNT_SID");
   const authTokenConfigured = hasEnv("TWILIO_AUTH_TOKEN");
   const fromNumberConfigured = hasEnv("TWILIO_FROM_NUMBER");
@@ -175,10 +182,10 @@ export function getEnvironmentReport(): EnvironmentReport {
   const tcgplayerConfigured = hasEnv("TCGPLAYER_ACCESS_TOKEN") || (hasEnv("TCGPLAYER_PUBLIC_KEY") && hasEnv("TCGPLAYER_PRIVATE_KEY"));
   const ebaySoldConfigured = hasEnv("EBAY_CLIENT_ID") && hasEnv("EBAY_CLIENT_SECRET") && hasEnv("EBAY_MARKETPLACE_ID");
   const pushConfigured = publicKeyConfigured && privateKeyConfigured && subjectConfigured;
-  const emailConfigured = smtpHostConfigured && smtpFromConfigured;
+  const emailConfigured = emailProvider.configured;
   const smsConfigured = accountSidConfigured && authTokenConfigured && fromNumberConfigured;
   const pushHealthStatus = optionalProviderHealth(pushConfigured, anyEnv(pushEnvVars));
-  const emailHealthStatus = optionalProviderHealth(emailConfigured, anyEnv(emailEnvVars));
+  const emailHealthStatus = optionalProviderHealth(emailConfigured, emailProvider.partiallyConfigured);
   const smsHealthStatus = optionalProviderHealth(smsConfigured, anyEnv(smsEnvVars));
   const searchFallbackHealthStatus =
     searchFallbackConfigured && supportedSearchProvider
@@ -239,7 +246,7 @@ export function getEnvironmentReport(): EnvironmentReport {
     warnings.push("Browser push env vars are partially configured. Set NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT together or leave browser push disabled.");
   }
   if (emailHealthStatus === "misconfigured") {
-    warnings.push("SMTP email is partially configured. Set SMTP_HOST and SMTP_FROM together, with credentials if your provider requires them, or leave email disabled.");
+    warnings.push("Email provider is partially configured. Set RESEND_API_KEY and EMAIL_FROM together, configure SMTP_HOST and SMTP_FROM fallback together, or leave email disabled.");
   }
   if (smsHealthStatus === "misconfigured") {
     warnings.push("Twilio SMS is partially configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER together or leave SMS disabled.");
@@ -297,16 +304,24 @@ export function getEnvironmentReport(): EnvironmentReport {
       },
       email: {
         configured: emailConfigured,
+        provider: emailProvider.provider,
         healthStatus: emailHealthStatus,
         envVars: emailEnvVars,
         message:
           emailHealthStatus === "configured"
-            ? "SMTP email is configured for email notifications."
+            ? emailProvider.provider === "resend"
+              ? "Resend email is configured for customer notifications."
+              : "SMTP email fallback is configured for email notifications."
             : emailHealthStatus === "misconfigured"
-              ? "SMTP email has partial configuration."
-              : "SMTP email is optional and not configured.",
-        smtpHostConfigured,
-        smtpFromConfigured
+              ? "Email provider has partial configuration."
+              : "Email provider is optional and not configured.",
+        resendConfigured: emailProvider.resendConfigured,
+        resendApiKeyConfigured: emailProvider.resendApiKeyConfigured,
+        emailFromConfigured: emailProvider.emailFromConfigured,
+        emailReplyToConfigured: emailProvider.emailReplyToConfigured,
+        smtpConfigured: emailProvider.smtpConfigured,
+        smtpHostConfigured: emailProvider.smtpHostConfigured,
+        smtpFromConfigured: emailProvider.smtpFromConfigured
       },
       sms: {
         configured: smsConfigured,

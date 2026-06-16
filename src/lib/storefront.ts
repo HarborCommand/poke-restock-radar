@@ -5,6 +5,7 @@ import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
+import { emailProviderConfigured, sendEmailViaProvider } from "@/lib/email-provider";
 import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
 import {
   DEFAULT_STOREFRONT_PURCHASE_LIMIT,
@@ -528,31 +529,8 @@ type StorefrontCancelRefundInput = {
   idempotencyKey: string;
 };
 
-function smtpReady() {
-  return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_FROM?.trim());
-}
-
-async function sendStorefrontEmail(to: string, subject: string, text: string) {
-  if (!smtpReady()) return false;
-  const { createTransport } = await import("nodemailer");
-  const transporter = createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: process.env.SMTP_USER
-      ? {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS || ""
-        }
-      : undefined
-  });
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to,
-    subject,
-    text
-  });
-  return true;
+async function sendStorefrontEmail(to: string, subject: string, text: string, idempotencyKey?: string) {
+  return sendEmailViaProvider({ to, subject, text }, { idempotencyKey });
 }
 
 function customerEmailEventType(kind: CustomerEmailKind, status: CustomerEmailStatus) {
@@ -561,11 +539,6 @@ function customerEmailEventType(kind: CustomerEmailKind, status: CustomerEmailSt
 
 function customerEmailEventId(kind: CustomerEmailKind, orderId: string, key = "default") {
   return `customer_email.${kind}:${orderId}:${key}`;
-}
-
-function sanitizedEmailFailure(error: unknown) {
-  if (!error) return null;
-  return "SMTP send failed.";
 }
 
 function orderItemSummaryLines(order: StorefrontOrderWithItems) {
@@ -724,39 +697,44 @@ async function sendCustomerEmailNotificationOnce(input: {
     });
     return "missing_customer_email";
   }
-  if (!smtpReady()) {
+  if (!emailProviderConfigured()) {
     await completeCustomerEmailEvent({
       eventId: input.eventId,
       order: input.order,
       kind: input.kind,
       status: "not_configured",
       recipient,
-      detail: "SMTP is not configured. Set SMTP_HOST and SMTP_FROM to send customer emails."
+      detail: "Email provider is not configured. Set RESEND_API_KEY and EMAIL_FROM, or configure SMTP fallback."
     });
     return "not_configured";
   }
   try {
-    const sent = await sendStorefrontEmail(recipient, input.subject || "GameDayGrabs order update", input.text || "GameDayGrabs order update");
-    const status: CustomerEmailStatus = sent ? "sent" : "not_configured";
-    const sentAt = status === "sent" ? new Date() : null;
+    const result = await sendStorefrontEmail(
+      recipient,
+      input.subject || "GameDayGrabs order update",
+      input.text || "GameDayGrabs order update",
+      input.eventId
+    );
+    const status: CustomerEmailStatus = result.status === "sent" ? "sent" : result.status === "failed" ? "failed" : "not_configured";
     await completeCustomerEmailEvent({
       eventId: input.eventId,
       order: input.order,
       kind: input.kind,
       status,
       recipient,
-      sentAt,
-      detail: status === "sent" ? "Email sent to customer." : "SMTP is not configured."
+      sentAt: result.sentAt,
+      failureReason: result.failureReason,
+      detail: result.detail
     });
     return status;
-  } catch (error) {
+  } catch {
     await completeCustomerEmailEvent({
       eventId: input.eventId,
       order: input.order,
       kind: input.kind,
       status: "failed",
       recipient,
-      failureReason: sanitizedEmailFailure(error),
+      failureReason: "Email provider send failed.",
       detail: "Email delivery failed without blocking the order workflow."
     });
     return "failed";
@@ -777,7 +755,7 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     "",
     `Shipping method: ${order.shippingMethodLabel || "Not captured"}`,
     `Amount paid: $${order.total.toFixed(2)}`,
-    "You'll receive tracking once your order ships.",
+    "We'll send tracking once your order ships.",
     "",
     `Questions? Contact ${contactEmail}.`
   ].join("\n");
@@ -785,7 +763,7 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     order,
     kind: "order_confirmation",
     eventId: customerEmailEventId("order_confirmation", order.id),
-    subject: `GameDayGrabs order ${order.orderNumber} confirmation`,
+    subject: `GameDayGrabs order confirmed: ${order.orderNumber}`,
     text
   });
 }
@@ -947,6 +925,7 @@ async function sendStorefrontCancellationEmail(input: {
     "GameDayGrabs order cancellation/refund update",
     "",
     `Order: ${input.order.orderNumber}`,
+    "Order canceled/refunded.",
     `Reason: ${reasonLabel}`,
     input.adminNote ? `Note: ${input.adminNote}` : null,
     refundLine,
@@ -959,7 +938,7 @@ async function sendStorefrontCancellationEmail(input: {
     order: input.order,
     kind: "refund_cancellation",
     eventId: customerEmailEventId("refund_cancellation", input.order.id, input.idempotencyKey),
-    subject: `GameDayGrabs order ${input.order.orderNumber} cancellation/refund update`,
+    subject: `GameDayGrabs order update: ${input.order.orderNumber}`,
     text,
     recipient: to
   });
@@ -988,7 +967,7 @@ async function sendStorefrontShipmentEmail(order: StorefrontOrderWithItems) {
     order,
     kind: "shipment",
     eventId: customerEmailEventId("shipment", order.id),
-    subject: `GameDayGrabs order ${order.orderNumber} shipped`,
+    subject: `Your GameDayGrabs order has shipped: ${order.orderNumber}`,
     text
   });
 }
@@ -1012,7 +991,7 @@ async function sendStorefrontLocalPickupEmail(order: StorefrontOrderWithItems) {
     order,
     kind: "local_pickup",
     eventId: customerEmailEventId("local_pickup", order.id),
-    subject: `GameDayGrabs order ${order.orderNumber} pickup instructions`,
+    subject: `GameDayGrabs pickup instructions: ${order.orderNumber}`,
     text
   });
 }
@@ -1555,13 +1534,15 @@ export async function createContactMessage(input: {
   let emailError: string | null = null;
   if (contactEmail) {
     try {
-      emailSent = await sendStorefrontEmail(
+      const result = await sendStorefrontEmail(
         contactEmail,
         `GameDayGrabs contact: ${input.subject}`,
         `${input.name} <${input.email}> sent a storefront message.\n\n${input.message}\n\nInquiry: ${order.orderNumber}`
       );
+      emailSent = result.status === "sent";
+      emailError = result.status === "failed" ? result.failureReason : null;
     } catch (error) {
-      emailError = error instanceof Error ? error.message.slice(0, 240) : "SMTP send failed.";
+      emailError = error instanceof Error ? error.message.slice(0, 240) : "Email provider send failed.";
       await prisma.storefrontOrder.update({
         where: { id: order.id },
         data: { notes: `${order.notes}\n\nEmail delivery failed: ${emailError}` }
@@ -1573,7 +1554,7 @@ export async function createContactMessage(input: {
     order: storefrontOrderToDTO(order),
     emailSent,
     stored: true,
-    delivery: emailSent ? "email_sent" : emailError ? "stored_email_failed" : contactEmail ? "stored_smtp_missing" : "stored_contact_email_missing",
+    delivery: emailSent ? "email_sent" : emailError ? "stored_email_failed" : contactEmail ? "stored_email_provider_missing" : "stored_contact_email_missing",
     message: emailSent
       ? "Thanks. Your message was sent to GameDayGrabs."
       : "Thanks. Your message was saved and GameDayGrabs will review it."

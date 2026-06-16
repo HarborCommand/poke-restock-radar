@@ -1217,6 +1217,12 @@ export type AppHealthDTO = {
     };
     email: ProviderHealthMetadataDTO & {
       configured: boolean;
+      provider: "resend" | "smtp" | "none";
+      resendConfigured: boolean;
+      resendApiKeyConfigured: boolean;
+      emailFromConfigured: boolean;
+      emailReplyToConfigured: boolean;
+      smtpConfigured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
     };

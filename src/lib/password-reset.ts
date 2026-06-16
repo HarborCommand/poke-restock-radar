@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
+import { sendEmailViaProvider } from "@/lib/email-provider";
 import type { SessionUser } from "@/types/radar";
 
 const RESET_TOKEN_MINUTES = 30;
@@ -15,27 +16,8 @@ function appUrl() {
   return "http://localhost:3020";
 }
 
-function smtpReady() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
-}
-
 async function sendPasswordResetEmail(email: string, resetUrl: string) {
-  if (!smtpReady()) return false;
-  const { createTransport } = await import("nodemailer");
-  const transporter = createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: process.env.SMTP_USER
-      ? {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS || ""
-        }
-      : undefined
-  });
-
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
+  const result = await sendEmailViaProvider({
     to: email,
     subject: "Poke Restock Radar password reset",
     text: [
@@ -47,7 +29,7 @@ async function sendPasswordResetEmail(email: string, resetUrl: string) {
       "If you did not request this, ignore this email. No checkout or retailer account action is connected to this app."
     ].join("\n")
   });
-  return true;
+  return result.status === "sent";
 }
 
 export async function requestPasswordReset(emailInput: string) {

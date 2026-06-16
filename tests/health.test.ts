@@ -17,6 +17,9 @@ const controlledEnvKeys = [
   "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
   "VAPID_PRIVATE_KEY",
   "VAPID_SUBJECT",
+  "RESEND_API_KEY",
+  "EMAIL_FROM",
+  "EMAIL_REPLY_TO",
   "SMTP_HOST",
   "SMTP_FROM",
   "SMTP_PORT",
@@ -115,13 +118,42 @@ test("health stays OK when required systems pass and optional providers are disa
 });
 
 test("health warns when an optional provider is partially configured", () => {
-  withEnv({ SMTP_HOST: "smtp.example.com" }, () => {
+  withEnv({ RESEND_API_KEY: "re_test_secret" }, () => {
     const report = getEnvironmentReport();
 
     assert.equal(report.providers.email.healthStatus, "misconfigured");
-    assert.match(report.warnings.join("\n"), /SMTP email is partially configured/);
+    assert.equal(report.providers.email.provider, "none");
+    assert.equal(report.providers.email.resendApiKeyConfigured, true);
+    assert.equal(report.providers.email.emailFromConfigured, false);
+    assert.match(report.warnings.join("\n"), /Email provider is partially configured/);
     assert.equal(statusForReport(report.warnings), "WARN");
   });
+});
+
+test("health reports Resend as the preferred configured email provider without exposing values", () => {
+  withEnv(
+    {
+      RESEND_API_KEY: "re_private_health_value",
+      EMAIL_FROM: "GameDayGrabs Orders <orders@example.com>",
+      EMAIL_REPLY_TO: "support@example.com",
+      SMTP_HOST: "smtp.example.com",
+      SMTP_FROM: "smtp@example.com"
+    },
+    () => {
+      const report = getEnvironmentReport();
+      const serialized = JSON.stringify(report);
+
+      assert.equal(report.providers.email.healthStatus, "configured");
+      assert.equal(report.providers.email.provider, "resend");
+      assert.equal(report.providers.email.resendConfigured, true);
+      assert.equal(report.providers.email.smtpConfigured, true);
+      assert.equal(report.providers.email.emailReplyToConfigured, true);
+      assert.match(report.providers.email.envVars.join(","), /RESEND_API_KEY/);
+      assert.doesNotMatch(serialized, /re_private_health_value/);
+      assert.doesNotMatch(serialized, /orders@example\.com/);
+      assert.doesNotMatch(serialized, /support@example\.com/);
+    }
+  );
 });
 
 test("health is ERROR when a required database check fails", () => {
@@ -157,6 +189,7 @@ test("health provider report does not serialize secret values", () => {
       assert.doesNotMatch(serialized, /pk_test_public_health_value/);
       assert.doesNotMatch(serialized, /sk_test_private_health_value/);
       assert.doesNotMatch(serialized, /whsec_private_health_value/);
+      assert.doesNotMatch(serialized, /re_private/);
       assert.doesNotMatch(serialized, /postgresql:\/\/example\.invalid/);
     }
   );

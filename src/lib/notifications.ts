@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { emailProviderConfigured, sendEmailViaProvider } from "@/lib/email-provider";
 import { exactProductActionUrl } from "@/lib/product-identity";
 import { browserNotificationPayload, notificationRouteForAlert, sendPushAlertToUser, sendTestBrowserPush } from "@/lib/push";
 import type { Priority, SessionUser } from "@/types/radar";
@@ -218,32 +219,9 @@ async function createSuppressedAlert(input: {
   });
 }
 
-function smtpReady() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
-}
-
 async function sendEmail(to: string, subject: string, text: string) {
-  if (!smtpReady()) return false;
-  const { createTransport } = await import("nodemailer");
-  const transporter = createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: process.env.SMTP_USER
-      ? {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS || ""
-        }
-      : undefined
-  });
-
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to,
-    subject,
-    text
-  });
-  return true;
+  const result = await sendEmailViaProvider({ to, subject, text });
+  return result.status === "sent";
 }
 
 function twilioReady() {
@@ -476,7 +454,7 @@ export async function deliverAlert(payload: AlertPayload): Promise<DeliveryResul
           channel: "email",
           status: "skipped",
           reason: "provider_not_configured",
-          detail: "Email was enabled but SMTP was not configured.",
+          detail: "Email was enabled but the email provider was not configured.",
           dedupeKey
         });
       }
@@ -599,7 +577,7 @@ export async function sendTestAlert(user: SessionUser, channel: "inApp" | "email
   if (channel === "email") {
     if (!settings.emailTo) throw new Error("Add an email destination before sending a test email.");
     const sent = await sendEmail(settings.emailTo, title, reason);
-    if (!sent) throw new Error("SMTP env vars are not configured.");
+    if (!sent) throw new Error("Email provider env vars are not configured.");
     return { ok: true, channel, result: "Email test alert sent" };
   }
 
@@ -693,7 +671,7 @@ export async function sendTestAllAlerts(user: SessionUser) {
   const result = {
     ok: true,
     inApp: { created: routePayloads.length },
-    email: { status: "skipped", detail: "Email alerts are disabled for this user or SMTP is not configured." },
+    email: { status: "skipped", detail: "Email alerts are disabled for this user or the email provider is not configured." },
     sms: { status: "skipped", detail: "SMS alerts are disabled for this user or Twilio is not configured." },
     browserPush: { status: "skipped", detail: "Browser push is disabled or no active subscription exists." },
     routes: routePayloads.map((payload) => ({
@@ -704,15 +682,17 @@ export async function sendTestAllAlerts(user: SessionUser) {
     }))
   };
 
-  if (settings.email && settings.emailTo && smtpReady()) {
-    await sendEmail(
+  if (settings.email && settings.emailTo && emailProviderConfigured()) {
+    const sent = await sendEmail(
       settings.emailTo,
       "Poke Restock Radar all-alert test",
       "All-alert test created in-app route checks and confirms email delivery is active."
     );
-    result.email = { status: "sent", detail: `Sent to ${settings.emailTo}` };
+    result.email = sent
+      ? { status: "sent", detail: `Sent to ${settings.emailTo}` }
+      : { status: "skipped", detail: "Email provider did not send the all-alert test." };
   } else if (settings.email) {
-    result.email = { status: "skipped", detail: "Email is enabled but SMTP or destination is missing." };
+    result.email = { status: "skipped", detail: "Email is enabled but the email provider or destination is missing." };
   }
 
   if (settings.sms && settings.phone && twilioReady()) {
