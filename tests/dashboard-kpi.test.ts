@@ -1175,6 +1175,12 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(app, /Mark Packing/);
   assert.match(app, /Mark Shipped/);
   assert.match(app, /Customer/);
+  assert.match(app, /Ship To/);
+  assert.match(app, /Payment Summary/);
+  assert.match(app, /Profit Summary/);
+  assert.match(app, /Shipping Summary/);
+  assert.match(app, /Customer Notifications/);
+  assert.match(app, /Advanced Details/);
   assert.match(app, /Shipping address/);
   assert.match(app, /Billing address/);
   assert.match(app, /Stripe customer/);
@@ -1197,13 +1203,21 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(css, /storefront-address-lines \{[\s\S]*display: grid;[\s\S]*gap: 2px;/);
 
   const orderModal = app.slice(app.indexOf("function StorefrontOrderDetailsModal"), app.indexOf("function DetailStat"));
-  const customerSection = orderModal.slice(orderModal.indexOf("<h3>Customer</h3>"), orderModal.indexOf("<h3>Order</h3>"));
-  assert.match(customerSection, /value=\{order\.customerEmail \|\| "Not provided"\}/);
-  assert.match(customerSection, /value=\{order\.customerPhone \|\| "Not provided"\}/);
+  const customerSection = orderModal.slice(orderModal.indexOf('<section className="storefront-order-workspace-card storefront-order-customer-card">'), orderModal.indexOf("<h3>Ship To</h3>"));
+  const shipToSection = orderModal.slice(orderModal.indexOf("<h3>Ship To</h3>"), orderModal.indexOf("<h3>Items</h3>"));
+  const primaryWorkspace = orderModal.slice(orderModal.indexOf('<div className="storefront-order-workspace-grid">'), orderModal.indexOf('<details className="storefront-order-advanced-details">'));
+  const advancedDetails = orderModal.slice(orderModal.indexOf('<details className="storefront-order-advanced-details">'));
+  assert.match(customerSection, /\{order\.customerEmail \|\| "Not provided"\}/);
+  assert.match(customerSection, /\{order\.customerPhone \|\| "Not provided"\}/);
   assert.match(customerSection, /value=\{order\.stripeCustomerId \|\| "Not provided"\}/);
-  assert.match(customerSection, /<StorefrontAddressLines address=\{order\.shippingAddress\} \/>/);
-  assert.match(customerSection, /<StorefrontAddressLines address=\{order\.billingAddress\} \/>/);
+  assert.match(shipToSection, /<StorefrontAddressLines address=\{order\.shippingAddress\} \/>/);
+  assert.match(shipToSection, /<StorefrontAddressLines address=\{order\.billingAddress\} \/>/);
   assert.doesNotMatch(customerSection, /Not saved|Not collected|Not stored|formatStorefrontAddress|JSON\.stringify|<pre|<code/);
+  assert.doesNotMatch(primaryWorkspace, /Stripe session|Payment intent|Payment Verification|Inventory Reservations/);
+  assert.match(advancedDetails, /Stripe session/);
+  assert.match(advancedDetails, /Payment intent/);
+  assert.match(advancedDetails, /Payment Verification/);
+  assert.match(advancedDetails, /Inventory Reservations/);
   assert.doesNotMatch(orderModal, /email not saved/);
 
   assert.match(types, /isNewPaidOrder: boolean/);

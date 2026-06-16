@@ -309,17 +309,21 @@ test("Admin Orders renders saved customer and address data instead of old placeh
   const app = readProjectFile("src/components/RadarApp.tsx");
   const css = readProjectFile("src/app/globals.css");
   const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function DetailStat");
-  const customerSection = sourceSlice(orderModal, "<h3>Customer</h3>", "<h3>Order</h3>");
+  const customerSection = sourceSlice(orderModal, '<section className="storefront-order-workspace-card storefront-order-customer-card">', "<h3>Ship To</h3>");
+  const shipToSection = sourceSlice(orderModal, "<h3>Ship To</h3>", "<h3>Items</h3>");
 
   assert.match(app, /function formatStorefrontAddressLines/);
   assert.match(app, /className="storefront-address-lines"/);
   assert.match(css, /\.storefront-address-lines \{[\s\S]*display: grid;[\s\S]*gap: 2px;/);
-  assert.match(customerSection, /value=\{order\.customerEmail \|\| "Not provided"\}/);
-  assert.match(customerSection, /value=\{order\.customerPhone \|\| "Not provided"\}/);
+  assert.match(customerSection, /\{order\.customerEmail \|\| "Not provided"\}/);
+  assert.match(customerSection, /\{order\.customerPhone \|\| "Not provided"\}/);
   assert.match(customerSection, /value=\{order\.stripeCustomerId \|\| "Not provided"\}/);
-  assert.match(customerSection, /<StorefrontAddressLines address=\{order\.shippingAddress\} \/>/);
-  assert.match(customerSection, /<StorefrontAddressLines address=\{order\.billingAddress\} \/>/);
+  assert.match(shipToSection, /<StorefrontAddressLines address=\{order\.shippingAddress\} \/>/);
+  assert.match(shipToSection, /<StorefrontAddressLines address=\{order\.billingAddress\} \/>/);
+  assert.match(shipToSection, /Same as shipping/);
+  assert.match(shipToSection, /Copy Address/);
   assert.doesNotMatch(customerSection, /email not saved|Not saved|Not collected|Not stored|JSON\.stringify|<pre|<code/);
+  assert.doesNotMatch(shipToSection, /email not saved|Not saved|Not collected|Not stored|JSON\.stringify|<pre|<code/);
 });
 
 test("Admin Orders renders an operational shipping section without raw payment details", () => {
@@ -327,7 +331,7 @@ test("Admin Orders renders an operational shipping section without raw payment d
   const css = readProjectFile("src/app/globals.css");
   const storefront = readProjectFile("src/lib/storefront.ts");
   const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontCancelRefundModal");
-  const shippingSection = sourceSlice(orderModal, '<section className="storefront-shipping-section">', "<section>");
+  const shippingSection = sourceSlice(orderModal, '<section className="storefront-order-workspace-card storefront-shipping-section">', "<section className=\"storefront-order-workspace-card\">");
   const storefrontSummary = sourceSlice(storefront, "export async function storefrontSummary", "async function returnOrderInventory");
 
   assert.match(app, /function formatShippingPackageWeight/);
@@ -337,23 +341,20 @@ test("Admin Orders renders an operational shipping section without raw payment d
   assert.match(app, /order\.shippingCharged - order\.shippingCost/);
   assert.match(app, /function storefrontOrderShippingReadiness/);
 
-  assert.match(shippingSection, /<h3>Shipping<\/h3>/);
-  assert.match(shippingSection, /Shipping method selected/);
-  assert.match(shippingSection, /Shipping charged to customer/);
-  assert.match(shippingSection, /Package weight snapshot/);
-  assert.match(shippingSection, /Package profile snapshot/);
-  assert.match(shippingSection, /Package dimensions snapshot/);
+  assert.match(shippingSection, /<h3>Fulfillment<\/h3>/);
+  assert.match(shippingSection, /Shipping method/);
+  assert.match(shippingSection, /Shipping charged/);
+  assert.match(shippingSection, /Package weight/);
+  assert.match(shippingSection, /Package profile/);
   assert.match(shippingSection, /Actual shipping cost/);
-  assert.match(shippingSection, /Shipping profit\/loss/);
   assert.match(shippingSection, /Carrier/);
   assert.match(shippingSection, /Tracking number/);
-  assert.match(shippingSection, /Shipped at/);
   assert.match(shippingSection, /Fulfillment status/);
   assert.match(shippingSection, /name="shippingCost"/);
   assert.match(shippingSection, /name="carrier"/);
   assert.match(shippingSection, /name="trackingNumber"/);
-  assert.match(shippingSection, /name="fulfillmentStatus"/);
   assert.match(shippingSection, /Mark Shipped requires carrier and tracking number/);
+  assert.match(shippingSection, /Save Fulfillment/);
   assert.match(orderModal, /const canFulfillOrder = storefrontOrderCanFulfill\(order\)/);
   assert.match(orderModal, /const shipmentDetailsSaved = storefrontOrderHasShipmentDetails\(order\)/);
   assert.match(orderModal, /Print\/View Packing Slip/);
@@ -366,7 +367,7 @@ test("Admin Orders renders an operational shipping section without raw payment d
 
   assert.match(css, /storefront-shipping-section/);
   assert.match(css, /storefront-shipping-form/);
-  assert.match(css, /storefront-shipping-head,[\s\S]*storefront-shipping-form \{[\s\S]*grid-template-columns: 1fr/);
+  assert.match(css, /storefront-fulfillment-snapshot/);
 
   assert.match(storefrontSummary, /ordersToShipCount/);
   assert.match(storefrontSummary, /paymentStatus: "paid", fulfillmentStatus: \{ in: \["unfulfilled", "packing", "pickup_ready"\] \}/);
@@ -378,8 +379,10 @@ test("archived order detail is read-only while active fulfillment controls are p
   const css = readProjectFile("src/app/globals.css");
   const storefront = readProjectFile("src/lib/storefront.ts");
   const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontPackingSlip");
-  const shippingSection = sourceSlice(orderModal, '<section className="storefront-shipping-section">', "<section>");
-  const fulfillmentSection = sourceSlice(orderModal, '<section className="storefront-order-notes-section">', "</section>");
+  const shippingSection = sourceSlice(orderModal, '<section className="storefront-order-workspace-card storefront-shipping-section">', "<section className=\"storefront-order-workspace-card\">");
+  const fulfillmentSection = sourceSlice(orderModal, '<section className="storefront-order-workspace-card storefront-order-notes-section">', "<details className=\"storefront-order-advanced-details\">");
+  const primaryWorkspace = sourceSlice(orderModal, '<div className="storefront-order-workspace-grid">', '<details className="storefront-order-advanced-details">');
+  const advancedDetails = sourceSlice(orderModal, '<details className="storefront-order-advanced-details">', "</details>");
   const updateStorefrontOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(finalOrder);");
 
   assert.match(app, /function storefrontOrderDetailIsReadOnly\(order: StorefrontOrderDTO\)/);
@@ -392,6 +395,10 @@ test("archived order detail is read-only while active fulfillment controls are p
 
   assert.match(orderModal, /const canFulfillOrder = storefrontOrderCanFulfill\(order\)/);
   assert.match(orderModal, /const canShowPackingSlip = order\.items\.length > 0 && \(canFulfillOrder \|\| orderDetailReadOnly \|\| order\.fulfillmentStatus === "shipped"\)/);
+  assert.match(orderModal, /storefront-order-workspace-backdrop/);
+  assert.match(orderModal, /storefront-order-workspace-header/);
+  assert.match(orderModal, /storefront-order-action-bar/);
+  assert.match(orderModal, /storefront-order-workspace-grid/);
   assert.match(orderModal, /orderDetailReadOnly \? "View Historical Packing Slip" : "Print\/View Packing Slip"/);
   assert.match(orderModal, /orderDetailReadOnly \? "View Historical Packing Slip Preview" : "View Packing Slip Preview"/);
   assert.match(orderModal, /\{canFulfillOrder \? \(/);
@@ -408,15 +415,28 @@ test("archived order detail is read-only while active fulfillment controls are p
   assert.match(orderModal, /Net revenue/);
 
   assert.match(shippingSection, /\{orderDetailReadOnly \? \([\s\S]*className="storefront-shipping-readonly-summary"[\s\S]*Shipping and fulfillment are read-only for this historical order\.[\s\S]*\) : \([\s\S]*<form/);
-  assert.match(shippingSection, /name="fulfillmentStatus"/);
   assert.match(shippingSection, /name="carrier"/);
   assert.match(shippingSection, /name="trackingNumber"/);
   assert.match(shippingSection, /name="shippingCost"/);
-  assert.match(shippingSection, /Save Shipping/);
+  assert.match(shippingSection, /Save Fulfillment/);
   assert.match(fulfillmentSection, /\{orderDetailReadOnly \? \([\s\S]*className="storefront-fulfillment-readonly-summary"[\s\S]*Order status[\s\S]*Fulfillment status[\s\S]*Order notes[\s\S]*\) : \([\s\S]*<form/);
   assert.match(fulfillmentSection, /name="status"/);
   assert.match(fulfillmentSection, /name="notes"/);
   assert.match(fulfillmentSection, /Save Fulfillment/);
+  assert.match(primaryWorkspace, /Customer/);
+  assert.match(primaryWorkspace, /Ship To/);
+  assert.match(primaryWorkspace, /Items/);
+  assert.match(primaryWorkspace, /Payment Summary/);
+  assert.match(primaryWorkspace, /Profit Summary/);
+  assert.match(primaryWorkspace, /Shipping Summary/);
+  assert.match(primaryWorkspace, /Customer Notifications/);
+  assert.match(primaryWorkspace, /Timeline/);
+  assert.doesNotMatch(primaryWorkspace, /Stripe session|Payment intent|Payment Verification|Inventory Reservations/);
+  assert.match(advancedDetails, /Advanced Details/);
+  assert.match(advancedDetails, /Stripe session/);
+  assert.match(advancedDetails, /Payment intent/);
+  assert.match(advancedDetails, /Payment Verification/);
+  assert.match(advancedDetails, /Inventory Reservations/);
 
   assert.match(updateStorefrontOrder, /Canceled, refunded, or expired orders cannot be marked packing or shipped\./);
   assert.match(updateStorefrontOrder, /Only paid orders can be marked packing or shipped\./);
@@ -424,6 +444,9 @@ test("archived order detail is read-only while active fulfillment controls are p
   assert.match(css, /storefront-archived-detail-card/);
   assert.match(css, /storefront-shipping-readonly-summary/);
   assert.match(css, /storefront-fulfillment-readonly-summary/);
+  assert.match(css, /storefront-order-workspace/);
+  assert.match(css, /storefront-order-workspace-grid/);
+  assert.match(css, /storefront-order-advanced-details/);
   assert.doesNotMatch(orderModal, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
 });
 

@@ -7006,30 +7006,53 @@ function StorefrontOrderDetailsModal({
   const canShowPackingSlip = order.items.length > 0 && (canFulfillOrder || orderDetailReadOnly || order.fulfillmentStatus === "shipped");
   const packingSlipLabel = orderDetailReadOnly ? "View Historical Packing Slip" : "Print/View Packing Slip";
   const packingSlipPreviewLabel = orderDetailReadOnly ? "View Historical Packing Slip Preview" : "View Packing Slip Preview";
+  const billingMatchesShipping =
+    Boolean(order.shippingAddress && order.billingAddress) &&
+    formatStorefrontAddressLines(order.shippingAddress).join("\n") === formatStorefrontAddressLines(order.billingAddress).join("\n");
+  const primaryNotification = order.customerEmailNotifications[0] ?? null;
   const [cancelRefundOpen, setCancelRefundOpen] = useState(false);
   const [cancelRefundKey, setCancelRefundKey] = useState("");
   const openCancelRefund = () => {
     setCancelRefundKey(globalThis.crypto?.randomUUID?.() ?? `cancel-refund-${order.id}-${Date.now()}`);
     setCancelRefundOpen(true);
   };
+  const copyShippingAddress = () => {
+    const address = formatStorefrontAddressLines(order.shippingAddress).join("\n");
+    if (!address || address === "Not provided") return;
+    void navigator.clipboard?.writeText(address);
+  };
   return (
-    <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`Order ${order.orderNumber}`}>
-        <header className="inventory-details-header">
+    <div className="inventory-modal-backdrop storefront-order-workspace-backdrop" role="presentation">
+      <div className="inventory-details-modal storefront-order-workspace" role="dialog" aria-modal="true" aria-label={`Order ${order.orderNumber}`}>
+        <header className="storefront-order-workspace-header">
           <div className="storefront-order-avatar"><ShoppingBag size={24} /></div>
-          <div>
-            <h2>{order.orderNumber}</h2>
-            <p>{order.customerName || "Customer"} - {order.customerEmail || "Not provided"}</p>
+          <div className="storefront-order-heading">
+            <div>
+              <h2>{order.orderNumber}</h2>
+              <p>Placed {dateTime(order.createdAt)} <span aria-hidden="true">-</span> {order.itemCount} item{order.itemCount === 1 ? "" : "s"}</p>
+            </div>
+            <div className="storefront-order-workspace-badges" aria-label="Order status">
+              <span className={`chip compact-chip ${storefrontOrderPaymentTone(order)}`}>{formatStatus(order.paymentStatus)}</span>
+              <span className={`chip compact-chip ${canFulfillOrder ? "watch" : orderDetailReadOnly ? "neutral" : "good"}`}>{formatStatus(order.fulfillmentStatus)}</span>
+              {canFulfillOrder ? <span className="chip compact-chip good">Ready for fulfillment</span> : null}
+              {orderDetailReadOnly ? <span className="chip compact-chip neutral">Archived order</span> : null}
+            </div>
+          </div>
+          <div className="storefront-order-header-total" aria-label="Order total paid">
+            <small>Total paid</small>
+            <strong>{money(order.total)}</strong>
+            <span>{order.sourceLabel}</span>
           </div>
           <button className="icon-button" type="button" aria-label="Close order details" onClick={onClose}>
             <X size={18} />
           </button>
         </header>
-        <section className="inventory-details-actions">
+
+        <section className="storefront-order-action-bar" aria-label="Order actions">
           {canFulfillOrder ? (
             <>
               <button
-                className="mini-action"
+                className="primary-action"
                 disabled={busy}
                 title="Mark this paid order as packing."
                 type="button"
@@ -7045,8 +7068,21 @@ function StorefrontOrderDetailsModal({
                   )
                 }
               >
+                <PackageSearch size={16} />
                 Mark Packing
               </button>
+              {canShowPackingSlip ? (
+                <button className="mini-action" type="button" onClick={() => window.print()}>
+                  <Printer size={14} />
+                  {packingSlipLabel}
+                </button>
+              ) : null}
+              {order.canCancelOrRefund && !(order.paymentStatus === "paid" && order.refundableAmount <= 0) ? (
+                <button className="mini-action danger" disabled={busy} type="button" onClick={openCancelRefund}>
+                  <RotateCcw size={14} />
+                  Cancel / Refund
+                </button>
+              ) : null}
               <button
                 className="mini-action"
                 disabled={busy || !shipmentDetailsSaved}
@@ -7070,26 +7106,24 @@ function StorefrontOrderDetailsModal({
                   )
                 }
               >
+                <PackageSearch size={14} />
                 Mark Shipped
               </button>
               {!shipmentDetailsSaved ? <span className="fulfillment-locked-note">Enter carrier and tracking number before marking shipped.</span> : null}
             </>
           ) : (
-            <span className="fulfillment-locked-note">{storefrontOrderIsCanceledOrRefunded(order) ? "Historical order - no fulfillment action needed." : "Only active paid orders can be marked packing or shipped."}</span>
+            <>
+              {canShowPackingSlip ? (
+                <button className="mini-action" type="button" onClick={() => window.print()}>
+                  <Printer size={14} />
+                  {packingSlipLabel}
+                </button>
+              ) : null}
+              <span className="fulfillment-locked-note">{storefrontOrderIsCanceledOrRefunded(order) ? "Historical order - no fulfillment action needed." : "Only active paid orders can be marked packing or shipped."}</span>
+            </>
           )}
-          {canShowPackingSlip ? (
-            <button className="mini-action" type="button" onClick={() => window.print()}>
-              <Printer size={14} />
-              {packingSlipLabel}
-            </button>
-          ) : null}
-          {order.canCancelOrRefund && !(order.paymentStatus === "paid" && order.refundableAmount <= 0) ? (
-            <button className="mini-action danger" disabled={busy} type="button" onClick={openCancelRefund}>
-              <RotateCcw size={14} />
-              Cancel / Refund
-            </button>
-          ) : null}
         </section>
+
         {canShowPackingSlip ? (
           <>
             <details className="packing-slip-preview-shell">
@@ -7104,6 +7138,7 @@ function StorefrontOrderDetailsModal({
             </div>
           </>
         ) : null}
+
         {orderDetailReadOnly ? (
           <section className="storefront-archived-detail-card" aria-label="Archived order fulfillment status">
             <div>
@@ -7119,81 +7154,91 @@ function StorefrontOrderDetailsModal({
             </div>
           </section>
         ) : null}
-        <div className="inventory-details-grid">
-          <section>
+
+        <div className="storefront-order-workspace-grid">
+          <div className="storefront-order-primary-column">
+          <section className="storefront-order-workspace-card storefront-order-customer-card">
             <h3>Customer</h3>
-            <div className="detail-stat-grid">
-              <DetailStat label="Name" value={order.customerName || "Not provided"} />
-              <DetailStat label="Email" value={order.customerEmail || "Not provided"} />
-              <DetailStat label="Phone" value={order.customerPhone || "Not provided"} />
-              <DetailStat label="Shipping address" value={<StorefrontAddressLines address={order.shippingAddress} />} />
-              <DetailStat label="Billing address" value={<StorefrontAddressLines address={order.billingAddress} />} />
-              <DetailStat label="Stripe customer" value={order.stripeCustomerId || "Not provided"} tone={order.stripeCustomerId ? "good" : "neutral"} />
+            <div className="storefront-order-customer-grid">
+              <div className="storefront-order-person">
+                <strong>{order.customerName || "Customer"}</strong>
+                <span>{order.customerEmail || "Not provided"}</span>
+                <span>{order.customerPhone || "Not provided"}</span>
+              </div>
               <DetailStat label="Order history" value={order.customerOrderCount !== null ? `${order.customerOrderCount} order${order.customerOrderCount === 1 ? "" : "s"}` : "Not available"} />
               <DetailStat label="Customer spent" value={order.customerTotalSpent !== null ? money(order.customerTotalSpent) : "Not available"} />
+              <DetailStat label="Stripe customer" value={order.stripeCustomerId || "Not provided"} tone={order.stripeCustomerId ? "good" : "neutral"} />
             </div>
           </section>
-          <section>
-            <h3>Order</h3>
-            <div className="detail-stat-grid">
-              <DetailStat label="Source" value={order.sourceLabel} />
-              <DetailStat label="Order status" value={formatStatus(order.status)} />
-              <DetailStat label="Payment" value={formatStatus(order.paymentStatus)} tone={order.paymentStatus === "paid" ? "good" : "bad"} />
-              <DetailStat label="Fulfillment" value={formatStatus(order.fulfillmentStatus)} />
-              <DetailStat label="Stripe session" value={order.stripeCheckoutSessionId ? "Stored" : "Not stored"} tone={order.stripeCheckoutSessionId ? "good" : "bad"} />
-              <DetailStat label="Payment intent" value={order.stripePaymentIntentId ? "Stored" : "Not stored"} tone={order.stripePaymentIntentId ? "good" : "bad"} />
-              <DetailStat label="Refund status" value={order.refundStatus ? formatStatus(order.refundStatus) : "Not refunded"} tone={order.refundStatus && order.refundStatus !== "not_applicable" ? "bad" : "neutral"} />
-              <DetailStat label="Refunded amount" value={money(order.refundedAmount)} />
-              <DetailStat label="Refundable remaining" value={money(order.refundableAmount)} />
-              <DetailStat label="Stripe refund" value={order.stripeRefundId ? "Stored" : "Not stored"} tone={order.stripeRefundId ? "good" : "neutral"} />
-              <DetailStat label="Refund reason" value={order.refundReason || "Not provided"} />
-              <DetailStat label="Stock returned" value={order.stockReturnStatus ? formatStatus(order.stockReturnStatus) : "Not returned"} tone={order.stockReturnedAt ? "good" : "neutral"} />
-              <DetailStat label="Customer notification" value={order.customerCancellationEmailStatus ? formatStatus(order.customerCancellationEmailStatus) : "Not sent"} tone={order.customerCancellationEmailSentAt ? "good" : "neutral"} />
+
+          <section className="storefront-order-workspace-card">
+            <div className="storefront-order-section-heading">
+              <h3>Ship To</h3>
+              <button className="mini-action" type="button" onClick={copyShippingAddress}>
+                <ClipboardList size={14} />
+                Copy Address
+              </button>
             </div>
-          </section>
-          <section className="storefront-email-section">
-            <h3>Email notifications</h3>
-            {order.customerEmailNotifications.length ? (
-              <div className="storefront-email-log">
-                {order.customerEmailNotifications.map((notification) => (
-                  <article key={notification.id}>
-                    <div>
-                      <strong>{notification.label}</strong>
-                      <span>{notification.recipient || order.customerEmail || "No customer email on file"}</span>
-                    </div>
-                    <span className={`chip compact-chip ${emailStatusTone(notification.status)}`}>{emailStatusLabel(notification.status)}</span>
-                    <small>Sent: {notification.sentAt ? dateTime(notification.sentAt) : "Not sent"}</small>
-                    <small>Updated: {dateTime(notification.updatedAt)}</small>
-                    {notification.detail ? <small>Detail: {notification.detail}</small> : null}
-                    {notification.failureReason ? <small>Reason: {notification.failureReason}</small> : null}
-                  </article>
-                ))}
+            <div className="storefront-order-address-grid">
+              <div>
+                <small>Shipping address</small>
+                <strong>{order.shippingAddress?.name || order.customerName || "Customer"}</strong>
+                <StorefrontAddressLines address={order.shippingAddress} />
               </div>
-            ) : (
-              <p className="form-helper publish-ready-note">No customer lifecycle emails recorded yet.</p>
-            )}
+              <div>
+                <small>Billing address</small>
+                {billingMatchesShipping ? <strong>Same as shipping</strong> : <StorefrontAddressLines address={order.billingAddress} />}
+              </div>
+            </div>
           </section>
-          <section className="storefront-shipping-section">
+
+          <section className="storefront-order-workspace-card">
+            <h3>Items</h3>
+            <div className="storefront-order-items">
+              {order.items.length ? (
+                order.items.map((item) => (
+                  <article className="storefront-order-item storefront-order-line-item" key={item.id}>
+                    <span>{item.imageUrl ? <Image src={item.imageUrl} alt={item.publicTitle} width={72} height={72} unoptimized /> : <ShoppingBag size={22} />}</span>
+                    <div>
+                      <strong>{item.publicTitle}</strong>
+                      <small>SKU/UPC: {[item.sku, item.upc].filter(Boolean).join(" / ") || "Not provided"}</small>
+                      <small>SKU/TCIN: {item.sku || item.tcin || "missing"} - DPCI {item.dpci || "missing"}</small>
+                      <small>Cost basis {money(item.costBasis)} - Profit {money(item.profitLoss)}</small>
+                    </div>
+                    <div className="storefront-order-item-metrics">
+                      <span><small>Qty</small><strong>{item.quantity}</strong></span>
+                      <span><small>Unit price</small><strong>{money(item.unitPrice)}</strong></span>
+                      <span><small>Line total</small><strong>{money(item.lineTotal)}</strong></span>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <article className="storefront-order-item storefront-order-line-item">
+                  <span><Mail size={22} /></span>
+                  <div>
+                    <strong>Storefront contact inquiry</strong>
+                    <small>No cart items. Read the message in Order notes.</small>
+                  </div>
+                  <b>Message</b>
+                </article>
+              )}
+            </div>
+          </section>
+
+          <section className="storefront-order-workspace-card storefront-shipping-section">
             <div className="storefront-shipping-head">
               <div>
-                <h3>Shipping</h3>
-                <p>Selected checkout shipping, fulfillment details, and actual shipment cost.</p>
+                <h3>Fulfillment</h3>
+                <p>Shipping method, package snapshot, carrier, tracking, and actual shipment cost.</p>
               </div>
               <span className={`chip compact-chip ${order.needsFulfillment ? "watch" : "neutral"}`}>{shippingReadiness}</span>
             </div>
-            <div className="detail-stat-grid storefront-shipping-metrics">
-              <DetailStat label="Shipping method selected" value={order.shippingMethodLabel || "Not captured"} />
-              <DetailStat label="Shipping charged to customer" value={money(order.shippingCharged)} tone={order.shippingCharged > 0 ? "good" : "neutral"} />
-              <DetailStat label="Package weight snapshot" value={formatShippingPackageWeight(order)} />
-              <DetailStat label="Package profile snapshot" value={formatShippingPackageProfile(order)} />
-              <DetailStat label="Package dimensions snapshot" value={formatShippingPackageDimensions(order)} />
-              <DetailStat label="Actual shipping cost" value={money(order.shippingCost)} />
-              <DetailStat label="Shipping profit/loss" value={moneyDelta(shippingProfitLoss)} tone={shippingProfitTone} />
-              <DetailStat label="Carrier" value={order.carrier || "Not provided"} />
-              <DetailStat label="Tracking number" value={order.trackingNumber || "Not provided"} />
-              <DetailStat label="Shipped at" value={order.shippedAt ? dateTime(order.shippedAt) : "Not shipped"} />
+            <div className="storefront-fulfillment-snapshot">
               <DetailStat label="Fulfillment status" value={formatStatus(order.fulfillmentStatus)} tone={shippingActionsLocked ? "bad" : order.needsFulfillment ? "good" : "neutral"} />
-              <DetailStat label="Shipping warnings" value={order.shippingWarnings.length ? order.shippingWarnings.join(" ") : "None"} />
+              <DetailStat label="Shipping method" value={order.shippingMethodLabel || "Not captured"} />
+              <DetailStat label="Shipping charged" value={money(order.shippingCharged)} tone={order.shippingCharged > 0 ? "good" : "neutral"} />
+              <DetailStat label="Package profile" value={formatShippingPackageProfile(order)} />
+              <DetailStat label="Package weight" value={formatShippingPackageWeight(order)} />
             </div>
             {orderDetailReadOnly ? (
               <div className="storefront-shipping-readonly-summary">
@@ -7212,129 +7257,87 @@ function StorefrontOrderDetailsModal({
                   )
                 }
               >
-                <SelectInput
-                  name="fulfillmentStatus"
-                  label="Fulfillment status"
-                  defaultValue={order.fulfillmentStatus}
-                  disabled={shippingActionsLocked}
-                  options={["inquiry", "unfulfilled", "review_required", "packing", "shipped", "pickup_ready", "picked_up", "canceled"].map(optionFromString)}
-                />
                 <TextInput name="carrier" label="Carrier" defaultValue={order.carrier ?? ""} />
                 <TextInput name="trackingNumber" label="Tracking number" defaultValue={order.trackingNumber ?? ""} />
                 <TextInput name="shippingCost" label="Actual shipping cost" type="number" min="0" step="0.01" defaultValue={order.shippingCost || ""} />
-                <p className="form-helper publish-ready-note wide-field">Mark Shipped requires carrier and tracking number. To ship from this form, select Shipped and include both fields.</p>
+                <p className="form-helper publish-ready-note wide-field">Mark Shipped requires carrier and tracking number.</p>
                 <button className="primary-action" disabled={busy} type="submit">
                   <Save size={16} />
-                  {busyLabel === saveLabel ? "Saving" : "Save Shipping"}
+                  {busyLabel === saveLabel ? "Saving" : "Save Fulfillment"}
                 </button>
               </form>
             )}
           </section>
-          <section>
-            <h3>Items</h3>
-            <div className="storefront-order-items">
-              {order.items.length ? (
-                order.items.map((item) => (
-                  <article className="storefront-order-item" key={item.id}>
-                    <span>{item.imageUrl ? <Image src={item.imageUrl} alt={item.publicTitle} width={72} height={72} unoptimized /> : <ShoppingBag size={22} />}</span>
-                    <div>
-                      <strong>{item.publicTitle}</strong>
-                      <small>Qty {item.quantity} - {money(item.unitPrice)} each</small>
-                      <small>UPC {item.upc || "missing"} - SKU/TCIN {item.sku || item.tcin || "missing"} - DPCI {item.dpci || "missing"}</small>
-                      <small>Inventory item {item.inventoryItemId}</small>
-                      <small>Cost basis {money(item.costBasis)} - Profit {money(item.profitLoss)}</small>
-                    </div>
-                    <b>{money(item.lineTotal)}</b>
-                  </article>
-                ))
-              ) : (
-                <article className="storefront-order-item">
-                  <span><Mail size={22} /></span>
-                  <div>
-                    <strong>Storefront contact inquiry</strong>
-                    <small>No cart items. Read the message in Order notes.</small>
-                  </div>
-                  <b>Message</b>
-                </article>
-              )}
-            </div>
-          </section>
-          <section>
-            <h3>Totals</h3>
-            <div className="detail-stat-grid">
+          </div>
+
+          <aside className="storefront-order-summary-column">
+          <section className="storefront-order-workspace-card">
+            <h3>Payment Summary</h3>
+            <div className="storefront-order-summary-list">
               <DetailStat label="Subtotal" value={money(order.subtotal)} />
+              <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
               <DetailStat label="Total paid" value={money(order.total)} tone="good" />
               <DetailStat label="Refunded amount" value={money(order.refundedAmount)} tone={order.refundedAmount > 0 ? "bad" : "neutral"} />
               <DetailStat label="Net revenue" value={money(storefrontOrderNetRevenue(order))} tone={storefrontOrderNetRevenue(order) > 0 ? "good" : "neutral"} />
-              <DetailStat label="Estimated Stripe fee" value={money(order.stripeFeeEstimate)} />
+            </div>
+          </section>
+
+          <section className="storefront-order-workspace-card">
+            <h3>Profit Summary</h3>
+            <div className="storefront-order-summary-list">
               <DetailStat label="Cost basis" value={money(order.costBasis)} />
+              <DetailStat label="Estimated Stripe fee" value={money(order.stripeFeeEstimate)} />
+              <DetailStat label="Actual shipping cost" value={money(order.shippingCost)} />
               <DetailStat label="Estimated net profit" value={money(order.netProfit)} tone={order.netProfit >= 0 ? "good" : "bad"} />
               <DetailStat label="ROI" value={percent(order.roiPercent)} />
             </div>
-            <p className="form-helper publish-ready-note">Stripe fee is estimated until exact Stripe balance transaction fees are imported. Profit uses paid order totals, stock lot cost basis, estimated fees, and actual shipping cost when entered.</p>
+            <p className="form-helper publish-ready-note">Stripe fee is estimated until exact fees are imported.</p>
           </section>
-          <section>
-            <h3>Payment Verification</h3>
-            <div className="detail-stat-grid">
-              <DetailStat label="Payment status" value={order.paymentStatus} tone={order.paymentStatus === "paid" ? "good" : "bad"} />
-              <DetailStat label="Webhook event" value={completedPaymentEvent ? "Received" : "Not stored"} tone={completedPaymentEvent ? "good" : "bad"} />
-              <DetailStat label="Stripe session" value={order.stripeCheckoutSessionId ? "Stored" : "Missing"} tone={order.stripeCheckoutSessionId ? "good" : "bad"} />
-              <DetailStat label="Payment intent" value={order.stripePaymentIntentId ? "Stored" : "Missing"} tone={order.stripePaymentIntentId ? "good" : "bad"} />
-              <DetailStat label="Inventory finalization" value={inventoryFinalized ? "Complete" : "Review"} tone={inventoryFinalized ? "good" : "bad"} />
-              <DetailStat label="Paid at" value={order.paidAt ? dateTime(order.paidAt) : "Not paid"} tone={order.paidAt ? "good" : "bad"} />
-            </div>
-            <div className="compact-ledger-list">
-              {order.paymentEvents.length ? (
-                order.paymentEvents.slice(0, 4).map((event) => (
-                  <article key={event.id}>
-                    <strong>{event.eventType}</strong>
-                    <span>{dateTime(event.receivedAt)}</span>
-                    <small>Stored Stripe webhook event</small>
-                  </article>
-                ))
-              ) : (
-                <article>
-                  <strong>No Stripe events stored</strong>
-                  <span>Webhook has not been recorded for this order.</span>
-                </article>
-              )}
+
+          <section className="storefront-order-workspace-card">
+            <h3>Shipping Summary</h3>
+            <div className="storefront-order-summary-list">
+              <DetailStat label="Method" value={order.shippingMethodLabel || "Not captured"} />
+              <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
+              <DetailStat label="Package profile" value={formatShippingPackageProfile(order)} />
+              <DetailStat label="Package weight" value={formatShippingPackageWeight(order)} />
+              <DetailStat label="Package dimensions" value={formatShippingPackageDimensions(order)} />
+              <DetailStat label="Shipping warnings" value={order.shippingWarnings.length ? order.shippingWarnings.join(" ") : "None"} tone={order.shippingWarnings.length ? "bad" : "good"} />
             </div>
           </section>
-          <section>
-            <h3>Inventory Reservations</h3>
-            <div className="compact-ledger-list">
-              {order.reservations.length ? (
-                order.reservations.map((reservation) => (
-                  <article key={reservation.id}>
-                    <strong>{reservation.status}</strong>
-                    <span>Qty {reservation.quantity}</span>
-                    <span>Expires {dateTime(reservation.expiresAt)}</span>
-                    <span>{reservationStripeSessionLabel(reservation)}</span>
-                    <small>{reservationLifecycleLabel(reservation)}</small>
-                  </article>
-                ))
-              ) : (
-                <article>
-                  <strong>No reservation rows</strong>
-                  <span>Invoice/contact orders do not reserve stock.</span>
-                </article>
-              )}
+
+          <section className="storefront-order-workspace-card storefront-notification-summary">
+            <h3>Customer Notifications</h3>
+            <div className="storefront-notification-card">
+              <span className={`chip compact-chip ${emailStatusTone(primaryNotification?.status ?? order.customerCancellationEmailStatus)}`}>
+                {emailStatusLabel(primaryNotification?.status ?? order.customerCancellationEmailStatus)}
+              </span>
+              <strong>{primaryNotification?.label ?? (order.customerCancellationEmailStatus ? "Cancellation email" : "Order confirmation")}</strong>
+              <small>
+                Detail: {primaryNotification?.detail || primaryNotification?.failureReason || (primaryNotification?.sentAt ? `Sent ${dateTime(primaryNotification.sentAt)}` : "No customer notification detail recorded.")}
+              </small>
             </div>
           </section>
-          <section>
+          </aside>
+
+          <section className="storefront-order-workspace-card storefront-order-timeline-card">
             <h3>Timeline</h3>
-            <div className="compact-ledger-list">
+            <div className="storefront-order-timeline">
               {order.timeline.map((entry) => (
                 <article key={entry.label}>
-                  <strong>{entry.label}</strong>
-                  <span>{entry.at ? dateTime(entry.at) : "Pending"}</span>
-                  <small>{entry.detail}</small>
+                  <span aria-hidden="true" />
+                  <div>
+                    <strong>{entry.label}</strong>
+                    <small>{entry.at ? dateTime(entry.at) : "Pending"}</small>
+                    <p>{entry.detail}</p>
+                  </div>
                 </article>
               ))}
             </div>
           </section>
-          <section className="storefront-order-notes-section">
-            <h3>Fulfillment</h3>
+
+          <section className="storefront-order-workspace-card storefront-order-notes-section">
+            <h3>Order Notes</h3>
             {orderDetailReadOnly ? (
               <div className="storefront-fulfillment-readonly-summary">
                 <DetailStat label="Order status" value={formatStatus(order.status)} />
@@ -7367,6 +7370,89 @@ function StorefrontOrderDetailsModal({
               </form>
             )}
           </section>
+
+          <details className="storefront-order-advanced-details">
+            <summary>
+              <Settings size={14} />
+              Advanced Details
+              <span>Stripe session - Payment intent - Webhook events - Inventory reservations - Internal IDs - Debug info</span>
+            </summary>
+            <div className="storefront-order-advanced-grid">
+              <section>
+                <h3>Order Technical Status</h3>
+                <div className="detail-stat-grid">
+                  <DetailStat label="Source" value={order.sourceLabel} />
+                  <DetailStat label="Order status" value={formatStatus(order.status)} />
+                  <DetailStat label="Payment" value={formatStatus(order.paymentStatus)} tone={order.paymentStatus === "paid" ? "good" : "bad"} />
+                  <DetailStat label="Fulfillment" value={formatStatus(order.fulfillmentStatus)} />
+                  <DetailStat label="Stripe session" value={order.stripeCheckoutSessionId ? "Stored" : "Not stored"} tone={order.stripeCheckoutSessionId ? "good" : "bad"} />
+                  <DetailStat label="Payment intent" value={order.stripePaymentIntentId ? "Stored" : "Not stored"} tone={order.stripePaymentIntentId ? "good" : "bad"} />
+                  <DetailStat label="Refund status" value={order.refundStatus ? formatStatus(order.refundStatus) : "Not refunded"} tone={order.refundStatus && order.refundStatus !== "not_applicable" ? "bad" : "neutral"} />
+                  <DetailStat label="Refundable remaining" value={money(order.refundableAmount)} />
+                  <DetailStat label="Stripe refund" value={order.stripeRefundId ? "Stored" : "Not stored"} tone={order.stripeRefundId ? "good" : "neutral"} />
+                  <DetailStat label="Refund reason" value={order.refundReason || "Not provided"} />
+                  <DetailStat label="Stock returned" value={order.stockReturnStatus ? formatStatus(order.stockReturnStatus) : "Not returned"} tone={order.stockReturnedAt ? "good" : "neutral"} />
+                  <DetailStat label="Customer notification" value={order.customerCancellationEmailStatus ? formatStatus(order.customerCancellationEmailStatus) : "Not sent"} tone={order.customerCancellationEmailSentAt ? "good" : "neutral"} />
+                </div>
+              </section>
+              <section>
+                <h3>Payment Verification</h3>
+                <div className="detail-stat-grid">
+                  <DetailStat label="Payment status" value={order.paymentStatus} tone={order.paymentStatus === "paid" ? "good" : "bad"} />
+                  <DetailStat label="Webhook event" value={completedPaymentEvent ? "Received" : "Not stored"} tone={completedPaymentEvent ? "good" : "bad"} />
+                  <DetailStat label="Inventory finalization" value={inventoryFinalized ? "Complete" : "Review"} tone={inventoryFinalized ? "good" : "bad"} />
+                  <DetailStat label="Paid at" value={order.paidAt ? dateTime(order.paidAt) : "Not paid"} tone={order.paidAt ? "good" : "bad"} />
+                  <DetailStat label="Shipped at" value={order.shippedAt ? dateTime(order.shippedAt) : "Not shipped"} />
+                  <DetailStat label="Carrier" value={order.carrier || "Not provided"} />
+                  <DetailStat label="Tracking number" value={order.trackingNumber || "Not provided"} />
+                  <DetailStat label="Shipping profit/loss" value={moneyDelta(shippingProfitLoss)} tone={shippingProfitTone} />
+                </div>
+              </section>
+              <section>
+                <h3>Email notifications</h3>
+                {order.customerEmailNotifications.length ? (
+                  <div className="storefront-email-log">
+                    {order.customerEmailNotifications.map((notification) => (
+                      <article key={notification.id}>
+                        <div>
+                          <strong>{notification.label}</strong>
+                          <span>{notification.recipient || order.customerEmail || "No customer email on file"}</span>
+                        </div>
+                        <span className={`chip compact-chip ${emailStatusTone(notification.status)}`}>{emailStatusLabel(notification.status)}</span>
+                        <small>Sent: {notification.sentAt ? dateTime(notification.sentAt) : "Not sent"}</small>
+                        <small>Updated: {dateTime(notification.updatedAt)}</small>
+                        {notification.detail ? <small>Detail: {notification.detail}</small> : null}
+                        {notification.failureReason ? <small>Reason: {notification.failureReason}</small> : null}
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="form-helper publish-ready-note">No customer lifecycle emails recorded yet.</p>
+                )}
+              </section>
+              <section>
+                <h3>Inventory Reservations</h3>
+                <div className="compact-ledger-list">
+                  {order.reservations.length ? (
+                    order.reservations.map((reservation) => (
+                      <article key={reservation.id}>
+                        <strong>{reservation.status}</strong>
+                        <span>Qty {reservation.quantity}</span>
+                        <span>Expires {dateTime(reservation.expiresAt)}</span>
+                        <span>{reservationStripeSessionLabel(reservation)}</span>
+                        <small>{reservationLifecycleLabel(reservation)}</small>
+                      </article>
+                    ))
+                  ) : (
+                    <article>
+                      <strong>No reservation rows</strong>
+                      <span>Invoice/contact orders do not reserve stock.</span>
+                    </article>
+                  )}
+                </div>
+              </section>
+            </div>
+          </details>
         </div>
       </div>
       {cancelRefundOpen ? (
