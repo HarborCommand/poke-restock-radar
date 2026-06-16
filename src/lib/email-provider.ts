@@ -99,15 +99,16 @@ export function renderEmailHtml(subject: string, text: string) {
     .join("");
 
   return [
-    '<div style="margin:0;background:#f7f9f5;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#102314;">',
-    '<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #dfe8d8;border-radius:14px;overflow:hidden;">',
-    '<div style="padding:18px 22px;background:#0f3b23;color:#ffffff;">',
-    '<strong style="font-size:18px;">GameDayGrabs</strong>',
+    '<div style="margin:0;background:#F5F7FA;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#111111;">',
+    '<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #E6EAF0;border-radius:18px;overflow:hidden;">',
+    '<div style="padding:20px 24px;background:#ffffff;border-bottom:1px solid #E6EAF0;">',
+    '<strong style="font-size:18px;color:#111111;">GameDay<span style="color:#FF6A00;">Grabs</span></strong>',
+    '<div style="margin-top:3px;color:#5F6B7A;font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;">Collect. Play. Invest.</div>',
     "</div>",
     '<div style="padding:22px;">',
-    `<h1 style="margin:0 0 14px;color:#102314;font-size:22px;line-height:1.25;">${escapeHtml(subject)}</h1>`,
-    `<div style="font-size:15px;line-height:1.55;color:#253328;">${sections}</div>`,
-    '<p style="margin-top:22px;color:#5f6f63;font-size:13px;">GameDayGrabs securely processes payment through Stripe.</p>',
+    `<h1 style="margin:0 0 14px;color:#111111;font-size:22px;line-height:1.25;">${escapeHtml(subject)}</h1>`,
+    `<div style="font-size:15px;line-height:1.55;color:#111111;">${sections}</div>`,
+    '<p style="margin-top:22px;color:#5F6B7A;font-size:13px;">Payment is securely processed through Stripe.</p>',
     "</div>",
     "</div>",
     "</div>"

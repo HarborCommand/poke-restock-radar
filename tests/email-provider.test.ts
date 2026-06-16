@@ -38,6 +38,7 @@ test("Resend provider sends through mocked fetch without exposing the API key in
   assert.equal(body.to, "buyer@example.com");
   assert.equal(body.subject, "GameDayGrabs order confirmed: PR-TEST");
   assert.match(String(body.html), /GameDayGrabs/);
+  assert.match(String(body.html), /#F5F7FA|#FF6A00/);
   assert.doesNotMatch(JSON.stringify(result), /test_resend_api_key|orders@example\.com|support@example\.com/);
   assert.doesNotMatch(JSON.stringify(body), /test_resend_api_key/);
 });
@@ -96,5 +97,8 @@ test("email template keeps customer copy mobile-readable without raw payment dat
 
   assert.match(html, /GameDayGrabs/);
   assert.match(html, /Thanks for your order/);
+  assert.match(html, /#F5F7FA/);
+  assert.match(html, /#FF6A00/);
+  assert.doesNotMatch(html, /#0f3b23|#102314|background:#0f3b23/i);
   assert.doesNotMatch(html, /payment_method_details|payment_method_data|card_number|cardNumber|CVC|cvc|cvv|raw Stripe/i);
 });

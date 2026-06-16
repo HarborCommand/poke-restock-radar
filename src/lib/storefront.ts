@@ -8,6 +8,15 @@ import { getSavedProductImageUrls } from "@/lib/product-images";
 import { emailProviderConfigured, sendEmailViaProvider } from "@/lib/email-provider";
 import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
 import {
+  buildCheckoutExpiredEmail,
+  buildLocalPickupEmail,
+  buildOrderConfirmationEmail,
+  buildRefundCancellationEmail,
+  buildShippingConfirmationEmail,
+  type StorefrontEmailAddress,
+  type StorefrontEmailItem
+} from "@/lib/storefront-email-templates";
+import {
   DEFAULT_STOREFRONT_PURCHASE_LIMIT,
   storefrontConfiguredPurchaseLimit,
   storefrontEffectiveMaxQuantity
@@ -529,8 +538,8 @@ type StorefrontCancelRefundInput = {
   idempotencyKey: string;
 };
 
-async function sendStorefrontEmail(to: string, subject: string, text: string, idempotencyKey?: string) {
-  return sendEmailViaProvider({ to, subject, text }, { idempotencyKey });
+async function sendStorefrontEmail(to: string, subject: string, text: string, idempotencyKey?: string, html?: string) {
+  return sendEmailViaProvider({ to, subject, text, html }, { idempotencyKey });
 }
 
 function customerEmailEventType(kind: CustomerEmailKind, status: CustomerEmailStatus) {
@@ -541,20 +550,55 @@ function customerEmailEventId(kind: CustomerEmailKind, orderId: string, key = "d
   return `customer_email.${kind}:${orderId}:${key}`;
 }
 
-function orderItemSummaryLines(order: StorefrontOrderWithItems) {
-  if (!order.items.length) return ["No line items were stored for this order."];
-  return order.items.map((item) => `${item.quantity} x ${item.publicTitle} - $${item.lineTotal.toFixed(2)}`);
+function absoluteStorefrontAssetUrl(path: string) {
+  return `${storefrontCheckoutBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function orderAddressSummaryLines(order: StorefrontOrderWithItems) {
-  const lines = [
-    order.shippingName || order.customerName || null,
-    order.shippingLine1,
-    order.shippingLine2,
-    [order.shippingCity, order.shippingState, order.shippingPostalCode].filter(Boolean).join(", "),
-    order.shippingCountry
-  ].filter((line): line is string => Boolean(line && line.trim()));
-  return lines.length ? lines : ["Shipping address was not captured."];
+function storefrontEmailLogoUrl() {
+  return absoluteStorefrontAssetUrl("/brand/gamedaygrabs-logo-horizontal.png");
+}
+
+function safeEmailImageUrl(url: string | null | undefined) {
+  if (!url) return null;
+  if (/^https:\/\//i.test(url)) return url;
+  if (url.startsWith("/")) return absoluteStorefrontAssetUrl(url);
+  return null;
+}
+
+function orderEmailItems(order: StorefrontOrderWithItems): StorefrontEmailItem[] {
+  return order.items.map((item) => {
+    const imageUrl =
+      safeEmailImageUrl(item.imageUrl) ??
+      safeEmailImageUrl(getSavedProductImageUrls(item.inventoryItem, { publicOnly: true }).find(isStorefrontDisplayImageUrl));
+    return {
+      name: item.publicTitle,
+      quantity: item.quantity,
+      lineTotal: item.lineTotal,
+      imageUrl
+    };
+  });
+}
+
+function orderShippingAddressForEmail(order: StorefrontOrderWithItems): StorefrontEmailAddress | null {
+  const address = orderAddress({
+    name: order.shippingName ?? order.customerName,
+    line1: order.shippingLine1,
+    line2: order.shippingLine2,
+    city: order.shippingCity,
+    state: order.shippingState,
+    postalCode: order.shippingPostalCode,
+    country: order.shippingCountry
+  });
+  return address;
+}
+
+function pickupInstructionLines(instructions: string | null | undefined) {
+  return (
+    instructions
+      ?.split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean) ?? []
+  );
 }
 
 function trackingUrlFor(carrier: string | null | undefined, trackingNumber: string | null | undefined) {
@@ -662,6 +706,7 @@ async function sendCustomerEmailNotificationOnce(input: {
   eventId: string;
   subject?: string;
   text?: string;
+  html?: string;
   recipient?: string | null;
   skippedDetail?: string;
 }) {
@@ -713,7 +758,8 @@ async function sendCustomerEmailNotificationOnce(input: {
       recipient,
       input.subject || "GameDayGrabs order update",
       input.text || "GameDayGrabs order update",
-      input.eventId
+      input.eventId,
+      input.html
     );
     const status: CustomerEmailStatus = result.status === "sent" ? "sent" : result.status === "failed" ? "failed" : "not_configured";
     await completeCustomerEmailEvent({
@@ -744,52 +790,43 @@ async function sendCustomerEmailNotificationOnce(input: {
 async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithItems) {
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
-  const text = [
-    "Thanks for your order.",
-    "",
-    "GameDayGrabs received your payment.",
-    `Order: ${order.orderNumber}`,
-    "",
-    "Items:",
-    ...orderItemSummaryLines(order),
-    "",
-    `Shipping method: ${order.shippingMethodLabel || "Not captured"}`,
-    `Amount paid: $${order.total.toFixed(2)}`,
-    "We'll send tracking once your order ships.",
-    "",
-    `Questions? Contact ${contactEmail}.`
-  ].join("\n");
+  const email = buildOrderConfirmationEmail({
+    orderNumber: order.orderNumber,
+    supportEmail: contactEmail,
+    logoUrl: storefrontEmailLogoUrl(),
+    items: orderEmailItems(order),
+    subtotal: order.subtotal,
+    shippingCharged: order.shippingCharged,
+    totalPaid: order.total,
+    shippingMethod: order.shippingMethodLabel
+  });
   return sendCustomerEmailNotificationOnce({
     order,
     kind: "order_confirmation",
     eventId: customerEmailEventId("order_confirmation", order.id),
-    subject: `GameDayGrabs order confirmed: ${order.orderNumber}`,
-    text
+    subject: email.subject,
+    text: email.text,
+    html: email.html
   });
 }
 
 async function sendStorefrontCheckoutExpiredEmail(order: StorefrontOrderWithItems, reason: string) {
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
-  const text = [
-    "Your GameDayGrabs checkout expired.",
-    "",
-    `Order: ${order.orderNumber}`,
-    "No payment was collected for this checkout.",
-    reason,
-    "",
-    "Items:",
-    ...orderItemSummaryLines(order),
-    "",
-    "If you still want these items, start checkout again while inventory is available.",
-    `Questions? Contact ${contactEmail}.`
-  ].join("\n");
+  const email = buildCheckoutExpiredEmail({
+    orderNumber: order.orderNumber,
+    supportEmail: contactEmail,
+    logoUrl: storefrontEmailLogoUrl(),
+    items: orderEmailItems(order),
+    reason
+  });
   return sendCustomerEmailNotificationOnce({
     order,
     kind: "checkout_expired",
     eventId: customerEmailEventId("checkout_expired", order.id),
-    subject: `GameDayGrabs checkout ${order.orderNumber} expired`,
-    text
+    subject: email.subject,
+    text: email.text,
+    html: email.html
   });
 }
 
@@ -917,29 +954,27 @@ async function sendStorefrontCancellationEmail(input: {
 }) {
   const to = input.order.customerEmail ?? input.order.customer?.email ?? null;
   const reasonLabel = cancellationReasonLabels[input.reason];
-  const refundLine =
+  const statusLabel =
     input.refundAmount > 0
-      ? `Refund amount: $${input.refundAmount.toFixed(2)}. Refund timing depends on your bank or card issuer.`
-      : "No Stripe refund was issued for this order.";
-  const text = [
-    "GameDayGrabs order cancellation/refund update",
-    "",
-    `Order: ${input.order.orderNumber}`,
-    "Order canceled/refunded.",
-    `Reason: ${reasonLabel}`,
-    input.adminNote ? `Note: ${input.adminNote}` : null,
-    refundLine,
-    "",
-    `Questions? Contact ${input.contactEmail}.`
-  ]
-    .filter((line): line is string => line !== null)
-    .join("\n");
+      ? input.order.paymentStatus === "partially_refunded" || input.order.status === "partially_refunded"
+        ? "Partially refunded"
+        : "Order refunded"
+      : "Order canceled";
+  const email = buildRefundCancellationEmail({
+    orderNumber: input.order.orderNumber,
+    supportEmail: input.contactEmail,
+    logoUrl: storefrontEmailLogoUrl(),
+    statusLabel,
+    refundAmount: input.refundAmount,
+    reasonLabel
+  });
   return sendCustomerEmailNotificationOnce({
     order: input.order,
     kind: "refund_cancellation",
     eventId: customerEmailEventId("refund_cancellation", input.order.id, input.idempotencyKey),
-    subject: `GameDayGrabs order update: ${input.order.orderNumber}`,
-    text,
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
     recipient: to
   });
 }
@@ -948,51 +983,43 @@ async function sendStorefrontShipmentEmail(order: StorefrontOrderWithItems) {
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
   const trackingUrl = trackingUrlFor(order.carrier, order.trackingNumber);
-  const text = [
-    "Your GameDayGrabs order has shipped.",
-    "",
-    `Order: ${order.orderNumber}`,
-    `Carrier: ${order.carrier || "Not provided"}`,
-    `Tracking number: ${order.trackingNumber || "Not provided"}`,
-    trackingUrl ? `Tracking link: ${trackingUrl}` : null,
-    "",
-    "Shipping address:",
-    ...orderAddressSummaryLines(order),
-    "",
-    `Questions? Contact ${contactEmail}.`
-  ]
-    .filter((line): line is string => line !== null)
-    .join("\n");
+  const email = buildShippingConfirmationEmail({
+    orderNumber: order.orderNumber,
+    supportEmail: contactEmail,
+    logoUrl: storefrontEmailLogoUrl(),
+    carrier: order.carrier,
+    trackingNumber: order.trackingNumber,
+    trackingUrl,
+    shippingAddress: orderShippingAddressForEmail(order)
+  });
   return sendCustomerEmailNotificationOnce({
     order,
     kind: "shipment",
     eventId: customerEmailEventId("shipment", order.id),
-    subject: `Your GameDayGrabs order has shipped: ${order.orderNumber}`,
-    text
+    subject: email.subject,
+    text: email.text,
+    html: email.html
   });
 }
 
 async function sendStorefrontLocalPickupEmail(order: StorefrontOrderWithItems) {
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
-  const pickupInstructions = settings.localPickupInstructions?.trim();
-  const text = [
-    "Your GameDayGrabs order is ready for local pickup.",
-    "",
-    `Order: ${order.orderNumber}`,
-    pickupInstructions || "Please contact GameDayGrabs to coordinate pickup timing.",
-    "",
-    "Items:",
-    ...orderItemSummaryLines(order),
-    "",
-    `Questions? Contact ${contactEmail}.`
-  ].join("\n");
+  const pickupInstructions = pickupInstructionLines(settings.localPickupInstructions);
+  const email = buildLocalPickupEmail({
+    orderNumber: order.orderNumber,
+    supportEmail: contactEmail,
+    logoUrl: storefrontEmailLogoUrl(),
+    pickupLocationLines: pickupInstructions.length ? ["GameDayGrabs", ...pickupInstructions] : ["GameDayGrabs", "Please contact GameDayGrabs to coordinate pickup timing."],
+    pickupNotes: ["Please bring a valid ID.", "We'll confirm your order details when you arrive."]
+  });
   return sendCustomerEmailNotificationOnce({
     order,
     kind: "local_pickup",
     eventId: customerEmailEventId("local_pickup", order.id),
-    subject: `GameDayGrabs pickup instructions: ${order.orderNumber}`,
-    text
+    subject: email.subject,
+    text: email.text,
+    html: email.html
   });
 }
 

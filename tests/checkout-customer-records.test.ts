@@ -527,6 +527,7 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   const app = readProjectFile("src/components/RadarApp.tsx");
   const css = readProjectFile("src/app/globals.css");
   const types = readProjectFile("src/types/radar.ts");
+  const emailTemplates = readProjectFile("src/lib/storefront-email-templates.ts");
   const webhook = sourceSlice(storefront, "export async function handleStripeWebhook", "export async function updateInventoryStoreListing");
   const cancelOrRefund = sourceSlice(storefront, "export async function cancelOrRefundStorefrontOrder", "export async function updateStorefrontOrder");
   const updateOrder = sourceSlice(storefront, "export async function updateStorefrontOrder");
@@ -542,6 +543,7 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(emailHelpers, /emailProviderConfigured\(\)/);
   assert.match(emailHelpers, /sendEmailViaProvider/);
   assert.match(emailHelpers, /idempotencyKey/);
+  assert.match(emailHelpers, /html\?: string/);
   assert.match(emailHelpers, /prisma\.paymentEvent\.create/);
   assert.match(emailHelpers, /const existing = await prisma\.paymentEvent\.findUnique\(\{ where: \{ eventId: input\.eventId \} \}\)/);
   assert.match(emailHelpers, /Prisma\.PrismaClientKnownRequestError/);
@@ -549,21 +551,26 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(emailHelpers, /No customer email is saved for this order\./);
   assert.match(emailHelpers, /Email provider is not configured\. Set RESEND_API_KEY and EMAIL_FROM, or configure SMTP fallback\./);
   assert.match(emailHelpers, /Email delivery failed without blocking the order workflow\./);
-  assert.match(emailHelpers, /GameDayGrabs order confirmed: \$\{order\.orderNumber\}/);
-  assert.match(emailHelpers, /GameDayGrabs received your payment/);
-  assert.match(emailHelpers, /We'll send tracking once your order ships\./);
-  assert.match(emailHelpers, /Your GameDayGrabs checkout expired/);
-  assert.match(emailHelpers, /No payment was collected for this checkout/);
-  assert.match(emailHelpers, /If you still want these items, start checkout again while inventory is available/);
-  assert.match(emailHelpers, /GameDayGrabs order cancellation\/refund update/);
-  assert.match(emailHelpers, /GameDayGrabs order update: \$\{input\.order\.orderNumber\}/);
-  assert.match(emailHelpers, /Refund timing depends on your bank or card issuer/);
-  assert.match(emailHelpers, /Your GameDayGrabs order has shipped/);
-  assert.match(emailHelpers, /Your GameDayGrabs order has shipped: \$\{order\.orderNumber\}/);
-  assert.match(emailHelpers, /Tracking link:/);
-  assert.match(emailHelpers, /Your GameDayGrabs order is ready for local pickup/);
-  assert.match(emailHelpers, /GameDayGrabs pickup instructions: \$\{order\.orderNumber\}/);
-  assert.match(emailHelpers, /settings\.localPickupInstructions\?\.trim\(\)/);
+  assert.match(storefront, /buildOrderConfirmationEmail/);
+  assert.match(storefront, /buildCheckoutExpiredEmail/);
+  assert.match(storefront, /buildRefundCancellationEmail/);
+  assert.match(storefront, /buildShippingConfirmationEmail/);
+  assert.match(storefront, /buildLocalPickupEmail/);
+  assert.match(emailTemplates, /GameDayGrabs order confirmed: \$\{input\.orderNumber\}/);
+  assert.match(emailTemplates, /Thanks for your order!/);
+  assert.match(emailTemplates, /We've received your payment and we're getting it ready for you\./);
+  assert.match(emailTemplates, /We'll send tracking once your order ships\./);
+  assert.match(emailTemplates, /Your GameDayGrabs checkout expired/);
+  assert.match(emailTemplates, /No payment was collected for this checkout/);
+  assert.match(emailTemplates, /If you still want these items, start checkout again while inventory is available/);
+  assert.match(emailTemplates, /GameDayGrabs order update: \$\{input\.orderNumber\}/);
+  assert.match(emailTemplates, /Refunds typically appear in your account within 3-10 business days/);
+  assert.match(emailTemplates, /Your GameDayGrabs order has shipped/);
+  assert.match(emailTemplates, /Your GameDayGrabs order has shipped: \$\{input\.orderNumber\}/);
+  assert.match(emailTemplates, /Tracking link:/);
+  assert.match(emailTemplates, /Pickup ready!/);
+  assert.match(emailTemplates, /GameDayGrabs pickup instructions: \$\{input\.orderNumber\}/);
+  assert.match(storefront, /pickupInstructionLines\(settings\.localPickupInstructions\)/);
   assert.match(webhook, /if \(!wasPaid\) await sendStorefrontOrderConfirmationEmail\(order\)/);
   assert.match(cancelOrRefund, /customerEmailEventId\("refund_cancellation", updatedOrder\.id, input\.idempotencyKey\)/);
   assert.match(cancelOrRefund, /skippedDetail: "Admin chose not to send a cancellation email\."/);
@@ -581,7 +588,7 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(app, /function emailStatusTone/);
   assert.match(css, /storefront-email-section/);
   assert.match(css, /storefront-email-log/);
-  assert.doesNotMatch(emailHelpers + orderModal, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
+  assert.doesNotMatch(emailHelpers + orderModal + emailTemplates, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
 });
 
 test("admin cancel refund flow stores safe refund metadata and uses Stripe Refund API", () => {
