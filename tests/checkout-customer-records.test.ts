@@ -374,6 +374,33 @@ test("Admin Orders renders an operational shipping section without raw payment d
   assert.doesNotMatch(storefrontSummary, /prisma\.storefrontOrder\.count\(\{ where: \{ [^}]*paymentStatus: \{ in: activeRevenuePaymentStatuses \}/);
 });
 
+test("Admin order detail uses separated item metadata and compact timeline layout", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontPackingSlip");
+  const itemsSection = sourceSlice(orderModal, "<h3>Items</h3>", '<section className="storefront-order-workspace-card storefront-shipping-section">');
+  const timelineSection = sourceSlice(orderModal, '<section className="storefront-order-workspace-card storefront-order-timeline-card">', '<section className="storefront-order-workspace-card storefront-order-notes-section">');
+
+  assert.match(itemsSection, /className="storefront-order-item-image"/);
+  assert.match(itemsSection, /className="storefront-order-item-copy"/);
+  assert.match(itemsSection, /className="storefront-order-item-title"/);
+  assert.match(itemsSection, /className="storefront-order-item-metadata"/);
+  assert.match(itemsSection, /<span>UPC\/SKU<\/span>/);
+  assert.match(itemsSection, /<span>SKU\/TCIN\/DPCI<\/span>/);
+  assert.match(itemsSection, /<span>Cost and profit<\/span>/);
+  assert.match(itemsSection, /className="storefront-order-item-metrics"/);
+  assert.doesNotMatch(itemsSection, /<strong>\{item\.publicTitle\}<\/strong>\s*<small>SKU\/UPC:/);
+  assert.doesNotMatch(itemsSection, /SKU\/UPC:[\s\S]*SKU\/TCIN:[\s\S]*Cost basis/);
+
+  assert.match(timelineSection, /className=\{entry\.at \? "complete" : "pending"\}/);
+  assert.match(css, /\.storefront-order-timeline \{[\s\S]*display: grid;[\s\S]*gap: 0;/);
+  assert.match(css, /\.storefront-order-timeline article \{[\s\S]*grid-template-columns: 24px minmax\(0, 1fr\);[\s\S]*border-bottom: 1px solid #edf2f7;/);
+  assert.match(css, /\.storefront-order-timeline article\.pending/);
+  assert.doesNotMatch(css, /\.storefront-order-timeline \{[\s\S]{0,220}repeat\(auto-fit/);
+  assert.match(css, /\.storefront-order-item-metadata small \{[\s\S]*grid-template-columns: minmax\(98px, auto\) minmax\(0, 1fr\);/);
+  assert.match(css, /body \.inventory-details-modal\.storefront-order-workspace \{[\s\S]*width: 100vw;[\s\S]*height: 100svh;[\s\S]*border-radius: 0;/);
+});
+
 test("archived order detail is read-only while active fulfillment controls are preserved", () => {
   const app = readProjectFile("src/components/RadarApp.tsx");
   const css = readProjectFile("src/app/globals.css");

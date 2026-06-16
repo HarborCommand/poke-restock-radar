@@ -7198,12 +7198,14 @@ function StorefrontOrderDetailsModal({
               {order.items.length ? (
                 order.items.map((item) => (
                   <article className="storefront-order-item storefront-order-line-item" key={item.id}>
-                    <span>{item.imageUrl ? <Image src={item.imageUrl} alt={item.publicTitle} width={72} height={72} unoptimized /> : <ShoppingBag size={22} />}</span>
-                    <div>
-                      <strong>{item.publicTitle}</strong>
-                      <small>SKU/UPC: {[item.sku, item.upc].filter(Boolean).join(" / ") || "Not provided"}</small>
-                      <small>SKU/TCIN: {item.sku || item.tcin || "missing"} - DPCI {item.dpci || "missing"}</small>
-                      <small>Cost basis {money(item.costBasis)} - Profit {money(item.profitLoss)}</small>
+                    <span className="storefront-order-item-image">{item.imageUrl ? <Image src={item.imageUrl} alt={item.publicTitle} width={72} height={72} unoptimized /> : <ShoppingBag size={22} />}</span>
+                    <div className="storefront-order-item-copy">
+                      <strong className="storefront-order-item-title">{item.publicTitle}</strong>
+                      <div className="storefront-order-item-metadata" aria-label={`${item.publicTitle} item metadata`}>
+                        <small><span>UPC/SKU</span>{[item.upc, item.sku].filter(Boolean).join(" / ") || "Not provided"}</small>
+                        <small><span>SKU/TCIN/DPCI</span>SKU {item.sku || "missing"} - TCIN {item.tcin || "missing"} - DPCI {item.dpci || "missing"}</small>
+                        <small><span>Cost and profit</span>Cost basis {money(item.costBasis)} - Profit {money(item.profitLoss)}</small>
+                      </div>
                     </div>
                     <div className="storefront-order-item-metrics">
                       <span><small>Qty</small><strong>{item.quantity}</strong></span>
@@ -7214,10 +7216,12 @@ function StorefrontOrderDetailsModal({
                 ))
               ) : (
                 <article className="storefront-order-item storefront-order-line-item">
-                  <span><Mail size={22} /></span>
-                  <div>
-                    <strong>Storefront contact inquiry</strong>
-                    <small>No cart items. Read the message in Order notes.</small>
+                  <span className="storefront-order-item-image"><Mail size={22} /></span>
+                  <div className="storefront-order-item-copy">
+                    <strong className="storefront-order-item-title">Storefront contact inquiry</strong>
+                    <div className="storefront-order-item-metadata">
+                      <small><span>Items</span>No cart items. Read the message in Order notes.</small>
+                    </div>
                   </div>
                   <b>Message</b>
                 </article>
@@ -7324,7 +7328,7 @@ function StorefrontOrderDetailsModal({
             <h3>Timeline</h3>
             <div className="storefront-order-timeline">
               {order.timeline.map((entry) => (
-                <article key={entry.label}>
+                <article className={entry.at ? "complete" : "pending"} key={entry.label}>
                   <span aria-hidden="true" />
                   <div>
                     <strong>{entry.label}</strong>

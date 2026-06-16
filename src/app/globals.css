@@ -7255,14 +7255,27 @@ textarea {
 }
 
 .storefront-shipping-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(120px, 0.55fr) auto;
+  align-items: end;
+  gap: 10px;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
   background: #f8fafc;
-  padding: 12px;
+  padding: 10px;
 }
 
 .storefront-shipping-form .primary-action {
   align-self: end;
+  justify-content: center;
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.storefront-shipping-form .publish-ready-note {
+  align-self: start;
+  margin: 0;
+  color: #64748b;
 }
 
 .storefront-archived-detail-card {
@@ -11534,21 +11547,24 @@ body {
 .storefront-order-workspace-backdrop {
   align-items: stretch;
   justify-content: stretch;
-  padding: clamp(10px, 1.6vw, 18px);
+  background: #f8fafc;
+  padding: 0;
 }
 
 .storefront-order-workspace {
   display: grid;
   align-content: start;
-  gap: 14px;
-  width: calc(100vw - clamp(20px, 3.2vw, 36px));
+  gap: 12px;
+  width: 100vw;
   max-width: none;
-  height: calc(100svh - clamp(20px, 3.2vw, 36px));
+  height: 100svh;
   max-height: none;
   overflow: auto;
-  border-radius: 24px;
-  background: #ffffff;
-  padding: clamp(14px, 1.8vw, 22px);
+  border: 0;
+  border-radius: 0;
+  background: #f8fafc;
+  box-shadow: none;
+  padding: clamp(12px, 1.45vw, 18px);
 }
 
 .storefront-order-workspace-header {
@@ -11558,24 +11574,26 @@ body {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(120px, auto) auto;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   min-width: 0;
-  border-bottom: 1px solid #e5e7eb;
-  background: rgba(255, 255, 255, 0.94);
-  padding-bottom: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 10px 12px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(10px);
 }
 
 .storefront-order-heading {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
 .storefront-order-heading h2 {
   margin: 0;
   color: #0f172a;
-  font-size: clamp(1.55rem, 2.2vw, 2.2rem);
+  font-size: clamp(1.35rem, 1.85vw, 1.9rem);
   letter-spacing: 0;
   line-height: 1.05;
   overflow-wrap: anywhere;
@@ -11621,18 +11639,19 @@ body {
 
 .storefront-order-action-bar {
   position: sticky;
-  top: 89px;
+  top: 76px;
   z-index: 5;
   border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  background: rgba(248, 250, 252, 0.94);
-  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 8px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
   backdrop-filter: blur(10px);
 }
 
 .storefront-order-workspace-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.95fr);
+  grid-template-columns: minmax(0, 1.48fr) minmax(330px, 0.82fr);
   gap: 14px;
   align-items: start;
   min-width: 0;
@@ -11641,7 +11660,7 @@ body {
 .storefront-order-primary-column,
 .storefront-order-summary-column {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -11650,10 +11669,10 @@ body {
   gap: 12px;
   min-width: 0;
   border: 1px solid #e5e7eb;
-  border-radius: 18px;
+  border-radius: 16px;
   background: #ffffff;
-  padding: 14px;
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
+  padding: 13px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.045);
 }
 
 .storefront-order-workspace-card h3 {
@@ -11718,22 +11737,76 @@ body {
 }
 
 .storefront-order-line-item {
-  grid-template-columns: 76px minmax(0, 1fr) minmax(210px, auto);
+  grid-template-columns: 76px minmax(280px, 1fr) minmax(230px, auto);
+  align-items: start;
+  gap: 14px;
   border-color: #e5e7eb;
   background: #ffffff;
+  padding: 12px;
+}
+
+.storefront-order-line-item > b {
+  align-self: center;
+  justify-self: end;
+  color: #475569;
+  font-size: 0.84rem;
+}
+
+.storefront-order-item-image {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.storefront-order-item-copy {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.storefront-order-item-title {
+  color: #0f172a;
+  font-size: 0.92rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.storefront-order-item-metadata {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.storefront-order-item-metadata small {
+  display: grid;
+  grid-template-columns: minmax(98px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: #475569;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.storefront-order-item-metadata small span {
+  color: #64748b;
+  font-weight: 900;
 }
 
 .storefront-order-item-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, auto));
-  gap: 14px;
-  align-items: center;
+  gap: 10px;
+  align-items: start;
+  justify-content: end;
+  min-width: 0;
 }
 
 .storefront-order-item-metrics span {
   display: grid;
   gap: 3px;
   min-width: 0;
+  border-left: 1px solid #e5e7eb;
+  padding-left: 10px;
 }
 
 .storefront-order-item-metrics small {
@@ -11751,7 +11824,7 @@ body {
 
 .storefront-order-summary-list {
   display: grid;
-  gap: 7px;
+  gap: 0;
 }
 
 .storefront-order-summary-list .detail-stat {
@@ -11759,10 +11832,10 @@ body {
   align-items: center;
   gap: 10px;
   border: 0;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #edf2f7;
   border-radius: 0;
   background: transparent;
-  padding: 0 0 7px;
+  padding: 8px 0;
 }
 
 .storefront-order-summary-list .detail-stat:last-child {
@@ -11777,6 +11850,12 @@ body {
 
 .storefront-order-summary-list .detail-stat strong {
   text-align: right;
+  font-size: 0.9rem;
+}
+
+.storefront-order-summary-list .detail-stat.good strong,
+.storefront-order-summary-list .detail-stat.bad strong {
+  font-size: 1rem;
 }
 
 .storefront-order-timeline-card,
@@ -11787,29 +11866,42 @@ body {
 
 .storefront-order-timeline {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  gap: 0;
   min-width: 0;
 }
 
 .storefront-order-timeline article {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
   min-width: 0;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  background: #f8fafc;
-  padding: 10px;
+  border: 0;
+  border-bottom: 1px solid #edf2f7;
+  background: transparent;
+  padding: 9px 0;
+}
+
+.storefront-order-timeline article:last-child {
+  border-bottom: 0;
 }
 
 .storefront-order-timeline article > span {
-  width: 22px;
-  height: 22px;
-  border: 4px solid #dcfce7;
+  width: 10px;
+  height: 10px;
+  margin: 4px auto 0;
+  border: 3px solid #dcfce7;
   border-radius: 999px;
   background: #16a34a;
+}
+
+.storefront-order-timeline article.pending {
+  opacity: 0.68;
+}
+
+.storefront-order-timeline article.pending > span {
+  border-color: #e5e7eb;
+  background: #94a3b8;
 }
 
 .storefront-order-timeline article div {
@@ -11820,7 +11912,7 @@ body {
 
 .storefront-order-timeline strong {
   color: #0f172a;
-  font-size: 0.8rem;
+  font-size: 0.84rem;
   line-height: 1.2;
 }
 
@@ -20252,17 +20344,20 @@ body .storefront-order-workspace-backdrop {
   align-items: stretch;
   justify-content: stretch;
   overflow: hidden;
-  padding: clamp(10px, 1.6vw, 18px);
+  background: #f8fafc;
+  padding: 0;
 }
 
 body .inventory-details-modal.storefront-order-workspace {
-  width: calc(100vw - clamp(20px, 3.2vw, 36px));
+  width: 100vw;
   max-width: none;
-  height: calc(100svh - clamp(20px, 3.2vw, 36px));
+  height: 100svh;
   max-height: none;
   overflow: auto;
-  border-radius: 24px;
-  padding: clamp(14px, 1.8vw, 22px);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: clamp(12px, 1.45vw, 18px);
 }
 
 body .storefront-order-workspace .packing-slip-preview-shell {
@@ -20279,8 +20374,13 @@ body .storefront-order-workspace .packing-slip-preview-shell {
     grid-row: auto;
   }
 
-  body .storefront-fulfillment-snapshot {
+  body .storefront-fulfillment-snapshot,
+  body .storefront-shipping-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body .storefront-shipping-form .primary-action {
+    width: 100%;
   }
 }
 
@@ -20303,8 +20403,24 @@ body .storefront-order-workspace .packing-slip-preview-shell {
   body .storefront-order-address-grid,
   body .storefront-fulfillment-snapshot,
   body .storefront-order-line-item,
-  body .storefront-order-item-metrics {
+  body .storefront-order-item-metrics,
+  body .storefront-shipping-form {
     grid-template-columns: 1fr;
+  }
+
+  body .storefront-order-item-metadata small {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  body .storefront-order-item-metrics {
+    justify-content: stretch;
+  }
+
+  body .storefront-order-item-metrics span {
+    border-left: 0;
+    border-top: 1px solid #e5e7eb;
+    padding: 8px 0 0;
   }
 
   body .storefront-order-section-heading {
