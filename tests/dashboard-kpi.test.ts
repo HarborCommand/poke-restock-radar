@@ -1016,7 +1016,7 @@ test("storefront availability and purchase limits stay buyer-facing", () => {
   assert.match(schema, /purchaseLimitEnabled\s+Boolean\s+@default\(false\)/);
   assert.match(migration, /ADD COLUMN "purchaseLimitEnabled" BOOLEAN NOT NULL DEFAULT false/);
   assert.doesNotMatch(client, /per person/i);
-  assert.doesNotMatch(client, /card number|CVC|raw Stripe|payment method details/i);
+  assert.doesNotMatch(client, /payment_method_details|payment_method_data|card_number|cardNumber|cvv|raw Stripe object/i);
 });
 
 test("GameDayGrabs cart checkout is polished while preserving server-side guards", () => {
@@ -1026,6 +1026,8 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   const cartRoute = fs.readFileSync(new URL("../src/app/api/storefront/cart/route.ts", import.meta.url), "utf8");
   const sessionRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/session/route.ts", import.meta.url), "utf8");
   const invoiceRoute = fs.readFileSync(new URL("../src/app/api/storefront/invoice-request/route.ts", import.meta.url), "utf8");
+  const paymentBadgesComponent = client.slice(client.indexOf("function PaymentNetworkBadges"), client.indexOf("function displayStoreName"));
+  const paymentBadgeCss = css.slice(css.indexOf(".gdg-payment-badges"), css.indexOf(".gdg-cart-empty"));
 
   assert.match(client, /Your Pok&eacute;mon Picks Are Almost Yours/);
   assert.match(client, /Review your cart and complete secure checkout/);
@@ -1033,8 +1035,8 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Fast Shipping/);
   assert.match(client, /Carefully Packaged/);
   assert.match(client, /100% Authentic/);
-  assert.match(client, /Proceed to Checkout/);
-  assert.match(client, /Secure payment powered by Stripe/);
+  assert.match(client, /Proceed to Secure Checkout/);
+  assert.match(client, /Powered by Stripe/);
   assert.match(client, /Shipping calculated at checkout/);
   assert.match(client, /Shipping is estimated from product weight and package size\./);
   assert.match(client, /Final shipping is shown before payment\./);
@@ -1047,10 +1049,19 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Request Invoice/);
   assert.match(client, /No card is charged today/);
   assert.match(client, /PaymentNetworkBadges/);
+  assert.match(client, /Cards accepted securely through Stripe\./);
+  assert.match(client, /GameDayGrabs does not store card numbers or CVC\./);
   assert.match(client, /Visa accepted/);
   assert.match(client, /Mastercard accepted/);
   assert.match(client, /American Express accepted/);
   assert.match(client, /Discover accepted/);
+  assert.match(client, /VISA/);
+  assert.match(client, /Mastercard/);
+  assert.match(client, /AMEX/);
+  assert.match(client, /Discover/);
+  assert.match(paymentBadgesComponent, /className="gdg-payment-badges"/);
+  assert.match(paymentBadgesComponent, /className="gdg-payment-badge"/);
+  assert.doesNotMatch(paymentBadgesComponent, /<img|<Image|<svg|https?:\/\/|url\(|\.(svg|png|jpg|jpeg|webp)/i);
   assert.match(client, /isStripeCheckout/);
   assert.match(client, /gdg-invoice-form-card/);
   assert.match(client, /requestPayload/);
@@ -1071,7 +1082,8 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /disabled=\{product\.availableQuantity <= 0 \|\| product\.requestedQuantity >= maxQuantity\}/);
   assert.match(client, /\/api\/storefront\/checkout\/session/);
   assert.match(client, /\/api\/storefront\/invoice-request/);
-  assert.doesNotMatch(client, /Card Element|card number|cost basis|supplier notes|admin notes/i);
+  assert.doesNotMatch(client, /Card Element|payment_method_details|payment_method_data|card_number|cardNumber|cvv|cost basis|supplier notes|admin notes/i);
+  assert.doesNotMatch(client, /https?:\/\/[^"']*(visa|mastercard|amex|americanexpress|discover|stripe)[^"']*/i);
 
   assert.match(css, /gdg-checkout-trust-row/);
   assert.match(css, /gdg-checkout-panel/);
@@ -1080,15 +1092,17 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(css, /gdg-free-shipping/);
   assert.match(css, /--gdg-gold: #d4af37/);
   assert.match(css, /background: linear-gradient\(135deg, #050505, #17140d 54%, #6f4b05\)/);
-  assert.match(css, /gdg-payment-icons \.visa text/);
-  assert.match(css, /gdg-payment-icons \.mastercard circle:first-of-type/);
-  assert.match(css, /gdg-payment-icons \.amex rect/);
-  assert.match(css, /gdg-payment-icons \.discover path/);
+  assert.match(css, /gdg-payment-trust-card/);
+  assert.match(css, /gdg-payment-badges/);
+  assert.match(css, /gdg-payment-badge/);
   assert.match(css, /gdg-checkout-trust-copy/);
   assert.match(css, /gdg-shipping-checkout-note/);
   assert.match(css, /gdg-cart-stock-warning-copy/);
   assert.match(css, /gdg-stock-remove-button/);
-  assert.match(css, /gdg-payment-icons svg \{[\s\S]*width: 58px;[\s\S]*height: auto;[\s\S]*max-height: 22px;[\s\S]*object-fit: contain;/);
+  assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /min-height: 34px/);
+  assert.doesNotMatch(paymentBadgeCss, /background-image|mask-image|url\(|\.(svg|png|jpg|jpeg|webp)/i);
+  assert.doesNotMatch(css, /gdg-payment-icons svg|gdg-payment-icons \.visa|gdg-payment-icons \.mastercard|gdg-payment-icons \.amex|gdg-payment-icons \.discover/);
   assert.doesNotMatch(css, /background: linear-gradient\(135deg, #5b21b6, #9333ea\)/);
   assert.doesNotMatch(css, /gdg-payment-icons span \{\s*display: inline-flex;\s*min-width: 38px/s);
   assert.match(css, /@media \(max-width: 820px\)/);

@@ -179,7 +179,7 @@ test("homepage merchandising UI renders category links and safe product-card lin
   }
   assert.match(client, /href=\{`\/shop\/product\/\$\{product\.slug\}`\}/);
   assert.doesNotMatch(client, /availableQuantity\}.*gdg-product-card|exact stock|stock count/i);
-  assert.doesNotMatch(client, /card_number|cardNumber|cvc|cvv|payment_method_details|payment_method_data|raw Stripe/i);
+  assert.doesNotMatch(client, /card_number|cardNumber|cvv|payment_method_details|payment_method_data|raw Stripe object/i);
   assert.match(css, /gdg-home-product-row/);
   assert.match(css, /gdg-support-strip/);
 });

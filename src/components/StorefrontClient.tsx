@@ -162,36 +162,23 @@ function productIncludedBullets(product: PublicStoreProductDTO, displayCategory:
 }
 
 function PaymentNetworkBadges() {
+  const networks = [
+    { label: "VISA", accessibleLabel: "Visa accepted" },
+    { label: "Mastercard", accessibleLabel: "Mastercard accepted" },
+    { label: "AMEX", accessibleLabel: "American Express accepted" },
+    { label: "Discover", accessibleLabel: "Discover accepted" }
+  ];
+
   return (
-    <div className="gdg-payment-icons" aria-label="Accepted card network indicators">
-      <span className="visa" role="img" aria-label="Visa accepted">
-        <svg viewBox="0 0 74 28" aria-hidden="true" focusable="false">
-          <rect width="74" height="28" rx="7" />
-          <text x="37" y="18">VISA</text>
-        </svg>
-      </span>
-      <span className="mastercard" role="img" aria-label="Mastercard accepted">
-        <svg viewBox="0 0 74 28" aria-hidden="true" focusable="false">
-          <rect width="74" height="28" rx="7" />
-          <circle cx="31" cy="14" r="8" />
-          <circle cx="43" cy="14" r="8" />
-          <text x="37" y="23">MC</text>
-        </svg>
-      </span>
-      <span className="amex" role="img" aria-label="American Express accepted">
-        <svg viewBox="0 0 74 28" aria-hidden="true" focusable="false">
-          <rect width="74" height="28" rx="7" />
-          <text x="37" y="18">AMEX</text>
-        </svg>
-      </span>
-      <span className="discover" role="img" aria-label="Discover accepted">
-        <svg viewBox="0 0 74 28" aria-hidden="true" focusable="false">
-          <rect width="74" height="28" rx="7" />
-          <path d="M7 22C22 8 49 7 67 22" />
-          <text x="37" y="18">DISCOVER</text>
-        </svg>
-      </span>
-    </div>
+    <ul className="gdg-payment-badges" aria-label="Accepted card networks">
+      {networks.map((network) => (
+        <li key={network.accessibleLabel}>
+          <span className="gdg-payment-badge" aria-label={network.accessibleLabel}>
+            {network.label}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -1655,21 +1642,32 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
             <button className="gdg-primary-button wide gdg-checkout-button" type="button" disabled={checkoutDisabled} onClick={checkout}>
               <Lock size={17} />
               <span>
-                {busy ? (isStripeCheckout ? "Holding items..." : "Working...") : isStripeCheckout ? "Proceed to Checkout" : "Request Invoice"}
+                {busy ? (isStripeCheckout ? "Holding items..." : "Working...") : isStripeCheckout ? "Proceed to Secure Checkout" : "Request Invoice"}
                 <small>
                   {busy && isStripeCheckout
                     ? "Your items are held for 15 minutes while you complete checkout."
                     : isStripeCheckout
-                      ? "Secure payment powered by Stripe."
+                      ? "Powered by Stripe"
                       : "No card is charged today."}
                 </small>
               </span>
               <ChevronRight size={18} />
             </button>
-            <div className="gdg-payment-row" aria-label="Accepted payment note">
-              <CreditCard size={16} />
-              <small>{isStripeCheckout ? "Cards accepted securely through Stripe." : `We will contact you shortly at ${contactEmail}.`}</small>
-            </div>
+            {isStripeCheckout ? (
+              <div className="gdg-payment-trust-card" aria-label="Secure payment details">
+                <div className="gdg-payment-row">
+                  <CreditCard size={16} />
+                  <small>Cards accepted securely through Stripe.</small>
+                </div>
+                <PaymentNetworkBadges />
+                <p>Stripe securely handles payment. GameDayGrabs does not store card numbers or CVC.</p>
+              </div>
+            ) : (
+              <div className="gdg-payment-row" aria-label="Invoice request note">
+                <CreditCard size={16} />
+                <small>We will contact you shortly at {contactEmail}.</small>
+              </div>
+            )}
             {isStripeCheckout ? (
               <div className="gdg-checkout-trust-copy">
                 <strong>No account required.</strong>
@@ -1677,7 +1675,6 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 <span>We use your email and shipping address only to process your order.</span>
               </div>
             ) : null}
-            {isStripeCheckout ? <PaymentNetworkBadges /> : null}
           </aside>
         </div>
       ) : (
