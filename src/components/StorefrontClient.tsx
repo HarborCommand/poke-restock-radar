@@ -161,27 +161,6 @@ function productIncludedBullets(product: PublicStoreProductDTO, displayCategory:
   return Array.from(new Set(bullets));
 }
 
-function PaymentNetworkBadges() {
-  const networks = [
-    { label: "VISA", accessibleLabel: "Visa accepted" },
-    { label: "Mastercard", accessibleLabel: "Mastercard accepted" },
-    { label: "AMEX", accessibleLabel: "American Express accepted" },
-    { label: "Discover", accessibleLabel: "Discover accepted" }
-  ];
-
-  return (
-    <ul className="gdg-payment-badges" aria-label="Accepted card networks">
-      {networks.map((network) => (
-        <li key={network.accessibleLabel}>
-          <span className="gdg-payment-badge" aria-label={network.accessibleLabel}>
-            {network.label}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function displayStoreName(settings: StorefrontSettingsDTO) {
   return settings.storeName && !/poke radar/i.test(settings.storeName) ? settings.storeName : "GameDayGrabs LLC";
 }
@@ -1653,25 +1632,16 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               </span>
               <ChevronRight size={18} />
             </button>
-            {isStripeCheckout ? (
-              <div className="gdg-payment-trust-card" aria-label="Secure payment details">
-                <div className="gdg-payment-row">
-                  <CreditCard size={16} />
-                  <small>Cards accepted securely through Stripe.</small>
-                </div>
-                <PaymentNetworkBadges />
-                <p>Stripe securely handles payment. GameDayGrabs does not store card numbers or CVC.</p>
-              </div>
-            ) : (
+            {!isStripeCheckout ? (
               <div className="gdg-payment-row" aria-label="Invoice request note">
                 <CreditCard size={16} />
                 <small>We will contact you shortly at {contactEmail}.</small>
               </div>
-            )}
+            ) : null}
             {isStripeCheckout ? (
               <div className="gdg-checkout-trust-copy">
                 <strong>No account required.</strong>
-                <span>Stripe securely handles payment.</span>
+                <span>Stripe securely handles payment. GameDayGrabs does not store card numbers or CVC.</span>
                 <span>We use your email and shipping address only to process your order.</span>
               </div>
             ) : null}
