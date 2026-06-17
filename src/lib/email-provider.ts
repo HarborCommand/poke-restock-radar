@@ -1,7 +1,7 @@
 export type EmailProviderStatus = "sent" | "not_configured" | "failed";
 export type EmailProviderKind = "resend" | "smtp" | "none";
 
-type EmailProviderEnv = Record<string, string | undefined>;
+export type EmailProviderEnv = Record<string, string | undefined>;
 
 export type EmailProviderConfig = {
   configured: boolean;
@@ -31,7 +31,7 @@ export type EmailSendResult = {
   failureReason: string | null;
 };
 
-type EmailSendOptions = {
+export type EmailSendOptions = {
   env?: EmailProviderEnv;
   fetchImpl?: typeof fetch;
   idempotencyKey?: string;

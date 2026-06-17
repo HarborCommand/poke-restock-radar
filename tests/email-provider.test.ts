@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { emailProviderConfig, renderEmailHtml, sendEmailViaProvider } from "../src/lib/email-provider";
+import { sendStorefrontEmail } from "../src/lib/storefront";
+import {
+  buildCheckoutExpiredEmail,
+  buildLocalPickupEmail,
+  buildOrderConfirmationEmail,
+  buildRefundCancellationEmail,
+  buildShippingConfirmationEmail,
+  STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER,
+  type StorefrontRenderedEmail
+} from "../src/lib/storefront-email-templates";
 
 const resendEnv = {
   RESEND_API_KEY: "test_resend_api_key",
@@ -8,6 +18,47 @@ const resendEnv = {
   EMAIL_REPLY_TO: "support@example.com"
 };
 const darkTemplatePattern = /background(?:-color)?:\s*(?:#111(?:111)?|#222(?:222)?|#242424|#0f3b23|#102314|black)|dark-wrapper|dark-card/i;
+const backgroundShorthandPattern = /background(?!-color)\s*:/i;
+const whiteTextPattern = /(?<!background-)color:\s*(?:#fff(?:fff)?|white)\b/i;
+
+async function captureStorefrontResendHtml(email: StorefrontRenderedEmail) {
+  const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    requests.push({ url: String(input), init });
+    return new Response(JSON.stringify({ id: "email_customer_template_test" }), { status: 200 });
+  };
+
+  const result = await sendStorefrontEmail(
+    "buyer@example.com",
+    email.subject,
+    email.text,
+    "customer_email.order_confirmation:order_test:default",
+    email.html,
+    { env: resendEnv, fetchImpl }
+  );
+
+  assert.equal(result.status, "sent");
+  assert.equal(result.provider, "resend");
+  assert.equal(requests.length, 1);
+  const body = JSON.parse(String(requests[0].init?.body)) as Record<string, unknown>;
+  return String(body.html);
+}
+
+function assertLightCustomerEmailHtml(html: string) {
+  assert.match(html, new RegExp(STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER));
+  assert.match(html, /<meta name="color-scheme" content="light" \/>/);
+  assert.match(html, /<meta name="supported-color-schemes" content="light" \/>/);
+  assert.match(html, /bgcolor="#F5F7FA"/);
+  assert.match(html, /background-color:#F5F7FA/);
+  assert.match(html, /bgcolor="#FFFFFF"/);
+  assert.match(html, /background-color:#FFFFFF/);
+  assert.match(html, /#FF6A00/);
+  assert.match(html, /GameDayGrabs/);
+  assert.doesNotMatch(html, backgroundShorthandPattern);
+  assert.doesNotMatch(html, darkTemplatePattern);
+  assert.doesNotMatch(html, whiteTextPattern);
+  assert.doesNotMatch(html, /payment_method_details|payment_method_data|card_number|cardNumber|CVC|cvc|cvv|raw Stripe|raw PaymentIntent|raw Checkout Session|webhook body/i);
+}
 
 test("Resend provider sends through mocked fetch without exposing the API key in stored results", async () => {
   const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
@@ -46,6 +97,60 @@ test("Resend provider sends through mocked fetch without exposing the API key in
   assert.doesNotMatch(String(body.html), darkTemplatePattern);
   assert.doesNotMatch(JSON.stringify(result), /test_resend_api_key|orders@example\.com|support@example\.com/);
   assert.doesNotMatch(JSON.stringify(body), /test_resend_api_key/);
+});
+
+test("storefront customer emails pass the light template HTML through to Resend", async () => {
+  const supportEmail = "gamedaygrabs@outlook.com";
+  const logoUrl = "https://www.gamedaygrabs.com/brand/gamedaygrabs-logo-horizontal.png";
+  const templates = [
+    buildOrderConfirmationEmail({
+      orderNumber: "PR-20260617-CH8BO6",
+      supportEmail,
+      logoUrl,
+      items: [{ name: "Pokemon Test Product", quantity: 1, lineTotal: 44.99, imageUrl: "https://www.gamedaygrabs.com/product.jpg" }],
+      subtotal: 44.99,
+      shippingCharged: 5.99,
+      totalPaid: 50.98,
+      shippingMethod: "Standard Shipping"
+    }),
+    buildShippingConfirmationEmail({
+      orderNumber: "PR-20260617-CH8BO6",
+      supportEmail,
+      logoUrl,
+      carrier: "Test Carrier",
+      trackingNumber: "TEST-PR-20260617-CH8BO6",
+      trackingUrl: "https://carrier.example/track/TEST-PR-20260617-CH8BO6",
+      shippingAddress: { name: "GameDayGrabs Test", line1: "123 Test St", city: "Miami", state: "FL", postalCode: "33101", country: "US" }
+    }),
+    buildRefundCancellationEmail({
+      orderNumber: "PR-20260617-CH8BO6",
+      supportEmail,
+      logoUrl,
+      statusLabel: "Order refunded",
+      refundAmount: 50.98,
+      reasonLabel: "Customer requested cancellation"
+    }),
+    buildLocalPickupEmail({
+      orderNumber: "PR-20260617-CH8BO6",
+      supportEmail,
+      logoUrl,
+      pickupLocationLines: ["GameDayGrabs", "123 Test St", "Miami, FL 33101"],
+      pickupNotes: ["Please bring a valid ID."]
+    }),
+    buildCheckoutExpiredEmail({
+      orderNumber: "PR-20260617-CH8BO6",
+      supportEmail,
+      logoUrl,
+      items: [{ name: "Pokemon Test Product", quantity: 1, lineTotal: 44.99 }],
+      reason: "Stripe Checkout expired before payment completed."
+    })
+  ];
+
+  for (const email of templates) {
+    assert.ok(email.text.trim().length > 0);
+    const html = await captureStorefrontResendHtml(email);
+    assertLightCustomerEmailHtml(html);
+  }
 });
 
 test("missing Resend and SMTP config reports not_configured without throwing", async () => {

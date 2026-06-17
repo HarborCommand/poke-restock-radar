@@ -5,7 +5,7 @@ import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
-import { emailProviderConfigured, sendEmailViaProvider } from "@/lib/email-provider";
+import { emailProviderConfigured, sendEmailViaProvider, type EmailSendOptions } from "@/lib/email-provider";
 import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
 import {
   buildCheckoutExpiredEmail,
@@ -538,8 +538,15 @@ type StorefrontCancelRefundInput = {
   idempotencyKey: string;
 };
 
-async function sendStorefrontEmail(to: string, subject: string, text: string, idempotencyKey?: string, html?: string) {
-  return sendEmailViaProvider({ to, subject, text, html }, { idempotencyKey });
+export async function sendStorefrontEmail(
+  to: string,
+  subject: string,
+  text: string,
+  idempotencyKey?: string,
+  html?: string,
+  options: Omit<EmailSendOptions, "idempotencyKey"> = {}
+) {
+  return sendEmailViaProvider({ to, subject, text, html }, { ...options, idempotencyKey });
 }
 
 function customerEmailEventType(kind: CustomerEmailKind, status: CustomerEmailStatus) {
@@ -752,6 +759,18 @@ async function sendCustomerEmailNotificationOnce(input: {
       detail: "Email provider is not configured. Set RESEND_API_KEY and EMAIL_FROM, or configure SMTP fallback."
     });
     return "not_configured";
+  }
+  if (!input.html) {
+    await completeCustomerEmailEvent({
+      eventId: input.eventId,
+      order: input.order,
+      kind: input.kind,
+      status: "failed",
+      recipient,
+      failureReason: "Customer email template HTML missing.",
+      detail: "Customer email HTML template was missing, so no customer email was sent."
+    });
+    return "failed";
   }
   try {
     const result = await sendStorefrontEmail(

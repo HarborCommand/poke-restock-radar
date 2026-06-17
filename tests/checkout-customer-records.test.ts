@@ -544,6 +544,8 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(emailHelpers, /sendEmailViaProvider/);
   assert.match(emailHelpers, /idempotencyKey/);
   assert.match(emailHelpers, /html\?: string/);
+  assert.match(emailHelpers, /Customer email template HTML missing\./);
+  assert.match(emailHelpers, /Customer email HTML template was missing, so no customer email was sent\./);
   assert.match(emailHelpers, /prisma\.paymentEvent\.create/);
   assert.match(emailHelpers, /const existing = await prisma\.paymentEvent\.findUnique\(\{ where: \{ eventId: input\.eventId \} \}\)/);
   assert.match(emailHelpers, /Prisma\.PrismaClientKnownRequestError/);
@@ -557,6 +559,7 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(storefront, /buildShippingConfirmationEmail/);
   assert.match(storefront, /buildLocalPickupEmail/);
   assert.match(emailTemplates, /GameDayGrabs order confirmed: \$\{input\.orderNumber\}/);
+  assert.match(emailTemplates, /STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER = "GDD_EMAIL_TEMPLATE=light-v2"/);
   assert.match(emailTemplates, /Thanks for your order!/);
   assert.match(emailTemplates, /We've received your payment and we're getting it ready for you\./);
   assert.match(emailTemplates, /We'll send tracking once your order ships\./);
