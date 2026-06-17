@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildCheckoutExpiredEmail,
   buildLocalPickupEmail,
   buildOrderConfirmationEmail,
   buildRefundCancellationEmail,
@@ -10,6 +11,7 @@ import {
 const supportEmail = "gamedaygrabs@outlook.com";
 const logoUrl = "https://www.gamedaygrabs.com/brand/gamedaygrabs-logo-horizontal.png";
 const sensitivePaymentPattern = /card number|card_number|cardNumber|CVC|cvc|cvv|payment_method_details|payment_method_data|raw Stripe|raw PaymentIntent|raw Checkout Session|webhook body/i;
+const darkTemplatePattern = /background(?:-color)?:\s*(?:#111(?:111)?|#222(?:222)?|#242424|#0f3b23|#102314|black)|dark-wrapper|dark-card/i;
 
 const orderEmail = buildOrderConfirmationEmail({
   orderNumber: "PR-20260616-Y9SW07",
@@ -31,7 +33,13 @@ const orderEmail = buildOrderConfirmationEmail({
 
 test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.equal(orderEmail.subject, "GameDayGrabs order confirmed: PR-20260616-Y9SW07");
-  assert.match(orderEmail.html, /#F5F7FA/);
+  assert.match(orderEmail.html, /<meta name="color-scheme" content="light" \/>/);
+  assert.match(orderEmail.html, /<meta name="supported-color-schemes" content="light" \/>/);
+  assert.match(orderEmail.html, /bgcolor="#F5F7FA"/);
+  assert.match(orderEmail.html, /background-color:#F5F7FA/);
+  assert.match(orderEmail.html, /bgcolor="#FFFFFF"/);
+  assert.match(orderEmail.html, /background-color:#FFFFFF/);
+  assert.match(orderEmail.html, /color:#111111/);
   assert.match(orderEmail.html, /#FF6A00/);
   assert.match(orderEmail.html, /gamedaygrabs-logo-horizontal\.png/);
   assert.match(orderEmail.html, /Thanks for your order!/);
@@ -42,7 +50,8 @@ test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.match(orderEmail.html, /Shipping method/);
   assert.match(orderEmail.html, /Securely processed by Stripe/);
   assert.match(orderEmail.html, /gamedaygrabs@outlook\.com/);
-  assert.doesNotMatch(orderEmail.html, /#0f3b23|#102314|background:#0f3b23/i);
+  assert.doesNotMatch(orderEmail.html, /background(?!-color)\s*:/i);
+  assert.doesNotMatch(orderEmail.html, darkTemplatePattern);
   assert.doesNotMatch(orderEmail.html + orderEmail.text, sensitivePaymentPattern);
   assert.match(orderEmail.text, /Thanks for your order!/);
   assert.match(orderEmail.text, /Payment method: Securely processed by Stripe/);
@@ -120,15 +129,23 @@ test("all customer email templates include clean footer and support copy", () =>
     orderEmail,
     buildShippingConfirmationEmail({ orderNumber: "PR-TEST", supportEmail, carrier: null, trackingNumber: null, shippingAddress: null }),
     buildRefundCancellationEmail({ orderNumber: "PR-TEST", supportEmail, statusLabel: "Order canceled", refundAmount: 0 }),
-    buildLocalPickupEmail({ orderNumber: "PR-TEST", supportEmail, pickupLocationLines: [], pickupNotes: [] })
+    buildLocalPickupEmail({ orderNumber: "PR-TEST", supportEmail, pickupLocationLines: [], pickupNotes: [] }),
+    buildCheckoutExpiredEmail({ orderNumber: "PR-TEST", supportEmail, items: [], reason: "Checkout expired before payment." })
   ];
 
   for (const email of emails) {
+    assert.match(email.html, /<meta name="color-scheme" content="light" \/>/);
+    assert.match(email.html, /bgcolor="#F5F7FA"/);
+    assert.match(email.html, /background-color:#FFFFFF/);
+    assert.match(email.html, /color:#111111/);
+    assert.match(email.html, /#FF6A00/);
     assert.match(email.html, /Thank you for supporting GameDayGrabs/);
     assert.match(email.html, /Questions\?/);
     assert.match(email.html, /GameDayGrabs is not affiliated with The Pokemon Company International/);
     assert.match(email.text, /Questions\? Contact gamedaygrabs@outlook\.com/);
+    assert.doesNotMatch(email.html, /background(?!-color)\s*:/i);
     assert.doesNotMatch(email.html, /display:grid|grid-template|linear-gradient|#0f3b23|#102314/i);
+    assert.doesNotMatch(email.html, darkTemplatePattern);
     assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
   }
 });

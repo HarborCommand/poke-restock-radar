@@ -116,9 +116,9 @@ function label(text: string) {
 
 function orderNumberBlock(orderNumber: string) {
   return [
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:20px 0;background:${emailColors.card};">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.card}" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:20px 0;background-color:${emailColors.card};">`,
     "<tr>",
-    '<td align="center" style="padding:15px 18px;">',
+    `<td align="center" bgcolor="${emailColors.card}" style="padding:15px 18px;background-color:${emailColors.card};">`,
     label("Order number"),
     `<p style="margin:0;color:${emailColors.accent};font-size:18px;line-height:1.3;font-weight:800;letter-spacing:.01em;">${escapeHtml(orderNumber)}</p>`,
     "</td>",
@@ -127,11 +127,11 @@ function orderNumberBlock(orderNumber: string) {
   ].join("");
 }
 
-function card(content: string, extraStyle = "") {
+function card(content: string, extraStyle = "", backgroundColor = emailColors.card) {
   return [
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:14px 0;background:${emailColors.card};${extraStyle}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${backgroundColor}" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:14px 0;background-color:${backgroundColor};${extraStyle}">`,
     "<tr>",
-    '<td style="padding:18px;">',
+    `<td bgcolor="${backgroundColor}" style="padding:18px;background-color:${backgroundColor};">`,
     content,
     "</td>",
     "</tr>",
@@ -145,7 +145,8 @@ function noteCard(title: string, body: string) {
       `<p style="margin:0 0 5px;color:${emailColors.text};font-size:13px;line-height:1.4;font-weight:800;">${escapeHtml(title)}</p>`,
       `<p style="margin:0;color:${emailColors.text};font-size:13px;line-height:1.55;">${escapeHtml(body)}</p>`
     ].join(""),
-    `background:${emailColors.softAccent};border-color:#F2D8BD;`
+    `border-color:#F2D8BD;`,
+    emailColors.softAccent
   );
 }
 
@@ -164,7 +165,7 @@ function productRows(items: StorefrontEmailItem[]) {
         .map((item) => {
           const image = item.imageUrl
             ? `<img src="${escapeHtml(item.imageUrl)}" width="56" height="56" alt="" style="display:block;width:56px;height:56px;border-radius:10px;border:1px solid ${emailColors.border};object-fit:cover;" />`
-            : `<div style="width:56px;height:56px;border-radius:10px;background:${emailColors.softAccent};border:1px solid ${emailColors.border};text-align:center;line-height:56px;color:${emailColors.accent};font-weight:800;font-size:13px;">GDG</div>`;
+            : `<div style="width:56px;height:56px;border-radius:10px;background-color:${emailColors.softAccent};border:1px solid ${emailColors.border};text-align:center;line-height:56px;color:${emailColors.accent};font-weight:800;font-size:13px;">GDG</div>`;
           return [
             "<tr>",
             `<td width="66" valign="top" style="padding:0 10px 12px 0;">${image}</td>`,
@@ -293,19 +294,19 @@ function renderLayout(input: {
   bodyHtml: string;
 }) {
   const heroIcon = input.heroIcon
-    ? `<div style="margin:10px auto 14px;width:54px;height:54px;border-radius:27px;background:${emailColors.softAccent};color:${emailColors.accent};font-size:28px;line-height:54px;text-align:center;">${escapeHtml(input.heroIcon)}</div>`
+    ? `<div style="margin:10px auto 14px;width:54px;height:54px;border-radius:27px;background-color:${emailColors.softAccent};color:${emailColors.accent};font-size:28px;line-height:54px;text-align:center;">${escapeHtml(input.heroIcon)}</div>`
     : "";
   return [
     '<!doctype html>',
-    '<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />',
-    '<style>@media only screen and (max-width:620px){.gdg-email-shell{padding:16px!important}.gdg-email-card{border-radius:16px!important}.gdg-email-content{padding:22px!important}.gdg-email-title{font-size:24px!important}.gdg-email-logo img{width:170px!important}}</style>',
+    '<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="color-scheme" content="light" /><meta name="supported-color-schemes" content="light" /><meta name="viewport" content="width=device-width, initial-scale=1" />',
+    `<style>:root{color-scheme:light;supported-color-schemes:light;}body{background-color:${emailColors.background}!important;color:${emailColors.text}!important;}.gdg-email-shell{background-color:${emailColors.background}!important;}.gdg-email-card,.gdg-email-logo,.gdg-email-content{background-color:${emailColors.card}!important;color:${emailColors.text}!important;}[data-ogsc] .gdg-email-shell{background-color:${emailColors.background}!important;}[data-ogsc] .gdg-email-card,[data-ogsc] .gdg-email-logo,[data-ogsc] .gdg-email-content{background-color:${emailColors.card}!important;color:${emailColors.text}!important;}@media only screen and (max-width:620px){.gdg-email-shell{padding:16px!important}.gdg-email-card{border-radius:16px!important}.gdg-email-content{padding:22px!important}.gdg-email-title{font-size:24px!important}.gdg-email-logo img{width:170px!important}}</style>`,
     "</head>",
-    `<body style="margin:0;padding:0;background:${emailColors.background};font-family:Arial,Helvetica,sans-serif;color:${emailColors.text};">`,
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${emailColors.background};border-collapse:collapse;">`,
-    '<tr><td class="gdg-email-shell" align="center" style="padding:28px 14px;">',
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="gdg-email-card" style="max-width:600px;background:${emailColors.card};border:1px solid ${emailColors.border};border-radius:22px;border-collapse:separate;overflow:hidden;box-shadow:0 18px 42px rgba(17,24,39,.08);">`,
-    `<tr><td class="gdg-email-logo" style="padding:24px 26px 18px;border-bottom:1px solid ${emailColors.border};">${headerLogo(input.logoUrl)}</td></tr>`,
-    '<tr><td class="gdg-email-content" style="padding:28px 26px 18px;">',
+    `<body bgcolor="${emailColors.background}" style="margin:0;padding:0;background-color:${emailColors.background};font-family:Arial,Helvetica,sans-serif;color:${emailColors.text};">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.background}" style="background-color:${emailColors.background};border-collapse:collapse;">`,
+    `<tr><td class="gdg-email-shell" align="center" bgcolor="${emailColors.background}" style="padding:28px 14px;background-color:${emailColors.background};">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.card}" class="gdg-email-card" style="max-width:600px;background-color:${emailColors.card};border:1px solid ${emailColors.border};border-radius:22px;border-collapse:separate;overflow:hidden;box-shadow:0 18px 42px rgba(17,24,39,.08);">`,
+    `<tr><td class="gdg-email-logo" bgcolor="${emailColors.card}" style="padding:24px 26px 18px;border-bottom:1px solid ${emailColors.border};background-color:${emailColors.card};">${headerLogo(input.logoUrl)}</td></tr>`,
+    `<tr><td class="gdg-email-content" bgcolor="${emailColors.card}" style="padding:28px 26px 18px;background-color:${emailColors.card};color:${emailColors.text};">`,
     heroIcon,
     `<h1 class="gdg-email-title" style="margin:0 0 8px;text-align:center;color:${emailColors.text};font-size:28px;line-height:1.18;font-weight:900;">${escapeHtml(input.title)}</h1>`,
     `<p style="margin:0 auto 8px;max-width:430px;text-align:center;color:${emailColors.muted};font-size:14px;line-height:1.55;">${escapeHtml(input.subtitle)}</p>`,
@@ -390,7 +391,7 @@ export function buildShippingConfirmationEmail(input: ShippingConfirmationEmailI
     .filter((line): line is string => line !== null)
     .join("\n");
   const trackingButton = input.trackingUrl
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;"><tr><td align="center"><a href="${escapeHtml(input.trackingUrl)}" style="display:block;background:${emailColors.accent};color:#ffffff;text-decoration:none;font-size:14px;line-height:1.3;font-weight:900;border-radius:10px;padding:14px 20px;">Track Your Package</a></td></tr></table>`
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;"><tr><td align="center"><a href="${escapeHtml(input.trackingUrl)}" style="display:block;background-color:${emailColors.accent};color:#FFFFFF;text-decoration:none;font-size:14px;line-height:1.3;font-weight:900;border-radius:10px;padding:14px 20px;">Track Your Package</a></td></tr></table>`
     : "";
   const html = renderLayout({
     supportEmail: input.supportEmail,

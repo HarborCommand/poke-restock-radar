@@ -7,6 +7,7 @@ const resendEnv = {
   EMAIL_FROM: "GameDayGrabs Orders <orders@example.com>",
   EMAIL_REPLY_TO: "support@example.com"
 };
+const darkTemplatePattern = /background(?:-color)?:\s*(?:#111(?:111)?|#222(?:222)?|#242424|#0f3b23|#102314|black)|dark-wrapper|dark-card/i;
 
 test("Resend provider sends through mocked fetch without exposing the API key in stored results", async () => {
   const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
@@ -38,7 +39,11 @@ test("Resend provider sends through mocked fetch without exposing the API key in
   assert.equal(body.to, "buyer@example.com");
   assert.equal(body.subject, "GameDayGrabs order confirmed: PR-TEST");
   assert.match(String(body.html), /GameDayGrabs/);
-  assert.match(String(body.html), /#F5F7FA|#FF6A00/);
+  assert.match(String(body.html), /<meta name="color-scheme" content="light" \/>|<meta name="color-scheme" content="light"/);
+  assert.match(String(body.html), /bgcolor="#F5F7FA"/);
+  assert.match(String(body.html), /background-color:#FFFFFF/);
+  assert.match(String(body.html), /#FF6A00/);
+  assert.doesNotMatch(String(body.html), darkTemplatePattern);
   assert.doesNotMatch(JSON.stringify(result), /test_resend_api_key|orders@example\.com|support@example\.com/);
   assert.doesNotMatch(JSON.stringify(body), /test_resend_api_key/);
 });
@@ -97,8 +102,14 @@ test("email template keeps customer copy mobile-readable without raw payment dat
 
   assert.match(html, /GameDayGrabs/);
   assert.match(html, /Thanks for your order/);
-  assert.match(html, /#F5F7FA/);
+  assert.match(html, /<meta name="color-scheme" content="light" \/>/);
+  assert.match(html, /bgcolor="#F5F7FA"/);
+  assert.match(html, /background-color:#F5F7FA/);
+  assert.match(html, /bgcolor="#FFFFFF"/);
+  assert.match(html, /background-color:#FFFFFF/);
+  assert.match(html, /color:#111111/);
   assert.match(html, /#FF6A00/);
-  assert.doesNotMatch(html, /#0f3b23|#102314|background:#0f3b23/i);
+  assert.doesNotMatch(html, /background(?!-color)\s*:/i);
+  assert.doesNotMatch(html, darkTemplatePattern);
   assert.doesNotMatch(html, /payment_method_details|payment_method_data|card_number|cardNumber|CVC|cvc|cvv|raw Stripe/i);
 });
