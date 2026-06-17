@@ -5,7 +5,7 @@ import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
-import { emailProviderConfigured, sendEmailViaProvider, type EmailSendOptions } from "@/lib/email-provider";
+import { emailProviderConfigured, sendEmailViaProvider, type EmailMessage, type EmailSendOptions } from "@/lib/email-provider";
 import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
 import {
   buildCheckoutExpiredEmail,
@@ -510,6 +510,12 @@ const cancellationReasonLabels = {
   address_issue: "Address issue",
   fraud_suspicious: "Fraud / suspicious order",
   duplicate_order: "Duplicate order",
+  customer_return: "Customer return",
+  damaged_in_transit: "Damaged in transit",
+  lost_shipment: "Lost shipment",
+  wrong_item: "Wrong item",
+  support_adjustment: "Customer support adjustment",
+  test_order_cleanup: "Test order cleanup",
   other: "Other"
 } as const;
 
@@ -544,9 +550,10 @@ export async function sendStorefrontEmail(
   text: string,
   idempotencyKey?: string,
   html?: string,
-  options: Omit<EmailSendOptions, "idempotencyKey"> = {}
+  options: Omit<EmailSendOptions, "idempotencyKey"> & Pick<EmailMessage, "headers" | "tags"> = {}
 ) {
-  return sendEmailViaProvider({ to, subject, text, html }, { ...options, idempotencyKey });
+  const { headers, tags, ...sendOptions } = options;
+  return sendEmailViaProvider({ to, subject, text, html, headers, tags }, { ...sendOptions, idempotencyKey });
 }
 
 function customerEmailEventType(kind: CustomerEmailKind, status: CustomerEmailStatus) {
@@ -555,6 +562,25 @@ function customerEmailEventType(kind: CustomerEmailKind, status: CustomerEmailSt
 
 function customerEmailEventId(kind: CustomerEmailKind, orderId: string, key = "default") {
   return `customer_email.${kind}:${orderId}:${key}`;
+}
+
+function customerEmailRuntimeEnvironment() {
+  return envValue("VERCEL_ENV") || process.env.NODE_ENV || "development";
+}
+
+function customerEmailProviderMetadata(order: StorefrontOrderWithItems, kind: CustomerEmailKind) {
+  return {
+    headers: {
+      "X-Entity-Ref-ID": `gdd:${order.orderNumber}:${kind}`,
+      "X-GDD-Notification-Type": kind,
+      "X-GDD-Order-Number": order.orderNumber
+    },
+    tags: [
+      { name: "orderNumber", value: order.orderNumber },
+      { name: "notificationType", value: kind },
+      { name: "environment", value: customerEmailRuntimeEnvironment() }
+    ]
+  } satisfies Pick<EmailMessage, "headers" | "tags">;
 }
 
 function absoluteStorefrontAssetUrl(path: string) {
@@ -778,7 +804,8 @@ async function sendCustomerEmailNotificationOnce(input: {
       input.subject || "GameDayGrabs order update",
       input.text || "GameDayGrabs order update",
       input.eventId,
-      input.html
+      input.html,
+      customerEmailProviderMetadata(input.order, input.kind)
     );
     const status: CustomerEmailStatus = result.status === "sent" ? "sent" : result.status === "failed" ? "failed" : "not_configured";
     await completeCustomerEmailEvent({
@@ -904,11 +931,13 @@ function storefrontOrderNetProfitAfterRefund(order: Pick<StorefrontOrderWithItem
 }
 
 function orderCanCancelOrRefund(order: StorefrontOrderWithItems) {
-  return !(
-    ["canceled", "refunded", "partially_refunded", "refund_pending"].includes(order.status) ||
-    ["refunded", "partially_refunded", "refund_pending"].includes(order.paymentStatus) ||
-    Boolean(order.canceledAt && order.refundStatus)
-  );
+  if (["canceled", "refunded", "refund_pending"].includes(order.status)) return false;
+  if (["refunded", "refund_pending"].includes(order.paymentStatus)) return false;
+  if (order.canceledAt && order.refundStatus) return false;
+  if (order.status === "partially_refunded" || order.paymentStatus === "partially_refunded") {
+    return order.fulfillmentStatus === "shipped" && orderRemainingRefundableCents(order) > 0;
+  }
+  return true;
 }
 
 function orderIsClosedForFulfillment(order: Pick<StorefrontOrderWithItems, "status" | "paymentStatus" | "fulfillmentStatus">) {
@@ -1170,13 +1199,13 @@ function orderTimeline(order: StorefrontOrderWithItems): StorefrontOrderDTO["tim
     { label: "Payment completed", at: completedEvent?.receivedAt.toISOString() ?? order.paidAt?.toISOString() ?? null, detail: completedEvent ? "Stripe webhook checkout.session.completed was received." : "Payment completion webhook has not been stored." },
     { label: "Inventory reduced", at: order.reservations.some((reservation) => reservation.status === "completed") ? order.paidAt?.toISOString() ?? null : null, detail: order.reservations.some((reservation) => reservation.status === "completed") ? "Stock reservation completed after payment." : "Inventory has not been finalized for this order." },
     { label: "Sale created", at: order.items.some((item) => item.costBasis > 0 || item.profitLoss !== 0) ? order.paidAt?.toISOString() ?? null : null, detail: order.items.some((item) => item.costBasis > 0 || item.profitLoss !== 0) ? "Inventory sale/profit values are attached to order items." : "No sale/profit allocation stored yet." },
-    { label: "Cancellation started", at: cancellationStarted?.receivedAt.toISOString() ?? order.canceledAt?.toISOString() ?? null, detail: order.refundReason ? `Reason: ${order.refundReason}.` : "No cancellation has been started." },
+    { label: "Cancel/refund workflow", at: cancellationStarted?.receivedAt.toISOString() ?? order.canceledAt?.toISOString() ?? null, detail: order.refundReason ? `Reason: ${order.refundReason}.` : "No cancel/refund workflow has been started." },
     { label: "Refund created", at: refundCreated?.receivedAt.toISOString() ?? order.refundedAt?.toISOString() ?? null, detail: order.refundedAmount > 0 ? `Refund total recorded: $${order.refundedAmount.toFixed(2)}.` : "No Stripe refund recorded." },
     { label: "Refund status", at: order.refundedAt?.toISOString() ?? null, detail: order.refundStatus ? `Refund status: ${order.refundStatus}.` : "No refund status recorded." },
     { label: "Inventory returned", at: order.stockReturnedAt?.toISOString() ?? null, detail: order.stockReturnStatus ? `Stock return status: ${order.stockReturnStatus}.` : "Stock has not been returned for this order." },
     { label: "Order confirmation email", at: confirmationEmail?.sentAt ?? confirmationEmail?.updatedAt ?? null, detail: confirmationEmail ? `Email status: ${confirmationEmail.status}.` : "No order confirmation email recorded." },
-    { label: "Customer notified", at: order.customerCancellationEmailSentAt?.toISOString() ?? cancellationEmail?.sentAt ?? cancellationEmail?.updatedAt ?? null, detail: order.customerCancellationEmailStatus ? `Email status: ${order.customerCancellationEmailStatus}.` : cancellationEmail ? `Email status: ${cancellationEmail.status}.` : "No cancellation email recorded." },
-    { label: "Admin note/reason", at: cancellationStarted?.receivedAt.toISOString() ?? null, detail: [order.refundReason ? `Reason: ${order.refundReason}` : null, order.refundNote ? `Note: ${order.refundNote}` : null].filter(Boolean).join(" - ") || "No admin cancellation note recorded." },
+    { label: "Customer notified", at: order.customerCancellationEmailSentAt?.toISOString() ?? cancellationEmail?.sentAt ?? cancellationEmail?.updatedAt ?? null, detail: order.customerCancellationEmailStatus ? `Email status: ${order.customerCancellationEmailStatus}.` : cancellationEmail ? `Email status: ${cancellationEmail.status}.` : "No refund/cancellation email recorded." },
+    { label: "Admin note/reason", at: cancellationStarted?.receivedAt.toISOString() ?? null, detail: [order.refundReason ? `Reason: ${order.refundReason}` : null, order.refundNote ? `Note: ${order.refundNote}` : null].filter(Boolean).join(" - ") || "No admin refund/cancellation note recorded." },
     { label: "Packing", at: order.fulfillmentStatus === "packing" || order.status === "packing" ? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "packing" || order.status === "packing" ? "Order is marked packing." : "Not marked packing yet." },
     { label: "Shipped", at: order.fulfillmentStatus === "shipped" ? order.fulfillment?.shippedAt?.toISOString() ?? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "shipped" ? "Order is marked shipped." : "Not shipped yet." },
     { label: "Shipping email", at: shipmentEmail?.sentAt ?? shipmentEmail?.updatedAt ?? null, detail: shipmentEmail ? `Email status: ${shipmentEmail.status}.` : "No shipping email recorded." }
@@ -2615,11 +2644,18 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
   if (!order) throw new Error("Order not found");
   if (!orderCanCancelOrRefund(order)) throw new Error("This order is already canceled, refunded, or refunding.");
 
-  const isPaidStripeOrder = order.paymentStatus === "paid" && Boolean(order.stripePaymentIntentId);
-  if (input.refundType === "none" && isPaidStripeOrder) {
+  const isShippedRefundWorkflow = order.fulfillmentStatus === "shipped";
+  const isRefundableStripeOrder = ["paid", "partially_refunded"].includes(order.paymentStatus) && Boolean(order.stripePaymentIntentId);
+  if (isShippedRefundWorkflow && input.refundType === "none") {
+    throw new Error("Shipped orders cannot be canceled without a refund. Use Refund / Return for shipped orders.");
+  }
+  if (isShippedRefundWorkflow && !input.adminNote?.trim()) {
+    throw new Error("Add an admin note for shipped refund/return handling.");
+  }
+  if (input.refundType === "none" && isRefundableStripeOrder) {
     throw new Error("Paid Stripe orders must use a full or partial refund.");
   }
-  if (input.refundType !== "none" && !isPaidStripeOrder) {
+  if (input.refundType !== "none" && !isRefundableStripeOrder) {
     throw new Error("Stripe refund is only available for paid Stripe orders with a stored PaymentIntent.");
   }
 
@@ -2669,6 +2705,7 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
     const current = await tx.storefrontOrder.findUnique({ where: { id: order.id }, include: storefrontOrderInclude });
     if (!current) throw new Error("Order not found");
     if (!orderCanCancelOrRefund(current)) throw new Error("This order is already canceled, refunded, or refunding.");
+    const currentIsShippedRefundWorkflow = current.fulfillmentStatus === "shipped";
     if (refundCents > orderRemainingRefundableCents(current)) {
       throw new Error("Refund amount exceeds the remaining refundable order total.");
     }
@@ -2682,8 +2719,9 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
           ? "returned"
           : "not_applicable"
       : "not_returned";
+    const workflowReasonLabel = currentIsShippedRefundWorkflow ? "Refund/return reason" : "Cancellation reason";
     const cancellationNote = [
-      `Cancellation reason: ${reasonLabel}`,
+      `${workflowReasonLabel}: ${reasonLabel}`,
       input.adminNote ? `Admin note: ${input.adminNote}` : null,
       refundCents > 0 ? `Refund requested: $${moneyFromCents(refundCents).toFixed(2)}` : "Refund requested: none",
       `Inventory handling: ${stockReturnStatus}`,
@@ -2696,8 +2734,8 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
       data: {
         status: paymentStatus === "not_applicable" ? "canceled" : paymentStatus,
         paymentStatus,
-        fulfillmentStatus: "canceled",
-        canceledAt: current.canceledAt ?? new Date(),
+        fulfillmentStatus: currentIsShippedRefundWorkflow ? current.fulfillmentStatus : "canceled",
+        canceledAt: currentIsShippedRefundWorkflow ? current.canceledAt : current.canceledAt ?? new Date(),
         refundedAt,
         refundStatus,
         refundedAmount: moneyFromCents(newRefundedCents),

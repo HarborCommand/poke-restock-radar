@@ -19,7 +19,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
       action: "storefront.order.cancel_refund",
       entityType: "ORDER",
       entityId: order.id,
-      summary: `${user.email} canceled/refunded storefront order ${order.orderNumber}.`
+      summary: `${user.email} processed refund workflow for storefront order ${order.orderNumber}.`
     });
     return ok({ order });
   } catch (error) {

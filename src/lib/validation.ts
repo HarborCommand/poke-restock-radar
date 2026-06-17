@@ -890,7 +890,20 @@ export const storefrontContactMessageSchema = z.object({
 
 export const storefrontOrderCancelRefundSchema = z
   .object({
-    reason: z.enum(["out_of_stock", "customer_requested", "address_issue", "fraud_suspicious", "duplicate_order", "other"]),
+    reason: z.enum([
+      "out_of_stock",
+      "customer_requested",
+      "address_issue",
+      "fraud_suspicious",
+      "duplicate_order",
+      "customer_return",
+      "damaged_in_transit",
+      "lost_shipment",
+      "wrong_item",
+      "support_adjustment",
+      "test_order_cleanup",
+      "other"
+    ]),
     adminNote: optionalTrimmed,
     refundType: z.enum(["full", "partial", "none"]),
     partialRefundAmount: optionalMoney,

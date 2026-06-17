@@ -148,10 +148,16 @@ test("health reports Resend as the preferred configured email provider without e
       assert.equal(report.providers.email.resendConfigured, true);
       assert.equal(report.providers.email.smtpConfigured, true);
       assert.equal(report.providers.email.emailReplyToConfigured, true);
+      assert.equal(report.providers.email.deliverability.domainAuthenticationStatus, "manual_check_required");
+      assert.equal(report.providers.email.deliverability.dmarcStatus, "unknown_manual");
+      assert.deepEqual(report.providers.email.deliverability.customHeaders, ["X-Entity-Ref-ID", "X-GDD-Notification-Type", "X-GDD-Order-Number"]);
+      assert.deepEqual(report.providers.email.deliverability.tags, ["orderNumber", "notificationType", "environment"]);
+      assert.match(report.providers.email.deliverability.message, /DMARC/);
       assert.match(report.providers.email.envVars.join(","), /RESEND_API_KEY/);
       assert.doesNotMatch(serialized, /re_private_health_value/);
       assert.doesNotMatch(serialized, /orders@example\.com/);
       assert.doesNotMatch(serialized, /support@example\.com/);
+      assert.doesNotMatch(serialized, /orders@gamedaygrabs\.com|gamedaygrabs@outlook\.com/);
     }
   );
 });

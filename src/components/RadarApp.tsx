@@ -640,6 +640,18 @@ function storefrontOrderCanFulfill(order: StorefrontOrderDTO) {
   return order.paymentStatus === "paid" && order.needsFulfillment && !storefrontOrderIsCanceledOrRefunded(order);
 }
 
+function storefrontOrderCanOpenRefundFlow(order: StorefrontOrderDTO) {
+  return Boolean(order.canCancelOrRefund && ["paid", "partially_refunded"].includes(order.paymentStatus) && order.refundableAmount > 0);
+}
+
+function storefrontOrderUsesReturnRefundFlow(order: StorefrontOrderDTO) {
+  return order.fulfillmentStatus === "shipped" && storefrontOrderCanOpenRefundFlow(order);
+}
+
+function storefrontOrderRefundActionLabel(order: StorefrontOrderDTO) {
+  return storefrontOrderUsesReturnRefundFlow(order) ? "Refund / Return" : "Cancel / Refund";
+}
+
 function storefrontOrderDetailIsReadOnly(order: StorefrontOrderDTO) {
   const reviewLocked = order.status === "inventory_review" || order.fulfillmentStatus === "review_required";
   return storefrontOrderIsCanceledOrRefunded(order) || (reviewLocked && !storefrontOrderCanFulfill(order));
@@ -6704,13 +6716,20 @@ function StorefrontOrdersPanel({
   runAction: ActionHandler;
 }) {
   const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [refundOrderId, setRefundOrderId] = useState("");
+  const [refundOrderKey, setRefundOrderKey] = useState("");
   const [activeOrderTab, setActiveOrderTab] = useState<StorefrontOrderTab>(() => storefrontDefaultOrderTab(dashboard.storefrontOrders));
   const [storeSettingsOpen, setStoreSettingsOpen] = useState(false);
   const selectedOrder = dashboard.storefrontOrders.find((order) => order.id === selectedOrderId) ?? null;
+  const refundOrder = dashboard.storefrontOrders.find((order) => order.id === refundOrderId) ?? null;
   const stats = dashboard.storefrontSummary;
   const orderTabs = storefrontOrderTabs(dashboard.storefrontOrders);
   const visibleOrders = storefrontOrdersForTab(dashboard.storefrontOrders, activeOrderTab);
   const emptyState = storefrontOrderEmptyState(activeOrderTab);
+  const openRefundOrder = (order: StorefrontOrderDTO) => {
+    setRefundOrderKey(globalThis.crypto?.randomUUID?.() ?? `cancel-refund-${order.id}-${Date.now()}`);
+    setRefundOrderId(order.id);
+  };
 
   return (
     <>
@@ -6849,6 +6868,12 @@ function StorefrontOrdersPanel({
                           </button>
                         </>
                       ) : null}
+                      {storefrontOrderUsesReturnRefundFlow(order) ? (
+                        <button className="mini-action danger" disabled={busy} type="button" onClick={() => openRefundOrder(order)}>
+                          <RotateCcw size={13} />
+                          Refund / Return
+                        </button>
+                      ) : null}
                       <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>
                         Details
                       </button>
@@ -6883,6 +6908,16 @@ function StorefrontOrdersPanel({
           submit={submit}
           runAction={runAction}
           onClose={() => setSelectedOrderId("")}
+        />
+      ) : null}
+      {refundOrder ? (
+        <StorefrontCancelRefundModal
+          busy={busy}
+          busyLabel={busyLabel}
+          idempotencyKey={refundOrderKey}
+          onClose={() => setRefundOrderId("")}
+          order={refundOrder}
+          submit={submit}
         />
       ) : null}
     </>
@@ -7003,6 +7038,8 @@ function StorefrontOrderDetailsModal({
   const orderDetailReadOnly = storefrontOrderDetailIsReadOnly(order);
   const readOnlyDetailMessage = storefrontOrderReadOnlyDetailMessage(order);
   const shipmentDetailsSaved = storefrontOrderHasShipmentDetails(order);
+  const canOpenRefundFlow = storefrontOrderCanOpenRefundFlow(order);
+  const refundActionLabel = storefrontOrderRefundActionLabel(order);
   const canShowPackingSlip = order.items.length > 0 && (canFulfillOrder || orderDetailReadOnly || order.fulfillmentStatus === "shipped");
   const packingSlipLabel = orderDetailReadOnly ? "View Historical Packing Slip" : "Print/View Packing Slip";
   const packingSlipPreviewLabel = orderDetailReadOnly ? "View Historical Packing Slip Preview" : "View Packing Slip Preview";
@@ -7077,10 +7114,10 @@ function StorefrontOrderDetailsModal({
                   {packingSlipLabel}
                 </button>
               ) : null}
-              {order.canCancelOrRefund && !(order.paymentStatus === "paid" && order.refundableAmount <= 0) ? (
+              {canOpenRefundFlow ? (
                 <button className="mini-action danger" disabled={busy} type="button" onClick={openCancelRefund}>
                   <RotateCcw size={14} />
-                  Cancel / Refund
+                  {refundActionLabel}
                 </button>
               ) : null}
               <button
@@ -7117,6 +7154,12 @@ function StorefrontOrderDetailsModal({
                 <button className="mini-action" type="button" onClick={() => window.print()}>
                   <Printer size={14} />
                   {packingSlipLabel}
+                </button>
+              ) : null}
+              {canOpenRefundFlow ? (
+                <button className="mini-action danger" disabled={busy} type="button" onClick={openCancelRefund}>
+                  <RotateCcw size={14} />
+                  {refundActionLabel}
                 </button>
               ) : null}
               <span className="fulfillment-locked-note">{storefrontOrderIsCanceledOrRefunded(order) ? "Historical order - no fulfillment action needed." : "Only active paid orders can be marked packing or shipped."}</span>
@@ -7569,12 +7612,32 @@ function StorefrontCancelRefundModal({
   const [successOrder, setSuccessOrder] = useState<StorefrontOrderDTO | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const submittedRef = useRef(false);
-  const inventoryFinalized = order.paymentStatus === "paid" && order.reservations.some((reservation) => reservation.status === "completed");
-  const actionLabel = `Canceling/refunding ${order.orderNumber}`;
+  const shippedRefundFlow = storefrontOrderUsesReturnRefundFlow(order);
+  const inventoryFinalized = ["paid", "partially_refunded"].includes(order.paymentStatus) && order.reservations.some((reservation) => reservation.status === "completed");
+  const actionName = shippedRefundFlow ? "Refund / Return" : "Cancel / Refund";
+  const actionLabel = shippedRefundFlow ? `Refunding/returning ${order.orderNumber}` : `Canceling/refunding ${order.orderNumber}`;
   const processing = busyLabel === actionLabel;
-  const hasNoRefundableBalance = order.paymentStatus === "paid" && order.refundableAmount <= 0;
+  const hasNoRefundableBalance = ["paid", "partially_refunded"].includes(order.paymentStatus) && order.refundableAmount <= 0;
   const resultOrder = successOrder ?? order;
   const refundActionText = refundType === "none" ? "Canceling order..." : "Processing refund...";
+  const refundReasonOptions = shippedRefundFlow
+    ? [
+        { value: "customer_return", label: "Customer return" },
+        { value: "damaged_in_transit", label: "Damaged in transit" },
+        { value: "lost_shipment", label: "Lost shipment" },
+        { value: "wrong_item", label: "Wrong item" },
+        { value: "support_adjustment", label: "Customer support adjustment" },
+        { value: "test_order_cleanup", label: "Test order cleanup" },
+        { value: "other", label: "Other" }
+      ]
+    : [
+        { value: "out_of_stock", label: "Out of stock" },
+        { value: "customer_requested", label: "Customer requested cancellation" },
+        { value: "address_issue", label: "Address issue" },
+        { value: "fraud_suspicious", label: "Fraud / suspicious order" },
+        { value: "duplicate_order", label: "Duplicate order" },
+        { value: "other", label: "Other" }
+      ];
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     if (submittedRef.current) {
@@ -7605,11 +7668,11 @@ function StorefrontCancelRefundModal({
 
   return (
     <div className="inventory-modal-backdrop order-cancel-refund-backdrop" role="presentation">
-      <div className="inventory-modal order-cancel-refund-modal" role="dialog" aria-modal="true" aria-label={`Cancel or refund ${order.orderNumber}`}>
+      <div className="inventory-modal order-cancel-refund-modal" role="dialog" aria-modal="true" aria-label={`${actionName} ${order.orderNumber}`}>
         <header className="inventory-details-header">
           <div className="storefront-order-avatar">{successOrder ? <Check size={24} /> : <RotateCcw size={24} />}</div>
           <div>
-            <h2>{successOrder ? "Order canceled" : "Cancel / Refund"}</h2>
+            <h2>{successOrder ? (shippedRefundFlow ? "Refund / return recorded" : "Order canceled") : shippedRefundFlow ? "Refund / Return Shipped Order" : "Cancel / Refund"}</h2>
             <p>{order.orderNumber} - remaining refundable {money(resultOrder.refundableAmount)}</p>
           </div>
           <button className="icon-button" type="button" aria-label="Close cancel refund" onClick={onClose}>
@@ -7623,14 +7686,14 @@ function StorefrontCancelRefundModal({
               <DetailStat label="Refund status" value={cancelRefundResultLabel(refundType, successOrder)} tone={successOrder.stripeRefundId || refundType === "none" ? "good" : "neutral"} />
               <DetailStat label="Refund amount" value={money(Math.max(0, successOrder.refundedAmount - order.refundedAmount))} />
               <DetailStat label="Inventory result" value={stockReturnResultLabel(successOrder.stockReturnStatus)} tone={successOrder.stockReturnStatus === "returned" || successOrder.stockReturnStatus === "already_returned" ? "good" : "neutral"} />
-              <DetailStat label="Customer email result" value={customerEmailResultLabel(successOrder.customerCancellationEmailStatus)} tone={successOrder.customerCancellationEmailStatus === "sent" ? "good" : successOrder.customerCancellationEmailStatus === "failed" ? "bad" : "neutral"} />
+              <DetailStat label="Customer email result" value={customerEmailResultLabel(successOrder.customerCancellationEmailStatus, shippedRefundFlow)} tone={successOrder.customerCancellationEmailStatus === "sent" ? "good" : successOrder.customerCancellationEmailStatus === "failed" ? "bad" : "neutral"} />
             </div>
             <p className="form-helper publish-ready-note">
               Updated order status: {formatStatus(successOrder.status)}. Remaining refundable: {money(successOrder.refundableAmount)}.
             </p>
             <div className="inventory-edit-actions">
               <button className="primary-action" type="button" onClick={onClose}>
-                Done — View Updated Order
+                Done - View Updated Order
               </button>
             </div>
           </div>
@@ -7659,23 +7722,16 @@ function StorefrontCancelRefundModal({
             ) : null}
             <SelectInput
               name="reason"
-              label="Cancellation reason"
-              defaultValue="customer_requested"
-              options={[
-                { value: "out_of_stock", label: "Out of stock" },
-                { value: "customer_requested", label: "Customer requested cancellation" },
-                { value: "address_issue", label: "Address issue" },
-                { value: "fraud_suspicious", label: "Fraud / suspicious order" },
-                { value: "duplicate_order", label: "Duplicate order" },
-                { value: "other", label: "Other" }
-              ]}
+              label={shippedRefundFlow ? "Refund / return reason" : "Cancellation reason"}
+              defaultValue={shippedRefundFlow ? "customer_return" : "customer_requested"}
+              options={refundReasonOptions}
             />
             <label>
               Refund type
               <select name="refundType" value={refundType} onChange={(event) => setRefundType(event.currentTarget.value)}>
                 <option value="full">Full refund</option>
                 <option value="partial">Partial refund</option>
-                <option value="none" disabled={order.paymentStatus === "paid"}>No refund</option>
+                <option value="none" disabled={order.paymentStatus === "paid" || shippedRefundFlow}>No refund</option>
               </select>
             </label>
             {refundType === "partial" ? (
@@ -7683,28 +7739,39 @@ function StorefrontCancelRefundModal({
             ) : (
               <input name="partialRefundAmount" type="hidden" value="" />
             )}
-            <TextareaInput name="adminNote" label="Admin note / explanation" wide />
+            <TextareaInput
+              name="adminNote"
+              label={shippedRefundFlow ? "Admin note / return handling" : "Admin note / explanation"}
+              required={shippedRefundFlow}
+              placeholder={shippedRefundFlow ? "Explain the shipped refund or return handling." : undefined}
+              wide
+            />
             <input name="returnItemsToStock" type="hidden" value="false" />
             <label className="checkbox-label wide-field">
-              <input name="returnItemsToStock" type="checkbox" value="true" defaultChecked={inventoryFinalized} disabled={!inventoryFinalized} />
-              Return purchased items to stock
+              <input name="returnItemsToStock" type="checkbox" value="true" defaultChecked={inventoryFinalized && !shippedRefundFlow} disabled={!inventoryFinalized} />
+              Return item to stock
             </label>
+            {shippedRefundFlow ? (
+              <p className="form-helper publish-ready-note wide-field">
+                Only return stock if the item has been physically returned and is sellable. Shipped refunds do not return inventory by default.
+              </p>
+            ) : null}
             {!inventoryFinalized ? <p className="form-helper publish-ready-note wide-field">Inventory was not finalized for this order, so stock return is not applicable.</p> : null}
             <input name="sendCustomerEmail" type="hidden" value="false" />
             <label className="checkbox-label wide-field">
               <input name="sendCustomerEmail" type="checkbox" value="true" defaultChecked={Boolean(order.customerEmail)} />
-              Send cancellation email to customer
+              {shippedRefundFlow ? "Send refund/return update to customer" : "Send cancellation email to customer"}
             </label>
             <p className="form-helper publish-ready-note wide-field">
               Stripe-paid orders refund through the stored PaymentIntent. No sensitive payment details are stored here.
             </p>
             <div className="inventory-edit-actions wide-field">
               <button className="mini-action" disabled={processing} type="button" onClick={onClose}>
-                Keep Order
+                {shippedRefundFlow ? "Close" : "Keep Order"}
               </button>
               <button className="primary-action danger" disabled={busy || processing || submittedRef.current || !idempotencyKey} type="submit">
                 <RotateCcw size={16} />
-                {processing ? refundActionText : "Confirm Cancel / Refund"}
+                {processing ? refundActionText : shippedRefundFlow ? "Confirm Refund / Return" : "Confirm Cancel / Refund"}
               </button>
             </div>
           </form>
@@ -7729,8 +7796,8 @@ function stockReturnResultLabel(status: string | null) {
   return "Stock return not applicable";
 }
 
-function customerEmailResultLabel(status: string | null) {
-  if (status === "sent") return "Cancellation email sent";
+function customerEmailResultLabel(status: string | null, refundReturn = false) {
+  if (status === "sent") return refundReturn ? "Refund/return email sent" : "Cancellation email sent";
   if (status === "not_configured") return "Email not configured";
   if (status === "missing_customer_email") return "No customer email on file";
   if (status === "failed") return "Email failed";
@@ -19327,7 +19394,10 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
             health.providers.email.resendApiKeyConfigured
           ).toLowerCase()}, from ${configuredText(health.providers.email.emailFromConfigured).toLowerCase()}, reply-to ${configuredText(
             health.providers.email.emailReplyToConfigured
-          ).toLowerCase()} - ${health.providers.email.message}`}
+          ).toLowerCase()}, domain auth ${health.providers.email.deliverability.domainAuthenticationStatus.replaceAll(
+            "_",
+            " "
+          )}, DMARC ${health.providers.email.deliverability.dmarcStatus.replaceAll("_", " ")} - ${health.providers.email.message}`}
         />
         <HealthCard
           icon={Smartphone}

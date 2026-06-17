@@ -38,6 +38,13 @@ export type EnvironmentReport = {
       smtpConfigured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
+      deliverability: {
+        domainAuthenticationStatus: "manual_check_required" | "not_applicable";
+        dmarcStatus: "unknown_manual";
+        customHeaders: string[];
+        tags: string[];
+        message: string;
+      };
     };
     sms: ProviderHealthMetadata & {
       configured: boolean;
@@ -321,7 +328,17 @@ export function getEnvironmentReport(): EnvironmentReport {
         emailReplyToConfigured: emailProvider.emailReplyToConfigured,
         smtpConfigured: emailProvider.smtpConfigured,
         smtpHostConfigured: emailProvider.smtpHostConfigured,
-        smtpFromConfigured: emailProvider.smtpFromConfigured
+        smtpFromConfigured: emailProvider.smtpFromConfigured,
+        deliverability: {
+          domainAuthenticationStatus: emailProvider.provider === "resend" ? "manual_check_required" : "not_applicable",
+          dmarcStatus: "unknown_manual",
+          customHeaders: ["X-Entity-Ref-ID", "X-GDD-Notification-Type", "X-GDD-Order-Number"],
+          tags: ["orderNumber", "notificationType", "environment"],
+          message:
+            emailProvider.provider === "resend"
+              ? "Resend is configured. Domain authentication and DMARC are DNS/provider checks and should be verified manually."
+              : "Resend is not the active provider. DMARC is a manual DNS check."
+        }
       },
       sms: {
         configured: smsConfigured,

@@ -1225,6 +1225,13 @@ export type AppHealthDTO = {
       smtpConfigured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
+      deliverability: {
+        domainAuthenticationStatus: "manual_check_required" | "not_applicable";
+        dmarcStatus: "unknown_manual";
+        customHeaders: string[];
+        tags: string[];
+        message: string;
+      };
     };
     sms: ProviderHealthMetadataDTO & {
       configured: boolean;

@@ -38,5 +38,15 @@ Public Contact
 - If SMTP is not configured, contact form messages are stored as storefront inquiries in Admin.
 - If SMTP is configured later, contact form messages are sent to gamedaygrabs@outlook.com.
 
+Transactional Email Deliverability
+- Keep the Resend sending domain verified for gamedaygrabs.com.
+- EMAIL_FROM should stay on the verified domain, for example GameDayGrabs Orders <orders@gamedaygrabs.com>.
+- EMAIL_REPLY_TO should point to the monitored support inbox, for example gamedaygrabs@outlook.com.
+- The app does not check DNS records directly. Confirm SPF, DKIM, and DMARC in the domain DNS and Resend dashboard.
+- Add a DMARC TXT record for gamedaygrabs.com if one is not already present.
+- A safe monitoring-first starting point is:
+  _dmarc.gamedaygrabs.com TXT "v=DMARC1; p=none; rua=mailto:gamedaygrabs@outlook.com"
+- After monitoring mail flow, the owner can tighten DMARC later if comfortable.
+
 Public Data Safety
 The public storefront must never expose cost basis, supplier/source, market value, profit, tracker data, UPC scanner history, receipts, or admin notes.

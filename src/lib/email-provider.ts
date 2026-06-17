@@ -16,11 +16,18 @@ export type EmailProviderConfig = {
   partiallyConfigured: boolean;
 };
 
+export type EmailProviderTag = {
+  name: string;
+  value: string;
+};
+
 export type EmailMessage = {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  headers?: Record<string, string>;
+  tags?: EmailProviderTag[];
 };
 
 export type EmailSendResult = {
@@ -42,6 +49,37 @@ const resendEndpoint = "https://api.resend.com/emails";
 function envValue(env: EmailProviderEnv, name: string) {
   const value = env[name]?.trim();
   return value && value.length > 0 ? value : null;
+}
+
+const allowedCustomerEmailHeaders = new Set(["X-Entity-Ref-ID", "X-GDD-Notification-Type", "X-GDD-Order-Number"]);
+
+function cleanHeaderValue(value: string) {
+  return value.replace(/[\r\n]+/g, " ").trim().slice(0, 240);
+}
+
+function sanitizedMessageHeaders(headers: EmailMessage["headers"]) {
+  const safe: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (!allowedCustomerEmailHeaders.has(name) || typeof value !== "string") continue;
+    const cleanValue = cleanHeaderValue(value);
+    if (cleanValue) safe[name] = cleanValue;
+  }
+  return safe;
+}
+
+function sanitizedTagName(value: string) {
+  const clean = value.replace(/[^A-Za-z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "").slice(0, 50);
+  return clean || null;
+}
+
+function sanitizedMessageTags(tags: EmailMessage["tags"]) {
+  return (tags ?? [])
+    .map((tag) => {
+      const name = sanitizedTagName(tag.name);
+      const value = cleanHeaderValue(tag.value).slice(0, 256);
+      return name && value ? { name, value } : null;
+    })
+    .filter((tag): tag is EmailProviderTag => Boolean(tag));
 }
 
 export function emailProviderConfig(env: EmailProviderEnv = process.env): EmailProviderConfig {
@@ -138,23 +176,28 @@ async function sendWithResend(message: EmailMessage, env: EmailProviderEnv, fetc
   const from = envValue(env, "EMAIL_FROM");
   const replyTo = envValue(env, "EMAIL_REPLY_TO");
   if (!apiKey || !from) return false;
-  const headers: Record<string, string> = {
+  const apiHeaders: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json"
   };
-  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey.slice(0, 256);
+  if (idempotencyKey) apiHeaders["Idempotency-Key"] = idempotencyKey.slice(0, 256);
+  const emailHeaders = sanitizedMessageHeaders(message.headers);
+  const tags = sanitizedMessageTags(message.tags);
+  const body: Record<string, unknown> = {
+    from,
+    to: message.to,
+    subject: message.subject,
+    text: message.text,
+    html: message.html ?? renderEmailHtml(message.subject, message.text),
+    reply_to: replyTo || undefined
+  };
+  if (Object.keys(emailHeaders).length > 0) body.headers = emailHeaders;
+  if (tags.length > 0) body.tags = tags;
 
   const response = await fetchImpl(resendEndpoint, {
     method: "POST",
-    headers,
-    body: JSON.stringify({
-      from,
-      to: message.to,
-      subject: message.subject,
-      text: message.text,
-      html: message.html ?? renderEmailHtml(message.subject, message.text),
-      reply_to: replyTo || undefined
-    })
+    headers: apiHeaders,
+    body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(`Resend send failed with status ${response.status}.`);
   return true;
@@ -163,6 +206,7 @@ async function sendWithResend(message: EmailMessage, env: EmailProviderEnv, fetc
 async function sendWithSmtp(message: EmailMessage, env: EmailProviderEnv) {
   const host = envValue(env, "SMTP_HOST");
   const from = envValue(env, "SMTP_FROM");
+  const replyTo = envValue(env, "EMAIL_REPLY_TO");
   if (!host || !from) return false;
   const { createTransport } = await import("nodemailer");
   const transporter = createTransport({
@@ -181,7 +225,9 @@ async function sendWithSmtp(message: EmailMessage, env: EmailProviderEnv) {
     to: message.to,
     subject: message.subject,
     text: message.text,
-    html: message.html ?? renderEmailHtml(message.subject, message.text)
+    html: message.html ?? renderEmailHtml(message.subject, message.text),
+    replyTo: replyTo || undefined,
+    headers: sanitizedMessageHeaders(message.headers)
   });
   return true;
 }
