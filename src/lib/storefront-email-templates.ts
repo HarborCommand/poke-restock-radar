@@ -28,7 +28,7 @@ export type StorefrontRenderedEmail = {
   html: string;
 };
 
-export const STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER = "GDD_EMAIL_TEMPLATE=light-v2";
+export const STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER = "GDD_EMAIL_TEMPLATE=light-v3";
 
 export type OrderConfirmationEmailInput = StorefrontEmailBase & {
   items: StorefrontEmailItem[];
@@ -73,6 +73,14 @@ const emailColors = {
   green: "#16713F"
 };
 
+function lightBackgroundStyle(color: string) {
+  return `background-color:${color} !important;background-image:linear-gradient(${color},${color}) !important;`;
+}
+
+function textColorStyle(color: string) {
+  return `color:${color} !important;-webkit-text-fill-color:${color} !important;`;
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -113,16 +121,16 @@ function withLineBreaks(text: string) {
 }
 
 function label(text: string) {
-  return `<p style="margin:0 0 4px;color:${emailColors.muted};font-size:11px;line-height:1.35;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">${escapeHtml(text)}</p>`;
+  return `<p class="gdg-email-muted" style="margin:0 0 4px;${textColorStyle(emailColors.muted)}font-size:11px;line-height:1.35;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">${escapeHtml(text)}</p>`;
 }
 
 function orderNumberBlock(orderNumber: string) {
   return [
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.card}" class="gdg-email-panel" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:20px 0;background-color:${emailColors.card} !important;">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.card}" class="gdg-email-panel" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:20px 0;${lightBackgroundStyle(emailColors.card)}">`,
     "<tr>",
-    `<td align="center" bgcolor="${emailColors.card}" class="gdg-email-panel-cell" style="padding:15px 18px;background-color:${emailColors.card} !important;">`,
+    `<td align="center" bgcolor="${emailColors.card}" class="gdg-email-panel-cell" style="padding:15px 18px;${lightBackgroundStyle(emailColors.card)}">`,
     label("Order number"),
-    `<p style="margin:0;color:${emailColors.accent};font-size:18px;line-height:1.3;font-weight:800;letter-spacing:.01em;">${escapeHtml(orderNumber)}</p>`,
+    `<p class="gdg-email-accent" style="margin:0;${textColorStyle(emailColors.accent)}font-size:18px;line-height:1.3;font-weight:800;letter-spacing:.01em;">${escapeHtml(orderNumber)}</p>`,
     "</td>",
     "</tr>",
     "</table>"
@@ -132,9 +140,9 @@ function orderNumberBlock(orderNumber: string) {
 function card(content: string, extraStyle = "", backgroundColor = emailColors.card) {
   const className = backgroundColor === emailColors.softAccent ? "gdg-email-panel gdg-email-soft-panel" : "gdg-email-panel";
   return [
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${backgroundColor}" class="${className}" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:14px 0;background-color:${backgroundColor} !important;${extraStyle}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${backgroundColor}" class="${className}" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:14px 0;${lightBackgroundStyle(backgroundColor)}${extraStyle}">`,
     "<tr>",
-    `<td bgcolor="${backgroundColor}" class="gdg-email-panel-cell" style="padding:18px;background-color:${backgroundColor} !important;">`,
+    `<td bgcolor="${backgroundColor}" class="gdg-email-panel-cell" style="padding:18px;${lightBackgroundStyle(backgroundColor)}">`,
     content,
     "</td>",
     "</tr>",
@@ -145,8 +153,8 @@ function card(content: string, extraStyle = "", backgroundColor = emailColors.ca
 function noteCard(title: string, body: string) {
   return card(
     [
-      `<p style="margin:0 0 5px;color:${emailColors.text};font-size:13px;line-height:1.4;font-weight:800;">${escapeHtml(title)}</p>`,
-      `<p style="margin:0;color:${emailColors.text};font-size:13px;line-height:1.55;">${escapeHtml(body)}</p>`
+      `<p style="margin:0 0 5px;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.4;font-weight:800;">${escapeHtml(title)}</p>`,
+      `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.55;">${escapeHtml(body)}</p>`
     ].join(""),
     `border-color:#F2D8BD;`,
     emailColors.softAccent
@@ -156,8 +164,8 @@ function noteCard(title: string, body: string) {
 function summaryRow(labelText: string, value: string, isStrong = false) {
   return [
     "<tr>",
-    `<td style="padding:5px 0;color:${isStrong ? emailColors.text : emailColors.muted};font-size:${isStrong ? "15px" : "13px"};line-height:1.4;font-weight:${isStrong ? "800" : "500"};">${escapeHtml(labelText)}</td>`,
-    `<td align="right" style="padding:5px 0;color:${isStrong ? emailColors.accent : emailColors.text};font-size:${isStrong ? "15px" : "13px"};line-height:1.4;font-weight:${isStrong ? "800" : "700"};">${escapeHtml(value)}</td>`,
+    `<td class="${isStrong ? "" : "gdg-email-muted"}" style="padding:5px 0;${textColorStyle(isStrong ? emailColors.text : emailColors.muted)}font-size:${isStrong ? "15px" : "13px"};line-height:1.4;font-weight:${isStrong ? "800" : "500"};">${escapeHtml(labelText)}</td>`,
+    `<td align="right" class="${isStrong ? "gdg-email-accent" : ""}" style="padding:5px 0;${textColorStyle(isStrong ? emailColors.accent : emailColors.text)}font-size:${isStrong ? "15px" : "13px"};line-height:1.4;font-weight:${isStrong ? "800" : "700"};">${escapeHtml(value)}</td>`,
     "</tr>"
   ].join("");
 }
@@ -168,19 +176,19 @@ function productRows(items: StorefrontEmailItem[]) {
         .map((item) => {
           const image = item.imageUrl
             ? `<img src="${escapeHtml(item.imageUrl)}" width="56" height="56" alt="" style="display:block;width:56px;height:56px;border-radius:10px;border:1px solid ${emailColors.border};object-fit:cover;" />`
-            : `<div style="width:56px;height:56px;border-radius:10px;background-color:${emailColors.softAccent} !important;border:1px solid ${emailColors.border};text-align:center;line-height:56px;color:${emailColors.accent};font-weight:800;font-size:13px;">GDG</div>`;
+            : `<div class="gdg-email-soft-panel gdg-email-accent" style="width:56px;height:56px;border-radius:10px;${lightBackgroundStyle(emailColors.softAccent)}border:1px solid ${emailColors.border};text-align:center;line-height:56px;${textColorStyle(emailColors.accent)}font-weight:800;font-size:13px;">GDG</div>`;
           return [
             "<tr>",
             `<td width="66" valign="top" style="padding:0 10px 12px 0;">${image}</td>`,
             '<td valign="top" style="padding:0 8px 12px 0;">',
-            `<p style="margin:0;color:${emailColors.text};font-size:13px;line-height:1.35;font-weight:800;">${item.quantity} x ${escapeHtml(item.name)}</p>`,
+            `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.35;font-weight:800;">${item.quantity} x ${escapeHtml(item.name)}</p>`,
             "</td>",
-            `<td align="right" valign="top" style="padding:0 0 12px 8px;color:${emailColors.text};font-size:13px;line-height:1.35;font-weight:800;white-space:nowrap;">${formatMoney(item.lineTotal)}</td>`,
+            `<td align="right" valign="top" style="padding:0 0 12px 8px;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.35;font-weight:800;white-space:nowrap;">${formatMoney(item.lineTotal)}</td>`,
             "</tr>"
           ].join("");
         })
         .join("")
-    : `<tr><td style="color:${emailColors.muted};font-size:13px;line-height:1.5;">No line items were stored for this order.</td></tr>`;
+    : `<tr><td class="gdg-email-muted" style="${textColorStyle(emailColors.muted)}font-size:13px;line-height:1.5;">No line items were stored for this order.</td></tr>`;
 
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows}</table>`;
 }
@@ -194,7 +202,7 @@ function orderSummaryCard(input: {
 }) {
   return card(
     [
-      `<p style="margin:0 0 12px;color:${emailColors.text};font-size:12px;line-height:1.3;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Order summary</p>`,
+      `<p style="margin:0 0 12px;${textColorStyle(emailColors.text)}font-size:12px;line-height:1.3;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Order summary</p>`,
       productRows(input.items),
       `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid ${emailColors.border};padding-top:10px;">`,
       summaryRow("Subtotal", formatMoney(input.subtotal)),
@@ -212,11 +220,11 @@ function twoColumnInfoCard(left: { title: string; body: string }, right: { title
       "<tr>",
       `<td valign="top" width="50%" style="padding-right:14px;border-right:1px solid ${emailColors.border};">`,
       label(left.title),
-      `<p style="margin:0;color:${emailColors.text};font-size:13px;line-height:1.45;font-weight:700;">${withLineBreaks(left.body)}</p>`,
+      `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.45;font-weight:700;">${withLineBreaks(left.body)}</p>`,
       "</td>",
       '<td valign="top" width="50%" style="padding-left:14px;">',
       label(right.title),
-      `<p style="margin:0;color:${emailColors.text};font-size:13px;line-height:1.45;font-weight:700;">${withLineBreaks(right.body)}</p>`,
+      `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.45;font-weight:700;">${withLineBreaks(right.body)}</p>`,
       "</td>",
       "</tr>",
       "</table>"
@@ -235,7 +243,7 @@ function detailRows(rows: Array<{ label: string; value: string | null | undefine
           `<td valign="top" width="42" style="padding:0 12px 16px 0;color:${emailColors.green};font-size:20px;line-height:1;">•</td>`,
           '<td valign="top" style="padding:0 0 16px 0;">',
           label(row.label),
-          `<p style="margin:0;color:${emailColors.text};font-size:14px;line-height:1.45;font-weight:800;">${withLineBreaks(row.value || "")}</p>`,
+          `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:14px;line-height:1.45;font-weight:800;">${withLineBreaks(row.value || "")}</p>`,
           "</td>",
           "</tr>"
         ].join("")
@@ -250,8 +258,8 @@ function addressCard(title: string, lines: string[]) {
     [
       label(title),
       lines.length
-        ? lines.map((line) => `<p style="margin:0;color:${emailColors.text};font-size:13px;line-height:1.45;">${escapeHtml(line)}</p>`).join("")
-        : paragraph("Not provided", `color:${emailColors.muted};font-size:13px;line-height:1.45;`)
+        ? lines.map((line) => `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.45;">${escapeHtml(line)}</p>`).join("")
+        : paragraph("Not provided", `${textColorStyle(emailColors.muted)}font-size:13px;line-height:1.45;`)
     ].join("")
   );
 }
@@ -262,8 +270,8 @@ function supportCard(supportEmail: string) {
       '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>',
       '<td width="48" valign="middle" style="font-size:26px;line-height:1;">&#9742;</td>',
       '<td valign="middle">',
-      `<p style="margin:0 0 4px;color:${emailColors.text};font-size:13px;line-height:1.35;font-weight:800;text-transform:uppercase;letter-spacing:.04em;">Questions?</p>`,
-      `<p style="margin:0;color:${emailColors.text};font-size:13px;line-height:1.45;">Contact us anytime at <a href="mailto:${escapeHtml(supportEmail)}" style="color:${emailColors.accent};font-weight:800;text-decoration:none;">${escapeHtml(supportEmail)}</a></p>`,
+      `<p style="margin:0 0 4px;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.35;font-weight:800;text-transform:uppercase;letter-spacing:.04em;">Questions?</p>`,
+      `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.45;">Contact us anytime at <a class="gdg-email-accent" href="mailto:${escapeHtml(supportEmail)}" style="${textColorStyle(emailColors.accent)}font-weight:800;text-decoration:none;">${escapeHtml(supportEmail)}</a></p>`,
       "</td>",
       "</tr></table>"
     ].join("")
@@ -272,9 +280,9 @@ function supportCard(supportEmail: string) {
 
 function footer(supportEmail: string) {
   return [
-    `<p style="margin:22px 0 8px;text-align:center;color:${emailColors.text};font-size:12px;line-height:1.45;font-weight:800;">Thank you for supporting GameDayGrabs.</p>`,
-    `<p style="margin:0 0 8px;text-align:center;color:${emailColors.muted};font-size:11px;line-height:1.45;">Need help? <a href="mailto:${escapeHtml(supportEmail)}" style="color:${emailColors.accent};text-decoration:none;font-weight:700;">${escapeHtml(supportEmail)}</a></p>`,
-    `<p style="margin:0;text-align:center;color:${emailColors.muted};font-size:10px;line-height:1.45;">GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</p>`
+    `<p style="margin:22px 0 8px;text-align:center;${textColorStyle(emailColors.text)}font-size:12px;line-height:1.45;font-weight:800;">Thank you for supporting GameDayGrabs.</p>`,
+    `<p class="gdg-email-muted" style="margin:0 0 8px;text-align:center;${textColorStyle(emailColors.muted)}font-size:11px;line-height:1.45;">Need help? <a class="gdg-email-accent" href="mailto:${escapeHtml(supportEmail)}" style="${textColorStyle(emailColors.accent)}text-decoration:none;font-weight:700;">${escapeHtml(supportEmail)}</a></p>`,
+    `<p class="gdg-email-muted" style="margin:0;text-align:center;${textColorStyle(emailColors.muted)}font-size:10px;line-height:1.45;">GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</p>`
   ].join("");
 }
 
@@ -283,8 +291,8 @@ function headerLogo(logoUrl?: string | null) {
     return `<img src="${escapeHtml(logoUrl)}" width="190" alt="GameDayGrabs" style="display:block;width:190px;max-width:190px;height:auto;border:0;" />`;
   }
   return [
-    `<p style="margin:0;color:${emailColors.text};font-size:20px;line-height:1.1;font-weight:900;letter-spacing:.01em;">GameDay<span style="color:${emailColors.accent};">Grabs</span></p>`,
-    `<p style="margin:3px 0 0;color:${emailColors.muted};font-size:9px;line-height:1.2;font-weight:800;letter-spacing:.18em;text-transform:uppercase;">Collect. Play. Invest.</p>`
+    `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:20px;line-height:1.1;font-weight:900;letter-spacing:.01em;">GameDay<span class="gdg-email-accent" style="${textColorStyle(emailColors.accent)}">Grabs</span></p>`,
+    `<p class="gdg-email-muted" style="margin:3px 0 0;${textColorStyle(emailColors.muted)}font-size:9px;line-height:1.2;font-weight:800;letter-spacing:.18em;text-transform:uppercase;">Collect. Play. Invest.</p>`
   ].join("");
 }
 
@@ -297,23 +305,40 @@ function renderLayout(input: {
   bodyHtml: string;
 }) {
   const heroIcon = input.heroIcon
-    ? `<div style="margin:10px auto 14px;width:54px;height:54px;border-radius:27px;background-color:${emailColors.softAccent} !important;color:${emailColors.accent};font-size:28px;line-height:54px;text-align:center;">${escapeHtml(input.heroIcon)}</div>`
+    ? `<div class="gdg-email-soft-panel gdg-email-accent" style="margin:10px auto 14px;width:54px;height:54px;border-radius:27px;${lightBackgroundStyle(emailColors.softAccent)}${textColorStyle(emailColors.accent)}font-size:28px;line-height:54px;text-align:center;">${escapeHtml(input.heroIcon)}</div>`
     : "";
+  const emailCss = [
+    ":root{color-scheme:light;supported-color-schemes:light;}",
+    `body{${lightBackgroundStyle(emailColors.background)}${textColorStyle(emailColors.text)}}`,
+    `.gdg-email-root,.gdg-email-shell{${lightBackgroundStyle(emailColors.background)}${textColorStyle(emailColors.text)}}`,
+    `.gdg-email-card,.gdg-email-logo,.gdg-email-content,.gdg-email-panel,.gdg-email-panel-cell{${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}}`,
+    `.gdg-email-soft-panel,.gdg-email-soft-panel .gdg-email-panel-cell{${lightBackgroundStyle(emailColors.softAccent)}${textColorStyle(emailColors.text)}}`,
+    `.gdg-email-muted{${textColorStyle(emailColors.muted)}}`,
+    `.gdg-email-accent,.gdg-email-content a{${textColorStyle(emailColors.accent)}}`,
+    `.gdg-email-title{${textColorStyle(emailColors.text)}}`,
+    `[data-ogsc] body,[data-ogsb] body,[data-ogsc] .gdg-email-root,[data-ogsb] .gdg-email-root,[data-ogsc] .gdg-email-shell,[data-ogsb] .gdg-email-shell{${lightBackgroundStyle(emailColors.background)}${textColorStyle(emailColors.text)}}`,
+    `[data-ogsc] .gdg-email-card,[data-ogsb] .gdg-email-card,[data-ogsc] .gdg-email-logo,[data-ogsb] .gdg-email-logo,[data-ogsc] .gdg-email-content,[data-ogsb] .gdg-email-content,[data-ogsc] .gdg-email-panel,[data-ogsb] .gdg-email-panel,[data-ogsc] .gdg-email-panel-cell,[data-ogsb] .gdg-email-panel-cell{${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}}`,
+    `[data-ogsc] .gdg-email-soft-panel,[data-ogsb] .gdg-email-soft-panel,[data-ogsc] .gdg-email-soft-panel .gdg-email-panel-cell,[data-ogsb] .gdg-email-soft-panel .gdg-email-panel-cell{${lightBackgroundStyle(emailColors.softAccent)}${textColorStyle(emailColors.text)}}`,
+    `[data-ogsc] .gdg-email-muted,[data-ogsb] .gdg-email-muted{${textColorStyle(emailColors.muted)}}`,
+    `[data-ogsc] .gdg-email-accent,[data-ogsb] .gdg-email-accent,[data-ogsc] .gdg-email-content a,[data-ogsb] .gdg-email-content a{${textColorStyle(emailColors.accent)}}`,
+    `@media (prefers-color-scheme:dark){body,.gdg-email-root,.gdg-email-shell{${lightBackgroundStyle(emailColors.background)}${textColorStyle(emailColors.text)}}.gdg-email-card,.gdg-email-logo,.gdg-email-content,.gdg-email-panel,.gdg-email-panel-cell{${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}}.gdg-email-soft-panel,.gdg-email-soft-panel .gdg-email-panel-cell{${lightBackgroundStyle(emailColors.softAccent)}${textColorStyle(emailColors.text)}}.gdg-email-muted{${textColorStyle(emailColors.muted)}}.gdg-email-accent,.gdg-email-content a{${textColorStyle(emailColors.accent)}}}`,
+    "@media only screen and (max-width:620px){.gdg-email-shell{padding:16px!important}.gdg-email-card{border-radius:16px!important}.gdg-email-content{padding:22px!important}.gdg-email-title{font-size:24px!important}.gdg-email-logo img{width:170px!important}}"
+  ].join("");
   return [
     '<!doctype html>',
     `<!-- ${STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER} -->`,
     '<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="color-scheme" content="light" /><meta name="supported-color-schemes" content="light" /><meta name="viewport" content="width=device-width, initial-scale=1" />',
-    `<style>:root{color-scheme:light;supported-color-schemes:light;}body{background-color:${emailColors.background}!important;color:${emailColors.text}!important;}.gdg-email-root,.gdg-email-shell{background-color:${emailColors.background}!important;color:${emailColors.text}!important;}.gdg-email-card,.gdg-email-logo,.gdg-email-content,.gdg-email-panel,.gdg-email-panel-cell{background-color:${emailColors.card}!important;color:${emailColors.text}!important;}.gdg-email-soft-panel,.gdg-email-soft-panel .gdg-email-panel-cell{background-color:${emailColors.softAccent}!important;color:${emailColors.text}!important;}[data-ogsc] body,[data-ogsb] body,[data-ogsc] .gdg-email-root,[data-ogsb] .gdg-email-root,[data-ogsc] .gdg-email-shell,[data-ogsb] .gdg-email-shell{background-color:${emailColors.background}!important;color:${emailColors.text}!important;}[data-ogsc] .gdg-email-card,[data-ogsb] .gdg-email-card,[data-ogsc] .gdg-email-logo,[data-ogsb] .gdg-email-logo,[data-ogsc] .gdg-email-content,[data-ogsb] .gdg-email-content,[data-ogsc] .gdg-email-panel,[data-ogsb] .gdg-email-panel,[data-ogsc] .gdg-email-panel-cell,[data-ogsb] .gdg-email-panel-cell{background-color:${emailColors.card}!important;color:${emailColors.text}!important;}[data-ogsc] .gdg-email-soft-panel,[data-ogsb] .gdg-email-soft-panel,[data-ogsc] .gdg-email-soft-panel .gdg-email-panel-cell,[data-ogsb] .gdg-email-soft-panel .gdg-email-panel-cell{background-color:${emailColors.softAccent}!important;color:${emailColors.text}!important;}@media only screen and (max-width:620px){.gdg-email-shell{padding:16px!important}.gdg-email-card{border-radius:16px!important}.gdg-email-content{padding:22px!important}.gdg-email-title{font-size:24px!important}.gdg-email-logo img{width:170px!important}}</style>`,
+    `<style>${emailCss}</style>`,
     "</head>",
-    `<body bgcolor="${emailColors.background}" style="margin:0;padding:0;background-color:${emailColors.background} !important;font-family:Arial,Helvetica,sans-serif;color:${emailColors.text} !important;">`,
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.background}" class="gdg-email-root" style="background-color:${emailColors.background} !important;border-collapse:collapse;">`,
-    `<tr><td class="gdg-email-shell" align="center" bgcolor="${emailColors.background}" style="padding:28px 14px;background-color:${emailColors.background} !important;color:${emailColors.text} !important;">`,
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.card}" class="gdg-email-card" style="max-width:600px;background-color:${emailColors.card} !important;border:1px solid ${emailColors.border};border-radius:22px;border-collapse:separate;overflow:hidden;box-shadow:0 18px 42px rgba(17,24,39,.08);">`,
-    `<tr><td class="gdg-email-logo" bgcolor="${emailColors.card}" style="padding:24px 26px 18px;border-bottom:1px solid ${emailColors.border};background-color:${emailColors.card} !important;color:${emailColors.text} !important;">${headerLogo(input.logoUrl)}</td></tr>`,
-    `<tr><td class="gdg-email-content" bgcolor="${emailColors.card}" style="padding:28px 26px 18px;background-color:${emailColors.card} !important;color:${emailColors.text} !important;">`,
+    `<body bgcolor="${emailColors.background}" style="margin:0;padding:0;${lightBackgroundStyle(emailColors.background)}font-family:Arial,Helvetica,sans-serif;${textColorStyle(emailColors.text)}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.background}" class="gdg-email-root" style="${lightBackgroundStyle(emailColors.background)}border-collapse:collapse;">`,
+    `<tr><td class="gdg-email-shell" align="center" bgcolor="${emailColors.background}" style="padding:28px 14px;${lightBackgroundStyle(emailColors.background)}${textColorStyle(emailColors.text)}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.card}" class="gdg-email-card" style="max-width:600px;${lightBackgroundStyle(emailColors.card)}border:1px solid ${emailColors.border};border-radius:22px;border-collapse:separate;overflow:hidden;box-shadow:0 18px 42px rgba(17,24,39,.08);">`,
+    `<tr><td class="gdg-email-logo" bgcolor="${emailColors.card}" style="padding:24px 26px 18px;border-bottom:1px solid ${emailColors.border};${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}">${headerLogo(input.logoUrl)}</td></tr>`,
+    `<tr><td class="gdg-email-content" bgcolor="${emailColors.card}" style="padding:28px 26px 18px;${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}">`,
     heroIcon,
-    `<h1 class="gdg-email-title" style="margin:0 0 8px;text-align:center;color:${emailColors.text};font-size:28px;line-height:1.18;font-weight:900;">${escapeHtml(input.title)}</h1>`,
-    `<p style="margin:0 auto 8px;max-width:430px;text-align:center;color:${emailColors.muted};font-size:14px;line-height:1.55;">${escapeHtml(input.subtitle)}</p>`,
+    `<h1 class="gdg-email-title" style="margin:0 0 8px;text-align:center;${textColorStyle(emailColors.text)}font-size:28px;line-height:1.18;font-weight:900;">${escapeHtml(input.title)}</h1>`,
+    `<p class="gdg-email-muted" style="margin:0 auto 8px;max-width:430px;text-align:center;${textColorStyle(emailColors.muted)}font-size:14px;line-height:1.55;">${escapeHtml(input.subtitle)}</p>`,
     input.bodyHtml,
     supportCard(input.supportEmail),
     footer(input.supportEmail),
@@ -395,7 +420,7 @@ export function buildShippingConfirmationEmail(input: ShippingConfirmationEmailI
     .filter((line): line is string => line !== null)
     .join("\n");
   const trackingButton = input.trackingUrl
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;"><tr><td align="center"><a href="${escapeHtml(input.trackingUrl)}" style="display:block;background-color:${emailColors.accent} !important;color:${emailColors.text};text-decoration:none;font-size:14px;line-height:1.3;font-weight:900;border-radius:10px;padding:14px 20px;">Track Your Package</a></td></tr></table>`
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;"><tr><td align="center"><a href="${escapeHtml(input.trackingUrl)}" class="gdg-email-accent" style="display:block;${lightBackgroundStyle(emailColors.softAccent)}${textColorStyle(emailColors.accent)}text-decoration:none;font-size:14px;line-height:1.3;font-weight:900;border-radius:10px;padding:14px 20px;">Track Your Package</a></td></tr></table>`
     : "";
   const html = renderLayout({
     supportEmail: input.supportEmail,

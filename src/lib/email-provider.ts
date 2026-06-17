@@ -90,6 +90,14 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
+function fallbackLightBackgroundStyle(color: string) {
+  return `background-color:${color}!important;background-image:linear-gradient(${color},${color})!important;`;
+}
+
+function fallbackTextColorStyle(color: string) {
+  return `color:${color}!important;-webkit-text-fill-color:${color}!important;`;
+}
+
 export function renderEmailHtml(subject: string, text: string) {
   const sections = text
     .split(/\n{2,}/)
@@ -100,18 +108,18 @@ export function renderEmailHtml(subject: string, text: string) {
 
   return [
     '<!doctype html>',
-    '<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="color-scheme" content="light" /><meta name="supported-color-schemes" content="light" /><style>:root{color-scheme:light;supported-color-schemes:light;}body{background-color:#F5F7FA!important;color:#111111!important;}[data-ogsc] .gdg-email-card,[data-ogsc] .gdg-email-content{background-color:#FFFFFF!important;color:#111111!important;}</style></head>',
-    '<body bgcolor="#F5F7FA" style="margin:0;padding:0;background-color:#F5F7FA;font-family:Arial,Helvetica,sans-serif;color:#111111;">',
-    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#F5F7FA" style="background-color:#F5F7FA;border-collapse:collapse;"><tr><td align="center" bgcolor="#F5F7FA" style="padding:24px;background-color:#F5F7FA;">',
-    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#FFFFFF" class="gdg-email-card" style="max-width:640px;background-color:#FFFFFF;border:1px solid #E6EAF0;border-radius:18px;border-collapse:separate;overflow:hidden;">',
-    '<tr><td bgcolor="#FFFFFF" style="padding:20px 24px;background-color:#FFFFFF;border-bottom:1px solid #E6EAF0;">',
-    '<strong style="font-size:18px;color:#111111;">GameDay<span style="color:#FF6A00;">Grabs</span></strong>',
-    '<div style="margin-top:3px;color:#5F6B7A;font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;">Collect. Play. Invest.</div>',
+    `<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="color-scheme" content="light" /><meta name="supported-color-schemes" content="light" /><style>:root{color-scheme:light;supported-color-schemes:light;}body,.gdg-email-root{${fallbackLightBackgroundStyle("#F5F7FA")}${fallbackTextColorStyle("#111111")}}.gdg-email-card,.gdg-email-content,.gdg-email-panel{${fallbackLightBackgroundStyle("#FFFFFF")}${fallbackTextColorStyle("#111111")}}.gdg-email-muted{${fallbackTextColorStyle("#5F6B7A")}}.gdg-email-accent,.gdg-email-content a{${fallbackTextColorStyle("#FF6A00")}}[data-ogsc] body,[data-ogsb] body,[data-ogsc] .gdg-email-root,[data-ogsb] .gdg-email-root{${fallbackLightBackgroundStyle("#F5F7FA")}${fallbackTextColorStyle("#111111")}}[data-ogsc] .gdg-email-card,[data-ogsb] .gdg-email-card,[data-ogsc] .gdg-email-content,[data-ogsb] .gdg-email-content,[data-ogsc] .gdg-email-panel,[data-ogsb] .gdg-email-panel{${fallbackLightBackgroundStyle("#FFFFFF")}${fallbackTextColorStyle("#111111")}}@media (prefers-color-scheme:dark){body,.gdg-email-root{${fallbackLightBackgroundStyle("#F5F7FA")}${fallbackTextColorStyle("#111111")}}.gdg-email-card,.gdg-email-content,.gdg-email-panel{${fallbackLightBackgroundStyle("#FFFFFF")}${fallbackTextColorStyle("#111111")}}}</style></head>`,
+    `<body bgcolor="#F5F7FA" style="margin:0;padding:0;${fallbackLightBackgroundStyle("#F5F7FA")}font-family:Arial,Helvetica,sans-serif;${fallbackTextColorStyle("#111111")}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#F5F7FA" class="gdg-email-root" style="${fallbackLightBackgroundStyle("#F5F7FA")}border-collapse:collapse;"><tr><td align="center" bgcolor="#F5F7FA" style="padding:24px;${fallbackLightBackgroundStyle("#F5F7FA")}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#FFFFFF" class="gdg-email-card" style="max-width:640px;${fallbackLightBackgroundStyle("#FFFFFF")}border:1px solid #E6EAF0;border-radius:18px;border-collapse:separate;overflow:hidden;">`,
+    `<tr><td bgcolor="#FFFFFF" class="gdg-email-panel" style="padding:20px 24px;${fallbackLightBackgroundStyle("#FFFFFF")}border-bottom:1px solid #E6EAF0;">`,
+    `<strong style="font-size:18px;${fallbackTextColorStyle("#111111")}">GameDay<span class="gdg-email-accent" style="${fallbackTextColorStyle("#FF6A00")}">Grabs</span></strong>`,
+    `<div class="gdg-email-muted" style="margin-top:3px;${fallbackTextColorStyle("#5F6B7A")}font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;">Collect. Play. Invest.</div>`,
     "</td></tr>",
-    '<tr><td bgcolor="#FFFFFF" class="gdg-email-content" style="padding:22px;background-color:#FFFFFF;color:#111111;">',
-    `<h1 style="margin:0 0 14px;color:#111111;font-size:22px;line-height:1.25;">${escapeHtml(subject)}</h1>`,
-    `<div style="font-size:15px;line-height:1.55;color:#111111;">${sections}</div>`,
-    '<p style="margin-top:22px;color:#5F6B7A;font-size:13px;">Payment is securely processed through Stripe.</p>',
+    `<tr><td bgcolor="#FFFFFF" class="gdg-email-content" style="padding:22px;${fallbackLightBackgroundStyle("#FFFFFF")}${fallbackTextColorStyle("#111111")}">`,
+    `<h1 style="margin:0 0 14px;${fallbackTextColorStyle("#111111")}font-size:22px;line-height:1.25;">${escapeHtml(subject)}</h1>`,
+    `<div style="font-size:15px;line-height:1.55;${fallbackTextColorStyle("#111111")}">${sections}</div>`,
+    `<p class="gdg-email-muted" style="margin-top:22px;${fallbackTextColorStyle("#5F6B7A")}font-size:13px;">Payment is securely processed through Stripe.</p>`,
     "</td></tr>",
     "</table>",
     "</td></tr></table>",

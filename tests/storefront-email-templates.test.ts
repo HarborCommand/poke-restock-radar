@@ -40,8 +40,12 @@ test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.match(orderEmail.html, /<meta name="supported-color-schemes" content="light" \/>/);
   assert.match(orderEmail.html, /bgcolor="#F5F7FA"/);
   assert.match(orderEmail.html, /background-color:#F5F7FA/);
+  assert.match(orderEmail.html, /background-image:linear-gradient\(#F5F7FA,#F5F7FA\)/);
   assert.match(orderEmail.html, /bgcolor="#FFFFFF"/);
   assert.match(orderEmail.html, /background-color:#FFFFFF/);
+  assert.match(orderEmail.html, /background-image:linear-gradient\(#FFFFFF,#FFFFFF\)/);
+  assert.match(orderEmail.html, /-webkit-text-fill-color:#111111/);
+  assert.match(orderEmail.html, /-webkit-text-fill-color:#FF6A00/);
   assert.match(orderEmail.html, /color:#111111/);
   assert.match(orderEmail.html, /#FF6A00/);
   assert.match(orderEmail.html, /gamedaygrabs-logo-horizontal\.png/);
@@ -142,6 +146,8 @@ test("all customer email templates include clean footer and support copy", () =>
     assert.match(email.html, new RegExp(STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER));
     assert.match(email.html, /bgcolor="#F5F7FA"/);
     assert.match(email.html, /background-color:#FFFFFF/);
+    assert.match(email.html, /background-image:linear-gradient\(#FFFFFF,#FFFFFF\)/);
+    assert.match(email.html, /-webkit-text-fill-color:#111111/);
     assert.match(email.html, /color:#111111/);
     assert.match(email.html, /#FF6A00/);
     assert.match(email.html, /Thank you for supporting GameDayGrabs/);
@@ -149,7 +155,7 @@ test("all customer email templates include clean footer and support copy", () =>
     assert.match(email.html, /GameDayGrabs is not affiliated with The Pokemon Company International/);
     assert.match(email.text, /Questions\? Contact gamedaygrabs@outlook\.com/);
     assert.doesNotMatch(email.html, /background(?!-color)\s*:/i);
-    assert.doesNotMatch(email.html, /display:grid|grid-template|linear-gradient|#0f3b23|#102314/i);
+    assert.doesNotMatch(email.html, /display:grid|grid-template|#0f3b23|#102314/i);
     assert.doesNotMatch(email.html, darkTemplatePattern);
     assert.doesNotMatch(email.html, whiteTextPattern);
     assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);

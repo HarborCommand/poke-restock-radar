@@ -50,8 +50,12 @@ function assertLightCustomerEmailHtml(html: string) {
   assert.match(html, /<meta name="supported-color-schemes" content="light" \/>/);
   assert.match(html, /bgcolor="#F5F7FA"/);
   assert.match(html, /background-color:#F5F7FA/);
+  assert.match(html, /background-image:linear-gradient\(#F5F7FA,#F5F7FA\)/);
   assert.match(html, /bgcolor="#FFFFFF"/);
   assert.match(html, /background-color:#FFFFFF/);
+  assert.match(html, /background-image:linear-gradient\(#FFFFFF,#FFFFFF\)/);
+  assert.match(html, /-webkit-text-fill-color:#111111/);
+  assert.match(html, /-webkit-text-fill-color:#FF6A00/);
   assert.match(html, /#FF6A00/);
   assert.match(html, /GameDayGrabs/);
   assert.doesNotMatch(html, backgroundShorthandPattern);
@@ -210,8 +214,11 @@ test("email template keeps customer copy mobile-readable without raw payment dat
   assert.match(html, /<meta name="color-scheme" content="light" \/>/);
   assert.match(html, /bgcolor="#F5F7FA"/);
   assert.match(html, /background-color:#F5F7FA/);
+  assert.match(html, /background-image:linear-gradient\(#F5F7FA,#F5F7FA\)/);
   assert.match(html, /bgcolor="#FFFFFF"/);
   assert.match(html, /background-color:#FFFFFF/);
+  assert.match(html, /background-image:linear-gradient\(#FFFFFF,#FFFFFF\)/);
+  assert.match(html, /-webkit-text-fill-color:#111111/);
   assert.match(html, /color:#111111/);
   assert.match(html, /#FF6A00/);
   assert.doesNotMatch(html, /background(?!-color)\s*:/i);
