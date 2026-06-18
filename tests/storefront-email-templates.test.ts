@@ -14,6 +14,7 @@ const logoUrl = "https://www.gamedaygrabs.com/brand/gamedaygrabs-logo-horizontal
 const sensitivePaymentPattern = /card number|card_number|cardNumber|CVC|cvc|cvv|payment_method_details|payment_method_data|raw Stripe|raw PaymentIntent|raw Checkout Session|webhook body/i;
 const darkTemplatePattern = /background(?:-color)?:\s*(?:#111(?:111)?|#222(?:222)?|#242424|#0f3b23|#102314|black)|dark-wrapper|dark-card/i;
 const whiteTextPattern = /(?<!background-)color:\s*(?:#fff(?:fff)?|white)\b/i;
+const paleTextPattern = /(?<!background-)color:\s*(?:#f5f5f5|#eaeaea|#f7f7f7|#fafafa)\b/i;
 
 const orderEmail = buildOrderConfirmationEmail({
   orderNumber: "PR-20260616-Y9SW07",
@@ -38,15 +39,17 @@ test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.match(orderEmail.html, new RegExp(STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER));
   assert.match(orderEmail.html, /<meta name="color-scheme" content="light" \/>/);
   assert.match(orderEmail.html, /<meta name="supported-color-schemes" content="light" \/>/);
-  assert.match(orderEmail.html, /bgcolor="#F5F7FA"/);
-  assert.match(orderEmail.html, /background-color:#F5F7FA/);
-  assert.match(orderEmail.html, /background-image:linear-gradient\(#F5F7FA,#F5F7FA\)/);
+  assert.match(orderEmail.html, /bgcolor="#FFF7EB"/);
+  assert.match(orderEmail.html, /background-color:#FFF7EB/);
+  assert.match(orderEmail.html, /background-image:linear-gradient\(#FFF7EB,#FFF7EB\)/);
   assert.match(orderEmail.html, /bgcolor="#FFFFFF"/);
   assert.match(orderEmail.html, /background-color:#FFFFFF/);
   assert.match(orderEmail.html, /background-image:linear-gradient\(#FFFFFF,#FFFFFF\)/);
-  assert.match(orderEmail.html, /-webkit-text-fill-color:#111111/);
+  assert.match(orderEmail.html, /border:1px solid #D0D5DD/);
+  assert.match(orderEmail.html, /-webkit-text-fill-color:#101828/);
   assert.match(orderEmail.html, /-webkit-text-fill-color:#FF6A00/);
-  assert.match(orderEmail.html, /color:#111111/);
+  assert.match(orderEmail.html, /-webkit-text-fill-color:#475467/);
+  assert.match(orderEmail.html, /color:#101828/);
   assert.match(orderEmail.html, /#FF6A00/);
   assert.match(orderEmail.html, /gamedaygrabs-logo-horizontal\.png/);
   assert.match(orderEmail.html, /Thanks for your order!/);
@@ -61,6 +64,7 @@ test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.doesNotMatch(orderEmail.html, /background(?!-color)\s*:/i);
   assert.doesNotMatch(orderEmail.html, darkTemplatePattern);
   assert.doesNotMatch(orderEmail.html, whiteTextPattern);
+  assert.doesNotMatch(orderEmail.html, paleTextPattern);
   assert.doesNotMatch(orderEmail.html + orderEmail.text, sensitivePaymentPattern);
   assert.match(orderEmail.text, /Thanks for your order!/);
   assert.match(orderEmail.text, /Payment method: Securely processed by Stripe/);
@@ -145,6 +149,14 @@ test("refund and cancellation email includes refund status, amount, reason, and 
   assert.match(email.html, /\$49\.98/);
   assert.match(email.html, /Customer requested cancellation/);
   assert.match(email.html, /Refunds typically appear in your account within 3-10 business days/);
+  assert.match(email.html, /Status/);
+  assert.match(email.html, /Refund amount/);
+  assert.match(email.html, /Reason/);
+  assert.match(email.html, /-webkit-text-fill-color:#101828[^>]+font-size:15px[^>]+font-weight:900/);
+  assert.match(email.html, /border-color:#D98F45/);
+  assert.match(email.html, /bgcolor="#FFF3E2"/);
+  assert.doesNotMatch(email.html, whiteTextPattern);
+  assert.doesNotMatch(email.html, paleTextPattern);
   assert.match(email.text, /Refund amount: \$49\.98/);
   assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
 });
@@ -180,11 +192,13 @@ test("all customer email templates include clean footer and support copy", () =>
   for (const email of emails) {
     assert.match(email.html, /<meta name="color-scheme" content="light" \/>/);
     assert.match(email.html, new RegExp(STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER));
-    assert.match(email.html, /bgcolor="#F5F7FA"/);
+    assert.match(email.html, /bgcolor="#FFF7EB"/);
     assert.match(email.html, /background-color:#FFFFFF/);
     assert.match(email.html, /background-image:linear-gradient\(#FFFFFF,#FFFFFF\)/);
-    assert.match(email.html, /-webkit-text-fill-color:#111111/);
-    assert.match(email.html, /color:#111111/);
+    assert.match(email.html, /border:1px solid #D0D5DD/);
+    assert.match(email.html, /-webkit-text-fill-color:#101828/);
+    assert.match(email.html, /-webkit-text-fill-color:#475467/);
+    assert.match(email.html, /color:#101828/);
     assert.match(email.html, /#FF6A00/);
     assert.match(email.html, /Thank you for supporting GameDayGrabs/);
     assert.match(email.html, /Questions\?/);
@@ -194,6 +208,7 @@ test("all customer email templates include clean footer and support copy", () =>
     assert.doesNotMatch(email.html, /display:grid|grid-template|#0f3b23|#102314/i);
     assert.doesNotMatch(email.html, darkTemplatePattern);
     assert.doesNotMatch(email.html, whiteTextPattern);
+    assert.doesNotMatch(email.html, paleTextPattern);
     assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
   }
 });

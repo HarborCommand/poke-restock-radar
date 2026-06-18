@@ -64,15 +64,16 @@ export type CheckoutExpiredEmailInput = StorefrontEmailBase & {
 };
 
 const emailColors = {
-  background: "#F5F7FA",
+  background: "#FFF7EB",
   card: "#FFFFFF",
-  text: "#111111",
-  muted: "#5F6B7A",
-  border: "#E6EAF0",
+  text: "#101828",
+  muted: "#475467",
+  label: "#667085",
+  border: "#D0D5DD",
   accent: "#FF6A00",
   gold: "#FFB800",
-  softAccent: "#FFF8F0",
-  green: "#16713F"
+  softAccent: "#FFF3E2",
+  green: "#087443"
 };
 
 function lightBackgroundStyle(color: string) {
@@ -123,7 +124,7 @@ function withLineBreaks(text: string) {
 }
 
 function label(text: string) {
-  return `<p class="gdg-email-muted" style="margin:0 0 4px;${textColorStyle(emailColors.muted)}font-size:11px;line-height:1.35;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">${escapeHtml(text)}</p>`;
+  return `<p class="gdg-email-muted" style="margin:0 0 5px;${textColorStyle(emailColors.label)}font-size:11px;line-height:1.35;text-transform:uppercase;letter-spacing:.08em;font-weight:800;">${escapeHtml(text)}</p>`;
 }
 
 function orderNumberBlock(orderNumber: string) {
@@ -142,9 +143,9 @@ function orderNumberBlock(orderNumber: string) {
 function card(content: string, extraStyle = "", backgroundColor = emailColors.card) {
   const className = backgroundColor === emailColors.softAccent ? "gdg-email-panel gdg-email-soft-panel" : "gdg-email-panel";
   return [
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${backgroundColor}" class="${className}" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:14px 0;${lightBackgroundStyle(backgroundColor)}${extraStyle}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${backgroundColor}" class="${className}" style="border:1px solid ${emailColors.border};border-radius:14px;border-collapse:separate;margin:14px 0;${lightBackgroundStyle(backgroundColor)}${textColorStyle(emailColors.text)}${extraStyle}">`,
     "<tr>",
-    `<td bgcolor="${backgroundColor}" class="gdg-email-panel-cell" style="padding:18px;${lightBackgroundStyle(backgroundColor)}">`,
+    `<td bgcolor="${backgroundColor}" class="gdg-email-panel-cell" style="padding:18px;${lightBackgroundStyle(backgroundColor)}${textColorStyle(emailColors.text)}">`,
     content,
     "</td>",
     "</tr>",
@@ -155,10 +156,10 @@ function card(content: string, extraStyle = "", backgroundColor = emailColors.ca
 function noteCard(title: string, body: string) {
   return card(
     [
-      `<p style="margin:0 0 5px;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.4;font-weight:800;">${escapeHtml(title)}</p>`,
-      `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.55;">${escapeHtml(body)}</p>`
+      `<p style="margin:0 0 7px;${textColorStyle(emailColors.text)}font-size:14px;line-height:1.4;font-weight:900;">${escapeHtml(title)}</p>`,
+      `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:14px;line-height:1.58;font-weight:650;">${escapeHtml(body)}</p>`
     ].join(""),
-    `border-color:#F2D8BD;`,
+    `border-color:#D98F45;`,
     emailColors.softAccent
   );
 }
@@ -166,8 +167,8 @@ function noteCard(title: string, body: string) {
 function summaryRow(labelText: string, value: string, isStrong = false) {
   return [
     "<tr>",
-    `<td class="${isStrong ? "" : "gdg-email-muted"}" style="padding:5px 0;${textColorStyle(isStrong ? emailColors.text : emailColors.muted)}font-size:${isStrong ? "15px" : "13px"};line-height:1.4;font-weight:${isStrong ? "800" : "500"};">${escapeHtml(labelText)}</td>`,
-    `<td align="right" class="${isStrong ? "gdg-email-accent" : ""}" style="padding:5px 0;${textColorStyle(isStrong ? emailColors.accent : emailColors.text)}font-size:${isStrong ? "15px" : "13px"};line-height:1.4;font-weight:${isStrong ? "800" : "700"};">${escapeHtml(value)}</td>`,
+    `<td class="${isStrong ? "" : "gdg-email-muted"}" style="padding:5px 0;${textColorStyle(isStrong ? emailColors.text : emailColors.muted)}font-size:${isStrong ? "15px" : "13px"};line-height:1.4;font-weight:${isStrong ? "900" : "700"};">${escapeHtml(labelText)}</td>`,
+    `<td align="right" class="${isStrong ? "gdg-email-accent" : ""}" style="padding:5px 0;${textColorStyle(isStrong ? emailColors.accent : emailColors.text)}font-size:${isStrong ? "15px" : "13px"};line-height:1.4;font-weight:${isStrong ? "900" : "800"};">${escapeHtml(value)}</td>`,
     "</tr>"
   ].join("");
 }
@@ -247,7 +248,7 @@ function detailRows(rows: Array<{ label: string; value: string | null | undefine
           `<td valign="top" width="42" style="padding:0 12px 16px 0;color:${emailColors.green};font-size:20px;line-height:1;">•</td>`,
           '<td valign="top" style="padding:0 0 16px 0;">',
           label(row.label),
-          `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:14px;line-height:1.45;font-weight:800;">${withLineBreaks(row.value || "")}</p>`,
+          `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:15px;line-height:1.48;font-weight:900;">${withLineBreaks(row.value || "")}</p>`,
           "</td>",
           "</tr>"
         ].join("")
@@ -296,7 +297,7 @@ function headerLogo(logoUrl?: string | null) {
   }
   return [
     `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:20px;line-height:1.1;font-weight:900;letter-spacing:.01em;">GameDay<span class="gdg-email-accent" style="${textColorStyle(emailColors.accent)}">Grabs</span></p>`,
-    `<p class="gdg-email-muted" style="margin:3px 0 0;${textColorStyle(emailColors.muted)}font-size:9px;line-height:1.2;font-weight:800;letter-spacing:.18em;text-transform:uppercase;">Collect. Play. Invest.</p>`
+    `<p class="gdg-email-muted" style="margin:3px 0 0;${textColorStyle(emailColors.muted)}font-size:9px;line-height:1.2;font-weight:900;letter-spacing:.18em;text-transform:uppercase;">Collect. Play. Invest.</p>`
   ].join("");
 }
 
@@ -309,7 +310,7 @@ function renderLayout(input: {
   bodyHtml: string;
 }) {
   const heroIcon = input.heroIcon
-    ? `<div class="gdg-email-soft-panel gdg-email-accent" style="margin:10px auto 14px;width:54px;height:54px;border-radius:27px;${lightBackgroundStyle(emailColors.softAccent)}${textColorStyle(emailColors.accent)}font-size:28px;line-height:54px;text-align:center;">${escapeHtml(input.heroIcon)}</div>`
+    ? `<div class="gdg-email-soft-panel gdg-email-accent" style="margin:8px auto 14px;width:54px;height:54px;border-radius:27px;border:1px solid #FFD0A6;${lightBackgroundStyle(emailColors.softAccent)}${textColorStyle(emailColors.accent)}font-size:28px;line-height:54px;text-align:center;font-weight:900;">${escapeHtml(input.heroIcon)}</div>`
     : "";
   const emailCss = [
     ":root{color-scheme:light;supported-color-schemes:light;}",
@@ -326,7 +327,7 @@ function renderLayout(input: {
     `[data-ogsc] .gdg-email-muted,[data-ogsb] .gdg-email-muted{${textColorStyle(emailColors.muted)}}`,
     `[data-ogsc] .gdg-email-accent,[data-ogsb] .gdg-email-accent,[data-ogsc] .gdg-email-content a,[data-ogsb] .gdg-email-content a{${textColorStyle(emailColors.accent)}}`,
     `@media (prefers-color-scheme:dark){body,.gdg-email-root,.gdg-email-shell{${lightBackgroundStyle(emailColors.background)}${textColorStyle(emailColors.text)}}.gdg-email-card,.gdg-email-logo,.gdg-email-content,.gdg-email-panel,.gdg-email-panel-cell{${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}}.gdg-email-soft-panel,.gdg-email-soft-panel .gdg-email-panel-cell{${lightBackgroundStyle(emailColors.softAccent)}${textColorStyle(emailColors.text)}}.gdg-email-muted{${textColorStyle(emailColors.muted)}}.gdg-email-accent,.gdg-email-content a{${textColorStyle(emailColors.accent)}}}`,
-    "@media only screen and (max-width:620px){.gdg-email-shell{padding:16px!important}.gdg-email-card{border-radius:16px!important}.gdg-email-content{padding:22px!important}.gdg-email-title{font-size:24px!important}.gdg-email-logo img{width:170px!important}}"
+    "@media only screen and (max-width:620px){.gdg-email-shell{padding:12px!important}.gdg-email-card{border-radius:16px!important}.gdg-email-content{padding:22px 20px!important}.gdg-email-title{font-size:24px!important;line-height:1.22!important}.gdg-email-logo{padding:22px 20px 16px!important}.gdg-email-logo img{width:170px!important}.gdg-email-panel-cell{padding:16px!important}}"
   ].join("");
   return [
     '<!doctype html>',
@@ -337,12 +338,12 @@ function renderLayout(input: {
     `<body bgcolor="${emailColors.background}" style="margin:0;padding:0;${lightBackgroundStyle(emailColors.background)}font-family:Arial,Helvetica,sans-serif;${textColorStyle(emailColors.text)}">`,
     `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.background}" class="gdg-email-root" style="${lightBackgroundStyle(emailColors.background)}border-collapse:collapse;">`,
     `<tr><td class="gdg-email-shell" align="center" bgcolor="${emailColors.background}" style="padding:28px 14px;${lightBackgroundStyle(emailColors.background)}${textColorStyle(emailColors.text)}">`,
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.card}" class="gdg-email-card" style="max-width:600px;${lightBackgroundStyle(emailColors.card)}border:1px solid ${emailColors.border};border-radius:22px;border-collapse:separate;overflow:hidden;box-shadow:0 18px 42px rgba(17,24,39,.08);">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${emailColors.card}" class="gdg-email-card" style="max-width:600px;${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}border:1px solid ${emailColors.border};border-radius:22px;border-collapse:separate;overflow:hidden;box-shadow:0 18px 42px rgba(16,24,40,.10);">`,
     `<tr><td class="gdg-email-logo" bgcolor="${emailColors.card}" style="padding:24px 26px 18px;border-bottom:1px solid ${emailColors.border};${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}">${headerLogo(input.logoUrl)}</td></tr>`,
     `<tr><td class="gdg-email-content" bgcolor="${emailColors.card}" style="padding:28px 26px 18px;${lightBackgroundStyle(emailColors.card)}${textColorStyle(emailColors.text)}">`,
     heroIcon,
     `<h1 class="gdg-email-title" style="margin:0 0 8px;text-align:center;${textColorStyle(emailColors.text)}font-size:28px;line-height:1.18;font-weight:900;">${escapeHtml(input.title)}</h1>`,
-    `<p class="gdg-email-muted" style="margin:0 auto 8px;max-width:430px;text-align:center;${textColorStyle(emailColors.muted)}font-size:14px;line-height:1.55;">${escapeHtml(input.subtitle)}</p>`,
+    `<p class="gdg-email-muted" style="margin:0 auto 8px;max-width:430px;text-align:center;${textColorStyle(emailColors.muted)}font-size:14px;line-height:1.55;font-weight:700;">${escapeHtml(input.subtitle)}</p>`,
     input.bodyHtml,
     supportCard(input.supportEmail),
     footer(input.supportEmail),

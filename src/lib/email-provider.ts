@@ -143,21 +143,27 @@ export function renderEmailHtml(subject: string, text: string) {
     .filter(Boolean)
     .map((section) => `<p>${section.split(/\n/).map(escapeHtml).join("<br />")}</p>`)
     .join("");
+  const backgroundColor = "#FFF7EB";
+  const cardColor = "#FFFFFF";
+  const textColor = "#101828";
+  const mutedColor = "#475467";
+  const borderColor = "#D0D5DD";
+  const accentColor = "#FF6A00";
 
   return [
     '<!doctype html>',
-    `<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="color-scheme" content="light" /><meta name="supported-color-schemes" content="light" /><style>:root{color-scheme:light;supported-color-schemes:light;}body,.gdg-email-root{${fallbackLightBackgroundStyle("#F5F7FA")}${fallbackTextColorStyle("#111111")}}.gdg-email-card,.gdg-email-content,.gdg-email-panel{${fallbackLightBackgroundStyle("#FFFFFF")}${fallbackTextColorStyle("#111111")}}.gdg-email-muted{${fallbackTextColorStyle("#5F6B7A")}}.gdg-email-accent,.gdg-email-content a{${fallbackTextColorStyle("#FF6A00")}}[data-ogsc] body,[data-ogsb] body,[data-ogsc] .gdg-email-root,[data-ogsb] .gdg-email-root{${fallbackLightBackgroundStyle("#F5F7FA")}${fallbackTextColorStyle("#111111")}}[data-ogsc] .gdg-email-card,[data-ogsb] .gdg-email-card,[data-ogsc] .gdg-email-content,[data-ogsb] .gdg-email-content,[data-ogsc] .gdg-email-panel,[data-ogsb] .gdg-email-panel{${fallbackLightBackgroundStyle("#FFFFFF")}${fallbackTextColorStyle("#111111")}}@media (prefers-color-scheme:dark){body,.gdg-email-root{${fallbackLightBackgroundStyle("#F5F7FA")}${fallbackTextColorStyle("#111111")}}.gdg-email-card,.gdg-email-content,.gdg-email-panel{${fallbackLightBackgroundStyle("#FFFFFF")}${fallbackTextColorStyle("#111111")}}}</style></head>`,
-    `<body bgcolor="#F5F7FA" style="margin:0;padding:0;${fallbackLightBackgroundStyle("#F5F7FA")}font-family:Arial,Helvetica,sans-serif;${fallbackTextColorStyle("#111111")}">`,
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#F5F7FA" class="gdg-email-root" style="${fallbackLightBackgroundStyle("#F5F7FA")}border-collapse:collapse;"><tr><td align="center" bgcolor="#F5F7FA" style="padding:24px;${fallbackLightBackgroundStyle("#F5F7FA")}">`,
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#FFFFFF" class="gdg-email-card" style="max-width:640px;${fallbackLightBackgroundStyle("#FFFFFF")}border:1px solid #E6EAF0;border-radius:18px;border-collapse:separate;overflow:hidden;">`,
-    `<tr><td bgcolor="#FFFFFF" class="gdg-email-panel" style="padding:20px 24px;${fallbackLightBackgroundStyle("#FFFFFF")}border-bottom:1px solid #E6EAF0;">`,
-    `<strong style="font-size:18px;${fallbackTextColorStyle("#111111")}">GameDay<span class="gdg-email-accent" style="${fallbackTextColorStyle("#FF6A00")}">Grabs</span></strong>`,
-    `<div class="gdg-email-muted" style="margin-top:3px;${fallbackTextColorStyle("#5F6B7A")}font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;">Collect. Play. Invest.</div>`,
+    `<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="color-scheme" content="light" /><meta name="supported-color-schemes" content="light" /><style>:root{color-scheme:light;supported-color-schemes:light;}body,.gdg-email-root{${fallbackLightBackgroundStyle(backgroundColor)}${fallbackTextColorStyle(textColor)}}.gdg-email-card,.gdg-email-content,.gdg-email-panel{${fallbackLightBackgroundStyle(cardColor)}${fallbackTextColorStyle(textColor)}}.gdg-email-muted{${fallbackTextColorStyle(mutedColor)}}.gdg-email-accent,.gdg-email-content a{${fallbackTextColorStyle(accentColor)}}[data-ogsc] body,[data-ogsb] body,[data-ogsc] .gdg-email-root,[data-ogsb] .gdg-email-root{${fallbackLightBackgroundStyle(backgroundColor)}${fallbackTextColorStyle(textColor)}}[data-ogsc] .gdg-email-card,[data-ogsb] .gdg-email-card,[data-ogsc] .gdg-email-content,[data-ogsb] .gdg-email-content,[data-ogsc] .gdg-email-panel,[data-ogsb] .gdg-email-panel{${fallbackLightBackgroundStyle(cardColor)}${fallbackTextColorStyle(textColor)}}@media (prefers-color-scheme:dark){body,.gdg-email-root{${fallbackLightBackgroundStyle(backgroundColor)}${fallbackTextColorStyle(textColor)}}.gdg-email-card,.gdg-email-content,.gdg-email-panel{${fallbackLightBackgroundStyle(cardColor)}${fallbackTextColorStyle(textColor)}}}</style></head>`,
+    `<body bgcolor="${backgroundColor}" style="margin:0;padding:0;${fallbackLightBackgroundStyle(backgroundColor)}font-family:Arial,Helvetica,sans-serif;${fallbackTextColorStyle(textColor)}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${backgroundColor}" class="gdg-email-root" style="${fallbackLightBackgroundStyle(backgroundColor)}border-collapse:collapse;"><tr><td align="center" bgcolor="${backgroundColor}" style="padding:24px;${fallbackLightBackgroundStyle(backgroundColor)}">`,
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${cardColor}" class="gdg-email-card" style="max-width:640px;${fallbackLightBackgroundStyle(cardColor)}${fallbackTextColorStyle(textColor)}border:1px solid ${borderColor};border-radius:18px;border-collapse:separate;overflow:hidden;">`,
+    `<tr><td bgcolor="${cardColor}" class="gdg-email-panel" style="padding:20px 24px;${fallbackLightBackgroundStyle(cardColor)}border-bottom:1px solid ${borderColor};">`,
+    `<strong style="font-size:18px;${fallbackTextColorStyle(textColor)}">GameDay<span class="gdg-email-accent" style="${fallbackTextColorStyle(accentColor)}">Grabs</span></strong>`,
+    `<div class="gdg-email-muted" style="margin-top:3px;${fallbackTextColorStyle(mutedColor)}font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:800;">Collect. Play. Invest.</div>`,
     "</td></tr>",
-    `<tr><td bgcolor="#FFFFFF" class="gdg-email-content" style="padding:22px;${fallbackLightBackgroundStyle("#FFFFFF")}${fallbackTextColorStyle("#111111")}">`,
-    `<h1 style="margin:0 0 14px;${fallbackTextColorStyle("#111111")}font-size:22px;line-height:1.25;">${escapeHtml(subject)}</h1>`,
-    `<div style="font-size:15px;line-height:1.55;${fallbackTextColorStyle("#111111")}">${sections}</div>`,
-    `<p class="gdg-email-muted" style="margin-top:22px;${fallbackTextColorStyle("#5F6B7A")}font-size:13px;">Payment is securely processed through Stripe.</p>`,
+    `<tr><td bgcolor="${cardColor}" class="gdg-email-content" style="padding:22px;${fallbackLightBackgroundStyle(cardColor)}${fallbackTextColorStyle(textColor)}">`,
+    `<h1 style="margin:0 0 14px;${fallbackTextColorStyle(textColor)}font-size:22px;line-height:1.25;">${escapeHtml(subject)}</h1>`,
+    `<div style="font-size:15px;line-height:1.55;font-weight:650;${fallbackTextColorStyle(textColor)}">${sections}</div>`,
+    `<p class="gdg-email-muted" style="margin-top:22px;${fallbackTextColorStyle(mutedColor)}font-size:13px;font-weight:700;">Payment is securely processed through Stripe.</p>`,
     "</td></tr>",
     "</table>",
     "</td></tr></table>",

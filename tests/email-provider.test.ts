@@ -20,6 +20,7 @@ const resendEnv = {
 const darkTemplatePattern = /background(?:-color)?:\s*(?:#111(?:111)?|#222(?:222)?|#242424|#0f3b23|#102314|black)|dark-wrapper|dark-card/i;
 const backgroundShorthandPattern = /background(?!-color)\s*:/i;
 const whiteTextPattern = /(?<!background-)color:\s*(?:#fff(?:fff)?|white)\b/i;
+const paleTextPattern = /(?<!background-)color:\s*(?:#f5f5f5|#eaeaea|#f7f7f7|#fafafa)\b/i;
 
 async function captureStorefrontResendHtml(email: StorefrontRenderedEmail) {
   const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
@@ -48,19 +49,22 @@ function assertLightCustomerEmailHtml(html: string) {
   assert.match(html, new RegExp(STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER));
   assert.match(html, /<meta name="color-scheme" content="light" \/>/);
   assert.match(html, /<meta name="supported-color-schemes" content="light" \/>/);
-  assert.match(html, /bgcolor="#F5F7FA"/);
-  assert.match(html, /background-color:#F5F7FA/);
-  assert.match(html, /background-image:linear-gradient\(#F5F7FA,#F5F7FA\)/);
+  assert.match(html, /bgcolor="#FFF7EB"/);
+  assert.match(html, /background-color:#FFF7EB/);
+  assert.match(html, /background-image:linear-gradient\(#FFF7EB,#FFF7EB\)/);
   assert.match(html, /bgcolor="#FFFFFF"/);
   assert.match(html, /background-color:#FFFFFF/);
   assert.match(html, /background-image:linear-gradient\(#FFFFFF,#FFFFFF\)/);
-  assert.match(html, /-webkit-text-fill-color:#111111/);
+  assert.match(html, /border:1px solid #D0D5DD/);
+  assert.match(html, /-webkit-text-fill-color:#101828/);
+  assert.match(html, /-webkit-text-fill-color:#475467/);
   assert.match(html, /-webkit-text-fill-color:#FF6A00/);
   assert.match(html, /#FF6A00/);
   assert.match(html, /GameDayGrabs/);
   assert.doesNotMatch(html, backgroundShorthandPattern);
   assert.doesNotMatch(html, darkTemplatePattern);
   assert.doesNotMatch(html, whiteTextPattern);
+  assert.doesNotMatch(html, paleTextPattern);
   assert.doesNotMatch(html, /payment_method_details|payment_method_data|card_number|cardNumber|CVC|cvc|cvv|raw Stripe|raw PaymentIntent|raw Checkout Session|webhook body/i);
 }
 
@@ -118,8 +122,11 @@ test("Resend provider sends through mocked fetch without exposing the API key in
   ]);
   assert.match(String(body.html), /GameDayGrabs/);
   assert.match(String(body.html), /<meta name="color-scheme" content="light" \/>|<meta name="color-scheme" content="light"/);
-  assert.match(String(body.html), /bgcolor="#F5F7FA"/);
+  assert.match(String(body.html), /bgcolor="#FFF7EB"/);
   assert.match(String(body.html), /background-color:#FFFFFF/);
+  assert.match(String(body.html), /#101828/);
+  assert.match(String(body.html), /#475467/);
+  assert.match(String(body.html), /#D0D5DD/);
   assert.match(String(body.html), /#FF6A00/);
   assert.doesNotMatch(String(body.html), darkTemplatePattern);
   assert.doesNotMatch(JSON.stringify(result), /test_resend_api_key|orders@example\.com|support@example\.com/);
@@ -287,16 +294,20 @@ test("email template keeps customer copy mobile-readable without raw payment dat
   assert.match(html, /GameDayGrabs/);
   assert.match(html, /Thanks for your order/);
   assert.match(html, /<meta name="color-scheme" content="light" \/>/);
-  assert.match(html, /bgcolor="#F5F7FA"/);
-  assert.match(html, /background-color:#F5F7FA/);
-  assert.match(html, /background-image:linear-gradient\(#F5F7FA,#F5F7FA\)/);
+  assert.match(html, /bgcolor="#FFF7EB"/);
+  assert.match(html, /background-color:#FFF7EB/);
+  assert.match(html, /background-image:linear-gradient\(#FFF7EB,#FFF7EB\)/);
   assert.match(html, /bgcolor="#FFFFFF"/);
   assert.match(html, /background-color:#FFFFFF/);
   assert.match(html, /background-image:linear-gradient\(#FFFFFF,#FFFFFF\)/);
-  assert.match(html, /-webkit-text-fill-color:#111111/);
-  assert.match(html, /color:#111111/);
+  assert.match(html, /border:1px solid #D0D5DD/);
+  assert.match(html, /-webkit-text-fill-color:#101828/);
+  assert.match(html, /-webkit-text-fill-color:#475467/);
+  assert.match(html, /color:#101828/);
   assert.match(html, /#FF6A00/);
   assert.doesNotMatch(html, /background(?!-color)\s*:/i);
   assert.doesNotMatch(html, darkTemplatePattern);
+  assert.doesNotMatch(html, whiteTextPattern);
+  assert.doesNotMatch(html, paleTextPattern);
   assert.doesNotMatch(html, /payment_method_details|payment_method_data|card_number|cardNumber|CVC|cvc|cvv|raw Stripe/i);
 });
