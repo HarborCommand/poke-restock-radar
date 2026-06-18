@@ -20575,9 +20575,11 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 
 .shipping-hub-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  grid-template-columns: minmax(0, 1.3fr) minmax(360px, 0.7fr);
   gap: 18px;
   align-items: start;
+  width: 100%;
+  min-width: 0;
 }
 
 .shipping-hub-span {
@@ -20586,6 +20588,10 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 
 .shipping-hub-card {
   min-width: 0;
+}
+
+.shipping-profile-manager-card {
+  width: 100%;
 }
 
 .shipping-work-list,
@@ -20602,10 +20608,11 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 .shipping-profile-manager-row {
   border: 1px solid #d9dee8;
   border-radius: 8px;
-  background: #fffdf8;
+  background: #ffffff;
   padding: 14px;
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .shipping-work-row {
@@ -20615,8 +20622,9 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 
 .shipping-work-main,
 .shipping-compact-row > div:first-child,
-.shipping-missing-row > div:first-child,
-.shipping-profile-manager-row > div:first-child {
+.shipping-missing-main,
+.shipping-profile-identity,
+.shipping-profile-detail-group {
   display: grid;
   gap: 5px;
   min-width: 0;
@@ -20633,7 +20641,7 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 .shipping-work-main span,
 .shipping-compact-row span,
 .shipping-missing-row span,
-.shipping-profile-manager-row span {
+.shipping-profile-identity span:not(.shipping-profile-section-label) {
   color: #344054;
   font-size: 0.9rem;
   font-weight: 700;
@@ -20654,8 +20662,7 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 
 .shipping-work-meta span,
 .shipping-compact-row small,
-.shipping-missing-row small,
-.shipping-profile-manager-row small {
+.shipping-missing-row small {
   color: #475467;
   font-size: 0.82rem;
   line-height: 1.35;
@@ -20679,10 +20686,19 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 }
 
 .shipping-compact-row,
-.shipping-missing-row,
-.shipping-profile-manager-row {
+.shipping-missing-row {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+}
+
+.shipping-profile-manager-row {
+  grid-template-columns:
+    minmax(200px, 1fr)
+    minmax(250px, 1.15fr)
+    minmax(210px, 0.85fr)
+    minmax(180px, 0.75fr);
+  align-items: stretch;
+  padding: 16px;
 }
 
 .shipping-profile-manager-row.inactive {
@@ -20691,7 +20707,77 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 }
 
 .shipping-missing-row {
-  grid-template-columns: minmax(0, 0.9fr) minmax(220px, 0.8fr) auto;
+  grid-template-columns: minmax(320px, 1fr) minmax(280px, 0.8fr) auto;
+  align-items: center;
+  background: #ffffff;
+}
+
+.shipping-profile-section-label {
+  color: #667085;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shipping-profile-identity strong {
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.24;
+}
+
+.shipping-profile-detail-group,
+.shipping-profile-control-panel {
+  border-left: 1px solid #edf0f5;
+  padding-left: 16px;
+}
+
+.shipping-profile-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.shipping-profile-usage-grid {
+  grid-template-columns: repeat(3, minmax(76px, 1fr));
+}
+
+.shipping-profile-stat-grid > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fffaf0;
+  padding: 8px 10px;
+}
+
+.shipping-profile-stat-wide {
+  grid-column: 1 / -1;
+}
+
+.shipping-profile-stat-grid small {
+  color: #667085;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.shipping-profile-stat-grid strong {
+  color: #111827;
+  font-size: 0.86rem;
+  font-weight: 950;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.shipping-profile-control-panel {
+  display: grid;
+  align-content: space-between;
+  gap: 14px;
+  min-width: 0;
 }
 
 .shipping-profile-manager-badges {
@@ -20699,6 +20785,7 @@ body .storefront-order-workspace .packing-slip-preview-shell {
   flex-wrap: wrap;
   gap: 6px;
   justify-content: flex-end;
+  align-content: flex-start;
 }
 
 .shipping-profile-actions {
@@ -20709,9 +20796,30 @@ body .storefront-order-workspace .packing-slip-preview-shell {
   align-items: center;
 }
 
+.shipping-profile-actions .mini-action {
+  min-width: 118px;
+  justify-content: center;
+}
+
 .shipping-profile-inactive-warning {
   color: #9a3412 !important;
   font-weight: 900;
+}
+
+.shipping-missing-badges {
+  justify-content: flex-end;
+}
+
+.shipping-missing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.shipping-missing-actions .mini-action {
+  white-space: nowrap;
 }
 
 .shipping-readiness-grid {
@@ -20774,15 +20882,26 @@ body .storefront-order-workspace .packing-slip-preview-shell {
 @media (max-width: 1180px) {
   .shipping-hub-grid,
   .shipping-work-row,
-  .shipping-missing-row {
+  .shipping-missing-row,
+  .shipping-profile-manager-row {
     grid-template-columns: 1fr;
   }
 
   .shipping-work-actions,
   .shipping-mini-actions,
   .shipping-profile-manager-badges,
-  .shipping-profile-actions {
+  .shipping-profile-actions,
+  .shipping-missing-actions,
+  .shipping-missing-badges {
     justify-content: flex-start;
+  }
+
+  .shipping-profile-detail-group,
+  .shipping-profile-control-panel {
+    border-left: 0;
+    border-top: 1px solid #edf0f5;
+    padding-left: 0;
+    padding-top: 12px;
   }
 
   .shipping-readiness-grid {
@@ -20794,13 +20913,16 @@ body .storefront-order-workspace .packing-slip-preview-shell {
   .shipping-readiness-grid,
   .shipping-compact-row,
   .shipping-profile-manager-row,
-  .shipping-editor-summary {
+  .shipping-editor-summary,
+  .shipping-profile-stat-grid,
+  .shipping-profile-usage-grid {
     grid-template-columns: 1fr;
   }
 
   .shipping-work-actions .mini-action,
   .shipping-mini-actions .mini-action,
-  .shipping-profile-actions .mini-action {
+  .shipping-profile-actions .mini-action,
+  .shipping-missing-actions .mini-action {
     width: 100%;
   }
 }

@@ -1731,6 +1731,7 @@ test("shipping hub tracking section shows shipped carrier orders and copy action
 
 test("shipping hub surfaces missing shipping data and merchant readiness", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
   const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
 
   assert.match(app, /function shippingHubMissingProducts/);
@@ -1740,12 +1741,17 @@ test("shipping hub surfaces missing shipping data and merchant readiness", () =>
   assert.match(app, /inventoryMissingShippingDimensions/);
   assert.match(shippingHub, /Missing Shipping Data/);
   assert.match(shippingHub, /Edit Product Shipping/);
+  assert.match(shippingHub, /shipping-missing-main/);
+  assert.match(shippingHub, /shipping-missing-badges/);
+  assert.match(shippingHub, /shipping-missing-actions/);
   assert.match(shippingHub, /Google \/ Merchant Readiness/);
   assert.match(shippingHub, /Feed items missing brand/);
   assert.match(shippingHub, /Feed items missing product type\/category/);
   assert.match(shippingHub, /Products missing packed weight/);
   assert.match(shippingHub, /Products missing dimensions/);
   assert.match(shippingHub, /Ready for Standard Shipping/);
+  assert.match(css, /\.shipping-missing-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(320px, 1fr\) minmax\(280px, 0\.8fr\) auto;/);
+  assert.match(css, /\.shipping-missing-actions\s*\{[\s\S]*justify-content:\s*flex-end;/);
 });
 
 test("shipping profiles are database-backed with an additive migration", () => {
@@ -1792,18 +1798,29 @@ test("shipping profile APIs are admin-only and do not expose delete semantics", 
 
 test("shipping hub profile manager supports create edit deactivate and reactivate", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
   const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
   const profileEditor = app.slice(app.indexOf("function ShippingProfileEditorModal"), app.indexOf("function StorefrontOrdersPanel"));
 
   assert.match(shippingHub, /Shipping Profiles Manager/);
+  assert.match(shippingHub, /shipping-hub-card shipping-hub-span shipping-profile-manager-card/);
   assert.match(shippingHub, /Create Profile/);
   assert.match(shippingHub, /Edit Profile/);
   assert.match(shippingHub, /Deactivate/);
   assert.match(shippingHub, /Reactivate/);
   assert.match(shippingHub, /dashboard\.shippingProfiles/);
+  assert.match(shippingHub, /shipping-profile-identity/);
+  assert.match(shippingHub, /shipping-profile-detail-group/);
+  assert.match(shippingHub, /shipping-profile-stat-grid/);
+  assert.match(shippingHub, /shipping-profile-stat-wide/);
+  assert.match(shippingHub, /shipping-profile-control-panel/);
   assert.match(shippingHub, /productsUsingCount/);
   assert.match(shippingHub, /historicalOrdersUsingCount/);
   assert.match(shippingHub, /Inactive profile is still used by existing products or historical orders/);
+  assert.match(css, /\.shipping-profile-manager-row\s*\{[\s\S]*grid-template-columns:\s*[\s\S]*minmax\(200px, 1fr\)[\s\S]*minmax\(250px, 1\.15fr\)[\s\S]*minmax\(210px, 0\.85fr\)[\s\S]*minmax\(180px, 0\.75fr\)/);
+  assert.match(css, /\.shipping-profile-stat-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(120px, 1fr\)\)/);
+  assert.match(css, /\.shipping-profile-stat-wide\s*\{[\s\S]*grid-column:\s*1 \/ -1;/);
+  assert.match(css, /@media \(max-width: 1180px\)[\s\S]*\.shipping-profile-manager-row[\s\S]*grid-template-columns:\s*1fr/);
   assert.match(profileEditor, /Create Shipping Profile/);
   assert.match(profileEditor, /Edit Shipping Profile/);
   assert.match(profileEditor, /Changes apply to future checkout estimates only/);

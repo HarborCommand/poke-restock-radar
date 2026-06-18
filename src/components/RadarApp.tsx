@@ -7314,7 +7314,7 @@ function ShippingHubPanel({
           </div>
         </section>
 
-        <section className="dashboard-card shipping-hub-card">
+        <section className="dashboard-card shipping-hub-card shipping-hub-span shipping-profile-manager-card">
           <div className="dashboard-card-header">
             <div>
               <h3>Shipping Profiles Manager</h3>
@@ -7338,47 +7338,83 @@ function ShippingHubPanel({
                 const inUseWhileInactive = !profile.active && (profile.productsUsingCount > 0 || profile.historicalOrdersUsingCount > 0);
                 return (
                   <article className={`shipping-profile-manager-row ${profile.active ? "" : "inactive"}`} key={profile.id}>
-                    <div>
+                    <div className="shipping-profile-identity">
+                      <span className="shipping-profile-section-label">Profile</span>
                       <strong>{profile.name}</strong>
                       <span>{profile.packageType} - {profile.key}</span>
-                      <small>
-                        {dimensions} - default {profile.defaultWeightOz} oz
-                        {profile.defaultShippingCharge !== null ? ` - base ${money(profile.defaultShippingCharge)}` : ""}
-                      </small>
-                      <small>
-                        {profile.productsUsingCount} products using - {profile.activeProductsUsingCount} published - {profile.historicalOrdersUsingCount} order snapshots
-                      </small>
                       {inUseWhileInactive ? <small className="shipping-profile-inactive-warning">Inactive profile is still used by existing products or historical orders.</small> : null}
                     </div>
-                    <div className="shipping-profile-manager-badges">
-                      <span className={`chip compact-chip ${profile.active ? "good" : "watch"}`}>{profile.active ? "Active" : "Inactive"}</span>
-                      {profile.systemDefault ? <span className="chip compact-chip neutral">Default fallback</span> : null}
-                      {profile.localPickupEligibleDefault ? <span className="chip compact-chip good">Pickup eligible</span> : null}
-                      {profile.requiresBoxDefault ? <span className="chip compact-chip watch">Requires box</span> : null}
-                      {profile.insuranceRecommendedDefault ? <span className="chip compact-chip watch">Insurance recommended</span> : null}
+                    <div className="shipping-profile-detail-group">
+                      <span className="shipping-profile-section-label">Package</span>
+                      <div className="shipping-profile-stat-grid">
+                        <span>
+                          <small>Handling</small>
+                          <strong>{profile.requiresBoxDefault ? "Requires box" : "Standard pack"}</strong>
+                        </span>
+                        <span>
+                          <small>Weight</small>
+                          <strong>{profile.defaultWeightOz} oz</strong>
+                        </span>
+                        <span className="shipping-profile-stat-wide">
+                          <small>Dimensions</small>
+                          <strong>{dimensions}</strong>
+                        </span>
+                        {profile.defaultShippingCharge !== null ? (
+                          <span>
+                            <small>Base rate</small>
+                            <strong>{money(profile.defaultShippingCharge)}</strong>
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="shipping-profile-actions">
-                      <button className="mini-action" type="button" onClick={() => setProfileEditor({ mode: "edit", profileId: profile.id })}>
-                        Edit Profile
-                      </button>
-                      <button
-                        className="mini-action"
-                        disabled={busy}
-                        type="button"
-                        onClick={() =>
-                          runAction(
-                            `${profile.active ? "Deactivating" : "Reactivating"} shipping profile`,
-                            () =>
-                              requestJson(`/api/radar/shipping-profiles/${profile.id}`, {
-                                method: "PATCH",
-                                body: JSON.stringify({ active: !profile.active })
-                              }),
-                            { success: profile.active ? "Shipping profile deactivated" : "Shipping profile reactivated" }
-                          )
-                        }
-                      >
-                        {profile.active ? "Deactivate" : "Reactivate"}
-                      </button>
+                    <div className="shipping-profile-detail-group">
+                      <span className="shipping-profile-section-label">Usage</span>
+                      <div className="shipping-profile-stat-grid shipping-profile-usage-grid">
+                        <span>
+                          <small>Products</small>
+                          <strong>{profile.productsUsingCount}</strong>
+                        </span>
+                        <span>
+                          <small>Published</small>
+                          <strong>{profile.activeProductsUsingCount}</strong>
+                        </span>
+                        <span>
+                          <small>Order snapshots</small>
+                          <strong>{profile.historicalOrdersUsingCount}</strong>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="shipping-profile-control-panel">
+                      <div className="shipping-profile-manager-badges">
+                        <span className={`chip compact-chip ${profile.active ? "good" : "watch"}`}>{profile.active ? "Active" : "Inactive"}</span>
+                        {profile.systemDefault ? <span className="chip compact-chip neutral">Default fallback</span> : null}
+                        {profile.localPickupEligibleDefault ? <span className="chip compact-chip good">Pickup eligible</span> : null}
+                        {profile.requiresBoxDefault ? <span className="chip compact-chip watch">Requires box</span> : null}
+                        {profile.insuranceRecommendedDefault ? <span className="chip compact-chip watch">Insurance recommended</span> : null}
+                      </div>
+                      <div className="shipping-profile-actions">
+                        <button className="mini-action" type="button" onClick={() => setProfileEditor({ mode: "edit", profileId: profile.id })}>
+                          Edit Profile
+                        </button>
+                        <button
+                          className="mini-action"
+                          disabled={busy}
+                          type="button"
+                          onClick={() =>
+                            runAction(
+                              `${profile.active ? "Deactivating" : "Reactivating"} shipping profile`,
+                              () =>
+                                requestJson(`/api/radar/shipping-profiles/${profile.id}`, {
+                                  method: "PATCH",
+                                  body: JSON.stringify({ active: !profile.active })
+                                }),
+                              { success: profile.active ? "Shipping profile deactivated" : "Shipping profile reactivated" }
+                            )
+                          }
+                        >
+                          {profile.active ? "Deactivate" : "Reactivate"}
+                        </button>
+                      </div>
                     </div>
                   </article>
                 );
@@ -7400,19 +7436,19 @@ function ShippingHubPanel({
             {missingProducts.length ? (
               missingProducts.map((item) => (
                 <article className="shipping-missing-row" key={item.id}>
-                  <div>
+                  <div className="shipping-missing-main">
                     <strong>{item.publicTitle || item.itemName}</strong>
                     <span>{shippingHubPackageSummary(item)}</span>
                     <small>{item.shippingProfile ? formatStatus(item.shippingProfile) : "No shipping profile"} - {item.localPickupAvailable ? "Local pickup eligible" : "No local pickup"}</small>
                   </div>
-                  <div className="shipping-profile-issue-list" aria-label="Missing shipping badges">
+                  <div className="shipping-profile-issue-list shipping-missing-badges" aria-label="Missing shipping badges">
                     {inventoryShippingProfileBadges(item, dashboard.shippingProfiles).map((badge) => (
                       <span className={`shipping-profile-chip ${badge.tone === "good" ? "good" : "warning"}`} key={badge.label}>
                         {badge.label}
                       </span>
                     ))}
                   </div>
-                  <div className="catalog-actions shipping-work-actions">
+                  <div className="catalog-actions shipping-missing-actions">
                     <button className="mini-action" type="button" onClick={() => setShippingEditItemId(item.id)}>
                       Edit Product Shipping
                     </button>
