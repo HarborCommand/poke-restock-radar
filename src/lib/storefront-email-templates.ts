@@ -36,6 +36,8 @@ export type OrderConfirmationEmailInput = StorefrontEmailBase & {
   shippingCharged: number;
   totalPaid: number;
   shippingMethod: string | null;
+  isLocalPickup?: boolean;
+  pickupStatus?: string | null;
 };
 
 export type ShippingConfirmationEmailInput = StorefrontEmailBase & {
@@ -199,14 +201,16 @@ function orderSummaryCard(input: {
   shippingCharged: number;
   totalPaid: number;
   shippingMethod: string | null;
+  isLocalPickup?: boolean;
 }) {
+  const shippingLabel = input.isLocalPickup ? "Shipping charged" : `Shipping${input.shippingMethod ? ` (${input.shippingMethod})` : ""}`;
   return card(
     [
       `<p style="margin:0 0 12px;${textColorStyle(emailColors.text)}font-size:12px;line-height:1.3;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Order summary</p>`,
       productRows(input.items),
       `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid ${emailColors.border};padding-top:10px;">`,
       summaryRow("Subtotal", formatMoney(input.subtotal)),
-      summaryRow(`Shipping${input.shippingMethod ? ` (${input.shippingMethod})` : ""}`, formatMoney(input.shippingCharged)),
+      summaryRow(shippingLabel, formatMoney(input.shippingCharged)),
       summaryRow("Total paid", formatMoney(input.totalPaid), true),
       "</table>"
     ].join("")
@@ -360,8 +364,22 @@ function textFooter(supportEmail: string) {
   ].join("\n");
 }
 
+function isLocalPickupMethod(input: Pick<OrderConfirmationEmailInput, "isLocalPickup" | "shippingMethod">) {
+  return Boolean(input.isLocalPickup || String(input.shippingMethod || "").trim().toLowerCase() === "local pickup");
+}
+
+function pickupStatusLabel(status: string | null | undefined) {
+  if (status === "pickup_ready") return "Ready for pickup";
+  if (status === "picked_up") return "Picked up";
+  return "Pickup pending";
+}
+
 export function buildOrderConfirmationEmail(input: OrderConfirmationEmailInput): StorefrontRenderedEmail {
   const shippingMethod = input.shippingMethod || "Not captured";
+  const isLocalPickup = isLocalPickupMethod(input);
+  const methodLabel = isLocalPickup ? "Fulfillment method" : "Shipping method";
+  const nextStepCopy = isLocalPickup ? "We'll send pickup instructions when your order is ready." : "We'll send tracking once your order ships.";
+  const methodBody = isLocalPickup ? `${shippingMethod}\nPickup status: ${pickupStatusLabel(input.pickupStatus)}\n${nextStepCopy}` : `${shippingMethod}\n${nextStepCopy}`;
   const subject = `GameDayGrabs order confirmed: ${input.orderNumber}`;
   const text = [
     "Thanks for your order!",
@@ -372,14 +390,17 @@ export function buildOrderConfirmationEmail(input: OrderConfirmationEmailInput):
     "Order summary:",
     ...(input.items.length ? input.items.map((item) => `${item.quantity} x ${item.name} - ${formatMoney(item.lineTotal)}`) : ["No line items were stored for this order."]),
     `Subtotal: ${formatMoney(input.subtotal)}`,
-    `Shipping (${shippingMethod}): ${formatMoney(input.shippingCharged)}`,
+    isLocalPickup ? `Shipping charged: ${formatMoney(input.shippingCharged)}` : `Shipping (${shippingMethod}): ${formatMoney(input.shippingCharged)}`,
     `Total paid: ${formatMoney(input.totalPaid)}`,
     "",
-    `Shipping method: ${shippingMethod}`,
+    `${methodLabel}: ${shippingMethod}`,
+    isLocalPickup ? `Pickup status: ${pickupStatusLabel(input.pickupStatus)}` : null,
     "Payment method: Securely processed by Stripe",
-    "We'll send tracking once your order ships.",
+    nextStepCopy,
     textFooter(input.supportEmail)
-  ].join("\n");
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
   const html = renderLayout({
     supportEmail: input.supportEmail,
     logoUrl: input.logoUrl,
@@ -387,9 +408,9 @@ export function buildOrderConfirmationEmail(input: OrderConfirmationEmailInput):
     subtitle: "We've received your payment and we're getting it ready for you.",
     bodyHtml: [
       orderNumberBlock(input.orderNumber),
-      orderSummaryCard(input),
+      orderSummaryCard({ ...input, isLocalPickup }),
       twoColumnInfoCard(
-        { title: "Shipping method", body: `${shippingMethod}\nWe'll send tracking once your order ships.` },
+        { title: methodLabel, body: methodBody },
         { title: "Payment method", body: "Securely processed by Stripe" }
       )
     ].join("")

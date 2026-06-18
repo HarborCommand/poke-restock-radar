@@ -55,6 +55,7 @@ test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.match(orderEmail.html, /Total paid/);
   assert.match(orderEmail.html, /\$49\.98/);
   assert.match(orderEmail.html, /Shipping method/);
+  assert.match(orderEmail.html + orderEmail.text, /We'll send tracking once your order ships\./);
   assert.match(orderEmail.html, /Securely processed by Stripe/);
   assert.match(orderEmail.html, /gamedaygrabs@outlook\.com/);
   assert.doesNotMatch(orderEmail.html, /background(?!-color)\s*:/i);
@@ -63,6 +64,41 @@ test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.doesNotMatch(orderEmail.html + orderEmail.text, sensitivePaymentPattern);
   assert.match(orderEmail.text, /Thanks for your order!/);
   assert.match(orderEmail.text, /Payment method: Securely processed by Stripe/);
+});
+
+test("local pickup order confirmation uses pickup wording instead of shipping tracking copy", () => {
+  const email = buildOrderConfirmationEmail({
+    orderNumber: "PR-20260618-9C3KQ3",
+    supportEmail,
+    logoUrl,
+    items: [
+      {
+        name: "Perfect Order Premium Checklane Blister - Meganium",
+        quantity: 1,
+        lineTotal: 18,
+        imageUrl: "https://www.gamedaygrabs.com/meganium.jpg"
+      }
+    ],
+    subtotal: 18,
+    shippingCharged: 0,
+    totalPaid: 18,
+    shippingMethod: "Local Pickup",
+    isLocalPickup: true,
+    pickupStatus: "unfulfilled"
+  });
+
+  assert.equal(email.subject, "GameDayGrabs order confirmed: PR-20260618-9C3KQ3");
+  assert.match(email.html, /Fulfillment method/);
+  assert.match(email.html, /Local Pickup/);
+  assert.match(email.html, /Pickup status/);
+  assert.match(email.html, /Pickup pending/);
+  assert.match(email.html + email.text, /We'll send pickup instructions when your order is ready\./);
+  assert.match(email.text, /Fulfillment method: Local Pickup/);
+  assert.match(email.text, /Shipping charged: \$0\.00/);
+  assert.match(email.text, /Pickup status: Pickup pending/);
+  assert.match(email.text, /gamedaygrabs@outlook\.com/);
+  assert.doesNotMatch(email.html + email.text, /tracking once your order ships|Your order is on the way|has shipped|Track Your Package/i);
+  assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
 });
 
 test("shipping confirmation email includes tracking details and optional tracking button", () => {

@@ -529,7 +529,7 @@ const customerEmailKindLabels: Record<CustomerEmailKind, string> = {
   refund_cancellation: "Refund/cancellation",
   shipment: "Shipping/tracking",
   checkout_expired: "Expired checkout",
-  local_pickup: "Local pickup"
+  local_pickup: "Pickup instructions"
 };
 
 const defaultStorefrontContactEmail = "gamedaygrabs@outlook.com";
@@ -844,7 +844,9 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     subtotal: order.subtotal,
     shippingCharged: order.shippingCharged,
     totalPaid: order.total,
-    shippingMethod: order.shippingMethodLabel
+    shippingMethod: order.shippingMethodLabel,
+    isLocalPickup: orderIsLocalPickup(order),
+    pickupStatus: order.fulfillmentStatus
   });
   return sendCustomerEmailNotificationOnce({
     order,
@@ -1028,6 +1030,14 @@ async function sendStorefrontCancellationEmail(input: {
 }
 
 async function sendStorefrontShipmentEmail(order: StorefrontOrderWithItems) {
+  if (orderIsLocalPickup(order)) {
+    return sendCustomerEmailNotificationOnce({
+      order,
+      kind: "shipment",
+      eventId: customerEmailEventId("shipment", order.id),
+      skippedDetail: "Local Pickup orders use pickup instructions instead of shipping confirmation."
+    });
+  }
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
   const trackingUrl = trackingUrlFor(order.carrier, order.trackingNumber);

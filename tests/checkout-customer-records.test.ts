@@ -640,6 +640,12 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(emailTemplates, /Thanks for your order!/);
   assert.match(emailTemplates, /We've received your payment and we're getting it ready for you\./);
   assert.match(emailTemplates, /We'll send tracking once your order ships\./);
+  assert.match(emailTemplates, /function isLocalPickupMethod/);
+  assert.match(emailTemplates, /function pickupStatusLabel/);
+  assert.match(emailTemplates, /We'll send pickup instructions when your order is ready\./);
+  assert.match(emailTemplates, /Fulfillment method/);
+  assert.match(emailTemplates, /Shipping charged/);
+  assert.match(emailTemplates, /Pickup status: \$\{pickupStatusLabel\(input\.pickupStatus\)\}/);
   assert.match(emailTemplates, /Your GameDayGrabs checkout expired/);
   assert.match(emailTemplates, /No payment was collected for this checkout/);
   assert.match(emailTemplates, /If you still want these items, start checkout again while inventory is available/);
@@ -657,6 +663,8 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(storefront, /await sendStorefrontCheckoutExpiredEmail\(order, "Stripe Checkout expired before payment completed\."\)/);
   assert.match(updateOrder, /nextFulfillmentStatus === "shipped"/);
   assert.match(updateOrder, /await sendStorefrontShipmentEmail\(finalOrder\)/);
+  assert.match(emailHelpers, /if \(orderIsLocalPickup\(order\)\) \{/);
+  assert.match(emailHelpers, /Local Pickup orders use pickup instructions instead of shipping confirmation\./);
   assert.match(updateOrder, /nextFulfillmentStatus === "pickup_ready"/);
   assert.match(updateOrder, /await sendStorefrontLocalPickupEmail\(finalOrder\)/);
   assert.match(storefront, /recordExpiredCheckoutEmailSkipped/);
