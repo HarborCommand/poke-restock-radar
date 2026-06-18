@@ -266,6 +266,29 @@ export type StorefrontSettingsDTO = {
   checkoutConfigured: boolean;
 };
 
+export type ShippingProfileDTO = {
+  id: string;
+  name: string;
+  key: string;
+  packageType: string;
+  defaultWeightOz: number;
+  packageLengthIn: number | null;
+  packageWidthIn: number | null;
+  packageHeightIn: number | null;
+  defaultShippingCharge: number | null;
+  localPickupEligibleDefault: boolean;
+  freeShippingEligibleDefault: boolean;
+  requiresBoxDefault: boolean;
+  insuranceRecommendedDefault: boolean;
+  active: boolean;
+  systemDefault: boolean;
+  productsUsingCount: number;
+  activeProductsUsingCount: number;
+  historicalOrdersUsingCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StorefrontOrderItemDTO = {
   id: string;
   inventoryItemId: string;
@@ -1483,6 +1506,7 @@ export type DashboardDTO = {
   storefrontOrders: StorefrontOrderDTO[];
   storefrontSummary: StorefrontSummaryDTO;
   storefrontSettings: StorefrontSettingsDTO;
+  shippingProfiles: ShippingProfileDTO[];
   barcodeScans: BarcodeScanDTO[];
   dailyRecaps: DailyRecapDTO[];
   savedFilterPresets: SavedFilterPresetDTO[];

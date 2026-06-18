@@ -31,6 +31,7 @@ import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates
 import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
 import { marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
+import { listShippingProfiles } from "@/lib/shipping-profiles";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText } from "@/lib/target-retail-policy";
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, sanitizePublicImageUrl, storeCreateSchema } from "@/lib/validation";
@@ -3062,10 +3063,11 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     monitorLogs: monitorLogDTOs,
     alerts: alertDTOs
   });
-  const [storefrontOrders, storefrontStats, storefrontSettings] = await Promise.all([
+  const [storefrontOrders, storefrontStats, storefrontSettings, shippingProfiles] = await Promise.all([
     listStorefrontOrders(currentUser),
     storefrontSummary(currentUser),
-    getStorefrontSettings()
+    getStorefrontSettings(),
+    listShippingProfiles(currentUser)
   ]);
   const inventoryWithSalesAdjustments = applyStorefrontOrderAdjustmentsToInventory(inventoryDTOs, storefrontOrders);
   const inactivePaidAlertOrderIds = inactiveStorefrontOrderIdsForPaidFulfillmentAlerts(storefrontOrders);
@@ -3091,6 +3093,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     storefrontOrders,
     storefrontSummary: storefrontStats,
     storefrontSettings,
+    shippingProfiles,
     barcodeScans: barcodeScans.map(barcodeScanToDTO),
     dailyRecaps: dailyRecaps.map(dailyRecapToDTO),
     savedFilterPresets: savedFilterPresets.map(savedFilterPresetToDTO),

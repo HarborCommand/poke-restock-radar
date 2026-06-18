@@ -223,6 +223,42 @@ const optionalMoney = z.preprocess(
   z.coerce.number().nonnegative().max(100000).optional()
 );
 
+const optionalPackageNumber = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().nonnegative().max(500).optional()
+);
+
+const requiredPackageWeight = z.coerce.number().nonnegative().max(500);
+
+const shippingProfileKeySchema = z.preprocess(
+  (value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    return String(value).trim().toLowerCase();
+  },
+  z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_-]{1,79}$/, "Use lowercase letters, numbers, dashes, or underscores")
+    .optional()
+);
+
+export const shippingProfileCreateSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  key: shippingProfileKeySchema,
+  packageType: z.string().trim().min(2).max(120),
+  defaultWeightOz: requiredPackageWeight,
+  packageLengthIn: optionalPackageNumber,
+  packageWidthIn: optionalPackageNumber,
+  packageHeightIn: optionalPackageNumber,
+  defaultShippingCharge: optionalMoney,
+  localPickupEligibleDefault: checkboxBoolean.default(false),
+  freeShippingEligibleDefault: checkboxBoolean.default(false),
+  requiresBoxDefault: checkboxBoolean.default(false),
+  insuranceRecommendedDefault: checkboxBoolean.default(false),
+  active: checkboxBoolean.default(true)
+});
+
+export const shippingProfileUpdateSchema = shippingProfileCreateSchema.partial();
+
 const optionalPurchaseLimit = z.preprocess(
   (value) => (value === "" || value === null || value === undefined ? null : value),
   z.coerce.number().int().min(1).max(25).nullable().optional()

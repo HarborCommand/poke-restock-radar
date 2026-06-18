@@ -48,6 +48,7 @@ model User {
   storefrontSettings       StorefrontSettings?
   storefrontOrders         StorefrontOrder[]
   storefrontCustomers      StorefrontCustomer[]
+  shippingProfiles         ShippingProfile[]
 }
 
 model PasswordResetToken {
@@ -1005,6 +1006,32 @@ model StorefrontSettings {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ShippingProfile {
+  id                         String   @id @default(cuid())
+  userId                     String?
+  name                       String
+  key                        String   @unique
+  packageType                String
+  defaultWeightOz            Float
+  packageLengthIn            Float?
+  packageWidthIn             Float?
+  packageHeightIn            Float?
+  defaultShippingCharge      Float?
+  localPickupEligibleDefault Boolean  @default(false)
+  freeShippingEligibleDefault Boolean @default(false)
+  requiresBoxDefault         Boolean  @default(false)
+  insuranceRecommendedDefault Boolean @default(false)
+  active                     Boolean  @default(true)
+  systemDefault              Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  user                       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([active])
+  @@index([systemDefault])
 }
 
 model StorefrontCustomer {

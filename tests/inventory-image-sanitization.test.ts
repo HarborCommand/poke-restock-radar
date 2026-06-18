@@ -234,7 +234,7 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(listingModal, /Leave blank only if you want the safe fallback rate\./);
   assert.match(listingModal, /Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment\./);
   assert.match(listingModal, /shipping-profile-issue-list/);
-  assert.match(listingModal, /inventoryShippingProfileBadges\(item\)\.map/);
+  assert.match(listingModal, /inventoryShippingProfileBadges\(item, shippingProfiles\)\.map/);
   assert.match(listingModal, /Needs shipping profile/);
   assert.match(listingModal, /Shipping profile set/);
   assert.match(listingModal, /Complete before relying on storefront estimates/);
@@ -259,14 +259,12 @@ test("admin listing editor renders a clean shipping profile card", () => {
     assert.match(listingModal, new RegExp(`name="${field}"`), `missing shipping field ${field}`);
   }
 
+  assert.match(listingModal, /options=\{shippingProfileSelectOptions\(shippingProfiles, item\.shippingProfile\)\}/);
+  assert.match(appSource, /function shippingProfileSelectOptions/);
+  assert.match(appSource, /inactive - existing products only/);
+  assert.match(appSource, /Inactive profile in use/);
+
   for (const label of [
-    "Single card / light item",
-    "Sealed pack small",
-    "Small box",
-    "Medium box",
-    "Large box",
-    "Heavy box",
-    "Local pickup only / eligible",
     "Weight in ounces",
     "Length in inches",
     "Width in inches",
@@ -297,25 +295,26 @@ test("admin inventory can find products that need shipping profiles", () => {
   const filtersComponent = sourceSlice(appSource, "function InventoryFilters", "function InventoryList");
   const listComponent = sourceSlice(appSource, "function InventoryList", "function InventoryDetailsModal");
 
-  assert.match(appSource, /function inventoryShippingProfileComplete\(item: InventoryItemDTO\)/);
-  assert.match(appSource, /function inventoryUsesFallbackShipping\(item: InventoryItemDTO\)/);
+  assert.match(appSource, /function inventoryShippingProfileComplete\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
+  assert.match(appSource, /function inventoryUsesFallbackShipping\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
   assert.match(appSource, /function inventoryMissingShippingWeight\(item: InventoryItemDTO\)/);
   assert.match(appSource, /function inventoryMissingShippingDimensions\(item: InventoryItemDTO\)/);
-  assert.match(appSource, /function inventoryShippingProfileBadges\(item: InventoryItemDTO\)/);
+  assert.match(appSource, /function inventoryShippingProfileBadges\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
   assert.match(appSource, /completedShippingProfileValues/);
+  assert.match(appSource, /inventoryShippingProfileRecord\(item, shippingProfiles\)/);
   assert.match(appSource, /positiveInventoryNumber\(item\.packageWeightOz\)/);
   assert.match(appSource, /positiveInventoryNumber\(item\.packageLengthIn\)/);
   assert.match(appSource, /positiveInventoryNumber\(item\.packageWidthIn\)/);
   assert.match(appSource, /positiveInventoryNumber\(item\.packageHeightIn\)/);
   assert.match(filterState, /shippingProfileStatus: string/);
   assert.match(appSource, /shippingProfileStatus: "ALL"/);
-  assert.match(filterLogic, /filters\.shippingProfileStatus === "NEEDS_SHIPPING_PROFILE" && inventoryShippingProfileComplete\(item\)/);
-  assert.match(filterLogic, /filters\.shippingProfileStatus === "PROFILE_READY" && !inventoryShippingProfileComplete\(item\)/);
+  assert.match(filterLogic, /filters\.shippingProfileStatus === "NEEDS_SHIPPING_PROFILE" && inventoryShippingProfileComplete\(item, shippingProfiles\)/);
+  assert.match(filterLogic, /filters\.shippingProfileStatus === "PROFILE_READY" && !inventoryShippingProfileComplete\(item, shippingProfiles\)/);
   assert.match(filtersComponent, /name="shippingProfileStatus"/);
   assert.match(filtersComponent, /All Shipping Profiles/);
   assert.match(filtersComponent, /Needs shipping profile/);
   assert.match(filtersComponent, /Profile ready/);
-  assert.match(listComponent, /inventoryShippingProfileBadges\(item\)\.map/);
+  assert.match(listComponent, /inventoryShippingProfileBadges\(item, shippingProfiles\)\.map/);
   assert.match(listComponent, /aria-label="Shipping profile status"/);
   assert.match(appSource, /Needs shipping profile/);
   assert.match(appSource, /Uses fallback shipping/);

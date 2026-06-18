@@ -7,6 +7,7 @@ import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
 import { emailProviderConfigured, sendEmailViaProvider, type EmailMessage, type EmailSendOptions } from "@/lib/email-provider";
 import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
+import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
   buildLocalPickupEmail,
@@ -1383,9 +1384,10 @@ export async function createCheckoutSession(input: {
   const cart = await getCartProducts(input.items);
   validateCheckoutReservationAvailability(cart, checkoutStartedAt);
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
+  const profileDefinitions = await shippingProfileDefinitionsForCheckout();
   const shippingCalculation = calculateCartShipping(
     cart.map(({ item, quantity }) => ({ ...item, quantity })),
-    { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod }
+    { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod, profileDefinitions }
   );
   const selectedShipping = shippingCalculation.defaultShippingOption;
   if (!selectedShipping) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");
@@ -1522,9 +1524,10 @@ export async function createInvoiceRequest(input: {
   const settings = await getStorefrontSettings();
   const cart = await getCartProducts(input.items);
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
+  const profileDefinitions = await shippingProfileDefinitionsForCheckout();
   const shippingCalculation = calculateCartShipping(
     cart.map(({ item, quantity }) => ({ ...item, quantity })),
-    { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod }
+    { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod, profileDefinitions }
   );
   const selectedShipping = shippingCalculation.defaultShippingOption;
   if (!selectedShipping) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");

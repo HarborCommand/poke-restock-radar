@@ -536,7 +536,7 @@ test("inventory mutations reveal or explain saved rows after refresh", () => {
   const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
   assert.match(app, /type InventoryMutationIntent/);
-  assert.match(app, /inventoryItemMatchesFilters\(item, filters\)/);
+  assert.match(app, /inventoryItemMatchesFilters\(item, filters, dashboard\.shippingProfiles\)/);
   assert.match(app, /findMutatedInventoryItem\(dashboard\.inventory, pendingInventoryMutation\)/);
   assert.match(app, /Inventory saved, but hidden by current filters/);
   assert.match(app, /Clear filters and show item/);
@@ -1675,4 +1675,211 @@ test("monitor creates explicit tracker online drop and system alert events", () 
   assert.match(notifications, /quiet_hours/);
   assert.match(route, /export async function DELETE/);
   assert.match(route, /clearSimulatedTrackerAlerts/);
+});
+
+test("admin shipping hub is a top-level navigation tab with overview sections", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
+
+  assert.match(app, /\| "shipping"/);
+  assert.match(app, /\{ id: "shipping", label: "Shipping", icon: Navigation, section: "inventory" \}/);
+  assert.match(app, /activeTab === "shipping"/);
+  assert.match(app, /<ShippingHubPanel/);
+  assert.match(shippingHub, /Shipping Hub/);
+  assert.match(shippingHub, /Shipping Overview/);
+  for (const label of [
+    "Orders To Ship",
+    "Packing",
+    "Shipped Today",
+    "Missing Shipping Data",
+    "Using Fallback Shipping",
+    "Average Shipping Charged",
+    "Shipping Revenue",
+    "Local Pickup"
+  ]) {
+    assert.match(shippingHub, new RegExp(label), `missing shipping overview card ${label}`);
+  }
+});
+
+test("shipping hub keeps carrier work separate from local pickup and archived orders", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
+  const canShip = app.slice(app.indexOf("function storefrontOrderCanShip"), app.indexOf("function storefrontOrderCanPickup"));
+
+  assert.match(canShip, /storefrontOrderCanFulfill\(order\) && !storefrontOrderIsLocalPickup\(order\)/);
+  assert.match(shippingHub, /const carrierOrdersToShip = dashboard\.storefrontOrders\.filter\(storefrontOrderCanShip\)/);
+  assert.match(shippingHub, /Local Pickup and archived orders are excluded\./);
+  assert.match(shippingHub, /storefrontOrderIsCanceledOrRefunded/);
+  assert.match(shippingHub, /Open Order/);
+  assert.match(shippingHub, /Add Tracking/);
+  assert.match(shippingHub, /Mark Shipped/);
+  assert.match(shippingHub, /Enter carrier and tracking in order detail first\./);
+});
+
+test("shipping hub tracking section shows shipped carrier orders and copy actions", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
+
+  assert.match(shippingHub, /Tracking \/ Shipped Orders/);
+  assert.match(shippingHub, /fulfillmentStatus === "shipped"/);
+  assert.match(shippingHub, /!storefrontOrderIsLocalPickup\(order\)/);
+  assert.match(shippingHub, /shippingHubCarrierTrackingUrl/);
+  assert.match(shippingHub, /Copy tracking/);
+  assert.match(shippingHub, /Copy URL/);
+  assert.match(shippingHub, /Marked-shipped orders with tracking will appear here\./);
+});
+
+test("shipping hub surfaces missing shipping data and merchant readiness", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
+
+  assert.match(app, /function shippingHubMissingProducts/);
+  assert.match(app, /inventoryShippingProfileComplete/);
+  assert.match(app, /inventoryUsesFallbackShipping/);
+  assert.match(app, /inventoryMissingShippingWeight/);
+  assert.match(app, /inventoryMissingShippingDimensions/);
+  assert.match(shippingHub, /Missing Shipping Data/);
+  assert.match(shippingHub, /Edit Product Shipping/);
+  assert.match(shippingHub, /Google \/ Merchant Readiness/);
+  assert.match(shippingHub, /Feed items missing brand/);
+  assert.match(shippingHub, /Feed items missing product type\/category/);
+  assert.match(shippingHub, /Products missing packed weight/);
+  assert.match(shippingHub, /Products missing dimensions/);
+  assert.match(shippingHub, /Ready for Standard Shipping/);
+});
+
+test("shipping profiles are database-backed with an additive migration", () => {
+  const schema = fs.readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
+  const migration = fs.readFileSync(new URL("../prisma/migrations/20260618124500_shipping_profiles/migration.sql", import.meta.url), "utf8");
+  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
+  const service = fs.readFileSync(new URL("../src/lib/shipping-profiles.ts", import.meta.url), "utf8");
+  const radarService = fs.readFileSync(new URL("../src/lib/radar-service.ts", import.meta.url), "utf8");
+
+  assert.match(schema, /model ShippingProfile/);
+  assert.match(schema, /key\s+String\s+@unique/);
+  assert.match(schema, /active\s+Boolean\s+@default\(true\)/);
+  assert.match(schema, /systemDefault\s+Boolean\s+@default\(false\)/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "ShippingProfile"/);
+  assert.doesNotMatch(migration, /DROP TABLE|ALTER TABLE "StorefrontOrder"|ALTER TABLE "InventoryItem"/i);
+  assert.match(types, /export type ShippingProfileDTO/);
+  assert.match(types, /shippingProfiles: ShippingProfileDTO\[\]/);
+  assert.match(service, /ensureDefaultShippingProfiles/);
+  assert.match(service, /shippingProfileUsageCounts/);
+  assert.match(service, /Profile key cannot be changed while products or historical orders use this profile/);
+  assert.match(radarService, /listShippingProfiles\(currentUser\)/);
+  assert.match(radarService, /shippingProfiles,/);
+});
+
+test("shipping profile APIs are admin-only and do not expose delete semantics", () => {
+  const createRoute = fs.readFileSync(new URL("../src/app/api/radar/shipping-profiles/route.ts", import.meta.url), "utf8");
+  const updateRoute = fs.readFileSync(new URL("../src/app/api/radar/shipping-profiles/[profileId]/route.ts", import.meta.url), "utf8");
+  const validation = fs.readFileSync(new URL("../src/lib/validation.ts", import.meta.url), "utf8");
+
+  assert.match(createRoute, /requireAdmin\(user\)/);
+  assert.match(createRoute, /export async function GET/);
+  assert.match(createRoute, /export async function POST/);
+  assert.match(createRoute, /shippingProfileCreateSchema/);
+  assert.match(createRoute, /createShippingProfile/);
+  assert.match(updateRoute, /requireAdmin\(user\)/);
+  assert.match(updateRoute, /export async function PATCH/);
+  assert.match(updateRoute, /shippingProfileUpdateSchema/);
+  assert.match(updateRoute, /updateShippingProfile/);
+  assert.doesNotMatch(createRoute + updateRoute, /export async function DELETE/);
+  assert.match(validation, /export const shippingProfileCreateSchema/);
+  assert.match(validation, /export const shippingProfileUpdateSchema/);
+  assert.match(validation, /defaultWeightOz: requiredPackageWeight/);
+});
+
+test("shipping hub profile manager supports create edit deactivate and reactivate", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
+  const profileEditor = app.slice(app.indexOf("function ShippingProfileEditorModal"), app.indexOf("function StorefrontOrdersPanel"));
+
+  assert.match(shippingHub, /Shipping Profiles Manager/);
+  assert.match(shippingHub, /Create Profile/);
+  assert.match(shippingHub, /Edit Profile/);
+  assert.match(shippingHub, /Deactivate/);
+  assert.match(shippingHub, /Reactivate/);
+  assert.match(shippingHub, /dashboard\.shippingProfiles/);
+  assert.match(shippingHub, /productsUsingCount/);
+  assert.match(shippingHub, /historicalOrdersUsingCount/);
+  assert.match(shippingHub, /Inactive profile is still used by existing products or historical orders/);
+  assert.match(profileEditor, /Create Shipping Profile/);
+  assert.match(profileEditor, /Edit Shipping Profile/);
+  assert.match(profileEditor, /Changes apply to future checkout estimates only/);
+  for (const field of [
+    "name",
+    "key",
+    "packageType",
+    "defaultWeightOz",
+    "packageLengthIn",
+    "packageWidthIn",
+    "packageHeightIn",
+    "defaultShippingCharge",
+    "localPickupEligibleDefault",
+    "freeShippingEligibleDefault",
+    "requiresBoxDefault",
+    "insuranceRecommendedDefault",
+    "active"
+  ]) {
+    assert.match(profileEditor, new RegExp(`name="${field}"`), `missing shipping profile field ${field}`);
+  }
+  for (const privateField of ["quantityOwned", "quantitySold", "publicPrice", "costBasis", "supplierNotes", "stripeCheckoutSessionId"]) {
+    assert.doesNotMatch(profileEditor, new RegExp(`name="${privateField}"`), `profile editor should not submit ${privateField}`);
+  }
+});
+
+test("shipping product editor saves package metadata without inventory or price mutation controls", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const editor = app.slice(app.indexOf("function ProductShippingEditorModal"), app.indexOf("function StorefrontOrdersPanel"));
+
+  assert.match(editor, /Edit Product Shipping/);
+  assert.match(editor, /Quantity, sold count, orders, sales, refunds, and price are preserved\./);
+  assert.match(editor, /\/api\/radar\/inventory\/\$\{item\.id\}\/store-listing/);
+  for (const field of [
+    "shippingProfile",
+    "packageWeightOz",
+    "packageLengthIn",
+    "packageWidthIn",
+    "packageHeightIn",
+    "shippingAvailable",
+    "localPickupAvailable",
+    "freeShippingEligible",
+    "requiresBox",
+    "insuranceRecommended"
+  ]) {
+    assert.match(editor, new RegExp(`name="${field}"`), `missing product shipping field ${field}`);
+  }
+  for (const privateField of ["quantityOwned", "quantitySold", "quantity", "soldCount", "costBasis", "supplier", "stockLots"]) {
+    assert.doesNotMatch(editor, new RegExp(`name="${privateField}"`), `shipping editor should not submit ${privateField}`);
+  }
+  assert.match(editor, /options=\{shippingProfileSelectOptions\(shippingProfiles, item\.shippingProfile\)\}/);
+  assert.match(app, /inactive - existing products only/);
+  assert.match(editor, /name="publicPrice" value=\{item\.publicPrice \?\? ""\}/);
+  assert.match(editor, /name="storeStatus" value=\{item\.storeStatus\}/);
+});
+
+test("checkout shipping uses persisted active profiles while preserving hardcoded fallback", () => {
+  const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
+  const shipping = fs.readFileSync(new URL("../src/lib/shipping.ts", import.meta.url), "utf8");
+  const profiles = fs.readFileSync(new URL("../src/lib/shipping-profiles.ts", import.meta.url), "utf8");
+
+  assert.match(storefront, /shippingProfileDefinitionsForCheckout/);
+  assert.match(storefront, /profileDefinitions = await shippingProfileDefinitionsForCheckout\(\)/);
+  assert.match(storefront, /fulfillmentMethod: input\.fulfillmentMethod, profileDefinitions/);
+  assert.match(shipping, /\.\.\.shippingProfiles,[\s\S]*\.\.\.\(options\.profileDefinitions \?\? \{\}\)/);
+  assert.match(shipping, /normalizeShippingProfile\(item\.shippingProfile, profileDefinitions\)/);
+  assert.match(shipping, /One or more items need a shipping profile; using a safe small-box fallback\./);
+  assert.match(profiles, /where: \{ active: true \}/);
+  assert.match(profiles, /shippingProfileToDefinition/);
+});
+
+test("shipping hub avoids payment and private inventory exposure", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function StorefrontOrdersPanel"));
+
+  for (const forbidden of ["cardNumber", "CVC", "paymentMethodDetails", "rawStripe", "webhookBody", "costBasis", "supplierNotes", "private inventory lots"]) {
+    assert.doesNotMatch(shippingHub, new RegExp(forbidden, "i"), `shipping hub should not expose ${forbidden}`);
+  }
+  assert.doesNotMatch(shippingHub, /stripePaymentIntentId|stripeCheckoutSessionId|stripeRefundId/);
 });

@@ -105,6 +105,7 @@ import type {
   RetailerDTO,
   RetailerTemplateDTO,
   SessionUser,
+  ShippingProfileDTO,
   SightingDTO,
   StoreDiscoveryResponseDTO,
   StoreDTO,
@@ -126,6 +127,7 @@ type Tab =
   | "cards"
   | "inventory"
   | "orders"
+  | "shipping"
   | "sales"
   | "alerts"
   | "keywords"
@@ -202,6 +204,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSect
   { id: "dashboard", label: "Dashboard", icon: Home, section: "main" },
   { id: "inventory", label: "Inventory", icon: Trophy, section: "inventory" },
   { id: "orders", label: "Orders", icon: ShoppingBag, section: "inventory" },
+  { id: "shipping", label: "Shipping", icon: Navigation, section: "inventory" },
   { id: "sales", label: "Sales", icon: Receipt, section: "inventory" },
   { id: "alerts", label: "Alerts", icon: Bell, section: "inventory" },
   { id: "market", label: "Market", icon: Sparkles, section: "analytics" },
@@ -1900,7 +1903,8 @@ export function RadarApp() {
   }
 
   const sidebarBadgeCounts: Partial<Record<Tab, number>> = {
-    orders: dashboard.storefrontOrders.filter(storefrontOrderCanFulfill).length
+    orders: dashboard.storefrontOrders.filter(storefrontOrderCanFulfill).length,
+    shipping: dashboard.storefrontOrders.filter(storefrontOrderCanShip).length
   };
 
   return (
@@ -2014,6 +2018,9 @@ export function RadarApp() {
         ) : null}
         {activeTab === "orders" ? (
           <StorefrontOrdersPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+        ) : null}
+        {activeTab === "shipping" ? (
+          <ShippingHubPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
         {activeTab === "sales" ? <SalesPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} /> : null}
         {activeTab === "alerts" ? (
@@ -6189,6 +6196,10 @@ const completedShippingProfileValues = new Set([
   "local_pickup"
 ]);
 
+function shippingProfileRecordMap(shippingProfiles: ShippingProfileDTO[] = []) {
+  return new Map(shippingProfiles.map((profile) => [profile.key.trim().toLowerCase(), profile]));
+}
+
 function inventoryShippingProfileValue(item: InventoryItemDTO) {
   return (item.shippingProfile || "").trim().toLowerCase();
 }
@@ -6197,9 +6208,23 @@ function inventoryShippingLocalPickupOnly(item: InventoryItemDTO) {
   return item.shippingAvailable === false && item.localPickupAvailable;
 }
 
-function inventoryUsesFallbackShipping(item: InventoryItemDTO) {
+function inventoryShippingProfileRecord(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
+  return shippingProfileRecordMap(shippingProfiles).get(inventoryShippingProfileValue(item)) ?? null;
+}
+
+function inventoryShippingProfileKnown(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
   const profile = inventoryShippingProfileValue(item);
-  return !profile || profile === "standard" || !completedShippingProfileValues.has(profile);
+  return Boolean(profile && profile !== "standard" && (completedShippingProfileValues.has(profile) || inventoryShippingProfileRecord(item, shippingProfiles)));
+}
+
+function inventoryUsesFallbackShipping(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
+  const profile = inventoryShippingProfileValue(item);
+  return !profile || profile === "standard" || !inventoryShippingProfileKnown(item, shippingProfiles);
+}
+
+function inventoryUsesInactiveShippingProfile(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
+  const profile = inventoryShippingProfileRecord(item, shippingProfiles);
+  return Boolean(profile && !profile.active);
 }
 
 function inventoryMissingShippingWeight(item: InventoryItemDTO) {
@@ -6214,19 +6239,23 @@ function inventoryMissingShippingDimensions(item: InventoryItemDTO) {
   );
 }
 
-function inventoryShippingProfileComplete(item: InventoryItemDTO) {
-  if (inventoryUsesFallbackShipping(item)) return false;
+function inventoryShippingProfileComplete(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
+  if (inventoryUsesFallbackShipping(item, shippingProfiles)) return false;
+  if (inventoryUsesInactiveShippingProfile(item, shippingProfiles)) return false;
   if (inventoryShippingLocalPickupOnly(item)) return true;
   return !inventoryMissingShippingWeight(item) && !inventoryMissingShippingDimensions(item);
 }
 
-function inventoryShippingProfileBadges(item: InventoryItemDTO): Array<{ label: string; tone: "good" | "warning" }> {
-  const badges: Array<{ label: string; tone: "good" | "warning" }> = inventoryShippingProfileComplete(item)
+function inventoryShippingProfileBadges(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []): Array<{ label: string; tone: "good" | "warning" }> {
+  const badges: Array<{ label: string; tone: "good" | "warning" }> = inventoryShippingProfileComplete(item, shippingProfiles)
     ? [{ label: "Shipping profile ready", tone: "good" }]
     : [{ label: "Needs shipping profile", tone: "warning" }];
 
-  if (inventoryUsesFallbackShipping(item)) {
+  if (inventoryUsesFallbackShipping(item, shippingProfiles)) {
     badges.push({ label: "Uses fallback shipping", tone: "warning" });
+  }
+  if (inventoryUsesInactiveShippingProfile(item, shippingProfiles)) {
+    badges.push({ label: "Inactive profile in use", tone: "warning" });
   }
   if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingWeight(item)) {
     badges.push({ label: "Missing weight", tone: "warning" });
@@ -6240,6 +6269,28 @@ function inventoryShippingProfileBadges(item: InventoryItemDTO): Array<{ label: 
     badges.push({ label: "Shipping disabled", tone: "warning" });
   }
   return badges;
+}
+
+function shippingProfileSelectOptions(shippingProfiles: ShippingProfileDTO[], currentKey?: string | null) {
+  const normalizedCurrentKey = String(currentKey || "").trim().toLowerCase();
+  const seen = new Set(["standard"]);
+  const options = [
+    { value: "standard", label: "Safe default profile" },
+    ...shippingProfiles
+      .filter((profile) => profile.active || profile.key === normalizedCurrentKey)
+      .sort((a, b) => Number(b.active) - Number(a.active) || Number(b.systemDefault) - Number(a.systemDefault) || a.name.localeCompare(b.name))
+      .map((profile) => {
+        seen.add(profile.key);
+        return {
+          value: profile.key,
+          label: `${profile.name}${profile.active ? "" : " (inactive - existing products only)"}`
+        };
+      })
+  ];
+  if (normalizedCurrentKey && !seen.has(normalizedCurrentKey)) {
+    options.push({ value: normalizedCurrentKey, label: `${formatStatus(normalizedCurrentKey)} (unknown - existing products only)` });
+  }
+  return options;
 }
 
 type InventoryFiltersState = {
@@ -6300,7 +6351,7 @@ function inventoryRecentTimestamp(item: InventoryItemDTO) {
   );
 }
 
-function inventoryItemMatchesFilters(item: InventoryItemDTO, filters: InventoryFiltersState) {
+function inventoryItemMatchesFilters(item: InventoryItemDTO, filters: InventoryFiltersState, shippingProfiles: ShippingProfileDTO[] = []) {
   const search = filters.search.toLowerCase().trim();
   const source = filters.source.toLowerCase().trim();
   if (
@@ -6315,8 +6366,8 @@ function inventoryItemMatchesFilters(item: InventoryItemDTO, filters: InventoryF
   if (filters.category !== "ALL" && item.category !== filters.category) return false;
   if (source && !item.source.toLowerCase().includes(source) && !(item.sourceStore || "").toLowerCase().includes(source)) return false;
   if (filters.listingStatus !== "ALL" && item.listingStatus !== filters.listingStatus) return false;
-  if (filters.shippingProfileStatus === "NEEDS_SHIPPING_PROFILE" && inventoryShippingProfileComplete(item)) return false;
-  if (filters.shippingProfileStatus === "PROFILE_READY" && !inventoryShippingProfileComplete(item)) return false;
+  if (filters.shippingProfileStatus === "NEEDS_SHIPPING_PROFILE" && inventoryShippingProfileComplete(item, shippingProfiles)) return false;
+  if (filters.shippingProfileStatus === "PROFILE_READY" && !inventoryShippingProfileComplete(item, shippingProfiles)) return false;
   return true;
 }
 
@@ -6396,8 +6447,8 @@ function InventoryPanel({
   const highlightTimerRef = useRef<number | null>(null);
   const rowScrollTimerRef = useRef<number | null>(null);
   const visibleItems = useMemo(() => {
-    return sortInventoryItemsForFilters(dashboard.inventory.filter((item) => inventoryItemMatchesFilters(item, filters)), filters);
-  }, [dashboard.inventory, filters]);
+    return sortInventoryItemsForFilters(dashboard.inventory.filter((item) => inventoryItemMatchesFilters(item, filters, dashboard.shippingProfiles)), filters);
+  }, [dashboard.inventory, dashboard.shippingProfiles, filters]);
 
   function updateFilter(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.currentTarget;
@@ -6478,7 +6529,7 @@ function InventoryPanel({
     if (!pendingInventoryMutation) return;
     const item = findMutatedInventoryItem(dashboard.inventory, pendingInventoryMutation);
     if (!item) return;
-    const hiddenByFilters = !inventoryItemMatchesFilters(item, filters);
+    const hiddenByFilters = !inventoryItemMatchesFilters(item, filters, dashboard.shippingProfiles);
     const resolutionTimer = window.setTimeout(() => {
       setView("items");
       setSelectedItemId(item.id);
@@ -6723,6 +6774,7 @@ function InventoryPanel({
                 items={visibleItems}
                 selectedId={selectedItem?.id ?? ""}
                 highlightedId={highlightedItemId}
+                shippingProfiles={dashboard.shippingProfiles}
                 selectedPublishIds={validSelectedPublishIds}
                 onSelect={(item) => setSelectedItemId(item.id)}
                 onTogglePublishSelect={togglePublishSelection}
@@ -6836,6 +6888,7 @@ function InventoryPanel({
       {detailItem ? (
         <InventoryDetailsModal
           item={detailItem}
+          shippingProfiles={dashboard.shippingProfiles}
           onAddStock={(item) => openPurchaseFlow(item.id)}
           onAdjustStock={(item) => {
             const lot = item.stockLots[0];
@@ -6919,6 +6972,7 @@ function InventoryPanel({
       {storeListingItem ? (
         <StoreListingModal
           item={storeListingItem}
+          shippingProfiles={dashboard.shippingProfiles}
           busy={busy}
           busyLabel={busyLabel}
           submit={async (event, label, run, options) => {
@@ -7001,6 +7055,757 @@ function storefrontOrderTabs(orders: StorefrontOrderDTO[]) {
     ...definition,
     count: storefrontOrdersForTab(orders, definition.id).length
   }));
+}
+
+function shippingHubPublishedProducts(items: InventoryItemDTO[]) {
+  return items.filter((item) => item.publishToStore && ["active", "sold_out"].includes(item.storeStatus));
+}
+
+function shippingHubMissingProducts(items: InventoryItemDTO[], shippingProfiles: ShippingProfileDTO[]) {
+  return shippingHubPublishedProducts(items).filter((item) => !inventoryShippingProfileComplete(item, shippingProfiles));
+}
+
+function shippingHubPackageSummary(item: InventoryItemDTO) {
+  const weight = positiveInventoryNumber(item.packageWeightOz) ? `${item.packageWeightOz} oz` : "Weight missing";
+  const dimensions = inventoryMissingShippingDimensions(item)
+    ? "Dimensions missing"
+    : `${item.packageLengthIn} x ${item.packageWidthIn} x ${item.packageHeightIn} in`;
+  return `${weight} - ${dimensions}`;
+}
+
+function shippingHubOrderDestination(order: StorefrontOrderDTO) {
+  const city = order.shippingAddress?.city?.trim();
+  const state = order.shippingAddress?.state?.trim();
+  return [city, state].filter(Boolean).join(", ") || "Destination not captured";
+}
+
+function shippingHubOrderItems(order: StorefrontOrderDTO) {
+  return order.items.length
+    ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
+    : "No item details captured";
+}
+
+function shippingHubCarrierTrackingUrl(order: StorefrontOrderDTO) {
+  const carrier = String(order.carrier || "").trim().toLowerCase();
+  const tracking = String(order.trackingNumber || "").trim();
+  if (!tracking) return null;
+  const encoded = encodeURIComponent(tracking);
+  if (carrier.includes("usps")) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encoded}`;
+  if (carrier.includes("ups")) return `https://www.ups.com/track?tracknum=${encoded}`;
+  if (carrier.includes("fedex")) return `https://www.fedex.com/fedextrack/?trknbr=${encoded}`;
+  if (carrier.includes("dhl")) return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${encoded}`;
+  return null;
+}
+
+function shippingHubAverageShippingCharged(orders: StorefrontOrderDTO[]) {
+  const carrierOrders = orders.filter((order) => !storefrontOrderIsLocalPickup(order) && order.shippingCharged > 0);
+  if (!carrierOrders.length) return 0;
+  const total = carrierOrders.reduce((sum, order) => sum + order.shippingCharged, 0);
+  return Math.round((total / carrierOrders.length) * 100) / 100;
+}
+
+function shippingHubIsToday(value: string | null | undefined) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+}
+
+function shippingHubIsRecent(value: string | null | undefined) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return Date.now() - date.getTime() <= 7 * ORDER_TIMER_DAY_MS;
+}
+
+function ShippingHubPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  submit,
+  runAction
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  runAction: ActionHandler;
+}) {
+  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [shippingEditItemId, setShippingEditItemId] = useState("");
+  const [profileEditor, setProfileEditor] = useState<{ mode: "create" | "edit"; profileId?: string } | null>(null);
+  const [orderTimerNow, setOrderTimerNow] = useState(() => Date.now());
+  const selectedOrder = dashboard.storefrontOrders.find((order) => order.id === selectedOrderId) ?? null;
+  const shippingEditItem = dashboard.inventory.find((item) => item.id === shippingEditItemId) ?? null;
+  const selectedProfile = profileEditor?.profileId ? dashboard.shippingProfiles.find((profile) => profile.id === profileEditor.profileId) ?? null : null;
+  const carrierOrdersToShip = dashboard.storefrontOrders.filter(storefrontOrderCanShip);
+  const packingOrders = carrierOrdersToShip.filter((order) => order.fulfillmentStatus === "packing" || order.status === "packing");
+  const shippedOrders = dashboard.storefrontOrders
+    .filter((order) => !storefrontOrderIsLocalPickup(order) && order.fulfillmentStatus === "shipped" && !storefrontOrderIsCanceledOrRefunded(order))
+    .sort((a, b) => (Date.parse(b.shippedAt || b.updatedAt) || 0) - (Date.parse(a.shippedAt || a.updatedAt) || 0));
+  const shippedTodayCount = shippedOrders.filter((order) => shippingHubIsToday(order.shippedAt || order.updatedAt)).length;
+  const recentlyShippedCount = shippedOrders.filter((order) => shippingHubIsRecent(order.shippedAt || order.updatedAt)).length;
+  const missingProducts = shippingHubMissingProducts(dashboard.inventory, dashboard.shippingProfiles);
+  const fallbackProducts = shippingHubPublishedProducts(dashboard.inventory).filter((item) => inventoryUsesFallbackShipping(item, dashboard.shippingProfiles));
+  const shippingRevenue = dashboard.storefrontOrders
+    .filter((order) => order.paymentStatus === "paid" && !storefrontOrderIsLocalPickup(order) && !storefrontOrderIsCanceledOrRefunded(order))
+    .reduce((sum, order) => sum + order.shippingCharged, 0);
+  const shippingCost = dashboard.storefrontOrders
+    .filter((order) => !storefrontOrderIsLocalPickup(order) && !storefrontOrderIsCanceledOrRefunded(order))
+    .reduce((sum, order) => sum + order.shippingCost, 0);
+  const readyForStandardShipping = shippingHubPublishedProducts(dashboard.inventory).filter(
+    (item) => inventoryShippingProfileComplete(item, dashboard.shippingProfiles) && item.shippingAvailable && !inventoryShippingLocalPickupOnly(item)
+  );
+  const missingBrandCount = shippingHubPublishedProducts(dashboard.inventory).filter((item) => !String(item.brand || "").trim()).length;
+  const missingCategoryCount = shippingHubPublishedProducts(dashboard.inventory).filter((item) => !String(item.storefrontCategory || item.category || "").trim()).length;
+
+  useEffect(() => {
+    const orderTimerTick = window.setInterval(() => setOrderTimerNow(Date.now()), ORDER_TIMER_MINUTE_MS);
+    return () => window.clearInterval(orderTimerTick);
+  }, []);
+
+  function copyShippingHubValue(value: string | null | undefined) {
+    const text = String(value || "").trim();
+    if (!text || typeof navigator === "undefined") return;
+    void navigator.clipboard?.writeText(text);
+  }
+
+  return (
+    <>
+      <section className="inventory-page-header inventory-ops-header shipping-hub-header">
+        <div>
+          <span className="eyeline">Admin-only</span>
+          <h2>Shipping Hub</h2>
+          <p>Central shipping workbench for carrier orders, tracking, package metadata, and Google readiness.</p>
+        </div>
+        <div className="inventory-header-actions">
+          <button
+            className="mini-action"
+            disabled={busy}
+            type="button"
+            onClick={() => runAction("Refreshing shipping hub", () => requestJson("/api/radar/dashboard"), { success: "Shipping hub refreshed" })}
+          >
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+        </div>
+      </section>
+
+      <section className="inventory-kpi-grid shipping-overview-grid" aria-label="Shipping Overview">
+        <InventoryKpiCard label="Orders To Ship" value={String(carrierOrdersToShip.length)} detail="Paid carrier shipments" tone={carrierOrdersToShip.length ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Packing" value={String(packingOrders.length)} detail="Carrier orders being packed" tone={packingOrders.length ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Shipped Today" value={String(shippedTodayCount)} detail={`${recentlyShippedCount} shipped recently`} tone="good" />
+        <InventoryKpiCard label="Missing Shipping Data" value={String(missingProducts.length)} detail="Published products needing package data" tone={missingProducts.length ? "watch" : "good"} />
+        <InventoryKpiCard label="Using Fallback Shipping" value={String(fallbackProducts.length)} detail="Safe fallback still active" tone={fallbackProducts.length ? "watch" : "good"} />
+        <InventoryKpiCard label="Average Shipping Charged" value={money(shippingHubAverageShippingCharged(dashboard.storefrontOrders))} detail="Carrier shipment average" tone="neutral" />
+        <InventoryKpiCard label="Shipping Revenue" value={money(shippingRevenue)} detail={`Cost recorded ${money(shippingCost)}`} tone={shippingRevenue >= shippingCost ? "good" : "watch"} />
+        <InventoryKpiCard label="Local Pickup" value={String(dashboard.storefrontSummary.pickupOrderCount)} detail="Separate pickup queue" tone={dashboard.storefrontSummary.pickupOrderCount ? "watch" : "neutral"} />
+      </section>
+
+      <section className="shipping-hub-grid">
+        <section className="dashboard-card shipping-hub-card shipping-hub-span">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Orders To Ship</h3>
+              <span>Paid standard-shipping orders only. Local Pickup and archived orders are excluded.</span>
+            </div>
+          </div>
+          <div className="shipping-work-list">
+            {carrierOrdersToShip.length ? (
+              carrierOrdersToShip.map((order) => {
+                const timerState = getOrderTimerState(order, orderTimerNow);
+                const canMarkShipped = storefrontOrderHasShipmentDetails(order);
+                return (
+                  <article className="shipping-work-row" key={order.id}>
+                    <div className="shipping-work-main">
+                      <div>
+                        <strong>{order.orderNumber}</strong>
+                        <span>{order.customerName || "Customer"} - {shippingHubOrderDestination(order)}</span>
+                      </div>
+                      <p>{shippingHubOrderItems(order)}</p>
+                      <div className="shipping-work-meta">
+                        <span>{order.shippingMethodLabel || "Shipping method not captured"}</span>
+                        <span>{money(order.shippingCharged)} charged</span>
+                        <span>{formatShippingPackageWeight(order)}</span>
+                        <span>{formatShippingPackageProfile(order)}</span>
+                      </div>
+                    </div>
+                    <div className="storefront-order-status-stack">
+                      <span className={`chip compact-chip storefront-order-timer-chip ${timerState.tone}`}>{timerState.shortLabel}</span>
+                      <span className="chip compact-chip good">{formatStatus(order.paymentStatus)}</span>
+                      <span className={`chip compact-chip ${canMarkShipped ? "good" : "watch"}`}>{canMarkShipped ? "Tracking ready" : "Tracking needed"}</span>
+                      <span className="chip compact-chip neutral">{storefrontOrderFulfillmentLabel(order)}</span>
+                    </div>
+                    <div className="catalog-actions shipping-work-actions">
+                      <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>
+                        Open Order
+                      </button>
+                      <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>
+                        Add Tracking
+                      </button>
+                      <button
+                        className="mini-action"
+                        disabled={busy || !canMarkShipped}
+                        title={canMarkShipped ? "Mark this order shipped." : "Enter carrier and tracking in order detail first."}
+                        type="button"
+                        onClick={() =>
+                          runAction(
+                            `Marking ${order.orderNumber} shipped`,
+                            () =>
+                              requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                                method: "PATCH",
+                                body: JSON.stringify({
+                                  status: "shipped",
+                                  fulfillmentStatus: "shipped",
+                                  carrier: order.carrier,
+                                  trackingNumber: order.trackingNumber,
+                                  shippingCost: order.shippingCost
+                                })
+                              }),
+                            { success: "Order marked shipped" }
+                          )
+                        }
+                      >
+                        Mark Shipped
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <EmptyState icon={Navigation} title="No carrier shipments waiting." detail="Paid Standard Shipping orders will appear here after Stripe confirms payment." />
+            )}
+          </div>
+        </section>
+
+        <section className="dashboard-card shipping-hub-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Tracking / Shipped Orders</h3>
+              <span>Recent carrier shipments with stored tracking details.</span>
+            </div>
+          </div>
+          <div className="shipping-compact-list">
+            {shippedOrders.length ? (
+              shippedOrders.slice(0, 8).map((order) => {
+                const trackingUrl = shippingHubCarrierTrackingUrl(order);
+                return (
+                  <article className="shipping-compact-row" key={order.id}>
+                    <div>
+                      <strong>{order.orderNumber}</strong>
+                      <span>{order.customerName || "Customer"} - {shippingHubOrderDestination(order)}</span>
+                      <small>{order.carrier || "Carrier not provided"} - {order.trackingNumber || "Tracking not provided"}</small>
+                      <small>Shipped {order.shippedAt ? dateTime(order.shippedAt) : "date not captured"} - {money(order.shippingCharged)} charged</small>
+                    </div>
+                    <div className="shipping-mini-actions">
+                      <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>Open</button>
+                      <button className="mini-action" disabled={!order.trackingNumber} type="button" onClick={() => copyShippingHubValue(order.trackingNumber)}>Copy tracking</button>
+                      {trackingUrl ? (
+                        <button className="mini-action" type="button" onClick={() => copyShippingHubValue(trackingUrl)}>Copy URL</button>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <EmptyState icon={ClipboardList} title="No shipped carrier orders yet." detail="Marked-shipped orders with tracking will appear here." />
+            )}
+          </div>
+        </section>
+
+        <section className="dashboard-card shipping-hub-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Shipping Profiles Manager</h3>
+              <span>Create and edit admin shipping profiles for future checkout estimates. Existing orders keep their original snapshot.</span>
+            </div>
+            <button className="mini-action" type="button" onClick={() => setProfileEditor({ mode: "create" })}>
+              <Plus size={14} />
+              Create Profile
+            </button>
+          </div>
+          <p className="shipping-profile-helper">
+            Changes apply to future checkout estimates only. Existing orders keep their original shipping snapshot.
+          </p>
+          <div className="shipping-profile-manager-list" data-profile-manager="database-backed">
+            {dashboard.shippingProfiles.length ? (
+              dashboard.shippingProfiles.map((profile) => {
+                const dimensions =
+                  profile.packageLengthIn && profile.packageWidthIn && profile.packageHeightIn
+                    ? `${profile.packageLengthIn} x ${profile.packageWidthIn} x ${profile.packageHeightIn} in`
+                    : "Dimensions not set";
+                const inUseWhileInactive = !profile.active && (profile.productsUsingCount > 0 || profile.historicalOrdersUsingCount > 0);
+                return (
+                  <article className={`shipping-profile-manager-row ${profile.active ? "" : "inactive"}`} key={profile.id}>
+                    <div>
+                      <strong>{profile.name}</strong>
+                      <span>{profile.packageType} - {profile.key}</span>
+                      <small>
+                        {dimensions} - default {profile.defaultWeightOz} oz
+                        {profile.defaultShippingCharge !== null ? ` - base ${money(profile.defaultShippingCharge)}` : ""}
+                      </small>
+                      <small>
+                        {profile.productsUsingCount} products using - {profile.activeProductsUsingCount} published - {profile.historicalOrdersUsingCount} order snapshots
+                      </small>
+                      {inUseWhileInactive ? <small className="shipping-profile-inactive-warning">Inactive profile is still used by existing products or historical orders.</small> : null}
+                    </div>
+                    <div className="shipping-profile-manager-badges">
+                      <span className={`chip compact-chip ${profile.active ? "good" : "watch"}`}>{profile.active ? "Active" : "Inactive"}</span>
+                      {profile.systemDefault ? <span className="chip compact-chip neutral">Default fallback</span> : null}
+                      {profile.localPickupEligibleDefault ? <span className="chip compact-chip good">Pickup eligible</span> : null}
+                      {profile.requiresBoxDefault ? <span className="chip compact-chip watch">Requires box</span> : null}
+                      {profile.insuranceRecommendedDefault ? <span className="chip compact-chip watch">Insurance recommended</span> : null}
+                    </div>
+                    <div className="shipping-profile-actions">
+                      <button className="mini-action" type="button" onClick={() => setProfileEditor({ mode: "edit", profileId: profile.id })}>
+                        Edit Profile
+                      </button>
+                      <button
+                        className="mini-action"
+                        disabled={busy}
+                        type="button"
+                        onClick={() =>
+                          runAction(
+                            `${profile.active ? "Deactivating" : "Reactivating"} shipping profile`,
+                            () =>
+                              requestJson(`/api/radar/shipping-profiles/${profile.id}`, {
+                                method: "PATCH",
+                                body: JSON.stringify({ active: !profile.active })
+                              }),
+                            { success: profile.active ? "Shipping profile deactivated" : "Shipping profile reactivated" }
+                          )
+                        }
+                      >
+                        {profile.active ? "Deactivate" : "Reactivate"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <EmptyState icon={Boxes} title="No shipping profiles yet." detail="Create a profile or refresh to seed the default fallback profiles." />
+            )}
+          </div>
+        </section>
+
+        <section className="dashboard-card shipping-hub-card shipping-hub-span">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Missing Shipping Data</h3>
+              <span>Complete weight, dimensions, and profiles before pushing Google traffic.</span>
+            </div>
+          </div>
+          <div className="shipping-missing-list">
+            {missingProducts.length ? (
+              missingProducts.map((item) => (
+                <article className="shipping-missing-row" key={item.id}>
+                  <div>
+                    <strong>{item.publicTitle || item.itemName}</strong>
+                    <span>{shippingHubPackageSummary(item)}</span>
+                    <small>{item.shippingProfile ? formatStatus(item.shippingProfile) : "No shipping profile"} - {item.localPickupAvailable ? "Local pickup eligible" : "No local pickup"}</small>
+                  </div>
+                  <div className="shipping-profile-issue-list" aria-label="Missing shipping badges">
+                    {inventoryShippingProfileBadges(item, dashboard.shippingProfiles).map((badge) => (
+                      <span className={`shipping-profile-chip ${badge.tone === "good" ? "good" : "warning"}`} key={badge.label}>
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="catalog-actions shipping-work-actions">
+                    <button className="mini-action" type="button" onClick={() => setShippingEditItemId(item.id)}>
+                      Edit Product Shipping
+                    </button>
+                    {item.publicSlug ? (
+                      <a className="mini-action" href={`/shop/product/${item.publicSlug}`} target="_blank" rel="noreferrer">
+                        Open Product
+                      </a>
+                    ) : null}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <EmptyState icon={Boxes} title="All published products have shipping data." detail="Products with missing package metadata will appear here." />
+            )}
+          </div>
+        </section>
+
+        <section className="dashboard-card shipping-hub-card shipping-hub-span">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Google / Merchant Readiness</h3>
+              <span>Admin-only package data checks for feed quality and Standard Shipping readiness.</span>
+            </div>
+          </div>
+          <div className="shipping-readiness-grid">
+            <article>
+              <span>Feed items missing brand</span>
+              <strong>{missingBrandCount}</strong>
+            </article>
+            <article>
+              <span>Feed items missing product type/category</span>
+              <strong>{missingCategoryCount}</strong>
+            </article>
+            <article>
+              <span>Products missing packed weight</span>
+              <strong>{shippingHubPublishedProducts(dashboard.inventory).filter(inventoryMissingShippingWeight).length}</strong>
+            </article>
+            <article>
+              <span>Products missing dimensions</span>
+              <strong>{shippingHubPublishedProducts(dashboard.inventory).filter(inventoryMissingShippingDimensions).length}</strong>
+            </article>
+            <article>
+              <span>Ready for Standard Shipping</span>
+              <strong>{readyForStandardShipping.length}</strong>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      {selectedOrder ? (
+        <StorefrontOrderDetailsModal
+          order={selectedOrder}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          runAction={runAction}
+          timerNow={orderTimerNow}
+          onClose={() => setSelectedOrderId("")}
+        />
+      ) : null}
+      {shippingEditItem ? (
+        <ProductShippingEditorModal
+          item={shippingEditItem}
+          shippingProfiles={dashboard.shippingProfiles}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          onClose={() => setShippingEditItemId("")}
+        />
+      ) : null}
+      {profileEditor ? (
+        <ShippingProfileEditorModal
+          profile={profileEditor.mode === "edit" ? selectedProfile : null}
+          mode={profileEditor.mode}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
+          onClose={() => setProfileEditor(null)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ProductShippingEditorModal({
+  item,
+  shippingProfiles,
+  busy,
+  busyLabel,
+  submit,
+  onClose
+}: {
+  item: InventoryItemDTO;
+  shippingProfiles: ShippingProfileDTO[];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  onClose: () => void;
+}) {
+  const saveLabel = `Saving shipping data for ${item.itemName}`;
+  const purchaseLimitActive = item.purchaseLimitEnabled || item.maxQuantityPerOrder !== DEFAULT_STOREFRONT_PURCHASE_LIMIT;
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal shipping-editor-modal" role="dialog" aria-modal="true" aria-label={`Edit shipping data ${item.itemName}`}>
+        <div className="edit-card-heading">
+          <div>
+            <h2>Edit Product Shipping</h2>
+            <span>Update package metadata only. Quantity, sold count, orders, sales, refunds, and price are preserved.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close product shipping editor" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form
+          className="inventory-edit-form"
+          onSubmit={(event) =>
+            submit(
+              event,
+              saveLabel,
+              (form) => requestJson(`/api/radar/inventory/${item.id}/store-listing`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
+              { reset: false, success: "Product shipping metadata saved", onSuccess: onClose }
+            )
+          }
+        >
+          <input type="hidden" name="publishToStore" value={item.publishToStore ? "true" : "false"} />
+          <input type="hidden" name="publicSlug" value={item.publicSlug ?? ""} />
+          <input type="hidden" name="publicTitle" value={item.publicTitle || item.itemName} />
+          <input type="hidden" name="publicDescription" value={item.publicDescription ?? ""} />
+          <input type="hidden" name="publicPrice" value={item.publicPrice ?? ""} />
+          <input type="hidden" name="compareAtPrice" value={item.compareAtPrice ?? ""} />
+          <input type="hidden" name="availableForSale" value={item.availableForSale ?? ""} />
+          <input type="hidden" name="purchaseLimitEnabled" value={purchaseLimitActive ? "true" : "false"} />
+          <input type="hidden" name="maxQuantityPerOrder" value={purchaseLimitActive ? item.maxQuantityPerOrder : ""} />
+          <input type="hidden" name="storeStatus" value={item.storeStatus} />
+          <input type="hidden" name="storefrontCategory" value={item.storefrontCategory ?? ""} />
+          <input type="hidden" name="storefrontTags" value={item.storefrontTags.join(", ")} />
+
+          <section className="shipping-editor-summary">
+            <ProductImagePreview imageUrl={item.publicImages[0] ?? item.imageUrl} itemName={item.itemName} />
+            <div>
+              <strong>{item.publicTitle || item.itemName}</strong>
+              <span>{storeListingLabel(item)} - on hand {item.quantityOwned} - public price {item.publicPrice !== null ? money(item.publicPrice) : "not set"}</span>
+              <small>Use packed shipping weight, including box or mailer. Used to estimate customer shipping at checkout.</small>
+            </div>
+          </section>
+
+          <section className="shipping-profile-card">
+            <div className="shipping-profile-card-head">
+              <div>
+                <strong>Package metadata</strong>
+                <span>Complete weight and dimensions before pushing Google traffic.</span>
+              </div>
+              {inventoryShippingProfileComplete(item, shippingProfiles) ? <span className="shipping-profile-status complete">Profile ready</span> : <span className="shipping-profile-status">Needs shipping profile</span>}
+            </div>
+            <p className="shipping-profile-helper">Fallback shipping is safe, but exact package data is better. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
+            <div className="shipping-profile-issue-list" aria-label="Shipping profile checklist">
+              {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
+                <span className={`shipping-profile-chip ${badge.tone === "good" ? "good" : "warning"}`} key={badge.label}>
+                  {badge.label}
+                </span>
+              ))}
+            </div>
+            <div className="shipping-profile-fields">
+              <SelectInput
+                name="shippingProfile"
+                label="Shipping profile"
+                defaultValue={item.shippingProfile || "standard"}
+                options={shippingProfileSelectOptions(shippingProfiles, item.shippingProfile)}
+              />
+              <div className="shipping-package-grid">
+                <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0" step="0.1" defaultValue={item.packageWeightOz ?? ""} />
+                <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0" step="0.1" defaultValue={item.packageLengthIn ?? ""} />
+                <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0" step="0.1" defaultValue={item.packageWidthIn ?? ""} />
+                <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0" step="0.1" defaultValue={item.packageHeightIn ?? ""} />
+              </div>
+              <div className="shipping-option-grid">
+                <label className="shipping-toggle-card">
+                  <input type="hidden" name="shippingAvailable" value="false" />
+                  <input name="shippingAvailable" type="checkbox" value="true" defaultChecked={item.shippingAvailable} />
+                  <span>
+                    <strong>Shipping available</strong>
+                    <small>Allow this listing to be shipped.</small>
+                  </span>
+                </label>
+                <label className="shipping-toggle-card">
+                  <input type="hidden" name="localPickupAvailable" value="false" />
+                  <input name="localPickupAvailable" type="checkbox" value="true" defaultChecked={item.localPickupAvailable} />
+                  <span>
+                    <strong>Local pickup eligible</strong>
+                    <small>Allow a local pickup option when available.</small>
+                  </span>
+                </label>
+                <label className="shipping-toggle-card">
+                  <input type="hidden" name="freeShippingEligible" value="false" />
+                  <input name="freeShippingEligible" type="checkbox" value="true" defaultChecked={item.freeShippingEligible} />
+                  <span>
+                    <strong>Free shipping eligible</strong>
+                    <small>Can participate in future free-shipping rules.</small>
+                  </span>
+                </label>
+                <label className="shipping-toggle-card">
+                  <input type="hidden" name="requiresBox" value="false" />
+                  <input name="requiresBox" type="checkbox" value="true" defaultChecked={item.requiresBox} />
+                  <span>
+                    <strong>Requires box</strong>
+                    <small>Use boxed-package handling for fragile or sealed items.</small>
+                  </span>
+                </label>
+                <label className="shipping-toggle-card">
+                  <input type="hidden" name="insuranceRecommended" value="false" />
+                  <input name="insuranceRecommended" type="checkbox" value="true" defaultChecked={item.insuranceRecommended} />
+                  <span>
+                    <strong>Insurance recommended</strong>
+                    <small>Flag higher-value shipments for admin review.</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <div className="inventory-edit-actions">
+            <button className="mini-action" disabled={busy} type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="primary-action" disabled={busy} type="submit">
+              <Save size={16} />
+              {busyLabel === saveLabel ? "Saving Shipping" : "Save Shipping Data"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ShippingProfileEditorModal({
+  profile,
+  mode,
+  busy,
+  busyLabel,
+  submit,
+  onClose
+}: {
+  profile: ShippingProfileDTO | null;
+  mode: "create" | "edit";
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  onClose: () => void;
+}) {
+  const isEdit = mode === "edit";
+  const saveLabel = isEdit ? `Updating shipping profile ${profile?.id ?? ""}` : "Creating shipping profile";
+  const keyLocked = Boolean(profile && (profile.systemDefault || profile.productsUsingCount > 0 || profile.historicalOrdersUsingCount > 0));
+
+  if (isEdit && !profile) {
+    return (
+      <div className="inventory-modal-backdrop" role="presentation">
+        <div className="inventory-modal shipping-editor-modal" role="dialog" aria-modal="true" aria-label="Shipping profile not found">
+          <div className="edit-card-heading">
+            <div>
+              <h2>Shipping Profile</h2>
+              <span>This shipping profile is no longer available.</span>
+            </div>
+            <button className="icon-button" type="button" aria-label="Close shipping profile editor" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
+          <div className="inventory-edit-actions">
+            <button className="primary-action" type="button" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="inventory-modal-backdrop" role="presentation">
+      <div className="inventory-modal shipping-editor-modal" role="dialog" aria-modal="true" aria-label={isEdit ? `Edit shipping profile ${profile?.name}` : "Create shipping profile"}>
+        <div className="edit-card-heading">
+          <div>
+            <h2>{isEdit ? "Edit Shipping Profile" : "Create Shipping Profile"}</h2>
+            <span>Used for future checkout estimates. Existing paid order snapshots are preserved.</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close shipping profile editor" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form
+          className="inventory-edit-form"
+          onSubmit={(event) =>
+            submit(
+              event,
+              saveLabel,
+              (form) =>
+                requestJson(isEdit ? `/api/radar/shipping-profiles/${profile?.id}` : "/api/radar/shipping-profiles", {
+                  method: isEdit ? "PATCH" : "POST",
+                  body: JSON.stringify(formJson(form))
+                }),
+              { reset: false, success: isEdit ? "Shipping profile saved" : "Shipping profile created", onSuccess: onClose }
+            )
+          }
+        >
+          <section className="shipping-profile-card">
+            <div className="shipping-profile-card-head">
+              <div>
+                <strong>Profile details</strong>
+                <span>Changes apply to future checkout estimates only. Existing orders keep their original shipping snapshot.</span>
+              </div>
+              {profile ? <span className={`shipping-profile-status ${profile.active ? "complete" : ""}`}>{profile.active ? "Active" : "Inactive"}</span> : null}
+            </div>
+            <p className="shipping-profile-helper">
+              Use packed weight including mailer/box. Dimensions should match packed package size. Used for future checkout estimates.
+            </p>
+            {keyLocked ? (
+              <div className="shipping-profile-guidance">
+                <strong>Profile key is locked.</strong>
+                <p>This key is used by products or historical order snapshots, so editing keeps the key stable.</p>
+              </div>
+            ) : null}
+            <div className="form-grid compact">
+              <TextInput name="name" label="Profile name" defaultValue={profile?.name ?? ""} required />
+              {keyLocked ? (
+                <>
+                  <input type="hidden" name="key" value={profile?.key ?? ""} />
+                  <TextInput name="keyDisplay" label="Profile key / slug" defaultValue={profile?.key ?? ""} disabled />
+                </>
+              ) : (
+                <TextInput name="key" label="Profile key / slug" defaultValue={profile?.key ?? ""} placeholder="small_box" />
+              )}
+              <TextInput name="packageType" label="Package type" defaultValue={profile?.packageType ?? ""} placeholder="Small Box / Booster Bundle Box" required />
+              <TextInput name="defaultWeightOz" label="Default weight oz" type="number" min="0" step="0.1" defaultValue={profile?.defaultWeightOz ?? ""} required />
+              <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0" step="0.1" defaultValue={profile?.packageLengthIn ?? ""} />
+              <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0" step="0.1" defaultValue={profile?.packageWidthIn ?? ""} />
+              <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0" step="0.1" defaultValue={profile?.packageHeightIn ?? ""} />
+              <TextInput name="defaultShippingCharge" label="Default shipping charge" type="number" min="0" step="0.01" defaultValue={profile?.defaultShippingCharge ?? ""} />
+              <p className="form-helper wide-field">Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
+            </div>
+            <div className="shipping-option-grid">
+              <label className="shipping-toggle-card">
+                <input type="hidden" name="localPickupEligibleDefault" value="false" />
+                <input name="localPickupEligibleDefault" type="checkbox" value="true" defaultChecked={profile?.localPickupEligibleDefault ?? false} />
+                <span>
+                  <strong>Local pickup eligible by default</strong>
+                  <small>New products can opt into local pickup from this profile.</small>
+                </span>
+              </label>
+              <label className="shipping-toggle-card">
+                <input type="hidden" name="freeShippingEligibleDefault" value="false" />
+                <input name="freeShippingEligibleDefault" type="checkbox" value="true" defaultChecked={profile?.freeShippingEligibleDefault ?? false} />
+                <span>
+                  <strong>Free shipping eligible by default</strong>
+                  <small>Can participate in future free-shipping rules.</small>
+                </span>
+              </label>
+              <label className="shipping-toggle-card">
+                <input type="hidden" name="requiresBoxDefault" value="false" />
+                <input name="requiresBoxDefault" type="checkbox" value="true" defaultChecked={profile?.requiresBoxDefault ?? false} />
+                <span>
+                  <strong>Requires box by default</strong>
+                  <small>Use boxed-package handling for fragile or sealed items.</small>
+                </span>
+              </label>
+              <label className="shipping-toggle-card">
+                <input type="hidden" name="insuranceRecommendedDefault" value="false" />
+                <input name="insuranceRecommendedDefault" type="checkbox" value="true" defaultChecked={profile?.insuranceRecommendedDefault ?? false} />
+                <span>
+                  <strong>Insurance recommended by default</strong>
+                  <small>Flag higher-value shipments for admin review.</small>
+                </span>
+              </label>
+              <label className="shipping-toggle-card">
+                <input type="hidden" name="active" value="false" />
+                <input name="active" type="checkbox" value="true" defaultChecked={profile?.active ?? true} />
+                <span>
+                  <strong>Active profile</strong>
+                  <small>Inactive profiles are hidden for new product choices but remain safe for existing products.</small>
+                </span>
+              </label>
+            </div>
+          </section>
+          <div className="inventory-edit-actions">
+            <button className="mini-action" disabled={busy} type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="primary-action" disabled={busy} type="submit">
+              <Save size={16} />
+              {busyLabel === saveLabel ? "Saving Profile" : isEdit ? "Save Profile" : "Create Profile"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function StorefrontOrdersPanel({
@@ -10127,6 +10932,7 @@ function InventoryList({
   items,
   selectedId,
   highlightedId,
+  shippingProfiles,
   selectedPublishIds,
   onSelect,
   onTogglePublishSelect,
@@ -10140,6 +10946,7 @@ function InventoryList({
   items: InventoryItemDTO[];
   selectedId: string;
   highlightedId: string;
+  shippingProfiles: ShippingProfileDTO[];
   selectedPublishIds: string[];
   onSelect: (item: InventoryItemDTO) => void;
   onTogglePublishSelect: (itemId: string) => void;
@@ -10200,12 +11007,12 @@ function InventoryList({
                   {storefrontListingEligible(item) ? "Store ready" : "Needs listing QA"}
                 </small>
                 <span className="inventory-shipping-badges" aria-label="Shipping profile status">
-                  {inventoryShippingProfileBadges(item).map((badge) => (
+                  {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
                     <small className={`publish-ready-note ${badge.tone === "good" ? "good" : "shipping-needed"}`} key={badge.label}>
                       {badge.label}
                     </small>
                   ))}
-                  {!inventoryShippingProfileComplete(item) ? (
+                  {!inventoryShippingProfileComplete(item, shippingProfiles) ? (
                     <small className="shipping-metadata-action">Open Edit Listing to complete packed weight, dimensions, and profile.</small>
                   ) : null}
                 </span>
@@ -10316,6 +11123,7 @@ function storeListingTone(item: InventoryItemDTO) {
 
 function InventoryDetailsModal({
   item,
+  shippingProfiles,
   onAddStock,
   onAdjustStock,
   onRecordSale,
@@ -10326,6 +11134,7 @@ function InventoryDetailsModal({
   onClose
 }: {
   item: InventoryItemDTO;
+  shippingProfiles: ShippingProfileDTO[];
   onAddStock: (item: InventoryItemDTO) => void;
   onAdjustStock: (item: InventoryItemDTO) => void;
   onRecordSale: (item: InventoryItemDTO) => void;
@@ -10352,7 +11161,7 @@ function InventoryDetailsModal({
               <span className={`chip compact-chip ${inventoryStockStatusTone(item)}`}>{inventoryStockStatusLabel(item)}</span>
               <span className={`chip compact-chip ${storeListingTone(item)}`}>{storeListingLabel(item)}</span>
               <span className={`chip compact-chip ${listingAvailable > 0 ? "good" : "bad"}`}>{storefrontListingPublicStatus(item)}</span>
-              {inventoryShippingProfileBadges(item).map((badge) => (
+              {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
                 <span className={`chip compact-chip ${badge.tone === "good" ? "good" : "watch"}`} key={badge.label}>
                   {badge.label}
                 </span>
@@ -10872,6 +11681,7 @@ function InventoryEditProductModal({
 
 function StoreListingModal({
   item,
+  shippingProfiles,
   busy,
   busyLabel,
   submit,
@@ -10879,6 +11689,7 @@ function StoreListingModal({
   onClose
 }: {
   item: InventoryItemDTO;
+  shippingProfiles: ShippingProfileDTO[];
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
@@ -10927,7 +11738,7 @@ function StoreListingModal({
     { key: "description", label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
     { key: "description-clean", label: "Description clean", complete: descriptionWarnings.length === 0 },
     { key: "category", label: "Category set", complete: Boolean(suggestedCategory.trim()) },
-    { key: "shipping", label: "Shipping profile set", complete: inventoryShippingProfileComplete(item) }
+    { key: "shipping", label: "Shipping profile set", complete: inventoryShippingProfileComplete(item, shippingProfiles) }
   ];
   const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
   return (
@@ -11074,17 +11885,17 @@ function StoreListingModal({
                   <strong>Shipping profile</strong>
                   <span>Used to estimate customer shipping at checkout.</span>
                 </div>
-                {inventoryShippingProfileComplete(item) ? <span className="shipping-profile-status complete">Profile ready</span> : <span className="shipping-profile-status">Needs shipping profile</span>}
+                {inventoryShippingProfileComplete(item, shippingProfiles) ? <span className="shipping-profile-status complete">Profile ready</span> : <span className="shipping-profile-status">Needs shipping profile</span>}
               </div>
               <p className="shipping-profile-helper">Use packed shipping weight, including box or mailer. Leave blank only if you want the safe fallback rate. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
               <div className="shipping-profile-issue-list" aria-label="Shipping profile checklist">
-                {inventoryShippingProfileBadges(item).map((badge) => (
+                {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
                   <span className={`shipping-profile-chip ${badge.tone === "good" ? "good" : "warning"}`} key={badge.label}>
                     {badge.label}
                   </span>
                 ))}
               </div>
-              {!inventoryShippingProfileComplete(item) ? (
+              {!inventoryShippingProfileComplete(item, shippingProfiles) ? (
                 <div className="shipping-profile-guidance">
                   <strong>Complete before relying on storefront estimates.</strong>
                   <p>Measure the packed shipment, choose the closest package profile, and confirm whether local pickup should be offered.</p>
@@ -11095,16 +11906,7 @@ function StoreListingModal({
                   name="shippingProfile"
                   label="Shipping profile"
                   defaultValue={item.shippingProfile || "standard"}
-                  options={[
-                    { value: "standard", label: "Safe default profile" },
-                    { value: "single_card_or_light_item", label: "Single card / light item" },
-                    { value: "sealed_pack_small", label: "Sealed pack small" },
-                    { value: "small_box", label: "Small box" },
-                    { value: "medium_box", label: "Medium box" },
-                    { value: "large_box", label: "Large box" },
-                    { value: "heavy_box", label: "Heavy box" },
-                    { value: "local_pickup", label: "Local pickup only / eligible" }
-                  ]}
+                  options={shippingProfileSelectOptions(shippingProfiles, item.shippingProfile)}
                 />
                 <div className="shipping-package-grid">
                   <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0" step="0.1" defaultValue={item.packageWeightOz ?? ""} />

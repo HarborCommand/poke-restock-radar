@@ -20564,3 +20564,243 @@ body .storefront-order-workspace .packing-slip-preview-shell {
     text-align: center;
   }
 }
+
+.shipping-hub-header {
+  background: linear-gradient(135deg, #fffaf0 0%, #ffffff 72%);
+}
+
+.shipping-overview-grid {
+  align-items: stretch;
+}
+
+.shipping-hub-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.shipping-hub-span {
+  grid-column: 1 / -1;
+}
+
+.shipping-hub-card {
+  min-width: 0;
+}
+
+.shipping-work-list,
+.shipping-compact-list,
+.shipping-missing-list,
+.shipping-profile-manager-list {
+  display: grid;
+  gap: 12px;
+}
+
+.shipping-work-row,
+.shipping-compact-row,
+.shipping-missing-row,
+.shipping-profile-manager-row {
+  border: 1px solid #d9dee8;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.shipping-work-row {
+  grid-template-columns: minmax(0, 1.35fr) minmax(180px, 0.55fr) auto;
+  align-items: center;
+}
+
+.shipping-work-main,
+.shipping-compact-row > div:first-child,
+.shipping-missing-row > div:first-child,
+.shipping-profile-manager-row > div:first-child {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.shipping-work-main strong,
+.shipping-compact-row strong,
+.shipping-missing-row strong,
+.shipping-profile-manager-row strong {
+  color: #071022;
+  font-size: 0.98rem;
+}
+
+.shipping-work-main span,
+.shipping-compact-row span,
+.shipping-missing-row span,
+.shipping-profile-manager-row span {
+  color: #344054;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.shipping-work-main p {
+  color: #475467;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.shipping-work-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.shipping-work-meta span,
+.shipping-compact-row small,
+.shipping-missing-row small,
+.shipping-profile-manager-row small {
+  color: #475467;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.shipping-work-meta span {
+  border: 1px solid #d9dee8;
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 5px 8px;
+  font-weight: 800;
+}
+
+.shipping-work-actions,
+.shipping-mini-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.shipping-compact-row,
+.shipping-missing-row,
+.shipping-profile-manager-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.shipping-profile-manager-row.inactive {
+  background: #f8fafc;
+  border-style: dashed;
+}
+
+.shipping-missing-row {
+  grid-template-columns: minmax(0, 0.9fr) minmax(220px, 0.8fr) auto;
+}
+
+.shipping-profile-manager-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.shipping-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.shipping-profile-inactive-warning {
+  color: #9a3412 !important;
+  font-weight: 900;
+}
+
+.shipping-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.shipping-readiness-grid article {
+  border: 1px solid #d9dee8;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.shipping-readiness-grid span {
+  color: #475467;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.shipping-readiness-grid strong {
+  color: #071022;
+  font-size: 1.55rem;
+}
+
+.shipping-editor-modal {
+  max-width: 880px;
+}
+
+.shipping-editor-summary {
+  border: 1px solid #d9dee8;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.shipping-editor-summary > div:last-child {
+  display: grid;
+  gap: 5px;
+}
+
+.shipping-editor-summary strong {
+  color: #071022;
+}
+
+.shipping-editor-summary span,
+.shipping-editor-summary small {
+  color: #475467;
+  line-height: 1.4;
+}
+
+@media (max-width: 1180px) {
+  .shipping-hub-grid,
+  .shipping-work-row,
+  .shipping-missing-row {
+    grid-template-columns: 1fr;
+  }
+
+  .shipping-work-actions,
+  .shipping-mini-actions,
+  .shipping-profile-manager-badges,
+  .shipping-profile-actions {
+    justify-content: flex-start;
+  }
+
+  .shipping-readiness-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .shipping-readiness-grid,
+  .shipping-compact-row,
+  .shipping-profile-manager-row,
+  .shipping-editor-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .shipping-work-actions .mini-action,
+  .shipping-mini-actions .mini-action,
+  .shipping-profile-actions .mini-action {
+    width: 100%;
+  }
+}

@@ -30,14 +30,14 @@ export type ShippingOption = {
   id: string;
   label: string;
   amount: number;
-  profile: ShippingProfileKey;
+  profile: string;
   rateSource: "internal_profile";
   requiresManualReview: boolean;
 };
 
 export type ShippingCalculation = {
   totalWeightOz: number;
-  packageProfile: ShippingProfileKey;
+  packageProfile: string;
   packageProfileLabel: string;
   shippingOptions: ShippingOption[];
   defaultShippingOption: ShippingOption | null;
@@ -47,17 +47,19 @@ export type ShippingCalculation = {
   localPickupEligible: boolean;
 };
 
-type ProfileDefinition = {
+export type ShippingProfileDefinition = {
   label: string;
   defaultWeightOz: number;
   rank: number;
   requiresBox: boolean;
   insuranceRecommended: boolean;
+  defaultShippingCharge?: number | null;
+  active?: boolean;
 };
 
 const safeFallbackProfile: ShippingProfileKey = "small_box";
 
-export const shippingProfiles: Record<ShippingProfileKey, ProfileDefinition> = {
+export const shippingProfiles: Record<ShippingProfileKey, ShippingProfileDefinition> = {
   single_card_or_light_item: {
     label: "Single Card or Light Item",
     defaultWeightOz: 4,
@@ -135,13 +137,16 @@ function quantityForItem(item: ShippingCartItem) {
   return quantity ? Math.max(1, Math.floor(quantity)) : 1;
 }
 
-export function normalizeShippingProfile(value: string | null | undefined): {
-  profile: ShippingProfileKey;
+export function normalizeShippingProfile(
+  value: string | null | undefined,
+  profileDefinitions: Record<string, ShippingProfileDefinition> = shippingProfiles
+): {
+  profile: string;
   usedFallback: boolean;
 } {
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized && normalized in shippingProfiles) {
-    return { profile: normalized as ShippingProfileKey, usedFallback: false };
+  if (normalized && normalized in profileDefinitions) {
+    return { profile: normalized, usedFallback: false };
   }
   if (normalized && normalized in profileAliases) {
     return { profile: profileAliases[normalized], usedFallback: false };
@@ -149,9 +154,12 @@ export function normalizeShippingProfile(value: string | null | undefined): {
   return { profile: safeFallbackProfile, usedFallback: true };
 }
 
-export function itemNeedsShippingProfile(item: Pick<ShippingCartItem, "shippingProfile" | "packageWeightOz">) {
+export function itemNeedsShippingProfile(
+  item: Pick<ShippingCartItem, "shippingProfile" | "packageWeightOz">,
+  profileDefinitions: Record<string, ShippingProfileDefinition> = shippingProfiles
+) {
   const normalized = String(item.shippingProfile || "").trim().toLowerCase();
-  return !normalized || normalized === "standard" || normalizeShippingProfile(item.shippingProfile).usedFallback || !positiveNumber(item.packageWeightOz);
+  return !normalized || normalized === "standard" || normalizeShippingProfile(item.shippingProfile, profileDefinitions).usedFallback || !positiveNumber(item.packageWeightOz);
 }
 
 function rateForWeight(totalWeightOz: number) {
@@ -168,21 +176,26 @@ export function calculateCartShipping(
     subtotal?: number | null;
     freeShippingThreshold?: number | null;
     fulfillmentMethod?: "shipping" | "pickup";
+    profileDefinitions?: Record<string, ShippingProfileDefinition>;
   } = {}
 ): ShippingCalculation {
+  const profileDefinitions: Record<string, ShippingProfileDefinition> = {
+    ...shippingProfiles,
+    ...(options.profileDefinitions ?? {})
+  };
   const cartItems = items.filter((item) => quantityForItem(item) > 0);
   const warnings = new Set<string>();
   let totalWeightOz = 0;
-  let packageProfile: ShippingProfileKey = safeFallbackProfile;
+  let packageProfile: string = safeFallbackProfile;
   let needsShippingProfile = false;
   let manualReviewRequired = false;
 
   for (const item of cartItems) {
     const quantity = quantityForItem(item);
-    const normalized = normalizeShippingProfile(item.shippingProfile);
-    const profile = shippingProfiles[normalized.profile];
+    const normalized = normalizeShippingProfile(item.shippingProfile, profileDefinitions);
+    const profile = profileDefinitions[normalized.profile] ?? shippingProfiles[safeFallbackProfile];
     const itemWeight = positiveNumber(item.packageWeightOz);
-    const fallbackNeeded = normalized.usedFallback || itemNeedsShippingProfile(item);
+    const fallbackNeeded = normalized.usedFallback || itemNeedsShippingProfile(item, profileDefinitions);
 
     if (fallbackNeeded) {
       needsShippingProfile = true;
@@ -191,11 +204,11 @@ export function calculateCartShipping(
 
     totalWeightOz += (itemWeight ?? profile.defaultWeightOz) * quantity;
 
-    if (profile.rank > shippingProfiles[packageProfile].rank) {
+    if (profile.rank > (profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile]).rank) {
       packageProfile = normalized.profile;
     }
 
-    if (item.requiresBox && shippingProfiles.small_box.rank > shippingProfiles[packageProfile].rank) {
+    if (item.requiresBox && shippingProfiles.small_box.rank > (profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile]).rank) {
       packageProfile = "small_box";
     }
 
@@ -212,7 +225,10 @@ export function calculateCartShipping(
     typeof options.freeShippingThreshold === "number" &&
     options.freeShippingThreshold > 0 &&
     options.subtotal >= options.freeShippingThreshold;
+  const packageDefinition = profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile];
   const baseRate = rateForWeight(totalWeightOz);
+  const profileCharge = positiveNumber(packageDefinition.defaultShippingCharge);
+  const rateAmount = profileCharge ?? baseRate.amount;
   manualReviewRequired = baseRate.manualReview;
   if (manualReviewRequired) warnings.add("Heavy package shipping may need manual review.");
 
@@ -220,7 +236,7 @@ export function calculateCartShipping(
     ? {
         id: "standard_shipping",
         label: baseRate.label,
-        amount: freeShippingUnlocked ? 0 : roundedMoney(baseRate.amount),
+        amount: freeShippingUnlocked ? 0 : roundedMoney(rateAmount),
         profile: packageProfile,
         rateSource: "internal_profile",
         requiresManualReview: manualReviewRequired
@@ -247,7 +263,7 @@ export function calculateCartShipping(
   return {
     totalWeightOz,
     packageProfile,
-    packageProfileLabel: shippingProfiles[packageProfile].label,
+    packageProfileLabel: packageDefinition.label,
     shippingOptions,
     defaultShippingOption,
     warnings: [...warnings],
