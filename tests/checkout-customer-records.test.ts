@@ -356,12 +356,15 @@ test("Admin Orders renders an operational shipping section without raw payment d
   assert.match(shippingSection, /Mark Shipped requires carrier and tracking number/);
   assert.match(shippingSection, /Save Fulfillment/);
   assert.match(orderModal, /const canFulfillOrder = storefrontOrderCanFulfill\(order\)/);
+  assert.match(orderModal, /const canShipOrder = storefrontOrderCanShip\(order\)/);
+  assert.match(orderModal, /const canPickupOrder = storefrontOrderCanPickup\(order\)/);
   assert.match(orderModal, /const shipmentDetailsSaved = storefrontOrderHasShipmentDetails\(order\)/);
   assert.match(orderModal, /Print\/View Packing Slip/);
+  assert.match(orderModal, /Print\/View Pickup Slip/);
   assert.match(orderModal, /View Packing Slip Preview/);
   assert.match(orderModal, /<StorefrontPackingSlip order=\{order\} \/>/);
-  assert.match(orderModal, /\{canFulfillOrder \? \(/);
-  assert.match(orderModal, /Only active paid orders can be marked packing or shipped/);
+  assert.match(orderModal, /\{canPickupOrder \? \(/);
+  assert.match(orderModal, /Only active paid orders can be marked packing, shipped, ready for pickup, or picked up/);
   assert.match(orderModal, /Enter carrier and tracking number before marking shipped\./);
   assert.doesNotMatch(shippingSection, /JSON\.stringify\(order|<pre|<code|payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 
@@ -370,7 +373,9 @@ test("Admin Orders renders an operational shipping section without raw payment d
   assert.match(css, /storefront-fulfillment-snapshot/);
 
   assert.match(storefrontSummary, /ordersToShipCount/);
-  assert.match(storefrontSummary, /paymentStatus: "paid", fulfillmentStatus: \{ in: \["unfulfilled", "packing", "pickup_ready"\] \}/);
+  assert.match(storefrontSummary, /pickupOrderCount/);
+  assert.match(storefrontSummary, /NOT: localPickupOrderWhere/);
+  assert.match(storefrontSummary, /\.\.\.localPickupOrderWhere/);
   assert.doesNotMatch(storefrontSummary, /prisma\.storefrontOrder\.count\(\{ where: \{ [^}]*paymentStatus: \{ in: activeRevenuePaymentStatuses \}/);
 });
 
@@ -421,14 +426,15 @@ test("archived order detail is read-only while active fulfillment controls are p
   assert.match(orderModal, /const readOnlyDetailMessage = storefrontOrderReadOnlyDetailMessage\(order\)/);
 
   assert.match(orderModal, /const canFulfillOrder = storefrontOrderCanFulfill\(order\)/);
-  assert.match(orderModal, /const canShowPackingSlip = order\.items\.length > 0 && \(canFulfillOrder \|\| orderDetailReadOnly \|\| order\.fulfillmentStatus === "shipped"\)/);
+  assert.match(orderModal, /const canShowPackingSlip = order\.items\.length > 0 && \(canFulfillOrder \|\| orderDetailReadOnly \|\| order\.fulfillmentStatus === "shipped" \|\| order\.fulfillmentStatus === "picked_up"\)/);
   assert.match(orderModal, /storefront-order-workspace-backdrop/);
   assert.match(orderModal, /storefront-order-workspace-header/);
   assert.match(orderModal, /storefront-order-action-bar/);
   assert.match(orderModal, /storefront-order-workspace-grid/);
-  assert.match(orderModal, /orderDetailReadOnly \? "View Historical Packing Slip" : "Print\/View Packing Slip"/);
-  assert.match(orderModal, /orderDetailReadOnly \? "View Historical Packing Slip Preview" : "View Packing Slip Preview"/);
-  assert.match(orderModal, /\{canFulfillOrder \? \(/);
+  assert.match(orderModal, /localPickupOrder[\s\S]*\? "Print\/View Pickup Slip"[\s\S]*: "Print\/View Packing Slip"/);
+  assert.match(orderModal, /localPickupOrder[\s\S]*\? "View Pickup Slip Preview"[\s\S]*: "View Packing Slip Preview"/);
+  assert.match(orderModal, /\{canPickupOrder \? \(/);
+  assert.match(orderModal, /\) : canShipOrder \? \(/);
   assert.match(orderModal, /Mark Packing/);
   assert.match(orderModal, /Mark Shipped/);
 
@@ -441,7 +447,8 @@ test("archived order detail is read-only while active fulfillment controls are p
   assert.match(orderModal, /Refunded amount/);
   assert.match(orderModal, /Net revenue/);
 
-  assert.match(shippingSection, /\{orderDetailReadOnly \? \([\s\S]*className="storefront-shipping-readonly-summary"[\s\S]*Shipping and fulfillment are read-only for this historical order\.[\s\S]*\) : \([\s\S]*<form/);
+  assert.match(shippingSection, /\{orderDetailReadOnly \? \([\s\S]*className="storefront-shipping-readonly-summary"[\s\S]*Shipping and fulfillment are read-only for this historical order\.[\s\S]*\) : localPickupOrder \? \(/);
+  assert.match(shippingSection, /This order is for local pickup\. No carrier or tracking is required\./);
   assert.match(shippingSection, /name="carrier"/);
   assert.match(shippingSection, /name="trackingNumber"/);
   assert.match(shippingSection, /name="shippingCost"/);
@@ -465,8 +472,10 @@ test("archived order detail is read-only while active fulfillment controls are p
   assert.match(advancedDetails, /Payment Verification/);
   assert.match(advancedDetails, /Inventory Reservations/);
 
-  assert.match(updateStorefrontOrder, /Canceled, refunded, or expired orders cannot be marked packing or shipped\./);
-  assert.match(updateStorefrontOrder, /Only paid orders can be marked packing or shipped\./);
+  assert.match(updateStorefrontOrder, /Canceled, refunded, or expired orders cannot be marked packing, shipped, ready for pickup, or picked up\./);
+  assert.match(updateStorefrontOrder, /Only paid orders can be marked packing, shipped, ready for pickup, or picked up\./);
+  assert.match(updateStorefrontOrder, /Pickup statuses are only available for local pickup orders\./);
+  assert.match(updateStorefrontOrder, /Local pickup orders do not require shipping\. Mark them ready for pickup or picked up instead\./);
   assert.match(updateStorefrontOrder, /Carrier and tracking number are required before marking an order shipped\./);
   assert.match(css, /storefront-archived-detail-card/);
   assert.match(css, /storefront-shipping-readonly-summary/);
@@ -475,6 +484,67 @@ test("archived order detail is read-only while active fulfillment controls are p
   assert.match(css, /storefront-order-workspace-grid/);
   assert.match(css, /storefront-order-advanced-details/);
   assert.doesNotMatch(orderModal, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
+});
+
+test("local pickup orders use pickup fulfillment queues instead of shipping queues", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const types = readProjectFile("src/types/radar.ts");
+  const orderTabs = sourceSlice(app, "type StorefrontOrderTab", "function StorefrontOrdersPanel");
+  const orderPanel = sourceSlice(app, "function StorefrontOrdersPanel", "function StorefrontSettingsCard");
+  const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontPackingSlip");
+  const shippingSection = sourceSlice(orderModal, '<section className="storefront-order-workspace-card storefront-shipping-section">', '<section className="storefront-order-workspace-card">');
+  const storefrontSummary = sourceSlice(storefront, "export async function storefrontSummary", "async function returnOrderInventory");
+  const updateStorefrontOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(finalOrder);");
+
+  assert.match(types, /isLocalPickup: boolean/);
+  assert.match(types, /pickupOrderCount: number/);
+  assert.match(storefront, /function orderIsLocalPickup/);
+  assert.match(storefront, /orderIsLocalPickup\(order\) && \["unfulfilled", "pickup_ready"\]\.includes\(order\.fulfillmentStatus\)/);
+  assert.match(storefront, /return "Ready for Pickup"/);
+  assert.match(storefront, /return "Picked Up"/);
+
+  assert.match(storefrontSummary, /const localPickupOrderWhere/);
+  assert.match(storefrontSummary, /paymentStatus: "paid"[\s\S]*fulfillmentStatus: "unfulfilled"[\s\S]*NOT: localPickupOrderWhere/);
+  assert.match(storefrontSummary, /ordersToShipCount/);
+  assert.match(storefrontSummary, /pickupOrderCount/);
+  assert.match(storefrontSummary, /NOT: localPickupOrderWhere/);
+  assert.match(storefrontSummary, /fulfillmentStatus: \{ in: \["unfulfilled", "packing"\] \}/);
+  assert.match(storefrontSummary, /fulfillmentStatus: \{ in: \["unfulfilled", "pickup_ready"\] \}/);
+  assert.match(storefrontSummary, /\.\.\.localPickupOrderWhere/);
+
+  assert.match(app, /function storefrontOrderIsLocalPickup/);
+  assert.match(app, /function storefrontOrderCanShip/);
+  assert.match(app, /function storefrontOrderCanPickup/);
+  assert.match(app, /function storefrontOrderFulfillmentLabel/);
+  assert.match(orderTabs, /"pickup"/);
+  assert.match(orderTabs, /tab === "new"[\s\S]*!storefrontOrderIsLocalPickup\(order\)/);
+  assert.match(orderTabs, /Pickup Orders/);
+  assert.match(orderTabs, /Paid local pickup orders that do not need carrier shipment\./);
+  assert.match(orderPanel, /label="Pickup Orders"/);
+  assert.match(orderPanel, /detail="Paid local pickup"/);
+  assert.match(orderPanel, /Ready for Pickup/);
+  assert.match(orderPanel, /Picked Up/);
+  assert.doesNotMatch(sourceSlice(orderPanel, "{canPickup ? (", ") : canShip ? ("), /Shipped|Mark Shipped|carrier and tracking/i);
+
+  assert.match(orderModal, /Mark Ready for Pickup/);
+  assert.match(orderModal, /Mark Picked Up/);
+  assert.match(orderModal, /Local pickup order\. No carrier or tracking is required\./);
+  assert.match(orderModal, /Print\/View Pickup Slip/);
+  assert.match(orderModal, /View Pickup Slip Preview/);
+  assert.match(shippingSection, /Fulfillment method/);
+  assert.match(shippingSection, /Tracking/);
+  assert.match(shippingSection, /Not required/);
+  assert.match(shippingSection, /This order is for local pickup\. No carrier or tracking is required\./);
+  assert.match(orderModal, /Pickup notification not sent/);
+
+  assert.match(updateStorefrontOrder, /\["packing", "shipped", "pickup_ready", "picked_up"\]/);
+  assert.match(updateStorefrontOrder, /requestsPickupStatus/);
+  assert.match(updateStorefrontOrder, /Pickup statuses are only available for local pickup orders\./);
+  assert.match(updateStorefrontOrder, /Local pickup orders do not require shipping\. Mark them ready for pickup or picked up instead\./);
+  assert.match(updateStorefrontOrder, /nextFulfillmentStatus === "pickup_ready"/);
+  assert.match(updateStorefrontOrder, /sendStorefrontLocalPickupEmail\(finalOrder\)/);
+  assert.doesNotMatch([orderPanel, orderModal, storefront].join("\n"), /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw webhook/i);
 });
 
 test("packing slip renders safe order data and excludes payment details", () => {
@@ -693,8 +763,9 @@ test("admin orders UI exposes cancel refund modal without replacing fulfillment 
   assert.match(orderModal, /Mark Packing/);
   assert.match(orderModal, /Mark Shipped/);
   assert.match(orderModal, /Packing Slip/);
-  assert.match(orderModal, /\{canFulfillOrder \? \(/);
-  assert.match(orderModal, /Only active paid orders can be marked packing or shipped/);
+  assert.match(orderModal, /\{canPickupOrder \? \(/);
+  assert.match(orderModal, /\) : canShipOrder \? \(/);
+  assert.match(orderModal, /Only active paid orders can be marked packing, shipped, ready for pickup, or picked up/);
   assert.match(orderModal, /storefrontOrderCanOpenRefundFlow\(order\)/);
   assert.match(orderModal, /refundActionLabel/);
   assert.match(app, /return storefrontOrderUsesReturnRefundFlow\(order\) \? "Refund \/ Return" : "Cancel \/ Refund"/);
@@ -776,7 +847,10 @@ test("Admin Orders treats canceled refunded and expired orders as a muted archiv
   assert.match(ordersPanel, /className=\{`\$\{activeOrderTab === tab\.id \? "active" : ""\} \$\{tab\.id === "canceled" \? "archive-tab" : ""\}`\.trim\(\)\}/);
   assert.match(ordersPanel, /const archived = storefrontOrderIsCanceledOrRefunded\(order\)/);
   assert.match(ordersPanel, /const canFulfill = storefrontOrderCanFulfill\(order\)/);
-  assert.match(ordersPanel, /\{canFulfill \? \(/);
+  assert.match(ordersPanel, /const canShip = storefrontOrderCanShip\(order\)/);
+  assert.match(ordersPanel, /const canPickup = storefrontOrderCanPickup\(order\)/);
+  assert.match(ordersPanel, /\{canPickup \? \(/);
+  assert.match(ordersPanel, /\) : canShip \? \(/);
   assert.match(ordersPanel, /Historical order\. No fulfillment action needed\./);
   assert.match(app, /No paid orders to ship\./);
   assert.match(app, /No new orders\./);
@@ -794,8 +868,8 @@ test("Admin Orders treats canceled refunded and expired orders as a muted archiv
 
   assert.match(storefront, /function orderIsClosedForFulfillment/);
   assert.match(updateStorefrontOrder, /requestsActiveFulfillment/);
-  assert.match(updateStorefrontOrder, /Canceled, refunded, or expired orders cannot be marked packing or shipped\./);
-  assert.match(updateStorefrontOrder, /Only paid orders can be marked packing or shipped\./);
+  assert.match(updateStorefrontOrder, /Canceled, refunded, or expired orders cannot be marked packing, shipped, ready for pickup, or picked up\./);
+  assert.match(updateStorefrontOrder, /Only paid orders can be marked packing, shipped, ready for pickup, or picked up\./);
   assert.match(updateStorefrontOrder, /requestsShippedStatus/);
   assert.match(updateStorefrontOrder, /nextCarrier/);
   assert.match(updateStorefrontOrder, /nextTrackingNumber/);
@@ -863,7 +937,8 @@ test("refunded storefront orders are netted out of sales and revenue summaries",
   assert.match(storefrontSummary, /todaySales: todayPaidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);
   assert.match(storefrontSummary, /totalRevenue: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);
   assert.match(storefrontSummary, /netProfit: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetProfitAfterRefund\(order\), 0\)/);
-  assert.match(storefrontSummary, /paymentStatus: "paid", fulfillmentStatus: \{ in: \["unfulfilled", "packing", "pickup_ready"\] \}/);
+  assert.match(storefrontSummary, /NOT: localPickupOrderWhere/);
+  assert.match(storefrontSummary, /fulfillmentStatus: \{ in: \["unfulfilled", "pickup_ready"\] \}/);
   assert.match(service, /export function applyStorefrontOrderAdjustmentsToInventory/);
   assert.match(service, /function storefrontOrderNumberFromSaleNotes/);
   assert.match(service, /saleStatus === "refunded" \|\| saleStatus === "canceled"/);

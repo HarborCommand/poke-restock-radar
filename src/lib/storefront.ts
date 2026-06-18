@@ -1111,6 +1111,10 @@ function orderSource(order: StorefrontOrderWithItems): StorefrontOrderDTO["sourc
   return "manual";
 }
 
+function orderIsLocalPickup(order: Pick<StorefrontOrderWithItems, "shippingMethodLabel" | "shippingPackageProfile">) {
+  return order.shippingPackageProfile === "local_pickup" || String(order.shippingMethodLabel || "").trim().toLowerCase() === "local pickup";
+}
+
 function orderStatusBadge(order: StorefrontOrderWithItems) {
   if (order.status === "contact_message") return "Inquiry";
   if (order.status === "invoice_requested") return "Invoice Request";
@@ -1121,6 +1125,8 @@ function orderStatusBadge(order: StorefrontOrderWithItems) {
   if (order.paymentStatus === "refunded" || order.status === "refunded") return "Refunded";
   if (order.status === "canceled") return "Canceled";
   if (order.paymentStatus === "expired") return "Expired";
+  if (order.paymentStatus === "paid" && orderIsLocalPickup(order) && ["unfulfilled", "pickup_ready"].includes(order.fulfillmentStatus)) return "Ready for Pickup";
+  if (order.paymentStatus === "paid" && orderIsLocalPickup(order) && order.fulfillmentStatus === "picked_up") return "Picked Up";
   if (order.paymentStatus === "paid" && order.fulfillmentStatus === "unfulfilled") return "Needs Shipping";
   if (order.paymentStatus === "paid") return "Paid";
   if (order.paymentStatus === "pending") return "New";
@@ -1236,6 +1242,7 @@ function orderAddress(fields: {
 export function storefrontOrderToDTO(order: StorefrontOrderWithItems): StorefrontOrderDTO {
   const source = orderSource(order);
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const isLocalPickup = orderIsLocalPickup(order);
   const needsFulfillment = order.paymentStatus === "paid" && !["shipped", "picked_up", "canceled"].includes(order.fulfillmentStatus);
   const isNewPaidOrder = order.paymentStatus === "paid" && order.fulfillmentStatus === "unfulfilled";
   const refundableAmount = moneyFromCents(orderRemainingRefundableCents(order));
@@ -1271,6 +1278,7 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     fulfillmentStatus: order.fulfillmentStatus,
     source,
     sourceLabel: source === "stripe_checkout" ? "Stripe Checkout" : source === "request_invoice" ? "Request Invoice" : source === "contact_message" ? "Contact Message" : "Manual",
+    isLocalPickup,
     itemCount,
     needsFulfillment,
     isNewPaidOrder,
@@ -2550,9 +2558,12 @@ export async function listStorefrontOrders(currentUser: SessionUser) {
 
 export async function storefrontSummary(currentUser: SessionUser): Promise<StorefrontSummaryDTO> {
   const where = currentUser.role === "ADMIN" ? {} : { userId: currentUser.id };
+  const localPickupOrderWhere: Prisma.StorefrontOrderWhereInput = {
+    OR: [{ shippingMethodLabel: "Local Pickup" }, { shippingPackageProfile: "local_pickup" }]
+  };
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const [productCount, activeProductCount, pendingOrderCount, inquiryCount, newPaidOrderCount, ordersToShipCount, paidOrders, todayPaidOrders, lastPaidOrder, lastWebhook] = await Promise.all([
+  const [productCount, activeProductCount, pendingOrderCount, inquiryCount, newPaidOrderCount, ordersToShipCount, pickupOrderCount, paidOrders, todayPaidOrders, lastPaidOrder, lastWebhook] = await Promise.all([
     prisma.inventoryItem.count({ where: { ...(where as Prisma.InventoryItemWhereInput), publishToStore: true } }),
     prisma.inventoryItem.count({
       where: {
@@ -2563,8 +2574,30 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     }),
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "pending_payment" } }),
     prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: { in: ["invoice_requested", "contact_message"] } } }),
-    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid", fulfillmentStatus: "unfulfilled" } }),
-    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: "paid", fulfillmentStatus: { in: ["unfulfilled", "packing", "pickup_ready"] } } }),
+    prisma.storefrontOrder.count({
+      where: {
+        ...(where as Prisma.StorefrontOrderWhereInput),
+        paymentStatus: "paid",
+        fulfillmentStatus: "unfulfilled",
+        NOT: localPickupOrderWhere
+      }
+    }),
+    prisma.storefrontOrder.count({
+      where: {
+        ...(where as Prisma.StorefrontOrderWhereInput),
+        paymentStatus: "paid",
+        fulfillmentStatus: { in: ["unfulfilled", "packing"] },
+        NOT: localPickupOrderWhere
+      }
+    }),
+    prisma.storefrontOrder.count({
+      where: {
+        ...(where as Prisma.StorefrontOrderWhereInput),
+        paymentStatus: "paid",
+        fulfillmentStatus: { in: ["unfulfilled", "pickup_ready"] },
+        ...localPickupOrderWhere
+      }
+    }),
     prisma.storefrontOrder.findMany({
       where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: { in: activeRevenuePaymentStatuses } },
       select: { total: true, refundedAmount: true, stripeFeeEstimate: true, shippingCost: true, costBasis: true, netProfit: true, paidAt: true }
@@ -2588,6 +2621,7 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     paidOrderCount: paidOrders.filter((order) => storefrontOrderNetRevenue(order) > 0).length,
     newPaidOrderCount,
     ordersToShipCount,
+    pickupOrderCount,
     todaySales: todayPaidOrders.reduce((sum, order) => sum + storefrontOrderNetRevenue(order), 0),
     todayPaidOrderCount: todayPaidOrders.filter((order) => storefrontOrderNetRevenue(order) > 0).length,
     lastPaidOrderAt: lastPaidOrder?.paidAt?.toISOString() ?? null,
@@ -2851,21 +2885,30 @@ export async function updateStorefrontOrder(
   });
   if (!order) throw new Error("Order not found");
   const requestsActiveFulfillment =
-    ["packing", "shipped"].includes(input.status ?? "") ||
-    ["packing", "shipped"].includes(input.fulfillmentStatus ?? "");
+    ["packing", "shipped", "pickup_ready", "picked_up"].includes(input.status ?? "") ||
+    ["packing", "shipped", "pickup_ready", "picked_up"].includes(input.fulfillmentStatus ?? "");
   if (requestsActiveFulfillment && orderIsClosedForFulfillment(order)) {
-    throw new Error("Canceled, refunded, or expired orders cannot be marked packing or shipped.");
+    throw new Error("Canceled, refunded, or expired orders cannot be marked packing, shipped, ready for pickup, or picked up.");
   }
   if (requestsActiveFulfillment && order.paymentStatus !== "paid") {
-    throw new Error("Only paid orders can be marked packing or shipped.");
+    throw new Error("Only paid orders can be marked packing, shipped, ready for pickup, or picked up.");
   }
   const requestsShippedStatus = input.status === "shipped" || input.fulfillmentStatus === "shipped";
+  const requestsPickupStatus = ["pickup_ready", "picked_up"].includes(input.status ?? "") || ["pickup_ready", "picked_up"].includes(input.fulfillmentStatus ?? "");
+  if (requestsPickupStatus && !orderIsLocalPickup(order)) {
+    throw new Error("Pickup statuses are only available for local pickup orders.");
+  }
+  if (requestsShippedStatus && orderIsLocalPickup(order)) {
+    throw new Error("Local pickup orders do not require shipping. Mark them ready for pickup or picked up instead.");
+  }
   const nextCarrier = input.carrier !== undefined ? input.carrier?.trim() ?? "" : order.carrier?.trim() ?? "";
   const nextTrackingNumber = input.trackingNumber !== undefined ? input.trackingNumber?.trim() ?? "" : order.trackingNumber?.trim() ?? "";
   if (requestsShippedStatus && (!nextCarrier || !nextTrackingNumber)) {
     throw new Error("Carrier and tracking number are required before marking an order shipped.");
   }
-  const nextFulfillmentStatus = input.fulfillmentStatus ?? (input.status === "packing" || input.status === "shipped" ? input.status : undefined);
+  const nextFulfillmentStatus =
+    input.fulfillmentStatus ??
+    (["packing", "shipped", "pickup_ready", "picked_up"].includes(input.status ?? "") ? input.status : undefined);
   const nextOrderStatus = input.status ?? (input.fulfillmentStatus === "packing" || input.fulfillmentStatus === "shipped" ? input.fulfillmentStatus : undefined);
   const updated = await prisma.storefrontOrder.update({
     where: { id: order.id },

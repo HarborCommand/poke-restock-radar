@@ -336,6 +336,7 @@ export type StorefrontOrderDTO = {
   fulfillmentStatus: string;
   source: "stripe_checkout" | "request_invoice" | "contact_message" | "manual";
   sourceLabel: string;
+  isLocalPickup: boolean;
   itemCount: number;
   needsFulfillment: boolean;
   isNewPaidOrder: boolean;
@@ -390,6 +391,7 @@ export type StorefrontSummaryDTO = {
   paidOrderCount: number;
   newPaidOrderCount: number;
   ordersToShipCount: number;
+  pickupOrderCount: number;
   todaySales: number;
   todayPaidOrderCount: number;
   lastPaidOrderAt: string | null;

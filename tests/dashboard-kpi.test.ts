@@ -198,6 +198,7 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     fulfillmentStatus: "unfulfilled",
     source: "stripe_checkout",
     sourceLabel: "Stripe Checkout",
+    isLocalPickup: false,
     itemCount: 1,
     needsFulfillment: true,
     isNewPaidOrder: true,
@@ -1137,6 +1138,9 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(storefront, /fulfillmentStatus: "unfulfilled"/);
   assert.match(storefront, /newPaidOrderCount/);
   assert.match(storefront, /ordersToShipCount/);
+  assert.match(storefront, /pickupOrderCount/);
+  assert.match(storefront, /NOT: localPickupOrderWhere/);
+  assert.match(storefront, /\.\.\.localPickupOrderWhere/);
   assert.match(storefront, /lastWebhookAt/);
   assert.match(storefront, /lastPaidOrderAt/);
   assert.match(storefront, /checkout\.session\.completed/);
@@ -1162,10 +1166,10 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.doesNotMatch(storefront, /totalSpent: \{ increment: order\.total \}/);
   assert.doesNotMatch(storefront, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 
-  for (const label of ["New Paid Orders", "Pending Payment", "Invoice Requests", "Orders To Ship", "Today's Net Sales", "Store Revenue", "Store Profit"]) {
+  for (const label of ["New Paid Orders", "Pending Payment", "Invoice Requests", "Orders To Ship", "Pickup Orders", "Today's Net Sales", "Store Revenue", "Store Profit"]) {
     assert.match(app, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing dashboard/order card ${label}`);
   }
-  for (const tab of ["New", "Pending Payment", "Paid", "Packing", "Shipped", "Invoice Requests", "Canceled / Expired"]) {
+  for (const tab of ["New", "Pickup Orders", "Pending Payment", "Paid", "Packing", "Shipped", "Invoice Requests", "Canceled / Expired"]) {
     assert.match(app, new RegExp(tab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing fulfillment tab ${tab}`);
   }
   assert.match(app, /New order received/);
@@ -1194,7 +1198,9 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(app, /Webhook active/);
   assert.match(app, /Last webhook received/);
   assert.match(app, /Last paid order/);
-  assert.match(app, /Orders needing fulfillment/);
+  assert.match(app, /Orders to ship/);
+  assert.match(app, /Pickup orders/);
+  assert.match(app, /New carrier fulfillment/);
   assert.match(app, /Invoice requests pending/);
   assert.match(app, /function formatStorefrontAddressLines/);
   assert.match(app, /return \["Not provided"\]/);

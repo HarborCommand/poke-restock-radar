@@ -640,6 +640,27 @@ function storefrontOrderCanFulfill(order: StorefrontOrderDTO) {
   return order.paymentStatus === "paid" && order.needsFulfillment && !storefrontOrderIsCanceledOrRefunded(order);
 }
 
+function storefrontOrderIsLocalPickup(order: StorefrontOrderDTO) {
+  return order.isLocalPickup || order.shippingPackageProfile === "local_pickup" || String(order.shippingMethodLabel || "").trim().toLowerCase() === "local pickup";
+}
+
+function storefrontOrderCanShip(order: StorefrontOrderDTO) {
+  return storefrontOrderCanFulfill(order) && !storefrontOrderIsLocalPickup(order);
+}
+
+function storefrontOrderCanPickup(order: StorefrontOrderDTO) {
+  return storefrontOrderCanFulfill(order) && storefrontOrderIsLocalPickup(order);
+}
+
+function storefrontOrderFulfillmentLabel(order: StorefrontOrderDTO) {
+  if (storefrontOrderIsLocalPickup(order)) {
+    if (order.fulfillmentStatus === "picked_up") return "Picked Up";
+    if (order.fulfillmentStatus === "pickup_ready") return "Ready for Pickup";
+    if (order.paymentStatus === "paid" && order.fulfillmentStatus === "unfulfilled") return "Pickup Pending";
+  }
+  return formatStatus(order.fulfillmentStatus);
+}
+
 function storefrontOrderCanOpenRefundFlow(order: StorefrontOrderDTO) {
   return Boolean(order.canCancelOrRefund && ["paid", "partially_refunded"].includes(order.paymentStatus) && order.refundableAmount > 0);
 }
@@ -670,6 +691,12 @@ function storefrontOrderHasShipmentDetails(order: StorefrontOrderDTO) {
 
 function storefrontOrderShippingReadiness(order: StorefrontOrderDTO) {
   if (storefrontOrderIsCanceledOrRefunded(order)) return "Not ready to ship";
+  if (storefrontOrderIsLocalPickup(order)) {
+    if (order.fulfillmentStatus === "picked_up") return "Picked up";
+    if (order.fulfillmentStatus === "pickup_ready") return "Ready for pickup";
+    if (order.needsFulfillment) return "Pickup pending";
+    return "Not ready for pickup";
+  }
   if (order.fulfillmentStatus === "shipped") return "Shipped";
   if (order.needsFulfillment) return "Ready for fulfillment";
   return "Not ready to ship";
@@ -1609,7 +1636,7 @@ export function RadarApp() {
   }
 
   const sidebarBadgeCounts: Partial<Record<Tab, number>> = {
-    orders: dashboard.storefrontSummary.newPaidOrderCount + dashboard.storefrontSummary.ordersToShipCount
+    orders: dashboard.storefrontOrders.filter(storefrontOrderCanFulfill).length
   };
 
   return (
@@ -2146,9 +2173,14 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
           <small>{dashboard.storefrontSummary.lastPaidOrderAt ? dateTime(dashboard.storefrontSummary.lastPaidOrderAt) : "No paid storefront orders are recorded yet."}</small>
         </article>
         <article>
-          <span className="eyeline">Orders needing fulfillment</span>
+          <span className="eyeline">Orders to ship</span>
           <strong>{dashboard.storefrontSummary.ordersToShipCount}</strong>
-          <small>Paid orders that are not shipped, picked up, or canceled.</small>
+          <small>Paid carrier-shipment orders that are not shipped or canceled.</small>
+        </article>
+        <article>
+          <span className="eyeline">Pickup orders</span>
+          <strong>{dashboard.storefrontSummary.pickupOrderCount}</strong>
+          <small>Paid local pickup orders not yet picked up.</small>
         </article>
         <article>
           <span className="eyeline">Invoice requests pending</span>
@@ -2599,10 +2631,11 @@ function DashboardPanel({
       ) : null}
       <DashboardAlertBanner alert={liveAlert} setActiveTab={setActiveTab} />
       <section className="inventory-kpi-grid dashboard-order-kpis" aria-label="Storefront order summary">
-        <InventoryKpiCard label="New Paid Orders" value={String(dashboard.storefrontSummary.newPaidOrderCount)} detail="Ready for fulfillment" tone={dashboard.storefrontSummary.newPaidOrderCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="New Paid Orders" value={String(dashboard.storefrontSummary.newPaidOrderCount)} detail="New carrier fulfillment" tone={dashboard.storefrontSummary.newPaidOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Pending Payment" value={String(dashboard.storefrontSummary.pendingOrderCount)} detail="Checkout started" tone={dashboard.storefrontSummary.pendingOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Invoice Requests" value={String(dashboard.storefrontSummary.inquiryCount)} detail="Needs follow-up" tone={dashboard.storefrontSummary.inquiryCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Orders To Ship" value={String(dashboard.storefrontSummary.ordersToShipCount)} detail="Paid and not shipped" tone={dashboard.storefrontSummary.ordersToShipCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Orders To Ship" value={String(dashboard.storefrontSummary.ordersToShipCount)} detail="Paid carrier shipments" tone={dashboard.storefrontSummary.ordersToShipCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Pickup Orders" value={String(dashboard.storefrontSummary.pickupOrderCount)} detail="Paid local pickup" tone={dashboard.storefrontSummary.pickupOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Today's Net Sales" value={money(dashboard.storefrontSummary.todaySales)} detail={`${dashboard.storefrontSummary.todayPaidOrderCount} active paid today`} tone="good" />
         <InventoryKpiCard label="Store Revenue" value={money(dashboard.storefrontSummary.totalRevenue)} detail="Net after refunds" tone="watch" />
         <InventoryKpiCard label="Store Profit" value={money(dashboard.storefrontSummary.netProfit)} detail="Net after refunds and costs" tone={dashboard.storefrontSummary.netProfit >= 0 ? "good" : "bad"} />
@@ -6638,10 +6671,11 @@ function InventoryPanel({
   );
 }
 
-type StorefrontOrderTab = "new" | "pending" | "paid" | "packing" | "shipped" | "invoice_requests" | "canceled";
+type StorefrontOrderTab = "new" | "pickup" | "pending" | "paid" | "packing" | "shipped" | "invoice_requests" | "canceled";
 
 function storefrontOrdersForTab(orders: StorefrontOrderDTO[], tab: StorefrontOrderTab) {
-  if (tab === "new") return orders.filter((order) => order.isNewPaidOrder && !storefrontOrderIsCanceledOrRefunded(order));
+  if (tab === "new") return orders.filter((order) => order.isNewPaidOrder && !storefrontOrderIsLocalPickup(order) && !storefrontOrderIsCanceledOrRefunded(order));
+  if (tab === "pickup") return orders.filter((order) => storefrontOrderCanPickup(order) && ["unfulfilled", "pickup_ready"].includes(order.fulfillmentStatus));
   if (tab === "pending") return orders.filter((order) => (order.status === "pending_payment" || order.paymentStatus === "pending") && !storefrontOrderIsCanceledOrRefunded(order));
   if (tab === "paid") return orders.filter((order) => order.paymentStatus === "paid" && !storefrontOrderIsCanceledOrRefunded(order));
   if (tab === "packing") return orders.filter((order) => (order.status === "packing" || order.fulfillmentStatus === "packing") && !storefrontOrderIsCanceledOrRefunded(order));
@@ -6651,7 +6685,7 @@ function storefrontOrdersForTab(orders: StorefrontOrderDTO[], tab: StorefrontOrd
 }
 
 function storefrontDefaultOrderTab(orders: StorefrontOrderDTO[]): StorefrontOrderTab {
-  for (const tab of ["new", "paid", "packing", "pending", "invoice_requests", "shipped"] as StorefrontOrderTab[]) {
+  for (const tab of ["new", "pickup", "paid", "packing", "pending", "invoice_requests", "shipped"] as StorefrontOrderTab[]) {
     if (storefrontOrdersForTab(orders, tab).length > 0) return tab;
   }
   return "new";
@@ -6659,7 +6693,8 @@ function storefrontDefaultOrderTab(orders: StorefrontOrderDTO[]): StorefrontOrde
 
 function storefrontOrderTabDetail(tab: StorefrontOrderTab) {
   if (tab === "canceled") return "Historical canceled, refunded, and expired orders. No fulfillment action is needed.";
-  if (tab === "new") return "New paid orders that need fulfillment.";
+  if (tab === "new") return "New paid carrier-shipment orders that need fulfillment.";
+  if (tab === "pickup") return "Paid local pickup orders that do not need carrier shipment.";
   if (tab === "pending") return "Checkout-started or invoice orders still awaiting payment.";
   if (tab === "paid") return "Active paid orders that are still operational.";
   if (tab === "packing") return "Orders currently being packed.";
@@ -6669,7 +6704,8 @@ function storefrontOrderTabDetail(tab: StorefrontOrderTab) {
 
 function storefrontOrderEmptyState(tab: StorefrontOrderTab) {
   if (tab === "paid") return { title: "No paid orders to ship.", detail: "Paid orders will appear here after Stripe confirms payment." };
-  if (tab === "new") return { title: "No new orders.", detail: "New paid orders will appear here when fulfillment is needed." };
+  if (tab === "new") return { title: "No new orders.", detail: "New paid carrier-shipment orders will appear here when fulfillment is needed." };
+  if (tab === "pickup") return { title: "No pickup orders.", detail: "Paid local pickup orders will appear here when pickup is pending." };
   if (tab === "pending") return { title: "No pending payment orders.", detail: "Only still-valid checkout or invoice orders appear here." };
   if (tab === "canceled") return { title: "No archived orders.", detail: "Canceled and expired orders are kept here for history." };
   return { title: "No orders in this view.", detail: "Orders will appear here when their status matches this view." };
@@ -6689,6 +6725,7 @@ function storefrontOrderNetLabel(order: StorefrontOrderDTO) {
 function storefrontOrderTabs(orders: StorefrontOrderDTO[]) {
   const definitions: Array<{ id: StorefrontOrderTab; label: string }> = [
     { id: "new", label: "New" },
+    { id: "pickup", label: "Pickup Orders" },
     { id: "pending", label: "Pending Payment" },
     { id: "paid", label: "Paid" },
     { id: "packing", label: "Packing" },
@@ -6761,10 +6798,11 @@ function StorefrontOrdersPanel({
 
       <section className="inventory-kpi-grid">
         <InventoryKpiCard label="Published Products" value={String(stats.productCount)} detail={`${stats.activeProductCount} active`} />
-        <InventoryKpiCard label="New Paid Orders" value={String(stats.newPaidOrderCount)} detail="Needs fulfillment" tone={stats.newPaidOrderCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="New Paid Orders" value={String(stats.newPaidOrderCount)} detail="New carrier fulfillment" tone={stats.newPaidOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Pending Orders" value={String(stats.pendingOrderCount)} detail="Awaiting payment" tone={stats.pendingOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Invoice Requests" value={String(stats.inquiryCount)} detail="Needs follow-up" tone={stats.inquiryCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Orders To Ship" value={String(stats.ordersToShipCount)} detail="Paid and not shipped" tone={stats.ordersToShipCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Orders To Ship" value={String(stats.ordersToShipCount)} detail="Paid carrier shipments" tone={stats.ordersToShipCount ? "watch" : "neutral"} />
+        <InventoryKpiCard label="Pickup Orders" value={String(stats.pickupOrderCount)} detail="Paid local pickup" tone={stats.pickupOrderCount ? "watch" : "neutral"} />
         <InventoryKpiCard label="Today's Net Sales" value={money(stats.todaySales)} detail={`${stats.todayPaidOrderCount} active paid today`} tone="good" />
         <InventoryKpiCard label="Paid Orders" value={String(stats.paidOrderCount)} detail="All time" tone="good" />
         <InventoryKpiCard label="Store Revenue" value={money(stats.totalRevenue)} detail="Net after refunds" tone="watch" />
@@ -6797,7 +6835,9 @@ function StorefrontOrdersPanel({
               visibleOrders.map((order) => {
                 const archived = storefrontOrderIsCanceledOrRefunded(order);
                 const canFulfill = storefrontOrderCanFulfill(order);
-                const canMarkShipped = canFulfill && storefrontOrderHasShipmentDetails(order);
+                const canShip = storefrontOrderCanShip(order);
+                const canPickup = storefrontOrderCanPickup(order);
+                const canMarkShipped = canShip && storefrontOrderHasShipmentDetails(order);
                 const itemSummary = order.items.length
                   ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
                   : order.notes?.split("\n").find((line) => line.startsWith("Subject:"))?.replace("Subject:", "Contact:") || "Contact inquiry";
@@ -6817,11 +6857,52 @@ function StorefrontOrdersPanel({
                     <div className="storefront-order-status-stack">
                       <span className={`chip compact-chip ${archived ? "bad" : order.needsFulfillment ? "watch" : "neutral"}`}>{order.statusBadge}</span>
                       <span className={`chip compact-chip ${storefrontOrderPaymentTone(order)}`}>{formatStatus(order.paymentStatus)}</span>
-                      <span className={`chip compact-chip ${canFulfill ? "watch" : "neutral"}`}>{formatStatus(order.fulfillmentStatus)}</span>
+                      <span className={`chip compact-chip ${canFulfill ? "watch" : "neutral"}`}>{storefrontOrderFulfillmentLabel(order)}</span>
                     </div>
                     <span className="storefront-order-total">{storefrontOrderNetLabel(order)}</span>
                     <div className="catalog-actions storefront-order-actions">
-                      {canFulfill ? (
+                      {canPickup ? (
+                        <>
+                          {order.fulfillmentStatus !== "pickup_ready" ? (
+                            <button
+                              className="mini-action"
+                              disabled={busy}
+                              type="button"
+                              onClick={() =>
+                                runAction(
+                                  `Marking ${order.orderNumber} ready for pickup`,
+                                  () =>
+                                    requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                                      method: "PATCH",
+                                      body: JSON.stringify({ fulfillmentStatus: "pickup_ready" })
+                                    }),
+                                  { success: "Order marked ready for pickup" }
+                                )
+                              }
+                            >
+                              Ready for Pickup
+                            </button>
+                          ) : null}
+                          <button
+                            className="mini-action"
+                            disabled={busy}
+                            type="button"
+                            onClick={() =>
+                              runAction(
+                                `Marking ${order.orderNumber} picked up`,
+                                () =>
+                                  requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                                    method: "PATCH",
+                                    body: JSON.stringify({ fulfillmentStatus: "picked_up" })
+                                  }),
+                                { success: "Order marked picked up" }
+                              )
+                            }
+                          >
+                            Picked Up
+                          </button>
+                        </>
+                      ) : canShip ? (
                         <>
                           <button
                             className="mini-action"
@@ -7035,18 +7116,30 @@ function StorefrontOrderDetailsModal({
   const shippingActionsLocked = storefrontOrderIsCanceledOrRefunded(order);
   const shippingReadiness = storefrontOrderShippingReadiness(order);
   const canFulfillOrder = storefrontOrderCanFulfill(order);
+  const localPickupOrder = storefrontOrderIsLocalPickup(order);
+  const canShipOrder = storefrontOrderCanShip(order);
+  const canPickupOrder = storefrontOrderCanPickup(order);
   const orderDetailReadOnly = storefrontOrderDetailIsReadOnly(order);
   const readOnlyDetailMessage = storefrontOrderReadOnlyDetailMessage(order);
   const shipmentDetailsSaved = storefrontOrderHasShipmentDetails(order);
   const canOpenRefundFlow = storefrontOrderCanOpenRefundFlow(order);
   const refundActionLabel = storefrontOrderRefundActionLabel(order);
-  const canShowPackingSlip = order.items.length > 0 && (canFulfillOrder || orderDetailReadOnly || order.fulfillmentStatus === "shipped");
-  const packingSlipLabel = orderDetailReadOnly ? "View Historical Packing Slip" : "Print/View Packing Slip";
-  const packingSlipPreviewLabel = orderDetailReadOnly ? "View Historical Packing Slip Preview" : "View Packing Slip Preview";
+  const canShowPackingSlip = order.items.length > 0 && (canFulfillOrder || orderDetailReadOnly || order.fulfillmentStatus === "shipped" || order.fulfillmentStatus === "picked_up");
+  const packingSlipLabel = orderDetailReadOnly
+    ? "View Historical Packing Slip"
+    : localPickupOrder
+      ? "Print/View Pickup Slip"
+      : "Print/View Packing Slip";
+  const packingSlipPreviewLabel = orderDetailReadOnly
+    ? "View Historical Packing Slip Preview"
+    : localPickupOrder
+      ? "View Pickup Slip Preview"
+      : "View Packing Slip Preview";
   const billingMatchesShipping =
     Boolean(order.shippingAddress && order.billingAddress) &&
     formatStorefrontAddressLines(order.shippingAddress).join("\n") === formatStorefrontAddressLines(order.billingAddress).join("\n");
   const primaryNotification = order.customerEmailNotifications[0] ?? null;
+  const localPickupNotification = order.customerEmailNotifications.find((notification) => notification.kind === "local_pickup") ?? null;
   const [cancelRefundOpen, setCancelRefundOpen] = useState(false);
   const [cancelRefundKey, setCancelRefundKey] = useState("");
   const openCancelRefund = () => {
@@ -7070,8 +7163,8 @@ function StorefrontOrderDetailsModal({
             </div>
             <div className="storefront-order-workspace-badges" aria-label="Order status">
               <span className={`chip compact-chip ${storefrontOrderPaymentTone(order)}`}>{formatStatus(order.paymentStatus)}</span>
-              <span className={`chip compact-chip ${canFulfillOrder ? "watch" : orderDetailReadOnly ? "neutral" : "good"}`}>{formatStatus(order.fulfillmentStatus)}</span>
-              {canFulfillOrder ? <span className="chip compact-chip good">Ready for fulfillment</span> : null}
+              <span className={`chip compact-chip ${canFulfillOrder ? "watch" : orderDetailReadOnly ? "neutral" : "good"}`}>{storefrontOrderFulfillmentLabel(order)}</span>
+              {canFulfillOrder ? <span className="chip compact-chip good">{localPickupOrder ? "Ready for pickup" : "Ready for fulfillment"}</span> : null}
               {orderDetailReadOnly ? <span className="chip compact-chip neutral">Archived order</span> : null}
             </div>
           </div>
@@ -7086,7 +7179,65 @@ function StorefrontOrderDetailsModal({
         </header>
 
         <section className="storefront-order-action-bar" aria-label="Order actions">
-          {canFulfillOrder ? (
+          {canPickupOrder ? (
+            <>
+              {order.fulfillmentStatus !== "pickup_ready" ? (
+                <button
+                  className="primary-action"
+                  disabled={busy}
+                  title="Mark this local pickup order as ready for customer pickup."
+                  type="button"
+                  onClick={() =>
+                    runAction(
+                      `Marking ${order.orderNumber} ready for pickup`,
+                      () =>
+                        requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                          method: "PATCH",
+                          body: JSON.stringify({ fulfillmentStatus: "pickup_ready" })
+                        }),
+                      { success: "Order marked ready for pickup" }
+                    )
+                  }
+                >
+                  <PackageSearch size={16} />
+                  Mark Ready for Pickup
+                </button>
+              ) : null}
+              <button
+                className={order.fulfillmentStatus === "pickup_ready" ? "primary-action" : "mini-action"}
+                disabled={busy}
+                title="Mark this local pickup order as picked up."
+                type="button"
+                onClick={() =>
+                  runAction(
+                    `Marking ${order.orderNumber} picked up`,
+                    () =>
+                      requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ fulfillmentStatus: "picked_up" })
+                      }),
+                    { success: "Order marked picked up" }
+                  )
+                }
+              >
+                <PackageSearch size={14} />
+                Mark Picked Up
+              </button>
+              {canShowPackingSlip ? (
+                <button className="mini-action" type="button" onClick={() => window.print()}>
+                  <Printer size={14} />
+                  {packingSlipLabel}
+                </button>
+              ) : null}
+              {canOpenRefundFlow ? (
+                <button className="mini-action danger" disabled={busy} type="button" onClick={openCancelRefund}>
+                  <RotateCcw size={14} />
+                  {refundActionLabel}
+                </button>
+              ) : null}
+              <span className="fulfillment-locked-note">Local pickup order. No carrier or tracking is required.</span>
+            </>
+          ) : canShipOrder ? (
             <>
               <button
                 className="primary-action"
@@ -7162,7 +7313,9 @@ function StorefrontOrderDetailsModal({
                   {refundActionLabel}
                 </button>
               ) : null}
-              <span className="fulfillment-locked-note">{storefrontOrderIsCanceledOrRefunded(order) ? "Historical order - no fulfillment action needed." : "Only active paid orders can be marked packing or shipped."}</span>
+              <span className="fulfillment-locked-note">
+                {storefrontOrderIsCanceledOrRefunded(order) ? "Historical order - no fulfillment action needed." : "Only active paid orders can be marked packing, shipped, ready for pickup, or picked up."}
+              </span>
             </>
           )}
         </section>
@@ -7276,21 +7429,27 @@ function StorefrontOrderDetailsModal({
             <div className="storefront-shipping-head">
               <div>
                 <h3>Fulfillment</h3>
-                <p>Shipping method, package snapshot, carrier, tracking, and actual shipment cost.</p>
+                <p>{localPickupOrder ? "Pickup method, package snapshot, pickup status, and customer handoff details." : "Shipping method, package snapshot, carrier, tracking, and actual shipment cost."}</p>
               </div>
               <span className={`chip compact-chip ${order.needsFulfillment ? "watch" : "neutral"}`}>{shippingReadiness}</span>
             </div>
             <div className="storefront-fulfillment-snapshot">
-              <DetailStat label="Fulfillment status" value={formatStatus(order.fulfillmentStatus)} tone={shippingActionsLocked ? "bad" : order.needsFulfillment ? "good" : "neutral"} />
-              <DetailStat label="Shipping method" value={order.shippingMethodLabel || "Not captured"} />
+              <DetailStat label="Fulfillment status" value={storefrontOrderFulfillmentLabel(order)} tone={shippingActionsLocked ? "bad" : order.needsFulfillment ? "good" : "neutral"} />
+              <DetailStat label={localPickupOrder ? "Fulfillment method" : "Shipping method"} value={order.shippingMethodLabel || "Not captured"} />
               <DetailStat label="Shipping charged" value={money(order.shippingCharged)} tone={order.shippingCharged > 0 ? "good" : "neutral"} />
               <DetailStat label="Package profile" value={formatShippingPackageProfile(order)} />
               <DetailStat label="Package weight" value={formatShippingPackageWeight(order)} />
+              {localPickupOrder ? <DetailStat label="Tracking" value="Not required" tone="good" /> : null}
             </div>
             {orderDetailReadOnly ? (
               <div className="storefront-shipping-readonly-summary">
                 <strong>Shipping and fulfillment are read-only for this historical order.</strong>
                 <p>Carrier, tracking, actual shipping cost, and shipment status are preserved for audit history and cannot be edited here.</p>
+              </div>
+            ) : localPickupOrder ? (
+              <div className="storefront-shipping-readonly-summary">
+                <strong>This order is for local pickup. No carrier or tracking is required.</strong>
+                <p>Use the pickup actions above to mark the order ready for pickup or picked up. Inventory was already finalized after paid checkout.</p>
               </div>
             ) : (
               <form
@@ -7342,10 +7501,11 @@ function StorefrontOrderDetailsModal({
           </section>
 
           <section className="storefront-order-workspace-card">
-            <h3>Shipping Summary</h3>
+            <h3>{localPickupOrder ? "Fulfillment Summary" : "Shipping Summary"}</h3>
             <div className="storefront-order-summary-list">
-              <DetailStat label="Method" value={order.shippingMethodLabel || "Not captured"} />
+              <DetailStat label={localPickupOrder ? "Fulfillment method" : "Method"} value={order.shippingMethodLabel || "Not captured"} />
               <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
+              {localPickupOrder ? <DetailStat label="Tracking" value="Not required" tone="good" /> : null}
               <DetailStat label="Package profile" value={formatShippingPackageProfile(order)} />
               <DetailStat label="Package weight" value={formatShippingPackageWeight(order)} />
               <DetailStat label="Package dimensions" value={formatShippingPackageDimensions(order)} />
@@ -7363,6 +7523,11 @@ function StorefrontOrderDetailsModal({
               <small>
                 Detail: {primaryNotification?.detail || primaryNotification?.failureReason || (primaryNotification?.sentAt ? `Sent ${dateTime(primaryNotification.sentAt)}` : "No customer notification detail recorded.")}
               </small>
+              {localPickupOrder ? (
+                <small>
+                  Pickup notification: {localPickupNotification ? `${emailStatusLabel(localPickupNotification.status)}${localPickupNotification.sentAt ? ` ${dateTime(localPickupNotification.sentAt)}` : ""}` : "Pickup notification not sent"}
+                </small>
+              ) : null}
             </div>
           </section>
           </aside>
