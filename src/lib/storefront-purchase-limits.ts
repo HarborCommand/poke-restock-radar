@@ -1,6 +1,6 @@
 import type { PublicStoreProductDTO } from "@/types/radar";
 
-type LimitProduct = Pick<PublicStoreProductDTO, "availableQuantity" | "maxQuantityPerOrder" | "status">;
+type LimitProduct = Pick<PublicStoreProductDTO, "availabilityLevel" | "maxQuantityPerOrder" | "publicMaxQuantity" | "status">;
 
 export const DEFAULT_STOREFRONT_PURCHASE_LIMIT = 4;
 
@@ -21,8 +21,8 @@ export function storefrontConfiguredPurchaseLimit(
   return limit !== DEFAULT_STOREFRONT_PURCHASE_LIMIT ? limit : null;
 }
 
-export function storefrontEffectiveMaxQuantity(product: Pick<PublicStoreProductDTO, "availableQuantity" | "maxQuantityPerOrder">) {
-  const availableQuantity = Math.max(0, Math.floor(product.availableQuantity));
+export function storefrontEffectiveMaxQuantity(product: Pick<PublicStoreProductDTO, "publicMaxQuantity" | "maxQuantityPerOrder">) {
+  const availableQuantity = Math.max(0, Math.floor(product.publicMaxQuantity));
   const purchaseLimit = storefrontPurchaseLimit(product);
   return purchaseLimit === null ? availableQuantity : Math.min(availableQuantity, purchaseLimit);
 }
@@ -33,14 +33,14 @@ export function storefrontPurchaseLimitLabel(product: Pick<PublicStoreProductDTO
   return purchaseLimit === 1 ? "Limit 1 per order" : `Maximum ${purchaseLimit} per order`;
 }
 
-export function storefrontAvailabilityLabel(product: Pick<LimitProduct, "availableQuantity" | "status">) {
-  if (product.status === "sold_out" || product.availableQuantity <= 0) return "Sold Out";
-  if (product.availableQuantity <= 2) return "Almost gone";
-  if (product.availableQuantity <= 5) return "Low Stock";
+export function storefrontAvailabilityLabel(product: Pick<LimitProduct, "availabilityLevel" | "status">) {
+  if (product.status === "sold_out" || product.availabilityLevel === "sold_out") return "Sold Out";
+  if (product.availabilityLevel === "almost_gone") return "Almost gone";
+  if (product.availabilityLevel === "low_stock") return "Low Stock";
   return "In Stock";
 }
 
-export function storefrontAvailabilityDetail(product: Pick<LimitProduct, "availableQuantity" | "status">) {
+export function storefrontAvailabilityDetail(product: Pick<LimitProduct, "availabilityLevel" | "status">) {
   const label = storefrontAvailabilityLabel(product);
   if (label === "Sold Out") return "Sold out.";
   if (label === "Almost gone") return "Almost gone.";

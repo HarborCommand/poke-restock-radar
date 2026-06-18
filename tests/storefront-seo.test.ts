@@ -7,6 +7,14 @@ import {
   storefrontProductMetadata,
   storefrontProductSchemaAvailability
 } from "../src/lib/storefront-seo";
+import {
+  getStorefrontCollection,
+  storefrontCollectionBreadcrumbJsonLd,
+  storefrontCollectionItemListJsonLd,
+  storefrontCollectionMetadata,
+  storefrontCollectionProducts,
+  storefrontCollectionUrl
+} from "../src/lib/storefront-collections";
 import type { PublicStoreProductDTO } from "../src/types/radar";
 
 function product(overrides: Partial<PublicStoreProductDTO> = {}): PublicStoreProductDTO {
@@ -27,7 +35,8 @@ function product(overrides: Partial<PublicStoreProductDTO> = {}): PublicStorePro
     manufacturer: "The Pokemon Company",
     sku: "PKM-SEO-1",
     upc: "123456789012",
-    availableQuantity: 3,
+    publicMaxQuantity: 4,
+    availabilityLevel: "low_stock",
     maxQuantityPerOrder: null,
     status: "active",
     localPickupAvailable: true,
@@ -91,7 +100,7 @@ test("product structured data renders safe Product and Offer fields only", () =>
 });
 
 test("sold-out structured data does not claim in-stock availability", () => {
-  const soldOut = product({ availableQuantity: 0, status: "sold_out" });
+  const soldOut = product({ publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" });
   assert.equal(storefrontProductSchemaAvailability(soldOut), "https://schema.org/OutOfStock");
   const jsonLd = storefrontProductJsonLd(soldOut) as Record<string, any>;
   assert.equal(jsonLd.offers.availability, "https://schema.org/OutOfStock");
@@ -101,7 +110,14 @@ test("sold-out structured data does not claim in-stock availability", () => {
 test("product pages, sitemap, and robots are wired for Google-ready discovery", () => {
   const productRoute = fs.readFileSync(new URL("../src/app/product/[slug]/page.tsx", import.meta.url), "utf8");
   const shopProductRoute = fs.readFileSync(new URL("../src/app/shop/product/[slug]/page.tsx", import.meta.url), "utf8");
+  const collectionRoute = fs.readFileSync(new URL("../src/app/collections/[slug]/page.tsx", import.meta.url), "utf8");
+  const homePage = fs.readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+  const shopPage = fs.readFileSync(new URL("../src/app/shop/page.tsx", import.meta.url), "utf8");
+  const aboutPage = fs.readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
+  const policiesPage = fs.readFileSync(new URL("../src/app/policies/page.tsx", import.meta.url), "utf8");
+  const contactPage = fs.readFileSync(new URL("../src/app/contact/page.tsx", import.meta.url), "utf8");
   const productView = fs.readFileSync(new URL("../src/components/StorefrontServerViews.tsx", import.meta.url), "utf8");
+  const storefrontClient = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
   const sitemap = fs.readFileSync(new URL("../src/app/sitemap.ts", import.meta.url), "utf8");
   const robots = fs.readFileSync(new URL("../src/app/robots.ts", import.meta.url), "utf8");
 
@@ -111,16 +127,78 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(shopProductRoute, /productCanonicalUrl\(slug\)/);
   assert.match(productView, /type="application\/ld\+json"/);
   assert.match(productView, /storefrontProductJsonLd\(product\)/);
+  assert.match(collectionRoute, /storefrontCollectionMetadata\(collection\)/);
+  assert.match(productView, /StorefrontCollectionLanding/);
+  assert.match(productView, /storefrontCollectionJsonLdScripts/);
+  assert.match(homePage, /canonical: GAMEDAYGRABS_CANONICAL_ORIGIN/);
+  assert.match(shopPage, /canonical: shopUrl/);
+  assert.match(aboutPage, /canonical: aboutUrl/);
+  assert.match(policiesPage, /canonical: policiesUrl/);
+  assert.match(contactPage, /canonical: contactUrl/);
+  assert.match(storefrontClient, /href=\{`\/product\/\$\{product\.slug\}`\}/);
+  assert.doesNotMatch(storefrontClient, /href=\{`\/shop\/product\/\$\{product\.slug\}`\}/);
 
   assert.match(sitemap, /listPublicStoreProducts/);
   assert.match(sitemap, /productCanonicalUrl\(product\.slug\)/);
+  assert.match(sitemap, /storefrontCollections/);
+  assert.match(sitemap, /storefrontCollectionUrl\(collection\.slug\)/);
+  assert.match(sitemap, /feedSitemapPaths/);
+  assert.match(sitemap, /"\/product-feed\.xml"/);
   for (const publicPath of ['"/"', '"/shop"', '"/about"', '"/policies"', '"/contact"']) {
     assert.match(sitemap, new RegExp(publicPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.doesNotMatch(sitemap, /\/admin|\/app|\/dashboard|\/api\//);
 
   assert.match(robots, /sitemap: `\$\{GAMEDAYGRABS_CANONICAL_ORIGIN\}\/sitemap\.xml`/);
-  for (const privatePath of ['"/admin"', '"/app"', '"/dashboard"', '"/api/"']) {
+  assert.match(robots, /"\/collections\/"/);
+  assert.match(robots, /"\/product\/"/);
+  assert.match(robots, /"\/product-feed\.xml"/);
+  for (const privatePath of ['"/admin"', '"/app"', '"/account"', '"/auth"', '"/dashboard"', '"/login"', '"/api/"']) {
     assert.match(robots, new RegExp(privatePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+});
+
+test("collection pages have metadata, canonical URLs, and natural intro copy", () => {
+  const collection = getStorefrontCollection("booster-bundles");
+  assert.ok(collection);
+  const metadata = storefrontCollectionMetadata(collection);
+
+  assert.match(String(metadata.title), /Booster Bundles/);
+  assert.match(String(metadata.description), /Browse Pokemon booster bundles/);
+  assert.equal(metadata.alternates?.canonical, storefrontCollectionUrl("booster-bundles"));
+  assert.match(collection.intro, /booster bundles/i);
+  assert.doesNotMatch(collection.intro + collection.detail, /keyword keyword|guaranteed ranking|fake/i);
+});
+
+test("collection filtering supports category, new arrivals, almost gone, and local pickup without exact public counts", () => {
+  const booster = product({ id: "booster", slug: "booster", title: "Pokemon Booster Bundle", category: "Booster Bundles", availabilityLevel: "low_stock", localPickupEligible: false });
+  const blisterLow = product({ id: "blister", slug: "blister", title: "Pokemon Checklane Blister", category: "Blisters", availabilityLevel: "almost_gone", localPickupEligible: false });
+  const soldOut = product({ id: "sold-out", slug: "sold-out", title: "Sold Out Booster Bundle", category: "Booster Bundles", publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out", localPickupEligible: false });
+  const pickup = product({ id: "pickup", slug: "pickup", title: "Pickup Premium Collection", category: "Premium Collections", availabilityLevel: "almost_gone", localPickupEligible: true });
+  const old = product({ id: "old", slug: "old", title: "Old Tin", category: "Tins", availabilityLevel: "low_stock", localPickupEligible: false, publishedAt: "2025-01-01T00:00:00.000Z", createdAt: "2025-01-01T00:00:00.000Z" });
+  const products = [booster, blisterLow, soldOut, pickup, old];
+
+  assert.deepEqual(storefrontCollectionProducts(getStorefrontCollection("booster-bundles")!, products).map((entry) => entry.id), ["booster", "sold-out"]);
+  assert.deepEqual(storefrontCollectionProducts(getStorefrontCollection("almost-gone")!, products).map((entry) => entry.id), ["blister", "pickup"]);
+  assert.deepEqual(storefrontCollectionProducts(getStorefrontCollection("local-pickup-eligible")!, products).map((entry) => entry.id), ["pickup"]);
+  assert.deepEqual(
+    storefrontCollectionProducts(getStorefrontCollection("new-arrivals")!, products, { now: new Date("2026-06-20T00:00:00.000Z"), newArrivalDays: 14 }).map((entry) => entry.id),
+    ["booster", "blister", "pickup"]
+  );
+});
+
+test("collection structured data renders BreadcrumbList and ItemList without private or payment data", () => {
+  const collection = getStorefrontCollection("premium-collections")!;
+  const breadcrumb = storefrontCollectionBreadcrumbJsonLd(collection) as Record<string, any>;
+  const itemList = storefrontCollectionItemListJsonLd(collection, [product({ slug: "premium-product", title: "Premium Product" })]) as Record<string, any>;
+
+  assert.equal(breadcrumb["@type"], "BreadcrumbList");
+  assert.equal(breadcrumb.itemListElement[2].name, "Premium Collections");
+  assert.equal(breadcrumb.itemListElement[2].item, storefrontCollectionUrl("premium-collections"));
+  assert.equal(itemList["@type"], "ItemList");
+  assert.equal(itemList.itemListElement[0].url, productCanonicalUrl("premium-product"));
+
+  const serialized = JSON.stringify([breadcrumb, itemList]);
+  assert.doesNotMatch(serialized, /aggregateRating|review|availableQuantity|costBasis|supplier|admin/i);
+  assert.doesNotMatch(serialized, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
 });

@@ -1,18 +1,33 @@
-import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_WWW_DOMAIN } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { StorefrontShopView } from "@/components/StorefrontServerViews";
+import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
+
+const shopUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/shop`;
+const shopTitle = "Shop Pokemon TCG Products | GameDayGrabs LLC";
+const shopDescription =
+  "Browse sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections, and collectible card products from GameDayGrabs.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
-  metadataBase: new URL(`https://${GAMEDAYGRABS_WWW_DOMAIN}`),
-  title: "GameDayGrabs LLC | Pokémon & Sports Card Collectibles",
-  description: "Family-owned online card shop specializing in Pokémon sealed products, sports cards, and collectibles.",
+  metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
+  title: shopTitle,
+  description: shopDescription,
+  alternates: {
+    canonical: shopUrl
+  },
   openGraph: {
-    title: "GameDayGrabs LLC | Pokémon & Sports Card Collectibles",
-    description: "Family-owned online card shop specializing in Pokémon sealed products, sports cards, and collectibles.",
-    url: `https://${GAMEDAYGRABS_WWW_DOMAIN}/shop`,
+    title: shopTitle,
+    description: shopDescription,
+    url: shopUrl,
     siteName: "GameDayGrabs LLC",
-    images: ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]
+    images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: shopTitle,
+    description: shopDescription,
+    images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
   },
   other: {
     "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL

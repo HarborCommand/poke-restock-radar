@@ -803,11 +803,11 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /homepageCollectorPicksSection/);
   assert.match(client, /HomepageProductSection/);
   assert.match(client, /HomepageSupportStrip/);
-  assert.match(client, /href: "\/shop\?category=pokemon"/);
+  assert.match(client, /storefrontCollectionPathForCategory\(category\) \?\? `\/shop\?category=\$\{categoryToSlug\(category\)\}`/);
   assert.match(client, /GAMEDAYGRABS_SPORTS_CARDS_URL/);
   assert.match(client, /Sports card inventory is currently listed on our eBay store/);
   assert.match(client, /Open eBay Store/);
-  assert.match(client, /href: "\/shop\?sort=newest"/);
+  assert.match(client, /storefrontCollectionPath\("new-arrivals"\)/);
   assert.match(client, /initialCategory/);
   assert.match(client, /initialSort/);
   assert.match(client, /availabilityFromParam/);
@@ -843,9 +843,10 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   const combined = `${aboutPage}\n${policiesPage}`;
 
   assert.match(aboutPage, /About GameDayGrabs/);
-  assert.match(aboutPage, /Built for Pok&eacute;mon collectors/);
+  assert.match(aboutPage, /Built for Pokemon collectors/);
   assert.match(aboutPage, /accurate listings, real inventory/);
-  assert.match(aboutPage, /secure checkout, and careful packaging/);
+  assert.match(aboutPage, /secure checkout, local pickup when available, and careful packaging/);
+  assert.match(aboutPage, /sealed Pokemon TCG products and collectible card products/);
   assert.match(aboutPage, /Email \$\{contactEmail\} for help with an order or product question/);
 
   assert.match(policiesPage, /Shipping Policy/);
@@ -866,6 +867,8 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   assert.match(policiesPage, /Product Availability \/ Preorders/);
   assert.match(policiesPage, /If a product is sold out, checkout is blocked/);
   assert.match(policiesPage, /Privacy \/ Customer Information/);
+  assert.match(policiesPage, /Trademark Notice/);
+  assert.match(policiesPage, /GameDayGrabs is not affiliated with The Pokemon Company International/);
   assert.match(policiesPage, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
   assert.match(routing, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL = "gamedaygrabs@outlook\.com"/);
 
@@ -873,6 +876,7 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   assert.doesNotMatch(policiesPage, /eBay feedback|feedback screenshots|feedback links|Customer Feedback|reviews from eBay/i);
   assert.doesNotMatch(combined, /payment_method_details|payment_method_data|card_number|cardNumber|cvv|JSON\.stringify|raw Stripe object/i);
   assert.doesNotMatch(combined, /same[- ]day shipping|same[- ]day delivery/i);
+  assert.doesNotMatch(combined, /official Pokemon partner|officially affiliated|authorized by The Pokemon Company/i);
 });
 
 test("GameDayGrabs marketplace feedback section uses curated safe social proof", () => {
@@ -987,21 +991,21 @@ test("storefront availability and purchase limits stay buyer-facing", () => {
   const schema = fs.readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
   const migration = fs.readFileSync(new URL("../prisma/migrations/20260615103000_storefront_purchase_limits/migration.sql", import.meta.url), "utf8");
 
-  assert.equal(storefrontAvailabilityLabel({ availableQuantity: 8, status: "active" }), "In Stock");
-  assert.equal(storefrontAvailabilityLabel({ availableQuantity: 4, status: "active" }), "Low Stock");
-  assert.equal(storefrontAvailabilityLabel({ availableQuantity: 2, status: "active" }), "Almost gone");
-  assert.equal(storefrontAvailabilityLabel({ availableQuantity: 0, status: "sold_out" }), "Sold Out");
+  assert.equal(storefrontAvailabilityLabel({ availabilityLevel: "in_stock", status: "active" }), "In Stock");
+  assert.equal(storefrontAvailabilityLabel({ availabilityLevel: "low_stock", status: "active" }), "Low Stock");
+  assert.equal(storefrontAvailabilityLabel({ availabilityLevel: "almost_gone", status: "active" }), "Almost gone");
+  assert.equal(storefrontAvailabilityLabel({ availabilityLevel: "sold_out", status: "sold_out" }), "Sold Out");
   assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: null }), null);
   assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: 1 }), "Limit 1 per order");
   assert.equal(storefrontPurchaseLimitLabel({ maxQuantityPerOrder: 2 }), "Maximum 2 per order");
   assert.equal(storefrontConfiguredPurchaseLimit({ maxQuantityPerOrder: 1, purchaseLimitEnabled: false }), 1);
   assert.equal(storefrontConfiguredPurchaseLimit({ maxQuantityPerOrder: 4, purchaseLimitEnabled: false }), null);
   assert.equal(storefrontConfiguredPurchaseLimit({ maxQuantityPerOrder: 1, purchaseLimitEnabled: true }), 1);
-  assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 9, maxQuantityPerOrder: null }), 9);
-  assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 9, maxQuantityPerOrder: 2 }), 2);
-  assert.equal(storefrontEffectiveMaxQuantity({ availableQuantity: 1, maxQuantityPerOrder: 4 }), 1);
+  assert.equal(storefrontEffectiveMaxQuantity({ publicMaxQuantity: 4, maxQuantityPerOrder: null }), 4);
+  assert.equal(storefrontEffectiveMaxQuantity({ publicMaxQuantity: 4, maxQuantityPerOrder: 2 }), 2);
+  assert.equal(storefrontEffectiveMaxQuantity({ publicMaxQuantity: 1, maxQuantityPerOrder: 4 }), 1);
 
-  assert.doesNotMatch(client, /Stock visible now|visible stock|stock visible|\$\{product\.availableQuantity\} available|Only \$\{product\.availableQuantity\}/i);
+  assert.doesNotMatch(client, /Stock visible now|visible stock|stock visible|\$\{product\.(?:availableQuantity|publicMaxQuantity)\} available|Only \$\{product\.(?:availableQuantity|publicMaxQuantity)\}/i);
   assert.match(client, /storefrontAvailabilityLabel\(product\)/);
   assert.match(client, /storefrontAvailabilityDetail\(product\)/);
   assert.match(client, /storefrontPurchaseLimitLabel\(product\)/);
@@ -1009,7 +1013,7 @@ test("storefront availability and purchase limits stay buyer-facing", () => {
   assert.match(client, /disabled=\{isSoldOut \|\| quantity >= effectiveMaxQuantity\}/);
   assert.match(client, /storefrontEffectiveMaxQuantity\(product\)/);
   assert.match(storefront, /maxQuantityPerOrder: storefrontConfiguredPurchaseLimit\(item\)/);
-  assert.match(storefront, /const effectiveMaxQuantity = storefrontEffectiveMaxQuantity\(product\)/);
+  assert.match(storefront, /const effectiveMaxQuantity = storefrontEffectiveMaxQuantity\(\{ \.\.\.product, publicMaxQuantity: rawAvailableQuantity \}\)/);
   assert.match(storefront, /if \(strict && requestedQuantity > effectiveMaxQuantity\)/);
   assert.match(storefront, /Purchase limit reached for \$\{product\.title\}/);
   assert.match(app, /Enable purchase limit/);
@@ -1068,11 +1072,11 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Remove this sold-out item to continue checkout\./);
   assert.match(client, /Quantity updated because availability or purchase limits changed/);
   assert.match(client, /cartHasBlockingStockIssue/);
-  assert.match(client, /return products\.some\(\(product\) => isSoldOutProduct\(product\) \|\| product\.availableQuantity <= 0 \|\| product\.requestedQuantity > storefrontEffectiveMaxQuantity\(product\)\)/);
+  assert.match(client, /return products\.some\(\(product\) => isSoldOutProduct\(product\) \|\| product\.publicMaxQuantity <= 0 \|\| product\.requestedQuantity > storefrontEffectiveMaxQuantity\(product\)\)/);
   assert.match(client, /checkoutDisabled/);
   assert.match(client, /const checkoutDisabled = busy \|\| hasBlockingStockIssue/);
   assert.match(client, /setProducts\(products\.filter\(\(product\) => !blockedIds\.has\(product\.id\)\)\)/);
-  assert.match(client, /disabled=\{product\.availableQuantity <= 0 \|\| product\.requestedQuantity >= maxQuantity\}/);
+  assert.match(client, /disabled=\{product\.publicMaxQuantity <= 0 \|\| product\.requestedQuantity >= maxQuantity\}/);
   assert.match(client, /\/api\/storefront\/checkout\/session/);
   assert.match(client, /\/api\/storefront\/invoice-request/);
   assert.doesNotMatch(client, /Card Element|payment_method_details|payment_method_data|card_number|cardNumber|cvv|cost basis|supplier notes|admin notes/i);
@@ -1103,7 +1107,8 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(storefront, /export async function getCartProducts\(items: Array<\{ id: string; quantity: number \}>, options: \{ strict\?: boolean \} = \{\}\)/);
   assert.match(storefront, /const strict = options\.strict \?\? true/);
   assert.match(storefront, /if \(strict && product\.status !== "active"\)/);
-  assert.match(storefront, /if \(strict && requestedQuantity > product\.availableQuantity\)/);
+  assert.match(storefront, /const rawAvailableQuantity = sellableQuantity\(item\)/);
+  assert.match(storefront, /if \(strict && requestedQuantity > rawAvailableQuantity\)/);
   assert.match(storefront, /if \(strict && requestedQuantity > effectiveMaxQuantity\)/);
   assert.match(storefront, /unit_amount: Math\.round\(item\.unitPrice \* 100\)/);
   assert.match(storefront, /customer_email: input\.customerEmail/);
@@ -1274,7 +1279,7 @@ test("GameDayGrabs custom domain routes public storefront without exposing priva
   assert.match(rootPage, /headers/);
   assert.match(rootPage, /StorefrontHomeView/);
   assert.match(rootPage, /RadarApp/);
-  assert.match(rootPage, /GameDayGrabs LLC \| Pokémon & Sports Card Collectibles/);
+  assert.match(rootPage, /GameDayGrabs LLC \| Sealed Pokemon TCG & Collectible Card Products/);
   assert.match(productAlias, /StorefrontProductView/);
   assert.match(shopCartAlias, /redirect\("\/cart"\)/);
   for (const privateAlias of [appAlias, adminAlias, dashboardAlias]) {

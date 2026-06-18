@@ -1,8 +1,14 @@
 import { notFound } from "next/navigation";
-import { ProductDetail, ProductGrid, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
+import { ProductDetail, ProductGrid, StorefrontCollectionLanding, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { getPublicStoreProduct, getStorefrontSettings, listPublicStoreProducts } from "@/lib/storefront";
 import { storefrontJsonLdScript, storefrontProductJsonLd } from "@/lib/storefront-seo";
+import {
+  getStorefrontCollection,
+  relatedStorefrontCollections,
+  storefrontCollectionJsonLdScripts,
+  storefrontCollectionProducts
+} from "@/lib/storefront-collections";
 
 type StorefrontShopViewParams = {
   category?: string | null;
@@ -29,6 +35,31 @@ export async function StorefrontShopView({ category, sort, availability }: Store
       <StorefrontHeader settings={settings} homeHref={homeHref} />
       {settings.announcementBanner ? <section className="shop-announcement">{settings.announcementBanner}</section> : null}
       <ProductGrid products={products} settings={settings} mode="shop" initialCategory={category} initialSort={sort} initialAvailability={availability} />
+      <StorefrontFooter settings={settings} homeHref={homeHref} />
+    </main>
+  );
+}
+
+export async function StorefrontCollectionView({ slug }: { slug: string }) {
+  const collection = getStorefrontCollection(slug);
+  if (!collection) notFound();
+
+  const [settings, products, homeHref] = await Promise.all([getStorefrontSettings(), listPublicStoreProducts(), getStorefrontHomeHref()]);
+  const collectionProducts = storefrontCollectionProducts(collection, products, { newArrivalDays: settings.newArrivalDays });
+  const relatedCollections = relatedStorefrontCollections(collection);
+  const jsonLdScripts = storefrontCollectionJsonLdScripts(collection, collectionProducts);
+
+  return (
+    <main className="shop-shell">
+      <StorefrontHeader settings={settings} homeHref={homeHref} />
+      {jsonLdScripts.map((script, index) => (
+        <script
+          key={`${collection.slug}-jsonld-${index}`}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: script }}
+        />
+      ))}
+      <StorefrontCollectionLanding collection={collection} products={collectionProducts} relatedCollections={relatedCollections} settings={settings} />
       <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>
   );

@@ -56,8 +56,8 @@ test("homepage hero product image links to the same product page as View Product
 
   assert.match(client, /className="gdg-hero-product-link"/);
   assert.match(client, /aria-label=\{`View \$\{heroProductTitle\}`\}/);
-  assert.match(client, /<Link href=\{`\/shop\/product\/\$\{heroProduct\.slug\}`\} className="gdg-hero-product-link"/);
-  assert.match(client, /<Link href=\{`\/shop\/product\/\$\{heroProduct\.slug\}`\} className="gdg-secondary-button compact"/);
+  assert.match(client, /<Link href=\{`\/product\/\$\{heroProduct\.slug\}`\} className="gdg-hero-product-link"/);
+  assert.match(client, /<Link href=\{`\/product\/\$\{heroProduct\.slug\}`\} className="gdg-secondary-button compact"/);
   assert.match(client, /gdg-hero-placeholder/);
 });
 

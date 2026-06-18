@@ -1,6 +1,7 @@
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 import { isNewArrival, isSoldOutProduct, storefrontArrivalDate } from "@/lib/storefront-badges";
 import { displayStorefrontCategory } from "@/lib/storefront-categories";
+import { storefrontCollectionPath } from "@/lib/storefront-collections";
 
 type HeroSettings = Pick<StorefrontSettingsDTO, "featuredHeroProductId" | "homepageHeroMode" | "showSoldOutInHero">;
 
@@ -59,7 +60,7 @@ export function homepageArrivalSection(products: PublicStoreProductDTO[], newArr
     return {
       title: "New Arrivals",
       detail: "Freshly added products from GameDayGrabs.",
-      href: "/shop?sort=newest",
+      href: storefrontCollectionPath("new-arrivals"),
       linkLabel: "View All New Arrivals",
       products: newArrivals
     } satisfies HomepageMerchandisingSection;
@@ -68,7 +69,7 @@ export function homepageArrivalSection(products: PublicStoreProductDTO[], newArr
   return {
     title: "Recently Added",
     detail: "The latest published products from GameDayGrabs.",
-    href: "/shop?sort=newest",
+    href: storefrontCollectionPath("new-arrivals"),
     linkLabel: "View All Recently Added",
     products: sorted.slice(0, 4)
   } satisfies HomepageMerchandisingSection;
@@ -76,10 +77,8 @@ export function homepageArrivalSection(products: PublicStoreProductDTO[], newArr
 
 export function homepageAlmostGoneSection(products: PublicStoreProductDTO[]) {
   const almostGone = activeStorefrontProducts(products)
-    .filter((product) => product.availableQuantity <= 2)
+    .filter((product) => product.availabilityLevel === "almost_gone")
     .sort((left, right) => {
-      const quantityDiff = left.availableQuantity - right.availableQuantity;
-      if (quantityDiff !== 0) return quantityDiff;
       return byNewestThenTitle(left, right);
     })
     .slice(0, 4);
@@ -87,7 +86,7 @@ export function homepageAlmostGoneSection(products: PublicStoreProductDTO[]) {
   return {
     title: "Almost Gone",
     detail: "Small batches available now. Exact stock may change at checkout.",
-    href: "/shop?sort=stock",
+    href: storefrontCollectionPath("almost-gone"),
     linkLabel: "Shop Low Stock",
     products: almostGone
   } satisfies HomepageMerchandisingSection;
@@ -116,7 +115,7 @@ export function homepageCollectorPicksSection(products: PublicStoreProductDTO[])
   return {
     title: "Collector Picks",
     detail: "Active sealed products and premium releases collectors often scan first.",
-    href: "/shop?category=pokemon",
+    href: storefrontCollectionPath("pokemon-sealed-products"),
     linkLabel: "Shop Collector Picks",
     products: picks
   } satisfies HomepageMerchandisingSection;

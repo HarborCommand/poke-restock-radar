@@ -226,7 +226,8 @@ export type PublicStoreProductDTO = {
   manufacturer?: string | null;
   sku?: string | null;
   upc?: string | null;
-  availableQuantity: number;
+  publicMaxQuantity: number;
+  availabilityLevel: "in_stock" | "low_stock" | "almost_gone" | "sold_out";
   maxQuantityPerOrder: number | null;
   status: "active" | "sold_out";
   localPickupAvailable: boolean;

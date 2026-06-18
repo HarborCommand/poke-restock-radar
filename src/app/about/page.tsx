@@ -2,12 +2,38 @@ import { MarketplaceFeedbackSection, StorefrontFooter, StorefrontHeader } from "
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
+
+const aboutUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/about`;
+const aboutTitle = "About GameDayGrabs LLC | Collector-Focused Pokemon TCG Shop";
+const aboutDescription =
+  "Learn about GameDayGrabs, a collector-focused shop for sealed Pokemon TCG products, collectible card products, careful packaging, secure checkout, and order support.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "About | GameDayGrabs LLC",
-  description: "Learn about GameDayGrabs LLC, a collector-focused Pokemon TCG shop."
+  metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
+  title: aboutTitle,
+  description: aboutDescription,
+  alternates: {
+    canonical: aboutUrl
+  },
+  openGraph: {
+    title: aboutTitle,
+    description: aboutDescription,
+    url: aboutUrl,
+    siteName: "GameDayGrabs LLC",
+    images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: aboutTitle,
+    description: aboutDescription,
+    images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+  },
+  other: {
+    "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
+  }
 };
 
 export default async function AboutPage() {
@@ -19,26 +45,26 @@ export default async function AboutPage() {
       <StorefrontHeader settings={settings} homeHref={homeHref} />
       <section className="gdg-info-hero">
         <p className="gdg-overline">About GameDayGrabs LLC</p>
-        <h1>Built for Pok&eacute;mon collectors.</h1>
+        <h1>Built for Pokemon collectors.</h1>
         <p>
-          GameDayGrabs is a collector-focused Pok&eacute;mon TCG shop built around accurate listings, real inventory,
-          secure checkout, and careful packaging. Our goal is simple: make it easy to buy sealed Pok&eacute;mon products
-          with confidence.
+          GameDayGrabs is a collector-focused Pokemon TCG shop built around accurate listings, real inventory,
+          secure checkout, local pickup when available, and careful packaging. Our goal is simple: make it easier to buy
+          sealed Pokemon TCG products and collectible card products with confidence.
         </p>
       </section>
       <section className="gdg-section gdg-values">
         <div className="gdg-section-header">
           <div>
             <h2>Collector-first service</h2>
-            <p>Clear listings, secure payment, and practical fulfillment without unnecessary friction.</p>
+            <p>Clear listings, secure payment, practical fulfillment, and careful packaging for collectors.</p>
           </div>
         </div>
         <div className="gdg-value-grid">
           {[
             ["Accurate Listings", "Products are listed with current availability so customers can shop from real public inventory."],
-            ["Secure Checkout", "Checkout is handled securely, with Stripe available for card payments when enabled."],
-            ["Careful Packaging", "Orders are packed with care so sealed products arrive protected and easy to review."],
-            ["Practical Fulfillment", "Orders move through a clear fulfillment process without overpromising delivery timing."],
+            ["Secure Checkout", "Stripe securely handles checkout when card payment is available."],
+            ["Careful Packaging", "Orders are packed carefully so sealed Pokemon TCG products and premium collections arrive protected."],
+            ["Practical Fulfillment", "Orders move through shipping or local pickup workflows without overpromising delivery timing."],
             ["Order Help", "Customers can contact GameDayGrabs for order questions, pickup coordination, or product help."],
             ["Contact", `Email ${contactEmail} for help with an order or product question.`]
           ].map(([title, text]) => (

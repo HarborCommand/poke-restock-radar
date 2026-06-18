@@ -192,13 +192,25 @@ function publicListingPrice(item: Pick<StorefrontInventoryItem, "publicPrice" | 
   return item.publicPrice ?? item.targetSellPrice ?? item.msrp ?? item.currentMarketEstimate ?? null;
 }
 
+function publicAvailabilityLevel(quantity: number, storeStatus: string): PublicStoreProductDTO["availabilityLevel"] {
+  if (storeStatus !== "active" || quantity <= 0) return "sold_out";
+  if (quantity <= 2) return "almost_gone";
+  if (quantity <= 5) return "low_stock";
+  return "in_stock";
+}
+
+function publicMaxQuantityForItem(item: StorefrontInventoryItem, quantity: number) {
+  if (quantity <= 0 || item.storeStatus !== "active") return 0;
+  return storefrontConfiguredPurchaseLimit(item) ?? DEFAULT_STOREFRONT_PURCHASE_LIMIT;
+}
+
 function publicImages(item: StorefrontInventoryItem) {
   return getSavedProductImageUrls(item, { publicOnly: true }).filter(isStorefrontDisplayImageUrl);
 }
 
 export function publicProductToDTO(item: StorefrontInventoryItem): PublicStoreProductDTO | null {
   const price = item.publicPrice;
-  const availableQuantity = sellableQuantity(item);
+  const rawAvailableQuantity = sellableQuantity(item);
   const slug = item.publicSlug;
   if (!item.publishToStore || !slug || price === null || price === undefined) return null;
   if (!["active", "sold_out"].includes(item.storeStatus)) return null;
@@ -211,7 +223,8 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     tags: parseList(item.storefrontTags)
   });
   const publicTitle = cleanStorefrontTitle(item.publicTitle || item.itemName);
-  const status = availableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out";
+  const status = rawAvailableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out";
+  const availabilityLevel = publicAvailabilityLevel(rawAvailableQuantity, item.storeStatus);
   const primaryImageUrl = images[0] ?? null;
   return {
     id: item.id,
@@ -226,7 +239,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
       publicDescription: item.publicDescription,
       description: item.description,
       status,
-      availableQuantity
+      availableQuantity: status === "active" ? 1 : 0
     }),
     price,
     compareAtPrice: item.compareAtPrice,
@@ -240,7 +253,8 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     manufacturer: cleanStorefrontTitle(item.manufacturer) || null,
     sku: item.sku,
     upc: item.upc,
-    availableQuantity,
+    publicMaxQuantity: publicMaxQuantityForItem(item, rawAvailableQuantity),
+    availabilityLevel,
     maxQuantityPerOrder: storefrontConfiguredPurchaseLimit(item),
     status,
     localPickupAvailable: item.localPickupAvailable,
@@ -342,9 +356,10 @@ export async function getCartProducts(items: Array<{ id: string; quantity: numbe
     const product = publicProductToDTO(item);
     if (!product) throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
     const requestedQuantity = requested.get(item.id) ?? 0;
-    const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
+    const rawAvailableQuantity = sellableQuantity(item);
+    const effectiveMaxQuantity = storefrontEffectiveMaxQuantity({ ...product, publicMaxQuantity: rawAvailableQuantity });
     if (strict && product.status !== "active") throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
-    if (strict && requestedQuantity > product.availableQuantity) throw new Error(`Reduce the quantity for ${product.title} before checkout.`);
+    if (strict && requestedQuantity > rawAvailableQuantity) throw new Error(`Reduce the quantity for ${product.title} before checkout.`);
     if (strict && requestedQuantity > effectiveMaxQuantity) throw new Error(`Purchase limit reached for ${product.title}.`);
     return { item, product, quantity: requestedQuantity };
   });

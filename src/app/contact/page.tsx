@@ -2,12 +2,35 @@ import { StorefrontContactForm, StorefrontFooter, StorefrontHeader } from "@/com
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
+
+const contactUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/contact`;
+const contactTitle = "Contact GameDayGrabs LLC | Order & Product Support";
+const contactDescription =
+  "Contact GameDayGrabs for Pokemon TCG product questions, order support, local pickup coordination, invoice requests, and collectible card product help.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "Contact | GameDayGrabs LLC",
-  description: "Contact GameDayGrabs LLC for inventory questions, invoice requests, and order help.",
+  metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
+  title: contactTitle,
+  description: contactDescription,
+  alternates: {
+    canonical: contactUrl
+  },
+  openGraph: {
+    title: contactTitle,
+    description: contactDescription,
+    url: contactUrl,
+    siteName: "GameDayGrabs LLC",
+    images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: contactTitle,
+    description: contactDescription,
+    images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+  },
   other: {
     "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
   }
@@ -20,8 +43,11 @@ export default async function ContactPage() {
       <StorefrontHeader settings={settings} homeHref={homeHref} />
       <section className="gdg-info-hero compact">
         <p className="gdg-overline">Contact</p>
-        <h1>Questions about inventory or invoices?</h1>
-        <p>Reach out before ordering if you need product details, availability confirmation, or help with an invoice request.</p>
+        <h1>Questions about products, pickup, or invoices?</h1>
+        <p>
+          Reach out before ordering if you need product details, availability confirmation, local pickup coordination,
+          or help with an invoice request.
+        </p>
       </section>
       <section className="gdg-contact-page-card">
         <div>
@@ -33,7 +59,7 @@ export default async function ContactPage() {
           ) : (
             <p>Public contact email is not configured yet. Use the cart Request Invoice flow for product inquiries.</p>
           )}
-          <p>Collector-focused Pokémon and sports card products for customers, players, and fans.</p>
+          <p>Collector-focused Pokemon TCG, sports card, and collectible card products for customers, players, and fans.</p>
         </div>
         <a className="gdg-primary-button" href={settings.contactEmail ? `mailto:${settings.contactEmail}` : "/shop"}>
           {settings.contactEmail ? "Email Us" : "Browse Products"}

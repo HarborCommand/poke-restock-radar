@@ -15,12 +15,15 @@ test("product detail renders retailer-style buyer clarity sections", () => {
   assert.match(productDetail, /className="gdg-detail-info gdg-purchase-panel"/);
   assert.match(productDetail, /Product Description/);
   assert.match(productDetail, /What&apos;s included/);
+  assert.match(productDetail, /productIncludedBullets\(product, displayCategory, conditionLabel\)/);
+  assert.match(client, /collectible card product offered/);
   assert.match(productDetail, /Product condition/);
   assert.match(productDetail, /Condition details are based on the listing information\./);
   assert.match(productDetail, /Shipping summary/);
   assert.match(productDetail, /Shipping is calculated from product weight and package size\./);
   assert.match(productDetail, /Final shipping is shown before payment\./);
   assert.match(productDetail, /product\.localPickupEligible \? <li>Local pickup may be available for this item\.<\/li>/);
+  assert.match(productDetail, /Local pickup appears at checkout when available for this item\./);
   assert.match(productDetail, /Checkout hold/);
   assert.match(productDetail, /Items are held for 15 minutes once checkout starts\./);
 });

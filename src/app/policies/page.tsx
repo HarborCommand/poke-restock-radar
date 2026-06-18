@@ -2,12 +2,35 @@ import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClien
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
+
+const policiesUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
+const policiesTitle = "GameDayGrabs Policies | Shipping, Pickup, Payment & Returns";
+const policiesDescription =
+  "Review GameDayGrabs shipping, local pickup, payment security, checkout holds, privacy, and product issue policies before ordering collectible card products.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "Policies | GameDayGrabs LLC",
-  description: "Shipping, pickup, payment, inventory, and order policies for GameDayGrabs LLC.",
+  metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
+  title: policiesTitle,
+  description: policiesDescription,
+  alternates: {
+    canonical: policiesUrl
+  },
+  openGraph: {
+    title: policiesTitle,
+    description: policiesDescription,
+    url: policiesUrl,
+    siteName: "GameDayGrabs LLC",
+    images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: policiesTitle,
+    description: policiesDescription,
+    images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+  },
   other: {
     "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
   }
@@ -25,19 +48,19 @@ export default async function PoliciesPage() {
         <h1>Clear ordering, shipping, and pickup expectations.</h1>
         <p>
           GameDayGrabs keeps public policies simple so customers know how shipping, checkout holds, payment security,
-          pickup, and order support work before placing an order.
+          local pickup when available, and order support work before placing an order.
         </p>
       </section>
       <section className="gdg-policies gdg-policy-page">
         <article>
           <h2>Shipping Policy</h2>
           <p>Shipping is calculated from product weight and package size. Final shipping is shown before payment.</p>
-          <p>Orders are packed carefully, and tracking is added when available after shipment is created.</p>
+          <p>Orders are packed carefully for collectors, and tracking is added when available after shipment is created.</p>
         </article>
         <article>
           <h2>Local Pickup Policy</h2>
           <p>Local pickup is only available when shown at checkout. Pickup instructions are provided after purchase.</p>
-          <p>Local pickup is not the same as shipping, and pickup availability is not promised for every order.</p>
+          <p>Local pickup is separate from shipping, and pickup availability is not promised for every order.</p>
         </article>
         <article>
           <h2>Cancellations / Refunds</h2>
@@ -68,6 +91,10 @@ export default async function PoliciesPage() {
           <h2>Privacy / Customer Information</h2>
           <p>Email, phone, shipping address, and billing details are used to process orders and provide support.</p>
           <p>GameDayGrabs keeps customer-facing order information focused on checkout, fulfillment, pickup, and support needs.</p>
+        </article>
+        <article>
+          <h2>Trademark Notice</h2>
+          <p>GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</p>
         </article>
         <article>
           <h2>Contact</h2>

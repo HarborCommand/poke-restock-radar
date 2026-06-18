@@ -25,7 +25,8 @@ function product(overrides: Partial<PublicStoreProductDTO> & { id: string; title
     category: overrides.category ?? "Pokemon Sealed",
     tags: overrides.tags ?? [],
     condition: overrides.condition ?? "Sealed",
-    availableQuantity: overrides.availableQuantity ?? 8,
+    publicMaxQuantity: overrides.publicMaxQuantity ?? 4,
+    availabilityLevel: overrides.availabilityLevel ?? "in_stock",
     maxQuantityPerOrder: 4,
     status: overrides.status ?? "active",
     localPickupAvailable: true,
@@ -110,7 +111,7 @@ test("homepage hero falls back to newest published active product with image", (
 });
 
 test("sold-out featured product can be selected and shows Sold Out badge", () => {
-  const soldOut = product({ id: "sold", availableQuantity: 0, status: "sold_out" });
+  const soldOut = product({ id: "sold", publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" });
 
   const selected = selectHomepageHeroProduct([soldOut], settings({ homepageHeroMode: "manual_product", featuredHeroProductId: "sold" }));
   const labels = selected ? storefrontImageBadges(selected, 14).map((badge) => badge.label) : [];
@@ -132,7 +133,7 @@ test("New Arrivals section limits to four products", () => {
 test("New Arrivals section excludes sold-out products from active homepage shopping", () => {
   const now = new Date().toISOString();
   const active = product({ id: "active", publishedAt: now });
-  const soldOut = product({ id: "sold-out", publishedAt: now, availableQuantity: 0, status: "sold_out" });
+  const soldOut = product({ id: "sold-out", publishedAt: now, publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" });
 
   const section = homepageArrivalSection([soldOut, active], 14);
 
@@ -141,10 +142,10 @@ test("New Arrivals section excludes sold-out products from active homepage shopp
 
 test("Almost Gone uses low stock active products without sold-out products or exact-count copy", () => {
   const products = [
-    product({ id: "sold-out", availableQuantity: 0, status: "sold_out" }),
-    product({ id: "low-two", availableQuantity: 2 }),
-    product({ id: "low-one", availableQuantity: 1 }),
-    product({ id: "regular", availableQuantity: 6 })
+    product({ id: "sold-out", publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" }),
+    product({ id: "low-two", availabilityLevel: "almost_gone" }),
+    product({ id: "low-one", availabilityLevel: "almost_gone" }),
+    product({ id: "regular", availabilityLevel: "in_stock" })
   ];
 
   const section = homepageAlmostGoneSection(products);
@@ -156,7 +157,7 @@ test("Almost Gone uses low stock active products without sold-out products or ex
 
 test("Collector Picks uses active product categories without fake best-seller claims", () => {
   const section = homepageCollectorPicksSection([
-    product({ id: "sold-out-premium", category: "Premium Collections", availableQuantity: 0, status: "sold_out" }),
+    product({ id: "sold-out-premium", category: "Premium Collections", publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" }),
     product({ id: "premium", category: "Premium Collections" }),
     product({ id: "tin", category: "Tins" }),
     product({ id: "generic", category: "Other" })
@@ -174,11 +175,15 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.match(client, /HomepageProductSection/);
   assert.match(client, /homepageAlmostGoneSection\(products\)/);
   assert.match(client, /homepageCollectorPicksSection\(products\)/);
+  assert.match(client, /sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections/);
+  assert.match(client, /GameDayGrabs is not affiliated with The Pokemon Company International/);
   for (const category of ["Pokemon Sealed", "Booster Bundles", "Tins", "Premium Collections", "Blisters", "Accessories"]) {
     assert.match(client, new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  assert.match(client, /href=\{`\/shop\/product\/\$\{product\.slug\}`\}/);
+  assert.match(client, /href=\{`\/product\/\$\{product\.slug\}`\}/);
+  assert.match(client, /storefrontCollectionPathForCategory/);
   assert.doesNotMatch(client, /availableQuantity\}.*gdg-product-card|exact stock|stock count/i);
+  assert.match(client, /availabilitySortScore/);
   assert.doesNotMatch(client, /card_number|cardNumber|cvv|payment_method_details|payment_method_data|raw Stripe object/i);
   assert.match(css, /gdg-home-product-row/);
   assert.match(css, /gdg-support-strip/);

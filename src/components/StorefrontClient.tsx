@@ -49,6 +49,11 @@ import {
   selectHomepageHeroProduct,
   type HomepageMerchandisingSection
 } from "@/lib/storefront-home";
+import {
+  storefrontCollectionPath,
+  storefrontCollectionPathForCategory,
+  type StorefrontCollectionDefinition
+} from "@/lib/storefront-collections";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { calculateCartShipping } from "@/lib/shipping";
 import {
@@ -132,12 +137,19 @@ function availabilityFromParam(value: string | null | undefined): StorefrontAvai
 }
 
 function categoryHref(category: string) {
-  return `/shop?category=${categoryToSlug(category)}`;
+  return storefrontCollectionPathForCategory(category) ?? `/shop?category=${categoryToSlug(category)}`;
 }
 
 function money(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "TBD";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+}
+
+function availabilitySortScore(product: Pick<PublicStoreProductDTO, "availabilityLevel" | "status">) {
+  if (isSoldOutProduct(product)) return 0;
+  if (product.availabilityLevel === "almost_gone") return 1;
+  if (product.availabilityLevel === "low_stock") return 2;
+  return 3;
 }
 
 function publicCategoryLabel(category: string) {
@@ -156,7 +168,7 @@ function productIncludedBullets(product: PublicStoreProductDTO, displayCategory:
     productHasSealedSignal(product, displayCategory, conditionLabel)
       ? "Sealed product details are based on the listing information."
       : `${conditionLabel}.`,
-    "Public listing photos and title identify the item offered."
+    "Public listing photos and title identify the collectible card product offered."
   ];
   return Array.from(new Set(bullets));
 }
@@ -323,7 +335,7 @@ function ProductImage({
   showBadges = false,
   newArrivalDays = 14
 }: {
-  product: Pick<PublicStoreProductDTO, "title" | "primaryImageUrl" | "imageUrl" | "images" | "availableQuantity" | "status" | "publishedAt" | "createdAt">;
+  product: Pick<PublicStoreProductDTO, "title" | "primaryImageUrl" | "imageUrl" | "images" | "availabilityLevel" | "status" | "publishedAt" | "createdAt">;
   size?: "card" | "hero" | "thumb" | "detail";
   showBadges?: boolean;
   newArrivalDays?: number;
@@ -381,9 +393,9 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
   const nav = [
     { href: homeHref, label: "Home", external: false },
     { href: "/shop", label: "Shop", external: false },
-    { href: "/shop?category=pokemon", label: "Pokémon", external: false },
+    { href: storefrontCollectionPath("pokemon-sealed-products"), label: "Pokémon", external: false },
     { href: sportsCards.href, label: "Sports Cards", external: sportsCards.external },
-    { href: "/shop?sort=newest", label: "New Arrivals", external: false },
+    { href: storefrontCollectionPath("new-arrivals"), label: "New Arrivals", external: false },
     { href: "/about", label: "About", external: false },
     { href: "/policies", label: "Policies", external: false },
     { href: "/contact", label: "Contact", external: false }
@@ -441,7 +453,7 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
           <Image src={storefrontLogoPath} alt={`${storeName} logo`} width={180} height={44} className="gdg-footer-brand-logo" />
           <span className="sr-only">{storeName}</span>
         </Link>
-        <p>Pokémon and sports card products for collectors, players, and families.</p>
+        <p>Sealed Pokemon TCG products, sports cards, and collectible card products packed carefully for collectors.</p>
         {settings.contactEmail ? (
           <a href={`mailto:${settings.contactEmail}`} className="gdg-footer-email">
             <Mail size={15} />
@@ -454,7 +466,7 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
       <nav aria-label="Store footer navigation">
         <Link href={homeHref}>Home</Link>
         <Link href="/shop">Shop</Link>
-        <Link href="/shop?category=pokemon">Pokémon</Link>
+        <Link href={storefrontCollectionPath("pokemon-sealed-products")}>Pokémon</Link>
         {sportsCards.external ? (
           <a href={sportsCards.href} target="_blank" rel="noopener noreferrer" className="gdg-external-nav">
             Sports Cards
@@ -463,12 +475,13 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
         ) : (
           <Link href={sportsCards.href}>Sports Cards</Link>
         )}
-        <Link href="/shop?sort=newest">New Arrivals</Link>
+        <Link href={storefrontCollectionPath("new-arrivals")}>New Arrivals</Link>
         <Link href="/about">About</Link>
         <Link href="/policies">Policies</Link>
         <Link href="/contact">Contact</Link>
       </nav>
       <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
+      <small>GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</small>
     </footer>
   );
 }
@@ -615,20 +628,20 @@ function ProductCard({
 
   return (
     <article className="gdg-product-card">
-      <Link href={`/shop/product/${product.slug}`} className="gdg-product-media">
+      <Link href={`/product/${product.slug}`} className="gdg-product-media">
         <ProductImage product={product} showBadges newArrivalDays={settings.newArrivalDays} />
       </Link>
       <div className="gdg-product-body">
         <span className="gdg-product-category">{displayCategory}</span>
         <h3>
-          <Link href={`/shop/product/${product.slug}`}>{productTitle}</Link>
+          <Link href={`/product/${product.slug}`}>{productTitle}</Link>
         </h3>
         <strong>{money(product.price)}</strong>
       </div>
       <footer>
         <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
         <div className="gdg-card-actions">
-          <Link href={`/shop/product/${product.slug}`} className="gdg-secondary-button">
+          <Link href={`/product/${product.slug}`} className="gdg-secondary-button">
             View Product
           </Link>
           <button
@@ -751,7 +764,7 @@ export function ProductGrid({
       .sort((left, right) => {
         if (sort === "price-low") return left.price - right.price;
         if (sort === "price-high") return right.price - left.price;
-        if (sort === "stock") return right.availableQuantity - left.availableQuantity;
+        if (sort === "stock") return availabilitySortScore(right) - availabilitySortScore(left);
         return 0;
       });
   }, [availability, category, products, query, sort]);
@@ -784,12 +797,12 @@ export function ProductGrid({
             <div className="gdg-hero-copy">
               <p className="gdg-overline">Pokémon & Sports Cards</p>
               <h1>Collect. Play. Invest.</h1>
-              <p>Premium Pokémon and sports card products for collectors, players, and fans.</p>
+              <p>Shop sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections, and collectible card products packed carefully for collectors.</p>
               <div className="gdg-hero-actions">
                 <Link href="/shop" className="gdg-primary-button">
                   Shop Now
                 </Link>
-                <Link href="/shop?sort=newest" className="gdg-secondary-button">
+                <Link href={storefrontCollectionPath("new-arrivals")} className="gdg-secondary-button">
                   New Arrivals
                 </Link>
               </div>
@@ -803,7 +816,7 @@ export function ProductGrid({
                   <small>{heroCategory}</small>
                   <strong>{heroProductTitle}</strong>
                   <b>{money(heroProduct.price)}</b>
-                  <Link href={`/shop/product/${heroProduct.slug}`} className="gdg-secondary-button compact">
+                  <Link href={`/product/${heroProduct.slug}`} className="gdg-secondary-button compact">
                     View Product
                   </Link>
                 </div>
@@ -811,7 +824,7 @@ export function ProductGrid({
             </div>
             <div className="gdg-hero-stage" aria-label="Featured collectible products">
               {heroProduct ? (
-                <Link href={`/shop/product/${heroProduct.slug}`} className="gdg-hero-product-link" aria-label={`View ${heroProductTitle}`}>
+                <Link href={`/product/${heroProduct.slug}`} className="gdg-hero-product-link" aria-label={`View ${heroProductTitle}`}>
                   <ProductImage product={heroProduct} size="hero" showBadges newArrivalDays={settings.newArrivalDays} />
                   <span className="gdg-hero-view-cue">
                     View product
@@ -920,8 +933,9 @@ export function ProductGrid({
         <section className="gdg-shop-area" id="shop">
           <aside className="gdg-shop-filters">
             <div>
-              <h2>Shop All Products</h2>
-              <p>Showing {visibleProducts.length} of {products.length} active listings.</p>
+              <h1>Shop Pokemon TCG products</h1>
+              <p>Browse sealed Pokemon products, booster bundles, tins, blisters, premium collections, and collectible card products.</p>
+              <p>Showing {visibleProducts.length} of {products.length} public listings.</p>
             </div>
             <label>
               Search
@@ -1005,6 +1019,91 @@ export function ProductGrid({
           </div>
         </section>
       )}
+    </>
+  );
+}
+
+export function StorefrontCollectionLanding({
+  collection,
+  products,
+  relatedCollections,
+  settings
+}: {
+  collection: StorefrontCollectionDefinition;
+  products: PublicStoreProductDTO[];
+  relatedCollections: StorefrontCollectionDefinition[];
+  settings: StorefrontSettingsDTO;
+}) {
+  const [notice, setNotice] = useState("");
+
+  function onAdded(product: PublicStoreProductDTO) {
+    setNotice(`${cleanStorefrontTitle(product.title)} added. ${settings.checkoutConfigured ? "Open cart to checkout." : "Open cart to request an invoice."}`);
+  }
+
+  return (
+    <>
+      <section className="gdg-collection-hero">
+        <nav className="gdg-breadcrumb" aria-label="Breadcrumb">
+          <Link href="/shop">Home</Link>
+          <ChevronRight size={13} />
+          <Link href="/shop">Shop</Link>
+          <ChevronRight size={13} />
+          <span>{collection.shortTitle}</span>
+        </nav>
+        <div className="gdg-collection-hero-grid">
+          <div>
+            <p className="gdg-overline">GameDayGrabs collection</p>
+            <h1>{collection.title}</h1>
+            <p>{collection.intro}</p>
+            <p>{collection.detail}</p>
+          </div>
+          <aside className="gdg-collection-note" aria-label="Collection shopping notes">
+            <strong>Before checkout</strong>
+            <span>Availability can change quickly.</span>
+            <span>Items are confirmed before payment.</span>
+            <span>Internal inventory quantity is not shown publicly.</span>
+          </aside>
+        </div>
+        {relatedCollections.length ? (
+          <div className="gdg-collection-links" aria-label="Related collections">
+            <span>Related collections</span>
+            {relatedCollections.map((related) => (
+              <Link href={storefrontCollectionPath(related.slug)} key={related.slug}>
+                {related.shortTitle}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </section>
+      {notice ? (
+        <p className="gdg-toast">
+          <Check size={16} /> {notice}
+        </p>
+      ) : null}
+      <section className="gdg-section gdg-collection-products">
+        <div className="gdg-section-header">
+          <div>
+            <h2>{collection.shortTitle} products</h2>
+            <p>Product cards link to canonical product pages. Sold-out items are clearly labeled when included.</p>
+          </div>
+          <Link href="/shop">Shop all</Link>
+        </div>
+        {products.length ? (
+          <div className="gdg-product-grid">
+            {products.map((product) => (
+              <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />
+            ))}
+          </div>
+        ) : (
+          <div className="gdg-empty">
+            <h3>No matching products right now</h3>
+            <p>Check back as new public listings are added, or browse all available products.</p>
+            <Link href="/shop" className="gdg-primary-button">
+              Shop all products
+            </Link>
+          </div>
+        )}
+      </section>
     </>
   );
 }
@@ -1207,6 +1306,7 @@ export function ProductDetail({
             <li>Availability: {availabilityLabel}.</li>
             {purchaseLimitLabel ? <li>{purchaseLimitLabel}.</li> : null}
             <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request Invoice mode is active until online checkout is configured."}</li>
+            <li>Local pickup appears at checkout when available for this item.</li>
           </ul>
         </article>
         <article>
@@ -1257,7 +1357,7 @@ export function ProductDetail({
 }
 
 function cartStockState(product: PublicStoreProductDTO & { requestedQuantity: number }) {
-  if (isSoldOutProduct(product) || product.availableQuantity <= 0) {
+  if (isSoldOutProduct(product) || product.publicMaxQuantity <= 0) {
     return { label: "Sold Out", tone: "out", detail: "Remove this sold-out item to continue checkout." };
   }
   const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
@@ -1266,17 +1366,17 @@ function cartStockState(product: PublicStoreProductDTO & { requestedQuantity: nu
     return { label: purchaseLimit ? "Purchase Limit" : "Stock Changed", tone: "warn", detail: "Update quantity before checkout." };
   }
   const purchaseLimit = storefrontPurchaseLimitLabel(product);
-  if (product.availableQuantity <= 2) {
+  if (product.availabilityLevel === "almost_gone") {
     return { label: "Almost gone", tone: "warn", detail: purchaseLimit ?? "Almost gone." };
   }
-  if (product.availableQuantity <= 5) {
+  if (product.availabilityLevel === "low_stock") {
     return { label: "Low Stock", tone: "limited", detail: purchaseLimit ?? "Small batch available." };
   }
   return { label: "In Stock", tone: "in", detail: purchaseLimit ?? "Ready for secure checkout." };
 }
 
 function cartHasBlockingStockIssue(products: Array<PublicStoreProductDTO & { requestedQuantity: number }>) {
-  return products.some((product) => isSoldOutProduct(product) || product.availableQuantity <= 0 || product.requestedQuantity > storefrontEffectiveMaxQuantity(product));
+  return products.some((product) => isSoldOutProduct(product) || product.publicMaxQuantity <= 0 || product.requestedQuantity > storefrontEffectiveMaxQuantity(product));
 }
 
 export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
@@ -1333,8 +1433,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
       : 0;
   const isStripeCheckout = settings.checkoutConfigured;
   const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
-  const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.availableQuantity <= 0);
-  const overQuantityProducts = products.filter((product) => product.requestedQuantity > storefrontEffectiveMaxQuantity(product) && product.availableQuantity > 0);
+  const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.publicMaxQuantity <= 0);
+  const overQuantityProducts = products.filter((product) => product.requestedQuantity > storefrontEffectiveMaxQuantity(product) && product.publicMaxQuantity > 0);
   const checkoutDisabled = busy || hasBlockingStockIssue || (!isStripeCheckout && (!customerEmail.trim() || !customerName.trim()));
   const successMessage = message.toLowerCase().includes("received");
   const cartIsLoading = items.length > 0 && !products.length && !message;
@@ -1507,7 +1607,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                           <Minus size={14} />
                         </button>
                         <b>{product.requestedQuantity}</b>
-                        <button type="button" disabled={product.availableQuantity <= 0 || product.requestedQuantity >= maxQuantity} onClick={() => updateQuantity(product.id, product.requestedQuantity + 1)} aria-label={`Increase ${title} quantity`}>
+                        <button type="button" disabled={product.publicMaxQuantity <= 0 || product.requestedQuantity >= maxQuantity} onClick={() => updateQuantity(product.id, product.requestedQuantity + 1)} aria-label={`Increase ${title} quantity`}>
                           <Plus size={14} />
                         </button>
                       </div>
@@ -1655,10 +1755,10 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
           <h2>Your cart is waiting for something awesome.</h2>
           <p>Browse Pok&eacute;mon sealed products, sports cards, and collectibles.</p>
           <div className="gdg-card-actions">
-            <Link href="/shop?category=pokemon" className="gdg-primary-button">
+            <Link href={storefrontCollectionPath("pokemon-sealed-products")} className="gdg-primary-button">
               Shop Pok&eacute;mon
             </Link>
-            <Link href="/shop?sort=newest" className="gdg-secondary-button">
+            <Link href={storefrontCollectionPath("new-arrivals")} className="gdg-secondary-button">
               View New Arrivals
             </Link>
           </div>

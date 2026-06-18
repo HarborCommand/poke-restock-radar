@@ -12,7 +12,7 @@ import {
 test("sold out products are detectable for filters and actions", () => {
   const soldOutPublished = {
     status: "sold_out" as const,
-    availableQuantity: 0,
+    availabilityLevel: "sold_out" as const,
     publishedAt: "2026-06-01T10:00:00.000Z",
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-01T10:00:00.000Z"
@@ -31,7 +31,7 @@ test("sold out products are detectable for filters and actions", () => {
 test("sold-out public product disables add-to-cart and request invoice actions", () => {
   const soldOut = {
     status: "sold_out" as const,
-    availableQuantity: 0,
+    availabilityLevel: "sold_out" as const,
     publishedAt: "2026-06-01T10:00:00.000Z",
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-01T10:00:00.000Z"
@@ -46,7 +46,7 @@ test("sold-out public product disables add-to-cart and request invoice actions",
 test("in-stock availability excludes sold-out products", () => {
   const activeProduct = {
     status: "active" as const,
-    availableQuantity: 4,
+    availabilityLevel: "low_stock" as const,
     publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
@@ -54,7 +54,7 @@ test("in-stock availability excludes sold-out products", () => {
 
   const soldOut = {
     status: "sold_out" as const,
-    availableQuantity: 0,
+    availabilityLevel: "sold_out" as const,
     publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
@@ -67,7 +67,7 @@ test("in-stock availability excludes sold-out products", () => {
 test("active in-stock products stay in-stock and are not disabled", () => {
   const activeProduct = {
     status: "active" as const,
-    availableQuantity: 7,
+    availabilityLevel: "in_stock" as const,
     publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
@@ -85,7 +85,7 @@ test("new arrival badges appear for recently published public products", () => {
 
   const newArrivalProduct = {
     status: "active" as const,
-    availableQuantity: 12,
+    availabilityLevel: "in_stock" as const,
     publishedAt,
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-06-05T10:00:00.000Z"
@@ -100,7 +100,7 @@ test("new arrival badges appear for recently published public products", () => {
 test("low quantity active products show LOW STOCK badge", () => {
   const lowQuantityProduct = {
     status: "active" as const,
-    availableQuantity: 2,
+    availabilityLevel: "almost_gone" as const,
     publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
@@ -112,7 +112,7 @@ test("low quantity active products show LOW STOCK badge", () => {
 test("limited quantity active products show LIMITED STOCK badge", () => {
   const limitedQuantityProduct = {
     status: "active" as const,
-    availableQuantity: 4,
+    availabilityLevel: "low_stock" as const,
     publishedAt: "2026-01-02T10:00:00.000Z",
     createdAt: "2026-01-02T10:00:00.000Z",
     updatedAt: "2026-01-02T10:00:00.000Z"
@@ -125,7 +125,7 @@ test("sold out with recent creation keeps SOLD OUT as priority and may include N
   const now = new Date();
   const recentSoldOut = {
     status: "sold_out" as const,
-    availableQuantity: 0,
+    availabilityLevel: "sold_out" as const,
     publishedAt: now.toISOString(),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString()

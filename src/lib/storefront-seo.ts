@@ -49,15 +49,15 @@ export function storefrontProductTitle(product: Pick<SeoProduct, "title">) {
   return `${cleanStorefrontTitle(product.title)} | ${GAMEDAYGRABS_SEO_SITE_NAME}`;
 }
 
-export function storefrontProductAvailabilityText(product: Pick<SeoProduct, "availableQuantity" | "status">) {
+export function storefrontProductAvailabilityText(product: Pick<SeoProduct, "availabilityLevel" | "status">) {
   return isSoldOutProduct(product) ? "Out of stock" : "In stock";
 }
 
-export function storefrontProductSchemaAvailability(product: Pick<SeoProduct, "availableQuantity" | "status">) {
+export function storefrontProductSchemaAvailability(product: Pick<SeoProduct, "availabilityLevel" | "status">) {
   return isSoldOutProduct(product) ? "https://schema.org/OutOfStock" : "https://schema.org/InStock";
 }
 
-export function storefrontProductMetaDescription(product: Pick<SeoProduct, "title" | "description" | "category" | "price" | "availableQuantity" | "status">) {
+export function storefrontProductMetaDescription(product: Pick<SeoProduct, "title" | "description" | "category" | "price" | "availabilityLevel" | "status">) {
   const title = cleanStorefrontTitle(product.title);
   const description = compactText(product.description);
   const prefix = `Shop ${title} from ${GAMEDAYGRABS_SEO_STORE_NAME}. ${product.category}. ${moneyForMeta(product.price)}. ${storefrontProductAvailabilityText(product)}.`;

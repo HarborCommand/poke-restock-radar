@@ -26,7 +26,8 @@ function product(overrides: Partial<PublicStoreProductDTO> = {}): PublicStorePro
     manufacturer: "The Pokemon Company",
     sku: "GDG-FEED-1",
     upc: "123456789012",
-    availableQuantity: 4,
+    publicMaxQuantity: 4,
+    availabilityLevel: "low_stock",
     maxQuantityPerOrder: null,
     status: "active",
     localPickupAvailable: true,
@@ -67,7 +68,7 @@ test("Google Merchant product feed renders public active storefront products", (
 
 test("Google Merchant product feed excludes unavailable and image-missing products by default", () => {
   const active = product({ slug: "active-product" });
-  const soldOut = product({ slug: "sold-out-product", status: "sold_out", availableQuantity: 0 });
+  const soldOut = product({ slug: "sold-out-product", status: "sold_out", publicMaxQuantity: 0, availabilityLevel: "sold_out" });
   const noImage = product({ slug: "missing-image-product", imageUrl: null, primaryImageUrl: null, images: [] });
 
   const items = storefrontProductFeedItems([active, soldOut, noImage]);
@@ -81,7 +82,7 @@ test("Google Merchant product feed excludes unavailable and image-missing produc
 
 test("Google Merchant product feed can render sold-out availability only when explicitly allowed", () => {
   const xml = storefrontProductFeedXml(
-    [product({ slug: "sold-out-product", status: "sold_out", availableQuantity: 0 })],
+    [product({ slug: "sold-out-product", status: "sold_out", publicMaxQuantity: 0, availabilityLevel: "sold_out" })],
     { includeUnavailable: true }
   );
 

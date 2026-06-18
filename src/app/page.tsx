@@ -1,7 +1,12 @@
 import { headers } from "next/headers";
 import { RadarApp } from "@/components/RadarApp";
 import { StorefrontHomeView } from "@/components/StorefrontServerViews";
-import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_WWW_DOMAIN, isGameDayGrabsHost } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, isGameDayGrabsHost } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
+
+const storefrontHomeTitle = "GameDayGrabs LLC | Sealed Pokemon TCG & Collectible Card Products";
+const storefrontHomeDescription =
+  "Shop sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections, and collectible card products packed carefully for collectors.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,15 +15,24 @@ export async function generateMetadata() {
   const host = (await headers()).get("host");
   if (isGameDayGrabsHost(host)) {
     return {
-      metadataBase: new URL(`https://${GAMEDAYGRABS_WWW_DOMAIN}`),
-      title: "GameDayGrabs LLC | Pokémon & Sports Card Collectibles",
-      description: "Family-owned online card shop specializing in Pokémon sealed products, sports cards, and collectibles.",
+      metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
+      title: storefrontHomeTitle,
+      description: storefrontHomeDescription,
+      alternates: {
+        canonical: GAMEDAYGRABS_CANONICAL_ORIGIN
+      },
       openGraph: {
-        title: "GameDayGrabs LLC | Pokémon & Sports Card Collectibles",
-        description: "Family-owned online card shop specializing in Pokémon sealed products, sports cards, and collectibles.",
-        url: `https://${GAMEDAYGRABS_WWW_DOMAIN}`,
+        title: storefrontHomeTitle,
+        description: storefrontHomeDescription,
+        url: GAMEDAYGRABS_CANONICAL_ORIGIN,
         siteName: "GameDayGrabs LLC",
-        images: ["/brand/gamedaygrabs-icon.png?v=gdg-icons-v1"]
+        images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: storefrontHomeTitle,
+        description: storefrontHomeDescription,
+        images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
       },
       other: {
         "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
@@ -27,7 +41,7 @@ export async function generateMetadata() {
   }
   return {
     title: "Poke Restock Radar",
-    description: "Private Pokémon TCG restock, release, inventory, and alert radar."
+    description: "Private Pokemon TCG restock, release, inventory, and alert radar."
   };
 }
 
