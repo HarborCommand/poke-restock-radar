@@ -1,4 +1,5 @@
 import { emailProviderConfig, type EmailProviderKind } from "@/lib/email-provider";
+import { shippingRateProviderConfig } from "@/lib/shipping-rate-provider";
 
 export type ProviderHealthStatus = "configured" | "optional_not_configured" | "misconfigured" | "disabled";
 
@@ -77,6 +78,16 @@ export type EnvironmentReport = {
       webhookReady: boolean;
       missing: string[];
     };
+    shippingRates: ProviderHealthMetadata & {
+      configured: boolean;
+      calculatedUspsEnabled: boolean;
+      provider: "shippo" | "none";
+      shippoConfigured: boolean;
+      shipFromZipConfigured: boolean;
+      shipFromConfigured: boolean;
+      fallbackEnabled: boolean;
+      quoteTtlMinutes: number;
+    };
     blob: ProviderHealthMetadata & {
       configured: boolean;
       readWriteTokenConfigured: boolean;
@@ -142,6 +153,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const smsEnvVars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"];
   const searchEnvVars = ["PRODUCT_SEARCH_PROVIDER", "PRODUCT_SEARCH_API_URL", "PRODUCT_SEARCH_API_KEY"];
   const stripeEnvVars = ["STRIPE_CHECKOUT_ENABLED", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STORE_BASE_URL"];
+  const shippingRateProvider = shippingRateProviderConfig();
   const blobEnvVars = ["BLOB_READ_WRITE_TOKEN"];
   const marketEnvVars = [
     "TCGCSV_ENABLED",
@@ -208,6 +220,12 @@ export function getEnvironmentReport(): EnvironmentReport {
         ? "misconfigured"
         : "disabled";
   const storeBaseUrlHealthStatus: ProviderHealthStatus = storeBaseUrlConfigured ? "configured" : "optional_not_configured";
+  const shippingRateHealthStatus: ProviderHealthStatus =
+    shippingRateProvider.calculatedUspsEnabled && shippingRateProvider.shippoConfigured
+      ? "configured"
+      : shippingRateProvider.calculatedUspsEnabled
+        ? "misconfigured"
+        : "disabled";
   const blobHealthStatus = optionalProviderHealth(blobReadWriteTokenConfigured, anyEnv(blobEnvVars));
   const marketPartiallyConfigured =
     anyEnv(marketEnvVars.filter((name) => name !== "TCGCSV_ENABLED")) ||
@@ -267,6 +285,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   }
   if (stripeHealthStatus === "misconfigured") {
     warnings.push(`Storefront Stripe Checkout is disabled until ${stripeMissing.join(", ")} ${stripeMissing.length === 1 ? "is" : "are"} set.`);
+  }
+  if (shippingRateHealthStatus === "misconfigured") {
+    warnings.push("Calculated USPS shipping is enabled but Shippo or ship-from env vars are incomplete. Disable CALCULATED_USPS_SHIPPING_ENABLED or finish Shippo setup.");
   }
   if (marketHealthStatus === "misconfigured") {
     warnings.push("Market pricing providers are partially configured. Complete the selected provider env vars or leave automatic pricing disabled.");
@@ -391,6 +412,24 @@ export function getEnvironmentReport(): EnvironmentReport {
         checkoutSessionReady: stripeCheckoutEnabled && stripePublishableConfigured && stripeSecretConfigured,
         webhookReady: stripeWebhookConfigured,
         missing: stripeMissing
+      },
+      shippingRates: {
+        configured: shippingRateHealthStatus === "configured",
+        healthStatus: shippingRateHealthStatus,
+        envVars: shippingRateProvider.envVars,
+        message:
+          shippingRateHealthStatus === "configured"
+            ? "Calculated USPS shipping is enabled through Shippo."
+            : shippingRateHealthStatus === "misconfigured"
+              ? "Calculated USPS shipping is enabled but Shippo or ship-from configuration is incomplete."
+              : "Calculated USPS shipping is disabled; internal smart shipping fallback remains available.",
+        calculatedUspsEnabled: shippingRateProvider.calculatedUspsEnabled,
+        provider: shippingRateProvider.provider,
+        shippoConfigured: shippingRateProvider.shippoConfigured,
+        shipFromZipConfigured: shippingRateProvider.shipFromZipConfigured,
+        shipFromConfigured: shippingRateProvider.shipFromConfigured,
+        fallbackEnabled: shippingRateProvider.fallbackEnabled,
+        quoteTtlMinutes: shippingRateProvider.quoteTtlMinutes
       },
       blob: {
         configured: blobReadWriteTokenConfigured,

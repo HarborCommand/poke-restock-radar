@@ -208,8 +208,20 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     shippingMethodLabel: null,
     shippingRateSource: null,
     shippingPackageWeightOz: null,
+    shippingPackageLengthIn: null,
+    shippingPackageWidthIn: null,
+    shippingPackageHeightIn: null,
     shippingPackageProfile: null,
     shippingWarnings: [],
+    shippingQuoteId: null,
+    shippingQuoteProvider: null,
+    shippingCarrier: null,
+    shippingService: null,
+    shippingQuotedAmountCents: null,
+    shippingQuotedZip: null,
+    shippingQuoteFallbackUsed: false,
+    shippingQuoteExpiresAt: null,
+    shippingZipMismatchReview: false,
     tax: 0,
     total: 100,
     stripeFeeEstimate: 5,
@@ -1074,7 +1086,10 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /cartHasBlockingStockIssue/);
   assert.match(client, /return products\.some\(\(product\) => isSoldOutProduct\(product\) \|\| product\.publicMaxQuantity <= 0 \|\| product\.requestedQuantity > storefrontEffectiveMaxQuantity\(product\)\)/);
   assert.match(client, /checkoutDisabled/);
-  assert.match(client, /const checkoutDisabled = busy \|\| hasBlockingStockIssue/);
+  assert.match(client, /quoteRequired && \(!shippingQuote \|\| quoteExpired\)/);
+  assert.match(client, /quoteBusy/);
+  assert.match(client, /Enter ZIP code to calculate USPS shipping\./);
+  assert.match(client, /shippingQuoteToken/);
   assert.match(client, /setProducts\(products\.filter\(\(product\) => !blockedIds\.has\(product\.id\)\)\)/);
   assert.match(client, /disabled=\{product\.publicMaxQuantity <= 0 \|\| product\.requestedQuantity >= maxQuantity\}/);
   assert.match(client, /\/api\/storefront\/checkout\/session/);
@@ -1695,7 +1710,10 @@ test("admin shipping hub is a top-level navigation tab with overview sections", 
     "Using Fallback Shipping",
     "Average Shipping Charged",
     "Shipping Revenue",
-    "Local Pickup"
+    "Local Pickup",
+    "Calculated USPS",
+    "Shippo configured",
+    "Fallback shipping"
   ]) {
     assert.match(shippingHub, new RegExp(label), `missing shipping overview card ${label}`);
   }
@@ -1714,6 +1732,9 @@ test("shipping hub keeps carrier work separate from local pickup and archived or
   assert.match(shippingHub, /Add Tracking/);
   assert.match(shippingHub, /Mark Shipped/);
   assert.match(shippingHub, /Enter carrier and tracking in order detail first\./);
+  assert.match(shippingHub, /formatShippingCarrierService\(order\)/);
+  assert.match(shippingHub, /Quoted ZIP/);
+  assert.match(shippingHub, /shippingQuoteStatusBadges\(order\)/);
 });
 
 test("shipping hub tracking section shows shipped carrier orders and copy actions", () => {
@@ -1750,8 +1771,34 @@ test("shipping hub surfaces missing shipping data and merchant readiness", () =>
   assert.match(shippingHub, /Products missing packed weight/);
   assert.match(shippingHub, /Products missing dimensions/);
   assert.match(shippingHub, /Ready for Standard Shipping/);
+  assert.match(shippingHub, /dashboard\.health\?\.providers\.shippingRates\.calculatedUspsEnabled/);
+  assert.match(shippingHub, /dashboard\.health\?\.providers\.shippingRates\.shippoConfigured/);
+  assert.match(shippingHub, /dashboard\.health\?\.providers\.shippingRates\.fallbackEnabled/);
   assert.match(css, /\.shipping-missing-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(320px, 1fr\) minmax\(280px, 0\.8fr\) auto;/);
   assert.match(css, /\.shipping-missing-actions\s*\{[\s\S]*justify-content:\s*flex-end;/);
+});
+
+test("shipping hub and order detail show calculated quote review fields without provider payloads", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const env = fs.readFileSync(new URL("../src/lib/env.ts", import.meta.url), "utf8");
+  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
+  const detail = app.slice(app.indexOf("function StorefrontOrderDetailsModal"), app.indexOf("function CancelRefundModal"));
+  const healthPanel = app.slice(app.indexOf("function AdminHealthPanel"), app.indexOf("function NotificationSettingsPanel"));
+
+  assert.match(detail, /Carrier \/ service/);
+  assert.match(detail, /Quoted amount/);
+  assert.match(detail, /Quoted ZIP/);
+  assert.match(detail, /Rate provider/);
+  assert.match(detail, /Fallback used/);
+  assert.match(detail, /ZIP review/);
+  assert.match(detail, /Shipping ZIP differs from quoted ZIP/);
+  assert.match(app, /Fallback shipping used/);
+  assert.match(app, /ZIP review needed/);
+  assert.match(healthPanel, /Calculated USPS/);
+  assert.match(healthPanel, /health\.providers\.shippingRates\.provider/);
+  assert.match(env, /shippingRates:/);
+  assert.match(types, /shippingRates: ProviderHealthMetadataDTO/);
+  assert.doesNotMatch(detail + healthPanel, /shippingQuoteRateProviderRef|shippingQuoteShipmentProviderRef|SHIPPO_API_TOKEN|DATABASE_URL|STRIPE_SECRET_KEY/);
 });
 
 test("shipping profiles are database-backed with an additive migration", () => {

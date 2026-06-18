@@ -907,7 +907,19 @@ export const storefrontCheckoutSchema = z.object({
   items: z.array(storefrontCartItemSchema).min(1).max(25),
   fulfillmentMethod: z.enum(["shipping", "pickup"]).default("shipping"),
   customerEmail: z.string().trim().email().optional(),
-  customerName: optionalTrimmed
+  customerName: optionalTrimmed,
+  shippingQuoteToken: optionalTrimmed
+});
+
+export const storefrontShippingQuoteSchema = z.object({
+  items: z.array(storefrontCartItemSchema).min(1).max(25),
+  destinationZip: z.string().trim().regex(/^\d{5}$/, "Enter a valid 5-digit ZIP code."),
+  state: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2}$/, "Use a two-letter state code.")
+    .optional(),
+  country: z.enum(["US"]).default("US")
 });
 
 export const storefrontInvoiceRequestSchema = storefrontCheckoutSchema.extend({

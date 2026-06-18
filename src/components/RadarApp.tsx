@@ -609,17 +609,28 @@ function formatShippingPackageProfile(order: StorefrontOrderDTO) {
 }
 
 function formatShippingPackageDimensions(order: StorefrontOrderDTO) {
-  const dimensions = order as StorefrontOrderDTO & {
-    shippingPackageLengthIn?: number | null;
-    shippingPackageWidthIn?: number | null;
-    shippingPackageHeightIn?: number | null;
-  };
-  const length = dimensions.shippingPackageLengthIn;
-  const width = dimensions.shippingPackageWidthIn;
-  const height = dimensions.shippingPackageHeightIn;
+  const length = order.shippingPackageLengthIn;
+  const width = order.shippingPackageWidthIn;
+  const height = order.shippingPackageHeightIn;
   return typeof length === "number" && typeof width === "number" && typeof height === "number"
     ? `${length} x ${width} x ${height} in`
     : "Not captured";
+}
+
+function formatShippingCarrierService(order: StorefrontOrderDTO) {
+  return [order.shippingCarrier, order.shippingService].filter(Boolean).join(" - ") || order.shippingMethodLabel || "Not captured";
+}
+
+function formatShippingQuotedAmount(order: StorefrontOrderDTO) {
+  return typeof order.shippingQuotedAmountCents === "number" ? money(order.shippingQuotedAmountCents / 100) : "Not captured";
+}
+
+function shippingQuoteStatusBadges(order: StorefrontOrderDTO) {
+  const badges: Array<{ label: string; tone: "good" | "watch" | "bad" | "neutral" }> = [];
+  if (order.shippingQuoteProvider) badges.push({ label: order.shippingQuoteProvider === "shippo" ? "Shippo quote" : "Fallback quote", tone: order.shippingQuoteProvider === "shippo" ? "good" : "watch" });
+  if (order.shippingQuoteFallbackUsed) badges.push({ label: "Fallback shipping used", tone: "watch" });
+  if (order.shippingZipMismatchReview) badges.push({ label: "ZIP review needed", tone: "bad" });
+  return badges;
 }
 
 function storefrontOrderShippingProfitLoss(order: StorefrontOrderDTO) {
@@ -7225,11 +7236,20 @@ function ShippingHubPanel({
                       </div>
                       <p>{shippingHubOrderItems(order)}</p>
                       <div className="shipping-work-meta">
-                        <span>{order.shippingMethodLabel || "Shipping method not captured"}</span>
+                        <span>{formatShippingCarrierService(order)}</span>
                         <span>{money(order.shippingCharged)} charged</span>
                         <span>{formatShippingPackageWeight(order)}</span>
                         <span>{formatShippingPackageProfile(order)}</span>
+                        <span>{formatShippingPackageDimensions(order)}</span>
+                        {order.shippingQuotedZip ? <span>Quoted ZIP {order.shippingQuotedZip}</span> : null}
                       </div>
+                      {shippingQuoteStatusBadges(order).length ? (
+                        <div className="shipping-quote-badge-row">
+                          {shippingQuoteStatusBadges(order).map((badge) => (
+                            <span className={`chip compact-chip ${badge.tone}`} key={badge.label}>{badge.label}</span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="storefront-order-status-stack">
                       <span className={`chip compact-chip storefront-order-timer-chip ${timerState.tone}`}>{timerState.shortLabel}</span>
@@ -7493,6 +7513,18 @@ function ShippingHubPanel({
             <article>
               <span>Ready for Standard Shipping</span>
               <strong>{readyForStandardShipping.length}</strong>
+            </article>
+            <article>
+              <span>Calculated USPS</span>
+              <strong>{dashboard.health?.providers.shippingRates.calculatedUspsEnabled ? "Enabled" : "Disabled"}</strong>
+            </article>
+            <article>
+              <span>Shippo configured</span>
+              <strong>{dashboard.health?.providers.shippingRates.shippoConfigured ? "Yes" : "No"}</strong>
+            </article>
+            <article>
+              <span>Fallback shipping</span>
+              <strong>{dashboard.health?.providers.shippingRates.fallbackEnabled ? "Enabled" : "Disabled"}</strong>
             </article>
           </div>
         </section>
@@ -8625,10 +8657,28 @@ function StorefrontOrderDetailsModal({
               <DetailStat label={localPickupOrder ? "Fulfillment method" : "Method"} value={order.shippingMethodLabel || "Not captured"} />
               <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
               {localPickupOrder ? <DetailStat label="Tracking" value="Not required" tone="good" /> : null}
+              {!localPickupOrder ? <DetailStat label="Carrier / service" value={formatShippingCarrierService(order)} /> : null}
+              {!localPickupOrder ? <DetailStat label="Quoted amount" value={formatShippingQuotedAmount(order)} /> : null}
+              {!localPickupOrder ? <DetailStat label="Quoted ZIP" value={order.shippingQuotedZip || "Not captured"} /> : null}
+              {!localPickupOrder ? <DetailStat label="Rate provider" value={order.shippingQuoteProvider ? formatStatus(order.shippingQuoteProvider) : "Not captured"} /> : null}
               <DetailStat label="Package profile" value={formatShippingPackageProfile(order)} />
               <DetailStat label="Package weight" value={formatShippingPackageWeight(order)} />
               <DetailStat label="Package dimensions" value={formatShippingPackageDimensions(order)} />
               <DetailStat label="Shipping warnings" value={order.shippingWarnings.length ? order.shippingWarnings.join(" ") : "None"} tone={order.shippingWarnings.length ? "bad" : "good"} />
+              {!localPickupOrder ? (
+                <DetailStat
+                  label="Fallback used"
+                  value={order.shippingQuoteFallbackUsed ? "Yes" : "No"}
+                  tone={order.shippingQuoteFallbackUsed ? "bad" : "neutral"}
+                />
+              ) : null}
+              {!localPickupOrder ? (
+                <DetailStat
+                  label="ZIP review"
+                  value={order.shippingZipMismatchReview ? "Shipping ZIP differs from quoted ZIP" : "No review flag"}
+                  tone={order.shippingZipMismatchReview ? "bad" : "good"}
+                />
+              ) : null}
             </div>
           </section>
 
@@ -20699,6 +20749,19 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
           } ${configuredText(
             health.providers.upc.searchFallbackConfigured
           ).toLowerCase()} - ${health.providers.upc.searchFallbackMessage}`}
+        />
+        <HealthCard
+          icon={Navigation}
+          title="Calculated USPS"
+          value={providerHealthLabel(health.providers.shippingRates.healthStatus)}
+          tone={providerHealthTone(health.providers.shippingRates.healthStatus)}
+          detail={`Provider ${health.providers.shippingRates.provider}, Shippo ${configuredText(
+            health.providers.shippingRates.shippoConfigured
+          ).toLowerCase()}, ship-from ZIP ${configuredText(
+            health.providers.shippingRates.shipFromZipConfigured
+          ).toLowerCase()}, fallback ${configuredText(
+            health.providers.shippingRates.fallbackEnabled
+          ).toLowerCase()}, TTL ${health.providers.shippingRates.quoteTtlMinutes} minutes - ${health.providers.shippingRates.message}`}
         />
         <HealthCard
           icon={Upload}

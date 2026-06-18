@@ -264,6 +264,12 @@ export type StorefrontSettingsDTO = {
   freeShippingThreshold: number | null;
   socialLinks: string[];
   checkoutConfigured: boolean;
+  calculatedUspsShipping: {
+    enabled: boolean;
+    provider: "shippo" | "none";
+    shippoConfigured: boolean;
+    fallbackEnabled: boolean;
+  };
 };
 
 export type ShippingProfileDTO = {
@@ -370,8 +376,20 @@ export type StorefrontOrderDTO = {
   shippingMethodLabel: string | null;
   shippingRateSource: string | null;
   shippingPackageWeightOz: number | null;
+  shippingPackageLengthIn: number | null;
+  shippingPackageWidthIn: number | null;
+  shippingPackageHeightIn: number | null;
   shippingPackageProfile: string | null;
   shippingWarnings: string[];
+  shippingQuoteId: string | null;
+  shippingQuoteProvider: string | null;
+  shippingCarrier: string | null;
+  shippingService: string | null;
+  shippingQuotedAmountCents: number | null;
+  shippingQuotedZip: string | null;
+  shippingQuoteFallbackUsed: boolean;
+  shippingQuoteExpiresAt: string | null;
+  shippingZipMismatchReview: boolean;
   tax: number;
   total: number;
   stripeFeeEstimate: number;
@@ -1291,6 +1309,16 @@ export type AppHealthDTO = {
       checkoutSessionReady: boolean;
       webhookReady: boolean;
       missing: string[];
+    };
+    shippingRates: ProviderHealthMetadataDTO & {
+      configured: boolean;
+      calculatedUspsEnabled: boolean;
+      provider: "shippo" | "none";
+      shippoConfigured: boolean;
+      shipFromZipConfigured: boolean;
+      shipFromConfigured: boolean;
+      fallbackEnabled: boolean;
+      quoteTtlMinutes: number;
     };
     blob: ProviderHealthMetadataDTO & {
       configured: boolean;

@@ -49,6 +49,7 @@ model User {
   storefrontOrders         StorefrontOrder[]
   storefrontCustomers      StorefrontCustomer[]
   shippingProfiles         ShippingProfile[]
+  shippingQuotes           ShippingQuote[]
 }
 
 model PasswordResetToken {
@@ -1009,25 +1010,25 @@ model StorefrontSettings {
 }
 
 model ShippingProfile {
-  id                         String   @id @default(cuid())
-  userId                     String?
-  name                       String
-  key                        String   @unique
-  packageType                String
-  defaultWeightOz            Float
-  packageLengthIn            Float?
-  packageWidthIn             Float?
-  packageHeightIn            Float?
-  defaultShippingCharge      Float?
-  localPickupEligibleDefault Boolean  @default(false)
-  freeShippingEligibleDefault Boolean @default(false)
-  requiresBoxDefault         Boolean  @default(false)
-  insuranceRecommendedDefault Boolean @default(false)
-  active                     Boolean  @default(true)
-  systemDefault              Boolean  @default(false)
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
-  user                       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id                          String   @id @default(cuid())
+  userId                      String?
+  name                        String
+  key                         String   @unique
+  packageType                 String
+  defaultWeightOz             Float
+  packageLengthIn             Float?
+  packageWidthIn              Float?
+  packageHeightIn             Float?
+  defaultShippingCharge       Float?
+  localPickupEligibleDefault  Boolean  @default(false)
+  freeShippingEligibleDefault Boolean  @default(false)
+  requiresBoxDefault          Boolean  @default(false)
+  insuranceRecommendedDefault Boolean  @default(false)
+  active                      Boolean  @default(true)
+  systemDefault               Boolean  @default(false)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  user                        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([active])
@@ -1063,70 +1064,85 @@ model StorefrontCustomer {
 }
 
 model StorefrontOrder {
-  id                              String                @id @default(cuid())
-  orderNumber                     String                @unique
-  userId                          String?
-  customerId                      String?
-  customerEmail                   String?
-  customerName                    String?
-  customerPhone                   String?
-  shippingName                    String?
-  shippingLine1                   String?
-  shippingLine2                   String?
-  shippingCity                    String?
-  shippingState                   String?
-  shippingPostalCode              String?
-  shippingCountry                 String?
-  billingName                     String?
-  billingLine1                    String?
-  billingLine2                    String?
-  billingCity                     String?
-  billingState                    String?
-  billingPostalCode               String?
-  billingCountry                  String?
-  status                          String                @default("pending_payment")
-  paymentStatus                   String                @default("pending")
-  fulfillmentStatus               String                @default("unfulfilled")
-  stripeCheckoutSessionId         String?               @unique
-  stripePaymentIntentId           String?
-  subtotal                        Float                 @default(0)
-  shippingCharged                 Float                 @default(0)
-  shippingMethodLabel             String?
-  shippingRateSource              String?
-  shippingPackageWeightOz         Float?
-  shippingPackageProfile          String?
-  shippingWarnings                String?
-  tax                             Float                 @default(0)
-  total                           Float                 @default(0)
-  stripeFeeEstimate               Float                 @default(0)
-  shippingCost                    Float                 @default(0)
-  costBasis                       Float                 @default(0)
-  netProfit                       Float                 @default(0)
-  roiPercent                      Float?
-  trackingNumber                  String?
-  carrier                         String?
-  notes                           String?
-  paidAt                          DateTime?
-  canceledAt                      DateTime?
-  refundedAt                      DateTime?
-  refundStatus                    String?
-  refundedAmount                  Float                 @default(0)
-  refundCurrency                  String                @default("usd")
-  stripeRefundId                  String?
-  refundReason                    String?
-  refundNote                      String?
-  stockReturnStatus               String?
-  stockReturnedAt                 DateTime?
-  customerCancellationEmailStatus String?
-  customerCancellationEmailSentAt DateTime?
-  createdAt                       DateTime              @default(now())
-  updatedAt                       DateTime              @updatedAt
-  user                            User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
-  customer                        StorefrontCustomer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  items                           StorefrontOrderItem[]
-  reservations                    StockReservation[]
-  paymentEvents                   PaymentEvent[]
-  fulfillment                     Fulfillment?
+  id                               String                @id @default(cuid())
+  orderNumber                      String                @unique
+  userId                           String?
+  customerId                       String?
+  customerEmail                    String?
+  customerName                     String?
+  customerPhone                    String?
+  shippingName                     String?
+  shippingLine1                    String?
+  shippingLine2                    String?
+  shippingCity                     String?
+  shippingState                    String?
+  shippingPostalCode               String?
+  shippingCountry                  String?
+  billingName                      String?
+  billingLine1                     String?
+  billingLine2                     String?
+  billingCity                      String?
+  billingState                     String?
+  billingPostalCode                String?
+  billingCountry                   String?
+  status                           String                @default("pending_payment")
+  paymentStatus                    String                @default("pending")
+  fulfillmentStatus                String                @default("unfulfilled")
+  stripeCheckoutSessionId          String?               @unique
+  stripePaymentIntentId            String?
+  subtotal                         Float                 @default(0)
+  shippingCharged                  Float                 @default(0)
+  shippingMethodLabel              String?
+  shippingRateSource               String?
+  shippingPackageWeightOz          Float?
+  shippingPackageLengthIn          Float?
+  shippingPackageWidthIn           Float?
+  shippingPackageHeightIn          Float?
+  shippingPackageProfile           String?
+  shippingWarnings                 String?
+  shippingQuoteId                  String?
+  shippingQuoteProvider            String?
+  shippingCarrier                  String?
+  shippingService                  String?
+  shippingQuotedAmountCents        Int?
+  shippingQuotedZip                String?
+  shippingQuoteFallbackUsed        Boolean               @default(false)
+  shippingQuoteRateProviderRef     String?
+  shippingQuoteShipmentProviderRef String?
+  shippingQuoteExpiresAt           DateTime?
+  shippingZipMismatchReview        Boolean               @default(false)
+  tax                              Float                 @default(0)
+  total                            Float                 @default(0)
+  stripeFeeEstimate                Float                 @default(0)
+  shippingCost                     Float                 @default(0)
+  costBasis                        Float                 @default(0)
+  netProfit                        Float                 @default(0)
+  roiPercent                       Float?
+  trackingNumber                   String?
+  carrier                          String?
+  notes                            String?
+  paidAt                           DateTime?
+  canceledAt                       DateTime?
+  refundedAt                       DateTime?
+  refundStatus                     String?
+  refundedAmount                   Float                 @default(0)
+  refundCurrency                   String                @default("usd")
+  stripeRefundId                   String?
+  refundReason                     String?
+  refundNote                       String?
+  stockReturnStatus                String?
+  stockReturnedAt                  DateTime?
+  customerCancellationEmailStatus  String?
+  customerCancellationEmailSentAt  DateTime?
+  createdAt                        DateTime              @default(now())
+  updatedAt                        DateTime              @updatedAt
+  user                             User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customer                         StorefrontCustomer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items                            StorefrontOrderItem[]
+  reservations                     StockReservation[]
+  paymentEvents                    PaymentEvent[]
+  fulfillment                      Fulfillment?
+  shippingQuotes                   ShippingQuote[]
 
   @@index([userId])
   @@index([customerId])
@@ -1135,6 +1151,41 @@ model StorefrontOrder {
   @@index([fulfillmentStatus])
   @@index([refundStatus])
   @@index([createdAt])
+}
+
+model ShippingQuote {
+  id                  String           @id @default(cuid())
+  quoteToken          String           @unique
+  userId              String?
+  orderId             String?
+  provider            String
+  carrier             String
+  service             String
+  amountCents         Int
+  currency            String           @default("USD")
+  destinationZip      String
+  country             String           @default("US")
+  packageWeightOz     Float?
+  packageLengthIn     Float?
+  packageWidthIn      Float?
+  packageHeightIn     Float?
+  packageProfileKey   String?
+  rateProviderRef     String?
+  shipmentProviderRef String?
+  fallbackUsed        Boolean          @default(false)
+  warning             String?
+  expiresAt           DateTime
+  createdAt           DateTime         @default(now())
+  usedAt              DateTime?
+  cartHash            String?
+  user                User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  order               StorefrontOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([expiresAt])
+  @@index([destinationZip])
+  @@index([cartHash])
 }
 
 model StorefrontOrderItem {

@@ -1,12 +1,19 @@
 import Stripe from "stripe";
 import { Prisma } from "@prisma/client";
+import { createHash, randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
 import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
 import { emailProviderConfigured, sendEmailViaProvider, type EmailMessage, type EmailSendOptions } from "@/lib/email-provider";
-import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation } from "@/lib/shipping";
+import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation, type ShippingOption } from "@/lib/shipping";
+import {
+  fetchShippoUspsQuote,
+  shippingRateProviderConfig,
+  shippingQuoteExpiresAt,
+  type NormalizedShippingQuote
+} from "@/lib/shipping-rate-provider";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
@@ -289,6 +296,7 @@ export async function releaseExpiredReservations() {
 
 export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
   const settings = await prisma.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
+  const shippingRates = shippingRateProviderConfig();
   return {
     storeName: settings?.storeName ?? "GameDayGrabs LLC",
     storeLogoUrl: settings?.storeLogoUrl ?? null,
@@ -305,7 +313,13 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
     defaultShippingPrice: settings?.defaultShippingPrice ?? 5,
     freeShippingThreshold: settings?.freeShippingThreshold ?? null,
     socialLinks: parseList(settings?.socialLinks),
-    checkoutConfigured: storefrontCheckoutConfigured()
+    checkoutConfigured: storefrontCheckoutConfigured(),
+    calculatedUspsShipping: {
+      enabled: shippingRates.calculatedUspsEnabled,
+      provider: shippingRates.provider,
+      shippoConfigured: shippingRates.shippoConfigured,
+      fallbackEnabled: shippingRates.fallbackEnabled
+    }
   };
 }
 
@@ -923,6 +937,258 @@ function stripeShippingOptions(shippingCalculation: ShippingCalculation): Stripe
   }));
 }
 
+type StoredShippingQuote = Prisma.ShippingQuoteGetPayload<object>;
+
+type StorefrontShippingQuoteResponse = {
+  quoteId: string;
+  carrier: string;
+  service: string;
+  amount: number;
+  amountCents: number;
+  currency: string;
+  destinationZip: string;
+  expiresAt: string;
+  fallbackUsed: boolean;
+  warning: string | null;
+  packageWeightOz: number | null;
+  packageProfile: string | null;
+};
+
+function shippingQuoteToken() {
+  return `ship_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+}
+
+function shippingCartHash(cart: CheckoutCartEntry[]) {
+  const payload = cart
+    .map(({ item, product, quantity }) => ({
+      id: item.id,
+      quantity,
+      price: product.price,
+      shippingProfile: item.shippingProfile,
+      packageWeightOz: item.packageWeightOz,
+      packageLengthIn: item.packageLengthIn,
+      packageWidthIn: item.packageWidthIn,
+      packageHeightIn: item.packageHeightIn,
+      shippingAvailable: item.shippingAvailable,
+      localPickupAvailable: item.localPickupAvailable
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
+
+function calculatedQuotePackage(shippingCalculation: ShippingCalculation) {
+  return {
+    weightOz: shippingCalculation.totalWeightOz,
+    lengthIn: shippingCalculation.packageLengthIn,
+    widthIn: shippingCalculation.packageWidthIn,
+    heightIn: shippingCalculation.packageHeightIn,
+    profileKey: shippingCalculation.packageProfile
+  };
+}
+
+function shippingQuoteToResponse(quote: StoredShippingQuote): StorefrontShippingQuoteResponse {
+  return {
+    quoteId: quote.quoteToken,
+    carrier: quote.carrier,
+    service: quote.service,
+    amount: moneyFromCents(quote.amountCents),
+    amountCents: quote.amountCents,
+    currency: quote.currency,
+    destinationZip: quote.destinationZip,
+    expiresAt: quote.expiresAt.toISOString(),
+    fallbackUsed: quote.fallbackUsed,
+    warning: quote.warning,
+    packageWeightOz: quote.packageWeightOz,
+    packageProfile: quote.packageProfileKey
+  };
+}
+
+function fallbackShippingQuote(
+  shippingCalculation: ShippingCalculation,
+  destinationZip: string,
+  reason: string,
+  now = new Date()
+): NormalizedShippingQuote {
+  const selectedShipping = shippingCalculation.shippingOptions.find((option) => option.id !== "local_pickup") ?? shippingCalculation.defaultShippingOption;
+  if (!selectedShipping || selectedShipping.id === "local_pickup") {
+    throw new Error("Shipping is not available for this cart. Use Request Invoice for manual review.");
+  }
+  return {
+    provider: "internal_profile",
+    carrier: "STANDARD",
+    service: selectedShipping.label,
+    amountCents: centsFromMoney(selectedShipping.amount),
+    currency: "USD",
+    estimatedDays: null,
+    rateProviderRef: null,
+    shipmentProviderRef: null,
+    expiresAt: shippingQuoteExpiresAt(now),
+    fallbackUsed: true,
+    warning: reason || "USPS quote is temporarily unavailable. A safe standard shipping estimate is shown."
+  };
+}
+
+async function quoteForCalculatedShipping(
+  shippingCalculation: ShippingCalculation,
+  destinationZip: string,
+  state: string | null | undefined,
+  options: { fetchImpl?: typeof fetch; now?: Date } = {}
+) {
+  const config = shippingRateProviderConfig();
+  const packageSnapshot = calculatedQuotePackage(shippingCalculation);
+  const missingPackageData = !packageSnapshot.weightOz || !packageSnapshot.lengthIn || !packageSnapshot.widthIn || !packageSnapshot.heightIn;
+  if (!config.calculatedUspsEnabled) {
+    return fallbackShippingQuote(shippingCalculation, destinationZip, "Calculated USPS shipping is disabled. A safe standard shipping estimate is shown.", options.now);
+  }
+  if (missingPackageData) {
+    return fallbackShippingQuote(shippingCalculation, destinationZip, "USPS quote needs complete package weight and dimensions. A safe standard shipping estimate is shown.", options.now);
+  }
+  try {
+    const quote = await fetchShippoUspsQuote(
+      {
+        destination: { zip: destinationZip, state, country: "US" },
+        package: packageSnapshot
+      },
+      { fetchImpl: options.fetchImpl, now: options.now }
+    );
+    if (quote) return quote;
+  } catch {
+    // Provider failures intentionally fall through to the safe internal estimate.
+  }
+  return fallbackShippingQuote(shippingCalculation, destinationZip, "USPS quote is temporarily unavailable. A safe standard shipping estimate is shown.", options.now);
+}
+
+export async function createStorefrontShippingQuote(
+  input: {
+    items: Array<{ id: string; quantity: number }>;
+    destinationZip: string;
+    state?: string | null;
+    country?: "US";
+  },
+  options: { fetchImpl?: typeof fetch; now?: Date } = {}
+) {
+  const config = shippingRateProviderConfig();
+  if (!config.calculatedUspsEnabled && !config.fallbackEnabled) {
+    throw new Error("Calculated shipping is not enabled. Use Request Invoice for manual review.");
+  }
+  const settings = await getStorefrontSettings();
+  const cart = await getCartProducts(input.items);
+  const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
+  const profileDefinitions = await shippingProfileDefinitionsForCheckout();
+  const shippingCalculation = calculateCartShipping(
+    cart.map(({ item, quantity }) => ({ ...item, quantity })),
+    { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: "shipping", profileDefinitions }
+  );
+  const selectedShipping = shippingCalculation.shippingOptions.find((option) => option.id !== "local_pickup") ?? null;
+  if (!selectedShipping) throw new Error("Shipping is not available for this cart. Use Request Invoice for manual review.");
+
+  const normalizedQuote =
+    config.calculatedUspsEnabled
+      ? await quoteForCalculatedShipping(shippingCalculation, input.destinationZip, input.state, options)
+      : fallbackShippingQuote(shippingCalculation, input.destinationZip, "Calculated USPS shipping is disabled. A safe standard shipping estimate is shown.", options.now);
+  if (normalizedQuote.fallbackUsed && !config.fallbackEnabled) {
+    throw new Error("USPS quote is unavailable and fallback shipping is disabled. Use Request Invoice for manual review.");
+  }
+
+  const quote = await prisma.shippingQuote.create({
+    data: {
+      quoteToken: shippingQuoteToken(),
+      userId: cart[0]?.item.userId ?? null,
+      provider: normalizedQuote.provider,
+      carrier: normalizedQuote.carrier,
+      service: normalizedQuote.service,
+      amountCents: normalizedQuote.amountCents,
+      currency: normalizedQuote.currency,
+      destinationZip: input.destinationZip,
+      country: input.country ?? "US",
+      packageWeightOz: shippingCalculation.totalWeightOz,
+      packageLengthIn: shippingCalculation.packageLengthIn,
+      packageWidthIn: shippingCalculation.packageWidthIn,
+      packageHeightIn: shippingCalculation.packageHeightIn,
+      packageProfileKey: shippingCalculation.packageProfile,
+      rateProviderRef: normalizedQuote.rateProviderRef,
+      shipmentProviderRef: normalizedQuote.shipmentProviderRef,
+      fallbackUsed: normalizedQuote.fallbackUsed,
+      warning: normalizedQuote.warning,
+      expiresAt: normalizedQuote.expiresAt,
+      cartHash: shippingCartHash(cart)
+    }
+  });
+  return {
+    quote: shippingQuoteToResponse(quote),
+    shippingOptions: [
+      shippingQuoteToResponse(quote),
+      ...(shippingCalculation.localPickupEligible
+        ? [
+            {
+              quoteId: "local_pickup",
+              carrier: "LOCAL",
+              service: "Local Pickup",
+              amount: 0,
+              amountCents: 0,
+              currency: "USD",
+              destinationZip: input.destinationZip,
+              expiresAt: quote.expiresAt.toISOString(),
+              fallbackUsed: false,
+              warning: null,
+              packageWeightOz: 0,
+              packageProfile: "local_pickup"
+            }
+          ]
+        : [])
+    ]
+  };
+}
+
+function shippingOptionFromQuote(quote: StoredShippingQuote): ShippingOption {
+  return {
+    id: "calculated_usps",
+    label: quote.service,
+    amount: moneyFromCents(quote.amountCents),
+    profile: quote.packageProfileKey || "small_box",
+    rateSource: quote.provider === "shippo" ? "shippo" : "internal_profile",
+    requiresManualReview: false
+  };
+}
+
+function stripeShippingOptionsForCheckout(
+  shippingCalculation: ShippingCalculation,
+  calculatedQuote?: StoredShippingQuote | null
+): Stripe.Checkout.SessionCreateParams.ShippingOption[] {
+  if (!calculatedQuote) return stripeShippingOptions(shippingCalculation);
+  const pickupOption = shippingCalculation.shippingOptions.find((option) => option.id === "local_pickup");
+  const quoteOption = shippingOptionFromQuote(calculatedQuote);
+  const options = [quoteOption, pickupOption].filter((option): option is ShippingOption => Boolean(option));
+  return options.map((option) => ({
+    shipping_rate_data: {
+      type: "fixed_amount",
+      display_name: option.label,
+      fixed_amount: {
+        amount: centsFromMoney(option.amount),
+        currency: "usd"
+      },
+      metadata: {
+        shippingOptionId: option.id,
+        shippingOptionLabel: option.label,
+        shippingRateSource: option.rateSource,
+        shippingPackageProfile: option.profile,
+        shippingPackageWeightOz: String(option.id === "local_pickup" ? 0 : shippingCalculation.totalWeightOz),
+        shippingPackageLengthIn: String(shippingCalculation.packageLengthIn ?? ""),
+        shippingPackageWidthIn: String(shippingCalculation.packageWidthIn ?? ""),
+        shippingPackageHeightIn: String(shippingCalculation.packageHeightIn ?? ""),
+        shippingWarnings: stringifyList(shippingCalculation.warnings) ?? "",
+        shippingQuoteId: calculatedQuote.quoteToken,
+        shippingQuoteProvider: calculatedQuote.provider,
+        shippingCarrier: calculatedQuote.carrier,
+        shippingService: calculatedQuote.service,
+        shippingQuotedZip: calculatedQuote.destinationZip,
+        shippingQuotedAmountCents: String(calculatedQuote.amountCents),
+        shippingQuoteFallbackUsed: String(calculatedQuote.fallbackUsed)
+      }
+    }
+  }));
+}
+
 function orderRefundedCents(order: Pick<StorefrontOrderWithItems, "refundedAmount">) {
   return centsFromMoney(order.refundedAmount || 0);
 }
@@ -1314,8 +1580,20 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     shippingMethodLabel: order.shippingMethodLabel,
     shippingRateSource: order.shippingRateSource,
     shippingPackageWeightOz: order.shippingPackageWeightOz,
+    shippingPackageLengthIn: order.shippingPackageLengthIn,
+    shippingPackageWidthIn: order.shippingPackageWidthIn,
+    shippingPackageHeightIn: order.shippingPackageHeightIn,
     shippingPackageProfile: order.shippingPackageProfile,
     shippingWarnings: parseList(order.shippingWarnings),
+    shippingQuoteId: order.shippingQuoteId,
+    shippingQuoteProvider: order.shippingQuoteProvider,
+    shippingCarrier: order.shippingCarrier,
+    shippingService: order.shippingService,
+    shippingQuotedAmountCents: order.shippingQuotedAmountCents,
+    shippingQuotedZip: order.shippingQuotedZip,
+    shippingQuoteFallbackUsed: order.shippingQuoteFallbackUsed,
+    shippingQuoteExpiresAt: order.shippingQuoteExpiresAt?.toISOString() ?? null,
+    shippingZipMismatchReview: order.shippingZipMismatchReview,
     tax: order.tax,
     total: order.total,
     stripeFeeEstimate: order.stripeFeeEstimate,
@@ -1371,6 +1649,7 @@ export async function createCheckoutSession(input: {
   fulfillmentMethod: "shipping" | "pickup";
   customerEmail?: string;
   customerName?: string;
+  shippingQuoteToken?: string;
 }, options: { requestUrl?: string | null } = {}) {
   const readiness = storefrontStripeReadiness();
   if (!readiness.configured) {
@@ -1389,7 +1668,7 @@ export async function createCheckoutSession(input: {
     cart.map(({ item, quantity }) => ({ ...item, quantity })),
     { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod, profileDefinitions }
   );
-  const selectedShipping = shippingCalculation.defaultShippingOption;
+  let selectedShipping = shippingCalculation.defaultShippingOption;
   if (!selectedShipping) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");
   if (input.fulfillmentMethod === "shipping" && selectedShipping.id === "local_pickup") {
     throw new Error("Shipping is not available for one or more cart items. Use Request Invoice for manual review.");
@@ -1397,7 +1676,26 @@ export async function createCheckoutSession(input: {
   if (input.fulfillmentMethod === "pickup" && selectedShipping.id !== "local_pickup") {
     throw new Error("Local pickup is not available for one or more cart items.");
   }
-  const checkoutShippingOptions = stripeShippingOptions(shippingCalculation);
+  let calculatedQuote: StoredShippingQuote | null = null;
+  const shippingRates = shippingRateProviderConfig();
+  if (input.fulfillmentMethod === "shipping" && shippingRates.calculatedUspsEnabled) {
+    if (!input.shippingQuoteToken) {
+      throw new Error("Enter ZIP code to calculate USPS shipping before checkout.");
+    }
+    calculatedQuote = await prisma.shippingQuote.findUnique({ where: { quoteToken: input.shippingQuoteToken } });
+    if (!calculatedQuote) throw new Error("Shipping quote was not found. Recalculate USPS shipping.");
+    if (calculatedQuote.expiresAt.getTime() <= checkoutStartedAt.getTime()) {
+      throw new Error("Shipping quote expired. Recalculate USPS shipping.");
+    }
+    if (calculatedQuote.usedAt) {
+      throw new Error("Shipping quote was already used. Recalculate USPS shipping.");
+    }
+    if (calculatedQuote.cartHash !== shippingCartHash(cart)) {
+      throw new Error("Cart changed after shipping was calculated. Recalculate USPS shipping.");
+    }
+    selectedShipping = shippingOptionFromQuote(calculatedQuote);
+  }
+  const checkoutShippingOptions = stripeShippingOptionsForCheckout(shippingCalculation, calculatedQuote);
   if (!checkoutShippingOptions.length) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");
   const shippingCharged = selectedShipping.amount;
   const total = subtotal + shippingCharged;
@@ -1413,8 +1711,21 @@ export async function createCheckoutSession(input: {
         shippingMethodLabel: selectedShipping.label,
         shippingRateSource: selectedShipping.rateSource,
         shippingPackageWeightOz: shippingCalculation.totalWeightOz,
+        shippingPackageLengthIn: shippingCalculation.packageLengthIn,
+        shippingPackageWidthIn: shippingCalculation.packageWidthIn,
+        shippingPackageHeightIn: shippingCalculation.packageHeightIn,
         shippingPackageProfile: shippingCalculation.packageProfile,
         shippingWarnings: stringifyList(shippingCalculation.warnings),
+        shippingQuoteId: calculatedQuote?.quoteToken ?? null,
+        shippingQuoteProvider: calculatedQuote?.provider ?? null,
+        shippingCarrier: calculatedQuote?.carrier ?? null,
+        shippingService: calculatedQuote?.service ?? null,
+        shippingQuotedAmountCents: calculatedQuote?.amountCents ?? null,
+        shippingQuotedZip: calculatedQuote?.destinationZip ?? null,
+        shippingQuoteFallbackUsed: calculatedQuote?.fallbackUsed ?? false,
+        shippingQuoteRateProviderRef: calculatedQuote?.rateProviderRef ?? null,
+        shippingQuoteShipmentProviderRef: calculatedQuote?.shipmentProviderRef ?? null,
+        shippingQuoteExpiresAt: calculatedQuote?.expiresAt ?? null,
         total,
         stripeFeeEstimate: estimateStripeFee(total),
         items: {
@@ -1441,6 +1752,9 @@ export async function createCheckoutSession(input: {
     orderNumber: order.orderNumber,
     inventoryProductIds: order.items.map((item) => item.inventoryItemId).join(","),
     quantities: order.items.map((item) => item.quantity).join(","),
+    shippingQuoteId: calculatedQuote?.quoteToken ?? "",
+    shippingQuoteProvider: calculatedQuote?.provider ?? "",
+    shippingQuotedZip: calculatedQuote?.destinationZip ?? "",
     internalReservationExpiresAt: reservationExpiresAt.toISOString(),
     internalReservationMinutes: String(reservationMinutes)
   };
@@ -1484,6 +1798,12 @@ export async function createCheckoutSession(input: {
         where: { orderId: order.id, status: "reserved" },
         data: { stripeCheckoutSessionId: session.id }
       });
+      if (calculatedQuote) {
+        await tx.shippingQuote.update({
+          where: { id: calculatedQuote.id },
+          data: { orderId: order.id, usedAt: new Date() }
+        });
+      }
       return tx.storefrontOrder.update({
         where: { id: order.id },
         data: { stripeCheckoutSessionId: session.id },
@@ -1574,6 +1894,9 @@ export async function createInvoiceRequest(input: {
       shippingMethodLabel: selectedShipping.label,
       shippingRateSource: selectedShipping.rateSource,
       shippingPackageWeightOz: shippingCalculation.totalWeightOz,
+      shippingPackageLengthIn: shippingCalculation.packageLengthIn,
+      shippingPackageWidthIn: shippingCalculation.packageWidthIn,
+      shippingPackageHeightIn: shippingCalculation.packageHeightIn,
       shippingPackageProfile: shippingCalculation.packageProfile,
       shippingWarnings: stringifyList(shippingCalculation.warnings),
       total,
@@ -2121,8 +2444,18 @@ type CheckoutShippingSnapshot = {
   shippingMethodLabel: string | null;
   shippingRateSource: string | null;
   shippingPackageWeightOz: number | null;
+  shippingPackageLengthIn: number | null;
+  shippingPackageWidthIn: number | null;
+  shippingPackageHeightIn: number | null;
   shippingPackageProfile: string | null;
   shippingWarnings: string[];
+  shippingQuoteId: string | null;
+  shippingQuoteProvider: string | null;
+  shippingCarrier: string | null;
+  shippingService: string | null;
+  shippingQuotedAmountCents: number | null;
+  shippingQuotedZip: string | null;
+  shippingQuoteFallbackUsed: boolean;
 };
 
 function stripeId(value: string | { id?: string | null } | null | undefined) {
@@ -2234,14 +2567,28 @@ function stripeShippingRateSnapshot(rate: Stripe.ShippingRate | null, fallback: 
   if (!rate) return fallback;
   const metadata = rate.metadata ?? {};
   const weight = Number(metadata.shippingPackageWeightOz);
+  const length = Number(metadata.shippingPackageLengthIn);
+  const width = Number(metadata.shippingPackageWidthIn);
+  const height = Number(metadata.shippingPackageHeightIn);
+  const quotedAmountCents = Number(metadata.shippingQuotedAmountCents);
   const metadataWarnings = parseList(metadata.shippingWarnings);
   return {
     shippingCharged: fallback.shippingCharged,
     shippingMethodLabel: metadata.shippingOptionLabel || rate.display_name || fallback.shippingMethodLabel,
     shippingRateSource: "stripe_checkout",
     shippingPackageWeightOz: Number.isFinite(weight) ? weight : fallback.shippingPackageWeightOz,
+    shippingPackageLengthIn: Number.isFinite(length) && length > 0 ? length : fallback.shippingPackageLengthIn,
+    shippingPackageWidthIn: Number.isFinite(width) && width > 0 ? width : fallback.shippingPackageWidthIn,
+    shippingPackageHeightIn: Number.isFinite(height) && height > 0 ? height : fallback.shippingPackageHeightIn,
     shippingPackageProfile: metadata.shippingPackageProfile || fallback.shippingPackageProfile,
-    shippingWarnings: metadataWarnings.length ? metadataWarnings : fallback.shippingWarnings
+    shippingWarnings: metadataWarnings.length ? metadataWarnings : fallback.shippingWarnings,
+    shippingQuoteId: metadata.shippingQuoteId || fallback.shippingQuoteId,
+    shippingQuoteProvider: metadata.shippingQuoteProvider || fallback.shippingQuoteProvider,
+    shippingCarrier: metadata.shippingCarrier || fallback.shippingCarrier,
+    shippingService: metadata.shippingService || fallback.shippingService,
+    shippingQuotedAmountCents: Number.isFinite(quotedAmountCents) ? quotedAmountCents : fallback.shippingQuotedAmountCents,
+    shippingQuotedZip: metadata.shippingQuotedZip || fallback.shippingQuotedZip,
+    shippingQuoteFallbackUsed: metadata.shippingQuoteFallbackUsed === "true" || fallback.shippingQuoteFallbackUsed
   };
 }
 
@@ -2259,8 +2606,18 @@ async function checkoutShippingSnapshot(session: Stripe.Checkout.Session, order:
     shippingMethodLabel: order.shippingMethodLabel,
     shippingRateSource: shippingCents === null ? order.shippingRateSource : "stripe_checkout",
     shippingPackageWeightOz: order.shippingPackageWeightOz,
+    shippingPackageLengthIn: order.shippingPackageLengthIn,
+    shippingPackageWidthIn: order.shippingPackageWidthIn,
+    shippingPackageHeightIn: order.shippingPackageHeightIn,
     shippingPackageProfile: order.shippingPackageProfile,
-    shippingWarnings: parseList(order.shippingWarnings)
+    shippingWarnings: parseList(order.shippingWarnings),
+    shippingQuoteId: order.shippingQuoteId,
+    shippingQuoteProvider: order.shippingQuoteProvider,
+    shippingCarrier: order.shippingCarrier,
+    shippingService: order.shippingService,
+    shippingQuotedAmountCents: order.shippingQuotedAmountCents,
+    shippingQuotedZip: order.shippingQuotedZip,
+    shippingQuoteFallbackUsed: order.shippingQuoteFallbackUsed
   };
 
   const shippingRate = shippingCost?.shipping_rate ?? null;
@@ -2306,6 +2663,9 @@ async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, sessi
   const shippingSnapshot = await checkoutShippingSnapshot(session, order);
   const shippingCharged = shippingSnapshot.shippingCharged ?? order.shippingCharged;
   const total = typeof session.amount_total === "number" ? moneyFromCents(session.amount_total) : order.subtotal + shippingCharged + order.tax;
+  const collectedZip = String(snapshot.shippingAddress?.postal_code || "").replace(/\D/g, "").slice(0, 5);
+  const quotedZip = String(shippingSnapshot.shippingQuotedZip || order.shippingQuotedZip || "").replace(/\D/g, "").slice(0, 5);
+  const shippingZipMismatchReview = Boolean(quotedZip && collectedZip && quotedZip !== collectedZip);
   const customer = snapshot.customerEmail
     ? await prisma.storefrontCustomer.upsert({
         where: { email: snapshot.customerEmail },
@@ -2352,8 +2712,19 @@ async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, sessi
       shippingMethodLabel: shippingSnapshot.shippingMethodLabel,
       shippingRateSource: shippingSnapshot.shippingRateSource ?? "stripe_checkout",
       shippingPackageWeightOz: shippingSnapshot.shippingPackageWeightOz,
+      shippingPackageLengthIn: shippingSnapshot.shippingPackageLengthIn,
+      shippingPackageWidthIn: shippingSnapshot.shippingPackageWidthIn,
+      shippingPackageHeightIn: shippingSnapshot.shippingPackageHeightIn,
       shippingPackageProfile: shippingSnapshot.shippingPackageProfile,
       shippingWarnings: stringifyList(shippingSnapshot.shippingWarnings),
+      shippingQuoteId: shippingSnapshot.shippingQuoteId,
+      shippingQuoteProvider: shippingSnapshot.shippingQuoteProvider,
+      shippingCarrier: shippingSnapshot.shippingCarrier,
+      shippingService: shippingSnapshot.shippingService,
+      shippingQuotedAmountCents: shippingSnapshot.shippingQuotedAmountCents,
+      shippingQuotedZip: shippingSnapshot.shippingQuotedZip,
+      shippingQuoteFallbackUsed: shippingSnapshot.shippingQuoteFallbackUsed,
+      shippingZipMismatchReview,
       total,
       stripeFeeEstimate: estimateStripeFee(total)
     },

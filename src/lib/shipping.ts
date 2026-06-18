@@ -31,7 +31,7 @@ export type ShippingOption = {
   label: string;
   amount: number;
   profile: string;
-  rateSource: "internal_profile";
+  rateSource: "internal_profile" | "shippo";
   requiresManualReview: boolean;
 };
 
@@ -39,6 +39,9 @@ export type ShippingCalculation = {
   totalWeightOz: number;
   packageProfile: string;
   packageProfileLabel: string;
+  packageLengthIn: number | null;
+  packageWidthIn: number | null;
+  packageHeightIn: number | null;
   shippingOptions: ShippingOption[];
   defaultShippingOption: ShippingOption | null;
   warnings: string[];
@@ -53,6 +56,9 @@ export type ShippingProfileDefinition = {
   rank: number;
   requiresBox: boolean;
   insuranceRecommended: boolean;
+  packageLengthIn?: number | null;
+  packageWidthIn?: number | null;
+  packageHeightIn?: number | null;
   defaultShippingCharge?: number | null;
   active?: boolean;
 };
@@ -130,6 +136,10 @@ function roundedMoney(value: number) {
 
 function roundedWeight(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+function packageDimension(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value * 10) / 10 : null;
 }
 
 function quantityForItem(item: ShippingCartItem) {
@@ -226,6 +236,13 @@ export function calculateCartShipping(
     options.freeShippingThreshold > 0 &&
     options.subtotal >= options.freeShippingThreshold;
   const packageDefinition = profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile];
+  const singleCartItem = cartItems.length === 1 ? cartItems[0] : null;
+  const packageLengthIn = packageDimension(singleCartItem?.packageLengthIn) ?? packageDimension(packageDefinition.packageLengthIn);
+  const packageWidthIn = packageDimension(singleCartItem?.packageWidthIn) ?? packageDimension(packageDefinition.packageWidthIn);
+  const packageHeightIn = packageDimension(singleCartItem?.packageHeightIn) ?? packageDimension(packageDefinition.packageHeightIn);
+  if (allShippingAvailable && (!packageLengthIn || !packageWidthIn || !packageHeightIn)) {
+    warnings.add("Package dimensions are missing; using fallback shipping until package size is complete.");
+  }
   const baseRate = rateForWeight(totalWeightOz);
   const profileCharge = positiveNumber(packageDefinition.defaultShippingCharge);
   const rateAmount = profileCharge ?? baseRate.amount;
@@ -264,6 +281,9 @@ export function calculateCartShipping(
     totalWeightOz,
     packageProfile,
     packageProfileLabel: packageDefinition.label,
+    packageLengthIn,
+    packageWidthIn,
+    packageHeightIn,
     shippingOptions,
     defaultShippingOption,
     warnings: [...warnings],

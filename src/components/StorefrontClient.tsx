@@ -66,6 +66,19 @@ import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar
 
 type CartItem = { id: string; quantity: number };
 
+type ShippingQuoteResult = {
+  quoteId: string;
+  carrier: string;
+  service: string;
+  amount: number;
+  amountCents: number;
+  currency: string;
+  destinationZip: string;
+  expiresAt: string;
+  fallbackUsed: boolean;
+  warning: string | null;
+};
+
 const cartKey = "poke-radar-cart";
 const emptyCartSnapshot: CartItem[] = [];
 let cartSnapshotRaw = "[]";
@@ -1387,6 +1400,12 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerNotes, setCustomerNotes] = useState("");
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<"shipping" | "pickup">("shipping");
+  const [destinationZip, setDestinationZip] = useState("");
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuoteResult | null>(null);
+  const [shippingQuoteMessage, setShippingQuoteMessage] = useState("");
+  const [quoteNow, setQuoteNow] = useState(() => Date.now());
+  const [quoteBusy, setQuoteBusy] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -1421,10 +1440,22 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
 
   const subtotal = products.reduce((sum, product) => sum + product.price * product.requestedQuantity, 0);
   const shippingEstimate = calculateCartShipping(products, { subtotal, freeShippingThreshold: settings.freeShippingThreshold });
-  const shippingOption = shippingEstimate.defaultShippingOption;
-  const shipping = shippingOption?.amount ?? 0;
+  const localPickupAvailable = shippingEstimate.localPickupEligible;
+  const calculatedShippingEnabled = Boolean(settings.calculatedUspsShipping?.enabled);
+  const shippingOption = fulfillmentMethod === "pickup" ? shippingEstimate.shippingOptions.find((option) => option.id === "local_pickup") ?? null : shippingEstimate.defaultShippingOption;
+  const quotedShipping = fulfillmentMethod === "shipping" && shippingQuote ? shippingQuote.amount : null;
+  const shipping = fulfillmentMethod === "pickup" ? 0 : quotedShipping ?? shippingOption?.amount ?? 0;
   const total = subtotal + shipping;
-  const shippingSummary = shippingOption ? `Estimated ${money(shipping)}` : "Final shipping shown before payment";
+  const shippingSummary =
+    fulfillmentMethod === "pickup"
+      ? "Local Pickup - Free"
+      : shippingQuote
+        ? `${shippingQuote.service} - ${money(shippingQuote.amount)}`
+        : shippingOption
+          ? calculatedShippingEnabled
+            ? "Enter ZIP for USPS quote"
+            : `Estimated ${money(shipping)}`
+          : "Final shipping shown before payment";
   const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
   const freeShippingRemaining = settings.freeShippingThreshold !== null ? Math.max(0, settings.freeShippingThreshold - subtotal) : null;
   const freeShippingProgress =
@@ -1435,9 +1466,65 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
   const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.publicMaxQuantity <= 0);
   const overQuantityProducts = products.filter((product) => product.requestedQuantity > storefrontEffectiveMaxQuantity(product) && product.publicMaxQuantity > 0);
-  const checkoutDisabled = busy || hasBlockingStockIssue || (!isStripeCheckout && (!customerEmail.trim() || !customerName.trim()));
+  const quoteRequired = isStripeCheckout && calculatedShippingEnabled && fulfillmentMethod === "shipping";
+  const quoteExpired = shippingQuote ? Date.parse(shippingQuote.expiresAt) <= quoteNow : false;
+  const checkoutDisabled =
+    busy ||
+    quoteBusy ||
+    hasBlockingStockIssue ||
+    (quoteRequired && (!shippingQuote || quoteExpired)) ||
+    (!isStripeCheckout && (!customerEmail.trim() || !customerName.trim()));
   const successMessage = message.toLowerCase().includes("received");
   const cartIsLoading = items.length > 0 && !products.length && !message;
+
+  useEffect(() => {
+    setShippingQuote(null);
+    setShippingQuoteMessage("");
+  }, [items, fulfillmentMethod]);
+
+  useEffect(() => {
+    if (!localPickupAvailable && fulfillmentMethod === "pickup") {
+      setFulfillmentMethod("shipping");
+    }
+  }, [localPickupAvailable, fulfillmentMethod]);
+
+  useEffect(() => {
+    if (!shippingQuote) return undefined;
+    const timer = window.setInterval(() => setQuoteNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [shippingQuote]);
+
+  function updateDestinationZip(value: string) {
+    setDestinationZip(value.replace(/\D/g, "").slice(0, 5));
+    setShippingQuote(null);
+    setShippingQuoteMessage("");
+  }
+
+  async function calculateUspsShippingQuote() {
+    if (!/^\d{5}$/.test(destinationZip)) {
+      setShippingQuoteMessage("Enter a valid 5-digit ZIP code.");
+      return;
+    }
+    setQuoteBusy(true);
+    setShippingQuoteMessage("");
+    try {
+      const response = await fetch("/api/storefront/shipping/quote", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items, destinationZip, country: "US" })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Shipping quote could not be calculated.");
+      setShippingQuote(payload.quote);
+      setQuoteNow(Date.now());
+      setShippingQuoteMessage(payload.quote?.warning || "USPS shipping calculated.");
+    } catch (error) {
+      setShippingQuote(null);
+      setShippingQuoteMessage(error instanceof Error ? error.message : "Shipping quote could not be calculated.");
+    } finally {
+      setQuoteBusy(false);
+    }
+  }
 
   function removeSoldOutItems() {
     const blockedIds = new Set(soldOutProducts.map((product) => product.id));
@@ -1463,19 +1550,21 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     try {
       const requestPayload: {
         items: CartItem[];
-        fulfillmentMethod: "shipping";
+        fulfillmentMethod: "shipping" | "pickup";
         customerEmail?: string;
         customerName?: string;
         customerPhone?: string;
         customerNotes?: string;
+        shippingQuoteToken?: string;
       } = {
         items,
-        fulfillmentMethod: "shipping"
+        fulfillmentMethod
       };
 
       if (isStripeCheckout) {
         if (customerEmail.trim()) requestPayload.customerEmail = customerEmail.trim();
         if (customerName.trim()) requestPayload.customerName = customerName.trim();
+        if (quoteRequired && shippingQuote?.quoteId) requestPayload.shippingQuoteToken = shippingQuote.quoteId;
       } else {
         requestPayload.customerEmail = customerEmail.trim();
         requestPayload.customerName = customerName.trim();
@@ -1695,9 +1784,60 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 {money(total)}
               </strong>
             </div>
+            {isStripeCheckout && (calculatedShippingEnabled || localPickupAvailable) ? (
+              <div className="gdg-shipping-quote-card">
+                {localPickupAvailable ? (
+                  <div className="gdg-fulfillment-choice" role="group" aria-label="Fulfillment method">
+                    <button
+                      className={fulfillmentMethod === "shipping" ? "active" : ""}
+                      type="button"
+                      onClick={() => setFulfillmentMethod("shipping")}
+                    >
+                      Ship order
+                    </button>
+                    <button
+                      className={fulfillmentMethod === "pickup" ? "active" : ""}
+                      type="button"
+                      onClick={() => setFulfillmentMethod("pickup")}
+                    >
+                      Local Pickup - Free
+                    </button>
+                  </div>
+                ) : null}
+                {calculatedShippingEnabled && fulfillmentMethod === "shipping" ? (
+                  <div className="gdg-usps-quote-form">
+                    <label>
+                      Calculate USPS shipping
+                      <span>Enter ZIP code to calculate USPS shipping.</span>
+                    </label>
+                    <div>
+                      <input
+                        inputMode="numeric"
+                        maxLength={5}
+                        pattern="\\d{5}"
+                        placeholder="ZIP code"
+                        value={destinationZip}
+                        onChange={(event) => updateDestinationZip(event.currentTarget.value)}
+                      />
+                      <button className="gdg-secondary-button" type="button" disabled={quoteBusy || destinationZip.length !== 5} onClick={calculateUspsShippingQuote}>
+                        {quoteBusy ? "Calculating..." : "Calculate"}
+                      </button>
+                    </div>
+                    {shippingQuote ? (
+                      <p className={shippingQuote.fallbackUsed ? "gdg-shipping-quote-warning" : "gdg-shipping-quote-result"}>
+                        <strong>{shippingQuote.fallbackUsed ? "Standard Shipping Estimate" : shippingQuote.service}</strong>
+                        <span>{money(shippingQuote.amount)}</span>
+                      </p>
+                    ) : null}
+                    {shippingQuoteMessage ? <small>{shippingQuoteMessage}</small> : null}
+                    <small>Calculated using packed product weight and package size.</small>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="gdg-shipping-checkout-note">
               <Truck size={16} />
-              <span>Shipping is estimated from product weight and package size.</span>
+              <span>{calculatedShippingEnabled ? "Shipping is calculated from product weight, package size, and destination ZIP." : "Shipping is estimated from product weight and package size."}</span>
               <span>Final shipping is shown before payment.</span>
             </div>
             <div className="gdg-shipping-checkout-note">
@@ -1718,6 +1858,9 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               </div>
             )}
             {hasBlockingStockIssue ? <p className="gdg-summary-warning">Please remove sold-out items or update changed quantities before checkout.</p> : null}
+            {quoteRequired && !hasBlockingStockIssue && (!shippingQuote || quoteExpired) ? (
+              <p className="gdg-summary-warning">{quoteExpired ? "Shipping quote expired. Recalculate USPS shipping before checkout." : "Calculate USPS shipping before checkout, or choose Local Pickup if available."}</p>
+            ) : null}
             <button className="gdg-primary-button wide gdg-checkout-button" type="button" disabled={checkoutDisabled} onClick={checkout}>
               <Lock size={17} />
               <span>

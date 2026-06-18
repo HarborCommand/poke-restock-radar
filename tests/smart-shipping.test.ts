@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 import { calculateCartShipping } from "../src/lib/shipping";
+import { normalizeShippoUspsQuote, shippingRateProviderConfig } from "../src/lib/shipping-rate-provider";
 
 function shippableItem(overrides: Parameters<typeof calculateCartShipping>[0][number] = {}) {
   return {
@@ -11,6 +12,9 @@ function shippableItem(overrides: Parameters<typeof calculateCartShipping>[0][nu
     quantity: 1,
     shippingProfile: "single_card_or_light_item",
     packageWeightOz: 4,
+    packageLengthIn: 6,
+    packageWidthIn: 4,
+    packageHeightIn: 1,
     shippingAvailable: true,
     localPickupAvailable: true,
     freeShippingEligible: false,
@@ -82,6 +86,103 @@ test("missing package profile uses safe fallback and warning", () => {
   assert.equal(result.warnings.some((warning) => warning.includes("safe small-box fallback")), true);
 });
 
+test("missing package dimensions are surfaced for calculated shipping fallback", () => {
+  const result = calculateCartShipping([
+    shippableItem({
+      packageLengthIn: null,
+      packageWidthIn: null,
+      packageHeightIn: null
+    })
+  ]);
+
+  assert.equal(result.packageLengthIn, null);
+  assert.equal(result.packageWidthIn, null);
+  assert.equal(result.packageHeightIn, null);
+  assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), true);
+});
+
+test("Shippo USPS quote normalizer prefers Ground Advantage without exposing raw provider payloads", () => {
+  const quote = normalizeShippoUspsQuote(
+    {
+      object_id: "shippo_shipment_safe_ref",
+      rates: [
+        {
+          object_id: "priority_rate",
+          provider: "USPS",
+          servicelevel: { name: "USPS Priority Mail" },
+          amount: "9.99",
+          currency: "USD",
+          estimated_days: 3
+        },
+        {
+          object_id: "ground_rate",
+          provider: "USPS",
+          servicelevel: { name: "USPS Ground Advantage" },
+          amount: "6.45",
+          currency: "USD",
+          estimated_days: 5
+        },
+        {
+          object_id: "ups_rate",
+          provider: "UPS",
+          servicelevel: { name: "UPS Ground" },
+          amount: "4.00",
+          currency: "USD"
+        }
+      ]
+    },
+    {
+      now: new Date("2026-06-18T12:00:00.000Z"),
+      env: { SHIPPING_QUOTE_TTL_MINUTES: "30" }
+    }
+  );
+
+  assert.ok(quote);
+  assert.equal(quote.provider, "shippo");
+  assert.equal(quote.carrier, "USPS");
+  assert.equal(quote.service, "USPS Ground Advantage");
+  assert.equal(quote.amountCents, 645);
+  assert.equal(quote.rateProviderRef, "ground_rate");
+  assert.equal(quote.shipmentProviderRef, "shippo_shipment_safe_ref");
+  assert.equal(quote.expiresAt.toISOString(), "2026-06-18T12:30:00.000Z");
+  assert.equal("rates" in quote, false);
+});
+
+test("shipping rate provider config is feature flagged and reports configured booleans only", () => {
+  const disabled = shippingRateProviderConfig({});
+  assert.equal(disabled.calculatedUspsEnabled, false);
+  assert.equal(disabled.provider, "shippo");
+  assert.equal(disabled.shippoConfigured, false);
+  assert.equal(disabled.fallbackEnabled, true);
+
+  const configured = shippingRateProviderConfig({
+    CALCULATED_USPS_SHIPPING_ENABLED: "true",
+    SHIPPING_RATE_PROVIDER: "shippo",
+    SHIPPO_API_TOKEN: "secret_token_not_returned",
+    SHIP_FROM_NAME: "GameDayGrabs",
+    SHIP_FROM_STREET1: "123 Test St",
+    SHIP_FROM_CITY: "Miami",
+    SHIP_FROM_STATE: "FL",
+    SHIP_FROM_ZIP: "33101",
+    SHIP_FROM_COUNTRY: "US",
+    SHIPPING_FALLBACK_ENABLED: "false",
+    SHIPPING_QUOTE_TTL_MINUTES: "999"
+  });
+
+  assert.equal(configured.calculatedUspsEnabled, true);
+  assert.equal(configured.provider, "shippo");
+  assert.equal(configured.shippoConfigured, true);
+  assert.equal(configured.shipFromZipConfigured, true);
+  assert.equal(configured.fallbackEnabled, false);
+  assert.equal(configured.quoteTtlMinutes, 120);
+  assert.deepEqual(
+    configured.envVars.includes("SHIPPO_API_TOKEN"),
+    true,
+    "env var names may be reported but values must not be returned"
+  );
+  assert.doesNotMatch(JSON.stringify(configured), /secret_token_not_returned/);
+});
+
 test("shipping calculator does not depend on the old flat five dollar setting", () => {
   const source = fs.readFileSync(new URL("../src/lib/shipping.ts", import.meta.url), "utf8");
 
@@ -115,6 +216,20 @@ test("smart shipping schema and order snapshots are wired without raw payment de
     assert.match(storefront, new RegExp(`${field}:`));
   }
 
+  for (const field of [
+    "shippingQuoteId",
+    "shippingQuoteProvider",
+    "shippingCarrier",
+    "shippingService",
+    "shippingQuotedAmountCents",
+    "shippingQuotedZip",
+    "shippingQuoteFallbackUsed",
+    "shippingZipMismatchReview"
+  ]) {
+    assert.match(schema, new RegExp(`${field}\\s+`));
+    assert.match(types, new RegExp(`${field}:`));
+  }
+
   assert.match(storefront, /calculateCartShipping/);
   assert.match(storefront, /shippingWarnings: stringifyList\(shippingCalculation\.warnings\)/);
   assert.match(types, /needsShippingProfile: boolean/);
@@ -137,7 +252,7 @@ test("storefront checkout passes smart shipping options to Stripe instead of a f
   );
 
   assert.match(storefront, /function stripeShippingOptions\(shippingCalculation: ShippingCalculation\)/);
-  assert.match(createCheckoutSession, /const checkoutShippingOptions = stripeShippingOptions\(shippingCalculation\)/);
+  assert.match(createCheckoutSession, /const checkoutShippingOptions = stripeShippingOptionsForCheckout\(shippingCalculation, calculatedQuote\)/);
   assert.match(sessionCreateParams, /shipping_options: checkoutShippingOptions/);
   assert.match(sessionCreateParams, /shipping_address_collection: \{\s*allowed_countries: stripeShippingAllowedCountries\s*\}/);
   assert.doesNotMatch(sessionCreateParams, /product_data: \{ name: "Shipping" \}/);
@@ -148,7 +263,43 @@ test("storefront checkout passes smart shipping options to Stripe instead of a f
   assert.match(client, /Final shipping is shown before payment\./);
   assert.match(client, /Items are not reserved until checkout starts\./);
   assert.match(client, /Availability is confirmed before payment\./);
+  assert.match(client, /Enter ZIP code to calculate USPS shipping\./);
+  assert.match(client, /\/api\/storefront\/shipping\/quote/);
+  assert.match(client, /shippingQuoteToken/);
   assert.doesNotMatch(client, /<b>Shipping estimate<\/b>\s*\{money\(shipping\)\}/);
+});
+
+test("calculated USPS quote API and checkout enforce server-side quote safety", () => {
+  const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
+  const validation = fs.readFileSync(new URL("../src/lib/validation.ts", import.meta.url), "utf8");
+  const route = fs.readFileSync(new URL("../src/app/api/storefront/shipping/quote/route.ts", import.meta.url), "utf8");
+  const provider = fs.readFileSync(new URL("../src/lib/shipping-rate-provider.ts", import.meta.url), "utf8");
+  const createQuote = storefront.slice(storefront.indexOf("export async function createStorefrontShippingQuote"), storefront.indexOf("function shippingOptionFromQuote"));
+  const quoteHelper = storefront.slice(storefront.indexOf("async function quoteForCalculatedShipping"), storefront.indexOf("export async function createStorefrontShippingQuote"));
+  const createCheckoutSession = storefront.slice(
+    storefront.indexOf("export async function createCheckoutSession"),
+    storefront.indexOf("export async function createInvoiceRequest")
+  );
+
+  assert.match(validation, /storefrontShippingQuoteSchema/);
+  assert.match(validation, /destinationZip: z\.string\(\)\.trim\(\)\.regex\(\/\^\\d\{5\}\$\//);
+  assert.match(route, /export const dynamic = "force-dynamic"/);
+  assert.match(route, /createStorefrontShippingQuote\(input\)/);
+  assert.match(createQuote, /const cart = await getCartProducts\(input\.items\)/);
+  assert.match(createQuote, /calculateCartShipping/);
+  assert.doesNotMatch(createQuote, /packageWeightOz: input|packageLengthIn: input|amountCents: input/);
+  assert.match(quoteHelper, /fetchShippoUspsQuote/);
+  assert.match(quoteHelper, /fallbackShippingQuote/);
+  assert.match(createQuote, /fallbackShippingQuote/);
+  assert.match(createQuote, /cartHash: shippingCartHash\(cart\)/);
+  assert.match(createCheckoutSession, /if \(input\.fulfillmentMethod === "shipping" && shippingRates\.calculatedUspsEnabled\)/);
+  assert.match(createCheckoutSession, /if \(!input\.shippingQuoteToken\)/);
+  assert.match(createCheckoutSession, /calculatedQuote\.expiresAt\.getTime\(\) <= checkoutStartedAt\.getTime\(\)/);
+  assert.match(createCheckoutSession, /calculatedQuote\.usedAt/);
+  assert.match(createCheckoutSession, /calculatedQuote\.cartHash !== shippingCartHash\(cart\)/);
+  assert.match(createCheckoutSession, /shippingQuote\.update/);
+  assert.match(provider, /authorization: `ShippoToken/);
+  assert.doesNotMatch(provider, /console\.(log|warn|error).*SHIPPO_API_TOKEN/);
 });
 
 test("paid checkout webhook persists selected Stripe Checkout shipping result", () => {
@@ -167,6 +318,9 @@ test("paid checkout webhook persists selected Stripe Checkout shipping result", 
   assert.match(persistPaidCheckoutSession, /shippingMethodLabel: shippingSnapshot\.shippingMethodLabel/);
   assert.match(persistPaidCheckoutSession, /shippingRateSource: shippingSnapshot\.shippingRateSource \?\? "stripe_checkout"/);
   assert.match(persistPaidCheckoutSession, /shippingPackageWeightOz: shippingSnapshot\.shippingPackageWeightOz/);
+  assert.match(persistPaidCheckoutSession, /shippingPackageLengthIn: shippingSnapshot\.shippingPackageLengthIn/);
+  assert.match(persistPaidCheckoutSession, /shippingQuotedZip: shippingSnapshot\.shippingQuotedZip/);
+  assert.match(persistPaidCheckoutSession, /shippingZipMismatchReview/);
   assert.match(persistPaidCheckoutSession, /shippingPackageProfile: shippingSnapshot\.shippingPackageProfile/);
   assert.match(persistPaidCheckoutSession, /shippingWarnings: stringifyList\(shippingSnapshot\.shippingWarnings\)/);
   assert.match(persistPaidCheckoutSession, /total,/);

@@ -87,13 +87,16 @@ export async function ensureDefaultShippingProfiles(currentUser?: Pick<SessionUs
   }
 }
 
-function shippingProfileToDefinition(profile: Pick<ShippingProfileRecord, "name" | "defaultWeightOz" | "requiresBoxDefault" | "insuranceRecommendedDefault" | "defaultShippingCharge" | "active">): ShippingProfileDefinition {
+function shippingProfileToDefinition(profile: Pick<ShippingProfileRecord, "name" | "defaultWeightOz" | "packageLengthIn" | "packageWidthIn" | "packageHeightIn" | "requiresBoxDefault" | "insuranceRecommendedDefault" | "defaultShippingCharge" | "active">): ShippingProfileDefinition {
   return {
     label: profile.name,
     defaultWeightOz: profile.defaultWeightOz,
     rank: shippingProfileRank(profile.defaultWeightOz),
     requiresBox: profile.requiresBoxDefault,
     insuranceRecommended: profile.insuranceRecommendedDefault,
+    packageLengthIn: profile.packageLengthIn,
+    packageWidthIn: profile.packageWidthIn,
+    packageHeightIn: profile.packageHeightIn,
     defaultShippingCharge: profile.defaultShippingCharge,
     active: profile.active
   };
