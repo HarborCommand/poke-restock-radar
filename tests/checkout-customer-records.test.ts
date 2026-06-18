@@ -576,6 +576,67 @@ test("packing slip renders safe order data and excludes payment details", () => 
   assert.match(css, /body:has\(\.packing-slip-print\)[\s\S]*\.packing-slip-print/);
 });
 
+test("Admin Orders shows read-only workflow timers for every order state", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const types = readProjectFile("src/types/radar.ts");
+  const timerHelpers = sourceSlice(app, "function formatOrderDuration", "function reservationLifecycleLabel");
+  const orderPanel = sourceSlice(app, "function StorefrontOrdersPanel", "function StorefrontSettingsCard");
+  const timerTick = sourceSlice(orderPanel, "useEffect(() => {", "  return (");
+  const orderModal = sourceSlice(app, "function StorefrontOrderDetailsModal", "function StorefrontPackingSlip");
+
+  assert.match(types, /paidAt: string \| null/);
+  assert.match(types, /shippedAt: string \| null/);
+  assert.match(types, /canceledAt: string \| null/);
+  assert.match(types, /refundedAt: string \| null/);
+  assert.match(storefront, /canceledAt: order\.canceledAt\?\.toISOString\(\) \?\? null/);
+  assert.match(storefront, /refundedAt: order\.refundedAt\?\.toISOString\(\) \?\? null/);
+
+  assert.match(app, /type OrderTimerState = \{/);
+  assert.match(timerHelpers, /function formatOrderDuration/);
+  assert.match(timerHelpers, /function getOrderTimerState\(order: StorefrontOrderDTO, nowMs = Date\.now\(\)\): OrderTimerState/);
+  assert.match(timerHelpers, /ORDER_TIMER_MINUTE_MS/);
+  assert.match(timerHelpers, /ORDER_TIMER_HOUR_MS/);
+  assert.match(timerHelpers, /ORDER_TIMER_DAY_MS/);
+  assert.match(timerHelpers, /return `\$\{totalMinutes\}m`/);
+  assert.match(timerHelpers, /`\$\{hours\}h \$\{minutes\}m`/);
+  assert.match(timerHelpers, /`\$\{days\}d \$\{hours\}h`/);
+  assert.match(timerHelpers, /shortPrefix: "Pending"/);
+  assert.match(timerHelpers, /detailPrefix: "Pending payment"/);
+  assert.match(timerHelpers, /shortPrefix: "Open"/);
+  assert.match(timerHelpers, /shortPrefix: "Packing"/);
+  assert.match(timerHelpers, /shortPrefix: "Pickup pending"/);
+  assert.match(timerHelpers, /shortPrefix: "Ready"/);
+  assert.match(timerHelpers, /shortPrefix: "Picked up"/);
+  assert.match(timerHelpers, /shortPrefix: "Shipped"/);
+  assert.match(timerHelpers, /shortPrefix: "Requested"/);
+  assert.match(timerHelpers, /shortPrefix: "Expired"/);
+  assert.match(timerHelpers, /shortPrefix: "Canceled"/);
+  assert.match(timerHelpers, /shortPrefix: "Partially refunded"/);
+  assert.match(timerHelpers, /const refundLabel = .*"Refunded"/);
+  assert.match(timerHelpers, /afterPayment: true/);
+  assert.match(timerHelpers, /tone: "neutral"/);
+
+  assert.match(orderPanel, /const \[orderTimerNow, setOrderTimerNow\] = useState\(\(\) => Date\.now\(\)\)/);
+  assert.match(timerTick, /window\.setInterval\(\(\) => setOrderTimerNow\(Date\.now\(\)\), ORDER_TIMER_MINUTE_MS\)/);
+  assert.match(orderPanel, /window\.clearInterval\(orderTimerTick\)/);
+  assert.doesNotMatch(timerTick, /requestJson|fetch|prisma|PATCH|POST|PUT|DELETE/i);
+  assert.match(orderPanel, /const timerState = getOrderTimerState\(order, orderTimerNow\)/);
+  assert.match(orderPanel, /storefront-order-timer-chip/);
+  assert.match(orderPanel, /timerState\.shortLabel/);
+  assert.match(orderPanel, /timerNow=\{orderTimerNow\}/);
+
+  assert.match(orderModal, /timerNow: number/);
+  assert.match(orderModal, /const timerState = getOrderTimerState\(order, timerNow\)/);
+  assert.match(orderModal, /storefront-order-workflow-timer/);
+  assert.match(orderModal, /timerState\.label/);
+  assert.match(orderModal, /timerState\.shortLabel/);
+  assert.match(css, /storefront-order-timer-chip/);
+  assert.match(css, /storefront-order-workflow-timer/);
+  assert.doesNotMatch(timerHelpers + timerTick + orderModal, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe|raw webhook/i);
+});
+
 test("checkout customer records never persist raw card or payment method details", () => {
   const storefront = readProjectFile("src/lib/storefront.ts");
   const schema = readProjectFile("prisma/schema.prisma");

@@ -11470,6 +11470,12 @@ body {
   align-items: center;
 }
 
+.storefront-order-timer-chip {
+  border-style: dashed;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .storefront-order-actions {
   justify-content: flex-end;
 }
@@ -11605,6 +11611,28 @@ body {
   color: #64748b;
   font-size: 0.82rem;
   font-weight: 750;
+}
+
+.storefront-order-heading .storefront-order-workflow-timer {
+  color: #334155;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.storefront-order-workflow-timer.good {
+  color: #15803d;
+}
+
+.storefront-order-workflow-timer.watch {
+  color: #b45309;
+}
+
+.storefront-order-workflow-timer.bad {
+  color: #b91c1c;
+}
+
+.storefront-order-workflow-timer.neutral {
+  color: #64748b;
 }
 
 .storefront-order-workspace-badges,

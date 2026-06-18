@@ -374,6 +374,8 @@ export type StorefrontOrderDTO = {
   canCancelOrRefund: boolean;
   paidAt: string | null;
   shippedAt: string | null;
+  canceledAt: string | null;
+  refundedAt: string | null;
   createdAt: string;
   updatedAt: string;
   items: StorefrontOrderItemDTO[];

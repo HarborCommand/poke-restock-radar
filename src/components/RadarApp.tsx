@@ -702,6 +702,17 @@ function storefrontOrderShippingReadiness(order: StorefrontOrderDTO) {
   return "Not ready to ship";
 }
 
+type OrderTimerTone = "good" | "watch" | "bad" | "neutral";
+
+type OrderTimerState = {
+  label: string;
+  shortLabel: string;
+  tone: OrderTimerTone;
+  startDate: string | null;
+  endDate: string | null;
+  isActive: boolean;
+};
+
 function formatGradeType(value: string) {
   return value === "BGS_BLACK_LABEL" ? "BGS Black Label" : formatStatus(value);
 }
@@ -815,6 +826,259 @@ function dateTime(value: string | null | undefined) {
     hour: "numeric",
     minute: "2-digit"
   }).format(date);
+}
+
+const ORDER_TIMER_MINUTE_MS = 60_000;
+const ORDER_TIMER_HOUR_MS = 60 * ORDER_TIMER_MINUTE_MS;
+const ORDER_TIMER_DAY_MS = 24 * ORDER_TIMER_HOUR_MS;
+
+function orderTimerTime(value: string | null | undefined) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function formatDurationPart(value: number, singular: string) {
+  return `${value} ${singular}${value === 1 ? "" : "s"}`;
+}
+
+function formatOrderDuration(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined = null,
+  format: "short" | "long" = "short",
+  nowMs = Date.now()
+) {
+  const startMs = orderTimerTime(startDate);
+  if (startMs === null) return format === "short" ? "unknown" : "unknown time";
+  const endMs = orderTimerTime(endDate) ?? nowMs;
+  const durationMs = Math.max(0, endMs - startMs);
+  const totalMinutes = Math.floor(durationMs / ORDER_TIMER_MINUTE_MS);
+  const days = Math.floor(durationMs / ORDER_TIMER_DAY_MS);
+  const hours = Math.floor((durationMs % ORDER_TIMER_DAY_MS) / ORDER_TIMER_HOUR_MS);
+  const minutes = Math.floor((durationMs % ORDER_TIMER_HOUR_MS) / ORDER_TIMER_MINUTE_MS);
+
+  if (format === "short") {
+    if (totalMinutes < 60) return `${totalMinutes}m`;
+    if (days < 1) return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+    return hours ? `${days}d ${hours}h` : `${days}d`;
+  }
+
+  if (days > 0) {
+    return hours ? `${formatDurationPart(days, "day")} ${formatDurationPart(hours, "hour")}` : formatDurationPart(days, "day");
+  }
+  if (hours > 0) {
+    return minutes ? `${formatDurationPart(hours, "hour")} ${formatDurationPart(minutes, "minute")}` : formatDurationPart(hours, "hour");
+  }
+  return formatDurationPart(totalMinutes, "minute");
+}
+
+function orderTimerTone(startDate: string | null | undefined, endDate: string | null | undefined, isActive: boolean, nowMs: number): OrderTimerTone {
+  if (!isActive || endDate) return "neutral";
+  const startMs = orderTimerTime(startDate);
+  if (startMs === null) return "neutral";
+  const ageMs = Math.max(0, nowMs - startMs);
+  if (ageMs < 2 * ORDER_TIMER_HOUR_MS) return "good";
+  if (ageMs < ORDER_TIMER_DAY_MS) return "watch";
+  return "bad";
+}
+
+function orderTimerState(input: {
+  shortPrefix: string;
+  detailPrefix: string;
+  startDate: string | null | undefined;
+  endDate?: string | null | undefined;
+  isActive?: boolean;
+  afterPayment?: boolean;
+  tone?: OrderTimerTone;
+  nowMs: number;
+}): OrderTimerState {
+  const isActive = input.isActive ?? !input.endDate;
+  const shortDuration = formatOrderDuration(input.startDate, input.endDate ?? null, "short", input.nowMs);
+  const longDuration = formatOrderDuration(input.startDate, input.endDate ?? null, "long", input.nowMs);
+  const shortLabel = input.endDate ? `${input.shortPrefix} after ${shortDuration}` : `${input.shortPrefix} ${shortDuration}`;
+  const label = input.endDate
+    ? `${input.detailPrefix} ${longDuration}${input.afterPayment ? " after payment" : ""}`
+    : `${input.detailPrefix} for ${longDuration}`;
+  return {
+    label,
+    shortLabel,
+    tone: input.tone ?? orderTimerTone(input.startDate, input.endDate ?? null, isActive, input.nowMs),
+    startDate: input.startDate ?? null,
+    endDate: input.endDate ?? null,
+    isActive
+  };
+}
+
+function getOrderTimerState(order: StorefrontOrderDTO, nowMs = Date.now()): OrderTimerState {
+  const status = order.status.toLowerCase();
+  const paymentStatus = order.paymentStatus.toLowerCase();
+  const fulfillmentStatus = order.fulfillmentStatus.toLowerCase();
+  const createdAt = order.createdAt;
+  const paidAt = order.paidAt ?? order.createdAt;
+  const updatedAt = order.updatedAt;
+  const refundEndedAt = order.refundedAt ?? order.updatedAt;
+  const canceledEndedAt = order.canceledAt ?? order.updatedAt;
+  const shippedAt = order.shippedAt ?? order.updatedAt;
+  const pickupOrder = storefrontOrderIsLocalPickup(order);
+
+  if (paymentStatus === "partially_refunded" || status === "partially_refunded") {
+    return orderTimerState({
+      shortPrefix: "Partially refunded",
+      detailPrefix: "Partially refunded",
+      startDate: paidAt,
+      endDate: refundEndedAt,
+      afterPayment: true,
+      isActive: false,
+      tone: "neutral",
+      nowMs
+    });
+  }
+
+  if (["refunded", "refund_pending", "refund_failed"].includes(paymentStatus) || ["refunded", "refund_pending", "refund_failed"].includes(status)) {
+    const refundLabel = paymentStatus === "refund_pending" || status === "refund_pending" ? "Refund pending" : paymentStatus === "refund_failed" || status === "refund_failed" ? "Refund failed" : "Refunded";
+    return orderTimerState({
+      shortPrefix: refundLabel,
+      detailPrefix: refundLabel,
+      startDate: paidAt,
+      endDate: refundEndedAt,
+      afterPayment: true,
+      isActive: false,
+      tone: "neutral",
+      nowMs
+    });
+  }
+
+  if (paymentStatus === "expired") {
+    return orderTimerState({
+      shortPrefix: "Expired",
+      detailPrefix: "Expired",
+      startDate: createdAt,
+      endDate: canceledEndedAt,
+      isActive: false,
+      tone: "neutral",
+      nowMs
+    });
+  }
+
+  if (status === "canceled" || paymentStatus === "canceled" || fulfillmentStatus === "canceled") {
+    return orderTimerState({
+      shortPrefix: "Canceled",
+      detailPrefix: "Canceled",
+      startDate: createdAt,
+      endDate: canceledEndedAt,
+      isActive: false,
+      tone: "neutral",
+      nowMs
+    });
+  }
+
+  if (paymentStatus === "failed") {
+    return orderTimerState({
+      shortPrefix: "Failed",
+      detailPrefix: "Payment failed",
+      startDate: createdAt,
+      endDate: updatedAt,
+      isActive: false,
+      tone: "neutral",
+      nowMs
+    });
+  }
+
+  if (fulfillmentStatus === "shipped" || status === "shipped") {
+    return orderTimerState({
+      shortPrefix: "Shipped",
+      detailPrefix: "Shipped",
+      startDate: paidAt,
+      endDate: shippedAt,
+      afterPayment: true,
+      isActive: false,
+      tone: "neutral",
+      nowMs
+    });
+  }
+
+  if (pickupOrder && fulfillmentStatus === "picked_up") {
+    return orderTimerState({
+      shortPrefix: "Picked up",
+      detailPrefix: "Picked up",
+      startDate: paidAt,
+      endDate: updatedAt,
+      afterPayment: true,
+      isActive: false,
+      tone: "neutral",
+      nowMs
+    });
+  }
+
+  if (status === "invoice_requested" || status === "contact_message" || order.source === "request_invoice" || order.source === "contact_message") {
+    return orderTimerState({
+      shortPrefix: "Requested",
+      detailPrefix: status === "contact_message" ? "Contact request waiting" : "Invoice request waiting",
+      startDate: createdAt,
+      nowMs
+    });
+  }
+
+  if (status === "pending_payment" || paymentStatus === "pending") {
+    return orderTimerState({
+      shortPrefix: "Pending",
+      detailPrefix: "Pending payment",
+      startDate: createdAt,
+      nowMs
+    });
+  }
+
+  if (pickupOrder && fulfillmentStatus === "pickup_ready") {
+    return orderTimerState({
+      shortPrefix: "Ready",
+      detailPrefix: "Ready for pickup",
+      startDate: updatedAt || paidAt,
+      nowMs
+    });
+  }
+
+  if (pickupOrder && paymentStatus === "paid" && fulfillmentStatus === "unfulfilled") {
+    return orderTimerState({
+      shortPrefix: "Pickup pending",
+      detailPrefix: "Pickup pending",
+      startDate: paidAt,
+      nowMs
+    });
+  }
+
+  if (fulfillmentStatus === "packing" || status === "packing") {
+    return orderTimerState({
+      shortPrefix: "Packing",
+      detailPrefix: "Packing",
+      startDate: paidAt,
+      nowMs
+    });
+  }
+
+  if (status === "inventory_review" || fulfillmentStatus === "review_required") {
+    return orderTimerState({
+      shortPrefix: "Review",
+      detailPrefix: "Inventory review waiting",
+      startDate: paidAt,
+      nowMs
+    });
+  }
+
+  if (paymentStatus === "paid" && order.needsFulfillment) {
+    return orderTimerState({
+      shortPrefix: "Open",
+      detailPrefix: "Open",
+      startDate: paidAt,
+      nowMs
+    });
+  }
+
+  return orderTimerState({
+    shortPrefix: "Open",
+    detailPrefix: "Open",
+    startDate: createdAt,
+    nowMs
+  });
 }
 
 function reservationLifecycleLabel(reservation: StorefrontOrderDTO["reservations"][number]) {
@@ -6757,6 +7021,7 @@ function StorefrontOrdersPanel({
   const [refundOrderKey, setRefundOrderKey] = useState("");
   const [activeOrderTab, setActiveOrderTab] = useState<StorefrontOrderTab>(() => storefrontDefaultOrderTab(dashboard.storefrontOrders));
   const [storeSettingsOpen, setStoreSettingsOpen] = useState(false);
+  const [orderTimerNow, setOrderTimerNow] = useState(() => Date.now());
   const selectedOrder = dashboard.storefrontOrders.find((order) => order.id === selectedOrderId) ?? null;
   const refundOrder = dashboard.storefrontOrders.find((order) => order.id === refundOrderId) ?? null;
   const stats = dashboard.storefrontSummary;
@@ -6767,6 +7032,11 @@ function StorefrontOrdersPanel({
     setRefundOrderKey(globalThis.crypto?.randomUUID?.() ?? `cancel-refund-${order.id}-${Date.now()}`);
     setRefundOrderId(order.id);
   };
+
+  useEffect(() => {
+    const orderTimerTick = window.setInterval(() => setOrderTimerNow(Date.now()), ORDER_TIMER_MINUTE_MS);
+    return () => window.clearInterval(orderTimerTick);
+  }, []);
 
   return (
     <>
@@ -6838,6 +7108,7 @@ function StorefrontOrdersPanel({
                 const canShip = storefrontOrderCanShip(order);
                 const canPickup = storefrontOrderCanPickup(order);
                 const canMarkShipped = canShip && storefrontOrderHasShipmentDetails(order);
+                const timerState = getOrderTimerState(order, orderTimerNow);
                 const itemSummary = order.items.length
                   ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
                   : order.notes?.split("\n").find((line) => line.startsWith("Subject:"))?.replace("Subject:", "Contact:") || "Contact inquiry";
@@ -6855,6 +7126,7 @@ function StorefrontOrdersPanel({
                       </small>
                     </button>
                     <div className="storefront-order-status-stack">
+                      <span className={`chip compact-chip storefront-order-timer-chip ${timerState.tone}`}>{timerState.shortLabel}</span>
                       <span className={`chip compact-chip ${archived ? "bad" : order.needsFulfillment ? "watch" : "neutral"}`}>{order.statusBadge}</span>
                       <span className={`chip compact-chip ${storefrontOrderPaymentTone(order)}`}>{formatStatus(order.paymentStatus)}</span>
                       <span className={`chip compact-chip ${canFulfill ? "watch" : "neutral"}`}>{storefrontOrderFulfillmentLabel(order)}</span>
@@ -6988,6 +7260,7 @@ function StorefrontOrdersPanel({
           busyLabel={busyLabel}
           submit={submit}
           runAction={runAction}
+          timerNow={orderTimerNow}
           onClose={() => setSelectedOrderId("")}
         />
       ) : null}
@@ -7099,6 +7372,7 @@ function StorefrontOrderDetailsModal({
   busyLabel,
   submit,
   runAction,
+  timerNow,
   onClose
 }: {
   order: StorefrontOrderDTO;
@@ -7106,6 +7380,7 @@ function StorefrontOrderDetailsModal({
   busyLabel: string | null;
   submit: SubmitHandler;
   runAction: ActionHandler;
+  timerNow: number;
   onClose: () => void;
 }) {
   const saveLabel = `Updating order ${order.id}`;
@@ -7125,6 +7400,7 @@ function StorefrontOrderDetailsModal({
   const canOpenRefundFlow = storefrontOrderCanOpenRefundFlow(order);
   const refundActionLabel = storefrontOrderRefundActionLabel(order);
   const canShowPackingSlip = order.items.length > 0 && (canFulfillOrder || orderDetailReadOnly || order.fulfillmentStatus === "shipped" || order.fulfillmentStatus === "picked_up");
+  const timerState = getOrderTimerState(order, timerNow);
   const packingSlipLabel = orderDetailReadOnly
     ? "View Historical Packing Slip"
     : localPickupOrder
@@ -7160,8 +7436,10 @@ function StorefrontOrderDetailsModal({
             <div>
               <h2>{order.orderNumber}</h2>
               <p>Placed {dateTime(order.createdAt)} <span aria-hidden="true">-</span> {order.itemCount} item{order.itemCount === 1 ? "" : "s"}</p>
+              <p className={`storefront-order-workflow-timer ${timerState.tone}`}>{timerState.label}</p>
             </div>
             <div className="storefront-order-workspace-badges" aria-label="Order status">
+              <span className={`chip compact-chip storefront-order-timer-chip ${timerState.tone}`}>{timerState.shortLabel}</span>
               <span className={`chip compact-chip ${storefrontOrderPaymentTone(order)}`}>{formatStatus(order.paymentStatus)}</span>
               <span className={`chip compact-chip ${canFulfillOrder ? "watch" : orderDetailReadOnly ? "neutral" : "good"}`}>{storefrontOrderFulfillmentLabel(order)}</span>
               {canFulfillOrder ? <span className="chip compact-chip good">{localPickupOrder ? "Ready for pickup" : "Ready for fulfillment"}</span> : null}

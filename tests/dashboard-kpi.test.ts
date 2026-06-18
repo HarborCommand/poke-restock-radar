@@ -236,6 +236,8 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     canCancelOrRefund: true,
     paidAt: now,
     shippedAt: null,
+    canceledAt: null,
+    refundedAt: null,
     createdAt: now,
     updatedAt: now,
     items: [

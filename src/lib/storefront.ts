@@ -1326,6 +1326,8 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     canCancelOrRefund: orderCanCancelOrRefund(order),
     paidAt: order.paidAt?.toISOString() ?? null,
     shippedAt: order.fulfillment?.shippedAt?.toISOString() ?? null,
+    canceledAt: order.canceledAt?.toISOString() ?? null,
+    refundedAt: order.refundedAt?.toISOString() ?? null,
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
     items: order.items.map(orderItemToDTO),
