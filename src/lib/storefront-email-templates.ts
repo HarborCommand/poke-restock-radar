@@ -29,6 +29,8 @@ export type StorefrontRenderedEmail = {
 };
 
 export const STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER = "GDD_EMAIL_TEMPLATE=light-v3";
+const STOREFRONT_ORDER_STATUS_URL = "https://www.gamedaygrabs.com/order-status";
+const STOREFRONT_POLICIES_URL = "https://www.gamedaygrabs.com/policies";
 
 export type OrderConfirmationEmailInput = StorefrontEmailBase & {
   items: StorefrontEmailItem[];
@@ -277,6 +279,7 @@ function supportCard(supportEmail: string) {
       '<td valign="middle">',
       `<p style="margin:0 0 4px;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.35;font-weight:800;text-transform:uppercase;letter-spacing:.04em;">Questions?</p>`,
       `<p style="margin:0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.45;">Contact us anytime at <a class="gdg-email-accent" href="mailto:${escapeHtml(supportEmail)}" style="${textColorStyle(emailColors.accent)}font-weight:800;text-decoration:none;">${escapeHtml(supportEmail)}</a></p>`,
+      `<p style="margin:8px 0 0;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.45;">Check your order anytime at <a class="gdg-email-accent" href="${STOREFRONT_ORDER_STATUS_URL}" style="${textColorStyle(emailColors.accent)}font-weight:800;text-decoration:none;">Check order status</a>.</p>`,
       "</td>",
       "</tr></table>"
     ].join("")
@@ -287,6 +290,7 @@ function footer(supportEmail: string) {
   return [
     `<p style="margin:22px 0 8px;text-align:center;${textColorStyle(emailColors.text)}font-size:12px;line-height:1.45;font-weight:800;">Thank you for supporting GameDayGrabs.</p>`,
     `<p class="gdg-email-muted" style="margin:0 0 8px;text-align:center;${textColorStyle(emailColors.muted)}font-size:11px;line-height:1.45;">Need help? <a class="gdg-email-accent" href="mailto:${escapeHtml(supportEmail)}" style="${textColorStyle(emailColors.accent)}text-decoration:none;font-weight:700;">${escapeHtml(supportEmail)}</a></p>`,
+    `<p class="gdg-email-muted" style="margin:0 0 8px;text-align:center;${textColorStyle(emailColors.muted)}font-size:11px;line-height:1.45;"><a class="gdg-email-accent" href="${STOREFRONT_ORDER_STATUS_URL}" style="${textColorStyle(emailColors.accent)}text-decoration:none;font-weight:700;">Check order status</a> &nbsp;|&nbsp; <a class="gdg-email-accent" href="${STOREFRONT_POLICIES_URL}" style="${textColorStyle(emailColors.accent)}text-decoration:none;font-weight:700;">Store policies</a></p>`,
     `<p class="gdg-email-muted" style="margin:0;text-align:center;${textColorStyle(emailColors.muted)}font-size:10px;line-height:1.45;">GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</p>`
   ].join("");
 }
@@ -359,6 +363,8 @@ function textFooter(supportEmail: string) {
   return [
     "",
     `Questions? Contact ${supportEmail}.`,
+    `Check order status: ${STOREFRONT_ORDER_STATUS_URL}`,
+    `Store policies: ${STOREFRONT_POLICIES_URL}`,
     "",
     "Thank you for supporting GameDayGrabs.",
     "GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners."

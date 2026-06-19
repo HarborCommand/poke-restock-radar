@@ -328,6 +328,14 @@ export type StorefrontOrderPaymentEventDTO = {
   receivedAt: string;
 };
 
+export type StorefrontTestOrderReason =
+  | "stripe_test_mode"
+  | "live_checkout_smoke"
+  | "email_smoke_test"
+  | "shipping_smoke_test"
+  | "refund_smoke_test"
+  | "other";
+
 export type StorefrontEmailNotificationDTO = {
   id: string;
   kind: string;
@@ -413,6 +421,10 @@ export type StorefrontOrderDTO = {
   stockReturnedAt: string | null;
   customerCancellationEmailStatus: string | null;
   customerCancellationEmailSentAt: string | null;
+  isTestOrder: boolean;
+  testOrderReason: StorefrontTestOrderReason | null;
+  testMarkedAt: string | null;
+  testMarkedBy: string | null;
   canCancelOrRefund: boolean;
   paidAt: string | null;
   shippedAt: string | null;
@@ -442,6 +454,36 @@ export type StorefrontSummaryDTO = {
   lastWebhookAt: string | null;
   totalRevenue: number;
   netProfit: number;
+  testOrderCount: number;
+};
+
+export type PublicOrderStatusLookupDTO = {
+  found: boolean;
+  message?: string;
+  order?: {
+    orderNumber: string;
+    orderDate: string;
+    status: string;
+    paymentStatus: string;
+    fulfillmentStatus: string;
+    fulfillmentMethod: "shipping" | "local_pickup";
+    shippingMethodLabel: string | null;
+    shippingCharged: number;
+    carrier: string | null;
+    trackingNumber: string | null;
+    trackingUrl: string | null;
+    pickupStatus: string | null;
+    refundStatus: string | null;
+    refundedAmount: number;
+    canceledAt: string | null;
+    refundedAt: string | null;
+    supportEmail: string;
+    items: Array<{
+      title: string;
+      quantity: number;
+      imageUrl: string | null;
+    }>;
+  };
 };
 
 export type InventoryStockLotDTO = {
@@ -497,7 +539,7 @@ export type InventorySaleDTO = {
   profitLoss: number;
   activeProfitLoss: number;
   roiPercent: number | null;
-  saleStatus: "active" | "partially_refunded" | "refunded" | "canceled";
+  saleStatus: "active" | "partially_refunded" | "refunded" | "canceled" | "test";
   storefrontOrderNumber: string | null;
   storefrontOrderStatus: string | null;
   refundStatus: string | null;

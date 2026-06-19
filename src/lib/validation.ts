@@ -1002,7 +1002,22 @@ export const orderFulfillmentUpdateSchema = z.object({
   trackingNumber: optionalTrimmed,
   carrier: optionalTrimmed,
   shippingCost: optionalMoney,
-  notes: optionalTrimmed
+  notes: optionalTrimmed,
+  isTestOrder: checkboxBoolean.optional(),
+  testOrderReason: z.enum(["stripe_test_mode", "live_checkout_smoke", "email_smoke_test", "shipping_smoke_test", "refund_smoke_test", "other"]).optional()
+}).superRefine((input, context) => {
+  if (input.isTestOrder === true && !input.testOrderReason) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["testOrderReason"],
+      message: "Select a test/smoke reason before marking this order."
+    });
+  }
+});
+
+export const publicOrderStatusLookupSchema = z.object({
+  orderNumber: z.string().trim().min(6).max(80),
+  email: z.string().trim().email().max(254)
 });
 
 export const inventoryCompCreateSchema = z.object({

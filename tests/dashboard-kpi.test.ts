@@ -245,6 +245,10 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     stockReturnedAt: null,
     customerCancellationEmailStatus: null,
     customerCancellationEmailSentAt: null,
+    isTestOrder: false,
+    testOrderReason: null,
+    testMarkedAt: null,
+    testMarkedBy: null,
     canCancelOrRefund: true,
     paidAt: now,
     shippedAt: null,
@@ -371,6 +375,48 @@ test("fully refunded storefront sales stay in history but are excluded from acti
   assert.equal(adjustedSale.netRevenueAfterRefund, 0);
   assert.equal(summary.totalSalesGross, 0);
   assert.equal(summary.totalSalesNet, 0);
+  assert.equal(summary.realizedProfitLoss, 0);
+  assert.equal(summary.itemsSold, 0);
+});
+
+test("test storefront sales stay in history but are excluded from active business totals", () => {
+  const adjusted = applyStorefrontOrderAdjustmentsToInventory(
+    [
+      item({
+        quantityOwned: 3,
+        quantitySold: 1,
+        sales: [
+          sale({
+            grossSale: 18,
+            netSale: 18,
+            costBasis: 9,
+            profitLoss: 9,
+            platform: "website",
+            notes: "Storefront order GDG-1001"
+          })
+        ]
+      })
+    ],
+    [
+      storefrontOrder({
+        isTestOrder: true,
+        testOrderReason: "live_checkout_smoke",
+        testMarkedAt: new Date().toISOString(),
+        testMarkedBy: "admin@example.com"
+      })
+    ]
+  );
+  const adjustedSale = adjusted[0].sales[0];
+  const summary = summarizeInventory(adjusted);
+
+  assert.equal(adjustedSale.saleStatus, "test");
+  assert.equal(adjustedSale.grossSale, 18);
+  assert.equal(adjustedSale.activeGrossSale, 0);
+  assert.equal(adjustedSale.activeNetSale, 0);
+  assert.equal(adjustedSale.activeProfitLoss, 0);
+  assert.equal(adjustedSale.activeQuantitySold, 0);
+  assert.equal(adjustedSale.netRevenueAfterRefund, 0);
+  assert.equal(summary.totalSalesGross, 0);
   assert.equal(summary.realizedProfitLoss, 0);
   assert.equal(summary.itemsSold, 0);
 });
@@ -1725,9 +1771,27 @@ test("shipping hub keeps carrier work separate from local pickup and archived or
   const canShip = app.slice(app.indexOf("function storefrontOrderCanShip"), app.indexOf("function storefrontOrderCanPickup"));
 
   assert.match(canShip, /storefrontOrderCanFulfill\(order\) && !storefrontOrderIsLocalPickup\(order\)/);
-  assert.match(shippingHub, /const carrierOrdersToShip = dashboard\.storefrontOrders\.filter\(storefrontOrderCanShip\)/);
+  assert.match(shippingHub, /const businessStorefrontOrders = dashboard\.storefrontOrders\.filter\(\(order\) => !order\.isTestOrder\)/);
+  assert.match(shippingHub, /const carrierOrdersToShip = businessStorefrontOrders\.filter\(storefrontOrderCanShip\)/);
   assert.match(shippingHub, /Local Pickup and archived orders are excluded\./);
   assert.match(shippingHub, /storefrontOrderIsCanceledOrRefunded/);
+  assert.match(shippingHub, /shipping-packing-items/);
+  assert.match(shippingHub, /shipping-packing-checklist/);
+  assert.match(shippingHub, /shippingHubPackingChecklist/);
+  assert.match(app, /Pull item/);
+  assert.match(app, /Check condition/);
+  assert.match(app, /Sleeve\/protect if applicable/);
+  assert.match(app, /Add tracking/);
+  assert.match(shippingHub, /shippingHubOrderDestination\(order\)/);
+  assert.match(shippingHub, /Order age \{timerState\.shortLabel\}/);
+  assert.match(shippingHub, /formatShippingPackageWeight\(order\)/);
+  assert.match(shippingHub, /formatShippingPackageProfile\(order\)/);
+  assert.match(shippingHub, /formatShippingPackageDimensions\(order\)/);
+  assert.match(shippingHub, /Copy Address/);
+  assert.match(shippingHub, /shippingHubOrderAddressText\(order\)/);
+  assert.match(shippingHub, /Copy Order #/);
+  assert.match(shippingHub, /Print Packing Slip/);
+  assert.match(shippingHub, /setPrintPackingSlipOrderId\(order\.id\)/);
   assert.match(shippingHub, /Open Order/);
   assert.match(shippingHub, /Add Tracking/);
   assert.match(shippingHub, /Mark Shipped/);
@@ -1768,6 +1832,9 @@ test("shipping hub surfaces missing shipping data and merchant readiness", () =>
   assert.match(shippingHub, /Google \/ Merchant Readiness/);
   assert.match(shippingHub, /Feed items missing brand/);
   assert.match(shippingHub, /Feed items missing product type\/category/);
+  assert.match(shippingHub, /Feed ready/);
+  assert.match(shippingHub, /shippingHubMerchantBrand\(item\)/);
+  assert.match(shippingHub, /shippingHubMerchantProductType\(item\)/);
   assert.match(shippingHub, /Products missing packed weight/);
   assert.match(shippingHub, /Products missing dimensions/);
   assert.match(shippingHub, /Ready for Standard Shipping/);

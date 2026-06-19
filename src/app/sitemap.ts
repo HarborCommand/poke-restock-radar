@@ -6,7 +6,7 @@ import { storefrontCollectionUrl, storefrontCollections } from "@/lib/storefront
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const staticSitemapPaths = ["/", "/shop", "/about", "/policies", "/contact"];
+const staticSitemapPaths = ["/", "/shop", "/about", "/policies", "/contact", "/order-status"];
 const feedSitemapPaths = ["/product-feed.xml"];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

@@ -62,8 +62,43 @@ test("Google Merchant product feed renders public active storefront products", (
   assert.match(xml, /<g:price>24\.99 USD<\/g:price>/);
   assert.match(xml, /<g:condition>new<\/g:condition>/);
   assert.match(xml, /<g:brand>Pokemon<\/g:brand>/);
+  assert.match(xml, /<g:product_type>Pokemon TCG &gt; Booster Bundles<\/g:product_type>/);
   assert.match(xml, /<g:gtin>123456789012<\/g:gtin>/);
   assert.match(xml, /<g:shipping_weight>12 oz<\/g:shipping_weight>/);
+});
+
+test("Google Merchant product feed uses safe brand and product type fallbacks without fake identifiers", () => {
+  const xml = storefrontProductFeedXml([
+    product({
+      title: "Pokemon Premium Collection",
+      category: "Premium Collections",
+      tags: ["Pokemon Sealed"],
+      brand: null,
+      manufacturer: null,
+      upc: ""
+    })
+  ]);
+
+  assert.match(xml, /<g:brand>Pokemon<\/g:brand>/);
+  assert.match(xml, /<g:product_type>Pokemon TCG &gt; Premium Collections<\/g:product_type>/);
+  assert.doesNotMatch(xml, /<g:gtin>/);
+  assert.doesNotMatch(xml, /aggregateRating|review|ratingValue/i);
+});
+
+test("Google Merchant product feed honors admin-entered brand while computing category from collection type", () => {
+  const xml = storefrontProductFeedXml([
+    product({
+      title: "Pokemon Checklane Blister",
+      category: "",
+      tags: ["Blisters"],
+      brand: "Admin Brand",
+      manufacturer: "Pokemon"
+    })
+  ]);
+
+  assert.match(xml, /<g:brand>Admin Brand<\/g:brand>/);
+  assert.match(xml, /<g:product_type>Pokemon TCG &gt; Blisters<\/g:product_type>/);
+  assert.doesNotMatch(xml, /<g:brand>Pokemon<\/g:brand>/);
 });
 
 test("Google Merchant product feed uses selected shipping profile defaults when product overrides are blank", () => {

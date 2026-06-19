@@ -61,6 +61,9 @@ test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.match(orderEmail.html + orderEmail.text, /We'll send tracking once your order ships\./);
   assert.match(orderEmail.html, /Securely processed by Stripe/);
   assert.match(orderEmail.html, /gamedaygrabs@outlook\.com/);
+  assert.match(orderEmail.html + orderEmail.text, /Check order status/);
+  assert.match(orderEmail.html + orderEmail.text, /https:\/\/www\.gamedaygrabs\.com\/order-status/);
+  assert.match(orderEmail.html + orderEmail.text, /https:\/\/www\.gamedaygrabs\.com\/policies/);
   assert.doesNotMatch(orderEmail.html, /background(?!-color)\s*:/i);
   assert.doesNotMatch(orderEmail.html, darkTemplatePattern);
   assert.doesNotMatch(orderEmail.html, whiteTextPattern);
@@ -128,6 +131,7 @@ test("shipping confirmation email includes tracking details and optional trackin
   assert.match(email.html, /Test Carrier/);
   assert.match(email.html, /TEST-PR-20260616-Y9SW07/);
   assert.match(email.html, /Track Your Package/);
+  assert.match(email.html + email.text, /Check order status/);
   assert.match(email.html, /Tracking updates may take up to 24 hours/);
   assert.match(email.text, /Tracking link: https:\/\/carrier\.example/);
   assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
@@ -149,6 +153,8 @@ test("refund and cancellation email includes refund status, amount, reason, and 
   assert.match(email.html, /\$49\.98/);
   assert.match(email.html, /Customer requested cancellation/);
   assert.match(email.html, /Refunds typically appear in your account within 3-10 business days/);
+  assert.match(email.html + email.text, /Store policies|https:\/\/www\.gamedaygrabs\.com\/policies/);
+  assert.match(email.html + email.text, /Check order status/);
   assert.match(email.html, /Status/);
   assert.match(email.html, /Refund amount/);
   assert.match(email.html, /Reason/);
@@ -175,6 +181,7 @@ test("local pickup email includes pickup instructions with no sensitive payment 
   assert.match(email.html, /Pickup location/);
   assert.match(email.html, /123 Test St/);
   assert.match(email.html, /Please bring a valid ID/);
+  assert.match(email.html + email.text, /Check order status/);
   assert.match(email.text, /Pickup notes:/);
   assert.match(email.text, /gamedaygrabs@outlook\.com/);
   assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
@@ -202,8 +209,12 @@ test("all customer email templates include clean footer and support copy", () =>
     assert.match(email.html, /#FF6A00/);
     assert.match(email.html, /Thank you for supporting GameDayGrabs/);
     assert.match(email.html, /Questions\?/);
+    assert.match(email.html, /Check order status/);
+    assert.match(email.html, /Store policies/);
     assert.match(email.html, /GameDayGrabs is not affiliated with The Pokemon Company International/);
     assert.match(email.text, /Questions\? Contact gamedaygrabs@outlook\.com/);
+    assert.match(email.text, /Check order status: https:\/\/www\.gamedaygrabs\.com\/order-status/);
+    assert.match(email.text, /Store policies: https:\/\/www\.gamedaygrabs\.com\/policies/);
     assert.doesNotMatch(email.html, /background(?!-color)\s*:/i);
     assert.doesNotMatch(email.html, /display:grid|grid-template|#0f3b23|#102314/i);
     assert.doesNotMatch(email.html, darkTemplatePattern);

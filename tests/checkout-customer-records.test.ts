@@ -568,7 +568,9 @@ test("packing slip renders safe order data and excludes payment details", () => 
   assert.match(packingSlip, /UPC \$\{item\.upc\}/);
   assert.match(packingSlip, /Qty \{item\.quantity\}/);
   assert.match(packingSlip, /Packing checklist/);
-  assert.match(packingSlip, /Internal note area/);
+  assert.match(packingSlip, /Package note area/);
+  assert.match(packingSlip, /Thank you for supporting GameDayGrabs/);
+  assert.match(packingSlip, /gamedaygrabs@outlook\.com/);
   assert.doesNotMatch(packingSlip, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|stripePaymentIntentId|stripeCheckoutSessionId/i);
 
   assert.match(css, /packing-slip-preview-shell/);

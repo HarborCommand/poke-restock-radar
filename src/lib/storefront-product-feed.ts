@@ -25,6 +25,7 @@ type ProductFeedItem = {
   price: string;
   condition: "new" | "used" | "refurbished";
   brand: string | null;
+  productType: string | null;
   gtin: string | null;
   shippingWeight: string | null;
   shippingLength: string | null;
@@ -77,8 +78,25 @@ function googleMerchantGtin(product: Pick<PublicStoreProductDTO, "upc">) {
   return /^\d{12,14}$/.test(digits) ? digits : null;
 }
 
-function googleMerchantBrand(product: Pick<PublicStoreProductDTO, "brand" | "manufacturer">) {
-  return compactText(product.brand) || compactText(product.manufacturer) || null;
+function pokemonTcgSignal(product: Pick<PublicStoreProductDTO, "title" | "category" | "tags" | "brand" | "manufacturer">) {
+  const text = [product.title, product.category, product.brand, product.manufacturer, ...(product.tags ?? [])].join(" ").toLowerCase();
+  return /pok[eé]mon|tcg|booster|blister|tin|premium collection|deck|sealed/.test(text);
+}
+
+export function googleMerchantBrand(product: Pick<PublicStoreProductDTO, "title" | "category" | "tags" | "brand" | "manufacturer">) {
+  return compactText(product.brand) || compactText(product.manufacturer) || (pokemonTcgSignal(product) ? "Pokemon" : null);
+}
+
+export function googleMerchantProductType(product: Pick<PublicStoreProductDTO, "title" | "category" | "tags">) {
+  const text = [product.title, product.category, ...(product.tags ?? [])].join(" ").toLowerCase();
+  if (/booster bundle/.test(text)) return "Pokemon TCG > Booster Bundles";
+  if (/sleeved booster|sleeved/.test(text)) return "Pokemon TCG > Sleeved Boosters";
+  if (/premium collection|collection box|premium box/.test(text)) return "Pokemon TCG > Premium Collections";
+  if (/checklane|blister/.test(text)) return "Pokemon TCG > Blisters";
+  if (/\btins?\b/.test(text)) return "Pokemon TCG > Tins";
+  if (/\bdecks?\b/.test(text)) return "Pokemon TCG > Decks";
+  const category = compactText(product.category);
+  return category ? `Pokemon TCG > ${category}` : "Pokemon TCG > Sealed Products";
 }
 
 function measuredUnit(value: number | null | undefined, unit: "oz" | "in") {
@@ -103,6 +121,7 @@ function productFeedItem(product: PublicStoreProductDTO, options: ProductFeedOpt
     price: `${product.price.toFixed(2)} USD`,
     condition: googleMerchantCondition(product),
     brand: googleMerchantBrand(product),
+    productType: googleMerchantProductType(product),
     gtin: googleMerchantGtin(product),
     shippingWeight: measuredUnit(packageData.packageWeightOz, "oz"),
     shippingLength: measuredUnit(packageData.packageLengthIn, "in"),
@@ -136,6 +155,7 @@ function productFeedItemXml(item: ProductFeedItem) {
     xmlElement("g:price", item.price),
     xmlElement("g:condition", item.condition),
     xmlElement("g:brand", item.brand),
+    xmlElement("g:product_type", item.productType),
     xmlElement("g:gtin", item.gtin),
     xmlElement("g:shipping_weight", item.shippingWeight),
     xmlElement("g:shipping_length", item.shippingLength),

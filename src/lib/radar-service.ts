@@ -1831,6 +1831,7 @@ function saleActiveQuantity(sale: InventorySaleDTO) {
 }
 
 function storefrontOrderSaleStatus(order: StorefrontOrderDTO): InventorySaleDTO["saleStatus"] {
+  if (order.isTestOrder) return "test";
   if (order.paymentStatus === "refunded" || order.status === "refunded") return "refunded";
   if (order.paymentStatus === "partially_refunded" || order.status === "partially_refunded") return "partially_refunded";
   if (order.status === "canceled" || order.fulfillmentStatus === "canceled" || ["failed", "expired"].includes(order.paymentStatus)) return "canceled";
@@ -1847,7 +1848,7 @@ function storefrontSaleRefundAllocation(sale: InventorySaleDTO, order: Storefron
 function applyStorefrontOrderToSale(sale: InventorySaleDTO, order: StorefrontOrderDTO): InventorySaleDTO {
   const saleStatus = storefrontOrderSaleStatus(order);
   const refundedAmount = Number(storefrontSaleRefundAllocation(sale, order).toFixed(2));
-  const isFullyInactive = saleStatus === "refunded" || saleStatus === "canceled";
+  const isFullyInactive = saleStatus === "refunded" || saleStatus === "canceled" || saleStatus === "test";
   const activeGrossSale = isFullyInactive ? 0 : Number(Math.max(0, sale.grossSale - refundedAmount).toFixed(2));
   const activeNetSale = isFullyInactive ? 0 : Number(Math.max(0, sale.netSale - refundedAmount).toFixed(2));
   const activeProfitLoss = isFullyInactive ? 0 : Number((activeNetSale - sale.costBasis).toFixed(2));

@@ -489,6 +489,7 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
           <Link href={sportsCards.href}>Sports Cards</Link>
         )}
         <Link href={storefrontCollectionPath("new-arrivals")}>New Arrivals</Link>
+        <Link href="/order-status">Check Order Status</Link>
         <Link href="/about">About</Link>
         <Link href="/policies">Policies</Link>
         <Link href="/contact">Contact</Link>

@@ -689,6 +689,24 @@ function storefrontOrderRefundActionLabel(order: StorefrontOrderDTO) {
   return storefrontOrderUsesReturnRefundFlow(order) ? "Refund / Return" : "Cancel / Refund";
 }
 
+const testOrderReasonOptions = [
+  { value: "stripe_test_mode", label: "Stripe test-mode order" },
+  { value: "live_checkout_smoke", label: "Live checkout smoke" },
+  { value: "email_smoke_test", label: "Email smoke test" },
+  { value: "shipping_smoke_test", label: "Shipping smoke test" },
+  { value: "refund_smoke_test", label: "Refund smoke test" },
+  { value: "other", label: "Other" }
+];
+
+function testOrderReasonLabel(reason: StorefrontOrderDTO["testOrderReason"]) {
+  return testOrderReasonOptions.find((option) => option.value === reason)?.label ?? "Reason not recorded";
+}
+
+function storefrontTestOrderBadge(order: StorefrontOrderDTO) {
+  if (!order.isTestOrder) return null;
+  return order.testOrderReason === "live_checkout_smoke" ? "Smoke Test" : "Test Order";
+}
+
 function storefrontOrderDetailIsReadOnly(order: StorefrontOrderDTO) {
   const reviewLocked = order.status === "inventory_review" || order.fulfillmentStatus === "review_required";
   return storefrontOrderIsCanceledOrRefunded(order) || (reviewLocked && !storefrontOrderCanFulfill(order));
@@ -1916,8 +1934,8 @@ export function RadarApp() {
   }
 
   const sidebarBadgeCounts: Partial<Record<Tab, number>> = {
-    orders: dashboard.storefrontOrders.filter(storefrontOrderCanFulfill).length,
-    shipping: dashboard.storefrontOrders.filter(storefrontOrderCanShip).length
+    orders: dashboard.storefrontOrders.filter((order) => !order.isTestOrder && storefrontOrderCanFulfill(order)).length,
+    shipping: dashboard.storefrontOrders.filter((order) => !order.isTestOrder && storefrontOrderCanShip(order)).length
   };
 
   return (
@@ -2828,7 +2846,8 @@ function DashboardPanel({
 }) {
   const liveAlert = dashboard.alerts.find((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !alert.read) ?? null;
   const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert)).slice(0, 5);
-  const newPaidOrders = dashboard.storefrontOrders.filter((order) => order.isNewPaidOrder);
+  const businessStorefrontOrders = dashboard.storefrontOrders.filter((order) => !order.isTestOrder);
+  const newPaidOrders = businessStorefrontOrders.filter((order) => order.isNewPaidOrder);
   const latestNewPaidOrder = newPaidOrders[0] ?? null;
   const profitValue = (item: InventoryItemDTO) => item.marketProfitLoss ?? item.businessProfitLoss ?? 0;
   const productsInStock = dashboard.inventory.filter((item) => item.quantityOwned > 0).length;
@@ -2845,7 +2864,7 @@ function DashboardPanel({
     .sort((a, b) => profitValue(b) - profitValue(a))
     .slice(0, 3);
   const activityItems = [
-    ...dashboard.storefrontOrders.map((order) => ({
+    ...businessStorefrontOrders.map((order) => ({
       id: order.id,
       icon: ShoppingBag,
       title: `Order ${order.orderNumber}`,
@@ -7280,16 +7299,59 @@ function shippingHubPackageSummary(item: InventoryItemDTO, shippingProfiles: Shi
   return `${weight} - ${dimensions}`;
 }
 
+function shippingHubPokemonTcgSignal(item: InventoryItemDTO) {
+  const text = [item.itemName, item.publicTitle, item.category, item.storefrontCategory, item.brand, item.manufacturer, item.setName, ...item.storefrontTags].join(" ").toLowerCase();
+  return /pok[eé]mon|tcg|booster|blister|tin|premium collection|deck|sealed/.test(text);
+}
+
+function shippingHubMerchantBrand(item: InventoryItemDTO) {
+  return String(item.brand || item.manufacturer || "").trim() || (shippingHubPokemonTcgSignal(item) ? "Pokemon" : "");
+}
+
+function shippingHubMerchantProductType(item: InventoryItemDTO) {
+  const text = [item.publicTitle || item.itemName, item.storefrontCategory, item.category, ...item.storefrontTags].join(" ").toLowerCase();
+  if (/booster bundle/.test(text)) return "Pokemon TCG > Booster Bundles";
+  if (/sleeved booster|sleeved/.test(text)) return "Pokemon TCG > Sleeved Boosters";
+  if (/premium collection|collection box|premium box/.test(text)) return "Pokemon TCG > Premium Collections";
+  if (/checklane|blister/.test(text)) return "Pokemon TCG > Blisters";
+  if (/\btins?\b/.test(text)) return "Pokemon TCG > Tins";
+  if (/\bdecks?\b/.test(text)) return "Pokemon TCG > Decks";
+  const category = String(item.storefrontCategory || item.category || "").trim();
+  return category ? `Pokemon TCG > ${category}` : shippingHubPokemonTcgSignal(item) ? "Pokemon TCG > Sealed Products" : "";
+}
+
+const shippingHubPackingChecklist = [
+  "Pull item",
+  "Check condition",
+  "Sleeve/protect if applicable",
+  "Pack item",
+  "Add packing slip",
+  "Seal package",
+  "Add tracking"
+];
+
 function shippingHubOrderDestination(order: StorefrontOrderDTO) {
   const city = order.shippingAddress?.city?.trim();
   const state = order.shippingAddress?.state?.trim();
-  return [city, state].filter(Boolean).join(", ") || "Destination not captured";
+  const postalCode = order.shippingAddress?.postalCode?.trim();
+  const cityState = [city, state].filter(Boolean).join(", ");
+  return [cityState, postalCode].filter(Boolean).join(" ") || "Destination not captured";
+}
+
+function shippingHubOrderAddressText(order: StorefrontOrderDTO) {
+  return formatStorefrontAddressLines(order.shippingAddress).join("\n");
+}
+
+function shippingHubOrderItemRows(order: StorefrontOrderDTO) {
+  return order.items.length
+    ? order.items.map((item) => ({ label: item.publicTitle, quantity: item.quantity }))
+    : [{ label: "No item details captured", quantity: 0 }];
 }
 
 function shippingHubOrderItems(order: StorefrontOrderDTO) {
-  return order.items.length
-    ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
-    : "No item details captured";
+  return shippingHubOrderItemRows(order)
+    .map((item) => (item.quantity > 0 ? `${item.quantity}x ${item.label}` : item.label))
+    .join(", ");
 }
 
 function shippingHubCarrierTrackingUrl(order: StorefrontOrderDTO) {
@@ -7340,33 +7402,36 @@ function ShippingHubPanel({
   runAction: ActionHandler;
 }) {
   const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [printPackingSlipOrderId, setPrintPackingSlipOrderId] = useState("");
   const [shippingEditItemId, setShippingEditItemId] = useState("");
   const [profileEditor, setProfileEditor] = useState<{ mode: "create" | "edit"; profileId?: string } | null>(null);
   const [orderTimerNow, setOrderTimerNow] = useState(() => Date.now());
   const selectedOrder = dashboard.storefrontOrders.find((order) => order.id === selectedOrderId) ?? null;
   const shippingEditItem = dashboard.inventory.find((item) => item.id === shippingEditItemId) ?? null;
   const selectedProfile = profileEditor?.profileId ? dashboard.shippingProfiles.find((profile) => profile.id === profileEditor.profileId) ?? null : null;
-  const carrierOrdersToShip = dashboard.storefrontOrders.filter(storefrontOrderCanShip);
+  const businessStorefrontOrders = dashboard.storefrontOrders.filter((order) => !order.isTestOrder);
+  const carrierOrdersToShip = businessStorefrontOrders.filter(storefrontOrderCanShip);
   const packingOrders = carrierOrdersToShip.filter((order) => order.fulfillmentStatus === "packing" || order.status === "packing");
-  const shippedOrders = dashboard.storefrontOrders
+  const shippedOrders = businessStorefrontOrders
     .filter((order) => !storefrontOrderIsLocalPickup(order) && order.fulfillmentStatus === "shipped" && !storefrontOrderIsCanceledOrRefunded(order))
     .sort((a, b) => (Date.parse(b.shippedAt || b.updatedAt) || 0) - (Date.parse(a.shippedAt || a.updatedAt) || 0));
   const shippedTodayCount = shippedOrders.filter((order) => shippingHubIsToday(order.shippedAt || order.updatedAt)).length;
   const recentlyShippedCount = shippedOrders.filter((order) => shippingHubIsRecent(order.shippedAt || order.updatedAt)).length;
   const missingProducts = shippingHubMissingProducts(dashboard.inventory, dashboard.shippingProfiles);
   const fallbackProducts = shippingHubPublishedProducts(dashboard.inventory).filter((item) => inventoryUsesFallbackShipping(item, dashboard.shippingProfiles));
-  const shippingRevenue = dashboard.storefrontOrders
+  const shippingRevenue = businessStorefrontOrders
     .filter((order) => order.paymentStatus === "paid" && !storefrontOrderIsLocalPickup(order) && !storefrontOrderIsCanceledOrRefunded(order))
     .reduce((sum, order) => sum + order.shippingCharged, 0);
-  const shippingCost = dashboard.storefrontOrders
+  const shippingCost = businessStorefrontOrders
     .filter((order) => !storefrontOrderIsLocalPickup(order) && !storefrontOrderIsCanceledOrRefunded(order))
     .reduce((sum, order) => sum + order.shippingCost, 0);
   const readyForStandardShipping = shippingHubPublishedProducts(dashboard.inventory).filter(
     (item) => inventoryShippingProfileComplete(item, dashboard.shippingProfiles) && item.shippingAvailable && !inventoryShippingLocalPickupOnly(item)
   );
   const publishedShippingProducts = shippingHubPublishedProducts(dashboard.inventory);
-  const missingBrandCount = publishedShippingProducts.filter((item) => !String(item.brand || "").trim()).length;
-  const missingCategoryCount = publishedShippingProducts.filter((item) => !String(item.storefrontCategory || item.category || "").trim()).length;
+  const missingBrandCount = publishedShippingProducts.filter((item) => !shippingHubMerchantBrand(item)).length;
+  const missingCategoryCount = publishedShippingProducts.filter((item) => !shippingHubMerchantProductType(item)).length;
+  const feedReadyCount = publishedShippingProducts.filter((item) => shippingHubMerchantBrand(item) && shippingHubMerchantProductType(item) && (item.publicImages.length || item.imageUrl)).length;
   const missingEffectiveWeightCount = publishedShippingProducts.filter((item) => inventoryMissingShippingWeight(item, dashboard.shippingProfiles)).length;
   const missingEffectiveDimensionCount = publishedShippingProducts.filter((item) => inventoryMissingShippingDimensions(item, dashboard.shippingProfiles)).length;
 
@@ -7374,6 +7439,15 @@ function ShippingHubPanel({
     const orderTimerTick = window.setInterval(() => setOrderTimerNow(Date.now()), ORDER_TIMER_MINUTE_MS);
     return () => window.clearInterval(orderTimerTick);
   }, []);
+
+  useEffect(() => {
+    if (!printPackingSlipOrderId || selectedOrder?.id !== printPackingSlipOrderId) return;
+    const printTimer = window.setTimeout(() => {
+      window.print();
+      setPrintPackingSlipOrderId("");
+    }, 100);
+    return () => window.clearTimeout(printTimer);
+  }, [printPackingSlipOrderId, selectedOrder?.id]);
 
   function copyShippingHubValue(value: string | null | undefined) {
     const text = String(value || "").trim();
@@ -7408,7 +7482,7 @@ function ShippingHubPanel({
         <InventoryKpiCard label="Shipped Today" value={String(shippedTodayCount)} detail={`${recentlyShippedCount} shipped recently`} tone="good" />
         <InventoryKpiCard label="Missing Shipping Data" value={String(missingProducts.length)} detail="Published products needing package data" tone={missingProducts.length ? "watch" : "good"} />
         <InventoryKpiCard label="Using Fallback Shipping" value={String(fallbackProducts.length)} detail="Safe fallback still active" tone={fallbackProducts.length ? "watch" : "good"} />
-        <InventoryKpiCard label="Average Shipping Charged" value={money(shippingHubAverageShippingCharged(dashboard.storefrontOrders))} detail="Carrier shipment average" tone="neutral" />
+        <InventoryKpiCard label="Average Shipping Charged" value={money(shippingHubAverageShippingCharged(businessStorefrontOrders))} detail="Carrier shipment average" tone="neutral" />
         <InventoryKpiCard label="Shipping Revenue" value={money(shippingRevenue)} detail={`Cost recorded ${money(shippingCost)}`} tone={shippingRevenue >= shippingCost ? "good" : "watch"} />
         <InventoryKpiCard label="Local Pickup" value={String(dashboard.storefrontSummary.pickupOrderCount)} detail="Separate pickup queue" tone={dashboard.storefrontSummary.pickupOrderCount ? "watch" : "neutral"} />
       </section>
@@ -7433,15 +7507,28 @@ function ShippingHubPanel({
                         <strong>{order.orderNumber}</strong>
                         <span>{order.customerName || "Customer"} - {shippingHubOrderDestination(order)}</span>
                       </div>
-                      <p>{shippingHubOrderItems(order)}</p>
+                      <div className="shipping-packing-items" aria-label={`Items to pack for ${order.orderNumber}`}>
+                        {shippingHubOrderItemRows(order).map((item) => (
+                          <span key={`${order.id}-${item.label}`}>
+                            <b>{item.quantity > 0 ? `Qty ${item.quantity}` : "Item"}</b>
+                            {item.label}
+                          </span>
+                        ))}
+                      </div>
                       <div className="shipping-work-meta">
                         <span>{formatShippingCarrierService(order)}</span>
                         <span>{money(order.shippingCharged)} charged</span>
                         <span>{formatShippingPackageWeight(order)}</span>
                         <span>{formatShippingPackageProfile(order)}</span>
                         <span>{formatShippingPackageDimensions(order)}</span>
+                        <span>Order age {timerState.shortLabel}</span>
                         {order.shippingQuotedZip ? <span>Quoted ZIP {order.shippingQuotedZip}</span> : null}
                       </div>
+                      <ol className="shipping-packing-checklist" aria-label={`Packing checklist for ${order.orderNumber}`}>
+                        {shippingHubPackingChecklist.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ol>
                       {shippingQuoteStatusBadges(order).length ? (
                         <div className="shipping-quote-badge-row">
                           {shippingQuoteStatusBadges(order).map((badge) => (
@@ -7457,6 +7544,22 @@ function ShippingHubPanel({
                       <span className="chip compact-chip neutral">{storefrontOrderFulfillmentLabel(order)}</span>
                     </div>
                     <div className="catalog-actions shipping-work-actions">
+                      <button className="mini-action" type="button" onClick={() => copyShippingHubValue(shippingHubOrderAddressText(order))}>
+                        Copy Address
+                      </button>
+                      <button className="mini-action" type="button" onClick={() => copyShippingHubValue(order.orderNumber)}>
+                        Copy Order #
+                      </button>
+                      <button
+                        className="mini-action"
+                        type="button"
+                        onClick={() => {
+                          setSelectedOrderId(order.id);
+                          setPrintPackingSlipOrderId(order.id);
+                        }}
+                      >
+                        Print Packing Slip
+                      </button>
                       <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>
                         Open Order
                       </button>
@@ -7700,6 +7803,10 @@ function ShippingHubPanel({
             <article>
               <span>Feed items missing product type/category</span>
               <strong>{missingCategoryCount}</strong>
+            </article>
+            <article>
+              <span>Feed ready</span>
+              <strong>{feedReadyCount}</strong>
             </article>
             <article>
               <span>Products missing packed weight</span>
@@ -8112,13 +8219,19 @@ function StorefrontOrdersPanel({
   const [refundOrderId, setRefundOrderId] = useState("");
   const [refundOrderKey, setRefundOrderKey] = useState("");
   const [activeOrderTab, setActiveOrderTab] = useState<StorefrontOrderTab>(() => storefrontDefaultOrderTab(dashboard.storefrontOrders));
+  const [testOrderVisibility, setTestOrderVisibility] = useState<"exclude" | "include" | "only">("exclude");
   const [storeSettingsOpen, setStoreSettingsOpen] = useState(false);
   const [orderTimerNow, setOrderTimerNow] = useState(() => Date.now());
   const selectedOrder = dashboard.storefrontOrders.find((order) => order.id === selectedOrderId) ?? null;
   const refundOrder = dashboard.storefrontOrders.find((order) => order.id === refundOrderId) ?? null;
   const stats = dashboard.storefrontSummary;
-  const orderTabs = storefrontOrderTabs(dashboard.storefrontOrders);
-  const visibleOrders = storefrontOrdersForTab(dashboard.storefrontOrders, activeOrderTab);
+  const ordersForVisibility = useMemo(() => {
+    if (testOrderVisibility === "include") return dashboard.storefrontOrders;
+    if (testOrderVisibility === "only") return dashboard.storefrontOrders.filter((order) => order.isTestOrder);
+    return dashboard.storefrontOrders.filter((order) => !order.isTestOrder);
+  }, [dashboard.storefrontOrders, testOrderVisibility]);
+  const orderTabs = storefrontOrderTabs(ordersForVisibility);
+  const visibleOrders = storefrontOrdersForTab(ordersForVisibility, activeOrderTab);
   const emptyState = storefrontOrderEmptyState(activeOrderTab);
   const openRefundOrder = (order: StorefrontOrderDTO) => {
     setRefundOrderKey(globalThis.crypto?.randomUUID?.() ?? `cancel-refund-${order.id}-${Date.now()}`);
@@ -8169,6 +8282,7 @@ function StorefrontOrdersPanel({
         <InventoryKpiCard label="Paid Orders" value={String(stats.paidOrderCount)} detail="All time" tone="good" />
         <InventoryKpiCard label="Store Revenue" value={money(stats.totalRevenue)} detail="Net after refunds" tone="watch" />
         <InventoryKpiCard label="Store Profit" value={money(stats.netProfit)} detail="Net after refunds and costs" tone={stats.netProfit >= 0 ? "good" : "bad"} />
+        <InventoryKpiCard label="Test / Smoke Orders" value={String(stats.testOrderCount)} detail="Excluded from business metrics" tone={stats.testOrderCount ? "watch" : "neutral"} />
       </section>
 
       <section className="storefront-admin-grid fulfillment-focused">
@@ -8178,6 +8292,18 @@ function StorefrontOrdersPanel({
               <h3>Fulfillment Center</h3>
               <span>Manage paid, pending, and invoice orders. {storefrontOrderTabDetail(activeOrderTab)}</span>
             </div>
+          </div>
+          <div className="order-reporting-filter" aria-label="Test order reporting visibility">
+            <span>Reporting view</span>
+            <button className={testOrderVisibility === "exclude" ? "active" : ""} type="button" onClick={() => setTestOrderVisibility("exclude")}>
+              Real orders
+            </button>
+            <button className={testOrderVisibility === "include" ? "active" : ""} type="button" onClick={() => setTestOrderVisibility("include")}>
+              Include test orders
+            </button>
+            <button className={testOrderVisibility === "only" ? "active" : ""} type="button" onClick={() => setTestOrderVisibility("only")}>
+              Show only test orders
+            </button>
           </div>
           <div className="order-tab-bar" role="tablist" aria-label="Order views">
             {orderTabs.map((tab) => (
@@ -8205,7 +8331,7 @@ function StorefrontOrdersPanel({
                   ? order.items.map((item) => `${item.quantity}x ${item.publicTitle}`).join(", ")
                   : order.notes?.split("\n").find((line) => line.startsWith("Subject:"))?.replace("Subject:", "Contact:") || "Contact inquiry";
                 return (
-                  <article className={`storefront-order-row ${canFulfill ? "needs-fulfillment" : ""} ${archived ? "archived" : ""}`} key={order.id}>
+                  <article className={`storefront-order-row ${canFulfill ? "needs-fulfillment" : ""} ${archived ? "archived" : ""} ${order.isTestOrder ? "test-order" : ""}`.trim()} key={order.id}>
                     <button type="button" onClick={() => setSelectedOrderId(order.id)}>
                       <strong>{order.orderNumber}</strong>
                       <span>{order.customerName || "Customer"} - {order.customerEmail || "No customer email"} - {dateTime(order.createdAt)}</span>
@@ -8219,6 +8345,7 @@ function StorefrontOrdersPanel({
                     </button>
                     <div className="storefront-order-status-stack">
                       <span className={`chip compact-chip storefront-order-timer-chip ${timerState.tone}`}>{timerState.shortLabel}</span>
+                      {order.isTestOrder ? <span className="chip compact-chip watch">{storefrontTestOrderBadge(order)}</span> : null}
                       <span className={`chip compact-chip ${archived ? "bad" : order.needsFulfillment ? "watch" : "neutral"}`}>{order.statusBadge}</span>
                       <span className={`chip compact-chip ${storefrontOrderPaymentTone(order)}`}>{formatStatus(order.paymentStatus)}</span>
                       <span className={`chip compact-chip ${canFulfill ? "watch" : "neutral"}`}>{storefrontOrderFulfillmentLabel(order)}</span>
@@ -8532,6 +8659,7 @@ function StorefrontOrderDetailsModal({
             </div>
             <div className="storefront-order-workspace-badges" aria-label="Order status">
               <span className={`chip compact-chip storefront-order-timer-chip ${timerState.tone}`}>{timerState.shortLabel}</span>
+              {order.isTestOrder ? <span className="chip compact-chip watch">{storefrontTestOrderBadge(order)}</span> : null}
               <span className={`chip compact-chip ${storefrontOrderPaymentTone(order)}`}>{formatStatus(order.paymentStatus)}</span>
               <span className={`chip compact-chip ${canFulfillOrder ? "watch" : orderDetailReadOnly ? "neutral" : "good"}`}>{storefrontOrderFulfillmentLabel(order)}</span>
               {canFulfillOrder ? <span className="chip compact-chip good">{localPickupOrder ? "Ready for pickup" : "Ready for fulfillment"}</span> : null}
@@ -8720,6 +8848,67 @@ function StorefrontOrderDetailsModal({
             </div>
           </section>
         ) : null}
+
+        <section className={`storefront-test-order-card ${order.isTestOrder ? "marked" : ""}`} aria-label="Test and smoke order reporting controls">
+          <div>
+            <span className={`chip compact-chip ${order.isTestOrder ? "watch" : "neutral"}`}>
+              {order.isTestOrder ? storefrontTestOrderBadge(order) : "Business reporting"}
+            </span>
+            <h3>{order.isTestOrder ? "Marked as Test / Smoke" : "Test / Smoke Order"}</h3>
+            <p>This does not refund the order or change inventory. It only changes reporting visibility.</p>
+            {order.isTestOrder ? (
+              <div className="detail-stat-grid">
+                <DetailStat label="Reason" value={testOrderReasonLabel(order.testOrderReason)} />
+                <DetailStat label="Marked at" value={order.testMarkedAt ? dateTime(order.testMarkedAt) : "Not recorded"} />
+                <DetailStat label="Marked by" value={order.testMarkedBy || "Not recorded"} />
+              </div>
+            ) : (
+              <p className="form-helper publish-ready-note">Use this only for Stripe test-mode orders, live smoke tests, email/shipping/refund smoke tests, or owner-approved cleanup.</p>
+            )}
+          </div>
+          {order.isTestOrder ? (
+            <button
+              className="mini-action"
+              disabled={busy}
+              type="button"
+              onClick={() =>
+                runAction(
+                  `Removing test mark from ${order.orderNumber}`,
+                  () =>
+                    requestJson(`/api/radar/storefront/orders/${order.id}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ isTestOrder: false })
+                    }),
+                  {
+                    confirm: "Remove the Test / Smoke marker from this order? This only changes reporting visibility.",
+                    success: "Test mark removed"
+                  }
+                )
+              }
+            >
+              Remove Test Mark
+            </button>
+          ) : (
+            <form
+              className="storefront-test-order-form"
+              onSubmit={(event) =>
+                submit(
+                  event,
+                  `Marking ${order.orderNumber} as test/smoke`,
+                  (form) => requestJson(`/api/radar/storefront/orders/${order.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
+                  { reset: false, success: "Order marked as Test / Smoke" }
+                )
+              }
+            >
+              <input name="isTestOrder" type="hidden" value="true" />
+              <SelectInput name="testOrderReason" label="Reason" defaultValue="" options={[{ value: "", label: "Select reason" }, ...testOrderReasonOptions]} required />
+              <button className="primary-action" disabled={busy} type="submit">
+                <AlertTriangle size={15} />
+                Mark as Test / Smoke
+              </button>
+            </form>
+          )}
+        </section>
 
         <div className="storefront-order-workspace-grid">
           <div className="storefront-order-primary-column">
@@ -9072,11 +9261,13 @@ function StorefrontOrderDetailsModal({
 function StorefrontPackingSlip({ order }: { order: StorefrontOrderDTO }) {
   const shippingLines = formatStorefrontAddressLines(order.shippingAddress);
   const checklist = [
-    "Verify item title and quantity",
-    "Inspect packaging condition",
-    "Add protective packing material",
-    "Confirm shipping address on label",
-    "Seal package before handoff"
+    "Pull item",
+    "Check condition",
+    "Sleeve/protect if applicable",
+    "Pack item",
+    "Add packing slip",
+    "Seal package",
+    "Add tracking"
   ];
   return (
     <section className="packing-slip-card" aria-label={`Packing slip for ${order.orderNumber}`}>
@@ -9139,9 +9330,13 @@ function StorefrontPackingSlip({ order }: { order: StorefrontOrderDTO }) {
         ))}
       </section>
       <section className="packing-slip-notes">
-        <h4>Internal note area</h4>
+        <h4>Package note area</h4>
         <div aria-hidden="true" />
       </section>
+      <footer className="packing-slip-footer">
+        <strong>Thank you for supporting GameDayGrabs.</strong>
+        <span>Questions? Contact gamedaygrabs@outlook.com.</span>
+      </footer>
     </section>
   );
 }
@@ -13221,7 +13416,8 @@ function SalesLog({
           if (filters.platform !== "ALL" && sale.platform !== filters.platform) return false;
           if (filters.profitStatus !== "ALL" && status !== filters.profitStatus) return false;
           if (filters.saleState === "ACTIVE" && !saleCountsAsActive(sale)) return false;
-          if (filters.saleState === "REFUNDED_CANCELED" && sale.saleStatus === "active") return false;
+          if (filters.saleState === "REFUNDED_CANCELED" && !["refunded", "canceled", "partially_refunded"].includes(sale.saleStatus)) return false;
+          if (filters.saleState === "TEST" && sale.saleStatus !== "test") return false;
           if (fromDate && soldAt < fromDate) return false;
           if (toDate && soldAt > toDate) return false;
           return true;
@@ -13298,7 +13494,8 @@ function SalesLog({
           options={[
             { value: "ALL", label: "All" },
             { value: "ACTIVE", label: "Active sales" },
-            { value: "REFUNDED_CANCELED", label: "Refunded / canceled" }
+            { value: "REFUNDED_CANCELED", label: "Refunded / canceled" },
+            { value: "TEST", label: "Test / smoke" }
           ]}
         />
         <TextInput name="fromDate" label="From" type="date" value={filters.fromDate} onChange={updateFilter} />
@@ -13364,10 +13561,11 @@ function saleProfitStatusLabel(sale: InventorySaleDTO) {
 }
 
 function saleCountsAsActive(sale: InventorySaleDTO) {
-  return !["refunded", "canceled"].includes(sale.saleStatus) && sale.activeGrossSale > 0;
+  return !["refunded", "canceled", "test"].includes(sale.saleStatus) && sale.activeGrossSale > 0;
 }
 
 function saleLifecycleLabel(sale: InventorySaleDTO) {
+  if (sale.saleStatus === "test") return "Test / Smoke";
   if (sale.saleStatus === "refunded") return "Refunded";
   if (sale.saleStatus === "partially_refunded") return "Partially Refunded";
   if (sale.saleStatus === "canceled") return "Canceled";
@@ -13375,6 +13573,7 @@ function saleLifecycleLabel(sale: InventorySaleDTO) {
 }
 
 function saleLifecycleTone(sale: InventorySaleDTO) {
+  if (sale.saleStatus === "test") return "watch";
   if (sale.saleStatus === "refunded" || sale.saleStatus === "canceled") return "bad";
   if (sale.saleStatus === "partially_refunded") return "watch";
   return saleProfitTone(sale);

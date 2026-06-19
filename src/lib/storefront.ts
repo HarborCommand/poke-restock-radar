@@ -38,12 +38,14 @@ import {
 } from "@/lib/storefront-purchase-limits";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import type {
+  PublicOrderStatusLookupDTO,
   PublicStoreProductDTO,
   SessionUser,
   StorefrontOrderDTO,
   StorefrontOrderItemDTO,
   StorefrontSettingsDTO,
-  StorefrontSummaryDTO
+  StorefrontSummaryDTO,
+  StorefrontTestOrderReason
 } from "@/types/radar";
 
 const reservationMinutes = 15;
@@ -1225,6 +1227,18 @@ function orderRemainingRefundableCents(order: Pick<StorefrontOrderWithItems, "to
 }
 
 const activeRevenuePaymentStatuses = ["paid", "partially_refunded"];
+const storefrontTestOrderReasons = new Set<StorefrontTestOrderReason>([
+  "stripe_test_mode",
+  "live_checkout_smoke",
+  "email_smoke_test",
+  "shipping_smoke_test",
+  "refund_smoke_test",
+  "other"
+]);
+
+function storefrontRealBusinessOrderWhere(): Prisma.StorefrontOrderWhereInput {
+  return { isTestOrder: false };
+}
 
 function storefrontOrderNetRevenue(order: Pick<StorefrontOrderWithItems, "total" | "refundedAmount">) {
   return Math.max(0, order.total - (order.refundedAmount || 0));
@@ -1529,7 +1543,8 @@ function orderTimeline(order: StorefrontOrderWithItems): StorefrontOrderDTO["tim
     { label: "Admin note/reason", at: cancellationStarted?.receivedAt.toISOString() ?? null, detail: [order.refundReason ? `Reason: ${order.refundReason}` : null, order.refundNote ? `Note: ${order.refundNote}` : null].filter(Boolean).join(" - ") || "No admin refund/cancellation note recorded." },
     { label: "Packing", at: order.fulfillmentStatus === "packing" || order.status === "packing" ? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "packing" || order.status === "packing" ? "Order is marked packing." : "Not marked packing yet." },
     { label: "Shipped", at: order.fulfillmentStatus === "shipped" ? order.fulfillment?.shippedAt?.toISOString() ?? order.updatedAt.toISOString() : null, detail: order.fulfillmentStatus === "shipped" ? "Order is marked shipped." : "Not shipped yet." },
-    { label: "Shipping email", at: shipmentEmail?.sentAt ?? shipmentEmail?.updatedAt ?? null, detail: shipmentEmail ? `Email status: ${shipmentEmail.status}.` : "No shipping email recorded." }
+    { label: "Shipping email", at: shipmentEmail?.sentAt ?? shipmentEmail?.updatedAt ?? null, detail: shipmentEmail ? `Email status: ${shipmentEmail.status}.` : "No shipping email recorded." },
+    { label: "Test / smoke marker", at: order.testMarkedAt?.toISOString() ?? null, detail: order.isTestOrder ? `Marked as test/smoke: ${order.testOrderReason ?? "reason not recorded"}.` : "Not marked as a test/smoke order." }
   ];
 }
 
@@ -1640,6 +1655,10 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     stockReturnedAt: order.stockReturnedAt?.toISOString() ?? null,
     customerCancellationEmailStatus: order.customerCancellationEmailStatus,
     customerCancellationEmailSentAt: order.customerCancellationEmailSentAt?.toISOString() ?? null,
+    isTestOrder: order.isTestOrder,
+    testOrderReason: storefrontTestOrderReasons.has(order.testOrderReason as StorefrontTestOrderReason) ? (order.testOrderReason as StorefrontTestOrderReason) : null,
+    testMarkedAt: order.testMarkedAt?.toISOString() ?? null,
+    testMarkedBy: order.testMarkedBy ?? null,
     canCancelOrRefund: orderCanCancelOrRefund(order),
     paidAt: order.paidAt?.toISOString() ?? null,
     shippedAt: order.fulfillment?.shippedAt?.toISOString() ?? null,
@@ -2662,7 +2681,7 @@ async function checkoutShippingSnapshot(session: Stripe.Checkout.Session, order:
 
 async function syncStorefrontCustomerTotals(customerId: string, customerEmail: string) {
   const paidOrders = await prisma.storefrontOrder.findMany({
-    where: { customerEmail, paymentStatus: { in: activeRevenuePaymentStatuses } },
+    where: { customerEmail, paymentStatus: { in: activeRevenuePaymentStatuses }, ...storefrontRealBusinessOrderWhere() },
     select: { total: true, refundedAmount: true, paidAt: true, createdAt: true }
   });
   const paidDates = paidOrders
@@ -2978,14 +2997,69 @@ export async function listStorefrontOrders(currentUser: SessionUser) {
   return orders.map(storefrontOrderToDTO);
 }
 
+const publicOrderLookupMiss = "We could not find an order with that order number and email.";
+
+function publicPickupStatus(order: StorefrontOrderWithItems) {
+  if (!orderIsLocalPickup(order)) return null;
+  if (order.fulfillmentStatus === "picked_up") return "Picked up";
+  if (order.fulfillmentStatus === "pickup_ready") return "Ready for pickup";
+  return "Pickup pending";
+}
+
+export async function lookupPublicOrderStatus(input: { orderNumber: string; email: string }): Promise<PublicOrderStatusLookupDTO> {
+  const orderNumber = input.orderNumber.trim().toUpperCase();
+  const email = normalizedCustomerEmail(input.email);
+  if (!orderNumber || !email) return { found: false, message: publicOrderLookupMiss };
+
+  const order = await prisma.storefrontOrder.findFirst({
+    where: { orderNumber },
+    include: storefrontOrderInclude
+  });
+  if (!order) return { found: false, message: publicOrderLookupMiss };
+  if (normalizedCustomerEmail(order.customerEmail ?? order.customer?.email) !== email) {
+    return { found: false, message: publicOrderLookupMiss };
+  }
+
+  const settings = await getStorefrontSettings();
+  const isLocalPickup = orderIsLocalPickup(order);
+  return {
+    found: true,
+    order: {
+      orderNumber: order.orderNumber,
+      orderDate: order.createdAt.toISOString(),
+      status: orderStatusBadge(order),
+      paymentStatus: order.paymentStatus,
+      fulfillmentStatus: order.fulfillmentStatus,
+      fulfillmentMethod: isLocalPickup ? "local_pickup" : "shipping",
+      shippingMethodLabel: order.shippingMethodLabel,
+      shippingCharged: order.shippingCharged,
+      carrier: isLocalPickup ? null : order.carrier,
+      trackingNumber: isLocalPickup ? null : order.trackingNumber,
+      trackingUrl: isLocalPickup ? null : trackingUrlFor(order.carrier, order.trackingNumber),
+      pickupStatus: publicPickupStatus(order),
+      refundStatus: order.refundStatus ?? (order.paymentStatus === "refunded" || order.paymentStatus === "partially_refunded" ? order.paymentStatus : null),
+      refundedAmount: order.refundedAmount,
+      canceledAt: order.canceledAt?.toISOString() ?? null,
+      refundedAt: order.refundedAt?.toISOString() ?? null,
+      supportEmail: settings.contactEmail || defaultStorefrontContactEmail,
+      items: order.items.map((item) => ({
+        title: item.publicTitle,
+        quantity: item.quantity,
+        imageUrl: item.imageUrl ?? getSavedProductImageUrls(item.inventoryItem, { publicOnly: true }).find(isStorefrontDisplayImageUrl) ?? null
+      }))
+    }
+  };
+}
+
 export async function storefrontSummary(currentUser: SessionUser): Promise<StorefrontSummaryDTO> {
   const where = currentUser.role === "ADMIN" ? {} : { userId: currentUser.id };
+  const realBusinessOrderWhere = storefrontRealBusinessOrderWhere();
   const localPickupOrderWhere: Prisma.StorefrontOrderWhereInput = {
     OR: [{ shippingMethodLabel: "Local Pickup" }, { shippingPackageProfile: "local_pickup" }]
   };
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const [productCount, activeProductCount, pendingOrderCount, inquiryCount, newPaidOrderCount, ordersToShipCount, pickupOrderCount, paidOrders, todayPaidOrders, lastPaidOrder, lastWebhook] = await Promise.all([
+  const [productCount, activeProductCount, pendingOrderCount, inquiryCount, newPaidOrderCount, ordersToShipCount, pickupOrderCount, paidOrders, todayPaidOrders, lastPaidOrder, lastWebhook, testOrderCount] = await Promise.all([
     prisma.inventoryItem.count({ where: { ...(where as Prisma.InventoryItemWhereInput), publishToStore: true } }),
     prisma.inventoryItem.count({
       where: {
@@ -2994,11 +3068,12 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
         storeStatus: { in: ["active", "sold_out"] }
       }
     }),
-    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "pending_payment" } }),
-    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: { in: ["invoice_requested", "contact_message"] } } }),
+    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: "pending_payment", ...realBusinessOrderWhere } }),
+    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), status: { in: ["invoice_requested", "contact_message"] }, ...realBusinessOrderWhere } }),
     prisma.storefrontOrder.count({
       where: {
         ...(where as Prisma.StorefrontOrderWhereInput),
+        ...realBusinessOrderWhere,
         paymentStatus: "paid",
         fulfillmentStatus: "unfulfilled",
         NOT: localPickupOrderWhere
@@ -3007,6 +3082,7 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     prisma.storefrontOrder.count({
       where: {
         ...(where as Prisma.StorefrontOrderWhereInput),
+        ...realBusinessOrderWhere,
         paymentStatus: "paid",
         fulfillmentStatus: { in: ["unfulfilled", "packing"] },
         NOT: localPickupOrderWhere
@@ -3015,25 +3091,27 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     prisma.storefrontOrder.count({
       where: {
         ...(where as Prisma.StorefrontOrderWhereInput),
+        ...realBusinessOrderWhere,
         paymentStatus: "paid",
         fulfillmentStatus: { in: ["unfulfilled", "pickup_ready"] },
         ...localPickupOrderWhere
       }
     }),
     prisma.storefrontOrder.findMany({
-      where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: { in: activeRevenuePaymentStatuses } },
+      where: { ...(where as Prisma.StorefrontOrderWhereInput), ...realBusinessOrderWhere, paymentStatus: { in: activeRevenuePaymentStatuses } },
       select: { total: true, refundedAmount: true, stripeFeeEstimate: true, shippingCost: true, costBasis: true, netProfit: true, paidAt: true }
     }),
     prisma.storefrontOrder.findMany({
-      where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: { in: activeRevenuePaymentStatuses }, paidAt: { gte: todayStart } },
+      where: { ...(where as Prisma.StorefrontOrderWhereInput), ...realBusinessOrderWhere, paymentStatus: { in: activeRevenuePaymentStatuses }, paidAt: { gte: todayStart } },
       select: { total: true, refundedAmount: true }
     }),
-    prisma.storefrontOrder.findFirst({ where: { ...(where as Prisma.StorefrontOrderWhereInput), paymentStatus: { in: activeRevenuePaymentStatuses } }, orderBy: { paidAt: "desc" }, select: { paidAt: true } }),
+    prisma.storefrontOrder.findFirst({ where: { ...(where as Prisma.StorefrontOrderWhereInput), ...realBusinessOrderWhere, paymentStatus: { in: activeRevenuePaymentStatuses } }, orderBy: { paidAt: "desc" }, select: { paidAt: true } }),
     prisma.paymentEvent.findFirst({
       where: currentUser.role === "ADMIN" ? {} : { order: { userId: currentUser.id } },
       orderBy: { receivedAt: "desc" },
       select: { receivedAt: true }
-    })
+    }),
+    prisma.storefrontOrder.count({ where: { ...(where as Prisma.StorefrontOrderWhereInput), isTestOrder: true } })
   ]);
   return {
     productCount,
@@ -3049,7 +3127,8 @@ export async function storefrontSummary(currentUser: SessionUser): Promise<Store
     lastPaidOrderAt: lastPaidOrder?.paidAt?.toISOString() ?? null,
     lastWebhookAt: lastWebhook?.receivedAt.toISOString() ?? null,
     totalRevenue: paidOrders.reduce((sum, order) => sum + storefrontOrderNetRevenue(order), 0),
-    netProfit: paidOrders.reduce((sum, order) => sum + storefrontOrderNetProfitAfterRefund(order), 0)
+    netProfit: paidOrders.reduce((sum, order) => sum + storefrontOrderNetProfitAfterRefund(order), 0),
+    testOrderCount
   };
 }
 
@@ -3300,12 +3379,21 @@ export async function updateStorefrontOrder(
     carrier?: string;
     shippingCost?: number;
     notes?: string;
+    isTestOrder?: boolean;
+    testOrderReason?: StorefrontTestOrderReason;
   }
 ) {
   const order = await prisma.storefrontOrder.findFirst({
     where: { id: orderId, ...(currentUser.role === "ADMIN" ? {} : { userId: currentUser.id }) }
   });
   if (!order) throw new Error("Order not found");
+  const requestsTestOrderChange = input.isTestOrder !== undefined;
+  if (input.isTestOrder === true && !input.testOrderReason) {
+    throw new Error("Select a test/smoke reason before marking this order.");
+  }
+  if (input.testOrderReason && !storefrontTestOrderReasons.has(input.testOrderReason)) {
+    throw new Error("Select a valid test/smoke reason.");
+  }
   const requestsActiveFulfillment =
     ["packing", "shipped", "pickup_ready", "picked_up"].includes(input.status ?? "") ||
     ["packing", "shipped", "pickup_ready", "picked_up"].includes(input.fulfillmentStatus ?? "");
@@ -3332,6 +3420,22 @@ export async function updateStorefrontOrder(
     input.fulfillmentStatus ??
     (["packing", "shipped", "pickup_ready", "picked_up"].includes(input.status ?? "") ? input.status : undefined);
   const nextOrderStatus = input.status ?? (input.fulfillmentStatus === "packing" || input.fulfillmentStatus === "shipped" ? input.fulfillmentStatus : undefined);
+  const testOrderData =
+    input.isTestOrder === true
+      ? {
+          isTestOrder: true,
+          testOrderReason: input.testOrderReason,
+          testMarkedAt: new Date(),
+          testMarkedBy: currentUser.email ?? currentUser.id
+        }
+      : input.isTestOrder === false
+        ? {
+            isTestOrder: false,
+            testOrderReason: null,
+            testMarkedAt: null,
+            testMarkedBy: null
+          }
+        : {};
   const updated = await prisma.storefrontOrder.update({
     where: { id: order.id },
     data: {
@@ -3341,28 +3445,38 @@ export async function updateStorefrontOrder(
       carrier: input.carrier,
       shippingCost: input.shippingCost,
       notes: input.notes,
-      netProfit: input.shippingCost !== undefined ? order.total - order.stripeFeeEstimate - input.shippingCost - order.costBasis : undefined
+      netProfit: input.shippingCost !== undefined ? order.total - order.stripeFeeEstimate - input.shippingCost - order.costBasis : undefined,
+      ...testOrderData
     },
     include: storefrontOrderInclude
   });
-  await prisma.fulfillment.upsert({
-    where: { orderId: order.id },
-    create: {
-      orderId: order.id,
-      status: nextFulfillmentStatus ?? order.fulfillmentStatus,
-      carrier: input.carrier,
-      trackingNumber: input.trackingNumber,
-      notes: input.notes,
-      shippedAt: nextFulfillmentStatus === "shipped" ? new Date() : undefined
-    },
-    update: {
-      status: nextFulfillmentStatus,
-      carrier: input.carrier,
-      trackingNumber: input.trackingNumber,
-      notes: input.notes,
-      shippedAt: nextFulfillmentStatus === "shipped" ? new Date() : undefined
-    }
-  });
+  const requestsFulfillmentRecordUpdate =
+    input.status !== undefined ||
+    input.fulfillmentStatus !== undefined ||
+    input.trackingNumber !== undefined ||
+    input.carrier !== undefined ||
+    input.shippingCost !== undefined ||
+    input.notes !== undefined;
+  if (requestsFulfillmentRecordUpdate) {
+    await prisma.fulfillment.upsert({
+      where: { orderId: order.id },
+      create: {
+        orderId: order.id,
+        status: nextFulfillmentStatus ?? order.fulfillmentStatus,
+        carrier: input.carrier,
+        trackingNumber: input.trackingNumber,
+        notes: input.notes,
+        shippedAt: nextFulfillmentStatus === "shipped" ? new Date() : undefined
+      },
+      update: {
+        status: nextFulfillmentStatus,
+        carrier: input.carrier,
+        trackingNumber: input.trackingNumber,
+        notes: input.notes,
+        shippedAt: nextFulfillmentStatus === "shipped" ? new Date() : undefined
+      }
+    });
+  }
   const refreshed = await prisma.storefrontOrder.findUnique({
     where: { id: order.id },
     include: storefrontOrderInclude
@@ -3373,6 +3487,9 @@ export async function updateStorefrontOrder(
   }
   if (nextFulfillmentStatus === "pickup_ready") {
     await sendStorefrontLocalPickupEmail(finalOrder);
+  }
+  if (requestsTestOrderChange && finalOrder.customerId && finalOrder.customerEmail) {
+    await syncStorefrontCustomerTotals(finalOrder.customerId, finalOrder.customerEmail);
   }
   const withEmailEvents = await prisma.storefrontOrder.findUnique({
     where: { id: order.id },
