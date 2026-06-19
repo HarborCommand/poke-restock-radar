@@ -19014,6 +19014,53 @@ body:has(.shop-shell) {
   align-items: center;
 }
 
+.inventory-row-readiness-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  min-width: 0;
+}
+
+.inventory-row-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 23px;
+  max-width: 100%;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.inventory-row-badge svg {
+  flex: 0 0 auto;
+}
+
+.inventory-row-badge.good {
+  border-color: rgba(22, 163, 74, 0.2);
+  background: #dcfce7;
+  color: #166534;
+}
+
+.inventory-row-badge.neutral {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.inventory-row-badge.warning {
+  border-color: rgba(245, 158, 11, 0.25);
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .shipping-metadata-action {
   flex-basis: 100%;
   color: #64748b;

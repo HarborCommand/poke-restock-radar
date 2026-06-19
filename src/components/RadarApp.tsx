@@ -6330,6 +6330,110 @@ function inventoryShippingProfileBadges(item: InventoryItemDTO, shippingProfiles
   return badges;
 }
 
+type InventoryRowBadge = {
+  icon: "store" | "shipping" | "defaults" | "warning";
+  label: string;
+  title: string;
+  tone: "good" | "neutral" | "warning";
+};
+
+function inventoryStoreReadinessRowBadge(item: InventoryItemDTO): InventoryRowBadge {
+  return storefrontListingEligible(item)
+    ? {
+        icon: "store",
+        label: "Store Ready",
+        title: "Public listing has the required customer-facing fields.",
+        tone: "good"
+      }
+    : {
+        icon: "warning",
+        label: "Needs QA",
+        title: "Listing still needs required customer-facing fields before publishing.",
+        tone: "warning"
+      };
+}
+
+function inventoryShippingProfileRowBadges(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []): InventoryRowBadge[] {
+  const complete = inventoryShippingProfileComplete(item, shippingProfiles);
+  const effectiveData = inventoryEffectiveShippingData(item, shippingProfiles);
+  const badges: InventoryRowBadge[] = [
+    complete
+      ? {
+          icon: inventoryShippingLocalPickupOnly(item) ? "store" : "shipping",
+          label: inventoryShippingLocalPickupOnly(item) ? "Pickup Ready" : "Shipping Ready",
+          title: inventoryShippingLocalPickupOnly(item)
+            ? "Local pickup is configured and no carrier package data is required."
+            : "Shipping profile and effective package data are ready.",
+          tone: "good"
+        }
+      : {
+          icon: "warning",
+          label: "Needs Shipping",
+          title: "Complete shipping profile, weight, or dimensions before relying on shipping estimates.",
+          tone: "warning"
+        }
+  ];
+
+  if (complete && (effectiveData.usesProfileDefaultWeight || effectiveData.usesProfileDefaultDimensions)) {
+    badges.push({
+      icon: "defaults",
+      label: "Defaults",
+      title: "Blank package fields use the selected shipping profile defaults.",
+      tone: "neutral"
+    });
+  }
+
+  if (!complete && inventoryUsesInactiveShippingProfile(item, shippingProfiles)) {
+    badges.push({
+      icon: "warning",
+      label: "Inactive Profile",
+      title: "This product is using an inactive shipping profile.",
+      tone: "warning"
+    });
+  }
+  if (!complete && !inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingWeight(item, shippingProfiles)) {
+    badges.push({
+      icon: "warning",
+      label: "Missing Weight",
+      title: "Packed shipping weight is missing and no selected profile default can be used.",
+      tone: "warning"
+    });
+  }
+  if (!complete && !inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingDimensions(item, shippingProfiles)) {
+    badges.push({
+      icon: "warning",
+      label: "Missing Dimensions",
+      title: "Package dimensions are missing and no selected profile defaults can be used.",
+      tone: "warning"
+    });
+  }
+  if (!complete && !inventoryShippingLocalPickupOnly(item) && effectiveData.selectedProfileMissingDefaults) {
+    badges.push({
+      icon: "warning",
+      label: "Profile Defaults",
+      title: "Selected shipping profile is missing package defaults.",
+      tone: "warning"
+    });
+  }
+  if (!complete && item.shippingAvailable === false && !inventoryShippingLocalPickupOnly(item)) {
+    badges.push({
+      icon: "warning",
+      label: "Shipping Off",
+      title: "Shipping is disabled for this product.",
+      tone: "warning"
+    });
+  }
+
+  return badges.slice(0, 4);
+}
+
+function InventoryRowBadgeIcon({ icon }: { icon: InventoryRowBadge["icon"] }) {
+  if (icon === "store") return <Store size={12} aria-hidden="true" />;
+  if (icon === "shipping") return <PackageSearch size={12} aria-hidden="true" />;
+  if (icon === "defaults") return <Check size={12} aria-hidden="true" />;
+  return <AlertTriangle size={12} aria-hidden="true" />;
+}
+
 function shippingProfileSelectOptions(shippingProfiles: ShippingProfileDTO[], currentKey?: string | null) {
   const normalizedCurrentKey = String(currentKey || "").trim().toLowerCase();
   const seen = new Set(["standard"]);
@@ -11202,18 +11306,13 @@ function InventoryList({
                 <small className="text-safe">
                   {formatStatus(item.category)} - {item.setName || item.retailer || "Source unknown"}
                 </small>
-                <small className={storefrontListingEligible(item) ? "publish-ready-note good" : "publish-ready-note"}>
-                  {storefrontListingEligible(item) ? "Store ready" : "Needs listing QA"}
-                </small>
-                <span className="inventory-shipping-badges" aria-label="Shipping profile status">
-                  {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
-                    <small className={`publish-ready-note ${badge.tone === "good" ? "good" : "shipping-needed"}`} key={badge.label}>
+                <span className="inventory-row-readiness-badges" aria-label="Inventory readiness status">
+                  {[inventoryStoreReadinessRowBadge(item), ...inventoryShippingProfileRowBadges(item, shippingProfiles)].map((badge) => (
+                    <small className={`inventory-row-badge ${badge.tone}`} key={badge.label} title={badge.title}>
+                      <InventoryRowBadgeIcon icon={badge.icon} />
                       {badge.label}
                     </small>
                   ))}
-                  {!inventoryShippingProfileComplete(item, shippingProfiles) ? (
-                    <small className="shipping-metadata-action">Open Edit Listing to complete packed weight, dimensions, and profile.</small>
-                  ) : null}
                 </span>
               </span>
             </button>
