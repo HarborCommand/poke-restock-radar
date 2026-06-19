@@ -60,6 +60,7 @@ import {
   type FormEvent,
   type InputHTMLAttributes,
   type ChangeEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -69,6 +70,7 @@ import {
   useRef,
   useState
 } from "react";
+import { createPortal } from "react-dom";
 import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPolicyResult } from "@/lib/target-retail-policy";
@@ -11261,10 +11263,131 @@ function InventoryList({
   onEditListing: (item: InventoryItemDTO) => void;
 }) {
   if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
-  function closeActionDetails(event: { currentTarget: HTMLElement }) {
-    event.currentTarget.closest("details")?.removeAttribute("open");
+  const [actionMenu, setActionMenu] = useState<{
+    item: InventoryItemDTO;
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const actionMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!actionMenu) return;
+
+    function closeOnOutsidePointer(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (actionMenuRef.current?.contains(target)) return;
+      if (actionMenuTriggerRef.current?.contains(target)) return;
+      setActionMenu(null);
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setActionMenu(null);
+    }
+
+    function closeOnViewportChange() {
+      setActionMenu(null);
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", closeOnViewportChange);
+    window.addEventListener("scroll", closeOnViewportChange, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", closeOnViewportChange);
+      window.removeEventListener("scroll", closeOnViewportChange, true);
+    };
+  }, [actionMenu]);
+
+  function actionMenuPositionFor(trigger: HTMLElement, item: InventoryItemDTO) {
+    const rect = trigger.getBoundingClientRect();
+    const margin = 14;
+    const gap = 8;
+    const width = Math.min(260, Math.max(220, window.innerWidth - margin * 2));
+    const estimatedHeight = item.publishToStore && item.publicSlug ? 336 : 292;
+    const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+    const left = Math.min(Math.max(margin, rect.right - width), maxLeft);
+    const belowTop = rect.bottom + gap;
+    const aboveTop = rect.top - estimatedHeight - gap;
+    const preferredTop = belowTop + estimatedHeight <= window.innerHeight - margin ? belowTop : aboveTop;
+    const maxTop = Math.max(margin, window.innerHeight - Math.min(estimatedHeight, window.innerHeight - margin * 2) - margin);
+
+    return {
+      left,
+      top: Math.min(Math.max(margin, preferredTop), maxTop),
+      width
+    };
   }
+
+  function toggleActionMenu(item: InventoryItemDTO, event: ReactMouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const trigger = event.currentTarget;
+    actionMenuTriggerRef.current = trigger;
+    setActionMenu((current) => {
+      if (current?.item.id === item.id) return null;
+      return { item, ...actionMenuPositionFor(trigger, item) };
+    });
+  }
+
+  function runActionMenuItem(action: (item: InventoryItemDTO) => void) {
+    if (!actionMenu) return;
+    const selectedItem = actionMenu.item;
+    setActionMenu(null);
+    action(selectedItem);
+  }
+
+  const floatingActionMenu =
+    actionMenu && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            aria-label={`Actions for ${actionMenu.item.itemName}`}
+            className="catalog-action-menu catalog-action-menu-floating"
+            ref={actionMenuRef}
+            role="menu"
+            style={{ left: actionMenu.left, top: actionMenu.top, width: actionMenu.width }}
+          >
+            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onViewDetails)}>
+              <FileText size={14} />
+              View Details
+            </button>
+            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onAddStock)}>
+              <Plus size={14} />
+              Add Stock
+            </button>
+            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onAdjustStock)}>
+              <History size={14} />
+              Adjust Stock
+            </button>
+            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onRecordSale)}>
+              <CircleDollarSign size={14} />
+              Record Sale
+            </button>
+            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onEditProduct)}>
+              <Settings size={14} />
+              Edit Product
+            </button>
+            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onEditListing)}>
+              <Store size={14} />
+              Edit Listing
+            </button>
+            {actionMenu.item.publishToStore && actionMenu.item.publicSlug ? (
+              <a role="menuitem" href={`/shop/product/${actionMenu.item.publicSlug}`} target="_blank" rel="noreferrer" onClick={() => setActionMenu(null)}>
+                <ExternalLink size={14} />
+                View Public Page
+              </a>
+            ) : null}
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
+    <>
     <div className="catalog-table">
       <div className="catalog-row catalog-head" aria-hidden="true">
         <span>Product</span>
@@ -11348,48 +11471,22 @@ function InventoryList({
                 Add Stock
               </button>
             ) : null}
-            <details className="catalog-action-menu-wrap">
-              <summary className="catalog-action-trigger">
+            <button
+              aria-expanded={actionMenu?.item.id === item.id}
+              aria-haspopup="menu"
+              className={`catalog-action-trigger${actionMenu?.item.id === item.id ? " is-open" : ""}`}
+              type="button"
+              onClick={(event) => toggleActionMenu(item, event)}
+            >
                 Actions
                 <MoreHorizontal size={15} />
-              </summary>
-              <div className="catalog-action-menu" role="menu">
-                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onViewDetails(item); }}>
-                  <FileText size={14} />
-                  View Details
-                </button>
-                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onAddStock(item); }}>
-                  <Plus size={14} />
-                  Add Stock
-                </button>
-                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onAdjustStock(item); }}>
-                  <History size={14} />
-                  Adjust Stock
-                </button>
-                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onRecordSale(item); }}>
-                  <CircleDollarSign size={14} />
-                  Record Sale
-                </button>
-                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onEditProduct(item); }}>
-                  <Settings size={14} />
-                  Edit Product
-                </button>
-                <button role="menuitem" type="button" onClick={(event) => { closeActionDetails(event); onEditListing(item); }}>
-                  <Store size={14} />
-                  Edit Listing
-                </button>
-                {item.publishToStore && item.publicSlug ? (
-                  <a role="menuitem" href={`/shop/product/${item.publicSlug}`} target="_blank" rel="noreferrer">
-                    <ExternalLink size={14} />
-                    View Public Page
-                  </a>
-                ) : null}
-              </div>
-            </details>
+            </button>
           </div>
         </article>
       ))}
     </div>
+    {floatingActionMenu}
+    </>
   );
 }
 

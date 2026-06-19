@@ -322,6 +322,11 @@ test("admin inventory can find products that need shipping profiles", () => {
   assert.match(listComponent, /inventoryStoreReadinessRowBadge\(item\)/);
   assert.match(listComponent, /inventoryShippingProfileRowBadges\(item, shippingProfiles\)/);
   assert.match(listComponent, /aria-label="Inventory readiness status"/);
+  assert.match(listComponent, /createPortal\(/);
+  assert.match(listComponent, /catalog-action-menu catalog-action-menu-floating/);
+  assert.match(listComponent, /actionMenuPositionFor\(trigger, item\)/);
+  assert.match(listComponent, /window\.addEventListener\("scroll", closeOnViewportChange, true\)/);
+  assert.match(listComponent, /aria-haspopup="menu"/);
   assert.match(appSource, /Store Ready/);
   assert.match(appSource, /Shipping Ready/);
   assert.match(appSource, /Defaults/);
@@ -341,6 +346,10 @@ test("admin inventory can find products that need shipping profiles", () => {
   assert.match(css, /\.inventory-row-readiness-badges \{[\s\S]*flex-wrap: wrap/);
   assert.match(css, /\.inventory-row-badge \{[\s\S]*white-space: nowrap/);
   assert.match(css, /\.inventory-row-badge\.neutral \{[\s\S]*background: #eff6ff/);
+  assert.match(css, /Phase 18H inventory width and viewport-safe action menus/);
+  assert.match(css, /body \.app-main-inventory \.catalog-table,[\s\S]*body \.catalog-table \{[\s\S]*overflow: visible !important/);
+  assert.match(css, /body \.catalog-action-menu-floating \{[\s\S]*position: fixed !important/);
+  assert.match(css, /body \.catalog-action-menu-floating \{[\s\S]*z-index: 1000 !important/);
   assert.match(css, /\.inventory-shipping-badges,[\s\S]*\.shipping-profile-issue-list \{[\s\S]*flex-wrap: wrap/);
   assert.match(css, /\.publish-ready-note\.shipping-needed \{[\s\S]*color: var\(--warning\)/);
   assert.doesNotMatch(filterLogic, /quantityOwned\s*[+\-]=|quantitySold\s*[+\-]=|remainingQuantity/);
@@ -451,16 +460,20 @@ test("inventory row actions and stock lot details make sold-out corrections obvi
   const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
   const css = readFileSync("src/app/globals.css", "utf8");
   const listComponent = sourceSlice(appSource, "function InventoryList", "function inventoryStockStatusLabel");
-  const actionMenu = sourceSlice(listComponent, "<div className=\"catalog-action-menu\"", "</div>");
+  const actionMenu = sourceSlice(listComponent, "const floatingActionMenu", "return (");
   const detailsModal = sourceSlice(appSource, "function InventoryDetailsModal", "function InventoryEditStockLotModal");
   const lotsComponent = sourceSlice(appSource, "function CompactLotsList", "function CompactSalesList");
 
   assert.match(listComponent, /inventory-row-primary-action/);
   assert.match(listComponent, /item\.quantityOwned <= 0/);
+  assert.doesNotMatch(listComponent, /<details className="catalog-action-menu-wrap">/);
+  assert.doesNotMatch(listComponent, /<summary className="catalog-action-trigger">/);
+  assert.match(actionMenu, /role="menu"/);
   assert.ok(actionMenu.indexOf("View Details") < actionMenu.indexOf("Add Stock"), "View Details should be first in the action menu");
   assert.ok(actionMenu.indexOf("Add Stock") < actionMenu.indexOf("Adjust Stock"), "Add Stock should come before Adjust Stock");
   assert.ok(actionMenu.indexOf("Adjust Stock") < actionMenu.indexOf("Record Sale"), "Adjust Stock should come before Record Sale");
   assert.ok(actionMenu.indexOf("Edit Product") < actionMenu.indexOf("Edit Listing"), "Edit Product should come before Edit Listing");
+  assert.ok(actionMenu.indexOf("Edit Listing") < actionMenu.indexOf("View Public Page"), "View Public Page should remain last when available");
   assert.match(detailsModal, /Adjust Stock/);
   assert.match(lotsComponent, /Active stock lots/);
   assert.match(lotsComponent, /Depleted stock lots/);
@@ -472,6 +485,8 @@ test("inventory row actions and stock lot details make sold-out corrections obvi
   assert.match(lotsComponent, /Edit Lot/);
   assert.match(lotsComponent, /Adjust Lot/);
   assert.match(css, /body \.inventory-row-primary-action/);
+  assert.match(css, /body \.catalog-action-trigger\.is-open/);
+  assert.match(css, /body \.catalog-actions \{[\s\S]*justify-content: flex-end !important/);
   assert.match(css, /body \.stock-lot-group\.depleted/);
   assert.match(css, /body \.compact-ledger-list article\.stock-lot-depleted/);
 });
