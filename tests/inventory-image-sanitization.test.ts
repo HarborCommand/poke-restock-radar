@@ -231,10 +231,12 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(listingModal, /<strong>Shipping profile<\/strong>/);
   assert.match(listingModal, /Used to estimate customer shipping at checkout\./);
   assert.match(listingModal, /Use packed shipping weight, including box or mailer\./);
-  assert.match(listingModal, /Leave blank only if you want the safe fallback rate\./);
+  assert.match(listingModal, /Leave blank to use the selected profile default\./);
   assert.match(listingModal, /Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment\./);
   assert.match(listingModal, /shipping-profile-issue-list/);
-  assert.match(listingModal, /inventoryShippingProfileBadges\(item, shippingProfiles\)\.map/);
+  assert.match(listingModal, /inventoryShippingProfileBadges\(draftShippingItem, shippingProfiles\)\.map/);
+  assert.match(listingModal, /Using profile defaults\./);
+  assert.match(listingModal, /Selected profile is missing package defaults\./);
   assert.match(listingModal, /Needs shipping profile/);
   assert.match(listingModal, /Shipping profile set/);
   assert.match(listingModal, /Complete before relying on storefront estimates/);
@@ -297,15 +299,16 @@ test("admin inventory can find products that need shipping profiles", () => {
 
   assert.match(appSource, /function inventoryShippingProfileComplete\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
   assert.match(appSource, /function inventoryUsesFallbackShipping\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
-  assert.match(appSource, /function inventoryMissingShippingWeight\(item: InventoryItemDTO\)/);
-  assert.match(appSource, /function inventoryMissingShippingDimensions\(item: InventoryItemDTO\)/);
+  assert.match(appSource, /function inventoryEffectiveShippingData\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
+  assert.match(appSource, /function inventoryMissingShippingWeight\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
+  assert.match(appSource, /function inventoryMissingShippingDimensions\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
   assert.match(appSource, /function inventoryShippingProfileBadges\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
   assert.match(appSource, /completedShippingProfileValues/);
   assert.match(appSource, /inventoryShippingProfileRecord\(item, shippingProfiles\)/);
-  assert.match(appSource, /positiveInventoryNumber\(item\.packageWeightOz\)/);
-  assert.match(appSource, /positiveInventoryNumber\(item\.packageLengthIn\)/);
-  assert.match(appSource, /positiveInventoryNumber\(item\.packageWidthIn\)/);
-  assert.match(appSource, /positiveInventoryNumber\(item\.packageHeightIn\)/);
+  assert.match(appSource, /effectiveWeightOz = productWeight \?\? profileWeight/);
+  assert.match(appSource, /effectiveLengthIn = productLength \?\? profileLength/);
+  assert.match(appSource, /usesProfileDefaultWeight/);
+  assert.match(appSource, /usesProfileDefaultDimensions/);
   assert.match(filterState, /shippingProfileStatus: string/);
   assert.match(appSource, /shippingProfileStatus: "ALL"/);
   assert.match(filterLogic, /filters\.shippingProfileStatus === "NEEDS_SHIPPING_PROFILE" && inventoryShippingProfileComplete\(item, shippingProfiles\)/);
@@ -320,6 +323,8 @@ test("admin inventory can find products that need shipping profiles", () => {
   assert.match(appSource, /Uses fallback shipping/);
   assert.match(appSource, /Missing weight/);
   assert.match(appSource, /Missing dimensions/);
+  assert.match(appSource, /Using profile default weight/);
+  assert.match(appSource, /Using profile default dimensions/);
   assert.match(listComponent, /Open Edit Listing to complete packed weight, dimensions, and profile/);
   assert.match(css, /\.shipping-metadata-action \{[\s\S]*flex-basis: 100%/);
   assert.match(listComponent, /shipping-needed/);

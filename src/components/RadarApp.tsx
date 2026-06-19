@@ -6197,6 +6197,15 @@ function positiveInventoryNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
+function positiveInventoryValue(value: number | string | null | undefined) {
+  if (typeof value === "number") return positiveInventoryNumber(value) ? value : null;
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    return positiveInventoryNumber(numeric) ? numeric : null;
+  }
+  return null;
+}
+
 const completedShippingProfileValues = new Set([
   "single_card_or_light_item",
   "sealed_pack_small",
@@ -6238,23 +6247,51 @@ function inventoryUsesInactiveShippingProfile(item: InventoryItemDTO, shippingPr
   return Boolean(profile && !profile.active);
 }
 
-function inventoryMissingShippingWeight(item: InventoryItemDTO) {
-  return !positiveInventoryNumber(item.packageWeightOz);
+function inventoryEffectiveShippingData(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
+  const profile = inventoryShippingProfileRecord(item, shippingProfiles);
+  const productWeight = positiveInventoryValue(item.packageWeightOz);
+  const productLength = positiveInventoryValue(item.packageLengthIn);
+  const productWidth = positiveInventoryValue(item.packageWidthIn);
+  const productHeight = positiveInventoryValue(item.packageHeightIn);
+  const profileWeight = profile ? positiveInventoryValue(profile.defaultWeightOz) : null;
+  const profileLength = profile ? positiveInventoryValue(profile.packageLengthIn) : null;
+  const profileWidth = profile ? positiveInventoryValue(profile.packageWidthIn) : null;
+  const profileHeight = profile ? positiveInventoryValue(profile.packageHeightIn) : null;
+  const effectiveWeightOz = productWeight ?? profileWeight;
+  const effectiveLengthIn = productLength ?? profileLength;
+  const effectiveWidthIn = productWidth ?? profileWidth;
+  const effectiveHeightIn = productHeight ?? profileHeight;
+  const profileHasDimensionDefaults = Boolean(profileLength && profileWidth && profileHeight);
+  const missingDimensions = !effectiveLengthIn || !effectiveWidthIn || !effectiveHeightIn;
+
+  return {
+    profile,
+    effectiveWeightOz,
+    effectiveLengthIn,
+    effectiveWidthIn,
+    effectiveHeightIn,
+    usesProfileDefaultWeight: !productWeight && Boolean(profileWeight),
+    usesProfileDefaultDimensions: (!productLength || !productWidth || !productHeight) && !missingDimensions && Boolean(profile),
+    profileHasWeightDefault: Boolean(profileWeight),
+    profileHasDimensionDefaults,
+    selectedProfileMissingDefaults: Boolean(profile && (!effectiveWeightOz || missingDimensions))
+  };
 }
 
-function inventoryMissingShippingDimensions(item: InventoryItemDTO) {
-  return (
-    !positiveInventoryNumber(item.packageLengthIn) ||
-    !positiveInventoryNumber(item.packageWidthIn) ||
-    !positiveInventoryNumber(item.packageHeightIn)
-  );
+function inventoryMissingShippingWeight(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
+  return !inventoryEffectiveShippingData(item, shippingProfiles).effectiveWeightOz;
+}
+
+function inventoryMissingShippingDimensions(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
+  const effectiveData = inventoryEffectiveShippingData(item, shippingProfiles);
+  return !effectiveData.effectiveLengthIn || !effectiveData.effectiveWidthIn || !effectiveData.effectiveHeightIn;
 }
 
 function inventoryShippingProfileComplete(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
   if (inventoryUsesFallbackShipping(item, shippingProfiles)) return false;
   if (inventoryUsesInactiveShippingProfile(item, shippingProfiles)) return false;
   if (inventoryShippingLocalPickupOnly(item)) return true;
-  return !inventoryMissingShippingWeight(item) && !inventoryMissingShippingDimensions(item);
+  return !inventoryMissingShippingWeight(item, shippingProfiles) && !inventoryMissingShippingDimensions(item, shippingProfiles);
 }
 
 function inventoryShippingProfileBadges(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []): Array<{ label: string; tone: "good" | "warning" }> {
@@ -6268,11 +6305,22 @@ function inventoryShippingProfileBadges(item: InventoryItemDTO, shippingProfiles
   if (inventoryUsesInactiveShippingProfile(item, shippingProfiles)) {
     badges.push({ label: "Inactive profile in use", tone: "warning" });
   }
-  if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingWeight(item)) {
+  const effectiveData = inventoryEffectiveShippingData(item, shippingProfiles);
+  if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingWeight(item, shippingProfiles)) {
     badges.push({ label: "Missing weight", tone: "warning" });
+  } else if (!positiveInventoryNumber(item.packageWeightOz) && effectiveData.usesProfileDefaultWeight) {
+    badges.push({ label: "Using profile default weight", tone: "good" });
   }
-  if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingDimensions(item)) {
+  if (!inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingDimensions(item, shippingProfiles)) {
     badges.push({ label: "Missing dimensions", tone: "warning" });
+  } else if (
+    (!positiveInventoryNumber(item.packageLengthIn) || !positiveInventoryNumber(item.packageWidthIn) || !positiveInventoryNumber(item.packageHeightIn)) &&
+    effectiveData.usesProfileDefaultDimensions
+  ) {
+    badges.push({ label: "Using profile default dimensions", tone: "good" });
+  }
+  if (!inventoryShippingLocalPickupOnly(item) && effectiveData.selectedProfileMissingDefaults) {
+    badges.push({ label: "Selected profile is missing package defaults", tone: "warning" });
   }
   if (inventoryShippingLocalPickupOnly(item)) {
     badges.push({ label: "Local pickup only", tone: "good" });
@@ -6302,6 +6350,47 @@ function shippingProfileSelectOptions(shippingProfiles: ShippingProfileDTO[], cu
     options.push({ value: normalizedCurrentKey, label: `${formatStatus(normalizedCurrentKey)} (unknown - existing products only)` });
   }
   return options;
+}
+
+type ShippingMetadataDraft = {
+  shippingProfile: string;
+  packageWeightOz: string;
+  packageLengthIn: string;
+  packageWidthIn: string;
+  packageHeightIn: string;
+};
+
+function shippingMetadataDraftFromItem(item: InventoryItemDTO): ShippingMetadataDraft {
+  return {
+    shippingProfile: item.shippingProfile || "standard",
+    packageWeightOz: item.packageWeightOz?.toString() ?? "",
+    packageLengthIn: item.packageLengthIn?.toString() ?? "",
+    packageWidthIn: item.packageWidthIn?.toString() ?? "",
+    packageHeightIn: item.packageHeightIn?.toString() ?? ""
+  };
+}
+
+function draftShippingNumber(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return positiveInventoryNumber(parsed) ? parsed : null;
+}
+
+function inventoryItemWithShippingDraft(item: InventoryItemDTO, draft: ShippingMetadataDraft): InventoryItemDTO {
+  return {
+    ...item,
+    shippingProfile: draft.shippingProfile,
+    packageWeightOz: draftShippingNumber(draft.packageWeightOz),
+    packageLengthIn: draftShippingNumber(draft.packageLengthIn),
+    packageWidthIn: draftShippingNumber(draft.packageWidthIn),
+    packageHeightIn: draftShippingNumber(draft.packageHeightIn)
+  };
+}
+
+function profileDefaultPlaceholder(profile: ShippingProfileDTO | null, field: "defaultWeightOz" | "packageLengthIn" | "packageWidthIn" | "packageHeightIn", unit: "oz" | "in") {
+  const value = field === "defaultWeightOz" ? profile?.defaultWeightOz : profile?.[field];
+  return positiveInventoryNumber(value) ? `Profile default: ${value} ${unit}` : "No profile default set";
 }
 
 type InventoryFiltersState = {
@@ -7076,11 +7165,12 @@ function shippingHubMissingProducts(items: InventoryItemDTO[], shippingProfiles:
   return shippingHubPublishedProducts(items).filter((item) => !inventoryShippingProfileComplete(item, shippingProfiles));
 }
 
-function shippingHubPackageSummary(item: InventoryItemDTO) {
-  const weight = positiveInventoryNumber(item.packageWeightOz) ? `${item.packageWeightOz} oz` : "Weight missing";
-  const dimensions = inventoryMissingShippingDimensions(item)
+function shippingHubPackageSummary(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[]) {
+  const effectiveData = inventoryEffectiveShippingData(item, shippingProfiles);
+  const weight = effectiveData.effectiveWeightOz ? `${effectiveData.effectiveWeightOz} oz${effectiveData.usesProfileDefaultWeight ? " profile default" : ""}` : "Weight missing";
+  const dimensions = inventoryMissingShippingDimensions(item, shippingProfiles)
     ? "Dimensions missing"
-    : `${item.packageLengthIn} x ${item.packageWidthIn} x ${item.packageHeightIn} in`;
+    : `${effectiveData.effectiveLengthIn} x ${effectiveData.effectiveWidthIn} x ${effectiveData.effectiveHeightIn} in${effectiveData.usesProfileDefaultDimensions ? " profile default" : ""}`;
   return `${weight} - ${dimensions}`;
 }
 
@@ -7168,8 +7258,11 @@ function ShippingHubPanel({
   const readyForStandardShipping = shippingHubPublishedProducts(dashboard.inventory).filter(
     (item) => inventoryShippingProfileComplete(item, dashboard.shippingProfiles) && item.shippingAvailable && !inventoryShippingLocalPickupOnly(item)
   );
-  const missingBrandCount = shippingHubPublishedProducts(dashboard.inventory).filter((item) => !String(item.brand || "").trim()).length;
-  const missingCategoryCount = shippingHubPublishedProducts(dashboard.inventory).filter((item) => !String(item.storefrontCategory || item.category || "").trim()).length;
+  const publishedShippingProducts = shippingHubPublishedProducts(dashboard.inventory);
+  const missingBrandCount = publishedShippingProducts.filter((item) => !String(item.brand || "").trim()).length;
+  const missingCategoryCount = publishedShippingProducts.filter((item) => !String(item.storefrontCategory || item.category || "").trim()).length;
+  const missingEffectiveWeightCount = publishedShippingProducts.filter((item) => inventoryMissingShippingWeight(item, dashboard.shippingProfiles)).length;
+  const missingEffectiveDimensionCount = publishedShippingProducts.filter((item) => inventoryMissingShippingDimensions(item, dashboard.shippingProfiles)).length;
 
   useEffect(() => {
     const orderTimerTick = window.setInterval(() => setOrderTimerNow(Date.now()), ORDER_TIMER_MINUTE_MS);
@@ -7458,7 +7551,7 @@ function ShippingHubPanel({
                 <article className="shipping-missing-row" key={item.id}>
                   <div className="shipping-missing-main">
                     <strong>{item.publicTitle || item.itemName}</strong>
-                    <span>{shippingHubPackageSummary(item)}</span>
+                    <span>{shippingHubPackageSummary(item, dashboard.shippingProfiles)}</span>
                     <small>{item.shippingProfile ? formatStatus(item.shippingProfile) : "No shipping profile"} - {item.localPickupAvailable ? "Local pickup eligible" : "No local pickup"}</small>
                   </div>
                   <div className="shipping-profile-issue-list shipping-missing-badges" aria-label="Missing shipping badges">
@@ -7504,11 +7597,11 @@ function ShippingHubPanel({
             </article>
             <article>
               <span>Products missing packed weight</span>
-              <strong>{shippingHubPublishedProducts(dashboard.inventory).filter(inventoryMissingShippingWeight).length}</strong>
+              <strong>{missingEffectiveWeightCount}</strong>
             </article>
             <article>
               <span>Products missing dimensions</span>
-              <strong>{shippingHubPublishedProducts(dashboard.inventory).filter(inventoryMissingShippingDimensions).length}</strong>
+              <strong>{missingEffectiveDimensionCount}</strong>
             </article>
             <article>
               <span>Ready for Standard Shipping</span>
@@ -7582,6 +7675,13 @@ function ProductShippingEditorModal({
 }) {
   const saveLabel = `Saving shipping data for ${item.itemName}`;
   const purchaseLimitActive = item.purchaseLimitEnabled || item.maxQuantityPerOrder !== DEFAULT_STOREFRONT_PURCHASE_LIMIT;
+  const [shippingDraft, setShippingDraft] = useState(() => shippingMetadataDraftFromItem(item));
+  const draftShippingItem = inventoryItemWithShippingDraft(item, shippingDraft);
+  const selectedShippingProfile = inventoryShippingProfileRecord(draftShippingItem, shippingProfiles);
+  const effectiveShippingData = inventoryEffectiveShippingData(draftShippingItem, shippingProfiles);
+  const shippingProfileReady = inventoryShippingProfileComplete(draftShippingItem, shippingProfiles);
+  const usingAnyProfileDefault = effectiveShippingData.usesProfileDefaultWeight || effectiveShippingData.usesProfileDefaultDimensions;
+
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-modal shipping-editor-modal" role="dialog" aria-modal="true" aria-label={`Edit shipping data ${item.itemName}`}>
@@ -7633,28 +7733,41 @@ function ProductShippingEditorModal({
                 <strong>Package metadata</strong>
                 <span>Complete weight and dimensions before pushing Google traffic.</span>
               </div>
-              {inventoryShippingProfileComplete(item, shippingProfiles) ? <span className="shipping-profile-status complete">Profile ready</span> : <span className="shipping-profile-status">Needs shipping profile</span>}
+              {shippingProfileReady ? <span className="shipping-profile-status complete">Profile ready</span> : <span className="shipping-profile-status">Needs shipping profile</span>}
             </div>
-            <p className="shipping-profile-helper">Fallback shipping is safe, but exact package data is better. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
+            <p className="shipping-profile-helper">Fallback shipping is safe, but exact package data is better. Leave blank to use the selected profile default. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
             <div className="shipping-profile-issue-list" aria-label="Shipping profile checklist">
-              {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
+              {inventoryShippingProfileBadges(draftShippingItem, shippingProfiles).map((badge) => (
                 <span className={`shipping-profile-chip ${badge.tone === "good" ? "good" : "warning"}`} key={badge.label}>
                   {badge.label}
                 </span>
               ))}
             </div>
+            {usingAnyProfileDefault ? (
+              <div className="shipping-profile-guidance good">
+                <strong>Using profile defaults.</strong>
+                <p>Blank product-level package fields will use the selected profile defaults at checkout.</p>
+              </div>
+            ) : null}
+            {effectiveShippingData.selectedProfileMissingDefaults ? (
+              <div className="shipping-profile-guidance">
+                <strong>Selected profile is missing package defaults.</strong>
+                <p>Add defaults to the profile or enter product-level overrides before relying on calculated shipping.</p>
+              </div>
+            ) : null}
             <div className="shipping-profile-fields">
               <SelectInput
                 name="shippingProfile"
                 label="Shipping profile"
-                defaultValue={item.shippingProfile || "standard"}
+                value={shippingDraft.shippingProfile}
+                onChange={(event) => setShippingDraft((draft) => ({ ...draft, shippingProfile: event.currentTarget.value }))}
                 options={shippingProfileSelectOptions(shippingProfiles, item.shippingProfile)}
               />
               <div className="shipping-package-grid">
-                <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0" step="0.1" defaultValue={item.packageWeightOz ?? ""} />
-                <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0" step="0.1" defaultValue={item.packageLengthIn ?? ""} />
-                <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0" step="0.1" defaultValue={item.packageWidthIn ?? ""} />
-                <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0" step="0.1" defaultValue={item.packageHeightIn ?? ""} />
+                <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0" step="0.1" value={shippingDraft.packageWeightOz} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageWeightOz: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "defaultWeightOz", "oz")} />
+                <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0" step="0.1" value={shippingDraft.packageLengthIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageLengthIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageLengthIn", "in")} />
+                <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0" step="0.1" value={shippingDraft.packageWidthIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageWidthIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageWidthIn", "in")} />
+                <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0" step="0.1" value={shippingDraft.packageHeightIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageHeightIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageHeightIn", "in")} />
               </div>
               <div className="shipping-option-grid">
                 <label className="shipping-toggle-card">
@@ -11817,6 +11930,12 @@ function StoreListingModal({
     availableQuantity: availableForSale
   });
   const descriptionWarnings = storefrontCopyWarnings(publicDescription);
+  const [shippingDraft, setShippingDraft] = useState(() => shippingMetadataDraftFromItem(item));
+  const draftShippingItem = inventoryItemWithShippingDraft(item, shippingDraft);
+  const selectedShippingProfile = inventoryShippingProfileRecord(draftShippingItem, shippingProfiles);
+  const effectiveShippingData = inventoryEffectiveShippingData(draftShippingItem, shippingProfiles);
+  const shippingProfileReady = inventoryShippingProfileComplete(draftShippingItem, shippingProfiles);
+  const usingAnyProfileDefault = effectiveShippingData.usesProfileDefaultWeight || effectiveShippingData.usesProfileDefaultDimensions;
   const qualityChecks = [
     { key: "image", label: "Storefront-safe image exists", complete: Boolean(primaryPublicImageUrl) },
     { key: "price", label: "Public price set", complete: Boolean(suggestedPrice && suggestedPrice > 0) },
@@ -11824,7 +11943,7 @@ function StoreListingModal({
     { key: "description", label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
     { key: "description-clean", label: "Description clean", complete: descriptionWarnings.length === 0 },
     { key: "category", label: "Category set", complete: Boolean(suggestedCategory.trim()) },
-    { key: "shipping", label: "Shipping profile set", complete: inventoryShippingProfileComplete(item, shippingProfiles) }
+    { key: "shipping", label: "Shipping profile set", complete: shippingProfileReady }
   ];
   const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
   return (
@@ -11971,17 +12090,29 @@ function StoreListingModal({
                   <strong>Shipping profile</strong>
                   <span>Used to estimate customer shipping at checkout.</span>
                 </div>
-                {inventoryShippingProfileComplete(item, shippingProfiles) ? <span className="shipping-profile-status complete">Profile ready</span> : <span className="shipping-profile-status">Needs shipping profile</span>}
+                {shippingProfileReady ? <span className="shipping-profile-status complete">Profile ready</span> : <span className="shipping-profile-status">Needs shipping profile</span>}
               </div>
-              <p className="shipping-profile-helper">Use packed shipping weight, including box or mailer. Leave blank only if you want the safe fallback rate. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
+              <p className="shipping-profile-helper">Use packed shipping weight, including box or mailer. Leave blank to use the selected profile default. Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment.</p>
               <div className="shipping-profile-issue-list" aria-label="Shipping profile checklist">
-                {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
+                {inventoryShippingProfileBadges(draftShippingItem, shippingProfiles).map((badge) => (
                   <span className={`shipping-profile-chip ${badge.tone === "good" ? "good" : "warning"}`} key={badge.label}>
                     {badge.label}
                   </span>
                 ))}
               </div>
-              {!inventoryShippingProfileComplete(item, shippingProfiles) ? (
+              {usingAnyProfileDefault ? (
+                <div className="shipping-profile-guidance good">
+                  <strong>Using profile defaults.</strong>
+                  <p>Blank product-level package fields will use the selected profile defaults at checkout.</p>
+                </div>
+              ) : null}
+              {effectiveShippingData.selectedProfileMissingDefaults ? (
+                <div className="shipping-profile-guidance">
+                  <strong>Selected profile is missing package defaults.</strong>
+                  <p>Add defaults to the profile or enter product-level overrides before relying on calculated shipping.</p>
+                </div>
+              ) : null}
+              {!shippingProfileReady && !effectiveShippingData.selectedProfileMissingDefaults ? (
                 <div className="shipping-profile-guidance">
                   <strong>Complete before relying on storefront estimates.</strong>
                   <p>Measure the packed shipment, choose the closest package profile, and confirm whether local pickup should be offered.</p>
@@ -11991,14 +12122,15 @@ function StoreListingModal({
                 <SelectInput
                   name="shippingProfile"
                   label="Shipping profile"
-                  defaultValue={item.shippingProfile || "standard"}
+                  value={shippingDraft.shippingProfile}
+                  onChange={(event) => setShippingDraft((draft) => ({ ...draft, shippingProfile: event.currentTarget.value }))}
                   options={shippingProfileSelectOptions(shippingProfiles, item.shippingProfile)}
                 />
                 <div className="shipping-package-grid">
-                  <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0" step="0.1" defaultValue={item.packageWeightOz ?? ""} />
-                  <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0" step="0.1" defaultValue={item.packageLengthIn ?? ""} />
-                  <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0" step="0.1" defaultValue={item.packageWidthIn ?? ""} />
-                  <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0" step="0.1" defaultValue={item.packageHeightIn ?? ""} />
+                  <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0" step="0.1" value={shippingDraft.packageWeightOz} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageWeightOz: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "defaultWeightOz", "oz")} />
+                  <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0" step="0.1" value={shippingDraft.packageLengthIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageLengthIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageLengthIn", "in")} />
+                  <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0" step="0.1" value={shippingDraft.packageWidthIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageWidthIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageWidthIn", "in")} />
+                  <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0" step="0.1" value={shippingDraft.packageHeightIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageHeightIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageHeightIn", "in")} />
                 </div>
                 <div className="shipping-option-grid">
                   <label className="shipping-toggle-card">

@@ -66,6 +66,39 @@ test("Google Merchant product feed renders public active storefront products", (
   assert.match(xml, /<g:shipping_weight>12 oz<\/g:shipping_weight>/);
 });
 
+test("Google Merchant product feed uses selected shipping profile defaults when product overrides are blank", () => {
+  const xml = storefrontProductFeedXml(
+    [
+      product({
+        shippingProfile: "three_booster_blister",
+        packageWeightOz: null,
+        packageLengthIn: null,
+        packageWidthIn: null,
+        packageHeightIn: null
+      })
+    ],
+    {
+      profileDefinitions: {
+        three_booster_blister: {
+          label: "3-Booster Blister",
+          defaultWeightOz: 6,
+          rank: 2,
+          requiresBox: false,
+          insuranceRecommended: false,
+          packageLengthIn: 9,
+          packageWidthIn: 7,
+          packageHeightIn: 1
+        }
+      }
+    }
+  );
+
+  assert.match(xml, /<g:shipping_weight>6 oz<\/g:shipping_weight>/);
+  assert.match(xml, /<g:shipping_length>9 in<\/g:shipping_length>/);
+  assert.match(xml, /<g:shipping_width>7 in<\/g:shipping_width>/);
+  assert.match(xml, /<g:shipping_height>1 in<\/g:shipping_height>/);
+});
+
 test("Google Merchant product feed excludes unavailable and image-missing products by default", () => {
   const active = product({ slug: "active-product" });
   const soldOut = product({ slug: "sold-out-product", status: "sold_out", publicMaxQuantity: 0, availabilityLevel: "sold_out" });

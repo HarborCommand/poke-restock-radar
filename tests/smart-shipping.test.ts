@@ -101,6 +101,111 @@ test("missing package dimensions are surfaced for calculated shipping fallback",
   assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), true);
 });
 
+test("selected shipping profile defaults complete blank product package data", () => {
+  const result = calculateCartShipping(
+    [
+      shippableItem({
+        shippingProfile: "three_booster_blister",
+        packageWeightOz: null,
+        packageLengthIn: null,
+        packageWidthIn: null,
+        packageHeightIn: null
+      })
+    ],
+    {
+      profileDefinitions: {
+        three_booster_blister: {
+          label: "3-Booster Blister",
+          defaultWeightOz: 6,
+          rank: 2,
+          requiresBox: false,
+          insuranceRecommended: false,
+          packageLengthIn: 9,
+          packageWidthIn: 7,
+          packageHeightIn: 1
+        }
+      }
+    }
+  );
+
+  assert.equal(result.totalWeightOz, 6);
+  assert.equal(result.packageProfile, "three_booster_blister");
+  assert.equal(result.packageLengthIn, 9);
+  assert.equal(result.packageWidthIn, 7);
+  assert.equal(result.packageHeightIn, 1);
+  assert.equal(result.needsShippingProfile, false);
+  assert.equal(result.defaultShippingOption?.amount, 4.99);
+  assert.equal(result.warnings.some((warning) => warning.includes("safe small-box fallback")), false);
+  assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), false);
+});
+
+test("product-level package data overrides selected profile defaults", () => {
+  const result = calculateCartShipping(
+    [
+      shippableItem({
+        shippingProfile: "three_booster_blister",
+        packageWeightOz: 12,
+        packageLengthIn: 10,
+        packageWidthIn: 8,
+        packageHeightIn: 2
+      })
+    ],
+    {
+      profileDefinitions: {
+        three_booster_blister: {
+          label: "3-Booster Blister",
+          defaultWeightOz: 6,
+          rank: 2,
+          requiresBox: false,
+          insuranceRecommended: false,
+          packageLengthIn: 9,
+          packageWidthIn: 7,
+          packageHeightIn: 1
+        }
+      }
+    }
+  );
+
+  assert.equal(result.totalWeightOz, 12);
+  assert.equal(result.packageLengthIn, 10);
+  assert.equal(result.packageWidthIn, 8);
+  assert.equal(result.packageHeightIn, 2);
+  assert.equal(result.defaultShippingOption?.amount, 5.99);
+});
+
+test("selected profile without dimension defaults still flags missing dimensions", () => {
+  const result = calculateCartShipping(
+    [
+      shippableItem({
+        shippingProfile: "dimensionless_profile",
+        packageWeightOz: null,
+        packageLengthIn: null,
+        packageWidthIn: null,
+        packageHeightIn: null
+      })
+    ],
+    {
+      profileDefinitions: {
+        dimensionless_profile: {
+          label: "Dimensionless Profile",
+          defaultWeightOz: 6,
+          rank: 2,
+          requiresBox: false,
+          insuranceRecommended: false,
+          packageLengthIn: null,
+          packageWidthIn: null,
+          packageHeightIn: null
+        }
+      }
+    }
+  );
+
+  assert.equal(result.totalWeightOz, 6);
+  assert.equal(result.needsShippingProfile, false);
+  assert.equal(result.packageLengthIn, null);
+  assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), true);
+});
+
 test("Shippo USPS quote normalizer prefers Ground Advantage without exposing raw provider payloads", () => {
   const quote = normalizeShippoUspsQuote(
     {
@@ -285,7 +390,7 @@ test("calculated USPS quote API and checkout enforce server-side quote safety", 
   assert.match(validation, /destinationZip: z\.string\(\)\.trim\(\)\.regex\(\/\^\\d\{5\}\$\//);
   assert.match(route, /export const dynamic = "force-dynamic"/);
   assert.match(route, /createStorefrontShippingQuote\(input\)/);
-  assert.match(createQuote, /const cart = await getCartProducts\(input\.items\)/);
+  assert.match(createQuote, /const cart = await getCartProducts\(input\.items, \{ profileDefinitions \}\)/);
   assert.match(createQuote, /calculateCartShipping/);
   assert.doesNotMatch(createQuote, /packageWeightOz: input|packageLengthIn: input|amountCents: input/);
   assert.match(quoteHelper, /fetchShippoUspsQuote/);

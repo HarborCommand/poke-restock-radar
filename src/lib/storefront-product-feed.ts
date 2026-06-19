@@ -7,10 +7,12 @@ import {
   storefrontProductMetaDescription
 } from "@/lib/storefront-seo";
 import { isSoldOutProduct } from "@/lib/storefront-badges";
+import { effectiveShippingPackageData, type ShippingProfileDefinition } from "@/lib/shipping";
 import type { PublicStoreProductDTO } from "@/types/radar";
 
 type ProductFeedOptions = {
   includeUnavailable?: boolean;
+  profileDefinitions?: Record<string, ShippingProfileDefinition>;
 };
 
 type ProductFeedItem = {
@@ -84,12 +86,13 @@ function measuredUnit(value: number | null | undefined, unit: "oz" | "in") {
   return `${Number(value.toFixed(2))} ${unit}`;
 }
 
-function productFeedItem(product: PublicStoreProductDTO): ProductFeedItem | null {
+function productFeedItem(product: PublicStoreProductDTO, options: ProductFeedOptions = {}): ProductFeedItem | null {
   if (product.price <= 0 || !Number.isFinite(product.price)) return null;
   const imageLink = productFeedImage(product);
   if (!imageLink) return null;
   const title = cleanStorefrontTitle(product.title);
   const description = compactText(product.description) || storefrontProductMetaDescription(product);
+  const packageData = effectiveShippingPackageData(product, options.profileDefinitions);
   return {
     id: product.slug,
     title,
@@ -101,10 +104,10 @@ function productFeedItem(product: PublicStoreProductDTO): ProductFeedItem | null
     condition: googleMerchantCondition(product),
     brand: googleMerchantBrand(product),
     gtin: googleMerchantGtin(product),
-    shippingWeight: measuredUnit(product.packageWeightOz, "oz"),
-    shippingLength: measuredUnit(product.packageLengthIn, "in"),
-    shippingWidth: measuredUnit(product.packageWidthIn, "in"),
-    shippingHeight: measuredUnit(product.packageHeightIn, "in")
+    shippingWeight: measuredUnit(packageData.packageWeightOz, "oz"),
+    shippingLength: measuredUnit(packageData.packageLengthIn, "in"),
+    shippingWidth: measuredUnit(packageData.packageWidthIn, "in"),
+    shippingHeight: measuredUnit(packageData.packageHeightIn, "in")
   };
 }
 
@@ -112,7 +115,7 @@ export function storefrontProductFeedItems(products: PublicStoreProductDTO[], op
   const includeUnavailable = options.includeUnavailable ?? false;
   return products
     .filter((product) => includeUnavailable || !isSoldOutProduct(product))
-    .map(productFeedItem)
+    .map((product) => productFeedItem(product, options))
     .filter((item): item is ProductFeedItem => Boolean(item));
 }
 

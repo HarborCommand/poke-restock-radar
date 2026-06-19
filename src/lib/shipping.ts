@@ -63,6 +63,22 @@ export type ShippingProfileDefinition = {
   active?: boolean;
 };
 
+export type EffectiveShippingPackageData = {
+  profileKey: string;
+  profileDefinition: ShippingProfileDefinition;
+  usedFallbackProfile: boolean;
+  packageWeightOz: number | null;
+  packageLengthIn: number | null;
+  packageWidthIn: number | null;
+  packageHeightIn: number | null;
+  usesProfileDefaultWeight: boolean;
+  usesProfileDefaultDimensions: boolean;
+  profileHasWeightDefault: boolean;
+  profileHasDimensionDefaults: boolean;
+  needsShippingProfile: boolean;
+  missingDimensions: boolean;
+};
+
 const safeFallbackProfile: ShippingProfileKey = "small_box";
 
 export const shippingProfiles: Record<ShippingProfileKey, ShippingProfileDefinition> = {
@@ -147,6 +163,13 @@ function quantityForItem(item: ShippingCartItem) {
   return quantity ? Math.max(1, Math.floor(quantity)) : 1;
 }
 
+function shippingProfileDefinitionMap(profileDefinitions: Record<string, ShippingProfileDefinition>): Record<string, ShippingProfileDefinition> {
+  return {
+    ...shippingProfiles,
+    ...profileDefinitions
+  };
+}
+
 export function normalizeShippingProfile(
   value: string | null | undefined,
   profileDefinitions: Record<string, ShippingProfileDefinition> = shippingProfiles
@@ -168,8 +191,49 @@ export function itemNeedsShippingProfile(
   item: Pick<ShippingCartItem, "shippingProfile" | "packageWeightOz">,
   profileDefinitions: Record<string, ShippingProfileDefinition> = shippingProfiles
 ) {
-  const normalized = String(item.shippingProfile || "").trim().toLowerCase();
-  return !normalized || normalized === "standard" || normalizeShippingProfile(item.shippingProfile, profileDefinitions).usedFallback || !positiveNumber(item.packageWeightOz);
+  return effectiveShippingPackageData(item, profileDefinitions).needsShippingProfile;
+}
+
+export function effectiveShippingPackageData(
+  item: Pick<
+    ShippingCartItem,
+    "shippingProfile" | "packageWeightOz" | "packageLengthIn" | "packageWidthIn" | "packageHeightIn"
+  >,
+  profileDefinitions: Record<string, ShippingProfileDefinition> = shippingProfiles
+): EffectiveShippingPackageData {
+  const definitions = shippingProfileDefinitionMap(profileDefinitions);
+  const normalized = normalizeShippingProfile(item.shippingProfile, definitions);
+  const profileDefinition = definitions[normalized.profile] ?? shippingProfiles[safeFallbackProfile];
+  const itemWeight = positiveNumber(item.packageWeightOz);
+  const profileWeight = positiveNumber(profileDefinition.defaultWeightOz);
+  const itemLength = packageDimension(item.packageLengthIn);
+  const itemWidth = packageDimension(item.packageWidthIn);
+  const itemHeight = packageDimension(item.packageHeightIn);
+  const profileLength = packageDimension(profileDefinition.packageLengthIn);
+  const profileWidth = packageDimension(profileDefinition.packageWidthIn);
+  const profileHeight = packageDimension(profileDefinition.packageHeightIn);
+  const packageWeightOz = itemWeight ?? profileWeight;
+  const packageLengthIn = itemLength ?? profileLength;
+  const packageWidthIn = itemWidth ?? profileWidth;
+  const packageHeightIn = itemHeight ?? profileHeight;
+  const profileHasDimensionDefaults = Boolean(profileLength && profileWidth && profileHeight);
+  const missingDimensions = !packageLengthIn || !packageWidthIn || !packageHeightIn;
+
+  return {
+    profileKey: normalized.profile,
+    profileDefinition,
+    usedFallbackProfile: normalized.usedFallback,
+    packageWeightOz,
+    packageLengthIn,
+    packageWidthIn,
+    packageHeightIn,
+    usesProfileDefaultWeight: !itemWeight && Boolean(profileWeight) && !normalized.usedFallback,
+    usesProfileDefaultDimensions: (!itemLength || !itemWidth || !itemHeight) && !missingDimensions && !normalized.usedFallback,
+    profileHasWeightDefault: Boolean(profileWeight),
+    profileHasDimensionDefaults,
+    needsShippingProfile: normalized.usedFallback || !packageWeightOz,
+    missingDimensions
+  };
 }
 
 function rateForWeight(totalWeightOz: number) {
@@ -189,10 +253,7 @@ export function calculateCartShipping(
     profileDefinitions?: Record<string, ShippingProfileDefinition>;
   } = {}
 ): ShippingCalculation {
-  const profileDefinitions: Record<string, ShippingProfileDefinition> = {
-    ...shippingProfiles,
-    ...(options.profileDefinitions ?? {})
-  };
+  const profileDefinitions = shippingProfileDefinitionMap(options.profileDefinitions ?? {});
   const cartItems = items.filter((item) => quantityForItem(item) > 0);
   const warnings = new Set<string>();
   let totalWeightOz = 0;
@@ -202,20 +263,22 @@ export function calculateCartShipping(
 
   for (const item of cartItems) {
     const quantity = quantityForItem(item);
-    const normalized = normalizeShippingProfile(item.shippingProfile, profileDefinitions);
-    const profile = profileDefinitions[normalized.profile] ?? shippingProfiles[safeFallbackProfile];
-    const itemWeight = positiveNumber(item.packageWeightOz);
-    const fallbackNeeded = normalized.usedFallback || itemNeedsShippingProfile(item, profileDefinitions);
+    const effectivePackage = effectiveShippingPackageData(item, profileDefinitions);
+    const fallbackNeeded = effectivePackage.needsShippingProfile;
+    const profile = fallbackNeeded ? shippingProfiles[safeFallbackProfile] : effectivePackage.profileDefinition;
+    const profileKey = fallbackNeeded ? safeFallbackProfile : effectivePackage.profileKey;
 
     if (fallbackNeeded) {
       needsShippingProfile = true;
       warnings.add("One or more items need a shipping profile; using a safe small-box fallback.");
     }
 
-    totalWeightOz += (itemWeight ?? profile.defaultWeightOz) * quantity;
+    totalWeightOz += (effectivePackage.packageWeightOz ?? shippingProfiles[safeFallbackProfile].defaultWeightOz) * quantity;
 
-    if (profile.rank > (profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile]).rank) {
-      packageProfile = normalized.profile;
+    if (!fallbackNeeded && cartItems.length === 1) {
+      packageProfile = profileKey;
+    } else if (profile.rank > (profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile]).rank) {
+      packageProfile = profileKey;
     }
 
     if (item.requiresBox && shippingProfiles.small_box.rank > (profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile]).rank) {

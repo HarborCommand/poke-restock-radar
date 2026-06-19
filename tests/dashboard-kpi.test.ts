@@ -1119,7 +1119,7 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(cartRoute, /getCartProducts\(input\.items, \{ strict: false \}\)/);
   assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
   assert.match(invoiceRoute, /createInvoiceRequest\(input\)/);
-  assert.match(storefront, /export async function getCartProducts\(items: Array<\{ id: string; quantity: number \}>, options: \{ strict\?: boolean \} = \{\}\)/);
+  assert.match(storefront, /export async function getCartProducts\(\s*items: Array<\{ id: string; quantity: number \}>,\s*options: \{ strict\?: boolean; profileDefinitions\?: Record<string, ShippingProfileDefinition> \} = \{\}\s*\)/);
   assert.match(storefront, /const strict = options\.strict \?\? true/);
   assert.match(storefront, /if \(strict && product\.status !== "active"\)/);
   assert.match(storefront, /const rawAvailableQuantity = sellableQuantity\(item\)/);
@@ -1918,6 +1918,12 @@ test("shipping product editor saves package metadata without inventory or price 
     assert.doesNotMatch(editor, new RegExp(`name="${privateField}"`), `shipping editor should not submit ${privateField}`);
   }
   assert.match(editor, /options=\{shippingProfileSelectOptions\(shippingProfiles, item\.shippingProfile\)\}/);
+  assert.match(editor, /shippingMetadataDraftFromItem\(item\)/);
+  assert.match(editor, /inventoryItemWithShippingDraft\(item, shippingDraft\)/);
+  assert.match(editor, /Leave blank to use the selected profile default/);
+  assert.match(editor, /Using profile defaults\./);
+  assert.match(editor, /profileDefaultPlaceholder\(selectedShippingProfile, "defaultWeightOz", "oz"\)/);
+  assert.match(editor, /profileDefaultPlaceholder\(selectedShippingProfile, "packageLengthIn", "in"\)/);
   assert.match(app, /inactive - existing products only/);
   assert.match(editor, /name="publicPrice" value=\{item\.publicPrice \?\? ""\}/);
   assert.match(editor, /name="storeStatus" value=\{item\.storeStatus\}/);
@@ -1929,10 +1935,12 @@ test("checkout shipping uses persisted active profiles while preserving hardcode
   const profiles = fs.readFileSync(new URL("../src/lib/shipping-profiles.ts", import.meta.url), "utf8");
 
   assert.match(storefront, /shippingProfileDefinitionsForCheckout/);
-  assert.match(storefront, /profileDefinitions = await shippingProfileDefinitionsForCheckout\(\)/);
+  assert.match(storefront, /const \[settings, profileDefinitions\] = await Promise\.all\(\[getStorefrontSettings\(\), shippingProfileDefinitionsForCheckout\(\)\]\)/);
   assert.match(storefront, /fulfillmentMethod: input\.fulfillmentMethod, profileDefinitions/);
-  assert.match(shipping, /\.\.\.shippingProfiles,[\s\S]*\.\.\.\(options\.profileDefinitions \?\? \{\}\)/);
-  assert.match(shipping, /normalizeShippingProfile\(item\.shippingProfile, profileDefinitions\)/);
+  assert.match(shipping, /shippingProfileDefinitionMap\(options\.profileDefinitions \?\? \{\}\)/);
+  assert.match(shipping, /normalizeShippingProfile\(item\.shippingProfile, definitions\)/);
+  assert.match(shipping, /effectiveShippingPackageData/);
+  assert.match(shipping, /packageWeightOz = itemWeight \?\? profileWeight/);
   assert.match(shipping, /One or more items need a shipping profile; using a safe small-box fallback\./);
   assert.match(profiles, /where: \{ active: true \}/);
   assert.match(profiles, /shippingProfileToDefinition/);

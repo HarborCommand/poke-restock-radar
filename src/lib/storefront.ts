@@ -7,7 +7,14 @@ import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefro
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { getSavedProductImageUrls } from "@/lib/product-images";
 import { emailProviderConfigured, sendEmailViaProvider, type EmailMessage, type EmailSendOptions } from "@/lib/email-provider";
-import { calculateCartShipping, itemNeedsShippingProfile, type ShippingCalculation, type ShippingOption } from "@/lib/shipping";
+import {
+  calculateCartShipping,
+  effectiveShippingPackageData,
+  itemNeedsShippingProfile,
+  type ShippingCalculation,
+  type ShippingOption,
+  type ShippingProfileDefinition
+} from "@/lib/shipping";
 import {
   fetchShippoUspsQuote,
   shippingRateProviderConfig,
@@ -216,7 +223,10 @@ function publicImages(item: StorefrontInventoryItem) {
   return getSavedProductImageUrls(item, { publicOnly: true }).filter(isStorefrontDisplayImageUrl);
 }
 
-export function publicProductToDTO(item: StorefrontInventoryItem): PublicStoreProductDTO | null {
+export function publicProductToDTO(
+  item: StorefrontInventoryItem,
+  options: { profileDefinitions?: Record<string, ShippingProfileDefinition> } = {}
+): PublicStoreProductDTO | null {
   const price = item.publicPrice;
   const rawAvailableQuantity = sellableQuantity(item);
   const slug = item.publicSlug;
@@ -234,6 +244,7 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
   const status = rawAvailableQuantity > 0 && item.storeStatus === "active" ? "active" : "sold_out";
   const availabilityLevel = publicAvailabilityLevel(rawAvailableQuantity, item.storeStatus);
   const primaryImageUrl = images[0] ?? null;
+  const effectivePackage = effectiveShippingPackageData(item, options.profileDefinitions);
   return {
     id: item.id,
     slug,
@@ -269,14 +280,14 @@ export function publicProductToDTO(item: StorefrontInventoryItem): PublicStorePr
     localPickupEligible: item.localPickupAvailable,
     shippingAvailable: item.shippingAvailable,
     shippingProfile: item.shippingProfile,
-    packageWeightOz: item.packageWeightOz,
-    packageLengthIn: item.packageLengthIn,
-    packageWidthIn: item.packageWidthIn,
-    packageHeightIn: item.packageHeightIn,
+    packageWeightOz: effectivePackage.packageWeightOz,
+    packageLengthIn: effectivePackage.packageLengthIn,
+    packageWidthIn: effectivePackage.packageWidthIn,
+    packageHeightIn: effectivePackage.packageHeightIn,
     freeShippingEligible: item.freeShippingEligible,
     requiresBox: item.requiresBox,
     insuranceRecommended: item.insuranceRecommended,
-    needsShippingProfile: itemNeedsShippingProfile(item),
+    needsShippingProfile: itemNeedsShippingProfile(item, options.profileDefinitions),
     publishedAt: item.publishedAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString()
@@ -324,20 +335,23 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
 }
 
 export async function listPublicStoreProducts(input?: { q?: string; category?: string }) {
-  const products = await prisma.inventoryItem.findMany({
-    where: {
-      publishToStore: true,
-      storeStatus: { in: ["active", "sold_out"] },
-      publicPrice: { not: null },
-      publicSlug: { not: null }
-    },
-    include: storefrontInventoryInclude,
-    orderBy: { updatedAt: "desc" }
-  });
+  const [products, profileDefinitions] = await Promise.all([
+    prisma.inventoryItem.findMany({
+      where: {
+        publishToStore: true,
+        storeStatus: { in: ["active", "sold_out"] },
+        publicPrice: { not: null },
+        publicSlug: { not: null }
+      },
+      include: storefrontInventoryInclude,
+      orderBy: { updatedAt: "desc" }
+    }),
+    shippingProfileDefinitionsForCheckout()
+  ]);
   const q = input?.q?.trim().toLowerCase();
   const category = input?.category?.trim().toLowerCase();
   return products
-    .map((item) => publicProductToDTO(item))
+    .map((item) => publicProductToDTO(item, { profileDefinitions }))
     .filter((product): product is PublicStoreProductDTO => Boolean(product))
     .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))
     .filter((product) => !category || category === "all" || product.category.toLowerCase() === category)
@@ -349,26 +363,36 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
 }
 
 export async function getPublicStoreProduct(slug: string) {
-  const item = await prisma.inventoryItem.findFirst({
-    where: { publicSlug: slug, publishToStore: true, storeStatus: { in: ["active", "sold_out"] } },
-    include: storefrontInventoryInclude
-  });
+  const [item, profileDefinitions] = await Promise.all([
+    prisma.inventoryItem.findFirst({
+      where: { publicSlug: slug, publishToStore: true, storeStatus: { in: ["active", "sold_out"] } },
+      include: storefrontInventoryInclude
+    }),
+    shippingProfileDefinitionsForCheckout()
+  ]);
   if (!item) return null;
-  return publicProductToDTO(item);
+  return publicProductToDTO(item, { profileDefinitions });
 }
 
-export async function getCartProducts(items: Array<{ id: string; quantity: number }>, options: { strict?: boolean } = {}) {
+export async function getCartProducts(
+  items: Array<{ id: string; quantity: number }>,
+  options: { strict?: boolean; profileDefinitions?: Record<string, ShippingProfileDefinition> } = {}
+) {
   const strict = options.strict ?? true;
   const requested = new Map(items.map((item) => [item.id, item.quantity]));
-  const products = await prisma.inventoryItem.findMany({
-    where: { id: { in: [...requested.keys()] } },
-    include: storefrontInventoryInclude
-  });
+  const profileDefinitionsPromise = options.profileDefinitions ? Promise.resolve(options.profileDefinitions) : shippingProfileDefinitionsForCheckout();
+  const [products, profileDefinitions] = await Promise.all([
+    prisma.inventoryItem.findMany({
+      where: { id: { in: [...requested.keys()] } },
+      include: storefrontInventoryInclude
+    }),
+    profileDefinitionsPromise
+  ]);
   if (products.length !== requested.size) {
     throw new Error("One or more cart items are no longer available.");
   }
   return products.map((item) => {
-    const product = publicProductToDTO(item);
+    const product = publicProductToDTO(item, { profileDefinitions });
     if (!product) throw new Error(`${item.publicTitle || item.itemName} is not available for checkout.`);
     const requestedQuantity = requested.get(item.id) ?? 0;
     const rawAvailableQuantity = sellableQuantity(item);
@@ -1071,10 +1095,9 @@ export async function createStorefrontShippingQuote(
   if (!config.calculatedUspsEnabled && !config.fallbackEnabled) {
     throw new Error("Calculated shipping is not enabled. Use Request Invoice for manual review.");
   }
-  const settings = await getStorefrontSettings();
-  const cart = await getCartProducts(input.items);
+  const [settings, profileDefinitions] = await Promise.all([getStorefrontSettings(), shippingProfileDefinitionsForCheckout()]);
+  const cart = await getCartProducts(input.items, { profileDefinitions });
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
-  const profileDefinitions = await shippingProfileDefinitionsForCheckout();
   const shippingCalculation = calculateCartShipping(
     cart.map(({ item, quantity }) => ({ ...item, quantity })),
     { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: "shipping", profileDefinitions }
@@ -1656,14 +1679,13 @@ export async function createCheckoutSession(input: {
     throw new Error(`Stripe Checkout is not ready. Missing: ${readiness.missing.join(", ")}. Use Request Invoice until these are configured.`);
   }
   const checkoutBaseUrl = storefrontCheckoutBaseUrl(options.requestUrl);
-  const settings = await getStorefrontSettings();
+  const [settings, profileDefinitions] = await Promise.all([getStorefrontSettings(), shippingProfileDefinitionsForCheckout()]);
   const checkoutStartedAt = new Date();
   const reservationExpiresAt = checkoutReservationExpiresAt(checkoutStartedAt);
   await cleanupExpiredReservationsForCheckoutOnly(checkoutStartedAt);
-  const cart = await getCartProducts(input.items);
+  const cart = await getCartProducts(input.items, { profileDefinitions });
   validateCheckoutReservationAvailability(cart, checkoutStartedAt);
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
-  const profileDefinitions = await shippingProfileDefinitionsForCheckout();
   const shippingCalculation = calculateCartShipping(
     cart.map(({ item, quantity }) => ({ ...item, quantity })),
     { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod, profileDefinitions }
@@ -1841,10 +1863,9 @@ export async function createInvoiceRequest(input: {
   customerPhone?: string | null;
   customerNotes?: string | null;
 }) {
-  const settings = await getStorefrontSettings();
-  const cart = await getCartProducts(input.items);
+  const [settings, profileDefinitions] = await Promise.all([getStorefrontSettings(), shippingProfileDefinitionsForCheckout()]);
+  const cart = await getCartProducts(input.items, { profileDefinitions });
   const subtotal = cart.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
-  const profileDefinitions = await shippingProfileDefinitionsForCheckout();
   const shippingCalculation = calculateCartShipping(
     cart.map(({ item, quantity }) => ({ ...item, quantity })),
     { subtotal, freeShippingThreshold: settings.freeShippingThreshold, fulfillmentMethod: input.fulfillmentMethod, profileDefinitions }

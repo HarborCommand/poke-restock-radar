@@ -58,7 +58,8 @@ test("Stripe Checkout session creation only creates temporary stock reservations
     "    });"
   );
 
-  assert.match(createCheckoutSession, /const cart = await getCartProducts\(input\.items\)/);
+  assert.match(createCheckoutSession, /const \[settings, profileDefinitions\] = await Promise\.all\(/);
+  assert.match(createCheckoutSession, /const cart = await getCartProducts\(input\.items, \{ profileDefinitions \}\)/);
   assert.match(storefront, /const reservationMinutes = 15/);
   assert.match(storefront, /const stripeCheckoutExpirationMinutes = 30/);
   assert.match(storefront, /function checkoutReservationExpiresAt\(now = new Date\(\)\)/);
@@ -100,7 +101,7 @@ test("cart availability refresh is read-only and unpaid reservations do not appe
     assert.doesNotMatch(readPath, /prisma\.inventorySale\.create|prisma\.inventoryStockLot\.update|quantitySold:|remainingQuantity:\s*lot\.remainingQuantity -/);
   }
 
-  assert.match(createCheckoutSession, /await cleanupExpiredReservationsForCheckoutOnly\(checkoutStartedAt\);\s+const cart = await getCartProducts\(input\.items\)/);
+  assert.match(createCheckoutSession, /await cleanupExpiredReservationsForCheckoutOnly\(checkoutStartedAt\);\s+const cart = await getCartProducts\(input\.items, \{ profileDefinitions \}\)/);
   assert.match(createCheckoutSession, /validateCheckoutReservationAvailability\(cart, checkoutStartedAt\)/);
   assert.doesNotMatch(getCartProducts, /reservations:\s*\{\s*create/);
 });

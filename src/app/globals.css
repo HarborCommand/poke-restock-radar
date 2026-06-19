@@ -20129,6 +20129,19 @@ body .shipping-profile-guidance p {
   line-height: 1.45;
 }
 
+body .shipping-profile-guidance.good {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+body .shipping-profile-guidance.good strong {
+  color: #166534;
+}
+
+body .shipping-profile-guidance.good p {
+  color: #166534;
+}
+
 body .shipping-profile-chip {
   display: inline-flex;
   align-items: center;
