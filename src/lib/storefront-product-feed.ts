@@ -88,8 +88,11 @@ function merchantIdHash(product: Pick<PublicStoreProductDTO, "id" | "slug" | "ti
 }
 
 export function googleMerchantProductId(product: Pick<PublicStoreProductDTO, "id" | "slug" | "title">) {
+  const safeSlug = merchantIdSlug(product.slug);
+  if (safeSlug && safeSlug.length <= GOOGLE_MERCHANT_ID_MAX_LENGTH) return safeSlug;
+
   const hash = merchantIdHash(product);
-  const slugSource = merchantIdSlug(product.slug) || merchantIdSlug(product.title) || "product";
+  const slugSource = safeSlug || merchantIdSlug(product.title) || "product";
   const slugMaxLength = GOOGLE_MERCHANT_ID_MAX_LENGTH - GOOGLE_MERCHANT_ID_PREFIX.length - 2 - hash.length;
   const slugPart = trimMerchantIdSlug(slugSource, slugMaxLength);
   const id = `${GOOGLE_MERCHANT_ID_PREFIX}-${slugPart}-${hash}`;

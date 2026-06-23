@@ -58,7 +58,7 @@ test("Google Merchant product feed renders public active storefront products", (
   const xml = storefrontProductFeedXml([product()]);
 
   assert.match(xml, /<rss version="2\.0" xmlns:g="http:\/\/base\.google\.com\/ns\/1\.0">/);
-  assert.match(xml, /<g:id>gdd-pokemon-feed-product-[a-f0-9]{8}<\/g:id>/);
+  assert.match(xml, /<g:id>pokemon-feed-product<\/g:id>/);
   assert.match(xml, /<title>Pok.mon Feed Product<\/title>/);
   assert.match(xml, /<description>Factory sealed Pokemon product for collectors\.<\/description>/);
   assert.match(xml, new RegExp(`<link>${productCanonicalUrl("pokemon-feed-product").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</link>`));
@@ -70,6 +70,25 @@ test("Google Merchant product feed renders public active storefront products", (
   assert.match(xml, /<g:product_type>Pokemon TCG &gt; Booster Bundles<\/g:product_type>/);
   assert.match(xml, /<g:gtin>123456789012<\/g:gtin>/);
   assert.match(xml, /<g:shipping_weight>12 oz<\/g:shipping_weight>/);
+});
+
+test("Google Merchant product feed preserves short safe slug IDs", () => {
+  const products = [
+    product({ slug: "poke-ball-tin-q4-2025" }),
+    product({ slug: "perfect-order-premium-checklane-blister-meganium" }),
+    product({ slug: "mega-evolution-perfect-order-booster-bundle" })
+  ];
+
+  assert.equal(googleMerchantProductId(products[0]), "poke-ball-tin-q4-2025");
+  assert.equal(googleMerchantProductId(products[1]), "perfect-order-premium-checklane-blister-meganium");
+  assert.equal(googleMerchantProductId(products[2]), "mega-evolution-perfect-order-booster-bundle");
+
+  const ids = storefrontProductFeedItems(products).map((item) => item.id);
+  assert.deepEqual(ids, [
+    "poke-ball-tin-q4-2025",
+    "perfect-order-premium-checklane-blister-meganium",
+    "mega-evolution-perfect-order-booster-bundle"
+  ]);
 });
 
 test("Google Merchant product feed IDs are short stable unique and safe", () => {
@@ -203,7 +222,7 @@ test("Google Merchant product feed excludes unavailable and image-missing produc
 
   const items = storefrontProductFeedItems([active, soldOut, noImage]);
   assert.equal(items.length, 1);
-  assert.match(items[0].id, /^gdd-active-product-[a-f0-9]{8}$/);
+  assert.equal(items[0].id, "active-product");
   assert.equal(items[0].link, productCanonicalUrl("active-product"));
 
   const xml = storefrontProductFeedXml([active, soldOut, noImage]);
@@ -218,7 +237,7 @@ test("Google Merchant product feed can render sold-out availability only when ex
     { includeUnavailable: true }
   );
 
-  assert.match(xml, /<g:id>gdd-sold-out-product-[a-f0-9]{8}<\/g:id>/);
+  assert.match(xml, /<g:id>sold-out-product<\/g:id>/);
   assert.match(xml, /<g:availability>out of stock<\/g:availability>/);
   assert.doesNotMatch(xml, /<g:availability>in stock<\/g:availability>/);
 });
