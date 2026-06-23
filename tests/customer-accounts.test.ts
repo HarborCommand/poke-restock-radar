@@ -28,8 +28,10 @@ test("customer account and rewards feature flags default disabled", () => {
   assert.deepEqual(config.envVars, [
     "CUSTOMER_ACCOUNTS_ENABLED",
     "CUSTOMER_REWARDS_ENABLED",
-    "CUSTOMER_REWARD_REDEMPTION_ENABLED"
+    "CUSTOMER_REWARD_REDEMPTION_ENABLED",
+    "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED"
   ]);
+  assert.equal(config.customerRewardAdminAdjustmentsEnabled, false);
 });
 
 test("customer account and rewards schema foundation exists without touching checkout totals", () => {
@@ -144,6 +146,24 @@ test("customer account routes are feature-flagged and keep guest checkout visibl
   assert.match(accountComponents, /type="email"/);
 });
 
+test("customer account UI polish keeps account creation optional and mobile-safe", () => {
+  const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const cartClient = readProjectFile("src/components/StorefrontClient.tsx");
+
+  assert.match(accountComponents, /No password needed\. We'll send a secure sign-in link to your email\./);
+  for (const label of ["My Orders", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
+    assert.match(accountComponents, new RegExp(label));
+  }
+  assert.match(accountComponents, /Earn points on eligible purchases/);
+  assert.match(accountComponents, /Redemption coming soon/);
+  assert.doesNotMatch(accountComponents, /Redeem points|Apply points|reward discount|points discount/i);
+  assert.match(css, /\.gdg-address-form/);
+  assert.match(css, /@media \(max-width: 640px\)/);
+  assert.match(css, /\.gdg-address-form,\s*\r?\n\s*\.gdg-address-actions\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
+  assert.match(cartClient, /No account required/);
+});
+
 test("customer magic link tokens are hashed, one-time, and stored outside admin auth", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const requestRoute = readProjectFile("src/app/api/account/magic-link/request/route.ts");
@@ -204,7 +224,7 @@ test("customer account dashboard and order pages require a verified customer ses
 test("customer order history is linked by verified email and exposes safe fields only", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
-  const orderHistory = sourceSlice(auth, "export async function listCustomerAccountOrders");
+  const orderHistory = sourceSlice(auth, "export async function listCustomerAccountOrders", "export async function getCustomerAccountOrderDetail");
 
   assert.match(orderHistory, /if \(!email \|\| !account\.emailVerifiedAt\) return \[\]/);
   assert.match(orderHistory, /isTestOrder:\s*false/);
@@ -219,6 +239,88 @@ test("customer order history is linked by verified email and exposes safe fields
   assert.match(accountComponents, /Refund\/cancel status/);
 
   assert.doesNotMatch(orderHistory + accountComponents, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|payment_method|paymentMethod|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|costBasis|netProfit|supplier|private lot|billingAddress/i);
+});
+
+test("customer account order detail is verified-email scoped and customer safe", () => {
+  const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const detailPage = readProjectFile("src/app/account/orders/[orderNumber]/page.tsx");
+  const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const orderStatusRoute = readProjectFile("src/app/api/storefront/order-status/route.ts");
+  const detailFunction = sourceSlice(auth, "export async function getCustomerAccountOrderDetail");
+  const detailComponent = sourceSlice(accountComponents, "export function AccountOrderDetail", "export function AccountRewards");
+
+  assert.match(detailPage, /customerAccountsEnabled\(\)/);
+  assert.match(detailPage, /currentCustomerAccount\(\)/);
+  assert.match(detailPage, /getCustomerAccountOrderDetail\(account, decodeURIComponent\(orderNumber\)\)/);
+  assert.match(detailPage, /AccountOrderNotFound/);
+  assert.match(detailPage, /robots:\s*\{\s*\r?\n\s*index:\s*false/);
+
+  assert.match(detailFunction, /if \(!email \|\| !account\.emailVerifiedAt \|\| !cleanOrderNumber\) return null/);
+  assert.match(detailFunction, /orderNumber:\s*cleanOrderNumber/);
+  assert.match(detailFunction, /isTestOrder:\s*false/);
+  assert.match(detailFunction, /customerEmail:\s*email/);
+  assert.match(detailFunction, /customer:\s*\{\s*is:\s*\{\s*email\s*\}\s*\}/);
+  assert.match(detailFunction, /select:\s*\{/);
+  assert.match(detailFunction, /shippingTrackingNumber:\s*true/);
+  assert.match(detailFunction, /shippingTrackingUrl:\s*true/);
+  assert.match(detailFunction, /shippingCarrier:\s*true/);
+  assert.match(detailFunction, /shippingService:\s*true/);
+  assert.match(detailFunction, /unitPrice:\s*true/);
+  assert.match(detailFunction, /lineTotal:\s*true/);
+
+  assert.match(detailComponent, /export function AccountOrderDetail/);
+  assert.match(detailComponent, /safe customer-facing details/);
+  assert.match(detailComponent, /Carrier \/ service/);
+  assert.match(detailComponent, /Tracking number/);
+  assert.match(detailComponent, /Pickup status/);
+  assert.match(detailComponent, /Not required/);
+  assert.match(detailComponent, /Refund\/cancel status/);
+  assert.match(detailComponent, /Customer account pages do not provide\s*\r?\n\s*cancellation or refund actions/);
+  assert.match(accountComponents, /Use Guest Order Lookup/);
+  assert.match(accountComponents, /View Details/);
+  assert.match(orderStatusRoute, /lookupPublicOrderStatus\(input\)/);
+
+  assert.doesNotMatch(detailFunction + detailPage + detailComponent, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|stripeRefundId|payment_method|paymentMethod|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|notes:\s*true|costBasis|netProfit|profitLoss|supplier|private lot|billingLine|billingAddress/i);
+});
+
+test("saved address book is verified-account scoped and checkout-isolated", () => {
+  const addressHelper = readProjectFile("src/lib/customer-addresses.ts");
+  const addressRoute = readProjectFile("src/app/api/account/addresses/route.ts");
+  const addressPage = readProjectFile("src/app/account/addresses/page.tsx");
+  const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const addressComponents = sourceSlice(accountComponents, "export function AccountAddresses");
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const checkoutSession = sourceSlice(
+    storefront,
+    "export async function createCheckoutSession",
+    "export async function createInvoiceRequest"
+  );
+
+  assert.match(addressPage, /CustomerAccountsComingSoon/);
+  assert.match(addressPage, /currentCustomerAccount/);
+  assert.match(addressPage, /AccountAddresses account=\{account\} status=\{firstParam\(params\.addressStatus\)\}/);
+  assert.match(addressRoute, /customerAccountsEnabled\(\)/);
+  assert.match(addressRoute, /currentCustomerAccount\(\)/);
+  assert.match(addressRoute, /status:\s*401/);
+  assert.match(addressRoute, /createCustomerSavedAddress/);
+  assert.match(addressRoute, /updateCustomerSavedAddress/);
+  assert.match(addressRoute, /deleteCustomerSavedAddress/);
+  assert.match(addressRoute, /setDefaultCustomerSavedAddress/);
+
+  assert.match(addressHelper, /customerAccountId: account\.id/g);
+  assert.match(addressHelper, /updateMany\(\{\s*\r?\n\s*where: \{ id: addressId, customerAccountId: account\.id \}/);
+  assert.match(addressHelper, /deleteMany\(\{\s*\r?\n\s*where: \{ id: addressId, customerAccountId: account\.id \}/);
+  assert.match(addressHelper, /findFirst\(\{\s*\r?\n\s*where: \{ id: addressId, customerAccountId: account\.id \}/);
+  assert.match(addressHelper, /\^\\d\{5\}\(\?:-\\d\{4\}\)\?\$/);
+  assert.match(addressHelper, /country.*\|\| "US"/);
+
+  assert.match(addressComponents, /Save Address/);
+  assert.match(addressComponents, /Save Changes/);
+  assert.match(addressComponents, /Make Default/);
+  assert.match(addressComponents, /Delete/);
+  assert.match(addressComponents, /Checkout still collects shipping or pickup details normally and does not\s+prefill/);
+  assert.doesNotMatch(checkoutSession, /CustomerSavedAddress|savedAddress|account\/addresses|customerSavedAddress/i);
+  assert.doesNotMatch(addressHelper + addressRoute + addressComponents, /stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|webhook body|costBasis|netProfit|supplier|private lot|adminNotes/i);
 });
 
 test("paid webhook awards reward points once without changing checkout totals", () => {
@@ -303,13 +405,29 @@ test("admin order detail displays rewards without redemption controls or private
   const types = readProjectFile("src/types/radar.ts");
   const storefront = readProjectFile("src/lib/storefront.ts");
   const app = readProjectFile("src/components/RadarApp.tsx");
+  const config = readProjectFile("src/lib/customer-accounts.ts");
+  const rewardPanel = sourceSlice(app, "<h3>Rewards Summary</h3>", "<h3>Profit Summary</h3>");
+  const rewardMapper = sourceSlice(storefront, "function customerRewardSummaryForOrder", "function customerEmailEventStatusFromRecord");
 
   assert.match(types, /export type StorefrontRewardSummaryDTO/);
+  assert.match(types, /export type StorefrontCustomerRewardSummaryDTO/);
   assert.match(types, /redemptionEnabled: false/);
+  assert.match(types, /adminAdjustmentsEnabled: false/);
   assert.match(storefront, /rewardSummary: rewardSummaryForOrder\(order\)/);
-  assert.match(app, /Rewards Summary/);
-  assert.match(app, /Points earned/);
-  assert.match(app, /Points reversed/);
-  assert.match(app, /Rewards redemption is not enabled/);
-  assert.doesNotMatch(app, /Redeem|Apply points|discount/i);
+  assert.match(storefront, /customerRewardSummary: customerRewardSummaryForOrder\(order\)/);
+  assert.match(storefront, /rewardBalance:\s*true/);
+  assert.match(storefront, /rewardLedgerEntries:\s*\{/);
+  assert.match(config, /CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED/);
+  assert.match(config, /customerRewardAdminAdjustmentsEnabled/);
+  assert.match(rewardPanel, /Rewards Summary/);
+  assert.match(rewardPanel, /Points earned/);
+  assert.match(rewardPanel, /Points reversed/);
+  assert.match(rewardPanel, /Customer available/);
+  assert.match(rewardPanel, /Lifetime earned/);
+  assert.match(rewardPanel, /Recent customer reward ledger entries/);
+  assert.match(rewardPanel, /Manual rewards adjustments disabled/);
+  assert.match(rewardPanel, /disabled/);
+  assert.match(rewardPanel, /Rewards redemption is not enabled/);
+  assert.doesNotMatch(rewardPanel, /Redeem|Apply points|discount/i);
+  assert.doesNotMatch(rewardMapper + rewardPanel, /metadataJson|stripePaymentIntentId|stripeCheckoutSessionId|payment_method|raw Stripe|webhook body|cardNumber|cvc|costBasis|netProfit|supplier|private lot/i);
 });

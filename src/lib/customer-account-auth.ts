@@ -69,6 +69,19 @@ export type CustomerAccountOrderHistoryItem = {
   items: Array<{ title: string; quantity: number }>;
 };
 
+export type CustomerAccountOrderDetail = Omit<CustomerAccountOrderHistoryItem, "items"> & {
+  subtotal: number;
+  items: Array<{
+    title: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+  }>;
+  shippingCarrier: string | null;
+  shippingService: string | null;
+  supportEmail: string;
+};
+
 function envValue(name: string) {
   const value = process.env[name]?.trim();
   return value && value.length > 0 ? value : null;
@@ -406,4 +419,88 @@ export async function listCustomerAccountOrders(account: CurrentCustomerAccount)
       }))
     };
   });
+}
+
+export async function getCustomerAccountOrderDetail(
+  account: CurrentCustomerAccount,
+  orderNumber: string
+): Promise<CustomerAccountOrderDetail | null> {
+  const email = normalizeCustomerAccountEmail(account.email);
+  const cleanOrderNumber = orderNumber.trim();
+  if (!email || !account.emailVerifiedAt || !cleanOrderNumber) return null;
+
+  const order = await prisma.storefrontOrder.findFirst({
+    where: {
+      orderNumber: cleanOrderNumber,
+      isTestOrder: false,
+      OR: [{ customerEmail: email }, { customer: { is: { email } } }]
+    },
+    select: {
+      orderNumber: true,
+      createdAt: true,
+      status: true,
+      paymentStatus: true,
+      fulfillmentStatus: true,
+      subtotal: true,
+      shippingCharged: true,
+      shippingMethodLabel: true,
+      shippingPackageProfile: true,
+      shippingCarrier: true,
+      shippingService: true,
+      shippingTrackingNumber: true,
+      shippingTrackingUrl: true,
+      carrier: true,
+      trackingNumber: true,
+      total: true,
+      refundStatus: true,
+      refundedAmount: true,
+      canceledAt: true,
+      refundedAt: true,
+      items: {
+        select: {
+          publicTitle: true,
+          quantity: true,
+          unitPrice: true,
+          lineTotal: true
+        }
+      }
+    }
+  });
+  if (!order) return null;
+
+  const localPickup = orderIsLocalPickup(order);
+  const carrier = localPickup ? null : order.shippingCarrier ?? order.carrier;
+  const trackingNumber = localPickup ? null : order.shippingTrackingNumber ?? order.trackingNumber;
+
+  return {
+    orderNumber: order.orderNumber,
+    orderDate: order.createdAt.toISOString(),
+    status: safeOrderStatus(order),
+    paymentStatus: order.paymentStatus,
+    fulfillmentStatus: order.fulfillmentStatus,
+    fulfillmentMethod: localPickup ? "local_pickup" : "shipping",
+    subtotal: order.subtotal,
+    totalPaid: order.total,
+    shippingCharged: order.shippingCharged,
+    shippingMethodLabel: order.shippingMethodLabel,
+    pickupStatus: localPickup ? pickupStatus(order) : null,
+    carrier,
+    trackingNumber,
+    trackingUrl: localPickup ? null : order.shippingTrackingUrl ?? trackingUrlFor(carrier, trackingNumber),
+    shippingCarrier: localPickup ? null : order.shippingCarrier ?? carrier,
+    shippingService: localPickup ? null : order.shippingService,
+    refundStatus:
+      order.refundStatus ??
+      (order.paymentStatus === "refunded" || order.paymentStatus === "partially_refunded" ? order.paymentStatus : null),
+    refundedAmount: order.refundedAmount,
+    canceledAt: order.canceledAt?.toISOString() ?? null,
+    refundedAt: order.refundedAt?.toISOString() ?? null,
+    supportEmail: GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL,
+    items: order.items.map((item) => ({
+      title: item.publicTitle,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal
+    }))
+  };
 }

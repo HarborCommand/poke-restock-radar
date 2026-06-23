@@ -6,6 +6,7 @@ import { getStorefrontSettings } from "@/lib/storefront";
 import {
   customerAccountsEnabled,
   type CurrentCustomerAccount,
+  type CustomerAccountOrderDetail,
   type CustomerAccountOrderHistoryItem
 } from "@/lib/customer-account-auth";
 import type { CustomerRewardActivityItem } from "@/lib/customer-rewards";
@@ -18,6 +19,15 @@ function money(value: number) {
 function dateLabel(value: string | Date | null | undefined) {
   if (!value) return "Not captured";
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function addressStatusMessage(value: string | null | undefined) {
+  if (value === "created") return "Address saved.";
+  if (value === "updated") return "Address updated.";
+  if (value === "deleted") return "Address deleted.";
+  if (value === "default") return "Default address updated.";
+  if (value === "error") return "Address could not be saved. Check the required fields and ZIP code.";
+  return null;
 }
 
 export async function CustomerAccountShell({ children }: { children: ReactNode }) {
@@ -54,7 +64,7 @@ export function AccountSignInRequired({ title = "Sign in to view your account." 
       <p className="gdg-overline">Optional Account</p>
       <h1>{title}</h1>
       <p>
-        Use a secure email link to view your order history and account placeholders. Guest checkout remains available.
+        Use a secure email link to view your order history, rewards, saved addresses, and support links. Guest checkout remains available.
       </p>
       <div className="gdg-account-actions">
         <Link href="/account/login" className="gdg-primary-button">Email Me a Sign-In Link</Link>
@@ -66,6 +76,39 @@ export function AccountSignInRequired({ title = "Sign in to view your account." 
 
 export function AccountDashboard({ account }: { account: CurrentCustomerAccount }) {
   const rewardBalance = account.rewardBalance;
+  const tiles = [
+    {
+      href: "/account/orders",
+      label: "My Orders",
+      value: "View your orders",
+      copy: "Track paid orders, shipping, pickup, and refund status tied to this verified email."
+    },
+    {
+      href: "/account/rewards",
+      label: "Rewards",
+      value: rewardBalance ? `${rewardBalance.availablePoints} points` : "0 points",
+      copy: "Earn points on eligible purchases. Redemption coming soon."
+    },
+    {
+      href: "/account/addresses",
+      label: "Saved Addresses",
+      value: account.savedAddresses.length ? `${account.savedAddresses.length} saved` : "No saved addresses",
+      copy: "Manage address book entries for your account. Checkout still collects details normally."
+    },
+    {
+      href: "/order-status",
+      label: "Order Status",
+      value: "Guest lookup",
+      copy: "Use an order number and checkout email without signing in."
+    },
+    {
+      href: "/contact",
+      label: "Support",
+      value: "Contact us",
+      copy: "Questions about orders, pickup, or products go directly to GameDayGrabs support."
+    }
+  ];
+
   return (
     <>
       <div className="gdg-account-card hero">
@@ -80,26 +123,13 @@ export function AccountDashboard({ account }: { account: CurrentCustomerAccount 
         </form>
       </div>
       <div className="gdg-account-grid">
-        <Link href="/account/orders" className="gdg-account-tile">
-          <span>Order History</span>
-          <strong>View your orders</strong>
-          <p>Orders appear after your checkout email matches this verified account.</p>
-        </Link>
-        <Link href="/account/rewards" className="gdg-account-tile">
-          <span>Rewards</span>
-          <strong>{rewardBalance ? `${rewardBalance.availablePoints} points` : "Rewards placeholder"}</strong>
-          <p>Rewards are being prepared and do not affect checkout totals yet.</p>
-        </Link>
-        <Link href="/account/addresses" className="gdg-account-tile">
-          <span>Addresses</span>
-          <strong>{account.savedAddresses.length ? `${account.savedAddresses.length} saved` : "No saved addresses"}</strong>
-          <p>Saved address management is planned for a future phase.</p>
-        </Link>
-        <Link href="/order-status" className="gdg-account-tile">
-          <span>Guest Lookup</span>
-          <strong>Check an order</strong>
-          <p>Use an order number and checkout email without signing in.</p>
-        </Link>
+        {tiles.map((tile) => (
+          <Link key={tile.label} href={tile.href} className="gdg-account-tile">
+            <span>{tile.label}</span>
+            <strong>{tile.value}</strong>
+            <p>{tile.copy}</p>
+          </Link>
+        ))}
       </div>
       <div className="gdg-account-card compact">
         <h2>Need support?</h2>
@@ -145,9 +175,9 @@ export function CustomerLoginPageContent({
       <p className="gdg-overline">Customer Login</p>
       <h1>Email yourself a secure sign-in link.</h1>
       <p>
-        Customer accounts are optional. Use the same email you used at checkout to see matching order history after
-        verification.
+        No password needed. We'll send a secure sign-in link to your email.
       </p>
+      <p>Customer accounts are optional. Use the same email you used at checkout to see matching order history after verification.</p>
       {sent ? (
         <p className="gdg-account-notice good">
           If that email can receive account links, a sign-in link has been sent. Check your inbox.
@@ -163,7 +193,7 @@ export function CustomerLoginPageContent({
         <button className="gdg-primary-button wide" type="submit">Send Sign-In Link</button>
       </form>
       <p className="gdg-account-helper">
-        No password is required. This does not change checkout; you can still buy as a guest.
+        This does not change checkout; you can still buy as a guest.
       </p>
     </div>
   );
@@ -176,6 +206,11 @@ export function AccountOrders({ account, orders }: { account: CurrentCustomerAcc
         <p className="gdg-overline">Order History</p>
         <h1>Your GameDayGrabs orders.</h1>
         <p>Showing orders for verified email <strong>{account.email}</strong>. Guest order lookup remains available.</p>
+        <div className="gdg-account-mini-grid" aria-label="Order history privacy notes">
+          <span>Verified email only</span>
+          <span>No payment details shown</span>
+          <span>Guest checkout unchanged</span>
+        </div>
       </div>
       {orders.length ? (
         <div className="gdg-account-orders">
@@ -224,6 +259,9 @@ export function AccountOrders({ account, orders }: { account: CurrentCustomerAcc
                   {order.refundedAmount > 0 ? ` (${money(order.refundedAmount)} recorded)` : ""}.
                 </p>
               ) : null}
+              <div className="gdg-account-actions">
+                <Link href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-secondary-button">View Details</Link>
+              </div>
             </article>
           ))}
         </div>
@@ -238,6 +276,124 @@ export function AccountOrders({ account, orders }: { account: CurrentCustomerAcc
   );
 }
 
+export function AccountOrderNotFound() {
+  return (
+    <div className="gdg-account-card hero">
+      <p className="gdg-overline">Order Details</p>
+      <h1>Order not found.</h1>
+      <p>
+        We could not find an order for this verified account. Use guest order lookup or contact support if you need help.
+      </p>
+      <div className="gdg-account-actions">
+        <Link href="/account/orders" className="gdg-secondary-button">Back to My Orders</Link>
+        <Link href="/order-status" className="gdg-primary-button">Use Guest Order Lookup</Link>
+      </div>
+    </div>
+  );
+}
+
+export function AccountOrderDetail({ account, order }: { account: CurrentCustomerAccount; order: CustomerAccountOrderDetail }) {
+  const fulfillmentLabel = order.fulfillmentMethod === "local_pickup" ? "Local Pickup" : order.shippingMethodLabel || "Standard Shipping";
+  const carrierService = [order.shippingCarrier, order.shippingService].filter(Boolean).join(" / ") || "Not provided yet";
+
+  return (
+    <>
+      <div className="gdg-account-card hero">
+        <p className="gdg-overline">Order Details</p>
+        <h1>{order.orderNumber}</h1>
+        <p>
+          Showing safe customer-facing details for <strong>{account.email}</strong>. Guest checkout and order status
+          lookup remain available.
+        </p>
+        <div className="gdg-account-actions">
+          <Link href="/account/orders" className="gdg-secondary-button">Back to My Orders</Link>
+          <Link href="/policies" className="gdg-secondary-button">View Policies</Link>
+        </div>
+      </div>
+
+      <div className="gdg-account-detail-layout">
+        <article className="gdg-account-order-card">
+          <header>
+            <div>
+              <span>Placed</span>
+              <h2>{dateLabel(order.orderDate)}</h2>
+            </div>
+            <strong>{money(order.totalPaid)}</strong>
+          </header>
+          <div className="gdg-account-order-grid">
+            <div>
+              <span>Status</span>
+              <strong>{order.status}</strong>
+            </div>
+            <div>
+              <span>Fulfillment method</span>
+              <strong>{fulfillmentLabel}</strong>
+            </div>
+            <div>
+              <span>{order.fulfillmentMethod === "local_pickup" ? "Pickup status" : "Carrier / service"}</span>
+              <strong>{order.fulfillmentMethod === "local_pickup" ? order.pickupStatus || "Pickup pending" : carrierService}</strong>
+            </div>
+            <div>
+              <span>{order.fulfillmentMethod === "local_pickup" ? "Tracking" : "Tracking number"}</span>
+              {order.fulfillmentMethod === "local_pickup" ? (
+                <strong>Not required</strong>
+              ) : order.trackingNumber ? (
+                order.trackingUrl ? <a href={order.trackingUrl}>{order.trackingNumber}</a> : <strong>{order.trackingNumber}</strong>
+              ) : (
+                <strong>Not provided yet</strong>
+              )}
+            </div>
+          </div>
+          <section>
+            <h3>Items</h3>
+            {order.items.map((item) => (
+              <p key={`${order.orderNumber}-${item.title}`}>
+                {item.quantity} x {item.title} - {money(item.lineTotal)}
+              </p>
+            ))}
+          </section>
+        </article>
+
+        <aside className="gdg-account-card compact">
+          <h2>Order Summary</h2>
+          <div className="gdg-account-order-grid two">
+            <div>
+              <span>Subtotal</span>
+              <strong>{money(order.subtotal)}</strong>
+            </div>
+            <div>
+              <span>Shipping charged</span>
+              <strong>{money(order.shippingCharged)}</strong>
+            </div>
+            <div>
+              <span>Total paid</span>
+              <strong>{money(order.totalPaid)}</strong>
+            </div>
+            <div>
+              <span>Support</span>
+              <a href={`mailto:${order.supportEmail}`}>{order.supportEmail}</a>
+            </div>
+          </div>
+          {order.refundStatus || order.canceledAt ? (
+            <p className="gdg-account-notice">
+              Refund/cancel status: {order.refundStatus || "Canceled"}
+              {order.refundedAmount > 0 ? ` (${money(order.refundedAmount)} recorded)` : ""}.
+            </p>
+          ) : null}
+          <p>
+            Need help with this order? Contact support and include your order number. Customer account pages do not provide
+            cancellation or refund actions.
+          </p>
+          <div className="gdg-account-actions">
+            <a href={`mailto:${order.supportEmail}`} className="gdg-primary-button">Contact Support</a>
+            <Link href="/policies" className="gdg-secondary-button">Policies</Link>
+          </div>
+        </aside>
+      </div>
+    </>
+  );
+}
+
 export function AccountRewards({ account, activity = [] }: { account: CurrentCustomerAccount; activity?: CustomerRewardActivityItem[] }) {
   const balance = account.rewardBalance;
   return (
@@ -245,7 +401,8 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
       <div className="gdg-account-card hero">
         <p className="gdg-overline">Rewards</p>
         <h1>Track your GameDayGrabs points.</h1>
-        <p>Earn 1 point per eligible item-subtotal dollar after paid orders. Shipping, taxes, refunds, and test orders do not earn points.</p>
+        <p>Earn points on eligible purchases. You earn 1 point per eligible item-subtotal dollar after paid orders.</p>
+        <p>Shipping, taxes, refunds, and test orders do not earn points.</p>
         <p className="gdg-account-notice">Redemption coming soon. Points are display-only and do not affect checkout totals yet.</p>
         <div className="gdg-account-order-grid">
           <div>
@@ -284,29 +441,138 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
   );
 }
 
-export function AccountAddresses({ account }: { account: CurrentCustomerAccount }) {
+export function AccountAddresses({ account, status }: { account: CurrentCustomerAccount; status?: string | null }) {
+  const message = addressStatusMessage(status);
   return (
     <>
       <div className="gdg-account-card hero">
         <p className="gdg-overline">Saved Addresses</p>
-        <h1>Address book placeholder.</h1>
-        <p>Saved address editing is planned for a later phase. Checkout can still collect shipping details as usual.</p>
+        <h1>Your address book.</h1>
+        <p>
+          Save addresses for your account only. Checkout still collects shipping or pickup details normally and does not
+          prefill from this address book yet.
+        </p>
+        <div className="gdg-account-mini-grid" aria-label="Saved address privacy notes">
+          <span>Verified account only</span>
+          <span>Checkout unchanged</span>
+          <span>Private to your email</span>
+        </div>
+        {message ? (
+          <p className={`gdg-account-notice ${status === "error" ? "error" : "good"}`}>{message}</p>
+        ) : null}
+      </div>
+      <div className="gdg-account-card compact">
+        <h2>Add an address</h2>
+        <p className="gdg-account-helper">Use this for account convenience only. It will not change checkout yet.</p>
+        <form className="gdg-address-form" action="/api/account/addresses" method="post">
+          <input type="hidden" name="action" value="create" />
+          <label>
+            Label or recipient name
+            <input name="name" autoComplete="name" placeholder="Home, Office, or recipient name" />
+          </label>
+          <label className="wide">
+            Street address
+            <input name="street1" autoComplete="address-line1" required placeholder="123 Main St" />
+          </label>
+          <label className="wide">
+            Apartment, suite, or unit
+            <input name="street2" autoComplete="address-line2" placeholder="Optional" />
+          </label>
+          <label>
+            City
+            <input name="city" autoComplete="address-level2" required />
+          </label>
+          <label>
+            State
+            <input name="state" autoComplete="address-level1" required maxLength={32} />
+          </label>
+          <label>
+            ZIP
+            <input name="zip" autoComplete="postal-code" required pattern="\d{5}(-\d{4})?" inputMode="numeric" />
+          </label>
+          <label>
+            Country
+            <input name="country" autoComplete="country" defaultValue="US" required maxLength={2} />
+          </label>
+          <label className="gdg-checkbox-row wide">
+            <input name="isDefault" type="checkbox" />
+            <span>Make this my default saved address</span>
+          </label>
+          <button className="gdg-primary-button wide" type="submit">Save Address</button>
+        </form>
       </div>
       {account.savedAddresses.length ? (
-        <div className="gdg-account-grid">
+        <div className="gdg-address-list">
           {account.savedAddresses.map((address) => (
-            <article key={address.id} className="gdg-account-tile">
-              <span>{address.isDefault ? "Default address" : "Saved address"}</span>
-              <strong>{address.name || "Address"}</strong>
-              <p>{address.street1}{address.street2 ? `, ${address.street2}` : ""}</p>
-              <p>{address.city}, {address.state} {address.zip}</p>
+            <article key={address.id} className="gdg-address-card">
+              <div className="gdg-address-card-main">
+                <span>{address.isDefault ? "Default address" : "Saved address"}</span>
+                <strong>{address.name || "Address"}</strong>
+                <p>{address.street1}{address.street2 ? `, ${address.street2}` : ""}</p>
+                <p>{address.city}, {address.state} {address.zip}</p>
+                <p>{address.country}</p>
+              </div>
+              <details className="gdg-address-edit">
+                <summary>Edit address</summary>
+                <form className="gdg-address-form compact" action="/api/account/addresses" method="post">
+                  <input type="hidden" name="action" value="update" />
+                  <input type="hidden" name="addressId" value={address.id} />
+                  <label>
+                    Label or recipient name
+                    <input name="name" defaultValue={address.name ?? ""} />
+                  </label>
+                  <label className="wide">
+                    Street address
+                    <input name="street1" defaultValue={address.street1} required />
+                  </label>
+                  <label className="wide">
+                    Apartment, suite, or unit
+                    <input name="street2" defaultValue={address.street2 ?? ""} />
+                  </label>
+                  <label>
+                    City
+                    <input name="city" defaultValue={address.city} required />
+                  </label>
+                  <label>
+                    State
+                    <input name="state" defaultValue={address.state} required maxLength={32} />
+                  </label>
+                  <label>
+                    ZIP
+                    <input name="zip" defaultValue={address.zip} required pattern="\d{5}(-\d{4})?" inputMode="numeric" />
+                  </label>
+                  <label>
+                    Country
+                    <input name="country" defaultValue={address.country} required maxLength={2} />
+                  </label>
+                  <label className="gdg-checkbox-row wide">
+                    <input name="isDefault" type="checkbox" defaultChecked={address.isDefault} />
+                    <span>Make this my default saved address</span>
+                  </label>
+                  <button className="gdg-primary-button wide" type="submit">Save Changes</button>
+                </form>
+              </details>
+              <div className="gdg-address-actions">
+                {!address.isDefault ? (
+                  <form action="/api/account/addresses" method="post">
+                    <input type="hidden" name="action" value="default" />
+                    <input type="hidden" name="addressId" value={address.id} />
+                    <button className="gdg-secondary-button" type="submit">Make Default</button>
+                  </form>
+                ) : null}
+                <form action="/api/account/addresses" method="post">
+                  <input type="hidden" name="action" value="delete" />
+                  <input type="hidden" name="addressId" value={address.id} />
+                  <button className="gdg-danger-link" type="submit">Delete</button>
+                </form>
+              </div>
             </article>
           ))}
         </div>
       ) : (
         <div className="gdg-account-card compact">
           <h2>No saved addresses</h2>
-          <p>Checkout still collects shipping or pickup details securely when you order.</p>
+          <p>Saved addresses will appear here after you add one. Checkout still collects shipping or pickup details securely when you order.</p>
         </div>
       )}
     </>

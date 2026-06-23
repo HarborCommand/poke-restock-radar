@@ -11,7 +11,7 @@ import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@
 const accountUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/account`;
 const accountTitle = "Customer Account | GameDayGrabs LLC";
 const accountDescription =
-  "Access your optional GameDayGrabs customer account, order history, rewards placeholder, saved address placeholder, and support links.";
+  "Access your optional GameDayGrabs customer account, order history, rewards, saved addresses, and support links.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

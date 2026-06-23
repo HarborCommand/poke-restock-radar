@@ -7,7 +7,7 @@ import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@
 const policiesUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
 const policiesTitle = "GameDayGrabs Policies | Shipping, Pickup, Payment & Returns";
 const policiesDescription =
-  "Review GameDayGrabs shipping, local pickup, payment security, checkout holds, trading card returns, privacy, and product issue policies before ordering collectible card products.";
+  "Review GameDayGrabs shipping, local pickup, payment security, checkout holds, rewards, trading card returns, privacy, and product issue policies before ordering collectible card products.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -114,6 +114,16 @@ export default async function PoliciesPage() {
           <h2>Inventory / Checkout Holds</h2>
           <p>Items are not reserved until checkout starts. Checkout holds items for 15 minutes while payment is completed.</p>
           <p>Abandoned or expired checkout sessions release the hold. Inventory is finalized only after successful payment.</p>
+        </article>
+        <article>
+          <h2>GameDayGrabs Rewards</h2>
+          <p>No account required to checkout. Customer accounts are optional, and guest checkout remains available.</p>
+          <p>Earn points on eligible purchases when GameDayGrabs Rewards are enabled. Points are awarded after payment is confirmed.</p>
+          <p>Shipping, taxes, refunds, discounts, canceled orders, and test/smoke orders do not earn points.</p>
+          <p>Refunded or canceled orders can reverse points that were previously awarded.</p>
+          <p>Rewards redemption coming soon. Redemption is not currently available, and points cannot be used at checkout yet.</p>
+          <p>Points have no cash value and are not transferable.</p>
+          <p>GameDayGrabs may adjust or reverse points for fraud, abuse, refunds, cancellations, or errors.</p>
         </article>
         <article>
           <h2>Product Availability / Preorders</h2>

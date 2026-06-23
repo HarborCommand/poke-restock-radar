@@ -367,6 +367,23 @@ export type StorefrontRewardSummaryDTO = {
   redemptionEnabled: false;
 };
 
+export type StorefrontRewardLedgerEntryDTO = {
+  id: string;
+  points: number;
+  type: string;
+  reason: string;
+  orderNumber: string | null;
+  createdAt: string;
+};
+
+export type StorefrontCustomerRewardSummaryDTO = {
+  availablePoints: number;
+  lifetimeEarnedPoints: number;
+  pendingPoints: number;
+  recentLedgerEntries: StorefrontRewardLedgerEntryDTO[];
+  adminAdjustmentsEnabled: false;
+};
+
 export type StorefrontOrderDTO = {
   id: string;
   orderNumber: string;
@@ -457,6 +474,7 @@ export type StorefrontOrderDTO = {
   paymentEvents: StorefrontOrderPaymentEventDTO[];
   customerEmailNotifications: StorefrontEmailNotificationDTO[];
   rewardSummary: StorefrontRewardSummaryDTO;
+  customerRewardSummary: StorefrontCustomerRewardSummaryDTO | null;
   timeline: Array<{ label: string; at: string | null; detail: string }>;
 };
 
@@ -1396,10 +1414,12 @@ export type AppHealthDTO = {
       customerAccountsEnabled: boolean;
       customerRewardsEnabled: boolean;
       customerRewardRedemptionEnabled: boolean;
+      customerRewardAdminAdjustmentsEnabled: boolean;
       accountProvider: "magic_link";
       rewardsProvider: "internal_ledger";
       rewardsReady: boolean;
       redemptionReady: boolean;
+      adminAdjustmentsReady: boolean;
     };
     blob: ProviderHealthMetadataDTO & {
       configured: boolean;

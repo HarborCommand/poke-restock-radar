@@ -9143,7 +9143,31 @@ function StorefrontOrderDetailsModal({
               <DetailStat label="Points reversed" value={String(order.rewardSummary.pointsReversed)} tone={order.rewardSummary.pointsReversed > 0 ? "bad" : "neutral"} />
               <DetailStat label="Net points" value={String(order.rewardSummary.netPoints)} tone={order.rewardSummary.netPoints > 0 ? "good" : order.rewardSummary.netPoints < 0 ? "bad" : "neutral"} />
               <DetailStat label="Reward status" value={order.rewardSummary.status} />
+              {order.customerRewardSummary ? (
+                <>
+                  <DetailStat label="Customer available" value={String(order.customerRewardSummary.availablePoints)} tone={order.customerRewardSummary.availablePoints > 0 ? "good" : "neutral"} />
+                  <DetailStat label="Lifetime earned" value={String(order.customerRewardSummary.lifetimeEarnedPoints)} tone={order.customerRewardSummary.lifetimeEarnedPoints > 0 ? "good" : "neutral"} />
+                </>
+              ) : (
+                <DetailStat label="Customer rewards" value="No customer account" />
+              )}
             </div>
+            {order.customerRewardSummary?.recentLedgerEntries.length ? (
+              <div className="admin-reward-ledger-list" aria-label="Recent customer reward ledger entries">
+                {order.customerRewardSummary.recentLedgerEntries.slice(0, 5).map((entry) => (
+                  <article key={entry.id}>
+                    <div>
+                      <strong>{entry.reason}</strong>
+                      <span>{entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {shortDate(entry.createdAt)}</span>
+                    </div>
+                    <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+            <button className="secondary-action wide-action" type="button" disabled>
+              Manual rewards adjustments disabled
+            </button>
             <p className="form-helper publish-ready-note">Rewards redemption is not enabled. Points do not change checkout totals.</p>
           </section>
 

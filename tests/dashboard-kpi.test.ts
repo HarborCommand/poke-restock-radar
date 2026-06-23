@@ -296,6 +296,7 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
       status: "No rewards recorded",
       redemptionEnabled: false
     },
+    customerRewardSummary: null,
     timeline: [],
     ...overrides
   };
@@ -959,6 +960,20 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   assert.match(policiesPage, /Checkout holds items for 15 minutes while payment is completed/);
   assert.match(policiesPage, /Abandoned or expired checkout sessions release the hold/);
   assert.match(policiesPage, /Inventory is finalized only after successful payment/);
+  assert.match(policiesPage, /GameDayGrabs Rewards/);
+  assert.match(policiesPage, /No account required to checkout/);
+  assert.match(policiesPage, /Customer accounts are optional/);
+  assert.match(policiesPage, /guest checkout remains available/);
+  assert.match(policiesPage, /Earn points on eligible purchases/);
+  assert.match(policiesPage, /Points are awarded after payment is confirmed/);
+  assert.match(policiesPage, /Shipping, taxes, refunds, discounts, canceled orders, and test\/smoke orders do not earn points/);
+  assert.match(policiesPage, /Refunded or canceled orders can reverse points/);
+  assert.match(policiesPage, /Rewards redemption coming soon/);
+  assert.match(policiesPage, /Redemption is not currently available/);
+  assert.match(policiesPage, /points cannot be used at checkout yet/);
+  assert.match(policiesPage, /Points have no cash value/);
+  assert.match(policiesPage, /GameDayGrabs may adjust or reverse points for fraud, abuse, refunds, cancellations, or errors/);
+  assert.doesNotMatch(policiesPage, /Redeem Now|Apply points|Use points at checkout|points have cash value|cash equivalent/i);
   assert.match(policiesPage, /Product Availability \/ Preorders/);
   assert.match(policiesPage, /If a product is sold out, checkout is blocked/);
   assert.match(policiesPage, /Privacy \/ Customer Information/);

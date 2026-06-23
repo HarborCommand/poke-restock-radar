@@ -47,6 +47,7 @@ const controlledEnvKeys = [
   "CUSTOMER_ACCOUNTS_ENABLED",
   "CUSTOMER_REWARDS_ENABLED",
   "CUSTOMER_REWARD_REDEMPTION_ENABLED",
+  "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED",
   "SHIPPO_API_TOKEN",
   "SHIP_FROM_NAME",
   "SHIP_FROM_STREET1",
@@ -137,6 +138,7 @@ test("health stays OK when required systems pass and optional providers are disa
     assert.equal(report.providers.customerAccounts.customerAccountsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerRewardAdminAdjustmentsEnabled, false);
     assert.equal(report.providers.customerAccounts.accountProvider, "magic_link");
     assert.equal(report.providers.customerAccounts.rewardsProvider, "internal_ledger");
     assert.match(report.providers.customerAccounts.message, /guest checkout remains available/);
@@ -244,12 +246,15 @@ test("health reports customer account reward flags without exposing values or af
       assert.equal(report.providers.customerAccounts.customerAccountsEnabled, true);
       assert.equal(report.providers.customerAccounts.customerRewardsEnabled, true);
       assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
+      assert.equal(report.providers.customerAccounts.customerRewardAdminAdjustmentsEnabled, false);
       assert.equal(report.providers.customerAccounts.rewardsReady, true);
       assert.equal(report.providers.customerAccounts.redemptionReady, false);
+      assert.equal(report.providers.customerAccounts.adminAdjustmentsReady, false);
       assert.deepEqual(report.providers.customerAccounts.envVars, [
         "CUSTOMER_ACCOUNTS_ENABLED",
         "CUSTOMER_REWARDS_ENABLED",
-        "CUSTOMER_REWARD_REDEMPTION_ENABLED"
+        "CUSTOMER_REWARD_REDEMPTION_ENABLED",
+        "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED"
       ]);
       assert.doesNotMatch(serialized, /card_number|cardNumber|cvc|cvv|payment_method_details|raw Stripe/i);
       assert.equal(statusForReport(report.warnings), "OK");

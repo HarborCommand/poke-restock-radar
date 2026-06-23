@@ -103,10 +103,12 @@ export type EnvironmentReport = {
       customerAccountsEnabled: boolean;
       customerRewardsEnabled: boolean;
       customerRewardRedemptionEnabled: boolean;
+      customerRewardAdminAdjustmentsEnabled: boolean;
       accountProvider: "magic_link";
       rewardsProvider: "internal_ledger";
       rewardsReady: boolean;
       redemptionReady: boolean;
+      adminAdjustmentsReady: boolean;
     };
     blob: ProviderHealthMetadata & {
       configured: boolean;
@@ -257,6 +259,8 @@ export function getEnvironmentReport(): EnvironmentReport {
   const customerAccountHealthStatus: ProviderHealthStatus =
     customerAccountFeatures.customerRewardRedemptionEnabled && !customerAccountFeatures.customerRewardsEnabled
       ? "misconfigured"
+      : customerAccountFeatures.customerRewardAdminAdjustmentsEnabled && !customerAccountFeatures.customerRewardsEnabled
+        ? "misconfigured"
       : customerAccountFeatures.customerRewardsEnabled && !customerAccountFeatures.customerAccountsEnabled
         ? "misconfigured"
         : customerAccountFeatures.customerAccountsEnabled
@@ -329,7 +333,7 @@ export function getEnvironmentReport(): EnvironmentReport {
     warnings.push("Shippo label purchase is enabled but the label provider is not fully configured. Disable SHIPPO_LABEL_PURCHASE_ENABLED or finish Shippo setup.");
   }
   if (customerAccountHealthStatus === "misconfigured") {
-    warnings.push("Customer account rewards flags are inconsistent. Enable CUSTOMER_ACCOUNTS_ENABLED before rewards, and enable CUSTOMER_REWARDS_ENABLED before redemption.");
+    warnings.push("Customer account rewards flags are inconsistent. Enable CUSTOMER_ACCOUNTS_ENABLED before rewards, and enable CUSTOMER_REWARDS_ENABLED before redemption or admin adjustments.");
   }
   if (marketHealthStatus === "misconfigured") {
     warnings.push("Market pricing providers are partially configured. Complete the selected provider env vars or leave automatic pricing disabled.");
@@ -504,13 +508,18 @@ export function getEnvironmentReport(): EnvironmentReport {
         customerAccountsEnabled: customerAccountFeatures.customerAccountsEnabled,
         customerRewardsEnabled: customerAccountFeatures.customerRewardsEnabled,
         customerRewardRedemptionEnabled: customerAccountFeatures.customerRewardRedemptionEnabled,
+        customerRewardAdminAdjustmentsEnabled: customerAccountFeatures.customerRewardAdminAdjustmentsEnabled,
         accountProvider: customerAccountFeatures.accountProvider,
         rewardsProvider: customerAccountFeatures.rewardsProvider,
         rewardsReady: customerAccountFeatures.customerAccountsEnabled && customerAccountFeatures.customerRewardsEnabled,
         redemptionReady:
           customerAccountFeatures.customerAccountsEnabled &&
           customerAccountFeatures.customerRewardsEnabled &&
-          customerAccountFeatures.customerRewardRedemptionEnabled
+          customerAccountFeatures.customerRewardRedemptionEnabled,
+        adminAdjustmentsReady:
+          customerAccountFeatures.customerAccountsEnabled &&
+          customerAccountFeatures.customerRewardsEnabled &&
+          customerAccountFeatures.customerRewardAdminAdjustmentsEnabled
       },
       blob: {
         configured: blobReadWriteTokenConfigured,

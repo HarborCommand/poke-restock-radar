@@ -10,7 +10,7 @@ import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@
 
 const addressesUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/account/addresses`;
 const addressesTitle = "Saved Addresses | GameDayGrabs LLC";
-const addressesDescription = "View the optional GameDayGrabs customer saved address placeholder.";
+const addressesDescription = "Manage optional GameDayGrabs customer saved addresses after verifying your account email.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +39,16 @@ export const metadata = {
   }
 };
 
-export default async function AccountAddressesPage() {
+type AccountAddressesPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
+
+export default async function AccountAddressesPage({ searchParams }: AccountAddressesPageProps) {
+  const params = searchParams ? await searchParams : {};
   const enabled = customerAccountsEnabled();
   const account = enabled ? await currentCustomerAccount() : null;
 
@@ -48,7 +57,7 @@ export default async function AccountAddressesPage() {
       {!enabled ? (
         <CustomerAccountsComingSoon />
       ) : account ? (
-        <AccountAddresses account={account} />
+        <AccountAddresses account={account} status={firstParam(params.addressStatus)} />
       ) : (
         <AccountSignInRequired title="Sign in to view saved addresses." />
       )}

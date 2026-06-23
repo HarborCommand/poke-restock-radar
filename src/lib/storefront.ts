@@ -43,6 +43,7 @@ import type {
   PublicOrderStatusLookupDTO,
   PublicStoreProductDTO,
   SessionUser,
+  StorefrontCustomerRewardSummaryDTO,
   StorefrontOrderDTO,
   StorefrontOrderItemDTO,
   StorefrontSettingsDTO,
@@ -106,6 +107,27 @@ const storefrontOrderInclude = {
     }
   },
   customer: true,
+  customerAccount: {
+    select: {
+      rewardBalance: true,
+      rewardLedgerEntries: {
+        select: {
+          id: true,
+          points: true,
+          type: true,
+          reason: true,
+          createdAt: true,
+          order: {
+            select: {
+              orderNumber: true
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" as const },
+        take: 8
+      }
+    }
+  },
   reservations: true,
   paymentEvents: { orderBy: { receivedAt: "desc" } },
   rewardLedgerEntries: {
@@ -1529,6 +1551,26 @@ function customerEmailNotifications(order: StorefrontOrderWithItems): Storefront
   return notifications.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
+function customerRewardSummaryForOrder(order: StorefrontOrderWithItems): StorefrontCustomerRewardSummaryDTO | null {
+  const account = order.customerAccount;
+  if (!account) return null;
+  const balance = account.rewardBalance;
+  return {
+    availablePoints: balance?.availablePoints ?? 0,
+    lifetimeEarnedPoints: balance?.lifetimeEarnedPoints ?? 0,
+    pendingPoints: balance?.pendingPoints ?? 0,
+    recentLedgerEntries: account.rewardLedgerEntries.map((entry) => ({
+      id: entry.id,
+      points: entry.points,
+      type: entry.type,
+      reason: entry.reason,
+      orderNumber: entry.order?.orderNumber ?? null,
+      createdAt: entry.createdAt.toISOString()
+    })),
+    adminAdjustmentsEnabled: false
+  };
+}
+
 function customerEmailEventStatusFromRecord(record: Record<string, unknown>, event: { eventType: string; payload: string | null }) {
   const status = typeof record.status === "string" ? record.status : typeof record.emailStatus === "string" ? record.emailStatus : null;
   if (status && ["sent", "not_configured", "missing_customer_email", "failed", "skipped"].includes(status)) return status;
@@ -1709,6 +1751,7 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
     })),
     customerEmailNotifications: customerEmailNotifications(order),
     rewardSummary: rewardSummaryForOrder(order),
+    customerRewardSummary: customerRewardSummaryForOrder(order),
     timeline: orderTimeline(order)
   };
 }
