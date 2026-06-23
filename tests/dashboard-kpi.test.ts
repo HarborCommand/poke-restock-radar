@@ -288,6 +288,14 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     reservations: [],
     paymentEvents: [],
     customerEmailNotifications: [],
+    rewardSummary: {
+      pointsEarned: 0,
+      pointsReversed: 0,
+      netPoints: 0,
+      ledgerCount: 0,
+      status: "No rewards recorded",
+      redemptionEnabled: false
+    },
     timeline: [],
     ...overrides
   };

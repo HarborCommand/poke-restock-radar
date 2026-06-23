@@ -1,4 +1,5 @@
 import { emailProviderConfig, type EmailProviderKind } from "@/lib/email-provider";
+import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { shippingLabelWorkflowConfig } from "@/lib/shipping-labels";
 import { shippingRateProviderConfig } from "@/lib/shipping-rate-provider";
 
@@ -97,6 +98,16 @@ export type EnvironmentReport = {
       labelProviderConfigured: boolean;
       purchaseReady: boolean;
     };
+    customerAccounts: ProviderHealthMetadata & {
+      configured: boolean;
+      customerAccountsEnabled: boolean;
+      customerRewardsEnabled: boolean;
+      customerRewardRedemptionEnabled: boolean;
+      accountProvider: "magic_link";
+      rewardsProvider: "internal_ledger";
+      rewardsReady: boolean;
+      redemptionReady: boolean;
+    };
     blob: ProviderHealthMetadata & {
       configured: boolean;
       readWriteTokenConfigured: boolean;
@@ -164,6 +175,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const stripeEnvVars = ["STRIPE_CHECKOUT_ENABLED", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STORE_BASE_URL"];
   const shippingRateProvider = shippingRateProviderConfig();
   const shippingLabelWorkflow = shippingLabelWorkflowConfig();
+  const customerAccountFeatures = customerAccountFeatureConfig();
   const blobEnvVars = ["BLOB_READ_WRITE_TOKEN"];
   const marketEnvVars = [
     "TCGCSV_ENABLED",
@@ -242,6 +254,14 @@ export function getEnvironmentReport(): EnvironmentReport {
       : shippingLabelWorkflow.shippoLabelPurchaseEnabled
         ? "misconfigured"
         : "disabled";
+  const customerAccountHealthStatus: ProviderHealthStatus =
+    customerAccountFeatures.customerRewardRedemptionEnabled && !customerAccountFeatures.customerRewardsEnabled
+      ? "misconfigured"
+      : customerAccountFeatures.customerRewardsEnabled && !customerAccountFeatures.customerAccountsEnabled
+        ? "misconfigured"
+        : customerAccountFeatures.customerAccountsEnabled
+          ? "configured"
+          : "disabled";
   const blobHealthStatus = optionalProviderHealth(blobReadWriteTokenConfigured, anyEnv(blobEnvVars));
   const marketPartiallyConfigured =
     anyEnv(marketEnvVars.filter((name) => name !== "TCGCSV_ENABLED")) ||
@@ -307,6 +327,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   }
   if (shippingLabelHealthStatus === "misconfigured") {
     warnings.push("Shippo label purchase is enabled but the label provider is not fully configured. Disable SHIPPO_LABEL_PURCHASE_ENABLED or finish Shippo setup.");
+  }
+  if (customerAccountHealthStatus === "misconfigured") {
+    warnings.push("Customer account rewards flags are inconsistent. Enable CUSTOMER_ACCOUNTS_ENABLED before rewards, and enable CUSTOMER_REWARDS_ENABLED before redemption.");
   }
   if (marketHealthStatus === "misconfigured") {
     warnings.push("Market pricing providers are partially configured. Complete the selected provider env vars or leave automatic pricing disabled.");
@@ -465,6 +488,29 @@ export function getEnvironmentReport(): EnvironmentReport {
         provider: shippingLabelWorkflow.provider,
         labelProviderConfigured: shippingLabelWorkflow.labelProviderConfigured,
         purchaseReady: shippingLabelWorkflow.purchaseReady
+      },
+      customerAccounts: {
+        configured: customerAccountHealthStatus === "configured",
+        healthStatus: customerAccountHealthStatus,
+        envVars: customerAccountFeatures.envVars,
+        message:
+          customerAccountHealthStatus === "configured"
+            ? customerAccountFeatures.customerRewardsEnabled
+              ? "Optional customer accounts and rewards are enabled."
+              : "Optional customer accounts are enabled; rewards remain disabled."
+            : customerAccountHealthStatus === "misconfigured"
+              ? "Customer account reward flags are inconsistent."
+              : "Optional customer accounts and rewards are disabled; guest checkout remains available.",
+        customerAccountsEnabled: customerAccountFeatures.customerAccountsEnabled,
+        customerRewardsEnabled: customerAccountFeatures.customerRewardsEnabled,
+        customerRewardRedemptionEnabled: customerAccountFeatures.customerRewardRedemptionEnabled,
+        accountProvider: customerAccountFeatures.accountProvider,
+        rewardsProvider: customerAccountFeatures.rewardsProvider,
+        rewardsReady: customerAccountFeatures.customerAccountsEnabled && customerAccountFeatures.customerRewardsEnabled,
+        redemptionReady:
+          customerAccountFeatures.customerAccountsEnabled &&
+          customerAccountFeatures.customerRewardsEnabled &&
+          customerAccountFeatures.customerRewardRedemptionEnabled
       },
       blob: {
         configured: blobReadWriteTokenConfigured,

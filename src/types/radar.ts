@@ -358,6 +358,15 @@ export type StorefrontAddressDTO = {
   country: string | null;
 };
 
+export type StorefrontRewardSummaryDTO = {
+  pointsEarned: number;
+  pointsReversed: number;
+  netPoints: number;
+  ledgerCount: number;
+  status: string;
+  redemptionEnabled: false;
+};
+
 export type StorefrontOrderDTO = {
   id: string;
   orderNumber: string;
@@ -447,6 +456,7 @@ export type StorefrontOrderDTO = {
   reservations: StorefrontOrderReservationDTO[];
   paymentEvents: StorefrontOrderPaymentEventDTO[];
   customerEmailNotifications: StorefrontEmailNotificationDTO[];
+  rewardSummary: StorefrontRewardSummaryDTO;
   timeline: Array<{ label: string; at: string | null; detail: string }>;
 };
 
@@ -1380,6 +1390,16 @@ export type AppHealthDTO = {
       provider: "shippo" | "none";
       labelProviderConfigured: boolean;
       purchaseReady: boolean;
+    };
+    customerAccounts: ProviderHealthMetadataDTO & {
+      configured: boolean;
+      customerAccountsEnabled: boolean;
+      customerRewardsEnabled: boolean;
+      customerRewardRedemptionEnabled: boolean;
+      accountProvider: "magic_link";
+      rewardsProvider: "internal_ledger";
+      rewardsReady: boolean;
+      redemptionReady: boolean;
     };
     blob: ProviderHealthMetadataDTO & {
       configured: boolean;

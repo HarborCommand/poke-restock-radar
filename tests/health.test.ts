@@ -44,6 +44,9 @@ const controlledEnvKeys = [
   "SHIPPING_QUOTE_TTL_MINUTES",
   "SHIPPO_LABEL_PURCHASE_ENABLED",
   "SHIPPING_LABELS_ENABLED",
+  "CUSTOMER_ACCOUNTS_ENABLED",
+  "CUSTOMER_REWARDS_ENABLED",
+  "CUSTOMER_REWARD_REDEMPTION_ENABLED",
   "SHIPPO_API_TOKEN",
   "SHIP_FROM_NAME",
   "SHIP_FROM_STREET1",
@@ -130,6 +133,13 @@ test("health stays OK when required systems pass and optional providers are disa
     assert.equal(report.providers.shippingLabels.healthStatus, "disabled");
     assert.equal(report.providers.shippingLabels.shippoLabelPurchaseEnabled, false);
     assert.equal(report.providers.shippingLabels.purchaseReady, false);
+    assert.equal(report.providers.customerAccounts.healthStatus, "disabled");
+    assert.equal(report.providers.customerAccounts.customerAccountsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
+    assert.equal(report.providers.customerAccounts.accountProvider, "magic_link");
+    assert.equal(report.providers.customerAccounts.rewardsProvider, "internal_ledger");
+    assert.match(report.providers.customerAccounts.message, /guest checkout remains available/);
     assert.equal(statusForReport(report.warnings), "OK");
   });
 });
@@ -217,6 +227,47 @@ test("health reports configured Shippo labels without exposing Shippo secrets", 
       assert.doesNotMatch(serialized, /123 Test St/);
     }
   );
+});
+
+test("health reports customer account reward flags without exposing values or affecting checkout", () => {
+  withEnv(
+    {
+      CUSTOMER_ACCOUNTS_ENABLED: "true",
+      CUSTOMER_REWARDS_ENABLED: "true",
+      CUSTOMER_REWARD_REDEMPTION_ENABLED: "false"
+    },
+    () => {
+      const report = getEnvironmentReport();
+      const serialized = JSON.stringify(report);
+
+      assert.equal(report.providers.customerAccounts.healthStatus, "configured");
+      assert.equal(report.providers.customerAccounts.customerAccountsEnabled, true);
+      assert.equal(report.providers.customerAccounts.customerRewardsEnabled, true);
+      assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
+      assert.equal(report.providers.customerAccounts.rewardsReady, true);
+      assert.equal(report.providers.customerAccounts.redemptionReady, false);
+      assert.deepEqual(report.providers.customerAccounts.envVars, [
+        "CUSTOMER_ACCOUNTS_ENABLED",
+        "CUSTOMER_REWARDS_ENABLED",
+        "CUSTOMER_REWARD_REDEMPTION_ENABLED"
+      ]);
+      assert.doesNotMatch(serialized, /card_number|cardNumber|cvc|cvv|payment_method_details|raw Stripe/i);
+      assert.equal(statusForReport(report.warnings), "OK");
+    }
+  );
+});
+
+test("health warns when reward redemption is enabled without the required account flags", () => {
+  withEnv({ CUSTOMER_REWARD_REDEMPTION_ENABLED: "true" }, () => {
+    const report = getEnvironmentReport();
+
+    assert.equal(report.providers.customerAccounts.healthStatus, "misconfigured");
+    assert.equal(report.providers.customerAccounts.customerAccountsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, true);
+    assert.match(report.warnings.join("\n"), /Customer account rewards flags are inconsistent/);
+    assert.equal(statusForReport(report.warnings), "WARN");
+  });
 });
 
 test("health is ERROR when a required database check fails", () => {

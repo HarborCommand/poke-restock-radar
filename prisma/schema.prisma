@@ -48,6 +48,7 @@ model User {
   storefrontSettings       StorefrontSettings?
   storefrontOrders         StorefrontOrder[]
   storefrontCustomers      StorefrontCustomer[]
+  customerAccounts         CustomerAccount[]
   shippingProfiles         ShippingProfile[]
   shippingQuotes           ShippingQuote[]
 }
@@ -1038,6 +1039,7 @@ model ShippingProfile {
 model StorefrontCustomer {
   id                        String            @id @default(cuid())
   userId                    String?
+  customerAccountId         String?
   email                     String            @unique
   name                      String?
   phone                     String?
@@ -1056,11 +1058,73 @@ model StorefrontCustomer {
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
   user                      User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customerAccount           CustomerAccount?  @relation(fields: [customerAccountId], references: [id], onDelete: SetNull)
   orders                    StorefrontOrder[]
 
   @@index([userId])
+  @@index([customerAccountId])
   @@index([email])
   @@index([stripeCustomerId])
+}
+
+model CustomerAccount {
+  id                  String                   @id @default(cuid())
+  userId              String?
+  email               String                   @unique
+  displayName         String?
+  phone               String?
+  status              String                   @default("active")
+  emailVerifiedAt     DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  user                User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  storefrontCustomers StorefrontCustomer[]
+  orders              StorefrontOrder[]
+  savedAddresses      CustomerSavedAddress[]
+  magicLinkTokens     CustomerMagicLinkToken[]
+  rewardLedgerEntries RewardLedgerEntry[]
+  rewardBalance       RewardBalance?
+
+  @@index([userId])
+  @@index([email])
+  @@index([status])
+  @@index([emailVerifiedAt])
+}
+
+model CustomerSavedAddress {
+  id                String          @id @default(cuid())
+  customerAccountId String
+  name              String?
+  street1           String
+  street2           String?
+  city              String
+  state             String
+  zip               String
+  country           String          @default("US")
+  isDefault         Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  customerAccount   CustomerAccount @relation(fields: [customerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([customerAccountId])
+  @@index([customerAccountId, isDefault])
+}
+
+model CustomerMagicLinkToken {
+  id                String           @id @default(cuid())
+  customerAccountId String?
+  email             String
+  tokenHash         String           @unique
+  expiresAt         DateTime
+  usedAt            DateTime?
+  createdAt         DateTime         @default(now())
+  customerAccount   CustomerAccount? @relation(fields: [customerAccountId], references: [id], onDelete: SetNull)
+
+  @@index([customerAccountId])
+  @@index([email])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 model StorefrontOrder {
@@ -1068,6 +1132,7 @@ model StorefrontOrder {
   orderNumber                      String                @unique
   userId                           String?
   customerId                       String?
+  customerAccountId                String?
   customerEmail                    String?
   customerName                     String?
   customerPhone                    String?
@@ -1153,14 +1218,17 @@ model StorefrontOrder {
   updatedAt                        DateTime              @updatedAt
   user                             User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
   customer                         StorefrontCustomer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerAccount                  CustomerAccount?      @relation(fields: [customerAccountId], references: [id], onDelete: SetNull)
   items                            StorefrontOrderItem[]
   reservations                     StockReservation[]
   paymentEvents                    PaymentEvent[]
   fulfillment                      Fulfillment?
   shippingQuotes                   ShippingQuote[]
+  rewardLedgerEntries              RewardLedgerEntry[]
 
   @@index([userId])
   @@index([customerId])
+  @@index([customerAccountId])
   @@index([status])
   @@index([paymentStatus])
   @@index([fulfillmentStatus])
@@ -1257,6 +1325,34 @@ model PaymentEvent {
   @@index([orderId])
   @@index([eventType])
   @@index([receivedAt])
+}
+
+model RewardLedgerEntry {
+  id                String            @id @default(cuid())
+  customerAccountId String
+  orderId           String?
+  points            Int
+  type              String
+  reason            String
+  idempotencyKey    String?           @unique
+  metadataJson      String?
+  createdAt         DateTime          @default(now())
+  customerAccount   CustomerAccount   @relation(fields: [customerAccountId], references: [id], onDelete: Cascade)
+  order             StorefrontOrder?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([customerAccountId])
+  @@index([orderId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model RewardBalance {
+  customerAccountId    String          @id
+  availablePoints      Int             @default(0)
+  lifetimeEarnedPoints Int             @default(0)
+  pendingPoints        Int             @default(0)
+  updatedAt            DateTime        @updatedAt
+  customerAccount      CustomerAccount @relation(fields: [customerAccountId], references: [id], onDelete: Cascade)
 }
 
 model Fulfillment {

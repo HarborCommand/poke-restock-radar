@@ -9137,6 +9137,17 @@ function StorefrontOrderDetailsModal({
           </section>
 
           <section className="storefront-order-workspace-card">
+            <h3>Rewards Summary</h3>
+            <div className="storefront-order-summary-list">
+              <DetailStat label="Points earned" value={String(order.rewardSummary.pointsEarned)} tone={order.rewardSummary.pointsEarned > 0 ? "good" : "neutral"} />
+              <DetailStat label="Points reversed" value={String(order.rewardSummary.pointsReversed)} tone={order.rewardSummary.pointsReversed > 0 ? "bad" : "neutral"} />
+              <DetailStat label="Net points" value={String(order.rewardSummary.netPoints)} tone={order.rewardSummary.netPoints > 0 ? "good" : order.rewardSummary.netPoints < 0 ? "bad" : "neutral"} />
+              <DetailStat label="Reward status" value={order.rewardSummary.status} />
+            </div>
+            <p className="form-helper publish-ready-note">Rewards redemption is not enabled. Points do not change checkout totals.</p>
+          </section>
+
+          <section className="storefront-order-workspace-card">
             <h3>Profit Summary</h3>
             <div className="storefront-order-summary-list">
               <DetailStat label="Cost basis" value={money(order.costBasis)} />

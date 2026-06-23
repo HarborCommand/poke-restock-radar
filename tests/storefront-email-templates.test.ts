@@ -108,6 +108,34 @@ test("local pickup order confirmation uses pickup wording instead of shipping tr
   assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
 });
 
+test("order confirmation can include a safe optional account and rewards CTA", () => {
+  const email = buildOrderConfirmationEmail({
+    orderNumber: "PR-REWARDS",
+    supportEmail,
+    logoUrl,
+    items: [
+      {
+        name: "Mega Evolution Perfect Order Booster Bundle",
+        quantity: 1,
+        lineTotal: 44.99,
+        imageUrl: null
+      }
+    ],
+    subtotal: 44.99,
+    shippingCharged: 5.7,
+    totalPaid: 50.69,
+    shippingMethod: "USPS Ground Advantage",
+    accountCtaEnabled: true,
+    rewardsCtaEnabled: true
+  });
+
+  assert.match(email.html + email.text, /Create your GameDayGrabs account to track orders and rewards/);
+  assert.match(email.html + email.text, /Rewards redemption coming soon/);
+  assert.match(email.html, /https:\/\/www\.gamedaygrabs\.com\/account\/login/);
+  assert.doesNotMatch(email.html + email.text, /redeem points|apply points|discount|coupon/i);
+  assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
+});
+
 test("shipping confirmation email includes tracking details and optional tracking button", () => {
   const email = buildShippingConfirmationEmail({
     orderNumber: "PR-20260616-Y9SW07",

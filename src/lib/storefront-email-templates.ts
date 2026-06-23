@@ -31,6 +31,7 @@ export type StorefrontRenderedEmail = {
 export const STOREFRONT_CUSTOMER_EMAIL_TEMPLATE_MARKER = "GDD_EMAIL_TEMPLATE=light-v3";
 const STOREFRONT_ORDER_STATUS_URL = "https://www.gamedaygrabs.com/order-status";
 const STOREFRONT_POLICIES_URL = "https://www.gamedaygrabs.com/policies";
+const STOREFRONT_ACCOUNT_LOGIN_URL = "https://www.gamedaygrabs.com/account/login";
 
 export type OrderConfirmationEmailInput = StorefrontEmailBase & {
   items: StorefrontEmailItem[];
@@ -40,6 +41,8 @@ export type OrderConfirmationEmailInput = StorefrontEmailBase & {
   shippingMethod: string | null;
   isLocalPickup?: boolean;
   pickupStatus?: string | null;
+  accountCtaEnabled?: boolean;
+  rewardsCtaEnabled?: boolean;
 };
 
 export type ShippingConfirmationEmailInput = StorefrontEmailBase & {
@@ -239,6 +242,21 @@ function twoColumnInfoCard(left: { title: string; body: string }, right: { title
   );
 }
 
+function accountRewardsCtaCard(input: { rewardsCtaEnabled?: boolean }) {
+  const body = input.rewardsCtaEnabled
+    ? "Create your GameDayGrabs account to track orders and rewards. Rewards redemption coming soon."
+    : "Create your GameDayGrabs account to track orders. Guest checkout remains available.";
+  return card(
+    [
+      `<p style="margin:0 0 7px;${textColorStyle(emailColors.text)}font-size:14px;line-height:1.4;font-weight:900;">Optional customer account</p>`,
+      `<p style="margin:0 0 12px;${textColorStyle(emailColors.text)}font-size:13px;line-height:1.58;font-weight:650;">${escapeHtml(body)}</p>`,
+      `<a class="gdg-email-accent" href="${STOREFRONT_ACCOUNT_LOGIN_URL}" style="${textColorStyle(emailColors.accent)}font-size:13px;line-height:1.4;font-weight:900;text-decoration:none;">Create or sign in to your account</a>`
+    ].join(""),
+    "border-color:#D98F45;",
+    emailColors.softAccent
+  );
+}
+
 function detailRows(rows: Array<{ label: string; value: string | null | undefined }>) {
   return [
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0">',
@@ -404,6 +422,12 @@ export function buildOrderConfirmationEmail(input: OrderConfirmationEmailInput):
     isLocalPickup ? `Pickup status: ${pickupStatusLabel(input.pickupStatus)}` : null,
     "Payment method: Securely processed by Stripe",
     nextStepCopy,
+    input.accountCtaEnabled
+      ? input.rewardsCtaEnabled
+        ? `Create your GameDayGrabs account to track orders and rewards: ${STOREFRONT_ACCOUNT_LOGIN_URL}`
+        : `Create your GameDayGrabs account to track orders: ${STOREFRONT_ACCOUNT_LOGIN_URL}`
+      : null,
+    input.accountCtaEnabled && input.rewardsCtaEnabled ? "Rewards redemption coming soon." : null,
     textFooter(input.supportEmail)
   ]
     .filter((line): line is string => line !== null)
@@ -419,7 +443,8 @@ export function buildOrderConfirmationEmail(input: OrderConfirmationEmailInput):
       twoColumnInfoCard(
         { title: methodLabel, body: methodBody },
         { title: "Payment method", body: "Securely processed by Stripe" }
-      )
+      ),
+      input.accountCtaEnabled ? accountRewardsCtaCard({ rewardsCtaEnabled: input.rewardsCtaEnabled }) : ""
     ].join("")
   });
   return { subject, text, html };

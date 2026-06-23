@@ -1,4 +1,5 @@
 import { CheckoutSuccessClient, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
+import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 
@@ -13,10 +14,15 @@ export default async function CheckoutSuccessPage({ searchParams }: { searchPara
   const params = await searchParams;
   const orderReference = params.number || params.order || "";
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
+  const customerAccountFeatures = customerAccountFeatureConfig();
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />
-      <CheckoutSuccessClient orderReference={orderReference} />
+      <CheckoutSuccessClient
+        orderReference={orderReference}
+        accountCtaEnabled={customerAccountFeatures.customerAccountsEnabled}
+        rewardsCtaEnabled={customerAccountFeatures.customerAccountsEnabled && customerAccountFeatures.customerRewardsEnabled}
+      />
       <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>
   );

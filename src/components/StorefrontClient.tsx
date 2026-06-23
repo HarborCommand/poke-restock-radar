@@ -1912,7 +1912,15 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   );
 }
 
-export function CheckoutSuccessClient({ orderReference = "" }: { orderReference?: string }) {
+export function CheckoutSuccessClient({
+  orderReference = "",
+  accountCtaEnabled = false,
+  rewardsCtaEnabled = false
+}: {
+  orderReference?: string;
+  accountCtaEnabled?: boolean;
+  rewardsCtaEnabled?: boolean;
+}) {
   useEffect(() => {
     writeCart([]);
   }, []);
@@ -1925,6 +1933,15 @@ export function CheckoutSuccessClient({ orderReference = "" }: { orderReference?
       <h1>Payment received</h1>
       {orderReference ? <p className="gdg-order-reference">Order {orderReference}</p> : null}
       <p>Your order is being confirmed by Stripe. Inventory updates after the secure webhook confirms payment.</p>
+      {accountCtaEnabled ? (
+        <div className="gdg-success-account-cta">
+          <strong>Create an account to track this order{rewardsCtaEnabled ? " and earn rewards" : ""}.</strong>
+          <span>{rewardsCtaEnabled ? "Track points in your account. Rewards redemption coming soon." : "Account creation is optional and guest checkout remains available."}</span>
+          <Link href="/account/login" className="gdg-secondary-button compact">
+            Create or Sign In
+          </Link>
+        </div>
+      ) : null}
       <div className="gdg-result-actions">
         <Link href="/shop" className="gdg-primary-button">
           Back to Shop

@@ -21,6 +21,8 @@ import {
   shippingQuoteExpiresAt,
   type NormalizedShippingQuote
 } from "@/lib/shipping-rate-provider";
+import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
+import { awardRewardsForPaidOrder, reverseRewardsForOrder, rewardSummaryForOrder } from "@/lib/customer-rewards";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
@@ -106,6 +108,16 @@ const storefrontOrderInclude = {
   customer: true,
   reservations: true,
   paymentEvents: { orderBy: { receivedAt: "desc" } },
+  rewardLedgerEntries: {
+    select: {
+      id: true,
+      points: true,
+      type: true,
+      reason: true,
+      createdAt: true
+    },
+    orderBy: { createdAt: "desc" as const }
+  },
   fulfillment: true
 } satisfies Prisma.StorefrontOrderInclude;
 
@@ -892,6 +904,7 @@ async function sendCustomerEmailNotificationOnce(input: {
 async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithItems) {
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
+  const accountFeatures = customerAccountFeatureConfig();
   const email = buildOrderConfirmationEmail({
     orderNumber: order.orderNumber,
     supportEmail: contactEmail,
@@ -902,7 +915,9 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     totalPaid: order.total,
     shippingMethod: order.shippingMethodLabel,
     isLocalPickup: orderIsLocalPickup(order),
-    pickupStatus: order.fulfillmentStatus
+    pickupStatus: order.fulfillmentStatus,
+    accountCtaEnabled: accountFeatures.customerAccountsEnabled,
+    rewardsCtaEnabled: accountFeatures.customerAccountsEnabled && accountFeatures.customerRewardsEnabled
   });
   return sendCustomerEmailNotificationOnce({
     order,
@@ -1693,6 +1708,7 @@ export function storefrontOrderToDTO(order: StorefrontOrderWithItems): Storefron
       receivedAt: event.receivedAt.toISOString()
     })),
     customerEmailNotifications: customerEmailNotifications(order),
+    rewardSummary: rewardSummaryForOrder(order),
     timeline: orderTimeline(order)
   };
 }
@@ -2799,6 +2815,7 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
     const persisted = await persistPaidCheckoutSession(order, session);
     order = persisted.order;
     if (!wasPaid && order.paymentStatus !== "paid") await createStorefrontSale(order);
+    if (!wasPaid && order.paymentStatus === "paid") await awardRewardsForPaidOrder(order);
     if (!wasPaid) await sendStorefrontOrderConfirmationEmail(order);
     if (persisted.customer && persisted.customerEmail) await syncStorefrontCustomerTotals(persisted.customer.id, persisted.customerEmail);
     return { ok: true };
@@ -3344,6 +3361,17 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
   });
 
   let finalOrder = updatedOrder;
+  if (refundCents > 0 || updatedOrder.status === "canceled" || updatedOrder.paymentStatus === "refunded" || updatedOrder.paymentStatus === "partially_refunded") {
+    await reverseRewardsForOrder(updatedOrder, {
+      reason: refundCents > 0 ? "refund" : "cancel",
+      idempotencyKey: input.idempotencyKey,
+      refundedAmount: moneyFromCents(newRefundedCents)
+    });
+    finalOrder = await prisma.storefrontOrder.findUnique({
+      where: { id: updatedOrder.id },
+      include: storefrontOrderInclude
+    }) ?? updatedOrder;
+  }
   if (input.sendCustomerEmail) {
     const settings = await getStorefrontSettings();
     const emailStatus = await sendStorefrontCancellationEmail({
@@ -3501,6 +3529,12 @@ export async function updateStorefrontOrder(
   }
   if (requestsTestOrderChange && finalOrder.customerId && finalOrder.customerEmail) {
     await syncStorefrontCustomerTotals(finalOrder.customerId, finalOrder.customerEmail);
+  }
+  if (requestsTestOrderChange && input.isTestOrder === true) {
+    await reverseRewardsForOrder(finalOrder, {
+      reason: "test_order",
+      idempotencyKey: `test-order:${finalOrder.testMarkedAt?.toISOString() ?? Date.now()}`
+    });
   }
   const withEmailEvents = await prisma.storefrontOrder.findUnique({
     where: { id: order.id },
