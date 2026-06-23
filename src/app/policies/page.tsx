@@ -7,7 +7,7 @@ import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@
 const policiesUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
 const policiesTitle = "GameDayGrabs Policies | Shipping, Pickup, Payment & Returns";
 const policiesDescription =
-  "Review GameDayGrabs shipping, local pickup, payment security, checkout holds, privacy, and product issue policies before ordering collectible card products.";
+  "Review GameDayGrabs shipping, local pickup, payment security, checkout holds, trading card returns, privacy, and product issue policies before ordering collectible card products.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,12 +65,45 @@ export default async function PoliciesPage() {
         <article>
           <h2>Cancellations / Refunds</h2>
           <p>Customers can contact GameDayGrabs for order issues. Paid orders may be canceled or refunded before shipment when eligible.</p>
-          <p>Refund timing depends on the customer's bank or card issuer. Once an order ships, refunds and returns are reviewed case by case.</p>
+          <p>Approved refunds are processed back to the original payment method. Bank or card issuer processing times may vary, but refunds typically appear within 3-10 business days after approval.</p>
         </article>
         <article>
-          <h2>Returns / Product Issues</h2>
-          <p>Contact GameDayGrabs if an item arrives damaged, incorrect, or has another order issue.</p>
-          <p>Sealed collectible products should be reviewed carefully because condition matters. Return options are reviewed case by case.</p>
+          <h2>Trading Card Return Policy</h2>
+          <p>
+            All sealed trading card products, including Pokemon TCG products, sports cards, booster packs, booster bundles,
+            tins, blisters, premium collections, decks, and similar collectible card products, are final sale and are not
+            eligible for return or exchange.
+          </p>
+          <p>
+            Because trading card products can be opened, searched, resealed, tampered with, or affected by market value
+            changes after delivery, GameDayGrabs does not accept buyer-remorse returns, opened product returns, or exchanges
+            for sealed trading card items.
+          </p>
+        </article>
+        <article>
+          <h2>Order Issue Exceptions</h2>
+          <p>
+            If your order arrives damaged, incorrect, missing an item, or materially different from what was purchased,
+            contact GameDayGrabs within 3 calendar days of delivery at <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.
+          </p>
+          <p>Please include your order number, photos of the package, photos of the product condition, photos of the shipping label, and a brief explanation of the issue.</p>
+          <p>GameDayGrabs will review the claim and may offer a replacement, refund, partial refund, or another resolution after review.</p>
+        </article>
+        <article>
+          <h2>Opened Products</h2>
+          <p>
+            Opened trading card products are not eligible for return, refund, or exchange unless GameDayGrabs determines
+            there was a verified fulfillment error or shipping-related issue.
+          </p>
+          <p>GameDayGrabs reserves the right to deny claims involving opened products, tampering, missing contents, suspected abuse, or requests made outside the claim window.</p>
+        </article>
+        <article>
+          <h2>Return Shipping</h2>
+          <p>
+            If GameDayGrabs approves a return due to our error, wrong item, or verified shipping damage, return instructions
+            will be provided. Approved returns must be returned in the condition received, with all original packaging and
+            contents included.
+          </p>
         </article>
         <article>
           <h2>Payment Security</h2>
