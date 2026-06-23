@@ -38,6 +38,20 @@ const controlledEnvKeys = [
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "STORE_BASE_URL",
+  "CALCULATED_USPS_SHIPPING_ENABLED",
+  "SHIPPING_FALLBACK_ENABLED",
+  "SHIPPING_RATE_PROVIDER",
+  "SHIPPING_QUOTE_TTL_MINUTES",
+  "SHIPPO_LABEL_PURCHASE_ENABLED",
+  "SHIPPING_LABELS_ENABLED",
+  "SHIPPO_API_TOKEN",
+  "SHIP_FROM_NAME",
+  "SHIP_FROM_STREET1",
+  "SHIP_FROM_STREET2",
+  "SHIP_FROM_CITY",
+  "SHIP_FROM_STATE",
+  "SHIP_FROM_ZIP",
+  "SHIP_FROM_COUNTRY",
   "BLOB_READ_WRITE_TOKEN",
   "TCGCSV_ENABLED",
   "PRICECHARTING_API_TOKEN",
@@ -113,6 +127,9 @@ test("health stays OK when required systems pass and optional providers are disa
     assert.equal(report.providers.upc.searchFallbackHealthStatus, "optional_not_configured");
     assert.equal(report.providers.blob.healthStatus, "optional_not_configured");
     assert.equal(report.providers.stripe.healthStatus, "disabled");
+    assert.equal(report.providers.shippingLabels.healthStatus, "disabled");
+    assert.equal(report.providers.shippingLabels.shippoLabelPurchaseEnabled, false);
+    assert.equal(report.providers.shippingLabels.purchaseReady, false);
     assert.equal(statusForReport(report.warnings), "OK");
   });
 });
@@ -158,6 +175,46 @@ test("health reports Resend as the preferred configured email provider without e
       assert.doesNotMatch(serialized, /orders@example\.com/);
       assert.doesNotMatch(serialized, /support@example\.com/);
       assert.doesNotMatch(serialized, /orders@gamedaygrabs\.com|gamedaygrabs@outlook\.com/);
+    }
+  );
+});
+
+test("health warns only when Shippo label purchase is enabled without provider setup", () => {
+  withEnv({ SHIPPO_LABEL_PURCHASE_ENABLED: "true" }, () => {
+    const report = getEnvironmentReport();
+
+    assert.equal(report.providers.shippingLabels.healthStatus, "misconfigured");
+    assert.equal(report.providers.shippingLabels.shippoLabelPurchaseEnabled, true);
+    assert.equal(report.providers.shippingLabels.labelProviderConfigured, false);
+    assert.equal(report.providers.shippingLabels.purchaseReady, false);
+    assert.match(report.warnings.join("\n"), /Shippo label purchase is enabled/);
+    assert.equal(statusForReport(report.warnings), "WARN");
+  });
+});
+
+test("health reports configured Shippo labels without exposing Shippo secrets", () => {
+  withEnv(
+    {
+      SHIPPO_LABEL_PURCHASE_ENABLED: "true",
+      SHIPPO_API_TOKEN: "shippo_private_health_value",
+      SHIP_FROM_NAME: "GameDayGrabs",
+      SHIP_FROM_STREET1: "123 Test St",
+      SHIP_FROM_CITY: "Miami",
+      SHIP_FROM_STATE: "FL",
+      SHIP_FROM_ZIP: "33101",
+      SHIP_FROM_COUNTRY: "US"
+    },
+    () => {
+      const report = getEnvironmentReport();
+      const serialized = JSON.stringify(report);
+
+      assert.equal(report.providers.shippingLabels.healthStatus, "configured");
+      assert.equal(report.providers.shippingLabels.provider, "shippo");
+      assert.equal(report.providers.shippingLabels.labelProviderConfigured, true);
+      assert.equal(report.providers.shippingLabels.purchaseReady, true);
+      assert.match(report.providers.shippingLabels.envVars.join(","), /SHIPPO_LABEL_PURCHASE_ENABLED/);
+      assert.doesNotMatch(serialized, /shippo_private_health_value/);
+      assert.doesNotMatch(serialized, /123 Test St/);
     }
   );
 });

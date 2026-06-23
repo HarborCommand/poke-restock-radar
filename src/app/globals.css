@@ -21126,6 +21126,57 @@ body .storefront-order-workspace .packing-slip-preview-shell {
   font-weight: 800;
 }
 
+.shipping-label-status-shell {
+  background: #fffdf8;
+  border: 1px solid #d9dee8;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.shipping-label-status-shell > span,
+.shipping-label-summary-grid small {
+  color: #667085;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.shipping-label-status-shell strong,
+.shipping-label-summary-grid b {
+  color: #071022;
+  font-size: 0.88rem;
+}
+
+.shipping-label-status-shell p {
+  color: #475467;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.shipping-label-summary-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.shipping-label-summary-grid span {
+  background: #ffffff;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.shipping-label-summary-grid b {
+  overflow-wrap: break-word;
+}
+
 .shipping-packing-checklist {
   display: grid;
   gap: 6px;
@@ -21362,6 +21413,18 @@ body .storefront-order-workspace .packing-slip-preview-shell {
   line-height: 1.4;
 }
 
+.storefront-label-tracking-card {
+  border-color: #d9dee8;
+  background: #fffdf8;
+}
+
+.storefront-label-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
 @media (max-width: 1180px) {
   .shipping-hub-grid,
   .shipping-work-row,
@@ -21401,6 +21464,7 @@ body .storefront-order-workspace .packing-slip-preview-shell {
   .shipping-compact-row,
   .shipping-profile-manager-row,
   .shipping-editor-summary,
+  .shipping-label-summary-grid,
   .shipping-profile-stat-grid,
   .shipping-profile-usage-grid {
     grid-template-columns: 1fr;

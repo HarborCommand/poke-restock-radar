@@ -1111,6 +1111,17 @@ model StorefrontOrder {
   shippingQuoteShipmentProviderRef String?
   shippingQuoteExpiresAt           DateTime?
   shippingZipMismatchReview        Boolean               @default(false)
+  shippingLabelProvider            String?
+  shippingLabelProviderId          String?
+  shippingLabelUrl                 String?
+  shippingLabelFileType            String?
+  shippingTrackingNumber           String?
+  shippingTrackingUrl              String?
+  shippingLabelCostCents           Int?
+  shippingLabelCurrency            String?
+  shippingLabelPurchasedAt         DateTime?
+  shippingLabelVoidedAt            DateTime?
+  shippingLabelStatus              String?
   tax                              Float                 @default(0)
   total                            Float                 @default(0)
   stripeFeeEstimate                Float                 @default(0)

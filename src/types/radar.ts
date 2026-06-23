@@ -398,6 +398,17 @@ export type StorefrontOrderDTO = {
   shippingQuoteFallbackUsed: boolean;
   shippingQuoteExpiresAt: string | null;
   shippingZipMismatchReview: boolean;
+  shippingLabelProvider: string | null;
+  shippingLabelProviderId: string | null;
+  shippingLabelUrl: string | null;
+  shippingLabelFileType: string | null;
+  shippingTrackingNumber: string | null;
+  shippingTrackingUrl: string | null;
+  shippingLabelCostCents: number | null;
+  shippingLabelCurrency: string | null;
+  shippingLabelPurchasedAt: string | null;
+  shippingLabelVoidedAt: string | null;
+  shippingLabelStatus: string | null;
   tax: number;
   total: number;
   stripeFeeEstimate: number;
@@ -1361,6 +1372,14 @@ export type AppHealthDTO = {
       shipFromConfigured: boolean;
       fallbackEnabled: boolean;
       quoteTtlMinutes: number;
+    };
+    shippingLabels: ProviderHealthMetadataDTO & {
+      configured: boolean;
+      shippingLabelsEnabled: boolean;
+      shippoLabelPurchaseEnabled: boolean;
+      provider: "shippo" | "none";
+      labelProviderConfigured: boolean;
+      purchaseReady: boolean;
     };
     blob: ProviderHealthMetadataDTO & {
       configured: boolean;

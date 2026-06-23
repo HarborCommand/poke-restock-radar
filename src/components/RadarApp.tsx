@@ -723,6 +723,59 @@ function storefrontOrderHasShipmentDetails(order: StorefrontOrderDTO) {
   return Boolean(order.carrier?.trim() && order.trackingNumber?.trim());
 }
 
+function storefrontOrderHasShipToAddress(order: StorefrontOrderDTO) {
+  const address = order.shippingAddress;
+  return Boolean(address?.line1?.trim() && address.city?.trim() && address.state?.trim() && address.postalCode?.trim() && address.country?.trim());
+}
+
+function storefrontOrderHasPackageSnapshot(order: StorefrontOrderDTO) {
+  return Boolean(
+    order.shippingPackageWeightOz &&
+      order.shippingPackageWeightOz > 0 &&
+      order.shippingPackageLengthIn &&
+      order.shippingPackageLengthIn > 0 &&
+      order.shippingPackageWidthIn &&
+      order.shippingPackageWidthIn > 0 &&
+      order.shippingPackageHeightIn &&
+      order.shippingPackageHeightIn > 0
+  );
+}
+
+function storefrontOrderHasShippingLabel(order: StorefrontOrderDTO) {
+  return Boolean(order.shippingLabelProviderId || order.shippingLabelUrl || order.shippingTrackingNumber || order.shippingTrackingUrl);
+}
+
+function storefrontOrderLabelStatus(order: StorefrontOrderDTO) {
+  if (order.shippingLabelVoidedAt || order.shippingLabelStatus === "voided") return "Label voided";
+  if (storefrontOrderHasShippingLabel(order)) return order.shippingTrackingNumber || order.shippingTrackingUrl ? "Tracking available" : "Label ready";
+  return "No label purchased";
+}
+
+function storefrontOrderLabelCost(order: StorefrontOrderDTO) {
+  if (typeof order.shippingLabelCostCents !== "number") return "Not captured";
+  return money(order.shippingLabelCostCents / 100);
+}
+
+function storefrontOrderPreferredTrackingNumber(order: StorefrontOrderDTO) {
+  return order.shippingTrackingNumber || order.trackingNumber;
+}
+
+function storefrontOrderPreferredTrackingUrl(order: StorefrontOrderDTO) {
+  return order.shippingTrackingUrl || shippingHubCarrierTrackingUrl(order);
+}
+
+function storefrontOrderLabelEligibility(order: StorefrontOrderDTO, health: AppHealthDTO | null | undefined) {
+  if (!health?.providers.shippingLabels.purchaseReady) {
+    return { enabled: false, reason: "Label purchase disabled. Enable Shippo labels after live shipping test." };
+  }
+  if (order.paymentStatus !== "paid") return { enabled: false, reason: "Only paid orders can buy labels." };
+  if (storefrontOrderIsLocalPickup(order)) return { enabled: false, reason: "Local Pickup orders do not need carrier labels." };
+  if (storefrontOrderIsCanceledOrRefunded(order)) return { enabled: false, reason: "Historical orders cannot buy labels." };
+  if (!storefrontOrderHasShipToAddress(order)) return { enabled: false, reason: "Ship-to address is required before buying a label." };
+  if (!storefrontOrderHasPackageSnapshot(order)) return { enabled: false, reason: "Package weight and dimensions are required before buying a label." };
+  return { enabled: true, reason: "Ready for future Shippo label purchase." };
+}
+
 function storefrontOrderShippingReadiness(order: StorefrontOrderDTO) {
   if (storefrontOrderIsCanceledOrRefunded(order)) return "Not ready to ship";
   if (storefrontOrderIsLocalPickup(order)) {
@@ -7500,6 +7553,8 @@ function ShippingHubPanel({
               carrierOrdersToShip.map((order) => {
                 const timerState = getOrderTimerState(order, orderTimerNow);
                 const canMarkShipped = storefrontOrderHasShipmentDetails(order);
+                const labelEligibility = storefrontOrderLabelEligibility(order, dashboard.health);
+                const labelPurchased = storefrontOrderHasShippingLabel(order);
                 return (
                   <article className="shipping-work-row" key={order.id}>
                     <div className="shipping-work-main">
@@ -7536,6 +7591,19 @@ function ShippingHubPanel({
                           ))}
                         </div>
                       ) : null}
+                      <div className="shipping-label-status-shell" aria-label={`Label status for ${order.orderNumber}`}>
+                        <div>
+                          <span>Label Status</span>
+                          <strong>{storefrontOrderLabelStatus(order)}</strong>
+                          <small>{labelPurchased ? "Stored label/tracking data will appear here for shipment prep." : labelEligibility.reason}</small>
+                        </div>
+                        <div className="shipping-label-summary-grid">
+                          <span><b>Service</b>{formatShippingCarrierService(order)}</span>
+                          <span><b>Charged</b>{money(order.shippingCharged)}</span>
+                          <span><b>Quoted ZIP</b>{order.shippingQuotedZip || "Not captured"}</span>
+                          <span><b>Package</b>{formatShippingPackageWeight(order)} / {formatShippingPackageDimensions(order)}</span>
+                        </div>
+                      </div>
                     </div>
                     <div className="storefront-order-status-stack">
                       <span className={`chip compact-chip storefront-order-timer-chip ${timerState.tone}`}>{timerState.shortLabel}</span>
@@ -7565,6 +7633,15 @@ function ShippingHubPanel({
                       </button>
                       <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>
                         Add Tracking
+                      </button>
+                      <button
+                        className="mini-action"
+                        disabled={busy || !labelEligibility.enabled}
+                        title={labelEligibility.reason}
+                        type="button"
+                        onClick={() => window.alert("Shippo label purchase is not implemented in this disabled shell.")}
+                      >
+                        Buy Label
                       </button>
                       <button
                         className="mini-action"
@@ -7611,18 +7688,19 @@ function ShippingHubPanel({
           <div className="shipping-compact-list">
             {shippedOrders.length ? (
               shippedOrders.slice(0, 8).map((order) => {
-                const trackingUrl = shippingHubCarrierTrackingUrl(order);
+                const trackingNumber = storefrontOrderPreferredTrackingNumber(order);
+                const trackingUrl = storefrontOrderPreferredTrackingUrl(order);
                 return (
                   <article className="shipping-compact-row" key={order.id}>
                     <div>
                       <strong>{order.orderNumber}</strong>
                       <span>{order.customerName || "Customer"} - {shippingHubOrderDestination(order)}</span>
-                      <small>{order.carrier || "Carrier not provided"} - {order.trackingNumber || "Tracking not provided"}</small>
+                      <small>{order.carrier || order.shippingCarrier || "Carrier not provided"} - {trackingNumber || "Tracking not provided"}</small>
                       <small>Shipped {order.shippedAt ? dateTime(order.shippedAt) : "date not captured"} - {money(order.shippingCharged)} charged</small>
                     </div>
                     <div className="shipping-mini-actions">
                       <button className="mini-action" type="button" onClick={() => setSelectedOrderId(order.id)}>Open</button>
-                      <button className="mini-action" disabled={!order.trackingNumber} type="button" onClick={() => copyShippingHubValue(order.trackingNumber)}>Copy tracking</button>
+                      <button className="mini-action" disabled={!trackingNumber} type="button" onClick={() => copyShippingHubValue(trackingNumber)}>Copy tracking</button>
                       {trackingUrl ? (
                         <button className="mini-action" type="button" onClick={() => copyShippingHubValue(trackingUrl)}>Copy URL</button>
                       ) : null}
@@ -7831,6 +7909,14 @@ function ShippingHubPanel({
             <article>
               <span>Fallback shipping</span>
               <strong>{dashboard.health?.providers.shippingRates.fallbackEnabled ? "Enabled" : "Disabled"}</strong>
+            </article>
+            <article>
+              <span>Shippo labels</span>
+              <strong>{dashboard.health?.providers.shippingLabels.shippoLabelPurchaseEnabled ? "Enabled" : "Disabled"}</strong>
+            </article>
+            <article>
+              <span>Label provider configured</span>
+              <strong>{dashboard.health?.providers.shippingLabels.labelProviderConfigured ? "Yes" : "No"}</strong>
             </article>
           </div>
         </section>
@@ -8616,6 +8702,9 @@ function StorefrontOrderDetailsModal({
   const orderDetailReadOnly = storefrontOrderDetailIsReadOnly(order);
   const readOnlyDetailMessage = storefrontOrderReadOnlyDetailMessage(order);
   const shipmentDetailsSaved = storefrontOrderHasShipmentDetails(order);
+  const labelPurchased = storefrontOrderHasShippingLabel(order);
+  const labelTrackingNumber = storefrontOrderPreferredTrackingNumber(order);
+  const labelTrackingUrl = storefrontOrderPreferredTrackingUrl(order);
   const canOpenRefundFlow = storefrontOrderCanOpenRefundFlow(order);
   const refundActionLabel = storefrontOrderRefundActionLabel(order);
   const canShowPackingSlip = order.items.length > 0 && (canFulfillOrder || orderDetailReadOnly || order.fulfillmentStatus === "shipped" || order.fulfillmentStatus === "picked_up");
@@ -9089,6 +9178,43 @@ function StorefrontOrderDetailsModal({
               ) : null}
             </div>
           </section>
+
+          {!localPickupOrder ? (
+            <section className="storefront-order-workspace-card storefront-label-tracking-card">
+              <div className="storefront-order-section-heading">
+                <h3>Label &amp; Tracking</h3>
+                <span className={`chip compact-chip ${labelPurchased ? "good" : "neutral"}`}>{storefrontOrderLabelStatus(order)}</span>
+              </div>
+              <p className="form-helper publish-ready-note">
+                {labelPurchased ? "Stored Shippo label or tracking data is preserved for fulfillment history." : "No shipping label purchased yet."}
+              </p>
+              <p className="form-helper publish-ready-note">Shippo label purchase is disabled.</p>
+              <div className="storefront-order-summary-list">
+                <DetailStat label="Carrier / service" value={formatShippingCarrierService(order)} />
+                <DetailStat label="Package" value={`${formatShippingPackageWeight(order)} / ${formatShippingPackageDimensions(order)}`} />
+                <DetailStat label="Shipping charged" value={money(order.shippingCharged)} />
+                <DetailStat label="Label cost" value={storefrontOrderLabelCost(order)} />
+                <DetailStat label="Label provider" value={order.shippingLabelProvider || "Not captured"} />
+                <DetailStat label="Label status" value={order.shippingLabelStatus ? formatStatus(order.shippingLabelStatus) : "Not purchased"} />
+                <DetailStat label="Tracking number" value={labelTrackingNumber || "Not captured"} />
+                <DetailStat label="Label purchased" value={order.shippingLabelPurchasedAt ? dateTime(order.shippingLabelPurchasedAt) : "Not captured"} />
+              </div>
+              {labelTrackingUrl || order.shippingLabelUrl ? (
+                <div className="storefront-label-action-row">
+                  {labelTrackingUrl ? (
+                    <a className="mini-action" href={labelTrackingUrl} rel="noopener noreferrer" target="_blank">
+                      Open Tracking
+                    </a>
+                  ) : null}
+                  {order.shippingLabelUrl ? (
+                    <a className="mini-action" href={order.shippingLabelUrl} rel="noopener noreferrer" target="_blank">
+                      Open Label
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="storefront-order-workspace-card storefront-notification-summary">
             <h3>Customer Notifications</h3>
@@ -21289,6 +21415,17 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
           ).toLowerCase()}, fallback ${configuredText(
             health.providers.shippingRates.fallbackEnabled
           ).toLowerCase()}, TTL ${health.providers.shippingRates.quoteTtlMinutes} minutes - ${health.providers.shippingRates.message}`}
+        />
+        <HealthCard
+          icon={PackageSearch}
+          title="Shippo Labels"
+          value={providerHealthLabel(health.providers.shippingLabels.healthStatus)}
+          tone={providerHealthTone(health.providers.shippingLabels.healthStatus)}
+          detail={`Provider ${health.providers.shippingLabels.provider}, purchase ${configuredText(
+            health.providers.shippingLabels.shippoLabelPurchaseEnabled
+          ).toLowerCase()}, provider configured ${configuredText(
+            health.providers.shippingLabels.labelProviderConfigured
+          ).toLowerCase()} - ${health.providers.shippingLabels.message}`}
         />
         <HealthCard
           icon={Upload}

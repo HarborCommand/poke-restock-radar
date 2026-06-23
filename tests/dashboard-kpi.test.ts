@@ -222,6 +222,17 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     shippingQuoteFallbackUsed: false,
     shippingQuoteExpiresAt: null,
     shippingZipMismatchReview: false,
+    shippingLabelProvider: null,
+    shippingLabelProviderId: null,
+    shippingLabelUrl: null,
+    shippingLabelFileType: null,
+    shippingTrackingNumber: null,
+    shippingTrackingUrl: null,
+    shippingLabelCostCents: null,
+    shippingLabelCurrency: null,
+    shippingLabelPurchasedAt: null,
+    shippingLabelVoidedAt: null,
+    shippingLabelStatus: null,
     tax: 0,
     total: 100,
     stripeFeeEstimate: 5,
@@ -1779,7 +1790,9 @@ test("admin shipping hub is a top-level navigation tab with overview sections", 
     "Local Pickup",
     "Calculated USPS",
     "Shippo configured",
-    "Fallback shipping"
+    "Fallback shipping",
+    "Shippo labels",
+    "Label provider configured"
   ]) {
     assert.match(shippingHub, new RegExp(label), `missing shipping overview card ${label}`);
   }
@@ -1819,6 +1832,11 @@ test("shipping hub keeps carrier work separate from local pickup and archived or
   assert.match(shippingHub, /formatShippingCarrierService\(order\)/);
   assert.match(shippingHub, /Quoted ZIP/);
   assert.match(shippingHub, /shippingQuoteStatusBadges\(order\)/);
+  assert.match(shippingHub, /shipping-label-status-shell/);
+  assert.match(app, /Label purchase disabled\. Enable Shippo labels after live shipping test\./);
+  assert.match(shippingHub, /Buy Label/);
+  assert.match(shippingHub, /disabled=\{busy \|\| !labelEligibility\.enabled\}/);
+  assert.match(shippingHub, /storefrontOrderLabelEligibility\(order, dashboard\.health\)/);
 });
 
 test("shipping hub tracking section shows shipped carrier orders and copy actions", () => {
@@ -1828,7 +1846,8 @@ test("shipping hub tracking section shows shipped carrier orders and copy action
   assert.match(shippingHub, /Tracking \/ Shipped Orders/);
   assert.match(shippingHub, /fulfillmentStatus === "shipped"/);
   assert.match(shippingHub, /!storefrontOrderIsLocalPickup\(order\)/);
-  assert.match(shippingHub, /shippingHubCarrierTrackingUrl/);
+  assert.match(shippingHub, /storefrontOrderPreferredTrackingNumber\(order\)/);
+  assert.match(shippingHub, /storefrontOrderPreferredTrackingUrl\(order\)/);
   assert.match(shippingHub, /Copy tracking/);
   assert.match(shippingHub, /Copy URL/);
   assert.match(shippingHub, /Marked-shipped orders with tracking will appear here\./);
@@ -1861,11 +1880,13 @@ test("shipping hub surfaces missing shipping data and merchant readiness", () =>
   assert.match(shippingHub, /dashboard\.health\?\.providers\.shippingRates\.calculatedUspsEnabled/);
   assert.match(shippingHub, /dashboard\.health\?\.providers\.shippingRates\.shippoConfigured/);
   assert.match(shippingHub, /dashboard\.health\?\.providers\.shippingRates\.fallbackEnabled/);
+  assert.match(shippingHub, /dashboard\.health\?\.providers\.shippingLabels\.shippoLabelPurchaseEnabled/);
+  assert.match(shippingHub, /dashboard\.health\?\.providers\.shippingLabels\.labelProviderConfigured/);
   assert.match(css, /\.shipping-missing-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(320px, 1fr\) minmax\(280px, 0\.8fr\) auto;/);
   assert.match(css, /\.shipping-missing-actions\s*\{[\s\S]*justify-content:\s*flex-end;/);
 });
 
-test("shipping hub and order detail show calculated quote review fields without provider payloads", () => {
+test("shipping hub and order detail show calculated quote and label review fields without provider payloads", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const env = fs.readFileSync(new URL("../src/lib/env.ts", import.meta.url), "utf8");
   const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
@@ -1879,13 +1900,68 @@ test("shipping hub and order detail show calculated quote review fields without 
   assert.match(detail, /Fallback used/);
   assert.match(detail, /ZIP review/);
   assert.match(detail, /Shipping ZIP differs from quoted ZIP/);
+  assert.match(detail, /Label &amp; Tracking/);
+  assert.match(detail, /No shipping label purchased yet\./);
+  assert.match(detail, /Shippo label purchase is disabled\./);
+  assert.match(detail, /storefrontOrderPreferredTrackingNumber\(order\)/);
+  assert.match(detail, /storefrontOrderPreferredTrackingUrl\(order\)/);
   assert.match(app, /Fallback shipping used/);
   assert.match(app, /ZIP review needed/);
+  assert.match(app, /function storefrontOrderLabelEligibility/);
+  assert.match(app, /storefrontOrderIsLocalPickup\(order\)/);
+  assert.match(app, /storefrontOrderIsCanceledOrRefunded\(order\)/);
+  assert.match(app, /storefrontOrderHasShipToAddress\(order\)/);
+  assert.match(app, /storefrontOrderHasPackageSnapshot\(order\)/);
   assert.match(healthPanel, /Calculated USPS/);
+  assert.match(healthPanel, /Shippo Labels/);
   assert.match(healthPanel, /health\.providers\.shippingRates\.provider/);
+  assert.match(healthPanel, /health\.providers\.shippingLabels\.shippoLabelPurchaseEnabled/);
+  assert.match(healthPanel, /health\.providers\.shippingLabels\.labelProviderConfigured/);
   assert.match(env, /shippingRates:/);
+  assert.match(env, /shippingLabels:/);
   assert.match(types, /shippingRates: ProviderHealthMetadataDTO/);
+  assert.match(types, /shippingLabels: ProviderHealthMetadataDTO/);
   assert.doesNotMatch(detail + healthPanel, /shippingQuoteRateProviderRef|shippingQuoteShipmentProviderRef|SHIPPO_API_TOKEN|DATABASE_URL|STRIPE_SECRET_KEY/);
+});
+
+test("shipping label shell is an additive disabled workflow without purchase API wiring", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const schema = fs.readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
+  const migration = fs.readFileSync(new URL("../prisma/migrations/20260623024500_shipping_label_shell/migration.sql", import.meta.url), "utf8");
+  const labelConfig = fs.readFileSync(new URL("../src/lib/shipping-labels.ts", import.meta.url), "utf8");
+  const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
+
+  for (const field of [
+    "shippingLabelProvider",
+    "shippingLabelProviderId",
+    "shippingLabelUrl",
+    "shippingLabelFileType",
+    "shippingTrackingNumber",
+    "shippingTrackingUrl",
+    "shippingLabelCostCents",
+    "shippingLabelCurrency",
+    "shippingLabelPurchasedAt",
+    "shippingLabelVoidedAt",
+    "shippingLabelStatus"
+  ]) {
+    assert.match(schema, new RegExp(`${field}\\s+`), `missing schema field ${field}`);
+    assert.match(migration, new RegExp(`ADD COLUMN "${field}"`), `missing additive migration field ${field}`);
+  }
+
+  assert.doesNotMatch(migration, /DROP TABLE|DROP COLUMN|ALTER COLUMN|SET NOT NULL|DELETE FROM|UPDATE /i);
+  assert.match(labelConfig, /SHIPPO_LABEL_PURCHASE_ENABLED/);
+  assert.match(labelConfig, /SHIPPING_LABELS_ENABLED/);
+  assert.match(labelConfig, /defaultValue = false/);
+  assert.match(labelConfig, /purchaseReady: shippoLabelPurchaseEnabled && labelProviderConfigured/);
+  assert.doesNotMatch(labelConfig, /fetch\(|transactions|label_url|api\.goshippo\.com\/transactions/i);
+  assert.match(app, /if \(order\.paymentStatus !== "paid"\) return \{ enabled: false, reason: "Only paid orders can buy labels\." \}/);
+  assert.match(app, /if \(storefrontOrderIsLocalPickup\(order\)\) return \{ enabled: false, reason: "Local Pickup orders do not need carrier labels\." \}/);
+  assert.match(app, /if \(storefrontOrderIsCanceledOrRefunded\(order\)\) return \{ enabled: false, reason: "Historical orders cannot buy labels\." \}/);
+  assert.match(app, /if \(!storefrontOrderHasShipToAddress\(order\)\) return \{ enabled: false, reason: "Ship-to address is required before buying a label\." \}/);
+  assert.match(app, /if \(!storefrontOrderHasPackageSnapshot\(order\)\) return \{ enabled: false, reason: "Package weight and dimensions are required before buying a label\." \}/);
+  assert.match(app, /Label purchase disabled\. Enable Shippo labels after live shipping test\./);
+  assert.match(shippingHub, /window\.alert\("Shippo label purchase is not implemented in this disabled shell\."\)/);
+  assert.doesNotMatch(shippingHub, /\/api\/.*label|buyShippingLabel|purchaseLabel|ShippoToken/i);
 });
 
 test("shipping profiles are database-backed with an additive migration", () => {

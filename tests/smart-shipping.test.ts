@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 import { calculateCartShipping } from "../src/lib/shipping";
+import { shippingLabelWorkflowConfig } from "../src/lib/shipping-labels";
 import { normalizeShippoUspsQuote, shippingRateProviderConfig } from "../src/lib/shipping-rate-provider";
 
 function shippableItem(overrides: Parameters<typeof calculateCartShipping>[0][number] = {}) {
@@ -286,6 +287,44 @@ test("shipping rate provider config is feature flagged and reports configured bo
     "env var names may be reported but values must not be returned"
   );
   assert.doesNotMatch(JSON.stringify(configured), /secret_token_not_returned/);
+});
+
+test("Shippo label purchase workflow is disabled by default and reports booleans only", () => {
+  const disabled = shippingLabelWorkflowConfig({});
+  assert.equal(disabled.shippingLabelsEnabled, false);
+  assert.equal(disabled.shippoLabelPurchaseEnabled, false);
+  assert.equal(disabled.provider, "shippo");
+  assert.equal(disabled.labelProviderConfigured, false);
+  assert.equal(disabled.purchaseReady, false);
+
+  const providerConfiguredButDisabled = shippingLabelWorkflowConfig({
+    SHIPPO_API_TOKEN: "secret_shippo_token_not_returned",
+    SHIP_FROM_NAME: "GameDayGrabs",
+    SHIP_FROM_STREET1: "123 Test St",
+    SHIP_FROM_CITY: "Miami",
+    SHIP_FROM_STATE: "FL",
+    SHIP_FROM_ZIP: "33101",
+    SHIP_FROM_COUNTRY: "US"
+  });
+  assert.equal(providerConfiguredButDisabled.labelProviderConfigured, true);
+  assert.equal(providerConfiguredButDisabled.shippoLabelPurchaseEnabled, false);
+  assert.equal(providerConfiguredButDisabled.purchaseReady, false);
+
+  const enabled = shippingLabelWorkflowConfig({
+    SHIPPO_LABEL_PURCHASE_ENABLED: "true",
+    SHIPPO_API_TOKEN: "secret_shippo_token_not_returned",
+    SHIP_FROM_NAME: "GameDayGrabs",
+    SHIP_FROM_STREET1: "123 Test St",
+    SHIP_FROM_CITY: "Miami",
+    SHIP_FROM_STATE: "FL",
+    SHIP_FROM_ZIP: "33101",
+    SHIP_FROM_COUNTRY: "US"
+  });
+  assert.equal(enabled.shippoLabelPurchaseEnabled, true);
+  assert.equal(enabled.labelProviderConfigured, true);
+  assert.equal(enabled.purchaseReady, true);
+  assert.deepEqual(enabled.envVars.includes("SHIPPO_LABEL_PURCHASE_ENABLED"), true);
+  assert.doesNotMatch(JSON.stringify(enabled), /secret_shippo_token_not_returned/);
 });
 
 test("shipping calculator does not depend on the old flat five dollar setting", () => {

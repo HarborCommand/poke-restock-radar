@@ -1,4 +1,5 @@
 import { emailProviderConfig, type EmailProviderKind } from "@/lib/email-provider";
+import { shippingLabelWorkflowConfig } from "@/lib/shipping-labels";
 import { shippingRateProviderConfig } from "@/lib/shipping-rate-provider";
 
 export type ProviderHealthStatus = "configured" | "optional_not_configured" | "misconfigured" | "disabled";
@@ -88,6 +89,14 @@ export type EnvironmentReport = {
       fallbackEnabled: boolean;
       quoteTtlMinutes: number;
     };
+    shippingLabels: ProviderHealthMetadata & {
+      configured: boolean;
+      shippingLabelsEnabled: boolean;
+      shippoLabelPurchaseEnabled: boolean;
+      provider: "shippo" | "none";
+      labelProviderConfigured: boolean;
+      purchaseReady: boolean;
+    };
     blob: ProviderHealthMetadata & {
       configured: boolean;
       readWriteTokenConfigured: boolean;
@@ -154,6 +163,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const searchEnvVars = ["PRODUCT_SEARCH_PROVIDER", "PRODUCT_SEARCH_API_URL", "PRODUCT_SEARCH_API_KEY"];
   const stripeEnvVars = ["STRIPE_CHECKOUT_ENABLED", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STORE_BASE_URL"];
   const shippingRateProvider = shippingRateProviderConfig();
+  const shippingLabelWorkflow = shippingLabelWorkflowConfig();
   const blobEnvVars = ["BLOB_READ_WRITE_TOKEN"];
   const marketEnvVars = [
     "TCGCSV_ENABLED",
@@ -226,6 +236,12 @@ export function getEnvironmentReport(): EnvironmentReport {
       : shippingRateProvider.calculatedUspsEnabled
         ? "misconfigured"
         : "disabled";
+  const shippingLabelHealthStatus: ProviderHealthStatus =
+    shippingLabelWorkflow.purchaseReady
+      ? "configured"
+      : shippingLabelWorkflow.shippoLabelPurchaseEnabled
+        ? "misconfigured"
+        : "disabled";
   const blobHealthStatus = optionalProviderHealth(blobReadWriteTokenConfigured, anyEnv(blobEnvVars));
   const marketPartiallyConfigured =
     anyEnv(marketEnvVars.filter((name) => name !== "TCGCSV_ENABLED")) ||
@@ -288,6 +304,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   }
   if (shippingRateHealthStatus === "misconfigured") {
     warnings.push("Calculated USPS shipping is enabled but Shippo or ship-from env vars are incomplete. Disable CALCULATED_USPS_SHIPPING_ENABLED or finish Shippo setup.");
+  }
+  if (shippingLabelHealthStatus === "misconfigured") {
+    warnings.push("Shippo label purchase is enabled but the label provider is not fully configured. Disable SHIPPO_LABEL_PURCHASE_ENABLED or finish Shippo setup.");
   }
   if (marketHealthStatus === "misconfigured") {
     warnings.push("Market pricing providers are partially configured. Complete the selected provider env vars or leave automatic pricing disabled.");
@@ -430,6 +449,22 @@ export function getEnvironmentReport(): EnvironmentReport {
         shipFromConfigured: shippingRateProvider.shipFromConfigured,
         fallbackEnabled: shippingRateProvider.fallbackEnabled,
         quoteTtlMinutes: shippingRateProvider.quoteTtlMinutes
+      },
+      shippingLabels: {
+        configured: shippingLabelHealthStatus === "configured",
+        healthStatus: shippingLabelHealthStatus,
+        envVars: shippingLabelWorkflow.envVars,
+        message:
+          shippingLabelHealthStatus === "configured"
+            ? "Shippo label purchase is enabled for admin fulfillment."
+            : shippingLabelHealthStatus === "misconfigured"
+              ? "Shippo label purchase is enabled but provider configuration is incomplete."
+              : "Shippo label purchase is disabled. Labels can be prepared after live shipping testing.",
+        shippingLabelsEnabled: shippingLabelWorkflow.shippingLabelsEnabled,
+        shippoLabelPurchaseEnabled: shippingLabelWorkflow.shippoLabelPurchaseEnabled,
+        provider: shippingLabelWorkflow.provider,
+        labelProviderConfigured: shippingLabelWorkflow.labelProviderConfigured,
+        purchaseReady: shippingLabelWorkflow.purchaseReady
       },
       blob: {
         configured: blobReadWriteTokenConfigured,
