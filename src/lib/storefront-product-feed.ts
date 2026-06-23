@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cleanStorefrontTitle } from "@/lib/storefront-copy";
 import {
   GAMEDAYGRABS_CANONICAL_ORIGIN,
@@ -33,6 +34,10 @@ type ProductFeedItem = {
   shippingHeight: string | null;
 };
 
+const GOOGLE_MERCHANT_ID_MAX_LENGTH = 50;
+const GOOGLE_MERCHANT_ID_PREFIX = "gdd";
+const GOOGLE_MERCHANT_ID_HASH_LENGTH = 8;
+
 function compactText(value: string | null | undefined) {
   return (value || "").replace(/\s+/g, " ").trim();
 }
@@ -55,6 +60,40 @@ function absoluteHttpUrl(value: string | null | undefined) {
   } catch {
     return null;
   }
+}
+
+function merchantIdSlug(value: string | null | undefined) {
+  return compactText(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function trimMerchantIdSlug(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value;
+  const hardTrimmed = value.slice(0, maxLength).replace(/-+$/g, "");
+  const lastDash = hardTrimmed.lastIndexOf("-");
+  if (lastDash >= Math.max(12, Math.floor(maxLength * 0.6))) {
+    return hardTrimmed.slice(0, lastDash).replace(/-+$/g, "");
+  }
+  return hardTrimmed || value.slice(0, maxLength).replace(/-+$/g, "") || "product";
+}
+
+function merchantIdHash(product: Pick<PublicStoreProductDTO, "id" | "slug" | "title">) {
+  const source = compactText(product.id) || compactText(product.slug) || compactText(product.title);
+  return createHash("sha256").update(source || "gamedaygrabs-product").digest("hex").slice(0, GOOGLE_MERCHANT_ID_HASH_LENGTH);
+}
+
+export function googleMerchantProductId(product: Pick<PublicStoreProductDTO, "id" | "slug" | "title">) {
+  const hash = merchantIdHash(product);
+  const slugSource = merchantIdSlug(product.slug) || merchantIdSlug(product.title) || "product";
+  const slugMaxLength = GOOGLE_MERCHANT_ID_MAX_LENGTH - GOOGLE_MERCHANT_ID_PREFIX.length - 2 - hash.length;
+  const slugPart = trimMerchantIdSlug(slugSource, slugMaxLength);
+  const id = `${GOOGLE_MERCHANT_ID_PREFIX}-${slugPart}-${hash}`;
+  return id.length <= GOOGLE_MERCHANT_ID_MAX_LENGTH ? id : `${GOOGLE_MERCHANT_ID_PREFIX}-${hash}`;
 }
 
 function productFeedImage(product: Pick<PublicStoreProductDTO, "primaryImageUrl" | "imageUrl" | "images">) {
@@ -112,7 +151,7 @@ function productFeedItem(product: PublicStoreProductDTO, options: ProductFeedOpt
   const description = compactText(product.description) || storefrontProductMetaDescription(product);
   const packageData = effectiveShippingPackageData(product, options.profileDefinitions);
   return {
-    id: product.slug,
+    id: googleMerchantProductId(product),
     title,
     description,
     link: productCanonicalUrl(product.slug),

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
+  googleMerchantProductId,
   storefrontProductFeedItems,
   storefrontProductFeedXml
 } from "../src/lib/storefront-product-feed";
@@ -49,11 +50,15 @@ function product(overrides: Partial<PublicStoreProductDTO> = {}): PublicStorePro
   };
 }
 
+function feedIds(xml: string) {
+  return [...xml.matchAll(/<g:id>([^<]+)<\/g:id>/g)].map((match) => match[1]);
+}
+
 test("Google Merchant product feed renders public active storefront products", () => {
   const xml = storefrontProductFeedXml([product()]);
 
   assert.match(xml, /<rss version="2\.0" xmlns:g="http:\/\/base\.google\.com\/ns\/1\.0">/);
-  assert.match(xml, /<g:id>pokemon-feed-product<\/g:id>/);
+  assert.match(xml, /<g:id>gdd-pokemon-feed-product-[a-f0-9]{8}<\/g:id>/);
   assert.match(xml, /<title>Pok.mon Feed Product<\/title>/);
   assert.match(xml, /<description>Factory sealed Pokemon product for collectors\.<\/description>/);
   assert.match(xml, new RegExp(`<link>${productCanonicalUrl("pokemon-feed-product").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</link>`));
@@ -65,6 +70,63 @@ test("Google Merchant product feed renders public active storefront products", (
   assert.match(xml, /<g:product_type>Pokemon TCG &gt; Booster Bundles<\/g:product_type>/);
   assert.match(xml, /<g:gtin>123456789012<\/g:gtin>/);
   assert.match(xml, /<g:shipping_weight>12 oz<\/g:shipping_weight>/);
+});
+
+test("Google Merchant product feed IDs are short stable unique and safe", () => {
+  const longSlug = "pokemon-trading-card-game-mega-evolution-perfect-order-3-booster-blister-with-very-long-name";
+  const similarLongSlug = "pokemon-trading-card-game-mega-evolution-perfect-order-3-booster-blister-with-very-long-name-alt";
+  const longProduct = product({
+    id: "stable-private-product-key-1",
+    slug: longSlug,
+    title: "Mega Evolution Perfect Order Booster Bundle"
+  });
+  const similarProduct = product({
+    id: "stable-private-product-key-2",
+    slug: similarLongSlug,
+    title: "Mega Evolution Perfect Order Booster Bundle"
+  });
+
+  const firstId = googleMerchantProductId(longProduct);
+  const repeatedId = googleMerchantProductId(longProduct);
+  const secondId = googleMerchantProductId(similarProduct);
+  assert.equal(firstId, repeatedId);
+  assert.notEqual(firstId, secondId);
+
+  for (const id of [firstId, secondId]) {
+    assert.ok(id.length <= 50, `${id} exceeded Google Merchant id length`);
+    assert.match(id, /^gdd-[a-z0-9-]+-[a-f0-9]{8}$/);
+    assert.doesNotMatch(id, /\s|[^a-z0-9_-]/);
+  }
+
+  const [item] = storefrontProductFeedItems([longProduct]);
+  assert.equal(item.id, firstId);
+  assert.equal(item.title, "Mega Evolution Perfect Order Booster Bundle");
+  assert.equal(item.link, productCanonicalUrl(longSlug));
+});
+
+test("Google Merchant product feed XML keeps every g:id under 50 characters", () => {
+  const xml = storefrontProductFeedXml([
+    product({
+      id: "safe-key-1",
+      slug: "pokemon-trading-card-game-mega-evolution-perfect-order-3-booster-blister-with-very-long-name"
+    }),
+    product({
+      id: "safe-key-2",
+      slug: "pokemon-trading-card-game-mega-evolution-perfect-order-premium-checklane-blister-with-very-long-name"
+    }),
+    product({
+      id: "safe-key-3",
+      slug: "Pokemon TCG: Special & Rare Product / Collector Box"
+    })
+  ]);
+  const ids = feedIds(xml);
+
+  assert.equal(ids.length, 3);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const id of ids) {
+    assert.ok(id.length <= 50, `${id} exceeded Google Merchant id length`);
+    assert.doesNotMatch(id, /\s|[^a-z0-9_-]/);
+  }
 });
 
 test("Google Merchant product feed uses safe brand and product type fallbacks without fake identifiers", () => {
@@ -140,7 +202,9 @@ test("Google Merchant product feed excludes unavailable and image-missing produc
   const noImage = product({ slug: "missing-image-product", imageUrl: null, primaryImageUrl: null, images: [] });
 
   const items = storefrontProductFeedItems([active, soldOut, noImage]);
-  assert.deepEqual(items.map((item) => item.id), ["active-product"]);
+  assert.equal(items.length, 1);
+  assert.match(items[0].id, /^gdd-active-product-[a-f0-9]{8}$/);
+  assert.equal(items[0].link, productCanonicalUrl("active-product"));
 
   const xml = storefrontProductFeedXml([active, soldOut, noImage]);
   assert.match(xml, /active-product/);
@@ -154,7 +218,7 @@ test("Google Merchant product feed can render sold-out availability only when ex
     { includeUnavailable: true }
   );
 
-  assert.match(xml, /<g:id>sold-out-product<\/g:id>/);
+  assert.match(xml, /<g:id>gdd-sold-out-product-[a-f0-9]{8}<\/g:id>/);
   assert.match(xml, /<g:availability>out of stock<\/g:availability>/);
   assert.doesNotMatch(xml, /<g:availability>in stock<\/g:availability>/);
 });
