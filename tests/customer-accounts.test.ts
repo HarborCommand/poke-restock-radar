@@ -233,6 +233,15 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(css, /\.gdg-rewards-info-strip/);
   assert.match(css, /\.gdg-account-preview-thumb img/);
   assert.match(css, /@media \(max-width: 640px\)/);
+  assert.match(css, /\.gdg-account-shell > \* \+ \*/);
+  assert.match(css, /padding:\s*24px 0 calc\(76px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(css, /\.gdg-account-dashboard,\s*\r?\n\s*\.gdg-account-dashboard-layout,\s*\r?\n\s*\.gdg-account-side-stack,\s*\r?\n\s*\.gdg-rewards-grid\s*\{\s*\r?\n\s*gap: 18px/);
+  assert.match(css, /\.gdg-account-rewards-panel::after\s*\{\s*\r?\n\s*right: -36px;\s*\r?\n\s*top: -30px;\s*\r?\n\s*width: 108px;\s*\r?\n\s*opacity: 0\.28/);
+  assert.match(css, /\.gdg-rewards-balance-card::before\s*\{\s*\r?\n\s*right: -34px;\s*\r?\n\s*top: -36px;\s*\r?\n\s*width: 104px;\s*\r?\n\s*border-width: 10px;\s*\r?\n\s*opacity: 0\.52/);
+  assert.match(css, /\.gdg-rewards-info-strip\s*\{\s*\r?\n\s*gap: 14px;\s*\r?\n\s*border-radius: 24px;\s*\r?\n\s*padding: 22px/);
+  assert.match(css, /\.gdg-account-progress-label\s*\{\s*\r?\n\s*flex-wrap: wrap/);
+  assert.match(css, /@media \(max-width: 420px\)/);
+  assert.match(css, /\.gdg-rewards-info-strip > div\s*\{\s*\r?\n\s*grid-template-columns: 52px minmax\(0, 1fr\)/);
   assert.match(css, /\.gdg-account-hero-actions,\s*\r?\n\s*\.gdg-account-hero-actions form,\s*\r?\n\s*\.gdg-account-hero-actions \.gdg-primary-button,\s*\r?\n\s*\.gdg-account-hero-actions \.gdg-secondary-button\s*\{\s*\r?\n\s*width: 100%/);
   assert.match(css, /\.gdg-address-form,\s*\r?\n\s*\.gdg-address-actions\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(cartClient, /No account required/);
@@ -617,6 +626,7 @@ test("refund cancellation and test markers reverse rewards without redemption", 
 test("customer rewards page shows balance activity and redemption coming soon", () => {
   const rewardsPage = readProjectFile("src/app/account/rewards/page.tsx");
   const components = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const css = readProjectFile("src/app/globals.css");
   const accountRewards = sourceSlice(components, "export function AccountRewards", "export function AccountAddresses");
 
   assert.match(rewardsPage, /listCustomerRewardActivity\(account\)/);
@@ -644,6 +654,10 @@ test("customer rewards page shows balance activity and redemption coming soon", 
   assert.match(accountRewards, /View orders/);
   assert.match(accountRewards, /Rewards rules/);
   assert.match(accountRewards, /Contact support/);
+  assert.match(css, /\.gdg-rewards-hero-copy,\s*\r?\n\s*\.gdg-rewards-balance-card\s*\{\s*\r?\n\s*position: relative;\s*\r?\n\s*z-index: 1/);
+  assert.match(css, /\.gdg-rewards-balance-card > \*\s*\{\s*\r?\n\s*max-width: 76%/);
+  assert.match(css, /\.gdg-rewards-explainer ul\s*\{\s*\r?\n\s*gap: 12px/);
+  assert.match(css, /\.gdg-rewards-stat-row > div\s*\{\s*\r?\n\s*padding: 16px/);
   assert.doesNotMatch(accountRewards, /redeem points|apply points|points discount|reward discount|coupon/i);
   assert.doesNotMatch(accountRewards, /stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|webhook body|adminNotes|costBasis|supplier|private lot/i);
 });

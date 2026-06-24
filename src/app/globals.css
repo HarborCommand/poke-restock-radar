@@ -21818,6 +21818,10 @@ body .catalog-action-menu-floating {
   margin-left: auto;
 }
 
+.gdg-account-shell > * + * {
+  margin-top: 16px;
+}
+
 .gdg-account-card,
 .gdg-account-tile,
 .gdg-account-panel,
@@ -23261,11 +23265,15 @@ body .catalog-action-menu-floating {
 
 @media (max-width: 640px) {
   .gdg-account-shell {
-    padding: 28px 0 48px;
+    padding: 24px 0 calc(76px + env(safe-area-inset-bottom));
   }
 
   .gdg-account-shell > * {
-    width: min(100% - 22px, 1120px);
+    width: min(100% - 24px, 1120px);
+  }
+
+  .gdg-account-shell > * + * {
+    margin-top: 18px;
   }
 
   .gdg-account-card,
@@ -23300,6 +23308,18 @@ body .catalog-action-menu-floating {
     border-radius: 20px;
   }
 
+  .gdg-account-dashboard,
+  .gdg-account-dashboard-layout,
+  .gdg-account-side-stack,
+  .gdg-rewards-grid {
+    gap: 18px;
+  }
+
+  .gdg-account-panel {
+    padding: 20px;
+    border-radius: 20px;
+  }
+
   .gdg-account-hero-copy h1,
   .gdg-account-card h1 {
     font-size: 2.25rem;
@@ -23327,26 +23347,143 @@ body .catalog-action-menu-floating {
     display: none;
   }
 
+  .gdg-account-rewards-panel {
+    padding: 22px;
+  }
+
+  .gdg-account-rewards-panel::after {
+    right: -36px;
+    top: -30px;
+    width: 108px;
+    opacity: 0.28;
+  }
+
   .gdg-rewards-hero {
-    gap: 14px;
+    gap: 18px;
+    padding: 22px 18px;
+    border-radius: 22px;
+  }
+
+  .gdg-rewards-hero-copy,
+  .gdg-rewards-balance-card {
+    position: relative;
+    z-index: 1;
+  }
+
+  .gdg-rewards-hero-copy h1 {
+    font-size: 2.35rem;
+  }
+
+  .gdg-rewards-coming-soon {
+    width: 100%;
+    justify-content: center;
   }
 
   .gdg-rewards-balance-card {
     min-height: auto;
     justify-items: start;
+    gap: 10px;
+    overflow: hidden;
+    padding: 24px 22px;
     text-align: left;
   }
 
+  .gdg-rewards-balance-card::before {
+    right: -34px;
+    top: -36px;
+    width: 104px;
+    border-width: 10px;
+    opacity: 0.52;
+  }
+
+  .gdg-rewards-balance-card > * {
+    max-width: 76%;
+  }
+
+  .gdg-rewards-balance-card strong {
+    font-size: 4rem;
+  }
+
+  .gdg-rewards-info-strip {
+    gap: 14px;
+    border-radius: 24px;
+    padding: 22px;
+  }
+
   .gdg-rewards-info-strip > div {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 14px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .gdg-rewards-info-strip .gdg-account-icon-badge {
+    width: 56px;
+    height: 56px;
+  }
+
+  .gdg-rewards-info-strip p {
+    font-size: 1rem;
+    line-height: 1.38;
   }
 
   .gdg-account-stat-card {
     min-height: auto;
+    padding: 20px;
   }
 
   .gdg-account-panel-heading {
     align-items: flex-start;
+    gap: 14px;
+  }
+
+  .gdg-rewards-level-card,
+  .gdg-rewards-explainer,
+  .gdg-rewards-activity-card,
+  .gdg-rewards-links-card {
+    padding: 24px 20px;
+  }
+
+  .gdg-rewards-level-card .gdg-account-panel-heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .gdg-rewards-level-card .gdg-account-icon-badge {
+    width: 58px;
+    height: 58px;
+  }
+
+  .gdg-account-progress {
+    margin-top: 6px;
+  }
+
+  .gdg-account-progress-label {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    line-height: 1.25;
+  }
+
+  .gdg-rewards-stat-row {
+    gap: 12px;
+    margin-top: 2px;
+  }
+
+  .gdg-rewards-stat-row > div {
+    padding: 16px;
+  }
+
+  .gdg-rewards-explainer ul {
+    gap: 12px;
+  }
+
+  .gdg-rewards-explainer li {
+    padding: 14px 14px 14px 38px;
+    line-height: 1.4;
+  }
+
+  .gdg-rewards-explainer li::before {
+    left: 18px;
+    top: 21px;
   }
 
   .gdg-account-preview-row {
@@ -23383,5 +23520,30 @@ body .catalog-action-menu-floating {
 
   .gdg-reward-activity-list b {
     justify-self: start;
+  }
+}
+
+@media (max-width: 420px) {
+  .gdg-rewards-balance-card > * {
+    max-width: 72%;
+  }
+
+  .gdg-rewards-info-strip {
+    padding: 20px;
+  }
+
+  .gdg-rewards-info-strip > div {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .gdg-rewards-info-strip .gdg-account-icon-badge,
+  .gdg-rewards-level-card .gdg-account-icon-badge {
+    width: 52px;
+    height: 52px;
+  }
+
+  .gdg-account-progress-label {
+    font-size: 0.78rem;
   }
 }
