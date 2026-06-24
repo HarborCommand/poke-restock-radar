@@ -173,10 +173,13 @@ export function CustomerLoginPageContent({
   return (
     <div className="gdg-account-card hero">
       <p className="gdg-overline">Customer Login</p>
-      <h1>Email yourself a secure sign-in link.</h1>
+      <h1>Sign in or create an account.</h1>
       <p>
         No password needed. We'll send a secure sign-in link to your email.
       </p>
+      <p>Enter your email and we'll send a secure sign-in link.</p>
+      <p>If you do not have an account yet, we'll create one after you verify your email.</p>
+      <p>Guest checkout is always available.</p>
       <p>Customer accounts are optional. Use the same email you used at checkout to see matching order history after verification.</p>
       {sent ? (
         <p className="gdg-account-notice good">

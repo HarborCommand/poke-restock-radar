@@ -79,6 +79,12 @@ type ShippingQuoteResult = {
   warning: string | null;
 };
 
+type CustomerAccountSession = {
+  enabled: boolean;
+  account: { email: string; displayName: string | null; emailVerified: boolean } | null;
+  session: { authenticated: boolean };
+};
+
 const cartKey = "poke-radar-cart";
 const emptyCartSnapshot: CartItem[] = [];
 let cartSnapshotRaw = "[]";
@@ -249,6 +255,33 @@ function getServerCartSnapshot(): CartItem[] {
   return emptyCartSnapshot;
 }
 
+function useCustomerAccountSession(enabled: boolean) {
+  const [session, setSession] = useState<CustomerAccountSession | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setSession(null);
+      return;
+    }
+
+    let active = true;
+    fetch("/api/account/session", { cache: "no-store", credentials: "same-origin" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: CustomerAccountSession | null) => {
+        if (active) setSession(data);
+      })
+      .catch(() => {
+        if (active) setSession(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [enabled]);
+
+  return session;
+}
+
 function subscribeCart(callback: () => void) {
   if (typeof window === "undefined") return () => {};
   window.addEventListener("storage", callback);
@@ -391,6 +424,10 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
   const [menuOpen, setMenuOpen] = useState(false);
   const storeName = displayStoreName(settings);
   const sportsCards = sportsCardsLink(settings);
+  const accountSession = useCustomerAccountSession(settings.customerAccounts.enabled);
+  const accountSignedIn = Boolean(accountSession?.session.authenticated);
+  const accountHref = accountSignedIn ? "/account" : "/account/login";
+  const accountLabel = accountSignedIn ? "My Account" : "Sign In / Create Account";
 
   useEffect(() => {
     const sync = () => setCount(readCart().reduce((sum, item) => sum + item.quantity, 0));
@@ -403,7 +440,7 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
     };
   }, []);
 
-  const nav = [
+  const nav: Array<{ href: string; label: string; external: boolean; className?: string }> = [
     { href: homeHref, label: "Home", external: false },
     { href: "/shop", label: "Shop", external: false },
     { href: storefrontCollectionPath("pokemon-sealed-products"), label: "Pokémon", external: false },
@@ -413,6 +450,9 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
     { href: "/policies", label: "Policies", external: false },
     { href: "/contact", label: "Contact", external: false }
   ];
+  if (settings.customerAccounts.enabled) {
+    nav.push({ href: accountHref, label: accountLabel, external: false, className: "gdg-mobile-account-nav" });
+  }
 
   return (
     <header className="gdg-header">
@@ -429,12 +469,12 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
       <nav className={`gdg-nav ${menuOpen ? "open" : ""}`} aria-label="Public shop navigation">
         {nav.map((item) =>
           item.external ? (
-            <a key={`${item.label}-${item.href}`} href={item.href} target="_blank" rel="noopener noreferrer" className="gdg-external-nav" onClick={() => setMenuOpen(false)}>
+            <a key={`${item.label}-${item.href}`} href={item.href} target="_blank" rel="noopener noreferrer" className={`gdg-external-nav ${item.className ?? ""}`.trim()} onClick={() => setMenuOpen(false)}>
               {item.label}
               <ExternalLink size={12} aria-hidden="true" />
             </a>
           ) : (
-            <Link key={`${item.label}-${item.href}`} href={item.href} onClick={() => setMenuOpen(false)}>
+            <Link key={`${item.label}-${item.href}`} href={item.href} className={item.className} onClick={() => setMenuOpen(false)}>
               {item.label}
             </Link>
           )
@@ -444,6 +484,12 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
         <a className="gdg-icon-link" href="/shop" aria-label="Search products">
           <Search size={18} />
         </a>
+        {settings.customerAccounts.enabled ? (
+          <Link href={accountHref} className="gdg-account-entry" aria-label={accountLabel}>
+            <User size={16} aria-hidden="true" />
+            <span>{accountLabel}</span>
+          </Link>
+        ) : null}
         <Link href="/cart" className="gdg-cart-link" aria-label={`Cart with ${count} items`}>
           <ShoppingBag size={18} />
           {count ? <b>{count}</b> : null}
@@ -459,6 +505,8 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
 export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: StorefrontSettingsDTO; homeHref?: string }) {
   const storeName = displayStoreName(settings);
   const sportsCards = sportsCardsLink(settings);
+  const accountSession = useCustomerAccountSession(settings.customerAccounts.enabled);
+  const accountHref = accountSession?.session.authenticated ? "/account" : "/account/login";
   return (
     <footer className="gdg-footer">
       <div>
@@ -489,7 +537,8 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
           <Link href={sportsCards.href}>Sports Cards</Link>
         )}
         <Link href={storefrontCollectionPath("new-arrivals")}>New Arrivals</Link>
-        <Link href="/order-status">Check Order Status</Link>
+        {settings.customerAccounts.enabled ? <Link href={accountHref}>My Account</Link> : null}
+        <Link href="/order-status">Order Status</Link>
         <Link href="/about">About</Link>
         <Link href="/policies">Policies</Link>
         <Link href="/contact">Contact</Link>
@@ -1885,8 +1934,14 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
             {isStripeCheckout ? (
               <div className="gdg-checkout-trust-copy">
                 <strong>No account required.</strong>
+                <span>Guest checkout available.</span>
                 <span>Stripe securely handles payment. GameDayGrabs does not store card numbers or CVC.</span>
                 <span>We use your email and shipping address only to process your order.</span>
+                {settings.customerAccounts.enabled ? (
+                  <Link href="/account/login" className="gdg-cart-account-link">
+                    Create an account to track orders{settings.customerAccounts.rewardsEnabled ? " and rewards" : ""}.
+                  </Link>
+                ) : null}
               </div>
             ) : null}
           </aside>

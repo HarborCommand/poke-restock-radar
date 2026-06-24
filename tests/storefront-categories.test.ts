@@ -64,9 +64,10 @@ test("homepage hero product image links to the same product page as View Product
 test("public header includes Home before Shop and mobile nav uses the same nav map", () => {
   const client = fs.readFileSync("src/components/StorefrontClient.tsx", "utf8");
 
-  assert.match(client, /const nav = \[\s*\{ href: homeHref, label: "Home", external: false \},\s*\{ href: "\/shop", label: "Shop", external: false \}/);
+  assert.match(client, /const nav:[\s\S]*= \[\s*\{ href: homeHref, label: "Home", external: false \},\s*\{ href: "\/shop", label: "Shop", external: false \}/);
   assert.match(client, /className=\{`gdg-nav \$\{menuOpen \? "open" : ""\}`\}/);
   assert.match(client, /label: "Pokémon"/);
+  assert.match(client, /nav\.push\(\{ href: accountHref, label: accountLabel, external: false, className: "gdg-mobile-account-nav" \}\)/);
 });
 
 test("homepage hero image has hover and keyboard focus affordances", () => {

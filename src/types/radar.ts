@@ -264,6 +264,11 @@ export type StorefrontSettingsDTO = {
   freeShippingThreshold: number | null;
   socialLinks: string[];
   checkoutConfigured: boolean;
+  customerAccounts: {
+    enabled: boolean;
+    rewardsEnabled: boolean;
+    redemptionEnabled: boolean;
+  };
   calculatedUspsShipping: {
     enabled: boolean;
     provider: "shippo" | "none";

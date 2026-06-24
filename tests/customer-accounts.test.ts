@@ -151,7 +151,11 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   const css = readProjectFile("src/app/globals.css");
   const cartClient = readProjectFile("src/components/StorefrontClient.tsx");
 
+  assert.match(accountComponents, /Sign in or create an account/);
   assert.match(accountComponents, /No password needed\. We'll send a secure sign-in link to your email\./);
+  assert.match(accountComponents, /Enter your email and we'll send a secure sign-in link\./);
+  assert.match(accountComponents, /If you do not have an account yet, we'll create one after you verify your email\./);
+  assert.match(accountComponents, /Guest checkout is always available\./);
   for (const label of ["My Orders", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
     assert.match(accountComponents, new RegExp(label));
   }
@@ -162,6 +166,28 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(css, /@media \(max-width: 640px\)/);
   assert.match(css, /\.gdg-address-form,\s*\r?\n\s*\.gdg-address-actions\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(cartClient, /No account required/);
+  assert.match(cartClient, /Guest checkout available/);
+});
+
+test("storefront exposes optional account entry points without requiring login for checkout", () => {
+  const client = readProjectFile("src/components/StorefrontClient.tsx");
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const types = readProjectFile("src/types/radar.ts");
+
+  assert.match(types, /customerAccounts:\s*\{\s*\r?\n\s*enabled: boolean/);
+  assert.match(storefront, /customerAccountFeatureConfig\(\)/);
+  assert.match(storefront, /enabled: accountFeatures\.customerAccountsEnabled/);
+  assert.match(client, /fetch\("\/api\/account\/session", \{ cache: "no-store", credentials: "same-origin" \}\)/);
+  assert.match(client, /accountSignedIn \? "\/account" : "\/account\/login"/);
+  assert.match(client, /accountSignedIn \? "My Account" : "Sign In \/ Create Account"/);
+  assert.match(client, /className="gdg-account-entry"/);
+  assert.match(client, /gdg-mobile-account-nav/);
+  assert.match(client, /<Link href=\{accountHref\}>My Account<\/Link>/);
+  assert.match(client, /Create an account to track orders\{settings\.customerAccounts\.rewardsEnabled \? " and rewards" : ""\}/);
+  assert.match(client, /Proceed to Secure Checkout/);
+  assert.match(client, /No account required/);
+  assert.match(client, /Guest checkout available/);
+  assert.doesNotMatch(client, /redeem points|apply points|points discount|reward discount/i);
 });
 
 test("customer magic link tokens are hashed, one-time, and stored outside admin auth", () => {

@@ -344,6 +344,7 @@ export async function releaseExpiredReservations() {
 export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
   const settings = await prisma.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
   const shippingRates = shippingRateProviderConfig();
+  const accountFeatures = customerAccountFeatureConfig();
   return {
     storeName: settings?.storeName ?? "GameDayGrabs LLC",
     storeLogoUrl: settings?.storeLogoUrl ?? null,
@@ -361,6 +362,11 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
     freeShippingThreshold: settings?.freeShippingThreshold ?? null,
     socialLinks: parseList(settings?.socialLinks),
     checkoutConfigured: storefrontCheckoutConfigured(),
+    customerAccounts: {
+      enabled: accountFeatures.customerAccountsEnabled,
+      rewardsEnabled: accountFeatures.customerRewardsEnabled,
+      redemptionEnabled: accountFeatures.customerRewardRedemptionEnabled
+    },
     calculatedUspsShipping: {
       enabled: shippingRates.calculatedUspsEnabled,
       provider: shippingRates.provider,

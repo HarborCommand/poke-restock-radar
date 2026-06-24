@@ -65,6 +65,11 @@ function settings(overrides: Partial<StorefrontSettingsDTO> = {}): StorefrontSet
     freeShippingThreshold: null,
     socialLinks: [],
     checkoutConfigured: false,
+    customerAccounts: {
+      enabled: false,
+      rewardsEnabled: false,
+      redemptionEnabled: false
+    },
     calculatedUspsShipping: {
       enabled: false,
       provider: "none",

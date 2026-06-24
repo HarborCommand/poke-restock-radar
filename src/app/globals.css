@@ -16226,6 +16226,7 @@ body:has(.shop-shell) {
 .gdg-brand,
 .gdg-nav a,
 .gdg-icon-link,
+.gdg-account-entry,
 .gdg-cart-link,
 .gdg-primary-button,
 .gdg-secondary-button {
@@ -16287,6 +16288,7 @@ body:has(.shop-shell) {
 }
 
 .gdg-icon-link,
+.gdg-account-entry,
 .gdg-cart-link,
 .gdg-menu-button,
 .gdg-icon-button {
@@ -16302,10 +16304,29 @@ body:has(.shop-shell) {
 }
 
 .gdg-icon-link:hover,
+.gdg-account-entry:hover,
 .gdg-cart-link:hover,
 .gdg-menu-button:hover,
 .gdg-icon-button:hover {
   background: #f1f5f9;
+}
+
+.gdg-account-entry {
+  display: inline-flex;
+  width: auto;
+  min-width: 0;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid rgba(15, 61, 46, 0.1);
+  background: #fff9ec;
+  color: #0b2f24;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.gdg-mobile-account-nav {
+  display: none;
 }
 
 .gdg-cart-link {
@@ -18648,6 +18669,18 @@ body:has(.shop-shell) {
   font-weight: 900;
 }
 
+.gdg-cart-account-link {
+  justify-self: start;
+  margin-top: 3px;
+  color: #0b6b3a;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.gdg-cart-account-link:hover {
+  text-decoration: underline;
+}
+
 .gdg-cart-empty {
   min-height: 430px;
   border-style: solid;
@@ -18753,8 +18786,16 @@ body:has(.shop-shell) {
     background: #f8fafc;
   }
 
+  .gdg-mobile-account-nav {
+    display: flex;
+  }
+
   .gdg-header-actions {
     margin-left: auto;
+  }
+
+  .gdg-account-entry {
+    display: none;
   }
 
   .gdg-icon-link.optional {
