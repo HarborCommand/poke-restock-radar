@@ -214,7 +214,11 @@ export function CustomerLoginPageContent({
       ) : null}
       {signedOut ? <p className="gdg-account-notice">You have been signed out.</p> : null}
       {error ? <p className="gdg-account-notice error">That sign-in link is invalid, expired, or already used.</p> : null}
-      {loginError ? <p className="gdg-account-notice error">Email or password is incorrect.</p> : null}
+      {loginError ? (
+        <p className="gdg-account-notice error">
+          Email or password is incorrect. Use the email sign-in link or reset your password if needed.
+        </p>
+      ) : null}
       {registerError ? <p className="gdg-account-notice error">We could not create that account. Check the fields and try again.</p> : null}
       {activeMode === "signin" ? (
         <form className="gdg-account-form" action="/api/account/login" method="post">

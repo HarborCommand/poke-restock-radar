@@ -293,7 +293,12 @@ test("customer password login register and reset are hashed token-based and gues
   assert.match(auth, /import bcrypt from "bcryptjs"/);
   assert.match(auth, /bcrypt\.hash\(password, 12\)/);
   assert.match(loginFunction, /bcrypt\.compare\(input\.password, account\.passwordHash\)/);
-  assert.match(registerFunction, /passwordHash: await hashCustomerPassword\(input\.password\)/);
+  assert.match(registerFunction, /select:\s*\{\s*id:\s*true,\s*status:\s*true,\s*passwordHash:\s*true,\s*displayName:\s*true\s*\}/);
+  assert.match(registerFunction, /const passwordHash = await hashCustomerPassword\(input\.password\)/);
+  assert.match(registerFunction, /passwordHash,\s*\r?\n\s*passwordSetAt/);
+  assert.match(registerFunction, /else if \(existingAccount\.status === "active" && !existingAccount\.passwordHash\)/);
+  assert.match(registerFunction, /prisma\.customerAccount\.update\(\{\s*\r?\n\s*where: \{ id: existingAccount\.id \}/);
+  assert.doesNotMatch(registerFunction, /else if \(existingAccount\.status === "active" && existingAccount\.passwordHash\)/);
   assert.match(registerFunction, /requestCustomerMagicLink/);
   assert.doesNotMatch(registerFunction, /emailVerifiedAt:\s*new Date|lastLoginAt:\s*new Date/);
   assert.match(loginFunction, /!account\.emailVerifiedAt/);
@@ -309,6 +314,7 @@ test("customer password login register and reset are hashed token-based and gues
   assert.match(resetFunction, /passwordSetAt:\s*now/);
   assert.match(resetFunction, /usedAt:\s*now/);
   assert.match(loginRoute, /Email or password is incorrect/);
+  assert.match(accountComponents, /Use the email sign-in link or reset your password if needed/);
   assert.match(loginRoute, /setCustomerSessionCookie/);
   assert.match(resetRoute, /setCustomerSessionCookie/);
   assert.match(resetRoute, /clearCustomerSessionCookie/);
@@ -319,6 +325,36 @@ test("customer password login register and reset are hashed token-based and gues
   assert.match(accountComponents, /Redemption coming soon/);
   assert.doesNotMatch(checkoutSession, /CustomerPasswordResetToken|passwordHash|passwordSetAt|customerPassword|redeem|points discount|reward discount/i);
   assert.doesNotMatch(auth + loginRoute + registerRoute + forgotRoute + resetRoute + accountComponents, /plainTextPassword|rawPassword|token:\s*token\b|cardNumber|cvc|payment_method_details|raw Stripe|webhook body|costBasis|supplier/i);
+});
+
+test("password registration repairs magic-link accounts without replacing existing passwords", () => {
+  const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const registerFunction = sourceSlice(auth, "export async function registerCustomerAccountWithPassword", "export async function authenticateCustomerPassword");
+  const verifyFunction = sourceSlice(auth, "export async function verifyCustomerMagicLink", "export function setCustomerSessionCookie");
+  const resetFunction = sourceSlice(auth, "export async function resetCustomerPassword", "export async function verifyCustomerMagicLink");
+  const addressRoute = readProjectFile("src/app/api/account/addresses/route.ts");
+  const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+
+  assert.match(registerFunction, /const existingAccount = await prisma\.customerAccount\.findUnique/);
+  assert.match(registerFunction, /passwordHash:\s*true/);
+  assert.match(registerFunction, /const passwordHash = await hashCustomerPassword\(input\.password\)/);
+  assert.match(registerFunction, /const passwordSetAt = new Date\(\)/);
+  assert.match(registerFunction, /if \(!existingAccount\) \{/);
+  assert.match(registerFunction, /else if \(existingAccount\.status === "active" && !existingAccount\.passwordHash\) \{/);
+  assert.match(registerFunction, /passwordHash,\s*\r?\n\s*passwordSetAt/);
+  assert.match(registerFunction, /\.\.\.\(displayName && !existingAccount\.displayName \? \{ displayName \} : \{\}\)/);
+  assert.doesNotMatch(registerFunction, /where:\s*\{\s*email\s*\},\s*\r?\n\s*data:\s*\{\s*passwordHash/);
+  assert.doesNotMatch(registerFunction, /passwordHash:\s*null|passwordSetAt:\s*null/);
+
+  assert.match(verifyFunction, /emailVerifiedAt: account\.emailVerifiedAt \?\? now/);
+  assert.match(verifyFunction, /lastLoginAt:\s*now/);
+  assert.doesNotMatch(verifyFunction, /passwordHash|passwordSetAt/);
+
+  assert.match(resetFunction, /passwordHash,\s*\r?\n\s*passwordSetAt:\s*now/);
+  assert.match(resetFunction, /emailVerifiedAt: record\.customerAccount\.emailVerifiedAt \?\? now/);
+  assert.match(addressRoute, /currentCustomerAccount\(\)/);
+  assert.match(addressRoute, /createCustomerSavedAddress\(account, input\.input\)/);
+  assert.match(accountComponents, /Use the email sign-in link or reset your password if needed/);
 });
 
 test("customer account dashboard and order pages require a verified customer session", () => {

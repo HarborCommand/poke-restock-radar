@@ -295,17 +295,29 @@ export async function registerCustomerAccountWithPassword(input: {
 
   const existingAccount = await prisma.customerAccount.findUnique({
     where: { email },
-    select: { id: true }
+    select: { id: true, status: true, passwordHash: true, displayName: true }
   });
+  const passwordHash = await hashCustomerPassword(input.password);
+  const passwordSetAt = new Date();
+  const displayName = input.displayName?.trim().slice(0, 120) || null;
 
   if (!existingAccount) {
     await prisma.customerAccount.create({
       data: {
         email,
-        displayName: input.displayName?.trim().slice(0, 120) || null,
+        displayName,
         status: "active",
-        passwordHash: await hashCustomerPassword(input.password),
-        passwordSetAt: new Date()
+        passwordHash,
+        passwordSetAt
+      }
+    });
+  } else if (existingAccount.status === "active" && !existingAccount.passwordHash) {
+    await prisma.customerAccount.update({
+      where: { id: existingAccount.id },
+      data: {
+        passwordHash,
+        passwordSetAt,
+        ...(displayName && !existingAccount.displayName ? { displayName } : {})
       }
     });
   }
