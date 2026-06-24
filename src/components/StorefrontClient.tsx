@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import {
   BadgeCheck,
   Check,
+  ChevronDown,
   ChevronRight,
   CreditCard,
   ExternalLink,
@@ -111,6 +112,14 @@ const homeCategories = [
   "Premium Collections",
   "Blisters",
   "Accessories"
+];
+
+const customerAccountMenuLinks = [
+  { href: "/account", label: "My Account" },
+  { href: "/account/orders", label: "My Orders" },
+  { href: "/account/rewards", label: "Rewards" },
+  { href: "/account/addresses", label: "Saved Addresses" },
+  { href: "/order-status", label: "Order Status" }
 ];
 
 const categorySubtitles: Record<string, string> = {
@@ -422,6 +431,8 @@ function ProductImage({
 export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: StorefrontSettingsDTO; homeHref?: string }) {
   const [count, setCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const storeName = displayStoreName(settings);
   const sportsCards = sportsCardsLink(settings);
   const accountSession = useCustomerAccountSession(settings.customerAccounts.enabled);
@@ -451,8 +462,31 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
     { href: "/contact", label: "Contact", external: false }
   ];
   if (settings.customerAccounts.enabled) {
-    nav.push({ href: accountHref, label: accountLabel, external: false, className: "gdg-mobile-account-nav" });
+    if (!accountSignedIn) {
+      nav.push({ href: accountHref, label: accountLabel, external: false, className: "gdg-mobile-account-nav" });
+    }
   }
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && accountMenuRef.current?.contains(target)) return;
+      setAccountMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setAccountMenuOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [accountMenuOpen]);
 
   return (
     <header className="gdg-header">
@@ -479,15 +513,53 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
             </Link>
           )
         )}
+        {settings.customerAccounts.enabled && accountSignedIn ? (
+          <div className="gdg-mobile-account-menu">
+            <p>Customer account</p>
+            {customerAccountMenuLinks.map((item) => (
+              <Link key={`mobile-${item.href}`} href={item.href} onClick={() => setMenuOpen(false)}>
+                {item.label}
+              </Link>
+            ))}
+            <form action="/api/account/logout" method="post">
+              <button type="submit">Sign Out</button>
+            </form>
+          </div>
+        ) : null}
       </nav>
       <div className="gdg-header-actions">
         <a className="gdg-icon-link" href="/shop" aria-label="Search products">
           <Search size={18} />
         </a>
-        {settings.customerAccounts.enabled ? (
-          <Link href={accountHref} className="gdg-account-entry" aria-label={accountLabel}>
+        {settings.customerAccounts.enabled && accountSignedIn ? (
+          <div className="gdg-account-menu" ref={accountMenuRef}>
+            <button
+              className="gdg-account-entry"
+              type="button"
+              aria-label="Open account menu"
+              aria-expanded={accountMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setAccountMenuOpen((value) => !value)}
+            >
+              <User size={16} aria-hidden="true" />
+              <span>My Account</span>
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>
+            <div className={`gdg-account-dropdown ${accountMenuOpen ? "open" : ""}`} role="menu" aria-label="Customer account menu">
+              {customerAccountMenuLinks.map((item) => (
+                <Link key={item.href} href={item.href} role="menuitem" onClick={() => setAccountMenuOpen(false)}>
+                  {item.label}
+                </Link>
+              ))}
+              <form action="/api/account/logout" method="post">
+                <button type="submit" role="menuitem">Sign Out</button>
+              </form>
+            </div>
+          </div>
+        ) : settings.customerAccounts.enabled ? (
+          <Link href="/account/login" className="gdg-account-entry" aria-label="Sign In / Create Account">
             <User size={16} aria-hidden="true" />
-            <span>{accountLabel}</span>
+            <span>Sign In / Create Account</span>
           </Link>
         ) : null}
         <Link href="/cart" className="gdg-cart-link" aria-label={`Cart with ${count} items`}>

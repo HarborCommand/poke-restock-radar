@@ -16311,6 +16311,12 @@ body:has(.shop-shell) {
   background: #f1f5f9;
 }
 
+.gdg-account-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 .gdg-account-entry {
   display: inline-flex;
   width: auto;
@@ -16325,7 +16331,83 @@ body:has(.shop-shell) {
   white-space: nowrap;
 }
 
+.gdg-account-entry svg {
+  flex: 0 0 auto;
+}
+
+.gdg-account-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 80;
+  display: none;
+  width: min(260px, calc(100vw - 28px));
+  padding: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+}
+
+.gdg-account-dropdown.open {
+  display: grid;
+  gap: 3px;
+}
+
+.gdg-account-dropdown a,
+.gdg-account-dropdown button,
+.gdg-mobile-account-menu a,
+.gdg-mobile-account-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 850;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.gdg-account-dropdown a,
+.gdg-account-dropdown button {
+  padding: 0 12px;
+}
+
+.gdg-account-dropdown a:hover,
+.gdg-account-dropdown button:hover,
+.gdg-account-dropdown a:focus-visible,
+.gdg-account-dropdown button:focus-visible,
+.gdg-mobile-account-menu a:hover,
+.gdg-mobile-account-menu button:hover,
+.gdg-mobile-account-menu a:focus-visible,
+.gdg-mobile-account-menu button:focus-visible {
+  outline: none;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.gdg-account-dropdown form,
+.gdg-mobile-account-menu form {
+  margin: 0;
+}
+
+.gdg-account-dropdown form {
+  padding-top: 3px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
 .gdg-mobile-account-nav {
+  display: none;
+}
+
+.gdg-mobile-account-menu {
   display: none;
 }
 
@@ -18790,8 +18872,38 @@ body:has(.shop-shell) {
     display: flex;
   }
 
+  .gdg-mobile-account-menu {
+    display: grid;
+    gap: 5px;
+    padding: 8px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    background: #fff9ec;
+  }
+
+  .gdg-mobile-account-menu p {
+    margin: 0 6px 4px;
+    color: #92400e;
+    font-size: 0.72rem;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .gdg-mobile-account-menu a,
+  .gdg-mobile-account-menu button {
+    min-height: 42px;
+    padding: 0 10px;
+    border-radius: 12px;
+    background: #ffffff;
+  }
+
   .gdg-header-actions {
     margin-left: auto;
+  }
+
+  .gdg-account-menu {
+    display: none;
   }
 
   .gdg-account-entry {
@@ -22177,6 +22289,183 @@ body .catalog-action-menu-floating {
   line-height: 1;
 }
 
+.gdg-rewards-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.36fr);
+  gap: 18px;
+  align-items: stretch;
+  overflow: hidden;
+  border-color: rgba(245, 166, 35, 0.32);
+  background:
+    radial-gradient(circle at 92% 10%, rgba(255, 184, 0, 0.22), transparent 28%),
+    linear-gradient(135deg, #ffffff 0%, #fff7eb 48%, #f7f2ea 100%);
+}
+
+.gdg-rewards-hero-copy {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.gdg-rewards-hero-copy h1 {
+  margin: 0;
+  color: #101828;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1;
+}
+
+.gdg-rewards-hero-copy p {
+  max-width: 620px;
+  margin: 0;
+  color: #344054;
+  font-size: 1rem;
+  font-weight: 760;
+  line-height: 1.55;
+}
+
+.gdg-rewards-coming-soon {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  border: 1px solid rgba(255, 106, 0, 0.24);
+  border-radius: 999px;
+  background: #fff7ed;
+  padding: 8px 12px;
+  color: #c2410c;
+  font-size: 0.82rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.gdg-rewards-balance-card {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  min-height: 190px;
+  border: 1px solid rgba(16, 24, 40, 0.1);
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 22px 58px rgba(16, 24, 40, 0.1);
+  padding: 22px;
+  text-align: center;
+}
+
+.gdg-rewards-balance-card span,
+.gdg-rewards-stat-row span {
+  color: #667085;
+  font-size: 0.74rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gdg-rewards-balance-card strong {
+  color: #101828;
+  font-size: clamp(3rem, 8vw, 5rem);
+  line-height: 0.9;
+}
+
+.gdg-rewards-balance-card small {
+  color: #475467;
+  font-size: 0.84rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.gdg-rewards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.gdg-rewards-level-card,
+.gdg-rewards-explainer,
+.gdg-rewards-activity-card,
+.gdg-rewards-links-card {
+  min-width: 0;
+}
+
+.gdg-rewards-stat-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.gdg-rewards-stat-row > div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  border-radius: 16px;
+  background: #fffdf7;
+  padding: 12px;
+}
+
+.gdg-rewards-stat-row strong {
+  color: #101828;
+  font-size: 1.25rem;
+}
+
+.gdg-rewards-explainer ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gdg-rewards-explainer li {
+  position: relative;
+  min-width: 0;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  border-radius: 14px;
+  background: #fffdf7;
+  padding: 11px 12px 11px 34px;
+  color: #344054;
+  font-size: 0.92rem;
+  font-weight: 760;
+  line-height: 1.4;
+}
+
+.gdg-rewards-explainer li::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 18px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffb800, #ff6a00);
+}
+
+.gdg-rewards-empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  border: 1px dashed rgba(16, 24, 40, 0.2);
+  border-radius: 18px;
+  background: #fff7eb;
+  padding: 18px;
+  color: #475467;
+}
+
+.gdg-rewards-empty-state svg {
+  color: #c2410c;
+}
+
+.gdg-rewards-empty-state strong {
+  color: #101828;
+}
+
+.gdg-rewards-empty-state p {
+  margin: 0;
+}
+
+.gdg-rewards-links-card .gdg-account-support-links {
+  grid-template-columns: 1fr;
+}
+
 .gdg-account-progress {
   overflow: hidden;
   height: 9px;
@@ -22682,7 +22971,9 @@ body .catalog-action-menu-floating {
   }
 
   .gdg-account-hero-dashboard,
-  .gdg-account-dashboard-layout {
+  .gdg-account-dashboard-layout,
+  .gdg-rewards-hero,
+  .gdg-rewards-grid {
     grid-template-columns: 1fr;
   }
 
@@ -22763,6 +23054,16 @@ body .catalog-action-menu-floating {
     display: none;
   }
 
+  .gdg-rewards-hero {
+    gap: 14px;
+  }
+
+  .gdg-rewards-balance-card {
+    min-height: auto;
+    justify-items: start;
+    text-align: left;
+  }
+
   .gdg-account-stat-card {
     min-height: auto;
   }
@@ -22799,6 +23100,11 @@ body .catalog-action-menu-floating {
   }
 
   .gdg-reward-activity-list article {
+    display: grid;
     align-items: flex-start;
+  }
+
+  .gdg-reward-activity-list b {
+    justify-self: start;
   }
 }

@@ -847,47 +847,124 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
 
 export function AccountRewards({ account, activity = [] }: { account: CurrentCustomerAccount; activity?: CustomerRewardActivityItem[] }) {
   const balance = account.rewardBalance;
+  const availablePoints = balance?.availablePoints ?? 0;
+  const lifetimeEarnedPoints = balance?.lifetimeEarnedPoints ?? 0;
+  const pendingPoints = balance?.pendingPoints ?? 0;
+  const nextThreshold = 500;
+  const progressPoints = Math.min(availablePoints, nextThreshold);
+  const progressPercent = Math.max(2, Math.min(100, Math.round((progressPoints / nextThreshold) * 100)));
   return (
     <>
       <AccountNavigation active="rewards" />
-      <div className="gdg-account-card hero">
-        <p className="gdg-overline">Rewards</p>
-        <h1>Track your GameDayGrabs points.</h1>
-        <p>Earn points on eligible purchases. You earn 1 point per eligible item-subtotal dollar after paid orders.</p>
-        <p>Shipping, taxes, refunds, and test orders do not earn points.</p>
-        <p className="gdg-account-notice">Redemption coming soon. Points are display-only and do not affect checkout totals yet.</p>
-        <div className="gdg-account-order-grid">
-          <div>
-            <span>Available points</span>
-            <strong>{balance?.availablePoints ?? 0}</strong>
-          </div>
-          <div>
-            <span>Lifetime earned</span>
-            <strong>{balance?.lifetimeEarnedPoints ?? 0}</strong>
-          </div>
-          <div>
-            <span>Pending</span>
-            <strong>{balance?.pendingPoints ?? 0}</strong>
-          </div>
+      <section className="gdg-account-card gdg-rewards-hero" aria-labelledby="gdg-rewards-title">
+        <div className="gdg-rewards-hero-copy">
+          <p className="gdg-overline">Customer rewards</p>
+          <h1 id="gdg-rewards-title">GameDayGrabs Rewards</h1>
+          <p>Earn points on eligible purchases and track your collector progress from your account.</p>
+          <span className="gdg-rewards-coming-soon">Redemption coming soon</span>
         </div>
-      </div>
-      <div className="gdg-account-card compact">
-        <h2>Recent activity</h2>
-        {activity.length ? (
-          <div className="gdg-reward-activity-list">
-            {activity.map((entry) => (
-              <article key={entry.id}>
-                <div>
-                  <strong>{entry.reason}</strong>
-                  <span>{entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {dateLabel(entry.createdAt)}</span>
-                </div>
-                <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
-              </article>
-            ))}
+        <div className="gdg-rewards-balance-card" aria-label="Current rewards balance">
+          <span>Available points</span>
+          <strong>{availablePoints}</strong>
+          <small>Points are display-only and do not affect checkout totals yet.</small>
+        </div>
+      </section>
+
+      <div className="gdg-rewards-grid">
+        <section className="gdg-account-card gdg-rewards-level-card" aria-labelledby="gdg-rewards-level-title">
+          <div className="gdg-account-panel-heading">
+            <div>
+              <p className="gdg-overline">Level</p>
+              <h2 id="gdg-rewards-level-title">Rookie Collector</h2>
+            </div>
+            <AccountIconBadge tone="gold" icon={Trophy} />
           </div>
-        ) : (
-          <p>No reward activity yet. Eligible paid orders will appear here after payment is confirmed.</p>
-        )}
+          <p className="gdg-account-panel-copy">Build points as eligible paid orders are confirmed.</p>
+          <div className="gdg-account-progress" aria-label={`${progressPoints} of ${nextThreshold} points toward Rookie Collector progress`}>
+            <span style={{ width: `${progressPercent}%` }} />
+          </div>
+          <div className="gdg-account-progress-label">
+            <span>{progressPoints} / {nextThreshold} points</span>
+            <span>Next threshold</span>
+          </div>
+          <div className="gdg-rewards-stat-row" aria-label="Rewards summary">
+            <div>
+              <span>Lifetime earned</span>
+              <strong>{lifetimeEarnedPoints}</strong>
+            </div>
+            <div>
+              <span>Pending</span>
+              <strong>{pendingPoints}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="gdg-account-card gdg-rewards-explainer" aria-labelledby="gdg-rewards-how-title">
+          <div className="gdg-account-panel-heading">
+            <div>
+              <p className="gdg-overline">How points work</p>
+              <h2 id="gdg-rewards-how-title">Points explainer</h2>
+            </div>
+            <AccountIconBadge tone="green" icon={ShieldCheck} />
+          </div>
+          <ul>
+            <li>Earn points on eligible purchases.</li>
+            <li>Points are added after payment is confirmed.</li>
+            <li>Shipping, taxes, refunds, canceled orders, discounts, and test/smoke orders do not earn points.</li>
+            <li>Refunds/cancellations may reverse points.</li>
+            <li>Points have no cash value.</li>
+          </ul>
+        </section>
+      </div>
+
+      <div className="gdg-rewards-grid">
+        <section className="gdg-account-card compact gdg-rewards-activity-card" aria-labelledby="gdg-rewards-activity-title">
+          <div className="gdg-account-panel-heading">
+            <div>
+              <p className="gdg-overline">Ledger</p>
+              <h2 id="gdg-rewards-activity-title">Recent activity</h2>
+            </div>
+          </div>
+          {activity.length ? (
+            <div className="gdg-reward-activity-list">
+              {activity.map((entry) => (
+                <article key={entry.id}>
+                  <div>
+                    <strong>{entry.reason}</strong>
+                    <span>{entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {dateLabel(entry.createdAt)}</span>
+                  </div>
+                  <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="gdg-rewards-empty-state">
+              <Gift size={24} aria-hidden="true" />
+              <strong>No reward activity yet.</strong>
+              <p>Eligible paid orders will appear here after payment is confirmed.</p>
+            </div>
+          )}
+        </section>
+
+        <aside className="gdg-account-card compact gdg-rewards-links-card" aria-labelledby="gdg-rewards-links-title">
+          <p className="gdg-overline">Helpful links</p>
+          <h2 id="gdg-rewards-links-title">Keep going</h2>
+          <p>Review your orders, read the current rewards rules, or contact support if something looks off.</p>
+          <div className="gdg-account-support-links">
+            <Link href="/account/orders">
+              <ShoppingBag size={15} aria-hidden="true" />
+              View orders
+            </Link>
+            <Link href="/policies">
+              <ShieldCheck size={15} aria-hidden="true" />
+              Rewards rules
+            </Link>
+            <a href={`mailto:${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`}>
+              <Headphones size={15} aria-hidden="true" />
+              Contact support
+            </a>
+          </div>
+        </aside>
       </div>
     </>
   );

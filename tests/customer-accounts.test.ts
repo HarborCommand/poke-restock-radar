@@ -252,6 +252,49 @@ test("storefront exposes optional account entry points without requiring login f
   assert.doesNotMatch(client, /redeem points|apply points|points discount|reward discount/i);
 });
 
+test("storefront header exposes a signed-in account dropdown and mobile account links", () => {
+  const client = readProjectFile("src/components/StorefrontClient.tsx");
+  const headerSource = sourceSlice(client, "export function StorefrontHeader", "export function StorefrontFooter");
+  const css = readProjectFile("src/app/globals.css");
+  const logoutRoute = readProjectFile("src/app/api/account/logout/route.ts");
+
+  assert.match(client, /customerAccountMenuLinks/);
+  for (const [label, href] of [
+    ["My Account", "/account"],
+    ["My Orders", "/account/orders"],
+    ["Rewards", "/account/rewards"],
+    ["Saved Addresses", "/account/addresses"],
+    ["Order Status", "/order-status"]
+  ]) {
+    assert.match(client, new RegExp(`label: "${label}"`));
+    assert.match(client, new RegExp(`href: "${href.replaceAll("/", "\\/")}"`));
+  }
+
+  assert.match(client, /accountSignedIn \? "\/account" : "\/account\/login"/);
+  assert.match(client, /Sign In \/ Create Account/);
+  assert.match(client, /aria-haspopup="menu"/);
+  assert.match(client, /aria-expanded=\{accountMenuOpen\}/);
+  assert.match(client, /role="menu"/);
+  assert.match(client, /role="menuitem"/);
+  assert.match(client, /document\.addEventListener\("pointerdown", handlePointerDown\)/);
+  assert.match(client, /event\.key === "Escape"/);
+  assert.match(client, /action="\/api\/account\/logout"/);
+  assert.match(client, /gdg-mobile-account-menu/);
+  assert.match(client, /setMenuOpen\(false\)/);
+  assert.match(logoutRoute, /clearCustomerSessionCookie/);
+  assert.match(logoutRoute, /status:\s*303/);
+
+  assert.match(css, /\.gdg-account-menu/);
+  assert.match(css, /\.gdg-account-dropdown/);
+  assert.match(css, /\.gdg-account-dropdown\.open/);
+  assert.match(css, /width: min\(260px, calc\(100vw - 28px\)\)/);
+  assert.match(css, /\.gdg-mobile-account-menu/);
+  assert.match(css, /@media \(max-width: 820px\)/);
+  assert.match(css, /\.gdg-account-menu\s*\{\s*\r?\n\s*display: none/);
+  assert.doesNotMatch(headerSource, /redeem points|apply points|points discount|reward discount|coupon/i);
+  assert.doesNotMatch(headerSource, /passwordHash|tokenHash|magic-link token|reset token|stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|adminNotes|costBasis|supplier|private lot/i);
+});
+
 test("customer magic link tokens are hashed, one-time, and stored outside admin auth", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const requestRoute = readProjectFile("src/app/api/account/magic-link/request/route.ts");
@@ -564,15 +607,34 @@ test("refund cancellation and test markers reverse rewards without redemption", 
 test("customer rewards page shows balance activity and redemption coming soon", () => {
   const rewardsPage = readProjectFile("src/app/account/rewards/page.tsx");
   const components = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const accountRewards = sourceSlice(components, "export function AccountRewards", "export function AccountAddresses");
 
   assert.match(rewardsPage, /listCustomerRewardActivity\(account\)/);
-  assert.match(components, /Track your GameDayGrabs points/);
-  assert.match(components, /Available points/);
-  assert.match(components, /Lifetime earned/);
-  assert.match(components, /Recent activity/);
-  assert.match(components, /Redemption coming soon/);
-  assert.match(components, /Points are display-only and do not affect checkout totals yet/);
-  assert.doesNotMatch(components, /redeem points|apply points|discount/i);
+  assert.match(accountRewards, /GameDayGrabs Rewards/);
+  assert.match(accountRewards, /gdg-rewards-hero/);
+  assert.match(accountRewards, /Available points/);
+  assert.match(accountRewards, /availablePoints/);
+  assert.match(accountRewards, /Redemption coming soon/);
+  assert.match(accountRewards, /Points are display-only and do not affect checkout totals yet/);
+  assert.match(accountRewards, /Rookie Collector/);
+  assert.match(accountRewards, /nextThreshold = 500/);
+  assert.match(accountRewards, /gdg-account-progress/);
+  assert.match(accountRewards, /Earn points on eligible purchases/);
+  assert.match(accountRewards, /Points are added after payment is confirmed/);
+  assert.match(accountRewards, /Shipping, taxes, refunds, canceled orders, discounts, and test\/smoke orders do not earn points/);
+  assert.match(accountRewards, /Refunds\/cancellations may reverse points/);
+  assert.match(accountRewards, /Points have no cash value/);
+  assert.match(accountRewards, /Recent activity/);
+  assert.match(accountRewards, /activity\.map/);
+  assert.match(accountRewards, /entry\.reason/);
+  assert.match(accountRewards, /entry\.orderNumber/);
+  assert.match(accountRewards, /No reward activity yet/);
+  assert.match(accountRewards, /Eligible paid orders will appear here after payment is confirmed/);
+  assert.match(accountRewards, /View orders/);
+  assert.match(accountRewards, /Rewards rules/);
+  assert.match(accountRewards, /Contact support/);
+  assert.doesNotMatch(accountRewards, /redeem points|apply points|points discount|reward discount|coupon/i);
+  assert.doesNotMatch(accountRewards, /stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|webhook body|adminNotes|costBasis|supplier|private lot/i);
 });
 
 test("success page and order confirmation include safe optional account rewards CTA", () => {
