@@ -1,32 +1,36 @@
-import { CustomerAccountShell, CustomerLoginPageContent } from "@/components/CustomerAccountPages";
+import { AccountForgotPasswordPageContent, CustomerAccountShell } from "@/components/CustomerAccountPages";
 import { currentCustomerAccount } from "@/lib/customer-account-auth";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
 
-const loginUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/account/login`;
-const loginTitle = "Customer Login | GameDayGrabs LLC";
-const loginDescription = "Sign in to your optional GameDayGrabs customer account with a password or secure email link.";
+const forgotPasswordUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/account/forgot-password`;
+const forgotPasswordTitle = "Reset Customer Password | GameDayGrabs LLC";
+const forgotPasswordDescription = "Request a secure GameDayGrabs customer account password reset link.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
-  title: loginTitle,
-  description: loginDescription,
+  title: forgotPasswordTitle,
+  description: forgotPasswordDescription,
   alternates: {
-    canonical: loginUrl
+    canonical: forgotPasswordUrl
+  },
+  robots: {
+    index: false,
+    follow: false
   },
   openGraph: {
-    title: loginTitle,
-    description: loginDescription,
-    url: loginUrl,
+    title: forgotPasswordTitle,
+    description: forgotPasswordDescription,
+    url: forgotPasswordUrl,
     siteName: "GameDayGrabs LLC",
     images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
   },
   twitter: {
     card: "summary_large_image",
-    title: loginTitle,
-    description: loginDescription,
+    title: forgotPasswordTitle,
+    description: forgotPasswordDescription,
     images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
   },
   other: {
@@ -34,7 +38,7 @@ export const metadata = {
   }
 };
 
-type AccountLoginPageProps = {
+type AccountForgotPasswordPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
@@ -42,7 +46,7 @@ function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
 }
 
-export default async function AccountLoginPage({ searchParams }: AccountLoginPageProps) {
+export default async function AccountForgotPasswordPage({ searchParams }: AccountForgotPasswordPageProps) {
   const [params, account] = await Promise.all([
     searchParams ? searchParams : Promise.resolve({} as Record<string, string | string[] | undefined>),
     currentCustomerAccount()
@@ -50,16 +54,7 @@ export default async function AccountLoginPage({ searchParams }: AccountLoginPag
 
   return (
     <CustomerAccountShell>
-      <CustomerLoginPageContent
-        account={account}
-        sent={firstParam(params.sent)}
-        error={firstParam(params.error)}
-        signedOut={firstParam(params.signedOut)}
-        accountStatus={firstParam(params.accountStatus)}
-        mode={firstParam(params.mode)}
-        loginError={firstParam(params.loginError)}
-        registerError={firstParam(params.registerError)}
-      />
+      <AccountForgotPasswordPageContent account={account} resetStatus={firstParam(params.resetStatus)} />
     </CustomerAccountShell>
   );
 }

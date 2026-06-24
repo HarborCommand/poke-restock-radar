@@ -1074,6 +1074,8 @@ model CustomerAccount {
   displayName         String?
   phone               String?
   status              String                   @default("active")
+  passwordHash        String?
+  passwordSetAt       DateTime?
   emailVerifiedAt     DateTime?
   lastLoginAt         DateTime?
   createdAt           DateTime                 @default(now())
@@ -1083,6 +1085,7 @@ model CustomerAccount {
   orders              StorefrontOrder[]
   savedAddresses      CustomerSavedAddress[]
   magicLinkTokens     CustomerMagicLinkToken[]
+  passwordResetTokens CustomerPasswordResetToken[]
   rewardLedgerEntries RewardLedgerEntry[]
   rewardBalance       RewardBalance?
 
@@ -1090,6 +1093,20 @@ model CustomerAccount {
   @@index([email])
   @@index([status])
   @@index([emailVerifiedAt])
+}
+
+model CustomerPasswordResetToken {
+  id                String          @id @default(cuid())
+  customerAccountId String
+  tokenHash         String          @unique
+  expiresAt         DateTime
+  usedAt            DateTime?
+  createdAt         DateTime        @default(now())
+  customerAccount   CustomerAccount @relation(fields: [customerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([customerAccountId])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 model CustomerSavedAddress {

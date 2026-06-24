@@ -23,7 +23,7 @@ test("customer account and rewards feature flags default disabled", () => {
   assert.equal(config.customerAccountsEnabled, false);
   assert.equal(config.customerRewardsEnabled, false);
   assert.equal(config.customerRewardRedemptionEnabled, false);
-  assert.equal(config.accountProvider, "magic_link");
+  assert.equal(config.accountProvider, "password_magic_link");
   assert.equal(config.rewardsProvider, "internal_ledger");
   assert.deepEqual(config.envVars, [
     "CUSTOMER_ACCOUNTS_ENABLED",
@@ -52,6 +52,7 @@ test("customer account and rewards schema foundation exists without touching che
     "CustomerAccount",
     "CustomerSavedAddress",
     "CustomerMagicLinkToken",
+    "CustomerPasswordResetToken",
     "RewardLedgerEntry",
     "RewardBalance"
   ]) {
@@ -62,6 +63,8 @@ test("customer account and rewards schema foundation exists without touching che
   assert.match(schema, /status\s+String\s+@default\("active"\)/);
   assert.match(schema, /emailVerifiedAt\s+DateTime\?/);
   assert.match(schema, /lastLoginAt\s+DateTime\?/);
+  assert.match(schema, /passwordHash\s+String\?/);
+  assert.match(schema, /passwordSetAt\s+DateTime\?/);
   assert.match(schema, /tokenHash\s+String\s+@unique/);
   assert.match(schema, /expiresAt\s+DateTime/);
   assert.match(schema, /usedAt\s+DateTime\?/);
@@ -106,10 +109,30 @@ test("reward ledger idempotency migration is additive", () => {
   assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "RewardLedgerEntry_idempotencyKey_key"/);
 });
 
+test("customer password account migration is additive and stores only hashes", () => {
+  const migration = readProjectFile("prisma/migrations/20260623064500_customer_password_accounts/migration.sql");
+  const schema = readProjectFile("prisma/schema.prisma");
+  const customerPasswordSchema = sourceSlice(schema, "model CustomerAccount", "model CustomerSavedAddress");
+  const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
+
+  assert.match(migration, /ALTER TABLE "CustomerAccount" ADD COLUMN "passwordHash" TEXT/);
+  assert.match(migration, /ALTER TABLE "CustomerAccount" ADD COLUMN "passwordSetAt" TIMESTAMP\(3\)/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "CustomerPasswordResetToken"/);
+  assert.match(migration, /"tokenHash" TEXT NOT NULL/);
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerPasswordResetToken_tokenHash_key"/);
+  assert.match(schema, /model CustomerPasswordResetToken \{/);
+  assert.match(schema, /passwordResetTokens CustomerPasswordResetToken\[\]/);
+  assert.match(schema, /passwordHash\s+String\?/);
+  assert.match(sqliteInit, /"passwordHash" TEXT/);
+  assert.match(sqliteInit, /CREATE TABLE IF NOT EXISTS "CustomerPasswordResetToken"/);
+  assert.doesNotMatch(migration, /\bDROP\b|\bDELETE\s+FROM\b|\bTRUNCATE\b|\bUPDATE\s+"|ALTER COLUMN|SET NOT NULL/i);
+  assert.doesNotMatch(migration + customerPasswordSchema, /\bpassword\s+String\b|plainTextPassword|rawPassword|cardNumber|cvc|payment_method_details|raw Stripe|webhook body/i);
+});
+
 test("customer account SQLite bootstrap stays aligned with the foundation schema", () => {
   const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
 
-  for (const table of ["CustomerAccount", "CustomerSavedAddress", "CustomerMagicLinkToken", "RewardLedgerEntry", "RewardBalance"]) {
+  for (const table of ["CustomerAccount", "CustomerSavedAddress", "CustomerMagicLinkToken", "CustomerPasswordResetToken", "RewardLedgerEntry", "RewardBalance"]) {
     assert.match(sqliteInit, new RegExp(`CREATE TABLE IF NOT EXISTS "${table}"`));
   }
 
@@ -117,6 +140,7 @@ test("customer account SQLite bootstrap stays aligned with the foundation schema
   assert.match(sqliteInit, /ALTER TABLE "StorefrontCustomer" ADD COLUMN "customerAccountId" TEXT/);
   assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerAccount_email_key"/);
   assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerMagicLinkToken_tokenHash_key"/);
+  assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerPasswordResetToken_tokenHash_key"/);
   assert.match(sqliteInit, /CREATE INDEX IF NOT EXISTS "RewardLedgerEntry_customerAccountId_idx"/);
   assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "RewardLedgerEntry_idempotencyKey_key"/);
 });
@@ -127,8 +151,14 @@ test("customer account routes are feature-flagged and keep guest checkout visibl
   const ordersPage = readProjectFile("src/app/account/orders/page.tsx");
   const rewardsPage = readProjectFile("src/app/account/rewards/page.tsx");
   const addressesPage = readProjectFile("src/app/account/addresses/page.tsx");
+  const forgotPasswordPage = readProjectFile("src/app/account/forgot-password/page.tsx");
+  const resetPasswordPage = readProjectFile("src/app/account/reset-password/page.tsx");
   const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
   const magicLinkRequestRoute = readProjectFile("src/app/api/account/magic-link/request/route.ts");
+  const passwordLoginRoute = readProjectFile("src/app/api/account/login/route.ts");
+  const registerRoute = readProjectFile("src/app/api/account/register/route.ts");
+  const forgotPasswordRoute = readProjectFile("src/app/api/account/forgot-password/route.ts");
+  const resetPasswordRoute = readProjectFile("src/app/api/account/reset-password/route.ts");
 
   for (const source of [accountPage, ordersPage, rewardsPage, addressesPage]) {
     assert.match(source, /customerAccountsEnabled\(\)/);
@@ -137,12 +167,20 @@ test("customer account routes are feature-flagged and keep guest checkout visibl
   }
 
   assert.match(loginPage, /CustomerLoginPageContent/);
+  assert.match(forgotPasswordPage, /AccountForgotPasswordPageContent/);
+  assert.match(resetPasswordPage, /AccountResetPasswordPageContent/);
   assert.match(magicLinkRequestRoute, /customerAccountsEnabled\(\)/);
   assert.match(magicLinkRequestRoute, /status:\s*404/);
+  for (const route of [passwordLoginRoute, registerRoute, forgotPasswordRoute, resetPasswordRoute]) {
+    assert.match(route, /customerAccountsEnabled\(\)/);
+    assert.match(route, /status:\s*404/);
+  }
   assert.match(accountComponents, /Customer accounts coming soon/);
   assert.match(accountComponents, /Shop as Guest/);
   assert.match(accountComponents, /guest checkout remains available|You do not need an account to\s+place an order/i);
   assert.match(accountComponents, /action="\/api\/account\/magic-link\/request"/);
+  assert.match(accountComponents, /action="\/api\/account\/login"/);
+  assert.match(accountComponents, /action="\/api\/account\/register"/);
   assert.match(accountComponents, /type="email"/);
 });
 
@@ -152,9 +190,10 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   const cartClient = readProjectFile("src/components/StorefrontClient.tsx");
 
   assert.match(accountComponents, /Sign in or create an account/);
-  assert.match(accountComponents, /No password needed\. We'll send a secure sign-in link to your email\./);
-  assert.match(accountComponents, /Enter your email and we'll send a secure sign-in link\./);
-  assert.match(accountComponents, /If you do not have an account yet, we'll create one after you verify your email\./);
+  assert.match(accountComponents, /No password needed if you prefer email login\. We'll send a secure sign-in link to your email\./);
+  assert.match(accountComponents, /Forgot Password\?/);
+  assert.match(accountComponents, /Create Account/);
+  assert.match(accountComponents, /Email sign-in link/);
   assert.match(accountComponents, /Guest checkout is always available\./);
   for (const label of ["My Orders", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
     assert.match(accountComponents, new RegExp(label));
@@ -163,6 +202,8 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountComponents, /Redemption coming soon/);
   assert.doesNotMatch(accountComponents, /Redeem points|Apply points|reward discount|points discount/i);
   assert.match(css, /\.gdg-address-form/);
+  assert.match(css, /\.gdg-account-tabs/);
+  assert.match(css, /\.gdg-account-magic-option/);
   assert.match(css, /@media \(max-width: 640px\)/);
   assert.match(css, /\.gdg-address-form,\s*\r?\n\s*\.gdg-address-actions\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(cartClient, /No account required/);
@@ -229,6 +270,55 @@ test("customer magic link email uses existing provider safely without raw paymen
   assert.match(requestFunction, /customer_account_magic_link/);
   assert.match(requestFunction, /idempotencyKey:\s*`customer-account-magic-link:\$\{tokenHash\}`/);
   assert.doesNotMatch(requestFunction, /card number|cardNumber|cvc|payment_method|paymentMethod|raw Stripe|webhook body|stripePaymentIntent|stripeCheckoutSession/i);
+});
+
+test("customer password login register and reset are hashed token-based and guest checkout safe", () => {
+  const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const loginRoute = readProjectFile("src/app/api/account/login/route.ts");
+  const registerRoute = readProjectFile("src/app/api/account/register/route.ts");
+  const forgotRoute = readProjectFile("src/app/api/account/forgot-password/route.ts");
+  const resetRoute = readProjectFile("src/app/api/account/reset-password/route.ts");
+  const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const checkoutSession = sourceSlice(
+    storefront,
+    "export async function createCheckoutSession",
+    "export async function createInvoiceRequest"
+  );
+  const registerFunction = sourceSlice(auth, "export async function registerCustomerAccountWithPassword", "export async function authenticateCustomerPassword");
+  const loginFunction = sourceSlice(auth, "export async function authenticateCustomerPassword", "export async function requestCustomerPasswordReset");
+  const forgotFunction = sourceSlice(auth, "export async function requestCustomerPasswordReset", "export async function resetCustomerPassword");
+  const resetFunction = sourceSlice(auth, "export async function resetCustomerPassword", "export async function verifyCustomerMagicLink");
+
+  assert.match(auth, /import bcrypt from "bcryptjs"/);
+  assert.match(auth, /bcrypt\.hash\(password, 12\)/);
+  assert.match(loginFunction, /bcrypt\.compare\(input\.password, account\.passwordHash\)/);
+  assert.match(registerFunction, /passwordHash: await hashCustomerPassword\(input\.password\)/);
+  assert.match(registerFunction, /requestCustomerMagicLink/);
+  assert.doesNotMatch(registerFunction, /emailVerifiedAt:\s*new Date|lastLoginAt:\s*new Date/);
+  assert.match(loginFunction, /!account\.emailVerifiedAt/);
+  assert.match(loginFunction, /verificationEmail = await requestCustomerMagicLink/);
+  assert.match(forgotFunction, /randomBytes\(32\)\.toString\("base64url"\)/);
+  assert.match(forgotFunction, /hashCustomerPasswordResetToken\(token\)/);
+  assert.match(forgotFunction, /customerPasswordResetToken\.create/);
+  assert.match(forgotFunction, /Reset your GameDayGrabs account password/);
+  assert.match(forgotFunction, /idempotencyKey:\s*`customer-account-password-reset:\$\{tokenHash\}`/);
+  assert.match(resetFunction, /customerPasswordResetToken\.findUnique/);
+  assert.match(resetFunction, /record\.usedAt/);
+  assert.match(resetFunction, /record\.expiresAt\.getTime\(\)\s*<=\s*now\.getTime\(\)/);
+  assert.match(resetFunction, /passwordSetAt:\s*now/);
+  assert.match(resetFunction, /usedAt:\s*now/);
+  assert.match(loginRoute, /Email or password is incorrect/);
+  assert.match(loginRoute, /setCustomerSessionCookie/);
+  assert.match(resetRoute, /setCustomerSessionCookie/);
+  assert.match(resetRoute, /clearCustomerSessionCookie/);
+  assert.match(registerRoute, /registerCustomerAccountWithPassword/);
+  assert.match(forgotRoute, /sent_if_eligible/);
+  assert.match(accountComponents, /No password needed if you prefer email login/);
+  assert.match(accountComponents, /Guest checkout is always available/);
+  assert.match(accountComponents, /Redemption coming soon/);
+  assert.doesNotMatch(checkoutSession, /CustomerPasswordResetToken|passwordHash|passwordSetAt|customerPassword|redeem|points discount|reward discount/i);
+  assert.doesNotMatch(auth + loginRoute + registerRoute + forgotRoute + resetRoute + accountComponents, /plainTextPassword|rawPassword|token:\s*token\b|cardNumber|cvc|payment_method_details|raw Stripe|webhook body|costBasis|supplier/i);
 });
 
 test("customer account dashboard and order pages require a verified customer session", () => {

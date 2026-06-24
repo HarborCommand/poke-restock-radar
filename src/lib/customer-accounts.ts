@@ -3,7 +3,7 @@ export type CustomerAccountFeatureConfig = {
   customerRewardsEnabled: boolean;
   customerRewardRedemptionEnabled: boolean;
   customerRewardAdminAdjustmentsEnabled: boolean;
-  accountProvider: "magic_link";
+  accountProvider: "password_magic_link";
   rewardsProvider: "internal_ledger";
   envVars: string[];
 };
@@ -25,7 +25,7 @@ export function customerAccountFeatureConfig(env: Record<string, string | undefi
     customerRewardsEnabled: envFlag(env, "CUSTOMER_REWARDS_ENABLED"),
     customerRewardRedemptionEnabled: envFlag(env, "CUSTOMER_REWARD_REDEMPTION_ENABLED"),
     customerRewardAdminAdjustmentsEnabled: envFlag(env, "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED"),
-    accountProvider: "magic_link",
+    accountProvider: "password_magic_link",
     rewardsProvider: "internal_ledger",
     envVars: customerAccountEnvVars
   };

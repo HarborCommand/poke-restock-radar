@@ -139,7 +139,7 @@ test("health stays OK when required systems pass and optional providers are disa
     assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardAdminAdjustmentsEnabled, false);
-    assert.equal(report.providers.customerAccounts.accountProvider, "magic_link");
+    assert.equal(report.providers.customerAccounts.accountProvider, "password_magic_link");
     assert.equal(report.providers.customerAccounts.rewardsProvider, "internal_ledger");
     assert.match(report.providers.customerAccounts.message, /guest checkout remains available/);
     assert.equal(statusForReport(report.warnings), "OK");

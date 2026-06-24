@@ -665,6 +665,8 @@ const statements = [
     "displayName" TEXT,
     "phone" TEXT,
     "status" TEXT NOT NULL DEFAULT 'active',
+    "passwordHash" TEXT,
+    "passwordSetAt" DATETIME,
     "emailVerifiedAt" DATETIME,
     "lastLoginAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -695,6 +697,15 @@ const statements = [
     "usedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "CustomerMagicLinkToken_customerAccountId_fkey" FOREIGN KEY ("customerAccountId") REFERENCES "CustomerAccount" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS "CustomerPasswordResetToken" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "customerAccountId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL UNIQUE,
+    "expiresAt" DATETIME NOT NULL,
+    "usedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "CustomerPasswordResetToken_customerAccountId_fkey" FOREIGN KEY ("customerAccountId") REFERENCES "CustomerAccount" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
   `CREATE TABLE IF NOT EXISTS "StorefrontOrder" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -1426,6 +1437,10 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS "CustomerMagicLinkToken_email_idx" ON "CustomerMagicLinkToken"("email")`,
   `CREATE INDEX IF NOT EXISTS "CustomerMagicLinkToken_expiresAt_idx" ON "CustomerMagicLinkToken"("expiresAt")`,
   `CREATE INDEX IF NOT EXISTS "CustomerMagicLinkToken_usedAt_idx" ON "CustomerMagicLinkToken"("usedAt")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "CustomerPasswordResetToken_tokenHash_key" ON "CustomerPasswordResetToken"("tokenHash")`,
+  `CREATE INDEX IF NOT EXISTS "CustomerPasswordResetToken_customerAccountId_idx" ON "CustomerPasswordResetToken"("customerAccountId")`,
+  `CREATE INDEX IF NOT EXISTS "CustomerPasswordResetToken_expiresAt_idx" ON "CustomerPasswordResetToken"("expiresAt")`,
+  `CREATE INDEX IF NOT EXISTS "CustomerPasswordResetToken_usedAt_idx" ON "CustomerPasswordResetToken"("usedAt")`,
   `CREATE INDEX IF NOT EXISTS "StorefrontOrder_userId_idx" ON "StorefrontOrder"("userId")`,
   `CREATE INDEX IF NOT EXISTS "StorefrontOrder_customerId_idx" ON "StorefrontOrder"("customerId")`,
   `CREATE INDEX IF NOT EXISTS "StorefrontOrder_customerAccountId_idx" ON "StorefrontOrder"("customerAccountId")`,

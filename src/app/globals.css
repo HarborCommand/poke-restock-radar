@@ -21782,6 +21782,35 @@ body .catalog-action-menu-floating {
   margin-top: 8px;
 }
 
+.gdg-account-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  width: min(100%, 420px);
+  border: 1px solid rgba(15, 61, 46, 0.12);
+  border-radius: 999px;
+  background: #fffdf6;
+  padding: 4px;
+}
+
+.gdg-account-tabs a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 999px;
+  color: rgba(11, 47, 36, 0.72);
+  font-size: 0.88rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.gdg-account-tabs a.active {
+  background: #0b2f24;
+  color: #ffffff;
+  box-shadow: 0 10px 26px rgba(15, 61, 46, 0.18);
+}
+
 .gdg-account-form label {
   display: grid;
   gap: 8px;
@@ -21797,6 +21826,44 @@ body .catalog-action-menu-floating {
   background: #fffdf6;
   color: #0b2f24;
   font: inherit;
+}
+
+.gdg-account-form.compact {
+  max-width: none;
+}
+
+.gdg-account-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.gdg-account-form-row .gdg-primary-button {
+  flex: 1 1 220px;
+}
+
+.gdg-inline-link {
+  color: #0b2f24;
+  font-weight: 850;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.gdg-account-magic-option {
+  display: grid;
+  gap: 10px;
+  max-width: 560px;
+  border: 1px solid rgba(15, 61, 46, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 253, 246, 0.84);
+  padding: 16px;
+}
+
+.gdg-account-magic-option h2 {
+  margin: 0;
+  color: #0b2f24;
+  font-size: 1rem;
 }
 
 .gdg-account-mini-grid {

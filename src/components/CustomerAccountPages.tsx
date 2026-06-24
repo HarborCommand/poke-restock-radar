@@ -30,6 +30,18 @@ function addressStatusMessage(value: string | null | undefined) {
   return null;
 }
 
+function accountStatusMessage(value: string | null | undefined) {
+  if (value === "check_email") return "If that email can receive account links, check your inbox to verify and sign in.";
+  if (value === "verify_email") return "Check your inbox for a secure verification link before signing in.";
+  if (value === "password_reset") return "Your password has been updated.";
+  return null;
+}
+
+function resetStatusMessage(value: string | null | undefined) {
+  if (value === "sent") return "If that email matches an account, a password reset link has been sent.";
+  return null;
+}
+
 export async function CustomerAccountShell({ children }: { children: ReactNode }) {
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
@@ -64,10 +76,11 @@ export function AccountSignInRequired({ title = "Sign in to view your account." 
       <p className="gdg-overline">Optional Account</p>
       <h1>{title}</h1>
       <p>
-        Use a secure email link to view your order history, rewards, saved addresses, and support links. Guest checkout remains available.
+        Sign in with your password or a secure email link to view your order history, rewards, saved addresses, and
+        support links. Guest checkout remains available.
       </p>
       <div className="gdg-account-actions">
-        <Link href="/account/login" className="gdg-primary-button">Email Me a Sign-In Link</Link>
+        <Link href="/account/login" className="gdg-primary-button">Sign In</Link>
         <Link href="/order-status" className="gdg-secondary-button">Use Guest Order Lookup</Link>
       </div>
     </div>
@@ -146,11 +159,19 @@ export function CustomerLoginPageContent({
   sent,
   error,
   signedOut,
+  accountStatus,
+  mode,
+  loginError,
+  registerError,
   account
 }: {
   sent?: string | null;
   error?: string | null;
   signedOut?: string | null;
+  accountStatus?: string | null;
+  mode?: string | null;
+  loginError?: string | null;
+  registerError?: string | null;
   account: CurrentCustomerAccount | null;
 }) {
   if (!customerAccountsEnabled()) return <CustomerAccountsComingSoon />;
@@ -170,17 +191,22 @@ export function CustomerLoginPageContent({
     );
   }
 
+  const activeMode = mode === "create" ? "create" : "signin";
+  const statusMessage = accountStatusMessage(accountStatus);
+
   return (
     <div className="gdg-account-card hero">
       <p className="gdg-overline">Customer Login</p>
       <h1>Sign in or create an account.</h1>
       <p>
-        No password needed. We'll send a secure sign-in link to your email.
+        No password needed if you prefer email login. We'll send a secure sign-in link to your email.
       </p>
-      <p>Enter your email and we'll send a secure sign-in link.</p>
-      <p>If you do not have an account yet, we'll create one after you verify your email.</p>
-      <p>Guest checkout is always available.</p>
-      <p>Customer accounts are optional. Use the same email you used at checkout to see matching order history after verification.</p>
+      <p>Customer accounts are optional. Guest checkout is always available.</p>
+      <div className="gdg-account-tabs" role="tablist" aria-label="Customer account options">
+        <Link href="/account/login?mode=signin" className={activeMode === "signin" ? "active" : ""}>Sign In</Link>
+        <Link href="/account/login?mode=create" className={activeMode === "create" ? "active" : ""}>Create Account</Link>
+      </div>
+      {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
       {sent ? (
         <p className="gdg-account-notice good">
           If that email can receive account links, a sign-in link has been sent. Check your inbox.
@@ -188,15 +214,148 @@ export function CustomerLoginPageContent({
       ) : null}
       {signedOut ? <p className="gdg-account-notice">You have been signed out.</p> : null}
       {error ? <p className="gdg-account-notice error">That sign-in link is invalid, expired, or already used.</p> : null}
-      <form className="gdg-account-form" action="/api/account/magic-link/request" method="post">
+      {loginError ? <p className="gdg-account-notice error">Email or password is incorrect.</p> : null}
+      {registerError ? <p className="gdg-account-notice error">We could not create that account. Check the fields and try again.</p> : null}
+      {activeMode === "signin" ? (
+        <form className="gdg-account-form" action="/api/account/login" method="post">
+          <label>
+            Email address
+            <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" autoComplete="current-password" required placeholder="Your password" />
+          </label>
+          <div className="gdg-account-form-row">
+            <button className="gdg-primary-button wide" type="submit">Sign In</button>
+            <Link href="/account/forgot-password" className="gdg-inline-link">Forgot Password?</Link>
+          </div>
+        </form>
+      ) : (
+        <form className="gdg-account-form" action="/api/account/register" method="post">
+          <label>
+            Name
+            <input name="displayName" type="text" autoComplete="name" placeholder="Your name" />
+          </label>
+          <label>
+            Email address
+            <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" autoComplete="new-password" minLength={8} required placeholder="At least 8 characters" />
+          </label>
+          <label>
+            Confirm password
+            <input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required placeholder="Re-enter password" />
+          </label>
+          <button className="gdg-primary-button wide" type="submit">Create Account</button>
+        </form>
+      )}
+      <div className="gdg-account-magic-option">
+        <h2>Email sign-in link</h2>
+        <p>Prefer not to use a password? We can send a secure one-time sign-in link instead.</p>
+        <form className="gdg-account-form compact" action="/api/account/magic-link/request" method="post">
+          <label>
+            Email address
+            <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
+          </label>
+          <button className="gdg-secondary-button" type="submit">Send Sign-In Link</button>
+        </form>
+      </div>
+      <p className="gdg-account-helper">
+        Use the same email you used at checkout to see matching order history after verification. This does not change
+        checkout; you can still buy as a guest.
+      </p>
+    </div>
+  );
+}
+
+export function AccountForgotPasswordPageContent({
+  resetStatus,
+  account
+}: {
+  resetStatus?: string | null;
+  account: CurrentCustomerAccount | null;
+}) {
+  if (!customerAccountsEnabled()) return <CustomerAccountsComingSoon />;
+  if (account) {
+    return (
+      <div className="gdg-account-card hero">
+        <p className="gdg-overline">Password</p>
+        <h1>You are already signed in.</h1>
+        <p>You are signed in as {account.email}. You can sign out first if you need to reset a different account.</p>
+        <div className="gdg-account-actions">
+          <Link href="/account" className="gdg-primary-button">Go to Account</Link>
+          <form action="/api/account/logout" method="post">
+            <button className="gdg-secondary-button" type="submit">Sign Out</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+  const statusMessage = resetStatusMessage(resetStatus);
+  return (
+    <div className="gdg-account-card hero">
+      <p className="gdg-overline">Forgot Password</p>
+      <h1>Reset your password.</h1>
+      <p>Enter your account email. If it matches an account, we'll send a secure reset link.</p>
+      {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
+      <form className="gdg-account-form" action="/api/account/forgot-password" method="post">
         <label>
           Email address
           <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
         </label>
-        <button className="gdg-primary-button wide" type="submit">Send Sign-In Link</button>
+        <button className="gdg-primary-button wide" type="submit">Send Reset Link</button>
       </form>
       <p className="gdg-account-helper">
-        This does not change checkout; you can still buy as a guest.
+        Guest checkout remains available. Password reset emails never include password hashes or payment details.
+      </p>
+    </div>
+  );
+}
+
+export function AccountResetPasswordPageContent({
+  token,
+  resetError
+}: {
+  token?: string | null;
+  resetError?: string | null;
+}) {
+  if (!customerAccountsEnabled()) return <CustomerAccountsComingSoon />;
+  if (!token || resetError === "invalid" || resetError === "expired" || resetError === "used") {
+    return (
+      <div className="gdg-account-card hero">
+        <p className="gdg-overline">Reset Password</p>
+        <h1>This reset link is invalid, expired, or already used.</h1>
+        <p>Request a new password reset link to continue. Guest checkout remains available.</p>
+        <div className="gdg-account-actions">
+          <Link href="/account/forgot-password" className="gdg-primary-button">Request New Link</Link>
+          <Link href="/account/login" className="gdg-secondary-button">Back to Sign In</Link>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="gdg-account-card hero">
+      <p className="gdg-overline">Reset Password</p>
+      <h1>Choose a new password.</h1>
+      <p>Use at least 8 characters. This link can only be used once.</p>
+      {resetError === "password" ? <p className="gdg-account-notice error">Passwords must match and be at least 8 characters.</p> : null}
+      <form className="gdg-account-form" action="/api/account/reset-password" method="post">
+        <input type="hidden" name="token" value={token} />
+        <label>
+          New password
+          <input name="password" type="password" autoComplete="new-password" minLength={8} required placeholder="At least 8 characters" />
+        </label>
+        <label>
+          Confirm password
+          <input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required placeholder="Re-enter password" />
+        </label>
+        <button className="gdg-primary-button wide" type="submit">Update Password</button>
+      </form>
+      <p className="gdg-account-helper">
+        Password reset is only for your customer account. It does not change checkout, orders, or payment processing.
       </p>
     </div>
   );

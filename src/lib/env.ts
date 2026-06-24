@@ -104,7 +104,7 @@ export type EnvironmentReport = {
       customerRewardsEnabled: boolean;
       customerRewardRedemptionEnabled: boolean;
       customerRewardAdminAdjustmentsEnabled: boolean;
-      accountProvider: "magic_link";
+      accountProvider: "password_magic_link";
       rewardsProvider: "internal_ledger";
       rewardsReady: boolean;
       redemptionReady: boolean;
@@ -500,8 +500,8 @@ export function getEnvironmentReport(): EnvironmentReport {
         message:
           customerAccountHealthStatus === "configured"
             ? customerAccountFeatures.customerRewardsEnabled
-              ? "Optional customer accounts and rewards are enabled."
-              : "Optional customer accounts are enabled; rewards remain disabled."
+              ? "Optional customer accounts with password or email-link sign-in are enabled; rewards are enabled."
+              : "Optional customer accounts with password or email-link sign-in are enabled; rewards remain disabled."
             : customerAccountHealthStatus === "misconfigured"
               ? "Customer account reward flags are inconsistent."
               : "Optional customer accounts and rewards are disabled; guest checkout remains available.",

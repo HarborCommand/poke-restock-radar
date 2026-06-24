@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
@@ -11,6 +12,8 @@ const customerSessionCookie = "gdg_customer_session";
 const hostCustomerSessionCookie = "__Host-gdg_customer_session";
 const customerSessionDays = 30;
 const magicLinkMinutes = 20;
+const passwordResetMinutes = 30;
+const customerPasswordMinLength = 8;
 const devFallbackSecret = "local-dev-customer-account-secret-change-before-sharing";
 
 type CustomerSessionPayload = {
@@ -81,6 +84,16 @@ export type CustomerAccountOrderDetail = Omit<CustomerAccountOrderHistoryItem, "
   shippingService: string | null;
   supportEmail: string;
 };
+
+type CustomerAccountEmailStatus = {
+  status: EmailSendResult["status"] | "skipped";
+  provider: EmailSendResult["provider"];
+  expiresAt: Date | null;
+};
+
+export type CustomerPasswordLoginResult =
+  | { ok: true; account: { id: string; email: string } }
+  | { ok: false; reason: "disabled" | "invalid" | "unverified"; verificationEmail?: CustomerAccountEmailStatus };
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -161,6 +174,27 @@ export function hashCustomerMagicLinkToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+export function hashCustomerPasswordResetToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export function customerPasswordMeetsPolicy(password: string) {
+  return password.length >= customerPasswordMinLength;
+}
+
+function assertCustomerPassword(password: string, confirmPassword?: string) {
+  if (!customerPasswordMeetsPolicy(password)) {
+    throw new Error(`Password must be at least ${customerPasswordMinLength} characters.`);
+  }
+  if (confirmPassword !== undefined && password !== confirmPassword) {
+    throw new Error("Passwords do not match.");
+  }
+}
+
+async function hashCustomerPassword(password: string) {
+  return bcrypt.hash(password, 12);
+}
+
 function safeBaseUrl(requestUrl?: string | null) {
   const configured = envValue("STORE_BASE_URL") || envValue("APP_URL");
   if (configured) return configured.replace(/\/+$/, "");
@@ -175,6 +209,20 @@ function customerMagicLinkText(link: string) {
     `Use this secure link to access your optional account: ${link}`,
     "",
     `This link expires in ${magicLinkMinutes} minutes. You can still checkout as a guest at any time.`,
+    "",
+    `Questions? Contact ${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}.`
+  ].join("\n");
+}
+
+function customerPasswordResetText(link: string) {
+  return [
+    "Reset your GameDayGrabs customer account password.",
+    "",
+    `Use this secure link to choose a new password: ${link}`,
+    "",
+    `This link expires in ${passwordResetMinutes} minutes and can only be used once.`,
+    "",
+    "If you did not request this, you can ignore this email. Guest checkout remains available.",
     "",
     `Questions? Contact ${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}.`
   ].join("\n");
@@ -230,6 +278,175 @@ export async function requestCustomerMagicLink(input: {
     }
   );
   return { status: result.status, provider: result.provider, expiresAt };
+}
+
+export async function registerCustomerAccountWithPassword(input: {
+  email: string;
+  password: string;
+  confirmPassword: string;
+  displayName?: string | null;
+  requestUrl?: string | null;
+  fetchImpl?: typeof fetch;
+}): Promise<CustomerAccountEmailStatus> {
+  if (!customerAccountsEnabled()) return { status: "not_configured", provider: "none", expiresAt: null };
+  const email = normalizeCustomerAccountEmail(input.email);
+  if (!email) throw new Error("Enter a valid email address.");
+  assertCustomerPassword(input.password, input.confirmPassword);
+
+  const existingAccount = await prisma.customerAccount.findUnique({
+    where: { email },
+    select: { id: true }
+  });
+
+  if (!existingAccount) {
+    await prisma.customerAccount.create({
+      data: {
+        email,
+        displayName: input.displayName?.trim().slice(0, 120) || null,
+        status: "active",
+        passwordHash: await hashCustomerPassword(input.password),
+        passwordSetAt: new Date()
+      }
+    });
+  }
+
+  const result = await requestCustomerMagicLink({
+    email,
+    requestUrl: input.requestUrl,
+    fetchImpl: input.fetchImpl
+  });
+  return result;
+}
+
+export async function authenticateCustomerPassword(input: {
+  email: string;
+  password: string;
+  requestUrl?: string | null;
+  fetchImpl?: typeof fetch;
+}): Promise<CustomerPasswordLoginResult> {
+  if (!customerAccountsEnabled()) return { ok: false, reason: "disabled" };
+  const email = normalizeCustomerAccountEmail(input.email);
+  if (!email || !input.password) return { ok: false, reason: "invalid" };
+
+  const account = await prisma.customerAccount.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      email: true,
+      status: true,
+      passwordHash: true,
+      emailVerifiedAt: true
+    }
+  });
+  if (!account || account.status !== "active" || !account.passwordHash) return { ok: false, reason: "invalid" };
+  const passwordOk = await bcrypt.compare(input.password, account.passwordHash);
+  if (!passwordOk) return { ok: false, reason: "invalid" };
+  if (!account.emailVerifiedAt) {
+    const verificationEmail = await requestCustomerMagicLink({
+      email,
+      requestUrl: input.requestUrl,
+      fetchImpl: input.fetchImpl
+    });
+    return { ok: false, reason: "unverified", verificationEmail };
+  }
+
+  const updatedAccount = await prisma.customerAccount.update({
+    where: { id: account.id },
+    data: { lastLoginAt: new Date() },
+    select: { id: true, email: true }
+  });
+  return { ok: true, account: updatedAccount };
+}
+
+export async function requestCustomerPasswordReset(input: {
+  email: string;
+  requestUrl?: string | null;
+  fetchImpl?: typeof fetch;
+}): Promise<CustomerAccountEmailStatus> {
+  if (!customerAccountsEnabled()) return { status: "not_configured", provider: "none", expiresAt: null };
+  const email = normalizeCustomerAccountEmail(input.email);
+  if (!email) return { status: "skipped", provider: "none", expiresAt: null };
+
+  const account = await prisma.customerAccount.findUnique({
+    where: { email },
+    select: { id: true, email: true, status: true }
+  });
+  if (!account || account.status !== "active") return { status: "skipped", provider: "none", expiresAt: null };
+
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = hashCustomerPasswordResetToken(token);
+  const expiresAt = new Date(Date.now() + passwordResetMinutes * 60 * 1000);
+  await prisma.customerPasswordResetToken.create({
+    data: {
+      customerAccountId: account.id,
+      tokenHash,
+      expiresAt
+    }
+  });
+
+  const link = `${safeBaseUrl(input.requestUrl)}/account/reset-password?token=${encodeURIComponent(token)}`;
+  const result = await sendEmailViaProvider(
+    {
+      to: email,
+      subject: "Reset your GameDayGrabs account password",
+      text: customerPasswordResetText(link),
+      headers: {
+        "X-Entity-Ref-ID": `customer-account:${account.id}:password-reset`,
+        "X-GDD-Notification-Type": "customer_account_password_reset"
+      },
+      tags: [
+        { name: "notificationType", value: "customer_account_password_reset" },
+        { name: "environment", value: process.env.NODE_ENV || "development" }
+      ]
+    },
+    {
+      fetchImpl: input.fetchImpl,
+      idempotencyKey: `customer-account-password-reset:${tokenHash}`
+    }
+  );
+  return { status: result.status, provider: result.provider, expiresAt };
+}
+
+export async function resetCustomerPassword(input: {
+  token: string | null | undefined;
+  password: string;
+  confirmPassword: string;
+}) {
+  if (!customerAccountsEnabled()) return { ok: false, reason: "disabled" as const, account: null };
+  const cleanToken = input.token?.trim();
+  if (!cleanToken) return { ok: false, reason: "missing" as const, account: null };
+  assertCustomerPassword(input.password, input.confirmPassword);
+  const tokenHash = hashCustomerPasswordResetToken(cleanToken);
+  const now = new Date();
+  const record = await prisma.customerPasswordResetToken.findUnique({
+    where: { tokenHash },
+    include: { customerAccount: true }
+  });
+  if (!record || record.usedAt) return { ok: false, reason: "invalid" as const, account: null };
+  if (record.expiresAt.getTime() <= now.getTime()) return { ok: false, reason: "expired" as const, account: null };
+  if (!record.customerAccount || record.customerAccount.status !== "active") {
+    return { ok: false, reason: "disabled_account" as const, account: null };
+  }
+
+  const passwordHash = await hashCustomerPassword(input.password);
+  const [updatedAccount] = await prisma.$transaction([
+    prisma.customerAccount.update({
+      where: { id: record.customerAccount.id },
+      data: {
+        passwordHash,
+        passwordSetAt: now,
+        emailVerifiedAt: record.customerAccount.emailVerifiedAt ?? now,
+        lastLoginAt: now
+      },
+      select: { id: true, email: true }
+    }),
+    prisma.customerPasswordResetToken.update({
+      where: { id: record.id },
+      data: { usedAt: now }
+    })
+  ]);
+
+  return { ok: true, reason: "reset" as const, account: updatedAccount };
 }
 
 export async function verifyCustomerMagicLink(token: string | null | undefined) {
