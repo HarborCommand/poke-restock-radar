@@ -195,19 +195,40 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountComponents, /Create Account/);
   assert.match(accountComponents, /Email sign-in link/);
   assert.match(accountComponents, /Guest checkout is always available\./);
+  assert.match(accountComponents, /Collector Dashboard/);
+  assert.match(accountComponents, /Welcome back/);
+  assert.match(accountComponents, /Signed in as <strong>\{account\.email\}<\/strong>/);
+  assert.match(accountComponents, /Track orders, rewards, saved addresses, and support in one\s+place/);
+  assert.match(accountComponents, /Guest checkout stays available\. No account required to buy\./);
+  assert.match(accountComponents, /Track your collection orders/);
   for (const label of ["My Orders", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
+    assert.match(accountComponents, new RegExp(label));
+  }
+  for (const label of ["Orders", "Points", "Saved Addresses", "Support / Order Status"]) {
     assert.match(accountComponents, new RegExp(label));
   }
   assert.match(accountComponents, /Earn points on eligible purchases/);
   assert.match(accountComponents, /Redemption coming soon/);
+  assert.match(accountComponents, /Rewards redemption coming soon/);
+  assert.match(accountComponents, /Display only/);
+  assert.match(accountComponents, /Orders placed with this verified email, including guest checkout orders, appear here/);
+  assert.match(accountComponents, /Manage addresses/);
   assert.doesNotMatch(accountComponents, /Redeem points|Apply points|reward discount|points discount/i);
   assert.match(css, /\.gdg-address-form/);
   assert.match(css, /\.gdg-account-tabs/);
   assert.match(css, /\.gdg-account-magic-option/);
+  assert.match(css, /\.gdg-account-hero-dashboard/);
+  assert.match(css, /\.gdg-account-stat-grid/);
+  assert.match(css, /\.gdg-account-dashboard-layout/);
+  assert.match(css, /\.gdg-account-preview-row/);
+  assert.match(css, /\.gdg-account-card-fan/);
+  assert.match(css, /\.gdg-account-nav/);
   assert.match(css, /@media \(max-width: 640px\)/);
+  assert.match(css, /\.gdg-account-hero-actions,\s*\r?\n\s*\.gdg-account-hero-actions form,\s*\r?\n\s*\.gdg-account-hero-actions \.gdg-primary-button,\s*\r?\n\s*\.gdg-account-hero-actions \.gdg-secondary-button\s*\{\s*\r?\n\s*width: 100%/);
   assert.match(css, /\.gdg-address-form,\s*\r?\n\s*\.gdg-address-actions\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(cartClient, /No account required/);
   assert.match(cartClient, /Guest checkout available/);
+  assert.doesNotMatch(accountComponents, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|payment_method|paymentMethod|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|costBasis|netProfit|supplier|private lot|passwordHash|magic-link token|reset token/i);
 });
 
 test("storefront exposes optional account entry points without requiring login for checkout", () => {
@@ -367,7 +388,9 @@ test("customer account dashboard and order pages require a verified customer ses
   assert.match(currentAccountFunction, /verifyCustomerSessionToken/);
   assert.match(currentAccountFunction, /!account\.emailVerifiedAt/);
   assert.match(currentAccountFunction, /normalizeCustomerAccountEmail\(account\.email\)/);
+  assert.match(accountPage, /listCustomerAccountOrders\(account\)/);
   assert.match(accountPage, /account \? <AccountDashboard/);
+  assert.match(accountPage, /recentOrders=\{recentOrders\}/);
   assert.match(accountPage, /<AccountSignInRequired/);
   assert.match(ordersPage, /listCustomerAccountOrders\(account\)/);
   assert.match(ordersPage, /<AccountSignInRequired title="Sign in to view your order history\."/);

@@ -4,7 +4,7 @@ import {
   CustomerAccountShell,
   CustomerAccountsComingSoon
 } from "@/components/CustomerAccountPages";
-import { currentCustomerAccount, customerAccountsEnabled } from "@/lib/customer-account-auth";
+import { currentCustomerAccount, customerAccountsEnabled, listCustomerAccountOrders } from "@/lib/customer-account-auth";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
 
@@ -43,10 +43,11 @@ export const metadata = {
 export default async function AccountPage() {
   const enabled = customerAccountsEnabled();
   const account = enabled ? await currentCustomerAccount() : null;
+  const recentOrders = account ? await listCustomerAccountOrders(account) : [];
 
   return (
     <CustomerAccountShell>
-      {!enabled ? <CustomerAccountsComingSoon /> : account ? <AccountDashboard account={account} /> : <AccountSignInRequired />}
+      {!enabled ? <CustomerAccountsComingSoon /> : account ? <AccountDashboard account={account} recentOrders={recentOrders} /> : <AccountSignInRequired />}
     </CustomerAccountShell>
   );
 }

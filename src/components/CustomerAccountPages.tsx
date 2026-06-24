@@ -1,5 +1,19 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import {
+  Box,
+  ChevronRight,
+  Gift,
+  Headphones,
+  Home,
+  MapPin,
+  PackageCheck,
+  Search,
+  ShieldCheck,
+  ShoppingBag,
+  Trophy,
+  type LucideIcon
+} from "lucide-react";
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { getStorefrontSettings } from "@/lib/storefront";
@@ -112,6 +126,61 @@ function refundedCanceledNote(order: CustomerAccountOrderHistoryItem) {
   return null;
 }
 
+type AccountSection = "overview" | "orders" | "rewards" | "addresses" | "support";
+
+const accountNavigation: Array<{ section: AccountSection; label: string; href: string; icon: LucideIcon }> = [
+  { section: "overview", label: "Overview", href: "/account", icon: Home },
+  { section: "orders", label: "Orders", href: "/account/orders", icon: PackageCheck },
+  { section: "rewards", label: "Rewards", href: "/account/rewards", icon: Gift },
+  { section: "addresses", label: "Addresses", href: "/account/addresses", icon: MapPin },
+  { section: "support", label: "Support", href: "/contact", icon: Headphones }
+];
+
+function AccountNavigation({ active }: { active: AccountSection }) {
+  return (
+    <nav className="gdg-account-nav" aria-label="Customer account navigation">
+      {accountNavigation.map((item) => {
+        const Icon = item.icon;
+        return (
+          <Link key={item.section} href={item.href} className={active === item.section ? "active" : ""}>
+            <Icon size={17} aria-hidden="true" />
+            <span>{item.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function AccountIconBadge({ icon: Icon, tone = "gold" }: { icon: LucideIcon; tone?: "gold" | "green" | "blue" | "violet" | "orange" }) {
+  return (
+    <span className={`gdg-account-icon-badge ${tone}`}>
+      <Icon size={22} aria-hidden="true" />
+    </span>
+  );
+}
+
+function orderStatusTone(order: CustomerAccountOrderHistoryItem) {
+  const category = orderHistoryCategory(order);
+  if (category === "refunded-canceled") return "muted";
+  if (category === "completed") return "good";
+  return "active";
+}
+
+function DashboardCardFan() {
+  return (
+    <div className="gdg-account-card-fan" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+      <span />
+      <div className="gdg-account-card-box">
+        <Box size={30} />
+      </div>
+    </div>
+  );
+}
+
 export async function CustomerAccountShell({ children }: { children: ReactNode }) {
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
@@ -157,71 +226,189 @@ export function AccountSignInRequired({ title = "Sign in to view your account." 
   );
 }
 
-export function AccountDashboard({ account }: { account: CurrentCustomerAccount }) {
+export function AccountDashboard({
+  account,
+  recentOrders = []
+}: {
+  account: CurrentCustomerAccount;
+  recentOrders?: CustomerAccountOrderHistoryItem[];
+}) {
   const rewardBalance = account.rewardBalance;
-  const tiles = [
+  const availablePoints = rewardBalance?.availablePoints ?? 0;
+  const lifetimePoints = rewardBalance?.lifetimeEarnedPoints ?? 0;
+  const addressCount = account.savedAddresses.length;
+  const previewOrders = recentOrders.slice(0, 3);
+  const progressPercent = Math.min(100, Math.max(0, Math.round((availablePoints / 500) * 100)));
+  const stats: Array<{
+    href: string;
+    label: string;
+    value: string;
+    copy: string;
+    icon: LucideIcon;
+    tone: "gold" | "green" | "blue" | "violet" | "orange";
+  }> = [
     {
       href: "/account/orders",
-      label: "My Orders",
-      value: "View your orders",
-      copy: "Track paid orders, shipping, pickup, and refund status tied to this verified email."
+      label: "Orders",
+      value: `${recentOrders.length}`,
+      copy: recentOrders.length === 1 ? "order tied to this email" : "orders tied to this email",
+      icon: ShoppingBag,
+      tone: "green"
     },
     {
       href: "/account/rewards",
-      label: "Rewards",
-      value: rewardBalance ? `${rewardBalance.availablePoints} points` : "0 points",
-      copy: "Earn points on eligible purchases. Redemption coming soon."
+      label: "Points",
+      value: `${availablePoints}`,
+      copy: "Redemption coming soon",
+      icon: Gift,
+      tone: "violet"
     },
     {
       href: "/account/addresses",
       label: "Saved Addresses",
-      value: account.savedAddresses.length ? `${account.savedAddresses.length} saved` : "No saved addresses",
-      copy: "Manage address book entries for your account. Checkout still collects details normally."
+      value: `${addressCount}`,
+      copy: addressCount === 1 ? "saved address" : "saved addresses",
+      icon: MapPin,
+      tone: "blue"
     },
     {
       href: "/order-status",
-      label: "Order Status",
+      label: "Support / Order Status",
       value: "Guest lookup",
-      copy: "Use an order number and checkout email without signing in."
-    },
-    {
-      href: "/contact",
-      label: "Support",
-      value: "Contact us",
-      copy: "Questions about orders, pickup, or products go directly to GameDayGrabs support."
+      copy: "No account required to buy",
+      icon: Headphones,
+      tone: "orange"
     }
   ];
 
   return (
-    <>
-      <div className="gdg-account-card hero">
-        <p className="gdg-overline">My Account</p>
-        <h1>Welcome{account.displayName ? `, ${account.displayName}` : ""}.</h1>
-        <p>
-          Signed in as <strong>{account.email}</strong>. Your account is optional; guest checkout stays available for
-          every order.
-        </p>
-        <form action="/api/account/logout" method="post">
-          <button className="gdg-secondary-button" type="submit">Sign Out</button>
-        </form>
+    <div className="gdg-account-dashboard">
+      <AccountNavigation active="overview" />
+
+      <div className="gdg-account-hero-dashboard">
+        <div className="gdg-account-hero-copy">
+          <p className="gdg-overline">Collector Dashboard</p>
+          <h1>Welcome back{account.displayName ? `, ${account.displayName}` : ""}.</h1>
+          <p>
+            Signed in as <strong>{account.email}</strong>. Track orders, rewards, saved addresses, and support in one
+            place.
+          </p>
+          <div className="gdg-account-hero-actions">
+            <Link href="/account/orders" className="gdg-primary-button">Track your collection orders</Link>
+            <form action="/api/account/logout" method="post">
+              <button className="gdg-secondary-button" type="submit">Sign Out</button>
+            </form>
+          </div>
+          <span className="gdg-account-guest-note">Guest checkout stays available. No account required to buy.</span>
+        </div>
+        <DashboardCardFan />
       </div>
-      <div className="gdg-account-grid">
-        {tiles.map((tile) => (
-          <Link key={tile.label} href={tile.href} className="gdg-account-tile">
-            <span>{tile.label}</span>
-            <strong>{tile.value}</strong>
-            <p>{tile.copy}</p>
+
+      <div className="gdg-account-stat-grid" aria-label="Account quick stats">
+        {stats.map((tile) => (
+          <Link key={tile.label} href={tile.href} className="gdg-account-stat-card">
+            <AccountIconBadge icon={tile.icon} tone={tile.tone} />
+            <div>
+              <strong>{tile.value}</strong>
+              <span>{tile.label}</span>
+              <p>{tile.copy}</p>
+            </div>
+            <ChevronRight size={18} aria-hidden="true" />
           </Link>
         ))}
       </div>
-      <div className="gdg-account-card compact">
-        <h2>Need support?</h2>
-        <p>
-          Contact <a href={`mailto:${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`}>{GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}</a> for
-          order, pickup, or product questions.
-        </p>
+
+      <div className="gdg-account-dashboard-layout">
+        <section className="gdg-account-panel gdg-account-orders-preview">
+          <header className="gdg-account-panel-heading">
+            <div>
+              <p className="gdg-overline">My Orders</p>
+              <h2>Recent orders</h2>
+            </div>
+            <Link href="/account/orders">View all orders <ChevronRight size={16} aria-hidden="true" /></Link>
+          </header>
+          <p className="gdg-account-panel-copy">
+            Orders placed with this verified email, including guest checkout orders, appear here. No payment method
+            details are shown.
+          </p>
+          {previewOrders.length ? (
+            <div className="gdg-account-preview-list">
+              {previewOrders.map((order) => (
+                <Link key={order.orderNumber} href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-account-preview-row">
+                  <div className="gdg-account-preview-thumb">
+                    <PackageCheck size={18} aria-hidden="true" />
+                  </div>
+                  <div className="gdg-account-preview-main">
+                    <strong>{order.items[0]?.title || order.orderNumber}</strong>
+                    <span>{order.orderNumber} - {dateLabel(order.orderDate)}</span>
+                  </div>
+                  <span className={`gdg-account-status-pill ${orderStatusTone(order)}`}>{order.status}</span>
+                  <b>{money(order.totalPaid)}</b>
+                  <ChevronRight size={17} aria-hidden="true" />
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="gdg-account-empty-panel">
+              <PackageCheck size={22} aria-hidden="true" />
+              <strong>No orders found for this verified email yet.</strong>
+              <p>Guest checkout orders will appear here after they match your verified account email.</p>
+            </div>
+          )}
+        </section>
+
+        <aside className="gdg-account-side-stack">
+          <section className="gdg-account-panel gdg-account-rewards-panel">
+            <div className="gdg-account-panel-heading">
+              <div>
+                <p className="gdg-overline">Rewards</p>
+                <h2>Rewards Program</h2>
+              </div>
+              <AccountIconBadge icon={Trophy} tone="gold" />
+            </div>
+            <strong className="gdg-account-points-display">{availablePoints} points</strong>
+            <p>Earn points on eligible purchases. Rewards redemption coming soon.</p>
+            <div className="gdg-account-progress" aria-label={`${progressPercent}% toward collector milestone`}>
+              <span style={{ width: `${progressPercent}%` }} />
+            </div>
+            <div className="gdg-account-progress-label">
+              <span>{lifetimePoints} lifetime pts</span>
+              <span>Display only</span>
+            </div>
+          </section>
+
+          <section className="gdg-account-panel">
+            <div className="gdg-account-panel-heading">
+              <div>
+                <p className="gdg-overline">Saved Addresses</p>
+                <h2>{addressCount ? `${addressCount} saved` : "No saved addresses"}</h2>
+              </div>
+              <AccountIconBadge icon={MapPin} tone="blue" />
+            </div>
+            <p>Saved addresses make future checkout easier. Checkout still collects details normally.</p>
+            <Link href="/account/addresses" className="gdg-secondary-button">Manage addresses</Link>
+          </section>
+
+          <section className="gdg-account-panel gdg-account-support-panel">
+            <div className="gdg-account-panel-heading">
+              <div>
+                <p className="gdg-overline">Support</p>
+                <h2>Need help?</h2>
+              </div>
+              <AccountIconBadge icon={Headphones} tone="orange" />
+            </div>
+            <p>
+              Contact <a href={`mailto:${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`}>{GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}</a>{" "}
+              for order, pickup, or product questions.
+            </p>
+            <div className="gdg-account-support-links">
+              <Link href="/order-status"><Search size={15} aria-hidden="true" /> Order Status</Link>
+              <Link href="/policies"><ShieldCheck size={15} aria-hidden="true" /> Policies</Link>
+            </div>
+          </section>
+        </aside>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -448,6 +635,7 @@ export function AccountOrders({
   const hasAnyOrders = orders.length > 0;
   return (
     <>
+      <AccountNavigation active="orders" />
       <div className="gdg-account-card hero">
         <p className="gdg-overline">Order History</p>
         <h1>Your GameDayGrabs orders.</h1>
@@ -560,6 +748,7 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
 
   return (
     <>
+      <AccountNavigation active="orders" />
       <div className="gdg-account-card hero">
         <p className="gdg-overline">Order Details</p>
         <h1>{order.orderNumber}</h1>
@@ -660,6 +849,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
   const balance = account.rewardBalance;
   return (
     <>
+      <AccountNavigation active="rewards" />
       <div className="gdg-account-card hero">
         <p className="gdg-overline">Rewards</p>
         <h1>Track your GameDayGrabs points.</h1>
@@ -707,6 +897,7 @@ export function AccountAddresses({ account, status }: { account: CurrentCustomer
   const message = addressStatusMessage(status);
   return (
     <>
+      <AccountNavigation active="addresses" />
       <div className="gdg-account-card hero">
         <p className="gdg-overline">Saved Addresses</p>
         <h1>Your address book.</h1>
