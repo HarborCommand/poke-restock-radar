@@ -39,7 +39,21 @@ export const metadata = {
   }
 };
 
-export default async function AccountOrdersPage() {
+type AccountOrdersPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function orderHistoryView(value: string | string[] | undefined) {
+  const view = firstParam(value);
+  return view === "completed" || view === "refunded-canceled" || view === "all" ? view : "active";
+}
+
+export default async function AccountOrdersPage({ searchParams }: AccountOrdersPageProps) {
+  const params = searchParams ? await searchParams : {};
   const enabled = customerAccountsEnabled();
   const account = enabled ? await currentCustomerAccount() : null;
   const orders = account ? await listCustomerAccountOrders(account) : [];
@@ -49,7 +63,7 @@ export default async function AccountOrdersPage() {
       {!enabled ? (
         <CustomerAccountsComingSoon />
       ) : account ? (
-        <AccountOrders account={account} orders={orders} />
+        <AccountOrders account={account} orders={orders} view={orderHistoryView(params.view)} />
       ) : (
         <AccountSignInRequired title="Sign in to view your order history." />
       )}

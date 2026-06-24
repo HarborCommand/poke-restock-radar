@@ -42,6 +42,76 @@ function resetStatusMessage(value: string | null | undefined) {
   return null;
 }
 
+type AccountOrderHistoryView = "active" | "completed" | "refunded-canceled" | "all";
+
+const orderHistoryFilters: Array<{ view: AccountOrderHistoryView; label: string; href: string }> = [
+  { view: "active", label: "Active", href: "/account/orders" },
+  { view: "completed", label: "Completed", href: "/account/orders?view=completed" },
+  { view: "refunded-canceled", label: "Refunded / Canceled", href: "/account/orders?view=refunded-canceled" },
+  { view: "all", label: "All", href: "/account/orders?view=all" }
+];
+
+function orderHistoryCategory(order: CustomerAccountOrderHistoryItem): Exclude<AccountOrderHistoryView, "all"> {
+  const status = order.status.toLowerCase();
+  if (
+    status.includes("refunded") ||
+    status.includes("canceled") ||
+    status.includes("expired") ||
+    order.paymentStatus === "refunded" ||
+    order.paymentStatus === "partially_refunded" ||
+    order.paymentStatus === "expired"
+  ) {
+    return "refunded-canceled";
+  }
+  if (status === "shipped" || status === "picked up" || order.fulfillmentStatus === "shipped" || order.fulfillmentStatus === "picked_up") {
+    return "completed";
+  }
+  return "active";
+}
+
+function orderHistoryRank(order: CustomerAccountOrderHistoryItem) {
+  const category = orderHistoryCategory(order);
+  if (category === "active") return 0;
+  if (category === "completed") return 1;
+  return 2;
+}
+
+function orderHistoryFiltered(
+  orders: CustomerAccountOrderHistoryItem[],
+  view: AccountOrderHistoryView
+): CustomerAccountOrderHistoryItem[] {
+  if (view === "all") {
+    return [...orders].sort((left, right) => {
+      const rankDiff = orderHistoryRank(left) - orderHistoryRank(right);
+      if (rankDiff !== 0) return rankDiff;
+      return new Date(right.orderDate).getTime() - new Date(left.orderDate).getTime();
+    });
+  }
+  return orders.filter((order) => orderHistoryCategory(order) === view);
+}
+
+function orderHistoryEmptyTitle(view: AccountOrderHistoryView, hasAnyOrders: boolean) {
+  if (!hasAnyOrders || view === "all") return "No orders found for this verified email yet.";
+  if (view === "completed") return "No completed orders found.";
+  if (view === "refunded-canceled") return "No refunded or canceled orders found.";
+  return "No active orders found.";
+}
+
+function orderHistoryEmptyMessage(view: AccountOrderHistoryView, hasAnyOrders: boolean) {
+  if (!hasAnyOrders || view === "all") return "Orders will appear here after your verified account email matches a checkout email.";
+  return "Try All to see every non-test order placed with this verified email.";
+}
+
+function refundedCanceledNote(order: CustomerAccountOrderHistoryItem) {
+  const status = order.status.toLowerCase();
+  if (status.includes("refunded") || order.paymentStatus === "refunded" || order.paymentStatus === "partially_refunded") {
+    return "This order was refunded.";
+  }
+  if (status.includes("canceled")) return "This order was canceled.";
+  if (status.includes("expired") || order.paymentStatus === "expired") return "This checkout expired.";
+  return null;
+}
+
 export async function CustomerAccountShell({ children }: { children: ReactNode }) {
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
@@ -365,22 +435,46 @@ export function AccountResetPasswordPageContent({
   );
 }
 
-export function AccountOrders({ account, orders }: { account: CurrentCustomerAccount; orders: CustomerAccountOrderHistoryItem[] }) {
+export function AccountOrders({
+  account,
+  orders,
+  view = "active"
+}: {
+  account: CurrentCustomerAccount;
+  orders: CustomerAccountOrderHistoryItem[];
+  view?: AccountOrderHistoryView;
+}) {
+  const visibleOrders = orderHistoryFiltered(orders, view);
+  const hasAnyOrders = orders.length > 0;
   return (
     <>
       <div className="gdg-account-card hero">
         <p className="gdg-overline">Order History</p>
         <h1>Your GameDayGrabs orders.</h1>
-        <p>Showing orders for verified email <strong>{account.email}</strong>. Guest order lookup remains available.</p>
+        <p>
+          These orders were placed with your verified email, including guest checkout orders. No payment method details
+          are shown.
+        </p>
+        <p>Verified email: <strong>{account.email}</strong>. Guest order lookup remains available.</p>
         <div className="gdg-account-mini-grid" aria-label="Order history privacy notes">
           <span>Verified email only</span>
-          <span>No payment details shown</span>
+          <span>No payment method details shown</span>
+          <span>Test orders hidden</span>
           <span>Guest checkout unchanged</span>
         </div>
+        <nav className="gdg-account-order-filters" aria-label="Order history filters">
+          {orderHistoryFilters.map((filter) => (
+            <Link key={filter.view} href={filter.href} className={view === filter.view ? "active" : ""}>
+              {filter.label}
+            </Link>
+          ))}
+        </nav>
       </div>
-      {orders.length ? (
+      {visibleOrders.length ? (
         <div className="gdg-account-orders">
-          {orders.map((order) => (
+          {visibleOrders.map((order) => {
+            const historyNote = refundedCanceledNote(order);
+            return (
             <article key={order.orderNumber} className="gdg-account-order-card">
               <header>
                 <div>
@@ -409,10 +503,11 @@ export function AccountOrders({ account, orders }: { account: CurrentCustomerAcc
                   ) : order.trackingNumber ? (
                     order.trackingUrl ? <a href={order.trackingUrl}>{order.trackingNumber}</a> : <strong>{order.trackingNumber}</strong>
                   ) : (
-                    <strong>Not provided yet</strong>
+                  <strong>Not provided yet</strong>
                   )}
                 </div>
               </div>
+              {historyNote ? <p className="gdg-account-notice">{historyNote}</p> : null}
               <section>
                 <h3>Items</h3>
                 {order.items.map((item) => (
@@ -429,12 +524,13 @@ export function AccountOrders({ account, orders }: { account: CurrentCustomerAcc
                 <Link href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-secondary-button">View Details</Link>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="gdg-account-card compact">
-          <h2>No orders yet</h2>
-          <p>Orders will appear here after your verified account email matches a checkout email.</p>
+          <h2>{orderHistoryEmptyTitle(view, hasAnyOrders)}</h2>
+          <p>{orderHistoryEmptyMessage(view, hasAnyOrders)}</p>
           <Link href="/order-status" className="gdg-secondary-button">Check an Order as Guest</Link>
         </div>
       )}

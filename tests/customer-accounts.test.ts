@@ -375,6 +375,7 @@ test("customer account dashboard and order pages require a verified customer ses
 
 test("customer order history is linked by verified email and exposes safe fields only", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const ordersPage = readProjectFile("src/app/account/orders/page.tsx");
   const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
   const orderHistory = sourceSlice(auth, "export async function listCustomerAccountOrders", "export async function getCustomerAccountOrderDetail");
 
@@ -384,11 +385,27 @@ test("customer order history is linked by verified email and exposes safe fields
   assert.match(orderHistory, /customer:\s*\{\s*is:\s*\{\s*email\s*\}\s*\}/);
   assert.match(orderHistory, /select:\s*\{\s*\r?\n\s*publicTitle:\s*true,\s*\r?\n\s*quantity:\s*true/);
   assert.match(orderHistory, /take:\s*100/);
-  assert.match(accountComponents, /No orders yet/);
+  assert.match(ordersPage, /searchParams/);
+  assert.match(ordersPage, /orderHistoryView\(params\.view\)/);
+  assert.match(accountComponents, /These orders were placed with your verified email, including guest checkout orders/);
+  assert.match(accountComponents, /No payment method details\s+are shown/);
+  assert.match(accountComponents, /Test orders hidden/);
+  assert.match(accountComponents, /No orders found for this verified email yet/);
   assert.match(accountComponents, /Guest order lookup remains available/);
   assert.match(accountComponents, /Tracking/);
   assert.match(accountComponents, /Pickup status/);
   assert.match(accountComponents, /Refund\/cancel status/);
+  assert.match(accountComponents, /orderHistoryFilters/);
+  assert.match(accountComponents, /Active/);
+  assert.match(accountComponents, /Completed/);
+  assert.match(accountComponents, /Refunded \/ Canceled/);
+  assert.match(accountComponents, /view=completed/);
+  assert.match(accountComponents, /view=refunded-canceled/);
+  assert.match(accountComponents, /orderHistoryFiltered\(orders, view\)/);
+  assert.match(accountComponents, /orderHistoryCategory/);
+  assert.match(accountComponents, /This order was refunded/);
+  assert.match(accountComponents, /This order was canceled/);
+  assert.match(accountComponents, /This checkout expired/);
 
   assert.doesNotMatch(orderHistory + accountComponents, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|payment_method|paymentMethod|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|costBasis|netProfit|supplier|private lot|billingAddress/i);
 });

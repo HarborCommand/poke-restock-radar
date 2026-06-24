@@ -21811,6 +21811,37 @@ body .catalog-action-menu-floating {
   box-shadow: 0 10px 26px rgba(15, 61, 46, 0.18);
 }
 
+.gdg-account-order-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  width: min(100%, 720px);
+  margin-top: 8px;
+  border: 1px solid rgba(15, 61, 46, 0.12);
+  border-radius: 18px;
+  background: #fffdf6;
+  padding: 6px;
+}
+
+.gdg-account-order-filters a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 14px;
+  color: rgba(11, 47, 36, 0.72);
+  font-size: 0.84rem;
+  font-weight: 900;
+  text-align: center;
+  text-decoration: none;
+}
+
+.gdg-account-order-filters a.active {
+  background: #0b2f24;
+  color: #ffffff;
+  box-shadow: 0 10px 26px rgba(15, 61, 46, 0.18);
+}
+
 .gdg-account-form label {
   display: grid;
   gap: 8px;
@@ -22202,6 +22233,10 @@ body .catalog-action-menu-floating {
   .gdg-account-order-grid,
   .gdg-account-order-grid.two {
     grid-template-columns: 1fr;
+  }
+
+  .gdg-account-order-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .gdg-account-order-card header {
