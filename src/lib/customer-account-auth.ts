@@ -69,7 +69,7 @@ export type CustomerAccountOrderHistoryItem = {
   refundedAmount: number;
   canceledAt: string | null;
   refundedAt: string | null;
-  items: Array<{ title: string; quantity: number }>;
+  items: Array<{ title: string; quantity: number; imageUrl: string | null }>;
 };
 
 export type CustomerAccountOrderDetail = Omit<CustomerAccountOrderHistoryItem, "items"> & {
@@ -612,6 +612,7 @@ export async function listCustomerAccountOrders(account: CurrentCustomerAccount)
       items: {
         select: {
           publicTitle: true,
+          imageUrl: true,
           quantity: true
         }
       }
@@ -644,7 +645,8 @@ export async function listCustomerAccountOrders(account: CurrentCustomerAccount)
       refundedAt: order.refundedAt?.toISOString() ?? null,
       items: order.items.map((item) => ({
         title: item.publicTitle,
-        quantity: item.quantity
+        quantity: item.quantity,
+        imageUrl: item.imageUrl
       }))
     };
   });

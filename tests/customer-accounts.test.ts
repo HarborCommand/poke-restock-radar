@@ -201,6 +201,10 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountComponents, /Track orders, rewards, saved addresses, and support in one\s+place/);
   assert.match(accountComponents, /Guest checkout stays available\. No account required to buy\./);
   assert.match(accountComponents, /Track your collection orders/);
+  assert.match(accountComponents, /RewardsInfoStrip/);
+  assert.match(accountComponents, /gdg-rewards-info-strip/);
+  assert.match(accountComponents, /previewItem\?\.imageUrl/);
+  assert.match(accountComponents, /thumbnail/);
   for (const label of ["My Orders", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
     assert.match(accountComponents, new RegExp(label));
   }
@@ -223,6 +227,11 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(css, /\.gdg-account-preview-row/);
   assert.match(css, /\.gdg-account-card-fan/);
   assert.match(css, /\.gdg-account-nav/);
+  assert.match(css, /\.gdg-account-shell::before/);
+  assert.match(css, /\.gdg-account-stat-card:nth-child\(1\)/);
+  assert.match(css, /\.gdg-account-rewards-panel::after/);
+  assert.match(css, /\.gdg-rewards-info-strip/);
+  assert.match(css, /\.gdg-account-preview-thumb img/);
   assert.match(css, /@media \(max-width: 640px\)/);
   assert.match(css, /\.gdg-account-hero-actions,\s*\r?\n\s*\.gdg-account-hero-actions form,\s*\r?\n\s*\.gdg-account-hero-actions \.gdg-primary-button,\s*\r?\n\s*\.gdg-account-hero-actions \.gdg-secondary-button\s*\{\s*\r?\n\s*width: 100%/);
   assert.match(css, /\.gdg-address-form,\s*\r?\n\s*\.gdg-address-actions\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
@@ -449,7 +458,8 @@ test("customer order history is linked by verified email and exposes safe fields
   assert.match(orderHistory, /isTestOrder:\s*false/);
   assert.match(orderHistory, /customerEmail:\s*email/);
   assert.match(orderHistory, /customer:\s*\{\s*is:\s*\{\s*email\s*\}\s*\}/);
-  assert.match(orderHistory, /select:\s*\{\s*\r?\n\s*publicTitle:\s*true,\s*\r?\n\s*quantity:\s*true/);
+  assert.match(orderHistory, /select:\s*\{\s*\r?\n\s*publicTitle:\s*true,\s*\r?\n\s*imageUrl:\s*true,\s*\r?\n\s*quantity:\s*true/);
+  assert.match(orderHistory, /imageUrl:\s*item\.imageUrl/);
   assert.match(orderHistory, /take:\s*100/);
   assert.match(ordersPage, /searchParams/);
   assert.match(ordersPage, /orderHistoryView\(params\.view\)/);
@@ -612,6 +622,7 @@ test("customer rewards page shows balance activity and redemption coming soon", 
   assert.match(rewardsPage, /listCustomerRewardActivity\(account\)/);
   assert.match(accountRewards, /GameDayGrabs Rewards/);
   assert.match(accountRewards, /gdg-rewards-hero/);
+  assert.match(accountRewards, /RewardsInfoStrip/);
   assert.match(accountRewards, /Available points/);
   assert.match(accountRewards, /availablePoints/);
   assert.match(accountRewards, /Redemption coming soon/);

@@ -155,7 +155,7 @@ function AccountNavigation({ active }: { active: AccountSection }) {
 function AccountIconBadge({ icon: Icon, tone = "gold" }: { icon: LucideIcon; tone?: "gold" | "green" | "blue" | "violet" | "orange" }) {
   return (
     <span className={`gdg-account-icon-badge ${tone}`}>
-      <Icon size={22} aria-hidden="true" />
+      <Icon size={28} aria-hidden="true" />
     </span>
   );
 }
@@ -178,6 +178,29 @@ function DashboardCardFan() {
         <Box size={30} />
       </div>
     </div>
+  );
+}
+
+function RewardsInfoStrip({ className = "" }: { className?: string }) {
+  const infoItems: Array<{ label: string; copy: string; icon: LucideIcon; tone: "gold" | "violet" | "green" | "blue" }> = [
+    { label: "Earn points", copy: "on eligible purchases.", icon: Trophy, tone: "gold" },
+    { label: "Points added", copy: "after payment is confirmed.", icon: Gift, tone: "violet" },
+    { label: "Refunds may", copy: "reverse points.", icon: ShieldCheck, tone: "green" },
+    { label: "No cash value", copy: "or exchange.", icon: ShieldCheck, tone: "blue" }
+  ];
+
+  return (
+    <section className={`gdg-rewards-info-strip ${className}`.trim()} aria-label="Rewards rules summary">
+      {infoItems.map((item) => (
+        <div key={item.label}>
+          <AccountIconBadge icon={item.icon} tone={item.tone} />
+          <p>
+            <strong>{item.label}</strong>
+            <span>{item.copy}</span>
+          </p>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -288,7 +311,7 @@ export function AccountDashboard({
       <div className="gdg-account-hero-dashboard">
         <div className="gdg-account-hero-copy">
           <p className="gdg-overline">Collector Dashboard</p>
-          <h1>Welcome back{account.displayName ? `, ${account.displayName}` : ""}.</h1>
+          <h1>Welcome back.</h1>
           <p>
             Signed in as <strong>{account.email}</strong>. Track orders, rewards, saved addresses, and support in one
             place.
@@ -333,20 +356,28 @@ export function AccountDashboard({
           </p>
           {previewOrders.length ? (
             <div className="gdg-account-preview-list">
-              {previewOrders.map((order) => (
-                <Link key={order.orderNumber} href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-account-preview-row">
-                  <div className="gdg-account-preview-thumb">
-                    <PackageCheck size={18} aria-hidden="true" />
-                  </div>
-                  <div className="gdg-account-preview-main">
-                    <strong>{order.items[0]?.title || order.orderNumber}</strong>
-                    <span>{order.orderNumber} - {dateLabel(order.orderDate)}</span>
-                  </div>
-                  <span className={`gdg-account-status-pill ${orderStatusTone(order)}`}>{order.status}</span>
-                  <b>{money(order.totalPaid)}</b>
-                  <ChevronRight size={17} aria-hidden="true" />
-                </Link>
-              ))}
+              {previewOrders.map((order) => {
+                const previewItem = order.items[0];
+                return (
+                  <Link key={order.orderNumber} href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-account-preview-row">
+                    <div className="gdg-account-preview-thumb">
+                      {previewItem?.imageUrl ? (
+                      // Safe public order snapshot image.
+                        <img src={previewItem.imageUrl} alt={`${previewItem.title} thumbnail`} />
+                      ) : (
+                        <PackageCheck size={18} aria-hidden="true" />
+                      )}
+                    </div>
+                    <div className="gdg-account-preview-main">
+                      <strong>{previewItem?.title || order.orderNumber}</strong>
+                      <span>{order.orderNumber} - {dateLabel(order.orderDate)}</span>
+                    </div>
+                    <span className={`gdg-account-status-pill ${orderStatusTone(order)}`}>{order.status}</span>
+                    <b>{money(order.totalPaid)}</b>
+                    <ChevronRight size={17} aria-hidden="true" />
+                  </Link>
+                );
+              })}
             </div>
           ) : (
             <div className="gdg-account-empty-panel">
@@ -376,6 +407,7 @@ export function AccountDashboard({
               <span>Display only</span>
             </div>
           </section>
+          <RewardsInfoStrip className="dashboard" />
 
           <section className="gdg-account-panel">
             <div className="gdg-account-panel-heading">
@@ -570,7 +602,7 @@ export function AccountForgotPasswordPageContent({
         <button className="gdg-primary-button wide" type="submit">Send Reset Link</button>
       </form>
       <p className="gdg-account-helper">
-        Guest checkout remains available. Password reset emails never include password hashes or payment details.
+        Guest checkout remains available. Password reset emails never include payment details.
       </p>
     </div>
   );
@@ -869,6 +901,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
           <small>Points are display-only and do not affect checkout totals yet.</small>
         </div>
       </section>
+      <RewardsInfoStrip />
 
       <div className="gdg-rewards-grid">
         <section className="gdg-account-card gdg-rewards-level-card" aria-labelledby="gdg-rewards-level-title">

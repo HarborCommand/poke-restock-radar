@@ -21785,10 +21785,37 @@ body .catalog-action-menu-floating {
 }
 
 .gdg-account-shell {
-  width: min(1180px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 42px 0 64px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  margin: 0;
+  padding: 42px 0 72px;
+  background:
+    radial-gradient(circle at 8% 4%, rgba(255, 184, 0, 0.16), transparent 24%),
+    radial-gradient(circle at 92% 14%, rgba(74, 55, 214, 0.22), transparent 28%),
+    radial-gradient(circle at 76% 84%, rgba(22, 163, 74, 0.13), transparent 32%),
+    linear-gradient(180deg, #05080d 0%, #091019 42%, #06090f 100%);
   color: #101828;
+}
+
+.gdg-account-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.28;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at 50% 10%, #000 0 22%, transparent 70%);
+}
+
+.gdg-account-shell > * {
+  width: min(1180px, calc(100% - 32px));
+  margin-right: auto;
+  margin-left: auto;
 }
 
 .gdg-account-card,
@@ -21796,10 +21823,10 @@ body .catalog-action-menu-floating {
 .gdg-account-panel,
 .gdg-account-stat-card,
 .gdg-account-order-card {
-  border: 1px solid rgba(16, 24, 40, 0.1);
-  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
   background: #ffffff;
-  box-shadow: 0 18px 54px rgba(16, 24, 40, 0.08);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.22);
 }
 
 .gdg-account-card {
@@ -21872,10 +21899,11 @@ body .catalog-action-menu-floating {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
-  border: 1px solid rgba(16, 24, 40, 0.08);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 12px 40px rgba(16, 24, 40, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px);
   padding: 8px;
 }
 
@@ -21887,7 +21915,7 @@ body .catalog-action-menu-floating {
   min-width: 0;
   min-height: 44px;
   border-radius: 14px;
-  color: #344054;
+  color: rgba(255, 255, 255, 0.8);
   font-size: 0.9rem;
   font-weight: 850;
   text-align: center;
@@ -21899,8 +21927,8 @@ body .catalog-action-menu-floating {
 }
 
 .gdg-account-nav a:hover {
-  background: #fff7eb;
-  color: #101828;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
   transform: translateY(-1px);
 }
 
@@ -21916,24 +21944,41 @@ body .catalog-action-menu-floating {
   grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
   gap: 22px;
   overflow: hidden;
-  border: 1px solid rgba(16, 24, 40, 0.1);
-  border-radius: 24px;
+  border: 1px solid rgba(255, 184, 0, 0.32);
+  border-radius: 26px;
   background:
-    radial-gradient(circle at 82% 18%, rgba(255, 184, 0, 0.22), transparent 18%),
-    radial-gradient(circle at 100% 100%, rgba(255, 106, 0, 0.2), transparent 28%),
-    linear-gradient(135deg, #101828 0%, #132c24 52%, #0f3d2e 100%);
-  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.16);
-  padding: 30px;
+    radial-gradient(circle at 79% 20%, rgba(255, 184, 0, 0.44), transparent 22%),
+    radial-gradient(circle at 92% 68%, rgba(255, 106, 0, 0.24), transparent 24%),
+    linear-gradient(123deg, rgba(255, 184, 0, 0) 0 48%, rgba(255, 184, 0, 0.42) 49% 52%, rgba(255, 184, 0, 0) 53%),
+    linear-gradient(148deg, rgba(255, 184, 0, 0) 0 57%, rgba(255, 184, 0, 0.68) 58% 62%, rgba(255, 184, 0, 0.1) 63%),
+    linear-gradient(100deg, #060b13 0%, #0b1018 43%, #1d1504 100%);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.34);
+  padding: 34px;
 }
 
 .gdg-account-hero-dashboard::before {
   content: "";
   position: absolute;
-  inset: auto -70px -120px auto;
-  width: 260px;
-  height: 260px;
-  border: 32px solid rgba(255, 184, 0, 0.16);
+  inset: 0;
+  opacity: 0.34;
+  background:
+    radial-gradient(circle at 10% 50%, rgba(255, 255, 255, 0.18) 0 1px, transparent 2px),
+    radial-gradient(circle at 55% 18%, rgba(255, 184, 0, 0.92) 0 6px, transparent 7px),
+    radial-gradient(circle at 71% 82%, rgba(255, 184, 0, 0.86) 0 5px, transparent 6px),
+    radial-gradient(circle at 96% 30%, rgba(255, 184, 0, 0.9) 0 8px, transparent 9px);
+  background-size: 18px 18px, auto, auto, auto;
+}
+
+.gdg-account-hero-dashboard::after {
+  content: "";
+  position: absolute;
+  right: -7%;
+  bottom: -24%;
+  width: 34%;
+  aspect-ratio: 1;
+  border: 20px solid rgba(255, 184, 0, 0.2);
   border-radius: 999px;
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.32), transparent 36%);
 }
 
 .gdg-account-hero-copy {
@@ -21952,9 +21997,11 @@ body .catalog-action-menu-floating {
 .gdg-account-hero-copy h1 {
   margin: 0;
   color: #ffffff;
-  font-size: 3rem;
+  max-width: 620px;
+  font-size: clamp(3.1rem, 7vw, 5rem);
   line-height: 1;
   letter-spacing: 0;
+  text-shadow: 0 5px 22px rgba(0, 0, 0, 0.28);
 }
 
 .gdg-account-hero-copy p {
@@ -21965,7 +22012,7 @@ body .catalog-action-menu-floating {
 }
 
 .gdg-account-hero-copy strong {
-  color: #ffffff;
+  color: #ffcf33;
   overflow-wrap: anywhere;
 }
 
@@ -21981,7 +22028,7 @@ body .catalog-action-menu-floating {
   width: fit-content;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.34);
   padding: 8px 11px;
   color: rgba(255, 255, 255, 0.9);
   font-size: 0.86rem;
@@ -21991,62 +22038,67 @@ body .catalog-action-menu-floating {
 .gdg-account-card-fan {
   position: relative;
   z-index: 1;
-  min-height: 186px;
+  min-height: 232px;
 }
 
 .gdg-account-card-fan > span {
   position: absolute;
-  top: 16px;
-  left: 50%;
-  width: 94px;
-  height: 132px;
-  border: 2px solid rgba(255, 255, 255, 0.72);
-  border-radius: 14px;
+  top: 14px;
+  left: 44%;
+  width: 112px;
+  height: 156px;
+  border: 4px solid #ffbf12;
+  border-radius: 18px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 235, 0.9)),
-    repeating-linear-gradient(135deg, rgba(255, 184, 0, 0.24) 0 9px, rgba(255, 106, 0, 0.16) 9px 18px);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+    radial-gradient(circle at center, rgba(255, 184, 0, 0.24), transparent 36%),
+    linear-gradient(135deg, #111827, #05070b 68%, #241701);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 22px 44px rgba(0, 0, 0, 0.34);
 }
 
 .gdg-account-card-fan > span::after {
   content: "";
   position: absolute;
-  inset: 14px;
-  border-radius: 10px;
+  inset: 34px 24px;
+  border: 5px solid rgba(255, 184, 0, 0.96);
+  border-radius: 999px;
   background:
-    radial-gradient(circle at center, rgba(255, 184, 0, 0.5), transparent 30%),
-    linear-gradient(135deg, rgba(16, 24, 40, 0.84), rgba(15, 61, 46, 0.76));
+    radial-gradient(circle, rgba(255, 184, 0, 0.98) 0 22%, transparent 23% 100%),
+    linear-gradient(135deg, transparent 0 45%, rgba(255, 184, 0, 0.94) 46% 55%, transparent 56%);
 }
 
 .gdg-account-card-fan > span:nth-child(1) {
-  transform: translateX(-112px) rotate(-15deg);
+  transform: translateX(-132px) rotate(-17deg);
 }
 
 .gdg-account-card-fan > span:nth-child(2) {
-  transform: translateX(-56px) rotate(-7deg);
+  transform: translateX(-67px) rotate(-7deg);
 }
 
 .gdg-account-card-fan > span:nth-child(3) {
-  transform: translateX(0) rotate(6deg);
+  transform: translateX(-1px) rotate(6deg);
 }
 
 .gdg-account-card-fan > span:nth-child(4) {
-  transform: translateX(58px) rotate(15deg);
+  transform: translateX(66px) rotate(16deg);
 }
 
 .gdg-account-card-box {
   position: absolute;
-  right: 18px;
-  bottom: 0;
+  right: 2px;
+  bottom: 8px;
   display: grid;
   place-items: center;
-  width: 118px;
-  height: 82px;
-  border: 2px solid rgba(255, 184, 0, 0.56);
-  border-radius: 18px;
-  background: linear-gradient(135deg, #ffb800, #ff6a00);
-  color: #101828;
-  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.2);
+  width: 144px;
+  height: 104px;
+  border: 2px solid rgba(255, 184, 0, 0.72);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 184, 0, 0.88) 0 24%, transparent 25%),
+    linear-gradient(135deg, #1a1204, #05070b);
+  color: #ffb800;
+  box-shadow: 0 28px 52px rgba(0, 0, 0, 0.34);
 }
 
 .gdg-account-stat-grid {
@@ -22057,12 +22109,14 @@ body .catalog-action-menu-floating {
 
 .gdg-account-stat-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 13px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: end;
   min-width: 0;
-  min-height: 116px;
-  padding: 18px;
+  min-height: 196px;
+  overflow: hidden;
+  padding: 22px;
   color: #101828;
   text-decoration: none;
   transition:
@@ -22071,21 +22125,49 @@ body .catalog-action-menu-floating {
     box-shadow 160ms ease;
 }
 
+.gdg-account-stat-card:nth-child(1) {
+  background:
+    radial-gradient(circle at 10% 18%, rgba(22, 163, 74, 0.2), transparent 38%),
+    linear-gradient(135deg, #ffffff, #edfff5);
+}
+
+.gdg-account-stat-card:nth-child(2) {
+  background:
+    radial-gradient(circle at 12% 16%, rgba(124, 58, 237, 0.2), transparent 38%),
+    linear-gradient(135deg, #ffffff, #f4f0ff);
+}
+
+.gdg-account-stat-card:nth-child(3) {
+  background:
+    radial-gradient(circle at 12% 16%, rgba(37, 99, 235, 0.18), transparent 40%),
+    linear-gradient(135deg, #ffffff, #eff6ff);
+}
+
+.gdg-account-stat-card:nth-child(4) {
+  background:
+    radial-gradient(circle at 12% 16%, rgba(255, 106, 0, 0.2), transparent 40%),
+    linear-gradient(135deg, #ffffff, #fff7eb);
+}
+
 .gdg-account-stat-card:hover {
   transform: translateY(-2px);
   border-color: rgba(245, 166, 35, 0.36);
   box-shadow: 0 24px 70px rgba(16, 24, 40, 0.12);
 }
 
+.gdg-account-stat-card .gdg-account-icon-badge {
+  grid-column: 1 / -1;
+}
+
 .gdg-account-stat-card div {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 
 .gdg-account-stat-card strong {
   color: #101828;
-  font-size: 1.6rem;
+  font-size: 2.25rem;
   line-height: 1;
 }
 
@@ -22104,10 +22186,14 @@ body .catalog-action-menu-floating {
 .gdg-account-icon-badge {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
-  border-radius: 18px;
+  width: 72px;
+  height: 72px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
   color: #101828;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    0 12px 28px rgba(16, 24, 40, 0.12);
 }
 
 .gdg-account-icon-badge.gold {
@@ -22147,6 +22233,50 @@ body .catalog-action-menu-floating {
   gap: 14px;
   min-width: 0;
   padding: 22px;
+}
+
+.gdg-account-orders-preview {
+  position: relative;
+  overflow: hidden;
+  min-height: 210px;
+  padding-left: 166px;
+}
+
+.gdg-account-orders-preview::before {
+  content: "";
+  position: absolute;
+  left: 24px;
+  top: 58px;
+  width: 104px;
+  height: 82px;
+  border: 2px solid rgba(255, 184, 0, 0.62);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 184, 0, 0.9) 0 26%, transparent 27%),
+    radial-gradient(circle at 36% 60%, rgba(255, 106, 0, 0.42), transparent 24%),
+    linear-gradient(135deg, #1a1204, #05070b);
+  box-shadow: 0 22px 42px rgba(16, 24, 40, 0.16);
+  transform: rotate(-8deg);
+}
+
+.gdg-account-orders-preview::after {
+  content: "";
+  position: absolute;
+  left: 44px;
+  top: 31px;
+  width: 72px;
+  height: 96px;
+  border: 3px solid rgba(124, 58, 237, 0.22);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.12), transparent),
+    #f6f2ff;
+  transform: rotate(7deg);
+}
+
+.gdg-account-orders-preview > * {
+  position: relative;
+  z-index: 1;
 }
 
 .gdg-account-panel-heading {
@@ -22210,11 +22340,18 @@ body .catalog-action-menu-floating {
 .gdg-account-preview-thumb {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  overflow: hidden;
+  width: 54px;
+  height: 54px;
   border-radius: 14px;
   background: #ffedd5;
   color: #c2410c;
+}
+
+.gdg-account-preview-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .gdg-account-preview-main {
@@ -22289,16 +22426,106 @@ body .catalog-action-menu-floating {
   line-height: 1;
 }
 
+.gdg-account-rewards-panel {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(168, 85, 247, 0.48);
+  background:
+    radial-gradient(circle at 82% 18%, rgba(255, 184, 0, 0.9), transparent 17%),
+    radial-gradient(circle at 88% 38%, rgba(168, 85, 247, 0.52), transparent 24%),
+    linear-gradient(135deg, #26114f 0%, #12051f 62%, #08030f 100%);
+  color: #ffffff;
+}
+
+.gdg-account-rewards-panel::after {
+  content: "";
+  position: absolute;
+  right: 22px;
+  top: 30px;
+  width: 116px;
+  aspect-ratio: 1;
+  border: 10px solid #f59e0b;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, #ffef9c 0 22%, #ffb800 23% 54%, #d97706 55%);
+  box-shadow: 0 18px 42px rgba(255, 184, 0, 0.34);
+  opacity: 0.46;
+}
+
+.gdg-account-rewards-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.gdg-account-rewards-panel .gdg-overline,
+.gdg-account-rewards-panel .gdg-account-panel-heading h2,
+.gdg-account-rewards-panel .gdg-account-points-display {
+  color: #ffffff;
+}
+
+.gdg-account-rewards-panel p,
+.gdg-account-rewards-panel .gdg-account-progress-label {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.gdg-account-rewards-panel .gdg-account-progress {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.gdg-rewards-info-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.18);
+  padding: 14px;
+}
+
+.gdg-rewards-info-strip.dashboard {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+}
+
+.gdg-rewards-info-strip > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.gdg-rewards-info-strip .gdg-account-icon-badge {
+  width: 48px;
+  height: 48px;
+}
+
+.gdg-rewards-info-strip p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  color: #475467;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.gdg-rewards-info-strip strong {
+  color: #101828;
+  font-weight: 950;
+}
+
 .gdg-rewards-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 0.36fr);
   gap: 18px;
   align-items: stretch;
   overflow: hidden;
-  border-color: rgba(245, 166, 35, 0.32);
+  border-color: rgba(168, 85, 247, 0.5);
   background:
-    radial-gradient(circle at 92% 10%, rgba(255, 184, 0, 0.22), transparent 28%),
-    linear-gradient(135deg, #ffffff 0%, #fff7eb 48%, #f7f2ea 100%);
+    radial-gradient(circle at 84% 18%, rgba(255, 184, 0, 0.82), transparent 20%),
+    radial-gradient(circle at 68% 60%, rgba(168, 85, 247, 0.42), transparent 30%),
+    linear-gradient(135deg, #2a135d 0%, #140822 62%, #08030f 100%);
 }
 
 .gdg-rewards-hero-copy {
@@ -22308,9 +22535,13 @@ body .catalog-action-menu-floating {
   min-width: 0;
 }
 
+.gdg-rewards-hero-copy .gdg-overline {
+  color: #c4b5fd;
+}
+
 .gdg-rewards-hero-copy h1 {
   margin: 0;
-  color: #101828;
+  color: #ffffff;
   font-size: clamp(2rem, 4vw, 3.4rem);
   line-height: 1;
 }
@@ -22318,7 +22549,7 @@ body .catalog-action-menu-floating {
 .gdg-rewards-hero-copy p {
   max-width: 620px;
   margin: 0;
-  color: #344054;
+  color: rgba(255, 255, 255, 0.86);
   font-size: 1rem;
   font-weight: 760;
   line-height: 1.55;
@@ -22339,17 +22570,40 @@ body .catalog-action-menu-floating {
 }
 
 .gdg-rewards-balance-card {
+  position: relative;
   display: grid;
   align-content: center;
   justify-items: center;
   gap: 8px;
   min-height: 190px;
-  border: 1px solid rgba(16, 24, 40, 0.1);
+  overflow: hidden;
+  border: 1px solid rgba(255, 184, 0, 0.36);
   border-radius: 24px;
-  background: #ffffff;
-  box-shadow: 0 22px 58px rgba(16, 24, 40, 0.1);
+  background:
+    radial-gradient(circle at 76% 28%, rgba(255, 184, 0, 0.34), transparent 28%),
+    rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
   padding: 22px;
   text-align: center;
+}
+
+.gdg-rewards-balance-card::before {
+  content: "";
+  position: absolute;
+  right: -22px;
+  top: -20px;
+  width: 120px;
+  aspect-ratio: 1;
+  border: 12px solid #f59e0b;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, #fff3b0 0 20%, #ffb800 21% 54%, #d97706 55%);
+  opacity: 0.82;
+}
+
+.gdg-rewards-balance-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .gdg-rewards-balance-card span,
@@ -22973,12 +23227,23 @@ body .catalog-action-menu-floating {
   .gdg-account-hero-dashboard,
   .gdg-account-dashboard-layout,
   .gdg-rewards-hero,
-  .gdg-rewards-grid {
+  .gdg-rewards-grid,
+  .gdg-rewards-info-strip,
+  .gdg-rewards-info-strip.dashboard {
     grid-template-columns: 1fr;
   }
 
   .gdg-account-card-fan {
     min-height: 150px;
+  }
+
+  .gdg-account-orders-preview {
+    padding-left: 22px;
+  }
+
+  .gdg-account-orders-preview::before,
+  .gdg-account-orders-preview::after {
+    display: none;
   }
 
   .gdg-address-card {
@@ -22996,8 +23261,11 @@ body .catalog-action-menu-floating {
 
 @media (max-width: 640px) {
   .gdg-account-shell {
-    width: min(100% - 22px, 1120px);
     padding: 28px 0 48px;
+  }
+
+  .gdg-account-shell > * {
+    width: min(100% - 22px, 1120px);
   }
 
   .gdg-account-card,
@@ -23014,11 +23282,16 @@ body .catalog-action-menu-floating {
   }
 
   .gdg-account-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    overflow-x: auto;
+    scroll-padding: 8px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .gdg-account-nav a {
+    flex: 0 0 auto;
     justify-content: flex-start;
+    min-width: max-content;
     padding: 0 12px;
   }
 
@@ -23062,6 +23335,10 @@ body .catalog-action-menu-floating {
     min-height: auto;
     justify-items: start;
     text-align: left;
+  }
+
+  .gdg-rewards-info-strip > div {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .gdg-account-stat-card {
