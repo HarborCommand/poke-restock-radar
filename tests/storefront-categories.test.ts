@@ -41,6 +41,19 @@ test("manually assigned specific storefront category is respected", () => {
   assert.equal(displayStorefrontCategory(product), "Premium Collections");
 });
 
+test("explicit storefront category overrides stale tags and title inference for collection matching", () => {
+  const blister = {
+    title: "Chaos Rising Premium Checklane Blister",
+    category: "Blisters",
+    tags: ["Premium Collections"]
+  };
+
+  assert.equal(displayStorefrontCategory(blister), "Blisters");
+  assert.equal(storefrontCategoryMatches(blister, "Blisters"), true);
+  assert.equal(storefrontCategoryMatches(blister, "Premium Collections"), false);
+  assert.equal(storefrontCategoryMatches(blister, "Pokemon Sealed"), true);
+});
+
 test("hero does not render the duplicate floating price card", () => {
   const client = fs.readFileSync("src/components/StorefrontClient.tsx", "utf8");
   const styles = fs.readFileSync("src/app/globals.css", "utf8");

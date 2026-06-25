@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { isNewArrival, isSoldOutProduct } from "@/lib/storefront-badges";
-import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/storefront-categories";
+import { storefrontCategoryMatches } from "@/lib/storefront-categories";
 import { cleanStorefrontTitle } from "@/lib/storefront-copy";
 import {
   GAMEDAYGRABS_CANONICAL_ORIGIN,
@@ -153,7 +153,7 @@ export function storefrontCollectionProducts(
   const newArrivalDays = options.newArrivalDays ?? 14;
   const filtered = products.filter((product) => {
     if (collection.mode === "category") {
-      return collection.category ? storefrontCategoryMatches(product, collection.category) || displayStorefrontCategory(product) === collection.category : false;
+      return collection.category ? storefrontCategoryMatches(product, collection.category) : false;
     }
     if (collection.mode === "new_arrivals") return !isSoldOutProduct(product) && isNewArrival(product, now, newArrivalDays);
     if (collection.mode === "almost_gone") return !isSoldOutProduct(product) && product.availabilityLevel === "almost_gone";

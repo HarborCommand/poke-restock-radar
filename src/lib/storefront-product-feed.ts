@@ -8,6 +8,7 @@ import {
   storefrontProductMetaDescription
 } from "@/lib/storefront-seo";
 import { isSoldOutProduct } from "@/lib/storefront-badges";
+import { resolvedStorefrontCategory } from "@/lib/storefront-categories";
 import { effectiveShippingPackageData, type ShippingProfileDefinition } from "@/lib/shipping";
 import type { PublicStoreProductDTO } from "@/types/radar";
 
@@ -130,14 +131,18 @@ export function googleMerchantBrand(product: Pick<PublicStoreProductDTO, "title"
 }
 
 export function googleMerchantProductType(product: Pick<PublicStoreProductDTO, "title" | "category" | "tags">) {
-  const text = [product.title, product.category, ...(product.tags ?? [])].join(" ").toLowerCase();
-  if (/booster bundle/.test(text)) return "Pokemon TCG > Booster Bundles";
-  if (/sleeved booster|sleeved/.test(text)) return "Pokemon TCG > Sleeved Boosters";
-  if (/premium collection|collection box|premium box/.test(text)) return "Pokemon TCG > Premium Collections";
-  if (/checklane|blister/.test(text)) return "Pokemon TCG > Blisters";
-  if (/\btins?\b/.test(text)) return "Pokemon TCG > Tins";
-  if (/\bdecks?\b/.test(text)) return "Pokemon TCG > Decks";
-  const category = compactText(product.category);
+  const category = compactText(resolvedStorefrontCategory(product));
+  if (category === "Booster Bundles") return "Pokemon TCG > Booster Bundles";
+  if (category === "Sleeved Boosters") return "Pokemon TCG > Sleeved Boosters";
+  if (category === "Premium Collections") return "Pokemon TCG > Premium Collections";
+  if (category === "Collection Boxes") return "Pokemon TCG > Collection Boxes";
+  if (category === "Blisters") return "Pokemon TCG > Blisters";
+  if (category === "Tins") return "Pokemon TCG > Tins";
+  if (category === "Elite Trainer Boxes") return "Pokemon TCG > Elite Trainer Boxes";
+  if (category === "Booster Boxes") return "Pokemon TCG > Booster Boxes";
+  if (category === "Accessories") return "Pokemon TCG > Accessories";
+  if (category === "Graded Cards") return "Pokemon TCG > Graded Cards";
+  if (/\bdecks?\b/i.test([product.title, category, ...(product.tags ?? [])].join(" "))) return "Pokemon TCG > Decks";
   return category ? `Pokemon TCG > ${category}` : "Pokemon TCG > Sealed Products";
 }
 

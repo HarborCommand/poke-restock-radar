@@ -223,6 +223,38 @@ test("collection filtering supports category, new arrivals, almost gone, and loc
   );
 });
 
+test("collection pages use resolved storefront category instead of stale product tags", () => {
+  const stalePremiumTaggedBlister = product({
+    id: "checklane-blister",
+    slug: "checklane-blister",
+    title: "Chaos Rising Premium Checklane Blister",
+    category: "Blisters",
+    tags: ["Pokemon", "Premium Collections"],
+    availabilityLevel: "low_stock"
+  });
+  const premiumCollection = product({
+    id: "zygarde-premium",
+    slug: "zygarde-premium",
+    title: "Pokemon Mega Zygarde ex Premium Collection",
+    category: "Premium Collections",
+    tags: ["Pokemon", "Blisters"],
+    availabilityLevel: "low_stock"
+  });
+  const boosterBundle = product({
+    id: "booster-bundle",
+    slug: "booster-bundle",
+    title: "Mega Evolution Perfect Order Booster Bundle",
+    category: "Booster Bundles",
+    tags: ["Pokemon", "Premium Collections"],
+    availabilityLevel: "low_stock"
+  });
+  const products = [stalePremiumTaggedBlister, premiumCollection, boosterBundle];
+
+  assert.deepEqual(storefrontCollectionProducts(getStorefrontCollection("premium-collections")!, products).map((entry) => entry.id), ["zygarde-premium"]);
+  assert.deepEqual(storefrontCollectionProducts(getStorefrontCollection("blisters")!, products).map((entry) => entry.id), ["checklane-blister"]);
+  assert.deepEqual(storefrontCollectionProducts(getStorefrontCollection("booster-bundles")!, products).map((entry) => entry.id), ["booster-bundle"]);
+});
+
 test("collection structured data renders BreadcrumbList and ItemList without private or payment data", () => {
   const collection = getStorefrontCollection("premium-collections")!;
   const breadcrumb = storefrontCollectionBreadcrumbJsonLd(collection) as Record<string, any>;

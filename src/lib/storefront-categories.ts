@@ -35,9 +35,17 @@ function textForCategoryMatch(input: { title?: string | null; category?: string 
   return [input.category, input.title, input.itemName, input.setName, ...(input.tags ?? [])].filter(Boolean).join(" ");
 }
 
+function normalizedCategory(value: string | null | undefined) {
+  return (value || "").toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function categoryEquals(left: string | null | undefined, right: string | null | undefined) {
+  return normalizedCategory(left) === normalizedCategory(right);
+}
+
 export function isGenericStorefrontCategory(category: string | null | undefined) {
-  if (!category) return true;
-  const normalized = category.toLowerCase().replace(/[_-]+/g, " ").trim();
+  const normalized = normalizedCategory(category);
+  if (!normalized) return true;
   return [
     "pokemon sealed",
     "pokemon",
@@ -78,19 +86,31 @@ export function displayStorefrontCategory(input: {
   return inferSpecificStorefrontCategory(input);
 }
 
+export function resolvedStorefrontCategory(input: {
+  title?: string | null;
+  category?: string | null;
+  tags?: string[] | null;
+  setName?: string | null;
+  itemName?: string | null;
+}) {
+  return displayStorefrontCategory(input);
+}
+
 export function storefrontCategoryMatches(
   product: { title: string; category: string; tags: string[] },
   category: string
 ) {
   if (category === "all") return true;
-  const normalized = category.toLowerCase();
-  const specific = displayStorefrontCategory(product);
+  const normalized = normalizedCategory(category);
+  const specific = resolvedStorefrontCategory(product);
+  const targetIsSpecific = Array.from(specificCategories).some((entry) => categoryEquals(entry, category));
   const text = textForCategoryMatch(product).toLowerCase();
 
-  if (normalized === STOREFRONT_GENERIC_POKEMON_CATEGORY.toLowerCase()) {
+  if (normalized === normalizedCategory(STOREFRONT_GENERIC_POKEMON_CATEGORY)) {
     return /pokemon|sealed|booster|trainer|collection|tin|blister|tcg|trading card/.test(text);
   }
-  if (specific === category) return true;
+  if (categoryEquals(specific, category)) return true;
+  if (targetIsSpecific) return false;
   if (normalized === "sports cards") return /\b(sports|bowman|topps|panini|basketball|football|baseball)\b/.test(text);
   if (normalized === "graded cards") return /\b(graded|psa|bgs|cgc|slab)\b/.test(text);
   if (normalized === "accessories") return /\b(accessory|accessories|binder|sleeve|toploader|top loader|deck box|playmat|storage)\b/.test(text);

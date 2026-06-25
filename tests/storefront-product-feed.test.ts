@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   googleMerchantProductId,
+  googleMerchantProductType,
   storefrontProductFeedItems,
   storefrontProductFeedXml
 } from "../src/lib/storefront-product-feed";
@@ -180,6 +181,26 @@ test("Google Merchant product feed honors admin-entered brand while computing ca
   assert.match(xml, /<g:brand>Admin Brand<\/g:brand>/);
   assert.match(xml, /<g:product_type>Pokemon TCG &gt; Blisters<\/g:product_type>/);
   assert.doesNotMatch(xml, /<g:brand>Pokemon<\/g:brand>/);
+});
+
+test("Google Merchant product type follows resolved storefront category over stale tags", () => {
+  const blister = product({
+    title: "Chaos Rising Premium Checklane Blister",
+    category: "Blisters",
+    tags: ["Premium Collections"]
+  });
+  const premium = product({
+    title: "Pokemon Mega Zygarde ex Premium Collection",
+    category: "Premium Collections",
+    tags: ["Blisters"]
+  });
+
+  assert.equal(googleMerchantProductType(blister), "Pokemon TCG > Blisters");
+  assert.equal(googleMerchantProductType(premium), "Pokemon TCG > Premium Collections");
+
+  const xml = storefrontProductFeedXml([blister, premium]);
+  assert.match(xml, /Chaos Rising Premium Checklane Blister[\s\S]*<g:product_type>Pokemon TCG &gt; Blisters<\/g:product_type>/);
+  assert.match(xml, /Pok.mon Mega Zygarde ex Premium Collection[\s\S]*<g:product_type>Pokemon TCG &gt; Premium Collections<\/g:product_type>/);
 });
 
 test("Google Merchant product feed uses selected shipping profile defaults when product overrides are blank", () => {
