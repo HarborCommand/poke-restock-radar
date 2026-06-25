@@ -629,14 +629,14 @@ function marketplaceFeedbackBadgeIcon(label: string) {
 
 export function MarketplaceFeedbackSection({ variant = "home" }: { variant?: "home" | "about" }) {
   const isAbout = variant === "about";
-  const snippets = isAbout ? storefrontFeedback.snippets.slice(0, 3) : storefrontFeedback.snippets;
+  const snippets = storefrontFeedback.snippets.slice(0, 3);
   const title = isAbout ? storefrontFeedback.aboutTitle : storefrontFeedback.homepageTitle;
   const body = isAbout ? storefrontFeedback.aboutBody : storefrontFeedback.homepageBody;
-  const trustBadges = isAbout ? storefrontFeedback.trustBadges.slice(0, 3) : storefrontFeedback.trustBadges;
+  const trustBadges = storefrontFeedback.trustBadges.slice(0, 3);
 
   return (
     <section
-      className={`gdg-feedback-panel${isAbout ? " compact" : ""}`}
+      className={`gdg-feedback-panel compact${isAbout ? " about" : ""}`}
       aria-labelledby={isAbout ? "gdg-about-feedback-title" : "gdg-home-feedback-title"}
     >
       <div className="gdg-feedback-heading">
@@ -1021,23 +1021,6 @@ export function ProductGrid({
           </section>
 
           <HomepageAccountCta settings={settings} signedIn={accountSignedIn} />
-
-          <section className="gdg-trust-bar" aria-label="Store promises">
-            {[
-              { icon: <ShieldCheck size={19} />, title: "Secure checkout", text: "Handled by Stripe" },
-              { icon: <Truck size={19} />, title: "USPS shipping", text: "Calculated by ZIP" },
-              { icon: <ShoppingCart size={19} />, title: "Guest checkout", text: "No account required" },
-              { icon: <BadgeCheck size={19} />, title: "Local pickup", text: "When available" }
-            ].map((item) => (
-              <div key={item.title}>
-                <span>{item.icon}</span>
-                <strong>{item.title}</strong>
-                <small>{item.text}</small>
-              </div>
-            ))}
-          </section>
-
-          <MarketplaceFeedbackSection />
         </>
       ) : null}
 
@@ -1101,6 +1084,7 @@ export function ProductGrid({
           </section>
 
           <HomepageSupportStrip />
+          <MarketplaceFeedbackSection />
         </>
       ) : (
         <section className="gdg-shop-area" id="shop">

@@ -890,8 +890,10 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /<span className="gdg-home-account-badge-mark">G<\/span>/);
   assert.doesNotMatch(client, /gdg-home-account-icon/);
   assert.doesNotMatch(client, /gdg-home-account-[\s\S]{0,160}<User/);
+  assert.doesNotMatch(client, /<section className="gdg-trust-bar"/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{almostGoneSection\}/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{collectorPicksSection\}/);
+  assert.doesNotMatch(client, /<HomepageProductSection section=\{premiumCollectionsSection\}/);
   assert.ok(client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />") > client.indexOf('<section className="gdg-hero">'));
   assert.ok(client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />") < client.indexOf("section={featuredSection}"));
   assert.ok(client.indexOf("<h2>Shop By Category</h2>") > client.indexOf("section={featuredSection}"));
@@ -1015,15 +1017,15 @@ test("GameDayGrabs marketplace feedback section uses curated safe social proof",
   assert.notEqual(componentStart, -1);
   assert.notEqual(componentEnd, -1);
   const feedbackComponent = client.slice(componentStart, componentEnd);
-  const trustBarIndex = client.indexOf('<section className="gdg-trust-bar"');
   const feedbackIndex = client.indexOf("<MarketplaceFeedbackSection />");
   const shopByCategoryIndex = client.indexOf("<h2>Shop By Category</h2>");
+  const trustSectionIndex = client.indexOf("<HomepageSupportStrip />");
 
-  assert.notEqual(trustBarIndex, -1);
   assert.notEqual(feedbackIndex, -1);
   assert.notEqual(shopByCategoryIndex, -1);
-  assert.ok(trustBarIndex < feedbackIndex);
-  assert.ok(feedbackIndex < shopByCategoryIndex);
+  assert.notEqual(trustSectionIndex, -1);
+  assert.ok(shopByCategoryIndex < trustSectionIndex);
+  assert.ok(trustSectionIndex < feedbackIndex);
   assert.match(aboutPage, /MarketplaceFeedbackSection, StorefrontFooter, StorefrontHeader/);
   assert.match(aboutPage, /<MarketplaceFeedbackSection variant="about" \/>/);
 

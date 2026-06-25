@@ -210,6 +210,8 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.match(client, /homepageFeaturedDropsSection\(products, settings\.newArrivalDays\)/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{almostGoneSection\}/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{collectorPicksSection\}/);
+  assert.doesNotMatch(client, /<HomepageProductSection section=\{premiumCollectionsSection\}/);
+  assert.doesNotMatch(client, /<section className="gdg-trust-bar"/);
   assert.match(home, /Featured Drops/);
   assert.match(client, /Shop Pokemon/);
   assert.match(client, /View New Arrivals/);
@@ -243,12 +245,17 @@ test("homepage merchandising UI renders category links and safe product-card lin
   const featuredRenderIndex = client.indexOf("section={featuredSection}");
   const accountCtaIndex = client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />");
   const categoryIndex = client.indexOf("<h2>Shop By Category</h2>");
+  const trustIndex = client.indexOf("<HomepageSupportStrip />");
+  const feedbackIndex = client.indexOf("<MarketplaceFeedbackSection />");
   assert.ok(heroRenderIndex >= 0);
   assert.ok(featuredRenderIndex >= 0);
   assert.ok(accountCtaIndex > heroRenderIndex);
   assert.ok(accountCtaIndex < featuredRenderIndex);
   assert.ok(categoryIndex > featuredRenderIndex);
+  assert.ok(trustIndex > categoryIndex);
+  assert.ok(feedbackIndex > trustIndex);
   assert.match(css, /gdg-home-product-row/);
+  assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
   assert.match(css, /gdg-support-strip/);
   assert.match(css, /gdg-home-account-cta/);
   assert.match(css, /gdg-home-account-badge-shell/);
