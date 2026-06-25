@@ -20793,6 +20793,17 @@ body .inventory-modal textarea {
   color: #111827 !important;
 }
 
+body .storefront-category-field {
+  align-content: start;
+}
+
+body .storefront-category-field small {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 body .checkbox-label,
 body .inventory-modal .checkbox-label,
 body .inventory-edit-form .checkbox-label,

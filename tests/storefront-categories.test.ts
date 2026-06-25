@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-import { displayStorefrontCategory, storefrontCategoryMatches } from "../src/lib/storefront-categories";
+import { displayStorefrontCategory, STOREFRONT_CATEGORY_OPTIONS, storefrontCategoryMatches } from "../src/lib/storefront-categories";
 
 test("ETB title maps to Elite Trainer Boxes and beats generic Pokemon Sealed", () => {
   const product = {
@@ -22,6 +22,13 @@ test("specific sealed product titles map to specific storefront categories", () 
   assert.equal(displayStorefrontCategory({ title: "Pokemon Premium Collection Box", category: "Pokemon Sealed", tags: [] }), "Premium Collections");
   assert.equal(displayStorefrontCategory({ title: "Pokemon Poke Ball Tin", category: "Pokemon Sealed", tags: [] }), "Tins");
   assert.equal(displayStorefrontCategory({ title: "Pokemon Three-Booster Blister", category: "Pokemon Sealed", tags: [] }), "Blisters");
+});
+
+test("storefront category options expose existing public categories for admin selection", () => {
+  assert.deepEqual([...new Set(STOREFRONT_CATEGORY_OPTIONS)], [...STOREFRONT_CATEGORY_OPTIONS]);
+  for (const category of ["Pokemon Sealed", "Booster Bundles", "Blisters", "Tins", "Premium Collections", "Accessories"]) {
+    assert.equal(STOREFRONT_CATEGORY_OPTIONS.includes(category as (typeof STOREFRONT_CATEGORY_OPTIONS)[number]), true, `missing ${category}`);
+  }
 });
 
 test("manually assigned specific storefront category is respected", () => {

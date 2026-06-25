@@ -76,6 +76,7 @@ import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPolicyResult } from "@/lib/target-retail-policy";
 import { compareTargetDiscordAlert, targetUrlFromTcin, type TargetDiscordAlertInput, type TargetDiscordComparison } from "@/lib/target-discord-alert";
 import { cleanStorefrontDescription, cleanStorefrontTitle, generatedStorefrontDescription, storefrontCopyWarnings } from "@/lib/storefront-copy";
+import { STOREFRONT_CATEGORY_OPTIONS } from "@/lib/storefront-categories";
 import { isProductImageUrlRenderable, isStorefrontDisplayImageUrl, productImageQualityWarnings } from "@/lib/product-image-quality";
 import { DEFAULT_STOREFRONT_PURCHASE_LIMIT } from "@/lib/storefront-purchase-limits";
 import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
@@ -159,6 +160,14 @@ type ActionHandler = <T>(
   run: () => Promise<T>,
   options?: { confirm?: string; reload?: boolean; success?: string }
 ) => Promise<void>;
+const CUSTOM_STOREFRONT_CATEGORY_VALUE = "__custom_storefront_category__";
+const storefrontCategoryOptionSet = new Set<string>(STOREFRONT_CATEGORY_OPTIONS);
+
+function storefrontCategorySelectValue(category: string | null | undefined) {
+  const trimmed = String(category || "").trim();
+  return trimmed && storefrontCategoryOptionSet.has(trimmed) ? trimmed : CUSTOM_STOREFRONT_CATEGORY_VALUE;
+}
+
 type InventoryPurchasePrefill = {
   upc?: string;
   itemName?: string;
@@ -12493,11 +12502,15 @@ function StoreListingModal({
   const listingStockWarnings = storefrontListingStockWarnings(item);
   const generatedDescription = storefrontSuggestedDescription(item);
   const purchaseLimitActive = item.purchaseLimitEnabled || item.maxQuantityPerOrder !== DEFAULT_STOREFRONT_PURCHASE_LIMIT;
+  const [storefrontCategory, setStorefrontCategory] = useState(suggestedCategory);
+  const [storefrontCategoryMode, setStorefrontCategoryMode] = useState(() => storefrontCategorySelectValue(suggestedCategory));
+  const selectedStorefrontCategory = storefrontCategoryMode === CUSTOM_STOREFRONT_CATEGORY_VALUE ? storefrontCategory.trim() : storefrontCategory.trim() || suggestedCategory;
+  const effectiveStorefrontCategory = selectedStorefrontCategory || suggestedCategory;
   const initialDescription = cleanStorefrontDescription({
     title: item.publicTitle || item.itemName,
     itemName: item.itemName,
     brand: item.brand,
-    category: suggestedCategory,
+    category: effectiveStorefrontCategory,
     setName: item.setName,
     publicDescription: item.publicDescription,
     description: item.description,
@@ -12509,7 +12522,7 @@ function StoreListingModal({
     title: item.publicTitle || item.itemName,
     itemName: item.itemName,
     brand: item.brand,
-    category: suggestedCategory,
+    category: effectiveStorefrontCategory,
     setName: item.setName,
     publicDescription,
     description: null,
@@ -12529,7 +12542,7 @@ function StoreListingModal({
     { key: "quantity", label: availableForSale > 0 ? "Quantity available" : "Sold out online", complete: availableForSale > 0 },
     { key: "description", label: "Description exists", complete: Boolean(cleanedDescriptionPreview.trim()) },
     { key: "description-clean", label: "Description clean", complete: descriptionWarnings.length === 0 },
-    { key: "category", label: "Category set", complete: Boolean(suggestedCategory.trim()) },
+    { key: "category", label: "Category set", complete: Boolean(selectedStorefrontCategory.trim()) },
     { key: "shipping", label: "Shipping profile set", complete: shippingProfileReady }
   ];
   const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
@@ -12606,7 +12619,43 @@ function StoreListingModal({
                 ]}
               />
               <TextInput name="publicSlug" label="Public URL slug" defaultValue={item.publicSlug ?? ""} />
-              <TextInput name="storefrontCategory" label="Store category" defaultValue={suggestedCategory} />
+              <label className="storefront-category-field">
+                Store category
+                <input type="hidden" name="storefrontCategory" value={selectedStorefrontCategory} />
+                <select
+                  aria-label="Store category"
+                  value={storefrontCategoryMode}
+                  onChange={(event) => {
+                    const nextCategoryMode = event.currentTarget.value;
+                    setStorefrontCategoryMode(nextCategoryMode);
+                    if (nextCategoryMode === CUSTOM_STOREFRONT_CATEGORY_VALUE) {
+                      setStorefrontCategory(storefrontCategoryOptionSet.has(storefrontCategory.trim()) ? "" : storefrontCategory);
+                      return;
+                    }
+                    setStorefrontCategory(nextCategoryMode);
+                  }}
+                >
+                  {STOREFRONT_CATEGORY_OPTIONS.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_STOREFRONT_CATEGORY_VALUE}>Add new category...</option>
+                </select>
+                {storefrontCategoryMode === CUSTOM_STOREFRONT_CATEGORY_VALUE ? (
+                  <>
+                    <input
+                      aria-label="Custom store category"
+                      value={storefrontCategory}
+                      onChange={(event) => setStorefrontCategory(event.currentTarget.value)}
+                      placeholder="Enter a new public category"
+                    />
+                    <small>Custom category will be saved to this listing only.</small>
+                  </>
+                ) : (
+                  <small>Choose an existing storefront category, or scroll to add a new one.</small>
+                )}
+              </label>
             </div>
             {showSoldOutPublishWarning ? <p className="form-helper publish-ready-note">This product will appear publicly with a Sold Out badge.</p> : null}
             {listingStockWarnings.length ? (

@@ -1,5 +1,20 @@
 export const STOREFRONT_GENERIC_POKEMON_CATEGORY = "Pokemon Sealed";
 
+export const STOREFRONT_CATEGORY_OPTIONS = [
+  STOREFRONT_GENERIC_POKEMON_CATEGORY,
+  "Booster Bundles",
+  "Booster Boxes",
+  "Elite Trainer Boxes",
+  "Premium Collections",
+  "Collection Boxes",
+  "Blisters",
+  "Tins",
+  "Sleeved Boosters",
+  "Accessories",
+  "Graded Cards",
+  "Sports Cards"
+] as const;
+
 const specificCategoryMatchers: Array<{ category: string; pattern: RegExp }> = [
   { category: "Elite Trainer Boxes", pattern: /\b(elite trainer box|etb)\b/i },
   { category: "Booster Bundles", pattern: /\bbooster bundle\b/i },

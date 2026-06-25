@@ -291,6 +291,25 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.shipping-profile-card-head,[\s\S]*body \.shipping-package-grid,[\s\S]*body \.shipping-option-grid \{[\s\S]*grid-template-columns: 1fr/);
 });
 
+test("admin listing editor offers existing storefront categories with custom entry", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
+
+  assert.match(appSource, /import \{ STOREFRONT_CATEGORY_OPTIONS \} from "@\/lib\/storefront-categories"/);
+  assert.match(appSource, /const CUSTOM_STOREFRONT_CATEGORY_VALUE = "__custom_storefront_category__"/);
+  assert.match(appSource, /function storefrontCategorySelectValue/);
+  assert.match(listingModal, /className="storefront-category-field"/);
+  assert.match(listingModal, /<input type="hidden" name="storefrontCategory" value=\{selectedStorefrontCategory\} \/>/);
+  assert.match(listingModal, /STOREFRONT_CATEGORY_OPTIONS\.map\(\(category\) =>/);
+  assert.match(listingModal, /<option value=\{CUSTOM_STOREFRONT_CATEGORY_VALUE\}>Add new category\.\.\.<\/option>/);
+  assert.match(listingModal, /aria-label="Custom store category"/);
+  assert.match(listingModal, /Choose an existing storefront category, or scroll to add a new one\./);
+  assert.doesNotMatch(listingModal, /TextInput name="storefrontCategory"/);
+  assert.match(css, /body \.storefront-category-field \{/);
+  assert.match(css, /body \.storefront-category-field small \{/);
+});
+
 test("admin shipping profile selection is guarded against missing profile data", () => {
   const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
   const helperSource = sourceSlice(appSource, "function safeShippingProfileKey", "const completedShippingProfileValues");
