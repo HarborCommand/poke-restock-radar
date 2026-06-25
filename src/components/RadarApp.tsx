@@ -6280,6 +6280,18 @@ function positiveInventoryValue(value: number | string | null | undefined) {
   return null;
 }
 
+function safeShippingProfileKey(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function safeShippingProfileName(profile: Partial<ShippingProfileDTO> | null | undefined) {
+  return typeof profile?.name === "string" && profile.name.trim() ? profile.name.trim() : "Unnamed shipping profile";
+}
+
+function safeShippingProfiles(shippingProfiles: ShippingProfileDTO[] | null | undefined) {
+  return Array.isArray(shippingProfiles) ? shippingProfiles.filter((profile) => Boolean(profile && safeShippingProfileKey(profile.key))) : [];
+}
+
 const completedShippingProfileValues = new Set([
   "single_card_or_light_item",
   "sealed_pack_small",
@@ -6290,12 +6302,12 @@ const completedShippingProfileValues = new Set([
   "local_pickup"
 ]);
 
-function shippingProfileRecordMap(shippingProfiles: ShippingProfileDTO[] = []) {
-  return new Map(shippingProfiles.map((profile) => [profile.key.trim().toLowerCase(), profile]));
+function shippingProfileRecordMap(shippingProfiles: ShippingProfileDTO[] | null | undefined = []) {
+  return new Map(safeShippingProfiles(shippingProfiles).map((profile) => [safeShippingProfileKey(profile.key), profile]));
 }
 
-function inventoryShippingProfileValue(item: InventoryItemDTO) {
-  return (item.shippingProfile || "").trim().toLowerCase();
+function inventoryShippingProfileValue(item: Pick<InventoryItemDTO, "shippingProfile"> | null | undefined) {
+  return safeShippingProfileKey(item?.shippingProfile);
 }
 
 function inventoryShippingLocalPickupOnly(item: InventoryItemDTO) {
@@ -6323,6 +6335,7 @@ function inventoryUsesInactiveShippingProfile(item: InventoryItemDTO, shippingPr
 
 function inventoryEffectiveShippingData(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []) {
   const profile = inventoryShippingProfileRecord(item, shippingProfiles);
+  const selectedProfileKey = inventoryShippingProfileValue(item);
   const productWeight = positiveInventoryValue(item.packageWeightOz);
   const productLength = positiveInventoryValue(item.packageLengthIn);
   const productWidth = positiveInventoryValue(item.packageWidthIn);
@@ -6348,6 +6361,7 @@ function inventoryEffectiveShippingData(item: InventoryItemDTO, shippingProfiles
     usesProfileDefaultDimensions: (!productLength || !productWidth || !productHeight) && !missingDimensions && Boolean(profile),
     profileHasWeightDefault: Boolean(profileWeight),
     profileHasDimensionDefaults,
+    selectedProfileUnavailable: Boolean(selectedProfileKey && selectedProfileKey !== "standard" && !profile),
     selectedProfileMissingDefaults: Boolean(profile && (!effectiveWeightOz || missingDimensions))
   };
 }
@@ -6395,6 +6409,9 @@ function inventoryShippingProfileBadges(item: InventoryItemDTO, shippingProfiles
   }
   if (!inventoryShippingLocalPickupOnly(item) && effectiveData.selectedProfileMissingDefaults) {
     badges.push({ label: "Selected profile is missing package defaults", tone: "warning" });
+  }
+  if (!inventoryShippingLocalPickupOnly(item) && effectiveData.selectedProfileUnavailable) {
+    badges.push({ label: "Selected profile is unavailable", tone: "warning" });
   }
   if (inventoryShippingLocalPickupOnly(item)) {
     badges.push({ label: "Local pickup only", tone: "good" });
@@ -6489,6 +6506,14 @@ function inventoryShippingProfileRowBadges(item: InventoryItemDTO, shippingProfi
       tone: "warning"
     });
   }
+  if (!complete && !inventoryShippingLocalPickupOnly(item) && effectiveData.selectedProfileUnavailable) {
+    badges.push({
+      icon: "warning",
+      label: "Profile Missing",
+      title: "Selected shipping profile is unavailable.",
+      tone: "warning"
+    });
+  }
   if (!complete && item.shippingAvailable === false && !inventoryShippingLocalPickupOnly(item)) {
     badges.push({
       icon: "warning",
@@ -6508,19 +6533,20 @@ function InventoryRowBadgeIcon({ icon }: { icon: InventoryRowBadge["icon"] }) {
   return <AlertTriangle size={12} aria-hidden="true" />;
 }
 
-function shippingProfileSelectOptions(shippingProfiles: ShippingProfileDTO[], currentKey?: string | null) {
-  const normalizedCurrentKey = String(currentKey || "").trim().toLowerCase();
+function shippingProfileSelectOptions(shippingProfiles: ShippingProfileDTO[] | null | undefined, currentKey?: string | null) {
+  const normalizedCurrentKey = safeShippingProfileKey(currentKey);
   const seen = new Set(["standard"]);
   const options = [
     { value: "standard", label: "Safe default profile" },
-    ...shippingProfiles
-      .filter((profile) => profile.active || profile.key === normalizedCurrentKey)
-      .sort((a, b) => Number(b.active) - Number(a.active) || Number(b.systemDefault) - Number(a.systemDefault) || a.name.localeCompare(b.name))
+    ...safeShippingProfiles(shippingProfiles)
+      .filter((profile) => Boolean(profile.active) || safeShippingProfileKey(profile.key) === normalizedCurrentKey)
+      .sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)) || Number(Boolean(b.systemDefault)) - Number(Boolean(a.systemDefault)) || safeShippingProfileName(a).localeCompare(safeShippingProfileName(b)))
       .map((profile) => {
-        seen.add(profile.key);
+        const key = safeShippingProfileKey(profile.key);
+        seen.add(key);
         return {
-          value: profile.key,
-          label: `${profile.name}${profile.active ? "" : " (inactive - existing products only)"}`
+          value: key,
+          label: `${safeShippingProfileName(profile)}${profile.active ? "" : " (inactive - existing products only)"}`
         };
       })
   ];
@@ -6540,7 +6566,7 @@ type ShippingMetadataDraft = {
 
 function shippingMetadataDraftFromItem(item: InventoryItemDTO): ShippingMetadataDraft {
   return {
-    shippingProfile: item.shippingProfile || "standard",
+    shippingProfile: inventoryShippingProfileValue(item) || "standard",
     packageWeightOz: item.packageWeightOz?.toString() ?? "",
     packageLengthIn: item.packageLengthIn?.toString() ?? "",
     packageWidthIn: item.packageWidthIn?.toString() ?? "",
@@ -6558,7 +6584,7 @@ function draftShippingNumber(value: string) {
 function inventoryItemWithShippingDraft(item: InventoryItemDTO, draft: ShippingMetadataDraft): InventoryItemDTO {
   return {
     ...item,
-    shippingProfile: draft.shippingProfile,
+    shippingProfile: safeShippingProfileKey(draft.shippingProfile) || "standard",
     packageWeightOz: draftShippingNumber(draft.packageWeightOz),
     packageLengthIn: draftShippingNumber(draft.packageLengthIn),
     packageWidthIn: draftShippingNumber(draft.packageWidthIn),
@@ -8054,12 +8080,21 @@ function ProductShippingEditorModal({
                 <p>Add defaults to the profile or enter product-level overrides before relying on calculated shipping.</p>
               </div>
             ) : null}
+            {effectiveShippingData.selectedProfileUnavailable ? (
+              <div className="shipping-profile-guidance">
+                <strong>Selected shipping profile is unavailable.</strong>
+                <p>The product form is still safe to edit. Choose another profile or save product-level package overrides.</p>
+              </div>
+            ) : null}
             <div className="shipping-profile-fields">
               <SelectInput
                 name="shippingProfile"
                 label="Shipping profile"
                 value={shippingDraft.shippingProfile}
-                onChange={(event) => setShippingDraft((draft) => ({ ...draft, shippingProfile: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const nextShippingProfile = safeShippingProfileKey(event.currentTarget.value) || "standard";
+                  setShippingDraft((draft) => ({ ...draft, shippingProfile: nextShippingProfile }));
+                }}
                 options={shippingProfileSelectOptions(shippingProfiles, item.shippingProfile)}
               />
               <div className="shipping-package-grid">
@@ -12664,7 +12699,13 @@ function StoreListingModal({
                   <p>Add defaults to the profile or enter product-level overrides before relying on calculated shipping.</p>
                 </div>
               ) : null}
-              {!shippingProfileReady && !effectiveShippingData.selectedProfileMissingDefaults ? (
+              {effectiveShippingData.selectedProfileUnavailable ? (
+                <div className="shipping-profile-guidance">
+                  <strong>Selected shipping profile is unavailable.</strong>
+                  <p>The listing form is still safe to edit. Choose another profile or save product-level package overrides.</p>
+                </div>
+              ) : null}
+              {!shippingProfileReady && !effectiveShippingData.selectedProfileMissingDefaults && !effectiveShippingData.selectedProfileUnavailable ? (
                 <div className="shipping-profile-guidance">
                   <strong>Complete before relying on storefront estimates.</strong>
                   <p>Measure the packed shipment, choose the closest package profile, and confirm whether local pickup should be offered.</p>
@@ -12675,7 +12716,10 @@ function StoreListingModal({
                   name="shippingProfile"
                   label="Shipping profile"
                   value={shippingDraft.shippingProfile}
-                  onChange={(event) => setShippingDraft((draft) => ({ ...draft, shippingProfile: event.currentTarget.value }))}
+                  onChange={(event) => {
+                    const nextShippingProfile = safeShippingProfileKey(event.currentTarget.value) || "standard";
+                    setShippingDraft((draft) => ({ ...draft, shippingProfile: nextShippingProfile }));
+                  }}
                   options={shippingProfileSelectOptions(shippingProfiles, item.shippingProfile)}
                 />
                 <div className="shipping-package-grid">

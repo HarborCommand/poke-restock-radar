@@ -237,6 +237,7 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(listingModal, /inventoryShippingProfileBadges\(draftShippingItem, shippingProfiles\)\.map/);
   assert.match(listingModal, /Using profile defaults\./);
   assert.match(listingModal, /Selected profile is missing package defaults\./);
+  assert.match(listingModal, /Selected shipping profile is unavailable\./);
   assert.match(listingModal, /Needs shipping profile/);
   assert.match(listingModal, /Shipping profile set/);
   assert.match(listingModal, /Complete before relying on storefront estimates/);
@@ -265,6 +266,7 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(appSource, /function shippingProfileSelectOptions/);
   assert.match(appSource, /inactive - existing products only/);
   assert.match(appSource, /Inactive profile in use/);
+  assert.match(appSource, /Selected profile is unavailable/);
 
   for (const label of [
     "Weight in ounces",
@@ -287,6 +289,31 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(css, /body \.shipping-package-grid,[\s\S]*body \.shipping-option-grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /body \.shipping-toggle-card \{[\s\S]*grid-template-columns: auto minmax\(0, 1fr\)/);
   assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.shipping-profile-card-head,[\s\S]*body \.shipping-package-grid,[\s\S]*body \.shipping-option-grid \{[\s\S]*grid-template-columns: 1fr/);
+});
+
+test("admin shipping profile selection is guarded against missing profile data", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const helperSource = sourceSlice(appSource, "function safeShippingProfileKey", "const completedShippingProfileValues");
+  const productShippingModal = sourceSlice(appSource, "function ProductShippingEditorModal", "function ShippingProfileEditorModal");
+  const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
+
+  assert.match(helperSource, /function safeShippingProfileKey\(value: unknown\)/);
+  assert.match(helperSource, /typeof value === "string" \? value\.trim\(\)\.toLowerCase\(\) : ""/);
+  assert.match(helperSource, /function safeShippingProfiles\(shippingProfiles: ShippingProfileDTO\[\] \| null \| undefined\)/);
+  assert.match(helperSource, /Array\.isArray\(shippingProfiles\)/);
+  assert.match(appSource, /function shippingProfileRecordMap\(shippingProfiles: ShippingProfileDTO\[\] \| null \| undefined = \[\]\)/);
+  assert.match(appSource, /safeShippingProfiles\(shippingProfiles\)\.map/);
+  assert.doesNotMatch(appSource, /profile\.key\.trim\(\)/);
+  assert.match(appSource, /selectedProfileUnavailable: Boolean\(selectedProfileKey && selectedProfileKey !== "standard" && !profile\)/);
+  assert.match(appSource, /Selected shipping profile is unavailable\./);
+  assert.match(appSource, /shippingProfile: inventoryShippingProfileValue\(item\) \|\| "standard"/);
+  assert.match(appSource, /shippingProfile: safeShippingProfileKey\(draft\.shippingProfile\) \|\| "standard"/);
+  assert.match(productShippingModal, /const nextShippingProfile = safeShippingProfileKey\(event\.currentTarget\.value\) \|\| "standard"/);
+  assert.match(productShippingModal, /setShippingDraft\(\(draft\) => \(\{ \.\.\.draft, shippingProfile: nextShippingProfile \}\)\)/);
+  assert.doesNotMatch(productShippingModal, /setShippingDraft\(\(draft\) => \(\{ \.\.\.draft, shippingProfile: safeShippingProfileKey\(event\.currentTarget\.value\)/);
+  assert.match(listingModal, /const nextShippingProfile = safeShippingProfileKey\(event\.currentTarget\.value\) \|\| "standard"/);
+  assert.match(listingModal, /setShippingDraft\(\(draft\) => \(\{ \.\.\.draft, shippingProfile: nextShippingProfile \}\)\)/);
+  assert.doesNotMatch(listingModal, /setShippingDraft\(\(draft\) => \(\{ \.\.\.draft, shippingProfile: safeShippingProfileKey\(event\.currentTarget\.value\)/);
 });
 
 test("admin inventory can find products that need shipping profiles", () => {
