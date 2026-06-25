@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
+  GAMEDAYGRABS_POLICIES_URL,
   productCanonicalUrl,
+  storefrontOfferShippingDetails,
   storefrontProductJsonLd,
   storefrontProductMetadata,
   storefrontProductSchemaAvailability
@@ -91,12 +93,44 @@ test("product structured data renders safe Product and Offer fields only", () =>
   assert.equal(jsonLd.offers.price, "49.99");
   assert.equal(jsonLd.offers.priceCurrency, "USD");
   assert.equal(jsonLd.offers.availability, "https://schema.org/InStock");
+  assert.equal(jsonLd.offers.shippingDetails["@type"], "OfferShippingDetails");
+  assert.equal(jsonLd.offers.shippingDetails.shippingDestination.addressCountry, "US");
+  assert.equal(jsonLd.offers.shippingDetails.shippingRate.currency, "USD");
+  assert.equal(jsonLd.offers.shippingDetails.shippingRate.value, "5.99");
+  assert.notEqual(jsonLd.offers.shippingDetails.shippingRate.value, "0.00");
+  assert.deepEqual(jsonLd.offers.shippingDetails.deliveryTime.businessDays.dayOfWeek, [
+    "https://schema.org/Monday",
+    "https://schema.org/Tuesday",
+    "https://schema.org/Wednesday",
+    "https://schema.org/Thursday",
+    "https://schema.org/Friday"
+  ]);
+  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.handlingTime.minValue, 1);
+  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.handlingTime.maxValue, 2);
+  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.handlingTime.unitCode, "d");
+  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.transitTime.minValue, 2);
+  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.transitTime.maxValue, 5);
+  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.transitTime.unitCode, "d");
+  assert.equal(jsonLd.offers.hasMerchantReturnPolicy["@type"], "MerchantReturnPolicy");
+  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.applicableCountry, "US");
+  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
+  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.merchantReturnLink, GAMEDAYGRABS_POLICIES_URL);
   assert.equal(jsonLd.offers.seller.name, "GameDayGrabs");
 
   const serialized = JSON.stringify(jsonLd);
+  // Real first-party product reviews are not visible on product pages yet, so review and aggregateRating markup stay intentionally absent.
   assert.doesNotMatch(serialized, /aggregateRating|review|ratingValue|ratingCount/i);
   assert.doesNotMatch(serialized, /availableQuantity|quantityOwned|costBasis|supplier|admin/i);
   assert.doesNotMatch(serialized, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
+});
+
+test("product structured data omits shipping details when carrier shipping is unavailable", () => {
+  const pickupOnly = product({ shippingAvailable: false, localPickupAvailable: true, localPickupEligible: true, shippingProfile: "local_pickup", packageWeightOz: 0 });
+  assert.equal(storefrontOfferShippingDetails(pickupOnly), null);
+
+  const jsonLd = storefrontProductJsonLd(pickupOnly) as Record<string, any>;
+  assert.equal(jsonLd.offers.shippingDetails, undefined);
+  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
 });
 
 test("sold-out structured data does not claim in-stock availability", () => {
@@ -105,6 +139,8 @@ test("sold-out structured data does not claim in-stock availability", () => {
   const jsonLd = storefrontProductJsonLd(soldOut) as Record<string, any>;
   assert.equal(jsonLd.offers.availability, "https://schema.org/OutOfStock");
   assert.notEqual(jsonLd.offers.availability, "https://schema.org/InStock");
+  assert.equal(jsonLd.offers.price, "49.99");
+  assert.equal(jsonLd.offers.url, productCanonicalUrl("pokemon-seo-product"));
 });
 
 test("product pages, sitemap, and robots are wired for Google-ready discovery", () => {

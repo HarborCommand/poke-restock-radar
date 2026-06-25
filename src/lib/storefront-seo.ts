@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import { cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { GAMEDAYGRABS_WWW_DOMAIN } from "@/lib/storefront-routing";
 import { isSoldOutProduct } from "@/lib/storefront-badges";
+import { calculateCartShipping } from "@/lib/shipping";
 import type { PublicStoreProductDTO } from "@/types/radar";
 
 export const GAMEDAYGRABS_SEO_STORE_NAME = "GameDayGrabs";
 export const GAMEDAYGRABS_SEO_SITE_NAME = "GameDayGrabs LLC";
 export const GAMEDAYGRABS_CANONICAL_ORIGIN = `https://${GAMEDAYGRABS_WWW_DOMAIN}`;
 export const GAMEDAYGRABS_OG_FALLBACK_IMAGE = "/brand/gamedaygrabs-icon.png?v=gdg-icons-v1";
+export const GAMEDAYGRABS_POLICIES_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
 
 type SeoProduct = PublicStoreProductDTO & {
   brand?: string | null;
@@ -116,11 +118,72 @@ function productIdentifierFields(product: Pick<SeoProduct, "sku" | "upc">) {
   return fields;
 }
 
+function positiveMoney(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value * 100) / 100 : null;
+}
+
+export function storefrontOfferShippingDetails(product: Pick<SeoProduct, "shippingAvailable" | "shippingProfile" | "packageWeightOz" | "packageLengthIn" | "packageWidthIn" | "packageHeightIn" | "freeShippingEligible" | "requiresBox" | "insuranceRecommended" | "localPickupEligible" | "localPickupAvailable">) {
+  if (product.shippingAvailable === false) return null;
+  const calculated = calculateCartShipping([product], { fulfillmentMethod: "shipping" });
+  const shippingOption = calculated.shippingOptions.find((option) => option.id !== "local_pickup") ?? calculated.defaultShippingOption;
+  if (!shippingOption || shippingOption.id === "local_pickup") return null;
+  const shippingAmount = positiveMoney(shippingOption.amount);
+  if (shippingAmount === null) return null;
+
+  return {
+    "@type": "OfferShippingDetails",
+    shippingRate: {
+      "@type": "MonetaryAmount",
+      value: shippingAmount.toFixed(2),
+      currency: "USD"
+    },
+    shippingDestination: {
+      "@type": "DefinedRegion",
+      addressCountry: "US"
+    },
+    deliveryTime: {
+      "@type": "ShippingDeliveryTime",
+      businessDays: {
+        "@type": "OpeningHoursSpecification",
+        dayOfWeek: [
+          "https://schema.org/Monday",
+          "https://schema.org/Tuesday",
+          "https://schema.org/Wednesday",
+          "https://schema.org/Thursday",
+          "https://schema.org/Friday"
+        ]
+      },
+      handlingTime: {
+        "@type": "QuantitativeValue",
+        minValue: 1,
+        maxValue: 2,
+        unitCode: "d"
+      },
+      transitTime: {
+        "@type": "QuantitativeValue",
+        minValue: 2,
+        maxValue: 5,
+        unitCode: "d"
+      }
+    }
+  };
+}
+
+export function storefrontOfferReturnPolicy() {
+  return {
+    "@type": "MerchantReturnPolicy",
+    applicableCountry: "US",
+    returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
+    merchantReturnLink: GAMEDAYGRABS_POLICIES_URL
+  };
+}
+
 export function storefrontProductJsonLd(product: SeoProduct) {
   const canonicalUrl = productCanonicalUrl(product.slug);
   const description = storefrontProductMetaDescription(product);
   const brand = cleanIdentifier(product.brand);
   const manufacturer = cleanIdentifier(product.manufacturer);
+  const shippingDetails = storefrontOfferShippingDetails(product);
   const data: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -136,6 +199,8 @@ export function storefrontProductJsonLd(product: SeoProduct) {
       price: product.price.toFixed(2),
       priceCurrency: "USD",
       availability: storefrontProductSchemaAvailability(product),
+      ...(shippingDetails ? { shippingDetails } : {}),
+      hasMerchantReturnPolicy: storefrontOfferReturnPolicy(),
       seller: {
         "@type": "Organization",
         name: GAMEDAYGRABS_SEO_STORE_NAME
@@ -144,6 +209,7 @@ export function storefrontProductJsonLd(product: SeoProduct) {
   };
   if (brand) data.brand = { "@type": "Brand", name: brand };
   if (manufacturer && manufacturer !== brand) data.manufacturer = { "@type": "Organization", name: manufacturer };
+  // Reviews and aggregateRating stay omitted until real, visible first-party product reviews exist.
   return data;
 }
 
