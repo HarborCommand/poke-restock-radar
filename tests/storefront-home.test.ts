@@ -7,6 +7,7 @@ import {
   homepageAlmostGoneSection,
   homepageArrivalSection,
   homepageCollectorPicksSection,
+  homepageFeaturedDropsSection,
   selectHomepageHeroProduct
 } from "../src/lib/storefront-home";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "../src/types/radar";
@@ -151,6 +152,27 @@ test("New Arrivals section excludes sold-out products from active homepage shopp
   assert.deepEqual(section.products.map((entry) => entry.id), ["active"]);
 });
 
+test("Featured Drops section limits homepage products and mixes categories", () => {
+  const now = new Date().toISOString();
+  const products = [
+    product({ id: "sold-out", category: "Premium Collections", publishedAt: now, publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" }),
+    product({ id: "premium-one", category: "Premium Collections", publishedAt: now }),
+    product({ id: "premium-two", category: "Premium Collections", publishedAt: now }),
+    product({ id: "bundle", category: "Booster Bundles", publishedAt: now }),
+    product({ id: "tin", category: "Tins", publishedAt: now }),
+    product({ id: "blister", category: "Blisters", publishedAt: now }),
+    product({ id: "accessory", category: "Accessories", publishedAt: now })
+  ];
+
+  const section = homepageFeaturedDropsSection(products, 14);
+
+  assert.equal(section.title, "Featured Drops");
+  assert.equal(section.products.length, 4);
+  assert.equal(section.products.some((entry) => entry.id === "sold-out"), false);
+  assert.deepEqual(new Set(section.products.map((entry) => entry.category)).size, 4);
+  assert.doesNotMatch(`${section.title} ${section.detail}`, /best.?seller|top rated|exact stock|stock count/i);
+});
+
 test("Almost Gone uses low stock active products without sold-out products or exact-count copy", () => {
   const products = [
     product({ id: "sold-out", publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" }),
@@ -181,21 +203,31 @@ test("Collector Picks uses active product categories without fake best-seller cl
 
 test("homepage merchandising UI renders category links and safe product-card links", () => {
   const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const home = fs.readFileSync(new URL("../src/lib/storefront-home.ts", import.meta.url), "utf8");
   const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
   assert.match(client, /HomepageProductSection/);
-  assert.match(client, /homepageAlmostGoneSection\(products\)/);
-  assert.match(client, /homepageCollectorPicksSection\(products\)/);
+  assert.match(client, /homepageFeaturedDropsSection\(products, settings\.newArrivalDays\)/);
+  assert.doesNotMatch(client, /<HomepageProductSection section=\{almostGoneSection\}/);
+  assert.doesNotMatch(client, /<HomepageProductSection section=\{collectorPicksSection\}/);
+  assert.match(home, /Featured Drops/);
+  assert.match(client, /Shop Pokemon/);
+  assert.match(client, /View New Arrivals/);
+  assert.match(client, /Why buy from GameDayGrabs\?/);
+  assert.match(client, /Create an account to track orders and rewards/);
+  assert.match(client, /Rewards redemption coming soon/);
   assert.match(client, /sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections/);
   assert.match(client, /GameDayGrabs is not affiliated with The Pokemon Company International/);
-  for (const category of ["Pokemon Sealed", "Booster Bundles", "Tins", "Premium Collections", "Blisters", "Accessories"]) {
+  for (const category of ["Booster Bundles", "Tins", "Premium Collections", "Blisters", "New Arrivals"]) {
     assert.match(client, new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(client, /href=\{`\/product\/\$\{product\.slug\}`\}/);
   assert.match(client, /storefrontCollectionPathForCategory/);
   assert.doesNotMatch(client, /availableQuantity\}.*gdg-product-card|exact stock|stock count/i);
+  assert.doesNotMatch(client, /aggregateRating|ratingValue|reviewCount|Redeem points|Apply points|coupon/i);
   assert.match(client, /availabilitySortScore/);
   assert.doesNotMatch(client, /card_number|cardNumber|cvv|payment_method_details|payment_method_data|raw Stripe object/i);
   assert.match(css, /gdg-home-product-row/);
   assert.match(css, /gdg-support-strip/);
+  assert.match(css, /gdg-home-account-cta/);
 });

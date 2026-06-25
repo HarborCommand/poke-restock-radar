@@ -803,6 +803,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   const routing = fs.readFileSync(new URL("../src/lib/storefront-routing.ts", import.meta.url), "utf8");
   const storefrontNavigation = fs.readFileSync(new URL("../src/lib/storefront-navigation.ts", import.meta.url), "utf8");
   const client = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
+  const home = fs.readFileSync(new URL("../src/lib/storefront-home.ts", import.meta.url), "utf8");
   const serverViews = fs.readFileSync(new URL("../src/components/StorefrontServerViews.tsx", import.meta.url), "utf8");
   const shopPage = fs.readFileSync(new URL("../src/app/shop/page.tsx", import.meta.url), "utf8");
   const styles = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
@@ -876,11 +877,13 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(shopPage, /StorefrontShopView/);
   assert.match(client, /homeCategories/);
   assert.match(client, /categoryPreviewCards/);
-  assert.match(client, /homepageArrivalSection/);
-  assert.match(client, /homepageAlmostGoneSection/);
-  assert.match(client, /homepageCollectorPicksSection/);
+  assert.match(client, /homepageFeaturedDropsSection/);
   assert.match(client, /HomepageProductSection/);
   assert.match(client, /HomepageSupportStrip/);
+  assert.match(client, /HomepageAccountCta/);
+  assert.match(home, /Featured Drops/);
+  assert.doesNotMatch(client, /<HomepageProductSection section=\{almostGoneSection\}/);
+  assert.doesNotMatch(client, /<HomepageProductSection section=\{collectorPicksSection\}/);
   assert.match(client, /storefrontCollectionPathForCategory\(category\) \?\? `\/shop\?category=\$\{categoryToSlug\(category\)\}`/);
   assert.match(client, /GAMEDAYGRABS_SPORTS_CARDS_URL/);
   assert.match(client, /Sports card inventory is currently listed on our eBay store/);
@@ -897,7 +900,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /Thanks - we received your request and will contact you shortly/);
   assert.match(client, /customerPhone/);
   assert.match(client, /customerNotes/);
-  assert.match(client, /Secure Packaging/);
+  assert.match(client, /Packed carefully/);
   assert.match(client, /Sleeved Boosters/);
   assert.match(client, /Product Details/);
   assert.match(client, /What&apos;s included/);

@@ -44,9 +44,7 @@ import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/stor
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
 import { GAMEDAYGRABS_EBAY_FEEDBACK_URL, storefrontFeedback } from "@/lib/storefront-feedback";
 import {
-  homepageAlmostGoneSection,
-  homepageArrivalSection,
-  homepageCollectorPicksSection,
+  homepageFeaturedDropsSection,
   selectHomepageHeroProduct,
   type HomepageMerchandisingSection
 } from "@/lib/storefront-home";
@@ -106,12 +104,11 @@ const preferredCategories = [
   "Graded Cards"
 ];
 const homeCategories = [
-  "Pokemon Sealed",
   "Booster Bundles",
   "Tins",
-  "Premium Collections",
   "Blisters",
-  "Accessories"
+  "Premium Collections",
+  "New Arrivals"
 ];
 
 const customerAccountMenuLinks = [
@@ -133,6 +130,7 @@ const categorySubtitles: Record<string, string> = {
   "Tins": "Tins and Poké Balls",
   "Collection Boxes": "Boxed collections",
   "Accessories": "Storage and collector gear",
+  "New Arrivals": "Freshly added drops",
   "Sports Cards": "Shop on eBay",
   "Graded Cards": "Slabs and singles"
 };
@@ -165,6 +163,7 @@ function availabilityFromParam(value: string | null | undefined): StorefrontAvai
 }
 
 function categoryHref(category: string) {
+  if (category === "New Arrivals") return storefrontCollectionPath("new-arrivals");
   return storefrontCollectionPathForCategory(category) ?? `/shop?category=${categoryToSlug(category)}`;
 }
 
@@ -834,14 +833,23 @@ function HomepageProductSection({
 
 function HomepageSupportStrip() {
   const points = [
-    { icon: <Truck size={19} aria-hidden="true" />, title: "Smart shipping", text: "Shipping is estimated from product weight and package size." },
-    { icon: <Package size={19} aria-hidden="true" />, title: "Careful packaging", text: "Orders are packed with collector condition in mind." },
-    { icon: <ShieldCheck size={19} aria-hidden="true" />, title: "Secure checkout", text: "Stripe handles payment securely; card details stay with Stripe." },
-    { icon: <MessageCircle size={19} aria-hidden="true" />, title: "Order support", text: "Questions go directly to GameDayGrabs support." }
+    { icon: <Package size={19} aria-hidden="true" />, title: "Packed carefully", text: "Sealed products are packed with collector condition in mind." },
+    { icon: <CreditCard size={19} aria-hidden="true" />, title: "Secure Stripe checkout", text: "Stripe handles payment securely; card details stay with Stripe." },
+    { icon: <Truck size={19} aria-hidden="true" />, title: "USPS calculated shipping", text: "Carrier shipping is calculated from ZIP and package details." },
+    { icon: <ShoppingCart size={19} aria-hidden="true" />, title: "No account required", text: "Guest checkout stays available for every shopper." },
+    { icon: <Trophy size={19} aria-hidden="true" />, title: "Optional account & rewards", text: "Track orders and display points when you want an account." },
+    { icon: <ShieldCheck size={19} aria-hidden="true" />, title: "Clear final-sale policy", text: "Trading card return terms are available before purchase." }
   ];
 
   return (
-    <section className="gdg-section gdg-support-strip" aria-label="Shipping and support">
+    <section className="gdg-section gdg-support-strip gdg-home-trust-section" aria-label="Why buy from GameDayGrabs">
+      <div className="gdg-section-header gdg-section-header-centered">
+        <div>
+          <h2>Why buy from GameDayGrabs?</h2>
+          <p>Clear shipping, secure checkout, and collector-minded handling without forcing an account.</p>
+        </div>
+        <Link href="/policies">Read policies</Link>
+      </div>
       {points.map((point) => (
         <article key={point.title}>
           <span>{point.icon}</span>
@@ -851,6 +859,36 @@ function HomepageSupportStrip() {
           </div>
         </article>
       ))}
+    </section>
+  );
+}
+
+function HomepageAccountCta({ settings }: { settings: StorefrontSettingsDTO }) {
+  return (
+    <section className="gdg-section gdg-home-account-cta" aria-label="Customer account and rewards">
+      <div>
+        <span>
+          <User size={22} aria-hidden="true" />
+        </span>
+        <div>
+          <h2>Create an account to track orders and rewards.</h2>
+          <p>Guest checkout always available. Rewards redemption coming soon.</p>
+        </div>
+      </div>
+      <div className="gdg-home-account-actions">
+        {settings.customerAccounts.enabled ? (
+          <Link href="/account/login" className="gdg-primary-button">
+            Sign In / Create Account
+          </Link>
+        ) : (
+          <Link href="/order-status" className="gdg-primary-button">
+            Check Order Status
+          </Link>
+        )}
+        <Link href="/shop" className="gdg-secondary-button">
+          Continue as Guest
+        </Link>
+      </div>
     </section>
   );
 }
@@ -904,9 +942,7 @@ export function ProductGrid({
       });
   }, [availability, category, products, query, sort]);
 
-  const arrivalSection = useMemo(() => homepageArrivalSection(products, settings.newArrivalDays), [products, settings.newArrivalDays]);
-  const almostGoneSection = useMemo(() => homepageAlmostGoneSection(products), [products]);
-  const collectorPicksSection = useMemo(() => homepageCollectorPicksSection(products), [products]);
+  const featuredSection = useMemo(() => homepageFeaturedDropsSection(products, settings.newArrivalDays), [products, settings.newArrivalDays]);
   const heroProduct = selectHomepageHeroProduct(products, settings);
   const heroCategory = heroProduct ? publicCategoryLabel(displayStorefrontCategory(heroProduct)) : null;
   const heroProductTitle = heroProduct ? cleanStorefrontTitle(heroProduct.title) : "";
@@ -935,10 +971,10 @@ export function ProductGrid({
               <p>Shop sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections, and collectible card products packed carefully for collectors.</p>
               <div className="gdg-hero-actions">
                 <Link href="/shop" className="gdg-primary-button">
-                  Shop Now
+                  Shop Pokemon
                 </Link>
                 <Link href={storefrontCollectionPath("new-arrivals")} className="gdg-secondary-button">
-                  New Arrivals
+                  View New Arrivals
                 </Link>
               </div>
               {heroProduct ? (
@@ -978,10 +1014,10 @@ export function ProductGrid({
 
           <section className="gdg-trust-bar" aria-label="Store promises">
             {[
-              { icon: <BadgeCheck size={19} />, title: "Authentic Products", text: "100% authentic guaranteed" },
-              { icon: <ShieldCheck size={19} />, title: "Secure Packaging", text: "Packed carefully for transit" },
-              { icon: <Truck size={19} />, title: "Fast Shipping", text: "Secure & tracked delivery" },
-              { icon: <ShieldCheck size={19} />, title: "Collector Trusted", text: "Reliable for collectors" }
+              { icon: <ShieldCheck size={19} />, title: "Secure checkout", text: "Handled by Stripe" },
+              { icon: <Truck size={19} />, title: "USPS shipping", text: "Calculated by ZIP" },
+              { icon: <ShoppingCart size={19} />, title: "Guest checkout", text: "No account required" },
+              { icon: <BadgeCheck size={19} />, title: "Local pickup", text: "When available" }
             ].map((item) => (
               <div key={item.title}>
                 <span>{item.icon}</span>
@@ -1004,7 +1040,7 @@ export function ProductGrid({
       {mode === "home" ? (
         <>
           <HomepageProductSection
-            section={arrivalSection}
+            section={featuredSection}
             settings={settings}
             onAdded={onAdded}
             emptyTitle="No public listings yet"
@@ -1054,15 +1090,8 @@ export function ProductGrid({
             </div>
           </section>
 
-          {almostGoneSection.products.length ? (
-            <HomepageProductSection section={almostGoneSection} settings={settings} onAdded={onAdded} />
-          ) : null}
-
-          {collectorPicksSection.products.length ? (
-            <HomepageProductSection section={collectorPicksSection} settings={settings} onAdded={onAdded} />
-          ) : null}
-
           <HomepageSupportStrip />
+          <HomepageAccountCta settings={settings} />
         </>
       ) : (
         <section className="gdg-shop-area" id="shop">

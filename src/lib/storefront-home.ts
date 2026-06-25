@@ -75,6 +75,43 @@ export function homepageArrivalSection(products: PublicStoreProductDTO[], newArr
   } satisfies HomepageMerchandisingSection;
 }
 
+export function homepageFeaturedDropsSection(products: PublicStoreProductDTO[], newArrivalDays: number, now = new Date()) {
+  const sorted = activeStorefrontProducts(products)
+    .filter((product) => Boolean(product.imageUrl || product.primaryImageUrl || product.images.length))
+    .sort((left, right) => {
+      const leftNew = isNewArrival(left, now, newArrivalDays) ? 1 : 0;
+      const rightNew = isNewArrival(right, now, newArrivalDays) ? 1 : 0;
+      if (rightNew !== leftNew) return rightNew - leftNew;
+      return byNewestThenTitle(left, right);
+    });
+  const selected: PublicStoreProductDTO[] = [];
+  const selectedCategories = new Set<string>();
+
+  for (const product of sorted) {
+    const category = displayStorefrontCategory(product);
+    if (selectedCategories.has(category)) continue;
+    selected.push(product);
+    selectedCategories.add(category);
+    if (selected.length === 4) break;
+  }
+
+  if (selected.length < 4) {
+    for (const product of sorted) {
+      if (selected.some((entry) => entry.id === product.id)) continue;
+      selected.push(product);
+      if (selected.length === 4) break;
+    }
+  }
+
+  return {
+    title: "Featured Drops",
+    detail: "Fresh sealed products ready to ship or pick up.",
+    href: "/shop",
+    linkLabel: "Shop All Products",
+    products: selected
+  } satisfies HomepageMerchandisingSection;
+}
+
 export function homepageAlmostGoneSection(products: PublicStoreProductDTO[]) {
   const almostGone = activeStorefrontProducts(products)
     .filter((product) => product.availabilityLevel === "almost_gone")
