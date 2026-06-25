@@ -17507,22 +17507,54 @@ body:has(.shop-shell) {
 
 .gdg-home-account-copy {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
+  grid-template-columns: 58px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
   min-width: 0;
 }
 
-.gdg-home-account-icon {
+.gdg-home-account-badge-shell {
+  position: relative;
   display: grid;
-  width: 54px;
-  height: 54px;
+  width: 58px;
+  height: 58px;
   place-items: center;
-  border: 1px solid #bbf7d0;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #fef3c7, #dcfce7);
-  color: #047857;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(180, 83, 9, 0.42);
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(250, 204, 21, 0.28), transparent 45%),
+    linear-gradient(145deg, #111827 0%, #0b1220 66%, #2a2107 100%);
+  color: #facc15;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 14px 26px rgba(15, 23, 42, 0.14);
+}
+
+.gdg-home-account-badge-shell::after {
+  position: absolute;
+  inset: 9px;
+  border: 1px solid rgba(250, 204, 21, 0.32);
+  border-radius: 15px;
+  content: "";
+}
+
+.gdg-home-account-badge-mark {
+  position: relative;
+  z-index: 1;
+  color: #facc15;
+  font-size: 1.5rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.24);
+}
+
+.gdg-home-account-badge-spark {
+  position: absolute;
+  z-index: 2;
+  right: 7px;
+  top: 7px;
+  color: #fde68a;
 }
 
 .gdg-home-account-cta h2,
@@ -17582,10 +17614,11 @@ body:has(.shop-shell) {
   color: #14532d;
 }
 
-.gdg-home-account-cta-ready .gdg-home-account-icon {
-  border-color: #bfdbfe;
-  background: linear-gradient(135deg, #dbeafe, #fef3c7);
-  color: #1d4ed8;
+.gdg-home-account-cta-ready .gdg-home-account-badge-shell {
+  border-color: rgba(250, 204, 21, 0.55);
+  background:
+    linear-gradient(135deg, rgba(34, 197, 94, 0.16), transparent 44%),
+    linear-gradient(145deg, #111827 0%, #0b1220 62%, #3b2f06 100%);
 }
 
 .gdg-product-card {
@@ -19142,14 +19175,30 @@ body:has(.shop-shell) {
   }
 
   .gdg-home-account-copy {
-    grid-template-columns: 46px minmax(0, 1fr);
+    grid-template-columns: 48px minmax(0, 1fr);
     gap: 12px;
   }
 
-  .gdg-home-account-icon {
-    width: 46px;
-    height: 46px;
+  .gdg-home-account-badge-shell {
+    width: 48px;
+    height: 48px;
     border-radius: 16px;
+  }
+
+  .gdg-home-account-badge-shell::after {
+    inset: 7px;
+    border-radius: 12px;
+  }
+
+  .gdg-home-account-badge-mark {
+    font-size: 1.28rem;
+  }
+
+  .gdg-home-account-badge-spark {
+    right: 6px;
+    top: 6px;
+    width: 11px;
+    height: 11px;
   }
 
   .gdg-home-account-cta h2 {

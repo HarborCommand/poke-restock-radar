@@ -886,10 +886,15 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /Your account is ready/);
   assert.match(client, /Shop as Guest/);
   assert.match(client, /Shop New Arrivals/);
+  assert.match(client, /gdg-home-account-badge-shell/);
+  assert.match(client, /<span className="gdg-home-account-badge-mark">G<\/span>/);
+  assert.doesNotMatch(client, /gdg-home-account-icon/);
+  assert.doesNotMatch(client, /gdg-home-account-[\s\S]{0,160}<User/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{almostGoneSection\}/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{collectorPicksSection\}/);
-  assert.ok(client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />") > client.indexOf("section={featuredSection}"));
-  assert.ok(client.indexOf("<h2>Shop By Category</h2>") > client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />"));
+  assert.ok(client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />") > client.indexOf('<section className="gdg-hero">'));
+  assert.ok(client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />") < client.indexOf("section={featuredSection}"));
+  assert.ok(client.indexOf("<h2>Shop By Category</h2>") > client.indexOf("section={featuredSection}"));
   assert.match(client, /storefrontCollectionPathForCategory\(category\) \?\? `\/shop\?category=\$\{categoryToSlug\(category\)\}`/);
   assert.match(client, /GAMEDAYGRABS_SPORTS_CARDS_URL/);
   assert.match(client, /Sports card inventory is currently listed on our eBay store/);

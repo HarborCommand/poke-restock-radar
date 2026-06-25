@@ -877,8 +877,9 @@ function HomepageAccountCta({ settings, signedIn }: { settings: StorefrontSettin
   return (
     <section className={`gdg-section gdg-home-account-cta ${signedIn ? "gdg-home-account-cta-ready" : ""}`} aria-label="Customer account and rewards">
       <div className="gdg-home-account-copy">
-        <span className="gdg-home-account-icon">
-          <User size={22} aria-hidden="true" />
+        <span className="gdg-home-account-badge-shell" aria-hidden="true">
+          <span className="gdg-home-account-badge-mark">G</span>
+          <Sparkles size={13} className="gdg-home-account-badge-spark" />
         </span>
         <div>
           <h2>{headline}</h2>
@@ -1019,6 +1020,8 @@ export function ProductGrid({
             </div>
           </section>
 
+          <HomepageAccountCta settings={settings} signedIn={accountSignedIn} />
+
           <section className="gdg-trust-bar" aria-label="Store promises">
             {[
               { icon: <ShieldCheck size={19} />, title: "Secure checkout", text: "Handled by Stripe" },
@@ -1053,8 +1056,6 @@ export function ProductGrid({
             emptyTitle="No public listings yet"
             emptyDetail="Published inventory will appear here automatically."
           />
-
-          <HomepageAccountCta settings={settings} signedIn={accountSignedIn} />
 
           <section className="gdg-section">
             <div className="gdg-section-header">

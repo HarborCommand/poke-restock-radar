@@ -223,6 +223,11 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.match(client, /Shop New Arrivals/);
   assert.match(client, /Rewards redemption coming soon/);
   assert.match(client, /primaryHref = signedIn \? "\/account" : accountsEnabled \? "\/account\/login" : "\/order-status"/);
+  assert.match(client, /gdg-home-account-badge-shell/);
+  assert.match(client, /gdg-home-account-badge-mark/);
+  assert.match(client, /<span className="gdg-home-account-badge-mark">G<\/span>/);
+  assert.doesNotMatch(client, /gdg-home-account-icon/);
+  assert.doesNotMatch(client, /gdg-home-account-[\s\S]{0,160}<User/);
   assert.match(client, /sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections/);
   assert.match(client, /GameDayGrabs is not affiliated with The Pokemon Company International/);
   for (const category of ["Booster Bundles", "Tins", "Premium Collections", "Blisters", "New Arrivals"]) {
@@ -234,15 +239,20 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.doesNotMatch(client, /aggregateRating|ratingValue|reviewCount|Redeem points|Apply points|coupon/i);
   assert.match(client, /availabilitySortScore/);
   assert.doesNotMatch(client, /card_number|cardNumber|cvv|payment_method_details|payment_method_data|raw Stripe object/i);
+  const heroRenderIndex = client.indexOf('<section className="gdg-hero">');
   const featuredRenderIndex = client.indexOf("section={featuredSection}");
   const accountCtaIndex = client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />");
   const categoryIndex = client.indexOf("<h2>Shop By Category</h2>");
+  assert.ok(heroRenderIndex >= 0);
   assert.ok(featuredRenderIndex >= 0);
-  assert.ok(accountCtaIndex > featuredRenderIndex);
-  assert.ok(categoryIndex > accountCtaIndex);
+  assert.ok(accountCtaIndex > heroRenderIndex);
+  assert.ok(accountCtaIndex < featuredRenderIndex);
+  assert.ok(categoryIndex > featuredRenderIndex);
   assert.match(css, /gdg-home-product-row/);
   assert.match(css, /gdg-support-strip/);
   assert.match(css, /gdg-home-account-cta/);
+  assert.match(css, /gdg-home-account-badge-shell/);
+  assert.match(css, /linear-gradient\(145deg, #111827 0%, #0b1220 66%, #2a2107 100%\)/);
   assert.match(css, /linear-gradient\(135deg, #ffffff 0%, #fffdf5 52%, #f2fbf4 100%\)/);
   assert.match(css, /border: 1px solid #d7e7d9/);
 });
