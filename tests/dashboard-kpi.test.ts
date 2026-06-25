@@ -882,8 +882,14 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /HomepageSupportStrip/);
   assert.match(client, /HomepageAccountCta/);
   assert.match(home, /Featured Drops/);
+  assert.match(client, /Guest checkout stays available\. Sign in anytime to view orders, saved addresses, and points/);
+  assert.match(client, /Your account is ready/);
+  assert.match(client, /Shop as Guest/);
+  assert.match(client, /Shop New Arrivals/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{almostGoneSection\}/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{collectorPicksSection\}/);
+  assert.ok(client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />") > client.indexOf("section={featuredSection}"));
+  assert.ok(client.indexOf("<h2>Shop By Category</h2>") > client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />"));
   assert.match(client, /storefrontCollectionPathForCategory\(category\) \?\? `\/shop\?category=\$\{categoryToSlug\(category\)\}`/);
   assert.match(client, /GAMEDAYGRABS_SPORTS_CARDS_URL/);
   assert.match(client, /Sports card inventory is currently listed on our eBay store/);

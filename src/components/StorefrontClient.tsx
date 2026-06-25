@@ -863,30 +863,35 @@ function HomepageSupportStrip() {
   );
 }
 
-function HomepageAccountCta({ settings }: { settings: StorefrontSettingsDTO }) {
+function HomepageAccountCta({ settings, signedIn }: { settings: StorefrontSettingsDTO; signedIn: boolean }) {
+  const accountsEnabled = settings.customerAccounts.enabled;
+  const headline = signedIn ? "Your account is ready." : "Create an account to track orders and rewards.";
+  const detail = signedIn
+    ? "Track orders, saved addresses, and rewards from your dashboard."
+    : "Guest checkout stays available. Sign in anytime to view orders, saved addresses, and points.";
+  const primaryHref = signedIn ? "/account" : accountsEnabled ? "/account/login" : "/order-status";
+  const primaryLabel = signedIn ? "My Account" : accountsEnabled ? "Sign In / Create Account" : "Check Order Status";
+  const secondaryHref = signedIn ? storefrontCollectionPath("new-arrivals") : "/shop";
+  const secondaryLabel = signedIn ? "Shop New Arrivals" : "Shop as Guest";
+
   return (
-    <section className="gdg-section gdg-home-account-cta" aria-label="Customer account and rewards">
-      <div>
-        <span>
+    <section className={`gdg-section gdg-home-account-cta ${signedIn ? "gdg-home-account-cta-ready" : ""}`} aria-label="Customer account and rewards">
+      <div className="gdg-home-account-copy">
+        <span className="gdg-home-account-icon">
           <User size={22} aria-hidden="true" />
         </span>
         <div>
-          <h2>Create an account to track orders and rewards.</h2>
-          <p>Guest checkout always available. Rewards redemption coming soon.</p>
+          <h2>{headline}</h2>
+          <p>{detail}</p>
+          <small>{signedIn ? "Rewards redemption coming soon." : "No account required to buy. Rewards redemption coming soon."}</small>
         </div>
       </div>
       <div className="gdg-home-account-actions">
-        {settings.customerAccounts.enabled ? (
-          <Link href="/account/login" className="gdg-primary-button">
-            Sign In / Create Account
-          </Link>
-        ) : (
-          <Link href="/order-status" className="gdg-primary-button">
-            Check Order Status
-          </Link>
-        )}
-        <Link href="/shop" className="gdg-secondary-button">
-          Continue as Guest
+        <Link href={primaryHref} className="gdg-primary-button">
+          {primaryLabel}
+        </Link>
+        <Link href={secondaryHref} className="gdg-secondary-button">
+          {secondaryLabel}
         </Link>
       </div>
     </section>
@@ -914,6 +919,8 @@ export function ProductGrid({
   const [sort, setSort] = useState(() => (mode === "shop" ? sortFromParam(initialSort) : "newest"));
   const [notice, setNotice] = useState("");
   const sportsCards = sportsCardsLink(settings);
+  const accountSession = useCustomerAccountSession(settings.customerAccounts.enabled);
+  const accountSignedIn = Boolean(accountSession?.session.authenticated);
 
   const categories = useMemo(() => {
     const fromProducts = Array.from(new Set(products.map((product) => displayStorefrontCategory(product)).filter(Boolean)));
@@ -1047,6 +1054,8 @@ export function ProductGrid({
             emptyDetail="Published inventory will appear here automatically."
           />
 
+          <HomepageAccountCta settings={settings} signedIn={accountSignedIn} />
+
           <section className="gdg-section">
             <div className="gdg-section-header">
               <div>
@@ -1091,7 +1100,6 @@ export function ProductGrid({
           </section>
 
           <HomepageSupportStrip />
-          <HomepageAccountCta settings={settings} />
         </>
       ) : (
         <section className="gdg-shop-area" id="shop">
