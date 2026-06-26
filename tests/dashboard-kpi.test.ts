@@ -1191,7 +1191,10 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /gdg-invoice-form-card/);
   assert.match(client, /requestPayload/);
   assert.match(client, /if \(customerEmail\.trim\(\)\) requestPayload\.customerEmail/);
-  assert.match(client, /Your cart is waiting for something awesome/);
+  assert.match(client, /variant="empty-cart"/);
+  assert.match(client, /gdg-cart-grabby-card/);
+  assert.match(client, /Guest checkout stays available when you are ready to buy/);
+  assert.match(client, /Shop New Arrivals/);
   assert.match(client, /Shop Pok&eacute;mon/);
   assert.match(client, /Remove sold-out item/);
   assert.match(client, /Remove sold-out items/);

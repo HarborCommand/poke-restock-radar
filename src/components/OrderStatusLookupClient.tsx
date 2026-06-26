@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { type FormEvent, useState } from "react";
 import { Mail, PackageCheck, Search, Truck } from "lucide-react";
+import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import type { PublicOrderStatusLookupDTO } from "@/types/radar";
 
 function money(value: number) {
@@ -78,6 +79,7 @@ export function OrderStatusLookupClient() {
             {loading ? "Checking..." : "Check Order Status"}
           </button>
         </form>
+        <GrabbyCard variant="order-status" compact className="order-status-grabby-card" />
         {error ? <p className="order-status-message error">{error}</p> : null}
         {result && !result.found ? <p className="order-status-message">{result.message}</p> : null}
       </div>

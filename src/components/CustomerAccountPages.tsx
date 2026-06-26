@@ -23,6 +23,7 @@ import {
   type CustomerAccountOrderDetail,
   type CustomerAccountOrderHistoryItem
 } from "@/lib/customer-account-auth";
+import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import type { CustomerRewardActivityItem } from "@/lib/customer-rewards";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 
@@ -408,6 +409,14 @@ export function AccountDashboard({
             </div>
           </section>
           <RewardsInfoStrip className="dashboard" />
+
+          <GrabbyCard
+            variant="support"
+            compact
+            ctaHref="/order-status"
+            ctaLabel="Check order status"
+            className="gdg-account-grabby-card"
+          />
 
           <section className="gdg-account-panel">
             <div className="gdg-account-panel-heading">
@@ -901,6 +910,13 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
           <small>Points are display-only and do not affect checkout totals yet.</small>
         </div>
       </section>
+      <GrabbyCard
+        variant="rewards"
+        compact
+        ctaHref="/policies"
+        ctaLabel="Rewards rules"
+        className="gdg-rewards-grabby-card"
+      />
       <RewardsInfoStrip />
 
       <div className="gdg-rewards-grid">

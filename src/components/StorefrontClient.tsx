@@ -32,6 +32,7 @@ import {
   X
 } from "lucide-react";
 import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
+import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import {
   storefrontImageBadges,
   storefrontMatchesAvailability,
@@ -2042,11 +2043,13 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
         </div>
       ) : (
         <div className="gdg-empty gdg-cart-empty">
-          <span>
-            <ShoppingCart size={34} />
-          </span>
-          <h2>Your cart is waiting for something awesome.</h2>
-          <p>Browse Pok&eacute;mon sealed products, sports cards, and collectibles.</p>
+          <GrabbyCard
+            variant="empty-cart"
+            ctaHref={storefrontCollectionPath("new-arrivals")}
+            ctaLabel="Shop New Arrivals"
+            className="gdg-cart-grabby-card"
+          />
+          <p className="gdg-cart-empty-support-copy">Guest checkout stays available when you are ready to buy.</p>
           <div className="gdg-card-actions">
             <Link href={storefrontCollectionPath("pokemon-sealed-products")} className="gdg-primary-button">
               Shop Pok&eacute;mon

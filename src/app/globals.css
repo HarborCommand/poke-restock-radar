@@ -4657,6 +4657,14 @@ textarea {
   padding: 18px;
 }
 
+.route-state-card.route-state-card-grabby {
+  width: min(100%, 560px);
+}
+
+.route-state-card-grabby .grabby-card {
+  box-shadow: none;
+}
+
 .route-state-card h1 {
   font-size: 1.8rem;
   line-height: 1;
@@ -4664,6 +4672,11 @@ textarea {
 
 .route-state-card .primary-action {
   justify-content: center;
+}
+
+.route-state-card .primary-action.secondary {
+  background: #f8fafc;
+  color: #101828;
 }
 
 .form-error {
@@ -17804,6 +17817,410 @@ body:has(.shop-shell) {
   min-width: 220px;
 }
 
+.grabby-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(15, 61, 46, 0.12);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 96% 12%, rgba(255, 184, 0, 0.18), transparent 28%),
+    linear-gradient(135deg, #ffffff 0%, #fffaf0 58%, #f3fbf5 100%);
+  box-shadow: 0 18px 48px rgba(15, 61, 46, 0.08);
+  padding: 18px;
+  color: #101828;
+  text-align: left;
+}
+
+.grabby-card.compact {
+  gap: 14px;
+  border-radius: 18px;
+  padding: 14px;
+}
+
+.grabby-card::after {
+  content: "";
+  position: absolute;
+  right: -38px;
+  bottom: -52px;
+  width: 150px;
+  aspect-ratio: 1;
+  border: 16px solid rgba(255, 184, 0, 0.1);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.grabby-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.grabby-card-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.grabby-card-kicker {
+  margin: 0;
+  color: #a15c00;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.grabby-card h2 {
+  margin: 0;
+  color: #101828;
+  font-size: clamp(1.1rem, 2vw, 1.45rem);
+  line-height: 1.1;
+}
+
+.grabby-card p {
+  margin: 0;
+  color: #475467;
+  line-height: 1.45;
+}
+
+.grabby-card-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 4px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: #0f3d2e;
+  color: #ffffff;
+  padding: 9px 12px;
+  font-size: 0.83rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.grabby-card-link:hover {
+  background: #145c40;
+}
+
+.grabby-mascot {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 132px;
+  aspect-ratio: 1;
+}
+
+.grabby-mascot.small {
+  width: 96px;
+}
+
+.grabby-mascot.large {
+  width: 164px;
+}
+
+.grabby-mascot-aura {
+  position: absolute;
+  inset: 11%;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.9), transparent 22%),
+    linear-gradient(135deg, rgba(255, 184, 0, 0.18), rgba(22, 163, 74, 0.1));
+  box-shadow: inset 0 0 0 1px rgba(255, 184, 0, 0.22);
+}
+
+.grabby-mascot-character {
+  position: relative;
+  width: 68%;
+  height: 82%;
+}
+
+.grabby-face {
+  position: absolute;
+  top: 22%;
+  left: 20%;
+  width: 60%;
+  height: 43%;
+  border: 2px solid #101828;
+  border-radius: 42% 42% 48% 48%;
+  background: #f6c08d;
+  box-shadow:
+    inset 0 -7px 0 rgba(165, 85, 34, 0.08),
+    0 5px 0 rgba(16, 24, 40, 0.1);
+}
+
+.grabby-cap {
+  position: absolute;
+  top: 10%;
+  left: 17%;
+  z-index: 4;
+  width: 66%;
+  height: 26%;
+}
+
+.grabby-cap-crown {
+  position: absolute;
+  inset: 0 11% 24%;
+  display: grid;
+  place-items: center;
+  border: 2px solid #050505;
+  border-radius: 58% 58% 36% 36%;
+  background: linear-gradient(135deg, #101010, #050505);
+  color: #ffb800;
+  font-size: 1.35rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.grabby-cap-brim {
+  position: absolute;
+  right: 7%;
+  bottom: 8%;
+  width: 62%;
+  height: 34%;
+  border: 2px solid #050505;
+  border-radius: 999px 999px 999px 48%;
+  background: linear-gradient(135deg, #f2a900, #c77900);
+  transform: rotate(-8deg);
+}
+
+.grabby-hair {
+  position: absolute;
+  z-index: 3;
+  top: 28%;
+  width: 18%;
+  height: 24%;
+  background: #111111;
+}
+
+.grabby-hair.left {
+  left: 14%;
+  border-radius: 70% 18% 70% 25%;
+  transform: rotate(18deg);
+}
+
+.grabby-hair.right {
+  right: 14%;
+  border-radius: 18% 70% 25% 70%;
+  transform: rotate(-16deg);
+}
+
+.grabby-eye {
+  position: absolute;
+  top: 39%;
+  width: 13%;
+  height: 17%;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 62% 28%, #ffffff 0 18%, transparent 19%),
+    #101828;
+}
+
+.grabby-eye.left {
+  left: 24%;
+}
+
+.grabby-eye.right {
+  right: 24%;
+}
+
+.grabby-nose {
+  position: absolute;
+  top: 55%;
+  left: 48%;
+  width: 6%;
+  height: 9%;
+  border-radius: 999px;
+  background: rgba(101, 52, 23, 0.28);
+}
+
+.grabby-smile {
+  position: absolute;
+  left: 33%;
+  bottom: 18%;
+  width: 34%;
+  height: 12%;
+  border-bottom: 3px solid #101828;
+  border-radius: 0 0 999px 999px;
+}
+
+.grabby-body {
+  position: absolute;
+  bottom: 7%;
+  left: 20%;
+  width: 60%;
+  height: 38%;
+  border: 2px solid #050505;
+  border-radius: 26% 26% 18% 18%;
+  background:
+    linear-gradient(90deg, transparent 48%, rgba(255, 184, 0, 0.9) 49% 52%, transparent 53%),
+    linear-gradient(135deg, #151515, #050505);
+  box-shadow: 0 14px 26px rgba(16, 24, 40, 0.18);
+}
+
+.grabby-hoodie-mark {
+  position: absolute;
+  top: 28%;
+  left: 18%;
+  color: #ffb800;
+  font-size: 0.75rem;
+  font-weight: 950;
+}
+
+.grabby-zip {
+  position: absolute;
+  top: 18%;
+  left: 48%;
+  width: 2px;
+  height: 64%;
+  background: rgba(255, 184, 0, 0.74);
+}
+
+.grabby-arm {
+  position: absolute;
+  top: 17%;
+  width: 20%;
+  height: 56%;
+  border: 2px solid #050505;
+  border-radius: 999px;
+  background: #111111;
+}
+
+.grabby-arm.left {
+  left: -12%;
+  transform: rotate(22deg);
+}
+
+.grabby-arm.right {
+  right: -12%;
+  transform: rotate(-20deg);
+}
+
+.grabby-prop {
+  position: absolute;
+  z-index: 6;
+  right: -2%;
+  bottom: 14%;
+  width: 30%;
+  height: 30%;
+}
+
+.grabby-mascot.welcome .grabby-prop,
+.grabby-mascot.empty-cart .grabby-prop {
+  background:
+    linear-gradient(135deg, #111111, #050505);
+  border: 2px solid #ffb800;
+  border-radius: 7px;
+  box-shadow:
+    -11px -5px 0 -3px #111111,
+    -11px -5px 0 -1px #ffb800,
+    -21px 1px 0 -5px #111111,
+    -21px 1px 0 -3px #ffb800;
+  transform: rotate(-8deg);
+}
+
+.grabby-mascot.rewards .grabby-prop {
+  border: 3px solid #c77900;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, #fff4bf 0 22%, transparent 23%),
+    radial-gradient(circle, #ffcf45 0 56%, #f2a900 57%);
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.35);
+}
+
+.grabby-mascot.shipping .grabby-prop {
+  width: 38%;
+  height: 27%;
+  border: 2px solid #8a5200;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 47%, rgba(138, 82, 0, 0.42) 48% 53%, transparent 54%),
+    linear-gradient(180deg, #efb84a 0 24%, #d89220 25%);
+}
+
+.grabby-mascot.support .grabby-prop {
+  border: 4px solid #ffb800;
+  border-bottom-color: transparent;
+  border-radius: 999px 999px 0 0;
+}
+
+.grabby-mascot.support .grabby-prop::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  bottom: -2px;
+  width: 15px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ffb800;
+}
+
+.grabby-mascot.order-status .grabby-prop {
+  border: 4px solid #0f3d2e;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.grabby-mascot.order-status .grabby-prop::after {
+  content: "";
+  position: absolute;
+  right: -10px;
+  bottom: -7px;
+  width: 17px;
+  height: 5px;
+  border-radius: 999px;
+  background: #0f3d2e;
+  transform: rotate(43deg);
+}
+
+.grabby-mascot.error .grabby-prop {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff7e8;
+  color: #c2410c;
+  font-weight: 950;
+}
+
+.grabby-mascot.error .grabby-prop::before {
+  content: "?";
+}
+
+.grabby-star {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #ffb800;
+  clip-path: polygon(50% 0, 60% 38%, 100% 50%, 60% 62%, 50% 100%, 40% 62%, 0 50%, 40% 38%);
+}
+
+.grabby-star.one {
+  top: 15%;
+  right: 16%;
+}
+
+.grabby-star.two {
+  bottom: 19%;
+  left: 14%;
+  width: 8px;
+  height: 8px;
+  background: #16a34a;
+}
+
+.gdg-cart-grabby-card {
+  width: min(680px, 100%);
+}
+
+.gdg-cart-empty-support-copy {
+  margin: 4px 0 0;
+  color: #475467;
+  font-weight: 800;
+}
+
 .gdg-empty {
   display: grid;
   grid-column: 1 / -1;
@@ -20038,6 +20455,10 @@ body:has(.shop-shell) {
   color: #101828;
   font: inherit;
   padding: 12px;
+}
+
+.order-status-grabby-card {
+  margin-top: 16px;
 }
 
 .order-status-message {
@@ -22602,6 +23023,16 @@ body .catalog-action-menu-floating {
   gap: 12px;
 }
 
+.gdg-account-grabby-card {
+  min-height: 0;
+}
+
+.gdg-account-grabby-card .grabby-card-link,
+.gdg-rewards-grabby-card .grabby-card-link {
+  background: #ffb800;
+  color: #101828;
+}
+
 .gdg-account-preview-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
@@ -22845,6 +23276,10 @@ body .catalog-action-menu-floating {
   font-size: 0.82rem;
   font-weight: 950;
   text-transform: uppercase;
+}
+
+.gdg-rewards-grabby-card {
+  margin: 16px 0;
 }
 
 .gdg-rewards-balance-card {
@@ -23825,5 +24260,69 @@ body .catalog-action-menu-floating {
 
   .gdg-account-progress-label {
     font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .grabby-card {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 12px;
+    border-radius: 20px;
+    padding: 14px;
+  }
+
+  .grabby-card::after {
+    opacity: 0.55;
+  }
+
+  .grabby-card.compact {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .grabby-mascot,
+  .grabby-mascot.small {
+    width: 82px;
+  }
+
+  .grabby-card h2 {
+    font-size: 1.06rem;
+  }
+
+  .grabby-card p {
+    font-size: 0.9rem;
+  }
+
+  .grabby-card-kicker {
+    font-size: 0.66rem;
+  }
+
+  .grabby-card-link {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .gdg-cart-empty {
+    padding: 20px 14px;
+  }
+
+  .gdg-cart-grabby-card {
+    width: 100%;
+  }
+
+  .order-status-grabby-card {
+    margin-top: 14px;
+  }
+}
+
+@media (max-width: 420px) {
+  .grabby-card,
+  .grabby-card.compact {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .grabby-card-copy {
+    justify-items: center;
   }
 }
