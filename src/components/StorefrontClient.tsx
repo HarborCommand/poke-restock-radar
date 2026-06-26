@@ -1983,7 +1983,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                       Calculate USPS shipping
                       <span>Enter ZIP code to calculate USPS shipping.</span>
                     </label>
-                    <div>
+                    <div className="gdg-usps-quote-controls">
                       <input
                         inputMode="numeric"
                         maxLength={5}
@@ -2005,8 +2005,13 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     {shippingQuoteMessage ? <small>{shippingQuoteMessage}</small> : null}
                     <small>Calculated using packed product weight and package size.</small>
                     <div className="gdg-cart-grabby-tip" aria-label="Grabby shipping tip">
-                      <span className="gdg-cart-grabby-mark" aria-hidden="true">G</span>
-                      <span><strong>Grabby tip:</strong> enter your ZIP to see USPS shipping.</span>
+                      <span className="gdg-cart-grabby-mark" aria-hidden="true">
+                        <span>G</span>
+                      </span>
+                      <span className="gdg-cart-grabby-copy">
+                        <strong>Grabby tip</strong>
+                        <span>Enter your ZIP to see USPS shipping.</span>
+                      </span>
                     </div>
                   </div>
                 ) : null}
@@ -2014,7 +2019,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
             ) : null}
             {hasBlockingStockIssue ? <p className="gdg-summary-warning compact">Please remove sold-out items or update changed quantities before checkout.</p> : null}
             {missingShippingQuote ? (
-              <p className="gdg-summary-warning compact">{quoteExpired ? "Shipping quote expired. Recalculate USPS shipping before checkout." : "Calculate USPS shipping before checkout, or choose Local Pickup if available."}</p>
+              <p className="gdg-summary-warning compact gdg-shipping-required-warning">{quoteExpired ? "Shipping quote expired. Enter ZIP for USPS shipping, or choose Local Pickup if available." : "Enter ZIP for USPS shipping, or choose Local Pickup if available."}</p>
             ) : null}
             <button className="gdg-primary-button wide gdg-checkout-button" type="button" disabled={checkoutDisabled} onClick={checkout}>
               <Lock size={17} />
