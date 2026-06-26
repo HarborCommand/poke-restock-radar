@@ -1,17 +1,23 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
+  ArrowRight,
   Box,
   ChevronRight,
   Gift,
   Headphones,
   Home,
+  LockKeyhole,
   MapPin,
+  Mail,
   PackageCheck,
   Search,
+  Send,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
   Trophy,
+  UserRound,
   type LucideIcon
 } from "lucide-react";
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
@@ -24,6 +30,7 @@ import {
   type CustomerAccountOrderHistoryItem
 } from "@/lib/customer-account-auth";
 import { GrabbyCard } from "@/components/brand/GrabbyCard";
+import { GrabbyMascot } from "@/components/brand/GrabbyMascot";
 import type { CustomerRewardActivityItem } from "@/lib/customer-rewards";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 
@@ -442,6 +449,76 @@ export function AccountSecurityUnavailable() {
   );
 }
 
+const loginBenefits: Array<{ title: string; copy: string; icon: LucideIcon; tone: "gold" | "green" | "blue" }> = [
+  { title: "Earn Rewards", copy: "Collect points on eligible purchases.", icon: Trophy, tone: "gold" },
+  { title: "Track Orders", copy: "Check status and view order history.", icon: PackageCheck, tone: "green" },
+  { title: "Secure & Easy", copy: "Your account is protected.", icon: ShieldCheck, tone: "blue" }
+];
+
+function CustomerAuthWelcomePanel() {
+  return (
+    <section className="gdg-login-welcome" aria-labelledby="gdg-login-title">
+      <div className="gdg-login-brand-mark" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+      <p className="gdg-overline">GameDayGrabs Account</p>
+      <h1 id="gdg-login-title">Welcome back, Collector!</h1>
+      <p className="gdg-login-lede">
+        Sign in to manage your orders, earn rewards, and keep your collection growing.
+      </p>
+      <div className="gdg-login-benefits" aria-label="Account benefits">
+        {loginBenefits.map((benefit) => {
+          const Icon = benefit.icon;
+          return (
+            <div key={benefit.title} className="gdg-login-benefit">
+              <span className={`gdg-login-benefit-icon ${benefit.tone}`}>
+                <Icon size={21} aria-hidden="true" />
+              </span>
+              <p>
+                <strong>{benefit.title}</strong>
+                <span>{benefit.copy}</span>
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      <div className="gdg-login-grabby" aria-label="Grabby account helper">
+        <GrabbyMascot variant="welcome" size="large" />
+        <div className="gdg-login-grabby-bubble">
+          <strong>Hey there! I'm Grabby.</strong>
+          <span>Let's get you signed in so we can keep the good pulls coming!</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AccountAuthPanel({
+  overline,
+  title,
+  copy,
+  children
+}: {
+  overline: string;
+  title: string;
+  copy: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="gdg-login-page single">
+      <CustomerAuthWelcomePanel />
+      <section className="gdg-login-auth-card compact" aria-labelledby="gdg-login-card-title">
+        <p className="gdg-overline">{overline}</p>
+        <h1 id="gdg-login-card-title">{title}</h1>
+        <p className="gdg-login-card-copy">{copy}</p>
+        {children}
+      </section>
+    </div>
+  );
+}
+
 export function CustomerLoginPageContent({
   sent,
   error,
@@ -466,17 +543,18 @@ export function CustomerLoginPageContent({
   if (!customerAccountsEnabled()) return <CustomerAccountsComingSoon />;
   if (account) {
     return (
-      <div className="gdg-account-card hero">
-        <p className="gdg-overline">Already Signed In</p>
-        <h1>Your account is ready.</h1>
-        <p>You are signed in as {account.email}.</p>
+      <AccountAuthPanel
+        overline="Already Signed In"
+        title="Your account is ready."
+        copy={`You are signed in as ${account.email}. Guest checkout is always available.`}
+      >
         <div className="gdg-account-actions">
           <Link href="/account" className="gdg-primary-button">Go to Account</Link>
           <form action="/api/account/logout" method="post">
             <button className="gdg-secondary-button" type="submit">Sign Out</button>
           </form>
         </div>
-      </div>
+      </AccountAuthPanel>
     );
   }
 
@@ -488,87 +566,133 @@ export function CustomerLoginPageContent({
   const magicLinkErrorMessage = customerAuthAttemptMessage(error);
 
   return (
-    <div className="gdg-account-card hero">
-      <p className="gdg-overline">Customer Login</p>
-      <h1>Sign in or create an account.</h1>
-      <p>
-        No password needed if you prefer email login. We'll send a secure sign-in link to your email.
-      </p>
-      <p>Customer accounts are optional. Guest checkout is always available.</p>
-      <div className="gdg-account-tabs" role="tablist" aria-label="Customer account options">
-        <Link href="/account/login?mode=signin" className={activeMode === "signin" ? "active" : ""}>Sign In</Link>
-        <Link href="/account/login?mode=create" className={activeMode === "create" ? "active" : ""}>Create Account</Link>
-      </div>
-      {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
-      {sent && !sentRateLimitMessage ? (
-        <p className="gdg-account-notice good">
-          If that email can receive account links, a sign-in link has been sent. Check your inbox.
-        </p>
-      ) : null}
-      {sentRateLimitMessage ? <p className="gdg-account-notice error">{sentRateLimitMessage}</p> : null}
-      {signedOut ? <p className="gdg-account-notice">You have been signed out.</p> : null}
-      {session ? <p className="gdg-account-notice">Your session expired. Sign in again to continue.</p> : null}
-      {error && !magicLinkErrorMessage ? <p className="gdg-account-notice error">That sign-in link is invalid, expired, or already used.</p> : null}
-      {magicLinkErrorMessage ? <p className="gdg-account-notice error">{magicLinkErrorMessage}</p> : null}
-      {loginError && !loginRateLimitMessage ? (
-        <p className="gdg-account-notice error">
-          Email or password is incorrect. Use the email sign-in link or reset your password if needed.
-        </p>
-      ) : null}
-      {loginRateLimitMessage ? <p className="gdg-account-notice error">{loginRateLimitMessage}</p> : null}
-      {registerError && !registerRateLimitMessage ? <p className="gdg-account-notice error">We could not create that account. Check the fields and try again.</p> : null}
-      {registerRateLimitMessage ? <p className="gdg-account-notice error">{registerRateLimitMessage}</p> : null}
-      {activeMode === "signin" ? (
-        <form className="gdg-account-form" action="/api/account/login" method="post">
-          <label>
-            Email address
-            <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
-          </label>
-          <label>
-            Password
-            <input name="password" type="password" autoComplete="current-password" required placeholder="Your password" />
-          </label>
-          <div className="gdg-account-form-row">
-            <button className="gdg-primary-button wide" type="submit">Sign In</button>
-            <Link href="/account/forgot-password" className="gdg-inline-link">Forgot Password?</Link>
+    <div className="gdg-login-page">
+      <CustomerAuthWelcomePanel />
+      <section className="gdg-login-auth-card" aria-labelledby="gdg-login-auth-title">
+        <div className="gdg-account-tabs gdg-login-tabs" role="tablist" aria-label="Customer account options">
+          <Link href="/account/login?mode=signin" className={activeMode === "signin" ? "active" : ""}>Sign In</Link>
+          <Link href="/account/login?mode=create" className={activeMode === "create" ? "active" : ""}>Create Account</Link>
+        </div>
+        <div className="gdg-login-card-heading">
+          <p className="gdg-overline">{activeMode === "signin" ? "Welcome Back" : "Create Account"}</p>
+          <h2 id="gdg-login-auth-title">{activeMode === "signin" ? "Sign in to your account." : "Start your collector account."}</h2>
+          <p>
+            {activeMode === "signin"
+              ? "Password login stays primary. Email sign-in is optional."
+              : "Create an account to track orders and rewards. Guest checkout is still available."}
+          </p>
+        </div>
+        <div className="gdg-login-pill-row" aria-label="Account reminders">
+          <span>No account required to buy.</span>
+          <span>Rewards redemption coming soon.</span>
+        </div>
+        <div className="gdg-login-notices">
+          {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
+          {sent && !sentRateLimitMessage ? (
+            <p className="gdg-account-notice good">
+              If that email can receive account links, a sign-in link has been sent. Check your inbox.
+            </p>
+          ) : null}
+          {sentRateLimitMessage ? <p className="gdg-account-notice error">{sentRateLimitMessage}</p> : null}
+          {signedOut ? <p className="gdg-account-notice">You have been signed out.</p> : null}
+          {session ? <p className="gdg-account-notice">Your session expired. Sign in again to continue.</p> : null}
+          {error && !magicLinkErrorMessage ? <p className="gdg-account-notice error">That sign-in link is invalid, expired, or already used.</p> : null}
+          {magicLinkErrorMessage ? <p className="gdg-account-notice error">{magicLinkErrorMessage}</p> : null}
+          {loginError && !loginRateLimitMessage ? (
+            <p className="gdg-account-notice error">
+              Email or password is incorrect. Use the email sign-in link or reset your password if needed.
+            </p>
+          ) : null}
+          {loginRateLimitMessage ? <p className="gdg-account-notice error">{loginRateLimitMessage}</p> : null}
+          {registerError && !registerRateLimitMessage ? <p className="gdg-account-notice error">We could not create that account. Check the fields and try again.</p> : null}
+          {registerRateLimitMessage ? <p className="gdg-account-notice error">{registerRateLimitMessage}</p> : null}
+        </div>
+        {activeMode === "signin" ? (
+          <form className="gdg-account-form gdg-login-form" action="/api/account/login" method="post">
+            <label className="gdg-login-field">
+              <span>Email address</span>
+              <span className="gdg-login-input">
+                <Mail size={17} aria-hidden="true" />
+                <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
+              </span>
+            </label>
+            <label className="gdg-login-field">
+              <span>Password</span>
+              <span className="gdg-login-input">
+                <LockKeyhole size={17} aria-hidden="true" />
+                <input name="password" type="password" autoComplete="current-password" required placeholder="Enter your password" />
+              </span>
+            </label>
+            <div className="gdg-login-form-meta">
+              <span>Customer accounts are optional.</span>
+              <Link href="/account/forgot-password" className="gdg-inline-link">Forgot Password?</Link>
+            </div>
+            <button className="gdg-primary-button wide gdg-login-submit" type="submit">
+              <span>Sign In</span>
+              <ArrowRight size={18} aria-hidden="true" />
+            </button>
+          </form>
+        ) : (
+          <form className="gdg-account-form gdg-login-form" action="/api/account/register" method="post">
+            <label className="gdg-login-field">
+              <span>Full name <em>optional</em></span>
+              <span className="gdg-login-input">
+                <UserRound size={17} aria-hidden="true" />
+                <input name="displayName" type="text" autoComplete="name" placeholder="Your name" />
+              </span>
+            </label>
+            <label className="gdg-login-field">
+              <span>Email address</span>
+              <span className="gdg-login-input">
+                <Mail size={17} aria-hidden="true" />
+                <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
+              </span>
+            </label>
+            <label className="gdg-login-field">
+              <span>Password</span>
+              <span className="gdg-login-input">
+                <LockKeyhole size={17} aria-hidden="true" />
+                <input name="password" type="password" autoComplete="new-password" minLength={8} required placeholder="At least 8 characters" />
+              </span>
+            </label>
+            <label className="gdg-login-field">
+              <span>Confirm password</span>
+              <span className="gdg-login-input">
+                <LockKeyhole size={17} aria-hidden="true" />
+                <input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required placeholder="Re-enter password" />
+              </span>
+            </label>
+            <button className="gdg-primary-button wide gdg-login-submit" type="submit">
+              <span>Create Account</span>
+              <Sparkles size={18} aria-hidden="true" />
+            </button>
+          </form>
+        )}
+        <div className="gdg-login-divider" aria-hidden="true"><span>or</span></div>
+        <div className="gdg-account-magic-option gdg-login-magic-option">
+          <div>
+            <h2>Email sign-in link</h2>
+            <p>No password? We'll send a secure one-time sign-in link.</p>
           </div>
-        </form>
-      ) : (
-        <form className="gdg-account-form" action="/api/account/register" method="post">
-          <label>
-            Name
-            <input name="displayName" type="text" autoComplete="name" placeholder="Your name" />
-          </label>
-          <label>
-            Email address
-            <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
-          </label>
-          <label>
-            Password
-            <input name="password" type="password" autoComplete="new-password" minLength={8} required placeholder="At least 8 characters" />
-          </label>
-          <label>
-            Confirm password
-            <input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required placeholder="Re-enter password" />
-          </label>
-          <button className="gdg-primary-button wide" type="submit">Create Account</button>
-        </form>
-      )}
-      <div className="gdg-account-magic-option">
-        <h2>Email sign-in link</h2>
-        <p>Prefer not to use a password? We can send a secure one-time sign-in link instead.</p>
-        <form className="gdg-account-form compact" action="/api/account/magic-link/request" method="post">
-          <label>
-            Email address
-            <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
-          </label>
-          <button className="gdg-secondary-button" type="submit">Send Sign-In Link</button>
-        </form>
-      </div>
-      <p className="gdg-account-helper">
-        Use the same email you used at checkout to see matching order history after verification. This does not change
-        checkout; you can still buy as a guest.
-      </p>
+          <form className="gdg-account-form compact gdg-login-magic-form" action="/api/account/magic-link/request" method="post">
+            <label className="gdg-login-field">
+              <span>Email address</span>
+              <span className="gdg-login-input">
+                <Mail size={17} aria-hidden="true" />
+                <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
+              </span>
+            </label>
+            <button className="gdg-secondary-button" type="submit">
+              <span>Send Sign-In Link</span>
+              <Send size={16} aria-hidden="true" />
+            </button>
+          </form>
+        </div>
+        <p className="gdg-account-helper gdg-login-helper">
+          Use the same email you used at checkout to see matching order history after verification. Guest checkout is
+          always available.
+        </p>
+      </section>
     </div>
   );
 }
@@ -583,37 +707,42 @@ export function AccountForgotPasswordPageContent({
   if (!customerAccountsEnabled()) return <CustomerAccountsComingSoon />;
   if (account) {
     return (
-      <div className="gdg-account-card hero">
-        <p className="gdg-overline">Password</p>
-        <h1>You are already signed in.</h1>
-        <p>You are signed in as {account.email}. You can sign out first if you need to reset a different account.</p>
+      <AccountAuthPanel
+        overline="Password"
+        title="You are already signed in."
+        copy={`You are signed in as ${account.email}. You can sign out first if you need to reset a different account.`}
+      >
         <div className="gdg-account-actions">
           <Link href="/account" className="gdg-primary-button">Go to Account</Link>
           <form action="/api/account/logout" method="post">
             <button className="gdg-secondary-button" type="submit">Sign Out</button>
           </form>
         </div>
-      </div>
+      </AccountAuthPanel>
     );
   }
   const statusMessage = resetStatusMessage(resetStatus);
   return (
-    <div className="gdg-account-card hero">
-      <p className="gdg-overline">Forgot Password</p>
-      <h1>Reset your password.</h1>
-      <p>Enter your account email. If it matches an account, we'll send a secure reset link.</p>
+    <AccountAuthPanel
+      overline="Forgot Password"
+      title="Reset your password."
+      copy="Enter your account email. If it matches an account, we'll send a secure reset link."
+    >
       {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
-      <form className="gdg-account-form" action="/api/account/forgot-password" method="post">
-        <label>
-          Email address
-          <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
+      <form className="gdg-account-form gdg-login-form" action="/api/account/forgot-password" method="post">
+        <label className="gdg-login-field">
+          <span>Email address</span>
+          <span className="gdg-login-input">
+            <Mail size={17} aria-hidden="true" />
+            <input name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
+          </span>
         </label>
         <button className="gdg-primary-button wide" type="submit">Send Reset Link</button>
       </form>
       <p className="gdg-account-helper">
         Guest checkout remains available. Password reset emails never include payment details.
       </p>
-    </div>
+    </AccountAuthPanel>
   );
 }
 
@@ -628,52 +757,61 @@ export function AccountResetPasswordPageContent({
   const resetRateLimitMessage = customerAuthAttemptMessage(resetError);
   if (resetRateLimitMessage) {
     return (
-      <div className="gdg-account-card hero">
-        <p className="gdg-overline">Reset Password</p>
-        <h1>Please wait before trying again.</h1>
-        <p>{resetRateLimitMessage} Guest checkout remains available.</p>
+      <AccountAuthPanel
+        overline="Reset Password"
+        title="Please wait before trying again."
+        copy={`${resetRateLimitMessage} Guest checkout remains available.`}
+      >
         <div className="gdg-account-actions">
           <Link href="/account/forgot-password" className="gdg-primary-button">Request New Link</Link>
           <Link href="/account/login" className="gdg-secondary-button">Back to Sign In</Link>
         </div>
-      </div>
+      </AccountAuthPanel>
     );
   }
   if (!token || resetError === "invalid" || resetError === "expired" || resetError === "used") {
     return (
-      <div className="gdg-account-card hero">
-        <p className="gdg-overline">Reset Password</p>
-        <h1>This reset link is invalid, expired, or already used.</h1>
-        <p>Request a new password reset link to continue. Guest checkout remains available.</p>
+      <AccountAuthPanel
+        overline="Reset Password"
+        title="This reset link is invalid, expired, or already used."
+        copy="Request a new password reset link to continue. Guest checkout remains available."
+      >
         <div className="gdg-account-actions">
           <Link href="/account/forgot-password" className="gdg-primary-button">Request New Link</Link>
           <Link href="/account/login" className="gdg-secondary-button">Back to Sign In</Link>
         </div>
-      </div>
+      </AccountAuthPanel>
     );
   }
   return (
-    <div className="gdg-account-card hero">
-      <p className="gdg-overline">Reset Password</p>
-      <h1>Choose a new password.</h1>
-      <p>Use at least 8 characters. This link can only be used once.</p>
+    <AccountAuthPanel
+      overline="Reset Password"
+      title="Choose a new password."
+      copy="Use at least 8 characters. This link can only be used once."
+    >
       {resetError === "password" ? <p className="gdg-account-notice error">Passwords must match and be at least 8 characters.</p> : null}
-      <form className="gdg-account-form" action="/api/account/reset-password" method="post">
+      <form className="gdg-account-form gdg-login-form" action="/api/account/reset-password" method="post">
         <input type="hidden" name="token" value={token} />
-        <label>
-          New password
-          <input name="password" type="password" autoComplete="new-password" minLength={8} required placeholder="At least 8 characters" />
+        <label className="gdg-login-field">
+          <span>New password</span>
+          <span className="gdg-login-input">
+            <LockKeyhole size={17} aria-hidden="true" />
+            <input name="password" type="password" autoComplete="new-password" minLength={8} required placeholder="At least 8 characters" />
+          </span>
         </label>
-        <label>
-          Confirm password
-          <input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required placeholder="Re-enter password" />
+        <label className="gdg-login-field">
+          <span>Confirm password</span>
+          <span className="gdg-login-input">
+            <LockKeyhole size={17} aria-hidden="true" />
+            <input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required placeholder="Re-enter password" />
+          </span>
         </label>
         <button className="gdg-primary-button wide" type="submit">Update Password</button>
       </form>
       <p className="gdg-account-helper">
         Password reset is only for your customer account. It does not change checkout, orders, or payment processing.
       </p>
-    </div>
+    </AccountAuthPanel>
   );
 }
 

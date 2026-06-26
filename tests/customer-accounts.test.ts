@@ -463,15 +463,44 @@ test("customer account UI polish keeps account creation optional and mobile-safe
     "export function AccountDashboard",
     "export function AccountSecurityUnavailable"
   );
+  const accountLogin = sourceSlice(
+    accountComponents,
+    "const loginBenefits",
+    "export function AccountOrders"
+  );
   const css = readProjectFile("src/app/globals.css");
   const cartClient = readProjectFile("src/components/StorefrontClient.tsx");
 
-  assert.match(accountComponents, /Sign in or create an account/);
-  assert.match(accountComponents, /No password needed if you prefer email login\. We'll send a secure sign-in link to your email\./);
-  assert.match(accountComponents, /Forgot Password\?/);
-  assert.match(accountComponents, /Create Account/);
-  assert.match(accountComponents, /Email sign-in link/);
-  assert.match(accountComponents, /Guest checkout is always available\./);
+  assert.match(accountLogin, /gdg-login-page/);
+  assert.match(accountLogin, /CustomerAuthWelcomePanel/);
+  assert.match(accountLogin, /GrabbyMascot/);
+  assert.match(accountLogin, /Welcome back, Collector!/);
+  assert.match(accountLogin, /Hey there! I'm Grabby\./);
+  assert.match(accountLogin, /Let's get you signed in so we can keep the good pulls coming!/);
+  assert.match(accountLogin, /Earn Rewards/);
+  assert.match(accountLogin, /Collect points on eligible purchases/);
+  assert.match(accountLogin, /Track Orders/);
+  assert.match(accountLogin, /Check status and view order history/);
+  assert.match(accountLogin, /Secure & Easy/);
+  assert.match(accountLogin, /Your account is protected/);
+  assert.match(accountLogin, /Sign In/);
+  assert.match(accountLogin, /Create Account/);
+  assert.match(accountLogin, /Forgot Password\?/);
+  assert.match(accountLogin, /Email sign-in link/);
+  assert.match(accountLogin, /No password\? We'll send a secure one-time sign-in link\./);
+  assert.match(accountLogin, /Customer accounts are optional\./);
+  assert.match(accountLogin, /Guest checkout is always available\./);
+  assert.match(accountLogin, /No account required to buy\./);
+  assert.match(accountLogin, /Rewards redemption coming soon\./);
+  assert.match(accountLogin, /Your session expired\. Sign in again to continue\./);
+  assert.match(accountLogin, /action="\/api\/account\/login"/);
+  assert.match(accountLogin, /action="\/api\/account\/register"/);
+  assert.match(accountLogin, /action="\/api\/account\/magic-link\/request"/);
+  assert.match(accountLogin, /action="\/api\/account\/forgot-password"/);
+  assert.match(accountLogin, /action="\/api\/account\/reset-password"/);
+  assert.match(accountLogin, /Use the same email you used at checkout to see matching order history after verification/);
+  assert.doesNotMatch(accountLogin, /Keep me signed in/);
+  assert.doesNotMatch(accountLogin, /Pok[e\u00e9] Ball|official Pok[e\u00e9]mon|Nintendo|protected artwork|franchise-protected/i);
   assert.match(accountComponents, /Account Overview/);
   assert.match(accountComponents, /Welcome back/);
   assert.match(accountComponents, /Signed in as <strong>\{account\.email\}<\/strong>/);
@@ -505,6 +534,13 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(css, /\.gdg-address-form/);
   assert.match(css, /\.gdg-account-tabs/);
   assert.match(css, /\.gdg-account-magic-option/);
+  assert.match(css, /\.gdg-login-page/);
+  assert.match(css, /\.gdg-login-welcome/);
+  assert.match(css, /\.gdg-login-auth-card/);
+  assert.match(css, /\.gdg-login-grabby/);
+  assert.match(css, /\.gdg-login-magic-form/);
+  assert.match(css, /\.gdg-login-page,\s*\r?\n\s*\.gdg-login-page\.single\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
+  assert.match(css, /\.gdg-login-magic-form\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(css, /\.gdg-account-hero-dashboard/);
   assert.match(css, /\.gdg-account-stat-grid/);
   assert.match(css, /\.gdg-account-dashboard-layout/);
@@ -726,7 +762,7 @@ test("customer password login register and reset are hashed token-based and gues
   assert.doesNotMatch(resetRoute, /searchParams\.set\("token"/);
   assert.match(registerRoute, /registerCustomerAccountWithPassword/);
   assert.match(forgotRoute, /sent_if_eligible/);
-  assert.match(accountComponents, /No password needed if you prefer email login/);
+  assert.match(accountComponents, /No password\? We'll send a secure one-time sign-in link/);
   assert.match(accountComponents, /Guest checkout is always available/);
   assert.match(accountComponents, /Redemption coming soon/);
   assert.doesNotMatch(checkoutSession, /CustomerPasswordResetToken|passwordHash|passwordSetAt|customerPassword|redeem|points discount|reward discount/i);
