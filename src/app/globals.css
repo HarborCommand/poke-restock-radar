@@ -17949,31 +17949,6 @@ body:has(.shop-shell) {
   margin-bottom: 18px;
 }
 
-.gdg-cart-grabby-tip.grabby-card {
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 10px;
-  border-radius: 16px;
-  padding: 11px;
-  box-shadow: none;
-}
-
-.gdg-cart-grabby-tip .grabby-mascot {
-  width: 64px;
-}
-
-.gdg-cart-grabby-tip .grabby-card-kicker {
-  font-size: 0.6rem;
-}
-
-.gdg-cart-grabby-tip h2 {
-  font-size: 0.95rem;
-}
-
-.gdg-cart-grabby-tip p {
-  font-size: 0.78rem;
-  line-height: 1.35;
-}
-
 .grabby-mascot {
   position: relative;
   display: inline-grid;
@@ -18997,28 +18972,12 @@ body:has(.shop-shell) {
   opacity: 0.42;
 }
 
-.gdg-cart-assurance,
-.gdg-cart-small-business,
 .gdg-cart-stock-warning {
   display: flex;
   align-items: center;
   gap: 14px;
   border-radius: 18px;
   padding: 16px 18px;
-}
-
-.gdg-cart-assurance {
-  border: 1px solid var(--gdg-gold-border);
-  background:
-    radial-gradient(circle at 96% 50%, rgba(212, 175, 55, 0.14), transparent 13%),
-    var(--gdg-gold-pale);
-  color: var(--gdg-gold-deep);
-}
-
-.gdg-cart-small-business {
-  border: 1px solid #fde68a;
-  background: #fffbeb;
-  color: #92400e;
 }
 
 .gdg-cart-stock-warning {
@@ -19040,16 +18999,9 @@ body:has(.shop-shell) {
   white-space: nowrap;
 }
 
-.gdg-cart-assurance p,
-.gdg-cart-small-business p,
 .gdg-cart-stock-warning strong,
 .gdg-cart-stock-warning small {
   margin: 0;
-}
-
-.gdg-cart-assurance svg,
-.gdg-cart-small-business svg {
-  flex: 0 0 auto;
 }
 
 .gdg-invoice-form-card {
@@ -19145,26 +19097,6 @@ body:has(.shop-shell) {
   font-size: 1.15rem;
 }
 
-.gdg-shipping-checkout-note {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 3px 8px;
-  align-items: start;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 14px;
-  background: #f8fafc;
-  color: #475569;
-  padding: 10px 12px;
-  font-size: 0.8rem;
-  line-height: 1.35;
-}
-
-.gdg-shipping-checkout-note svg {
-  grid-row: span 2;
-  color: var(--gdg-gold-dark);
-  margin-top: 1px;
-}
-
 .gdg-shipping-quote-card {
   display: grid;
   gap: 10px;
@@ -19234,6 +19166,37 @@ body:has(.shop-shell) {
   font-weight: 850;
 }
 
+.gdg-cart-grabby-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  border-radius: 999px;
+  background: #fffaf0;
+  color: #475569;
+  padding: 7px 10px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.gdg-cart-grabby-tip strong {
+  color: #111827;
+}
+
+.gdg-cart-grabby-mark {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #080808, #2d2207 55%, #f5c84c);
+  color: #f8d05e;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
 .gdg-shipping-quote-result,
 .gdg-shipping-quote-warning {
   display: flex;
@@ -19262,37 +19225,6 @@ body:has(.shop-shell) {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
-}
-
-.gdg-free-shipping {
-  display: grid;
-  gap: 9px;
-  border: 1px solid rgba(212, 175, 55, 0.28);
-  border-radius: 16px;
-  background: var(--gdg-gold-pale);
-  color: var(--gdg-gold-deep);
-  padding: 12px 14px;
-}
-
-.gdg-free-shipping.muted {
-  border-color: rgba(212, 175, 55, 0.22);
-  background: linear-gradient(180deg, #fffdf7, #fff7df);
-  color: #334155;
-}
-
-.gdg-free-shipping > span {
-  display: block;
-  overflow: hidden;
-  height: 12px;
-  border-radius: 999px;
-  background: #f6e6b5;
-}
-
-.gdg-free-shipping i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #0b0b0c, var(--gdg-gold));
 }
 
 .gdg-invoice-form-card label {
@@ -19344,6 +19276,11 @@ body:has(.shop-shell) {
   font-weight: 850;
 }
 
+.gdg-summary-warning.compact {
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+
 .gdg-checkout-button {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) 20px;
@@ -19390,26 +19327,69 @@ body:has(.shop-shell) {
   flex: 0 0 auto;
 }
 
-.gdg-checkout-trust-copy {
-  display: grid;
-  gap: 3px;
-  border: 1px solid rgba(212, 175, 55, 0.2);
-  border-radius: 14px;
-  background: rgba(255, 253, 247, 0.78);
+.gdg-checkout-trust-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: -2px 0 0;
   color: #475569;
-  padding: 10px 12px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  font-weight: 850;
   line-height: 1.35;
 }
 
-.gdg-checkout-trust-copy strong {
+.gdg-checkout-trust-line svg {
+  flex: 0 0 auto;
+  color: var(--gdg-green);
+}
+
+.gdg-checkout-notes {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 0;
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.gdg-checkout-notes summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 12px;
   color: #0f172a;
-  font-weight: 900;
+  font-weight: 950;
+}
+
+.gdg-checkout-notes summary::-webkit-details-marker {
+  display: none;
+}
+
+.gdg-checkout-notes summary::after {
+  content: "+";
+  float: right;
+  color: var(--gdg-gold-dark);
+  font-weight: 950;
+}
+
+.gdg-checkout-notes[open] summary::after {
+  content: "-";
+}
+
+.gdg-checkout-notes ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 10px 14px 12px 28px;
+}
+
+.gdg-checkout-notes a {
+  color: #0b6b3a;
+  font-weight: 950;
 }
 
 .gdg-cart-account-link {
-  justify-self: start;
-  margin-top: 3px;
   color: #0b6b3a;
   font-weight: 900;
   text-decoration: none;
@@ -19871,9 +19851,7 @@ body:has(.shop-shell) {
     text-align: left;
   }
 
-  .gdg-cart-stock-warning,
-  .gdg-cart-assurance,
-  .gdg-cart-small-business {
+  .gdg-cart-stock-warning {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -24380,10 +24358,6 @@ body .catalog-action-menu-floating {
     margin-bottom: 14px;
   }
 
-  .gdg-cart-grabby-tip.grabby-card {
-    grid-template-columns: 62px minmax(0, 1fr);
-  }
-
   .grabby-mascot,
   .grabby-mascot.small {
     width: 82px;
@@ -24427,8 +24401,7 @@ body .catalog-action-menu-floating {
     text-align: center;
   }
 
-  .grabby-helper-strip.grabby-card,
-  .gdg-cart-grabby-tip.grabby-card {
+  .grabby-helper-strip.grabby-card {
     grid-template-columns: 1fr;
   }
 

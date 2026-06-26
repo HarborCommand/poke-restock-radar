@@ -403,10 +403,10 @@ test("storefront checkout passes smart shipping options to Stripe instead of a f
   assert.doesNotMatch(createCheckoutSession, /\.\.\.\(shippingCharged > 0/);
 
   assert.match(client, /Shipping calculated at checkout/);
-  assert.match(client, /Shipping is estimated from product weight and package size\./);
-  assert.match(client, /Final shipping is shown before payment\./);
-  assert.match(client, /Items are not reserved until checkout starts\./);
-  assert.match(client, /Availability is confirmed before payment\./);
+  assert.match(client, /Checkout notes/);
+  assert.match(client, /Shipping is calculated by ZIP before payment\./);
+  assert.match(client, /Items are reserved when checkout starts\./);
+  assert.match(client, /Secure checkout by Stripe\. Guest checkout available\./);
   assert.match(client, /Enter ZIP code to calculate USPS shipping\./);
   assert.match(client, /\/api\/storefront\/shipping\/quote/);
   assert.match(client, /shippingQuoteToken/);

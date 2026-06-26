@@ -10,7 +10,6 @@ import {
   ChevronRight,
   CreditCard,
   ExternalLink,
-  Heart,
   Lock,
   Mail,
   Menu,
@@ -1644,17 +1643,13 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
             : `Estimated ${money(shipping)}`
           : "Final shipping shown before payment";
   const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
-  const freeShippingRemaining = settings.freeShippingThreshold !== null ? Math.max(0, settings.freeShippingThreshold - subtotal) : null;
-  const freeShippingProgress =
-    settings.freeShippingThreshold !== null && settings.freeShippingThreshold > 0
-      ? Math.min(100, Math.max(0, (subtotal / settings.freeShippingThreshold) * 100))
-      : 0;
   const isStripeCheckout = settings.checkoutConfigured;
   const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
   const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.publicMaxQuantity <= 0);
   const overQuantityProducts = products.filter((product) => product.requestedQuantity > storefrontEffectiveMaxQuantity(product) && product.publicMaxQuantity > 0);
   const quoteRequired = isStripeCheckout && calculatedShippingEnabled && fulfillmentMethod === "shipping";
   const quoteExpired = shippingQuote ? Date.parse(shippingQuote.expiresAt) <= quoteNow : false;
+  const missingShippingQuote = quoteRequired && fulfillmentMethod === "shipping" && !hasBlockingStockIssue && (!shippingQuote || quoteExpired);
   const checkoutDisabled =
     busy ||
     quoteBusy ||
@@ -1786,8 +1781,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     <section className="gdg-cart-page">
       <div className="gdg-cart-header">
         <div>
-          <h1>Your Pok&eacute;mon Picks Are Almost Yours! <Sparkles size={28} aria-hidden="true" /></h1>
-          <p>Review your cart and complete secure checkout.</p>
+          <h1>Review your cart <Sparkles size={28} aria-hidden="true" /></h1>
+          <p>Confirm your items, choose shipping or pickup, then continue to secure checkout.</p>
         </div>
         <Link href="/shop" className="gdg-secondary-button">
           Continue Shopping
@@ -1899,15 +1894,6 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 );
               })}
             </div>
-            <div className="gdg-cart-assurance">
-              <ShieldCheck size={28} />
-              <p><strong>Every order is backed by our Authenticity Guarantee.</strong> 100% real Pok&eacute;mon products, packed carefully for collectors.</p>
-            </div>
-            <div className="gdg-cart-small-business">
-              <Trophy size={28} />
-              <p><strong>{`You're supporting a small business!`}</strong> Thank you for helping GameDayGrabs grow.</p>
-              <Heart size={18} />
-            </div>
             {!isStripeCheckout ? (
               <div className="gdg-invoice-form-card">
                 <div>
@@ -2018,42 +2004,17 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     ) : null}
                     {shippingQuoteMessage ? <small>{shippingQuoteMessage}</small> : null}
                     <small>Calculated using packed product weight and package size.</small>
+                    <div className="gdg-cart-grabby-tip" aria-label="Grabby shipping tip">
+                      <span className="gdg-cart-grabby-mark" aria-hidden="true">G</span>
+                      <span><strong>Grabby tip:</strong> enter your ZIP to see USPS shipping.</span>
+                    </div>
                   </div>
                 ) : null}
               </div>
             ) : null}
-            <div className="gdg-shipping-checkout-note">
-              <Truck size={16} />
-              <span>{calculatedShippingEnabled ? "Shipping is calculated from product weight, package size, and destination ZIP." : "Shipping is estimated from product weight and package size."}</span>
-              <span>Final shipping is shown before payment.</span>
-            </div>
-            <div className="gdg-shipping-checkout-note">
-              <Lock size={16} />
-              <span>Items are not reserved until checkout starts.</span>
-              <span>Availability is confirmed before payment.</span>
-            </div>
-            <GrabbyCard
-              variant="shipping"
-              title="Grabby tip"
-              message="Shipping is calculated by ZIP before checkout, and Local Pickup stays free when available."
-              compact
-              className="gdg-cart-grabby-tip"
-            />
-            {settings.freeShippingThreshold !== null && freeShippingRemaining !== null && subtotal > 0 ? (
-              <div className="gdg-free-shipping">
-                <strong>{freeShippingRemaining > 0 ? `You\u2019re only ${money(freeShippingRemaining)} away from free shipping!` : "Free shipping unlocked!"}</strong>
-                <span><i style={{ width: `${freeShippingProgress}%` }} /></span>
-                <small>Secure shipping with tracking.</small>
-              </div>
-            ) : (
-              <div className="gdg-free-shipping muted">
-                <strong>Orders are packed securely and shipped with tracking.</strong>
-                <small>Questions? Email {contactEmail}.</small>
-              </div>
-            )}
-            {hasBlockingStockIssue ? <p className="gdg-summary-warning">Please remove sold-out items or update changed quantities before checkout.</p> : null}
-            {quoteRequired && !hasBlockingStockIssue && (!shippingQuote || quoteExpired) ? (
-              <p className="gdg-summary-warning">{quoteExpired ? "Shipping quote expired. Recalculate USPS shipping before checkout." : "Calculate USPS shipping before checkout, or choose Local Pickup if available."}</p>
+            {hasBlockingStockIssue ? <p className="gdg-summary-warning compact">Please remove sold-out items or update changed quantities before checkout.</p> : null}
+            {missingShippingQuote ? (
+              <p className="gdg-summary-warning compact">{quoteExpired ? "Shipping quote expired. Recalculate USPS shipping before checkout." : "Calculate USPS shipping before checkout, or choose Local Pickup if available."}</p>
             ) : null}
             <button className="gdg-primary-button wide gdg-checkout-button" type="button" disabled={checkoutDisabled} onClick={checkout}>
               <Lock size={17} />
@@ -2076,18 +2037,28 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               </div>
             ) : null}
             {isStripeCheckout ? (
-              <div className="gdg-checkout-trust-copy">
-                <strong>No account required.</strong>
-                <span>Guest checkout available.</span>
-                <span>Stripe securely handles payment. GameDayGrabs does not store card numbers or CVC.</span>
-                <span>We use your email and shipping address only to process your order.</span>
-                {settings.customerAccounts.enabled ? (
-                  <Link href="/account/login" className="gdg-cart-account-link">
-                    Create an account to track orders{settings.customerAccounts.rewardsEnabled ? " and rewards" : ""}.
-                  </Link>
-                ) : null}
-              </div>
+              <p className="gdg-checkout-trust-line">
+                <Lock size={15} aria-hidden="true" />
+                Secure checkout by Stripe. Guest checkout available.
+              </p>
             ) : null}
+            <details className="gdg-checkout-notes">
+              <summary>Checkout notes</summary>
+              <ul>
+                <li>Shipping is calculated by ZIP before payment.</li>
+                <li>Items are reserved when checkout starts.</li>
+                <li>Guest checkout is available.</li>
+                {settings.customerAccounts.enabled ? (
+                  <li>
+                    <Link href="/account/login" className="gdg-cart-account-link">
+                      Create an account
+                    </Link>{" "}
+                    to track orders{settings.customerAccounts.rewardsEnabled ? " and rewards" : ""}.
+                  </li>
+                ) : null}
+                <li>Questions? <a href={`mailto:${contactEmail}`}>{contactEmail}</a></li>
+              </ul>
+            </details>
           </aside>
         </div>
       ) : (
