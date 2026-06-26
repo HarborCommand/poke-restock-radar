@@ -50,7 +50,7 @@ export default async function AccountResetPasswordPage({ searchParams }: Account
   noStore();
   const params = searchParams ? await searchParams : {};
   return (
-    <CustomerAccountShell>
+    <CustomerAccountShell focusedAuth>
       <AccountResetPasswordPageContent token={firstParam(params.token)} resetError={firstParam(params.resetError)} />
     </CustomerAccountShell>
   );

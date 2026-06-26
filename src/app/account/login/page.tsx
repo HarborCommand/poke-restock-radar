@@ -51,7 +51,7 @@ export default async function AccountLoginPage({ searchParams }: AccountLoginPag
   ]);
 
   return (
-    <CustomerAccountShell>
+    <CustomerAccountShell focusedAuth>
       <CustomerLoginPageContent
         account={account}
         sent={firstParam(params.sent)}

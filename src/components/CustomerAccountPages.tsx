@@ -218,13 +218,19 @@ function RewardsInfoStrip({ className = "" }: { className?: string }) {
   );
 }
 
-export async function CustomerAccountShell({ children }: { children: ReactNode }) {
+export async function CustomerAccountShell({
+  children,
+  focusedAuth = false
+}: {
+  children: ReactNode;
+  focusedAuth?: boolean;
+}) {
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
-    <main className="shop-shell">
+    <main className={`shop-shell${focusedAuth ? " gdg-auth-focused-shell" : ""}`}>
       <StorefrontHeader settings={settings} homeHref={homeHref} />
-      <section className="gdg-account-shell">{children}</section>
-      <StorefrontFooter settings={settings} homeHref={homeHref} />
+      <section className={`gdg-account-shell${focusedAuth ? " auth-focused" : ""}`}>{children}</section>
+      {focusedAuth ? null : <StorefrontFooter settings={settings} homeHref={homeHref} />}
     </main>
   );
 }
@@ -452,7 +458,7 @@ export function AccountSecurityUnavailable() {
 const loginBenefits: Array<{ title: string; copy: string; icon: LucideIcon; tone: "gold" | "green" | "blue" }> = [
   { title: "Earn Rewards", copy: "Collect points on eligible purchases.", icon: Trophy, tone: "gold" },
   { title: "Track Orders", copy: "Check status and view order history.", icon: PackageCheck, tone: "green" },
-  { title: "Secure & Easy", copy: "Your account is protected.", icon: ShieldCheck, tone: "blue" }
+  { title: "Secure & Easy", copy: "Your account is protected.", icon: ShieldCheck, tone: "gold" }
 ];
 
 function CustomerAuthWelcomePanel() {
@@ -474,7 +480,7 @@ function CustomerAuthWelcomePanel() {
           return (
             <div key={benefit.title} className="gdg-login-benefit">
               <span className={`gdg-login-benefit-icon ${benefit.tone}`}>
-                <Icon size={21} aria-hidden="true" />
+                <Icon size={25} strokeWidth={2.25} aria-hidden="true" />
               </span>
               <p>
                 <strong>{benefit.title}</strong>
@@ -579,11 +585,11 @@ export function CustomerLoginPageContent({
           <p>
             {activeMode === "signin"
               ? "Password login stays primary. Email sign-in is optional."
-              : "Create an account to track orders and rewards. Guest checkout is still available."}
+              : "Create an account to track orders and rewards."}
           </p>
         </div>
         <div className="gdg-login-pill-row" aria-label="Account reminders">
-          <span>No account required to buy.</span>
+          <span>Guest checkout is always available.</span>
           <span>Rewards redemption coming soon.</span>
         </div>
         <div className="gdg-login-notices">
@@ -689,8 +695,7 @@ export function CustomerLoginPageContent({
           </form>
         </div>
         <p className="gdg-account-helper gdg-login-helper">
-          Use the same email you used at checkout to see matching order history after verification. Guest checkout is
-          always available.
+          Use the same email you used at checkout to see matching order history after verification.
         </p>
       </section>
     </div>
@@ -740,7 +745,7 @@ export function AccountForgotPasswordPageContent({
         <button className="gdg-primary-button wide" type="submit">Send Reset Link</button>
       </form>
       <p className="gdg-account-helper">
-        Guest checkout remains available. Password reset emails never include payment details.
+        Guest checkout is always available.
       </p>
     </AccountAuthPanel>
   );
@@ -774,7 +779,7 @@ export function AccountResetPasswordPageContent({
       <AccountAuthPanel
         overline="Reset Password"
         title="This reset link is invalid, expired, or already used."
-        copy="Request a new password reset link to continue. Guest checkout remains available."
+        copy="Request a new password reset link to continue. Guest checkout is always available."
       >
         <div className="gdg-account-actions">
           <Link href="/account/forgot-password" className="gdg-primary-button">Request New Link</Link>
@@ -809,7 +814,7 @@ export function AccountResetPasswordPageContent({
         <button className="gdg-primary-button wide" type="submit">Update Password</button>
       </form>
       <p className="gdg-account-helper">
-        Password reset is only for your customer account. It does not change checkout, orders, or payment processing.
+        Guest checkout is always available.
       </p>
     </AccountAuthPanel>
   );

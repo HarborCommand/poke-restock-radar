@@ -55,7 +55,7 @@ export default async function AccountForgotPasswordPage({ searchParams }: Accoun
   ]);
 
   return (
-    <CustomerAccountShell>
+    <CustomerAccountShell focusedAuth>
       <AccountForgotPasswordPageContent account={account} resetStatus={firstParam(params.resetStatus)} />
     </CustomerAccountShell>
   );

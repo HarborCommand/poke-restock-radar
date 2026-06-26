@@ -22821,6 +22821,37 @@ body .catalog-action-menu-floating {
   padding-bottom: 40px;
 }
 
+.gdg-auth-focused-shell {
+  min-height: 100svh;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 184, 0, 0.13), transparent 27%),
+    radial-gradient(circle at 92% 8%, rgba(22, 163, 74, 0.1), transparent 29%),
+    linear-gradient(180deg, #ffffff 0%, #fffdf7 45%, #f8faf7 100%);
+}
+
+.gdg-account-shell.auth-focused {
+  display: grid;
+  align-items: center;
+  min-height: calc(100svh - 106px);
+  padding: clamp(14px, 2.4vh, 24px) 0 clamp(16px, 3vh, 30px);
+  background:
+    radial-gradient(circle at 6% 12%, rgba(255, 184, 0, 0.17), transparent 28%),
+    radial-gradient(circle at 94% 8%, rgba(22, 163, 74, 0.11), transparent 29%),
+    linear-gradient(135deg, #fffdf7 0%, #ffffff 46%, #f4fbf4 100%);
+}
+
+.gdg-account-shell.auth-focused::before {
+  opacity: 0.34;
+}
+
+.gdg-account-shell.auth-focused > * {
+  width: min(1180px, calc(100% - 28px));
+}
+
+.gdg-account-shell.auth-focused > * + * {
+  margin-top: 0;
+}
+
 .gdg-account-card,
 .gdg-account-tile,
 .gdg-account-panel,
@@ -23927,9 +23958,9 @@ body .catalog-action-menu-floating {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(500px, 0.86fr);
-  gap: clamp(22px, 3vw, 42px);
+  gap: clamp(20px, 2.6vw, 38px);
   align-items: center;
-  min-height: clamp(560px, calc(100svh - 190px), 680px);
+  min-height: clamp(520px, calc(100svh - 160px), 650px);
   overflow: hidden;
   border: 1px solid rgba(245, 166, 35, 0.18);
   border-radius: 30px;
@@ -23939,7 +23970,7 @@ body .catalog-action-menu-floating {
     radial-gradient(circle at 64% 90%, rgba(255, 184, 0, 0.12), transparent 28%),
     linear-gradient(135deg, #fffaf0 0%, #fffdf7 48%, #f2fbf4 100%);
   box-shadow: 0 28px 80px rgba(15, 61, 46, 0.1);
-  padding: clamp(20px, 3vw, 34px);
+  padding: clamp(18px, 2.6vw, 30px);
 }
 
 .gdg-login-page::before,
@@ -23970,7 +24001,7 @@ body .catalog-action-menu-floating {
 
 .gdg-login-page.single {
   grid-template-columns: minmax(0, 0.86fr) minmax(470px, 0.72fr);
-  min-height: clamp(520px, calc(100svh - 190px), 650px);
+  min-height: clamp(500px, calc(100svh - 160px), 620px);
 }
 
 .gdg-login-welcome,
@@ -23982,7 +24013,7 @@ body .catalog-action-menu-floating {
 .gdg-login-welcome {
   display: grid;
   align-content: center;
-  gap: 14px;
+  gap: 13px;
   min-width: 0;
   max-width: 620px;
 }
@@ -24044,7 +24075,7 @@ body .catalog-action-menu-floating {
 
 .gdg-login-benefit {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 52px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
 }
@@ -24052,20 +24083,27 @@ body .catalog-action-menu-floating {
 .gdg-login-benefit-icon {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(245, 166, 35, 0.22);
+  width: 52px;
+  height: 52px;
+  border: 1px solid rgba(245, 166, 35, 0.28);
   border-radius: 999px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 12px 26px rgba(15, 61, 46, 0.08);
 }
 
 .gdg-login-benefit-icon.gold {
-  background: #fff4cc;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.75), transparent 30%),
+    #fff4cc;
   color: #a15c00;
 }
 
 .gdg-login-benefit-icon.green {
-  background: #dcfce7;
+  border-color: rgba(22, 163, 74, 0.22);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.72), transparent 30%),
+    #dcfce7;
   color: #166534;
 }
 
@@ -24093,16 +24131,16 @@ body .catalog-action-menu-floating {
 
 .gdg-login-grabby {
   display: grid;
-  grid-template-columns: 98px minmax(0, 1fr);
+  grid-template-columns: 106px minmax(0, 1fr);
   gap: 12px;
   align-items: end;
   max-width: 440px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .gdg-login-grabby .grabby-mascot {
-  width: 98px;
-  height: 116px;
+  width: 106px;
+  height: 124px;
 }
 
 .gdg-login-grabby-bubble {
@@ -24139,7 +24177,7 @@ body .catalog-action-menu-floating {
 
 .gdg-login-auth-card {
   display: grid;
-  gap: 8px;
+  gap: 9px;
   min-width: 0;
   border: 1px solid rgba(15, 61, 46, 0.12);
   border-radius: 26px;
@@ -24259,7 +24297,7 @@ body .catalog-action-menu-floating {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  min-height: 44px;
+  min-height: 48px;
   border: 1px solid rgba(15, 61, 46, 0.16);
   border-radius: 16px;
   background: #fffdf7;
@@ -24274,14 +24312,28 @@ body .catalog-action-menu-floating {
 
 .gdg-login-input input {
   border: 0;
-  background: transparent;
+  background: transparent !important;
   padding: 0;
   color: #101828;
+  caret-color: #0b2f24;
   outline: none;
 }
 
 .gdg-login-input input::placeholder {
   color: #98a2b3;
+}
+
+.gdg-login-input input:-webkit-autofill,
+.gdg-login-input input:-webkit-autofill:hover,
+.gdg-login-input input:-webkit-autofill:focus,
+.gdg-login-input input:-webkit-autofill:active {
+  border: 0;
+  -webkit-box-shadow: 0 0 0 1000px #fffdf7 inset !important;
+  box-shadow: 0 0 0 1000px #fffdf7 inset !important;
+  -webkit-text-fill-color: #101828 !important;
+  background-color: #fffdf7 !important;
+  caret-color: #0b2f24;
+  transition: background-color 9999s ease-out 0s;
 }
 
 .gdg-login-form-meta {
@@ -24373,6 +24425,110 @@ body .catalog-action-menu-floating {
 .gdg-login-helper {
   color: #475467;
   font-size: 0.82rem;
+  margin-top: 2px;
+}
+
+@media (min-width: 961px) and (max-height: 820px) {
+  .gdg-auth-focused-shell {
+    padding-bottom: 0;
+  }
+
+  .gdg-account-shell.auth-focused {
+    min-height: calc(100svh - 112px);
+    padding: 8px 0 12px;
+  }
+
+  .gdg-login-page {
+    gap: clamp(18px, 2vw, 28px);
+    min-height: calc(100svh - 142px);
+    padding: 18px 28px;
+  }
+
+  .gdg-login-page.single {
+    min-height: calc(100svh - 142px);
+  }
+
+  .gdg-login-welcome {
+    gap: 9px;
+  }
+
+  .gdg-login-brand-mark {
+    margin-bottom: 0;
+  }
+
+  .gdg-login-brand-mark span {
+    width: 30px;
+    height: 40px;
+  }
+
+  .gdg-login-welcome h1 {
+    font-size: clamp(2.8rem, 4.1vw, 3.35rem);
+  }
+
+  .gdg-login-lede {
+    font-size: 0.98rem;
+    line-height: 1.42;
+  }
+
+  .gdg-login-benefits {
+    gap: 7px;
+  }
+
+  .gdg-login-benefit {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .gdg-login-benefit-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .gdg-login-benefit p,
+  .gdg-login-grabby-bubble {
+    line-height: 1.32;
+  }
+
+  .gdg-login-grabby {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  .gdg-login-grabby .grabby-mascot {
+    width: 88px;
+    height: 104px;
+  }
+
+  .gdg-login-auth-card {
+    gap: 8px;
+    padding: 16px;
+  }
+
+  .gdg-login-card-heading,
+  .gdg-login-auth-card.compact {
+    gap: 4px;
+  }
+
+  .gdg-login-card-heading p,
+  .gdg-login-card-copy {
+    font-size: 0.88rem;
+    line-height: 1.36;
+  }
+
+  .gdg-login-tabs a,
+  .gdg-login-submit,
+  .gdg-login-magic-form .gdg-secondary-button {
+    min-height: 42px;
+  }
+
+  .gdg-login-input {
+    min-height: 46px;
+  }
+
+  .gdg-login-magic-option {
+    padding: 10px;
+  }
 }
 
 @media (max-width: 960px) {
@@ -24415,12 +24571,12 @@ body .catalog-action-menu-floating {
   }
 
   .gdg-login-benefit {
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 48px minmax(0, 1fr);
   }
 
   .gdg-login-benefit-icon {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
   }
 
   .gdg-login-grabby {

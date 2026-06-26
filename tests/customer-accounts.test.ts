@@ -394,6 +394,9 @@ test("customer account routes are feature-flagged and keep guest checkout visibl
   assert.match(loginPage, /CustomerLoginPageContent/);
   assert.match(forgotPasswordPage, /AccountForgotPasswordPageContent/);
   assert.match(resetPasswordPage, /AccountResetPasswordPageContent/);
+  for (const source of [loginPage, forgotPasswordPage, resetPasswordPage]) {
+    assert.match(source, /<CustomerAccountShell focusedAuth>/);
+  }
   assert.match(magicLinkRequestRoute, /customerAccountsEnabled\(\)/);
   assert.match(magicLinkRequestRoute, /privateJson\(\{ error: "Customer accounts are not enabled yet\." \}, 404\)/);
   for (const route of [passwordLoginRoute, registerRoute, forgotPasswordRoute, resetPasswordRoute]) {
@@ -490,7 +493,7 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountLogin, /No password\? We'll send a secure one-time sign-in link\./);
   assert.match(accountLogin, /Customer accounts are optional\./);
   assert.match(accountLogin, /Guest checkout is always available\./);
-  assert.match(accountLogin, /No account required to buy\./);
+  assert.doesNotMatch(accountLogin, /Create an account to track orders and rewards\. Guest checkout is still available/);
   assert.match(accountLogin, /Rewards redemption coming soon\./);
   assert.match(accountLogin, /Your session expired\. Sign in again to continue\./);
   assert.match(accountLogin, /action="\/api\/account\/login"/);
@@ -532,6 +535,10 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.doesNotMatch(accountComponents, /section: "security", label: "Security", href: "\/account\/security"/);
   assert.doesNotMatch(accountComponents, /Redeem points|Apply points|reward discount|points discount/i);
   assert.match(css, /\.gdg-address-form/);
+  assert.match(accountComponents, /focusedAuth = false/);
+  assert.match(accountComponents, /focusedAuth \? null : <StorefrontFooter/);
+  assert.match(accountComponents, /gdg-auth-focused-shell/);
+  assert.match(accountComponents, /gdg-account-shell\$\{focusedAuth \? " auth-focused" : ""\}/);
   assert.match(css, /\.gdg-account-tabs/);
   assert.match(css, /\.gdg-account-magic-option/);
   assert.match(css, /\.gdg-login-page/);
@@ -539,6 +546,15 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(css, /\.gdg-login-auth-card/);
   assert.match(css, /\.gdg-login-grabby/);
   assert.match(css, /\.gdg-login-magic-form/);
+  assert.match(css, /\.gdg-auth-focused-shell/);
+  assert.match(css, /\.gdg-account-shell\.auth-focused/);
+  assert.match(css, /min-height:\s*calc\(100svh - 106px\)/);
+  assert.match(css, /\.gdg-login-input input:-webkit-autofill/);
+  assert.match(css, /-webkit-box-shadow:\s*0 0 0 1000px #fffdf7 inset !important/);
+  assert.match(css, /-webkit-text-fill-color:\s*#101828 !important/);
+  assert.match(css, /background-color:\s*#fffdf7 !important/);
+  assert.match(css, /\.gdg-login-benefit\s*\{\s*\r?\n\s*display: grid;\s*\r?\n\s*grid-template-columns: 52px minmax\(0, 1fr\)/);
+  assert.match(css, /\.gdg-login-benefit-icon\s*\{[\s\S]{0,220}width: 52px;\s*\r?\n\s*height: 52px/);
   assert.match(css, /\.gdg-login-page,\s*\r?\n\s*\.gdg-login-page\.single\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(css, /\.gdg-login-magic-form\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(css, /\.gdg-account-hero-dashboard/);
