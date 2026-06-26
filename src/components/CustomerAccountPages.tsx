@@ -3,14 +3,10 @@ import type { ReactNode } from "react";
 import {
   Box,
   ChevronRight,
-  Clock,
   Gift,
   Headphones,
   Home,
-  KeyRound,
-  LogOut,
   MapPin,
-  MonitorSmartphone,
   PackageCheck,
   Search,
   ShieldCheck,
@@ -25,8 +21,7 @@ import {
   customerAccountsEnabled,
   type CurrentCustomerAccount,
   type CustomerAccountOrderDetail,
-  type CustomerAccountOrderHistoryItem,
-  type CustomerAccountSecuritySession
+  type CustomerAccountOrderHistoryItem
 } from "@/lib/customer-account-auth";
 import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import type { CustomerRewardActivityItem } from "@/lib/customer-rewards";
@@ -138,14 +133,13 @@ function refundedCanceledNote(order: CustomerAccountOrderHistoryItem) {
   return null;
 }
 
-type AccountSection = "overview" | "orders" | "rewards" | "addresses" | "security" | "support";
+type AccountSection = "overview" | "orders" | "rewards" | "addresses" | "support";
 
 const accountNavigation: Array<{ section: AccountSection; label: string; href: string; icon: LucideIcon }> = [
   { section: "overview", label: "Overview", href: "/account", icon: Home },
   { section: "orders", label: "Orders", href: "/account/orders", icon: PackageCheck },
   { section: "rewards", label: "Rewards", href: "/account/rewards", icon: Gift },
   { section: "addresses", label: "Addresses", href: "/account/addresses", icon: MapPin },
-  { section: "security", label: "Security", href: "/account/security", icon: ShieldCheck },
   { section: "support", label: "Support", href: "/contact", icon: Headphones }
 ];
 
@@ -427,113 +421,22 @@ export function AccountDashboard({
   );
 }
 
-function securityStatusMessage(value: string | null | undefined) {
-  if (value === "session_revoked") return "That session was signed out.";
-  if (value === "signed_out_others") return "Other devices were signed out.";
-  if (value === "no_other_devices") return "No other active devices were found.";
-  if (value === "not_found") return "That session is no longer active.";
-  if (value === "disabled") return "Account Security is not enabled yet.";
-  if (value === "error") return "Security settings could not be updated. Please try again.";
-  return null;
-}
-
-export function AccountSecurity({
-  account,
-  sessions,
-  status
-}: {
-  account: CurrentCustomerAccount;
-  sessions: CustomerAccountSecuritySession[];
-  status?: string | null;
-}) {
-  const message = securityStatusMessage(status);
-  const otherSessionCount = sessions.filter((session) => !session.current && !session.expired).length;
-
+export function AccountSecurityUnavailable() {
   return (
-    <div className="gdg-account-dashboard gdg-account-security">
-      <AccountNavigation active="security" />
+    <div className="gdg-account-dashboard">
+      <AccountNavigation active="support" />
       <section className="gdg-account-card hero">
-        <p className="gdg-overline">Account Security</p>
-        <h1>Manage active sessions.</h1>
+        <p className="gdg-overline">Account Support</p>
+        <h1>Account security is handled automatically.</h1>
         <p>
-          Signed in as <strong>{account.email}</strong>. Review where your account is active and sign out devices you no
-          longer use.
+          GameDayGrabs keeps sign-in protection, rate limiting, and session timeouts active behind the scenes. Customer
+          device management is not shown in the account dashboard.
         </p>
         <div className="gdg-account-actions">
-          <form action="/api/account/security/sessions" method="post">
-            <input type="hidden" name="action" value="sign_out_others" />
-            <button className="gdg-secondary-button" type="submit" disabled={otherSessionCount === 0}>
-              Sign out all other devices
-            </button>
-          </form>
-          <form action="/api/account/security/sessions" method="post">
-            <input type="hidden" name="action" value="sign_out_all" />
-            <button className="gdg-primary-button danger" type="submit">Sign out all devices</button>
-          </form>
+          <Link href="/account" className="gdg-primary-button">My Account</Link>
+          <Link href="/contact" className="gdg-secondary-button">Contact Support</Link>
         </div>
         <span className="gdg-account-guest-note">Guest checkout stays available. No payment method details are shown.</span>
-      </section>
-
-      {message ? <p className={`gdg-account-notice ${status === "error" ? "error" : "good"}`}>{message}</p> : null}
-
-      <section className="gdg-account-panel">
-        <div className="gdg-account-panel-heading">
-          <div>
-            <p className="gdg-overline">Active Sessions</p>
-            <h2>Your signed-in devices</h2>
-          </div>
-          <AccountIconBadge icon={ShieldCheck} tone="gold" />
-        </div>
-        <p className="gdg-account-panel-copy">
-          Only sessions for this verified account are shown. GameDayGrabs does not display session tokens, token hashes,
-          full IP addresses, or payment information here.
-        </p>
-        {sessions.length ? (
-          <div className="gdg-security-session-list">
-            {sessions.map((session) => (
-              <article key={session.ref} className={`gdg-security-session-card ${session.current ? "current" : ""}`}>
-                <div className="gdg-security-session-icon">
-                  <MonitorSmartphone size={22} aria-hidden="true" />
-                </div>
-                <div className="gdg-security-session-main">
-                  <div>
-                    <strong>{session.deviceSummary}</strong>
-                    {session.current ? <span className="gdg-account-status-pill active">Current session</span> : null}
-                    {session.expired ? <span className="gdg-account-status-pill muted">Expired</span> : null}
-                  </div>
-                  <dl>
-                    <div>
-                      <dt><Clock size={14} aria-hidden="true" /> Created</dt>
-                      <dd>{dateLabel(session.createdAt)}</dd>
-                    </div>
-                    <div>
-                      <dt><KeyRound size={14} aria-hidden="true" /> Activity</dt>
-                      <dd>{session.activeLabel}</dd>
-                    </div>
-                    <div>
-                      <dt><ShieldCheck size={14} aria-hidden="true" /> Expiration</dt>
-                      <dd>{session.expirationLabel}</dd>
-                    </div>
-                  </dl>
-                </div>
-                <form action="/api/account/security/sessions" method="post">
-                  <input type="hidden" name="action" value="revoke" />
-                  <input type="hidden" name="sessionRef" value={session.ref} />
-                  <button className="gdg-secondary-button" type="submit">
-                    <LogOut size={15} aria-hidden="true" />
-                    {session.current ? "Sign out this session" : "Revoke session"}
-                  </button>
-                </form>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="gdg-account-empty-panel">
-            <ShieldCheck size={22} aria-hidden="true" />
-            <strong>No active sessions found.</strong>
-            <p>Sign in again to create a fresh customer account session.</p>
-          </div>
-        )}
       </section>
     </div>
   );

@@ -403,7 +403,7 @@ function customerPasswordResetText(link: string) {
 }
 
 export function customerLoginAlertText(input: {
-  securityUrl: string;
+  accountUrl: string;
   deviceSummary: string;
   createdAt: Date;
 }) {
@@ -413,7 +413,7 @@ export function customerLoginAlertText(input: {
     `Time: ${input.createdAt.toISOString()}`,
     `Device: ${input.deviceSummary}`,
     "",
-    `If this was you, no action is needed. To review active sessions, visit ${input.securityUrl}.`,
+    `If this was you, no action is needed. To review your account, visit ${input.accountUrl}.`,
     "",
     `Questions? Contact ${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}.`
   ].join("\n");
@@ -909,13 +909,13 @@ async function sendCustomerLoginAlert(input: {
 }) {
   if (!customerLoginAlertsEnabled()) return;
   try {
-    const securityUrl = `${safeBaseUrl(input.requestUrl)}/account/security`;
+    const accountUrl = `${safeBaseUrl(input.requestUrl)}/account`;
     await sendEmailViaProvider(
       {
         to: input.account.email,
         subject: "New GameDayGrabs account sign-in",
         text: customerLoginAlertText({
-          securityUrl,
+          accountUrl,
           deviceSummary: input.deviceSummary,
           createdAt: input.createdAt
         }),

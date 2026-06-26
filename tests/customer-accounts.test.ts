@@ -461,7 +461,7 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   const accountDashboard = sourceSlice(
     accountComponents,
     "export function AccountDashboard",
-    "function securityStatusMessage"
+    "export function AccountSecurityUnavailable"
   );
   const css = readProjectFile("src/app/globals.css");
   const cartClient = readProjectFile("src/components/StorefrontClient.tsx");
@@ -500,7 +500,7 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.doesNotMatch(accountDashboard, /Manage addresses/);
   assert.doesNotMatch(accountDashboard, /Contact <a href=\{\`mailto:\$\{GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL\}\`\}/);
   assert.doesNotMatch(accountDashboard, /gdg-account-support-panel/);
-  assert.match(accountComponents, /section: "security", label: "Security", href: "\/account\/security"/);
+  assert.doesNotMatch(accountComponents, /section: "security", label: "Security", href: "\/account\/security"/);
   assert.doesNotMatch(accountComponents, /Redeem points|Apply points|reward discount|points discount/i);
   assert.match(css, /\.gdg-address-form/);
   assert.match(css, /\.gdg-account-tabs/);
@@ -573,12 +573,13 @@ test("storefront header exposes a signed-in account dropdown and mobile account 
     ["My Orders", "/account/orders"],
     ["Rewards", "/account/rewards"],
     ["Saved Addresses", "/account/addresses"],
-    ["Account Security", "/account/security"],
     ["Order Status", "/order-status"]
   ]) {
     assert.match(client, new RegExp(`label: "${label}"`));
     assert.match(client, new RegExp(`href: "${href.replaceAll("/", "\\/")}"`));
   }
+  assert.doesNotMatch(client, /label: "Account Security"/);
+  assert.doesNotMatch(client, /href: "\/account\/security"/);
 
   assert.match(client, /accountSignedIn \? "\/account" : "\/account\/login"/);
   assert.match(client, /Sign In \/ Create Account/);
@@ -809,13 +810,12 @@ test("customer account dashboard and order pages require a verified customer ses
   assert.match(ordersPage, /<AccountSignInRequired title="Sign in to view your order history\."/);
 });
 
-test("customer security center is feature-gated account-scoped and token safe", () => {
+test("customer security center backend remains gated while customer-facing UI is removed", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const securityPage = readProjectFile("src/app/account/security/page.tsx");
   const securityRoute = readProjectFile("src/app/api/account/security/sessions/route.ts");
   const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
   const client = readProjectFile("src/components/StorefrontClient.tsx");
-  const css = readProjectFile("src/app/globals.css");
   const config = readProjectFile("src/lib/customer-accounts.ts");
   const security = readProjectFile("src/lib/customer-account-security.ts");
 
@@ -826,26 +826,23 @@ test("customer security center is feature-gated account-scoped and token safe", 
   const signOutAll = sourceSlice(auth, "export async function signOutAllCustomerSecuritySessions", "export function clearCustomerSessionCookie");
   const loginAlert = sourceSlice(auth, "export function customerLoginAlertText", "export async function requestCustomerMagicLink");
   const sessionStatus = sourceSlice(auth, "export async function currentCustomerAccountSessionStatus", "export async function currentCustomerAccount");
-  const accountSecurityComponent = sourceSlice(accountComponents, "export function AccountSecurity", "export function CustomerLoginPageContent");
+  const accountSecurityUnavailable = sourceSlice(accountComponents, "export function AccountSecurityUnavailable", "export function CustomerLoginPageContent");
 
   assert.match(config, /customerSecurityCenterEnabled:\s*boolean/);
   assert.match(config, /customerLoginAlertsEnabled:\s*boolean/);
   assert.match(config, /CUSTOMER_SECURITY_CENTER_ENABLED/);
   assert.match(config, /CUSTOMER_LOGIN_ALERTS_ENABLED/);
-  assert.match(securityPage, /customerSecurityCenterEnabled\(\)/);
-  assert.match(securityPage, /currentCustomerAccount\(\)/);
-  assert.match(securityPage, /listCustomerAccountSecuritySessions\(account\)/);
+  assert.match(securityPage, /AccountSecurityUnavailable/);
+  assert.doesNotMatch(securityPage, /customerSecurityCenterEnabled\(\)/);
+  assert.doesNotMatch(securityPage, /currentCustomerAccount\(\)/);
+  assert.doesNotMatch(securityPage, /listCustomerAccountSecuritySessions/);
   assert.match(securityPage, /robots:\s*\{\s*\r?\n\s*index:\s*false/);
-  assert.match(accountComponents, /\{ section: "security", label: "Security", href: "\/account\/security"/);
-  assert.match(accountComponents, /Account Security/);
-  assert.match(accountComponents, /Only sessions for this verified account are shown/);
-  assert.match(accountComponents, /does not display session tokens, token hashes,\s*\r?\n\s*full IP addresses/);
-  assert.match(accountComponents, /Sign out all other devices/);
-  assert.match(accountComponents, /Sign out all devices/);
-  assert.match(accountComponents, /Revoke session/);
-  assert.match(accountComponents, /Sign out this session/);
-  assert.match(client, /label: "Account Security"/);
-  assert.match(client, /href: "\/account\/security"/);
+  assert.doesNotMatch(accountComponents, /\{ section: "security", label: "Security", href: "\/account\/security"/);
+  assert.match(accountSecurityUnavailable, /Account security is handled automatically/);
+  assert.match(accountSecurityUnavailable, /rate limiting, and session timeouts active/);
+  assert.doesNotMatch(accountSecurityUnavailable, /Active Sessions|Your signed-in devices|Only sessions for this verified account|Sign out all other devices|Sign out all devices|Revoke session|Sign out this session/);
+  assert.doesNotMatch(client, /label: "Account Security"/);
+  assert.doesNotMatch(client, /href: "\/account\/security"/);
 
   assert.match(listSessions, /customerSecurityCenterEnabled\(\)/);
   assert.match(listSessions, /requireVerifiedCustomerAccountIdentity\(account\)/);
@@ -880,11 +877,10 @@ test("customer security center is feature-gated account-scoped and token safe", 
   assert.match(auth, /Mobile browser/);
   assert.match(loginAlert, /new sign-in/);
   assert.match(loginAlert, /Device:/);
-  assert.match(auth, /\/account\/security/);
+  assert.match(loginAlert, /To review your account/);
+  assert.doesNotMatch(loginAlert, /active sessions|\/account\/security/);
   assert.doesNotMatch(loginAlert, /ip address|token hash|session token|reset token|password|payment method|card number|cvc|raw stripe/i);
-  assert.doesNotMatch(accountSecurityComponent, /tokenHash|sessionId|customerAccountId|passwordHash|magic-link token|reset token|stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|adminNotes|costBasis|supplier|private lot|ipAddress|fullIp/i);
-  assert.match(css, /\.gdg-security-session-card/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*\.gdg-security-session-card\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
+  assert.doesNotMatch(accountSecurityUnavailable, /tokenHash|sessionId|customerAccountId|passwordHash|magic-link token|reset token|stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|adminNotes|costBasis|supplier|private lot|ipAddress|fullIp/i);
 });
 
 test("customer order history is linked by verified email and exposes safe fields only", () => {

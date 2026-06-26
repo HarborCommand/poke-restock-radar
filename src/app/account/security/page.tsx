@@ -1,22 +1,16 @@
 import { unstable_noStore as noStore } from "next/cache";
 import {
-  AccountSecurity,
-  AccountSignInRequired,
+  AccountSecurityUnavailable,
   CustomerAccountShell,
   CustomerAccountsComingSoon
 } from "@/components/CustomerAccountPages";
-import {
-  currentCustomerAccount,
-  customerAccountsEnabled,
-  customerSecurityCenterEnabled,
-  listCustomerAccountSecuritySessions
-} from "@/lib/customer-account-auth";
+import { customerAccountsEnabled } from "@/lib/customer-account-auth";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
 
 const securityUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/account/security`;
-const securityTitle = "Account Security | GameDayGrabs LLC";
-const securityDescription = "Review and manage active GameDayGrabs customer account sessions.";
+const securityTitle = "Account Support | GameDayGrabs LLC";
+const securityDescription = "GameDayGrabs account support and automatic sign-in protections.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,26 +47,17 @@ type AccountSecurityPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function firstParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] ?? null : value ?? null;
-}
-
 export default async function AccountSecurityPage({ searchParams }: AccountSecurityPageProps) {
   noStore();
-  const params = searchParams ? await searchParams : {};
+  if (searchParams) await searchParams;
   const enabled = customerAccountsEnabled();
-  const securityEnabled = customerSecurityCenterEnabled();
-  const account = enabled && securityEnabled ? await currentCustomerAccount() : null;
-  const sessions = account ? await listCustomerAccountSecuritySessions(account) : [];
 
   return (
     <CustomerAccountShell>
-      {!enabled || !securityEnabled ? (
+      {!enabled ? (
         <CustomerAccountsComingSoon />
-      ) : account ? (
-        <AccountSecurity account={account} sessions={sessions} status={firstParam(params.securityStatus)} />
       ) : (
-        <AccountSignInRequired title="Sign in to manage account security." />
+        <AccountSecurityUnavailable />
       )}
     </CustomerAccountShell>
   );

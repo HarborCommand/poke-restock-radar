@@ -127,7 +127,6 @@ const customerAccountMenuLinks = [
   { href: "/account/orders", label: "My Orders" },
   { href: "/account/rewards", label: "Rewards" },
   { href: "/account/addresses", label: "Saved Addresses" },
-  { href: "/account/security", label: "Account Security" },
   { href: "/order-status", label: "Order Status" }
 ];
 
