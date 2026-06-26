@@ -5,6 +5,27 @@ export function ok<T>(data: T, status = 200) {
   return NextResponse.json(data, { status });
 }
 
+export const privateNoStoreHeaders = {
+  "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",
+  Pragma: "no-cache",
+  Expires: "0"
+};
+
+export function privateOk<T>(data: T, status = 200) {
+  return NextResponse.json(data, { status, headers: privateNoStoreHeaders });
+}
+
+export function privateJson<T>(data: T, status = 200) {
+  return NextResponse.json(data, { status, headers: privateNoStoreHeaders });
+}
+
+export function withPrivateNoStore<T extends NextResponse>(response: T) {
+  for (const [name, value] of Object.entries(privateNoStoreHeaders)) {
+    response.headers.set(name, value);
+  }
+  return response;
+}
+
 export function badRequest(error: unknown) {
   if (error instanceof ZodError) {
     return NextResponse.json(

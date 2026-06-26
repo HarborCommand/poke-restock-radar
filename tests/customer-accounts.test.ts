@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 import { customerAccountFeatureConfig } from "../src/lib/customer-accounts";
+import { resolveCustomerSessionTimeout, shouldTouchCustomerSessionActivity } from "../src/lib/customer-session-timeouts";
 
 function readProjectFile(path: string) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -23,15 +24,111 @@ test("customer account and rewards feature flags default disabled", () => {
   assert.equal(config.customerAccountsEnabled, false);
   assert.equal(config.customerRewardsEnabled, false);
   assert.equal(config.customerRewardRedemptionEnabled, false);
+  assert.equal(config.customerAuthRateLimitEnabled, false);
+  assert.equal(config.customerSecurityCenterEnabled, false);
+  assert.equal(config.customerLoginAlertsEnabled, false);
+  assert.equal(config.customerSessionTimeoutsEnabled, false);
+  assert.equal(config.customerSessionIdleTimeoutMinutes, 10);
+  assert.equal(config.customerSessionAbsoluteTimeoutHours, 12);
+  assert.equal(config.customerSessionWarningSeconds, 60);
+  assert.equal(config.customerSessionActivityTouchIntervalSeconds, 60);
   assert.equal(config.accountProvider, "password_magic_link");
   assert.equal(config.rewardsProvider, "internal_ledger");
   assert.deepEqual(config.envVars, [
     "CUSTOMER_ACCOUNTS_ENABLED",
     "CUSTOMER_REWARDS_ENABLED",
     "CUSTOMER_REWARD_REDEMPTION_ENABLED",
-    "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED"
+    "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED",
+    "CUSTOMER_AUTH_RATE_LIMIT_ENABLED",
+    "CUSTOMER_SECURITY_CENTER_ENABLED",
+    "CUSTOMER_LOGIN_ALERTS_ENABLED",
+    "CUSTOMER_SESSION_TIMEOUTS_ENABLED",
+    "CUSTOMER_SESSION_IDLE_TIMEOUT_MINUTES",
+    "CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_HOURS",
+    "CUSTOMER_SESSION_WARNING_SECONDS",
+    "CUSTOMER_SESSION_ACTIVITY_TOUCH_INTERVAL_SECONDS"
   ]);
   assert.equal(config.customerRewardAdminAdjustmentsEnabled, false);
+});
+
+test("customer session timeout flags parse safely without enabling by default", () => {
+  const config = customerAccountFeatureConfig({
+    CUSTOMER_SESSION_TIMEOUTS_ENABLED: "true",
+    CUSTOMER_SESSION_IDLE_TIMEOUT_MINUTES: "15",
+    CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_HOURS: "8",
+    CUSTOMER_SESSION_WARNING_SECONDS: "90",
+    CUSTOMER_SESSION_ACTIVITY_TOUCH_INTERVAL_SECONDS: "120"
+  });
+  const fallbackConfig = customerAccountFeatureConfig({
+    CUSTOMER_SESSION_IDLE_TIMEOUT_MINUTES: "0",
+    CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_HOURS: "bad",
+    CUSTOMER_SESSION_WARNING_SECONDS: "3",
+    CUSTOMER_SESSION_ACTIVITY_TOUCH_INTERVAL_SECONDS: "-1"
+  });
+
+  assert.equal(config.customerSessionTimeoutsEnabled, true);
+  assert.equal(config.customerSessionIdleTimeoutMinutes, 15);
+  assert.equal(config.customerSessionAbsoluteTimeoutHours, 8);
+  assert.equal(config.customerSessionWarningSeconds, 90);
+  assert.equal(config.customerSessionActivityTouchIntervalSeconds, 120);
+  assert.equal(fallbackConfig.customerSessionTimeoutsEnabled, false);
+  assert.equal(fallbackConfig.customerSessionIdleTimeoutMinutes, 10);
+  assert.equal(fallbackConfig.customerSessionAbsoluteTimeoutHours, 12);
+  assert.equal(fallbackConfig.customerSessionWarningSeconds, 60);
+  assert.equal(fallbackConfig.customerSessionActivityTouchIntervalSeconds, 60);
+});
+
+test("customer session timeout helper enforces idle absolute and throttled activity windows", () => {
+  const config = customerAccountFeatureConfig({
+    CUSTOMER_SESSION_TIMEOUTS_ENABLED: "true",
+    CUSTOMER_SESSION_IDLE_TIMEOUT_MINUTES: "10",
+    CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_HOURS: "12",
+    CUSTOMER_SESSION_WARNING_SECONDS: "60",
+    CUSTOMER_SESSION_ACTIVITY_TOUCH_INTERVAL_SECONDS: "60"
+  });
+  const base = new Date("2026-06-26T12:00:00.000Z");
+  const active = resolveCustomerSessionTimeout(
+    config,
+    {
+      lastActivityAt: base,
+      absoluteExpiresAt: new Date("2026-06-27T00:00:00.000Z")
+    },
+    new Date("2026-06-26T12:08:59.000Z")
+  );
+  const idleExpired = resolveCustomerSessionTimeout(
+    config,
+    {
+      lastActivityAt: base,
+      absoluteExpiresAt: new Date("2026-06-27T00:00:00.000Z")
+    },
+    new Date("2026-06-26T12:10:01.000Z")
+  );
+  const absoluteExpired = resolveCustomerSessionTimeout(
+    config,
+    {
+      lastActivityAt: new Date("2026-06-26T23:59:00.000Z"),
+      absoluteExpiresAt: new Date("2026-06-27T00:00:00.000Z")
+    },
+    new Date("2026-06-27T00:00:01.000Z")
+  );
+  const revoked = resolveCustomerSessionTimeout(
+    config,
+    {
+      lastActivityAt: base,
+      absoluteExpiresAt: new Date("2026-06-27T00:00:00.000Z"),
+      revokedAt: new Date("2026-06-26T12:03:00.000Z")
+    },
+    new Date("2026-06-26T12:04:00.000Z")
+  );
+
+  assert.equal(active.reason, "active");
+  assert.equal(active.idleExpiresAt.toISOString(), "2026-06-26T12:10:00.000Z");
+  assert.equal(active.warningStartsAt.toISOString(), "2026-06-26T12:09:00.000Z");
+  assert.equal(idleExpired.reason, "idle_expired");
+  assert.equal(absoluteExpired.reason, "absolute_expired");
+  assert.equal(revoked.reason, "revoked");
+  assert.equal(shouldTouchCustomerSessionActivity(config, base, new Date("2026-06-26T12:00:59.000Z")), false);
+  assert.equal(shouldTouchCustomerSessionActivity(config, base, new Date("2026-06-26T12:01:00.000Z")), true);
 });
 
 test("customer account and rewards schema foundation exists without touching checkout totals", () => {
@@ -60,6 +157,7 @@ test("customer account and rewards schema foundation exists without touching che
   }
 
   assert.match(schema, /email\s+String\s+@unique/);
+  assert.match(schema, /normalizedEmail\s+String\?/);
   assert.match(schema, /status\s+String\s+@default\("active"\)/);
   assert.match(schema, /emailVerifiedAt\s+DateTime\?/);
   assert.match(schema, /lastLoginAt\s+DateTime\?/);
@@ -98,6 +196,127 @@ test("customer account migration is additive and does not expose private payment
   assert.doesNotMatch(migration + rewardLedger, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe|webhook body/i);
 });
 
+test("customer account normalized email migration is additive and non-unique until conflicts are audited", () => {
+  const migration = readProjectFile("prisma/migrations/20260626013000_customer_account_normalized_email/migration.sql");
+  const schema = readProjectFile("prisma/schema.prisma");
+  const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
+
+  assert.match(migration, /ALTER TABLE "CustomerAccount" ADD COLUMN "normalizedEmail" TEXT/);
+  assert.match(migration, /CREATE INDEX IF NOT EXISTS "CustomerAccount_normalizedEmail_idx"/);
+  assert.doesNotMatch(migration, /UNIQUE|DROP|DELETE\s+FROM|TRUNCATE|UPDATE\s+"|SET NOT NULL/i);
+  assert.match(schema, /normalizedEmail\s+String\?/);
+  assert.match(schema, /@@index\(\[normalizedEmail\]\)/);
+  assert.match(sqliteInit, /"normalizedEmail" TEXT/);
+  assert.match(sqliteInit, /ALTER TABLE "CustomerAccount" ADD COLUMN "normalizedEmail" TEXT/);
+  assert.match(sqliteInit, /CREATE INDEX IF NOT EXISTS "CustomerAccount_normalizedEmail_idx"/);
+});
+
+test("customer session timeout migration is additive and stores only token hashes", () => {
+  const migration = readProjectFile("prisma/migrations/20260626023000_customer_session_timeouts/migration.sql");
+  const schema = readProjectFile("prisma/schema.prisma");
+  const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
+  const sessionModel = sourceSlice(schema, "model CustomerSession", "model CustomerPasswordResetToken");
+
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "CustomerSession"/);
+  assert.match(migration, /"customerAccountId" TEXT NOT NULL/);
+  assert.match(migration, /"tokenHash" TEXT NOT NULL/);
+  assert.match(migration, /"lastActivityAt" TIMESTAMP\(3\) NOT NULL/);
+  assert.match(migration, /"absoluteExpiresAt" TIMESTAMP\(3\) NOT NULL/);
+  assert.match(migration, /"revokedAt" TIMESTAMP\(3\)/);
+  assert.match(migration, /"revokeReason" TEXT/);
+  assert.match(migration, /"userAgentSummary" TEXT/);
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerSession_tokenHash_key"/);
+  assert.doesNotMatch(migration, /\bDROP\b|\bDELETE\s+FROM\b|\bTRUNCATE\b|\bUPDATE\s+"|ALTER COLUMN|SET NOT NULL/i);
+  assert.match(schema, /sessions\s+CustomerSession\[\]/);
+  assert.match(sessionModel, /tokenHash\s+String\s+@unique/);
+  assert.match(sessionModel, /lastActivityAt\s+DateTime/);
+  assert.match(sessionModel, /absoluteExpiresAt\s+DateTime/);
+  assert.match(sessionModel, /revokedAt\s+DateTime\?/);
+  assert.match(sqliteInit, /CREATE TABLE IF NOT EXISTS "CustomerSession"/);
+  assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerSession_tokenHash_key"/);
+  assert.doesNotMatch(sessionModel + migration, /\btoken\s+String\b|plainText|password|cardNumber|cvc|payment_method_details|raw Stripe|webhook body/i);
+});
+
+test("customer auth hardening uses persistent hashed rate limits and session revocation", () => {
+  const migration = readProjectFile("prisma/migrations/20260626033000_customer_auth_hardening/migration.sql");
+  const schema = readProjectFile("prisma/schema.prisma");
+  const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
+  const rateLimit = readProjectFile("src/lib/customer-auth-rate-limit.ts");
+  const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const loginRoute = readProjectFile("src/app/api/account/login/route.ts");
+  const registerRoute = readProjectFile("src/app/api/account/register/route.ts");
+  const magicRequestRoute = readProjectFile("src/app/api/account/magic-link/request/route.ts");
+  const forgotRoute = readProjectFile("src/app/api/account/forgot-password/route.ts");
+  const resetRoute = readProjectFile("src/app/api/account/reset-password/route.ts");
+  const verifyRoute = readProjectFile("src/app/api/account/magic-link/verify/route.ts");
+  const logoutRoute = readProjectFile("src/app/api/account/logout/route.ts");
+  const addressRoute = readProjectFile("src/app/api/account/addresses/route.ts");
+  const refreshRoute = readProjectFile("src/app/api/account/session/refresh/route.ts");
+  const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const authSession = sourceSlice(auth, "type CustomerSessionPayload", "export type CustomerSessionTimeoutMetadata");
+  const resetFunction = sourceSlice(auth, "export async function resetCustomerPassword", "export async function verifyCustomerMagicLink");
+  const limiterModel = sourceSlice(schema, "model CustomerAuthRateLimit", "model CustomerSession");
+
+  assert.match(migration, /ALTER TABLE "CustomerAccount" ADD COLUMN "sessionRevokedBefore" TIMESTAMP\(3\)/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "CustomerAuthRateLimit"/);
+  assert.match(migration, /"emailKeyHash" TEXT NOT NULL/);
+  assert.match(migration, /"clientKeyHash" TEXT NOT NULL/);
+  assert.match(migration, /"attemptCount" INTEGER NOT NULL DEFAULT 0/);
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerAuthRateLimit_action_emailKeyHash_clientKeyHash_windowStart_key"/);
+  assert.doesNotMatch(migration, /\bDROP\b|\bDELETE\s+FROM\b|\bTRUNCATE\b|ALTER COLUMN|SET NOT NULL/i);
+
+  assert.match(schema, /model CustomerAuthRateLimit \{/);
+  assert.match(schema, /emailKeyHash\s+String/);
+  assert.match(schema, /clientKeyHash\s+String/);
+  assert.match(schema, /@@unique\(\[action, emailKeyHash, clientKeyHash, windowStart\]\)/);
+  assert.match(schema, /sessionRevokedBefore\s+DateTime\?/);
+  assert.match(sqliteInit, /CREATE TABLE IF NOT EXISTS "CustomerAuthRateLimit"/);
+  assert.match(sqliteInit, /CREATE INDEX IF NOT EXISTS "CustomerAuthRateLimit_blockedUntil_idx"/);
+
+  assert.match(rateLimit, /customerAuthRateLimitingEnabled/);
+  assert.match(rateLimit, /customerAccountFeatureConfig\(\)\.customerAuthRateLimitEnabled/);
+  assert.match(rateLimit, /createHmac\("sha256", secret\)/);
+  assert.match(rateLimit, /normalizeCustomerEmail\(input\.email\)/);
+  assert.match(rateLimit, /x-forwarded-for/);
+  assert.match(rateLimit, /prisma\.customerAuthRateLimit\.upsert/);
+  assert.match(rateLimit, /CustomerAuthRateLimitExceededError/);
+  assert.match(rateLimit, /Retry-After/);
+  assert.match(rateLimit, /assertCustomerSameOriginRequest/);
+  assert.match(rateLimit, /request\.headers\.get\("origin"\)/);
+  assert.doesNotMatch(rateLimit + migration + limiterModel, /rawEmail|plainEmail|rawIp|ipAddress\s+String|email\s+String\s+\/\/ rate|clientIp|passwordHash|tokenHash|cardNumber|cvc|payment_method_details|raw Stripe|webhook body/i);
+
+  for (const [route, action] of [
+    [loginRoute, "password_login"],
+    [registerRoute, "registration"],
+    [magicRequestRoute, "magic_link_request"],
+    [forgotRoute, "forgot_password_request"],
+    [resetRoute, "password_reset_submit"],
+    [verifyRoute, "magic_link_verify"]
+  ] as const) {
+    assert.match(route, /enforceCustomerAuthRateLimit/);
+    assert.match(route, new RegExp(`action:\\s*"${action}"`));
+    assert.match(route, /CustomerAuthRateLimitExceededError/);
+  }
+
+  for (const route of [loginRoute, registerRoute, magicRequestRoute, forgotRoute, resetRoute, logoutRoute, addressRoute, refreshRoute]) {
+    assert.match(route, /assertCustomerSameOriginRequest/);
+    assert.match(route, /CustomerAuthOriginError/);
+  }
+
+  assert.match(authSession, /iat\?:\s*number/);
+  assert.match(auth, /const customerDummyPasswordHash/);
+  assert.match(auth, /customerPasswordMaxLength = 128/);
+  assert.match(auth, /bcrypt\.compare\(input\.password, passwordHashForCompare\)/);
+  assert.match(auth, /sessionRevokedBefore/);
+  assert.match(auth, /issuedAt < account\.sessionRevokedBefore\.getTime\(\)/);
+  assert.match(resetFunction, /sessionRevokedBefore:\s*now/);
+  assert.match(resetFunction, /customerSession\.updateMany/);
+  assert.match(resetFunction, /revokeReason:\s*"password_reset"/);
+  assert.match(accountComponents, /Too many attempts\. Please wait a few minutes and try again\./);
+  assert.match(accountComponents, /rate_limited/);
+  assert.doesNotMatch(auth + rateLimit + loginRoute + registerRoute + magicRequestRoute + forgotRoute + resetRoute + verifyRoute, /plainTextPassword|rawPassword|token:\s*token\b|sessionId|password hashes? sent|cardNumber|cvc|payment_method_details|raw Stripe|webhook body|costBasis|supplier/i);
+});
+
 test("reward ledger idempotency migration is additive", () => {
   const migration = readProjectFile("prisma/migrations/20260623043000_reward_ledger_idempotency/migration.sql");
   const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
@@ -132,13 +351,19 @@ test("customer password account migration is additive and stores only hashes", (
 test("customer account SQLite bootstrap stays aligned with the foundation schema", () => {
   const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
 
-  for (const table of ["CustomerAccount", "CustomerSavedAddress", "CustomerMagicLinkToken", "CustomerPasswordResetToken", "RewardLedgerEntry", "RewardBalance"]) {
+  for (const table of ["CustomerAccount", "CustomerSession", "CustomerAuthRateLimit", "CustomerSavedAddress", "CustomerMagicLinkToken", "CustomerPasswordResetToken", "RewardLedgerEntry", "RewardBalance"]) {
     assert.match(sqliteInit, new RegExp(`CREATE TABLE IF NOT EXISTS "${table}"`));
   }
 
   assert.match(sqliteInit, /ALTER TABLE "StorefrontOrder" ADD COLUMN "customerAccountId" TEXT/);
   assert.match(sqliteInit, /ALTER TABLE "StorefrontCustomer" ADD COLUMN "customerAccountId" TEXT/);
+  assert.match(sqliteInit, /ALTER TABLE "CustomerAccount" ADD COLUMN "normalizedEmail" TEXT/);
+  assert.match(sqliteInit, /ALTER TABLE "CustomerAccount" ADD COLUMN "sessionRevokedBefore" DATETIME/);
   assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerAccount_email_key"/);
+  assert.match(sqliteInit, /CREATE INDEX IF NOT EXISTS "CustomerAccount_normalizedEmail_idx"/);
+  assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerSession_tokenHash_key"/);
+  assert.match(sqliteInit, /CREATE INDEX IF NOT EXISTS "CustomerSession_lastActivityAt_idx"/);
+  assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerAuthRateLimit_action_emailKeyHash_clientKeyHash_windowStart_key"/);
   assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerMagicLinkToken_tokenHash_key"/);
   assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerPasswordResetToken_tokenHash_key"/);
   assert.match(sqliteInit, /CREATE INDEX IF NOT EXISTS "RewardLedgerEntry_customerAccountId_idx"/);
@@ -170,10 +395,10 @@ test("customer account routes are feature-flagged and keep guest checkout visibl
   assert.match(forgotPasswordPage, /AccountForgotPasswordPageContent/);
   assert.match(resetPasswordPage, /AccountResetPasswordPageContent/);
   assert.match(magicLinkRequestRoute, /customerAccountsEnabled\(\)/);
-  assert.match(magicLinkRequestRoute, /status:\s*404/);
+  assert.match(magicLinkRequestRoute, /privateJson\(\{ error: "Customer accounts are not enabled yet\." \}, 404\)/);
   for (const route of [passwordLoginRoute, registerRoute, forgotPasswordRoute, resetPasswordRoute]) {
     assert.match(route, /customerAccountsEnabled\(\)/);
-    assert.match(route, /status:\s*404/);
+    assert.match(route, /privateJson\(\{ error: "Customer accounts are not enabled yet\." \}, 404\)/);
   }
   assert.match(accountComponents, /Customer accounts coming soon/);
   assert.match(accountComponents, /Shop as Guest/);
@@ -182,6 +407,53 @@ test("customer account routes are feature-flagged and keep guest checkout visibl
   assert.match(accountComponents, /action="\/api\/account\/login"/);
   assert.match(accountComponents, /action="\/api\/account\/register"/);
   assert.match(accountComponents, /type="email"/);
+});
+
+test("customer account isolation helpers normalize identity and reject client-supplied ownership", () => {
+  const security = readProjectFile("src/lib/customer-account-security.ts");
+  const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const rewards = readProjectFile("src/lib/customer-rewards.ts");
+  const http = readProjectFile("src/lib/http.ts");
+  const sessionRoute = readProjectFile("src/app/api/account/session/route.ts");
+  const addressRoute = readProjectFile("src/app/api/account/addresses/route.ts");
+  const accountPages = [
+    readProjectFile("src/app/account/page.tsx"),
+    readProjectFile("src/app/account/orders/page.tsx"),
+    readProjectFile("src/app/account/orders/[orderNumber]/page.tsx"),
+    readProjectFile("src/app/account/addresses/page.tsx"),
+    readProjectFile("src/app/account/rewards/page.tsx"),
+    readProjectFile("src/app/account/login/page.tsx"),
+    readProjectFile("src/app/account/forgot-password/page.tsx"),
+    readProjectFile("src/app/account/reset-password/page.tsx")
+  ].join("\n");
+
+  assert.match(security, /export function normalizeCustomerEmail/);
+  assert.match(security, /value\?\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(security, /export function verifiedCustomerIdentity/);
+  assert.match(security, /export function customerVisibleOrderWhere/);
+  assert.match(security, /export function hasClientSuppliedCustomerOwnership/);
+  for (const key of ["customerAccountId", "accountEmail", "sessionId", "addressOwnerId", "orderOwnerId", "rewardOwnerId"]) {
+    assert.match(security, new RegExp(`"${key}"`));
+  }
+
+  assert.match(auth, /SELECT "id"\s*\r?\n\s*FROM "CustomerAccount"/);
+  assert.match(auth, /lower\(trim\("email"\)\) = \$\{normalizedEmail\}/);
+  assert.match(auth, /OR "normalizedEmail" = \$\{normalizedEmail\}/);
+  assert.match(auth, /CustomerAccountIdentityConflictError/);
+  assert.match(auth, /findCustomerAccountByNormalizedEmail/);
+  assert.match(auth, /findOrCreateCustomerAccountByNormalizedEmail/);
+  assert.doesNotMatch(auth, /customerAccount\.upsert\(\{\s*\r?\n\s*where:\s*\{\s*email\s*\}/);
+  assert.match(rewards, /findOrCreateCustomerAccountByNormalizedEmail\(email, tx\)/);
+  assert.match(rewards, /CustomerAccountIdentityConflictError/);
+  assert.match(rewards, /status: "customer_account_conflict"/);
+
+  assert.match(http, /privateNoStoreHeaders/);
+  assert.match(http, /Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate"/);
+  assert.match(sessionRoute, /privateOk/);
+  assert.match(addressRoute, /privateJson/);
+  assert.match(addressRoute, /withPrivateNoStore/);
+  assert.match(accountPages, /unstable_noStore as noStore/);
+  assert.equal((accountPages.match(/noStore\(\)/g) || []).length, 8);
 });
 
 test("customer account UI polish keeps account creation optional and mobile-safe", () => {
@@ -289,6 +561,7 @@ test("storefront header exposes a signed-in account dropdown and mobile account 
     ["My Orders", "/account/orders"],
     ["Rewards", "/account/rewards"],
     ["Saved Addresses", "/account/addresses"],
+    ["Account Security", "/account/security"],
     ["Order Status", "/order-status"]
   ]) {
     assert.match(client, new RegExp(`label: "${label}"`));
@@ -320,6 +593,33 @@ test("storefront header exposes a signed-in account dropdown and mobile account 
   assert.doesNotMatch(headerSource, /passwordHash|tokenHash|magic-link token|reset token|stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|adminNotes|costBasis|supplier|private lot/i);
 });
 
+test("customer session timeout warning is client-side safe and keeps guest cart separate", () => {
+  const client = readProjectFile("src/components/StorefrontClient.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const sessionController = sourceSlice(client, "function CustomerSessionExpiryController", "function subscribeCart");
+  const sessionHook = sourceSlice(client, "function useCustomerAccountSession", "function CustomerSessionExpiryController");
+
+  assert.match(client, /customerSessionEventKey = "gdg-customer-session-event"/);
+  assert.match(client, /broadcastCustomerSessionEvent/);
+  assert.match(sessionController, /Your session is about to expire due to inactivity\./);
+  assert.match(sessionController, /Stay signed in/);
+  assert.match(sessionController, /Sign out/);
+  assert.match(sessionController, /\/api\/account\/session\/refresh/);
+  assert.match(sessionController, /\/api\/account\/logout/);
+  assert.match(sessionController, /timeout\.idleExpiresAt/);
+  assert.match(sessionController, /timeout\.warningSeconds/);
+  assert.match(sessionController, /Guest cart items remain separate and are not removed/);
+  assert.match(client, /window\.localStorage\.setItem\(customerSessionEventKey/);
+  assert.match(sessionHook, /detail\.reason === "logout" \|\| detail\.reason === "expired"/);
+  assert.match(sessionHook, /window\.location\.pathname\.startsWith\("\/account"\)/);
+  assert.doesNotMatch(sessionHook, /localStorage\.setItem\([^)]*(token|sessionId|tokenHash|password|magic)/i);
+  assert.match(css, /\.gdg-session-warning/);
+  assert.match(css, /\.gdg-session-warning-card/);
+  assert.match(css, /\.gdg-session-warning-actions/);
+  assert.match(client, /const cartKey = "poke-radar-cart"/);
+  assert.doesNotMatch(sessionController, /removeItem\(cartKey\)|setItem\(cartKey|writeCart\(\[\]\)|shippingQuote|zip/i);
+});
+
 test("customer magic link tokens are hashed, one-time, and stored outside admin auth", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const requestRoute = readProjectFile("src/app/api/account/magic-link/request/route.ts");
@@ -333,7 +633,7 @@ test("customer magic link tokens are hashed, one-time, and stored outside admin 
   assert.doesNotMatch(auth, /token:\s*token\b/);
   assert.doesNotMatch(schema, /\btoken\s+String\b/);
 
-  const verifyFunction = sourceSlice(auth, "export async function verifyCustomerMagicLink", "export function setCustomerSessionCookie");
+  const verifyFunction = sourceSlice(auth, "export async function verifyCustomerMagicLink", "export async function setCustomerSessionCookie");
   assert.match(verifyFunction, /record\.usedAt/);
   assert.match(verifyFunction, /record\.expiresAt\.getTime\(\)\s*<=\s*now\.getTime\(\)/);
   assert.match(verifyFunction, /usedAt:\s*now/);
@@ -381,8 +681,11 @@ test("customer password login register and reset are hashed token-based and gues
 
   assert.match(auth, /import bcrypt from "bcryptjs"/);
   assert.match(auth, /bcrypt\.hash\(password, 12\)/);
-  assert.match(loginFunction, /bcrypt\.compare\(input\.password, account\.passwordHash\)/);
-  assert.match(registerFunction, /select:\s*\{\s*id:\s*true,\s*status:\s*true,\s*passwordHash:\s*true,\s*displayName:\s*true\s*\}/);
+  assert.match(loginFunction, /passwordHashForCompare/);
+  assert.match(loginFunction, /bcrypt\.compare\(input\.password, passwordHashForCompare\)/);
+  assert.match(auth, /const customerAccountLookupSelect = \{/);
+  assert.match(auth, /passwordHash:\s*true/);
+  assert.match(registerFunction, /findCustomerAccountByNormalizedEmail\(email\)/);
   assert.match(registerFunction, /const passwordHash = await hashCustomerPassword\(input\.password\)/);
   assert.match(registerFunction, /passwordHash,\s*\r?\n\s*passwordSetAt/);
   assert.match(registerFunction, /else if \(existingAccount\.status === "active" && !existingAccount\.passwordHash\)/);
@@ -407,6 +710,7 @@ test("customer password login register and reset are hashed token-based and gues
   assert.match(loginRoute, /setCustomerSessionCookie/);
   assert.match(resetRoute, /setCustomerSessionCookie/);
   assert.match(resetRoute, /clearCustomerSessionCookie/);
+  assert.doesNotMatch(resetRoute, /searchParams\.set\("token"/);
   assert.match(registerRoute, /registerCustomerAccountWithPassword/);
   assert.match(forgotRoute, /sent_if_eligible/);
   assert.match(accountComponents, /No password needed if you prefer email login/);
@@ -419,27 +723,29 @@ test("customer password login register and reset are hashed token-based and gues
 test("password registration repairs magic-link accounts without replacing existing passwords", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const registerFunction = sourceSlice(auth, "export async function registerCustomerAccountWithPassword", "export async function authenticateCustomerPassword");
-  const verifyFunction = sourceSlice(auth, "export async function verifyCustomerMagicLink", "export function setCustomerSessionCookie");
+  const verifyFunction = sourceSlice(auth, "export async function verifyCustomerMagicLink", "export async function setCustomerSessionCookie");
   const resetFunction = sourceSlice(auth, "export async function resetCustomerPassword", "export async function verifyCustomerMagicLink");
   const addressRoute = readProjectFile("src/app/api/account/addresses/route.ts");
   const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
 
-  assert.match(registerFunction, /const existingAccount = await prisma\.customerAccount\.findUnique/);
-  assert.match(registerFunction, /passwordHash:\s*true/);
+  assert.match(registerFunction, /const existingAccount = await findCustomerAccountByNormalizedEmail\(email\)/);
+  assert.match(auth, /passwordHash:\s*true/);
   assert.match(registerFunction, /const passwordHash = await hashCustomerPassword\(input\.password\)/);
   assert.match(registerFunction, /const passwordSetAt = new Date\(\)/);
   assert.match(registerFunction, /if \(!existingAccount\) \{/);
   assert.match(registerFunction, /else if \(existingAccount\.status === "active" && !existingAccount\.passwordHash\) \{/);
   assert.match(registerFunction, /passwordHash,\s*\r?\n\s*passwordSetAt/);
   assert.match(registerFunction, /\.\.\.\(displayName && !existingAccount\.displayName \? \{ displayName \} : \{\}\)/);
+  assert.match(registerFunction, /normalizedEmail:\s*email/);
   assert.doesNotMatch(registerFunction, /where:\s*\{\s*email\s*\},\s*\r?\n\s*data:\s*\{\s*passwordHash/);
   assert.doesNotMatch(registerFunction, /passwordHash:\s*null|passwordSetAt:\s*null/);
 
   assert.match(verifyFunction, /emailVerifiedAt: account\.emailVerifiedAt \?\? now/);
   assert.match(verifyFunction, /lastLoginAt:\s*now/);
-  assert.doesNotMatch(verifyFunction, /passwordHash|passwordSetAt/);
+  assert.doesNotMatch(verifyFunction, /passwordSetAt|data:\s*\{[\s\S]{0,180}passwordHash/);
 
   assert.match(resetFunction, /passwordHash,\s*\r?\n\s*passwordSetAt:\s*now/);
+  assert.match(resetFunction, /normalizedEmail: normalizeCustomerAccountEmail\(record\.customerAccount\.email\)/);
   assert.match(resetFunction, /emailVerifiedAt: record\.customerAccount\.emailVerifiedAt \?\? now/);
   assert.match(addressRoute, /currentCustomerAccount\(\)/);
   assert.match(addressRoute, /createCustomerSavedAddress\(account, input\.input\)/);
@@ -450,30 +756,139 @@ test("customer account dashboard and order pages require a verified customer ses
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const accountPage = readProjectFile("src/app/account/page.tsx");
   const ordersPage = readProjectFile("src/app/account/orders/page.tsx");
+  const sessionRoute = readProjectFile("src/app/api/account/session/route.ts");
+  const refreshRoute = readProjectFile("src/app/api/account/session/refresh/route.ts");
+  const logoutRoute = readProjectFile("src/app/api/account/logout/route.ts");
 
-  const currentAccountFunction = sourceSlice(auth, "export async function currentCustomerAccount", "function trackingUrlFor");
-  assert.match(currentAccountFunction, /if \(!customerAccountsEnabled\(\)\) return null/);
+  const currentAccountFunction = sourceSlice(auth, "export async function currentCustomerAccountSessionStatus", "export async function currentCustomerAccount");
+  assert.match(currentAccountFunction, /if \(!customerAccountsEnabled\(\)\)/);
   assert.match(currentAccountFunction, /verifyCustomerSessionToken/);
-  assert.match(currentAccountFunction, /!account\.emailVerifiedAt/);
-  assert.match(currentAccountFunction, /normalizeCustomerAccountEmail\(account\.email\)/);
+  assert.match(currentAccountFunction, /ignoreExpiration: config\.customerSessionTimeoutsEnabled/);
+  assert.match(currentAccountFunction, /hashCustomerSessionToken\(token\)/);
+  assert.match(currentAccountFunction, /prisma\.customerSession\.findUnique/);
+  assert.match(currentAccountFunction, /resolveCustomerSessionTimeout/);
+  assert.match(currentAccountFunction, /shouldTouchCustomerSessionActivity/);
+  assert.match(currentAccountFunction, /lastActivityAt: now/);
+  assert.match(currentAccountFunction, /timeoutState\.reason !== "active"/);
+  assert.match(auth, /!account\.emailVerifiedAt/);
+  assert.match(auth, /account\.normalizedEmail \?\? normalizeCustomerAccountEmail\(account\.email\)/);
+  assert.match(auth, /requireVerifiedCustomerAccountIdentity/);
+  assert.match(auth, /export async function setCustomerSessionCookie/);
+  assert.match(auth, /prisma\.customerSession\.create/);
+  assert.match(auth, /tokenHash: hashCustomerSessionToken\(token\)/);
+  assert.match(auth, /absoluteExpiresAt/);
+  assert.match(auth, /userAgentSummary/);
+  assert.match(auth, /export async function revokeCurrentCustomerSession/);
+  assert.match(logoutRoute, /revokeCurrentCustomerSession\("logout"\)/);
+  assert.match(logoutRoute, /clearCustomerSessionCookie/);
+  assert.match(sessionRoute, /currentCustomerAccountSessionStatus\(\{ touchActivity: false \}\)/);
+  assert.match(sessionRoute, /timeout: status\.timeout/);
+  assert.match(sessionRoute, /if \(status\.shouldClearCookie\) clearCustomerSessionCookie\(response\)/);
+  assert.match(refreshRoute, /currentCustomerAccountSessionStatus\(\{ touchActivity: true \}\)/);
+  assert.match(refreshRoute, /timeout: status\.timeout/);
+  assert.match(refreshRoute, /clearCustomerSessionCookie\(response\)/);
   assert.match(accountPage, /listCustomerAccountOrders\(account\)/);
+  assert.match(accountPage, /noStore\(\)/);
   assert.match(accountPage, /account \? <AccountDashboard/);
   assert.match(accountPage, /recentOrders=\{recentOrders\}/);
   assert.match(accountPage, /<AccountSignInRequired/);
   assert.match(ordersPage, /listCustomerAccountOrders\(account\)/);
+  assert.match(ordersPage, /noStore\(\)/);
   assert.match(ordersPage, /<AccountSignInRequired title="Sign in to view your order history\."/);
+});
+
+test("customer security center is feature-gated account-scoped and token safe", () => {
+  const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const securityPage = readProjectFile("src/app/account/security/page.tsx");
+  const securityRoute = readProjectFile("src/app/api/account/security/sessions/route.ts");
+  const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const client = readProjectFile("src/components/StorefrontClient.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const config = readProjectFile("src/lib/customer-accounts.ts");
+  const security = readProjectFile("src/lib/customer-account-security.ts");
+
+  const listSessions = sourceSlice(auth, "export async function listCustomerAccountSecuritySessions", "async function findOwnedCustomerSessionByRef");
+  const findSession = sourceSlice(auth, "async function findOwnedCustomerSessionByRef", "export async function revokeCustomerAccountSecuritySession");
+  const revokeSession = sourceSlice(auth, "export async function revokeCustomerAccountSecuritySession", "export async function signOutOtherCustomerSecuritySessions");
+  const signOutOther = sourceSlice(auth, "export async function signOutOtherCustomerSecuritySessions", "export async function signOutAllCustomerSecuritySessions");
+  const signOutAll = sourceSlice(auth, "export async function signOutAllCustomerSecuritySessions", "export function clearCustomerSessionCookie");
+  const loginAlert = sourceSlice(auth, "export function customerLoginAlertText", "export async function requestCustomerMagicLink");
+  const sessionStatus = sourceSlice(auth, "export async function currentCustomerAccountSessionStatus", "export async function currentCustomerAccount");
+  const accountSecurityComponent = sourceSlice(accountComponents, "export function AccountSecurity", "export function CustomerLoginPageContent");
+
+  assert.match(config, /customerSecurityCenterEnabled:\s*boolean/);
+  assert.match(config, /customerLoginAlertsEnabled:\s*boolean/);
+  assert.match(config, /CUSTOMER_SECURITY_CENTER_ENABLED/);
+  assert.match(config, /CUSTOMER_LOGIN_ALERTS_ENABLED/);
+  assert.match(securityPage, /customerSecurityCenterEnabled\(\)/);
+  assert.match(securityPage, /currentCustomerAccount\(\)/);
+  assert.match(securityPage, /listCustomerAccountSecuritySessions\(account\)/);
+  assert.match(securityPage, /robots:\s*\{\s*\r?\n\s*index:\s*false/);
+  assert.match(accountComponents, /\{ section: "security", label: "Security", href: "\/account\/security"/);
+  assert.match(accountComponents, /Account Security/);
+  assert.match(accountComponents, /Only sessions for this verified account are shown/);
+  assert.match(accountComponents, /does not display session tokens, token hashes,\s*\r?\n\s*full IP addresses/);
+  assert.match(accountComponents, /Sign out all other devices/);
+  assert.match(accountComponents, /Sign out all devices/);
+  assert.match(accountComponents, /Revoke session/);
+  assert.match(accountComponents, /Sign out this session/);
+  assert.match(client, /label: "Account Security"/);
+  assert.match(client, /href: "\/account\/security"/);
+
+  assert.match(listSessions, /customerSecurityCenterEnabled\(\)/);
+  assert.match(listSessions, /requireVerifiedCustomerAccountIdentity\(account\)/);
+  assert.match(listSessions, /customerAccountId: account\.id/);
+  assert.match(listSessions, /currentTokenHash/);
+  assert.match(listSessions, /safeCustomerDeviceSummary\(session\.userAgentSummary\)/);
+  assert.match(listSessions, /ref: customerSessionActionRef\(session\.id\)/);
+  assert.match(findSession, /customerAccountId: account\.id/);
+  assert.match(findSession, /customerSessionActionRef\(session\.id\) === cleanRef/);
+  assert.match(revokeSession, /where:\s*\{\s*\r?\n\s*id: session\.id,\s*\r?\n\s*customerAccountId: account\.id/);
+  assert.match(revokeSession, /revokedCurrent/);
+  assert.match(signOutOther, /tokenHash: \{ not: currentTokenHash \}/);
+  assert.match(signOutAll, /customerAccountId: account\.id/);
+  assert.match(signOutAll, /sessionRevokedBefore: now/);
+  assert.match(sessionStatus, /customerSessionTrackingEnabled\(config\)/);
+  assert.match(sessionStatus, /session\.revokedAt/);
+  assert.match(sessionStatus, /shouldClearCookie: true/);
+
+  assert.match(securityRoute, /assertCustomerSameOriginRequest\(request\)/);
+  assert.match(securityRoute, /hasClientSuppliedCustomerOwnership\(input\.raw\)/);
+  assert.match(securityRoute, /currentCustomerAccount\(\)/);
+  assert.match(securityRoute, /revokeCustomerAccountSecuritySession\(account, input\.sessionRef\)/);
+  assert.match(securityRoute, /signOutOtherCustomerSecuritySessions\(account\)/);
+  assert.match(securityRoute, /signOutAllCustomerSecuritySessions\(account\)/);
+  assert.match(securityRoute, /clearCustomerSessionCookie\(response\)/);
+  assert.match(security, /"sessionId"/);
+  assert.match(security, /"customerAccountId"/);
+
+  assert.match(auth, /export function safeCustomerDeviceSummary/);
+  assert.match(auth, /Chrome.*Windows/s);
+  assert.match(auth, /Safari.*iPhone/s);
+  assert.match(auth, /Mobile browser/);
+  assert.match(loginAlert, /new sign-in/);
+  assert.match(loginAlert, /Device:/);
+  assert.match(auth, /\/account\/security/);
+  assert.doesNotMatch(loginAlert, /ip address|token hash|session token|reset token|password|payment method|card number|cvc|raw stripe/i);
+  assert.doesNotMatch(accountSecurityComponent, /tokenHash|sessionId|customerAccountId|passwordHash|magic-link token|reset token|stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|adminNotes|costBasis|supplier|private lot|ipAddress|fullIp/i);
+  assert.match(css, /\.gdg-security-session-card/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*\.gdg-security-session-card\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
 });
 
 test("customer order history is linked by verified email and exposes safe fields only", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const security = readProjectFile("src/lib/customer-account-security.ts");
   const ordersPage = readProjectFile("src/app/account/orders/page.tsx");
   const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
   const orderHistory = sourceSlice(auth, "export async function listCustomerAccountOrders", "export async function getCustomerAccountOrderDetail");
 
-  assert.match(orderHistory, /if \(!email \|\| !account\.emailVerifiedAt\) return \[\]/);
-  assert.match(orderHistory, /isTestOrder:\s*false/);
-  assert.match(orderHistory, /customerEmail:\s*email/);
-  assert.match(orderHistory, /customer:\s*\{\s*is:\s*\{\s*email\s*\}\s*\}/);
+  assert.match(orderHistory, /const where = customerVisibleOrderWhere\(account\)/);
+  assert.match(orderHistory, /if \(!where\) return \[\]/);
+  assert.match(security, /export function customerVisibleOrderWhere/);
+  assert.match(security, /isTestOrder:\s*false/);
+  assert.match(security, /customerAccountId: identity\.customerAccountId/);
+  assert.match(security, /\{ customerAccountId: null, customerEmail: identity\.email \}/);
+  assert.match(security, /customerAccountId: null,\s*\r?\n\s*customer: \{ is: \{ email: identity\.email \} \}/);
   assert.match(orderHistory, /select:\s*\{\s*\r?\n\s*publicTitle:\s*true,\s*\r?\n\s*imageUrl:\s*true,\s*\r?\n\s*quantity:\s*true/);
   assert.match(orderHistory, /imageUrl:\s*item\.imageUrl/);
   assert.match(orderHistory, /take:\s*100/);
@@ -504,6 +919,7 @@ test("customer order history is linked by verified email and exposes safe fields
 
 test("customer account order detail is verified-email scoped and customer safe", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
+  const security = readProjectFile("src/lib/customer-account-security.ts");
   const detailPage = readProjectFile("src/app/account/orders/[orderNumber]/page.tsx");
   const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
   const orderStatusRoute = readProjectFile("src/app/api/storefront/order-status/route.ts");
@@ -516,11 +932,12 @@ test("customer account order detail is verified-email scoped and customer safe",
   assert.match(detailPage, /AccountOrderNotFound/);
   assert.match(detailPage, /robots:\s*\{\s*\r?\n\s*index:\s*false/);
 
-  assert.match(detailFunction, /if \(!email \|\| !account\.emailVerifiedAt \|\| !cleanOrderNumber\) return null/);
-  assert.match(detailFunction, /orderNumber:\s*cleanOrderNumber/);
-  assert.match(detailFunction, /isTestOrder:\s*false/);
-  assert.match(detailFunction, /customerEmail:\s*email/);
-  assert.match(detailFunction, /customer:\s*\{\s*is:\s*\{\s*email\s*\}\s*\}/);
+  assert.match(detailPage, /noStore\(\)/);
+  assert.match(detailFunction, /const where = customerVisibleOrderWhere\(account, cleanOrderNumber\)/);
+  assert.match(detailFunction, /if \(!where\) return null/);
+  assert.match(security, /orderNumber: cleanOrderNumber/);
+  assert.match(security, /isTestOrder:\s*false/);
+  assert.match(security, /customerAccountId: identity\.customerAccountId/);
   assert.match(detailFunction, /select:\s*\{/);
   assert.match(detailFunction, /shippingTrackingNumber:\s*true/);
   assert.match(detailFunction, /shippingTrackingUrl:\s*true/);
@@ -562,7 +979,7 @@ test("saved address book is verified-account scoped and checkout-isolated", () =
   assert.match(addressPage, /AccountAddresses account=\{account\} status=\{firstParam\(params\.addressStatus\)\}/);
   assert.match(addressRoute, /customerAccountsEnabled\(\)/);
   assert.match(addressRoute, /currentCustomerAccount\(\)/);
-  assert.match(addressRoute, /status:\s*401/);
+  assert.match(addressRoute, /privateJson\(\{ error: "Sign in required\." \}, 401\)/);
   assert.match(addressRoute, /createCustomerSavedAddress/);
   assert.match(addressRoute, /updateCustomerSavedAddress/);
   assert.match(addressRoute, /deleteCustomerSavedAddress/);

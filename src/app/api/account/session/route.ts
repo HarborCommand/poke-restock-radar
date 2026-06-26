@@ -1,12 +1,18 @@
-import { currentCustomerAccount, customerAccountsEnabled, customerSessionCookieName } from "@/lib/customer-account-auth";
-import { ok } from "@/lib/http";
+import {
+  clearCustomerSessionCookie,
+  currentCustomerAccountSessionStatus,
+  customerAccountsEnabled,
+  customerSessionCookieName
+} from "@/lib/customer-account-auth";
+import { privateOk } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const account = await currentCustomerAccount();
-  return ok({
+  const status = await currentCustomerAccountSessionStatus({ touchActivity: false });
+  const account = status.account;
+  const response = privateOk({
     enabled: customerAccountsEnabled(),
     account: account
       ? {
@@ -19,6 +25,9 @@ export async function GET() {
       authenticated: Boolean(account),
       cookieName: customerSessionCookieName(),
       sameSite: "lax"
-    }
+    },
+    timeout: status.timeout
   });
+  if (status.shouldClearCookie) clearCustomerSessionCookie(response);
+  return response;
 }

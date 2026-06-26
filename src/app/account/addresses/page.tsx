@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import {
   AccountAddresses,
   AccountSignInRequired,
@@ -48,6 +49,7 @@ function firstParam(value: string | string[] | undefined) {
 }
 
 export default async function AccountAddressesPage({ searchParams }: AccountAddressesPageProps) {
+  noStore();
   const params = searchParams ? await searchParams : {};
   const enabled = customerAccountsEnabled();
   const account = enabled ? await currentCustomerAccount() : null;

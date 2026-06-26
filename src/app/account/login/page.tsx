@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { CustomerAccountShell, CustomerLoginPageContent } from "@/components/CustomerAccountPages";
 import { currentCustomerAccount } from "@/lib/customer-account-auth";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
@@ -43,6 +44,7 @@ function firstParam(value: string | string[] | undefined) {
 }
 
 export default async function AccountLoginPage({ searchParams }: AccountLoginPageProps) {
+  noStore();
   const [params, account] = await Promise.all([
     searchParams ? searchParams : Promise.resolve({} as Record<string, string | string[] | undefined>),
     currentCustomerAccount()
@@ -59,6 +61,7 @@ export default async function AccountLoginPage({ searchParams }: AccountLoginPag
         mode={firstParam(params.mode)}
         loginError={firstParam(params.loginError)}
         registerError={firstParam(params.registerError)}
+        session={firstParam(params.session)}
       />
     </CustomerAccountShell>
   );

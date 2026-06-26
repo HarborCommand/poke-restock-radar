@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { AccountResetPasswordPageContent, CustomerAccountShell } from "@/components/CustomerAccountPages";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
@@ -46,6 +47,7 @@ function firstParam(value: string | string[] | undefined) {
 }
 
 export default async function AccountResetPasswordPage({ searchParams }: AccountResetPasswordPageProps) {
+  noStore();
   const params = searchParams ? await searchParams : {};
   return (
     <CustomerAccountShell>

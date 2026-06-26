@@ -10,7 +10,12 @@ import {
   setDefaultCustomerSavedAddress,
   updateCustomerSavedAddress
 } from "@/lib/customer-addresses";
-import { badRequest, ok, readJson } from "@/lib/http";
+import {
+  assertCustomerSameOriginRequest,
+  CustomerAuthOriginError,
+  customerAuthOriginErrorResponse
+} from "@/lib/customer-auth-rate-limit";
+import { badRequest, privateJson, privateOk, readJson, withPrivateNoStore } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +23,7 @@ export const dynamic = "force-dynamic";
 function redirectToAddresses(request: Request, status: string) {
   const url = new URL("/account/addresses", request.url);
   url.searchParams.set("addressStatus", status);
-  return NextResponse.redirect(url, { status: 303 });
+  return withPrivateNoStore(NextResponse.redirect(url, { status: 303 }));
 }
 
 async function formAction(request: Request) {
@@ -52,40 +57,48 @@ async function jsonAction(request: Request) {
 
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") || "";
-  const input = contentType.includes("application/json") ? await jsonAction(request) : await formAction(request);
+  const redirect = !contentType.includes("application/json");
+  let input: Awaited<ReturnType<typeof formAction>> | Awaited<ReturnType<typeof jsonAction>> | null = null;
 
   try {
+    assertCustomerSameOriginRequest(request);
+    input = contentType.includes("application/json") ? await jsonAction(request) : await formAction(request);
     if (!customerAccountsEnabled()) {
       return input.redirect
         ? redirectToAddresses(request, "disabled")
-        : NextResponse.json({ error: "Customer accounts are not enabled yet." }, { status: 404 });
+        : privateJson({ error: "Customer accounts are not enabled yet." }, 404);
     }
 
     const account = await currentCustomerAccount();
     if (!account) {
       return input.redirect
-        ? NextResponse.redirect(new URL("/account/login", request.url), { status: 303 })
-        : NextResponse.json({ error: "Sign in required." }, { status: 401 });
+        ? withPrivateNoStore(NextResponse.redirect(new URL("/account/login", request.url), { status: 303 }))
+        : privateJson({ error: "Sign in required." }, 401);
     }
 
     if (input.action === "delete") {
       await deleteCustomerSavedAddress(account, input.addressId);
-      return input.redirect ? redirectToAddresses(request, "deleted") : ok({ ok: true, status: "deleted" });
+      return input.redirect ? redirectToAddresses(request, "deleted") : privateOk({ ok: true, status: "deleted" });
     }
 
     if (input.action === "default") {
       await setDefaultCustomerSavedAddress(account, input.addressId);
-      return input.redirect ? redirectToAddresses(request, "default") : ok({ ok: true, status: "default" });
+      return input.redirect ? redirectToAddresses(request, "default") : privateOk({ ok: true, status: "default" });
     }
 
     if (input.action === "update") {
       await updateCustomerSavedAddress(account, input.addressId, input.input);
-      return input.redirect ? redirectToAddresses(request, "updated") : ok({ ok: true, status: "updated" });
+      return input.redirect ? redirectToAddresses(request, "updated") : privateOk({ ok: true, status: "updated" });
     }
 
     await createCustomerSavedAddress(account, input.input);
-    return input.redirect ? redirectToAddresses(request, "created") : ok({ ok: true, status: "created" }, 201);
+    return input.redirect ? redirectToAddresses(request, "created") : privateOk({ ok: true, status: "created" }, 201);
   } catch (error) {
-    return input.redirect ? redirectToAddresses(request, "error") : badRequest(error);
+    if (error instanceof CustomerAuthOriginError) {
+      return redirect ? redirectToAddresses(request, "error") : customerAuthOriginErrorResponse();
+    }
+    if (input?.redirect) return redirectToAddresses(request, "error");
+    const response = badRequest(error);
+    return withPrivateNoStore(response);
   }
 }

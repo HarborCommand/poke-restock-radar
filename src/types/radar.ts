@@ -1420,6 +1420,12 @@ export type AppHealthDTO = {
       customerRewardsEnabled: boolean;
       customerRewardRedemptionEnabled: boolean;
       customerRewardAdminAdjustmentsEnabled: boolean;
+      customerAuthRateLimitEnabled: boolean;
+      customerSecurityCenterEnabled: boolean;
+      customerLoginAlertsEnabled: boolean;
+      customerSessionTimeoutsEnabled: boolean;
+      customerSessionIdleTimeoutMinutes: number;
+      customerSessionAbsoluteTimeoutHours: number;
       accountProvider: "password_magic_link";
       rewardsProvider: "internal_ledger";
       rewardsReady: boolean;

@@ -48,6 +48,9 @@ const controlledEnvKeys = [
   "CUSTOMER_REWARDS_ENABLED",
   "CUSTOMER_REWARD_REDEMPTION_ENABLED",
   "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED",
+  "CUSTOMER_AUTH_RATE_LIMIT_ENABLED",
+  "CUSTOMER_SECURITY_CENTER_ENABLED",
+  "CUSTOMER_LOGIN_ALERTS_ENABLED",
   "SHIPPO_API_TOKEN",
   "SHIP_FROM_NAME",
   "SHIP_FROM_STREET1",
@@ -139,6 +142,7 @@ test("health stays OK when required systems pass and optional providers are disa
     assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardAdminAdjustmentsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerAuthRateLimitEnabled, false);
     assert.equal(report.providers.customerAccounts.accountProvider, "password_magic_link");
     assert.equal(report.providers.customerAccounts.rewardsProvider, "internal_ledger");
     assert.match(report.providers.customerAccounts.message, /guest checkout remains available/);
@@ -247,6 +251,12 @@ test("health reports customer account reward flags without exposing values or af
       assert.equal(report.providers.customerAccounts.customerRewardsEnabled, true);
       assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
       assert.equal(report.providers.customerAccounts.customerRewardAdminAdjustmentsEnabled, false);
+      assert.equal(report.providers.customerAccounts.customerAuthRateLimitEnabled, false);
+      assert.equal(report.providers.customerAccounts.customerSecurityCenterEnabled, false);
+      assert.equal(report.providers.customerAccounts.customerLoginAlertsEnabled, false);
+      assert.equal(report.providers.customerAccounts.customerSessionTimeoutsEnabled, false);
+      assert.equal(report.providers.customerAccounts.customerSessionIdleTimeoutMinutes, 10);
+      assert.equal(report.providers.customerAccounts.customerSessionAbsoluteTimeoutHours, 12);
       assert.equal(report.providers.customerAccounts.rewardsReady, true);
       assert.equal(report.providers.customerAccounts.redemptionReady, false);
       assert.equal(report.providers.customerAccounts.adminAdjustmentsReady, false);
@@ -254,7 +264,15 @@ test("health reports customer account reward flags without exposing values or af
         "CUSTOMER_ACCOUNTS_ENABLED",
         "CUSTOMER_REWARDS_ENABLED",
         "CUSTOMER_REWARD_REDEMPTION_ENABLED",
-        "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED"
+        "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED",
+        "CUSTOMER_AUTH_RATE_LIMIT_ENABLED",
+        "CUSTOMER_SECURITY_CENTER_ENABLED",
+        "CUSTOMER_LOGIN_ALERTS_ENABLED",
+        "CUSTOMER_SESSION_TIMEOUTS_ENABLED",
+        "CUSTOMER_SESSION_IDLE_TIMEOUT_MINUTES",
+        "CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_HOURS",
+        "CUSTOMER_SESSION_WARNING_SECONDS",
+        "CUSTOMER_SESSION_ACTIVITY_TOUCH_INTERVAL_SECONDS"
       ]);
       assert.doesNotMatch(serialized, /card_number|cardNumber|cvc|cvv|payment_method_details|raw Stripe/i);
       assert.equal(statusForReport(report.warnings), "OK");
@@ -270,7 +288,7 @@ test("health warns when reward redemption is enabled without the required accoun
     assert.equal(report.providers.customerAccounts.customerAccountsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, true);
-    assert.match(report.warnings.join("\n"), /Customer account rewards flags are inconsistent/);
+    assert.match(report.warnings.join("\n"), /Customer account flags are inconsistent/);
     assert.equal(statusForReport(report.warnings), "WARN");
   });
 });

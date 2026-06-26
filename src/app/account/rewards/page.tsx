@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import {
   AccountRewards,
   AccountSignInRequired,
@@ -41,6 +42,7 @@ export const metadata = {
 };
 
 export default async function AccountRewardsPage() {
+  noStore();
   const enabled = customerAccountsEnabled();
   const account = enabled ? await currentCustomerAccount() : null;
   const activity = account ? await listCustomerRewardActivity(account) : [];

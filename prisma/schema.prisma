@@ -1071,11 +1071,13 @@ model CustomerAccount {
   id                  String                   @id @default(cuid())
   userId              String?
   email               String                   @unique
+  normalizedEmail     String?
   displayName         String?
   phone               String?
   status              String                   @default("active")
   passwordHash        String?
   passwordSetAt       DateTime?
+  sessionRevokedBefore DateTime?
   emailVerifiedAt     DateTime?
   lastLoginAt         DateTime?
   createdAt           DateTime                 @default(now())
@@ -1084,6 +1086,7 @@ model CustomerAccount {
   storefrontCustomers StorefrontCustomer[]
   orders              StorefrontOrder[]
   savedAddresses      CustomerSavedAddress[]
+  sessions            CustomerSession[]
   magicLinkTokens     CustomerMagicLinkToken[]
   passwordResetTokens CustomerPasswordResetToken[]
   rewardLedgerEntries RewardLedgerEntry[]
@@ -1091,8 +1094,51 @@ model CustomerAccount {
 
   @@index([userId])
   @@index([email])
+  @@index([normalizedEmail])
   @@index([status])
+  @@index([sessionRevokedBefore])
   @@index([emailVerifiedAt])
+}
+
+model CustomerAuthRateLimit {
+  id            String   @id @default(cuid())
+  action        String
+  emailKeyHash  String
+  clientKeyHash String
+  windowStart   DateTime
+  windowSeconds Int
+  attemptCount  Int      @default(0)
+  firstAttemptAt DateTime @default(now())
+  lastAttemptAt DateTime
+  blockedUntil  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([action, emailKeyHash, clientKeyHash, windowStart])
+  @@index([action])
+  @@index([emailKeyHash])
+  @@index([clientKeyHash])
+  @@index([windowStart])
+  @@index([blockedUntil])
+}
+
+model CustomerSession {
+  id                String          @id @default(cuid())
+  customerAccountId String
+  tokenHash         String          @unique
+  lastActivityAt    DateTime
+  absoluteExpiresAt DateTime
+  revokedAt         DateTime?
+  revokeReason      String?
+  userAgentSummary  String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  customerAccount   CustomerAccount @relation(fields: [customerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([customerAccountId])
+  @@index([lastActivityAt])
+  @@index([absoluteExpiresAt])
+  @@index([revokedAt])
 }
 
 model CustomerPasswordResetToken {

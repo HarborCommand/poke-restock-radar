@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import {
   AccountOrders,
   AccountSignInRequired,
@@ -53,6 +54,7 @@ function orderHistoryView(value: string | string[] | undefined) {
 }
 
 export default async function AccountOrdersPage({ searchParams }: AccountOrdersPageProps) {
+  noStore();
   const params = searchParams ? await searchParams : {};
   const enabled = customerAccountsEnabled();
   const account = enabled ? await currentCustomerAccount() : null;

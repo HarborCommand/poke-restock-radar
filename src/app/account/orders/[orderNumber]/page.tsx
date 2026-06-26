@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import {
   AccountOrderDetail,
   AccountOrderNotFound,
@@ -45,6 +46,7 @@ export const metadata = {
 };
 
 export default async function AccountOrderDetailPage({ params }: { params: Promise<{ orderNumber: string }> }) {
+  noStore();
   const enabled = customerAccountsEnabled();
   const account = enabled ? await currentCustomerAccount() : null;
   const { orderNumber } = await params;

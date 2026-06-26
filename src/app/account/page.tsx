@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import {
   AccountDashboard,
   AccountSignInRequired,
@@ -41,6 +42,7 @@ export const metadata = {
 };
 
 export default async function AccountPage() {
+  noStore();
   const enabled = customerAccountsEnabled();
   const account = enabled ? await currentCustomerAccount() : null;
   const recentOrders = account ? await listCustomerAccountOrders(account) : [];

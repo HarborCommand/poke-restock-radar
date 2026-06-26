@@ -104,6 +104,12 @@ export type EnvironmentReport = {
       customerRewardsEnabled: boolean;
       customerRewardRedemptionEnabled: boolean;
       customerRewardAdminAdjustmentsEnabled: boolean;
+      customerAuthRateLimitEnabled: boolean;
+      customerSecurityCenterEnabled: boolean;
+      customerLoginAlertsEnabled: boolean;
+      customerSessionTimeoutsEnabled: boolean;
+      customerSessionIdleTimeoutMinutes: number;
+      customerSessionAbsoluteTimeoutHours: number;
       accountProvider: "password_magic_link";
       rewardsProvider: "internal_ledger";
       rewardsReady: boolean;
@@ -261,6 +267,8 @@ export function getEnvironmentReport(): EnvironmentReport {
       ? "misconfigured"
       : customerAccountFeatures.customerRewardAdminAdjustmentsEnabled && !customerAccountFeatures.customerRewardsEnabled
         ? "misconfigured"
+      : (customerAccountFeatures.customerSecurityCenterEnabled || customerAccountFeatures.customerLoginAlertsEnabled) && !customerAccountFeatures.customerAccountsEnabled
+        ? "misconfigured"
       : customerAccountFeatures.customerRewardsEnabled && !customerAccountFeatures.customerAccountsEnabled
         ? "misconfigured"
         : customerAccountFeatures.customerAccountsEnabled
@@ -333,7 +341,7 @@ export function getEnvironmentReport(): EnvironmentReport {
     warnings.push("Shippo label purchase is enabled but the label provider is not fully configured. Disable SHIPPO_LABEL_PURCHASE_ENABLED or finish Shippo setup.");
   }
   if (customerAccountHealthStatus === "misconfigured") {
-    warnings.push("Customer account rewards flags are inconsistent. Enable CUSTOMER_ACCOUNTS_ENABLED before rewards, and enable CUSTOMER_REWARDS_ENABLED before redemption or admin adjustments.");
+    warnings.push("Customer account flags are inconsistent. Enable CUSTOMER_ACCOUNTS_ENABLED before rewards, account security, or login alerts; enable CUSTOMER_REWARDS_ENABLED before redemption or admin adjustments.");
   }
   if (marketHealthStatus === "misconfigured") {
     warnings.push("Market pricing providers are partially configured. Complete the selected provider env vars or leave automatic pricing disabled.");
@@ -503,12 +511,18 @@ export function getEnvironmentReport(): EnvironmentReport {
               ? "Optional customer accounts with password or email-link sign-in are enabled; rewards are enabled."
               : "Optional customer accounts with password or email-link sign-in are enabled; rewards remain disabled."
             : customerAccountHealthStatus === "misconfigured"
-              ? "Customer account reward flags are inconsistent."
+              ? "Customer account feature flags are inconsistent."
               : "Optional customer accounts and rewards are disabled; guest checkout remains available.",
         customerAccountsEnabled: customerAccountFeatures.customerAccountsEnabled,
         customerRewardsEnabled: customerAccountFeatures.customerRewardsEnabled,
         customerRewardRedemptionEnabled: customerAccountFeatures.customerRewardRedemptionEnabled,
         customerRewardAdminAdjustmentsEnabled: customerAccountFeatures.customerRewardAdminAdjustmentsEnabled,
+        customerAuthRateLimitEnabled: customerAccountFeatures.customerAuthRateLimitEnabled,
+        customerSecurityCenterEnabled: customerAccountFeatures.customerSecurityCenterEnabled,
+        customerLoginAlertsEnabled: customerAccountFeatures.customerLoginAlertsEnabled,
+        customerSessionTimeoutsEnabled: customerAccountFeatures.customerSessionTimeoutsEnabled,
+        customerSessionIdleTimeoutMinutes: customerAccountFeatures.customerSessionIdleTimeoutMinutes,
+        customerSessionAbsoluteTimeoutHours: customerAccountFeatures.customerSessionAbsoluteTimeoutHours,
         accountProvider: customerAccountFeatures.accountProvider,
         rewardsProvider: customerAccountFeatures.rewardsProvider,
         rewardsReady: customerAccountFeatures.customerAccountsEnabled && customerAccountFeatures.customerRewardsEnabled,

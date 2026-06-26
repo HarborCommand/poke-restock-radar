@@ -5,7 +5,15 @@ import {
   resetCustomerPassword,
   setCustomerSessionCookie
 } from "@/lib/customer-account-auth";
-import { badRequest, readJson } from "@/lib/http";
+import {
+  assertCustomerSameOriginRequest,
+  CustomerAuthOriginError,
+  CustomerAuthRateLimitExceededError,
+  customerAuthOriginErrorResponse,
+  customerAuthRateLimitResponse,
+  enforceCustomerAuthRateLimit
+} from "@/lib/customer-auth-rate-limit";
+import { badRequest, privateJson, readJson, withPrivateNoStore } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,14 +39,19 @@ async function requestInput(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let attemptedToken = "";
+  const contentType = request.headers.get("content-type") || "";
+  const redirect = !contentType.includes("application/json");
   try {
+    assertCustomerSameOriginRequest(request);
     if (!customerAccountsEnabled()) {
-      return NextResponse.json({ error: "Customer accounts are not enabled yet." }, { status: 404 });
+      return privateJson({ error: "Customer accounts are not enabled yet." }, 404);
     }
 
     const input = await requestInput(request);
-    attemptedToken = input.token;
+    await enforceCustomerAuthRateLimit({
+      request,
+      action: "password_reset_submit"
+    });
     const result = await resetCustomerPassword({
       token: input.token,
       password: input.password,
@@ -50,11 +63,11 @@ export async function POST(request: Request) {
         const url = new URL("/account", request.url);
         url.searchParams.set("accountStatus", "password_reset");
         const response = NextResponse.redirect(url, { status: 303 });
-        setCustomerSessionCookie(response, result.account);
-        return response;
+        await setCustomerSessionCookie(response, result.account, request);
+        return withPrivateNoStore(response);
       }
-      const response = NextResponse.json({ ok: true });
-      setCustomerSessionCookie(response, result.account);
+      const response = privateJson({ ok: true });
+      await setCustomerSessionCookie(response, result.account, request);
       return response;
     }
 
@@ -64,22 +77,27 @@ export async function POST(request: Request) {
       url.searchParams.set("resetError", safeReason);
       const response = NextResponse.redirect(url, { status: 303 });
       clearCustomerSessionCookie(response);
-      return response;
+      return withPrivateNoStore(response);
     }
 
-    const response = NextResponse.json({ error: "This password reset link is invalid, expired, or already used." }, { status: 400 });
+    const response = privateJson({ error: "This password reset link is invalid, expired, or already used." }, 400);
     clearCustomerSessionCookie(response);
     return response;
   } catch (error) {
-    const contentType = request.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
+    if (error instanceof CustomerAuthRateLimitExceededError) {
+      if (!redirect) return customerAuthRateLimitResponse(error);
+      const url = new URL("/account/reset-password", request.url);
+      url.searchParams.set("resetError", "rate_limited");
+      return withPrivateNoStore(NextResponse.redirect(url, { status: 303 }));
+    }
+    if (error instanceof CustomerAuthOriginError) return customerAuthOriginErrorResponse();
+    if (redirect) {
       const url = new URL("/account/reset-password", request.url);
       url.searchParams.set("resetError", "password");
-      if (attemptedToken) url.searchParams.set("token", attemptedToken);
       const response = NextResponse.redirect(url, { status: 303 });
       clearCustomerSessionCookie(response);
-      return response;
+      return withPrivateNoStore(response);
     }
-    return badRequest(error);
+    return withPrivateNoStore(badRequest(error));
   }
 }

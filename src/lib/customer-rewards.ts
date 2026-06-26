@@ -1,7 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
-import { normalizeCustomerAccountEmail, type CurrentCustomerAccount } from "@/lib/customer-account-auth";
+import {
+  CustomerAccountIdentityConflictError,
+  findOrCreateCustomerAccountByNormalizedEmail,
+  normalizeCustomerAccountEmail,
+  type CurrentCustomerAccount
+} from "@/lib/customer-account-auth";
 
 const rewardPointsPerDollar = 1;
 
@@ -84,12 +89,8 @@ function orderCustomerEmail(order: RewardOrder) {
 async function ensureRewardCustomerAccount(tx: RewardLedgerTx, order: RewardOrder) {
   const email = orderCustomerEmail(order);
   if (!email) return null;
-  const account = await tx.customerAccount.upsert({
-    where: { email },
-    update: {},
-    create: { email, status: "active" },
-    select: { id: true, email: true }
-  });
+  const account = await findOrCreateCustomerAccountByNormalizedEmail(email, tx);
+  if (!account) return null;
   if (order.customerId) {
     await tx.storefrontCustomer.updateMany({
       where: { id: order.customerId, customerAccountId: null },
@@ -158,7 +159,13 @@ export async function awardRewardsForPaidOrder(order: RewardOrder) {
   if (points <= 0) return { status: "no_points" as const, points: 0 };
 
   return prisma.$transaction(async (tx) => {
-    const account = await ensureRewardCustomerAccount(tx, order);
+    let account: Awaited<ReturnType<typeof ensureRewardCustomerAccount>>;
+    try {
+      account = await ensureRewardCustomerAccount(tx, order);
+    } catch (error) {
+      if (error instanceof CustomerAccountIdentityConflictError) return { status: "customer_account_conflict" as const, points: 0 };
+      throw error;
+    }
     if (!account) return { status: "missing_customer_email" as const, points: 0 };
     const result = await createRewardLedgerEntry({
       tx,

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import {
   BadgeCheck,
   Check,
@@ -82,9 +82,20 @@ type CustomerAccountSession = {
   enabled: boolean;
   account: { email: string; displayName: string | null; emailVerified: boolean } | null;
   session: { authenticated: boolean };
+  timeout?: {
+    enabled: boolean;
+    idleExpiresAt: string | null;
+    absoluteExpiresAt: string | null;
+    warningSeconds: number;
+    activityTouchIntervalSeconds: number;
+    serverNow: string;
+    expiredReason: string | null;
+  };
 };
 
 const cartKey = "poke-radar-cart";
+const customerSessionEventKey = "gdg-customer-session-event";
+const customerSessionEventName = "gdg-customer-session";
 const emptyCartSnapshot: CartItem[] = [];
 let cartSnapshotRaw = "[]";
 let cartSnapshotCache: CartItem[] = emptyCartSnapshot;
@@ -116,6 +127,7 @@ const customerAccountMenuLinks = [
   { href: "/account/orders", label: "My Orders" },
   { href: "/account/rewards", label: "Rewards" },
   { href: "/account/addresses", label: "Saved Addresses" },
+  { href: "/account/security", label: "Account Security" },
   { href: "/order-status", label: "Order Status" }
 ];
 
@@ -263,8 +275,35 @@ function getServerCartSnapshot(): CartItem[] {
   return emptyCartSnapshot;
 }
 
+function broadcastCustomerSessionEvent(reason: "logout" | "expired" | "refreshed") {
+  if (typeof window === "undefined") return;
+  const payload = { reason, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(customerSessionEventName, { detail: payload }));
+  try {
+    window.localStorage.setItem(customerSessionEventKey, JSON.stringify(payload));
+  } catch {
+    // Session broadcasts are best-effort only; never affect cart or checkout state.
+  }
+}
+
 function useCustomerAccountSession(enabled: boolean) {
   const [session, setSession] = useState<CustomerAccountSession | null>(null);
+
+  const refreshSession = useCallback(async () => {
+    if (!enabled) {
+      setSession(null);
+      return null;
+    }
+    try {
+      const response = await fetch("/api/account/session", { cache: "no-store", credentials: "same-origin" });
+      const data = response.ok ? ((await response.json()) as CustomerAccountSession) : null;
+      setSession(data);
+      return data;
+    } catch {
+      setSession(null);
+      return null;
+    }
+  }, [enabled]);
 
   useEffect(() => {
     if (!enabled) {
@@ -287,7 +326,156 @@ function useCustomerAccountSession(enabled: boolean) {
     };
   }, [enabled]);
 
-  return session;
+  useEffect(() => {
+    if (!enabled) return;
+
+    function handleSessionEvent(event: Event) {
+      const detail =
+        event instanceof CustomEvent
+          ? event.detail
+          : event instanceof StorageEvent && event.key === customerSessionEventKey
+            ? (() => {
+                try {
+                  return event.newValue ? JSON.parse(event.newValue) : null;
+                } catch {
+                  return null;
+                }
+              })()
+            : null;
+      if (!detail || typeof detail.reason !== "string") return;
+      if (detail.reason === "logout" || detail.reason === "expired") {
+        setSession(null);
+        if (window.location.pathname.startsWith("/account")) {
+          const login = new URL("/account/login", window.location.origin);
+          login.searchParams.set(detail.reason === "expired" ? "session" : "signedOut", "1");
+          window.location.assign(login.toString());
+        }
+      } else if (detail.reason === "refreshed") {
+        void refreshSession();
+      }
+    }
+
+    window.addEventListener(customerSessionEventName, handleSessionEvent);
+    window.addEventListener("storage", handleSessionEvent);
+    return () => {
+      window.removeEventListener(customerSessionEventName, handleSessionEvent);
+      window.removeEventListener("storage", handleSessionEvent);
+    };
+  }, [enabled, refreshSession]);
+
+  return {
+    session,
+    setSession,
+    refreshSession
+  };
+}
+
+function CustomerSessionExpiryController({
+  session,
+  setSession,
+  refreshSession
+}: {
+  session: CustomerAccountSession | null;
+  setSession: (session: CustomerAccountSession | null) => void;
+  refreshSession: () => Promise<CustomerAccountSession | null>;
+}) {
+  const [warningOpen, setWarningOpen] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const timeout = session?.timeout;
+  const authenticated = Boolean(session?.session.authenticated);
+
+  const expireLocally = useCallback(() => {
+    setWarningOpen(false);
+    setSession(null);
+    broadcastCustomerSessionEvent("expired");
+  }, [setSession]);
+
+  useEffect(() => {
+    if (!authenticated || !timeout?.enabled || !timeout.idleExpiresAt || timeout.expiredReason) {
+      setWarningOpen(false);
+      setRemainingSeconds(null);
+      return;
+    }
+
+    const serverOffsetMs = Date.parse(timeout.serverNow) - Date.now();
+    const idleExpiresAtMs = Date.parse(timeout.idleExpiresAt);
+    const warningSeconds = Math.max(10, Number(timeout.warningSeconds || 60));
+    let warningTimer: number | undefined;
+    let expiryTimer: number | undefined;
+    let countdownTimer: number | undefined;
+
+    function msUntilIdleExpiration() {
+      return idleExpiresAtMs - (Date.now() + serverOffsetMs);
+    }
+
+    function updateCountdown() {
+      setRemainingSeconds(Math.max(0, Math.ceil(msUntilIdleExpiration() / 1000)));
+    }
+
+    const warningDelayMs = Math.max(0, msUntilIdleExpiration() - warningSeconds * 1000);
+    const expiryDelayMs = Math.max(0, msUntilIdleExpiration());
+    warningTimer = window.setTimeout(() => {
+      setWarningOpen(true);
+      updateCountdown();
+      countdownTimer = window.setInterval(updateCountdown, 1000);
+    }, warningDelayMs);
+    expiryTimer = window.setTimeout(expireLocally, expiryDelayMs);
+
+    return () => {
+      if (warningTimer !== undefined) window.clearTimeout(warningTimer);
+      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
+      if (countdownTimer !== undefined) window.clearInterval(countdownTimer);
+    };
+  }, [authenticated, expireLocally, timeout?.enabled, timeout?.expiredReason, timeout?.idleExpiresAt, timeout?.serverNow, timeout?.warningSeconds]);
+
+  async function staySignedIn() {
+    const response = await fetch("/api/account/session/refresh", {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin"
+    }).catch(() => null);
+    if (!response?.ok) {
+      expireLocally();
+      return;
+    }
+    setWarningOpen(false);
+    await refreshSession();
+    broadcastCustomerSessionEvent("refreshed");
+  }
+
+  async function signOut() {
+    await fetch("/api/account/logout", {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin"
+    }).catch(() => null);
+    setWarningOpen(false);
+    setSession(null);
+    broadcastCustomerSessionEvent("logout");
+    window.location.assign("/account/login?signedOut=1");
+  }
+
+  if (!warningOpen || !authenticated) return null;
+
+  return (
+    <div className="gdg-session-warning" role="dialog" aria-modal="true" aria-labelledby="gdg-session-warning-title">
+      <div className="gdg-session-warning-card">
+        <ShieldCheck size={24} aria-hidden="true" />
+        <div>
+          <p className="gdg-overline">Customer Session</p>
+          <h2 id="gdg-session-warning-title">Your session is about to expire due to inactivity.</h2>
+          <p>
+            Stay signed in to keep viewing your account. Guest cart items remain separate and are not removed.
+            {remainingSeconds !== null ? ` ${remainingSeconds} seconds remaining.` : ""}
+          </p>
+        </div>
+        <div className="gdg-session-warning-actions">
+          <button type="button" className="gdg-primary-button" onClick={staySignedIn}>Stay signed in</button>
+          <button type="button" className="gdg-secondary-button" onClick={signOut}>Sign out</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function subscribeCart(callback: () => void) {
@@ -434,7 +622,8 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const storeName = displayStoreName(settings);
   const sportsCards = sportsCardsLink(settings);
-  const accountSession = useCustomerAccountSession(settings.customerAccounts.enabled);
+  const accountSessionState = useCustomerAccountSession(settings.customerAccounts.enabled);
+  const accountSession = accountSessionState.session;
   const accountSignedIn = Boolean(accountSession?.session.authenticated);
   const accountHref = accountSignedIn ? "/account" : "/account/login";
   const accountLabel = accountSignedIn ? "My Account" : "Sign In / Create Account";
@@ -488,6 +677,7 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
   }, [accountMenuOpen]);
 
   return (
+    <>
     <header className="gdg-header">
       <Link href={homeHref} className="gdg-brand" aria-label={`${storeName} home`}>
         <Image
@@ -520,7 +710,7 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
                 {item.label}
               </Link>
             ))}
-            <form action="/api/account/logout" method="post">
+            <form action="/api/account/logout" method="post" onSubmit={() => broadcastCustomerSessionEvent("logout")}>
               <button type="submit">Sign Out</button>
             </form>
           </div>
@@ -550,7 +740,7 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
                   {item.label}
                 </Link>
               ))}
-              <form action="/api/account/logout" method="post">
+              <form action="/api/account/logout" method="post" onSubmit={() => broadcastCustomerSessionEvent("logout")}>
                 <button type="submit" role="menuitem">Sign Out</button>
               </form>
             </div>
@@ -570,13 +760,19 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
         </button>
       </div>
     </header>
+    <CustomerSessionExpiryController
+      session={accountSession}
+      setSession={accountSessionState.setSession}
+      refreshSession={accountSessionState.refreshSession}
+    />
+    </>
   );
 }
 
 export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: StorefrontSettingsDTO; homeHref?: string }) {
   const storeName = displayStoreName(settings);
   const sportsCards = sportsCardsLink(settings);
-  const accountSession = useCustomerAccountSession(settings.customerAccounts.enabled);
+  const { session: accountSession } = useCustomerAccountSession(settings.customerAccounts.enabled);
   const accountHref = accountSession?.session.authenticated ? "/account" : "/account/login";
   return (
     <footer className="gdg-footer">
@@ -946,7 +1142,7 @@ export function ProductGrid({
   const [sort, setSort] = useState(() => (mode === "shop" ? sortFromParam(initialSort) : "newest"));
   const [notice, setNotice] = useState("");
   const sportsCards = sportsCardsLink(settings);
-  const accountSession = useCustomerAccountSession(settings.customerAccounts.enabled);
+  const { session: accountSession } = useCustomerAccountSession(settings.customerAccounts.enabled);
   const accountSignedIn = Boolean(accountSession?.session.authenticated);
 
   const categories = useMemo(() => {

@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { customerAccountsEnabled, registerCustomerAccountWithPassword } from "@/lib/customer-account-auth";
-import { badRequest, readJson } from "@/lib/http";
+import {
+  assertCustomerSameOriginRequest,
+  CustomerAuthOriginError,
+  CustomerAuthRateLimitExceededError,
+  customerAuthOriginErrorResponse,
+  customerAuthRateLimitResponse,
+  enforceCustomerAuthRateLimit
+} from "@/lib/customer-auth-rate-limit";
+import { badRequest, privateJson, readJson, withPrivateNoStore } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,12 +36,20 @@ async function requestInput(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const contentType = request.headers.get("content-type") || "";
+  const redirect = !contentType.includes("application/json");
   try {
+    assertCustomerSameOriginRequest(request);
     if (!customerAccountsEnabled()) {
-      return NextResponse.json({ error: "Customer accounts are not enabled yet." }, { status: 404 });
+      return privateJson({ error: "Customer accounts are not enabled yet." }, 404);
     }
     const input = await requestInput(request);
-    const result = await registerCustomerAccountWithPassword({
+    await enforceCustomerAuthRateLimit({
+      request,
+      action: "registration",
+      email: input.email
+    });
+    await registerCustomerAccountWithPassword({
       email: input.email,
       displayName: input.displayName,
       password: input.password,
@@ -44,24 +60,27 @@ export async function POST(request: Request) {
       const url = new URL("/account/login", request.url);
       url.searchParams.set("mode", "signin");
       url.searchParams.set("accountStatus", "check_email");
-      url.searchParams.set("emailStatus", result.status);
-      return NextResponse.redirect(url, { status: 303 });
+      return withPrivateNoStore(NextResponse.redirect(url, { status: 303 }));
     }
-    return NextResponse.json({
+    return privateJson({
       ok: true,
-      status: "check_email",
-      emailStatus: result.status,
-      provider: result.provider,
-      expiresAt: result.expiresAt?.toISOString() ?? null
+      status: "check_email"
     });
   } catch (error) {
-    const contentType = request.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
+    if (error instanceof CustomerAuthRateLimitExceededError) {
+      if (!redirect) return customerAuthRateLimitResponse(error);
+      const url = new URL("/account/login", request.url);
+      url.searchParams.set("mode", "create");
+      url.searchParams.set("registerError", "rate_limited");
+      return withPrivateNoStore(NextResponse.redirect(url, { status: 303 }));
+    }
+    if (error instanceof CustomerAuthOriginError) return customerAuthOriginErrorResponse();
+    if (redirect) {
       const url = new URL("/account/login", request.url);
       url.searchParams.set("mode", "create");
       url.searchParams.set("registerError", "invalid");
-      return NextResponse.redirect(url, { status: 303 });
+      return withPrivateNoStore(NextResponse.redirect(url, { status: 303 }));
     }
-    return badRequest(error);
+    return withPrivateNoStore(badRequest(error));
   }
 }

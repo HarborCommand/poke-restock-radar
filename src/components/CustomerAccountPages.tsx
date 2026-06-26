@@ -3,10 +3,14 @@ import type { ReactNode } from "react";
 import {
   Box,
   ChevronRight,
+  Clock,
   Gift,
   Headphones,
   Home,
+  KeyRound,
+  LogOut,
   MapPin,
+  MonitorSmartphone,
   PackageCheck,
   Search,
   ShieldCheck,
@@ -21,7 +25,8 @@ import {
   customerAccountsEnabled,
   type CurrentCustomerAccount,
   type CustomerAccountOrderDetail,
-  type CustomerAccountOrderHistoryItem
+  type CustomerAccountOrderHistoryItem,
+  type CustomerAccountSecuritySession
 } from "@/lib/customer-account-auth";
 import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import type { CustomerRewardActivityItem } from "@/lib/customer-rewards";
@@ -53,7 +58,13 @@ function accountStatusMessage(value: string | null | undefined) {
 }
 
 function resetStatusMessage(value: string | null | undefined) {
+  if (value === "rate_limited") return "Too many attempts. Please wait a few minutes and try again.";
   if (value === "sent") return "If that email matches an account, a password reset link has been sent.";
+  return null;
+}
+
+function customerAuthAttemptMessage(value: string | null | undefined) {
+  if (value === "rate_limited") return "Too many attempts. Please wait a few minutes and try again.";
   return null;
 }
 
@@ -127,13 +138,14 @@ function refundedCanceledNote(order: CustomerAccountOrderHistoryItem) {
   return null;
 }
 
-type AccountSection = "overview" | "orders" | "rewards" | "addresses" | "support";
+type AccountSection = "overview" | "orders" | "rewards" | "addresses" | "security" | "support";
 
 const accountNavigation: Array<{ section: AccountSection; label: string; href: string; icon: LucideIcon }> = [
   { section: "overview", label: "Overview", href: "/account", icon: Home },
   { section: "orders", label: "Orders", href: "/account/orders", icon: PackageCheck },
   { section: "rewards", label: "Rewards", href: "/account/rewards", icon: Gift },
   { section: "addresses", label: "Addresses", href: "/account/addresses", icon: MapPin },
+  { section: "security", label: "Security", href: "/account/security", icon: ShieldCheck },
   { section: "support", label: "Support", href: "/contact", icon: Headphones }
 ];
 
@@ -444,11 +456,124 @@ export function AccountDashboard({
             </p>
             <div className="gdg-account-support-links">
               <Link href="/order-status"><Search size={15} aria-hidden="true" /> Order Status</Link>
+              <Link href="/account/security"><ShieldCheck size={15} aria-hidden="true" /> Account Security</Link>
               <Link href="/policies"><ShieldCheck size={15} aria-hidden="true" /> Policies</Link>
             </div>
           </section>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function securityStatusMessage(value: string | null | undefined) {
+  if (value === "session_revoked") return "That session was signed out.";
+  if (value === "signed_out_others") return "Other devices were signed out.";
+  if (value === "no_other_devices") return "No other active devices were found.";
+  if (value === "not_found") return "That session is no longer active.";
+  if (value === "disabled") return "Account Security is not enabled yet.";
+  if (value === "error") return "Security settings could not be updated. Please try again.";
+  return null;
+}
+
+export function AccountSecurity({
+  account,
+  sessions,
+  status
+}: {
+  account: CurrentCustomerAccount;
+  sessions: CustomerAccountSecuritySession[];
+  status?: string | null;
+}) {
+  const message = securityStatusMessage(status);
+  const otherSessionCount = sessions.filter((session) => !session.current && !session.expired).length;
+
+  return (
+    <div className="gdg-account-dashboard gdg-account-security">
+      <AccountNavigation active="security" />
+      <section className="gdg-account-card hero">
+        <p className="gdg-overline">Account Security</p>
+        <h1>Manage active sessions.</h1>
+        <p>
+          Signed in as <strong>{account.email}</strong>. Review where your account is active and sign out devices you no
+          longer use.
+        </p>
+        <div className="gdg-account-actions">
+          <form action="/api/account/security/sessions" method="post">
+            <input type="hidden" name="action" value="sign_out_others" />
+            <button className="gdg-secondary-button" type="submit" disabled={otherSessionCount === 0}>
+              Sign out all other devices
+            </button>
+          </form>
+          <form action="/api/account/security/sessions" method="post">
+            <input type="hidden" name="action" value="sign_out_all" />
+            <button className="gdg-primary-button danger" type="submit">Sign out all devices</button>
+          </form>
+        </div>
+        <span className="gdg-account-guest-note">Guest checkout stays available. No payment method details are shown.</span>
+      </section>
+
+      {message ? <p className={`gdg-account-notice ${status === "error" ? "error" : "good"}`}>{message}</p> : null}
+
+      <section className="gdg-account-panel">
+        <div className="gdg-account-panel-heading">
+          <div>
+            <p className="gdg-overline">Active Sessions</p>
+            <h2>Your signed-in devices</h2>
+          </div>
+          <AccountIconBadge icon={ShieldCheck} tone="gold" />
+        </div>
+        <p className="gdg-account-panel-copy">
+          Only sessions for this verified account are shown. GameDayGrabs does not display session tokens, token hashes,
+          full IP addresses, or payment information here.
+        </p>
+        {sessions.length ? (
+          <div className="gdg-security-session-list">
+            {sessions.map((session) => (
+              <article key={session.ref} className={`gdg-security-session-card ${session.current ? "current" : ""}`}>
+                <div className="gdg-security-session-icon">
+                  <MonitorSmartphone size={22} aria-hidden="true" />
+                </div>
+                <div className="gdg-security-session-main">
+                  <div>
+                    <strong>{session.deviceSummary}</strong>
+                    {session.current ? <span className="gdg-account-status-pill active">Current session</span> : null}
+                    {session.expired ? <span className="gdg-account-status-pill muted">Expired</span> : null}
+                  </div>
+                  <dl>
+                    <div>
+                      <dt><Clock size={14} aria-hidden="true" /> Created</dt>
+                      <dd>{dateLabel(session.createdAt)}</dd>
+                    </div>
+                    <div>
+                      <dt><KeyRound size={14} aria-hidden="true" /> Activity</dt>
+                      <dd>{session.activeLabel}</dd>
+                    </div>
+                    <div>
+                      <dt><ShieldCheck size={14} aria-hidden="true" /> Expiration</dt>
+                      <dd>{session.expirationLabel}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <form action="/api/account/security/sessions" method="post">
+                  <input type="hidden" name="action" value="revoke" />
+                  <input type="hidden" name="sessionRef" value={session.ref} />
+                  <button className="gdg-secondary-button" type="submit">
+                    <LogOut size={15} aria-hidden="true" />
+                    {session.current ? "Sign out this session" : "Revoke session"}
+                  </button>
+                </form>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="gdg-account-empty-panel">
+            <ShieldCheck size={22} aria-hidden="true" />
+            <strong>No active sessions found.</strong>
+            <p>Sign in again to create a fresh customer account session.</p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -461,6 +586,7 @@ export function CustomerLoginPageContent({
   mode,
   loginError,
   registerError,
+  session,
   account
 }: {
   sent?: string | null;
@@ -470,6 +596,7 @@ export function CustomerLoginPageContent({
   mode?: string | null;
   loginError?: string | null;
   registerError?: string | null;
+  session?: string | null;
   account: CurrentCustomerAccount | null;
 }) {
   if (!customerAccountsEnabled()) return <CustomerAccountsComingSoon />;
@@ -491,6 +618,10 @@ export function CustomerLoginPageContent({
 
   const activeMode = mode === "create" ? "create" : "signin";
   const statusMessage = accountStatusMessage(accountStatus);
+  const sentRateLimitMessage = customerAuthAttemptMessage(sent);
+  const loginRateLimitMessage = customerAuthAttemptMessage(loginError);
+  const registerRateLimitMessage = customerAuthAttemptMessage(registerError);
+  const magicLinkErrorMessage = customerAuthAttemptMessage(error);
 
   return (
     <div className="gdg-account-card hero">
@@ -505,19 +636,24 @@ export function CustomerLoginPageContent({
         <Link href="/account/login?mode=create" className={activeMode === "create" ? "active" : ""}>Create Account</Link>
       </div>
       {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
-      {sent ? (
+      {sent && !sentRateLimitMessage ? (
         <p className="gdg-account-notice good">
           If that email can receive account links, a sign-in link has been sent. Check your inbox.
         </p>
       ) : null}
+      {sentRateLimitMessage ? <p className="gdg-account-notice error">{sentRateLimitMessage}</p> : null}
       {signedOut ? <p className="gdg-account-notice">You have been signed out.</p> : null}
-      {error ? <p className="gdg-account-notice error">That sign-in link is invalid, expired, or already used.</p> : null}
-      {loginError ? (
+      {session ? <p className="gdg-account-notice">Your session expired. Sign in again to continue.</p> : null}
+      {error && !magicLinkErrorMessage ? <p className="gdg-account-notice error">That sign-in link is invalid, expired, or already used.</p> : null}
+      {magicLinkErrorMessage ? <p className="gdg-account-notice error">{magicLinkErrorMessage}</p> : null}
+      {loginError && !loginRateLimitMessage ? (
         <p className="gdg-account-notice error">
           Email or password is incorrect. Use the email sign-in link or reset your password if needed.
         </p>
       ) : null}
-      {registerError ? <p className="gdg-account-notice error">We could not create that account. Check the fields and try again.</p> : null}
+      {loginRateLimitMessage ? <p className="gdg-account-notice error">{loginRateLimitMessage}</p> : null}
+      {registerError && !registerRateLimitMessage ? <p className="gdg-account-notice error">We could not create that account. Check the fields and try again.</p> : null}
+      {registerRateLimitMessage ? <p className="gdg-account-notice error">{registerRateLimitMessage}</p> : null}
       {activeMode === "signin" ? (
         <form className="gdg-account-form" action="/api/account/login" method="post">
           <label>
@@ -625,6 +761,20 @@ export function AccountResetPasswordPageContent({
   resetError?: string | null;
 }) {
   if (!customerAccountsEnabled()) return <CustomerAccountsComingSoon />;
+  const resetRateLimitMessage = customerAuthAttemptMessage(resetError);
+  if (resetRateLimitMessage) {
+    return (
+      <div className="gdg-account-card hero">
+        <p className="gdg-overline">Reset Password</p>
+        <h1>Please wait before trying again.</h1>
+        <p>{resetRateLimitMessage} Guest checkout remains available.</p>
+        <div className="gdg-account-actions">
+          <Link href="/account/forgot-password" className="gdg-primary-button">Request New Link</Link>
+          <Link href="/account/login" className="gdg-secondary-button">Back to Sign In</Link>
+        </div>
+      </div>
+    );
+  }
   if (!token || resetError === "invalid" || resetError === "expired" || resetError === "used") {
     return (
       <div className="gdg-account-card hero">

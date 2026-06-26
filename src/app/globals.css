@@ -16416,6 +16416,55 @@ body:has(.shop-shell) {
   border-top: 1px solid rgba(15, 23, 42, 0.08);
 }
 
+.gdg-session-warning {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(4px);
+}
+
+.gdg-session-warning-card {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid rgba(180, 131, 19, 0.32);
+  border-radius: 24px;
+  background: #fffdf7;
+  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.22);
+  color: #101828;
+}
+
+.gdg-session-warning-card > svg {
+  color: #b7791f;
+}
+
+.gdg-session-warning-card h2 {
+  margin: 4px 0 8px;
+  font-size: clamp(1.25rem, 4vw, 1.65rem);
+  line-height: 1.1;
+}
+
+.gdg-session-warning-card p {
+  margin: 0;
+  color: #344054;
+}
+
+.gdg-session-warning-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gdg-session-warning-actions button {
+  flex: 1 1 170px;
+  justify-content: center;
+}
+
 .gdg-mobile-account-nav {
   display: none;
 }
@@ -24016,6 +24065,116 @@ body .catalog-action-menu-floating {
   cursor: pointer;
 }
 
+.gdg-primary-button.danger {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: #991b1b;
+  color: #ffffff;
+}
+
+.gdg-primary-button:disabled,
+.gdg-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.gdg-account-security .gdg-account-actions {
+  align-items: center;
+}
+
+.gdg-account-security .gdg-account-actions form {
+  margin: 0;
+}
+
+.gdg-security-session-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.gdg-security-session-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid rgba(15, 61, 46, 0.1);
+  border-radius: 18px;
+  background: linear-gradient(135deg, #ffffff 0%, #fffaf0 100%);
+  padding: 16px;
+}
+
+.gdg-security-session-card.current {
+  border-color: rgba(22, 163, 74, 0.24);
+  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
+}
+
+.gdg-security-session-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: #0b2f24;
+  color: #ffcc26;
+}
+
+.gdg-security-session-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.gdg-security-session-main > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.gdg-security-session-main strong {
+  color: #0b2f24;
+  font-size: 1.02rem;
+}
+
+.gdg-security-session-main dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.gdg-security-session-main dl > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.gdg-security-session-main dt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(11, 47, 36, 0.58);
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gdg-security-session-main dd {
+  margin: 0;
+  color: #0b2f24;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.gdg-security-session-card form {
+  margin: 0;
+}
+
+.gdg-security-session-card .gdg-secondary-button {
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .gdg-account-helper,
 .gdg-account-notice {
   max-width: 620px;
@@ -24458,6 +24617,26 @@ body .catalog-action-menu-floating {
 
   .gdg-account-support-links {
     grid-template-columns: 1fr;
+  }
+
+  .gdg-security-session-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .gdg-security-session-icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .gdg-security-session-main dl {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-security-session-card .gdg-secondary-button {
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
   }
 
   .gdg-account-order-filters {

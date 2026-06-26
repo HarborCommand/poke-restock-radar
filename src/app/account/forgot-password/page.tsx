@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { AccountForgotPasswordPageContent, CustomerAccountShell } from "@/components/CustomerAccountPages";
 import { currentCustomerAccount } from "@/lib/customer-account-auth";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
@@ -47,6 +48,7 @@ function firstParam(value: string | string[] | undefined) {
 }
 
 export default async function AccountForgotPasswordPage({ searchParams }: AccountForgotPasswordPageProps) {
+  noStore();
   const [params, account] = await Promise.all([
     searchParams ? searchParams : Promise.resolve({} as Record<string, string | string[] | undefined>),
     currentCustomerAccount()
