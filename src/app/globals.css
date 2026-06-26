@@ -22070,12 +22070,11 @@ body .catalog-action-menu-floating {
   overflow: hidden;
   width: 100%;
   margin: 0;
-  padding: 42px 0 72px;
+  padding: 34px 0 72px;
   background:
-    radial-gradient(circle at 8% 4%, rgba(255, 184, 0, 0.16), transparent 24%),
-    radial-gradient(circle at 92% 14%, rgba(74, 55, 214, 0.22), transparent 28%),
-    radial-gradient(circle at 76% 84%, rgba(22, 163, 74, 0.13), transparent 32%),
-    linear-gradient(180deg, #05080d 0%, #091019 42%, #06090f 100%);
+    radial-gradient(circle at 7% 4%, rgba(255, 184, 0, 0.16), transparent 26%),
+    radial-gradient(circle at 92% 10%, rgba(22, 163, 74, 0.12), transparent 28%),
+    linear-gradient(180deg, #ffffff 0%, #fffdf7 42%, #f8faf7 100%);
   color: #101828;
 }
 
@@ -22084,12 +22083,12 @@ body .catalog-action-menu-floating {
   position: absolute;
   inset: 0;
   z-index: -1;
-  opacity: 0.28;
+  opacity: 0.5;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 42px 42px;
-  mask-image: radial-gradient(circle at 50% 10%, #000 0 22%, transparent 70%);
+    linear-gradient(rgba(15, 61, 46, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 61, 46, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at 50% 14%, #000 0 18%, transparent 72%);
 }
 
 .gdg-account-shell > * {
@@ -22107,10 +22106,10 @@ body .catalog-action-menu-floating {
 .gdg-account-panel,
 .gdg-account-stat-card,
 .gdg-account-order-card {
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 61, 46, 0.11);
   border-radius: 20px;
   background: #ffffff;
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 18px 54px rgba(15, 61, 46, 0.08);
 }
 
 .gdg-account-card {
@@ -22183,11 +22182,10 @@ body .catalog-action-menu-floating {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(18px);
+  border: 1px solid rgba(15, 61, 46, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 34px rgba(15, 61, 46, 0.08);
   padding: 8px;
 }
 
@@ -22199,7 +22197,7 @@ body .catalog-action-menu-floating {
   min-width: 0;
   min-height: 44px;
   border-radius: 14px;
-  color: rgba(255, 255, 255, 0.8);
+  color: #344054;
   font-size: 0.9rem;
   font-weight: 850;
   text-align: center;
@@ -22211,8 +22209,8 @@ body .catalog-action-menu-floating {
 }
 
 .gdg-account-nav a:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: #fff9ec;
+  color: #0b2f24;
   transform: translateY(-1px);
 }
 
@@ -22225,31 +22223,29 @@ body .catalog-action-menu-floating {
 .gdg-account-hero-dashboard {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
-  gap: 22px;
+  grid-template-columns: minmax(0, 1.18fr) minmax(220px, 0.64fr);
+  gap: 18px;
   overflow: hidden;
-  border: 1px solid rgba(255, 184, 0, 0.32);
-  border-radius: 26px;
+  border: 1px solid rgba(245, 166, 35, 0.28);
+  border-radius: 24px;
   background:
-    radial-gradient(circle at 79% 20%, rgba(255, 184, 0, 0.44), transparent 22%),
-    radial-gradient(circle at 92% 68%, rgba(255, 106, 0, 0.24), transparent 24%),
-    linear-gradient(123deg, rgba(255, 184, 0, 0) 0 48%, rgba(255, 184, 0, 0.42) 49% 52%, rgba(255, 184, 0, 0) 53%),
-    linear-gradient(148deg, rgba(255, 184, 0, 0) 0 57%, rgba(255, 184, 0, 0.68) 58% 62%, rgba(255, 184, 0, 0.1) 63%),
-    linear-gradient(100deg, #060b13 0%, #0b1018 43%, #1d1504 100%);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.34);
-  padding: 34px;
+    radial-gradient(circle at 84% 18%, rgba(255, 184, 0, 0.24), transparent 25%),
+    radial-gradient(circle at 92% 78%, rgba(22, 163, 74, 0.12), transparent 26%),
+    linear-gradient(135deg, #ffffff 0%, #fffaf0 54%, #f3fbf5 100%);
+  box-shadow: 0 22px 70px rgba(15, 61, 46, 0.1);
+  padding: 30px;
 }
 
 .gdg-account-hero-dashboard::before {
   content: "";
   position: absolute;
   inset: 0;
-  opacity: 0.34;
+  opacity: 0.36;
   background:
-    radial-gradient(circle at 10% 50%, rgba(255, 255, 255, 0.18) 0 1px, transparent 2px),
-    radial-gradient(circle at 55% 18%, rgba(255, 184, 0, 0.92) 0 6px, transparent 7px),
-    radial-gradient(circle at 71% 82%, rgba(255, 184, 0, 0.86) 0 5px, transparent 6px),
-    radial-gradient(circle at 96% 30%, rgba(255, 184, 0, 0.9) 0 8px, transparent 9px);
+    radial-gradient(circle at 10% 50%, rgba(15, 61, 46, 0.08) 0 1px, transparent 2px),
+    radial-gradient(circle at 55% 18%, rgba(255, 184, 0, 0.42) 0 5px, transparent 6px),
+    radial-gradient(circle at 72% 82%, rgba(34, 197, 94, 0.24) 0 5px, transparent 6px),
+    radial-gradient(circle at 96% 30%, rgba(255, 184, 0, 0.35) 0 8px, transparent 9px);
   background-size: 18px 18px, auto, auto, auto;
 }
 
@@ -22260,9 +22256,9 @@ body .catalog-action-menu-floating {
   bottom: -24%;
   width: 34%;
   aspect-ratio: 1;
-  border: 20px solid rgba(255, 184, 0, 0.2);
+  border: 18px solid rgba(255, 184, 0, 0.14);
   border-radius: 999px;
-  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.32), transparent 36%);
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.55), transparent 36%);
 }
 
 .gdg-account-hero-copy {
@@ -22275,28 +22271,27 @@ body .catalog-action-menu-floating {
 }
 
 .gdg-account-hero-copy .gdg-overline {
-  color: #ffb800;
+  color: #a15c00;
 }
 
 .gdg-account-hero-copy h1 {
   margin: 0;
-  color: #ffffff;
+  color: #101828;
   max-width: 620px;
-  font-size: clamp(3.1rem, 7vw, 5rem);
+  font-size: clamp(2.7rem, 6vw, 4.25rem);
   line-height: 1;
   letter-spacing: 0;
-  text-shadow: 0 5px 22px rgba(0, 0, 0, 0.28);
 }
 
 .gdg-account-hero-copy p {
   max-width: 660px;
   margin: 0;
-  color: rgba(255, 255, 255, 0.86);
+  color: #344054;
   line-height: 1.65;
 }
 
 .gdg-account-hero-copy strong {
-  color: #ffcf33;
+  color: #0b2f24;
   overflow-wrap: anywhere;
 }
 
@@ -22310,11 +22305,11 @@ body .catalog-action-menu-floating {
 
 .gdg-account-guest-note {
   width: fit-content;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(22, 163, 74, 0.18);
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.34);
+  background: #f0fdf4;
   padding: 8px 11px;
-  color: rgba(255, 255, 255, 0.9);
+  color: #166534;
   font-size: 0.86rem;
   font-weight: 800;
 }
@@ -22322,17 +22317,17 @@ body .catalog-action-menu-floating {
 .gdg-account-card-fan {
   position: relative;
   z-index: 1;
-  min-height: 232px;
+  min-height: 190px;
 }
 
 .gdg-account-card-fan > span {
   position: absolute;
   top: 14px;
-  left: 44%;
-  width: 112px;
-  height: 156px;
-  border: 4px solid #ffbf12;
-  border-radius: 18px;
+  left: 43%;
+  width: 86px;
+  height: 126px;
+  border: 3px solid #ffbf12;
+  border-radius: 16px;
   background:
     radial-gradient(circle at center, rgba(255, 184, 0, 0.24), transparent 36%),
     linear-gradient(135deg, #111827, #05070b 68%, #241701);
@@ -22344,8 +22339,8 @@ body .catalog-action-menu-floating {
 .gdg-account-card-fan > span::after {
   content: "";
   position: absolute;
-  inset: 34px 24px;
-  border: 5px solid rgba(255, 184, 0, 0.96);
+  inset: 28px 18px;
+  border: 4px solid rgba(255, 184, 0, 0.96);
   border-radius: 999px;
   background:
     radial-gradient(circle, rgba(255, 184, 0, 0.98) 0 22%, transparent 23% 100%),
@@ -22370,12 +22365,12 @@ body .catalog-action-menu-floating {
 
 .gdg-account-card-box {
   position: absolute;
-  right: 2px;
-  bottom: 8px;
+  right: 8px;
+  bottom: 10px;
   display: grid;
   place-items: center;
-  width: 144px;
-  height: 104px;
+  width: 122px;
+  height: 86px;
   border: 2px solid rgba(255, 184, 0, 0.72);
   border-radius: 20px;
   background:
@@ -22388,7 +22383,7 @@ body .catalog-action-menu-floating {
 .gdg-account-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .gdg-account-stat-card {
@@ -22398,9 +22393,9 @@ body .catalog-action-menu-floating {
   gap: 16px;
   align-items: end;
   min-width: 0;
-  min-height: 196px;
+  min-height: 156px;
   overflow: hidden;
-  padding: 22px;
+  padding: 20px;
   color: #101828;
   text-decoration: none;
   transition:
@@ -22470,8 +22465,8 @@ body .catalog-action-menu-floating {
 .gdg-account-icon-badge {
   display: grid;
   place-items: center;
-  width: 72px;
-  height: 72px;
+  width: 60px;
+  height: 60px;
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 999px;
   color: #101828;
@@ -22713,27 +22708,26 @@ body .catalog-action-menu-floating {
 .gdg-account-rewards-panel {
   position: relative;
   overflow: hidden;
-  border-color: rgba(168, 85, 247, 0.48);
+  border-color: rgba(245, 166, 35, 0.28);
   background:
-    radial-gradient(circle at 82% 18%, rgba(255, 184, 0, 0.9), transparent 17%),
-    radial-gradient(circle at 88% 38%, rgba(168, 85, 247, 0.52), transparent 24%),
-    linear-gradient(135deg, #26114f 0%, #12051f 62%, #08030f 100%);
-  color: #ffffff;
+    radial-gradient(circle at 86% 18%, rgba(255, 184, 0, 0.3), transparent 24%),
+    linear-gradient(135deg, #ffffff 0%, #fff7eb 58%, #f5fbf4 100%);
+  color: #101828;
 }
 
 .gdg-account-rewards-panel::after {
   content: "";
   position: absolute;
-  right: 22px;
-  top: 30px;
-  width: 116px;
+  right: -24px;
+  top: -24px;
+  width: 104px;
   aspect-ratio: 1;
   border: 10px solid #f59e0b;
   border-radius: 999px;
   background:
     radial-gradient(circle, #ffef9c 0 22%, #ffb800 23% 54%, #d97706 55%);
   box-shadow: 0 18px 42px rgba(255, 184, 0, 0.34);
-  opacity: 0.46;
+  opacity: 0.2;
 }
 
 .gdg-account-rewards-panel > * {
@@ -22744,26 +22738,26 @@ body .catalog-action-menu-floating {
 .gdg-account-rewards-panel .gdg-overline,
 .gdg-account-rewards-panel .gdg-account-panel-heading h2,
 .gdg-account-rewards-panel .gdg-account-points-display {
-  color: #ffffff;
+  color: #101828;
 }
 
 .gdg-account-rewards-panel p,
 .gdg-account-rewards-panel .gdg-account-progress-label {
-  color: rgba(255, 255, 255, 0.82);
+  color: #475467;
 }
 
 .gdg-account-rewards-panel .gdg-account-progress {
-  background: rgba(255, 255, 255, 0.14);
+  background: #f2f4f7;
 }
 
 .gdg-rewards-info-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 61, 46, 0.1);
   border-radius: 20px;
   background: #ffffff;
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 16px 44px rgba(15, 61, 46, 0.08);
   padding: 14px;
 }
 
@@ -22805,11 +22799,11 @@ body .catalog-action-menu-floating {
   gap: 18px;
   align-items: stretch;
   overflow: hidden;
-  border-color: rgba(168, 85, 247, 0.5);
+  border-color: rgba(245, 166, 35, 0.28);
   background:
-    radial-gradient(circle at 84% 18%, rgba(255, 184, 0, 0.82), transparent 20%),
-    radial-gradient(circle at 68% 60%, rgba(168, 85, 247, 0.42), transparent 30%),
-    linear-gradient(135deg, #2a135d 0%, #140822 62%, #08030f 100%);
+    radial-gradient(circle at 84% 18%, rgba(255, 184, 0, 0.22), transparent 22%),
+    radial-gradient(circle at 8% 90%, rgba(22, 163, 74, 0.12), transparent 28%),
+    linear-gradient(135deg, #ffffff 0%, #fff7eb 56%, #f4fbf4 100%);
 }
 
 .gdg-rewards-hero-copy {
@@ -22820,12 +22814,12 @@ body .catalog-action-menu-floating {
 }
 
 .gdg-rewards-hero-copy .gdg-overline {
-  color: #c4b5fd;
+  color: #a15c00;
 }
 
 .gdg-rewards-hero-copy h1 {
   margin: 0;
-  color: #ffffff;
+  color: #101828;
   font-size: clamp(2rem, 4vw, 3.4rem);
   line-height: 1;
 }
@@ -22833,7 +22827,7 @@ body .catalog-action-menu-floating {
 .gdg-rewards-hero-copy p {
   max-width: 620px;
   margin: 0;
-  color: rgba(255, 255, 255, 0.86);
+  color: #344054;
   font-size: 1rem;
   font-weight: 760;
   line-height: 1.55;
@@ -22866,7 +22860,7 @@ body .catalog-action-menu-floating {
   background:
     radial-gradient(circle at 76% 28%, rgba(255, 184, 0, 0.34), transparent 28%),
     rgba(255, 255, 255, 0.96);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 18px 48px rgba(15, 61, 46, 0.1);
   padding: 22px;
   text-align: center;
 }
@@ -23545,7 +23539,7 @@ body .catalog-action-menu-floating {
 
 @media (max-width: 640px) {
   .gdg-account-shell {
-    padding: 24px 0 calc(76px + env(safe-area-inset-bottom));
+    padding: 20px 0 calc(76px + env(safe-area-inset-bottom));
   }
 
   .gdg-account-shell > * {
@@ -23573,7 +23567,13 @@ body .catalog-action-menu-floating {
     display: flex;
     overflow-x: auto;
     scroll-padding: 8px;
+    scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+    background: #ffffff;
+  }
+
+  .gdg-account-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .gdg-account-nav a {
@@ -23635,7 +23635,7 @@ body .catalog-action-menu-floating {
     right: -36px;
     top: -30px;
     width: 108px;
-    opacity: 0.28;
+    opacity: 0.16;
   }
 
   .gdg-rewards-hero {

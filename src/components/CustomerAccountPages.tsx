@@ -310,7 +310,7 @@ export function AccountDashboard({
 
       <div className="gdg-account-hero-dashboard">
         <div className="gdg-account-hero-copy">
-          <p className="gdg-overline">Collector Dashboard</p>
+          <p className="gdg-overline">Account Overview</p>
           <h1>Welcome back.</h1>
           <p>
             Signed in as <strong>{account.email}</strong>. Track orders, rewards, saved addresses, and support in one
