@@ -23317,11 +23317,6 @@ body .catalog-action-menu-floating {
   gap: 12px;
 }
 
-.gdg-account-grabby-card {
-  min-height: 0;
-}
-
-.gdg-account-grabby-card .grabby-card-link,
 .gdg-rewards-grabby-card .grabby-card-link {
   background: #ffb800;
   color: #101828;

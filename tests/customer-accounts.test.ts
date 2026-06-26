@@ -458,6 +458,11 @@ test("customer account isolation helpers normalize identity and reject client-su
 
 test("customer account UI polish keeps account creation optional and mobile-safe", () => {
   const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const accountDashboard = sourceSlice(
+    accountComponents,
+    "export function AccountDashboard",
+    "function securityStatusMessage"
+  );
   const css = readProjectFile("src/app/globals.css");
   const cartClient = readProjectFile("src/components/StorefrontClient.tsx");
 
@@ -473,22 +478,29 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountComponents, /Track orders, rewards, saved addresses, and support in one\s+place/);
   assert.match(accountComponents, /Guest checkout stays available\. No account required to buy\./);
   assert.match(accountComponents, /Track your collection orders/);
-  assert.match(accountComponents, /RewardsInfoStrip/);
+  assert.match(accountDashboard, /RewardsInfoStrip/);
   assert.match(accountComponents, /gdg-rewards-info-strip/);
-  assert.match(accountComponents, /previewItem\?\.imageUrl/);
-  assert.match(accountComponents, /thumbnail/);
+  assert.match(accountDashboard, /previewItem\?\.imageUrl/);
+  assert.match(accountDashboard, /thumbnail/);
   for (const label of ["My Orders", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
     assert.match(accountComponents, new RegExp(label));
   }
   for (const label of ["Orders", "Points", "Saved Addresses", "Support / Order Status"]) {
-    assert.match(accountComponents, new RegExp(label));
+    assert.match(accountDashboard, new RegExp(label));
   }
-  assert.match(accountComponents, /Earn points on eligible purchases/);
-  assert.match(accountComponents, /Redemption coming soon/);
-  assert.match(accountComponents, /Rewards redemption coming soon/);
-  assert.match(accountComponents, /Display only/);
-  assert.match(accountComponents, /Orders placed with this verified email, including guest checkout orders, appear here/);
-  assert.match(accountComponents, /Manage addresses/);
+  assert.match(accountDashboard, /Earn points on eligible purchases/);
+  assert.match(accountDashboard, /Redemption coming soon/);
+  assert.match(accountDashboard, /Rewards redemption coming soon/);
+  assert.match(accountDashboard, /Display only/);
+  assert.match(accountDashboard, /Orders placed with this verified email, including guest checkout orders, appear here/);
+  assert.doesNotMatch(accountDashboard, /gdg-account-grabby-card/);
+  assert.doesNotMatch(accountDashboard, /variant="support"/);
+  assert.doesNotMatch(accountDashboard, /Grabby can point you to order status, policies, and support/);
+  assert.doesNotMatch(accountDashboard, /Saved addresses make future checkout easier/);
+  assert.doesNotMatch(accountDashboard, /Manage addresses/);
+  assert.doesNotMatch(accountDashboard, /Contact <a href=\{\`mailto:\$\{GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL\}\`\}/);
+  assert.doesNotMatch(accountDashboard, /gdg-account-support-panel/);
+  assert.match(accountComponents, /section: "security", label: "Security", href: "\/account\/security"/);
   assert.doesNotMatch(accountComponents, /Redeem points|Apply points|reward discount|points discount/i);
   assert.match(css, /\.gdg-address-form/);
   assert.match(css, /\.gdg-account-tabs/);

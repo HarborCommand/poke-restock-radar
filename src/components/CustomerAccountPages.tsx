@@ -421,45 +421,6 @@ export function AccountDashboard({
             </div>
           </section>
           <RewardsInfoStrip className="dashboard" />
-
-          <GrabbyCard
-            variant="support"
-            compact
-            ctaHref="/order-status"
-            ctaLabel="Check order status"
-            className="gdg-account-grabby-card"
-          />
-
-          <section className="gdg-account-panel">
-            <div className="gdg-account-panel-heading">
-              <div>
-                <p className="gdg-overline">Saved Addresses</p>
-                <h2>{addressCount ? `${addressCount} saved` : "No saved addresses"}</h2>
-              </div>
-              <AccountIconBadge icon={MapPin} tone="blue" />
-            </div>
-            <p>Saved addresses make future checkout easier. Checkout still collects details normally.</p>
-            <Link href="/account/addresses" className="gdg-secondary-button">Manage addresses</Link>
-          </section>
-
-          <section className="gdg-account-panel gdg-account-support-panel">
-            <div className="gdg-account-panel-heading">
-              <div>
-                <p className="gdg-overline">Support</p>
-                <h2>Need help?</h2>
-              </div>
-              <AccountIconBadge icon={Headphones} tone="orange" />
-            </div>
-            <p>
-              Contact <a href={`mailto:${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`}>{GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}</a>{" "}
-              for order, pickup, or product questions.
-            </p>
-            <div className="gdg-account-support-links">
-              <Link href="/order-status"><Search size={15} aria-hidden="true" /> Order Status</Link>
-              <Link href="/account/security"><ShieldCheck size={15} aria-hidden="true" /> Account Security</Link>
-              <Link href="/policies"><ShieldCheck size={15} aria-hidden="true" /> Policies</Link>
-            </div>
-          </section>
         </aside>
       </div>
     </div>
