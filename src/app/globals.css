@@ -17906,6 +17906,74 @@ body:has(.shop-shell) {
   background: #145c40;
 }
 
+.grabby-helper-strip {
+  width: min(100%, 1440px);
+  margin-inline: auto;
+}
+
+.grabby-helper-strip.grabby-card {
+  grid-template-columns: 88px minmax(0, 1fr);
+  border-color: rgba(212, 175, 55, 0.22);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 98% 0%, rgba(255, 184, 0, 0.14), transparent 26%),
+    linear-gradient(135deg, #ffffff 0%, #fffdf5 58%, #f4fbf4 100%);
+  box-shadow: 0 14px 34px rgba(15, 61, 46, 0.06);
+}
+
+.gdg-home-grabby-strip {
+  margin-block: 18px 4px;
+}
+
+.gdg-shop-grabby-strip {
+  margin-bottom: 16px;
+}
+
+.gdg-collection-grabby-strip {
+  margin-top: 2px;
+}
+
+.gdg-product-grabby-card {
+  margin-top: 2px;
+}
+
+.gdg-product-grabby-card.grabby-card {
+  border-color: rgba(15, 61, 46, 0.1);
+  background:
+    radial-gradient(circle at 94% 15%, rgba(22, 163, 74, 0.1), transparent 28%),
+    linear-gradient(135deg, #ffffff 0%, #fffaf0 70%, #ffffff 100%);
+}
+
+.gdg-policy-grabby-card,
+.gdg-contact-grabby-card {
+  margin-bottom: 18px;
+}
+
+.gdg-cart-grabby-tip.grabby-card {
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  border-radius: 16px;
+  padding: 11px;
+  box-shadow: none;
+}
+
+.gdg-cart-grabby-tip .grabby-mascot {
+  width: 64px;
+}
+
+.gdg-cart-grabby-tip .grabby-card-kicker {
+  font-size: 0.6rem;
+}
+
+.gdg-cart-grabby-tip h2 {
+  font-size: 0.95rem;
+}
+
+.gdg-cart-grabby-tip p {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .grabby-mascot {
   position: relative;
   display: inline-grid;
@@ -18110,7 +18178,9 @@ body:has(.shop-shell) {
 }
 
 .grabby-mascot.welcome .grabby-prop,
-.grabby-mascot.empty-cart .grabby-prop {
+.grabby-mascot.empty-cart .grabby-prop,
+.grabby-mascot.shop-guide .grabby-prop,
+.grabby-mascot.category-guide .grabby-prop {
   background:
     linear-gradient(135deg, #111111, #050505);
   border: 2px solid #ffb800;
@@ -18123,7 +18193,8 @@ body:has(.shop-shell) {
   transform: rotate(-8deg);
 }
 
-.grabby-mascot.rewards .grabby-prop {
+.grabby-mascot.rewards .grabby-prop,
+.grabby-mascot.product-helper .grabby-prop {
   border: 3px solid #c77900;
   border-radius: 999px;
   background:
@@ -18149,6 +18220,25 @@ body:has(.shop-shell) {
 }
 
 .grabby-mascot.support .grabby-prop::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  bottom: -2px;
+  width: 15px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ffb800;
+}
+
+.grabby-mascot.policies-support .grabby-prop,
+.grabby-mascot.contact-support .grabby-prop {
+  border: 4px solid #ffb800;
+  border-bottom-color: transparent;
+  border-radius: 999px 999px 0 0;
+}
+
+.grabby-mascot.policies-support .grabby-prop::after,
+.grabby-mascot.contact-support .grabby-prop::after {
   content: "";
   position: absolute;
   right: -7px;
@@ -24279,6 +24369,21 @@ body .catalog-action-menu-floating {
     grid-template-columns: 78px minmax(0, 1fr);
   }
 
+  .grabby-helper-strip.grabby-card {
+    grid-template-columns: 76px minmax(0, 1fr);
+    margin-block: 12px;
+  }
+
+  .gdg-shop-grabby-strip,
+  .gdg-policy-grabby-card,
+  .gdg-contact-grabby-card {
+    margin-bottom: 14px;
+  }
+
+  .gdg-cart-grabby-tip.grabby-card {
+    grid-template-columns: 62px minmax(0, 1fr);
+  }
+
   .grabby-mascot,
   .grabby-mascot.small {
     width: 82px;
@@ -24320,6 +24425,11 @@ body .catalog-action-menu-floating {
     grid-template-columns: 1fr;
     justify-items: center;
     text-align: center;
+  }
+
+  .grabby-helper-strip.grabby-card,
+  .gdg-cart-grabby-tip.grabby-card {
+    grid-template-columns: 1fr;
   }
 
   .grabby-card-copy {

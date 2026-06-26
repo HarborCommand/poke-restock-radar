@@ -900,6 +900,32 @@ function HomepageAccountCta({ settings, signedIn }: { settings: StorefrontSettin
   );
 }
 
+function HomepageGrabbyTip() {
+  return (
+    <GrabbyCard
+      variant="shop-guide"
+      title="Grabby's tip"
+      message="Start with Featured Drops, or jump into Shop to see every active product."
+      ctaHref="/shop"
+      ctaLabel="Shop all products"
+      compact
+      className="grabby-helper-strip gdg-home-grabby-strip"
+    />
+  );
+}
+
+function collectionGrabbyMessage(collection: StorefrontCollectionDefinition) {
+  const messages: Record<string, string> = {
+    "booster-bundles": "Booster bundles are a clean way to grab sealed packs without opening a full box.",
+    tins: "Tins are compact sealed picks collectors love for display and gifting.",
+    blisters: "Blisters are easy grab-and-go sealed products for quick pickups.",
+    "premium-collections": "Premium collections usually include promo cards and display-ready packaging.",
+    "new-arrivals": "Fresh drops show the newest active products first."
+  };
+
+  return messages[collection.slug] ?? "Browse active listings here, then jump to related collections when you want to compare product types.";
+}
+
 export function ProductGrid({
   products,
   settings,
@@ -1041,6 +1067,8 @@ export function ProductGrid({
             emptyDetail="Published inventory will appear here automatically."
           />
 
+          <HomepageGrabbyTip />
+
           <section className="gdg-section">
             <div className="gdg-section-header">
               <div>
@@ -1137,6 +1165,12 @@ export function ProductGrid({
             </button>
           </aside>
           <div className="gdg-shop-list">
+            <GrabbyCard
+              variant="shop-guide"
+              ctaHref={storefrontCollectionPath("new-arrivals")}
+              compact
+              className="grabby-helper-strip gdg-shop-grabby-strip"
+            />
             <div className="gdg-shop-toolbar">
               <div>
                 <p>Shop</p>
@@ -1222,6 +1256,13 @@ export function StorefrontCollectionLanding({
             <span>Internal inventory quantity is not shown publicly.</span>
           </aside>
         </div>
+        <GrabbyCard
+          variant="category-guide"
+          title="Grabby's tip"
+          message={collectionGrabbyMessage(collection)}
+          compact
+          className="grabby-helper-strip gdg-collection-grabby-strip"
+        />
         {relatedCollections.length ? (
           <div className="gdg-collection-links" aria-label="Related collections">
             <span>Related collections</span>
@@ -1431,6 +1472,7 @@ export function ProductDetail({
                 </span>
               ))}
             </div>
+            <GrabbyCard variant="product-helper" compact className="grabby-helper-strip gdg-product-grabby-card" />
           </section>
         </div>
       </section>
@@ -1990,6 +2032,13 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <span>Items are not reserved until checkout starts.</span>
               <span>Availability is confirmed before payment.</span>
             </div>
+            <GrabbyCard
+              variant="shipping"
+              title="Grabby tip"
+              message="Shipping is calculated by ZIP before checkout, and Local Pickup stays free when available."
+              compact
+              className="gdg-cart-grabby-tip"
+            />
             {settings.freeShippingThreshold !== null && freeShippingRemaining !== null && subtotal > 0 ? (
               <div className="gdg-free-shipping">
                 <strong>{freeShippingRemaining > 0 ? `You\u2019re only ${money(freeShippingRemaining)} away from free shipping!` : "Free shipping unlocked!"}</strong>

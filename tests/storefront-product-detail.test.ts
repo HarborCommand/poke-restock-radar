@@ -24,6 +24,8 @@ test("product detail renders retailer-style buyer clarity sections", () => {
   assert.match(productDetail, /Final shipping is shown before payment\./);
   assert.match(productDetail, /product\.localPickupEligible \? <li>Local pickup may be available for this item\.<\/li>/);
   assert.match(productDetail, /Local pickup appears at checkout when available for this item\./);
+  assert.match(productDetail, /variant="product-helper"/);
+  assert.match(productDetail, /className="grabby-helper-strip gdg-product-grabby-card"/);
   assert.match(productDetail, /Checkout hold/);
   assert.match(productDetail, /Items are held for 15 minutes once checkout starts\./);
 });

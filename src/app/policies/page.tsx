@@ -1,4 +1,5 @@
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
+import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
@@ -51,6 +52,12 @@ export default async function PoliciesPage() {
           local pickup when available, and order support work before placing an order.
         </p>
       </section>
+      <GrabbyCard
+        variant="policies-support"
+        ctaHref="/order-status"
+        compact
+        className="grabby-helper-strip gdg-policy-grabby-card"
+      />
       <section className="gdg-policies gdg-policy-page">
         <article>
           <h2>Shipping Policy</h2>

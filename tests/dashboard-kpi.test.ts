@@ -879,6 +879,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /categoryPreviewCards/);
   assert.match(client, /homepageFeaturedDropsSection/);
   assert.match(client, /HomepageProductSection/);
+  assert.match(client, /HomepageGrabbyTip/);
   assert.match(client, /HomepageSupportStrip/);
   assert.match(client, /HomepageAccountCta/);
   assert.match(home, /Featured Drops/);
@@ -896,6 +897,8 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.doesNotMatch(client, /<HomepageProductSection section=\{premiumCollectionsSection\}/);
   assert.ok(client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />") > client.indexOf('<section className="gdg-hero">'));
   assert.ok(client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />") < client.indexOf("section={featuredSection}"));
+  assert.ok(client.indexOf("<HomepageGrabbyTip />") > client.indexOf("section={featuredSection}"));
+  assert.ok(client.indexOf("<HomepageGrabbyTip />") < client.indexOf("<h2>Shop By Category</h2>"));
   assert.ok(client.indexOf("<h2>Shop By Category</h2>") > client.indexOf("section={featuredSection}"));
   assert.match(client, /storefrontCollectionPathForCategory\(category\) \?\? `\/shop\?category=\$\{categoryToSlug\(category\)\}`/);
   assert.match(client, /GAMEDAYGRABS_SPORTS_CARDS_URL/);
@@ -925,8 +928,10 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /href: "\/contact"/);
   assert.match(aboutPage, /About GameDayGrabs LLC/);
   assert.match(policiesPage, /Store Policies/);
+  assert.match(policiesPage, /variant="policies-support"/);
   assert.match(policiesPage, /Contact/);
   assert.match(contactPage, /Contact/);
+  assert.match(contactPage, /variant="contact-support"/);
   assert.match(contactPage, /StorefrontContactForm/);
 });
 

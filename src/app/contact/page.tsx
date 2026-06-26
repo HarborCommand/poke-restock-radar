@@ -1,4 +1,5 @@
 import { StorefrontContactForm, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
+import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
@@ -49,6 +50,11 @@ export default async function ContactPage() {
           or help with an invoice request.
         </p>
       </section>
+      <GrabbyCard
+        variant="contact-support"
+        compact
+        className="grabby-helper-strip gdg-contact-grabby-card"
+      />
       <section className="gdg-contact-page-card">
         <div>
           <h2>GameDayGrabs LLC</h2>

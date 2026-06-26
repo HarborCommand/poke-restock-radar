@@ -217,6 +217,9 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.match(client, /View New Arrivals/);
   assert.match(client, /Why buy from GameDayGrabs\?/);
   assert.match(client, /Create an account to track orders and rewards/);
+  assert.match(client, /function HomepageGrabbyTip/);
+  assert.match(client, /Start with Featured Drops, or jump into Shop to see every active product/);
+  assert.match(client, /Shop all products/);
   assert.match(client, /Guest checkout stays available\. Sign in anytime to view orders, saved addresses, and points/);
   assert.match(client, /Sign In \/ Create Account/);
   assert.match(client, /Shop as Guest/);
@@ -244,6 +247,7 @@ test("homepage merchandising UI renders category links and safe product-card lin
   const heroRenderIndex = client.indexOf('<section className="gdg-hero">');
   const featuredRenderIndex = client.indexOf("section={featuredSection}");
   const accountCtaIndex = client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />");
+  const grabbyTipIndex = client.indexOf("<HomepageGrabbyTip />");
   const categoryIndex = client.indexOf("<h2>Shop By Category</h2>");
   const trustIndex = client.indexOf("<HomepageSupportStrip />");
   const feedbackIndex = client.indexOf("<MarketplaceFeedbackSection />");
@@ -251,6 +255,8 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.ok(featuredRenderIndex >= 0);
   assert.ok(accountCtaIndex > heroRenderIndex);
   assert.ok(accountCtaIndex < featuredRenderIndex);
+  assert.ok(grabbyTipIndex > featuredRenderIndex);
+  assert.ok(grabbyTipIndex < categoryIndex);
   assert.ok(categoryIndex > featuredRenderIndex);
   assert.ok(trustIndex > categoryIndex);
   assert.ok(feedbackIndex > trustIndex);
