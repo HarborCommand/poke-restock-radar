@@ -18,6 +18,15 @@ function sourceSlice(source: string, startNeedle: string, endNeedle?: string) {
   return source.slice(start, end);
 }
 
+function cssRule(source: string, selector: string) {
+  const start = source.indexOf(`${selector} {`);
+  assert.notEqual(start, -1, `missing CSS rule: ${selector}`);
+  const bodyStart = source.indexOf("{", start) + 1;
+  const end = source.indexOf("\n}", bodyStart);
+  assert.notEqual(end, -1, `missing CSS rule close: ${selector}`);
+  return source.slice(bodyStart, end);
+}
+
 test("customer account and rewards feature flags default disabled", () => {
   const config = customerAccountFeatureConfig({});
 
@@ -473,11 +482,22 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   );
   const css = readProjectFile("src/app/globals.css");
   const cartClient = readProjectFile("src/components/StorefrontClient.tsx");
+  const desktopAuthCss = sourceSlice(
+    css,
+    "@media (min-width: 961px)",
+    "@media (min-width: 961px) and (max-height: 820px)"
+  );
+  const desktopAuthShellRule = cssRule(desktopAuthCss, ".gdg-auth-focused-shell");
+  const desktopAuthContentRule = cssRule(desktopAuthCss, ".gdg-account-shell.auth-focused");
+  const loginBenefitIconRule = cssRule(css, ".gdg-login-page .gdg-login-benefit-icon");
+  const loginBenefitSvgRule = cssRule(css, ".gdg-login-page .gdg-login-benefit-icon svg");
 
   assert.match(accountLogin, /gdg-login-page/);
   assert.match(accountLogin, /CustomerAuthWelcomePanel/);
   assert.match(accountLogin, /GrabbyMascot/);
   assert.match(accountLogin, /Welcome back, Collector!/);
+  assert.doesNotMatch(accountLogin, /gdg-login-brand-mark/);
+  assert.doesNotMatch(accountLogin, /GameDayGrabs Account/);
   assert.match(accountLogin, /Hey there! I'm Grabby\./);
   assert.match(accountLogin, /Let's get you signed in so we can keep the good pulls coming!/);
   assert.match(accountLogin, /Earn Rewards/);
@@ -543,18 +563,33 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(css, /\.gdg-account-magic-option/);
   assert.match(css, /\.gdg-login-page/);
   assert.match(css, /\.gdg-login-welcome/);
+  assert.doesNotMatch(css, /\.gdg-login-brand-mark/);
   assert.match(css, /\.gdg-login-auth-card/);
   assert.match(css, /\.gdg-login-grabby/);
   assert.match(css, /\.gdg-login-magic-form/);
   assert.match(css, /\.gdg-auth-focused-shell/);
   assert.match(css, /\.gdg-account-shell\.auth-focused/);
   assert.match(css, /min-height:\s*calc\(100svh - 106px\)/);
+  assert.match(desktopAuthShellRule, /height:\s*100dvh/);
+  assert.match(desktopAuthShellRule, /min-height:\s*100dvh/);
+  assert.match(desktopAuthShellRule, /overflow:\s*hidden/);
+  assert.match(desktopAuthContentRule, /flex:\s*1 1 auto/);
+  assert.match(desktopAuthContentRule, /min-height:\s*0/);
   assert.match(css, /\.gdg-login-input input:-webkit-autofill/);
   assert.match(css, /-webkit-box-shadow:\s*0 0 0 1000px #fffdf7 inset !important/);
   assert.match(css, /-webkit-text-fill-color:\s*#101828 !important/);
   assert.match(css, /background-color:\s*#fffdf7 !important/);
   assert.match(css, /\.gdg-login-benefit\s*\{\s*\r?\n\s*display: grid;\s*\r?\n\s*grid-template-columns: 52px minmax\(0, 1fr\)/);
-  assert.match(css, /\.gdg-login-benefit-icon\s*\{[\s\S]{0,220}width: 52px;\s*\r?\n\s*height: 52px/);
+  assert.match(css, /\.gdg-login-page \.gdg-login-benefit-icon/);
+  assert.match(loginBenefitIconRule, /display:\s*flex/);
+  assert.match(loginBenefitIconRule, /align-items:\s*center/);
+  assert.match(loginBenefitIconRule, /justify-content:\s*center/);
+  assert.match(loginBenefitIconRule, /width:\s*52px/);
+  assert.match(loginBenefitIconRule, /height:\s*52px/);
+  assert.match(loginBenefitSvgRule, /margin:\s*0/);
+  assert.match(loginBenefitSvgRule, /transform:\s*none/);
+  assert.match(css, /\.gdg-login-page \.gdg-login-benefit p strong,\s*\r?\n\s*\.gdg-login-page \.gdg-login-benefit p span/);
+  assert.doesNotMatch(css, /\.gdg-login-benefit strong,\s*\r?\n\s*\.gdg-login-benefit span/);
   assert.match(css, /\.gdg-login-page,\s*\r?\n\s*\.gdg-login-page\.single\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(css, /\.gdg-login-magic-form\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(css, /\.gdg-account-hero-dashboard/);
