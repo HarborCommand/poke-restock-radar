@@ -76,6 +76,93 @@ test("smart shipping calculator only offers local pickup when every cart item is
   assert.equal(result.shippingOptions.some((option) => option.label === "Standard Shipping"), true);
 });
 
+test("smart shipping packs every product in a multi-item cart for carrier quotes", () => {
+  const result = calculateCartShipping([
+    shippableItem({
+      id: "three-booster-blister",
+      title: "Perfect Order 3-Booster Blister",
+      shippingProfile: "sealed_pack_small",
+      packageWeightOz: 6,
+      packageLengthIn: 9,
+      packageWidthIn: 7,
+      packageHeightIn: 1.2
+    }),
+    shippableItem({
+      id: "premium-collection",
+      title: "Mega Zygarde ex Premium Collection",
+      shippingProfile: "large_box",
+      packageWeightOz: 36,
+      packageLengthIn: 13,
+      packageWidthIn: 10,
+      packageHeightIn: 3.5
+    }),
+    shippableItem({
+      id: "booster-bundle",
+      title: "Mega Evolution Perfect Order Booster Bundle",
+      shippingProfile: "small_box",
+      packageWeightOz: 24,
+      packageLengthIn: 7,
+      packageWidthIn: 5,
+      packageHeightIn: 4
+    })
+  ]);
+
+  assert.equal(result.totalWeightOz, 69);
+  assert.equal(result.packageProfile, "large_box");
+  assert.equal(result.packageLengthIn, 13.5);
+  assert.equal(result.packageWidthIn, 10.5);
+  assert.equal(result.packageHeightIn, 9.2);
+  assert.equal(result.defaultShippingOption?.amount, 9.99);
+});
+
+test("smart shipping quantity greater than one uses the full packed cart weight and height", () => {
+  const result = calculateCartShipping([
+    shippableItem({
+      id: "seven-blisters",
+      quantity: 7,
+      shippingProfile: "sealed_pack_small",
+      packageWeightOz: 6,
+      packageLengthIn: 9,
+      packageWidthIn: 7,
+      packageHeightIn: 1
+    })
+  ]);
+
+  assert.equal(result.totalWeightOz, 47);
+  assert.equal(result.packageProfile, "large_box");
+  assert.equal(result.packageLengthIn, 9.5);
+  assert.equal(result.packageWidthIn, 7.5);
+  assert.equal(result.packageHeightIn, 7.5);
+  assert.equal(result.defaultShippingOption?.amount, 9.99);
+});
+
+test("smart shipping does not fake complete carrier dimensions when any cart item is missing package size", () => {
+  const result = calculateCartShipping([
+    shippableItem({
+      id: "ready-box",
+      shippingProfile: "small_box",
+      packageWeightOz: 16,
+      packageLengthIn: 8,
+      packageWidthIn: 6,
+      packageHeightIn: 4
+    }),
+    shippableItem({
+      id: "missing-dimensions",
+      shippingProfile: "medium_box",
+      packageWeightOz: 18,
+      packageLengthIn: null,
+      packageWidthIn: null,
+      packageHeightIn: null
+    })
+  ]);
+
+  assert.equal(result.totalWeightOz, 36.5);
+  assert.equal(result.packageLengthIn, null);
+  assert.equal(result.packageWidthIn, null);
+  assert.equal(result.packageHeightIn, null);
+  assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), true);
+});
+
 test("missing package profile uses safe fallback and warning", () => {
   const result = calculateCartShipping([shippableItem({ shippingProfile: "standard", packageWeightOz: null })]);
 
@@ -84,7 +171,27 @@ test("missing package profile uses safe fallback and warning", () => {
   assert.equal(result.totalWeightOz, 16);
   assert.equal(result.defaultShippingOption?.amount, 5.99);
   assert.equal(result.needsShippingProfile, true);
-  assert.equal(result.warnings.some((warning) => warning.includes("safe small-box fallback")), true);
+  assert.equal(result.warnings.some((warning) => warning.includes("safe package fallback")), true);
+});
+
+test("missing package profile uses category-aware fallback for larger sealed products", () => {
+  const result = calculateCartShipping([
+    shippableItem({
+      shippingProfile: "standard",
+      category: "Premium Collections",
+      title: "Mega Zygarde ex Premium Collection",
+      packageWeightOz: null,
+      packageLengthIn: null,
+      packageWidthIn: null,
+      packageHeightIn: null
+    })
+  ]);
+
+  assert.equal(result.packageProfile, "large_box");
+  assert.equal(result.totalWeightOz, 80);
+  assert.equal(result.defaultShippingOption?.amount, 9.99);
+  assert.equal(result.needsShippingProfile, true);
+  assert.equal(result.warnings.some((warning) => warning.includes("safe package fallback")), true);
 });
 
 test("missing package dimensions are surfaced for calculated shipping fallback", () => {
@@ -136,7 +243,7 @@ test("selected shipping profile defaults complete blank product package data", (
   assert.equal(result.packageHeightIn, 1);
   assert.equal(result.needsShippingProfile, false);
   assert.equal(result.defaultShippingOption?.amount, 4.99);
-  assert.equal(result.warnings.some((warning) => warning.includes("safe small-box fallback")), false);
+  assert.equal(result.warnings.some((warning) => warning.includes("safe package fallback")), false);
   assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), false);
 });
 
