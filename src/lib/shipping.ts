@@ -11,6 +11,8 @@ export type ShippingCartItem = {
   id?: string | null;
   title?: string | null;
   itemName?: string | null;
+  category?: string | null;
+  storefrontCategory?: string | null;
   quantity?: number | null;
   requestedQuantity?: number | null;
   shippingProfile?: string | null;
@@ -188,22 +190,46 @@ export function normalizeShippingProfile(
 }
 
 export function itemNeedsShippingProfile(
-  item: Pick<ShippingCartItem, "shippingProfile" | "packageWeightOz">,
+  item: Pick<ShippingCartItem, "shippingProfile" | "packageWeightOz" | "category" | "storefrontCategory" | "title" | "itemName">,
   profileDefinitions: Record<string, ShippingProfileDefinition> = shippingProfiles
 ) {
   return effectiveShippingPackageData(item, profileDefinitions).needsShippingProfile;
 }
 
+function categoryAwareFallbackProfile(
+  item: Pick<ShippingCartItem, "category" | "storefrontCategory" | "title" | "itemName">
+): ShippingProfileKey {
+  const signals = [item.storefrontCategory, item.category, item.title, item.itemName]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  if (/\b(single|graded|raw)\s+cards?\b/.test(signals)) return "single_card_or_light_item";
+  if (/\b(booster\s+boxes?|ultra[-\s]?premium|premium\s+collections?|collection\s+boxes?)\b/.test(signals)) return "large_box";
+  if (/\b(elite\s+trainer|etbs?|booster\s+bundles?|tins?)\b/.test(signals)) return "medium_box";
+  if (/\b(blisters?|checklane|sleeved\s+boosters?|sealed\s+packs?|packs?)\b/.test(signals)) return "sealed_pack_small";
+  return safeFallbackProfile;
+}
+
 export function effectiveShippingPackageData(
   item: Pick<
     ShippingCartItem,
-    "shippingProfile" | "packageWeightOz" | "packageLengthIn" | "packageWidthIn" | "packageHeightIn"
+    | "shippingProfile"
+    | "packageWeightOz"
+    | "packageLengthIn"
+    | "packageWidthIn"
+    | "packageHeightIn"
+    | "category"
+    | "storefrontCategory"
+    | "title"
+    | "itemName"
   >,
   profileDefinitions: Record<string, ShippingProfileDefinition> = shippingProfiles
 ): EffectiveShippingPackageData {
   const definitions = shippingProfileDefinitionMap(profileDefinitions);
   const normalized = normalizeShippingProfile(item.shippingProfile, definitions);
-  const profileDefinition = definitions[normalized.profile] ?? shippingProfiles[safeFallbackProfile];
+  const profileKey = normalized.usedFallback ? categoryAwareFallbackProfile(item) : normalized.profile;
+  const profileDefinition = definitions[profileKey] ?? shippingProfiles[safeFallbackProfile];
   const itemWeight = positiveNumber(item.packageWeightOz);
   const profileWeight = positiveNumber(profileDefinition.defaultWeightOz);
   const itemLength = packageDimension(item.packageLengthIn);
@@ -220,7 +246,7 @@ export function effectiveShippingPackageData(
   const missingDimensions = !packageLengthIn || !packageWidthIn || !packageHeightIn;
 
   return {
-    profileKey: normalized.profile,
+    profileKey,
     profileDefinition,
     usedFallbackProfile: normalized.usedFallback,
     packageWeightOz,
@@ -244,6 +270,101 @@ function rateForWeight(totalWeightOz: number) {
   return { amount: 12.99, label: "Heavy Package Shipping", manualReview: true };
 }
 
+function profileRank(profileDefinitions: Record<string, ShippingProfileDefinition>, profileKey: string) {
+  return (profileDefinitions[profileKey] ?? shippingProfiles[safeFallbackProfile]).rank;
+}
+
+function higherRankProfile(
+  profileDefinitions: Record<string, ShippingProfileDefinition>,
+  currentProfile: string,
+  candidateProfile: string
+) {
+  return profileRank(profileDefinitions, candidateProfile) > profileRank(profileDefinitions, currentProfile) ? candidateProfile : currentProfile;
+}
+
+function profileForPackedWeight(totalWeightOz: number): ShippingProfileKey {
+  if (totalWeightOz <= 8) return "sealed_pack_small";
+  if (totalWeightOz <= 16) return "small_box";
+  if (totalWeightOz <= 32) return "medium_box";
+  if (totalWeightOz <= 80) return "large_box";
+  return "heavy_box";
+}
+
+function packingMaterialWeightOz(totalUnits: number) {
+  if (totalUnits <= 1) return 0;
+  return roundedWeight(Math.min(8, 2 + (totalUnits - 1) * 0.5));
+}
+
+function orientedDimensions(lengthIn: number | null, widthIn: number | null, heightIn: number | null) {
+  if (!lengthIn || !widthIn || !heightIn) return null;
+  const [length, width, height] = [lengthIn, widthIn, heightIn].sort((left, right) => right - left);
+  return { length, width, height };
+}
+
+function packedDimension(value: number, totalUnits: number) {
+  return packageDimension(totalUnits > 1 ? value + 0.5 : value);
+}
+
+function packedCartPackage(
+  cartItems: ShippingCartItem[],
+  profileDefinitions: Record<string, ShippingProfileDefinition>
+) {
+  let totalUnits = 0;
+  let totalWeightOz = 0;
+  let packageProfile: string = safeFallbackProfile;
+  let missingDimensions = false;
+  let maxLengthIn = 0;
+  let maxWidthIn = 0;
+  let stackedHeightIn = 0;
+
+  for (const item of cartItems) {
+    const quantity = quantityForItem(item);
+    const effectivePackage = effectiveShippingPackageData(item, profileDefinitions);
+    const fallbackNeeded = effectivePackage.needsShippingProfile;
+    const profileKey = effectivePackage.profileKey;
+    const profileWeightOz = effectivePackage.packageWeightOz ?? shippingProfiles[safeFallbackProfile].defaultWeightOz;
+    const dimensions = orientedDimensions(
+      effectivePackage.packageLengthIn,
+      effectivePackage.packageWidthIn,
+      effectivePackage.packageHeightIn
+    );
+
+    totalUnits += quantity;
+    totalWeightOz += profileWeightOz * quantity;
+    packageProfile =
+      cartItems.length === 1 && quantity === 1
+        ? profileKey
+        : higherRankProfile(profileDefinitions, packageProfile, profileKey);
+
+    if (item.requiresBox) {
+      packageProfile = higherRankProfile(profileDefinitions, packageProfile, "small_box");
+    }
+
+    if (!dimensions) {
+      missingDimensions = true;
+      continue;
+    }
+
+    maxLengthIn = Math.max(maxLengthIn, dimensions.length);
+    maxWidthIn = Math.max(maxWidthIn, dimensions.width);
+    stackedHeightIn += dimensions.height * quantity;
+  }
+
+  totalWeightOz = roundedWeight(totalWeightOz + packingMaterialWeightOz(totalUnits));
+  if (totalUnits > 1) {
+    packageProfile = higherRankProfile(profileDefinitions, packageProfile, profileForPackedWeight(totalWeightOz));
+  }
+
+  return {
+    totalUnits,
+    totalWeightOz,
+    packageProfile,
+    packageLengthIn: missingDimensions || totalUnits === 0 ? null : packedDimension(maxLengthIn, totalUnits),
+    packageWidthIn: missingDimensions || totalUnits === 0 ? null : packedDimension(maxWidthIn, totalUnits),
+    packageHeightIn: missingDimensions || totalUnits === 0 ? null : packedDimension(stackedHeightIn, totalUnits)
+  };
+}
+
 export function calculateCartShipping(
   items: ShippingCartItem[],
   options: {
@@ -255,34 +376,19 @@ export function calculateCartShipping(
 ): ShippingCalculation {
   const profileDefinitions = shippingProfileDefinitionMap(options.profileDefinitions ?? {});
   const cartItems = items.filter((item) => quantityForItem(item) > 0);
+  const packedPackage = packedCartPackage(cartItems, profileDefinitions);
   const warnings = new Set<string>();
-  let totalWeightOz = 0;
-  let packageProfile: string = safeFallbackProfile;
   let needsShippingProfile = false;
   let manualReviewRequired = false;
 
   for (const item of cartItems) {
-    const quantity = quantityForItem(item);
     const effectivePackage = effectiveShippingPackageData(item, profileDefinitions);
     const fallbackNeeded = effectivePackage.needsShippingProfile;
-    const profile = fallbackNeeded ? shippingProfiles[safeFallbackProfile] : effectivePackage.profileDefinition;
-    const profileKey = fallbackNeeded ? safeFallbackProfile : effectivePackage.profileKey;
+    const profile = effectivePackage.profileDefinition;
 
     if (fallbackNeeded) {
       needsShippingProfile = true;
-      warnings.add("One or more items need a shipping profile; using a safe small-box fallback.");
-    }
-
-    totalWeightOz += (effectivePackage.packageWeightOz ?? shippingProfiles[safeFallbackProfile].defaultWeightOz) * quantity;
-
-    if (!fallbackNeeded && cartItems.length === 1) {
-      packageProfile = profileKey;
-    } else if (profile.rank > (profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile]).rank) {
-      packageProfile = profileKey;
-    }
-
-    if (item.requiresBox && shippingProfiles.small_box.rank > (profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile]).rank) {
-      packageProfile = "small_box";
+      warnings.add("One or more items need a shipping profile; using a safe package fallback.");
     }
 
     if (item.insuranceRecommended || profile.insuranceRecommended) {
@@ -290,7 +396,6 @@ export function calculateCartShipping(
     }
   }
 
-  totalWeightOz = roundedWeight(totalWeightOz);
   const allPickupEligible = cartItems.length > 0 && cartItems.every((item) => (item.localPickupEligible ?? item.localPickupAvailable) === true);
   const allShippingAvailable = cartItems.length > 0 && cartItems.every((item) => item.shippingAvailable !== false);
   const freeShippingUnlocked =
@@ -298,11 +403,12 @@ export function calculateCartShipping(
     typeof options.freeShippingThreshold === "number" &&
     options.freeShippingThreshold > 0 &&
     options.subtotal >= options.freeShippingThreshold;
+  const totalWeightOz = packedPackage.totalWeightOz;
+  const packageProfile = packedPackage.packageProfile;
   const packageDefinition = profileDefinitions[packageProfile] ?? shippingProfiles[safeFallbackProfile];
-  const singleCartItem = cartItems.length === 1 ? cartItems[0] : null;
-  const packageLengthIn = packageDimension(singleCartItem?.packageLengthIn) ?? packageDimension(packageDefinition.packageLengthIn);
-  const packageWidthIn = packageDimension(singleCartItem?.packageWidthIn) ?? packageDimension(packageDefinition.packageWidthIn);
-  const packageHeightIn = packageDimension(singleCartItem?.packageHeightIn) ?? packageDimension(packageDefinition.packageHeightIn);
+  const packageLengthIn = packedPackage.packageLengthIn;
+  const packageWidthIn = packedPackage.packageWidthIn;
+  const packageHeightIn = packedPackage.packageHeightIn;
   if (allShippingAvailable && (!packageLengthIn || !packageWidthIn || !packageHeightIn)) {
     warnings.add("Package dimensions are missing; using fallback shipping until package size is complete.");
   }
