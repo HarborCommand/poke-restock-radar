@@ -11,6 +11,8 @@ import {
   calculateCartShipping,
   effectiveShippingPackageData,
   itemNeedsShippingProfile,
+  shippingFormulaVersion,
+  shippingRatePackageFromCalculation,
   type ShippingCalculation,
   type ShippingOption,
   type ShippingProfileDefinition
@@ -999,7 +1001,7 @@ function stripeShippingOptions(shippingCalculation: ShippingCalculation): Stripe
         shippingOptionLabel: option.label,
         shippingRateSource: option.rateSource,
         shippingPackageProfile: option.profile,
-        shippingPackageWeightOz: String(shippingCalculation.totalWeightOz),
+        shippingPackageWeightOz: String(shippingCalculation.actualWeightOz),
         shippingWarnings: stringifyList(shippingCalculation.warnings) ?? ""
       }
     }
@@ -1028,31 +1030,33 @@ function shippingQuoteToken() {
 }
 
 function shippingCartHash(cart: CheckoutCartEntry[]) {
-  const payload = cart
-    .map(({ item, product, quantity }) => ({
-      id: item.id,
-      quantity,
-      price: product.price,
-      shippingProfile: item.shippingProfile,
-      packageWeightOz: item.packageWeightOz,
-      packageLengthIn: item.packageLengthIn,
-      packageWidthIn: item.packageWidthIn,
-      packageHeightIn: item.packageHeightIn,
-      shippingAvailable: item.shippingAvailable,
-      localPickupAvailable: item.localPickupAvailable
-    }))
-    .sort((left, right) => left.id.localeCompare(right.id));
+  const payload = {
+    formulaVersion: shippingFormulaVersion,
+    items: cart
+      .map(({ item, product, quantity }) => ({
+        id: item.id,
+        quantity,
+        price: product.price,
+        title: product.title,
+        category: product.category,
+        shippingProfile: item.shippingProfile,
+        packageWeightOz: item.packageWeightOz,
+        packageLengthIn: item.packageLengthIn,
+        packageWidthIn: item.packageWidthIn,
+        packageHeightIn: item.packageHeightIn,
+        shippingAvailable: item.shippingAvailable,
+        localPickupAvailable: item.localPickupAvailable,
+        freeShippingEligible: item.freeShippingEligible,
+        requiresBox: item.requiresBox,
+        insuranceRecommended: item.insuranceRecommended
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id))
+  };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
 function calculatedQuotePackage(shippingCalculation: ShippingCalculation) {
-  return {
-    weightOz: shippingCalculation.totalWeightOz,
-    lengthIn: shippingCalculation.packageLengthIn,
-    widthIn: shippingCalculation.packageWidthIn,
-    heightIn: shippingCalculation.packageHeightIn,
-    profileKey: shippingCalculation.packageProfile
-  };
+  return shippingRatePackageFromCalculation(shippingCalculation);
 }
 
 function shippingQuoteToResponse(quote: StoredShippingQuote): StorefrontShippingQuoteResponse {
@@ -1169,7 +1173,7 @@ export async function createStorefrontShippingQuote(
       currency: normalizedQuote.currency,
       destinationZip: input.destinationZip,
       country: input.country ?? "US",
-      packageWeightOz: shippingCalculation.totalWeightOz,
+      packageWeightOz: shippingCalculation.actualWeightOz,
       packageLengthIn: shippingCalculation.packageLengthIn,
       packageWidthIn: shippingCalculation.packageWidthIn,
       packageHeightIn: shippingCalculation.packageHeightIn,
@@ -1240,7 +1244,7 @@ function stripeShippingOptionsForCheckout(
         shippingOptionLabel: option.label,
         shippingRateSource: option.rateSource,
         shippingPackageProfile: option.profile,
-        shippingPackageWeightOz: String(option.id === "local_pickup" ? 0 : shippingCalculation.totalWeightOz),
+        shippingPackageWeightOz: String(option.id === "local_pickup" ? 0 : shippingCalculation.actualWeightOz),
         shippingPackageLengthIn: String(shippingCalculation.packageLengthIn ?? ""),
         shippingPackageWidthIn: String(shippingCalculation.packageWidthIn ?? ""),
         shippingPackageHeightIn: String(shippingCalculation.packageHeightIn ?? ""),
@@ -1827,7 +1831,7 @@ export async function createCheckoutSession(input: {
         shippingCharged,
         shippingMethodLabel: selectedShipping.label,
         shippingRateSource: selectedShipping.rateSource,
-        shippingPackageWeightOz: shippingCalculation.totalWeightOz,
+        shippingPackageWeightOz: shippingCalculation.actualWeightOz,
         shippingPackageLengthIn: shippingCalculation.packageLengthIn,
         shippingPackageWidthIn: shippingCalculation.packageWidthIn,
         shippingPackageHeightIn: shippingCalculation.packageHeightIn,
@@ -2009,7 +2013,7 @@ export async function createInvoiceRequest(input: {
       shippingCharged,
       shippingMethodLabel: selectedShipping.label,
       shippingRateSource: selectedShipping.rateSource,
-      shippingPackageWeightOz: shippingCalculation.totalWeightOz,
+      shippingPackageWeightOz: shippingCalculation.actualWeightOz,
       shippingPackageLengthIn: shippingCalculation.packageLengthIn,
       shippingPackageWidthIn: shippingCalculation.packageWidthIn,
       shippingPackageHeightIn: shippingCalculation.packageHeightIn,
