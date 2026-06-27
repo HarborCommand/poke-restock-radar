@@ -819,8 +819,9 @@ test("calculated USPS quote API and checkout enforce server-side quote safety", 
   assert.match(quoteHelper, /fetchShippoUspsQuote/);
   assert.match(quoteHelper, /fallbackShippingQuote/);
   assert.match(createQuote, /fallbackShippingQuote/);
-  assert.match(createQuote, /cartHash: shippingCartHash\(cart\)/);
+  assert.match(createQuote, /cartHash: shippingCartHash\(cart, input\.destinationZip\)/);
   assert.match(storefront, /formulaVersion: shippingFormulaVersion/);
+  assert.match(storefront, /destinationZip: String\(destinationZip \|\| ""\)\.replace\(\/\\D\/g, ""\)\.slice\(0, 5\)/);
   for (const field of [
     "packageWeightOz",
     "packageLengthIn",
@@ -838,7 +839,7 @@ test("calculated USPS quote API and checkout enforce server-side quote safety", 
   assert.match(createCheckoutSession, /if \(!input\.shippingQuoteToken\)/);
   assert.match(createCheckoutSession, /calculatedQuote\.expiresAt\.getTime\(\) <= checkoutStartedAt\.getTime\(\)/);
   assert.match(createCheckoutSession, /calculatedQuote\.usedAt/);
-  assert.match(createCheckoutSession, /calculatedQuote\.cartHash !== shippingCartHash\(cart\)/);
+  assert.match(createCheckoutSession, /calculatedQuote\.cartHash !== shippingCartHash\(cart, calculatedQuote\.destinationZip\)/);
   assert.match(createCheckoutSession, /shippingQuote\.update/);
   assert.match(provider, /authorization: `ShippoToken/);
   assert.doesNotMatch(provider, /console\.(log|warn|error).*SHIPPO_API_TOKEN/);

@@ -1029,9 +1029,10 @@ function shippingQuoteToken() {
   return `ship_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 }
 
-function shippingCartHash(cart: CheckoutCartEntry[]) {
+function shippingCartHash(cart: CheckoutCartEntry[], destinationZip?: string | null) {
   const payload = {
     formulaVersion: shippingFormulaVersion,
+    destinationZip: String(destinationZip || "").replace(/\D/g, "").slice(0, 5),
     items: cart
       .map(({ item, product, quantity }) => ({
         id: item.id,
@@ -1183,7 +1184,7 @@ export async function createStorefrontShippingQuote(
       fallbackUsed: normalizedQuote.fallbackUsed,
       warning: normalizedQuote.warning,
       expiresAt: normalizedQuote.expiresAt,
-      cartHash: shippingCartHash(cart)
+      cartHash: shippingCartHash(cart, input.destinationZip)
     }
   });
   return {
@@ -1811,7 +1812,7 @@ export async function createCheckoutSession(input: {
     if (calculatedQuote.usedAt) {
       throw new Error("Shipping quote was already used. Recalculate USPS shipping.");
     }
-    if (calculatedQuote.cartHash !== shippingCartHash(cart)) {
+    if (calculatedQuote.cartHash !== shippingCartHash(cart, calculatedQuote.destinationZip)) {
       throw new Error("Cart changed after shipping was calculated. Recalculate USPS shipping.");
     }
     selectedShipping = shippingOptionFromQuote(calculatedQuote);
