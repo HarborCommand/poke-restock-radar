@@ -530,8 +530,19 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountComponents, /Track orders, rewards, saved addresses, and support in one\s+place/);
   assert.match(accountComponents, /Guest checkout stays available\. No account required to buy\./);
   assert.match(accountComponents, /Track your collection orders/);
+  assert.match(accountDashboard, /AccountHeroGrabby/);
+  assert.match(accountComponents, /GrabbyMascot variant="welcome" size="large" className="account-overview"/);
+  assert.match(accountComponents, /Grabby has your dashboard ready\./);
+  assert.doesNotMatch(accountComponents, /DashboardCardFan/);
+  assert.doesNotMatch(accountComponents, /gdg-account-card-fan/);
   assert.match(accountDashboard, /RewardsInfoStrip/);
   assert.match(accountComponents, /gdg-rewards-info-strip/);
+  assert.match(accountDashboard, /recentOrderItem = previewOrders\[0\]\?\.items\.find\(\(item\) => item\.imageUrl\)/);
+  assert.match(accountDashboard, /recentOrderImageUrl = recentOrderItem\?\.imageUrl/);
+  assert.match(accountDashboard, /gdg-account-orders-preview-visual has-image/);
+  assert.match(accountDashboard, /alt=\{recentOrderImageAlt\}/);
+  assert.match(accountDashboard, /Image unavailable/);
+  assert.match(accountDashboard, /Orders will appear here/);
   assert.match(accountDashboard, /previewItem\?\.imageUrl/);
   assert.match(accountDashboard, /thumbnail/);
   for (const label of ["My Orders", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
@@ -593,10 +604,16 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(css, /\.gdg-login-page,\s*\r?\n\s*\.gdg-login-page\.single\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(css, /\.gdg-login-magic-form\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(css, /\.gdg-account-hero-dashboard/);
+  assert.match(css, /\.gdg-account-hero-grabby/);
+  assert.match(css, /\.gdg-account-hero-grabby \.grabby-mascot\.account-overview/);
   assert.match(css, /\.gdg-account-stat-grid/);
   assert.match(css, /\.gdg-account-dashboard-layout/);
   assert.match(css, /\.gdg-account-preview-row/);
-  assert.match(css, /\.gdg-account-card-fan/);
+  assert.match(css, /\.gdg-account-orders-preview-visual/);
+  assert.match(css, /\.gdg-account-orders-preview-visual\.has-image/);
+  assert.match(css, /\.gdg-account-orders-preview-visual img/);
+  assert.doesNotMatch(css, /\.gdg-account-card-fan/);
+  assert.doesNotMatch(css, /\.gdg-account-card-box/);
   assert.match(css, /\.gdg-account-nav/);
   assert.match(css, /\.gdg-account-shell::before/);
   assert.match(css, /\.gdg-account-stat-card:nth-child\(1\)/);

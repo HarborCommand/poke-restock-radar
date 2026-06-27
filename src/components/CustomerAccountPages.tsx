@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   ArrowRight,
-  Box,
   ChevronRight,
   Gift,
   Headphones,
@@ -181,16 +180,11 @@ function orderStatusTone(order: CustomerAccountOrderHistoryItem) {
   return "active";
 }
 
-function DashboardCardFan() {
+function AccountHeroGrabby() {
   return (
-    <div className="gdg-account-card-fan" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-      <span />
-      <div className="gdg-account-card-box">
-        <Box size={30} />
-      </div>
+    <div className="gdg-account-hero-grabby">
+      <GrabbyMascot variant="welcome" size="large" className="account-overview" />
+      <span>Grabby has your dashboard ready.</span>
     </div>
   );
 }
@@ -281,6 +275,11 @@ export function AccountDashboard({
   const lifetimePoints = rewardBalance?.lifetimeEarnedPoints ?? 0;
   const addressCount = account.savedAddresses.length;
   const previewOrders = recentOrders.slice(0, 3);
+  const recentOrderItem = previewOrders[0]?.items.find((item) => item.imageUrl) ?? previewOrders[0]?.items[0] ?? null;
+  const recentOrderImageUrl = recentOrderItem?.imageUrl ?? null;
+  const recentOrderImageAlt = recentOrderItem?.title
+    ? `${recentOrderItem.title} from your most recent order`
+    : "Most recent order product image";
   const progressPercent = Math.min(100, Math.max(0, Math.round((availablePoints / 500) * 100)));
   const stats: Array<{
     href: string;
@@ -344,7 +343,7 @@ export function AccountDashboard({
           </div>
           <span className="gdg-account-guest-note">Guest checkout stays available. No account required to buy.</span>
         </div>
-        <DashboardCardFan />
+        <AccountHeroGrabby />
       </div>
 
       <div className="gdg-account-stat-grid" aria-label="Account quick stats">
@@ -363,49 +362,61 @@ export function AccountDashboard({
 
       <div className="gdg-account-dashboard-layout">
         <section className="gdg-account-panel gdg-account-orders-preview">
-          <header className="gdg-account-panel-heading">
-            <div>
-              <p className="gdg-overline">My Orders</p>
-              <h2>Recent orders</h2>
-            </div>
-            <Link href="/account/orders">View all orders <ChevronRight size={16} aria-hidden="true" /></Link>
-          </header>
-          <p className="gdg-account-panel-copy">
-            Orders placed with this verified email, including guest checkout orders, appear here. No payment method
-            details are shown.
-          </p>
-          {previewOrders.length ? (
-            <div className="gdg-account-preview-list">
-              {previewOrders.map((order) => {
-                const previewItem = order.items[0];
-                return (
-                  <Link key={order.orderNumber} href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-account-preview-row">
-                    <div className="gdg-account-preview-thumb">
-                      {previewItem?.imageUrl ? (
-                      // Safe public order snapshot image.
-                        <img src={previewItem.imageUrl} alt={`${previewItem.title} thumbnail`} />
-                      ) : (
-                        <PackageCheck size={18} aria-hidden="true" />
-                      )}
-                    </div>
-                    <div className="gdg-account-preview-main">
-                      <strong>{previewItem?.title || order.orderNumber}</strong>
-                      <span>{order.orderNumber} - {dateLabel(order.orderDate)}</span>
-                    </div>
-                    <span className={`gdg-account-status-pill ${orderStatusTone(order)}`}>{order.status}</span>
-                    <b>{money(order.totalPaid)}</b>
-                    <ChevronRight size={17} aria-hidden="true" />
-                  </Link>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="gdg-account-empty-panel">
-              <PackageCheck size={22} aria-hidden="true" />
-              <strong>No orders found for this verified email yet.</strong>
-              <p>Guest checkout orders will appear here after they match your verified account email.</p>
-            </div>
-          )}
+          <div className={recentOrderImageUrl ? "gdg-account-orders-preview-visual has-image" : "gdg-account-orders-preview-visual"}>
+            {recentOrderImageUrl ? (
+              <img src={recentOrderImageUrl} alt={recentOrderImageAlt} />
+            ) : (
+              <>
+                <PackageCheck size={28} aria-hidden="true" />
+                <span>{previewOrders.length ? "Image unavailable" : "Orders will appear here"}</span>
+              </>
+            )}
+          </div>
+          <div className="gdg-account-orders-preview-body">
+            <header className="gdg-account-panel-heading">
+              <div>
+                <p className="gdg-overline">My Orders</p>
+                <h2>Recent orders</h2>
+              </div>
+              <Link href="/account/orders">View all orders <ChevronRight size={16} aria-hidden="true" /></Link>
+            </header>
+            <p className="gdg-account-panel-copy">
+              Orders placed with this verified email, including guest checkout orders, appear here. No payment method
+              details are shown.
+            </p>
+            {previewOrders.length ? (
+              <div className="gdg-account-preview-list">
+                {previewOrders.map((order) => {
+                  const previewItem = order.items[0];
+                  return (
+                    <Link key={order.orderNumber} href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-account-preview-row">
+                      <div className="gdg-account-preview-thumb">
+                        {previewItem?.imageUrl ? (
+                          // Safe public order snapshot image.
+                          <img src={previewItem.imageUrl} alt={`${previewItem.title} thumbnail`} />
+                        ) : (
+                          <PackageCheck size={18} aria-hidden="true" />
+                        )}
+                      </div>
+                      <div className="gdg-account-preview-main">
+                        <strong>{previewItem?.title || order.orderNumber}</strong>
+                        <span>{order.orderNumber} - {dateLabel(order.orderDate)}</span>
+                      </div>
+                      <span className={`gdg-account-status-pill ${orderStatusTone(order)}`}>{order.status}</span>
+                      <b>{money(order.totalPaid)}</b>
+                      <ChevronRight size={17} aria-hidden="true" />
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="gdg-account-empty-panel">
+                <PackageCheck size={22} aria-hidden="true" />
+                <strong>No orders found for this verified email yet.</strong>
+                <p>Guest checkout orders will appear here after they match your verified account email.</p>
+              </div>
+            )}
+          </div>
         </section>
 
         <aside className="gdg-account-side-stack">
