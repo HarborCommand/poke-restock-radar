@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-import { calculateCartShipping } from "../src/lib/shipping";
+import {
+  calculateCartShipping,
+  explainCartShippingCalculation,
+  shippingRatePackageFromCalculation
+} from "../src/lib/shipping";
 import { shippingLabelWorkflowConfig } from "../src/lib/shipping-labels";
-import { normalizeShippoUspsQuote, shippingRateProviderConfig } from "../src/lib/shipping-rate-provider";
+import { fetchShippoUspsQuote, normalizeShippoUspsQuote, shippingRateProviderConfig } from "../src/lib/shipping-rate-provider";
 
 function shippableItem(overrides: Parameters<typeof calculateCartShipping>[0][number] = {}) {
   return {
@@ -77,7 +81,7 @@ test("smart shipping calculator only offers local pickup when every cart item is
 });
 
 test("smart shipping packs every product in a multi-item cart for carrier quotes", () => {
-  const result = calculateCartShipping([
+  const cart = [
     shippableItem({
       id: "three-booster-blister",
       title: "Perfect Order 3-Booster Blister",
@@ -105,14 +109,22 @@ test("smart shipping packs every product in a multi-item cart for carrier quotes
       packageWidthIn: 5,
       packageHeightIn: 4
     })
-  ]);
+  ];
+  const result = calculateCartShipping(cart);
+  const audit = explainCartShippingCalculation(cart);
 
-  assert.equal(result.totalWeightOz, 69);
+  assert.equal(result.totalWeightOz, 71);
+  assert.equal(result.packingWeightOz, 5);
+  assert.equal(result.billableWeightOz, 71);
   assert.equal(result.packageProfile, "large_box");
-  assert.equal(result.packageLengthIn, 13.5);
-  assert.equal(result.packageWidthIn, 10.5);
-  assert.equal(result.packageHeightIn, 9.2);
+  assert.equal(result.packageTierKey, "large_box");
+  assert.equal(result.packageLengthIn, 15);
+  assert.equal(result.packageWidthIn, 12);
+  assert.equal(result.packageHeightIn, 9);
   assert.equal(result.defaultShippingOption?.amount, 9.99);
+  assert.equal(audit.selectedPackageTier, "large_box");
+  assert.equal(audit.items.find((item) => item.id === "booster-bundle")?.selectedProfile, "medium_box");
+  assert.equal(audit.items.find((item) => item.id === "booster-bundle")?.packageWeightOz, 24);
 });
 
 test("smart shipping quantity greater than one uses the full packed cart weight and height", () => {
@@ -129,14 +141,16 @@ test("smart shipping quantity greater than one uses the full packed cart weight 
   ]);
 
   assert.equal(result.totalWeightOz, 47);
+  assert.equal(result.packingWeightOz, 5);
   assert.equal(result.packageProfile, "large_box");
-  assert.equal(result.packageLengthIn, 9.5);
-  assert.equal(result.packageWidthIn, 7.5);
-  assert.equal(result.packageHeightIn, 7.5);
+  assert.equal(result.packageTierKey, "large_box");
+  assert.equal(result.packageLengthIn, 15);
+  assert.equal(result.packageWidthIn, 12);
+  assert.equal(result.packageHeightIn, 9);
   assert.equal(result.defaultShippingOption?.amount, 9.99);
 });
 
-test("smart shipping does not fake complete carrier dimensions when any cart item is missing package size", () => {
+test("system profile defaults complete missing item dimensions before carrier quotes", () => {
   const result = calculateCartShipping([
     shippableItem({
       id: "ready-box",
@@ -156,11 +170,12 @@ test("smart shipping does not fake complete carrier dimensions when any cart ite
     })
   ]);
 
-  assert.equal(result.totalWeightOz, 36.5);
-  assert.equal(result.packageLengthIn, null);
-  assert.equal(result.packageWidthIn, null);
-  assert.equal(result.packageHeightIn, null);
-  assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), true);
+  assert.equal(result.totalWeightOz, 39);
+  assert.equal(result.packageTierKey, "large_box");
+  assert.equal(result.packageLengthIn, 15);
+  assert.equal(result.packageWidthIn, 12);
+  assert.equal(result.packageHeightIn, 9);
+  assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), false);
 });
 
 test("missing package profile uses safe fallback and warning", () => {
@@ -194,14 +209,167 @@ test("missing package profile uses category-aware fallback for larger sealed pro
   assert.equal(result.warnings.some((warning) => warning.includes("safe package fallback")), true);
 });
 
-test("missing package dimensions are surfaced for calculated shipping fallback", () => {
+test("category-aware fallback recognizes real sealed product category variations", () => {
+  const cases = [
+    {
+      title: "Pokémon Trading Card Game: Mega Zygarde ex Premium Collection",
+      category: "Premium Collections",
+      expectedProfile: "large_box"
+    },
+    {
+      title: "Pokémon Trading Card Game: Mega Zygarde ex Premium Collection",
+      category: "Premium Collection",
+      expectedProfile: "large_box"
+    },
+    {
+      title: "Pokémon Trading Card Game: Mega Evolution Perfect Order 3-Booster Blister",
+      category: "Blisters",
+      expectedProfile: "sealed_pack_small"
+    },
+    {
+      title: "Pokemon Trading Card Game Mega Evolution Perfect Order 3 Booster Blister",
+      category: "Blister",
+      expectedProfile: "sealed_pack_small"
+    },
+    {
+      title: "Mega Evolution Perfect Order Booster Bundle",
+      category: "Booster Bundles",
+      expectedProfile: "medium_box"
+    },
+    {
+      title: "Mega Evolution Perfect Order Booster Bundle",
+      category: "Booster Bundle",
+      expectedProfile: "medium_box"
+    },
+    {
+      title: "Pokémon TCG: Mega Moonlit Tin",
+      category: "Tins",
+      expectedProfile: "medium_box"
+    },
+    {
+      title: "Pokemon TCG Mega Moonlit Tin",
+      category: "Tin",
+      expectedProfile: "medium_box"
+    },
+    {
+      title: "Pokemon TCG Elite Trainer Box",
+      category: "Elite Trainer Boxes",
+      expectedProfile: "medium_box"
+    },
+    {
+      title: "Pokemon TCG ETB",
+      category: "ETB",
+      expectedProfile: "medium_box"
+    },
+    {
+      title: "Pokemon TCG Collector Collection",
+      category: "Collections",
+      expectedProfile: "large_box"
+    },
+    {
+      title: "Pokemon TCG Boxed Set",
+      category: "Boxed Sets",
+      expectedProfile: "large_box"
+    }
+  ];
+
+  for (const entry of cases) {
+    const audit = explainCartShippingCalculation([
+      shippableItem({
+        title: entry.title,
+        category: entry.category,
+        shippingProfile: "standard",
+        packageWeightOz: null,
+        packageLengthIn: null,
+        packageWidthIn: null,
+        packageHeightIn: null
+      })
+    ]);
+    assert.equal(audit.items[0].selectedProfile, entry.expectedProfile, `${entry.category} should map to ${entry.expectedProfile}`);
+  }
+});
+
+test("category-aware fallback uses conservative packed boxes for mixed sealed carts with missing metadata", () => {
   const result = calculateCartShipping([
     shippableItem({
+      id: "premium",
+      title: "Pokemon Trading Card Game: Mega Zygarde ex Premium Collection",
+      category: "Premium Collections",
+      shippingProfile: "standard",
+      packageWeightOz: null,
+      packageLengthIn: null,
+      packageWidthIn: null,
+      packageHeightIn: null
+    }),
+    shippableItem({
+      id: "bundle",
+      title: "Mega Evolution Perfect Order Booster Bundle",
+      category: "Booster Bundles",
+      shippingProfile: "standard",
+      packageWeightOz: null,
+      packageLengthIn: null,
+      packageWidthIn: null,
+      packageHeightIn: null
+    }),
+    shippableItem({
+      id: "tin",
+      title: "Pokemon TCG: Mega Moonlit Tin",
+      category: "Tins",
+      shippingProfile: "standard",
+      packageWeightOz: null,
+      packageLengthIn: null,
+      packageWidthIn: null,
+      packageHeightIn: null
+    }),
+    shippableItem({
+      id: "blister",
+      title: "Pokemon Trading Card Game: Mega Evolution Perfect Order 3-Booster Blister",
+      category: "Blisters",
+      shippingProfile: "standard",
+      packageWeightOz: null,
       packageLengthIn: null,
       packageWidthIn: null,
       packageHeightIn: null
     })
   ]);
+
+  assert.equal(result.packageProfile, "heavy_box");
+  assert.equal(result.packageTierKey, "heavy_box");
+  assert.equal(result.packageLengthIn, 22);
+  assert.equal(result.packageWidthIn, 16);
+  assert.equal(result.packageHeightIn, 14);
+  assert.equal(result.actualWeightOz, 162);
+  assert.equal(result.billableWeightOz, 480);
+  assert.equal(result.defaultShippingOption?.label, "Heavy Package Shipping");
+  assert.equal(result.manualReviewRequired, true);
+  assert.equal(result.localPickupEligible, true);
+});
+
+test("missing package dimensions are surfaced for calculated shipping fallback", () => {
+  const result = calculateCartShipping(
+    [
+      shippableItem({
+        shippingProfile: "dimensionless_profile",
+        packageLengthIn: null,
+        packageWidthIn: null,
+        packageHeightIn: null
+      })
+    ],
+    {
+      profileDefinitions: {
+        dimensionless_profile: {
+          label: "Dimensionless Profile",
+          defaultWeightOz: 6,
+          rank: 2,
+          requiresBox: false,
+          insuranceRecommended: false,
+          packageLengthIn: null,
+          packageWidthIn: null,
+          packageHeightIn: null
+        }
+      }
+    }
+  );
 
   assert.equal(result.packageLengthIn, null);
   assert.equal(result.packageWidthIn, null);
@@ -247,6 +415,41 @@ test("selected shipping profile defaults complete blank product package data", (
   assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), false);
 });
 
+test("incomplete DB-backed default profiles merge with built-in package dimensions", () => {
+  const result = calculateCartShipping(
+    [
+      shippableItem({
+        shippingProfile: "medium_box",
+        packageWeightOz: null,
+        packageLengthIn: null,
+        packageWidthIn: null,
+        packageHeightIn: null
+      })
+    ],
+    {
+      profileDefinitions: {
+        medium_box: {
+          label: "Medium Box",
+          defaultWeightOz: 32,
+          rank: 4,
+          requiresBox: true,
+          insuranceRecommended: false,
+          packageLengthIn: null,
+          packageWidthIn: null,
+          packageHeightIn: null
+        }
+      }
+    }
+  );
+
+  assert.equal(result.totalWeightOz, 32);
+  assert.equal(result.packageProfile, "medium_box");
+  assert.equal(result.packageLengthIn, 12);
+  assert.equal(result.packageWidthIn, 9);
+  assert.equal(result.packageHeightIn, 7);
+  assert.equal(result.warnings.some((warning) => warning.includes("Package dimensions are missing")), false);
+});
+
 test("product-level package data overrides selected profile defaults", () => {
   const result = calculateCartShipping(
     [
@@ -279,6 +482,80 @@ test("product-level package data overrides selected profile defaults", () => {
   assert.equal(result.packageWidthIn, 8);
   assert.equal(result.packageHeightIn, 2);
   assert.equal(result.defaultShippingOption?.amount, 5.99);
+});
+
+test("Shippo quote payload uses the packed actual package instead of a small one-item parcel", async () => {
+  const shippingCalculation = calculateCartShipping([
+    shippableItem({
+      id: "premium-collection",
+      title: "Mega Zygarde ex Premium Collection",
+      shippingProfile: "large_box",
+      packageWeightOz: 36,
+      packageLengthIn: 13,
+      packageWidthIn: 10,
+      packageHeightIn: 3.5
+    }),
+    shippableItem({
+      id: "booster-bundle",
+      title: "Mega Evolution Perfect Order Booster Bundle",
+      shippingProfile: "small_box",
+      packageWeightOz: 24,
+      packageLengthIn: 7,
+      packageWidthIn: 5,
+      packageHeightIn: 4
+    })
+  ]);
+  let shippoPayload = null as { parcels?: Array<Record<string, string>> } | null;
+  const quote = await fetchShippoUspsQuote(
+    {
+      destination: { zip: "33135", country: "US" },
+      package: shippingRatePackageFromCalculation(shippingCalculation)
+    },
+    {
+      env: {
+        CALCULATED_USPS_SHIPPING_ENABLED: "true",
+        SHIPPING_RATE_PROVIDER: "shippo",
+        SHIPPO_API_TOKEN: "secret_token_not_returned",
+        SHIP_FROM_NAME: "GameDayGrabs",
+        SHIP_FROM_STREET1: "123 Test St",
+        SHIP_FROM_CITY: "Miami",
+        SHIP_FROM_STATE: "FL",
+        SHIP_FROM_ZIP: "33101",
+        SHIP_FROM_COUNTRY: "US"
+      },
+      fetchImpl: async (_url, init) => {
+        shippoPayload = JSON.parse(String(init?.body || "{}")) as { parcels?: Array<Record<string, string>> };
+        return new Response(
+          JSON.stringify({
+            object_id: "shipment_safe_ref",
+            rates: [
+              {
+                object_id: "ground_safe_ref",
+                provider: "USPS",
+                servicelevel: { name: "USPS Ground Advantage" },
+                amount: "11.20",
+                currency: "USD",
+                estimated_days: 5
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+    }
+  );
+
+  assert.ok(shippoPayload?.parcels);
+  const parcels = shippoPayload.parcels;
+  assert.equal(parcels[0].weight, String(shippingCalculation.actualWeightOz));
+  assert.equal(parcels[0].length, String(shippingCalculation.packageLengthIn));
+  assert.equal(parcels[0].width, String(shippingCalculation.packageWidthIn));
+  assert.equal(parcels[0].height, String(shippingCalculation.packageHeightIn));
+  assert.ok(Number(parcels[0].weight) > 16);
+  assert.ok(shippingCalculation.billableWeightOz >= shippingCalculation.actualWeightOz);
+  assert.equal(quote?.service, "USPS Ground Advantage");
+  assert.equal(quote?.amountCents, 1120);
+  assert.doesNotMatch(JSON.stringify(shippoPayload), /secret_token_not_returned/);
 });
 
 test("selected profile without dimension defaults still flags missing dimensions", () => {
@@ -542,12 +819,27 @@ test("calculated USPS quote API and checkout enforce server-side quote safety", 
   assert.match(quoteHelper, /fetchShippoUspsQuote/);
   assert.match(quoteHelper, /fallbackShippingQuote/);
   assert.match(createQuote, /fallbackShippingQuote/);
-  assert.match(createQuote, /cartHash: shippingCartHash\(cart\)/);
+  assert.match(createQuote, /cartHash: shippingCartHash\(cart, input\.destinationZip\)/);
+  assert.match(storefront, /formulaVersion: shippingFormulaVersion/);
+  assert.match(storefront, /destinationZip: String\(destinationZip \|\| ""\)\.replace\(\/\\D\/g, ""\)\.slice\(0, 5\)/);
+  for (const field of [
+    "packageWeightOz",
+    "packageLengthIn",
+    "packageWidthIn",
+    "packageHeightIn",
+    "shippingAvailable",
+    "localPickupAvailable",
+    "freeShippingEligible",
+    "requiresBox",
+    "insuranceRecommended"
+  ]) {
+    assert.match(storefront, new RegExp(field), `shipping cart hash should include ${field}`);
+  }
   assert.match(createCheckoutSession, /if \(input\.fulfillmentMethod === "shipping" && shippingRates\.calculatedUspsEnabled\)/);
   assert.match(createCheckoutSession, /if \(!input\.shippingQuoteToken\)/);
   assert.match(createCheckoutSession, /calculatedQuote\.expiresAt\.getTime\(\) <= checkoutStartedAt\.getTime\(\)/);
   assert.match(createCheckoutSession, /calculatedQuote\.usedAt/);
-  assert.match(createCheckoutSession, /calculatedQuote\.cartHash !== shippingCartHash\(cart\)/);
+  assert.match(createCheckoutSession, /calculatedQuote\.cartHash !== shippingCartHash\(cart, calculatedQuote\.destinationZip\)/);
   assert.match(createCheckoutSession, /shippingQuote\.update/);
   assert.match(provider, /authorization: `ShippoToken/);
   assert.doesNotMatch(provider, /console\.(log|warn|error).*SHIPPO_API_TOKEN/);
