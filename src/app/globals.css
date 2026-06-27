@@ -24018,38 +24018,6 @@ body .catalog-action-menu-floating {
   max-width: 620px;
 }
 
-.gdg-login-brand-mark {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  margin-bottom: 4px;
-}
-
-.gdg-login-brand-mark span {
-  display: block;
-  width: 34px;
-  height: 46px;
-  border: 2px solid rgba(255, 184, 0, 0.76);
-  border-radius: 9px;
-  background:
-    radial-gradient(circle at 50% 52%, rgba(255, 184, 0, 0.28), transparent 34%),
-    linear-gradient(135deg, #111827, #05070b 70%, #1f1604);
-  box-shadow: 0 12px 26px rgba(16, 24, 40, 0.18);
-}
-
-.gdg-login-brand-mark span:nth-child(1) {
-  transform: rotate(-9deg);
-}
-
-.gdg-login-brand-mark span:nth-child(2) {
-  transform: translateY(-4px);
-}
-
-.gdg-login-brand-mark span:nth-child(3) {
-  transform: rotate(9deg);
-}
-
 .gdg-login-welcome h1 {
   max-width: 520px;
   margin: 0;
@@ -24080,9 +24048,11 @@ body .catalog-action-menu-floating {
   align-items: center;
 }
 
-.gdg-login-benefit-icon {
-  display: grid;
-  place-items: center;
+.gdg-login-page .gdg-login-benefit-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   width: 52px;
   height: 52px;
   border: 1px solid rgba(245, 166, 35, 0.28);
@@ -24092,14 +24062,21 @@ body .catalog-action-menu-floating {
     0 12px 26px rgba(15, 61, 46, 0.08);
 }
 
-.gdg-login-benefit-icon.gold {
+.gdg-login-page .gdg-login-benefit-icon svg {
+  display: block;
+  flex: 0 0 auto;
+  margin: 0;
+  transform: none;
+}
+
+.gdg-login-page .gdg-login-benefit-icon.gold {
   background:
     radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.75), transparent 30%),
     #fff4cc;
   color: #a15c00;
 }
 
-.gdg-login-benefit-icon.green {
+.gdg-login-page .gdg-login-benefit-icon.green {
   border-color: rgba(22, 163, 74, 0.22);
   background:
     radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.72), transparent 30%),
@@ -24107,7 +24084,7 @@ body .catalog-action-menu-floating {
   color: #166534;
 }
 
-.gdg-login-benefit-icon.blue {
+.gdg-login-page .gdg-login-benefit-icon.blue {
   background: #dbeafe;
   color: #1d4ed8;
 }
@@ -24119,12 +24096,12 @@ body .catalog-action-menu-floating {
   line-height: 1.4;
 }
 
-.gdg-login-benefit strong,
-.gdg-login-benefit span {
+.gdg-login-page .gdg-login-benefit p strong,
+.gdg-login-page .gdg-login-benefit p span {
   display: block;
 }
 
-.gdg-login-benefit strong {
+.gdg-login-page .gdg-login-benefit p strong {
   color: #101828;
   font-weight: 900;
 }
@@ -24428,6 +24405,21 @@ body .catalog-action-menu-floating {
   margin-top: 2px;
 }
 
+@media (min-width: 961px) {
+  .gdg-auth-focused-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .gdg-account-shell.auth-focused {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+
 @media (min-width: 961px) and (max-height: 820px) {
   .gdg-auth-focused-shell {
     padding-bottom: 0;
@@ -24450,15 +24442,6 @@ body .catalog-action-menu-floating {
 
   .gdg-login-welcome {
     gap: 9px;
-  }
-
-  .gdg-login-brand-mark {
-    margin-bottom: 0;
-  }
-
-  .gdg-login-brand-mark span {
-    width: 30px;
-    height: 40px;
   }
 
   .gdg-login-welcome h1 {
@@ -24558,12 +24541,6 @@ body .catalog-action-menu-floating {
 
   .gdg-login-welcome {
     gap: 14px;
-  }
-
-  .gdg-login-brand-mark span {
-    width: 26px;
-    height: 36px;
-    border-radius: 7px;
   }
 
   .gdg-login-welcome h1 {

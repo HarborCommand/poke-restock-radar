@@ -464,12 +464,6 @@ const loginBenefits: Array<{ title: string; copy: string; icon: LucideIcon; tone
 function CustomerAuthWelcomePanel() {
   return (
     <section className="gdg-login-welcome" aria-labelledby="gdg-login-title">
-      <div className="gdg-login-brand-mark" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-      <p className="gdg-overline">GameDayGrabs Account</p>
       <h1 id="gdg-login-title">Welcome back, Collector!</h1>
       <p className="gdg-login-lede">
         Sign in to manage your orders, earn rewards, and keep your collection growing.
@@ -493,8 +487,8 @@ function CustomerAuthWelcomePanel() {
       <div className="gdg-login-grabby" aria-label="Grabby account helper">
         <GrabbyMascot variant="welcome" size="large" />
         <div className="gdg-login-grabby-bubble">
-          <strong>Hey there! I'm Grabby.</strong>
-          <span>Let's get you signed in so we can keep the good pulls coming!</span>
+          <strong>{"Hey there! I'm Grabby."}</strong>
+          <span>{"Let's get you signed in so we can keep the good pulls coming!"}</span>
         </div>
       </div>
     </section>
@@ -678,7 +672,7 @@ export function CustomerLoginPageContent({
         <div className="gdg-account-magic-option gdg-login-magic-option">
           <div>
             <h2>Email sign-in link</h2>
-            <p>No password? We'll send a secure one-time sign-in link.</p>
+            <p>{"No password? We'll send a secure one-time sign-in link."}</p>
           </div>
           <form className="gdg-account-form compact gdg-login-magic-form" action="/api/account/magic-link/request" method="post">
             <label className="gdg-login-field">
