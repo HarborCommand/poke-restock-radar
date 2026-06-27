@@ -48,15 +48,18 @@ test("Phase 1 package scripts are present", () => {
 
 test("production deploy path uses migrations instead of destructive schema push", () => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const vercelBuildScript = readFileSync(join(root, "scripts", "vercel-build.ts"), "utf8");
   assert.equal(
     pkg.scripts["db:migrate:prod"],
     "npm run prisma:postgres && tsx scripts/migrate-postgres-production.ts"
   );
-  assert.equal(
-    pkg.scripts["vercel-build"],
-    "npm run prisma:postgres && tsx scripts/migrate-postgres-production.ts && prisma generate --schema .prisma-postgres/schema.prisma && next build"
-  );
+  assert.equal(pkg.scripts["vercel-build"], "tsx scripts/vercel-build.ts");
+  assert.match(vercelBuildScript, /vercelEnv === "production"/);
+  assert.match(vercelBuildScript, /npm", \["run", "prisma:postgres"\]/);
+  assert.match(vercelBuildScript, /tsx", \["scripts\/migrate-postgres-production\.ts"\]/);
+  assert.match(vercelBuildScript, /prisma", \["generate", "--schema", "\.prisma-postgres\/schema\.prisma"\]/);
   assert.doesNotMatch(pkg.scripts["vercel-build"], /db push|accept-data-loss/);
+  assert.doesNotMatch(vercelBuildScript, /db push|accept-data-loss/);
 });
 
 test("required data models exist", () => {
