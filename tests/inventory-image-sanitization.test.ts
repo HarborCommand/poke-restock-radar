@@ -228,11 +228,10 @@ test("admin listing editor renders a clean shipping profile card", () => {
   const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
 
   assert.match(listingModal, /className="shipping-profile-card"/);
-  assert.match(listingModal, /<strong>Shipping profile<\/strong>/);
-  assert.match(listingModal, /Used to estimate customer shipping at checkout\./);
-  assert.match(listingModal, /Use packed shipping weight, including box or mailer\./);
-  assert.match(listingModal, /Leave blank to use the selected profile default\./);
-  assert.match(listingModal, /Carrier labels are not purchased here; actual shipping cost can be entered after fulfillment\./);
+  assert.match(listingModal, /<strong>Shipping package details<\/strong>/);
+  assert.match(listingModal, /Used to calculate USPS shipping\. Leave blank to use safe fallback\./);
+  assert.match(listingModal, /Weigh the product as it will be shipped, measure the box or mailer, and enter ounces and inches\./);
+  assert.match(listingModal, /Leave unknown values blank so checkout can use profile defaults or safe fallback\./);
   assert.match(listingModal, /shipping-profile-issue-list/);
   assert.match(listingModal, /inventoryShippingProfileBadges\(draftShippingItem, shippingProfiles\)\.map/);
   assert.match(listingModal, /Using profile defaults\./);
@@ -242,7 +241,9 @@ test("admin listing editor renders a clean shipping profile card", () => {
   assert.match(listingModal, /Shipping profile set/);
   assert.match(listingModal, /Complete before relying on storefront estimates/);
   assert.match(listingModal, /Measure the packed shipment, choose the closest package profile, and confirm whether local pickup should be offered/);
-  assert.match(appSource, /Uses fallback shipping/);
+  assert.match(appSource, /Using fallback shipping profile/);
+  assert.match(appSource, /Measured shipping data/);
+  assert.match(appSource, /Estimated shipping data/);
   assert.match(appSource, /Missing weight/);
   assert.match(appSource, /Missing dimensions/);
   assert.match(appSource, /Local pickup only/);
@@ -250,6 +251,7 @@ test("admin listing editor renders a clean shipping profile card", () => {
 
   for (const field of [
     "shippingProfile",
+    "shippingMetadataSource",
     "packageWeightOz",
     "packageLengthIn",
     "packageWidthIn",
@@ -264,6 +266,8 @@ test("admin listing editor renders a clean shipping profile card", () => {
 
   assert.match(listingModal, /options=\{shippingProfileSelectOptions\(shippingProfiles, item\.shippingProfile\)\}/);
   assert.match(appSource, /function shippingProfileSelectOptions/);
+  assert.match(appSource, /const shippingMetadataSourceOptions/);
+  assert.match(appSource, /Metadata source/);
   assert.match(appSource, /inactive - existing products only/);
   assert.match(appSource, /Inactive profile in use/);
   assert.match(appSource, /Selected profile is unavailable/);
@@ -273,6 +277,7 @@ test("admin listing editor renders a clean shipping profile card", () => {
     "Length in inches",
     "Width in inches",
     "Height in inches",
+    "Metadata source",
     "Free shipping eligible",
     "Local pickup eligible",
     "Requires box",
@@ -351,6 +356,7 @@ test("admin inventory can find products that need shipping profiles", () => {
   assert.match(appSource, /function inventoryShippingProfileBadges\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
   assert.match(appSource, /function inventoryStoreReadinessRowBadge\(item: InventoryItemDTO\)/);
   assert.match(appSource, /function inventoryShippingProfileRowBadges\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
+  assert.match(appSource, /function inventoryHasAuthoritativeProductPackageData/);
   assert.match(appSource, /completedShippingProfileValues/);
   assert.match(appSource, /inventoryShippingProfileRecord\(item, shippingProfiles\)/);
   assert.match(appSource, /effectiveWeightOz = productWeight \?\? profileWeight/);
@@ -380,7 +386,9 @@ test("admin inventory can find products that need shipping profiles", () => {
   assert.match(appSource, /Missing Weight/);
   assert.match(appSource, /Missing Dimensions/);
   assert.match(appSource, /Needs shipping profile/);
-  assert.match(appSource, /Uses fallback shipping/);
+  assert.match(appSource, /Using fallback shipping profile/);
+  assert.match(appSource, /Measured shipping data/);
+  assert.match(appSource, /Estimated shipping data/);
   assert.match(appSource, /Missing weight/);
   assert.match(appSource, /Missing dimensions/);
   assert.match(appSource, /Using profile default weight/);
@@ -410,7 +418,7 @@ test("store listing save path persists shipping metadata without stock quantity 
   const updateListing = sourceSlice(storefront, "export async function updateInventoryStoreListing", "export async function bulkPublishInventoryStoreListings");
 
   assert.match(listingModal, /body: JSON\.stringify\(formJson\(form\)\)/);
-  for (const field of ["purchaseLimitEnabled", "maxQuantityPerOrder", "packageWeightOz", "packageLengthIn", "packageWidthIn", "packageHeightIn", "freeShippingEligible", "requiresBox", "insuranceRecommended"]) {
+  for (const field of ["purchaseLimitEnabled", "maxQuantityPerOrder", "packageWeightOz", "packageLengthIn", "packageWidthIn", "packageHeightIn", "shippingMetadataSource", "freeShippingEligible", "requiresBox", "insuranceRecommended"]) {
     assert.match(listingSchema, new RegExp(`${field}:`), `schema should accept ${field}`);
     if (field === "maxQuantityPerOrder") {
       assert.match(updateListing, /maxQuantityPerOrder,/);
@@ -439,6 +447,7 @@ test("store listing save path persists shipping metadata without stock quantity 
     packageLengthIn: "10",
     packageWidthIn: "7",
     packageHeightIn: "4",
+    shippingMetadataSource: "measured",
     freeShippingEligible: "true",
     localPickupAvailable: "true",
     shippingAvailable: "true",
@@ -451,6 +460,7 @@ test("store listing save path persists shipping metadata without stock quantity 
   assert.equal(parsed.packageLengthIn, 10);
   assert.equal(parsed.packageWidthIn, 7);
   assert.equal(parsed.packageHeightIn, 4);
+  assert.equal(parsed.shippingMetadataSource, "measured");
   assert.equal(parsed.freeShippingEligible, true);
   assert.equal(parsed.purchaseLimitEnabled, true);
   assert.equal(parsed.localPickupAvailable, true);
@@ -465,6 +475,59 @@ test("store listing save path persists shipping metadata without stock quantity 
   });
   assert.equal(blankLimit.purchaseLimitEnabled, false);
   assert.equal(blankLimit.maxQuantityPerOrder, null);
+  assert.equal(blankLimit.shippingMetadataSource, null);
+
+  const defaultSource = inventoryStoreListingSchema.parse({
+    publishToStore: false,
+    shippingProfile: "small_box",
+    packageWeightOz: "12",
+    packageLengthIn: "10",
+    packageWidthIn: "7",
+    packageHeightIn: "4",
+    storeStatus: "draft"
+  });
+  assert.equal(defaultSource.shippingMetadataSource, "estimated");
+
+  assert.throws(
+    () =>
+      inventoryStoreListingSchema.parse({
+        publishToStore: false,
+        shippingProfile: "small_box",
+        packageWeightOz: "0",
+        storeStatus: "draft"
+      }),
+    /Package weight must be greater than 0 ounces/
+  );
+  assert.throws(
+    () =>
+      inventoryStoreListingSchema.parse({
+        publishToStore: false,
+        shippingProfile: "small_box",
+        packageLengthIn: "0",
+        storeStatus: "draft"
+      }),
+    /Package dimensions must be greater than 0 inches/
+  );
+  assert.throws(
+    () =>
+      inventoryStoreListingSchema.parse({
+        publishToStore: false,
+        shippingProfile: "small_box",
+        packageWeightOz: "501",
+        storeStatus: "draft"
+      }),
+    /Package weight must stay under 500 ounces/
+  );
+  assert.throws(
+    () =>
+      inventoryStoreListingSchema.parse({
+        publishToStore: false,
+        shippingProfile: "small_box",
+        shippingMetadataSource: "raw",
+        storeStatus: "draft"
+      }),
+    /Invalid enum value|Invalid option/
+  );
   assert.doesNotMatch(updateListing, /\bquantity:\s*input\./);
   assert.doesNotMatch(updateListing, /inventoryStockLot|inventorySale|remainingQuantity|quantitySold/);
 });

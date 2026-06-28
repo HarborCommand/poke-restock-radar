@@ -152,6 +152,7 @@ function item(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
     packageLengthIn: null,
     packageWidthIn: null,
     packageHeightIn: null,
+    shippingMetadataSource: null,
     freeShippingEligible: false,
     localPickupEligible: false,
     requiresBox: false,
@@ -2132,6 +2133,7 @@ test("shipping product editor saves package metadata without inventory or price 
   assert.match(editor, /\/api\/radar\/inventory\/\$\{item\.id\}\/store-listing/);
   for (const field of [
     "shippingProfile",
+    "shippingMetadataSource",
     "packageWeightOz",
     "packageLengthIn",
     "packageWidthIn",
@@ -2150,7 +2152,10 @@ test("shipping product editor saves package metadata without inventory or price 
   assert.match(editor, /options=\{shippingProfileSelectOptions\(shippingProfiles, item\.shippingProfile\)\}/);
   assert.match(editor, /shippingMetadataDraftFromItem\(item\)/);
   assert.match(editor, /inventoryItemWithShippingDraft\(item, shippingDraft\)/);
-  assert.match(editor, /Leave blank to use the selected profile default/);
+  assert.match(editor, /Shipping package details/);
+  assert.match(editor, /Used to calculate USPS shipping\. Leave blank to use safe fallback\./);
+  assert.match(editor, /Weigh the product as it will be shipped, measure the box or mailer, and enter ounces and inches\./);
+  assert.match(editor, /Metadata source/);
   assert.match(editor, /Using profile defaults\./);
   assert.match(editor, /profileDefaultPlaceholder\(selectedShippingProfile, "defaultWeightOz", "oz"\)/);
   assert.match(editor, /profileDefaultPlaceholder\(selectedShippingProfile, "packageLengthIn", "in"\)/);
@@ -2170,6 +2175,7 @@ test("checkout shipping uses persisted active profiles while preserving hardcode
   assert.match(shipping, /shippingProfileDefinitionMap\(options\.profileDefinitions \?\? \{\}\)/);
   assert.match(shipping, /normalizeShippingProfile\(item\.shippingProfile, definitions\)/);
   assert.match(shipping, /effectiveShippingPackageData/);
+  assert.match(shipping, /normalizeShippingMetadataSource/);
   assert.match(shipping, /packageWeightOz = itemWeight \?\? fallbackWeight \?\? profileWeight/);
   assert.match(shipping, /One or more items need a shipping profile; using a safe package fallback\./);
   assert.match(profiles, /where: \{ active: true \}/);

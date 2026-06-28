@@ -49,6 +49,7 @@ function product(overrides: Partial<PublicStoreProductDTO> = {}): PublicStorePro
     packageLengthIn: 9,
     packageWidthIn: 6,
     packageHeightIn: 4,
+    shippingMetadataSource: null,
     freeShippingEligible: false,
     requiresBox: true,
     insuranceRecommended: false,

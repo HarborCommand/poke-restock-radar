@@ -416,6 +416,121 @@ test("reported premium collection carts use realistic flat parcels instead of ov
   });
 });
 
+test("measured product package metadata overrides category fallback dimensions", () => {
+  const audit = explainCartShippingCalculation([
+    shippableItem({
+      id: "measured-blister",
+      title: "Pokemon Trading Card Game: Mega Evolution Perfect Order 3-Booster Blister",
+      category: "Blisters",
+      shippingProfile: "standard",
+      packageWeightOz: 5.3,
+      packageLengthIn: 15,
+      packageWidthIn: 4,
+      packageHeightIn: 10,
+      shippingMetadataSource: "measured"
+    })
+  ]);
+
+  const item = audit.items.find((entry) => entry.id === "measured-blister");
+  assert.equal(item?.shippingMetadataSource, "measured");
+  assert.equal(item?.fallbackProfileUsed, false);
+  assert.deepEqual(item?.packageDimensions, {
+    lengthIn: 15,
+    widthIn: 4,
+    heightIn: 10
+  });
+  assert.equal(audit.cacheRelevantFields[0].shippingMetadataSource, "measured");
+  assert.equal(audit.cacheRelevantFields[0].packageLengthIn, 15);
+});
+
+test("incomplete product package metadata merges safely with selected profile defaults", () => {
+  const result = calculateCartShipping(
+    [
+      shippableItem({
+        id: "estimated-blister",
+        shippingProfile: "three_booster_blister",
+        packageWeightOz: 12,
+        packageLengthIn: null,
+        packageWidthIn: null,
+        packageHeightIn: null,
+        shippingMetadataSource: "estimated"
+      })
+    ],
+    {
+      profileDefinitions: {
+        three_booster_blister: {
+          label: "3-Booster Blister",
+          defaultWeightOz: 6,
+          rank: 2,
+          requiresBox: false,
+          insuranceRecommended: false,
+          packageLengthIn: 9,
+          packageWidthIn: 7,
+          packageHeightIn: 1
+        }
+      }
+    }
+  );
+  const audit = explainCartShippingCalculation(
+    [
+      shippableItem({
+        id: "estimated-blister",
+        shippingProfile: "three_booster_blister",
+        packageWeightOz: 12,
+        packageLengthIn: null,
+        packageWidthIn: null,
+        packageHeightIn: null,
+        shippingMetadataSource: "estimated"
+      })
+    ],
+    {
+      profileDefinitions: {
+        three_booster_blister: {
+          label: "3-Booster Blister",
+          defaultWeightOz: 6,
+          rank: 2,
+          requiresBox: false,
+          insuranceRecommended: false,
+          packageLengthIn: 9,
+          packageWidthIn: 7,
+          packageHeightIn: 1
+        }
+      }
+    }
+  );
+
+  assert.equal(result.needsShippingProfile, false);
+  assert.equal(result.packageTierKey, "box_10x8x4");
+  assert.equal(audit.items[0].packageWeightOz, 12);
+  assert.deepEqual(audit.items[0].packageDimensions, {
+    lengthIn: 9,
+    widthIn: 7,
+    heightIn: 1
+  });
+  assert.equal(audit.items[0].shippingMetadataSource, "estimated");
+});
+
+test("quote cache fingerprint changes when SKU package metadata changes", () => {
+  const baseItem = shippableItem({
+    id: "sku-metadata",
+    shippingProfile: "small_box",
+    packageWeightOz: 8,
+    packageLengthIn: 6,
+    packageWidthIn: 4,
+    packageHeightIn: 3,
+    shippingMetadataSource: "estimated"
+  });
+  const baseAudit = explainCartShippingCalculation([baseItem]);
+  const weightChangedAudit = explainCartShippingCalculation([{ ...baseItem, packageWeightOz: 9 }]);
+  const dimensionChangedAudit = explainCartShippingCalculation([{ ...baseItem, packageLengthIn: 7 }]);
+  const sourceChangedAudit = explainCartShippingCalculation([{ ...baseItem, shippingMetadataSource: "measured" }]);
+
+  assert.notDeepEqual(baseAudit.cacheRelevantFields, weightChangedAudit.cacheRelevantFields);
+  assert.notDeepEqual(baseAudit.cacheRelevantFields, dimensionChangedAudit.cacheRelevantFields);
+  assert.notDeepEqual(baseAudit.cacheRelevantFields, sourceChangedAudit.cacheRelevantFields);
+  assert.equal(sourceChangedAudit.cacheRelevantFields[0].shippingMetadataSource, "measured");
+});
+
 test("removing items changes the shipping parcel fingerprint even when the fitted box tier is unchanged", () => {
   const premiumCollection = shippableItem({
     id: "premium",

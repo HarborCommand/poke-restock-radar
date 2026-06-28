@@ -38,6 +38,7 @@ function product(overrides: Partial<PublicStoreProductDTO> & { id: string; title
     packageLengthIn: overrides.packageLengthIn ?? null,
     packageWidthIn: overrides.packageWidthIn ?? null,
     packageHeightIn: overrides.packageHeightIn ?? null,
+    shippingMetadataSource: overrides.shippingMetadataSource ?? null,
     freeShippingEligible: overrides.freeShippingEligible ?? false,
     requiresBox: overrides.requiresBox ?? false,
     insuranceRecommended: overrides.insuranceRecommended ?? false,

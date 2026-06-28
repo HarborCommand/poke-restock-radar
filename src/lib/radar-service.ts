@@ -2154,6 +2154,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     packageLengthIn: item.packageLengthIn,
     packageWidthIn: item.packageWidthIn,
     packageHeightIn: item.packageHeightIn,
+    shippingMetadataSource: item.shippingMetadataSource,
     freeShippingEligible: item.freeShippingEligible,
     localPickupEligible: item.localPickupAvailable,
     requiresBox: item.requiresBox,

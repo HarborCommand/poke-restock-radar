@@ -783,6 +783,7 @@ model InventoryItem {
   packageLengthIn               Float?
   packageWidthIn                Float?
   packageHeightIn               Float?
+  shippingMetadataSource        String?
   freeShippingEligible          Boolean                 @default(false)
   requiresBox                   Boolean                 @default(false)
   insuranceRecommended          Boolean                 @default(false)
