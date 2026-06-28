@@ -228,6 +228,16 @@ const optionalPackageNumber = z.preprocess(
   z.coerce.number().nonnegative().max(500).optional()
 );
 
+const optionalProductPackageWeightOz = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().positive("Package weight must be greater than 0 ounces").max(500, "Package weight must stay under 500 ounces").optional()
+);
+
+const optionalProductPackageDimensionIn = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().positive("Package dimensions must be greater than 0 inches").max(120, "Package dimensions must stay under 120 inches").optional()
+);
+
 const requiredPackageWeight = z.coerce.number().nonnegative().max(500);
 
 const shippingProfileKeySchema = z.preprocess(
@@ -239,6 +249,14 @@ const shippingProfileKeySchema = z.preprocess(
     .string()
     .regex(/^[a-z0-9][a-z0-9_-]{1,79}$/, "Use lowercase letters, numbers, dashes, or underscores")
     .optional()
+);
+
+const shippingMetadataSourceSchema = z.preprocess(
+  (value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    return String(value).trim().toLowerCase();
+  },
+  z.enum(["measured", "estimated", "fallback"]).optional()
 );
 
 export const shippingProfileCreateSchema = z.object({
@@ -773,10 +791,11 @@ export const inventoryStoreListingSchema = z.object({
   purchaseLimitEnabled: checkboxBoolean.default(false),
   maxQuantityPerOrder: optionalPurchaseLimit,
   shippingProfile: z.string().trim().min(1).max(80).default("standard"),
-  packageWeightOz: optionalMoney,
-  packageLengthIn: optionalMoney,
-  packageWidthIn: optionalMoney,
-  packageHeightIn: optionalMoney,
+  packageWeightOz: optionalProductPackageWeightOz,
+  packageLengthIn: optionalProductPackageDimensionIn,
+  packageWidthIn: optionalProductPackageDimensionIn,
+  packageHeightIn: optionalProductPackageDimensionIn,
+  shippingMetadataSource: shippingMetadataSourceSchema,
   freeShippingEligible: checkboxBoolean.default(false),
   requiresBox: checkboxBoolean.default(false),
   insuranceRecommended: checkboxBoolean.default(false),
@@ -785,6 +804,12 @@ export const inventoryStoreListingSchema = z.object({
   shippingAvailable: checkboxBooleanDefaultTrue.default(true),
   storefrontCategory: optionalTrimmed,
   storefrontTags: z.union([z.array(z.string().trim().min(1).max(80)), z.string().trim().max(500)]).optional()
+}).transform((input) => {
+  const hasAnyProductPackageField = Boolean(input.packageWeightOz || input.packageLengthIn || input.packageWidthIn || input.packageHeightIn);
+  return {
+    ...input,
+    shippingMetadataSource: hasAnyProductPackageField ? input.shippingMetadataSource ?? "estimated" : null
+  };
 });
 
 export const inventoryBulkStorePublishSchema = z.object({

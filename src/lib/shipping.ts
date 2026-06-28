@@ -20,6 +20,7 @@ export type ShippingCartItem = {
   packageLengthIn?: number | null;
   packageWidthIn?: number | null;
   packageHeightIn?: number | null;
+  shippingMetadataSource?: string | null;
   freeShippingEligible?: boolean | null;
   localPickupEligible?: boolean | null;
   localPickupAvailable?: boolean | null;
@@ -84,6 +85,8 @@ export type EffectiveShippingPackageData = {
   packageHeightIn: number | null;
   usesProfileDefaultWeight: boolean;
   usesProfileDefaultDimensions: boolean;
+  hasCompleteProductPackageData: boolean;
+  shippingMetadataSource: "measured" | "estimated" | "fallback" | null;
   profileHasWeightDefault: boolean;
   profileHasDimensionDefaults: boolean;
   needsShippingProfile: boolean;
@@ -108,6 +111,7 @@ export type ShippingCalculationAudit = {
     selectedProfile: string;
     selectedProfileLabel: string;
     fallbackProfileUsed: boolean;
+    shippingMetadataSource: string | null;
     categoryMinimumProfile: string | null;
     packageWeightOz: number | null;
     packageDimensions: { lengthIn: number | null; widthIn: number | null; heightIn: number | null };
@@ -134,6 +138,7 @@ export type ShippingCalculationAudit = {
     packageLengthIn: number | null;
     packageWidthIn: number | null;
     packageHeightIn: number | null;
+    shippingMetadataSource: string | null;
     category: string | null;
     storefrontCategory: string | null;
   }>;
@@ -264,6 +269,11 @@ function packageDimension(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value * 10) / 10 : null;
 }
 
+function normalizeShippingMetadataSource(value: string | null | undefined): "measured" | "estimated" | "fallback" | null {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "measured" || normalized === "estimated" || normalized === "fallback" ? normalized : null;
+}
+
 function quantityForItem(item: ShippingCartItem) {
   const quantity = positiveNumber(item.quantity ?? item.requestedQuantity);
   return quantity ? Math.max(1, Math.floor(quantity)) : 1;
@@ -313,7 +323,19 @@ export function normalizeShippingProfile(
 }
 
 export function itemNeedsShippingProfile(
-  item: Pick<ShippingCartItem, "shippingProfile" | "packageWeightOz" | "category" | "storefrontCategory" | "title" | "itemName">,
+  item: Pick<
+    ShippingCartItem,
+    | "shippingProfile"
+    | "packageWeightOz"
+    | "packageLengthIn"
+    | "packageWidthIn"
+    | "packageHeightIn"
+    | "shippingMetadataSource"
+    | "category"
+    | "storefrontCategory"
+    | "title"
+    | "itemName"
+  >,
   profileDefinitions: Record<string, ShippingProfileDefinition> = shippingProfiles
 ) {
   return effectiveShippingPackageData(item, profileDefinitions).needsShippingProfile;
@@ -428,6 +450,7 @@ export function effectiveShippingPackageData(
     | "packageLengthIn"
     | "packageWidthIn"
     | "packageHeightIn"
+    | "shippingMetadataSource"
     | "category"
     | "storefrontCategory"
     | "title"
@@ -448,14 +471,19 @@ export function effectiveShippingPackageData(
   const itemLength = packageDimension(item.packageLengthIn);
   const itemWidth = packageDimension(item.packageWidthIn);
   const itemHeight = packageDimension(item.packageHeightIn);
+  const shippingMetadataSource = normalizeShippingMetadataSource(item.shippingMetadataSource);
+  const productPackageDataAuthoritative = shippingMetadataSource === "measured" || shippingMetadataSource === "estimated";
+  const hasCompleteProductPackageData = Boolean(itemWeight && itemLength && itemWidth && itemHeight);
   const profileLength = packageDimension(profileDefinition.packageLengthIn);
   const profileWidth = packageDimension(profileDefinition.packageWidthIn);
   const profileHeight = packageDimension(profileDefinition.packageHeightIn);
-  const replaceDimensions = categoryFallbackShouldReplaceDimensions(item, fallbackPackage, {
-    lengthIn: itemLength,
-    widthIn: itemWidth,
-    heightIn: itemHeight
-  });
+  const replaceDimensions =
+    !productPackageDataAuthoritative &&
+    categoryFallbackShouldReplaceDimensions(item, fallbackPackage, {
+      lengthIn: itemLength,
+      widthIn: itemWidth,
+      heightIn: itemHeight
+    });
   const fallbackWeight = normalized.usedFallback ? fallbackPackage?.weightOz : null;
   const fallbackLength = normalized.usedFallback || replaceDimensions ? fallbackPackage?.lengthIn : null;
   const fallbackWidth = normalized.usedFallback || replaceDimensions ? fallbackPackage?.widthIn : null;
@@ -478,9 +506,11 @@ export function effectiveShippingPackageData(
     packageHeightIn,
     usesProfileDefaultWeight: !itemWeight && Boolean(profileWeight) && !normalized.usedFallback,
     usesProfileDefaultDimensions: (!itemLength || !itemWidth || !itemHeight) && !missingDimensions && !normalized.usedFallback,
+    hasCompleteProductPackageData,
+    shippingMetadataSource,
     profileHasWeightDefault: Boolean(profileWeight),
     profileHasDimensionDefaults,
-    needsShippingProfile: normalized.usedFallback || !packageWeightOz,
+    needsShippingProfile: !hasCompleteProductPackageData && (normalized.usedFallback || !packageWeightOz),
     missingDimensions
   };
 }
@@ -624,6 +654,7 @@ function packedCartPackage(
         selectedProfile: profileKey,
         selectedProfileLabel: effectivePackage.profileDefinition.label,
         fallbackProfileUsed: effectivePackage.needsShippingProfile,
+        shippingMetadataSource: effectivePackage.shippingMetadataSource,
         categoryMinimumProfile: effectivePackage.categoryMinimumProfile,
         packageWeightOz: effectivePackage.packageWeightOz,
         packageDimensions: {
@@ -650,6 +681,7 @@ function packedCartPackage(
       selectedProfile: profileKey,
       selectedProfileLabel: effectivePackage.profileDefinition.label,
       fallbackProfileUsed: effectivePackage.needsShippingProfile,
+      shippingMetadataSource: effectivePackage.shippingMetadataSource,
       categoryMinimumProfile: effectivePackage.categoryMinimumProfile,
       packageWeightOz: effectivePackage.packageWeightOz,
       packageDimensions: {
@@ -762,6 +794,7 @@ export function explainCartShippingCalculation(
         packageLengthIn: effectivePackage.packageLengthIn,
         packageWidthIn: effectivePackage.packageWidthIn,
         packageHeightIn: effectivePackage.packageHeightIn,
+        shippingMetadataSource: item.shippingMetadataSource ?? null,
         category: item.category ?? null,
         storefrontCategory: item.storefrontCategory ?? null
       };

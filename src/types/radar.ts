@@ -183,6 +183,7 @@ export type InventoryItemDTO = {
   packageLengthIn: number | null;
   packageWidthIn: number | null;
   packageHeightIn: number | null;
+  shippingMetadataSource: string | null;
   freeShippingEligible: boolean;
   localPickupEligible: boolean;
   requiresBox: boolean;
@@ -238,6 +239,7 @@ export type PublicStoreProductDTO = {
   packageLengthIn: number | null;
   packageWidthIn: number | null;
   packageHeightIn: number | null;
+  shippingMetadataSource: string | null;
   freeShippingEligible: boolean;
   requiresBox: boolean;
   insuranceRecommended: boolean;

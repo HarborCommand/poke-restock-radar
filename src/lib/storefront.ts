@@ -324,6 +324,7 @@ export function publicProductToDTO(
     packageLengthIn: effectivePackage.packageLengthIn,
     packageWidthIn: effectivePackage.packageWidthIn,
     packageHeightIn: effectivePackage.packageHeightIn,
+    shippingMetadataSource: item.shippingMetadataSource,
     freeShippingEligible: item.freeShippingEligible,
     requiresBox: item.requiresBox,
     insuranceRecommended: item.insuranceRecommended,
@@ -1065,6 +1066,7 @@ function shippingCartHash(
         packageLengthIn: item.packageLengthIn,
         packageWidthIn: item.packageWidthIn,
         packageHeightIn: item.packageHeightIn,
+        shippingMetadataSource: item.shippingMetadataSource,
         shippingAvailable: item.shippingAvailable,
         localPickupAvailable: item.localPickupAvailable,
         freeShippingEligible: item.freeShippingEligible,
@@ -2926,6 +2928,7 @@ export async function updateInventoryStoreListing(
     packageLengthIn?: number | null;
     packageWidthIn?: number | null;
     packageHeightIn?: number | null;
+    shippingMetadataSource?: string | null;
     freeShippingEligible?: boolean;
     requiresBox?: boolean;
     insuranceRecommended?: boolean;
@@ -2992,6 +2995,7 @@ export async function updateInventoryStoreListing(
       packageLengthIn: input.packageLengthIn,
       packageWidthIn: input.packageWidthIn,
       packageHeightIn: input.packageHeightIn,
+      shippingMetadataSource: input.shippingMetadataSource,
       freeShippingEligible: input.freeShippingEligible,
       requiresBox: input.requiresBox,
       insuranceRecommended: input.insuranceRecommended,
@@ -3066,6 +3070,7 @@ export async function bulkPublishInventoryStoreListings(
         packageLengthIn: item.packageLengthIn,
         packageWidthIn: item.packageWidthIn,
         packageHeightIn: item.packageHeightIn,
+        shippingMetadataSource: item.shippingMetadataSource,
         freeShippingEligible: item.freeShippingEligible,
         requiresBox: item.requiresBox,
         insuranceRecommended: item.insuranceRecommended,
