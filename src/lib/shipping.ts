@@ -50,6 +50,8 @@ export type ShippingCalculation = {
   packageLengthIn: number | null;
   packageWidthIn: number | null;
   packageHeightIn: number | null;
+  packageVolumeIn: number;
+  packageCubicFeet: number;
   shippingOptions: ShippingOption[];
   defaultShippingOption: ShippingOption | null;
   warnings: string[];
@@ -89,10 +91,12 @@ export type EffectiveShippingPackageData = {
 };
 
 const safeFallbackProfile: ShippingProfileKey = "small_box";
-export const shippingFormulaVersion = "packed-box-tiers-v2";
+export const shippingFormulaVersion = "fit-box-packing-v3";
+export const shippingFallbackProfileVersion = "tcg-retail-fallbacks-v1";
 
 export type ShippingCalculationAudit = {
   formulaVersion: string;
+  fallbackProfileVersion: string;
   lineCount: number;
   totalUnits: number;
   items: Array<{
@@ -115,6 +119,8 @@ export type ShippingCalculationAudit = {
   selectedPackageTier: string;
   selectedPackageTierLabel: string;
   selectedPackageDimensions: { lengthIn: number | null; widthIn: number | null; heightIn: number | null };
+  selectedPackageVolumeIn: number;
+  selectedPackageCubicFeet: number;
   actualPackedWeightOz: number;
   dimensionalWeightOz: number;
   billableWeightOz: number;
@@ -131,6 +137,13 @@ export type ShippingCalculationAudit = {
     category: string | null;
     storefrontCategory: string | null;
   }>;
+  shippoParcelPayload: {
+    weightOz: number;
+    lengthIn: number | null;
+    widthIn: number | null;
+    heightIn: number | null;
+    profileKey: string;
+  };
 };
 
 type ShippingPackageTier = {
@@ -145,12 +158,15 @@ type ShippingPackageTier = {
 };
 
 const shippingPackageTiers: ShippingPackageTier[] = [
-  { key: "small_padded_mailer", label: "Small Padded Mailer", profileKey: "sealed_pack_small", lengthIn: 10, widthIn: 7, heightIn: 2, maxWeightOz: 8, packingWeightOz: 1 },
-  { key: "small_box", label: "Small Box", profileKey: "small_box", lengthIn: 9, widthIn: 7, heightIn: 5, maxWeightOz: 16, packingWeightOz: 2 },
-  { key: "medium_box", label: "Medium Box", profileKey: "medium_box", lengthIn: 12, widthIn: 9, heightIn: 7, maxWeightOz: 48, packingWeightOz: 3.5 },
-  { key: "large_box", label: "Large Box", profileKey: "large_box", lengthIn: 15, widthIn: 12, heightIn: 9, maxWeightOz: 96, packingWeightOz: 5 },
-  { key: "extra_large_box", label: "Extra-Large Box", profileKey: "heavy_box", lengthIn: 18, widthIn: 14, heightIn: 12, maxWeightOz: 160, packingWeightOz: 8 },
-  { key: "heavy_box", label: "Heavy Box", profileKey: "heavy_box", lengthIn: 22, widthIn: 16, heightIn: 14, maxWeightOz: 320, packingWeightOz: 10 }
+  { key: "padded_mailer", label: "Padded Mailer", profileKey: "sealed_pack_small", lengthIn: 10, widthIn: 8, heightIn: 2, maxWeightOz: 12, packingWeightOz: 1 },
+  { key: "box_10x8x4", label: "10 x 8 x 4 Box", profileKey: "small_box", lengthIn: 10, widthIn: 8, heightIn: 4, maxWeightOz: 24, packingWeightOz: 2 },
+  { key: "box_12x9x4", label: "12 x 9 x 4 Box", profileKey: "small_box", lengthIn: 12, widthIn: 9, heightIn: 4, maxWeightOz: 48, packingWeightOz: 3 },
+  { key: "box_14x10x6", label: "14 x 10 x 6 Box", profileKey: "medium_box", lengthIn: 14, widthIn: 10, heightIn: 6, maxWeightOz: 80, packingWeightOz: 4 },
+  { key: "box_16x12x4", label: "16 x 12 x 4 Box", profileKey: "medium_box", lengthIn: 16, widthIn: 12, heightIn: 4, maxWeightOz: 80, packingWeightOz: 4.5 },
+  { key: "box_16x12x8", label: "16 x 12 x 8 Box", profileKey: "large_box", lengthIn: 16, widthIn: 12, heightIn: 8, maxWeightOz: 128, packingWeightOz: 6 },
+  { key: "box_18x12x8", label: "18 x 12 x 8 Box", profileKey: "large_box", lengthIn: 18, widthIn: 12, heightIn: 8, maxWeightOz: 160, packingWeightOz: 7 },
+  { key: "box_20x14x10", label: "20 x 14 x 10 Box", profileKey: "heavy_box", lengthIn: 20, widthIn: 14, heightIn: 10, maxWeightOz: 240, packingWeightOz: 9 },
+  { key: "box_22x16x14", label: "22 x 16 x 14 Box", profileKey: "heavy_box", lengthIn: 22, widthIn: 16, heightIn: 14, maxWeightOz: 320, packingWeightOz: 10 }
 ];
 
 export const shippingProfiles: Record<ShippingProfileKey, ShippingProfileDefinition> = {
@@ -322,11 +338,86 @@ function categoryMinimumProfile(
 
   if (/\b(single|graded|raw)\s+cards?\b/.test(signals)) return "single_card_or_light_item";
   if (/\b(booster\s+boxes?|ultra\s+premium|premium\s+collections?|collections?|collection\s+boxes?|illustration\s+collection|boxed\s+sets?)\b/.test(signals)) {
-    return "large_box";
+    return "medium_box";
   }
-  if (/\b(elite\s+trainer|etbs?|booster\s+bundles?|tins?|mini\s+tins?)\b/.test(signals)) return "medium_box";
+  if (/\b(elite\s+trainer|etbs?)\b/.test(signals)) return "medium_box";
+  if (/\b(booster\s+bundles?|tins?|mini\s+tins?)\b/.test(signals)) return "small_box";
   if (/\b(blisters?|checklane|sleeved\s+boosters?|sealed\s+packs?|packs?)\b/.test(signals)) return "sealed_pack_small";
   return null;
+}
+
+type CategoryFallbackPackage = {
+  profileKey: ShippingProfileKey;
+  weightOz: number;
+  lengthIn: number;
+  widthIn: number;
+  heightIn: number;
+};
+
+function categoryFallbackPackage(
+  item: Pick<ShippingCartItem, "category" | "storefrontCategory" | "title" | "itemName">
+): CategoryFallbackPackage | null {
+  const signals = normalizedSearchSignals(item);
+
+  if (/\b(single|graded|raw)\s+cards?\b/.test(signals)) {
+    return { profileKey: "single_card_or_light_item", weightOz: 4, lengthIn: 6, widthIn: 4, heightIn: 1 };
+  }
+  if (/\b(booster\s+boxes?)\b/.test(signals)) {
+    return { profileKey: "medium_box", weightOz: 28, lengthIn: 6, widthIn: 5, heightIn: 5 };
+  }
+  if (/\b(elite\s+trainer|etbs?)\b/.test(signals)) {
+    return { profileKey: "medium_box", weightOz: 26, lengthIn: 8, widthIn: 7, heightIn: 4 };
+  }
+  if (/\b(ultra\s+premium|premium\s+collections?|collections?|collection\s+boxes?|illustration\s+collection|boxed\s+sets?)\b/.test(signals)) {
+    return { profileKey: "medium_box", weightOz: 18, lengthIn: 15, widthIn: 10, heightIn: 2 };
+  }
+  if (/\b(booster\s+bundles?)\b/.test(signals)) {
+    return { profileKey: "small_box", weightOz: 6, lengthIn: 5, widthIn: 3, heightIn: 3 };
+  }
+  if (/\b(tins?|mini\s+tins?)\b/.test(signals)) {
+    return { profileKey: "small_box", weightOz: 10, lengthIn: 7, widthIn: 5, heightIn: 3 };
+  }
+  if (/\b(three|3)[-\s]?booster\s+blisters?\b/.test(signals)) {
+    return { profileKey: "sealed_pack_small", weightOz: 6, lengthIn: 11, widthIn: 8, heightIn: 1 };
+  }
+  if (/\b(blisters?|checklane)\b/.test(signals)) {
+    return { profileKey: "sealed_pack_small", weightOz: 5, lengthIn: 9, widthIn: 7, heightIn: 1 };
+  }
+  if (/\b(sleeved\s+boosters?|sealed\s+packs?|packs?)\b/.test(signals)) {
+    return { profileKey: "sealed_pack_small", weightOz: 4, lengthIn: 8, widthIn: 5, heightIn: 1 };
+  }
+  return null;
+}
+
+function packageVolume(lengthIn: number | null | undefined, widthIn: number | null | undefined, heightIn: number | null | undefined) {
+  return lengthIn && widthIn && heightIn ? lengthIn * widthIn * heightIn : 0;
+}
+
+function categoryFallbackShouldReplaceDimensions(
+  item: Pick<ShippingCartItem, "category" | "storefrontCategory" | "title" | "itemName">,
+  fallback: CategoryFallbackPackage | null,
+  dimensions: { lengthIn: number | null; widthIn: number | null; heightIn: number | null }
+) {
+  if (!fallback || !dimensions.lengthIn || !dimensions.widthIn || !dimensions.heightIn) return false;
+  const signals = normalizedSearchSignals(item);
+  const current = orientedDimensions(dimensions.lengthIn, dimensions.widthIn, dimensions.heightIn);
+  const fallbackOriented = orientedDimensions(fallback.lengthIn, fallback.widthIn, fallback.heightIn);
+  if (!current || !fallbackOriented) return false;
+
+  const currentVolume = packageVolume(current.length, current.width, current.height);
+  const fallbackVolume = packageVolume(fallbackOriented.length, fallbackOriented.width, fallbackOriented.height);
+  if (!currentVolume || !fallbackVolume) return false;
+
+  if (/\b(blisters?|checklane|sleeved\s+boosters?|sealed\s+packs?|packs?)\b/.test(signals)) {
+    return current.height > 2.5 || currentVolume > fallbackVolume * 3;
+  }
+  if (/\b(booster\s+bundles?|tins?|mini\s+tins?)\b/.test(signals)) {
+    return current.height > 5 || currentVolume > fallbackVolume * 5;
+  }
+  if (/\b(premium\s+collections?|collections?|collection\s+boxes?|illustration\s+collection|boxed\s+sets?)\b/.test(signals)) {
+    return current.height > 5 || currentVolume > fallbackVolume * 4;
+  }
+  return false;
 }
 
 export function effectiveShippingPackageData(
@@ -347,7 +438,8 @@ export function effectiveShippingPackageData(
   const definitions = shippingProfileDefinitionMap(profileDefinitions);
   const normalized = normalizeShippingProfile(item.shippingProfile, definitions);
   const minimumProfile = categoryMinimumProfile(item);
-  const baseProfileKey = normalized.usedFallback ? minimumProfile ?? safeFallbackProfile : normalized.profile;
+  const fallbackPackage = categoryFallbackPackage(item);
+  const baseProfileKey = normalized.usedFallback ? fallbackPackage?.profileKey ?? minimumProfile ?? safeFallbackProfile : normalized.profile;
   const categoryCanRaiseProfile = normalized.usedFallback || normalized.profile in shippingProfiles;
   const profileKey = minimumProfile && categoryCanRaiseProfile ? higherRankProfile(definitions, baseProfileKey, minimumProfile) : baseProfileKey;
   const profileDefinition = definitions[profileKey] ?? shippingProfiles[safeFallbackProfile];
@@ -359,10 +451,19 @@ export function effectiveShippingPackageData(
   const profileLength = packageDimension(profileDefinition.packageLengthIn);
   const profileWidth = packageDimension(profileDefinition.packageWidthIn);
   const profileHeight = packageDimension(profileDefinition.packageHeightIn);
-  const packageWeightOz = itemWeight ?? profileWeight;
-  const packageLengthIn = itemLength ?? profileLength;
-  const packageWidthIn = itemWidth ?? profileWidth;
-  const packageHeightIn = itemHeight ?? profileHeight;
+  const replaceDimensions = categoryFallbackShouldReplaceDimensions(item, fallbackPackage, {
+    lengthIn: itemLength,
+    widthIn: itemWidth,
+    heightIn: itemHeight
+  });
+  const fallbackWeight = normalized.usedFallback ? fallbackPackage?.weightOz : null;
+  const fallbackLength = normalized.usedFallback || replaceDimensions ? fallbackPackage?.lengthIn : null;
+  const fallbackWidth = normalized.usedFallback || replaceDimensions ? fallbackPackage?.widthIn : null;
+  const fallbackHeight = normalized.usedFallback || replaceDimensions ? fallbackPackage?.heightIn : null;
+  const packageWeightOz = itemWeight ?? fallbackWeight ?? profileWeight;
+  const packageLengthIn = replaceDimensions ? fallbackLength ?? null : itemLength ?? fallbackLength ?? profileLength;
+  const packageWidthIn = replaceDimensions ? fallbackWidth ?? null : itemWidth ?? fallbackWidth ?? profileWidth;
+  const packageHeightIn = replaceDimensions ? fallbackHeight ?? null : itemHeight ?? fallbackHeight ?? profileHeight;
   const profileHasDimensionDefaults = Boolean(profileLength && profileWidth && profileHeight);
   const missingDimensions = !packageLengthIn || !packageWidthIn || !packageHeightIn;
 
@@ -438,6 +539,8 @@ type PackedCartPackage = {
   actualWeightOz: number;
   dimensionalWeightOz: number;
   billableWeightOz: number;
+  packageVolumeIn: number;
+  packageCubicFeet: number;
   packageProfile: string;
   packageTierKey: string;
   packageTierLabel: string;
@@ -452,26 +555,25 @@ type PackedCartPackage = {
 function selectPackageTier(input: {
   requiredLengthIn: number;
   requiredWidthIn: number;
-  requiredHeightIn: number;
+  minimumItemHeightIn: number;
   totalVolumeIn: number;
   totalItemWeightOz: number;
   totalUnits: number;
-  requiredProfile: string;
-  profileDefinitions: Record<string, ShippingProfileDefinition>;
+  requiresRigidBox: boolean;
 }) {
-  const requiredRank = profileRank(input.profileDefinitions, input.requiredProfile);
-  const volumeWithVoidFill = input.totalVolumeIn * 1.2;
+  const volumeWithVoidFill = input.totalVolumeIn * (input.totalUnits <= 1 ? 1.15 : 1.2);
 
   return (
     shippingPackageTiers.find((tier) => {
       const tierVolume = tier.lengthIn * tier.widthIn * tier.heightIn;
+      const estimatedHeightIn = Math.max(input.minimumItemHeightIn, volumeWithVoidFill / (tier.lengthIn * tier.widthIn));
       return (
-        profileRank(input.profileDefinitions, tier.profileKey) >= requiredRank &&
+        (!input.requiresRigidBox || tier.key !== "padded_mailer") &&
         tier.lengthIn >= input.requiredLengthIn &&
         tier.widthIn >= input.requiredWidthIn &&
-        tier.heightIn >= input.requiredHeightIn &&
+        tier.heightIn >= estimatedHeightIn &&
         tierVolume >= volumeWithVoidFill &&
-        input.totalItemWeightOz + (input.totalUnits > 1 ? tier.packingWeightOz : 0) <= tier.maxWeightOz
+        input.totalItemWeightOz + tier.packingWeightOz <= tier.maxWeightOz
       );
     }) ?? shippingPackageTiers[shippingPackageTiers.length - 1]
   );
@@ -490,7 +592,7 @@ function packedCartPackage(
   let maxWidthIn = 0;
   let maxHeightIn = 0;
   let totalVolumeIn = 0;
-  let cumulativeHeightIn = 0;
+  let requiresRigidBox = false;
   const auditItems: PackedCartAuditItem[] = [];
 
   for (const item of cartItems) {
@@ -508,14 +610,8 @@ function packedCartPackage(
     const lineWeightOz = roundedWeight(profileWeightOz * quantity);
     totalItemWeightOz += lineWeightOz;
     fallbackProfileUsed ||= effectivePackage.needsShippingProfile;
-    packageProfile =
-      cartItems.length === 1 && quantity === 1
-        ? profileKey
-        : higherRankProfile(profileDefinitions, packageProfile, profileKey);
-
-    if (item.requiresBox) {
-      packageProfile = higherRankProfile(profileDefinitions, packageProfile, "small_box");
-    }
+    packageProfile = higherRankProfile(profileDefinitions, packageProfile, profileKey);
+    requiresRigidBox ||= Boolean(item.requiresBox || effectivePackage.profileDefinition.requiresBox);
 
     if (!dimensions) {
       missingDimensions = true;
@@ -544,7 +640,6 @@ function packedCartPackage(
     maxLengthIn = Math.max(maxLengthIn, dimensions.length);
     maxWidthIn = Math.max(maxWidthIn, dimensions.width);
     maxHeightIn = Math.max(maxHeightIn, dimensions.height);
-    cumulativeHeightIn += dimensions.height * quantity;
     totalVolumeIn += dimensions.length * dimensions.width * dimensions.height * quantity;
     auditItems.push({
       id: item.id ?? null,
@@ -568,43 +663,33 @@ function packedCartPackage(
   }
 
   totalItemWeightOz = roundedWeight(totalItemWeightOz);
-  if (totalUnits > 1) {
-    packageProfile = higherRankProfile(profileDefinitions, packageProfile, profileForPackedWeight(totalItemWeightOz));
-  }
 
-  const requiredLengthIn = maxLengthIn ? roundUpDimension(maxLengthIn + 1) : 0;
-  const requiredWidthIn = maxWidthIn ? roundUpDimension(maxWidthIn + 1) : 0;
-  const requiredHeightIn =
-    maxHeightIn && totalUnits > 1
-      ? roundUpDimension(Math.max(maxHeightIn + 1, Math.min(cumulativeHeightIn + 1, maxHeightIn + totalUnits)))
-      : maxHeightIn;
-  const useSingleItemPackage = !missingDimensions && totalUnits === 1;
+  const paddingIn = totalUnits <= 1 ? 0.5 : 1;
+  const requiredLengthIn = maxLengthIn ? roundUpDimension(maxLengthIn + paddingIn) : 0;
+  const requiredWidthIn = maxWidthIn ? roundUpDimension(maxWidthIn + paddingIn) : 0;
+  const minimumItemHeightIn = maxHeightIn ? roundUpDimension(maxHeightIn + paddingIn) : 0;
   const tier =
-    missingDimensions || totalUnits === 0 || useSingleItemPackage
+    missingDimensions || totalUnits === 0
       ? null
       : selectPackageTier({
           requiredLengthIn,
           requiredWidthIn,
-          requiredHeightIn,
+          minimumItemHeightIn,
           totalVolumeIn,
           totalItemWeightOz,
           totalUnits,
-          requiredProfile: packageProfile,
-          profileDefinitions
+          requiresRigidBox
         });
   const tierProfile = tier?.profileKey ?? packageProfile;
-  const packingWeightOz = tier && totalUnits > 1 ? tier.packingWeightOz : 0;
+  const packingWeightOz = tier ? tier.packingWeightOz : 0;
   const actualWeightOz = roundedWeight(totalItemWeightOz + packingWeightOz);
-  const packageLengthIn = useSingleItemPackage ? maxLengthIn : tier?.lengthIn ?? null;
-  const packageWidthIn = useSingleItemPackage ? maxWidthIn : tier?.widthIn ?? null;
-  const packageHeightIn = useSingleItemPackage ? maxHeightIn : tier?.heightIn ?? null;
+  const packageLengthIn = tier?.lengthIn ?? null;
+  const packageWidthIn = tier?.widthIn ?? null;
+  const packageHeightIn = tier?.heightIn ?? null;
   const calculatedDimensionalWeightOz = dimensionalWeightOz(packageLengthIn, packageWidthIn, packageHeightIn);
   const billableWeightOz = Math.max(actualWeightOz, calculatedDimensionalWeightOz);
-  const finalPackageProfile = higherRankProfile(
-    profileDefinitions,
-    higherRankProfile(profileDefinitions, packageProfile, tierProfile),
-    profileForPackedWeight(billableWeightOz)
-  );
+  const finalPackageProfile = tierProfile || profileForPackedWeight(billableWeightOz);
+  const finalPackageVolumeIn = packageVolume(packageLengthIn, packageWidthIn, packageHeightIn);
 
   return {
     totalUnits,
@@ -613,9 +698,11 @@ function packedCartPackage(
     actualWeightOz,
     dimensionalWeightOz: calculatedDimensionalWeightOz,
     billableWeightOz,
+    packageVolumeIn: finalPackageVolumeIn,
+    packageCubicFeet: finalPackageVolumeIn ? Math.round((finalPackageVolumeIn / 1728) * 1000) / 1000 : 0,
     packageProfile: finalPackageProfile,
-    packageTierKey: useSingleItemPackage ? "single_item_package" : tier?.key ?? "missing_package_data",
-    packageTierLabel: useSingleItemPackage ? "Single Item Package" : tier?.label ?? "Missing Package Data",
+    packageTierKey: tier?.key ?? "missing_package_data",
+    packageTierLabel: tier?.label ?? "Missing Package Data",
     packageLengthIn,
     packageWidthIn,
     packageHeightIn,
@@ -645,6 +732,7 @@ export function explainCartShippingCalculation(
 
   return {
     formulaVersion: shippingFormulaVersion,
+    fallbackProfileVersion: shippingFallbackProfileVersion,
     lineCount: cartItems.length,
     totalUnits: packedPackage.totalUnits,
     items: packedPackage.auditItems,
@@ -657,22 +745,34 @@ export function explainCartShippingCalculation(
       widthIn: packedPackage.packageWidthIn,
       heightIn: packedPackage.packageHeightIn
     },
+    selectedPackageVolumeIn: packedPackage.packageVolumeIn,
+    selectedPackageCubicFeet: packedPackage.packageCubicFeet,
     actualPackedWeightOz: packedPackage.actualWeightOz,
     dimensionalWeightOz: packedPackage.dimensionalWeightOz,
     billableWeightOz: packedPackage.billableWeightOz,
     fallbackProfileUsed: packedPackage.fallbackProfileUsed,
     missingDimensions: packedPackage.missingDimensions,
-    cacheRelevantFields: cartItems.map((item) => ({
-      id: item.id ?? null,
-      quantity: quantityForItem(item),
-      shippingProfile: item.shippingProfile ?? null,
-      packageWeightOz: item.packageWeightOz ?? null,
-      packageLengthIn: item.packageLengthIn ?? null,
-      packageWidthIn: item.packageWidthIn ?? null,
-      packageHeightIn: item.packageHeightIn ?? null,
-      category: item.category ?? null,
-      storefrontCategory: item.storefrontCategory ?? null
-    }))
+    cacheRelevantFields: cartItems.map((item) => {
+      const effectivePackage = effectiveShippingPackageData(item, profileDefinitions);
+      return {
+        id: item.id ?? null,
+        quantity: quantityForItem(item),
+        shippingProfile: item.shippingProfile ?? null,
+        packageWeightOz: effectivePackage.packageWeightOz,
+        packageLengthIn: effectivePackage.packageLengthIn,
+        packageWidthIn: effectivePackage.packageWidthIn,
+        packageHeightIn: effectivePackage.packageHeightIn,
+        category: item.category ?? null,
+        storefrontCategory: item.storefrontCategory ?? null
+      };
+    }),
+    shippoParcelPayload: {
+      weightOz: packedPackage.actualWeightOz,
+      lengthIn: packedPackage.packageLengthIn,
+      widthIn: packedPackage.packageWidthIn,
+      heightIn: packedPackage.packageHeightIn,
+      profileKey: packedPackage.packageProfile
+    }
   };
 }
 
@@ -770,6 +870,8 @@ export function calculateCartShipping(
     packageLengthIn,
     packageWidthIn,
     packageHeightIn,
+    packageVolumeIn: packedPackage.packageVolumeIn,
+    packageCubicFeet: packedPackage.packageCubicFeet,
     shippingOptions,
     defaultShippingOption,
     warnings: [...warnings],

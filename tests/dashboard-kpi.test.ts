@@ -2170,7 +2170,7 @@ test("checkout shipping uses persisted active profiles while preserving hardcode
   assert.match(shipping, /shippingProfileDefinitionMap\(options\.profileDefinitions \?\? \{\}\)/);
   assert.match(shipping, /normalizeShippingProfile\(item\.shippingProfile, definitions\)/);
   assert.match(shipping, /effectiveShippingPackageData/);
-  assert.match(shipping, /packageWeightOz = itemWeight \?\? profileWeight/);
+  assert.match(shipping, /packageWeightOz = itemWeight \?\? fallbackWeight \?\? profileWeight/);
   assert.match(shipping, /One or more items need a shipping profile; using a safe package fallback\./);
   assert.match(profiles, /where: \{ active: true \}/);
   assert.match(profiles, /shippingProfileToDefinition/);

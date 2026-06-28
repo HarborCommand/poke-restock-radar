@@ -96,7 +96,7 @@ test("product structured data renders safe Product and Offer fields only", () =>
   assert.equal(jsonLd.offers.shippingDetails["@type"], "OfferShippingDetails");
   assert.equal(jsonLd.offers.shippingDetails.shippingDestination.addressCountry, "US");
   assert.equal(jsonLd.offers.shippingDetails.shippingRate.currency, "USD");
-  assert.equal(jsonLd.offers.shippingDetails.shippingRate.value, "5.99");
+  assert.equal(jsonLd.offers.shippingDetails.shippingRate.value, "7.99");
   assert.notEqual(jsonLd.offers.shippingDetails.shippingRate.value, "0.00");
   assert.deepEqual(jsonLd.offers.shippingDetails.deliveryTime.businessDays.dayOfWeek, [
     "https://schema.org/Monday",
