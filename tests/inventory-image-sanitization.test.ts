@@ -327,6 +327,10 @@ test("admin shipping profile selection is guarded against missing profile data",
   assert.match(helperSource, /Array\.isArray\(shippingProfiles\)/);
   assert.match(appSource, /function shippingProfileRecordMap\(shippingProfiles: ShippingProfileDTO\[\] \| null \| undefined = \[\]\)/);
   assert.match(appSource, /safeShippingProfiles\(shippingProfiles\)\.map/);
+  assert.match(appSource, /function shippingMetadataDraftText\(value: unknown\)/);
+  assert.match(appSource, /function shippingMetadataDraftWithNumberField\(draft: ShippingMetadataDraft, field: ShippingMetadataNumberField, value: unknown\): ShippingMetadataDraft/);
+  assert.match(appSource, /draftShippingNumber\(value: unknown\)/);
+  assert.match(appSource, /shippingMetadataDraftText\(value\)\.trim\(\)/);
   assert.doesNotMatch(appSource, /profile\.key\.trim\(\)/);
   assert.match(appSource, /selectedProfileUnavailable: Boolean\(selectedProfileKey && selectedProfileKey !== "standard" && !profile\)/);
   assert.match(appSource, /Selected shipping profile is unavailable\./);
@@ -334,9 +338,17 @@ test("admin shipping profile selection is guarded against missing profile data",
   assert.match(appSource, /shippingProfile: safeShippingProfileKey\(draft\.shippingProfile\) \|\| "standard"/);
   assert.match(productShippingModal, /const nextShippingProfile = safeShippingProfileKey\(event\.currentTarget\.value\) \|\| "standard"/);
   assert.match(productShippingModal, /setShippingDraft\(\(draft\) => \(\{ \.\.\.draft, shippingProfile: nextShippingProfile \}\)\)/);
+  assert.match(productShippingModal, /shippingMetadataDraftWithNumberField\(draft, "packageWeightOz", event\.currentTarget\.value\)/);
+  assert.match(productShippingModal, /shippingMetadataDraftWithNumberField\(draft, "packageLengthIn", event\.currentTarget\.value\)/);
+  assert.match(productShippingModal, /shippingMetadataDraftWithNumberField\(draft, "packageWidthIn", event\.currentTarget\.value\)/);
+  assert.match(productShippingModal, /shippingMetadataDraftWithNumberField\(draft, "packageHeightIn", event\.currentTarget\.value\)/);
   assert.doesNotMatch(productShippingModal, /setShippingDraft\(\(draft\) => \(\{ \.\.\.draft, shippingProfile: safeShippingProfileKey\(event\.currentTarget\.value\)/);
   assert.match(listingModal, /const nextShippingProfile = safeShippingProfileKey\(event\.currentTarget\.value\) \|\| "standard"/);
   assert.match(listingModal, /setShippingDraft\(\(draft\) => \(\{ \.\.\.draft, shippingProfile: nextShippingProfile \}\)\)/);
+  assert.match(listingModal, /shippingMetadataDraftWithNumberField\(draft, "packageWeightOz", event\.currentTarget\.value\)/);
+  assert.match(listingModal, /shippingMetadataDraftWithNumberField\(draft, "packageLengthIn", event\.currentTarget\.value\)/);
+  assert.match(listingModal, /shippingMetadataDraftWithNumberField\(draft, "packageWidthIn", event\.currentTarget\.value\)/);
+  assert.match(listingModal, /shippingMetadataDraftWithNumberField\(draft, "packageHeightIn", event\.currentTarget\.value\)/);
   assert.doesNotMatch(listingModal, /setShippingDraft\(\(draft\) => \(\{ \.\.\.draft, shippingProfile: safeShippingProfileKey\(event\.currentTarget\.value\)/);
 });
 
@@ -477,6 +489,22 @@ test("store listing save path persists shipping metadata without stock quantity 
   assert.equal(blankLimit.maxQuantityPerOrder, null);
   assert.equal(blankLimit.shippingMetadataSource, null);
 
+  const blankPackageFields = inventoryStoreListingSchema.parse({
+    publishToStore: false,
+    shippingProfile: "small_box",
+    packageWeightOz: "",
+    packageLengthIn: "",
+    packageWidthIn: "",
+    packageHeightIn: "",
+    shippingMetadataSource: "estimated",
+    storeStatus: "draft"
+  });
+  assert.equal(blankPackageFields.packageWeightOz, null);
+  assert.equal(blankPackageFields.packageLengthIn, null);
+  assert.equal(blankPackageFields.packageWidthIn, null);
+  assert.equal(blankPackageFields.packageHeightIn, null);
+  assert.equal(blankPackageFields.shippingMetadataSource, null);
+
   const defaultSource = inventoryStoreListingSchema.parse({
     publishToStore: false,
     shippingProfile: "small_box",
@@ -488,6 +516,36 @@ test("store listing save path persists shipping metadata without stock quantity 
   });
   assert.equal(defaultSource.shippingMetadataSource, "estimated");
 
+  assert.throws(
+    () =>
+      inventoryStoreListingSchema.parse({
+        publishToStore: false,
+        shippingProfile: "small_box",
+        packageWeightOz: "abc",
+        storeStatus: "draft"
+      }),
+    /Expected number|Invalid input|received nan|NaN/
+  );
+  assert.throws(
+    () =>
+      inventoryStoreListingSchema.parse({
+        publishToStore: false,
+        shippingProfile: "small_box",
+        packageWeightOz: "Infinity",
+        storeStatus: "draft"
+      }),
+    /Package weight must stay under 500 ounces|Expected number|Invalid input/
+  );
+  assert.throws(
+    () =>
+      inventoryStoreListingSchema.parse({
+        publishToStore: false,
+        shippingProfile: "small_box",
+        packageWeightOz: "-1",
+        storeStatus: "draft"
+      }),
+    /Package weight must be greater than 0 ounces/
+  );
   assert.throws(
     () =>
       inventoryStoreListingSchema.parse({
