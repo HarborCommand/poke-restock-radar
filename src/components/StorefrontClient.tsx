@@ -1845,6 +1845,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const quoteRequired = isStripeCheckout && calculatedShippingEnabled && fulfillmentMethod === "shipping";
   const quoteExpired = shippingQuote ? Date.parse(shippingQuote.expiresAt) <= quoteNow : false;
   const missingShippingQuote = quoteRequired && fulfillmentMethod === "shipping" && !hasBlockingStockIssue && (!shippingQuote || quoteExpired);
+  const quoteResetKey = JSON.stringify({ items, fulfillmentMethod });
+  const previousQuoteResetKey = useRef(quoteResetKey);
   const checkoutDisabled =
     busy ||
     quoteBusy ||
@@ -1855,9 +1857,12 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const cartIsLoading = items.length > 0 && !products.length && !message;
 
   useEffect(() => {
+    if (previousQuoteResetKey.current === quoteResetKey) return;
+    const hadQuote = Boolean(shippingQuote);
+    previousQuoteResetKey.current = quoteResetKey;
     setShippingQuote(null);
-    setShippingQuoteMessage("");
-  }, [items, fulfillmentMethod]);
+    setShippingQuoteMessage(hadQuote && fulfillmentMethod === "shipping" ? "Cart changed. Recalculate shipping." : "");
+  }, [fulfillmentMethod, quoteResetKey, shippingQuote]);
 
   useEffect(() => {
     if (!localPickupAvailable && fulfillmentMethod === "pickup") {

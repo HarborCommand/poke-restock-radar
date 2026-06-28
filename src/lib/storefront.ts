@@ -9,8 +9,10 @@ import { getSavedProductImageUrls } from "@/lib/product-images";
 import { emailProviderConfigured, sendEmailViaProvider, type EmailMessage, type EmailSendOptions } from "@/lib/email-provider";
 import {
   calculateCartShipping,
+  explainCartShippingCalculation,
   effectiveShippingPackageData,
   itemNeedsShippingProfile,
+  shippingFallbackProfileVersion,
   shippingFormulaVersion,
   shippingRatePackageFromCalculation,
   type ShippingCalculation,
@@ -1029,10 +1031,28 @@ function shippingQuoteToken() {
   return `ship_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 }
 
-function shippingCartHash(cart: CheckoutCartEntry[], destinationZip?: string | null) {
+function shippingCartHash(
+  cart: CheckoutCartEntry[],
+  destinationZip?: string | null,
+  profileDefinitions?: Record<string, ShippingProfileDefinition>
+) {
+  const shippingAudit = explainCartShippingCalculation(cart.map(({ item, quantity }) => ({ ...item, quantity })), { profileDefinitions });
   const payload = {
     formulaVersion: shippingFormulaVersion,
+    fallbackProfileVersion: shippingFallbackProfileVersion,
+    fulfillmentMethod: "shipping",
     destinationZip: String(destinationZip || "").replace(/\D/g, "").slice(0, 5),
+    parcel: {
+      tier: shippingAudit.selectedPackageTier,
+      weightOz: shippingAudit.actualPackedWeightOz,
+      dimensionalWeightOz: shippingAudit.dimensionalWeightOz,
+      billableWeightOz: shippingAudit.billableWeightOz,
+      lengthIn: shippingAudit.selectedPackageDimensions.lengthIn,
+      widthIn: shippingAudit.selectedPackageDimensions.widthIn,
+      heightIn: shippingAudit.selectedPackageDimensions.heightIn,
+      cubicFeet: shippingAudit.selectedPackageCubicFeet,
+      shippo: shippingAudit.shippoParcelPayload
+    },
     items: cart
       .map(({ item, product, quantity }) => ({
         id: item.id,
@@ -1184,7 +1204,7 @@ export async function createStorefrontShippingQuote(
       fallbackUsed: normalizedQuote.fallbackUsed,
       warning: normalizedQuote.warning,
       expiresAt: normalizedQuote.expiresAt,
-      cartHash: shippingCartHash(cart, input.destinationZip)
+      cartHash: shippingCartHash(cart, input.destinationZip, profileDefinitions)
     }
   });
   return {
@@ -1812,7 +1832,7 @@ export async function createCheckoutSession(input: {
     if (calculatedQuote.usedAt) {
       throw new Error("Shipping quote was already used. Recalculate USPS shipping.");
     }
-    if (calculatedQuote.cartHash !== shippingCartHash(cart, calculatedQuote.destinationZip)) {
+    if (calculatedQuote.cartHash !== shippingCartHash(cart, calculatedQuote.destinationZip, profileDefinitions)) {
       throw new Error("Cart changed after shipping was calculated. Recalculate USPS shipping.");
     }
     selectedShipping = shippingOptionFromQuote(calculatedQuote);
