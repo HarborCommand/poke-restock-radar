@@ -6646,22 +6646,34 @@ type ShippingMetadataDraft = {
   shippingMetadataSource: string;
 };
 
+type ShippingMetadataNumberField = "packageWeightOz" | "packageLengthIn" | "packageWidthIn" | "packageHeightIn";
+
+function shippingMetadataDraftText(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "string") return value;
+  return "";
+}
+
 function shippingMetadataDraftFromItem(item: InventoryItemDTO): ShippingMetadataDraft {
   return {
     shippingProfile: inventoryShippingProfileValue(item) || "standard",
-    packageWeightOz: item.packageWeightOz?.toString() ?? "",
-    packageLengthIn: item.packageLengthIn?.toString() ?? "",
-    packageWidthIn: item.packageWidthIn?.toString() ?? "",
-    packageHeightIn: item.packageHeightIn?.toString() ?? "",
+    packageWeightOz: shippingMetadataDraftText(item.packageWeightOz),
+    packageLengthIn: shippingMetadataDraftText(item.packageLengthIn),
+    packageWidthIn: shippingMetadataDraftText(item.packageWidthIn),
+    packageHeightIn: shippingMetadataDraftText(item.packageHeightIn),
     shippingMetadataSource: inventoryShippingMetadataSourceValue(item)
   };
 }
 
-function draftShippingNumber(value: string) {
-  const normalized = value.trim();
+function draftShippingNumber(value: unknown) {
+  const normalized = shippingMetadataDraftText(value).trim();
   if (!normalized) return null;
   const parsed = Number(normalized);
   return positiveInventoryNumber(parsed) ? parsed : null;
+}
+
+function shippingMetadataDraftWithNumberField(draft: ShippingMetadataDraft, field: ShippingMetadataNumberField, value: unknown): ShippingMetadataDraft {
+  return { ...draft, [field]: shippingMetadataDraftText(value) };
 }
 
 function inventoryItemWithShippingDraft(item: InventoryItemDTO, draft: ShippingMetadataDraft): InventoryItemDTO {
@@ -8189,10 +8201,10 @@ function ProductShippingEditorModal({
                 options={shippingMetadataSourceOptions}
               />
               <div className="shipping-package-grid">
-                <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0.1" max="500" step="0.1" value={shippingDraft.packageWeightOz} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageWeightOz: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "defaultWeightOz", "oz")} />
-                <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageLengthIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageLengthIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageLengthIn", "in")} />
-                <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageWidthIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageWidthIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageWidthIn", "in")} />
-                <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageHeightIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageHeightIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageHeightIn", "in")} />
+                <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0.1" max="500" step="0.1" value={shippingDraft.packageWeightOz} onChange={(event) => setShippingDraft((draft) => shippingMetadataDraftWithNumberField(draft, "packageWeightOz", event.currentTarget.value))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "defaultWeightOz", "oz")} />
+                <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageLengthIn} onChange={(event) => setShippingDraft((draft) => shippingMetadataDraftWithNumberField(draft, "packageLengthIn", event.currentTarget.value))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageLengthIn", "in")} />
+                <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageWidthIn} onChange={(event) => setShippingDraft((draft) => shippingMetadataDraftWithNumberField(draft, "packageWidthIn", event.currentTarget.value))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageWidthIn", "in")} />
+                <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageHeightIn} onChange={(event) => setShippingDraft((draft) => shippingMetadataDraftWithNumberField(draft, "packageHeightIn", event.currentTarget.value))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageHeightIn", "in")} />
               </div>
               <div className="shipping-option-grid">
                 <label className="shipping-toggle-card">
@@ -12861,10 +12873,10 @@ function StoreListingModal({
                   options={shippingMetadataSourceOptions}
                 />
                 <div className="shipping-package-grid">
-                  <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0.1" max="500" step="0.1" value={shippingDraft.packageWeightOz} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageWeightOz: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "defaultWeightOz", "oz")} />
-                  <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageLengthIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageLengthIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageLengthIn", "in")} />
-                  <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageWidthIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageWidthIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageWidthIn", "in")} />
-                  <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageHeightIn} onChange={(event) => setShippingDraft((draft) => ({ ...draft, packageHeightIn: event.currentTarget.value }))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageHeightIn", "in")} />
+                  <TextInput name="packageWeightOz" label="Weight in ounces" type="number" min="0.1" max="500" step="0.1" value={shippingDraft.packageWeightOz} onChange={(event) => setShippingDraft((draft) => shippingMetadataDraftWithNumberField(draft, "packageWeightOz", event.currentTarget.value))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "defaultWeightOz", "oz")} />
+                  <TextInput name="packageLengthIn" label="Length in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageLengthIn} onChange={(event) => setShippingDraft((draft) => shippingMetadataDraftWithNumberField(draft, "packageLengthIn", event.currentTarget.value))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageLengthIn", "in")} />
+                  <TextInput name="packageWidthIn" label="Width in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageWidthIn} onChange={(event) => setShippingDraft((draft) => shippingMetadataDraftWithNumberField(draft, "packageWidthIn", event.currentTarget.value))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageWidthIn", "in")} />
+                  <TextInput name="packageHeightIn" label="Height in inches" type="number" min="0.1" max="120" step="0.1" value={shippingDraft.packageHeightIn} onChange={(event) => setShippingDraft((draft) => shippingMetadataDraftWithNumberField(draft, "packageHeightIn", event.currentTarget.value))} placeholder={profileDefaultPlaceholder(selectedShippingProfile, "packageHeightIn", "in")} />
                 </div>
                 <div className="shipping-option-grid">
                   <label className="shipping-toggle-card">

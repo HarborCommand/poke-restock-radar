@@ -229,13 +229,23 @@ const optionalPackageNumber = z.preprocess(
 );
 
 const optionalProductPackageWeightOz = z.preprocess(
-  (value) => (value === "" || value === null || value === undefined ? undefined : value),
-  z.coerce.number().positive("Package weight must be greater than 0 ounces").max(500, "Package weight must stay under 500 ounces").optional()
+  (value) => (value === "" || value === null || value === undefined ? null : value),
+  z.coerce
+    .number()
+    .positive("Package weight must be greater than 0 ounces")
+    .max(500, "Package weight must stay under 500 ounces")
+    .nullable()
+    .optional()
 );
 
 const optionalProductPackageDimensionIn = z.preprocess(
-  (value) => (value === "" || value === null || value === undefined ? undefined : value),
-  z.coerce.number().positive("Package dimensions must be greater than 0 inches").max(120, "Package dimensions must stay under 120 inches").optional()
+  (value) => (value === "" || value === null || value === undefined ? null : value),
+  z.coerce
+    .number()
+    .positive("Package dimensions must be greater than 0 inches")
+    .max(120, "Package dimensions must stay under 120 inches")
+    .nullable()
+    .optional()
 );
 
 const requiredPackageWeight = z.coerce.number().nonnegative().max(500);
