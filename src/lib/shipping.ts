@@ -515,7 +515,7 @@ export function effectiveShippingPackageData(
   };
 }
 
-function rateForWeight(totalWeightOz: number) {
+export function rateForWeight(totalWeightOz: number) {
   if (totalWeightOz <= 8) return { amount: 4.99, label: "Standard Shipping", manualReview: false };
   if (totalWeightOz <= 16) return { amount: 5.99, label: "Standard Shipping", manualReview: false };
   if (totalWeightOz <= 32) return { amount: 7.99, label: "Boxed Shipping", manualReview: false };

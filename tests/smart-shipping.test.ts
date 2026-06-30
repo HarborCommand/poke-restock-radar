@@ -291,6 +291,88 @@ test("merchant shipping policy leaves carrier quotes above the server minimum un
   assert.equal(policyResult.quote.amountCents, 1299);
 });
 
+test("merchant shipping policy uses the server weight floor when a configured profile charge is too low", () => {
+  const result = calculateCartShipping(
+    [
+      shippableItem({
+        id: "ascended-heroes-booster-bundle",
+        title: "Pokemon TCG: Mega Evolution- Ascended Heroes Booster Bundle",
+        category: "Booster Bundles",
+        shippingProfile: "small_box",
+        packageWeightOz: 6,
+        packageLengthIn: 6,
+        packageWidthIn: 4,
+        packageHeightIn: 2
+      }),
+      shippableItem({
+        id: "mega-zygarde-premium-collection",
+        title: "Pokemon Trading Card Game: Mega Zygarde ex Premium Collection",
+        category: "Premium Collections",
+        shippingProfile: "medium_box",
+        packageWeightOz: 16,
+        packageLengthIn: 9,
+        packageWidthIn: 15,
+        packageHeightIn: 1
+      }),
+      shippableItem({
+        id: "mega-moonlit-tin",
+        title: "Pokemon TCG: Mega Moonlit Tin",
+        category: "Tins",
+        shippingProfile: "regular_tin",
+        packageWeightOz: 10,
+        packageLengthIn: 7,
+        packageWidthIn: 3,
+        packageHeightIn: 5
+      }),
+      shippableItem({
+        id: "makuhita-checklane",
+        title: "Pokemon Perfect Order (Makuhita) Checklane",
+        category: "Blisters",
+        shippingProfile: "large_box",
+        packageWeightOz: 5,
+        packageLengthIn: 9,
+        packageWidthIn: 1,
+        packageHeightIn: 7
+      }),
+      shippableItem({
+        id: "chaos-rising-booster-bundle",
+        title: "Pokemon Trading Card Game: Mega Evolution Chaos Rising Booster Bundle",
+        category: "Booster Bundles",
+        shippingProfile: "small_box",
+        packageWeightOz: 5.3,
+        packageLengthIn: 6,
+        packageWidthIn: 4,
+        packageHeightIn: 2
+      })
+    ],
+    {
+      subtotal: 249.97,
+      fulfillmentMethod: "shipping",
+      profileDefinitions: {
+        medium_box: {
+          label: "Medium Box",
+          defaultWeightOz: 32,
+          rank: 4,
+          requiresBox: true,
+          insuranceRecommended: false,
+          packageLengthIn: 12,
+          packageWidthIn: 9,
+          packageHeightIn: 7,
+          defaultShippingCharge: 5.99
+        }
+      }
+    }
+  );
+  const policyResult = applyMerchantShippingPolicyToCarrierQuote(shippoQuote(599), result);
+
+  assert.equal(result.defaultShippingOption?.amount, 5.99);
+  assert.equal(result.billableWeightOz, 46.8);
+  assert.equal(result.packageTierKey, "box_16x12x4");
+  assert.equal(policyResult.minimumAmountCents, 999);
+  assert.equal(policyResult.policyApplied, true);
+  assert.equal(policyResult.quote.amountCents, 999);
+});
+
 test("merchant shipping policy does not double-adjust fallback internal quotes", () => {
   const result = calculateCartShipping([
     shippableItem({
