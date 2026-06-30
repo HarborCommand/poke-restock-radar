@@ -7,6 +7,7 @@ import {
   explainCartShippingCalculation,
   shippingRatePackageFromCalculation
 } from "../src/lib/shipping";
+import { applyMerchantShippingPolicyToCarrierQuote } from "../src/lib/shipping-policy";
 import { shippingLabelWorkflowConfig } from "../src/lib/shipping-labels";
 import { fetchShippoUspsQuote, normalizeShippoUspsQuote, shippingRateProviderConfig } from "../src/lib/shipping-rate-provider";
 
@@ -33,6 +34,38 @@ function defaultAmount(weightOz: number) {
   const result = calculateCartShipping([shippableItem({ packageWeightOz: weightOz })]);
   assert.ok(result.defaultShippingOption, "expected default shipping option");
   return result.defaultShippingOption.amount;
+}
+
+function shippoQuote(amountCents: number) {
+  return {
+    provider: "shippo" as const,
+    carrier: "USPS" as const,
+    service: "USPS Ground Advantage",
+    amountCents,
+    currency: "USD" as const,
+    estimatedDays: 3,
+    rateProviderRef: "rate_test",
+    shipmentProviderRef: "shipment_test",
+    expiresAt: new Date("2026-06-30T01:51:24.021Z"),
+    fallbackUsed: false,
+    warning: null
+  };
+}
+
+function internalFallbackQuote(amountCents: number) {
+  return {
+    provider: "internal_profile" as const,
+    carrier: "STANDARD" as const,
+    service: "Boxed Shipping",
+    amountCents,
+    currency: "USD" as const,
+    estimatedDays: null,
+    rateProviderRef: null,
+    shipmentProviderRef: null,
+    expiresAt: new Date("2026-06-30T01:51:24.021Z"),
+    fallbackUsed: true,
+    warning: "USPS quote is temporarily unavailable. A safe standard shipping estimate is shown."
+  };
 }
 
 test("smart shipping calculator includes packing weight for packages up to 8 oz", () => {
@@ -148,6 +181,134 @@ test("smart shipping quantity greater than one uses the full packed cart weight 
   assert.equal(result.packageWidthIn, 10);
   assert.equal(result.packageHeightIn, 6);
   assert.equal(result.defaultShippingOption?.amount, 9.99);
+});
+
+test("reported five-item sealed cart applies merchant minimum when Shippo returns a low local-zone rate", () => {
+  const cart = [
+    shippableItem({
+      id: "ascended-heroes-booster-bundle",
+      title: "Pokemon TCG: Mega Evolution- Ascended Heroes Booster Bundle",
+      category: "Booster Bundles",
+      shippingProfile: "small_box",
+      packageWeightOz: 6,
+      packageLengthIn: 6,
+      packageWidthIn: 4,
+      packageHeightIn: 2
+    }),
+    shippableItem({
+      id: "mega-zygarde-premium-collection",
+      title: "Pokemon Trading Card Game: Mega Zygarde ex Premium Collection",
+      category: "Premium Collections",
+      shippingProfile: "medium_box",
+      packageWeightOz: 16,
+      packageLengthIn: 9,
+      packageWidthIn: 15,
+      packageHeightIn: 1
+    }),
+    shippableItem({
+      id: "mega-moonlit-tin",
+      title: "Pokemon TCG: Mega Moonlit Tin",
+      category: "Tins",
+      shippingProfile: "regular_tin",
+      packageWeightOz: 10,
+      packageLengthIn: 7,
+      packageWidthIn: 3,
+      packageHeightIn: 5
+    }),
+    shippableItem({
+      id: "makuhita-checklane",
+      title: "Pokemon Perfect Order (Makuhita) Checklane",
+      category: "Blisters",
+      shippingProfile: "large_box",
+      packageWeightOz: 5,
+      packageLengthIn: 9,
+      packageWidthIn: 1,
+      packageHeightIn: 7
+    }),
+    shippableItem({
+      id: "chaos-rising-booster-bundle",
+      title: "Pokemon Trading Card Game: Mega Evolution Chaos Rising Booster Bundle",
+      category: "Booster Bundles",
+      shippingProfile: "small_box",
+      packageWeightOz: 5.3,
+      packageLengthIn: 6,
+      packageWidthIn: 4,
+      packageHeightIn: 2
+    })
+  ];
+  const result = calculateCartShipping(cart, { subtotal: 249.97, fulfillmentMethod: "shipping" });
+  const audit = explainCartShippingCalculation(cart);
+  const policyResult = applyMerchantShippingPolicyToCarrierQuote(shippoQuote(570), result);
+
+  assert.equal(audit.lineCount, 5);
+  assert.equal(audit.totalUnits, 5);
+  assert.deepEqual(
+    audit.items.map((item) => item.id),
+    [
+      "ascended-heroes-booster-bundle",
+      "mega-zygarde-premium-collection",
+      "mega-moonlit-tin",
+      "makuhita-checklane",
+      "chaos-rising-booster-bundle"
+    ]
+  );
+  assert.equal(audit.totalItemWeightOz, 42.3);
+  assert.equal(audit.actualPackedWeightOz, 46.8);
+  assert.equal(audit.selectedPackageTier, "box_16x12x4");
+  assert.deepEqual(audit.shippoParcelPayload, {
+    weightOz: 46.8,
+    lengthIn: 16,
+    widthIn: 12,
+    heightIn: 4,
+    profileKey: "medium_box"
+  });
+  assert.equal(result.defaultShippingOption?.amount, 9.99);
+  assert.equal(result.shippingOptions.find((option) => option.id === "local_pickup")?.amount, 0);
+  assert.equal(policyResult.baseAmountCents, 570);
+  assert.equal(policyResult.minimumAmountCents, 999);
+  assert.equal(policyResult.policyApplied, true);
+  assert.equal(policyResult.quote.amountCents, 999);
+  assert.equal(policyResult.quote.provider, "shippo");
+  assert.equal(policyResult.quote.service, "USPS Ground Advantage");
+  assert.equal(policyResult.quote.fallbackUsed, false);
+});
+
+test("merchant shipping policy leaves carrier quotes above the server minimum unchanged", () => {
+  const result = calculateCartShipping([
+    shippableItem({
+      id: "premium-collection",
+      shippingProfile: "medium_box",
+      packageWeightOz: 16,
+      packageLengthIn: 15,
+      packageWidthIn: 9,
+      packageHeightIn: 1
+    })
+  ]);
+  const policyResult = applyMerchantShippingPolicyToCarrierQuote(shippoQuote(1299), result);
+
+  assert.equal(policyResult.minimumAmountCents, 799);
+  assert.equal(policyResult.policyApplied, false);
+  assert.equal(policyResult.quote.amountCents, 1299);
+});
+
+test("merchant shipping policy does not double-adjust fallback internal quotes", () => {
+  const result = calculateCartShipping([
+    shippableItem({
+      id: "boxed-fallback",
+      shippingProfile: "medium_box",
+      packageWeightOz: 16,
+      packageLengthIn: 15,
+      packageWidthIn: 9,
+      packageHeightIn: 1
+    })
+  ]);
+  const policyResult = applyMerchantShippingPolicyToCarrierQuote(internalFallbackQuote(570), result);
+
+  assert.equal(policyResult.minimumAmountCents, 799);
+  assert.equal(policyResult.policyApplied, false);
+  assert.equal(policyResult.quote.amountCents, 570);
+  assert.equal(policyResult.quote.provider, "internal_profile");
+  assert.equal(policyResult.quote.fallbackUsed, true);
 });
 
 test("system profile defaults complete missing item dimensions before carrier quotes", () => {
@@ -1113,6 +1274,7 @@ test("calculated USPS quote API and checkout enforce server-side quote safety", 
   const validation = fs.readFileSync(new URL("../src/lib/validation.ts", import.meta.url), "utf8");
   const route = fs.readFileSync(new URL("../src/app/api/storefront/shipping/quote/route.ts", import.meta.url), "utf8");
   const provider = fs.readFileSync(new URL("../src/lib/shipping-rate-provider.ts", import.meta.url), "utf8");
+  const policy = fs.readFileSync(new URL("../src/lib/shipping-policy.ts", import.meta.url), "utf8");
   const createQuote = storefront.slice(storefront.indexOf("export async function createStorefrontShippingQuote"), storefront.indexOf("function shippingOptionFromQuote"));
   const quoteHelper = storefront.slice(storefront.indexOf("async function quoteForCalculatedShipping"), storefront.indexOf("export async function createStorefrontShippingQuote"));
   const createCheckoutSession = storefront.slice(
@@ -1128,6 +1290,7 @@ test("calculated USPS quote API and checkout enforce server-side quote safety", 
   assert.match(createQuote, /calculateCartShipping/);
   assert.doesNotMatch(createQuote, /packageWeightOz: input|packageLengthIn: input|amountCents: input/);
   assert.match(quoteHelper, /fetchShippoUspsQuote/);
+  assert.match(quoteHelper, /applyMerchantShippingPolicyToCarrierQuote\(quote, shippingCalculation\)\.quote/);
   assert.match(quoteHelper, /fallbackShippingQuote/);
   assert.match(createQuote, /fallbackShippingQuote/);
   assert.match(createQuote, /cartHash: shippingCartHash\(cart, input\.destinationZip, profileDefinitions\)/);
@@ -1156,6 +1319,9 @@ test("calculated USPS quote API and checkout enforce server-side quote safety", 
   assert.match(createCheckoutSession, /calculatedQuote\.cartHash !== shippingCartHash\(cart, calculatedQuote\.destinationZip, profileDefinitions\)/);
   assert.match(createCheckoutSession, /shippingQuote\.update/);
   assert.match(provider, /authorization: `ShippoToken/);
+  assert.match(policy, /merchantMinimumShippingCents/);
+  assert.match(policy, /option\.id !== "local_pickup"/);
+  assert.match(policy, /quote\.provider !== "shippo"/);
   assert.doesNotMatch(provider, /console\.(log|warn|error).*SHIPPO_API_TOKEN/);
 });
 

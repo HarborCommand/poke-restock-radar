@@ -25,6 +25,7 @@ import {
   shippingQuoteExpiresAt,
   type NormalizedShippingQuote
 } from "@/lib/shipping-rate-provider";
+import { applyMerchantShippingPolicyToCarrierQuote } from "@/lib/shipping-policy";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { awardRewardsForPaidOrder, reverseRewardsForOrder, rewardSummaryForOrder } from "@/lib/customer-rewards";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
@@ -1147,7 +1148,7 @@ async function quoteForCalculatedShipping(
       },
       { fetchImpl: options.fetchImpl, now: options.now }
     );
-    if (quote) return quote;
+    if (quote) return applyMerchantShippingPolicyToCarrierQuote(quote, shippingCalculation).quote;
   } catch {
     // Provider failures intentionally fall through to the safe internal estimate.
   }
