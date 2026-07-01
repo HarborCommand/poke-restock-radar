@@ -1125,6 +1125,31 @@ function fallbackShippingQuote(
   };
 }
 
+function normalizedQuoteFromStoredQuote(quote: StoredShippingQuote): NormalizedShippingQuote {
+  return {
+    provider: quote.provider === "shippo" ? "shippo" : "internal_profile",
+    carrier: quote.carrier === "USPS" ? "USPS" : "STANDARD",
+    service: quote.service,
+    amountCents: quote.amountCents,
+    currency: "USD",
+    estimatedDays: null,
+    rateProviderRef: quote.rateProviderRef,
+    shipmentProviderRef: quote.shipmentProviderRef,
+    expiresAt: quote.expiresAt,
+    fallbackUsed: quote.fallbackUsed,
+    warning: quote.warning
+  };
+}
+
+function applyMerchantShippingPolicyToStoredQuote(
+  quote: StoredShippingQuote,
+  shippingCalculation: ShippingCalculation
+): StoredShippingQuote {
+  const result = applyMerchantShippingPolicyToCarrierQuote(normalizedQuoteFromStoredQuote(quote), shippingCalculation);
+  if (!result.policyApplied) return quote;
+  return { ...quote, amountCents: result.quote.amountCents };
+}
+
 async function quoteForCalculatedShipping(
   shippingCalculation: ShippingCalculation,
   destinationZip: string,
@@ -1838,6 +1863,7 @@ export async function createCheckoutSession(input: {
     if (calculatedQuote.cartHash !== shippingCartHash(cart, calculatedQuote.destinationZip, profileDefinitions)) {
       throw new Error("Cart changed after shipping was calculated. Recalculate USPS shipping.");
     }
+    calculatedQuote = applyMerchantShippingPolicyToStoredQuote(calculatedQuote, shippingCalculation);
     selectedShipping = shippingOptionFromQuote(calculatedQuote);
   }
   const checkoutShippingOptions = stripeShippingOptionsForCheckout(shippingCalculation, calculatedQuote);
@@ -1946,7 +1972,7 @@ export async function createCheckoutSession(input: {
       if (calculatedQuote) {
         await tx.shippingQuote.update({
           where: { id: calculatedQuote.id },
-          data: { orderId: order.id, usedAt: new Date() }
+          data: { orderId: order.id, usedAt: new Date(), amountCents: calculatedQuote.amountCents }
         });
       }
       return tx.storefrontOrder.update({

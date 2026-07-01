@@ -39,6 +39,7 @@ export type ShippingOption = {
 };
 
 export type ShippingCalculation = {
+  totalUnits: number;
   totalWeightOz: number;
   actualWeightOz: number;
   packingWeightOz: number;
@@ -891,6 +892,7 @@ export function calculateCartShipping(
   const defaultShippingOption = options.fulfillmentMethod === "pickup" && pickupOption ? pickupOption : shippingOption ?? pickupOption;
 
   return {
+    totalUnits: packedPackage.totalUnits,
     totalWeightOz,
     actualWeightOz: packedPackage.actualWeightOz,
     packingWeightOz: packedPackage.packingWeightOz,
