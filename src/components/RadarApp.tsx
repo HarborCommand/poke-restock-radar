@@ -6516,6 +6516,27 @@ function inventoryStoreReadinessRowBadge(item: InventoryItemDTO): InventoryRowBa
       };
 }
 
+function inventoryShippingMetadataRowBadge(item: InventoryItemDTO, effectiveData: ReturnType<typeof inventoryEffectiveShippingData>, complete: boolean): InventoryRowBadge {
+  if (!inventoryShippingLocalPickupOnly(item) && effectiveData.hasAuthoritativeProductPackageData) {
+    const measured = effectiveData.shippingMetadataSource === "measured";
+    return {
+      icon: "defaults",
+      label: measured ? "Measured" : "Estimated",
+      title: measured ? "Measured data gives the most accurate shipping quote." : "Estimated package data is used for shipping quotes.",
+      tone: "neutral"
+    };
+  }
+
+  return {
+    icon: "defaults",
+    label: "Defaults",
+    title: complete
+      ? "Selected shipping profile defaults fill missing package data."
+      : "Package data is using defaults until measured or estimated values are saved.",
+    tone: complete ? "neutral" : "warning"
+  };
+}
+
 function inventoryShippingProfileRowBadges(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO[] = []): InventoryRowBadge[] {
   const complete = inventoryShippingProfileComplete(item, shippingProfiles);
   const effectiveData = inventoryEffectiveShippingData(item, shippingProfiles);
@@ -6537,74 +6558,8 @@ function inventoryShippingProfileRowBadges(item: InventoryItemDTO, shippingProfi
         }
   ];
 
-  if (complete && (effectiveData.usesProfileDefaultWeight || effectiveData.usesProfileDefaultDimensions)) {
-    badges.push({
-      icon: "defaults",
-      label: "Defaults",
-      title: "Blank package fields use the selected shipping profile defaults.",
-      tone: "neutral"
-    });
-  }
-
-  if (complete && effectiveData.hasAuthoritativeProductPackageData && !inventoryShippingLocalPickupOnly(item)) {
-    badges.push({
-      icon: "defaults",
-      label: effectiveData.shippingMetadataSource === "measured" ? "Measured" : "Estimated",
-      title: effectiveData.shippingMetadataSource === "measured" ? "Product-level package data is marked measured." : "Product-level package data is marked estimated.",
-      tone: "neutral"
-    });
-  }
-
-  if (!complete && inventoryUsesInactiveShippingProfile(item, shippingProfiles)) {
-    badges.push({
-      icon: "warning",
-      label: "Inactive Profile",
-      title: "This product is using an inactive shipping profile.",
-      tone: "warning"
-    });
-  }
-  if (!complete && !inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingWeight(item, shippingProfiles)) {
-    badges.push({
-      icon: "warning",
-      label: "Missing Weight",
-      title: "Packed shipping weight is missing and no selected profile default can be used.",
-      tone: "warning"
-    });
-  }
-  if (!complete && !inventoryShippingLocalPickupOnly(item) && inventoryMissingShippingDimensions(item, shippingProfiles)) {
-    badges.push({
-      icon: "warning",
-      label: "Missing Dimensions",
-      title: "Package dimensions are missing and no selected profile defaults can be used.",
-      tone: "warning"
-    });
-  }
-  if (!complete && !inventoryShippingLocalPickupOnly(item) && effectiveData.selectedProfileMissingDefaults) {
-    badges.push({
-      icon: "warning",
-      label: "Profile Defaults",
-      title: "Selected shipping profile is missing package defaults.",
-      tone: "warning"
-    });
-  }
-  if (!complete && !inventoryShippingLocalPickupOnly(item) && effectiveData.selectedProfileUnavailable) {
-    badges.push({
-      icon: "warning",
-      label: "Profile Missing",
-      title: "Selected shipping profile is unavailable.",
-      tone: "warning"
-    });
-  }
-  if (!complete && item.shippingAvailable === false && !inventoryShippingLocalPickupOnly(item)) {
-    badges.push({
-      icon: "warning",
-      label: "Shipping Off",
-      title: "Shipping is disabled for this product.",
-      tone: "warning"
-    });
-  }
-
-  return badges.slice(0, 4);
+  badges.push(inventoryShippingMetadataRowBadge(item, effectiveData, complete));
+  return badges;
 }
 
 function InventoryRowBadgeIcon({ icon }: { icon: InventoryRowBadge["icon"] }) {
@@ -6786,8 +6741,28 @@ function activeInventoryFilterLabels(filters: InventoryFiltersState) {
     filters.category !== "ALL" ? `category ${formatStatus(filters.category)}` : "",
     filters.source.trim() ? `source "${filters.source.trim()}"` : "",
     filters.listingStatus !== "ALL" ? `status ${formatStatus(filters.listingStatus)}` : "",
-    filters.shippingProfileStatus !== "ALL" ? `shipping ${formatStatus(filters.shippingProfileStatus)}` : ""
+    filters.shippingProfileStatus !== "ALL" ? `shipping ${formatStatus(filters.shippingProfileStatus)}` : "",
+    filters.sort !== defaultInventoryFilters.sort ? `sort ${formatStatus(filters.sort)}` : ""
   ].filter(Boolean);
+}
+
+function inventoryFiltersAreDefault(filters: InventoryFiltersState) {
+  return (
+    filters.search === defaultInventoryFilters.search &&
+    filters.category === defaultInventoryFilters.category &&
+    filters.source === defaultInventoryFilters.source &&
+    filters.listingStatus === defaultInventoryFilters.listingStatus &&
+    filters.shippingProfileStatus === defaultInventoryFilters.shippingProfileStatus &&
+    filters.sort === defaultInventoryFilters.sort
+  );
+}
+
+function inventoryMutationChangeLabel(reason: InventoryMutationReason) {
+  if (reason === "purchase_added") return "Product details changed";
+  if (reason === "stock_added" || reason === "stock_lot_updated" || reason === "stock_lot_removed") return "Stock changed";
+  if (reason === "sale_recorded") return "Stock changed";
+  if (reason === "listing_updated") return "Listing changed";
+  return "Product details changed";
 }
 
 function findMutatedInventoryItem(items: InventoryItemDTO[], mutation: InventoryMutationIntent) {
@@ -7112,14 +7087,14 @@ function InventoryPanel({
       </section>
       <section className="inventory-kpi-grid">
         <InventoryKpiCard label="Total Products" value={String(dashboard.inventory.length)} detail="Unique products" />
-        <InventoryKpiCard label="Items Owned" value={String(summary.itemsOwned)} detail="Total quantity" />
-        <InventoryKpiCard label="Total Spent" value={money(summary.totalSpent)} detail="Cost basis" />
-        <InventoryKpiCard label="Active Sales" value={money(summary.totalSalesGross)} detail="Net after refunds" tone="watch" />
+        <InventoryKpiCard label="Units On Hand" value={String(summary.itemsOwned)} detail="Current sellable units" />
+        <InventoryKpiCard label="Inventory Cost" value={money(summary.inventoryCostBasis)} detail="On-hand cost basis" />
+        <InventoryKpiCard label="Active Sales" value={money(summary.totalSalesNet)} detail={`${summary.itemsSold} active sold`} tone="watch" />
         <InventoryKpiCard
-          label="Net Profit / Loss"
-          value={money(summary.netProfitLoss)}
-          detail="Sales minus cost basis"
-          tone={summary.netProfitLoss >= 0 ? "good" : "bad"}
+          label="Realized Profit"
+          value={money(summary.realizedProfitLoss)}
+          detail="Sold units only"
+          tone={summary.realizedProfitLoss >= 0 ? "good" : "bad"}
         />
       </section>
       <section className="inventory-view-tabs" aria-label="Inventory views">
@@ -7169,7 +7144,7 @@ function InventoryPanel({
           ) : null}
           <section className="inventory-management-grid">
             <div className="catalog-panel">
-              <InventoryFilters filters={filters} itemCount={visibleItems.length} updateFilter={updateFilter} />
+              <InventoryFilters filters={filters} itemCount={visibleItems.length} onClearFilters={() => setFilters(defaultInventoryFilters)} updateFilter={updateFilter} />
               <InventoryList
                 items={visibleItems}
                 selectedId={selectedItem?.id ?? ""}
@@ -9913,6 +9888,7 @@ function InventoryMutationNotice({
   onDismiss: () => void;
 }) {
   const activeFilters = activeInventoryFilterLabels(notice.filters);
+  const changeLabel = inventoryMutationChangeLabel(notice.reason);
   return (
     <section className={`inventory-save-notice ${notice.hiddenByFilters ? "is-hidden-by-filter" : "is-visible"}`} aria-live="polite">
       <div>
@@ -9920,9 +9896,9 @@ function InventoryMutationNotice({
           <Check size={14} />
           Saved
         </span>
-        <h3>{notice.hiddenByFilters ? "Inventory saved, but hidden by current filters." : notice.message}</h3>
+        <h3>{notice.hiddenByFilters ? `${notice.itemName} saved, but hidden by current filters.` : `${notice.itemName} saved.`}</h3>
         <p>
-          {notice.itemName} was refreshed after the save. On hand is now {notice.onHand}. Available online is {notice.availableOnline}.
+          <strong>{changeLabel}.</strong> {notice.message} On hand is now {notice.onHand}. Available online is {notice.availableOnline}.
           {notice.hiddenByFilters && activeFilters.length ? ` Active filters: ${activeFilters.join(", ")}.` : ""}
         </p>
         <details className="inventory-mutation-diagnostics">
@@ -11238,9 +11214,11 @@ function InventoryStorefrontPublishToolbar({
       <div>
         <span className="eyeline">Storefront Publishing</span>
         <h3>Make real inventory visible in GameDayGrabs</h3>
-        <p>
-          {publishedCount} listed in this view (active/sold out) - {eligibleCount} ready - {needsQualityCount} need price, image, description, or category.
-        </p>
+        <div className="inventory-publish-counts" aria-label="Storefront publishing counts">
+          <span><small>Listed</small><strong>{publishedCount}</strong></span>
+          <span><small>Ready</small><strong>{eligibleCount}</strong></span>
+          <span><small>Needs Setup</small><strong>{needsQualityCount}</strong></span>
+        </div>
       </div>
       <div className="inventory-publish-stats">
         <span>{selectedLabel}</span>
@@ -11691,12 +11669,15 @@ function PurchaseFlow({
 function InventoryFilters({
   filters,
   itemCount,
+  onClearFilters,
   updateFilter
 }: {
   filters: InventoryFiltersState;
   itemCount: number;
+  onClearFilters: () => void;
   updateFilter: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
 }) {
+  const filtersActive = !inventoryFiltersAreDefault(filters);
   return (
     <section className="form-panel inventory-filter-panel">
       <div className="edit-card-heading">
@@ -11704,10 +11685,16 @@ function InventoryFilters({
           <h2>Product Catalog</h2>
           <span>{itemCount} products shown. Add stock, sell, or view details from each row.</span>
         </div>
-        <a className="mini-action" href="/api/radar/inventory?format=product-catalog-csv" target="_blank" rel="noreferrer">
-          <Download size={14} />
-          Export CSV
-        </a>
+        <div className="inventory-filter-actions">
+          <button className="mini-action" type="button" onClick={onClearFilters} disabled={!filtersActive}>
+            <X size={14} />
+            Clear filters
+          </button>
+          <a className="mini-action" href="/api/radar/inventory?format=product-catalog-csv" target="_blank" rel="noreferrer">
+            <Download size={14} />
+            Export CSV
+          </a>
+        </div>
       </div>
       <div className="inventory-filter-row">
         <TextInput name="search" label="Search" value={filters.search} onChange={updateFilter} />
@@ -11740,6 +11727,20 @@ function InventoryFilters({
       </div>
     </section>
   );
+}
+
+function inventoryOnHandCost(item: Pick<InventoryItemDTO, "averageCost" | "quantityOwned">) {
+  return item.averageCost * item.quantityOwned;
+}
+
+function inventoryDisplaySellPrice(item: Pick<InventoryItemDTO, "publicPrice" | "targetSellPrice">) {
+  return item.publicPrice ?? item.targetSellPrice;
+}
+
+function inventoryDisplaySellPriceSource(item: Pick<InventoryItemDTO, "publicPrice" | "targetSellPrice">) {
+  if (item.publicPrice !== null) return "Storefront";
+  if (item.targetSellPrice !== null) return "Target";
+  return null;
 }
 
 function InventoryList({
@@ -11816,8 +11817,8 @@ function InventoryList({
     const rect = trigger.getBoundingClientRect();
     const margin = 14;
     const gap = 8;
-    const width = Math.min(260, Math.max(220, window.innerWidth - margin * 2));
-    const estimatedHeight = item.publishToStore && item.publicSlug ? 336 : 292;
+    const width = Math.min(250, Math.max(224, window.innerWidth - margin * 2));
+    const estimatedHeight = item.publishToStore && item.publicSlug ? 356 : 318;
     const maxLeft = Math.max(margin, window.innerWidth - width - margin);
     const left = Math.min(Math.max(margin, rect.right - width), maxLeft);
     const belowTop = rect.bottom + gap;
@@ -11860,36 +11861,45 @@ function InventoryList({
             role="menu"
             style={{ left: actionMenu.left, top: actionMenu.top, width: actionMenu.width }}
           >
-            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onViewDetails)}>
-              <FileText size={14} />
-              View Details
-            </button>
-            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onAddStock)}>
-              <Plus size={14} />
-              Add Stock
-            </button>
-            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onAdjustStock)}>
-              <History size={14} />
-              Adjust Stock
-            </button>
-            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onRecordSale)}>
-              <CircleDollarSign size={14} />
-              Record Sale
-            </button>
-            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onEditProduct)}>
-              <Settings size={14} />
-              Edit Product
-            </button>
-            <button role="menuitem" type="button" onClick={() => runActionMenuItem(onEditListing)}>
-              <Store size={14} />
-              Edit Listing
-            </button>
-            {actionMenu.item.publishToStore && actionMenu.item.publicSlug ? (
-              <a role="menuitem" href={`/shop/product/${actionMenu.item.publicSlug}`} target="_blank" rel="noreferrer" onClick={() => setActionMenu(null)}>
-                <ExternalLink size={14} />
-                View Public Page
-              </a>
-            ) : null}
+            <div className="catalog-action-menu-section" role="group" aria-label="Inventory">
+              <span className="catalog-action-menu-label">Inventory</span>
+              <button role="menuitem" type="button" onClick={() => runActionMenuItem(onAddStock)}>
+                <Plus size={14} />
+                Add Stock
+              </button>
+              <button role="menuitem" type="button" onClick={() => runActionMenuItem(onAdjustStock)}>
+                <History size={14} />
+                Adjust Stock
+              </button>
+              <button role="menuitem" type="button" onClick={() => runActionMenuItem(onRecordSale)}>
+                <CircleDollarSign size={14} />
+                Record Sale
+              </button>
+            </div>
+            <div className="catalog-action-menu-section" role="group" aria-label="Storefront">
+              <span className="catalog-action-menu-label">Storefront</span>
+              <button role="menuitem" type="button" onClick={() => runActionMenuItem(onEditListing)}>
+                <Store size={14} />
+                Edit Listing
+              </button>
+              {actionMenu.item.publishToStore && actionMenu.item.publicSlug ? (
+                <a role="menuitem" href={`/shop/product/${actionMenu.item.publicSlug}`} target="_blank" rel="noreferrer" onClick={() => setActionMenu(null)}>
+                  <ExternalLink size={14} />
+                  View Public Page
+                </a>
+              ) : null}
+            </div>
+            <div className="catalog-action-menu-section" role="group" aria-label="Product">
+              <span className="catalog-action-menu-label">Product</span>
+              <button role="menuitem" type="button" onClick={() => runActionMenuItem(onViewDetails)}>
+                <FileText size={14} />
+                View Details
+              </button>
+              <button role="menuitem" type="button" onClick={() => runActionMenuItem(onEditProduct)}>
+                <Settings size={14} />
+                Edit Product
+              </button>
+            </div>
           </div>,
           document.body
         )
@@ -11908,9 +11918,12 @@ function InventoryList({
         <span>Sold</span>
         <span title="Profit uses actual recorded sale price and stock lot cost basis.">Realized Profit</span>
         <span>Status</span>
-        <span>Actions</span>
+        <span>Manage</span>
       </div>
-      {items.map((item) => (
+      {items.map((item) => {
+        const sellPrice = inventoryDisplaySellPrice(item);
+        const sellPriceSource = inventoryDisplaySellPriceSource(item);
+        return (
         <article
           className={[
             "catalog-row",
@@ -11954,9 +11967,10 @@ function InventoryList({
           </span>
           <span className="catalog-cell strong" data-label="Quantity">{item.quantityOwned}</span>
           <span className="catalog-cell" data-label="Avg Cost">{money(item.averageCost)}</span>
-          <span className="catalog-cell" data-label="Total Cost">{money(item.averageCost * item.quantityOwned)}</span>
-          <span className={item.targetSellPrice !== null ? "catalog-cell strong sell-price-cell" : "catalog-cell"} data-label="Sell Price">
-            {item.targetSellPrice !== null ? money(item.targetSellPrice) : "Not set"}
+          <span className="catalog-cell" data-label="Total Cost">{money(inventoryOnHandCost(item))}</span>
+          <span className={sellPrice !== null ? "catalog-cell strong sell-price-cell" : "catalog-cell"} data-label="Sell Price">
+            {sellPrice !== null ? money(sellPrice) : "Not set"}
+            {sellPriceSource ? <small>{sellPriceSource}</small> : null}
             {item.minimumAcceptablePrice !== null ? <small>Min {money(item.minimumAcceptablePrice)}</small> : null}
           </span>
           <span className="catalog-cell" data-label="Sold">{item.quantitySold}</span>
@@ -11987,12 +12001,13 @@ function InventoryList({
               type="button"
               onClick={(event) => toggleActionMenu(item, event)}
             >
-                Actions
+                Manage
                 <MoreHorizontal size={15} />
             </button>
           </div>
         </article>
-      ))}
+        );
+      })}
     </div>
     {floatingActionMenu}
     </>
