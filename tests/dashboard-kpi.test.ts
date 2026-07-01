@@ -18,6 +18,15 @@ import {
 import { inferTcgcsvProductType, normalizeTcgcsvProductText } from "../src/lib/tcgcsv-market";
 import type { AlertDTO, InventoryItemDTO, InventorySaleDTO, StorefrontOrderDTO } from "../src/types/radar";
 
+function sourceSlice(source: string, startNeedle: string, endNeedle?: string) {
+  const start = source.indexOf(startNeedle);
+  assert.notEqual(start, -1, `missing source start: ${startNeedle}`);
+  if (!endNeedle) return source.slice(start);
+  const end = source.indexOf(endNeedle, start + startNeedle.length);
+  assert.notEqual(end, -1, `missing source end: ${endNeedle}`);
+  return source.slice(start, end);
+}
+
 function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
   const base: InventorySaleDTO = {
     id: "sale-1",
@@ -518,6 +527,97 @@ test("canceled unpaid orders do not create active sales totals", () => {
   assert.equal(summary.itemsSold, 0);
 });
 
+test("inventory summary fixture matches dashboard KPI formulas", () => {
+  const summary = summarizeInventory([
+    item({
+      id: "item-kpi-1",
+      totalCost: 120,
+      quantityOwned: 3,
+      quantitySold: 1,
+      averageCost: 15,
+      sales: [
+        sale({
+          id: "sale-active",
+          grossSale: 100,
+          activeGrossSale: 100,
+          netSale: 90,
+          activeNetSale: 90,
+          costBasis: 50,
+          profitLoss: 40,
+          activeProfitLoss: 40
+        }),
+        sale({
+          id: "sale-refunded",
+          grossSale: 50,
+          activeGrossSale: 0,
+          netSale: 45,
+          activeNetSale: 0,
+          costBasis: 20,
+          profitLoss: 25,
+          activeProfitLoss: 0,
+          quantitySold: 1,
+          activeQuantitySold: 0,
+          saleStatus: "refunded"
+        })
+      ]
+    })
+  ]);
+
+  assert.equal(summary.itemsOwned, 3);
+  assert.equal(summary.inventoryCostBasis, 45);
+  assert.equal(summary.totalSpent, 120);
+  assert.equal(summary.totalSalesGross, 100);
+  assert.equal(summary.totalSalesNet, 90);
+  assert.equal(summary.realizedProfitLoss, 40);
+  assert.equal(summary.itemsSold, 1);
+});
+
+test("inventory dashboard KPI cards use financially accurate labels and fields", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const inventoryPanel = sourceSlice(app, "function InventoryPanel", "type StorefrontOrderTab");
+
+  assert.match(inventoryPanel, /label="Total Products" value=\{String\(dashboard\.inventory\.length\)\}/);
+  assert.match(inventoryPanel, /label="Units On Hand" value=\{String\(summary\.itemsOwned\)\}/);
+  assert.match(inventoryPanel, /label="Inventory Cost" value=\{money\(summary\.inventoryCostBasis\)\}/);
+  assert.match(inventoryPanel, /label="Active Sales" value=\{money\(summary\.totalSalesNet\)\}/);
+  assert.match(inventoryPanel, /label="Realized Profit"/);
+  assert.match(inventoryPanel, /value=\{money\(summary\.realizedProfitLoss\)\}/);
+  assert.doesNotMatch(inventoryPanel, /label="Items Owned"/);
+  assert.doesNotMatch(inventoryPanel, /label="Total Spent"/);
+  assert.doesNotMatch(inventoryPanel, /label="Net Profit \/ Loss"/);
+  assert.doesNotMatch(inventoryPanel, /money\(summary\.totalSalesGross\)/);
+  assert.doesNotMatch(inventoryPanel, /money\(summary\.netProfitLoss\)/);
+});
+
+test("inventory row metrics use current on-hand cost and storefront sell price", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const listComponent = sourceSlice(app, "function InventoryList", "function inventoryStockStatusLabel");
+
+  assert.match(app, /function inventoryOnHandCost\(item: Pick<InventoryItemDTO, "averageCost" \| "quantityOwned">\)/);
+  assert.match(app, /return item\.averageCost \* item\.quantityOwned/);
+  assert.match(app, /function inventoryDisplaySellPrice\(item: Pick<InventoryItemDTO, "publicPrice" \| "targetSellPrice">\)/);
+  assert.match(app, /return item\.publicPrice \?\? item\.targetSellPrice/);
+  assert.match(listComponent, /data-label="Avg Cost">\{money\(item\.averageCost\)\}/);
+  assert.match(listComponent, /data-label="Total Cost">\{money\(inventoryOnHandCost\(item\)\)\}/);
+  assert.match(listComponent, /const sellPrice = inventoryDisplaySellPrice\(item\)/);
+  assert.match(listComponent, /\{sellPrice !== null \? money\(sellPrice\) : "Not set"\}/);
+  assert.match(listComponent, /data-label="Sold">\{item\.quantitySold\}/);
+  assert.match(listComponent, /data-label="Realized Profit"/);
+  assert.match(listComponent, /money\(item\.realizedProfitLoss\)/);
+  assert.doesNotMatch(listComponent, /data-label="Total Cost">\{money\(item\.totalCost\)\}/);
+  assert.doesNotMatch(listComponent, /item\.targetSellPrice !== null \? money\(item\.targetSellPrice\)/);
+});
+
+test("inventory dashboard polish does not introduce checkout payment or refund behavior", () => {
+  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
+  const inventoryPanel = sourceSlice(app, "function InventoryPanel", "type StorefrontOrderTab");
+  const inventoryList = sourceSlice(app, "function InventoryList", "function inventoryStockStatusLabel");
+
+  assert.match(inventoryPanel, /InventoryStorefrontPublishToolbar/);
+  assert.match(inventoryList, /catalog-action-menu-section/);
+  assert.doesNotMatch(inventoryPanel + inventoryList, /stripe|checkout|paymentIntent|refunds\.create|cancelOrRefund|createCheckoutSession/i);
+});
+
 test("refunded storefront orders suppress stale paid fulfillment dashboard alerts", () => {
   const alerts = [
     dashboardAlert({
@@ -617,7 +717,7 @@ test("inventory mutations reveal or explain saved rows after refresh", () => {
   assert.match(app, /type InventoryMutationIntent/);
   assert.match(app, /inventoryItemMatchesFilters\(item, filters, dashboard\.shippingProfiles\)/);
   assert.match(app, /findMutatedInventoryItem\(dashboard\.inventory, pendingInventoryMutation\)/);
-  assert.match(app, /Inventory saved, but hidden by current filters/);
+  assert.match(app, /saved, but hidden by current filters/);
   assert.match(app, /Clear filters and show item/);
   assert.match(app, /id=\{`inventory-row-\$\{item\.id\}`\}/);
   assert.match(app, /data-highlighted=\{highlightedId === item\.id/);

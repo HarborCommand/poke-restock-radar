@@ -401,8 +401,6 @@ test("admin inventory can find products that need shipping profiles", () => {
   assert.match(appSource, /Shipping Ready/);
   assert.match(appSource, /Defaults/);
   assert.match(appSource, /Needs Shipping/);
-  assert.match(appSource, /Missing Weight/);
-  assert.match(appSource, /Missing Dimensions/);
   assert.match(appSource, /Needs shipping profile/);
   assert.match(appSource, /Using fallback shipping profile/);
   assert.match(appSource, /Measured shipping data/);
@@ -642,11 +640,19 @@ test("inventory row actions and stock lot details make sold-out corrections obvi
   assert.doesNotMatch(listComponent, /<details className="catalog-action-menu-wrap">/);
   assert.doesNotMatch(listComponent, /<summary className="catalog-action-trigger">/);
   assert.match(actionMenu, /role="menu"/);
-  assert.ok(actionMenu.indexOf("View Details") < actionMenu.indexOf("Add Stock"), "View Details should be first in the action menu");
+  assert.match(listComponent, /Manage/);
+  assert.match(actionMenu, /catalog-action-menu-section/);
+  assert.match(actionMenu, /aria-label="Inventory"/);
+  assert.match(actionMenu, /aria-label="Storefront"/);
+  assert.match(actionMenu, /aria-label="Product"/);
+  assert.ok(actionMenu.indexOf("Inventory") < actionMenu.indexOf("Add Stock"), "Inventory group should label stock actions");
   assert.ok(actionMenu.indexOf("Add Stock") < actionMenu.indexOf("Adjust Stock"), "Add Stock should come before Adjust Stock");
   assert.ok(actionMenu.indexOf("Adjust Stock") < actionMenu.indexOf("Record Sale"), "Adjust Stock should come before Record Sale");
-  assert.ok(actionMenu.indexOf("Edit Product") < actionMenu.indexOf("Edit Listing"), "Edit Product should come before Edit Listing");
-  assert.ok(actionMenu.indexOf("Edit Listing") < actionMenu.indexOf("View Public Page"), "View Public Page should remain last when available");
+  assert.ok(actionMenu.indexOf("Record Sale") < actionMenu.indexOf("Storefront"), "Inventory actions should stay grouped before storefront actions");
+  assert.ok(actionMenu.indexOf("Storefront") < actionMenu.indexOf("Edit Listing"), "Storefront group should label listing actions");
+  assert.ok(actionMenu.indexOf("Edit Listing") < actionMenu.indexOf("View Public Page"), "Public page action should stay with storefront actions");
+  assert.ok(actionMenu.indexOf("View Public Page") < actionMenu.indexOf("Product"), "Product actions should be grouped last");
+  assert.ok(actionMenu.indexOf("View Details") < actionMenu.indexOf("Edit Product"), "View Details should remain before Edit Product");
   assert.match(detailsModal, /Adjust Stock/);
   assert.match(lotsComponent, /Active stock lots/);
   assert.match(lotsComponent, /Depleted stock lots/);
@@ -659,9 +665,55 @@ test("inventory row actions and stock lot details make sold-out corrections obvi
   assert.match(lotsComponent, /Adjust Lot/);
   assert.match(css, /body \.inventory-row-primary-action/);
   assert.match(css, /body \.catalog-action-trigger\.is-open/);
+  assert.match(css, /body \.catalog-action-menu-section/);
+  assert.match(css, /body \.catalog-action-menu-label/);
   assert.match(css, /body \.catalog-actions \{[\s\S]*justify-content: flex-end !important/);
   assert.match(css, /body \.stock-lot-group\.depleted/);
   assert.match(css, /body \.compact-ledger-list article\.stock-lot-depleted/);
+});
+
+test("inventory dashboard polish keeps counts filters notice and shipping metadata concise", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const publishToolbar = sourceSlice(appSource, "function InventoryStorefrontPublishToolbar", "function PurchaseFlow");
+  const filtersComponent = sourceSlice(appSource, "function InventoryFilters", "function InventoryList");
+  const notice = sourceSlice(appSource, "function InventoryMutationNotice", "function AddProductChoiceModal");
+  const shippingRows = sourceSlice(appSource, "function inventoryShippingMetadataRowBadge", "function InventoryRowBadgeIcon");
+  const noticeCss = sourceSlice(css, "body .inventory-save-notice {", "body .inventory-save-notice.is-hidden-by-filter");
+
+  assert.match(publishToolbar, /inventory-publish-counts/);
+  assert.match(publishToolbar, /Listed/);
+  assert.match(publishToolbar, /Ready/);
+  assert.match(publishToolbar, /Needs Setup/);
+  assert.match(publishToolbar, /publishedCount/);
+  assert.match(publishToolbar, /eligibleCount/);
+  assert.match(publishToolbar, /needsQualityCount/);
+  assert.doesNotMatch(publishToolbar, /listed in this view \(active\/sold out\)/);
+
+  assert.match(filtersComponent, /onClearFilters/);
+  assert.match(filtersComponent, /Clear filters/);
+  assert.match(appSource, /function inventoryFiltersAreDefault/);
+  assert.match(appSource, /activeInventoryFilterLabels/);
+  assert.match(css, /\.inventory-filter-actions/);
+
+  assert.match(appSource, /function inventoryMutationChangeLabel/);
+  assert.match(appSource, /Stock changed/);
+  assert.match(appSource, /Listing changed/);
+  assert.match(appSource, /Product details changed/);
+  assert.match(notice, /\$\{notice\.itemName\} saved\./);
+  assert.match(notice, /<strong>\{changeLabel\}\.<\/strong>/);
+  assert.match(notice, /inventory-mutation-diagnostics/);
+  assert.doesNotMatch(noticeCss, /position:\s*fixed/);
+
+  assert.match(shippingRows, /Measured/);
+  assert.match(shippingRows, /Estimated/);
+  assert.match(shippingRows, /Defaults/);
+  assert.match(shippingRows, /Measured data gives the most accurate shipping quote/);
+  assert.match(shippingRows, /badges\.push\(inventoryShippingMetadataRowBadge\(item, effectiveData, complete\)\)/);
+  assert.doesNotMatch(shippingRows, /Missing Weight/);
+  assert.doesNotMatch(shippingRows, /Missing Dimensions/);
+  assert.match(css, /\.inventory-publish-counts/);
+  assert.match(css, /\.inventory-row-badge \{[\s\S]*border-radius: 8px/);
 });
 
 test("stock lot adjustment requires a reason and records the audit context", () => {
