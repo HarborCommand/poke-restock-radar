@@ -3492,6 +3492,73 @@ function SalesPanel({
 const posQuickFilters = ["All", "Booster Boxes", "ETBs", "Singles", "Accessories"] as const;
 type PosQuickFilter = (typeof posQuickFilters)[number];
 type PosCartLine = { itemId: string; quantity: number };
+type TerminalStatus = "idle" | "creating" | "connecting" | "waiting" | "processing" | "completing" | "canceled" | "failed";
+type PosTerminalPaymentResponse = {
+  terminalPayment: {
+    paymentIntentId: string;
+    clientSecret: string;
+    saleReference: string;
+    subtotal: number;
+    tax: number;
+    total: number;
+    itemCount: number;
+  };
+};
+
+type StripeTerminalError = { message?: string };
+type StripeTerminalPaymentIntent = { id: string; status?: string };
+type StripeTerminalReader = { id?: string; label?: string; serial_number?: string };
+type StripeTerminalInstance = {
+  discoverReaders(input: { simulated: boolean }): Promise<{ discoveredReaders?: StripeTerminalReader[]; error?: StripeTerminalError }>;
+  connectReader(reader: StripeTerminalReader): Promise<{ reader?: StripeTerminalReader; error?: StripeTerminalError }>;
+  collectPaymentMethod(clientSecret: string): Promise<{ paymentIntent?: StripeTerminalPaymentIntent; error?: StripeTerminalError }>;
+  processPayment(paymentIntent: StripeTerminalPaymentIntent): Promise<{ paymentIntent?: StripeTerminalPaymentIntent; error?: StripeTerminalError }>;
+  cancelCollectPaymentMethod?(): Promise<{ error?: StripeTerminalError }>;
+};
+
+declare global {
+  interface Window {
+    StripeTerminal?: {
+      create(input: { onFetchConnectionToken: () => Promise<string> }): StripeTerminalInstance;
+    };
+  }
+}
+
+const STRIPE_TERMINAL_SCRIPT_URL = "https://js.stripe.com/terminal/v1/";
+let stripeTerminalScriptPromise: Promise<void> | null = null;
+
+function loadStripeTerminalScript() {
+  if (typeof window === "undefined") return Promise.reject(new Error("Stripe Terminal requires a browser session."));
+  if (window.StripeTerminal) return Promise.resolve();
+  if (!stripeTerminalScriptPromise) {
+    stripeTerminalScriptPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector<HTMLScriptElement>(`script[src="${STRIPE_TERMINAL_SCRIPT_URL}"]`);
+      if (existing) {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        existing.addEventListener("error", () => reject(new Error("Stripe Terminal SDK failed to load.")), { once: true });
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = STRIPE_TERMINAL_SCRIPT_URL;
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Stripe Terminal SDK failed to load."));
+      document.head.appendChild(script);
+    });
+  }
+  return stripeTerminalScriptPromise;
+}
+
+async function createStripeTerminal() {
+  await loadStripeTerminalScript();
+  if (!window.StripeTerminal) throw new Error("Stripe Terminal SDK is unavailable.");
+  return window.StripeTerminal.create({
+    onFetchConnectionToken: async () => {
+      const token = await requestJson<{ secret: string }>("/api/radar/pos/terminal/connection-token", { method: "POST" });
+      return token.secret;
+    }
+  });
+}
 
 function posFilterMatches(item: InventoryItemDTO, filter: PosQuickFilter): boolean {
   const text = `${item.category} ${item.itemName} ${item.publicTitle ?? ""}`.toLowerCase();
@@ -3537,10 +3604,19 @@ function PosPanel({
   const [submitting, setSubmitting] = useState(false);
   const [posMessage, setPosMessage] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<PosSaleReceiptDTO | null>(null);
+  const [terminalStatus, setTerminalStatus] = useState<TerminalStatus>("idle");
+  const [terminalMessage, setTerminalMessage] = useState<string | null>(null);
+  const [terminalPaymentIntentId, setTerminalPaymentIntentId] = useState<string | null>(null);
+  const terminalRef = useRef<StripeTerminalInstance | null>(null);
 
   const sellableItems = useMemo(
     () => dashboard.inventory.filter(isPosSellableInventoryItem).sort((a, b) => posDisplayTitle(a).localeCompare(posDisplayTitle(b))),
     [dashboard.inventory]
+  );
+  const terminalReady = Boolean(dashboard.health?.providers.stripe.terminalTestModeReady);
+  const posPaymentMethods = useMemo(
+    () => POS_PAYMENT_METHOD_VALUES.filter((method) => terminalReady || method !== "card_terminal"),
+    [terminalReady]
   );
   const itemsById = useMemo(() => new Map(dashboard.inventory.map((item) => [item.id, item])), [dashboard.inventory]);
   const visibleItems = useMemo(
@@ -3562,10 +3638,22 @@ function PosPanel({
   const cartTotals = calculatePosTotals(cartLines, POS_DEFAULT_TAX_RATE);
   const cartInvalid = cartLines.some((line) => !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned);
   const actionDisabled = busy || submitting || cartLines.length === 0 || cartInvalid;
+  const terminalActive = ["creating", "connecting", "waiting", "processing", "completing"].includes(terminalStatus);
+
+  useEffect(() => {
+    if (!terminalReady && paymentMethod === "card_terminal") setPaymentMethod("cash");
+  }, [paymentMethod, terminalReady]);
+
+  function resetTerminalState() {
+    setTerminalStatus("idle");
+    setTerminalMessage(null);
+    setTerminalPaymentIntentId(null);
+  }
 
   function addToCart(item: InventoryItemDTO) {
     setReceipt(null);
     setPosMessage(null);
+    resetTerminalState();
     if (!isPosSellableInventoryItem(item)) {
       setPosMessage(`${item.itemName} is not available for POS sale.`);
       return;
@@ -3586,10 +3674,12 @@ function PosPanel({
 
   function updateCartQuantity(item: InventoryItemDTO, quantity: number) {
     const nextQuantity = Math.max(1, Math.min(item.quantityOwned, quantity));
+    resetTerminalState();
     setCart((current) => current.map((line) => (line.itemId === item.id ? { ...line, quantity: nextQuantity } : line)));
   }
 
   function removeFromCart(itemId: string) {
+    resetTerminalState();
     setCart((current) => current.filter((line) => line.itemId !== itemId));
   }
 
@@ -3597,6 +3687,7 @@ function PosPanel({
     setCart([]);
     setReceipt(null);
     setPosMessage(null);
+    resetTerminalState();
     setSaleIdempotencyKey(newPosSaleIdempotencyKey());
   }
 
@@ -3629,6 +3720,14 @@ function PosPanel({
 
   async function completeSale() {
     if (!validateBeforeConfirm()) return;
+    if (paymentMethod === "card_terminal") {
+      await completeTerminalSale();
+      return;
+    }
+    await completeManualSale();
+  }
+
+  async function completeManualSale() {
     setSubmitting(true);
     setPosMessage(null);
     try {
@@ -3649,6 +3748,92 @@ function PosPanel({
       await onCompleted();
     } catch (error) {
       setPosMessage(error instanceof Error ? error.message : "POS sale failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function cancelTerminalPayment(paymentIntentId = terminalPaymentIntentId) {
+    terminalRef.current?.cancelCollectPaymentMethod?.().catch(() => undefined);
+    if (paymentIntentId) {
+      await requestJson<{ payment: { paymentIntentId: string; status: string } }>("/api/radar/pos/terminal/cancel", {
+        method: "POST",
+        body: JSON.stringify({ paymentIntentId })
+      });
+    }
+    setTerminalStatus("canceled");
+    setTerminalMessage("Card reader payment canceled. Inventory was not deducted.");
+    setTerminalPaymentIntentId(null);
+  }
+
+  async function completeTerminalSale() {
+    setSubmitting(true);
+    setPosMessage(null);
+    setTerminalStatus("creating");
+    setTerminalMessage("Creating a Stripe Terminal test payment from server totals.");
+    try {
+      if (!terminalReady) throw new Error("Stripe Terminal test mode is not configured.");
+      const cartPayload = {
+        idempotencyKey: saleIdempotencyKey,
+        items: cartLines.map((line) => ({ inventoryItemId: line.item.id, quantity: line.quantity }))
+      };
+      const { terminalPayment } = await requestJson<PosTerminalPaymentResponse>("/api/radar/pos/terminal/payment-intents", {
+        method: "POST",
+        body: JSON.stringify(cartPayload)
+      });
+      setTerminalPaymentIntentId(terminalPayment.paymentIntentId);
+
+      setTerminalStatus("connecting");
+      setTerminalMessage("Connecting to the Stripe simulated test reader.");
+      const terminal = terminalRef.current ?? (await createStripeTerminal());
+      terminalRef.current = terminal;
+      const discovery = await terminal.discoverReaders({ simulated: true });
+      if (discovery.error) throw new Error(discovery.error.message || "Stripe Terminal reader discovery failed.");
+      const reader = discovery.discoveredReaders?.[0];
+      if (!reader) throw new Error("No Stripe Terminal simulated reader was found.");
+      const connected = await terminal.connectReader(reader);
+      if (connected.error) throw new Error(connected.error.message || "Stripe Terminal reader connection failed.");
+
+      setTerminalStatus("waiting");
+      setTerminalMessage("Waiting for test card presentation on the simulated reader.");
+      const collected = await terminal.collectPaymentMethod(terminalPayment.clientSecret);
+      if (collected.error || !collected.paymentIntent) {
+        await cancelTerminalPayment(terminalPayment.paymentIntentId);
+        throw new Error(collected.error?.message || "Stripe Terminal payment collection was canceled.");
+      }
+
+      setTerminalStatus("processing");
+      setTerminalMessage("Processing the Stripe Terminal test payment.");
+      const processed = await terminal.processPayment(collected.paymentIntent);
+      if (processed.error || !processed.paymentIntent) {
+        await cancelTerminalPayment(terminalPayment.paymentIntentId);
+        throw new Error(processed.error?.message || "Stripe Terminal payment failed.");
+      }
+
+      setTerminalStatus("completing");
+      setTerminalMessage("Payment authorized. Completing the POS sale on the server.");
+      const result = await requestJson<{ sale: PosSaleReceiptDTO }>("/api/radar/pos/terminal/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          ...cartPayload,
+          paymentIntentId: terminalPayment.paymentIntentId
+        })
+      });
+      setReceipt(result.sale);
+      setCart([]);
+      setPaymentReference("");
+      setSaleIdempotencyKey(newPosSaleIdempotencyKey());
+      setConfirmOpen(false);
+      setTerminalStatus("idle");
+      setTerminalMessage(null);
+      setTerminalPaymentIntentId(null);
+      await onCompleted();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Stripe Terminal payment failed.";
+      const canceled = /cancel/i.test(message);
+      setTerminalStatus(canceled ? "canceled" : "failed");
+      setTerminalMessage(canceled ? "Card reader payment canceled. Inventory was not deducted." : message);
+      setPosMessage(message);
     } finally {
       setSubmitting(false);
     }
@@ -3790,26 +3975,44 @@ function PosPanel({
           <div className="pos-payment-panel">
             <h3>Payment Method</h3>
             <div className="pos-payment-options">
-              {POS_PAYMENT_METHOD_VALUES.map((method) => (
+              {posPaymentMethods.map((method) => (
                 <button
                   className={paymentMethod === method ? "pos-payment active" : "pos-payment"}
                   key={method}
                   type="button"
-                  onClick={() => setPaymentMethod(method)}
+                  onClick={() => {
+                    resetTerminalState();
+                    setPaymentMethod(method);
+                  }}
                 >
                   <CreditCard size={15} />
                   {POS_PAYMENT_METHOD_LABELS[method]}
                 </button>
               ))}
             </div>
-            <label className="pos-reference-input">
-              Payment reference (optional)
-              <input
-                value={paymentReference}
-                onChange={(event) => setPaymentReference(event.currentTarget.value)}
-                placeholder="Cash received, Zelle confirmation, manual card note"
-              />
-            </label>
+            {paymentMethod === "card_terminal" ? (
+              <div className={`pos-terminal-status ${terminalStatus}`}>
+                <span>
+                  <Wifi size={15} />
+                  Stripe Terminal test reader
+                </span>
+                <small>{terminalMessage || "Uses a simulated Stripe reader. Server verifies payment before inventory changes."}</small>
+                {terminalActive ? (
+                  <button className="mini-action" type="button" onClick={() => void cancelTerminalPayment()}>
+                    Cancel card payment
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <label className="pos-reference-input">
+                Payment reference (optional)
+                <input
+                  value={paymentReference}
+                  onChange={(event) => setPaymentReference(event.currentTarget.value)}
+                  placeholder="Cash received, Zelle confirmation, manual card note"
+                />
+              </label>
+            )}
           </div>
           <button
             className="primary-action pos-complete-button"
@@ -3820,7 +4023,11 @@ function PosPanel({
             }}
           >
             <Check size={16} />
-            {submitting || busyLabel === "Completing POS sale" ? "Completing" : `Complete Sale ${money(cartTotals.total)}`}
+            {submitting || busyLabel === "Completing POS sale"
+              ? paymentMethod === "card_terminal"
+                ? "Processing card"
+                : "Completing"
+              : `${paymentMethod === "card_terminal" ? "Charge Card" : "Complete Sale"} ${money(cartTotals.total)}`}
           </button>
         </aside>
       </div>
@@ -3831,7 +4038,7 @@ function PosPanel({
             <div className="edit-card-heading">
               <div>
                 <h2>Confirm Sale</h2>
-                <span>This records the sale and deducts inventory.</span>
+                <span>{paymentMethod === "card_terminal" ? "This starts the Stripe Terminal test reader flow." : "This records the sale and deducts inventory."}</span>
               </div>
               <button className="icon-button" type="button" aria-label="Close confirm sale" onClick={() => setConfirmOpen(false)}>
                 <X size={18} />
@@ -3842,14 +4049,18 @@ function PosPanel({
               <span>Payment <strong>{posPaymentMethodLabel(paymentMethod)}</strong></span>
               <span>Total <strong>{money(cartTotals.total)}</strong></span>
             </div>
-            <p className="manual-safety-note">This action cannot be undone from POS. Use sale history corrections if a mistake is found.</p>
+            <p className="manual-safety-note">
+              {paymentMethod === "card_terminal"
+                ? "Inventory is deducted only after the server verifies and captures the test PaymentIntent."
+                : "This action cannot be undone from POS. Use sale history corrections if a mistake is found."}
+            </p>
             <div className="modal-action-row">
               <button className="mini-action" type="button" disabled={submitting} onClick={() => setConfirmOpen(false)}>
                 Cancel
               </button>
               <button className="primary-action" type="button" disabled={submitting} onClick={() => void completeSale()}>
                 <Check size={15} />
-                Confirm Sale
+                {paymentMethod === "card_terminal" ? "Start Card Reader" : "Confirm Sale"}
               </button>
             </div>
           </div>

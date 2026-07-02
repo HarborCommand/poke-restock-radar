@@ -844,6 +844,7 @@ Stripe setup:
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: reserved for future embedded Stripe UI; Stripe-hosted Checkout does not expose the secret key.
 - `STRIPE_WEBHOOK_SECRET`: required for signed webhook verification.
 - `STORE_BASE_URL`: production storefront base URL, for example `https://poke-restock-radar.vercel.app`.
+- `STRIPE_TERMINAL_TEST_MODE_ENABLED`: optional POS card-reader test-mode flag. When `true`, the POS can use Stripe Terminal's simulated reader only if `STRIPE_SECRET_KEY` is a `sk_test_` key.
 
 Checkout behavior:
 

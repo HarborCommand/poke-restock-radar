@@ -588,6 +588,7 @@ export type InventorySaleDTO = {
   saleReference: string | null;
   paymentMethod: string | null;
   paymentReference: string | null;
+  stripePaymentIntentId: string | null;
   saleStatus: "active" | "partially_refunded" | "refunded" | "canceled" | "test";
   storefrontOrderNumber: string | null;
   storefrontOrderStatus: string | null;
@@ -599,7 +600,7 @@ export type InventorySaleDTO = {
   createdAt: string;
 };
 
-export type PosPaymentMethodDTO = "cash" | "zelle" | "external_card" | "other";
+export type PosPaymentMethodDTO = "cash" | "zelle" | "external_card" | "other" | "card_terminal";
 
 export type PosSaleLineDTO = {
   inventoryItemId: string;
@@ -619,6 +620,7 @@ export type PosSaleReceiptDTO = {
   paymentMethod: PosPaymentMethodDTO;
   paymentMethodLabel: string;
   paymentReference: string | null;
+  stripePaymentIntentId: string | null;
   subtotal: number;
   tax: number;
   total: number;
@@ -1428,6 +1430,8 @@ export type AppHealthDTO = {
       testMode: boolean;
       checkoutSessionReady: boolean;
       webhookReady: boolean;
+      terminalTestModeEnabled: boolean;
+      terminalTestModeReady: boolean;
       missing: string[];
     };
     shippingRates: ProviderHealthMetadataDTO & {

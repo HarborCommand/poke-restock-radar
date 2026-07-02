@@ -933,6 +933,7 @@ model InventorySale {
   saleReference    String?
   paymentMethod    String?
   paymentReference String?
+  stripePaymentIntentId String?
   soldAt           DateTime
   notes            String?
   createdAt        DateTime      @default(now())
@@ -944,6 +945,7 @@ model InventorySale {
   @@index([platform])
   @@index([saleReference])
   @@index([paymentMethod])
+  @@index([stripePaymentIntentId])
   @@index([soldAt])
 }
 
