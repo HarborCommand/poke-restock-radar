@@ -930,6 +930,9 @@ model InventorySale {
   costBasis        Float
   profitLoss       Float
   roiPercent       Float?
+  saleReference    String?
+  paymentMethod    String?
+  paymentReference String?
   soldAt           DateTime
   notes            String?
   createdAt        DateTime      @default(now())
@@ -939,6 +942,8 @@ model InventorySale {
   @@index([inventoryItemId])
   @@index([userId])
   @@index([platform])
+  @@index([saleReference])
+  @@index([paymentMethod])
   @@index([soldAt])
 }
 
