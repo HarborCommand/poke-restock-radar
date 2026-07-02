@@ -11,6 +11,7 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
+  CreditCard,
   ClipboardList,
   Clock,
   Download,
@@ -26,6 +27,7 @@ import {
   Mail,
   MapPin,
   Menu,
+  Minus,
   MoreHorizontal,
   Navigation,
   PackageSearch,
@@ -45,6 +47,7 @@ import {
   Smartphone,
   Sparkles,
   ShoppingBag,
+  ShoppingCart,
   Star,
   Store,
   Tags,
@@ -60,6 +63,7 @@ import {
   type FormEvent,
   type InputHTMLAttributes,
   type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type SelectHTMLAttributes,
@@ -80,6 +84,17 @@ import { STOREFRONT_CATEGORY_OPTIONS } from "@/lib/storefront-categories";
 import { isProductImageUrlRenderable, isStorefrontDisplayImageUrl, productImageQualityWarnings } from "@/lib/product-image-quality";
 import { DEFAULT_STOREFRONT_PURCHASE_LIMIT } from "@/lib/storefront-purchase-limits";
 import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
+import {
+  POS_DEFAULT_TAX_RATE,
+  POS_PAYMENT_METHOD_LABELS,
+  POS_PAYMENT_METHOD_VALUES,
+  calculatePosTotals,
+  isPosSellableInventoryItem,
+  posItemExactCodeMatch,
+  posItemMatchesQuery,
+  posPaymentMethodLabel,
+  posUnitPrice
+} from "@/lib/pos";
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
@@ -102,6 +117,8 @@ import type {
   ProductDiscoverySourceDTO,
   ProductStatus,
   ProductVerificationStatus,
+  PosPaymentMethodDTO,
+  PosSaleReceiptDTO,
   ProviderHealthStatus,
   Rating,
   ReleaseDTO,
@@ -129,6 +146,7 @@ type Tab =
   | "releases"
   | "cards"
   | "inventory"
+  | "pos"
   | "orders"
   | "shipping"
   | "sales"
@@ -214,6 +232,7 @@ const navSectionLabels: Record<NavSection, string> = {
 const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSection }> = [
   { id: "dashboard", label: "Dashboard", icon: Home, section: "main" },
   { id: "inventory", label: "Inventory", icon: Trophy, section: "inventory" },
+  { id: "pos", label: "POS", icon: ShoppingCart, section: "inventory" },
   { id: "orders", label: "Orders", icon: ShoppingBag, section: "inventory" },
   { id: "shipping", label: "Shipping", icon: Navigation, section: "inventory" },
   { id: "sales", label: "Sales", icon: Receipt, section: "inventory" },
@@ -229,6 +248,7 @@ const deprecatedUiTabs = new Set<Tab>(["field", "products", "stores", "cards", "
 const deprecatedTrackerTabs = new Set<Tab>(["onlineDrops", "checkStock", "watchlist", "keywords"]);
 const deprecatedAnalyticsTabs = new Set<Tab>(["profitLoss", "trends"]);
 const visibleTabIds = new Set<Tab>(tabs.map((tab) => tab.id));
+const adminOnlyTabs = new Set<Tab>(["admin", "pos"]);
 const INVENTORY_PREFILL_STORAGE_KEY = "poke-radar-inventory-prefill";
 
 const productStatuses: ProductStatus[] = [
@@ -1807,6 +1827,12 @@ export function RadarApp() {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (activeTab === "pos" && dashboard && dashboard.currentUser.role !== "ADMIN") {
+      setActiveTab("dashboard");
+    }
+  }, [activeTab, dashboard, setActiveTab]);
+
   async function refreshAppCacheAndReload() {
     await clearAppCachesForReload();
     showToast({ type: "success", message: "App cache cleared. Reloading the latest build." });
@@ -1914,7 +1940,7 @@ export function RadarApp() {
   const navGroups = (Object.keys(navSectionLabels) as NavSection[])
     .map((section) => ({
       section,
-      tabs: tabs.filter((tab) => tab.section === section && (tab.id !== "admin" || isAdmin))
+      tabs: tabs.filter((tab) => tab.section === section && (!adminOnlyTabs.has(tab.id) || isAdmin))
     }))
     .filter((group) => group.tabs.length);
 
@@ -2108,6 +2134,9 @@ export function RadarApp() {
         ) : null}
         {activeTab === "inventory" ? (
           <InventoryPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+        ) : null}
+        {activeTab === "pos" && isAdmin ? (
+          <PosPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} onCompleted={loadDashboard} />
         ) : null}
         {activeTab === "orders" ? (
           <StorefrontOrdersPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
@@ -3456,6 +3485,400 @@ function SalesPanel({
         submit={submit}
         onRecordSale={() => undefined}
       />
+    </section>
+  );
+}
+
+const posQuickFilters = ["All", "Booster Boxes", "ETBs", "Singles", "Accessories"] as const;
+type PosQuickFilter = (typeof posQuickFilters)[number];
+type PosCartLine = { itemId: string; quantity: number };
+
+function posFilterMatches(item: InventoryItemDTO, filter: PosQuickFilter): boolean {
+  const text = `${item.category} ${item.itemName} ${item.publicTitle ?? ""}`.toLowerCase();
+  if (filter === "All") return true;
+  if (filter === "Booster Boxes") return text.includes("booster_box") || text.includes("booster box");
+  if (filter === "ETBs") return text.includes("etb") || text.includes("elite trainer");
+  if (filter === "Singles") return text.includes("single") || text.includes("raw_card") || text.includes("graded_card");
+  return !posQuickFilters.slice(1, 4).some((candidate) => posFilterMatches(item, candidate));
+}
+
+function posIdentifier(item: InventoryItemDTO) {
+  return item.upc || item.sku || item.dpci || item.asin || "No UPC/SKU";
+}
+
+function posDisplayTitle(item: InventoryItemDTO) {
+  return item.publicTitle || item.itemName;
+}
+
+function newPosSaleIdempotencyKey() {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
+  const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `${stamp}-${random}`;
+}
+
+function PosPanel({
+  dashboard,
+  busy,
+  busyLabel,
+  onCompleted
+}: {
+  dashboard: DashboardDTO;
+  busy: boolean;
+  busyLabel: string | null;
+  onCompleted: () => Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<PosQuickFilter>("All");
+  const [cart, setCart] = useState<PosCartLine[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethodDTO>("cash");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [saleIdempotencyKey, setSaleIdempotencyKey] = useState(() => newPosSaleIdempotencyKey());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [posMessage, setPosMessage] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<PosSaleReceiptDTO | null>(null);
+
+  const sellableItems = useMemo(
+    () => dashboard.inventory.filter(isPosSellableInventoryItem).sort((a, b) => posDisplayTitle(a).localeCompare(posDisplayTitle(b))),
+    [dashboard.inventory]
+  );
+  const itemsById = useMemo(() => new Map(dashboard.inventory.map((item) => [item.id, item])), [dashboard.inventory]);
+  const visibleItems = useMemo(
+    () =>
+      sellableItems
+        .filter((item) => posFilterMatches(item, filter))
+        .filter((item) => posItemMatchesQuery(item, query))
+        .slice(0, 24),
+    [filter, query, sellableItems]
+  );
+  const cartLines = cart
+    .map((line) => {
+      const item = itemsById.get(line.itemId);
+      const unitPrice = item ? posUnitPrice(item) : null;
+      return item && unitPrice !== null ? { ...line, item, unitPrice, lineTotal: unitPrice * line.quantity } : null;
+    })
+    .filter((line): line is PosCartLine & { item: InventoryItemDTO; unitPrice: number; lineTotal: number } => Boolean(line));
+  const cartQuantity = cartLines.reduce((sum, line) => sum + line.quantity, 0);
+  const cartTotals = calculatePosTotals(cartLines, POS_DEFAULT_TAX_RATE);
+  const cartInvalid = cartLines.some((line) => !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned);
+  const actionDisabled = busy || submitting || cartLines.length === 0 || cartInvalid;
+
+  function addToCart(item: InventoryItemDTO) {
+    setReceipt(null);
+    setPosMessage(null);
+    if (!isPosSellableInventoryItem(item)) {
+      setPosMessage(`${item.itemName} is not available for POS sale.`);
+      return;
+    }
+    setCart((current) => {
+      const existing = current.find((line) => line.itemId === item.id);
+      const currentQuantity = existing?.quantity ?? 0;
+      if (currentQuantity >= item.quantityOwned) {
+        setPosMessage(`Only ${item.quantityOwned} available for ${item.itemName}.`);
+        return current;
+      }
+      if (existing) {
+        return current.map((line) => (line.itemId === item.id ? { ...line, quantity: line.quantity + 1 } : line));
+      }
+      return [...current, { itemId: item.id, quantity: 1 }];
+    });
+  }
+
+  function updateCartQuantity(item: InventoryItemDTO, quantity: number) {
+    const nextQuantity = Math.max(1, Math.min(item.quantityOwned, quantity));
+    setCart((current) => current.map((line) => (line.itemId === item.id ? { ...line, quantity: nextQuantity } : line)));
+  }
+
+  function removeFromCart(itemId: string) {
+    setCart((current) => current.filter((line) => line.itemId !== itemId));
+  }
+
+  function clearCart() {
+    setCart([]);
+    setReceipt(null);
+    setPosMessage(null);
+    setSaleIdempotencyKey(newPosSaleIdempotencyKey());
+  }
+
+  function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    const exactMatches = sellableItems.filter((item) => posItemExactCodeMatch(item, query));
+    if (exactMatches.length === 1) {
+      event.preventDefault();
+      addToCart(exactMatches[0]);
+      setQuery("");
+    }
+  }
+
+  function validateBeforeConfirm() {
+    if (!cartLines.length) {
+      setPosMessage("Add at least one item before completing a sale.");
+      return false;
+    }
+    if (!paymentMethod) {
+      setPosMessage("Select a payment method.");
+      return false;
+    }
+    if (cartInvalid) {
+      setPosMessage("Review the cart. One or more quantities exceed current on-hand inventory.");
+      return false;
+    }
+    setPosMessage(null);
+    return true;
+  }
+
+  async function completeSale() {
+    if (!validateBeforeConfirm()) return;
+    setSubmitting(true);
+    setPosMessage(null);
+    try {
+      const result = await requestJson<{ sale: PosSaleReceiptDTO }>("/api/radar/pos/sales", {
+        method: "POST",
+        body: JSON.stringify({
+          idempotencyKey: saleIdempotencyKey,
+          items: cartLines.map((line) => ({ inventoryItemId: line.item.id, quantity: line.quantity })),
+          paymentMethod,
+          paymentReference
+        })
+      });
+      setReceipt(result.sale);
+      setCart([]);
+      setPaymentReference("");
+      setSaleIdempotencyKey(newPosSaleIdempotencyKey());
+      setConfirmOpen(false);
+      await onCompleted();
+    } catch (error) {
+      setPosMessage(error instanceof Error ? error.message : "POS sale failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="pos-page" aria-label="Admin POS">
+      <SectionIntro
+        title="POS"
+        detail="Fast in-person checkout for display inventory. Manual payments only."
+        stats={[
+          { label: "sellable", value: sellableItems.length },
+          { label: "in cart", value: cartQuantity, tone: cartQuantity ? "good" : "muted" }
+        ]}
+      />
+
+      {receipt ? <PosReceipt receipt={receipt} /> : null}
+      {posMessage ? <p className="form-error pos-alert" role="alert">{posMessage}</p> : null}
+
+      <div className="pos-workspace">
+        <section className="pos-search-panel" aria-label="Product search">
+          <div className="pos-scan-row">
+            <label className="pos-search-input">
+              <Search size={16} />
+              <input
+                autoComplete="off"
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Search by name, UPC, or SKU"
+              />
+              {query ? (
+                <button className="icon-button small" type="button" aria-label="Clear search" onClick={() => setQuery("")}>
+                  <X size={14} />
+                </button>
+              ) : null}
+            </label>
+            <span className="scan-hint"><ScanBarcode size={15} /> Scanner Enter adds exact UPC/SKU</span>
+          </div>
+          <div className="pos-filter-row" aria-label="Quick add filters">
+            {posQuickFilters.map((option) => (
+              <button className={filter === option ? "pos-filter active" : "pos-filter"} key={option} type="button" onClick={() => setFilter(option)}>
+                {option}
+              </button>
+            ))}
+          </div>
+          <div className="pos-results-heading">
+            <strong>Search Results ({visibleItems.length})</strong>
+            <span>{query ? "Filtered by search" : "Available display inventory"}</span>
+          </div>
+          <div className="pos-result-grid">
+            {visibleItems.length ? (
+              visibleItems.map((item) => {
+                const unitPrice = posUnitPrice(item) ?? 0;
+                const inCart = cart.find((line) => line.itemId === item.id)?.quantity ?? 0;
+                const canAdd = inCart < item.quantityOwned;
+                return (
+                  <article className="pos-product-card" key={item.id}>
+                    <InventoryImage item={item} />
+                    <div className="pos-product-copy">
+                      <strong>{posDisplayTitle(item)}</strong>
+                      <span>{posIdentifier(item)}</span>
+                      <span>{formatStatus(item.category)}</span>
+                      <div>
+                        <b>{money(unitPrice)}</b>
+                        <em>On hand: {item.quantityOwned}</em>
+                      </div>
+                    </div>
+                    <button className="primary-action pos-add-button" type="button" disabled={!canAdd} onClick={() => addToCart(item)}>
+                      <Plus size={15} />
+                      Add
+                    </button>
+                  </article>
+                );
+              })
+            ) : (
+              <EmptyState icon={PackageSearch} title="No sellable products found" detail="Try another search or add price/on-hand inventory first." />
+            )}
+          </div>
+        </section>
+
+        <aside className="pos-cart-panel" aria-label="POS cart">
+          <div className="pos-cart-header">
+            <div>
+              <h2>Cart ({cartQuantity})</h2>
+              <span>Server recalculates prices and inventory before completion.</span>
+            </div>
+            <button className="mini-action danger" type="button" disabled={!cart.length || submitting} onClick={clearCart}>
+              Clear
+            </button>
+          </div>
+          <div className="pos-cart-lines">
+            {cartLines.length ? (
+              cartLines.map((line) => {
+                const unavailable = !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned;
+                return (
+                  <article className={unavailable ? "pos-cart-line unavailable" : "pos-cart-line"} key={line.item.id}>
+                    <InventoryImage item={line.item} />
+                    <div className="pos-cart-line-copy">
+                      <strong>{posDisplayTitle(line.item)}</strong>
+                      <span>{posIdentifier(line.item)}</span>
+                      <small>{money(line.unitPrice)} each - {line.item.quantityOwned} available</small>
+                      {unavailable ? <em>Quantity needs review</em> : null}
+                    </div>
+                    <div className="pos-cart-quantity" aria-label={`Quantity for ${line.item.itemName}`}>
+                      <button type="button" disabled={line.quantity <= 1} onClick={() => updateCartQuantity(line.item, line.quantity - 1)} aria-label="Decrease quantity">
+                        <Minus size={14} />
+                      </button>
+                      <input
+                        aria-label="Quantity"
+                        type="number"
+                        min="1"
+                        max={line.item.quantityOwned}
+                        value={line.quantity}
+                        onChange={(event) => updateCartQuantity(line.item, Number(event.currentTarget.value) || 1)}
+                      />
+                      <button type="button" disabled={line.quantity >= line.item.quantityOwned} onClick={() => updateCartQuantity(line.item, line.quantity + 1)} aria-label="Increase quantity">
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                    <strong className="pos-line-total">{money(line.lineTotal)}</strong>
+                    <button className="icon-button small" type="button" aria-label="Remove item" onClick={() => removeFromCart(line.item.id)}>
+                      <X size={14} />
+                    </button>
+                  </article>
+                );
+              })
+            ) : (
+              <EmptyState icon={ShoppingCart} title="Cart is empty" detail="Search or scan a product to start an in-person sale." />
+            )}
+          </div>
+          <div className="pos-total-box">
+            <span>Subtotal <strong>{money(cartTotals.subtotal)}</strong></span>
+            <span>Tax <strong>{money(cartTotals.tax)}</strong></span>
+            <small>POS tax is centralized and configurable; current default is 0 until configured.</small>
+            <span className="total">Total <strong>{money(cartTotals.total)}</strong></span>
+          </div>
+          <div className="pos-payment-panel">
+            <h3>Payment Method</h3>
+            <div className="pos-payment-options">
+              {POS_PAYMENT_METHOD_VALUES.map((method) => (
+                <button
+                  className={paymentMethod === method ? "pos-payment active" : "pos-payment"}
+                  key={method}
+                  type="button"
+                  onClick={() => setPaymentMethod(method)}
+                >
+                  <CreditCard size={15} />
+                  {POS_PAYMENT_METHOD_LABELS[method]}
+                </button>
+              ))}
+            </div>
+            <label className="pos-reference-input">
+              Payment reference (optional)
+              <input
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.currentTarget.value)}
+                placeholder="Cash received, Zelle confirmation, manual card note"
+              />
+            </label>
+          </div>
+          <button
+            className="primary-action pos-complete-button"
+            type="button"
+            disabled={actionDisabled}
+            onClick={() => {
+              if (validateBeforeConfirm()) setConfirmOpen(true);
+            }}
+          >
+            <Check size={16} />
+            {submitting || busyLabel === "Completing POS sale" ? "Completing" : `Complete Sale ${money(cartTotals.total)}`}
+          </button>
+        </aside>
+      </div>
+
+      {confirmOpen ? (
+        <div className="inventory-modal-backdrop" role="presentation">
+          <div className="inventory-modal pos-confirm-modal" role="dialog" aria-modal="true" aria-label="Confirm POS sale">
+            <div className="edit-card-heading">
+              <div>
+                <h2>Confirm Sale</h2>
+                <span>This records the sale and deducts inventory.</span>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close confirm sale" onClick={() => setConfirmOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="pos-confirm-summary">
+              <span>Items <strong>{cartQuantity}</strong></span>
+              <span>Payment <strong>{posPaymentMethodLabel(paymentMethod)}</strong></span>
+              <span>Total <strong>{money(cartTotals.total)}</strong></span>
+            </div>
+            <p className="manual-safety-note">This action cannot be undone from POS. Use sale history corrections if a mistake is found.</p>
+            <div className="modal-action-row">
+              <button className="mini-action" type="button" disabled={submitting} onClick={() => setConfirmOpen(false)}>
+                Cancel
+              </button>
+              <button className="primary-action" type="button" disabled={submitting} onClick={() => void completeSale()}>
+                <Check size={15} />
+                Confirm Sale
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PosReceipt({ receipt }: { receipt: PosSaleReceiptDTO }) {
+  return (
+    <section className="pos-receipt" aria-live="polite">
+      <div>
+        <span className="sale-status-badge good">Sale Complete</span>
+        <h3>{receipt.saleReference}</h3>
+        <p>{receipt.itemCount} item{receipt.itemCount === 1 ? "" : "s"} sold. Inventory updated.</p>
+      </div>
+      <div className="pos-receipt-lines">
+        {receipt.lines.map((line) => (
+          <span key={line.inventoryItemId}>
+            {line.quantity} x {line.itemName}
+            <strong>{money(line.lineTotal)}</strong>
+          </span>
+        ))}
+      </div>
+      <div className="pos-receipt-total">
+        <span>{receipt.paymentMethodLabel}</span>
+        <strong>{money(receipt.total)}</strong>
+      </div>
     </section>
   );
 }
