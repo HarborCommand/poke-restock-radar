@@ -944,6 +944,26 @@ export const posSaleCreateSchema = z.object({
   paymentReference: optionalTrimmed
 });
 
+const posTerminalItemsSchema = z.array(z.object({
+  inventoryItemId: z.string().trim().min(2),
+  quantity: z.coerce.number().int().min(1).max(1000)
+})).min(1).max(100);
+
+export const posTerminalPaymentIntentCreateSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
+  items: posTerminalItemsSchema
+});
+
+export const posTerminalCompleteSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
+  items: posTerminalItemsSchema,
+  paymentIntentId: z.string().trim().regex(/^pi_[A-Za-z0-9_]+$/)
+});
+
+export const posTerminalCancelSchema = z.object({
+  paymentIntentId: z.string().trim().regex(/^pi_[A-Za-z0-9_]+$/)
+});
+
 export const storefrontCartItemSchema = z.object({
   id: z.string().trim().min(2),
   quantity: z.coerce.number().int().min(1).max(25)

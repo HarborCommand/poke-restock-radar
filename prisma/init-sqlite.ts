@@ -582,6 +582,7 @@ const statements = [
     "saleReference" TEXT,
     "paymentMethod" TEXT,
     "paymentReference" TEXT,
+    "stripePaymentIntentId" TEXT,
     "soldAt" DATETIME NOT NULL,
     "notes" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -642,6 +643,7 @@ const statements = [
   `ALTER TABLE "InventorySale" ADD COLUMN "saleReference" TEXT`,
   `ALTER TABLE "InventorySale" ADD COLUMN "paymentMethod" TEXT`,
   `ALTER TABLE "InventorySale" ADD COLUMN "paymentReference" TEXT`,
+  `ALTER TABLE "InventorySale" ADD COLUMN "stripePaymentIntentId" TEXT`,
   `CREATE TABLE IF NOT EXISTS "StorefrontCustomer" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "userId" TEXT,
@@ -1459,6 +1461,7 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS "InventorySale_platform_idx" ON "InventorySale"("platform")`,
   `CREATE INDEX IF NOT EXISTS "InventorySale_saleReference_idx" ON "InventorySale"("saleReference")`,
   `CREATE INDEX IF NOT EXISTS "InventorySale_paymentMethod_idx" ON "InventorySale"("paymentMethod")`,
+  `CREATE INDEX IF NOT EXISTS "InventorySale_stripePaymentIntentId_idx" ON "InventorySale"("stripePaymentIntentId")`,
   `CREATE INDEX IF NOT EXISTS "InventorySale_soldAt_idx" ON "InventorySale"("soldAt")`,
   `CREATE INDEX IF NOT EXISTS "InventoryMarketComp_inventoryItemId_idx" ON "InventoryMarketComp"("inventoryItemId")`,
   `CREATE INDEX IF NOT EXISTS "InventoryMarketComp_sourceQuality_idx" ON "InventoryMarketComp"("sourceQuality")`,
