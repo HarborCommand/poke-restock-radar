@@ -364,7 +364,7 @@ test("admin inventory can find products that need shipping profiles", () => {
   const filterState = sourceSlice(appSource, "type InventoryFiltersState", "type InventoryMutationReason");
   const filterLogic = sourceSlice(appSource, "function inventoryItemMatchesFilters", "function sortInventoryItemsForFilters");
   const filtersComponent = sourceSlice(appSource, "function InventoryFilters", "function InventoryList");
-  const listComponent = sourceSlice(appSource, "function InventoryList", "function InventoryDetailsModal");
+  const listComponent = sourceSlice(appSource, "function InventoryList", "function ProductWorkspaceShell");
 
   assert.match(appSource, /function inventoryShippingProfileComplete\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
   assert.match(appSource, /function inventoryUsesFallbackShipping\(item: InventoryItemDTO, shippingProfiles: ShippingProfileDTO\[\] = \[\]\)/);
@@ -599,7 +599,7 @@ test("admin inventory storefront availability is capped by on-hand stock", () =>
   const storefront = readFileSync("src/lib/storefront.ts", "utf8");
   const service = readFileSync("src/lib/radar-service.ts", "utf8");
   const helperSource = sourceSlice(appSource, "function storefrontListingAvailableForSale", "function positiveInventoryNumber");
-  const detailsModal = sourceSlice(appSource, "function InventoryDetailsModal", "function InventoryEditStockLotModal");
+  const workspaceOverview = sourceSlice(appSource, "function ProductWorkspaceShell", "function InventoryEditStockLotModal");
   const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
   const updateListing = sourceSlice(storefront, "export async function updateInventoryStoreListing", "export async function bulkPublishInventoryStoreListings");
 
@@ -610,11 +610,11 @@ test("admin inventory storefront availability is capped by on-hand stock", () =>
   assert.match(helperSource, /On hand exists, but online availability is capped at 0\./);
   assert.match(helperSource, /Listing is active but currently sold out\./);
   assert.match(helperSource, /Sold out online/);
-  assert.match(detailsModal, /DetailStat label="On hand"/);
-  assert.match(detailsModal, /DetailStat label="Available online"/);
-  assert.match(detailsModal, /Manual listing cap/);
-  assert.match(detailsModal, /storefrontListingStockWarnings\(item\)/);
-  assert.match(detailsModal, /storefrontListingPublicStatus\(item\)/);
+  assert.match(workspaceOverview, /DetailStat label="On hand"/);
+  assert.match(workspaceOverview, /DetailStat label="Available online"/);
+  assert.match(workspaceOverview, /Manual listing cap/);
+  assert.match(workspaceOverview, /storefrontListingStockWarnings\(item\)/);
+  assert.match(workspaceOverview, /storefrontListingPublicStatus\(item\)/);
   assert.match(listingModal, /max=\{String\(Math\.max\(0, item\.quantityOwned\)\)\}/);
   assert.match(listingModal, /Available online is capped by on-hand stock/);
   assert.match(listingModal, /manualAvailableForSale/);
@@ -632,7 +632,7 @@ test("inventory row actions and stock lot details make sold-out corrections obvi
   const css = readFileSync("src/app/globals.css", "utf8");
   const listComponent = sourceSlice(appSource, "function InventoryList", "function inventoryStockStatusLabel");
   const actionMenu = sourceSlice(listComponent, "const floatingActionMenu", "return (");
-  const detailsModal = sourceSlice(appSource, "function InventoryDetailsModal", "function InventoryEditStockLotModal");
+  const workspace = sourceSlice(appSource, "function productWorkspaceTitle", "function ProductWorkspaceOverview");
   const lotsComponent = sourceSlice(appSource, "function CompactLotsList", "function CompactSalesList");
 
   assert.match(listComponent, /inventory-row-primary-action/);
@@ -653,7 +653,14 @@ test("inventory row actions and stock lot details make sold-out corrections obvi
   assert.ok(actionMenu.indexOf("Edit Listing") < actionMenu.indexOf("View Public Page"), "Public page action should stay with storefront actions");
   assert.ok(actionMenu.indexOf("View Public Page") < actionMenu.indexOf("Product"), "Product actions should be grouped last");
   assert.ok(actionMenu.indexOf("View Details") < actionMenu.indexOf("Edit Product"), "View Details should remain before Edit Product");
-  assert.match(detailsModal, /Adjust Stock/);
+  assert.match(workspace, /Product Workspace/);
+  assert.match(workspace, /Add Stock/);
+  assert.match(workspace, /Adjust Stock/);
+  assert.match(workspace, /Record Sale/);
+  assert.match(workspace, /Edit Product/);
+  assert.match(workspace, /Edit Listing/);
+  assert.match(workspace, /View Public Page/);
+  assert.match(workspace, /Product Page/);
   assert.match(lotsComponent, /Active stock lots/);
   assert.match(lotsComponent, /Depleted stock lots/);
   assert.match(lotsComponent, /remainingQuantity > 0/);
@@ -670,6 +677,49 @@ test("inventory row actions and stock lot details make sold-out corrections obvi
   assert.match(css, /body \.catalog-actions \{[\s\S]*justify-content: flex-end !important/);
   assert.match(css, /body \.stock-lot-group\.depleted/);
   assert.match(css, /body \.compact-ledger-list article\.stock-lot-depleted/);
+  assert.match(css, /body \.product-workspace-backdrop/);
+  assert.match(css, /body \.inventory-details-modal\.product-workspace/);
+  assert.match(css, /body \.product-workspace-content \{[\s\S]*overflow: auto/);
+});
+
+test("product action workspace centralizes product action panels", () => {
+  const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const inventoryPanel = sourceSlice(appSource, "function InventoryPanel", "type StorefrontOrderTab");
+  const workspace = sourceSlice(appSource, "function ProductWorkspaceShell", "function ProductWorkspaceOverview");
+  const addStock = sourceSlice(appSource, "function PurchaseFlow", "function InventoryFilters");
+  const editListing = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
+
+  assert.match(appSource, /type ProductWorkspaceMode = "overview" \| "add-stock" \| "adjust-stock" \| "record-sale" \| "edit-product" \| "edit-listing"/);
+  assert.match(inventoryPanel, /const \[productWorkspace, setProductWorkspace\]/);
+  assert.match(inventoryPanel, /openProductWorkspace\(item, "overview"\)/);
+  assert.match(inventoryPanel, /openProductWorkspace\(item, "record-sale"\)/);
+  assert.match(inventoryPanel, /openProductWorkspace\(item, "edit-product"\)/);
+  assert.match(inventoryPanel, /openProductWorkspace\(item, "edit-listing"\)/);
+  assert.match(inventoryPanel, /<ProductWorkspaceShell/);
+  assert.match(inventoryPanel, /productWorkspace\.mode === "add-stock"/);
+  assert.match(inventoryPanel, /productWorkspace\.mode === "adjust-stock"/);
+  assert.match(inventoryPanel, /productWorkspace\.mode === "record-sale"/);
+  assert.match(inventoryPanel, /productWorkspace\.mode === "edit-product"/);
+  assert.match(inventoryPanel, /productWorkspace\.mode === "edit-listing"/);
+
+  assert.match(workspace, /product-workspace-header/);
+  assert.match(workspace, /product-workspace-section-tabs/);
+  assert.match(workspace, /product-workspace-actions/);
+  assert.match(workspace, /document\.addEventListener\("keydown", onKeyDown\)/);
+  assert.match(workspace, /event\.key === "Escape"/);
+  assert.match(workspace, /event\.key !== "Tab"/);
+  assert.match(workspace, /inventoryPrimaryIdentifier\(item\)/);
+
+  assert.match(addStock, /selected-stock-product-summary/);
+  assert.doesNotMatch(addStock, /<InventoryImage item=\{selectedExisting\}/);
+  assert.match(addStock, /Receipt and payment details/);
+  assert.match(addStock, /inventory-edit-actions/);
+  assert.match(editListing, /product-workspace-repeated-preview" hidden/);
+  assert.match(editListing, /workspace-collapsible listing-quality-card/);
+  assert.match(css, /body \.product-workspace-header/);
+  assert.match(css, /body \.workspace-collapsible/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*body \.product-workspace-header/);
 });
 
 test("inventory dashboard polish keeps counts filters notice and shipping metadata concise", () => {
@@ -750,7 +800,7 @@ test("stock lot adjustment requires a reason and records the audit context", () 
   assert.match(validation, /physical_count_correction/);
   assert.match(validation, /duplicate_entry_correction/);
   assert.match(schema, /adjustmentReason: inventoryStockAdjustmentReasonSchema/);
-  assert.match(modal, /<h2>Adjust Stock<\/h2>/);
+  assert.match(modal, /Adjust selected stock lot/);
   assert.match(modal, /name="adjustmentReason"/);
   assert.match(modal, /Physical count correction/);
   assert.match(modal, /Damaged item/);
@@ -762,6 +812,7 @@ test("stock lot adjustment requires a reason and records the audit context", () 
   assert.match(modal, /Selected lot remaining/);
   assert.match(modal, /Sold \/ allocated/);
   assert.match(modal, /Projected on hand/);
+  assert.match(modal, /workspace-collapsible stock-audit-details/);
   assert.match(modal, /This lot is depleted\. To add physical units, use Add Stock or create a correction lot\./);
   assert.match(modal, /No stock quantity changed\./);
   assert.match(updateLot, /Adjustment reason:/);

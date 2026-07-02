@@ -6666,6 +6666,15 @@ type InventoryMutationReason =
   | "stock_lot_updated"
   | "stock_lot_removed";
 
+type ProductWorkspaceMode = "overview" | "add-stock" | "adjust-stock" | "record-sale" | "edit-product" | "edit-listing";
+
+type ProductWorkspaceState = {
+  itemId: string;
+  mode: ProductWorkspaceMode;
+  lotId?: string;
+  prefill?: InventoryPurchasePrefill | null;
+};
+
 type InventoryMutationIntent = {
   beforeIds: string[];
   expectedItemId?: string;
@@ -6809,12 +6818,8 @@ function InventoryPanel({
   const [purchasePrefill, setPurchasePrefill] = useState<InventoryPurchasePrefill | null>(null);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
-  const [saleItemId, setSaleItemId] = useState<string>("");
-  const [detailItemId, setDetailItemId] = useState<string>("");
-  const [editItemId, setEditItemId] = useState<string>("");
-  const [storeListingItemId, setStoreListingItemId] = useState<string>("");
+  const [productWorkspace, setProductWorkspace] = useState<ProductWorkspaceState | null>(null);
   const [selectedPublishIds, setSelectedPublishIds] = useState<string[]>([]);
-  const [editStockLotTarget, setEditStockLotTarget] = useState<{ itemId: string; lotId: string } | null>(null);
   const [filters, setFilters] = useState<InventoryFiltersState>(defaultInventoryFilters);
   const [pendingInventoryMutation, setPendingInventoryMutation] = useState<InventoryMutationIntent | null>(null);
   const [inventoryNotice, setInventoryNotice] = useState<InventoryMutationNoticeState | null>(null);
@@ -6837,20 +6842,48 @@ function InventoryPanel({
     const existingIds = new Set(dashboard.inventory.map((item) => item.id));
     return selectedPublishIds.filter((id) => existingIds.has(id));
   }, [dashboard.inventory, selectedPublishIds]);
-  const detailItem = dashboard.inventory.find((item) => item.id === detailItemId) ?? null;
-  const editItem = dashboard.inventory.find((item) => item.id === editItemId) ?? null;
-  const storeListingItem = dashboard.inventory.find((item) => item.id === storeListingItemId) ?? null;
-  const saleItem = dashboard.inventory.find((item) => item.id === saleItemId) ?? null;
-  const editStockItem = editStockLotTarget
-    ? dashboard.inventory.find((item) => item.id === editStockLotTarget.itemId) ?? null
-    : null;
-  const editStockLot = editStockItem?.stockLots.find((lot) => lot.id === editStockLotTarget?.lotId) ?? null;
+  const workspaceItem = productWorkspace ? dashboard.inventory.find((item) => item.id === productWorkspace.itemId) ?? null : null;
+  const workspaceLot = workspaceItem?.stockLots.find((lot) => lot.id === productWorkspace?.lotId) ?? workspaceItem?.stockLots[0] ?? null;
   const openPurchaseFlow = useCallback((itemId = "", prefill: InventoryPurchasePrefill | null = null) => {
-    setPurchaseDefaultItemId(itemId);
-    setPurchasePrefill(prefill);
     setAddProductChoiceOpen(false);
+    if (itemId) {
+      setSelectedItemId(itemId);
+      setProductWorkspace({ itemId, mode: "add-stock", prefill });
+      setPurchaseFlowOpen(false);
+      return;
+    }
+    setPurchaseDefaultItemId("");
+    setPurchasePrefill(prefill);
     setPurchaseFlowOpen(true);
   }, []);
+
+  function openProductWorkspace(item: InventoryItemDTO, mode: ProductWorkspaceMode, lotId?: string) {
+    setSelectedItemId(item.id);
+    setProductWorkspace({ itemId: item.id, mode, lotId });
+  }
+
+  function openAdjustStockWorkspace(item: InventoryItemDTO) {
+    const lot = item.stockLots[0];
+    if (lot) {
+      openProductWorkspace(item, "adjust-stock", lot.id);
+    } else {
+      openPurchaseFlow(item.id);
+    }
+  }
+
+  function setWorkspaceMode(mode: ProductWorkspaceMode) {
+    if (!workspaceItem) return;
+    if (mode === "adjust-stock") {
+      const lot = workspaceLot ?? workspaceItem.stockLots[0];
+      if (lot) {
+        setProductWorkspace({ itemId: workspaceItem.id, mode, lotId: lot.id });
+      } else {
+        setProductWorkspace({ itemId: workspaceItem.id, mode: "add-stock" });
+      }
+      return;
+    }
+    setProductWorkspace((current) => (current ? { itemId: workspaceItem.id, mode, prefill: mode === "add-stock" ? current.prefill : null } : current));
+  }
 
   const scheduleInventoryRowReveal = useCallback((itemId: string) => {
     if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
@@ -7065,7 +7098,7 @@ function InventoryPanel({
               </button>
             </div>
           </details>
-          <button className="mini-action" disabled={!selectedItem} type="button" onClick={() => selectedItem && setSaleItemId(selectedItem.id)}>
+          <button className="mini-action" disabled={!selectedItem} type="button" onClick={() => selectedItem && openProductWorkspace(selectedItem, "record-sale")}>
             <CircleDollarSign size={14} />
             Record Sale
           </button>
@@ -7122,7 +7155,7 @@ function InventoryPanel({
               openPurchaseFlow(selectedItem?.id ?? "");
             }}
             onScan={() => setBarcodeScannerOpen(true)}
-            onRecordSale={() => selectedItem && setSaleItemId(selectedItem.id)}
+            onRecordSale={() => selectedItem && openProductWorkspace(selectedItem, "record-sale")}
             onViewSales={() => setView("sales")}
             selectedItem={selectedItem}
           />
@@ -7156,17 +7189,13 @@ function InventoryPanel({
                 onAddStock={(item) => {
                   openPurchaseFlow(item.id);
                 }}
-                onAdjustStock={(item) => {
-                  const lot = item.stockLots[0];
-                  if (lot) setEditStockLotTarget({ itemId: item.id, lotId: lot.id });
-                  else openPurchaseFlow(item.id);
-                }}
+                onAdjustStock={openAdjustStockWorkspace}
                 onRecordSale={(item) => {
-                  setSaleItemId(item.id);
+                  openProductWorkspace(item, "record-sale");
                 }}
-                onViewDetails={(item) => setDetailItemId(item.id)}
-                onEditProduct={(item) => setEditItemId(item.id)}
-                onEditListing={(item) => setStoreListingItemId(item.id)}
+                onViewDetails={(item) => openProductWorkspace(item, "overview")}
+                onEditProduct={(item) => openProductWorkspace(item, "edit-product")}
+                onEditListing={(item) => openProductWorkspace(item, "edit-listing")}
               />
             </div>
           </section>
@@ -7182,7 +7211,7 @@ function InventoryPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
-          onRecordSale={() => selectedItem && setSaleItemId(selectedItem.id)}
+          onRecordSale={() => selectedItem && openProductWorkspace(selectedItem, "record-sale")}
         />
       ) : null}
       {addProductChoiceOpen ? (
@@ -7235,130 +7264,130 @@ function InventoryPanel({
           </div>
         </div>
       ) : null}
-      {saleItem ? (
-        <RecordSaleModal
-          item={saleItem}
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={async (event, label, run, options) => {
-            const mutation = inventoryMutationForItem("sale_recorded", "Sale recorded. Inventory quantity and profit totals refreshed.", saleItem);
-            await submit(event, label, run, options);
-            setPendingInventoryMutation(mutation);
-            setSaleItemId("");
-          }}
-          onClose={() => setSaleItemId("")}
-        />
-      ) : null}
       {barcodeScannerOpen ? (
         <BarcodeScannerModal
           dashboard={dashboard}
           onUseResult={openBarcodeResult}
           onViewProduct={(item) => {
             setBarcodeScannerOpen(false);
-            setDetailItemId(item.id);
+            openProductWorkspace(item, "overview");
           }}
           onClose={() => setBarcodeScannerOpen(false)}
         />
       ) : null}
-      {detailItem ? (
-        <InventoryDetailsModal
-          item={detailItem}
+      {workspaceItem && productWorkspace ? (
+        <ProductWorkspaceShell
+          item={workspaceItem}
+          mode={productWorkspace.mode}
           shippingProfiles={dashboard.shippingProfiles}
-          onAddStock={(item) => openPurchaseFlow(item.id)}
-          onAdjustStock={(item) => {
-            const lot = item.stockLots[0];
-            if (lot) {
-              setDetailItemId("");
-              setEditStockLotTarget({ itemId: item.id, lotId: lot.id });
-            } else {
-              setDetailItemId("");
-              openPurchaseFlow(item.id);
-            }
-          }}
-          onRecordSale={(item) => {
-            setDetailItemId("");
-            setSelectedItemId(item.id);
-            setSaleItemId(item.id);
-          }}
-          onEditProduct={(item) => {
-            setDetailItemId("");
-            setEditItemId(item.id);
-          }}
-          onEditListing={(item) => {
-            setDetailItemId("");
-            setStoreListingItemId(item.id);
-          }}
-          onEditStockLot={(item, lot) => {
-            setDetailItemId("");
-            setEditStockLotTarget({ itemId: item.id, lotId: lot.id });
-          }}
-          onDeleteStockLot={(item, lot) => {
-            const mutation = inventoryMutationForItem("stock_lot_removed", "Stock lot removed. Inventory quantity and average cost refreshed.", item);
-            return runAction(
-              `Removing stock lot ${lot.id}`,
-              () =>
-                requestJson(`/api/radar/inventory/${item.id}/stock-lots/${lot.id}`, {
-                  method: "DELETE"
-                }),
-              {
-                confirm:
-                  "Remove this stock lot? This is for fixing mistaken stock entries. Lots with recorded sales cannot be removed.",
-                success: "Stock lot removed"
-              }
-            ).then(() => setPendingInventoryMutation(mutation));
-          }}
-          onClose={() => setDetailItemId("")}
-        />
-      ) : null}
-      {editStockItem && editStockLot ? (
-        <InventoryEditStockLotModal
-          item={editStockItem}
-          lot={editStockLot}
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={async (event, label, run, options) => {
-            const mutation = inventoryMutationForItem("stock_lot_updated", "Stock updated. On-hand and listing availability refreshed.", editStockItem);
-            await submit(event, label, run, options);
-            setPendingInventoryMutation(mutation);
-            setEditStockLotTarget(null);
-          }}
-          onAddStock={(item) => {
-            setEditStockLotTarget(null);
-            openPurchaseFlow(item.id);
-          }}
-          onClose={() => setEditStockLotTarget(null)}
-        />
-      ) : null}
-      {editItem ? (
-        <InventoryEditProductModal
-          item={editItem}
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={async (event, label, run, options) => {
-            const mutation = inventoryMutationFromForm(event.currentTarget, "product_updated", "Product updated. Catalog row refreshed.", editItem.id);
-            await submit(event, label, run, options);
-            setPendingInventoryMutation(mutation);
-            setEditItemId("");
-          }}
-          runAction={runAction}
-          onClose={() => setEditItemId("")}
-        />
-      ) : null}
-      {storeListingItem ? (
-        <StoreListingModal
-          item={storeListingItem}
-          shippingProfiles={dashboard.shippingProfiles}
-          busy={busy}
-          busyLabel={busyLabel}
-          submit={async (event, label, run, options) => {
-            const mutation = inventoryMutationFromForm(event.currentTarget, "listing_updated", "Store listing saved. Catalog status refreshed.", storeListingItem.id);
-            await submit(event, label, run, options);
-            setPendingInventoryMutation(mutation);
-            setStoreListingItemId("");
-          }}
-          runAction={runAction}
-          onClose={() => setStoreListingItemId("")}
-        />
+          onClose={() => setProductWorkspace(null)}
+          onModeChange={setWorkspaceMode}
+        >
+          {productWorkspace.mode === "overview" ? (
+            <ProductWorkspaceOverview
+              item={workspaceItem}
+              shippingProfiles={dashboard.shippingProfiles}
+              onEditStockLot={(item, lot) => {
+                setProductWorkspace({ itemId: item.id, mode: "adjust-stock", lotId: lot.id });
+              }}
+              onDeleteStockLot={(item, lot) => {
+                const mutation = inventoryMutationForItem("stock_lot_removed", "Stock lot removed. Inventory quantity and average cost refreshed.", item);
+                return runAction(
+                  `Removing stock lot ${lot.id}`,
+                  () =>
+                    requestJson(`/api/radar/inventory/${item.id}/stock-lots/${lot.id}`, {
+                      method: "DELETE"
+                    }),
+                  {
+                    confirm:
+                      "Remove this stock lot? This is for fixing mistaken stock entries. Lots with recorded sales cannot be removed.",
+                    success: "Stock lot removed"
+                  }
+                ).then(() => setPendingInventoryMutation(mutation));
+              }}
+            />
+          ) : null}
+          {productWorkspace.mode === "add-stock" ? (
+            <PurchaseFlow
+              key={`${workspaceItem.id}-${productWorkspace.prefill?.upc || ""}`}
+              items={dashboard.inventory}
+              defaultItemId={workspaceItem.id}
+              prefill={productWorkspace.prefill}
+              onScanBarcode={() => setBarcodeScannerOpen(true)}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={async (event, label, run, options) => {
+                const form = event.currentTarget;
+                const formData = new FormData(form);
+                const existingItemId = formStringValue(formData, "existingInventoryItemId") || workspaceItem.id;
+                const mutation = inventoryMutationFromForm(form, "stock_added", "Stock updated. On-hand and listing availability refreshed.", existingItemId);
+                await submit(event, label, run, options);
+                setPendingInventoryMutation(mutation);
+                setProductWorkspace(null);
+              }}
+            />
+          ) : null}
+          {productWorkspace.mode === "adjust-stock" && workspaceLot ? (
+            <InventoryEditStockLotModal
+              item={workspaceItem}
+              lot={workspaceLot}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={async (event, label, run, options) => {
+                const mutation = inventoryMutationForItem("stock_lot_updated", "Stock updated. On-hand and listing availability refreshed.", workspaceItem);
+                await submit(event, label, run, options);
+                setPendingInventoryMutation(mutation);
+                setProductWorkspace(null);
+              }}
+              onAddStock={(item) => setProductWorkspace({ itemId: item.id, mode: "add-stock" })}
+              onClose={() => setProductWorkspace(null)}
+            />
+          ) : null}
+          {productWorkspace.mode === "record-sale" ? (
+            <RecordSaleForm
+              item={workspaceItem}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={async (event, label, run, options) => {
+                const mutation = inventoryMutationForItem("sale_recorded", "Sale recorded. Inventory quantity and profit totals refreshed.", workspaceItem);
+                await submit(event, label, run, options);
+                setPendingInventoryMutation(mutation);
+                setProductWorkspace(null);
+              }}
+            />
+          ) : null}
+          {productWorkspace.mode === "edit-product" ? (
+            <InventoryEditProductModal
+              item={workspaceItem}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={async (event, label, run, options) => {
+                const mutation = inventoryMutationFromForm(event.currentTarget, "product_updated", "Product updated. Catalog row refreshed.", workspaceItem.id);
+                await submit(event, label, run, options);
+                setPendingInventoryMutation(mutation);
+                setProductWorkspace(null);
+              }}
+              runAction={runAction}
+              onClose={() => setProductWorkspace(null)}
+            />
+          ) : null}
+          {productWorkspace.mode === "edit-listing" ? (
+            <StoreListingModal
+              item={workspaceItem}
+              shippingProfiles={dashboard.shippingProfiles}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={async (event, label, run, options) => {
+                const mutation = inventoryMutationFromForm(event.currentTarget, "listing_updated", "Store listing saved. Catalog status refreshed.", workspaceItem.id);
+                await submit(event, label, run, options);
+                setPendingInventoryMutation(mutation);
+                setProductWorkspace(null);
+              }}
+              runAction={runAction}
+              onClose={() => setProductWorkspace(null)}
+            />
+          ) : null}
+        </ProductWorkspaceShell>
       ) : null}
     </>
   );
@@ -11451,14 +11480,11 @@ function PurchaseFlow({
               <input name="category" type="hidden" value={draft.category || "sealed_packs"} />
               <input name="brand" type="hidden" value={draft.brand} />
               <input name="setName" type="hidden" value={draft.setName} />
-              <InventoryImage item={selectedExisting} />
-              <div>
+              <div className="selected-stock-product-summary">
                 <span className="barcode-result-badge">
                   <Check size={14} />
                   Existing product selected
                 </span>
-                <h4>{selectedExisting.itemName}</h4>
-                <p>UPC {selectedExisting.upc || draft.upc || "Missing"} - {formatStatus(selectedExisting.category)} - {selectedExisting.setName || selectedExisting.retailer || "Set not saved"}</p>
                 <p className="stock-correction-help">
                   Add Stock creates a new stock lot and increases real on-hand quantity. Use it for newly found units or physical count corrections.
                 </p>
@@ -11569,7 +11595,7 @@ function PurchaseFlow({
         <article className="flow-step">
           <span>Step 3</span>
           <h3>Add proof/image</h3>
-          <ProductImagePreview imageUrl={draft.imageUrl} itemName={draft.itemName || "Product"} />
+          {!selectedExisting ? <ProductImagePreview imageUrl={draft.imageUrl} itemName={draft.itemName || "Product"} /> : null}
           <div className="form-grid compact">
             <ImageUploadInput value={draft.imageUrl} onValueChange={(value) => updateDraft("imageUrl", value)} />
             <ImageUploadInput
@@ -11579,10 +11605,18 @@ function PurchaseFlow({
               defaultValue={selectedExisting?.receiptImageUrl ?? ""}
               uploadFolder="receipts"
             />
-            <TextInput name="receiptNumber" label="Receipt number" defaultValue={selectedExisting?.receiptNumber ?? ""} />
-            <TextInput name="orderNumber" label="Order number" defaultValue={selectedExisting?.orderNumber ?? ""} />
-            <TextInput name="transactionId" label="Transaction ID" defaultValue={selectedExisting?.transactionId ?? ""} />
-            <TextInput name="paymentMethod" label="Payment method" placeholder="Visa, cash, PayPal" defaultValue={selectedExisting?.paymentMethod ?? ""} />
+            <details className="workspace-collapsible wide-field">
+              <summary>
+                <span>Receipt and payment details</span>
+                <strong>Optional</strong>
+              </summary>
+              <div className="form-grid compact">
+                <TextInput name="receiptNumber" label="Receipt number" defaultValue={selectedExisting?.receiptNumber ?? ""} />
+                <TextInput name="orderNumber" label="Order number" defaultValue={selectedExisting?.orderNumber ?? ""} />
+                <TextInput name="transactionId" label="Transaction ID" defaultValue={selectedExisting?.transactionId ?? ""} />
+                <TextInput name="paymentMethod" label="Payment method" placeholder="Visa, cash, PayPal" defaultValue={selectedExisting?.paymentMethod ?? ""} />
+              </div>
+            </details>
           </div>
         </article>
         <article className="flow-step">
@@ -11657,10 +11691,12 @@ function PurchaseFlow({
             <TextareaInput name="notes" label="Notes" wide />
           </div>
         </details>
-        <button className="primary-action inventory-save-action" disabled={busy} type="submit">
-          <Save size={16} />
-          {busyLabel === "Adding inventory item" ? "Saving" : "Save Purchase"}
-        </button>
+        <div className="inventory-edit-actions">
+          <button className="primary-action inventory-save-action" disabled={busy} type="submit">
+            <Save size={16} />
+            {busyLabel === "Adding inventory item" ? "Saving" : "Save Purchase"}
+          </button>
+        </div>
       </form>
     </section>
   );
@@ -12040,84 +12076,180 @@ function storeListingTone(item: InventoryItemDTO) {
   return "bad";
 }
 
-function InventoryDetailsModal({
+function inventoryPrimaryIdentifier(item: InventoryItemDTO) {
+  return item.upc || item.sku || item.dpci || item.asin || "No UPC/SKU saved";
+}
+
+function productWorkspaceTitle(mode: ProductWorkspaceMode) {
+  if (mode === "add-stock") return "Add Stock";
+  if (mode === "adjust-stock") return "Adjust Stock";
+  if (mode === "record-sale") return "Record Sale";
+  if (mode === "edit-product") return "Edit Product";
+  if (mode === "edit-listing") return "Edit Listing";
+  return "Product Workspace";
+}
+
+function ProductWorkspaceShell({
   item,
+  mode,
   shippingProfiles,
-  onAddStock,
-  onAdjustStock,
-  onRecordSale,
-  onEditProduct,
-  onEditListing,
-  onEditStockLot,
-  onDeleteStockLot,
-  onClose
+  onModeChange,
+  onClose,
+  children
 }: {
   item: InventoryItemDTO;
+  mode: ProductWorkspaceMode;
   shippingProfiles: ShippingProfileDTO[];
-  onAddStock: (item: InventoryItemDTO) => void;
-  onAdjustStock: (item: InventoryItemDTO) => void;
-  onRecordSale: (item: InventoryItemDTO) => void;
-  onEditProduct: (item: InventoryItemDTO) => void;
-  onEditListing: (item: InventoryItemDTO) => void;
-  onEditStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
-  onDeleteStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+  onModeChange: (mode: ProductWorkspaceMode) => void;
   onClose: () => void;
+  children: ReactNode;
 }) {
-  const listingQuality = storefrontListingQuality(item);
-  const listingAvailable = storefrontListingAvailableForSale(item);
-  const manualListingAvailable = storefrontListingManualAvailableForSale(item);
-  const listingWarnings = storefrontListingStockWarnings(item);
-  const listingDetailTone = storeListingTone(item) === "good" ? "good" : storeListingTone(item) === "bad" ? "bad" : "neutral";
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const availableOnline = storefrontListingAvailableForSale(item);
+  const publicPrice = inventoryDisplaySellPrice(item);
+  const publicPriceSource = inventoryDisplaySellPriceSource(item);
+  const workspaceActions: Array<{ mode: ProductWorkspaceMode; label: string; icon: typeof Plus; disabled?: boolean; title?: string }> = [
+    { mode: "add-stock", label: "Add Stock", icon: Plus },
+    {
+      mode: "adjust-stock",
+      label: "Adjust Stock",
+      icon: History,
+      disabled: item.stockLots.length === 0,
+      title: item.stockLots.length ? "Adjust a stock lot" : "Add stock before adjusting a lot"
+    },
+    { mode: "record-sale", label: "Record Sale", icon: CircleDollarSign, disabled: item.quantityOwned <= 0, title: item.quantityOwned > 0 ? "Record a sale" : "Add stock before recording a sale" },
+    { mode: "edit-product", label: "Edit Product", icon: Settings },
+    { mode: "edit-listing", label: "Edit Listing", icon: Store }
+  ];
+  const sections = [
+    { id: "overview", label: "Overview" },
+    { id: "stock", label: "Stock" },
+    { id: "listing", label: "Listing" },
+    { id: "images", label: "Images" },
+    { id: "shipping", label: "Shipping" },
+    { id: "sales", label: "Sales" },
+    { id: "receipts", label: "Receipts / Notes" }
+  ];
+
+  function openWorkspaceSection(sectionId: string) {
+    onModeChange("overview");
+    window.requestAnimationFrame(() => {
+      workspaceRef.current?.querySelector<HTMLElement>(`[data-workspace-section="${sectionId}"]`)?.scrollIntoView({
+        block: "start"
+      });
+    });
+  }
+
+  useEffect(() => {
+    const root = workspaceRef.current;
+    if (!root) return;
+    const rootElement = root;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])"
+    ].join(",");
+    const focusable = Array.from(rootElement.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hasAttribute("disabled"));
+    focusable[0]?.focus();
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const activeFocusable = Array.from(rootElement.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hasAttribute("disabled"));
+      if (!activeFocusable.length) return;
+      const first = activeFocusable[0];
+      const last = activeFocusable[activeFocusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [onClose]);
+
   return (
-    <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-details-modal" role="dialog" aria-modal="true" aria-label={`${item.itemName} inventory details`}>
-        <header className="inventory-details-header">
+    <div className="inventory-modal-backdrop product-workspace-backdrop" role="presentation">
+      <div
+        className="inventory-details-modal product-workspace"
+        ref={workspaceRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${productWorkspaceTitle(mode)} for ${item.itemName}`}
+      >
+        <header className="product-workspace-header">
           <InventoryImage item={item} />
-          <div className="inventory-details-title">
+          <div className="product-workspace-title">
+            <span className="eyeline">{productWorkspaceTitle(mode)}</span>
             <h2>{item.itemName}</h2>
-            <p>{formatStatus(item.category)} - {item.setName || item.retailer || "Set and retailer not saved"}</p>
+            <p>{formatStatus(item.category)} - {inventoryPrimaryIdentifier(item)}</p>
             <div className="inventory-detail-badges">
               <span className={`chip compact-chip ${inventoryStockStatusTone(item)}`}>{inventoryStockStatusLabel(item)}</span>
               <span className={`chip compact-chip ${storeListingTone(item)}`}>{storeListingLabel(item)}</span>
-              <span className={`chip compact-chip ${listingAvailable > 0 ? "good" : "bad"}`}>{storefrontListingPublicStatus(item)}</span>
+              <span className={`chip compact-chip ${availableOnline > 0 ? "good" : "bad"}`}>{storefrontListingPublicStatus(item)}</span>
               {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
                 <span className={`chip compact-chip ${badge.tone === "good" ? "good" : "watch"}`} key={badge.label}>
                   {badge.label}
                 </span>
               ))}
-              {item.realizedRoiPercent !== null ? <span className="chip compact-chip good">ROI {percent(item.realizedRoiPercent)}</span> : null}
             </div>
           </div>
-          <button className="icon-button" type="button" aria-label="Close inventory details" onClick={onClose}>
+          <div className="product-workspace-stats" aria-label="Product summary">
+            <DetailStat label="On hand" value={String(item.quantityOwned)} />
+            <DetailStat label="Available online" value={String(availableOnline)} tone={availableOnline > 0 ? "good" : "bad"} />
+            <DetailStat label="Public price" value={publicPrice !== null ? money(publicPrice) : "Not set"} />
+            <DetailStat label="Sold" value={String(item.quantitySold)} />
+            {publicPriceSource ? <span className="product-workspace-price-source">{publicPriceSource} price</span> : null}
+          </div>
+          <button className="icon-button product-workspace-close" type="button" aria-label="Close product workspace" onClick={onClose}>
             <X size={18} />
           </button>
         </header>
 
-        <section className="inventory-details-actions">
-          <button className="mini-action" type="button" onClick={() => onAddStock(item)}>
-            <Plus size={14} />
-            Add Stock
-          </button>
-          <button className="mini-action" type="button" onClick={() => onAdjustStock(item)}>
-            <History size={14} />
-            Adjust Stock
-          </button>
-          <button className="mini-action" type="button" onClick={() => onRecordSale(item)}>
-            <CircleDollarSign size={14} />
-            Record Sale
-          </button>
-          <button className="mini-action" type="button" onClick={() => onEditProduct(item)} title="Edit product details.">
-            <Settings size={14} />
-            Edit Product
-          </button>
-          <button className="mini-action" type="button" onClick={() => onEditListing(item)} title="Edit public storefront listing.">
-            <ShoppingBag size={14} />
-            Edit Listing
-          </button>
+        <nav className="product-workspace-section-tabs" aria-label="Product workspace sections">
+          {sections.map((section) => (
+            <button className={mode === "overview" && section.id === "overview" ? "active" : ""} key={section.id} type="button" onClick={() => openWorkspaceSection(section.id)}>
+              {section.label}
+            </button>
+          ))}
+        </nav>
+
+        <section className="product-workspace-actions" aria-label="Product actions">
+          {workspaceActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <button
+                className={mode === action.mode ? "mini-action solid" : "mini-action"}
+                disabled={action.disabled}
+                key={action.mode}
+                title={action.title}
+                type="button"
+                onClick={() => onModeChange(action.mode)}
+              >
+                <Icon size={14} />
+                {action.label}
+              </button>
+            );
+          })}
           {item.publishToStore && item.publicSlug ? (
             <a className="mini-action" href={`/shop/product/${item.publicSlug}`} target="_blank" rel="noreferrer">
               <ExternalLink size={14} />
-              Public Page
+              View Public Page
             </a>
           ) : null}
           {item.exactProductUrl ? (
@@ -12128,8 +12260,32 @@ function InventoryDetailsModal({
           ) : null}
         </section>
 
-        <div className="inventory-details-grid">
-          <section className="inventory-detail-section">
+        <main className="product-workspace-content">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+function ProductWorkspaceOverview({
+  item,
+  shippingProfiles,
+  onEditStockLot,
+  onDeleteStockLot
+}: {
+  item: InventoryItemDTO;
+  shippingProfiles: ShippingProfileDTO[];
+  onEditStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+  onDeleteStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+}) {
+  const listingQuality = storefrontListingQuality(item);
+  const listingAvailable = storefrontListingAvailableForSale(item);
+  const manualListingAvailable = storefrontListingManualAvailableForSale(item);
+  const listingWarnings = storefrontListingStockWarnings(item);
+  const listingDetailTone = storeListingTone(item) === "good" ? "good" : storeListingTone(item) === "bad" ? "bad" : "neutral";
+  const shippingData = inventoryEffectiveShippingData(item, shippingProfiles);
+  return (
+    <div className="inventory-details-grid product-workspace-overview-grid">
+          <section className="inventory-detail-section" data-workspace-section="overview">
             <h3>Overview</h3>
             <div className="detail-stat-grid">
               <DetailStat label="On hand" value={String(item.quantityOwned)} />
@@ -12156,7 +12312,7 @@ function InventoryDetailsModal({
             </div>
           </section>
 
-          <section className="inventory-detail-section">
+          <section className="inventory-detail-section" data-workspace-section="listing">
             <h3>Storefront Listing</h3>
             <div className="detail-stat-grid">
               <DetailStat label="Publish status" value={storeListingLabel(item)} tone={listingDetailTone} />
@@ -12182,22 +12338,22 @@ function InventoryDetailsModal({
             <p className="form-helper">Public storefront listings never expose cost basis, source receipts, supplier notes, market value, or tracker data.</p>
           </section>
 
-          <section className="inventory-detail-section">
+          <section className="inventory-detail-section" data-workspace-section="images">
             <h3>Product Images</h3>
             <InventoryDetailImageGallery item={item} />
           </section>
 
-          <section className="inventory-detail-section">
+          <section className="inventory-detail-section" data-workspace-section="stock">
             <h3>Stock Lots</h3>
             <CompactLotsList item={item} onEditLot={onEditStockLot} onDeleteLot={onDeleteStockLot} />
           </section>
 
-          <section className="inventory-detail-section">
+          <section className="inventory-detail-section" data-workspace-section="sales">
             <h3>Sales History</h3>
             <CompactSalesList item={item} />
           </section>
 
-          <section className="inventory-detail-section">
+          <section className="inventory-detail-section" data-workspace-section="receipts">
             <h3>Attachments / Receipts</h3>
             <div className="detail-line-list">
               <span>Receipt: {item.receiptNumber || "Not saved"}</span>
@@ -12213,6 +12369,31 @@ function InventoryDetailsModal({
             </div>
           </section>
 
+          <section className="inventory-detail-section" data-workspace-section="shipping">
+            <h3>Shipping & Packing</h3>
+            <div className="detail-stat-grid">
+              <DetailStat label="Profile" value={shippingData.profile?.name ?? (inventoryShippingProfileValue(item) || "Standard")} />
+              <DetailStat label="Weight" value={shippingData.effectiveWeightOz ? `${shippingData.effectiveWeightOz} oz` : "Missing"} tone={shippingData.effectiveWeightOz ? "good" : "bad"} />
+              <DetailStat
+                label="Dimensions"
+                value={
+                  shippingData.effectiveLengthIn && shippingData.effectiveWidthIn && shippingData.effectiveHeightIn
+                    ? `${shippingData.effectiveLengthIn} x ${shippingData.effectiveWidthIn} x ${shippingData.effectiveHeightIn} in`
+                    : "Missing"
+                }
+                tone={shippingData.effectiveLengthIn && shippingData.effectiveWidthIn && shippingData.effectiveHeightIn ? "good" : "bad"}
+              />
+              <DetailStat label="Metadata" value={inventoryShippingMetadataBadgeLabel(item)} />
+            </div>
+            <div className="inventory-detail-badges">
+              {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
+                <span className={`chip compact-chip ${badge.tone === "good" ? "good" : "watch"}`} key={badge.label}>
+                  {badge.label}
+                </span>
+              ))}
+            </div>
+          </section>
+
           <section className="inventory-detail-section">
             <h3>Notes</h3>
             <div className="detail-line-list">
@@ -12222,8 +12403,6 @@ function InventoryDetailsModal({
               <span>{item.notes || "No notes saved."}</span>
             </div>
           </section>
-        </div>
-      </div>
     </div>
   );
 }
@@ -12273,25 +12452,16 @@ function InventoryEditStockLotModal({
   }
 
   return (
-    <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-modal inventory-edit-modal stock-lot-edit-modal" role="dialog" aria-modal="true" aria-label={`Adjust stock for ${item.itemName}`}>
-        <div className="edit-card-heading">
+    <>
+        <section className="product-workspace-panel-intro">
           <div>
-            <h2>Adjust Stock</h2>
-            <span>Correct a purchase lot quantity, cost, source, or receipt with a required audit reason.</span>
+            <h3>Adjust selected stock lot</h3>
+            <p>Correct quantity, cost, source, or receipt details with a required audit reason.</p>
           </div>
-          <button className="icon-button" type="button" aria-label="Close adjust stock" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-
-        <section className="inventory-edit-preview">
-          <InventoryImage item={item} />
-          <div>
-            <strong>{item.itemName}</strong>
-            <span>
-              Lot from {lot.sourceStore || lot.source} - {lot.remainingQuantity} remaining - {soldFromLot} sold
-            </span>
+          <div className="product-workspace-summary-row">
+            <DetailStat label="Lot source" value={lot.sourceStore || lot.source || "Source unknown"} />
+            <DetailStat label="Remaining" value={String(lot.remainingQuantity)} />
+            <DetailStat label="Sold / allocated" value={String(soldFromLot)} />
           </div>
         </section>
 
@@ -12325,7 +12495,12 @@ function InventoryEditStockLotModal({
                 </button>
               </div>
             ) : null}
-            <div className="stock-cost-preview" aria-label="Live stock cost preview">
+            <details className="workspace-collapsible stock-audit-details" open>
+              <summary>
+                <span>Audit and cost preview</span>
+                <strong>{stockQuantityWillChange ? `Projected on hand ${projectedOnHand}` : "No stock quantity changed"}</strong>
+              </summary>
+              <div className="stock-cost-preview" aria-label="Live stock cost preview">
               <span>
                 <small>Current on hand</small>
                 <strong>{item.quantityOwned}</strong>
@@ -12362,7 +12537,8 @@ function InventoryEditStockLotModal({
                 <small>Remaining after sold lock</small>
                 <strong>{remainingAfterSoldLock}</strong>
               </span>
-            </div>
+              </div>
+            </details>
             {!stockQuantityWillChange ? <p className="form-helper">No stock quantity changed.</p> : null}
             <div className="form-grid compact">
               <SelectInput
@@ -12458,8 +12634,7 @@ function InventoryEditStockLotModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -12481,18 +12656,13 @@ function InventoryEditProductModal({
   const saveLabel = `Updating inventory item ${item.id}`;
 
   return (
-    <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-modal inventory-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit ${item.itemName}`}>
-        <div className="edit-card-heading">
+    <>
+        <section className="product-workspace-panel-intro">
           <div>
-            <h2>Edit Product</h2>
-            <span>Update the saved catalog details. Stock lots and sales history stay unchanged.</span>
+            <h3>Edit catalog details</h3>
+            <p>Catalog data, identifiers, images, shipping metadata, and selling plan. Stock lots and sales history stay read-only here.</p>
           </div>
-          <button className="icon-button" type="button" aria-label="Close edit product" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-
+        </section>
         <form
           className="inventory-edit-form"
           onSubmit={(event) =>
@@ -12504,16 +12674,6 @@ function InventoryEditProductModal({
             )
           }
         >
-          <section className="inventory-edit-preview">
-            <ProductImagePreview imageUrl={item.imageUrl ?? ""} itemName={item.itemName} />
-            <div>
-              <strong>{item.itemName}</strong>
-              <span>
-                {formatStatus(item.category)} - UPC {item.upc || "missing"} - {inventoryStockStatusLabel(item)}
-              </span>
-            </div>
-          </section>
-
           <section className="flow-step">
             <span>Catalog</span>
             <h3>Product details</h3>
@@ -12593,8 +12753,7 @@ function InventoryEditProductModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -12671,17 +12830,13 @@ function StoreListingModal({
   ];
   const showSoldOutPublishWarning = publishToStore && (availableForSale <= 0 || storeStatus === "sold_out");
   return (
-    <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-modal inventory-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit store listing ${item.itemName}`}>
-        <div className="edit-card-heading">
+    <>
+        <section className="product-workspace-panel-intro">
           <div>
-            <h2>Edit Store Listing</h2>
-            <span>Public shoppers only see this safe listing data. Costs, sources, lots, and radar notes stay private.</span>
+            <h3>Edit public listing</h3>
+            <p>Public shoppers only see safe listing data. Costs, sources, lots, and radar notes stay private.</p>
           </div>
-          <button className="icon-button" type="button" aria-label="Close store listing" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
+        </section>
         <form
           className="inventory-edit-form"
           onSubmit={(event) =>
@@ -12693,7 +12848,7 @@ function StoreListingModal({
             )
           }
         >
-          <section className="inventory-edit-preview">
+          <section className="inventory-edit-preview product-workspace-repeated-preview" hidden>
             <ProductImagePreview imageUrl={primaryPublicImageUrl} itemName={item.itemName} />
             <div>
               <strong>{item.publicTitle || item.itemName}</strong>
@@ -12702,11 +12857,11 @@ function StoreListingModal({
               </span>
             </div>
           </section>
-          <section className="listing-quality-card">
-            <div>
+          <details className="workspace-collapsible listing-quality-card">
+            <summary>
               <span>Listing Quality</span>
-              <h3>{qualityChecks.every((check) => check.complete) ? "Ready for storefront" : "Needs attention before public launch"}</h3>
-            </div>
+              <strong>{qualityChecks.every((check) => check.complete) ? "Ready for storefront" : "Needs setup before public launch"}</strong>
+            </summary>
             <div className="listing-quality-grid">
               {qualityChecks.map((check) => (
                 <span className={check.complete ? "complete" : ""} key={check.label}>
@@ -12715,7 +12870,7 @@ function StoreListingModal({
                 </span>
               ))}
             </div>
-          </section>
+          </details>
           <section className="flow-step">
             <span>Publish</span>
             <h3>Storefront visibility</h3>
@@ -12979,8 +13134,7 @@ function StoreListingModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -13377,45 +13531,6 @@ function SelectedSalesPanel({
   );
 }
 
-function RecordSaleModal({
-  item,
-  busy,
-  busyLabel,
-  submit,
-  onClose
-}: {
-  item: InventoryItemDTO;
-  busy: boolean;
-  busyLabel: string | null;
-  submit: SubmitHandler;
-  onClose: () => void;
-}) {
-  return (
-    <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-modal record-sale-modal" role="dialog" aria-modal="true" aria-label={`Record sale for ${item.itemName}`}>
-        <div className="edit-card-heading">
-          <div>
-            <h2>Record Sale</h2>
-            <span>Subtract sold quantity and log profit/loss for this product.</span>
-          </div>
-          <button className="icon-button" type="button" aria-label="Close record sale" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-        <article className="sale-product-preview">
-          <InventoryImage item={item} />
-          <div>
-            <strong>{item.itemName}</strong>
-            <span>{item.upc || item.sku || item.dpci || "No UPC/SKU saved"}</span>
-            <small>{item.quantityOwned} owned - average cost {money(item.averageCost)}</small>
-          </div>
-        </article>
-        <RecordSaleForm item={item} busy={busy} busyLabel={busyLabel} submit={submit} />
-      </div>
-    </div>
-  );
-}
-
 function RecordSaleForm({
   item,
   busy,
@@ -13448,7 +13563,6 @@ function RecordSaleForm({
         )
       }
     >
-      <h4>Record Sale</h4>
       <div className="form-grid compact">
         <TextInput
           name="quantitySold"
@@ -13498,10 +13612,12 @@ function RecordSaleForm({
         <span>Cost basis {money(costBasis)} ({item.stockLots.length ? "FIFO stock lots" : "average cost"})</span>
         <strong>P/L {money(profit)} ({percent(roi)})</strong>
       </div>
-      <button className="mini-action solid" disabled={busy || item.quantityOwned <= 0} type="submit">
-        <Save size={14} />
-        {busyLabel === `Recording sale ${item.id}` ? "Saving" : "Record Sale"}
-      </button>
+      <div className="inventory-edit-actions">
+        <button className="primary-action" disabled={busy || item.quantityOwned <= 0} type="submit">
+          <Save size={16} />
+          {busyLabel === `Recording sale ${item.id}` ? "Saving" : "Record Sale"}
+        </button>
+      </div>
     </form>
   );
 }

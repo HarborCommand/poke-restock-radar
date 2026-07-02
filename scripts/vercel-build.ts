@@ -27,11 +27,17 @@ function run(command: string, args: string[]) {
 }
 
 const vercelEnv = process.env.VERCEL_ENV ?? "development";
+const databaseUrl = process.env.DATABASE_URL ?? "";
+const usesPostgres = /^postgres(?:ql)?:\/\//i.test(databaseUrl);
 
 if (vercelEnv === "production") {
   console.log("Running production Vercel build with Postgres migrations.");
   run("npm", ["run", "prisma:postgres"]);
   run("tsx", ["scripts/migrate-postgres-production.ts"]);
+  run("prisma", ["generate", "--schema", ".prisma-postgres/schema.prisma"]);
+} else if (usesPostgres) {
+  console.log(`Running ${vercelEnv} Vercel build with Postgres Prisma client.`);
+  run("npm", ["run", "prisma:postgres"]);
   run("prisma", ["generate", "--schema", ".prisma-postgres/schema.prisma"]);
 } else {
   console.log(`Running ${vercelEnv} Vercel build without production migrations.`);
