@@ -72,6 +72,7 @@ test("Google Merchant product feed renders public active storefront products", (
   assert.match(xml, /<g:product_type>Pokemon TCG &gt; Booster Bundles<\/g:product_type>/);
   assert.match(xml, /<g:gtin>123456789012<\/g:gtin>/);
   assert.match(xml, /<g:shipping_weight>12 oz<\/g:shipping_weight>/);
+  assert.doesNotMatch(xml, /<g:shipping(?:\s|>)/);
 });
 
 test("Google Merchant product feed preserves short safe slug IDs", () => {

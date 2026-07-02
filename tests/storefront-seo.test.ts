@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-  GAMEDAYGRABS_POLICIES_URL,
+  GAMEDAYGRABS_RETURNS_POLICY_URL,
   productCanonicalUrl,
   storefrontOfferShippingDetails,
   storefrontProductJsonLd,
@@ -98,6 +98,7 @@ test("product structured data renders safe Product and Offer fields only", () =>
   assert.equal(jsonLd.offers.shippingDetails.shippingDestination.addressCountry, "US");
   assert.equal(jsonLd.offers.shippingDetails.shippingRate.currency, "USD");
   assert.equal(jsonLd.offers.shippingDetails.shippingRate.value, "7.99");
+  assert.notEqual(jsonLd.offers.shippingDetails.shippingRate.value, "4.99");
   assert.notEqual(jsonLd.offers.shippingDetails.shippingRate.value, "0.00");
   assert.deepEqual(jsonLd.offers.shippingDetails.deliveryTime.businessDays.dayOfWeek, [
     "https://schema.org/Monday",
@@ -115,14 +116,31 @@ test("product structured data renders safe Product and Offer fields only", () =>
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy["@type"], "MerchantReturnPolicy");
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy.applicableCountry, "US");
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
-  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.merchantReturnLink, GAMEDAYGRABS_POLICIES_URL);
-  assert.equal(jsonLd.offers.seller.name, "GameDayGrabs");
+  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.merchantReturnLink, GAMEDAYGRABS_RETURNS_POLICY_URL);
+  assert.equal(jsonLd.offers.seller.name, "GameDayGrabs LLC");
 
   const serialized = JSON.stringify(jsonLd);
   // Real first-party product reviews are not visible on product pages yet, so review and aggregateRating markup stay intentionally absent.
   assert.doesNotMatch(serialized, /aggregateRating|review|ratingValue|ratingCount/i);
   assert.doesNotMatch(serialized, /availableQuantity|quantityOwned|costBasis|supplier|admin/i);
   assert.doesNotMatch(serialized, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe/i);
+});
+
+test("product structured data never advertises shipping below the public small-cart floor", () => {
+  const jsonLd = storefrontProductJsonLd(
+    product({
+      shippingProfile: "sealed_pack_small",
+      packageWeightOz: 4,
+      packageLengthIn: 8,
+      packageWidthIn: 5,
+      packageHeightIn: 1,
+      requiresBox: false
+    })
+  ) as Record<string, any>;
+
+  assert.equal(jsonLd.offers.shippingDetails.shippingRate.currency, "USD");
+  assert.equal(jsonLd.offers.shippingDetails.shippingRate.value, "7.99");
+  assert.notEqual(jsonLd.offers.shippingDetails.shippingRate.value, "4.99");
 });
 
 test("product structured data omits shipping details when carrier shipping is unavailable", () => {
@@ -152,6 +170,10 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   const shopPage = fs.readFileSync(new URL("../src/app/shop/page.tsx", import.meta.url), "utf8");
   const aboutPage = fs.readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
   const policiesPage = fs.readFileSync(new URL("../src/app/policies/page.tsx", import.meta.url), "utf8");
+  const shippingPolicyPage = fs.readFileSync(new URL("../src/app/policies/shipping/page.tsx", import.meta.url), "utf8");
+  const returnsPolicyPage = fs.readFileSync(new URL("../src/app/policies/returns/page.tsx", import.meta.url), "utf8");
+  const privacyPage = fs.readFileSync(new URL("../src/app/privacy/page.tsx", import.meta.url), "utf8");
+  const termsPage = fs.readFileSync(new URL("../src/app/terms/page.tsx", import.meta.url), "utf8");
   const contactPage = fs.readFileSync(new URL("../src/app/contact/page.tsx", import.meta.url), "utf8");
   const productView = fs.readFileSync(new URL("../src/components/StorefrontServerViews.tsx", import.meta.url), "utf8");
   const storefrontClient = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
@@ -171,6 +193,10 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(shopPage, /canonical: shopUrl/);
   assert.match(aboutPage, /canonical: aboutUrl/);
   assert.match(policiesPage, /canonical: policiesUrl/);
+  assert.match(shippingPolicyPage, /canonical: GAMEDAYGRABS_SHIPPING_POLICY_URL/);
+  assert.match(returnsPolicyPage, /canonical: GAMEDAYGRABS_RETURNS_POLICY_URL/);
+  assert.match(privacyPage, /canonical: GAMEDAYGRABS_PRIVACY_POLICY_URL/);
+  assert.match(termsPage, /canonical: GAMEDAYGRABS_TERMS_URL/);
   assert.match(contactPage, /canonical: contactUrl/);
   assert.match(storefrontClient, /href=\{`\/product\/\$\{product\.slug\}`\}/);
   assert.doesNotMatch(storefrontClient, /href=\{`\/shop\/product\/\$\{product\.slug\}`\}/);
@@ -181,7 +207,7 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(sitemap, /storefrontCollectionUrl\(collection\.slug\)/);
   assert.match(sitemap, /feedSitemapPaths/);
   assert.match(sitemap, /"\/product-feed\.xml"/);
-  for (const publicPath of ['"/"', '"/shop"', '"/about"', '"/policies"', '"/contact"']) {
+  for (const publicPath of ['"/"', '"/shop"', '"/about"', '"/policies"', '"/policies/shipping"', '"/policies/returns"', '"/privacy"', '"/terms"', '"/contact"']) {
     assert.match(sitemap, new RegExp(publicPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.doesNotMatch(sitemap, /\/admin|\/app|\/dashboard|\/api\//);
@@ -190,6 +216,9 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(robots, /"\/collections\/"/);
   assert.match(robots, /"\/product\/"/);
   assert.match(robots, /"\/product-feed\.xml"/);
+  for (const publicPath of ['"/policies/shipping"', '"/policies/returns"', '"/privacy"', '"/terms"']) {
+    assert.match(robots, new RegExp(publicPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
   for (const privatePath of ['"/admin"', '"/app"', '"/account"', '"/auth"', '"/dashboard"', '"/login"', '"/api/"']) {
     assert.match(robots, new RegExp(privatePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }

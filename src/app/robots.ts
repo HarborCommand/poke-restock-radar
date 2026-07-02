@@ -7,7 +7,21 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: ["/", "/shop", "/collections/", "/product/", "/shop/product/", "/about", "/policies", "/contact", "/product-feed.xml"],
+        allow: [
+          "/",
+          "/shop",
+          "/collections/",
+          "/product/",
+          "/shop/product/",
+          "/about",
+          "/policies",
+          "/policies/shipping",
+          "/policies/returns",
+          "/privacy",
+          "/terms",
+          "/contact",
+          "/product-feed.xml"
+        ],
         disallow: [
           "/admin",
           "/app",

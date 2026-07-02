@@ -5,11 +5,16 @@ import { isSoldOutProduct } from "@/lib/storefront-badges";
 import { calculateCartShipping } from "@/lib/shipping";
 import type { PublicStoreProductDTO } from "@/types/radar";
 
-export const GAMEDAYGRABS_SEO_STORE_NAME = "GameDayGrabs";
+export const GAMEDAYGRABS_SEO_STORE_NAME = "GameDayGrabs LLC";
 export const GAMEDAYGRABS_SEO_SITE_NAME = "GameDayGrabs LLC";
 export const GAMEDAYGRABS_CANONICAL_ORIGIN = `https://${GAMEDAYGRABS_WWW_DOMAIN}`;
 export const GAMEDAYGRABS_OG_FALLBACK_IMAGE = "/brand/gamedaygrabs-icon.png?v=gdg-icons-v1";
 export const GAMEDAYGRABS_POLICIES_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
+export const GAMEDAYGRABS_SHIPPING_POLICY_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies/shipping`;
+export const GAMEDAYGRABS_RETURNS_POLICY_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies/returns`;
+export const GAMEDAYGRABS_PRIVACY_POLICY_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/privacy`;
+export const GAMEDAYGRABS_TERMS_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/terms`;
+export const GAMEDAYGRABS_SINGLE_ITEM_SHIPPING_SCHEMA_MINIMUM = 7.99;
 
 type SeoProduct = PublicStoreProductDTO & {
   brand?: string | null;
@@ -129,12 +134,13 @@ export function storefrontOfferShippingDetails(product: Pick<SeoProduct, "shippi
   if (!shippingOption || shippingOption.id === "local_pickup") return null;
   const shippingAmount = positiveMoney(shippingOption.amount);
   if (shippingAmount === null) return null;
+  const policyAlignedShippingAmount = Math.max(shippingAmount, GAMEDAYGRABS_SINGLE_ITEM_SHIPPING_SCHEMA_MINIMUM);
 
   return {
     "@type": "OfferShippingDetails",
     shippingRate: {
       "@type": "MonetaryAmount",
-      value: shippingAmount.toFixed(2),
+      value: policyAlignedShippingAmount.toFixed(2),
       currency: "USD"
     },
     shippingDestination: {
@@ -174,7 +180,7 @@ export function storefrontOfferReturnPolicy() {
     "@type": "MerchantReturnPolicy",
     applicableCountry: "US",
     returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
-    merchantReturnLink: GAMEDAYGRABS_POLICIES_URL
+    merchantReturnLink: GAMEDAYGRABS_RETURNS_POLICY_URL
   };
 }
 

@@ -806,7 +806,10 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
         {settings.customerAccounts.enabled ? <Link href={accountHref}>My Account</Link> : null}
         <Link href="/order-status">Order Status</Link>
         <Link href="/about">About</Link>
-        <Link href="/policies">Policies</Link>
+        <Link href="/policies/shipping">Shipping</Link>
+        <Link href="/policies/returns">Returns</Link>
+        <Link href="/privacy">Privacy</Link>
+        <Link href="/terms">Terms</Link>
         <Link href="/contact">Contact</Link>
       </nav>
       <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
@@ -1534,10 +1537,6 @@ export function ProductDetail({
   const purchaseLimitLabel = storefrontPurchaseLimitLabel(product);
   const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
   const quantityLimitReached = !isSoldOut && effectiveMaxQuantity > 0 && quantity >= effectiveMaxQuantity;
-  const productShippingEstimate = calculateCartShipping([{ ...product, requestedQuantity: 1 }], {
-    subtotal: product.price,
-    freeShippingThreshold: settings.freeShippingThreshold
-  });
 
   function addProductToCart(redirect = false) {
     if (isSoldOut || effectiveMaxQuantity <= 0) return;
@@ -1707,7 +1706,8 @@ export function ProductDetail({
           <h2>Shipping summary</h2>
           <p>Shipping is calculated from product weight and package size.</p>
           <ul>
-            <li>Shipping estimate: {money(productShippingEstimate.defaultShippingOption?.amount ?? 0)}.</li>
+            <li>Shipping is calculated in cart or checkout before payment.</li>
+            <li>Displayed shipping may include the current packing and handling minimum.</li>
             <li>Final shipping is shown before payment.</li>
             {product.localPickupEligible ? <li>Local pickup may be available for this item.</li> : null}
             {settings.freeShippingThreshold ? <li>Free shipping threshold: {money(settings.freeShippingThreshold)}.</li> : null}

@@ -1,4 +1,5 @@
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
+import { PolicyLinkGrid } from "@/components/StorefrontPolicies";
 import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
@@ -58,11 +59,18 @@ export default async function PoliciesPage() {
         compact
         className="grabby-helper-strip gdg-policy-grabby-card"
       />
+      <PolicyLinkGrid />
       <section className="gdg-policies gdg-policy-page">
         <article>
           <h2>Shipping Policy</h2>
+          <p>GameDayGrabs LLC currently ships online orders within the United States only.</p>
           <p>Shipping is calculated from product weight and package size. Final shipping is shown before payment.</p>
-          <p>Orders are packed carefully for collectors, and tracking is added when available after shipment is created.</p>
+          <p>USPS Ground Advantage is used when available. Shipping shown may include a packing and handling minimum.</p>
+          <p>Current shipped-order minimums are 1-2 items at $7.99, 3-5 items at $9.99, 6-9 items at $12.99, and 10+ items at $14.99.</p>
+          <p>Higher real carrier rates may apply. Orders are packed carefully for collectors, and tracking is added when available after shipment is created.</p>
+          <p>
+            Read the dedicated <a href="/policies/shipping">Shipping Policy</a>.
+          </p>
         </article>
         <article>
           <h2>Local Pickup Policy</h2>
@@ -85,6 +93,9 @@ export default async function PoliciesPage() {
             Because trading card products can be opened, searched, resealed, tampered with, or affected by market value
             changes after delivery, GameDayGrabs does not accept buyer-remorse returns, opened product returns, or exchanges
             for sealed trading card items.
+          </p>
+          <p>
+            Read the dedicated <a href="/policies/returns">Returns Policy</a>.
           </p>
         </article>
         <article>
@@ -141,6 +152,16 @@ export default async function PoliciesPage() {
           <h2>Privacy / Customer Information</h2>
           <p>Email, phone, shipping address, and billing details are used to process orders and provide support.</p>
           <p>GameDayGrabs keeps customer-facing order information focused on checkout, fulfillment, pickup, and support needs.</p>
+          <p>
+            Read the dedicated <a href="/privacy">Privacy Policy</a>.
+          </p>
+        </article>
+        <article>
+          <h2>Terms of Service</h2>
+          <p>Orders are subject to acceptance, availability, payment confirmation, fraud review, and fulfillment review.</p>
+          <p>
+            Read the dedicated <a href="/terms">Terms of Service</a>.
+          </p>
         </article>
         <article>
           <h2>Trademark Notice</h2>
