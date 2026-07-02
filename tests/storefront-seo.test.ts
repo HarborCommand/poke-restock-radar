@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-  GAMEDAYGRABS_POLICIES_URL,
+  GAMEDAYGRABS_RETURN_POLICY_URL,
   productCanonicalUrl,
   storefrontOfferShippingDetails,
   storefrontProductJsonLd,
@@ -115,7 +115,7 @@ test("product structured data renders safe Product and Offer fields only", () =>
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy["@type"], "MerchantReturnPolicy");
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy.applicableCountry, "US");
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
-  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.merchantReturnLink, GAMEDAYGRABS_POLICIES_URL);
+  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.merchantReturnLink, GAMEDAYGRABS_RETURN_POLICY_URL);
   assert.equal(jsonLd.offers.seller.name, "GameDayGrabs");
 
   const serialized = JSON.stringify(jsonLd);
@@ -152,6 +152,10 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   const shopPage = fs.readFileSync(new URL("../src/app/shop/page.tsx", import.meta.url), "utf8");
   const aboutPage = fs.readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
   const policiesPage = fs.readFileSync(new URL("../src/app/policies/page.tsx", import.meta.url), "utf8");
+  const shippingPolicyPage = fs.readFileSync(new URL("../src/app/policies/shipping/page.tsx", import.meta.url), "utf8");
+  const returnPolicyPage = fs.readFileSync(new URL("../src/app/policies/returns/page.tsx", import.meta.url), "utf8");
+  const privacyPage = fs.readFileSync(new URL("../src/app/privacy/page.tsx", import.meta.url), "utf8");
+  const termsPage = fs.readFileSync(new URL("../src/app/terms/page.tsx", import.meta.url), "utf8");
   const contactPage = fs.readFileSync(new URL("../src/app/contact/page.tsx", import.meta.url), "utf8");
   const productView = fs.readFileSync(new URL("../src/components/StorefrontServerViews.tsx", import.meta.url), "utf8");
   const storefrontClient = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
@@ -171,6 +175,10 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(shopPage, /canonical: shopUrl/);
   assert.match(aboutPage, /canonical: aboutUrl/);
   assert.match(policiesPage, /canonical: policiesUrl/);
+  assert.match(shippingPolicyPage, /canonical: shippingUrl/);
+  assert.match(returnPolicyPage, /canonical: returnsUrl/);
+  assert.match(privacyPage, /canonical: privacyUrl/);
+  assert.match(termsPage, /canonical: termsUrl/);
   assert.match(contactPage, /canonical: contactUrl/);
   assert.match(storefrontClient, /href=\{`\/product\/\$\{product\.slug\}`\}/);
   assert.doesNotMatch(storefrontClient, /href=\{`\/shop\/product\/\$\{product\.slug\}`\}/);
@@ -181,7 +189,7 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(sitemap, /storefrontCollectionUrl\(collection\.slug\)/);
   assert.match(sitemap, /feedSitemapPaths/);
   assert.match(sitemap, /"\/product-feed\.xml"/);
-  for (const publicPath of ['"/"', '"/shop"', '"/about"', '"/policies"', '"/contact"']) {
+  for (const publicPath of ['"/"', '"/shop"', '"/about"', '"/policies"', '"/policies/shipping"', '"/policies/returns"', '"/privacy"', '"/terms"', '"/contact"']) {
     assert.match(sitemap, new RegExp(publicPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.doesNotMatch(sitemap, /\/admin|\/app|\/dashboard|\/api\//);
@@ -190,6 +198,9 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(robots, /"\/collections\/"/);
   assert.match(robots, /"\/product\/"/);
   assert.match(robots, /"\/product-feed\.xml"/);
+  for (const trustPath of ['"/policies/shipping"', '"/policies/returns"', '"/privacy"', '"/terms"']) {
+    assert.match(robots, new RegExp(trustPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
   for (const privatePath of ['"/admin"', '"/app"', '"/account"', '"/auth"', '"/dashboard"', '"/login"', '"/api/"']) {
     assert.match(robots, new RegExp(privatePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }

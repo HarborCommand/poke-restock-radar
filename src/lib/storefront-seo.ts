@@ -10,6 +10,8 @@ export const GAMEDAYGRABS_SEO_SITE_NAME = "GameDayGrabs LLC";
 export const GAMEDAYGRABS_CANONICAL_ORIGIN = `https://${GAMEDAYGRABS_WWW_DOMAIN}`;
 export const GAMEDAYGRABS_OG_FALLBACK_IMAGE = "/brand/gamedaygrabs-icon.png?v=gdg-icons-v1";
 export const GAMEDAYGRABS_POLICIES_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
+export const GAMEDAYGRABS_RETURN_POLICY_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies/returns`;
+export const GAMEDAYGRABS_SHIPPING_POLICY_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies/shipping`;
 
 type SeoProduct = PublicStoreProductDTO & {
   brand?: string | null;
@@ -174,7 +176,7 @@ export function storefrontOfferReturnPolicy() {
     "@type": "MerchantReturnPolicy",
     applicableCountry: "US",
     returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
-    merchantReturnLink: GAMEDAYGRABS_POLICIES_URL
+    merchantReturnLink: GAMEDAYGRABS_RETURN_POLICY_URL
   };
 }
 

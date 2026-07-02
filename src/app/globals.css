@@ -20562,6 +20562,18 @@ body:has(.shop-shell) {
   background: #fbfdff;
 }
 
+.gdg-policy-link-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.gdg-policy-link-list a {
+  color: #16a34a;
+  font-weight: 900;
+}
+
 .gdg-policy-page h2,
 .gdg-contact-page-card h2 {
   margin: 0 0 8px;
@@ -20659,6 +20671,16 @@ body:has(.shop-shell) {
   color: #64748b;
 }
 
+.gdg-footer-identity,
+.gdg-footer-legal {
+  display: grid;
+  gap: 7px;
+}
+
+.gdg-footer-identity strong {
+  color: #0b1220;
+}
+
 .gdg-footer-brand {
   display: inline-block;
   margin-bottom: 7px;
@@ -20701,6 +20723,16 @@ body:has(.shop-shell) {
   color: #334155;
   font-weight: 800;
   text-decoration: none;
+}
+
+.gdg-footer-policy-nav a {
+  color: #15803d;
+}
+
+.gdg-footer-legal {
+  grid-column: 1 / -1;
+  border-top: 1px solid #edf2f7;
+  padding-top: 14px;
 }
 
 .order-reporting-filter {

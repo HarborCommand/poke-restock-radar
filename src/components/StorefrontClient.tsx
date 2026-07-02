@@ -44,6 +44,15 @@ import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/stor
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
 import { GAMEDAYGRABS_EBAY_FEEDBACK_URL, storefrontFeedback } from "@/lib/storefront-feedback";
 import {
+  GAMEDAYGRABS_LEGAL_NAME,
+  GAMEDAYGRABS_NO_STOREFRONT_HOURS,
+  GAMEDAYGRABS_RESPONSE_TIME,
+  GAMEDAYGRABS_SERVICE_AREA,
+  GAMEDAYGRABS_SUPPORT_EMAIL,
+  GAMEDAYGRABS_SUPPORT_HOURS,
+  storefrontPolicyLinks
+} from "@/lib/storefront-trust";
+import {
   homepageFeaturedDropsSection,
   selectHomepageHeroProduct,
   type HomepageMerchandisingSection
@@ -773,24 +782,25 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
   const sportsCards = sportsCardsLink(settings);
   const { session: accountSession } = useCustomerAccountSession(settings.customerAccounts.enabled);
   const accountHref = accountSession?.session.authenticated ? "/account" : "/account/login";
+  const contactEmail = settings.contactEmail || GAMEDAYGRABS_SUPPORT_EMAIL;
   return (
     <footer className="gdg-footer">
-      <div>
+      <div className="gdg-footer-identity">
         <Link href={homeHref} className="gdg-footer-brand">
           <Image src={storefrontLogoPath} alt={`${storeName} logo`} width={180} height={44} className="gdg-footer-brand-logo" />
           <span className="sr-only">{storeName}</span>
         </Link>
+        <p><strong>{GAMEDAYGRABS_LEGAL_NAME}</strong></p>
         <p>Sealed Pokemon TCG products, sports cards, and collectible card products packed carefully for collectors.</p>
-        {settings.contactEmail ? (
-          <a href={`mailto:${settings.contactEmail}`} className="gdg-footer-email">
-            <Mail size={15} />
-            {settings.contactEmail}
-          </a>
-        ) : (
-          <span className="gdg-footer-email muted">Contact email pending setup</span>
-        )}
+        <a href={`mailto:${contactEmail}`} className="gdg-footer-email">
+          <Mail size={15} />
+          {contactEmail}
+        </a>
+        <small>{GAMEDAYGRABS_SUPPORT_HOURS}</small>
+        <small>{GAMEDAYGRABS_RESPONSE_TIME}</small>
+        <small>{GAMEDAYGRABS_SERVICE_AREA}</small>
       </div>
-      <nav aria-label="Store footer navigation">
+      <nav aria-label="Store footer navigation" className="gdg-footer-main-nav">
         <Link href={homeHref}>Home</Link>
         <Link href="/shop">Shop</Link>
         <Link href={storefrontCollectionPath("pokemon-sealed-products")}>Pokémon</Link>
@@ -805,12 +815,22 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
         <Link href={storefrontCollectionPath("new-arrivals")}>New Arrivals</Link>
         {settings.customerAccounts.enabled ? <Link href={accountHref}>My Account</Link> : null}
         <Link href="/order-status">Order Status</Link>
-        <Link href="/about">About</Link>
-        <Link href="/policies">Policies</Link>
-        <Link href="/contact">Contact</Link>
       </nav>
-      <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
-      <small>GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</small>
+      <nav aria-label="Store policies and company information" className="gdg-footer-policy-nav">
+        <Link href="/about">About</Link>
+        <Link href="/contact">Contact</Link>
+        <Link href="/policies">Policy Overview</Link>
+        {storefrontPolicyLinks.map((link) => (
+          <Link key={link.href} href={link.href}>
+            {link.label}
+          </Link>
+        ))}
+      </nav>
+      <div className="gdg-footer-legal">
+        <small>{GAMEDAYGRABS_NO_STOREFRONT_HOURS}</small>
+        <small>(c) {new Date().getFullYear()} {GAMEDAYGRABS_LEGAL_NAME}. Availability subject to change.</small>
+        <small>GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</small>
+      </div>
     </footer>
   );
 }
@@ -2251,8 +2271,10 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <summary>Checkout notes</summary>
               <ul>
                 <li>Shipping is calculated by ZIP before payment.</li>
+                <li>Local Pickup is free only when it appears as an available fulfillment option.</li>
                 <li>Items are reserved when checkout starts.</li>
                 <li>Guest checkout is available.</li>
+                <li>No hidden fees are added after payment.</li>
                 {settings.customerAccounts.enabled ? (
                   <li>
                     <Link href="/account/login" className="gdg-cart-account-link">
@@ -2261,6 +2283,10 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     to track orders{settings.customerAccounts.rewardsEnabled ? " and rewards" : ""}.
                   </li>
                 ) : null}
+                <li>
+                  Review <Link href="/policies/shipping">shipping</Link>,{" "}
+                  <Link href="/policies/returns">returns</Link>, and <Link href="/privacy">privacy</Link>.
+                </li>
                 <li>Questions? <a href={`mailto:${contactEmail}`}>{contactEmail}</a></li>
               </ul>
             </details>

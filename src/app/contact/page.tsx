@@ -4,6 +4,14 @@ import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
+import {
+  GAMEDAYGRABS_LEGAL_NAME,
+  GAMEDAYGRABS_LOCAL_PICKUP_SUMMARY,
+  GAMEDAYGRABS_NO_STOREFRONT_HOURS,
+  GAMEDAYGRABS_RESPONSE_TIME,
+  GAMEDAYGRABS_SERVICE_AREA,
+  GAMEDAYGRABS_SUPPORT_HOURS
+} from "@/lib/storefront-trust";
 
 const contactUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/contact`;
 const contactTitle = "Contact GameDayGrabs LLC | Order & Product Support";
@@ -39,15 +47,16 @@ export const metadata = {
 
 export default async function ContactPage() {
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
+  const contactEmail = settings.contactEmail || GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL;
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />
       <section className="gdg-info-hero compact">
         <p className="gdg-overline">Contact</p>
-        <h1>Questions about products, pickup, or invoices?</h1>
+        <h1>Questions about products, pickup, shipping, or an order?</h1>
         <p>
           Reach out before ordering if you need product details, availability confirmation, local pickup coordination,
-          or help with an invoice request.
+          shipping help, or support for an existing order.
         </p>
       </section>
       <GrabbyCard
@@ -57,18 +66,29 @@ export default async function ContactPage() {
       />
       <section className="gdg-contact-page-card">
         <div>
-          <h2>GameDayGrabs LLC</h2>
-          {settings.contactEmail ? (
-            <p>
-              Email: <a href={`mailto:${settings.contactEmail}`}>{settings.contactEmail}</a>
-            </p>
-          ) : (
-            <p>Public contact email is not configured yet. Use the cart Request Invoice flow for product inquiries.</p>
-          )}
-          <p>Collector-focused Pokemon TCG, sports card, and collectible card products for customers, players, and fans.</p>
+          <h2>{GAMEDAYGRABS_LEGAL_NAME}</h2>
+          <p>
+            Email: <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
+          </p>
+          <p>{GAMEDAYGRABS_SUPPORT_HOURS}</p>
+          <p>{GAMEDAYGRABS_RESPONSE_TIME}</p>
+          <p>Service area: {GAMEDAYGRABS_SERVICE_AREA}</p>
+          <p>{GAMEDAYGRABS_LOCAL_PICKUP_SUMMARY}</p>
+          <p>{GAMEDAYGRABS_NO_STOREFRONT_HOURS}</p>
         </div>
-        <a className="gdg-primary-button" href={settings.contactEmail ? `mailto:${settings.contactEmail}` : "/shop"}>
-          {settings.contactEmail ? "Email Us" : "Browse Products"}
+        <a className="gdg-primary-button" href={`mailto:${contactEmail}`}>
+          Email Us
+        </a>
+      </section>
+      <section className="gdg-contact-page-card gdg-contact-instructions-card">
+        <div>
+          <h2>Order support</h2>
+          <p>For existing orders, include the order number and the email address used at checkout.</p>
+          <p>For damaged, incorrect, or missing items, include photos of the package, product condition, shipping label, and a short explanation.</p>
+          <p>For pickup questions, wait for pickup instructions after purchase and contact support before traveling.</p>
+        </div>
+        <a className="gdg-secondary-button" href="/order-status">
+          Check Order Status
         </a>
       </section>
       <section className="gdg-contact-page-card gdg-contact-form-card">

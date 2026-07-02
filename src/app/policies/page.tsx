@@ -1,14 +1,20 @@
+import Link from "next/link";
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import { getStorefrontSettings } from "@/lib/storefront";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
+import {
+  GAMEDAYGRABS_LOCAL_PICKUP_SUMMARY,
+  GAMEDAYGRABS_RESPONSE_TIME,
+  storefrontPolicyLinks
+} from "@/lib/storefront-trust";
 
 const policiesUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
 const policiesTitle = "GameDayGrabs Policies | Shipping, Pickup, Payment & Returns";
 const policiesDescription =
-  "Review GameDayGrabs shipping, local pickup, payment security, checkout holds, rewards, trading card returns, privacy, and product issue policies before ordering collectible card products.";
+  "Review GameDayGrabs shipping, local pickup, payment security, checkout holds, returns, privacy, terms, and product issue policies before ordering collectible card products.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,10 +52,10 @@ export default async function PoliciesPage() {
       <StorefrontHeader settings={settings} homeHref={homeHref} />
       <section className="gdg-info-hero compact">
         <p className="gdg-overline">Store Policies</p>
-        <h1>Clear ordering, shipping, and pickup expectations.</h1>
+        <h1>Clear ordering, shipping, pickup, and return expectations.</h1>
         <p>
-          GameDayGrabs keeps public policies simple so customers know how shipping, checkout holds, payment security,
-          local pickup when available, and order support work before placing an order.
+          GameDayGrabs keeps customer-facing policies visible so customers can understand shipping costs, local pickup,
+          payment security, returns, privacy, and terms before placing an order.
         </p>
       </section>
       <GrabbyCard
@@ -60,57 +66,36 @@ export default async function PoliciesPage() {
       />
       <section className="gdg-policies gdg-policy-page">
         <article>
-          <h2>Shipping Policy</h2>
-          <p>Shipping is calculated from product weight and package size. Final shipping is shown before payment.</p>
-          <p>Orders are packed carefully for collectors, and tracking is added when available after shipment is created.</p>
+          <h2>Policy Pages</h2>
+          <p>Review the detailed policy pages before ordering.</p>
+          <ul className="gdg-policy-link-list">
+            {storefrontPolicyLinks.map((link) => (
+              <li key={link.href}>
+                <Link href={link.href}>{link.label}</Link>
+              </li>
+            ))}
+          </ul>
         </article>
         <article>
-          <h2>Local Pickup Policy</h2>
-          <p>Local pickup is only available when shown at checkout. Pickup instructions are provided after purchase.</p>
-          <p>Local pickup is separate from shipping, and pickup availability is not promised for every order.</p>
-        </article>
-        <article>
-          <h2>Cancellations / Refunds</h2>
-          <p>Customers can contact GameDayGrabs for order issues. Paid orders may be canceled or refunded before shipment when eligible.</p>
-          <p>Approved refunds are processed back to the original payment method. Bank or card issuer processing times may vary, but refunds typically appear within 3-10 business days after approval.</p>
-        </article>
-        <article>
-          <h2>Trading Card Return Policy</h2>
+          <h2>Shipping Summary</h2>
+          <p>Shipping is calculated from product weight, package size, destination ZIP code, and store shipping rules.</p>
+          <p>Final shipping is shown before payment. Tracking is added when a shipment is created and tracking is available.</p>
           <p>
-            All sealed trading card products, including Pokemon TCG products, sports cards, booster packs, booster bundles,
-            tins, blisters, premium collections, decks, and similar collectible card products, are final sale and are not
-            eligible for return or exchange.
-          </p>
-          <p>
-            Because trading card products can be opened, searched, resealed, tampered with, or affected by market value
-            changes after delivery, GameDayGrabs does not accept buyer-remorse returns, opened product returns, or exchanges
-            for sealed trading card items.
+            <Link href="/policies/shipping">Read the full shipping policy</Link>.
           </p>
         </article>
         <article>
-          <h2>Order Issue Exceptions</h2>
+          <h2>Return & Refund Summary</h2>
+          <p>Sealed trading card products are generally final sale and are not eligible for buyer-remorse returns or exchanges.</p>
+          <p>Damaged, incorrect, missing, or materially different item claims must be sent within 3 calendar days of delivery.</p>
           <p>
-            If your order arrives damaged, incorrect, missing an item, or materially different from what was purchased,
-            contact GameDayGrabs within 3 calendar days of delivery at <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.
+            <Link href="/policies/returns">Read the full return and refund policy</Link>.
           </p>
-          <p>Please include your order number, photos of the package, photos of the product condition, photos of the shipping label, and a brief explanation of the issue.</p>
-          <p>GameDayGrabs will review the claim and may offer a replacement, refund, partial refund, or another resolution after review.</p>
         </article>
         <article>
-          <h2>Opened Products</h2>
-          <p>
-            Opened trading card products are not eligible for return, refund, or exchange unless GameDayGrabs determines
-            there was a verified fulfillment error or shipping-related issue.
-          </p>
-          <p>GameDayGrabs reserves the right to deny claims involving opened products, tampering, missing contents, suspected abuse, or requests made outside the claim window.</p>
-        </article>
-        <article>
-          <h2>Return Shipping</h2>
-          <p>
-            If GameDayGrabs approves a return due to our error, wrong item, or verified shipping damage, return instructions
-            will be provided. Approved returns must be returned in the condition received, with all original packaging and
-            contents included.
-          </p>
+          <h2>Local Pickup</h2>
+          <p>{GAMEDAYGRABS_LOCAL_PICKUP_SUMMARY}</p>
+          <p>Local pickup is separate from shipping and is not available for every item or every order.</p>
         </article>
         <article>
           <h2>Payment Security</h2>
@@ -118,29 +103,19 @@ export default async function PoliciesPage() {
           <p>Stripe session and payment references may be stored for order support, but raw card details are not stored.</p>
         </article>
         <article>
-          <h2>Inventory / Checkout Holds</h2>
-          <p>Items are not reserved until checkout starts. Checkout holds items for 15 minutes while payment is completed.</p>
-          <p>Abandoned or expired checkout sessions release the hold. Inventory is finalized only after successful payment.</p>
-        </article>
-        <article>
-          <h2>GameDayGrabs Rewards</h2>
-          <p>No account required to checkout. Customer accounts are optional, and guest checkout remains available.</p>
-          <p>Earn points on eligible purchases when GameDayGrabs Rewards are enabled. Points are awarded after payment is confirmed.</p>
-          <p>Shipping, taxes, refunds, discounts, canceled orders, and test/smoke orders do not earn points.</p>
-          <p>Refunded or canceled orders can reverse points that were previously awarded.</p>
-          <p>Rewards redemption coming soon. Redemption is not currently available, and points cannot be used at checkout yet.</p>
-          <p>Points have no cash value and are not transferable.</p>
-          <p>GameDayGrabs may adjust or reverse points for fraud, abuse, refunds, cancellations, or errors.</p>
-        </article>
-        <article>
-          <h2>Product Availability / Preorders</h2>
-          <p>Products are sold based on current availability. If a product is sold out, checkout is blocked.</p>
-          <p>GameDayGrabs only presents preorder behavior when an item is clearly labeled as preorder.</p>
-        </article>
-        <article>
           <h2>Privacy / Customer Information</h2>
-          <p>Email, phone, shipping address, and billing details are used to process orders and provide support.</p>
-          <p>GameDayGrabs keeps customer-facing order information focused on checkout, fulfillment, pickup, and support needs.</p>
+          <p>Email, phone when provided, shipping address, order details, and support messages are used to process orders and provide support.</p>
+          <p>Card numbers and CVC codes are handled by Stripe when Stripe Checkout is used.</p>
+          <p>
+            <Link href="/privacy">Read the privacy policy</Link>.
+          </p>
+        </article>
+        <article>
+          <h2>Terms of Service</h2>
+          <p>The Terms of Service explain storefront use, checkout, payments, availability, order support, and trademark ownership.</p>
+          <p>
+            <Link href="/terms">Read the terms of service</Link>.
+          </p>
         </article>
         <article>
           <h2>Trademark Notice</h2>
@@ -151,6 +126,7 @@ export default async function PoliciesPage() {
           <p>
             For order questions, contact <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.
           </p>
+          <p>{GAMEDAYGRABS_RESPONSE_TIME}</p>
         </article>
       </section>
       <StorefrontFooter settings={settings} homeHref={homeHref} />
