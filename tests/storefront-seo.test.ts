@@ -63,7 +63,7 @@ function product(overrides: Partial<PublicStoreProductDTO> = {}): PublicStorePro
 
 test("product SEO metadata uses real product data and canonical URLs", () => {
   const metadata = storefrontProductMetadata(product());
-  assert.equal(metadata.title, "Pokémon SEO Product | GameDayGrabs LLC");
+  assert.equal(metadata.title, "Pokémon SEO Product | GameDayGrabs");
   assert.match(String(metadata.description), /Shop Pokémon SEO Product from GameDayGrabs/);
   assert.match(String(metadata.description), /Premium Collections/);
   assert.match(String(metadata.description), /\$49\.99/);
@@ -117,7 +117,9 @@ test("product structured data renders safe Product and Offer fields only", () =>
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy.applicableCountry, "US");
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
   assert.equal(jsonLd.offers.hasMerchantReturnPolicy.merchantReturnLink, GAMEDAYGRABS_RETURNS_POLICY_URL);
-  assert.equal(jsonLd.offers.seller.name, "GameDayGrabs LLC");
+  assert.equal(jsonLd.offers.seller.name, "GameDayGrabs");
+  assert.equal(jsonLd.offers.seller.legalName, "GameDayGrabs LLC");
+  assert.equal(jsonLd.offers.seller.url, "https://www.gamedaygrabs.com");
 
   const serialized = JSON.stringify(jsonLd);
   // Real first-party product reviews are not visible on product pages yet, so review and aggregateRating markup stay intentionally absent.

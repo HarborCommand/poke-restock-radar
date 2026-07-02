@@ -26,6 +26,8 @@ test("Google Merchant policy routes are public storefront pages", () => {
 
 test("policy hub and footer expose dedicated policy and trust links", () => {
   const policiesPage = readProjectFile("src/app/policies/page.tsx");
+  const aboutPage = readProjectFile("src/app/about/page.tsx");
+  const contactPage = readProjectFile("src/app/contact/page.tsx");
   const policyLinks = readProjectFile("src/components/StorefrontPolicies.tsx");
   const storefrontClient = readProjectFile("src/components/StorefrontClient.tsx");
   const combinedPolicyHub = `${policiesPage}\n${policyLinks}`;
@@ -37,6 +39,9 @@ test("policy hub and footer expose dedicated policy and trust links", () => {
 
   assert.match(storefrontClient, /href="\/about"/);
   assert.match(storefrontClient, /href="\/contact"/);
+  assert.match(storefrontClient, /Store name: GameDayGrabs\. Legal business name: GameDayGrabs LLC\./);
+  assert.match(aboutPage, /About GameDayGrabs LLC/);
+  assert.match(contactPage, /GameDayGrabs LLC/);
   assert.match(policiesPage, /GameDayGrabs LLC/);
   assert.match(policyLinks, /gamedaygrabs@outlook\.com|contactEmail/);
 });
