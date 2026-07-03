@@ -212,7 +212,10 @@ function productIncludedBullets(product: PublicStoreProductDTO, displayCategory:
 }
 
 function displayStoreName(settings: StorefrontSettingsDTO) {
-  return settings.storeName && !/poke radar/i.test(settings.storeName) ? settings.storeName : "GameDayGrabs LLC";
+  if (settings.storeName && !/poke radar/i.test(settings.storeName)) {
+    return settings.storeName.replace(/\s+LLC\b/i, "").trim();
+  }
+  return "GameDayGrabs";
 }
 
 function checkoutModeLabel(settings: StorefrontSettingsDTO) {
@@ -812,6 +815,7 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
         <Link href="/terms">Terms</Link>
         <Link href="/contact">Contact</Link>
       </nav>
+      <small>Store name: GameDayGrabs. Legal business name: GameDayGrabs LLC.</small>
       <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
       <small>GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</small>
     </footer>

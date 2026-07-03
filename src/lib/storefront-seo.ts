@@ -5,8 +5,9 @@ import { isSoldOutProduct } from "@/lib/storefront-badges";
 import { calculateCartShipping } from "@/lib/shipping";
 import type { PublicStoreProductDTO } from "@/types/radar";
 
-export const GAMEDAYGRABS_SEO_STORE_NAME = "GameDayGrabs LLC";
-export const GAMEDAYGRABS_SEO_SITE_NAME = "GameDayGrabs LLC";
+export const GAMEDAYGRABS_SEO_STORE_NAME = "GameDayGrabs";
+export const GAMEDAYGRABS_LEGAL_NAME = "GameDayGrabs LLC";
+export const GAMEDAYGRABS_SEO_SITE_NAME = GAMEDAYGRABS_SEO_STORE_NAME;
 export const GAMEDAYGRABS_CANONICAL_ORIGIN = `https://${GAMEDAYGRABS_WWW_DOMAIN}`;
 export const GAMEDAYGRABS_OG_FALLBACK_IMAGE = "/brand/gamedaygrabs-icon.png?v=gdg-icons-v1";
 export const GAMEDAYGRABS_POLICIES_URL = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
@@ -209,7 +210,9 @@ export function storefrontProductJsonLd(product: SeoProduct) {
       hasMerchantReturnPolicy: storefrontOfferReturnPolicy(),
       seller: {
         "@type": "Organization",
-        name: GAMEDAYGRABS_SEO_STORE_NAME
+        name: GAMEDAYGRABS_SEO_STORE_NAME,
+        legalName: GAMEDAYGRABS_LEGAL_NAME,
+        url: GAMEDAYGRABS_CANONICAL_ORIGIN
       }
     }
   };
