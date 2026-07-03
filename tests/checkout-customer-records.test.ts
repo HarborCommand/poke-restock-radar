@@ -165,7 +165,8 @@ test("paid checkout completion is the permanent inventory decrement path", () =>
   assert.match(handleStripeWebhook, /const event = stripeClient\(\)\.webhooks\.constructEvent\(rawBody, signature, secret\)/);
   assert.match(handleStripeWebhook, /if \(session\.payment_status !== "paid"\) return \{ ok: true, skipped: "checkout_session_not_paid" \}/);
   assert.match(handleStripeWebhook, /const wasPaid = order\.paymentStatus === "paid"/);
-  assert.match(handleStripeWebhook, /if \(!wasPaid && order\.paymentStatus !== "paid"\) await createStorefrontSale\(order\)/);
+  assert.match(handleStripeWebhook, /if \(!wasPaid && order\.paymentStatus !== "paid"\) \{\s*await createStorefrontSale\(order\);\s*order = await loadFreshStorefrontOrder\(order\.id\);\s*\}/);
+  assert.match(storefront, /async function loadFreshStorefrontOrder\(orderId: string\) \{\s*return prisma\.storefrontOrder\.findUniqueOrThrow\(\{ where: \{ id: orderId \}, include: storefrontOrderInclude \}\);\s*\}/);
   assert.match(createStorefrontSale, /prisma\.\$transaction/);
   assert.match(createStorefrontSale, /tx\.storefrontOrder\.updateMany/);
   assert.match(createStorefrontSale, /where: \{ id: order\.id, paymentStatus: \{ not: "paid" \} \}/);
@@ -180,6 +181,28 @@ test("paid checkout completion is the permanent inventory decrement path", () =>
   assert.match(createStorefrontSale, /status: "inventory_review"/);
   assert.match(createStorefrontSale, /fulfillmentStatus: "review_required"/);
   assert.match(createStorefrontSale, /Paid order needs inventory review/);
+});
+
+test("checkout.session.completed reloads fresh paid order state before post-payment side effects", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const handleStripeWebhook = sourceSlice(
+    storefront,
+    "export async function handleStripeWebhook",
+    "export async function updateInventoryStoreListing"
+  );
+
+  const persistIndex = handleStripeWebhook.indexOf("order = persisted.order");
+  const createSaleIndex = handleStripeWebhook.indexOf("await createStorefrontSale(order)");
+  const reloadIndex = handleStripeWebhook.indexOf("order = await loadFreshStorefrontOrder(order.id)");
+  const rewardIndex = handleStripeWebhook.indexOf("await awardRewardsForPaidOrder(order)");
+  const emailIndex = handleStripeWebhook.indexOf("await sendStorefrontOrderConfirmationEmail(order)");
+
+  assert.ok(persistIndex >= 0, "webhook must use the persisted Stripe session snapshot");
+  assert.ok(createSaleIndex > persistIndex, "sale finalization must run after the Stripe session snapshot is persisted");
+  assert.ok(reloadIndex > createSaleIndex, "order must be reloaded after sale finalization changes paid state in the database");
+  assert.ok(rewardIndex > reloadIndex, "rewards must use the fresh paid order state, not the stale pre-sale object");
+  assert.ok(emailIndex > reloadIndex, "confirmation email must use the fresh paid order state");
+  assert.doesNotMatch(handleStripeWebhook, /createStorefrontSale\(order\);\s*if \(!wasPaid && order\.paymentStatus === "paid"\)/);
 });
 
 test("unpaid, expired, or canceled checkouts release reservations without recording paid inventory sales", () => {
@@ -245,6 +268,7 @@ test("duplicate Stripe sessions and events do not duplicate orders or customer t
   const persistPaidCheckoutSession = sourceSlice(storefront, "async function persistPaidCheckoutSession", "export async function handleStripeWebhook");
   const syncStorefrontCustomerTotals = sourceSlice(storefront, "async function syncStorefrontCustomerTotals", "async function persistPaidCheckoutSession");
   const upsertSafePaymentEvent = sourceSlice(storefront, "async function upsertSafePaymentEvent", "function checkoutCustomerSnapshot");
+  const sendCustomerEmailNotificationOnce = sourceSlice(storefront, "async function sendCustomerEmailNotificationOnce", "async function sendStorefrontOrderConfirmationEmail");
   const handleStripeWebhook = sourceSlice(
     storefront,
     "export async function handleStripeWebhook",
@@ -258,8 +282,11 @@ test("duplicate Stripe sessions and events do not duplicate orders or customer t
   assert.doesNotMatch(persistPaidCheckoutSession, /prisma\.storefrontOrder\.create/);
   assert.match(upsertSafePaymentEvent, /prisma\.paymentEvent\.upsert/);
   assert.match(upsertSafePaymentEvent, /where: \{ eventId: event\.id \}/);
+  assert.match(sendCustomerEmailNotificationOnce, /prisma\.paymentEvent\.findUnique\(\{ where: \{ eventId: input\.eventId \} \}\)/);
+  assert.match(sendCustomerEmailNotificationOnce, /createCustomerEmailEventClaim\(\{ eventId: input\.eventId, order: input\.order, kind: input\.kind, recipient \}\)/);
+  assert.match(storefront, /eventId: customerEmailEventId\("order_confirmation", order\.id\)/);
   assert.match(handleStripeWebhook, /const wasPaid = order\.paymentStatus === "paid"/);
-  assert.match(handleStripeWebhook, /if \(!wasPaid && order\.paymentStatus !== "paid"\) await createStorefrontSale\(order\)/);
+  assert.match(handleStripeWebhook, /if \(!wasPaid && order\.paymentStatus !== "paid"\) \{\s*await createStorefrontSale\(order\);\s*order = await loadFreshStorefrontOrder\(order\.id\);\s*\}/);
   assert.match(createStorefrontSale, /tx\.storefrontOrder\.updateMany/);
   assert.match(createStorefrontSale, /where: \{ id: order\.id, paymentStatus: \{ not: "paid" \} \}/);
   assert.match(createStorefrontSale, /if \(claimed\.count === 0\) return \{ created: false/);
@@ -721,6 +748,11 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(emailTemplates, /Pickup ready!/);
   assert.match(emailTemplates, /GameDayGrabs pickup instructions: \$\{input\.orderNumber\}/);
   assert.match(storefront, /pickupInstructionLines\(settings\.localPickupInstructions\)/);
+  assert.ok(webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") >= 0, "webhook must reload the paid order before confirmation email");
+  assert.ok(
+    webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") < webhook.indexOf("await sendStorefrontOrderConfirmationEmail(order)"),
+    "order confirmation email must run after the post-sale fresh order reload"
+  );
   assert.match(webhook, /if \(!wasPaid\) await sendStorefrontOrderConfirmationEmail\(order\)/);
   assert.match(cancelOrRefund, /customerEmailEventId\("refund_cancellation", updatedOrder\.id, input\.idempotencyKey\)/);
   assert.match(cancelOrRefund, /skippedDetail: "Admin chose not to send a cancellation email\."/);
