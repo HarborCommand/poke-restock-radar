@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { POS_PAYMENT_METHOD_VALUES } from "@/lib/pos";
 
 export const prioritySchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
 export const ratingSchema = z.enum(["BUY", "WATCH", "SKIP", "AVOID"]);
@@ -931,6 +932,16 @@ export const inventorySaleUpdateSchema = z.object({
       ? {}
       : { actualSalePrice, soldPricePerItem: actualSalePrice })
   };
+});
+
+export const posSaleCreateSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
+  items: z.array(z.object({
+    inventoryItemId: z.string().trim().min(2),
+    quantity: z.coerce.number().int().min(1).max(1000)
+  })).min(1).max(100),
+  paymentMethod: z.enum(POS_PAYMENT_METHOD_VALUES),
+  paymentReference: optionalTrimmed
 });
 
 export const storefrontCartItemSchema = z.object({

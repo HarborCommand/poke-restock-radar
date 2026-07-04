@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { listAccessOverview } from "@/lib/access";
 import { prisma } from "@/lib/db";
@@ -5,6 +6,15 @@ import { getAppHealth } from "@/lib/health";
 import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMinutes } from "@/lib/monitor";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { getSavedProductImageUrls, uniqueProductImageUrls } from "@/lib/product-images";
+import {
+  calculatePosTotals,
+  getConfiguredPosTaxRate,
+  isPosSellableInventoryItem,
+  normalizePosPaymentMethod,
+  posPaymentMethodLabel,
+  posUnitPrice,
+  roundPosMoney
+} from "@/lib/pos";
 import { itemNeedsShippingProfile } from "@/lib/shipping";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
 import {
@@ -77,6 +87,7 @@ import type {
   NotificationDeliveryLogDTO,
   NotificationSettingsDTO,
   OwnerLaunchChecklistItemDTO,
+  PosSaleReceiptDTO,
   Priority,
   ProductDTO,
   ProductDiscoveryCandidateDTO,
@@ -1798,6 +1809,9 @@ function inventorySaleToDTO(
     profitLoss: sale.profitLoss,
     activeProfitLoss: sale.profitLoss,
     roiPercent: sale.roiPercent,
+    saleReference: sale.saleReference,
+    paymentMethod: sale.paymentMethod,
+    paymentReference: sale.paymentReference,
     saleStatus: "active",
     storefrontOrderNumber,
     storefrontOrderStatus: null,
@@ -6555,6 +6569,9 @@ export async function createInventorySale(
     fees?: number;
     shippingCost?: number;
     soldAt: Date;
+    saleReference?: string | null;
+    paymentMethod?: string | null;
+    paymentReference?: string | null;
     notes?: string;
   }
 ) {
@@ -6604,12 +6621,336 @@ export async function createInventorySale(
       costBasis,
       profitLoss,
       roiPercent,
+      saleReference: input.saleReference,
+      paymentMethod: input.paymentMethod,
+      paymentReference: input.paymentReference,
       soldAt: input.soldAt,
       notes: input.notes
     }
   });
   await recalculateInventorySalesAndLots(item.id);
   return recomputeInventoryItem(item.id, currentUser);
+}
+
+function compactPosSaleItems(items: Array<{ inventoryItemId: string; quantity: number }>) {
+  const itemMap = new Map<string, number>();
+  for (const item of items) {
+    const inventoryItemId = item.inventoryItemId.trim();
+    if (!inventoryItemId) continue;
+    itemMap.set(inventoryItemId, (itemMap.get(inventoryItemId) ?? 0) + item.quantity);
+  }
+  return [...itemMap.entries()].map(([inventoryItemId, quantity]) => ({ inventoryItemId, quantity }));
+}
+
+function posSaleReferenceFromIdempotencyKey(userId: string, idempotencyKey: string) {
+  const hash = createHash("sha256").update(`${userId}:${idempotencyKey.trim()}`).digest("hex").slice(0, 12).toUpperCase();
+  return `POS-${hash}`;
+}
+
+function posSaleLineNote(input: {
+  saleReference: string;
+  paymentMethodLabel: string;
+  paymentReference: string | null;
+  subtotal: number;
+  tax: number;
+  total: number;
+}) {
+  return [
+    `POS sale ${input.saleReference}.`,
+    `Payment method: ${input.paymentMethodLabel}.`,
+    input.paymentReference ? `Payment reference: ${input.paymentReference}.` : null,
+    `POS subtotal: $${input.subtotal.toFixed(2)}.`,
+    `POS tax: $${input.tax.toFixed(2)}.`,
+    `POS total: $${input.total.toFixed(2)}.`
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function posMoneyFromNote(notes: string | null | undefined, label: "subtotal" | "tax" | "total") {
+  const match = notes?.match(new RegExp(`POS ${label}: \\$(\\d+(?:\\.\\d{1,2})?)\\.`));
+  return match ? roundPosMoney(Number(match[1])) : null;
+}
+
+type PosSaleClient = Prisma.TransactionClient | typeof prisma;
+type PosSaleRecordWithItem = Prisma.InventorySaleGetPayload<{ include: { inventoryItem: { include: typeof inventoryItemInclude } } }>;
+
+async function receiptForExistingPosSale(
+  client: PosSaleClient,
+  currentUser: SessionUser,
+  saleReference: string
+): Promise<PosSaleReceiptDTO | null> {
+  const sales = await client.inventorySale.findMany({
+    where: {
+      userId: currentUser.id,
+      saleReference,
+      platform: "pos"
+    },
+    include: { inventoryItem: { include: inventoryItemInclude } },
+    orderBy: { createdAt: "asc" }
+  });
+  if (!sales.length) return null;
+
+  const firstSale = sales[0];
+  const paymentMethod = normalizePosPaymentMethod(firstSale.paymentMethod) ?? "other";
+  const subtotal = roundPosMoney(sales.reduce((sum, sale) => sum + sale.grossSale, 0));
+  const noteTax = posMoneyFromNote(firstSale.notes, "tax");
+  const noteTotal = posMoneyFromNote(firstSale.notes, "total");
+  const tax = noteTax ?? 0;
+  const total = noteTotal ?? roundPosMoney(subtotal + tax);
+  return {
+    saleReference,
+    paymentMethod,
+    paymentMethodLabel: posPaymentMethodLabel(paymentMethod),
+    paymentReference: firstSale.paymentReference,
+    subtotal,
+    tax,
+    total,
+    taxRate: subtotal > 0 ? roundPosMoney(tax / subtotal) : getConfiguredPosTaxRate(),
+    itemCount: sales.reduce((sum, sale) => sum + sale.quantitySold, 0),
+    completedAt: firstSale.soldAt.toISOString(),
+    lines: (sales as PosSaleRecordWithItem[]).map((sale) => {
+      const item = inventoryItemToDTO(sale.inventoryItem);
+      const availableAfterSale = item.quantityOwned;
+      return {
+        inventoryItemId: item.id,
+        itemName: item.itemName,
+        imageUrl: item.imageUrl,
+        upc: item.upc,
+        sku: item.sku,
+        quantity: sale.quantitySold,
+        availableBeforeSale: availableAfterSale + sale.quantitySold,
+        availableAfterSale,
+        unitPrice: sale.soldPricePerItem,
+        lineTotal: roundPosMoney(sale.soldPricePerItem * sale.quantitySold)
+      };
+    })
+  };
+}
+
+function inventorySaleAvailability(item: InventoryItemWithInclude) {
+  const soldSoFar = item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+  const lotRemaining = item.stockLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
+  return item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - soldSoFar);
+}
+
+async function createPosInventorySaleLine(
+  tx: Prisma.TransactionClient,
+  currentUser: SessionUser,
+  line: {
+    record: InventoryItemWithInclude;
+    dto: InventoryItemDTO;
+    quantity: number;
+    unitPrice: number;
+  },
+  sale: {
+    saleReference: string;
+    paymentMethod: string;
+    paymentReference: string | null;
+    soldAt: Date;
+    notes: string;
+  }
+) {
+  const item = line.record;
+  const averageCost = inventoryEffectiveAverageCost(item);
+  const grossSale = roundPosMoney(line.quantity * line.unitPrice);
+  const fees = 0;
+  const shippingCost = 0;
+  const netSale = grossSale;
+  let remainingToAllocate = line.quantity;
+  let costBasis = 0;
+
+  const lotsToUpdate = [...item.stockLots]
+    .filter((lot) => lot.remainingQuantity > 0)
+    .sort((a, b) => a.purchasedAt.getTime() - b.purchasedAt.getTime() || a.createdAt.getTime() - b.createdAt.getTime());
+  for (const lot of lotsToUpdate) {
+    if (remainingToAllocate <= 0) break;
+    const quantityFromLot = Math.min(remainingToAllocate, lot.remainingQuantity);
+    const updated = await tx.inventoryStockLot.updateMany({
+      where: {
+        id: lot.id,
+        remainingQuantity: { gte: quantityFromLot }
+      },
+      data: {
+        remainingQuantity: { decrement: quantityFromLot }
+      }
+    });
+    if (updated.count !== 1) {
+      throw new Error(`Only ${inventorySaleAvailability(item)} available to sell for ${item.itemName}.`);
+    }
+    costBasis += quantityFromLot * (inventoryLotUnitCost(item, lot) || averageCost);
+    remainingToAllocate -= quantityFromLot;
+  }
+
+  if (remainingToAllocate > 0) costBasis += remainingToAllocate * averageCost;
+
+  const roundedCostBasis = roundPosMoney(costBasis);
+  const profitLoss = roundPosMoney(netSale - roundedCostBasis);
+  const roiPercent = roundedCostBasis > 0 ? (profitLoss / roundedCostBasis) * 100 : null;
+  await tx.inventorySale.create({
+    data: {
+      inventoryItemId: item.id,
+      userId: currentUser.id,
+      quantitySold: line.quantity,
+      soldPricePerItem: line.unitPrice,
+      grossSale,
+      platform: "pos",
+      fees,
+      shippingCost,
+      netSale,
+      costBasis: roundedCostBasis,
+      profitLoss,
+      roiPercent,
+      saleReference: sale.saleReference,
+      paymentMethod: sale.paymentMethod,
+      paymentReference: sale.paymentReference,
+      soldAt: sale.soldAt,
+      notes: sale.notes
+    }
+  });
+
+  const totalSold = item.sales.reduce((sum, existingSale) => sum + existingSale.quantitySold, 0) + line.quantity;
+  const totalProfitLoss = item.sales.reduce((sum, existingSale) => sum + existingSale.profitLoss, 0) + profitLoss;
+  await tx.inventoryItem.update({
+    where: { id: item.id },
+    data: {
+      listingStatus:
+        totalSold >= item.quantity && item.quantity > 0
+          ? "sold"
+          : item.listingStatus === "not_listed" && totalSold > 0
+            ? "held"
+            : item.listingStatus,
+      soldPrice: line.unitPrice,
+      soldAt: sale.soldAt,
+      buyerPlatform: "pos",
+      netProfitAfterFees: totalProfitLoss
+    }
+  });
+}
+
+export async function createPosSale(
+  currentUser: SessionUser,
+  input: {
+    idempotencyKey: string;
+    items: Array<{ inventoryItemId: string; quantity: number }>;
+    paymentMethod: string;
+    paymentReference?: string | null;
+  }
+): Promise<PosSaleReceiptDTO> {
+  const paymentMethod = normalizePosPaymentMethod(input.paymentMethod);
+  if (!paymentMethod) throw new Error("Select a valid POS payment method.");
+
+  const cartItems = compactPosSaleItems(input.items);
+  if (!cartItems.length) throw new Error("Add at least one item before completing a POS sale.");
+
+  const soldAt = new Date();
+  const saleReference = posSaleReferenceFromIdempotencyKey(currentUser.id, input.idempotencyKey);
+  const paymentReference = input.paymentReference?.trim() || null;
+  const paymentMethodLabel = posPaymentMethodLabel(paymentMethod);
+
+  const existingReceipt = await receiptForExistingPosSale(prisma, currentUser, saleReference);
+  if (existingReceipt) return existingReceipt;
+
+  const receipt = await prisma.$transaction(async (tx) => {
+    const sortedCartItems = [...cartItems].sort((a, b) => a.inventoryItemId.localeCompare(b.inventoryItemId));
+    for (const cartItem of sortedCartItems) {
+      const locked = await tx.inventoryItem.updateMany({
+        where: {
+          id: cartItem.inventoryItemId,
+          OR: [{ userId: null }, { userId: currentUser.id }]
+        },
+        data: { updatedAt: soldAt }
+      });
+      if (locked.count !== 1) throw new Error("One or more POS cart items could not be found.");
+    }
+
+    const duplicateReceipt = await receiptForExistingPosSale(tx, currentUser, saleReference);
+    if (duplicateReceipt) return duplicateReceipt;
+
+    const records = await tx.inventoryItem.findMany({
+      where: {
+        id: { in: cartItems.map((item) => item.inventoryItemId) },
+        OR: [{ userId: null }, { userId: currentUser.id }]
+      },
+      include: inventoryItemInclude
+    });
+    const recordsById = new Map(records.map((record) => [record.id, record]));
+    const missingItem = cartItems.find((item) => !recordsById.has(item.inventoryItemId));
+    if (missingItem) throw new Error("One or more POS cart items could not be found.");
+
+    const lines = cartItems.map((cartItem) => {
+      const record = recordsById.get(cartItem.inventoryItemId);
+      if (!record) throw new Error("One or more POS cart items could not be found.");
+      const dto = inventoryItemToDTO(record);
+      if (!isPosSellableInventoryItem(dto)) {
+        throw new Error(`${dto.itemName} is not available for POS sale.`);
+      }
+      if (cartItem.quantity > dto.quantityOwned) {
+        throw new Error(`Only ${dto.quantityOwned} available to sell for ${dto.itemName}.`);
+      }
+      const unitPrice = posUnitPrice(dto);
+      if (unitPrice === null) throw new Error(`${dto.itemName} needs a public or target sell price before POS sale.`);
+      return {
+        record,
+        dto,
+        quantity: cartItem.quantity,
+        unitPrice,
+        lineTotal: roundPosMoney(unitPrice * cartItem.quantity)
+      };
+    });
+
+    const taxRate = getConfiguredPosTaxRate();
+    const totals = calculatePosTotals(lines, taxRate);
+    const notes = posSaleLineNote({
+      saleReference,
+      paymentMethodLabel,
+      paymentReference,
+      subtotal: totals.subtotal,
+      tax: totals.tax,
+      total: totals.total
+    });
+
+    for (const line of lines) {
+      await createPosInventorySaleLine(tx, currentUser, line, {
+        saleReference,
+        paymentMethod,
+        paymentReference,
+        soldAt,
+        notes
+      });
+    }
+
+    return {
+      saleReference,
+      paymentMethod,
+      paymentMethodLabel,
+      paymentReference,
+      subtotal: totals.subtotal,
+      tax: totals.tax,
+      total: totals.total,
+      taxRate,
+      itemCount: lines.reduce((sum, line) => sum + line.quantity, 0),
+      completedAt: soldAt.toISOString(),
+      lines: lines.map((line) => ({
+        inventoryItemId: line.dto.id,
+        itemName: line.dto.itemName,
+        imageUrl: line.dto.imageUrl,
+        upc: line.dto.upc,
+        sku: line.dto.sku,
+        quantity: line.quantity,
+        availableBeforeSale: line.dto.quantityOwned,
+        availableAfterSale: Math.max(0, line.dto.quantityOwned - line.quantity),
+        unitPrice: line.unitPrice,
+        lineTotal: line.lineTotal
+      }))
+    };
+  });
+
+  for (const item of cartItems) {
+    await syncInventoryStoreStatusAfterStockChange(item.inventoryItemId);
+  }
+
+  return receipt;
 }
 
 export async function updateInventorySale(

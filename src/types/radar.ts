@@ -585,6 +585,9 @@ export type InventorySaleDTO = {
   profitLoss: number;
   activeProfitLoss: number;
   roiPercent: number | null;
+  saleReference: string | null;
+  paymentMethod: string | null;
+  paymentReference: string | null;
   saleStatus: "active" | "partially_refunded" | "refunded" | "canceled" | "test";
   storefrontOrderNumber: string | null;
   storefrontOrderStatus: string | null;
@@ -594,6 +597,35 @@ export type InventorySaleDTO = {
   soldAt: string;
   notes: string | null;
   createdAt: string;
+};
+
+export type PosPaymentMethodDTO = "cash" | "zelle" | "external_card" | "other";
+
+export type PosSaleLineDTO = {
+  inventoryItemId: string;
+  itemName: string;
+  imageUrl: string | null;
+  upc: string | null;
+  sku: string | null;
+  quantity: number;
+  availableBeforeSale: number;
+  availableAfterSale: number;
+  unitPrice: number;
+  lineTotal: number;
+};
+
+export type PosSaleReceiptDTO = {
+  saleReference: string;
+  paymentMethod: PosPaymentMethodDTO;
+  paymentMethodLabel: string;
+  paymentReference: string | null;
+  subtotal: number;
+  tax: number;
+  total: number;
+  taxRate: number;
+  itemCount: number;
+  completedAt: string;
+  lines: PosSaleLineDTO[];
 };
 
 export type InventoryMarketCompDTO = {
