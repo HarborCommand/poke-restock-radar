@@ -1,6 +1,7 @@
 import { StorefrontContactForm, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import { getStorefrontSettings } from "@/lib/storefront";
+import { GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE } from "@/lib/storefront-disclosures";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
@@ -66,6 +67,7 @@ export default async function ContactPage() {
             <p>Public contact email is not configured yet. Use the cart Request Invoice flow for product inquiries.</p>
           )}
           <p>Collector-focused Pokemon TCG, sports card, and collectible card products for customers, players, and fans.</p>
+          <p>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</p>
         </div>
         <a className="gdg-primary-button" href={settings.contactEmail ? `mailto:${settings.contactEmail}` : "/shop"}>
           {settings.contactEmail ? "Email Us" : "Browse Products"}

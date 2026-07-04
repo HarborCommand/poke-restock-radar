@@ -1103,7 +1103,9 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   assert.match(policiesPage, /If a product is sold out, checkout is blocked/);
   assert.match(policiesPage, /Privacy \/ Customer Information/);
   assert.match(policiesPage, /Trademark Notice/);
-  assert.match(policiesPage, /GameDayGrabs is not affiliated with The Pokemon Company International/);
+  assert.match(policiesPage, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
+  assert.match(policiesPage, /GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE/);
+  assert.match(policiesPage, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
   assert.match(policiesPage, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
   assert.match(policiesPage, /mailto:\$\{contactEmail\}/);
   assert.match(routing, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL = "gamedaygrabs@outlook\.com"/);

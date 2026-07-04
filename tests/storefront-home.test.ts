@@ -235,7 +235,8 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.doesNotMatch(client, /gdg-home-account-icon/);
   assert.doesNotMatch(client, /gdg-home-account-[\s\S]{0,160}<User/);
   assert.match(client, /sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections/);
-  assert.match(client, /GameDayGrabs is not affiliated with The Pokemon Company International/);
+  assert.match(client, /GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE/);
+  assert.match(client, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
   for (const category of ["Booster Bundles", "Tins", "Premium Collections", "Blisters", "New Arrivals"]) {
     assert.match(client, new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }

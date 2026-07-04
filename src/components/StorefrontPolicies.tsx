@@ -1,4 +1,9 @@
 import Link from "next/link";
+import {
+  GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE,
+  GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE,
+  GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE
+} from "@/lib/storefront-disclosures";
 
 export const policyLinks = [
   { href: "/policies/shipping", title: "Shipping Policy", description: "US shipping, USPS Ground Advantage, local pickup, tracking, and shipping minimums." },
@@ -170,7 +175,9 @@ export function TermsPolicyContent({ contactEmail }: { contactEmail: string }) {
       </article>
       <article>
         <h2>Trademark Notice</h2>
-        <p>GameDayGrabs LLC is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</p>
+        <p>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</p>
+        <p>{GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE}</p>
+        <p>{GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE}</p>
       </article>
       <article>
         <h2>Contact</h2>

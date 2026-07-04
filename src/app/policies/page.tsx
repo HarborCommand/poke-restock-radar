@@ -2,6 +2,11 @@ import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClien
 import { PolicyLinkGrid } from "@/components/StorefrontPolicies";
 import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import { getStorefrontSettings } from "@/lib/storefront";
+import {
+  GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE,
+  GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE,
+  GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE
+} from "@/lib/storefront-disclosures";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
@@ -165,7 +170,9 @@ export default async function PoliciesPage() {
         </article>
         <article>
           <h2>Trademark Notice</h2>
-          <p>GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</p>
+          <p>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</p>
+          <p>{GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE}</p>
+          <p>{GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE}</p>
         </article>
         <article>
           <h2>Contact</h2>
