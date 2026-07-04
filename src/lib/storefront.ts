@@ -2568,6 +2568,10 @@ async function orderForStripeEvent(event: Stripe.Event) {
   return null;
 }
 
+async function loadFreshStorefrontOrder(orderId: string) {
+  return prisma.storefrontOrder.findUniqueOrThrow({ where: { id: orderId }, include: storefrontOrderInclude });
+}
+
 type StripeAddressLike = {
   line1?: string | null;
   line2?: string | null;
@@ -2917,7 +2921,10 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
     const wasPaid = order.paymentStatus === "paid";
     const persisted = await persistPaidCheckoutSession(order, session);
     order = persisted.order;
-    if (!wasPaid && order.paymentStatus !== "paid") await createStorefrontSale(order);
+    if (!wasPaid && order.paymentStatus !== "paid") {
+      await createStorefrontSale(order);
+      order = await loadFreshStorefrontOrder(order.id);
+    }
     if (!wasPaid && order.paymentStatus === "paid") await awardRewardsForPaidOrder(order);
     if (!wasPaid) await sendStorefrontOrderConfirmationEmail(order);
     if (persisted.customer && persisted.customerEmail) await syncStorefrontCustomerTotals(persisted.customer.id, persisted.customerEmail);

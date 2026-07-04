@@ -1127,6 +1127,14 @@ test("paid webhook awards reward points once without changing checkout totals", 
     "export async function updateInventoryStoreListing"
   );
 
+  assert.ok(
+    webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") >= 0,
+    "webhook must reload the order after sale finalization so rewards do not see stale pending state"
+  );
+  assert.ok(
+    webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") < webhook.indexOf("await awardRewardsForPaidOrder(order)"),
+    "reward awarding must run after the fresh paid order reload"
+  );
   assert.match(webhook, /if \(!wasPaid && order\.paymentStatus === "paid"\) await awardRewardsForPaidOrder\(order\)/);
   assert.match(rewards, /export async function awardRewardsForPaidOrder/);
   assert.match(rewards, /config\.customerAccountsEnabled && config\.customerRewardsEnabled/);
