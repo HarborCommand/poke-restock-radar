@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import { getEnvironmentReport } from "../src/lib/env";
-import { appHealthStatusFromChecks } from "../src/lib/health";
+import { appHealthStatusFromChecks, publicHealthFromAppHealth } from "../src/lib/health";
+import type { AppHealthDTO } from "../src/types/radar";
 
 const controlledEnvKeys = [
   "NODE_ENV",
@@ -122,6 +124,10 @@ function statusForReport(warnings: string[]) {
   });
 }
 
+function readProjectFile(path: string) {
+  return fs.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
 test("health stays OK when required systems pass and optional providers are disabled", () => {
   withEnv({}, () => {
     const report = getEnvironmentReport();
@@ -160,6 +166,89 @@ test("health warns when an optional provider is partially configured", () => {
     assert.equal(report.providers.email.emailFromConfigured, false);
     assert.match(report.warnings.join("\n"), /Email provider is partially configured/);
     assert.equal(statusForReport(report.warnings), "WARN");
+  });
+});
+
+test("product search fallback warning remains available in detailed health data", () => {
+  withEnv({ PRODUCT_SEARCH_PROVIDER: "serpapi" }, () => {
+    const report = getEnvironmentReport();
+    const serialized = JSON.stringify(report);
+
+    assert.equal(report.providers.upc.searchFallbackConfigured, false);
+    assert.equal(report.providers.upc.searchFallbackHealthStatus, "misconfigured");
+    assert.deepEqual(report.providers.upc.searchFallbackEnvVars, [
+      "PRODUCT_SEARCH_PROVIDER",
+      "PRODUCT_SEARCH_API_URL",
+      "PRODUCT_SEARCH_API_KEY"
+    ]);
+    assert.match(report.providers.upc.searchFallbackMessage, /partial or unsupported configuration/);
+    assert.match(report.warnings.join("\n"), /Product search fallback is partially configured/);
+
+    const publicHealth = publicHealthFromAppHealth({
+      status: statusForReport(report.warnings),
+      checkedAt: "2026-07-04T12:00:00.000Z",
+      environment: {
+        nodeEnv: report.nodeEnv,
+        appUrl: report.appUrl,
+        isVercel: report.isVercel,
+        coreMissing: report.coreMissing,
+        featureMissing: report.featureMissing,
+        warnings: report.warnings
+      },
+      database: {
+        ok: true,
+        provider: report.databaseProvider,
+        urlConfigured: true,
+        productionSafe: true
+      },
+      auth: {
+        authSecretConfigured: true,
+        authSecretStrong: true,
+        authReady: true,
+        sessionCookieName: "__Host-poke_radar_session",
+        secureCookie: true,
+        sameSite: "lax",
+        sessionDays: 14,
+        currentSessionValid: false,
+        currentSessionEmail: null,
+        currentSessionRole: null,
+        adminUserCount: 1,
+        configuredAdminEmailPresent: true,
+        configuredAdminEmailExists: true,
+        lastAdminLoginAt: null,
+        passwordResetEmailConfigured: false
+      },
+      monitor: {
+        lastRunAt: null,
+        lastStatus: null,
+        lastSummary: null,
+        lastError: null,
+        dueProductCount: 0,
+        requestDelayMs: report.providers.cron.requestDelayMs,
+        monitorJobSecretConfigured: true,
+        vercelCronSecretConfigured: true
+      },
+      alerts: {
+        lastAlertAt: null,
+        lastAlertTitle: null,
+        lastAlertPriority: null,
+        unreadCount: 0
+      },
+      build: {
+        commitSha: "abcdef1234567890",
+        commitShort: "abcdef123456",
+        deployId: "dpl_internal",
+        buildTimestamp: "2026-07-04T11:59:00.000Z",
+        serviceWorkerVersion: "poke-radar-sw-test"
+      },
+      providers: report.providers
+    });
+    const publicSerialized = JSON.stringify(publicHealth);
+
+    assert.match(serialized, /PRODUCT_SEARCH_PROVIDER/);
+    assert.equal(publicHealth.warningCount, 1);
+    assert.deepEqual(publicHealth.warningCategories, ["configuration"]);
+    assert.doesNotMatch(publicSerialized, /PRODUCT_SEARCH_PROVIDER|PRODUCT_SEARCH_API_URL|PRODUCT_SEARCH_API_KEY|serpapi/);
   });
 });
 
@@ -330,4 +419,120 @@ test("health provider report does not serialize secret values", () => {
       assert.doesNotMatch(serialized, /postgresql:\/\/example\.invalid/);
     }
   );
+});
+
+test("public health projection exposes only minimal safe fields", () => {
+  const detailed = {
+    status: "ERROR",
+    checkedAt: "2026-07-04T12:00:00.000Z",
+    environment: {
+      nodeEnv: "production",
+      appUrl: "https://www.gamedaygrabs.com",
+      isVercel: true,
+      coreMissing: ["DATABASE_URL", "AUTH_SECRET"],
+      featureMissing: ["PRODUCT_SEARCH_API_KEY"],
+      warnings: ["Production should use a managed Postgres DATABASE_URL."]
+    },
+    database: {
+      ok: false,
+      provider: "unknown",
+      urlConfigured: false,
+      productionSafe: false,
+      error: "Environment variable not found: DATABASE_URL."
+    },
+    auth: {
+      authSecretConfigured: false,
+      authSecretStrong: false,
+      authReady: false,
+      sessionCookieName: "__Host-poke_radar_session",
+      secureCookie: true,
+      sameSite: "lax",
+      sessionDays: 14,
+      currentSessionValid: false,
+      currentSessionEmail: "owner@example.com",
+      currentSessionRole: null,
+      adminUserCount: 0,
+      configuredAdminEmailPresent: true,
+      configuredAdminEmailExists: false,
+      lastAdminLoginAt: null,
+      passwordResetEmailConfigured: true
+    },
+    monitor: {
+      lastRunAt: null,
+      lastStatus: null,
+      lastSummary: null,
+      lastError: "Monitor job failed with provider details.",
+      dueProductCount: 0,
+      requestDelayMs: 1500,
+      monitorJobSecretConfigured: false,
+      vercelCronSecretConfigured: false
+    },
+    alerts: {
+      lastAlertAt: null,
+      lastAlertTitle: "Private alert title",
+      lastAlertPriority: "HIGH",
+      unreadCount: 10
+    },
+    build: {
+      commitSha: "abc123456789",
+      commitShort: "abc123",
+      deployId: "dpl_safe_public_id",
+      buildTimestamp: "2026-07-04T11:59:00.000Z",
+      serviceWorkerVersion: "poke-radar-sw-test"
+    },
+    providers: {
+      email: { healthStatus: "misconfigured", envVars: ["RESEND_API_KEY"], message: "Email config missing." },
+      stripe: { healthStatus: "configured", envVars: ["STRIPE_SECRET_KEY"], message: "Stripe configured." }
+    }
+  } as unknown as AppHealthDTO;
+
+  const publicHealth = publicHealthFromAppHealth(detailed);
+  const serialized = JSON.stringify(publicHealth);
+
+  assert.deepEqual(Object.keys(publicHealth).sort(), ["buildCommit", "databaseOk", "status", "timestamp", "warningCategories", "warningCount"].sort());
+  assert.equal(publicHealth.status, "ERROR");
+  assert.equal(publicHealth.timestamp, "2026-07-04T12:00:00.000Z");
+  assert.equal(publicHealth.databaseOk, false);
+  assert.equal(publicHealth.warningCount, 10);
+  assert.deepEqual(publicHealth.warningCategories, ["database", "configuration", "auth", "providers", "monitor"]);
+  assert.equal(publicHealth.buildCommit, "abc123");
+
+  for (const forbidden of [
+    "environment",
+    "alerts",
+    "DATABASE_URL",
+    "AUTH_SECRET",
+    "PRODUCT_SEARCH_API_KEY",
+    "__Host-poke_radar_session",
+    "owner@example.com",
+    "Private alert title",
+    "Monitor job failed",
+    "STRIPE_SECRET_KEY",
+    "RESEND_API_KEY",
+    "dpl_safe_public_id",
+    "abc123456789"
+  ]) {
+    assert.doesNotMatch(serialized, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
+test("public and admin health routes split minimal and detailed diagnostics", () => {
+  const publicRoute = readProjectFile("src/app/api/health/route.ts");
+  const adminRoute = readProjectFile("src/app/api/admin/health/route.ts");
+  const finalSmoke = readProjectFile("scripts/final-production-smoke.ts");
+
+  assert.match(publicRoute, /publicHealthFromAppHealth/);
+  assert.match(publicRoute, /getAppHealth\(\)/);
+  assert.match(publicRoute, /ok\(publicHealthFromAppHealth\(health\), health\.status === "ERROR" \? 503 : 200\)/);
+  assert.doesNotMatch(publicRoute, /ok\(health,/);
+  assert.doesNotMatch(publicRoute, /requireUser|requireAdmin/);
+
+  assert.match(adminRoute, /requireUser\(\)/);
+  assert.match(adminRoute, /requireAdmin\(user\)/);
+  assert.match(adminRoute, /getAppHealth\(user\)/);
+  assert.match(adminRoute, /privateOk\(health, health\.status === "ERROR" \? 503 : 200\)/);
+
+  assert.match(finalSmoke, /health\.databaseOk !== true/);
+  assert.match(finalSmoke, /dashboardBody\.health\?\.database\?\.provider !== "postgres"/);
+  assert.doesNotMatch(finalSmoke, /health\.environment|health\.database\?\.provider/);
 });

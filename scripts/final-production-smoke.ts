@@ -92,9 +92,9 @@ async function main() {
 
   const healthResponse = await expectStatus("health", await fetch(`${baseUrl}/api/health`), [200, 503]);
   const health = await json(healthResponse);
-  if (health.status === "ERROR") throw new Error(`Health endpoint is ERROR: ${JSON.stringify(health.environment || {})}`);
-  if (health.database?.provider !== "postgres") throw new Error(`Production health is not using Postgres: ${health.database?.provider}`);
-  checks.health = { status: health.status, database: health.database?.provider };
+  if (health.status === "ERROR") throw new Error("Public health endpoint is ERROR.");
+  if (health.databaseOk !== true) throw new Error("Public health reports database unavailable.");
+  checks.health = { status: health.status, databaseOk: health.databaseOk, warningCount: health.warningCount };
 
   const backupUnauthed = await fetch(`${baseUrl}/api/radar/backup`);
   await expectStatus("admin backup unauthenticated", backupUnauthed, 401);
@@ -125,6 +125,9 @@ async function main() {
   const dashboard = await authedGet("/api/radar/dashboard");
   const dashboardBody = await json(dashboard);
   if (!dashboardBody.health?.auth?.currentSessionValid) throw new Error("Dashboard health did not see the current session.");
+  if (dashboardBody.health?.database?.provider !== "postgres") {
+    throw new Error(`Production dashboard health is not using Postgres: ${dashboardBody.health?.database?.provider}`);
+  }
   if (!Array.isArray(dashboardBody.ownerLaunchChecklist)) throw new Error("Dashboard is missing owner launch checklist data.");
   if (!Array.isArray(dashboardBody.alertCalibrationItems)) throw new Error("Dashboard is missing alert calibration data.");
   checks.dashboard = {
