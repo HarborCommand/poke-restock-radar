@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { publicProductToDTO } from "../src/lib/storefront";
+import { isPublicStorefrontListingSellable, isPublicStorefrontListingVisible, publicProductToDTO } from "../src/lib/storefront";
 
 function storefrontItem(overrides: Record<string, unknown> = {}) {
   return {
@@ -53,6 +53,31 @@ test("storefront DTO does not invent UPC cover image fallbacks", () => {
   assert.ok(dto);
   assert.equal(dto.primaryImageUrl, null);
   assert.deepEqual(dto.images, []);
+});
+
+test("public storefront detail visibility keeps sold-out history pages but separates sellable products", () => {
+  const active = storefrontItem();
+  const soldOut = storefrontItem({ storeStatus: "sold_out", quantity: 0, availableForSale: 0 });
+  const activeWithoutStock = storefrontItem({ quantity: 0, availableForSale: 0 });
+  const hidden = storefrontItem({ publishToStore: false });
+
+  assert.equal(isPublicStorefrontListingVisible(active), true);
+  assert.equal(isPublicStorefrontListingSellable(active), true);
+  assert.equal(publicProductToDTO(active)?.status, "active");
+
+  assert.equal(isPublicStorefrontListingVisible(soldOut), true);
+  assert.equal(isPublicStorefrontListingSellable(soldOut), false);
+  assert.equal(publicProductToDTO(soldOut)?.status, "sold_out");
+  assert.equal(publicProductToDTO(soldOut)?.publicMaxQuantity, 0);
+
+  assert.equal(isPublicStorefrontListingVisible(activeWithoutStock), true);
+  assert.equal(isPublicStorefrontListingSellable(activeWithoutStock), false);
+  assert.equal(publicProductToDTO(activeWithoutStock)?.status, "sold_out");
+  assert.equal(publicProductToDTO(activeWithoutStock)?.publicMaxQuantity, 0);
+
+  assert.equal(isPublicStorefrontListingVisible(hidden), false);
+  assert.equal(isPublicStorefrontListingSellable(hidden), false);
+  assert.equal(publicProductToDTO(hidden), null);
 });
 
 test("storefront DTO does not use leading-zero EAN values to guess public images", () => {

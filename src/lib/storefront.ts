@@ -221,19 +221,47 @@ async function uniqueSlug(base: string, itemId: string) {
   return `${normalized}-${Date.now()}`;
 }
 
-function quantitySold(item: Pick<StorefrontInventoryItem, "sales">) {
+function quantitySold(item: { sales: Array<{ quantitySold: number }> }) {
   return item.sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
 }
 
-function quantityOwned(item: StorefrontInventoryItem) {
+type StorefrontQuantityInput = {
+  quantity: number;
+  availableForSale: number | null;
+  stockLots: Array<{ remainingQuantity: number }>;
+  sales: Array<{ quantitySold: number }>;
+};
+
+type PublicStorefrontListingVisibilityInput = StorefrontQuantityInput & {
+  publishToStore: boolean;
+  publicSlug: string | null;
+  publicPrice: number | null;
+  storeStatus: string;
+};
+
+function quantityOwned(item: StorefrontQuantityInput) {
   const lotRemaining = item.stockLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
   return item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - quantitySold(item));
 }
 
-function sellableQuantity(item: StorefrontInventoryItem) {
+function sellableQuantity(item: StorefrontQuantityInput) {
   const owned = quantityOwned(item);
   const publicCap = item.availableForSale === null || item.availableForSale === undefined ? owned : Math.max(0, item.availableForSale);
   return Math.min(owned, publicCap);
+}
+
+export function isPublicStorefrontListingVisible(item: PublicStorefrontListingVisibilityInput) {
+  return Boolean(
+    item.publishToStore &&
+      item.publicSlug &&
+      item.publicPrice !== null &&
+      item.publicPrice !== undefined &&
+      ["active", "sold_out"].includes(item.storeStatus)
+  );
+}
+
+export function isPublicStorefrontListingSellable(item: PublicStorefrontListingVisibilityInput) {
+  return isPublicStorefrontListingVisible(item) && item.storeStatus === "active" && sellableQuantity(item) > 0;
 }
 
 function publicCategoryForItem(item: Pick<StorefrontInventoryItem, "category" | "setName" | "itemName">) {
@@ -271,8 +299,8 @@ export function publicProductToDTO(
   const price = item.publicPrice;
   const rawAvailableQuantity = sellableQuantity(item);
   const slug = item.publicSlug;
-  if (!item.publishToStore || !slug || price === null || price === undefined) return null;
-  if (!["active", "sold_out"].includes(item.storeStatus)) return null;
+  if (!isPublicStorefrontListingVisible(item)) return null;
+  if (!slug || price === null || price === undefined) return null;
   const images = publicImages(item);
   const publicCategory = displayStorefrontCategory({
     category: item.storefrontCategory || item.category,
@@ -382,12 +410,12 @@ export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
   };
 }
 
-export async function listPublicStoreProducts(input?: { q?: string; category?: string }) {
+export async function listPublicStoreProducts(input?: { q?: string; category?: string; onlySellable?: boolean }) {
   const [products, profileDefinitions] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: {
         publishToStore: true,
-        storeStatus: { in: ["active", "sold_out"] },
+        storeStatus: input?.onlySellable ? "active" : { in: ["active", "sold_out"] },
         publicPrice: { not: null },
         publicSlug: { not: null }
       },
@@ -399,6 +427,7 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
   const q = input?.q?.trim().toLowerCase();
   const category = input?.category?.trim().toLowerCase();
   return products
+    .filter((item) => !input?.onlySellable || isPublicStorefrontListingSellable(item))
     .map((item) => publicProductToDTO(item, { profileDefinitions }))
     .filter((product): product is PublicStoreProductDTO => Boolean(product))
     .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))

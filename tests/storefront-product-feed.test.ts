@@ -306,6 +306,7 @@ test("Google Merchant feed endpoint and robots are wired for crawler access", ()
   const route = fs.readFileSync(new URL("../src/app/product-feed.xml/route.ts", import.meta.url), "utf8");
   const robots = fs.readFileSync(new URL("../src/app/robots.ts", import.meta.url), "utf8");
   const sitemap = fs.readFileSync(new URL("../src/app/sitemap.ts", import.meta.url), "utf8");
+  const storefront = fs.readFileSync(new URL("../src/lib/storefront.ts", import.meta.url), "utf8");
 
   assert.match(route, /listPublicStoreProducts/);
   assert.match(route, /storefrontProductFeedXml/);
@@ -316,7 +317,18 @@ test("Google Merchant feed endpoint and robots are wired for crawler access", ()
   assert.match(robots, /sitemap/);
   assert.doesNotMatch(robots, /disallow:[\s\S]*"\/product-feed\.xml"/i);
 
-  assert.match(sitemap, /listPublicStoreProducts/);
+  assert.match(sitemap, /listPublicStoreProducts\(\{ onlySellable: true \}\)/);
   assert.match(sitemap, /productCanonicalUrl\(product\.slug\)/);
   assert.doesNotMatch(sitemap, /\/admin|\/app|\/dashboard|\/api\//);
+
+  assert.match(storefront, /export function isPublicStorefrontListingVisible/);
+  assert.match(storefront, /export function isPublicStorefrontListingSellable/);
+  const publicProductLoaders = storefront.slice(
+    storefront.indexOf("export async function listPublicStoreProducts"),
+    storefront.indexOf("export async function getCartProducts")
+  );
+  assert.match(route, /listPublicStoreProducts\(\{ onlySellable: true \}\)/);
+  assert.match(publicProductLoaders, /storeStatus: input\?\.onlySellable \? "active" : \{ in: \["active", "sold_out"\] \}/);
+  assert.match(publicProductLoaders, /isPublicStorefrontListingSellable\(item\)/);
+  assert.match(publicProductLoaders, /where: \{ publicSlug: slug, publishToStore: true, storeStatus: \{ in: \["active", "sold_out"\] \} \}/);
 });

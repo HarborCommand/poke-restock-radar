@@ -34,6 +34,23 @@ const fallbackDescriptionPatterns = warningDescriptionPatterns.filter(
   (pattern) => !/Pok/.test(pattern.source) && !/home|Mega Evolution|\\w\\\?/.test(pattern.source)
 );
 
+const counterfeitReviewRiskPatterns = [
+  /\breplica\b/i,
+  /\bcopy\b/i,
+  /\bfake\b/i,
+  /\bfaux\b/i,
+  /\bknockoff\b/i,
+  /\bknock-off\b/i,
+  /\bclone\b/i,
+  /\bmirror image\b/i,
+  /\bunofficial\b/i,
+  /\bunauthorized\b/i
+];
+
+export function soldOutCatalogHistoryDescription() {
+  return "Sold out. This sealed Pokemon TCG World Championships Deck product is listed for catalog history only and is not currently available for purchase from GameDayGrabs.";
+}
+
 function decodeCommonMojibake(value: string) {
   return value
     .replace(/Pok(?:\?|�|Ã©)mon/gi, "Pokémon")
@@ -112,6 +129,9 @@ export function generatedStorefrontDescription(product: StorefrontCopyProduct) {
 export function cleanStorefrontDescription(product: StorefrontCopyProduct) {
   const raw = product.publicDescription || product.description;
   const normalized = normalizeStorefrontCopy(raw);
+  if (product.status === "sold_out" && counterfeitReviewRiskPatterns.some((pattern) => pattern.test(normalized))) {
+    return soldOutCatalogHistoryDescription();
+  }
   if (hasLowQualityStorefrontDescription(raw)) {
     return generatedStorefrontDescription(product);
   }
@@ -119,7 +139,7 @@ export function cleanStorefrontDescription(product: StorefrontCopyProduct) {
 }
 
 export function storefrontSoldOutNote() {
-  return "This item is currently sold out. It remains listed for catalog reference and may return if restocked.";
+  return "This item is currently sold out and is not available for checkout. It may return if restocked.";
 }
 
 function dedupeSentences(value: string) {
