@@ -1408,6 +1408,7 @@ export type AppHealthDTO = {
     upc: {
       configuredUpcProvider: boolean;
       publicUpcProvider: boolean;
+      searchFallbackEnabled: boolean;
       searchFallbackConfigured: boolean;
       searchFallbackHealthStatus: ProviderHealthStatus;
       searchFallbackEnvVars: string[];

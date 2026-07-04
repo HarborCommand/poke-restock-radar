@@ -8,6 +8,20 @@ export type { ProductSearchCandidate, ProductSearchConfig, ProductSearchFailure,
 
 export async function searchProductsByUpc(upc: string): Promise<ProductSearchResult> {
   const config = productSearchConfig();
+  if (!config.enabled) {
+    return {
+      configured: false,
+      provider: config.provider,
+      candidates: [],
+      failures: [
+        productSearchFailure("search", "disabled", {
+          configured: false,
+          detail: "PRODUCT_SEARCH_FALLBACK_ENABLED is not true."
+        })
+      ]
+    };
+  }
+
   if (!config.provider || !config.apiUrl || !config.apiKeyConfigured) {
     return {
       configured: false,
@@ -42,4 +56,3 @@ export async function searchProductsByUpc(upc: string): Promise<ProductSearchRes
     ]
   };
 }
-

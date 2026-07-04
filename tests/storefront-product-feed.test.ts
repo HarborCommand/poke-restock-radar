@@ -75,6 +75,36 @@ test("Google Merchant product feed renders public active storefront products", (
   assert.doesNotMatch(xml, /<g:shipping(?:\s|>)/);
 });
 
+test("Google Merchant product feed is unaffected by disabled product search fallback config", () => {
+  const previous = {
+    enabled: process.env.PRODUCT_SEARCH_FALLBACK_ENABLED,
+    provider: process.env.PRODUCT_SEARCH_PROVIDER,
+    apiUrl: process.env.PRODUCT_SEARCH_API_URL,
+    apiKey: process.env.PRODUCT_SEARCH_API_KEY
+  };
+  try {
+    delete process.env.PRODUCT_SEARCH_FALLBACK_ENABLED;
+    process.env.PRODUCT_SEARCH_PROVIDER = "serpapi";
+    delete process.env.PRODUCT_SEARCH_API_URL;
+    delete process.env.PRODUCT_SEARCH_API_KEY;
+
+    const xml = storefrontProductFeedXml([product()]);
+
+    assert.match(xml, /<g:id>pokemon-feed-product<\/g:id>/);
+    assert.match(xml, /<g:availability>in stock<\/g:availability>/);
+    assert.doesNotMatch(xml, /PRODUCT_SEARCH/);
+  } finally {
+    if (previous.enabled === undefined) delete process.env.PRODUCT_SEARCH_FALLBACK_ENABLED;
+    else process.env.PRODUCT_SEARCH_FALLBACK_ENABLED = previous.enabled;
+    if (previous.provider === undefined) delete process.env.PRODUCT_SEARCH_PROVIDER;
+    else process.env.PRODUCT_SEARCH_PROVIDER = previous.provider;
+    if (previous.apiUrl === undefined) delete process.env.PRODUCT_SEARCH_API_URL;
+    else process.env.PRODUCT_SEARCH_API_URL = previous.apiUrl;
+    if (previous.apiKey === undefined) delete process.env.PRODUCT_SEARCH_API_KEY;
+    else process.env.PRODUCT_SEARCH_API_KEY = previous.apiKey;
+  }
+});
+
 test("Google Merchant product feed preserves short safe slug IDs", () => {
   const products = [
     product({ slug: "poke-ball-tin-q4-2025" }),

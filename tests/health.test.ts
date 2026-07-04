@@ -32,6 +32,7 @@ const controlledEnvKeys = [
   "TWILIO_AUTH_TOKEN",
   "TWILIO_FROM_NUMBER",
   "UPC_LOOKUP_API_URL",
+  "PRODUCT_SEARCH_FALLBACK_ENABLED",
   "PRODUCT_SEARCH_PROVIDER",
   "PRODUCT_SEARCH_API_URL",
   "PRODUCT_SEARCH_API_KEY",
@@ -137,7 +138,8 @@ test("health stays OK when required systems pass and optional providers are disa
     assert.equal(report.providers.push.healthStatus, "optional_not_configured");
     assert.equal(report.providers.email.healthStatus, "optional_not_configured");
     assert.equal(report.providers.sms.healthStatus, "optional_not_configured");
-    assert.equal(report.providers.upc.searchFallbackHealthStatus, "optional_not_configured");
+    assert.equal(report.providers.upc.searchFallbackEnabled, false);
+    assert.equal(report.providers.upc.searchFallbackHealthStatus, "disabled");
     assert.equal(report.providers.blob.healthStatus, "optional_not_configured");
     assert.equal(report.providers.stripe.healthStatus, "disabled");
     assert.equal(report.providers.shippingLabels.healthStatus, "disabled");
@@ -156,6 +158,53 @@ test("health stays OK when required systems pass and optional providers are disa
   });
 });
 
+test("product search fallback stays disabled without warning when only a provider placeholder is set", () => {
+  withEnv({ PRODUCT_SEARCH_PROVIDER: "serpapi" }, () => {
+    const report = getEnvironmentReport();
+
+    assert.equal(report.providers.upc.searchProvider, "serpapi");
+    assert.equal(report.providers.upc.searchFallbackEnabled, false);
+    assert.equal(report.providers.upc.searchFallbackConfigured, false);
+    assert.equal(report.providers.upc.searchFallbackHealthStatus, "disabled");
+    assert.equal(report.warnings.some((warning) => warning.includes("Product search fallback")), false);
+    assert.equal(statusForReport(report.warnings), "OK");
+  });
+});
+
+test("product search fallback warns only when explicitly enabled with incomplete configuration", () => {
+  withEnv({ PRODUCT_SEARCH_FALLBACK_ENABLED: "true", PRODUCT_SEARCH_PROVIDER: "serpapi" }, () => {
+    const report = getEnvironmentReport();
+
+    assert.equal(report.providers.upc.searchFallbackEnabled, true);
+    assert.equal(report.providers.upc.searchFallbackConfigured, false);
+    assert.equal(report.providers.upc.searchFallbackHealthStatus, "misconfigured");
+    assert.match(report.warnings.join("\n"), /Product search fallback is enabled but incomplete/);
+    assert.equal(statusForReport(report.warnings), "WARN");
+  });
+});
+
+test("product search fallback is healthy when explicitly enabled with complete supported config", () => {
+  withEnv(
+    {
+      PRODUCT_SEARCH_FALLBACK_ENABLED: "true",
+      PRODUCT_SEARCH_PROVIDER: "serpapi",
+      PRODUCT_SEARCH_API_URL: "https://serpapi.com/search.json",
+      PRODUCT_SEARCH_API_KEY: "test-key"
+    },
+    () => {
+      const report = getEnvironmentReport();
+      const serialized = JSON.stringify(report);
+
+      assert.equal(report.providers.upc.searchFallbackEnabled, true);
+      assert.equal(report.providers.upc.searchFallbackConfigured, true);
+      assert.equal(report.providers.upc.searchFallbackHealthStatus, "configured");
+      assert.equal(report.warnings.some((warning) => warning.includes("Product search fallback")), false);
+      assert.doesNotMatch(serialized, /test-key/);
+      assert.equal(statusForReport(report.warnings), "OK");
+    }
+  );
+});
+
 test("health warns when an optional provider is partially configured", () => {
   withEnv({ RESEND_API_KEY: "re_test_secret" }, () => {
     const report = getEnvironmentReport();
@@ -170,19 +219,21 @@ test("health warns when an optional provider is partially configured", () => {
 });
 
 test("product search fallback warning remains available in detailed health data", () => {
-  withEnv({ PRODUCT_SEARCH_PROVIDER: "serpapi" }, () => {
+  withEnv({ PRODUCT_SEARCH_FALLBACK_ENABLED: "true", PRODUCT_SEARCH_PROVIDER: "serpapi" }, () => {
     const report = getEnvironmentReport();
     const serialized = JSON.stringify(report);
 
+    assert.equal(report.providers.upc.searchFallbackEnabled, true);
     assert.equal(report.providers.upc.searchFallbackConfigured, false);
     assert.equal(report.providers.upc.searchFallbackHealthStatus, "misconfigured");
     assert.deepEqual(report.providers.upc.searchFallbackEnvVars, [
+      "PRODUCT_SEARCH_FALLBACK_ENABLED",
       "PRODUCT_SEARCH_PROVIDER",
       "PRODUCT_SEARCH_API_URL",
       "PRODUCT_SEARCH_API_KEY"
     ]);
-    assert.match(report.providers.upc.searchFallbackMessage, /partial or unsupported configuration/);
-    assert.match(report.warnings.join("\n"), /Product search fallback is partially configured/);
+    assert.match(report.providers.upc.searchFallbackMessage, /enabled but has partial or unsupported configuration/);
+    assert.match(report.warnings.join("\n"), /Product search fallback is enabled but incomplete/);
 
     const publicHealth = publicHealthFromAppHealth({
       status: statusForReport(report.warnings),
@@ -248,7 +299,7 @@ test("product search fallback warning remains available in detailed health data"
     assert.match(serialized, /PRODUCT_SEARCH_PROVIDER/);
     assert.equal(publicHealth.warningCount, 1);
     assert.deepEqual(publicHealth.warningCategories, ["configuration"]);
-    assert.doesNotMatch(publicSerialized, /PRODUCT_SEARCH_PROVIDER|PRODUCT_SEARCH_API_URL|PRODUCT_SEARCH_API_KEY|serpapi/);
+    assert.doesNotMatch(publicSerialized, /PRODUCT_SEARCH_FALLBACK_ENABLED|PRODUCT_SEARCH_PROVIDER|PRODUCT_SEARCH_API_URL|PRODUCT_SEARCH_API_KEY|serpapi/);
   });
 });
 
