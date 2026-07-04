@@ -9,6 +9,7 @@ import {
   enforceCustomerAuthRateLimit
 } from "@/lib/customer-auth-rate-limit";
 import { privateJson, readJson, withPrivateNoStore } from "@/lib/http";
+import { checkPublicRateLimit, PublicRateLimitExceededError, publicRateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,11 @@ export async function POST(request: Request) {
     }
 
     const input = await requestInput(request);
+    await checkPublicRateLimit({
+      request,
+      action: "customer_forgot_password",
+      identifiers: [{ scope: "email", value: input.email }]
+    });
     await enforceCustomerAuthRateLimit({
       request,
       action: "forgot_password_request",
@@ -57,6 +63,12 @@ export async function POST(request: Request) {
 
     return privateJson({ ok: true, status: "sent_if_eligible" });
   } catch (error) {
+    if (error instanceof PublicRateLimitExceededError) {
+      if (!redirect) return publicRateLimitResponse(error);
+      const url = new URL("/account/forgot-password", request.url);
+      url.searchParams.set("resetStatus", "rate_limited");
+      return withPrivateNoStore(NextResponse.redirect(url, { status: 303 }));
+    }
     if (error instanceof CustomerAuthRateLimitExceededError) {
       if (!redirect) return customerAuthRateLimitResponse(error);
       const url = new URL("/account/forgot-password", request.url);

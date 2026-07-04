@@ -9,6 +9,7 @@ import {
   enforceCustomerAuthRateLimit
 } from "@/lib/customer-auth-rate-limit";
 import { badRequest, privateJson, readJson, withPrivateNoStore } from "@/lib/http";
+import { checkPublicRateLimit, PublicRateLimitExceededError, publicRateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,11 @@ export async function POST(request: Request) {
       return privateJson({ error: "Customer accounts are not enabled yet." }, 404);
     }
     const input = await requestInput(request);
+    await checkPublicRateLimit({
+      request,
+      action: "customer_registration",
+      identifiers: [{ scope: "email", value: input.email }]
+    });
     await enforceCustomerAuthRateLimit({
       request,
       action: "registration",
@@ -67,6 +73,13 @@ export async function POST(request: Request) {
       status: "check_email"
     });
   } catch (error) {
+    if (error instanceof PublicRateLimitExceededError) {
+      if (!redirect) return publicRateLimitResponse(error);
+      const url = new URL("/account/login", request.url);
+      url.searchParams.set("mode", "create");
+      url.searchParams.set("registerError", "rate_limited");
+      return withPrivateNoStore(NextResponse.redirect(url, { status: 303 }));
+    }
     if (error instanceof CustomerAuthRateLimitExceededError) {
       if (!redirect) return customerAuthRateLimitResponse(error);
       const url = new URL("/account/login", request.url);

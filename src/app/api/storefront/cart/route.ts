@@ -1,4 +1,10 @@
 import { badRequest, ok, readJson } from "@/lib/http";
+import {
+  checkPublicRateLimit,
+  PublicRateLimitExceededError,
+  publicRateLimitCartIdentifier,
+  publicRateLimitResponse
+} from "@/lib/rate-limit";
 import { getCartProducts } from "@/lib/storefront";
 import { storefrontCartItemSchema } from "@/lib/validation";
 import { z } from "zod";
@@ -13,6 +19,11 @@ const cartSchema = z.object({
 export async function POST(request: Request) {
   try {
     const input = cartSchema.parse(await readJson(request));
+    await checkPublicRateLimit({
+      request,
+      action: "cart_lookup",
+      identifiers: [{ scope: "cart", value: publicRateLimitCartIdentifier(input.items) }]
+    });
     const cart = await getCartProducts(input.items, { strict: false });
     return ok({
       items: cart.map(({ product, quantity }) => ({
@@ -21,6 +32,7 @@ export async function POST(request: Request) {
       }))
     });
   } catch (error) {
+    if (error instanceof PublicRateLimitExceededError) return publicRateLimitResponse(error);
     return badRequest(error);
   }
 }
