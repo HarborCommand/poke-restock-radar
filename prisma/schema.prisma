@@ -1128,6 +1128,29 @@ model CustomerAuthRateLimit {
   @@index([blockedUntil])
 }
 
+model PublicRateLimit {
+  id            String   @id @default(cuid())
+  action        String
+  rule          String
+  scope         String
+  keyHash       String
+  windowStart   DateTime
+  windowSeconds Int
+  attemptCount  Int      @default(0)
+  firstAttemptAt DateTime @default(now())
+  lastAttemptAt DateTime
+  blockedUntil  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([action, rule, keyHash, windowStart])
+  @@index([action])
+  @@index([scope])
+  @@index([keyHash])
+  @@index([windowStart])
+  @@index([blockedUntil])
+}
+
 model CustomerSession {
   id                String          @id @default(cuid())
   customerAccountId String
