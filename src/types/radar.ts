@@ -1481,6 +1481,15 @@ export type AppHealthDTO = {
   };
 };
 
+export type PublicAppHealthDTO = {
+  status: AppHealthDTO["status"];
+  timestamp: string;
+  databaseOk: boolean;
+  warningCount: number;
+  warningCategories: Array<"database" | "configuration" | "auth" | "providers" | "monitor">;
+  buildCommit: string;
+};
+
 export type SetupChecklistItemDTO = {
   id: string;
   label: string;

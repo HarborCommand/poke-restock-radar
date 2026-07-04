@@ -3,7 +3,7 @@ import { emailProviderConfigured } from "@/lib/email-provider";
 import { getEnvironmentReport } from "@/lib/env";
 import { authRuntimeConfig } from "@/lib/auth";
 import { getBuildInfo } from "@/lib/build-info";
-import type { AppHealthDTO, SessionUser } from "@/types/radar";
+import type { AppHealthDTO, PublicAppHealthDTO, SessionUser } from "@/types/radar";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
@@ -20,6 +20,56 @@ export function appHealthStatusFromChecks(input: {
   if (!input.databaseOk || input.coreMissing.length > 0 || !input.authReady || input.adminUserCount === 0) return "ERROR";
   if (input.warnings.length > 0 || !input.configuredAdminEmailExists) return "WARN";
   return "OK";
+}
+
+export function publicHealthFromAppHealth(health: AppHealthDTO): PublicAppHealthDTO {
+  const warningCategories = new Set<PublicAppHealthDTO["warningCategories"][number]>();
+  let warningCount = 0;
+
+  if (!health.database.ok) {
+    warningCategories.add("database");
+    warningCount += 1;
+  }
+
+  const configurationWarningCount =
+    health.environment.coreMissing.length + health.environment.featureMissing.length + health.environment.warnings.length;
+  if (configurationWarningCount > 0) {
+    warningCategories.add("configuration");
+    warningCount += configurationWarningCount;
+  }
+
+  const authWarningCount =
+    Number(!health.auth.authReady) + Number(health.auth.adminUserCount === 0) + Number(!health.auth.configuredAdminEmailExists);
+  if (authWarningCount > 0) {
+    warningCategories.add("auth");
+    warningCount += authWarningCount;
+  }
+
+  const providerWarningCount = Object.values(health.providers).filter(
+    (provider) =>
+      typeof provider === "object" &&
+      provider !== null &&
+      "healthStatus" in provider &&
+      (provider as { healthStatus?: string }).healthStatus === "misconfigured"
+  ).length;
+  if (providerWarningCount > 0) {
+    warningCategories.add("providers");
+    warningCount += providerWarningCount;
+  }
+
+  if (health.monitor.lastError) {
+    warningCategories.add("monitor");
+    warningCount += 1;
+  }
+
+  return {
+    status: health.status,
+    timestamp: health.checkedAt,
+    databaseOk: health.database.ok,
+    warningCount,
+    warningCategories: Array.from(warningCategories),
+    buildCommit: health.build.commitShort
+  };
 }
 
 export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealthDTO> {
