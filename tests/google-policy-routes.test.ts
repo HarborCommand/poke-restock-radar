@@ -30,6 +30,7 @@ test("policy hub and footer expose dedicated policy and trust links", () => {
   const contactPage = readProjectFile("src/app/contact/page.tsx");
   const policyLinks = readProjectFile("src/components/StorefrontPolicies.tsx");
   const storefrontClient = readProjectFile("src/components/StorefrontClient.tsx");
+  const disclosures = readProjectFile("src/lib/storefront-disclosures.ts");
   const combinedPolicyHub = `${policiesPage}\n${policyLinks}`;
 
   for (const href of ["/policies/shipping", "/policies/returns", "/privacy", "/terms"]) {
@@ -44,6 +45,9 @@ test("policy hub and footer expose dedicated policy and trust links", () => {
   assert.match(contactPage, /GameDayGrabs LLC/);
   assert.match(policiesPage, /GameDayGrabs LLC/);
   assert.match(policyLinks, /gamedaygrabs@outlook\.com|contactEmail/);
+  assert.match(storefrontClient, /GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE/);
+  assert.match(disclosures, /independent retail store and reseller of genuine sealed collectible products/);
+  assert.match(disclosures, /not affiliated with, endorsed by, or sponsored by The Pokemon Company, Nintendo, Creatures, Game Freak/);
 });
 
 test("shipping and returns policy copy matches Merchant Center-facing commitments", () => {
@@ -58,5 +62,26 @@ test("shipping and returns policy copy matches Merchant Center-facing commitment
   assert.match(policyContent, /Returns are not accepted/);
   assert.match(policyContent, /Exchanges are not accepted/);
   assert.match(policyContent, /wrong item, damaged item, missing item/);
+});
+
+test("public trust pages include independent retailer, source, and trademark disclosures", () => {
+  const aboutPage = readProjectFile("src/app/about/page.tsx");
+  const contactPage = readProjectFile("src/app/contact/page.tsx");
+  const policiesPage = readProjectFile("src/app/policies/page.tsx");
+  const termsContent = readProjectFile("src/components/StorefrontPolicies.tsx");
+  const storefrontClient = readProjectFile("src/components/StorefrontClient.tsx");
+  const disclosures = readProjectFile("src/lib/storefront-disclosures.ts");
+  const combined = [aboutPage, contactPage, policiesPage, termsContent, storefrontClient, disclosures].join("\n");
+
+  assert.match(aboutPage, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
+  assert.match(aboutPage, /GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE/);
+  assert.match(contactPage, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
+  assert.match(policiesPage, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
+  assert.match(termsContent, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
+  assert.match(storefrontClient, /Seller and authenticity/);
+  assert.match(storefrontClient, /Product names, brands, characters, and trademarks belong to their respective owners/);
+  assert.match(disclosures, /retail, wholesale, and distributor channels/);
+
+  assert.doesNotMatch(combined, /official Pokemon partner|official Pok[eÃ©]mon retailer|authorized by The Pokemon Company|authorized Pok[eÃ©]mon retailer|direct from Pok[eÃ©]mon|Pokemon store|Pok[eÃ©]mon store|investment guaranteed|knockoff|knock-off|clone|mirror image/i);
 });
 

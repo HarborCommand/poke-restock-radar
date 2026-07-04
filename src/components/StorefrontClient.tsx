@@ -42,6 +42,12 @@ import {
 } from "@/lib/storefront-badges";
 import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
+import {
+  GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE,
+  GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE,
+  GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE,
+  GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE
+} from "@/lib/storefront-disclosures";
 import { GAMEDAYGRABS_EBAY_FEEDBACK_URL, storefrontFeedback } from "@/lib/storefront-feedback";
 import {
   homepageFeaturedDropsSection,
@@ -817,7 +823,8 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
       </nav>
       <small>Store name: GameDayGrabs. Legal business name: GameDayGrabs LLC.</small>
       <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
-      <small>GameDayGrabs is not affiliated with The Pokemon Company International. All trademarks are property of their respective owners.</small>
+      <small>{GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE}</small>
+      <small>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</small>
     </footer>
   );
 }
@@ -1657,7 +1664,7 @@ export function ProductDetail({
             ) : null}
             <div className="gdg-product-trust">
               {[
-                ["Authentic", "100% authentic products"],
+                ["Genuine products", "Sold by GameDayGrabs"],
                 ["Carefully packaged", "Packed with protection"],
                 ["Secure checkout", "Stripe handles payment"],
                 ["Order support", "Questions answered by GameDayGrabs"]
@@ -1702,8 +1709,18 @@ export function ProductDetail({
             <li>Condition: {conditionLabel}.</li>
             <li>Availability: {availabilityLabel}.</li>
             {purchaseLimitLabel ? <li>{purchaseLimitLabel}.</li> : null}
+            <li>{GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE}</li>
             <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request Invoice mode is active until online checkout is configured."}</li>
             <li>Local pickup appears at checkout when available for this item.</li>
+          </ul>
+        </article>
+        <article>
+          <h2>Seller and authenticity</h2>
+          <p>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</p>
+          <ul>
+            <li>{GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE}</li>
+            <li>{GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE}</li>
+            <li>Product names, brands, characters, and trademarks belong to their respective owners.</li>
           </ul>
         </article>
         <article>

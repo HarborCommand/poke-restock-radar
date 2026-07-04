@@ -1,5 +1,9 @@
 import { MarketplaceFeedbackSection, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
+import {
+  GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE,
+  GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE
+} from "@/lib/storefront-disclosures";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
@@ -51,6 +55,7 @@ export default async function AboutPage() {
           secure checkout, local pickup when available, and careful packaging. Our goal is simple: make it easier to buy
           sealed Pokemon TCG products and collectible card products with confidence.
         </p>
+        <p>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</p>
       </section>
       <section className="gdg-section gdg-values">
         <div className="gdg-section-header">
@@ -64,6 +69,7 @@ export default async function AboutPage() {
             ["Accurate Listings", "Products are listed with current availability so customers can shop from real public inventory."],
             ["Secure Checkout", "Stripe securely handles checkout when card payment is available."],
             ["Careful Packaging", "Orders are packed carefully so sealed Pokemon TCG products and premium collections arrive protected."],
+            ["Authenticity Records", GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE],
             ["Practical Fulfillment", "Orders move through shipping or local pickup workflows without overpromising delivery timing."],
             ["Order Help", "Customers can contact GameDayGrabs for order questions, pickup coordination, or product help."],
             ["Contact", `Email ${contactEmail} for help with an order or product question.`]

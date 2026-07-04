@@ -22,6 +22,10 @@ test("product detail renders retailer-style buyer clarity sections", () => {
   assert.match(productDetail, /Shipping summary/);
   assert.match(productDetail, /Shipping is calculated from product weight and package size\./);
   assert.match(productDetail, /Final shipping is shown before payment\./);
+  assert.match(productDetail, /Seller and authenticity/);
+  assert.match(productDetail, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
+  assert.match(productDetail, /GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE/);
+  assert.match(productDetail, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
   assert.match(productDetail, /product\.localPickupEligible \? <li>Local pickup may be available for this item\.<\/li>/);
   assert.match(productDetail, /Local pickup appears at checkout when available for this item\./);
   assert.match(productDetail, /variant="product-helper"/);
@@ -42,7 +46,7 @@ test("product detail keeps purchase controls clear and safe", () => {
 });
 
 test("product detail trust cards and privacy guardrails stay customer-facing", () => {
-  for (const label of ["Authentic", "Carefully packaged", "Secure checkout", "Order support"]) {
+  for (const label of ["Genuine products", "Carefully packaged", "Secure checkout", "Order support"]) {
     assert.match(productDetail, new RegExp(label));
   }
 
