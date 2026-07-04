@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const [products, profileDefinitions] = await Promise.all([listPublicStoreProducts(), shippingProfileDefinitionsForCheckout()]);
+  const [products, profileDefinitions] = await Promise.all([listPublicStoreProducts({ onlySellable: true }), shippingProfileDefinitionsForCheckout()]);
   return new Response(storefrontProductFeedXml(products, { profileDefinitions }), {
     headers: {
       "content-type": "application/xml; charset=utf-8",

@@ -69,6 +69,7 @@ test("product SEO metadata uses real product data and canonical URLs", () => {
   assert.match(String(metadata.description), /\$49\.99/);
   assert.match(String(metadata.description), /In stock/);
   assert.equal(metadata.alternates?.canonical, productCanonicalUrl("pokemon-seo-product"));
+  assert.equal(metadata.robots, undefined);
 
   const openGraph = metadata.openGraph as { url?: string; images?: string[] };
   assert.equal(openGraph.url, productCanonicalUrl("pokemon-seo-product"));
@@ -77,6 +78,13 @@ test("product SEO metadata uses real product data and canonical URLs", () => {
   const twitter = metadata.twitter as { card?: string; images?: string[] };
   assert.equal(twitter.card, "summary_large_image");
   assert.deepEqual(twitter.images, ["https://cdn.example.com/product.jpg"]);
+});
+
+test("sold-out product metadata remains public but noindexed", () => {
+  const metadata = storefrontProductMetadata(product({ publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" }));
+
+  assert.equal(metadata.alternates?.canonical, productCanonicalUrl("pokemon-seo-product"));
+  assert.deepEqual(metadata.robots, { index: false, follow: true });
 });
 
 test("product structured data renders safe Product and Offer fields only", () => {
@@ -203,7 +211,7 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(storefrontClient, /href=\{`\/product\/\$\{product\.slug\}`\}/);
   assert.doesNotMatch(storefrontClient, /href=\{`\/shop\/product\/\$\{product\.slug\}`\}/);
 
-  assert.match(sitemap, /listPublicStoreProducts/);
+  assert.match(sitemap, /listPublicStoreProducts\(\{ onlySellable: true \}\)/);
   assert.match(sitemap, /productCanonicalUrl\(product\.slug\)/);
   assert.match(sitemap, /storefrontCollections/);
   assert.match(sitemap, /storefrontCollectionUrl\(collection\.slug\)/);

@@ -82,6 +82,9 @@ test("public trust pages include independent retailer, source, and trademark dis
   assert.match(storefrontClient, /Product names, brands, characters, and trademarks belong to their respective owners/);
   assert.match(disclosures, /retail, wholesale, and distributor channels/);
 
-  assert.doesNotMatch(combined, /official Pokemon partner|official Pok[eÃ©]mon retailer|authorized by The Pokemon Company|authorized Pok[eÃ©]mon retailer|direct from Pok[eÃ©]mon|Pokemon store|Pok[eÃ©]mon store|investment guaranteed|knockoff|knock-off|clone|mirror image/i);
+  assert.doesNotMatch(
+    combined,
+    /official Pokemon partner|official Pok[eÃ©]mon retailer|authorized by The Pokemon Company|authorized Pok[eÃ©]mon retailer|direct from Pok[eÃ©]mon|Pokemon store|Pok[eÃ©]mon store|investment guaranteed|card-for-card|replica|fake|faux|knockoff|knock-off|clone|mirror image|unofficial|unauthorized/i
+  );
 });
 

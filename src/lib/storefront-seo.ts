@@ -84,10 +84,12 @@ export function storefrontProductMetadata(product: SeoProduct): Metadata {
   const description = storefrontProductMetaDescription(product);
   const canonicalUrl = productCanonicalUrl(product.slug);
   const images = productMetadataImages(product);
+  const soldOut = isSoldOutProduct(product);
   return {
     metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
     title,
     description,
+    ...(soldOut ? { robots: { index: false, follow: true } } : {}),
     alternates: {
       canonical: canonicalUrl
     },

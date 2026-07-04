@@ -7,6 +7,7 @@ import {
   cleanStorefrontTitle,
   generatedStorefrontDescription,
   normalizeStorefrontCopy,
+  soldOutCatalogHistoryDescription,
   storefrontCopyWarnings,
   storefrontSoldOutNote
 } from "../src/lib/storefront-copy";
@@ -55,8 +56,20 @@ test("fixable punctuation glitches are cleaned without replacing useful descript
 });
 
 test("sold-out copy is customer-facing and separate from private product data", () => {
-  assert.equal(storefrontSoldOutNote(), "This item is currently sold out. It remains listed for catalog reference and may return if restocked.");
+  assert.equal(storefrontSoldOutNote(), "This item is currently sold out and is not available for checkout. It may return if restocked.");
   assert.doesNotMatch(generatedStorefrontDescription({ title: "Pokemon Tin", category: "Tins" }), /cost|source|admin|tracker|receipt/i);
+});
+
+test("sold-out risky counterfeit wording is replaced with neutral catalog history copy", () => {
+  const description = cleanStorefrontDescription({
+    title: "Pokemon World Championship Deck 2025",
+    category: "Pokemon Sealed",
+    status: "sold_out",
+    publicDescription: "Choose one of four decks, each a card-for-card replica of a title contender deck."
+  });
+
+  assert.equal(description, soldOutCatalogHistoryDescription());
+  assert.doesNotMatch(description, /replica|copy|fake|faux|knockoff|knock-off|clone|mirror image|unofficial|unauthorized/i);
 });
 
 test("admin listing editor exposes preview, regenerate, and risky-copy warnings", () => {
