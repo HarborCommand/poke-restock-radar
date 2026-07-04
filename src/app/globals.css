@@ -26139,6 +26139,38 @@ body .catalog-action-menu-floating {
   padding: 0 10px;
 }
 
+.pos-terminal-status {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(67, 56, 202, 0.18);
+  border-radius: 8px;
+  background: rgba(79, 70, 229, 0.06);
+}
+
+.pos-terminal-status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 800;
+  color: #312e81;
+}
+
+.pos-terminal-status small {
+  color: #475569;
+  line-height: 1.45;
+}
+
+.pos-terminal-status.failed {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: rgba(254, 242, 242, 0.9);
+}
+
+.pos-terminal-status.canceled {
+  border-color: rgba(100, 116, 139, 0.25);
+  background: rgba(248, 250, 252, 0.9);
+}
+
 .pos-complete-button {
   width: 100%;
   min-height: 46px;

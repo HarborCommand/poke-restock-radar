@@ -51,6 +51,7 @@ function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
     saleReference: null,
     paymentMethod: null,
     paymentReference: null,
+    stripePaymentIntentId: null,
     saleStatus: "active",
     storefrontOrderNumber: null,
     storefrontOrderStatus: null,

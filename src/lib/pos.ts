@@ -1,13 +1,15 @@
 import type { InventoryItemDTO } from "@/types/radar";
 
-export const POS_PAYMENT_METHOD_VALUES = ["cash", "zelle", "external_card", "other"] as const;
+export const POS_PAYMENT_METHOD_VALUES = ["cash", "zelle", "external_card", "other", "card_terminal"] as const;
 export type PosPaymentMethod = (typeof POS_PAYMENT_METHOD_VALUES)[number];
+export const POS_MANUAL_PAYMENT_METHOD_VALUES = ["cash", "zelle", "external_card", "other"] as const;
 
 export const POS_PAYMENT_METHOD_LABELS: Record<PosPaymentMethod, string> = {
   cash: "Cash",
   zelle: "Zelle",
   external_card: "External card/manual",
-  other: "Other/manual"
+  other: "Other/manual",
+  card_terminal: "Card reader"
 };
 
 export const POS_TAX_RATE_ENV = "POS_TAX_RATE";

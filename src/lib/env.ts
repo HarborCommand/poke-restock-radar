@@ -78,6 +78,8 @@ export type EnvironmentReport = {
       testMode: boolean;
       checkoutSessionReady: boolean;
       webhookReady: boolean;
+      terminalTestModeEnabled: boolean;
+      terminalTestModeReady: boolean;
       missing: string[];
     };
     shippingRates: ProviderHealthMetadata & {
@@ -180,7 +182,14 @@ export function getEnvironmentReport(): EnvironmentReport {
   const emailEnvVars = ["RESEND_API_KEY", "EMAIL_FROM", "EMAIL_REPLY_TO", "SMTP_HOST", "SMTP_FROM", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS"];
   const smsEnvVars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"];
   const searchEnvVars = ["PRODUCT_SEARCH_PROVIDER", "PRODUCT_SEARCH_API_URL", "PRODUCT_SEARCH_API_KEY"];
-  const stripeEnvVars = ["STRIPE_CHECKOUT_ENABLED", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STORE_BASE_URL"];
+  const stripeEnvVars = [
+    "STRIPE_CHECKOUT_ENABLED",
+    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STORE_BASE_URL",
+    "STRIPE_TERMINAL_TEST_MODE_ENABLED"
+  ];
   const shippingRateProvider = shippingRateProviderConfig();
   const shippingLabelWorkflow = shippingLabelWorkflowConfig();
   const customerAccountFeatures = customerAccountFeatureConfig();
@@ -220,6 +229,8 @@ export function getEnvironmentReport(): EnvironmentReport {
   const stripePublishableKeyMode = stripeKeyMode(stripePublishableKey, "pk");
   const stripeSecretKeyMode = stripeKeyMode(stripeSecretKey, "sk");
   const stripeTestMode = stripePublishableKeyMode === "test" || stripeSecretKeyMode === "test";
+  const stripeTerminalTestModeEnabled = envValue("STRIPE_TERMINAL_TEST_MODE_ENABLED") === "true";
+  const stripeTerminalTestModeReady = stripeTerminalTestModeEnabled && stripeSecretKeyMode === "test";
   const stripeMissing = [
     !stripeCheckoutEnabled ? "STRIPE_CHECKOUT_ENABLED" : null,
     !stripePublishableConfigured ? "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY" : null,
@@ -242,7 +253,8 @@ export function getEnvironmentReport(): EnvironmentReport {
       : anyEnv(searchEnvVars)
         ? "misconfigured"
         : "optional_not_configured";
-  const stripePartiallyConfigured = stripeCheckoutEnabled || stripePublishableConfigured || stripeSecretConfigured || stripeWebhookConfigured;
+  const stripePartiallyConfigured =
+    stripeCheckoutEnabled || stripePublishableConfigured || stripeWebhookConfigured || (stripeSecretConfigured && !stripeTerminalTestModeEnabled);
   const stripeHealthStatus: ProviderHealthStatus =
     stripeMissing.length === 0
       ? "configured"
@@ -333,6 +345,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   }
   if (stripeHealthStatus === "misconfigured") {
     warnings.push(`Storefront Stripe Checkout is disabled until ${stripeMissing.join(", ")} ${stripeMissing.length === 1 ? "is" : "are"} set.`);
+  }
+  if (stripeTerminalTestModeEnabled && !stripeTerminalTestModeReady) {
+    warnings.push("Stripe Terminal test mode is enabled but STRIPE_SECRET_KEY is not a test key.");
   }
   if (shippingRateHealthStatus === "misconfigured") {
     warnings.push("Calculated USPS shipping is enabled but Shippo or ship-from env vars are incomplete. Disable CALCULATED_USPS_SHIPPING_ENABLED or finish Shippo setup.");
@@ -465,6 +480,8 @@ export function getEnvironmentReport(): EnvironmentReport {
         testMode: stripeTestMode,
         checkoutSessionReady: stripeCheckoutEnabled && stripePublishableConfigured && stripeSecretConfigured,
         webhookReady: stripeWebhookConfigured,
+        terminalTestModeEnabled: stripeTerminalTestModeEnabled,
+        terminalTestModeReady: stripeTerminalTestModeReady,
         missing: stripeMissing
       },
       shippingRates: {

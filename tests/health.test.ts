@@ -38,6 +38,7 @@ const controlledEnvKeys = [
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "STORE_BASE_URL",
+  "STRIPE_TERMINAL_TEST_MODE_ENABLED",
   "CALCULATED_USPS_SHIPPING_ENABLED",
   "SHIPPING_FALLBACK_ENABLED",
   "SHIPPING_RATE_PROVIDER",
@@ -134,6 +135,8 @@ test("health stays OK when required systems pass and optional providers are disa
     assert.equal(report.providers.upc.searchFallbackHealthStatus, "optional_not_configured");
     assert.equal(report.providers.blob.healthStatus, "optional_not_configured");
     assert.equal(report.providers.stripe.healthStatus, "disabled");
+    assert.equal(report.providers.stripe.terminalTestModeEnabled, false);
+    assert.equal(report.providers.stripe.terminalTestModeReady, false);
     assert.equal(report.providers.shippingLabels.healthStatus, "disabled");
     assert.equal(report.providers.shippingLabels.shippoLabelPurchaseEnabled, false);
     assert.equal(report.providers.shippingLabels.purchaseReady, false);
@@ -323,11 +326,42 @@ test("health provider report does not serialize secret values", () => {
       assert.equal(report.providers.stripe.publishableKeyMode, "test");
       assert.equal(report.providers.stripe.secretKeyMode, "test");
       assert.equal(report.providers.stripe.testMode, true);
+      assert.equal(report.providers.stripe.terminalTestModeReady, false);
       assert.doesNotMatch(serialized, /pk_test_public_health_value/);
       assert.doesNotMatch(serialized, /sk_test_private_health_value/);
       assert.doesNotMatch(serialized, /whsec_private_health_value/);
       assert.doesNotMatch(serialized, /re_private/);
       assert.doesNotMatch(serialized, /postgresql:\/\/example\.invalid/);
+    }
+  );
+});
+
+test("health reports Stripe Terminal test mode only when explicitly enabled with a test secret key", () => {
+  withEnv(
+    {
+      STRIPE_TERMINAL_TEST_MODE_ENABLED: "true",
+      STRIPE_SECRET_KEY: "sk_test_private_health_value"
+    },
+    () => {
+      const report = getEnvironmentReport();
+
+      assert.equal(report.providers.stripe.terminalTestModeEnabled, true);
+      assert.equal(report.providers.stripe.terminalTestModeReady, true);
+      assert.doesNotMatch(JSON.stringify(report), /sk_test_private_health_value/);
+    }
+  );
+
+  withEnv(
+    {
+      STRIPE_TERMINAL_TEST_MODE_ENABLED: "true",
+      STRIPE_SECRET_KEY: "sk_live_private_health_value"
+    },
+    () => {
+      const report = getEnvironmentReport();
+
+      assert.equal(report.providers.stripe.terminalTestModeEnabled, true);
+      assert.equal(report.providers.stripe.terminalTestModeReady, false);
+      assert.match(report.warnings.join("\n"), /Stripe Terminal test mode/);
     }
   );
 });

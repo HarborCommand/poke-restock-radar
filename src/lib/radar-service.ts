@@ -1812,6 +1812,7 @@ function inventorySaleToDTO(
     saleReference: sale.saleReference,
     paymentMethod: sale.paymentMethod,
     paymentReference: sale.paymentReference,
+    stripePaymentIntentId: sale.stripePaymentIntentId,
     saleStatus: "active",
     storefrontOrderNumber,
     storefrontOrderStatus: null,
@@ -6642,7 +6643,7 @@ function compactPosSaleItems(items: Array<{ inventoryItemId: string; quantity: n
   return [...itemMap.entries()].map(([inventoryItemId, quantity]) => ({ inventoryItemId, quantity }));
 }
 
-function posSaleReferenceFromIdempotencyKey(userId: string, idempotencyKey: string) {
+export function posSaleReferenceFromIdempotencyKey(userId: string, idempotencyKey: string) {
   const hash = createHash("sha256").update(`${userId}:${idempotencyKey.trim()}`).digest("hex").slice(0, 12).toUpperCase();
   return `POS-${hash}`;
 }
@@ -6703,6 +6704,7 @@ async function receiptForExistingPosSale(
     paymentMethod,
     paymentMethodLabel: posPaymentMethodLabel(paymentMethod),
     paymentReference: firstSale.paymentReference,
+    stripePaymentIntentId: firstSale.stripePaymentIntentId,
     subtotal,
     tax,
     total,
@@ -6734,6 +6736,89 @@ function inventorySaleAvailability(item: InventoryItemWithInclude) {
   return item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - soldSoFar);
 }
 
+export type TrustedPosSaleQuote = {
+  saleReference: string;
+  cartFingerprint: string;
+  items: Array<{ inventoryItemId: string; quantity: number }>;
+  lines: Array<{
+    inventoryItemId: string;
+    itemName: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+  }>;
+  subtotal: number;
+  tax: number;
+  total: number;
+  taxRate: number;
+  itemCount: number;
+};
+
+function posCartFingerprint(lines: Array<{ inventoryItemId: string; quantity: number }>) {
+  const payload = lines
+    .map((line) => `${line.inventoryItemId}:${line.quantity}`)
+    .sort()
+    .join("|");
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+export async function getTrustedPosSaleQuote(
+  currentUser: SessionUser,
+  input: {
+    idempotencyKey: string;
+    items: Array<{ inventoryItemId: string; quantity: number }>;
+  }
+): Promise<TrustedPosSaleQuote> {
+  const cartItems = compactPosSaleItems(input.items);
+  if (!cartItems.length) throw new Error("Add at least one item before completing a POS sale.");
+
+  const records = await prisma.inventoryItem.findMany({
+    where: {
+      id: { in: cartItems.map((item) => item.inventoryItemId) },
+      OR: [{ userId: null }, { userId: currentUser.id }]
+    },
+    include: inventoryItemInclude
+  });
+  const recordsById = new Map(records.map((record) => [record.id, record]));
+  const missingItem = cartItems.find((item) => !recordsById.has(item.inventoryItemId));
+  if (missingItem) throw new Error("One or more POS cart items could not be found.");
+
+  const lines = cartItems.map((cartItem) => {
+    const record = recordsById.get(cartItem.inventoryItemId);
+    if (!record) throw new Error("One or more POS cart items could not be found.");
+    const dto = inventoryItemToDTO(record);
+    if (!isPosSellableInventoryItem(dto)) {
+      throw new Error(`${dto.itemName} is not available for POS sale.`);
+    }
+    if (cartItem.quantity > dto.quantityOwned) {
+      throw new Error(`Only ${dto.quantityOwned} available to sell for ${dto.itemName}.`);
+    }
+    const unitPrice = posUnitPrice(dto);
+    if (unitPrice === null) throw new Error(`${dto.itemName} needs a public or target sell price before POS sale.`);
+    return {
+      inventoryItemId: dto.id,
+      itemName: dto.itemName,
+      quantity: cartItem.quantity,
+      unitPrice,
+      lineTotal: roundPosMoney(unitPrice * cartItem.quantity)
+    };
+  });
+
+  const taxRate = getConfiguredPosTaxRate();
+  const totals = calculatePosTotals(lines, taxRate);
+  return {
+    saleReference: posSaleReferenceFromIdempotencyKey(currentUser.id, input.idempotencyKey),
+    cartFingerprint: posCartFingerprint(cartItems),
+    items: cartItems,
+    lines,
+    subtotal: totals.subtotal,
+    tax: totals.tax,
+    total: totals.total,
+    taxRate,
+    itemCount: lines.reduce((sum, line) => sum + line.quantity, 0)
+  };
+}
+
 async function createPosInventorySaleLine(
   tx: Prisma.TransactionClient,
   currentUser: SessionUser,
@@ -6747,6 +6832,7 @@ async function createPosInventorySaleLine(
     saleReference: string;
     paymentMethod: string;
     paymentReference: string | null;
+    stripePaymentIntentId?: string | null;
     soldAt: Date;
     notes: string;
   }
@@ -6804,6 +6890,7 @@ async function createPosInventorySaleLine(
       saleReference: sale.saleReference,
       paymentMethod: sale.paymentMethod,
       paymentReference: sale.paymentReference,
+      stripePaymentIntentId: sale.stripePaymentIntentId ?? null,
       soldAt: sale.soldAt,
       notes: sale.notes
     }
@@ -6835,10 +6922,18 @@ export async function createPosSale(
     items: Array<{ inventoryItemId: string; quantity: number }>;
     paymentMethod: string;
     paymentReference?: string | null;
+    stripePaymentIntentId?: string | null;
   }
 ): Promise<PosSaleReceiptDTO> {
   const paymentMethod = normalizePosPaymentMethod(input.paymentMethod);
   if (!paymentMethod) throw new Error("Select a valid POS payment method.");
+  const stripePaymentIntentId = input.stripePaymentIntentId?.trim() || null;
+  if (paymentMethod === "card_terminal" && !stripePaymentIntentId) {
+    throw new Error("Card reader sales must be completed through the Stripe Terminal flow.");
+  }
+  if (paymentMethod !== "card_terminal" && stripePaymentIntentId) {
+    throw new Error("Stripe PaymentIntent IDs are only stored for card reader sales.");
+  }
 
   const cartItems = compactPosSaleItems(input.items);
   if (!cartItems.length) throw new Error("Add at least one item before completing a POS sale.");
@@ -6915,6 +7010,7 @@ export async function createPosSale(
         saleReference,
         paymentMethod,
         paymentReference,
+        stripePaymentIntentId,
         soldAt,
         notes
       });
@@ -6925,6 +7021,7 @@ export async function createPosSale(
       paymentMethod,
       paymentMethodLabel,
       paymentReference,
+      stripePaymentIntentId,
       subtotal: totals.subtotal,
       tax: totals.tax,
       total: totals.total,
