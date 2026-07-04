@@ -22,6 +22,7 @@ export type ProductSearchFailure = {
 };
 
 export type ProductSearchConfig = {
+  enabled: boolean;
   provider: string | null;
   apiUrl: string | null;
   apiKeyConfigured: boolean;
@@ -34,4 +35,3 @@ export type ProductSearchResult = {
   candidates: ProductSearchCandidate[];
   failures: ProductSearchFailure[];
 };
-

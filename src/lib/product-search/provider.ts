@@ -35,14 +35,16 @@ const REJECT_TITLE_PATTERNS = [
 ];
 
 export function productSearchConfig(): ProductSearchConfig {
+  const enabled = process.env.PRODUCT_SEARCH_FALLBACK_ENABLED?.trim() === "true";
   const provider = process.env.PRODUCT_SEARCH_PROVIDER?.trim().toLowerCase() || null;
   const apiUrl = process.env.PRODUCT_SEARCH_API_URL?.trim() || null;
   const apiKeyConfigured = Boolean(process.env.PRODUCT_SEARCH_API_KEY?.trim());
   return {
+    enabled,
     provider,
     apiUrl,
     apiKeyConfigured,
-    configured: Boolean(provider && apiUrl && apiKeyConfigured)
+    configured: Boolean(enabled && provider && apiUrl && apiKeyConfigured)
   };
 }
 

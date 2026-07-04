@@ -15,6 +15,7 @@ test("product search reports missing provider configuration safely", async () =>
   delete process.env.PRODUCT_SEARCH_PROVIDER;
   delete process.env.PRODUCT_SEARCH_API_URL;
   delete process.env.PRODUCT_SEARCH_API_KEY;
+  process.env.PRODUCT_SEARCH_FALLBACK_ENABLED = "true";
 
   const result = await searchProductsByUpc("196214154155");
 
@@ -24,8 +25,29 @@ test("product search reports missing provider configuration safely", async () =>
   assert.equal(result.failures[0]?.reason, "missing_env_or_no_results");
 });
 
+test("product search stays disabled when only a provider placeholder exists", async () => {
+  restore();
+  process.env.PRODUCT_SEARCH_PROVIDER = "serpapi";
+  delete process.env.PRODUCT_SEARCH_API_URL;
+  delete process.env.PRODUCT_SEARCH_API_KEY;
+  delete process.env.PRODUCT_SEARCH_FALLBACK_ENABLED;
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+
+  const result = await searchProductsByUpc("196214154155");
+
+  assert.equal(result.configured, false);
+  assert.equal(result.provider, "serpapi");
+  assert.equal(result.failures[0]?.reason, "disabled");
+  assert.equal(fetchCalled, false);
+});
+
 test("serpapi provider normalizes Google Shopping UPC candidates", async () => {
   restore();
+  process.env.PRODUCT_SEARCH_FALLBACK_ENABLED = "true";
   process.env.PRODUCT_SEARCH_PROVIDER = "serpapi";
   process.env.PRODUCT_SEARCH_API_URL = "https://serpapi.com/search.json";
   process.env.PRODUCT_SEARCH_API_KEY = "test-key";
@@ -62,4 +84,3 @@ test("serpapi provider normalizes Google Shopping UPC candidates", async () => {
 });
 
 test.after(restore);
-

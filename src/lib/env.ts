@@ -58,6 +58,7 @@ export type EnvironmentReport = {
     upc: {
       configuredUpcProvider: boolean;
       publicUpcProvider: boolean;
+      searchFallbackEnabled: boolean;
       searchFallbackConfigured: boolean;
       searchFallbackHealthStatus: ProviderHealthStatus;
       searchFallbackEnvVars: string[];
@@ -179,7 +180,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const pushEnvVars = ["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"];
   const emailEnvVars = ["RESEND_API_KEY", "EMAIL_FROM", "EMAIL_REPLY_TO", "SMTP_HOST", "SMTP_FROM", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS"];
   const smsEnvVars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"];
-  const searchEnvVars = ["PRODUCT_SEARCH_PROVIDER", "PRODUCT_SEARCH_API_URL", "PRODUCT_SEARCH_API_KEY"];
+  const searchEnvVars = ["PRODUCT_SEARCH_FALLBACK_ENABLED", "PRODUCT_SEARCH_PROVIDER", "PRODUCT_SEARCH_API_URL", "PRODUCT_SEARCH_API_KEY"];
   const stripeEnvVars = ["STRIPE_CHECKOUT_ENABLED", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STORE_BASE_URL"];
   const shippingRateProvider = shippingRateProviderConfig();
   const shippingLabelWorkflow = shippingLabelWorkflowConfig();
@@ -205,9 +206,11 @@ export function getEnvironmentReport(): EnvironmentReport {
   const monitorJobSecretConfigured = hasEnv("MONITOR_JOB_SECRET");
   const vercelCronSecretConfigured = hasEnv("CRON_SECRET");
   const configuredUpcProvider = hasEnv("UPC_LOOKUP_API_URL");
+  const searchFallbackEnabled = envValue("PRODUCT_SEARCH_FALLBACK_ENABLED") === "true";
   const searchProvider = envValue("PRODUCT_SEARCH_PROVIDER");
-  const searchFallbackConfigured = Boolean(searchProvider && hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY"));
+  const searchFallbackHasRequiredConfig = Boolean(searchProvider && hasEnv("PRODUCT_SEARCH_API_URL") && hasEnv("PRODUCT_SEARCH_API_KEY"));
   const supportedSearchProvider = !searchProvider || ["serpapi", "google_shopping", "custom"].includes(searchProvider.toLowerCase());
+  const searchFallbackConfigured = Boolean(searchFallbackEnabled && searchFallbackHasRequiredConfig && supportedSearchProvider);
   const stripeCheckoutEnabled = envValue("STRIPE_CHECKOUT_ENABLED") === "true";
   const stripePublishableKey = envValue("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY");
   const stripeSecretKey = envValue("STRIPE_SECRET_KEY");
@@ -237,9 +240,11 @@ export function getEnvironmentReport(): EnvironmentReport {
   const emailHealthStatus = optionalProviderHealth(emailConfigured, emailProvider.partiallyConfigured);
   const smsHealthStatus = optionalProviderHealth(smsConfigured, anyEnv(smsEnvVars));
   const searchFallbackHealthStatus =
-    searchFallbackConfigured && supportedSearchProvider
+    !searchFallbackEnabled
+      ? "disabled"
+      : searchFallbackConfigured
       ? "configured"
-      : anyEnv(searchEnvVars)
+      : searchFallbackEnabled
         ? "misconfigured"
         : "optional_not_configured";
   const stripePartiallyConfigured = stripeCheckoutEnabled || stripePublishableConfigured || stripeSecretConfigured || stripeWebhookConfigured;
@@ -327,7 +332,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   if (searchFallbackHealthStatus === "misconfigured") {
     warnings.push(
       supportedSearchProvider
-        ? "Product search fallback is partially configured. Set PRODUCT_SEARCH_PROVIDER, PRODUCT_SEARCH_API_URL, and PRODUCT_SEARCH_API_KEY together or leave it disabled."
+        ? "Product search fallback is enabled but incomplete. Set PRODUCT_SEARCH_PROVIDER, PRODUCT_SEARCH_API_URL, and PRODUCT_SEARCH_API_KEY together, or set PRODUCT_SEARCH_FALLBACK_ENABLED=false."
         : "PRODUCT_SEARCH_PROVIDER is not supported. Use serpapi, google_shopping, or custom."
     );
   }
@@ -432,6 +437,7 @@ export function getEnvironmentReport(): EnvironmentReport {
       upc: {
         configuredUpcProvider,
         publicUpcProvider: true,
+        searchFallbackEnabled,
         searchFallbackConfigured,
         searchFallbackHealthStatus,
         searchFallbackEnvVars: searchEnvVars,
@@ -439,8 +445,8 @@ export function getEnvironmentReport(): EnvironmentReport {
           searchFallbackHealthStatus === "configured"
             ? "Product search fallback is configured for UPC provider misses."
             : searchFallbackHealthStatus === "misconfigured"
-              ? "Product search fallback has partial or unsupported configuration."
-              : "Product search fallback is optional and not configured.",
+              ? "Product search fallback is enabled but has partial or unsupported configuration."
+              : "Product search fallback is disabled. UPC lookup uses configured UPC provider and public UPCItemDB only.",
         searchProvider
       },
       stripe: {
