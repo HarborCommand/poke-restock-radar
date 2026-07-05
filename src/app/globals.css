@@ -26630,10 +26630,182 @@ body .app-main-inventory .inventory-filter-row > * {
   border-color: rgba(34, 197, 94, 0.42);
 }
 
+/* Public storefront polish: customer-facing layout containment only. */
+.shop-shell {
+  overflow-x: clip;
+}
+
+.gdg-header,
+.gdg-footer,
+.gdg-hero,
+.gdg-section,
+.gdg-shop-area,
+.gdg-detail,
+.gdg-description-section,
+.gdg-cart-page,
+.gdg-account-shell > *,
+.gdg-login-page {
+  max-width: min(1440px, 100%);
+}
+
+.gdg-nav {
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.gdg-brand-logo {
+  max-width: min(220px, 48vw);
+}
+
+.gdg-primary-button,
+.gdg-secondary-button {
+  min-width: 0;
+  text-align: center;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.gdg-product-card,
+.gdg-product-card footer,
+.gdg-product-card h3,
+.gdg-product-card h3 a,
+.gdg-product-body,
+.gdg-shop-toolbar,
+.gdg-shop-filters,
+.gdg-detail-info,
+.gdg-detail-info > p,
+.gdg-description-section article,
+.gdg-cart-line,
+.gdg-cart-line-copy,
+.gdg-cart-line-price,
+.gdg-footer,
+.gdg-footer nav,
+.gdg-login-page,
+.gdg-login-auth-card,
+.gdg-login-welcome,
+.gdg-login-input,
+.gdg-login-input input {
+  min-width: 0;
+}
+
+.gdg-product-card {
+  grid-template-rows: auto minmax(96px, 1fr) auto;
+}
+
+.gdg-product-body h3 a,
+.gdg-detail-info h1,
+.gdg-cart-line h2,
+.gdg-footer a,
+.gdg-footer small,
+.gdg-login-card-heading h2,
+.gdg-login-card-copy {
+  overflow-wrap: anywhere;
+}
+
+.gdg-product-image-card {
+  min-height: 0;
+}
+
+.gdg-product-card .gdg-stock {
+  max-width: 100%;
+}
+
+.gdg-product-card .gdg-primary-button.compact,
+.gdg-product-card .gdg-secondary-button {
+  min-height: 40px;
+  padding-inline: 14px;
+}
+
+.gdg-shop-toolbar {
+  flex-wrap: wrap;
+}
+
+.gdg-detail-info > p {
+  line-height: 1.6;
+}
+
+.gdg-gallery-main {
+  min-height: clamp(320px, 44vw, 540px);
+}
+
+.gdg-gallery-main img {
+  object-position: center;
+}
+
+.gdg-cart-line-price {
+  min-width: 88px;
+}
+
+.gdg-footer {
+  display: grid;
+  gap: 14px;
+}
+
+.gdg-footer nav {
+  align-items: center;
+}
+
+.gdg-login-page {
+  width: 100%;
+}
+
+.gdg-login-input input {
+  width: 100%;
+}
+
 @media (max-width: 1120px) {
   .gdg-cart-summary {
     position: static;
     top: auto;
+  }
+}
+
+@media (max-width: 820px) {
+  .gdg-header {
+    gap: 10px;
+  }
+
+  .gdg-brand {
+    max-width: calc(100% - 132px);
+  }
+
+  .gdg-shop-area,
+  .gdg-detail,
+  .gdg-description-section,
+  .gdg-cart-page {
+    padding-inline: 16px;
+  }
+
+  .gdg-shop-toolbar {
+    align-items: stretch;
+  }
+
+  .gdg-shop-toolbar label,
+  .gdg-shop-toolbar select {
+    width: 100%;
+  }
+
+  .gdg-gallery-main {
+    min-height: clamp(300px, 82vw, 420px);
+    border-radius: 24px;
+    padding: 20px;
+  }
+
+  .gdg-cart-line-price {
+    grid-column: 2;
+    justify-items: start;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .gdg-cart-line > .gdg-icon-button {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .gdg-login-page {
+    overflow: visible;
   }
 }
 
@@ -26648,5 +26820,88 @@ body .app-main-inventory .inventory-filter-row > * {
 
   .gdg-checkout-trust-row article {
     min-height: 0;
+  }
+
+  .gdg-header-actions {
+    gap: 6px;
+  }
+
+  .gdg-brand-logo {
+    max-width: min(178px, 46vw);
+  }
+
+  .gdg-icon-link,
+  .gdg-cart-link,
+  .gdg-menu-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .gdg-shop-area,
+  .gdg-detail,
+  .gdg-description-section,
+  .gdg-cart-page {
+    padding-inline: 12px;
+  }
+
+  .gdg-product-card {
+    border-radius: 18px;
+    padding: 12px;
+  }
+
+  .gdg-product-image-card {
+    border-radius: 16px;
+    padding: 12px;
+  }
+
+  .gdg-detail-info h1 {
+    font-size: 1.88rem;
+  }
+
+  .gdg-product-status-list,
+  .gdg-product-trust,
+  .gdg-description-section {
+    gap: 10px;
+  }
+
+  .gdg-quantity-control {
+    max-width: 100%;
+    flex-wrap: wrap;
+    border-radius: 18px;
+  }
+
+  .gdg-cart-line {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .gdg-cart-line-price {
+    grid-column: 1 / -1;
+    justify-items: start;
+  }
+
+  .gdg-cart-line > .gdg-icon-button {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
+  .gdg-usps-quote-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-usps-quote-form .gdg-secondary-button {
+    width: 100%;
+  }
+
+  .gdg-login-page,
+  .gdg-login-page.single {
+    width: 100%;
+  }
+
+  .gdg-login-pill-row {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-footer nav {
+    gap: 8px;
   }
 }

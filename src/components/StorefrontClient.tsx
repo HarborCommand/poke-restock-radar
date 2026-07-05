@@ -984,13 +984,14 @@ function ProductCard({
       <footer>
         <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
         <div className="gdg-card-actions">
-          <Link href={`/product/${product.slug}`} className="gdg-secondary-button">
+          <Link href={`/product/${product.slug}`} className="gdg-secondary-button" aria-label={`View ${productTitle}`}>
             View Product
           </Link>
           <button
             type="button"
             className="gdg-primary-button compact"
             disabled={actionDisabled}
+            aria-label={`${actionText} ${productTitle}`}
             onClick={() => {
               addToCart(product);
               onAdded?.(product);
@@ -1626,13 +1627,14 @@ export function ProductDetail({
             {isSoldOut ? <p className="gdg-soldout-notice">{soldOutNote}</p> : null}
             <div className="gdg-quantity-control">
               <span>Quantity</span>
-              <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} disabled={isSoldOut}>
+              <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} disabled={isSoldOut} aria-label={`Decrease ${productTitle} quantity`}>
                 <Minus size={15} />
               </button>
               <b>{quantity}</b>
               <button
                 type="button"
                 disabled={isSoldOut || quantity >= effectiveMaxQuantity}
+                aria-label={`Increase ${productTitle} quantity`}
                 onClick={() => setQuantity((current) => Math.min(effectiveMaxQuantity, current + 1))}
               >
                 <Plus size={15} />
@@ -1644,6 +1646,7 @@ export function ProductDetail({
                 className="gdg-primary-button wide"
                 type="button"
                 disabled={isSoldOut}
+                aria-label={`${soldOutActionLabel} ${productTitle}`}
                 onClick={() => addProductToCart(false)}
               >
                 {soldOutActionLabel}
@@ -1652,6 +1655,7 @@ export function ProductDetail({
                 className="gdg-secondary-button wide"
                 type="button"
                 disabled={isSoldOut}
+                aria-label={`${soldOutSecondaryLabel} ${productTitle}`}
                 onClick={() => addProductToCart(true)}
               >
                 {soldOutSecondaryLabel}
