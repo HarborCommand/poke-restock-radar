@@ -3833,7 +3833,7 @@ function PosPanel({
                       {maxReached || maxReachedItemId === line.item.id ? <em className="pos-max-message">Max available reached.</em> : null}
                     </div>
                     <div className="pos-cart-quantity" aria-label={`Quantity for ${line.item.itemName}`}>
-                      <button type="button" disabled={line.quantity <= 1} onClick={() => updateCartQuantity(line.item, line.quantity - 1)} aria-label="Decrease quantity">
+                      <button type="button" disabled={line.quantity <= 1} onClick={() => updateCartQuantity(line.item, line.quantity - 1)} aria-label={`Decrease ${posDisplayTitle(line.item)} quantity`}>
                         <Minus size={14} />
                       </button>
                       <input
@@ -3844,7 +3844,7 @@ function PosPanel({
                         value={line.quantity}
                         onChange={(event) => updateCartQuantity(line.item, Number(event.currentTarget.value) || 1)}
                       />
-                      <button type="button" disabled={line.quantity >= line.item.quantityOwned} onClick={() => updateCartQuantity(line.item, line.quantity + 1)} aria-label="Increase quantity">
+                      <button type="button" disabled={line.quantity >= line.item.quantityOwned} onClick={() => updateCartQuantity(line.item, line.quantity + 1)} aria-label={`Increase ${posDisplayTitle(line.item)} quantity`}>
                         <Plus size={14} />
                       </button>
                     </div>

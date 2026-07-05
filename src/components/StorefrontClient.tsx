@@ -2035,8 +2035,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
           <article>
             <BadgeCheck size={24} />
             <div>
-              <strong>100% Authentic</strong>
-              <small>Real products only</small>
+              <strong>Genuine products</strong>
+              <small>Independent reseller</small>
             </div>
           </article>
         </div>
