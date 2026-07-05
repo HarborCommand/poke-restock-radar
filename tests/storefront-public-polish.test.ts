@@ -20,6 +20,19 @@ const css = readProjectFile("src/app/globals.css");
 const productCard = sourceSlice(client, "function ProductCard", "function HomepageProductSection");
 const productDetail = sourceSlice(client, "export function ProductDetail", "function cartStockState");
 const cartClient = sourceSlice(client, "export function CartClient", "export function CheckoutSuccessClient");
+const storefrontHeader = sourceSlice(client, "export function StorefrontHeader", "export function StorefrontFooter");
+const storefrontFooter = sourceSlice(client, "export function StorefrontFooter", "export function StorefrontContactForm");
+
+test("storefront logo images preserve the asset aspect ratio", () => {
+  assert.match(client, /const storefrontLogoWidth = 256;/);
+  assert.match(client, /const storefrontLogoHeight = 50;/);
+  assert.doesNotMatch(storefrontHeader, /width=\{220\}\s*\r?\n\s*height=\{56\}/);
+  assert.doesNotMatch(storefrontFooter, /width=\{180\}\s*height=\{44\}/);
+  assert.match(storefrontHeader, /width=\{storefrontLogoWidth\}\s*\r?\n\s*height=\{storefrontLogoHeight\}/);
+  assert.match(storefrontFooter, /width=\{storefrontLogoWidth\} height=\{storefrontLogoHeight\}/);
+  assert.match(css, /\.gdg-brand-logo\s*\{[\s\S]*?height: auto;/);
+  assert.match(css, /\.gdg-footer-brand-logo\s*\{[\s\S]*?height: auto;/);
+});
 
 test("storefront product actions have product-specific accessible labels", () => {
   assert.match(productCard, /aria-label=\{`View \$\{productTitle\}`\}/);

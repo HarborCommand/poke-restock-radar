@@ -106,6 +106,8 @@ const emptyCartSnapshot: CartItem[] = [];
 let cartSnapshotRaw = "[]";
 let cartSnapshotCache: CartItem[] = emptyCartSnapshot;
 const storefrontLogoPath = "/brand/gamedaygrabs-logo-horizontal.png";
+const storefrontLogoWidth = 256;
+const storefrontLogoHeight = 50;
 const preferredCategories = [
   "Pokemon Sealed",
   "Booster Bundles",
@@ -691,8 +693,8 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
         <Image
           src={storefrontLogoPath}
           alt={`${storeName} home`}
-          width={220}
-          height={56}
+          width={storefrontLogoWidth}
+          height={storefrontLogoHeight}
           className="gdg-brand-logo"
           priority
         />
@@ -786,7 +788,7 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
     <footer className="gdg-footer">
       <div>
         <Link href={homeHref} className="gdg-footer-brand">
-          <Image src={storefrontLogoPath} alt={`${storeName} logo`} width={180} height={44} className="gdg-footer-brand-logo" />
+          <Image src={storefrontLogoPath} alt={`${storeName} logo`} width={storefrontLogoWidth} height={storefrontLogoHeight} className="gdg-footer-brand-logo" />
           <span className="sr-only">{storeName}</span>
         </Link>
         <p>Sealed Pokemon TCG products, sports cards, and collectible card products packed carefully for collectors.</p>
