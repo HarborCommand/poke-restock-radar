@@ -7244,12 +7244,14 @@ type InventoryMutationReason =
   | "stock_lot_removed";
 
 type ProductWorkspaceMode = "overview" | "add-stock" | "adjust-stock" | "record-sale" | "edit-product" | "edit-listing";
+type ProductWorkspaceSectionId = "overview" | "stock" | "listing" | "images" | "shipping" | "sales" | "authenticity" | "receipts";
 
 type ProductWorkspaceState = {
   itemId: string;
   mode: ProductWorkspaceMode;
   lotId?: string;
   prefill?: InventoryPurchasePrefill | null;
+  focusSection?: ProductWorkspaceSectionId | null;
 };
 
 type InventoryMutationIntent = {
@@ -7434,10 +7436,20 @@ function InventoryPanel({
     setPurchaseFlowOpen(true);
   }, []);
 
-  function openProductWorkspace(item: InventoryItemDTO, mode: ProductWorkspaceMode, lotId?: string) {
+  function openProductWorkspace(item: InventoryItemDTO, mode: ProductWorkspaceMode, lotId?: string, focusSection?: ProductWorkspaceSectionId) {
     setSelectedItemId(item.id);
-    setProductWorkspace({ itemId: item.id, mode, lotId });
+    setProductWorkspace({ itemId: item.id, mode, lotId, focusSection });
   }
+
+  function openAuthenticityProofWorkspace(item: InventoryItemDTO) {
+    openProductWorkspace(item, "overview", undefined, "authenticity");
+  }
+
+  const closeProductWorkspace = useCallback(() => setProductWorkspace(null), []);
+
+  const clearProductWorkspaceFocusSection = useCallback(() => {
+    setProductWorkspace((current) => (current ? { ...current, focusSection: null } : current));
+  }, []);
 
   function openAdjustStockWorkspace(item: InventoryItemDTO) {
     const lot = item.stockLots[0];
@@ -7773,6 +7785,7 @@ function InventoryPanel({
                 onViewDetails={(item) => openProductWorkspace(item, "overview")}
                 onEditProduct={(item) => openProductWorkspace(item, "edit-product")}
                 onEditListing={(item) => openProductWorkspace(item, "edit-listing")}
+                onOpenAuthenticityProof={openAuthenticityProofWorkspace}
               />
             </div>
           </section>
@@ -7856,9 +7869,11 @@ function InventoryPanel({
         <ProductWorkspaceShell
           item={workspaceItem}
           mode={productWorkspace.mode}
+          focusSection={productWorkspace.focusSection ?? null}
           shippingProfiles={dashboard.shippingProfiles}
-          onClose={() => setProductWorkspace(null)}
+          onClose={closeProductWorkspace}
           onModeChange={setWorkspaceMode}
+          onSectionFocused={clearProductWorkspaceFocusSection}
         >
           {productWorkspace.mode === "overview" ? (
             <ProductWorkspaceOverview
@@ -12369,7 +12384,8 @@ function InventoryList({
   onRecordSale,
   onViewDetails,
   onEditProduct,
-  onEditListing
+  onEditListing,
+  onOpenAuthenticityProof
 }: {
   items: InventoryItemDTO[];
   selectedId: string;
@@ -12384,6 +12400,7 @@ function InventoryList({
   onViewDetails: (item: InventoryItemDTO) => void;
   onEditProduct: (item: InventoryItemDTO) => void;
   onEditListing: (item: InventoryItemDTO) => void;
+  onOpenAuthenticityProof: (item: InventoryItemDTO) => void;
 }) {
   if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
   const [actionMenu, setActionMenu] = useState<{
@@ -12536,6 +12553,9 @@ function InventoryList({
       {items.map((item) => {
         const sellPrice = inventoryDisplaySellPrice(item);
         const sellPriceSource = inventoryDisplaySellPriceSource(item);
+        const storeReadinessBadge = inventoryStoreReadinessRowBadge(item);
+        const proofBadge = inventoryAuthenticityProofRowBadge(item);
+        const shippingProfileBadges = inventoryShippingProfileRowBadges(item, shippingProfiles);
         return (
         <article
           className={[
@@ -12564,16 +12584,34 @@ function InventoryList({
                 <small className="text-safe">
                   {formatStatus(item.category)} - {item.setName || item.retailer || "Source unknown"}
                 </small>
-                <span className="inventory-row-readiness-badges" aria-label="Inventory readiness status">
-                  {[inventoryStoreReadinessRowBadge(item), inventoryAuthenticityProofRowBadge(item), ...inventoryShippingProfileRowBadges(item, shippingProfiles)].map((badge) => (
-                    <small className={`inventory-row-badge ${badge.tone}`} key={badge.label} title={badge.title}>
-                      <InventoryRowBadgeIcon icon={badge.icon} />
-                      {badge.label}
-                    </small>
-                  ))}
-                </span>
               </span>
             </button>
+            <span className="inventory-row-readiness-badges" aria-label="Inventory readiness status">
+              <small className={`inventory-row-badge ${storeReadinessBadge.tone}`} title={storeReadinessBadge.title}>
+                <InventoryRowBadgeIcon icon={storeReadinessBadge.icon} />
+                {storeReadinessBadge.label}
+              </small>
+              <button
+                aria-label={`Open authenticity proof for ${item.itemName}`}
+                className={`inventory-row-badge inventory-row-badge-button ${proofBadge.tone}`}
+                title="Open authenticity proof"
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenAuthenticityProof(item);
+                }}
+              >
+                <InventoryRowBadgeIcon icon={proofBadge.icon} />
+                {proofBadge.label}
+              </button>
+              {shippingProfileBadges.map((badge) => (
+                <small className={`inventory-row-badge ${badge.tone}`} key={badge.label} title={badge.title}>
+                  <InventoryRowBadgeIcon icon={badge.icon} />
+                  {badge.label}
+                </small>
+              ))}
+            </span>
           </div>
           <span className="catalog-cell inventory-id-cell identifier-text" data-label="UPC / SKU">
             {item.upc || item.sku || item.dpci || item.asin || "Missing ID"}
@@ -12669,19 +12707,25 @@ function productWorkspaceTitle(mode: ProductWorkspaceMode) {
 function ProductWorkspaceShell({
   item,
   mode,
+  focusSection,
   shippingProfiles,
   onModeChange,
   onClose,
+  onSectionFocused,
   children
 }: {
   item: InventoryItemDTO;
   mode: ProductWorkspaceMode;
+  focusSection: ProductWorkspaceSectionId | null;
   shippingProfiles: ShippingProfileDTO[];
   onModeChange: (mode: ProductWorkspaceMode) => void;
   onClose: () => void;
+  onSectionFocused: () => void;
   children: ReactNode;
 }) {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const highlightedSectionRef = useRef<HTMLElement | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
   const availableOnline = storefrontListingAvailableForSale(item);
   const publicPrice = inventoryDisplaySellPrice(item);
   const publicPriceSource = inventoryDisplaySellPriceSource(item);
@@ -12698,7 +12742,7 @@ function ProductWorkspaceShell({
     { mode: "edit-product", label: "Edit Product", icon: Settings },
     { mode: "edit-listing", label: "Edit Listing", icon: Store }
   ];
-  const sections = [
+  const sections: Array<{ id: ProductWorkspaceSectionId; label: string }> = [
     { id: "overview", label: "Overview" },
     { id: "stock", label: "Stock" },
     { id: "listing", label: "Listing" },
@@ -12709,12 +12753,41 @@ function ProductWorkspaceShell({
     { id: "receipts", label: "Receipts / Notes" }
   ];
 
-  function openWorkspaceSection(sectionId: string) {
+  const clearWorkspaceSectionHighlight = useCallback(() => {
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
+    highlightedSectionRef.current?.classList.remove("workspace-section-highlight");
+    highlightedSectionRef.current = null;
+  }, []);
+
+  const focusWorkspaceSection = useCallback(
+    (sectionId: ProductWorkspaceSectionId) => {
+      const target = workspaceRef.current?.querySelector<HTMLElement>(`[data-workspace-section="${sectionId}"]`);
+      if (!target) return false;
+      clearWorkspaceSectionHighlight();
+      target.setAttribute("tabindex", "-1");
+      target.classList.add("workspace-section-highlight");
+      highlightedSectionRef.current = target;
+      target.scrollIntoView({ block: "start", behavior: "smooth" });
+      target.focus({ preventScroll: true });
+      highlightTimerRef.current = window.setTimeout(() => {
+        if (highlightedSectionRef.current === target) {
+          target.classList.remove("workspace-section-highlight");
+          highlightedSectionRef.current = null;
+        }
+        highlightTimerRef.current = null;
+      }, 2200);
+      return true;
+    },
+    [clearWorkspaceSectionHighlight]
+  );
+
+  function openWorkspaceSection(sectionId: ProductWorkspaceSectionId) {
     onModeChange("overview");
     window.requestAnimationFrame(() => {
-      workspaceRef.current?.querySelector<HTMLElement>(`[data-workspace-section="${sectionId}"]`)?.scrollIntoView({
-        block: "start"
-      });
+      focusWorkspaceSection(sectionId);
     });
   }
 
@@ -12760,6 +12833,22 @@ function ProductWorkspaceShell({
       previousFocus?.focus();
     };
   }, [onClose]);
+
+  useEffect(() => {
+    if (!focusSection || mode !== "overview") return;
+    let timer: number | null = null;
+    const frame = window.requestAnimationFrame(() => {
+      timer = window.setTimeout(() => {
+        if (focusWorkspaceSection(focusSection)) onSectionFocused();
+      }, 80);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [focusSection, focusWorkspaceSection, mode, onSectionFocused]);
+
+  useEffect(() => clearWorkspaceSectionHighlight, [clearWorkspaceSectionHighlight]);
 
   return (
     <div className="inventory-modal-backdrop product-workspace-backdrop" role="presentation">
