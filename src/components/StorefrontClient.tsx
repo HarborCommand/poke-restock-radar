@@ -781,12 +781,9 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
 
 export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: StorefrontSettingsDTO; homeHref?: string }) {
   const storeName = displayStoreName(settings);
-  const sportsCards = sportsCardsLink(settings);
-  const { session: accountSession } = useCustomerAccountSession(settings.customerAccounts.enabled);
-  const accountHref = accountSession?.session.authenticated ? "/account" : "/account/login";
   return (
     <footer className="gdg-footer">
-      <div>
+      <div className="gdg-footer-brand-column">
         <Link href={homeHref} className="gdg-footer-brand">
           <Image src={storefrontLogoPath} alt={`${storeName} logo`} width={storefrontLogoWidth} height={storefrontLogoHeight} className="gdg-footer-brand-logo" />
           <span className="sr-only">{storeName}</span>
@@ -802,31 +799,20 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
         )}
       </div>
       <nav aria-label="Store footer navigation">
-        <Link href={homeHref}>Home</Link>
         <Link href="/shop">Shop</Link>
-        <Link href={storefrontCollectionPath("pokemon-sealed-products")}>Pokémon</Link>
-        {sportsCards.external ? (
-          <a href={sportsCards.href} target="_blank" rel="noopener noreferrer" className="gdg-external-nav">
-            Sports Cards
-            <ExternalLink size={12} aria-hidden="true" />
-          </a>
-        ) : (
-          <Link href={sportsCards.href}>Sports Cards</Link>
-        )}
-        <Link href={storefrontCollectionPath("new-arrivals")}>New Arrivals</Link>
-        {settings.customerAccounts.enabled ? <Link href={accountHref}>My Account</Link> : null}
-        <Link href="/order-status">Order Status</Link>
         <Link href="/about">About</Link>
+        <Link href="/contact">Contact</Link>
         <Link href="/policies/shipping">Shipping</Link>
         <Link href="/policies/returns">Returns</Link>
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
-        <Link href="/contact">Contact</Link>
       </nav>
-      <small>Store name: GameDayGrabs. Legal business name: GameDayGrabs LLC.</small>
-      <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
-      <small>{GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE}</small>
-      <small>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</small>
+      <div className="gdg-footer-legal">
+        <small>Store name: GameDayGrabs. Legal business name: GameDayGrabs LLC.</small>
+        <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
+        <small>{GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE}</small>
+        <small>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</small>
+      </div>
     </footer>
   );
 }

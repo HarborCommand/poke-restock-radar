@@ -56,6 +56,21 @@ test("public storefront polish keeps product, cart, footer, and login layouts co
   assert.match(css, /\.gdg-login-input input\s*\{[\s\S]*?width: 100%;/);
 });
 
+test("storefront footer keeps essential links without clutter-only navigation", () => {
+  for (const href of ["/shop", "/about", "/contact", "/policies/shipping", "/policies/returns", "/privacy", "/terms"]) {
+    assert.match(storefrontFooter, new RegExp(`href="${href.replace(/\//g, "\\/")}"`));
+  }
+
+  assert.doesNotMatch(storefrontFooter, /href=\{homeHref\}>Home/);
+  assert.doesNotMatch(storefrontFooter, /pokemon-sealed-products|Sports Cards|new-arrivals|accountHref|My Account|Order Status/);
+  assert.match(storefrontFooter, /className="gdg-footer-brand-column"/);
+  assert.match(storefrontFooter, /className="gdg-footer-legal"/);
+  assert.match(storefrontFooter, /GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE/);
+  assert.match(storefrontFooter, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
+  assert.match(css, /\.gdg-footer nav a\s*\{[\s\S]*?white-space: nowrap;/);
+  assert.doesNotMatch(css, /\.gdg-footer a,\s*\r?\n\s*\.gdg-footer small,\s*\r?\n\s*\.gdg-login-card-heading h2/);
+});
+
 test("mobile storefront polish prevents common narrow-viewport overflow", () => {
   assert.match(css, /@media \(max-width: 820px\)\s*\{[\s\S]*?\.gdg-brand\s*\{[\s\S]*?max-width: calc\(100% - 132px\);/);
   assert.match(css, /@media \(max-width: 820px\)\s*\{[\s\S]*?\.gdg-shop-toolbar label,\s*\r?\n\s*\.gdg-shop-toolbar select\s*\{[\s\S]*?width: 100%;/);
@@ -67,11 +82,11 @@ test("mobile storefront polish prevents common narrow-viewport overflow", () => 
 });
 
 test("public trust copy remains careful and does not imply official authorization", () => {
-  const publicCopy = [productCard, productDetail, cartClient].join("\n");
+  const publicCopy = [productCard, productDetail, cartClient, storefrontFooter].join("\n");
 
   assert.match(publicCopy, /Genuine products/);
   assert.match(publicCopy, /Independent reseller/);
   assert.match(publicCopy, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
-  assert.doesNotMatch(publicCopy, /100% Authentic|official Pok.mon retailer|authorized Pok.mon seller|direct from Pok.mon/i);
+  assert.doesNotMatch(publicCopy, /100% Authentic|guaranteed authentic|official Pok.mon retailer|authorized Pok.mon seller|direct from Pok.mon|replica/i);
   assert.doesNotMatch(client, /cardNumber|card_number|cvv|payment_method_details|raw Stripe object/i);
 });

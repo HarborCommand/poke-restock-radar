@@ -1072,13 +1072,15 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
           <small>Points are display-only and do not affect checkout totals yet.</small>
         </div>
       </section>
-      <GrabbyCard
-        variant="rewards"
-        compact
-        ctaHref="/policies"
-        ctaLabel="Rewards rules"
-        className="gdg-rewards-grabby-card"
-      />
+      <div className="gdg-rewards-sidekick">
+        <GrabbyCard
+          variant="rewards"
+          compact
+          ctaHref="/policies"
+          ctaLabel="Rewards rules"
+          className="gdg-rewards-grabby-card"
+        />
+      </div>
       <RewardsInfoStrip />
 
       <div className="gdg-rewards-grid">
