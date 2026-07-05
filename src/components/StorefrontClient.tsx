@@ -44,6 +44,7 @@ import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/stor
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
 import {
   GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE,
+  GAMEDAYGRABS_FOOTER_AFFILIATION_DISCLOSURE,
   GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE,
   GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE,
   GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE
@@ -807,11 +808,14 @@ export function StorefrontFooter({ settings, homeHref = "/shop" }: { settings: S
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
       </nav>
-      <div className="gdg-footer-legal">
-        <small>Store name: GameDayGrabs. Legal business name: GameDayGrabs LLC.</small>
-        <small>(c) {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.</small>
-        <small>{GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE}</small>
-        <small>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</small>
+      <div className="gdg-footer-legal" aria-label="Store legal and trademark disclosure">
+        <small>
+          <strong>Store name:</strong> GameDayGrabs. <strong>Legal business:</strong> GameDayGrabs LLC. (c){" "}
+          {new Date().getFullYear()} GameDayGrabs LLC. Availability subject to change.
+        </small>
+        <small>
+          <strong>{GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE}</strong> {GAMEDAYGRABS_FOOTER_AFFILIATION_DISCLOSURE}
+        </small>
       </div>
     </footer>
   );

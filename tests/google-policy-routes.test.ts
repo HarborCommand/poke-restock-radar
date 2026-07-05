@@ -40,7 +40,8 @@ test("policy hub and footer expose dedicated policy and trust links", () => {
 
   assert.match(storefrontClient, /href="\/about"/);
   assert.match(storefrontClient, /href="\/contact"/);
-  assert.match(storefrontClient, /Store name: GameDayGrabs\. Legal business name: GameDayGrabs LLC\./);
+  assert.match(storefrontClient, /<strong>Store name:<\/strong> GameDayGrabs/);
+  assert.match(storefrontClient, /<strong>Legal business:<\/strong> GameDayGrabs LLC/);
   assert.match(aboutPage, /About GameDayGrabs LLC/);
   assert.match(contactPage, /GameDayGrabs LLC/);
   assert.match(policiesPage, /GameDayGrabs LLC/);

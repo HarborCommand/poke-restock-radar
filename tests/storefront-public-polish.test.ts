@@ -64,11 +64,23 @@ test("storefront footer keeps essential links without clutter-only navigation", 
   assert.doesNotMatch(storefrontFooter, /href=\{homeHref\}>Home/);
   assert.doesNotMatch(storefrontFooter, /pokemon-sealed-products|Sports Cards|new-arrivals|accountHref|My Account|Order Status/);
   assert.match(storefrontFooter, /className="gdg-footer-brand-column"/);
-  assert.match(storefrontFooter, /className="gdg-footer-legal"/);
+  assert.match(storefrontFooter, /className="gdg-footer-legal" aria-label="Store legal and trademark disclosure"/);
   assert.match(storefrontFooter, /GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE/);
-  assert.match(storefrontFooter, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
+  assert.match(storefrontFooter, /GAMEDAYGRABS_FOOTER_AFFILIATION_DISCLOSURE/);
+  assert.match(storefrontFooter, /<strong>Store name:<\/strong> GameDayGrabs/);
+  assert.match(storefrontFooter, /<strong>Legal business:<\/strong> GameDayGrabs LLC/);
   assert.match(css, /\.gdg-footer nav a\s*\{[\s\S]*?white-space: nowrap;/);
   assert.doesNotMatch(css, /\.gdg-footer a,\s*\r?\n\s*\.gdg-footer small,\s*\r?\n\s*\.gdg-login-card-heading h2/);
+  assert.doesNotMatch(storefrontFooter, /authenticityProof|authenticityNotes|Proof Missing|Partial Proof|Proof Ready/);
+});
+
+test("storefront footer remains compact while preserving trust disclosures", () => {
+  assert.match(css, /\.gdg-footer\s*\{[\s\S]*?grid-template-columns: minmax\(250px, 0\.9fr\) minmax\(210px, 0\.54fr\) minmax\(360px, 1\.18fr\);/);
+  assert.match(css, /\.gdg-footer\s*\{[\s\S]*?padding: clamp\(16px, 2\.4vw, 24px\);/);
+  assert.match(css, /\.gdg-footer-brand-column,\s*\r?\n\s*\.gdg-footer-legal\s*\{[\s\S]*?gap: 5px;/);
+  assert.match(css, /\.gdg-footer-brand-logo\s*\{[\s\S]*?width: clamp\(128px, 14vw, 154px\);[\s\S]*?max-height: 30px;/);
+  assert.match(css, /\.gdg-footer nav\s*\{[\s\S]*?gap: 7px 18px;/);
+  assert.match(css, /@media \(max-width: 860px\)\s*\{[\s\S]*?\.gdg-footer\s*\{[\s\S]*?padding: 16px;[\s\S]*?border-radius: 20px 20px 0 0;/);
 });
 
 test("mobile storefront polish prevents common narrow-viewport overflow", () => {

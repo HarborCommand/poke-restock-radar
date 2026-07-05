@@ -20655,23 +20655,23 @@ body:has(.shop-shell) {
 
 .gdg-footer {
   display: grid;
-  grid-template-columns: minmax(280px, 1.1fr) minmax(240px, 0.72fr) minmax(300px, 1fr);
+  grid-template-columns: minmax(250px, 0.9fr) minmax(210px, 0.54fr) minmax(360px, 1.18fr);
   align-items: start;
-  gap: clamp(18px, 3vw, 34px);
-  width: min(1280px, calc(100% - 32px));
-  margin: 22px auto 0;
+  gap: clamp(14px, 2.2vw, 24px);
+  width: min(1240px, calc(100% - 28px));
+  margin: 14px auto 0;
   border: 1px solid #e5eaf0;
-  border-radius: 28px 28px 0 0;
+  border-radius: 22px 22px 0 0;
   background: #ffffff;
   color: #0b1220;
-  padding: clamp(22px, 4vw, 34px);
-  box-shadow: 0 -10px 36px rgba(15, 23, 42, 0.04);
+  padding: clamp(16px, 2.4vw, 24px);
+  box-shadow: 0 -8px 26px rgba(15, 23, 42, 0.035);
 }
 
 .gdg-footer-brand-column,
 .gdg-footer-legal {
   display: grid;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -20679,21 +20679,34 @@ body:has(.shop-shell) {
 .gdg-footer small {
   margin: 0;
   color: #64748b;
-  line-height: 1.55;
+  line-height: 1.42;
+}
+
+.gdg-footer p {
+  font-size: 0.9rem;
+}
+
+.gdg-footer small {
+  font-size: 0.82rem;
+}
+
+.gdg-footer small strong {
+  color: #334155;
+  font-weight: 850;
 }
 
 .gdg-footer-brand {
   display: inline-block;
-  margin-bottom: 7px;
+  margin-bottom: 3px;
   color: #080c14;
   font-weight: 950;
   text-decoration: none;
 }
 
 .gdg-footer-brand-logo {
-  width: clamp(150px, 20vw, 180px);
+  width: clamp(128px, 14vw, 154px);
   height: auto;
-  max-height: 38px;
+  max-height: 30px;
   object-fit: contain;
   object-position: left center;
 }
@@ -20701,9 +20714,10 @@ body:has(.shop-shell) {
 .gdg-footer-email {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 4px;
   color: #16a34a;
+  font-size: 0.9rem;
   font-weight: 850;
   text-decoration: none;
   overflow-wrap: anywhere;
@@ -20719,12 +20733,14 @@ body:has(.shop-shell) {
   justify-content: start;
   justify-items: start;
   align-items: start;
-  gap: 10px 22px;
+  gap: 7px 18px;
 }
 
 .gdg-footer nav a {
   color: #334155;
+  font-size: 0.9rem;
   font-weight: 800;
+  line-height: 1.2;
   text-decoration: none;
   white-space: nowrap;
 }
@@ -20987,10 +21003,16 @@ body:has(.shop-shell) {
 
   .gdg-footer {
     align-items: start;
+    gap: 12px;
+    width: min(100% - 24px, 720px);
+    margin-top: 12px;
+    padding: 16px;
+    border-radius: 20px 20px 0 0;
   }
 
   .gdg-footer nav {
     grid-template-columns: repeat(2, minmax(max-content, 1fr));
+    gap: 8px 16px;
     justify-content: start;
   }
 
@@ -26781,7 +26803,7 @@ body .app-main-inventory .inventory-filter-row > * {
 
 .gdg-footer {
   display: grid;
-  gap: 14px;
+  gap: clamp(12px, 1.8vw, 18px);
 }
 
 .gdg-footer nav {
