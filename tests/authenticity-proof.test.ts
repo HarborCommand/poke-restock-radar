@@ -114,6 +114,8 @@ test("inventory proof badge opens the product workspace directly to authenticity
   assert.match(listComponent, /event\.preventDefault\(\);[\s\S]*event\.stopPropagation\(\);[\s\S]*onOpenAuthenticityProof\(item\);/);
   assert.doesNotMatch(sourceSlice(listComponent, "onOpenAuthenticityProof(item);", "</button>"), /requestJson|submit\(|fetch\(/);
   assert.match(workspace, /focusSection: ProductWorkspaceSectionId \| null/);
+  assert.match(workspace, /children: \(activeSectionId: ProductWorkspaceSectionId\) => ReactNode/);
+  assert.match(app, /activeSectionId=\{activeSectionId\}/);
   assert.match(workspace, /querySelector<HTMLElement>\(`\[data-workspace-section="\$\{sectionId\}"\]`\)/);
   assert.match(workspace, /target\.scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
   assert.match(workspace, /target\.focus\(\{ preventScroll: true \}\)/);
@@ -127,7 +129,9 @@ test("product workspace proof polish keeps status compact and proof action direc
   const app = readProjectFile("src/components/RadarApp.tsx");
   const css = readProjectFile("src/app/globals.css");
   const workspace = sourceSlice(app, "function ProductWorkspaceShell", "function ProductWorkspaceOverview");
+  const proofCard = sourceSlice(app, "function ProductWorkspaceAuthenticityProofCard", "function ProductWorkspaceOverview");
   const overview = sourceSlice(app, "function ProductWorkspaceOverview", "function InventoryEditStockLotModal");
+  const focusedPanels = sourceSlice(overview, "const focusedPanels", "const panels");
   const headerBadges = sourceSlice(workspace, "const rawHeaderBadges", "const workspaceActions");
   const headerBadgeMarkup = sourceSlice(workspace, "product-workspace-status-strip", "product-workspace-stats");
 
@@ -146,22 +150,46 @@ test("product workspace proof polish keeps status compact and proof action direc
   assert.doesNotMatch(workspace, /View Public Page|>\s*Product Page\s*</);
 
   assert.match(overview, /onEditProof: \(\) => void/);
-  assert.match(overview, /product-workspace-proof-card/);
-  assert.match(overview, /Edit Proof Status/);
-  assert.match(overview, /product-workspace-proof-guidance/);
-  assert.match(overview, /Track private proof for Google review\. Do not upload receipts or invoices publicly\./);
-  assert.match(overview, /Front photo/);
-  assert.match(overview, /Back\/sealed photo/);
-  assert.match(overview, /UPC\/barcode photo/);
-  assert.match(overview, /Receipt\/order proof if available/);
-  assert.match(overview, /Private notes:[\s\S]*item\.authenticityNotes \? "Saved" : "Not saved"/);
+  assert.match(overview, /activeSectionId: ProductWorkspaceSectionId/);
+  assert.match(proofCard, /product-workspace-proof-card/);
+  assert.match(proofCard, /product-workspace-primary-card/);
+  assert.match(overview, /product-workspace-focused-grid/);
+  assert.match(focusedPanels, /authenticity: \[proofSection, receiptsSection, shippingSection\]/);
+  assert.match(proofCard, /Edit Proof Status/);
+  assert.match(proofCard, /product-workspace-proof-guidance/);
+  assert.match(proofCard, /Track private proof for Google review\. Do not upload receipts or invoices publicly\./);
+  assert.match(proofCard, /Front photo/);
+  assert.match(proofCard, /Back\/sealed photo/);
+  assert.match(proofCard, /UPC\/barcode photo/);
+  assert.match(proofCard, /Receipt\/order proof if available/);
+  assert.match(proofCard, /Private notes:[\s\S]*item\.authenticityNotes \? "Saved" : "Not saved"/);
   assert.match(app, /onEditProof=\{\(\) => setProductWorkspace\(\{ itemId: workspaceItem\.id, mode: "edit-product" \}\)\}/);
 
   assert.match(css, /body \.product-workspace-status-strip/);
   assert.match(css, /body \.product-workspace-card-head/);
   assert.match(css, /body \.product-workspace-proof-card/);
+  assert.match(css, /body \.product-workspace-focused-authenticity/);
+  assert.match(css, /body \.product-workspace-primary-card \.detail-stat-grid/);
   assert.match(css, /body \.product-workspace-proof-guidance/);
   assert.match(css, /\.product-workspace-actions a:focus-visible/);
+});
+
+test("product workspace stock lot cards prevent letter-stacked wrapping", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const lotsComponent = sourceSlice(app, "function CompactStockLotGroup", "function CompactSalesList");
+  const stockLotCss = sourceSlice(css, "body .compact-ledger-list article.stock-lot-card", "body .product-image-manager");
+
+  assert.match(lotsComponent, /className=\{`stock-lot-card \$\{muted \? "stock-lot-depleted" : ""\}`\}/);
+  assert.match(lotsComponent, /className="stock-lot-source"/);
+  assert.match(lotsComponent, /className="stock-lot-proof"/);
+  assert.match(lotsComponent, /aria-label=\{`Edit stock lot from \$\{shortDate\(lot\.purchasedAt\)\} for \$\{item\.itemName\}`\}/);
+  assert.match(lotsComponent, /aria-label=\{`Adjust stock lot from \$\{shortDate\(lot\.purchasedAt\)\} for \$\{item\.itemName\}`\}/);
+  assert.match(lotsComponent, /aria-label=\{`Remove stock lot from \$\{shortDate\(lot\.purchasedAt\)\} for \$\{item\.itemName\}`\}/);
+  assert.match(stockLotCss, /word-break: normal !important/);
+  assert.match(stockLotCss, /overflow-wrap: break-word !important/);
+  assert.match(stockLotCss, /-webkit-line-clamp: 2/);
+  assert.doesNotMatch(stockLotCss, /word-break:\s*break-all|overflow-wrap:\s*anywhere/);
 });
 
 test("authenticity proof fields stay out of public storefront, feed, schema, and customer surfaces", () => {
