@@ -9,3 +9,6 @@ export const GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE =
 
 export const GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE =
   "Independent retail store and reseller of genuine sealed collectible products.";
+
+export const GAMEDAYGRABS_FOOTER_AFFILIATION_DISCLOSURE =
+  "Not affiliated with, endorsed by, or sponsored by The Pokemon Company, Nintendo, Creatures, Game Freak, or any other trademark owners unless explicitly stated.";
