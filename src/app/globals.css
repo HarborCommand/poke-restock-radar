@@ -20227,6 +20227,10 @@ body:has(.shop-shell) {
   min-width: 0;
 }
 
+.catalog-product-wrap > .inventory-row-readiness-badges {
+  grid-column: 2;
+}
+
 .publish-select-box {
   display: grid;
   width: 28px;
@@ -20295,6 +20299,17 @@ body:has(.shop-shell) {
 
 .inventory-row-badge svg {
   flex: 0 0 auto;
+}
+
+.inventory-row-badge-button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.inventory-row-badge-button:hover,
+.inventory-row-badge-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 .inventory-row-badge.good {
@@ -21201,6 +21216,20 @@ body .release-detail-card {
 body .inventory-detail-section,
 body .flow-step {
   padding: 16px;
+}
+
+body .inventory-detail-section.workspace-section-highlight {
+  border-color: rgba(37, 99, 235, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14), 0 16px 38px rgba(15, 23, 42, 0.08);
+}
+
+body .inventory-detail-section:focus {
+  outline: none;
+}
+
+body .inventory-detail-section:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 3px;
 }
 
 body .inventory-detail-section h3,

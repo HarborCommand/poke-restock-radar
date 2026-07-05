@@ -73,10 +73,17 @@ test("admin inventory update can save proof status fields without price or quant
 
 test("admin UI renders proof badge and private authenticity proof editor", () => {
   const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
   const editProduct = sourceSlice(app, "function InventoryEditProductModal", "function StoreListingModal");
+  const rowBadgeLabel = sourceSlice(app, "function inventoryAuthenticityProofLabel", "function inventoryAuthenticityProofTone");
+  const rowBadgeHelper = sourceSlice(app, "function inventoryAuthenticityProofRowBadge", "function inventoryShippingProfileRowBadges");
 
   assert.match(app, /function inventoryAuthenticityProofRowBadge\(item: InventoryItemDTO\)/);
   assert.match(app, /inventoryAuthenticityProofRowBadge\(item\)/);
+  assert.match(rowBadgeLabel, /Proof Missing/);
+  assert.match(rowBadgeLabel, /Partial Proof/);
+  assert.match(rowBadgeLabel, /Proof Ready/);
+  assert.match(rowBadgeHelper, /label: inventoryAuthenticityProofLabel\(item\)/);
   assert.match(editProduct, /<h3>Authenticity proof<\/h3>/);
   assert.match(editProduct, /name="authenticityProofStatus"/);
   assert.match(editProduct, /name="authenticityReceiptStatus"/);
@@ -84,6 +91,36 @@ test("admin UI renders proof badge and private authenticity proof editor", () =>
   assert.match(editProduct, /name="authenticityUpcVerified" type="checkbox"/);
   assert.match(editProduct, /name="authenticityNotes"/);
   assert.match(editProduct, /Do not upload receipts or invoices publicly/);
+  assert.match(css, /\.inventory-row-badge-button \{[\s\S]*cursor: pointer/);
+  assert.match(css, /\.catalog-product-wrap > \.inventory-row-readiness-badges \{[\s\S]*grid-column: 2/);
+});
+
+test("inventory proof badge opens the product workspace directly to authenticity proof", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const inventoryPanel = sourceSlice(app, "function InventoryPanel", "type StorefrontOrderTab");
+  const listComponent = sourceSlice(app, "function InventoryList", "function ProductWorkspaceShell");
+  const workspace = sourceSlice(app, "function ProductWorkspaceShell", "function ProductWorkspaceOverview");
+
+  assert.match(app, /type ProductWorkspaceSectionId = [^;]*"authenticity"/);
+  assert.match(inventoryPanel, /function openAuthenticityProofWorkspace\(item: InventoryItemDTO\)[\s\S]*openProductWorkspace\(item, "overview", undefined, "authenticity"\)/);
+  assert.match(inventoryPanel, /onOpenAuthenticityProof=\{openAuthenticityProofWorkspace\}/);
+  assert.match(inventoryPanel, /focusSection=\{productWorkspace\.focusSection \?\? null\}/);
+  assert.match(listComponent, /onOpenAuthenticityProof: \(item: InventoryItemDTO\) => void/);
+  assert.match(listComponent, /className=\{`inventory-row-badge inventory-row-badge-button \$\{proofBadge\.tone\}`\}/);
+  assert.match(listComponent, /aria-label=\{`Open authenticity proof for \$\{item\.itemName\}`\}/);
+  assert.match(listComponent, /title="Open authenticity proof"/);
+  assert.match(listComponent, /onChange=\{\(\) => onTogglePublishSelect\(item\.id\)\}/);
+  assert.match(listComponent, /event\.preventDefault\(\);[\s\S]*event\.stopPropagation\(\);[\s\S]*onOpenAuthenticityProof\(item\);/);
+  assert.doesNotMatch(sourceSlice(listComponent, "onOpenAuthenticityProof(item);", "</button>"), /requestJson|submit\(|fetch\(/);
+  assert.match(workspace, /focusSection: ProductWorkspaceSectionId \| null/);
+  assert.match(workspace, /querySelector<HTMLElement>\(`\[data-workspace-section="\$\{sectionId\}"\]`\)/);
+  assert.match(workspace, /target\.scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
+  assert.match(workspace, /target\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(workspace, /onSectionFocused\(\)/);
+  assert.match(workspace, /workspace-section-highlight/);
+  assert.match(app, /data-workspace-section="authenticity"/);
+  assert.match(css, /body \.inventory-detail-section\.workspace-section-highlight/);
 });
 
 test("authenticity proof fields stay out of public storefront, feed, schema, and customer surfaces", () => {
