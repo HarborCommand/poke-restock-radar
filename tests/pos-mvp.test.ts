@@ -256,18 +256,93 @@ test("POS client sends idempotency key and clamps cart quantities to available s
   assert.match(posPanel, /idempotencyKey: saleIdempotencyKey/);
   assert.match(posPanel, /setSaleIdempotencyKey\(newPosSaleIdempotencyKey\(\)\)/);
   assert.match(posPanel, /Math\.min\(item\.quantityOwned, quantity\)/);
+  assert.match(posPanel, /if \(submitting\) return/);
+  assert.match(posPanel, /disabled=\{submitting\}/);
 });
 
 test("POS tab renders for admin with scan, cart, payment, and confirmation affordances", () => {
   const app = readSource("../src/components/RadarApp.tsx");
   assert.match(app, /\{ id: "pos", label: "POS"/);
   assert.match(app, /activeTab === "pos" && isAdmin/);
-  assert.match(app, /Scanner Enter adds exact UPC\/SKU/);
+  assert.match(app, /Scanner tip: scan a barcode or type UPC\/SKU and press Enter\./);
   assert.match(app, /Cart \(\{cartQuantity\}\)/);
   assert.match(app, /Payment Method/);
   assert.match(app, /Confirm Sale/);
   assert.match(app, /Clear/);
   assert.match(app, /Math\.min\(item\.quantityOwned, quantity\)/);
+});
+
+test("POS empty cart keeps payment and completion inactive", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+  assert.match(posPanel, /const cartEmpty = cartLines\.length === 0/);
+  assert.match(posPanel, /cartEmpty \|\| !paymentMethod/);
+  assert.match(posPanel, /Add item to complete sale/);
+  assert.match(posPanel, /Payment options activate after an item is in the cart\./);
+  assert.match(posPanel, /disabled=\{cartEmpty\}/);
+  assert.match(posPanel, /disabled=\{!cart\.length \|\| submitting\}/);
+  assert.match(posPanel, /Cart is empty/);
+  assert.match(posPanel, /Search or scan a product to start an in-person sale\./);
+});
+
+test("POS scanner feedback handles exact add, no match, and ambiguous code safely", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+  assert.match(posPanel, /posItemExactCodeMatch\(item, query\)/);
+  assert.match(posPanel, /exactMatches\.length === 1/);
+  assert.match(posPanel, /addToCart\(exactMatches\[0\]\)/);
+  assert.match(posPanel, /No product found for this UPC\/SKU\./);
+  assert.match(posPanel, /Multiple products matched that code/);
+  assert.match(posPanel, /searchInputRef\.current\?\.focus\(\)/);
+});
+
+test("POS quantity and product cards show low stock, added feedback, and max available state", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const css = readSource("../src/app/globals.css");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+  assert.match(posPanel, /recentlyAddedItemId/);
+  assert.match(posPanel, /Added/);
+  assert.match(posPanel, /Max available reached\./);
+  assert.match(posPanel, /Low stock/);
+  assert.match(posPanel, /On hand: \{item\.quantityOwned\}/);
+  assert.match(css, /\.pos-product-card\.just-added/);
+  assert.match(css, /\.pos-stock-warning/);
+  assert.match(css, /\.pos-max-message/);
+  assert.match(css, /\.pos-cart-quantity\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(38px, 1fr\) 40px/);
+});
+
+test("POS confirmation modal shows item lines, totals, payment, reference, and warning before final submit", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+  assert.match(posPanel, /aria-label="Confirm POS sale"/);
+  assert.match(posPanel, /pos-confirm-lines/);
+  assert.match(posPanel, /Subtotal <strong>\{money\(cartTotals\.subtotal\)\}/);
+  assert.match(posPanel, /Tax <strong>\{money\(cartTotals\.tax\)\}/);
+  assert.match(posPanel, /Payment <strong>\{paymentMethod \? posPaymentMethodLabel\(paymentMethod\) : "Not selected"\}/);
+  assert.match(posPanel, /Reference <strong>\{paymentReference\.trim\(\)\}/);
+  assert.match(posPanel, /This will record the sale and deduct inventory/);
+  assert.match(posPanel, /Close or cancel does not save anything/);
+  assert.match(posPanel, /Confirming/);
+});
+
+test("POS receipt success state includes metadata and copy receipt affordance", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const receipt = sourceSlice(app, "function PosReceipt", "function ProfitLossPanel");
+  assert.match(app, /function posReceiptSummary/);
+  assert.match(receipt, /Sale Complete/);
+  assert.match(receipt, /Inventory updated/);
+  assert.match(receipt, /receipt\.saleReference/);
+  assert.match(receipt, /receipt\.paymentMethodLabel/);
+  assert.match(receipt, /receipt\.subtotal/);
+  assert.match(receipt, /receipt\.tax/);
+  assert.match(receipt, /Copy Receipt/);
+});
+
+test("POS mobile layout keeps cart and product rows stacked without obvious overflow risk", () => {
+  const css = readSource("../src/app/globals.css");
+  assert.match(css, /@media \(max-width: 1100px\)[\s\S]*\.pos-workspace\s*\{[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(css, /@media \(max-width: 720px\)[\s\S]*\.pos-scan-row,[\s\S]*\.pos-result-grid,[\s\S]*\.pos-product-card,[\s\S]*\.pos-cart-line,[\s\S]*\.pos-receipt/);
+  assert.match(css, /\.pos-cart-panel\s*\{[\s\S]*position:\s*sticky/);
 });
 
 test("POS change is isolated from public checkout, shipping, refunds, and live payments", () => {

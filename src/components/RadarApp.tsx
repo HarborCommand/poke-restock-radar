@@ -3516,6 +3516,24 @@ function newPosSaleIdempotencyKey() {
   return `${stamp}-${random}`;
 }
 
+function posPaymentReferenceHelp(method: PosPaymentMethodDTO | null) {
+  if (method === "zelle" || method === "external_card" || method === "other") {
+    return "Add confirmation number, last 4, or note if available.";
+  }
+  return "Optional for cash.";
+}
+
+function posReceiptSummary(receipt: PosSaleReceiptDTO) {
+  return [
+    `Sale ${receipt.saleReference}`,
+    `Payment: ${receipt.paymentMethodLabel}${receipt.paymentReference ? ` (${receipt.paymentReference})` : ""}`,
+    ...receipt.lines.map((line) => `${line.quantity} x ${line.itemName} - ${money(line.lineTotal)}`),
+    `Subtotal: ${money(receipt.subtotal)}`,
+    `Tax: ${money(receipt.tax)}`,
+    `Total: ${money(receipt.total)}`
+  ].join("\n");
+}
+
 function PosPanel({
   dashboard,
   busy,
@@ -3530,13 +3548,17 @@ function PosPanel({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PosQuickFilter>("All");
   const [cart, setCart] = useState<PosCartLine[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethodDTO>("cash");
+  const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethodDTO | null>(null);
   const [paymentReference, setPaymentReference] = useState("");
   const [saleIdempotencyKey, setSaleIdempotencyKey] = useState(() => newPosSaleIdempotencyKey());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [posMessage, setPosMessage] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<PosSaleReceiptDTO | null>(null);
+  const [recentlyAddedItemId, setRecentlyAddedItemId] = useState<string | null>(null);
+  const [maxReachedItemId, setMaxReachedItemId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
 
   const sellableItems = useMemo(
     () => dashboard.inventory.filter(isPosSellableInventoryItem).sort((a, b) => posDisplayTitle(a).localeCompare(posDisplayTitle(b))),
@@ -3561,20 +3583,44 @@ function PosPanel({
   const cartQuantity = cartLines.reduce((sum, line) => sum + line.quantity, 0);
   const cartTotals = calculatePosTotals(cartLines, POS_DEFAULT_TAX_RATE);
   const cartInvalid = cartLines.some((line) => !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned);
-  const actionDisabled = busy || submitting || cartLines.length === 0 || cartInvalid;
+  const cartEmpty = cartLines.length === 0;
+  const actionDisabled = busy || submitting || cartEmpty || !paymentMethod || cartInvalid;
+  const completeSaleLabel = cartEmpty
+    ? "Add item to complete sale"
+    : !paymentMethod
+      ? "Select payment method"
+      : submitting || busyLabel === "Completing POS sale"
+        ? "Completing"
+        : `Complete Sale ${money(cartTotals.total)}`;
+
+  useEffect(() => {
+    if (!confirmOpen) return;
+    const timer = window.setTimeout(() => confirmCancelRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [confirmOpen]);
 
   function addToCart(item: InventoryItemDTO) {
     setReceipt(null);
     setPosMessage(null);
+    setMaxReachedItemId(null);
     if (!isPosSellableInventoryItem(item)) {
       setPosMessage(`${item.itemName} is not available for POS sale.`);
+      return;
+    }
+    const currentQuantity = cart.find((line) => line.itemId === item.id)?.quantity ?? 0;
+    if (currentQuantity >= item.quantityOwned) {
+      setRecentlyAddedItemId(null);
+      setMaxReachedItemId(item.id);
+      setPosMessage("Max available reached.");
+      searchInputRef.current?.focus();
       return;
     }
     setCart((current) => {
       const existing = current.find((line) => line.itemId === item.id);
       const currentQuantity = existing?.quantity ?? 0;
       if (currentQuantity >= item.quantityOwned) {
-        setPosMessage(`Only ${item.quantityOwned} available for ${item.itemName}.`);
+        setMaxReachedItemId(item.id);
+        setPosMessage("Max available reached.");
         return current;
       }
       if (existing) {
@@ -3582,10 +3628,13 @@ function PosPanel({
       }
       return [...current, { itemId: item.id, quantity: 1 }];
     });
+    setRecentlyAddedItemId(item.id);
+    searchInputRef.current?.focus();
   }
 
   function updateCartQuantity(item: InventoryItemDTO, quantity: number) {
     const nextQuantity = Math.max(1, Math.min(item.quantityOwned, quantity));
+    setMaxReachedItemId(quantity >= item.quantityOwned ? item.id : null);
     setCart((current) => current.map((line) => (line.itemId === item.id ? { ...line, quantity: nextQuantity } : line)));
   }
 
@@ -3597,7 +3646,11 @@ function PosPanel({
     setCart([]);
     setReceipt(null);
     setPosMessage(null);
+    setPaymentMethod(null);
     setSaleIdempotencyKey(newPosSaleIdempotencyKey());
+    setRecentlyAddedItemId(null);
+    setMaxReachedItemId(null);
+    searchInputRef.current?.focus();
   }
 
   function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
@@ -3607,6 +3660,12 @@ function PosPanel({
       event.preventDefault();
       addToCart(exactMatches[0]);
       setQuery("");
+      searchInputRef.current?.focus();
+      return;
+    }
+    if (query.trim()) {
+      event.preventDefault();
+      setPosMessage(exactMatches.length > 1 ? "Multiple products matched that code. Choose the right item from results." : "No product found for this UPC/SKU.");
     }
   }
 
@@ -3628,7 +3687,9 @@ function PosPanel({
   }
 
   async function completeSale() {
+    if (submitting) return;
     if (!validateBeforeConfirm()) return;
+    if (!paymentMethod) return;
     setSubmitting(true);
     setPosMessage(null);
     try {
@@ -3643,6 +3704,7 @@ function PosPanel({
       });
       setReceipt(result.sale);
       setCart([]);
+      setPaymentMethod(null);
       setPaymentReference("");
       setSaleIdempotencyKey(newPosSaleIdempotencyKey());
       setConfirmOpen(false);
@@ -3674,6 +3736,7 @@ function PosPanel({
             <label className="pos-search-input">
               <Search size={16} />
               <input
+                ref={searchInputRef}
                 autoComplete="off"
                 autoFocus
                 value={query}
@@ -3687,7 +3750,7 @@ function PosPanel({
                 </button>
               ) : null}
             </label>
-            <span className="scan-hint"><ScanBarcode size={15} /> Scanner Enter adds exact UPC/SKU</span>
+            <span className="scan-hint"><ScanBarcode size={15} /> Scanner tip: scan a barcode or type UPC/SKU and press Enter.</span>
           </div>
           <div className="pos-filter-row" aria-label="Quick add filters">
             {posQuickFilters.map((option) => (
@@ -3706,21 +3769,24 @@ function PosPanel({
                 const unitPrice = posUnitPrice(item) ?? 0;
                 const inCart = cart.find((line) => line.itemId === item.id)?.quantity ?? 0;
                 const canAdd = inCart < item.quantityOwned;
+                const lowStock = item.quantityOwned === 1;
+                const added = recentlyAddedItemId === item.id;
                 return (
-                  <article className="pos-product-card" key={item.id}>
+                  <article className={added ? "pos-product-card just-added" : "pos-product-card"} key={item.id}>
                     <InventoryImage item={item} />
                     <div className="pos-product-copy">
                       <strong>{posDisplayTitle(item)}</strong>
-                      <span>{posIdentifier(item)}</span>
+                      <span className="pos-product-id">{posIdentifier(item)}</span>
                       <span>{formatStatus(item.category)}</span>
-                      <div>
+                      <div className="pos-product-price-row">
                         <b>{money(unitPrice)}</b>
-                        <em>On hand: {item.quantityOwned}</em>
+                        <em className={lowStock ? "low-stock" : ""}>On hand: {item.quantityOwned}</em>
                       </div>
+                      {lowStock ? <small className="pos-stock-warning">Low stock</small> : null}
                     </div>
                     <button className="primary-action pos-add-button" type="button" disabled={!canAdd} onClick={() => addToCart(item)}>
                       <Plus size={15} />
-                      Add
+                      {added ? "Added" : canAdd ? "Add" : "Max added"}
                     </button>
                   </article>
                 );
@@ -3737,14 +3803,15 @@ function PosPanel({
               <h2>Cart ({cartQuantity})</h2>
               <span>Server recalculates prices and inventory before completion.</span>
             </div>
-            <button className="mini-action danger" type="button" disabled={!cart.length || submitting} onClick={clearCart}>
+            <button className="mini-action danger" type="button" disabled={!cart.length || submitting} onClick={clearCart} aria-disabled={!cart.length || submitting}>
               Clear
             </button>
           </div>
-          <div className="pos-cart-lines">
+          <div className={cartEmpty ? "pos-cart-lines is-empty" : "pos-cart-lines"}>
             {cartLines.length ? (
               cartLines.map((line) => {
                 const unavailable = !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned;
+                const maxReached = line.quantity >= line.item.quantityOwned;
                 return (
                   <article className={unavailable ? "pos-cart-line unavailable" : "pos-cart-line"} key={line.item.id}>
                     <InventoryImage item={line.item} />
@@ -3753,6 +3820,7 @@ function PosPanel({
                       <span>{posIdentifier(line.item)}</span>
                       <small>{money(line.unitPrice)} each - {line.item.quantityOwned} available</small>
                       {unavailable ? <em>Quantity needs review</em> : null}
+                      {maxReached || maxReachedItemId === line.item.id ? <em className="pos-max-message">Max available reached.</em> : null}
                     </div>
                     <div className="pos-cart-quantity" aria-label={`Quantity for ${line.item.itemName}`}>
                       <button type="button" disabled={line.quantity <= 1} onClick={() => updateCartQuantity(line.item, line.quantity - 1)} aria-label="Decrease quantity">
@@ -3787,14 +3855,16 @@ function PosPanel({
             <small>POS tax is centralized and configurable; current default is 0 until configured.</small>
             <span className="total">Total <strong>{money(cartTotals.total)}</strong></span>
           </div>
-          <div className="pos-payment-panel">
+          <div className={cartEmpty ? "pos-payment-panel inactive" : "pos-payment-panel"}>
             <h3>Payment Method</h3>
+            {cartEmpty ? <p>Payment options activate after an item is in the cart.</p> : null}
             <div className="pos-payment-options">
               {POS_PAYMENT_METHOD_VALUES.map((method) => (
                 <button
                   className={paymentMethod === method ? "pos-payment active" : "pos-payment"}
                   key={method}
                   type="button"
+                  disabled={cartEmpty}
                   onClick={() => setPaymentMethod(method)}
                 >
                   <CreditCard size={15} />
@@ -3807,12 +3877,14 @@ function PosPanel({
               <input
                 value={paymentReference}
                 onChange={(event) => setPaymentReference(event.currentTarget.value)}
+                disabled={cartEmpty}
                 placeholder="Cash received, Zelle confirmation, manual card note"
               />
+              <small>{posPaymentReferenceHelp(paymentMethod)}</small>
             </label>
           </div>
           <button
-            className="primary-action pos-complete-button"
+            className={actionDisabled ? "primary-action pos-complete-button inactive" : "primary-action pos-complete-button"}
             type="button"
             disabled={actionDisabled}
             onClick={() => {
@@ -3820,7 +3892,7 @@ function PosPanel({
             }}
           >
             <Check size={16} />
-            {submitting || busyLabel === "Completing POS sale" ? "Completing" : `Complete Sale ${money(cartTotals.total)}`}
+            {completeSaleLabel}
           </button>
         </aside>
       </div>
@@ -3831,25 +3903,36 @@ function PosPanel({
             <div className="edit-card-heading">
               <div>
                 <h2>Confirm Sale</h2>
-                <span>This records the sale and deducts inventory.</span>
+                <span>This will record the sale and deduct inventory.</span>
               </div>
               <button className="icon-button" type="button" aria-label="Close confirm sale" onClick={() => setConfirmOpen(false)}>
                 <X size={18} />
               </button>
             </div>
+            <div className="pos-confirm-lines" aria-label="POS sale items">
+              {cartLines.map((line) => (
+                <span key={line.item.id}>
+                  {line.quantity} x {posDisplayTitle(line.item)}
+                  <strong>{money(line.lineTotal)}</strong>
+                </span>
+              ))}
+            </div>
             <div className="pos-confirm-summary">
               <span>Items <strong>{cartQuantity}</strong></span>
-              <span>Payment <strong>{posPaymentMethodLabel(paymentMethod)}</strong></span>
+              <span>Subtotal <strong>{money(cartTotals.subtotal)}</strong></span>
+              <span>Tax <strong>{money(cartTotals.tax)}</strong></span>
+              <span>Payment <strong>{paymentMethod ? posPaymentMethodLabel(paymentMethod) : "Not selected"}</strong></span>
+              {paymentReference.trim() ? <span>Reference <strong>{paymentReference.trim()}</strong></span> : null}
               <span>Total <strong>{money(cartTotals.total)}</strong></span>
             </div>
-            <p className="manual-safety-note">This action cannot be undone from POS. Use sale history corrections if a mistake is found.</p>
+            <p className="manual-safety-note">This will record the sale and deduct inventory. Close or cancel does not save anything.</p>
             <div className="modal-action-row">
-              <button className="mini-action" type="button" disabled={submitting} onClick={() => setConfirmOpen(false)}>
+              <button className="mini-action" type="button" disabled={submitting} ref={confirmCancelRef} onClick={() => setConfirmOpen(false)}>
                 Cancel
               </button>
               <button className="primary-action" type="button" disabled={submitting} onClick={() => void completeSale()}>
                 <Check size={15} />
-                Confirm Sale
+                {submitting ? "Confirming" : "Confirm Sale"}
               </button>
             </div>
           </div>
@@ -3860,6 +3943,17 @@ function PosPanel({
 }
 
 function PosReceipt({ receipt }: { receipt: PosSaleReceiptDTO }) {
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+
+  async function copyReceipt() {
+    try {
+      await navigator.clipboard.writeText(posReceiptSummary(receipt));
+      setCopyStatus("Receipt copied.");
+    } catch {
+      setCopyStatus("Copy is not available in this browser.");
+    }
+  }
+
   return (
     <section className="pos-receipt" aria-live="polite">
       <div>
@@ -3876,8 +3970,15 @@ function PosReceipt({ receipt }: { receipt: PosSaleReceiptDTO }) {
         ))}
       </div>
       <div className="pos-receipt-total">
+        <span>Subtotal <strong>{money(receipt.subtotal)}</strong></span>
+        <span>Tax <strong>{money(receipt.tax)}</strong></span>
         <span>{receipt.paymentMethodLabel}</span>
         <strong>{money(receipt.total)}</strong>
+        <button className="mini-action" type="button" onClick={() => void copyReceipt()}>
+          <ClipboardList size={14} />
+          Copy Receipt
+        </button>
+        {copyStatus ? <small>{copyStatus}</small> : null}
       </div>
     </section>
   );
