@@ -78,6 +78,16 @@ import { createPortal } from "react-dom";
 import { BrowserCodeReader, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType, type Result } from "@zxing/library";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText, type TargetRetailPolicyResult } from "@/lib/target-retail-policy";
+import {
+  authenticityPhotoStatusOptions,
+  authenticityProofStatusOptions,
+  authenticityReceiptStatusOptions,
+  hasPartialAuthenticityProof,
+  isAuthenticityProofReady,
+  normalizeAuthenticityPhotoStatus,
+  normalizeAuthenticityProofStatus,
+  normalizeAuthenticityReceiptStatus
+} from "@/lib/authenticity-proof";
 import { compareTargetDiscordAlert, targetUrlFromTcin, type TargetDiscordAlertInput, type TargetDiscordComparison } from "@/lib/target-discord-alert";
 import { cleanStorefrontDescription, cleanStorefrontTitle, generatedStorefrontDescription, storefrontCopyWarnings } from "@/lib/storefront-copy";
 import { STOREFRONT_CATEGORY_OPTIONS } from "@/lib/storefront-categories";
@@ -7018,7 +7028,7 @@ function inventoryShippingProfileBadges(item: InventoryItemDTO, shippingProfiles
 }
 
 type InventoryRowBadge = {
-  icon: "store" | "shipping" | "defaults" | "warning";
+  icon: "store" | "shipping" | "defaults" | "proof" | "warning";
   label: string;
   title: string;
   tone: "good" | "neutral" | "warning";
@@ -7038,6 +7048,48 @@ function inventoryStoreReadinessRowBadge(item: InventoryItemDTO): InventoryRowBa
         title: "Listing still needs required customer-facing fields before publishing.",
         tone: "warning"
       };
+}
+
+function inventoryAuthenticityProofLabel(item: InventoryItemDTO) {
+  if (isAuthenticityProofReady(item)) return "Proof Ready";
+  if (hasPartialAuthenticityProof(item)) return "Partial Proof";
+  return "Proof Missing";
+}
+
+function inventoryAuthenticityProofTone(item: InventoryItemDTO): InventoryRowBadge["tone"] {
+  if (isAuthenticityProofReady(item)) return "good";
+  if (hasPartialAuthenticityProof(item)) return "neutral";
+  return "warning";
+}
+
+function inventoryAuthenticityProofRowBadge(item: InventoryItemDTO): InventoryRowBadge {
+  const ready = isAuthenticityProofReady(item);
+  const partial = hasPartialAuthenticityProof(item);
+  return {
+    icon: ready ? "proof" : partial ? "defaults" : "warning",
+    label: inventoryAuthenticityProofLabel(item),
+    title: ready
+      ? "Private receipt/source proof, front/back/UPC photos, and UPC verification are tracked as complete."
+      : partial
+        ? "Some private authenticity evidence is tracked; finish the missing proof before Google review."
+        : "Private authenticity evidence has not been tracked for this product yet.",
+    tone: inventoryAuthenticityProofTone(item)
+  };
+}
+
+function authenticityReceiptStatusLabel(value: string | null | undefined) {
+  const normalized = normalizeAuthenticityReceiptStatus(value);
+  return authenticityReceiptStatusOptions.find((option) => option.value === normalized)?.label ?? "Missing";
+}
+
+function authenticityPhotoStatusLabel(value: string | null | undefined) {
+  const normalized = normalizeAuthenticityPhotoStatus(value);
+  return authenticityPhotoStatusOptions.find((option) => option.value === normalized)?.label ?? "Missing";
+}
+
+function authenticityProofStatusLabel(value: string | null | undefined) {
+  const normalized = normalizeAuthenticityProofStatus(value);
+  return authenticityProofStatusOptions.find((option) => option.value === normalized)?.label ?? "Missing";
 }
 
 function inventoryShippingMetadataRowBadge(item: InventoryItemDTO, effectiveData: ReturnType<typeof inventoryEffectiveShippingData>, complete: boolean): InventoryRowBadge {
@@ -7089,6 +7141,7 @@ function inventoryShippingProfileRowBadges(item: InventoryItemDTO, shippingProfi
 function InventoryRowBadgeIcon({ icon }: { icon: InventoryRowBadge["icon"] }) {
   if (icon === "store") return <Store size={12} aria-hidden="true" />;
   if (icon === "shipping") return <PackageSearch size={12} aria-hidden="true" />;
+  if (icon === "proof") return <ShieldCheck size={12} aria-hidden="true" />;
   if (icon === "defaults") return <Check size={12} aria-hidden="true" />;
   return <AlertTriangle size={12} aria-hidden="true" />;
 }
@@ -12512,7 +12565,7 @@ function InventoryList({
                   {formatStatus(item.category)} - {item.setName || item.retailer || "Source unknown"}
                 </small>
                 <span className="inventory-row-readiness-badges" aria-label="Inventory readiness status">
-                  {[inventoryStoreReadinessRowBadge(item), ...inventoryShippingProfileRowBadges(item, shippingProfiles)].map((badge) => (
+                  {[inventoryStoreReadinessRowBadge(item), inventoryAuthenticityProofRowBadge(item), ...inventoryShippingProfileRowBadges(item, shippingProfiles)].map((badge) => (
                     <small className={`inventory-row-badge ${badge.tone}`} key={badge.label} title={badge.title}>
                       <InventoryRowBadgeIcon icon={badge.icon} />
                       {badge.label}
@@ -12652,6 +12705,7 @@ function ProductWorkspaceShell({
     { id: "images", label: "Images" },
     { id: "shipping", label: "Shipping" },
     { id: "sales", label: "Sales" },
+    { id: "authenticity", label: "Proof" },
     { id: "receipts", label: "Receipts / Notes" }
   ];
 
@@ -12726,6 +12780,9 @@ function ProductWorkspaceShell({
               <span className={`chip compact-chip ${inventoryStockStatusTone(item)}`}>{inventoryStockStatusLabel(item)}</span>
               <span className={`chip compact-chip ${storeListingTone(item)}`}>{storeListingLabel(item)}</span>
               <span className={`chip compact-chip ${availableOnline > 0 ? "good" : "bad"}`}>{storefrontListingPublicStatus(item)}</span>
+              <span className={`chip compact-chip ${inventoryAuthenticityProofTone(item) === "good" ? "good" : inventoryAuthenticityProofTone(item) === "warning" ? "watch" : "neutral"}`}>
+                {inventoryAuthenticityProofLabel(item)}
+              </span>
               {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
                 <span className={`chip compact-chip ${badge.tone === "good" ? "good" : "watch"}`} key={badge.label}>
                   {badge.label}
@@ -12890,6 +12947,21 @@ function ProductWorkspaceOverview({
               ) : (
                 <span>Receipt image missing</span>
               )}
+            </div>
+          </section>
+
+          <section className="inventory-detail-section" data-workspace-section="authenticity">
+            <h3>Authenticity Proof</h3>
+            <div className="detail-stat-grid">
+              <DetailStat label="Proof status" value={inventoryAuthenticityProofLabel(item)} tone={inventoryAuthenticityProofTone(item) === "good" ? "good" : inventoryAuthenticityProofTone(item) === "warning" ? "bad" : "neutral"} />
+              <DetailStat label="Source proof" value={authenticityReceiptStatusLabel(item.authenticityReceiptStatus)} />
+              <DetailStat label="Photo proof" value={authenticityPhotoStatusLabel(item.authenticityPhotoStatus)} />
+              <DetailStat label="UPC verified" value={item.authenticityUpcVerified ? "Yes" : "No"} tone={item.authenticityUpcVerified ? "good" : "bad"} />
+            </div>
+            <p className="form-helper">Use this to track private authenticity evidence for Google review. Do not upload receipts or invoices publicly.</p>
+            <div className="detail-line-list">
+              <span>Review state: {authenticityProofStatusLabel(item.authenticityProofStatus)}</span>
+              <span>{item.authenticityNotes || "No private proof notes saved."}</span>
             </div>
           </section>
 
@@ -13264,6 +13336,38 @@ function InventoryEditProductModal({
               <TextInput name="transactionId" label="Transaction ID" defaultValue={item.transactionId ?? ""} />
               <TextInput name="sourceStore" label="Source store" defaultValue={item.sourceStore ?? ""} />
               <TextInput name="paymentMethod" label="Payment method" defaultValue={item.paymentMethod ?? ""} />
+            </div>
+          </section>
+
+          <section className="flow-step">
+            <span>Authenticity</span>
+            <h3>Authenticity proof</h3>
+            <p className="form-helper">Use this to track private authenticity evidence for Google review. Do not upload receipts or invoices publicly.</p>
+            <div className="form-grid compact">
+              <SelectInput
+                name="authenticityProofStatus"
+                label="Proof status"
+                defaultValue={normalizeAuthenticityProofStatus(item.authenticityProofStatus)}
+                options={authenticityProofStatusOptions}
+              />
+              <SelectInput
+                name="authenticityReceiptStatus"
+                label="Receipt/source proof status"
+                defaultValue={normalizeAuthenticityReceiptStatus(item.authenticityReceiptStatus)}
+                options={authenticityReceiptStatusOptions}
+              />
+              <SelectInput
+                name="authenticityPhotoStatus"
+                label="Product photo proof status"
+                defaultValue={normalizeAuthenticityPhotoStatus(item.authenticityPhotoStatus)}
+                options={authenticityPhotoStatusOptions}
+              />
+              <label className="checkbox-label">
+                <input name="authenticityUpcVerified" type="hidden" value="false" />
+                <input name="authenticityUpcVerified" type="checkbox" value="true" defaultChecked={item.authenticityUpcVerified} />
+                UPC/barcode photo matches saved GTIN/UPC
+              </label>
+              <TextareaInput name="authenticityNotes" label="Admin-only proof notes" defaultValue={item.authenticityNotes ?? ""} wide />
             </div>
           </section>
 

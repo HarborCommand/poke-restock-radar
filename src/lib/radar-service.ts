@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { listAccessOverview } from "@/lib/access";
+import {
+  normalizeAuthenticityPhotoStatus,
+  normalizeAuthenticityProofStatus,
+  normalizeAuthenticityReceiptStatus
+} from "@/lib/authenticity-proof";
 import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMinutes } from "@/lib/monitor";
@@ -2180,6 +2185,11 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     storefrontCategory: item.storefrontCategory,
     storefrontTags: parseJsonStringArray(item.storefrontTags),
     publishedAt: item.publishedAt?.toISOString() ?? null,
+    authenticityProofStatus: normalizeAuthenticityProofStatus(item.authenticityProofStatus),
+    authenticityReceiptStatus: normalizeAuthenticityReceiptStatus(item.authenticityReceiptStatus),
+    authenticityPhotoStatus: normalizeAuthenticityPhotoStatus(item.authenticityPhotoStatus),
+    authenticityUpcVerified: item.authenticityUpcVerified === true,
+    authenticityNotes: item.authenticityNotes,
     totalSalesGross,
     totalSalesNet,
     realizedProfitLoss,
@@ -5945,6 +5955,11 @@ export async function createInventoryItem(
     estimatedEbayFee?: number;
     estimatedShippingCost?: number;
     expectedPlan?: string;
+    authenticityProofStatus?: string;
+    authenticityReceiptStatus?: string;
+    authenticityPhotoStatus?: string;
+    authenticityUpcVerified?: boolean;
+    authenticityNotes?: string;
     notes?: string;
   }
 ) {
@@ -6029,6 +6044,11 @@ export async function createInventoryItem(
       recommendedAction: computed.recommendedAction,
       recommendationReason: computed.recommendationReason,
       netProfitAfterFees: computed.netProfitAfterFees,
+      authenticityProofStatus: linkedInput.authenticityProofStatus,
+      authenticityReceiptStatus: linkedInput.authenticityReceiptStatus,
+      authenticityPhotoStatus: linkedInput.authenticityPhotoStatus,
+      authenticityUpcVerified: linkedInput.authenticityUpcVerified,
+      authenticityNotes: linkedInput.authenticityNotes,
       expectedPlan: linkedInput.expectedPlan,
       notes: linkedInput.notes
     },
@@ -6379,6 +6399,11 @@ export async function updateInventoryItem(
       currentMarketEstimate: input.currentMarketEstimate,
       estimatedEbayFee: input.estimatedEbayFee,
       estimatedShippingCost: input.estimatedShippingCost,
+      authenticityProofStatus: input.authenticityProofStatus,
+      authenticityReceiptStatus: input.authenticityReceiptStatus,
+      authenticityPhotoStatus: input.authenticityPhotoStatus,
+      authenticityUpcVerified: input.authenticityUpcVerified,
+      authenticityNotes: input.authenticityNotes,
       expectedPlan: input.expectedPlan,
       notes: input.notes,
       ...productData

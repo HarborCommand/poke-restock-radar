@@ -793,6 +793,11 @@ model InventoryItem {
   storefrontCategory            String?
   storefrontTags                String?
   publishedAt                   DateTime?
+  authenticityProofStatus       String?
+  authenticityReceiptStatus     String?
+  authenticityPhotoStatus       String?
+  authenticityUpcVerified       Boolean?
+  authenticityNotes             String?
   expectedPlan                  String?
   notes                         String?
   createdAt                     DateTime                @default(now())
