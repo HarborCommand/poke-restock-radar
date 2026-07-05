@@ -18,6 +18,9 @@ export type GradeType = "RAW" | "PSA_9" | "PSA_10" | "BGS_9_5" | "BGS_10" | "BGS
 export type CompSourceQuality = "EBAY_SOLD" | "PRICECHARTING" | "TCGPLAYER" | "TCGCSV_ESTIMATE" | "MANUAL_ESTIMATE" | "ACTIVE_ASKING";
 export type Era = "MODERN" | "VINTAGE";
 export type StoreVisitResult = "stock_seen" | "empty_shelf" | "vendor_spotted" | "bought_product" | "no_visit";
+export type AuthenticityProofStatus = "missing" | "partial" | "complete";
+export type AuthenticityReceiptStatus = "missing" | "receipt" | "invoice" | "order_history" | "other";
+export type AuthenticityPhotoStatus = "missing" | "front_only" | "front_back" | "front_back_upc";
 export type Zone = "MIAMI" | "FORT_LAUDERDALE" | "ORLANDO" | "TAMPA" | "JACKSONVILLE" | "CUSTOM";
 export type ProductVerificationStatus =
   | "UNVERIFIED"
@@ -195,6 +198,11 @@ export type InventoryItemDTO = {
   storefrontCategory: string | null;
   storefrontTags: string[];
   publishedAt: string | null;
+  authenticityProofStatus: AuthenticityProofStatus;
+  authenticityReceiptStatus: AuthenticityReceiptStatus;
+  authenticityPhotoStatus: AuthenticityPhotoStatus;
+  authenticityUpcVerified: boolean;
+  authenticityNotes: string | null;
   totalSalesGross: number;
   totalSalesNet: number;
   realizedProfitLoss: number;

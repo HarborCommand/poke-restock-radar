@@ -20,6 +20,9 @@ export const inventoryItemStatusSchema = z.enum(["sealed", "opened", "graded", "
 export const inventoryListingStatusSchema = z.enum(["not_listed", "listed", "sold", "held"]);
 export const inventoryRecommendationSchema = z.enum(["HOLD", "SELL_NOW", "LIST_HIGH", "GRADE_FIRST", "RIP_OPEN", "AVOID_BUYING_MORE"]);
 export const storeStatusSchema = z.enum(["draft", "active", "hidden", "sold_out"]);
+export const authenticityProofStatusSchema = z.enum(["missing", "partial", "complete"]);
+export const authenticityReceiptStatusSchema = z.enum(["missing", "receipt", "invoice", "order_history", "other"]);
+export const authenticityPhotoStatusSchema = z.enum(["missing", "front_only", "front_back", "front_back_upc"]);
 export const inventoryProductImageSourceSchema = z.enum(["uploaded", "url", "upc_lookup", "retailer", "manual", "existing_image_url"]);
 export const eraSchema = z.enum(["MODERN", "VINTAGE"]);
 export const zoneSchema = z.enum(["MIAMI", "FORT_LAUDERDALE", "ORLANDO", "TAMPA", "JACKSONVILLE", "CUSTOM"]);
@@ -785,6 +788,11 @@ export const inventoryCreateSchema = z.object({
   estimatedEbayFee: optionalMoney,
   estimatedShippingCost: optionalMoney,
   expectedPlan: optionalTrimmed,
+  authenticityProofStatus: authenticityProofStatusSchema.default("missing"),
+  authenticityReceiptStatus: authenticityReceiptStatusSchema.default("missing"),
+  authenticityPhotoStatus: authenticityPhotoStatusSchema.default("missing"),
+  authenticityUpcVerified: checkboxBoolean.default(false),
+  authenticityNotes: optionalTrimmed,
   notes: optionalTrimmed
 });
 
