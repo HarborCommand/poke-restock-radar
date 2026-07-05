@@ -263,6 +263,8 @@ test("POS client sends idempotency key and clamps cart quantities to available s
   assert.match(posPanel, /Math\.min\(item\.quantityOwned, quantity\)/);
   assert.match(posPanel, /if \(submitting\) return/);
   assert.match(posPanel, /disabled=\{submitting\}/);
+  assert.match(posPanel, /aria-label=\{`Decrease \$\{posDisplayTitle\(line\.item\)\} quantity`\}/);
+  assert.match(posPanel, /aria-label=\{`Increase \$\{posDisplayTitle\(line\.item\)\} quantity`\}/);
 });
 
 test("POS tab renders for admin with scan, cart, payment, and confirmation affordances", () => {
@@ -313,6 +315,10 @@ test("POS quantity and product cards show low stock, added feedback, and max ava
   assert.match(css, /\.pos-product-card\.just-added/);
   assert.match(css, /\.pos-stock-warning/);
   assert.match(css, /\.pos-max-message/);
+  assert.match(css, /\.pos-product-card:hover/);
+  assert.match(css, /\.pos-filter:focus-visible/);
+  assert.match(css, /\.pos-payment:focus-visible/);
+  assert.match(css, /\.pos-add-button:focus-visible/);
   assert.match(css, /\.pos-cart-quantity\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(38px, 1fr\) 40px/);
 });
 

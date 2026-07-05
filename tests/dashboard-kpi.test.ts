@@ -1283,7 +1283,9 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Secure Checkout/);
   assert.match(client, /Fast Shipping/);
   assert.match(client, /Carefully Packaged/);
-  assert.match(client, /100% Authentic/);
+  assert.match(client, /Genuine products/);
+  assert.match(client, /Independent reseller/);
+  assert.doesNotMatch(client, /100% Authentic/);
   assert.match(client, /Proceed to Secure Checkout/);
   assert.match(client, /Powered by Stripe/);
   assert.match(client, /Shipping calculated at checkout/);
@@ -1345,6 +1347,13 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.doesNotMatch(client, /https?:\/\/[^"']*(visa|mastercard|amex|americanexpress|discover|stripe)[^"']*/i);
 
   assert.match(css, /gdg-checkout-trust-row/);
+  assert.match(css, /Site\/admin polish pass/);
+  assert.match(css, /\.gdg-product-card:focus-within/);
+  assert.match(css, /\.gdg-product-card \.gdg-card-actions > \*/);
+  assert.match(css, /\.gdg-cart-summary\s*\{[\s\S]*position:\s*sticky/);
+  assert.match(css, /\.gdg-checkout-trust-row article\s*\{[\s\S]*min-height:\s*74px/);
+  assert.match(css, /body \.app-main-inventory \.inventory-filter-row\s*\{[\s\S]*repeat\(auto-fit, minmax\(min\(180px, 100%\), 1fr\)\) !important/);
+  assert.match(css, /body \.app-main-inventory \.inventory-filter-row > \*\s*\{[\s\S]*min-width:\s*0/);
   assert.match(css, /gdg-checkout-panel/);
   assert.match(css, /gdg-invoice-form-card/);
   assert.match(css, /gdg-cart-line-price/);
