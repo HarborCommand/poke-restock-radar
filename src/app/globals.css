@@ -20655,10 +20655,10 @@ body:has(.shop-shell) {
 
 .gdg-footer {
   display: grid;
-  grid-template-columns: minmax(260px, 1.2fr) minmax(240px, 0.9fr) auto;
-  align-items: center;
-  gap: 22px;
-  width: min(1440px, 100%);
+  grid-template-columns: minmax(280px, 1.1fr) minmax(240px, 0.72fr) minmax(300px, 1fr);
+  align-items: start;
+  gap: clamp(18px, 3vw, 34px);
+  width: min(1280px, calc(100% - 32px));
   margin: 22px auto 0;
   border: 1px solid #e5eaf0;
   border-radius: 28px 28px 0 0;
@@ -20668,10 +20668,18 @@ body:has(.shop-shell) {
   box-shadow: 0 -10px 36px rgba(15, 23, 42, 0.04);
 }
 
+.gdg-footer-brand-column,
+.gdg-footer-legal {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
 .gdg-footer p,
 .gdg-footer small {
   margin: 0;
   color: #64748b;
+  line-height: 1.55;
 }
 
 .gdg-footer-brand {
@@ -20707,15 +20715,22 @@ body:has(.shop-shell) {
 
 .gdg-footer nav {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, max-content));
-  justify-content: center;
-  gap: 10px 16px;
+  grid-template-columns: repeat(2, minmax(max-content, 1fr));
+  justify-content: start;
+  justify-items: start;
+  align-items: start;
+  gap: 10px 22px;
 }
 
 .gdg-footer nav a {
   color: #334155;
   font-weight: 800;
   text-decoration: none;
+  white-space: nowrap;
+}
+
+.gdg-footer-legal small {
+  overflow-wrap: break-word;
 }
 
 .order-reporting-filter {
@@ -20975,7 +20990,7 @@ body:has(.shop-shell) {
   }
 
   .gdg-footer nav {
-    grid-template-columns: repeat(2, minmax(0, max-content));
+    grid-template-columns: repeat(2, minmax(max-content, 1fr));
     justify-content: start;
   }
 
@@ -24151,8 +24166,23 @@ body .catalog-action-menu-floating {
   text-transform: uppercase;
 }
 
+.gdg-rewards-sidekick {
+  display: grid;
+  align-items: stretch;
+}
+
 .gdg-rewards-grabby-card {
-  margin: 16px 0;
+  width: 100%;
+  margin: 0;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: center;
+  border-color: rgba(245, 166, 35, 0.22);
+  border-radius: 22px;
+  padding: 18px 22px;
+}
+
+.gdg-rewards-grabby-card .grabby-mascot {
+  width: 96px;
 }
 
 .gdg-rewards-balance-card {
@@ -25762,6 +25792,20 @@ body .catalog-action-menu-floating {
     border-radius: 22px;
   }
 
+  .gdg-rewards-sidekick {
+    align-items: stretch;
+  }
+
+  .gdg-rewards-grabby-card {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .gdg-rewards-grabby-card .grabby-mascot {
+    width: 84px;
+  }
+
   .gdg-rewards-hero-copy,
   .gdg-rewards-balance-card {
     position: relative;
@@ -26696,8 +26740,6 @@ body .app-main-inventory .inventory-filter-row > * {
 .gdg-product-body h3 a,
 .gdg-detail-info h1,
 .gdg-cart-line h2,
-.gdg-footer a,
-.gdg-footer small,
 .gdg-login-card-heading h2,
 .gdg-login-card-copy {
   overflow-wrap: anywhere;

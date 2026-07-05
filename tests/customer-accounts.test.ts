@@ -537,6 +537,10 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.doesNotMatch(accountComponents, /gdg-account-card-fan/);
   assert.match(accountDashboard, /RewardsInfoStrip/);
   assert.match(accountComponents, /gdg-rewards-info-strip/);
+  assert.match(accountComponents, /className="gdg-rewards-sidekick"/);
+  assert.match(accountComponents, /className="gdg-rewards-grabby-card"/);
+  assert.match(css, /\.gdg-rewards-sidekick\s*\{\s*\r?\n\s*display: grid;/);
+  assert.match(css, /\.gdg-rewards-grabby-card\s*\{[\s\S]*?width: 100%;[\s\S]*?grid-template-columns: 108px minmax\(0, 1fr\);/);
   assert.match(accountDashboard, /recentOrderItem = previewOrders\[0\]\?\.items\.find\(\(item\) => item\.imageUrl\)/);
   assert.match(accountDashboard, /recentOrderImageUrl = recentOrderItem\?\.imageUrl/);
   assert.match(accountDashboard, /gdg-account-orders-preview-visual has-image/);
@@ -555,6 +559,10 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountDashboard, /Redemption coming soon/);
   assert.match(accountDashboard, /Rewards redemption coming soon/);
   assert.match(accountDashboard, /Display only/);
+  assert.match(accountComponents, /const availablePoints = balance\?\.availablePoints \?\? 0/);
+  assert.match(accountComponents, /const lifetimeEarnedPoints = balance\?\.lifetimeEarnedPoints \?\? 0/);
+  assert.match(accountComponents, /const pendingPoints = balance\?\.pendingPoints \?\? 0/);
+  assert.match(accountComponents, /Points are display-only and do not affect checkout totals yet\./);
   assert.match(accountDashboard, /Orders placed with this verified email, including guest checkout orders, appear here/);
   assert.doesNotMatch(accountDashboard, /gdg-account-grabby-card/);
   assert.doesNotMatch(accountDashboard, /variant="support"/);
@@ -656,7 +664,8 @@ test("storefront exposes optional account entry points without requiring login f
   assert.match(client, /accountSignedIn \? "My Account" : "Sign In \/ Create Account"/);
   assert.match(client, /className="gdg-account-entry"/);
   assert.match(client, /gdg-mobile-account-nav/);
-  assert.match(client, /<Link href=\{accountHref\}>My Account<\/Link>/);
+  assert.match(client, /<button\s*\r?\n\s*className="gdg-account-entry"/);
+  assert.match(client, /customerAccountMenuLinks\.map\(\(item\) => \(/);
   assert.match(client, /<Link href="\/account\/login" className="gdg-cart-account-link">\s*\r?\n\s*Create an account\s*\r?\n\s*<\/Link>/);
   assert.match(client, /to track orders\{settings\.customerAccounts\.rewardsEnabled \? " and rewards" : ""\}/);
   assert.match(client, /Proceed to Secure Checkout/);
