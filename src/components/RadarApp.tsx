@@ -7897,6 +7897,7 @@ function InventoryPanel({
                   }
                 ).then(() => setPendingInventoryMutation(mutation));
               }}
+              onEditProof={() => setProductWorkspace({ itemId: workspaceItem.id, mode: "edit-product" })}
             />
           ) : null}
           {productWorkspace.mode === "add-stock" ? (
@@ -12729,6 +12730,16 @@ function ProductWorkspaceShell({
   const availableOnline = storefrontListingAvailableForSale(item);
   const publicPrice = inventoryDisplaySellPrice(item);
   const publicPriceSource = inventoryDisplaySellPriceSource(item);
+  const [activeSectionId, setActiveSectionId] = useState<ProductWorkspaceSectionId>(focusSection ?? "overview");
+  const proofTone = inventoryAuthenticityProofTone(item);
+  const shippingReady = inventoryShippingProfileComplete(item, shippingProfiles);
+  const rawHeaderBadges: Array<{ label: string; tone: string }> = [
+    { label: inventoryStockStatusLabel(item), tone: inventoryStockStatusTone(item) },
+    { label: storeListingLabel(item), tone: storeListingTone(item) },
+    { label: inventoryAuthenticityProofLabel(item), tone: proofTone === "good" ? "good" : proofTone === "warning" ? "watch" : "neutral" },
+    { label: shippingReady ? "Shipping Ready" : "Needs Shipping", tone: shippingReady ? "good" : "watch" }
+  ];
+  const headerBadges = rawHeaderBadges.filter((badge, index, badges) => badges.findIndex((candidate) => candidate.label === badge.label) === index);
   const workspaceActions: Array<{ mode: ProductWorkspaceMode; label: string; icon: typeof Plus; disabled?: boolean; title?: string }> = [
     { mode: "add-stock", label: "Add Stock", icon: Plus },
     {
@@ -12785,6 +12796,7 @@ function ProductWorkspaceShell({
   );
 
   function openWorkspaceSection(sectionId: ProductWorkspaceSectionId) {
+    setActiveSectionId(sectionId);
     onModeChange("overview");
     window.requestAnimationFrame(() => {
       focusWorkspaceSection(sectionId);
@@ -12836,6 +12848,7 @@ function ProductWorkspaceShell({
 
   useEffect(() => {
     if (!focusSection || mode !== "overview") return;
+    setActiveSectionId(focusSection);
     let timer: number | null = null;
     const frame = window.requestAnimationFrame(() => {
       timer = window.setTimeout(() => {
@@ -12847,6 +12860,10 @@ function ProductWorkspaceShell({
       if (timer !== null) window.clearTimeout(timer);
     };
   }, [focusSection, focusWorkspaceSection, mode, onSectionFocused]);
+
+  useEffect(() => {
+    if (mode !== "overview") setActiveSectionId("overview");
+  }, [mode]);
 
   useEffect(() => clearWorkspaceSectionHighlight, [clearWorkspaceSectionHighlight]);
 
@@ -12863,17 +12880,11 @@ function ProductWorkspaceShell({
           <InventoryImage item={item} />
           <div className="product-workspace-title">
             <span className="eyeline">{productWorkspaceTitle(mode)}</span>
-            <h2>{item.itemName}</h2>
+            <h2 title={item.itemName}>{item.itemName}</h2>
             <p>{formatStatus(item.category)} - {inventoryPrimaryIdentifier(item)}</p>
-            <div className="inventory-detail-badges">
-              <span className={`chip compact-chip ${inventoryStockStatusTone(item)}`}>{inventoryStockStatusLabel(item)}</span>
-              <span className={`chip compact-chip ${storeListingTone(item)}`}>{storeListingLabel(item)}</span>
-              <span className={`chip compact-chip ${availableOnline > 0 ? "good" : "bad"}`}>{storefrontListingPublicStatus(item)}</span>
-              <span className={`chip compact-chip ${inventoryAuthenticityProofTone(item) === "good" ? "good" : inventoryAuthenticityProofTone(item) === "warning" ? "watch" : "neutral"}`}>
-                {inventoryAuthenticityProofLabel(item)}
-              </span>
-              {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
-                <span className={`chip compact-chip ${badge.tone === "good" ? "good" : "watch"}`} key={badge.label}>
+            <div className="inventory-detail-badges product-workspace-status-strip" aria-label="Product workspace status">
+              {headerBadges.map((badge) => (
+                <span className={`chip compact-chip ${badge.tone}`} key={badge.label}>
                   {badge.label}
                 </span>
               ))}
@@ -12893,7 +12904,7 @@ function ProductWorkspaceShell({
 
         <nav className="product-workspace-section-tabs" aria-label="Product workspace sections">
           {sections.map((section) => (
-            <button className={mode === "overview" && section.id === "overview" ? "active" : ""} key={section.id} type="button" onClick={() => openWorkspaceSection(section.id)}>
+            <button className={mode === "overview" && section.id === activeSectionId ? "active" : ""} key={section.id} type="button" onClick={() => openWorkspaceSection(section.id)}>
               {section.label}
             </button>
           ))}
@@ -12919,13 +12930,13 @@ function ProductWorkspaceShell({
           {item.publishToStore && item.publicSlug ? (
             <a className="mini-action" href={`/shop/product/${item.publicSlug}`} target="_blank" rel="noreferrer">
               <ExternalLink size={14} />
-              View Public Page
+              View Storefront Page
             </a>
           ) : null}
           {item.exactProductUrl ? (
             <a className="mini-action" href={item.exactProductUrl} target="_blank" rel="noreferrer">
               <ExternalLink size={14} />
-              Product Page
+              Retailer Source
             </a>
           ) : null}
         </section>
@@ -12940,12 +12951,14 @@ function ProductWorkspaceOverview({
   item,
   shippingProfiles,
   onEditStockLot,
-  onDeleteStockLot
+  onDeleteStockLot,
+  onEditProof
 }: {
   item: InventoryItemDTO;
   shippingProfiles: ShippingProfileDTO[];
   onEditStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
   onDeleteStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
+  onEditProof: () => void;
 }) {
   const listingQuality = storefrontListingQuality(item);
   const listingAvailable = storefrontListingAvailableForSale(item);
@@ -13039,18 +13052,33 @@ function ProductWorkspaceOverview({
             </div>
           </section>
 
-          <section className="inventory-detail-section" data-workspace-section="authenticity">
-            <h3>Authenticity Proof</h3>
+          <section className="inventory-detail-section product-workspace-proof-card" data-workspace-section="authenticity">
+            <div className="product-workspace-card-head">
+              <div>
+                <h3>Authenticity Proof</h3>
+                <p>Track private proof for Google review. Do not upload receipts or invoices publicly.</p>
+              </div>
+              <button className="mini-action solid product-workspace-proof-action" type="button" onClick={onEditProof}>
+                <ShieldCheck size={14} />
+                Edit Proof Status
+              </button>
+            </div>
             <div className="detail-stat-grid">
               <DetailStat label="Proof status" value={inventoryAuthenticityProofLabel(item)} tone={inventoryAuthenticityProofTone(item) === "good" ? "good" : inventoryAuthenticityProofTone(item) === "warning" ? "bad" : "neutral"} />
               <DetailStat label="Source proof" value={authenticityReceiptStatusLabel(item.authenticityReceiptStatus)} />
               <DetailStat label="Photo proof" value={authenticityPhotoStatusLabel(item.authenticityPhotoStatus)} />
               <DetailStat label="UPC verified" value={item.authenticityUpcVerified ? "Yes" : "No"} tone={item.authenticityUpcVerified ? "good" : "bad"} />
             </div>
-            <p className="form-helper">Use this to track private authenticity evidence for Google review. Do not upload receipts or invoices publicly.</p>
-            <div className="detail-line-list">
-              <span>Review state: {authenticityProofStatusLabel(item.authenticityProofStatus)}</span>
-              <span>{item.authenticityNotes || "No private proof notes saved."}</span>
+            <div className="product-workspace-proof-guidance" aria-label="Authenticity proof checklist">
+              <span>Front photo</span>
+              <span>Back/sealed photo</span>
+              <span>UPC/barcode photo</span>
+              <span>Receipt/order proof if available</span>
+            </div>
+            <p className="form-helper">Track private proof for Google review. Do not upload receipts or invoices publicly.</p>
+            <div className="detail-line-list product-workspace-proof-summary">
+              <span>Review state: <strong>{authenticityProofStatusLabel(item.authenticityProofStatus)}</strong></span>
+              <span>Private notes: <strong>{item.authenticityNotes ? "Saved" : "Not saved"}</strong></span>
             </div>
           </section>
 

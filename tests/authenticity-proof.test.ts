@@ -123,6 +123,47 @@ test("inventory proof badge opens the product workspace directly to authenticity
   assert.match(css, /body \.inventory-detail-section\.workspace-section-highlight/);
 });
 
+test("product workspace proof polish keeps status compact and proof action direct", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const css = readProjectFile("src/app/globals.css");
+  const workspace = sourceSlice(app, "function ProductWorkspaceShell", "function ProductWorkspaceOverview");
+  const overview = sourceSlice(app, "function ProductWorkspaceOverview", "function InventoryEditStockLotModal");
+  const headerBadges = sourceSlice(workspace, "const rawHeaderBadges", "const workspaceActions");
+  const headerBadgeMarkup = sourceSlice(workspace, "product-workspace-status-strip", "product-workspace-stats");
+
+  assert.match(headerBadges, /inventoryStockStatusLabel\(item\)/);
+  assert.match(headerBadges, /storeListingLabel\(item\)/);
+  assert.match(headerBadges, /inventoryAuthenticityProofLabel\(item\)/);
+  assert.match(headerBadges, /Shipping Ready/);
+  assert.match(headerBadges, /Needs Shipping/);
+  assert.match(headerBadges, /findIndex\(\(candidate\) => candidate\.label === badge\.label\) === index/);
+  assert.doesNotMatch(headerBadgeMarkup, /storefrontListingPublicStatus\(item\)|inventoryShippingProfileBadges\(item, shippingProfiles\)\.map/);
+
+  assert.match(workspace, /activeSectionId/);
+  assert.match(workspace, /setActiveSectionId\(sectionId\)/);
+  assert.match(workspace, /View Storefront Page/);
+  assert.match(workspace, /Retailer Source/);
+  assert.doesNotMatch(workspace, /View Public Page|>\s*Product Page\s*</);
+
+  assert.match(overview, /onEditProof: \(\) => void/);
+  assert.match(overview, /product-workspace-proof-card/);
+  assert.match(overview, /Edit Proof Status/);
+  assert.match(overview, /product-workspace-proof-guidance/);
+  assert.match(overview, /Track private proof for Google review\. Do not upload receipts or invoices publicly\./);
+  assert.match(overview, /Front photo/);
+  assert.match(overview, /Back\/sealed photo/);
+  assert.match(overview, /UPC\/barcode photo/);
+  assert.match(overview, /Receipt\/order proof if available/);
+  assert.match(overview, /Private notes:[\s\S]*item\.authenticityNotes \? "Saved" : "Not saved"/);
+  assert.match(app, /onEditProof=\{\(\) => setProductWorkspace\(\{ itemId: workspaceItem\.id, mode: "edit-product" \}\)\}/);
+
+  assert.match(css, /body \.product-workspace-status-strip/);
+  assert.match(css, /body \.product-workspace-card-head/);
+  assert.match(css, /body \.product-workspace-proof-card/);
+  assert.match(css, /body \.product-workspace-proof-guidance/);
+  assert.match(css, /\.product-workspace-actions a:focus-visible/);
+});
+
 test("authenticity proof fields stay out of public storefront, feed, schema, and customer surfaces", () => {
   const publicType = sourceSlice(readProjectFile("src/types/radar.ts"), "export type PublicStoreProductDTO", "export type StorefrontSettingsDTO");
   const storefront = readProjectFile("src/lib/storefront.ts");

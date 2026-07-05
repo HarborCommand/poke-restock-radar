@@ -659,8 +659,8 @@ test("inventory row actions and stock lot details make sold-out corrections obvi
   assert.match(workspace, /Record Sale/);
   assert.match(workspace, /Edit Product/);
   assert.match(workspace, /Edit Listing/);
-  assert.match(workspace, /View Public Page/);
-  assert.match(workspace, /Product Page/);
+  assert.match(workspace, /View Storefront Page/);
+  assert.match(workspace, /Retailer Source/);
   assert.match(lotsComponent, /Active stock lots/);
   assert.match(lotsComponent, /Depleted stock lots/);
   assert.match(lotsComponent, /remainingQuantity > 0/);
