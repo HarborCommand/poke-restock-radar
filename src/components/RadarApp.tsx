@@ -7875,31 +7875,34 @@ function InventoryPanel({
           onModeChange={setWorkspaceMode}
           onSectionFocused={clearProductWorkspaceFocusSection}
         >
-          {productWorkspace.mode === "overview" ? (
-            <ProductWorkspaceOverview
-              item={workspaceItem}
-              shippingProfiles={dashboard.shippingProfiles}
-              onEditStockLot={(item, lot) => {
-                setProductWorkspace({ itemId: item.id, mode: "adjust-stock", lotId: lot.id });
-              }}
-              onDeleteStockLot={(item, lot) => {
-                const mutation = inventoryMutationForItem("stock_lot_removed", "Stock lot removed. Inventory quantity and average cost refreshed.", item);
-                return runAction(
-                  `Removing stock lot ${lot.id}`,
-                  () =>
-                    requestJson(`/api/radar/inventory/${item.id}/stock-lots/${lot.id}`, {
-                      method: "DELETE"
-                    }),
-                  {
-                    confirm:
-                      "Remove this stock lot? This is for fixing mistaken stock entries. Lots with recorded sales cannot be removed.",
-                    success: "Stock lot removed"
-                  }
-                ).then(() => setPendingInventoryMutation(mutation));
-              }}
-              onEditProof={() => setProductWorkspace({ itemId: workspaceItem.id, mode: "edit-product" })}
-            />
-          ) : null}
+          {(activeSectionId) => (
+            <>
+              {productWorkspace.mode === "overview" ? (
+                <ProductWorkspaceOverview
+                  item={workspaceItem}
+                  activeSectionId={activeSectionId}
+                  shippingProfiles={dashboard.shippingProfiles}
+                  onEditStockLot={(item, lot) => {
+                    setProductWorkspace({ itemId: item.id, mode: "adjust-stock", lotId: lot.id });
+                  }}
+                  onDeleteStockLot={(item, lot) => {
+                    const mutation = inventoryMutationForItem("stock_lot_removed", "Stock lot removed. Inventory quantity and average cost refreshed.", item);
+                    return runAction(
+                      `Removing stock lot ${lot.id}`,
+                      () =>
+                        requestJson(`/api/radar/inventory/${item.id}/stock-lots/${lot.id}`, {
+                          method: "DELETE"
+                        }),
+                      {
+                        confirm:
+                          "Remove this stock lot? This is for fixing mistaken stock entries. Lots with recorded sales cannot be removed.",
+                        success: "Stock lot removed"
+                      }
+                    ).then(() => setPendingInventoryMutation(mutation));
+                  }}
+                  onEditProof={() => setProductWorkspace({ itemId: workspaceItem.id, mode: "edit-product" })}
+                />
+              ) : null}
           {productWorkspace.mode === "add-stock" ? (
             <PurchaseFlow
               key={`${workspaceItem.id}-${productWorkspace.prefill?.upc || ""}`}
@@ -7980,6 +7983,8 @@ function InventoryPanel({
               onClose={() => setProductWorkspace(null)}
             />
           ) : null}
+            </>
+          )}
         </ProductWorkspaceShell>
       ) : null}
     </>
@@ -12722,7 +12727,7 @@ function ProductWorkspaceShell({
   onModeChange: (mode: ProductWorkspaceMode) => void;
   onClose: () => void;
   onSectionFocused: () => void;
-  children: ReactNode;
+  children: (activeSectionId: ProductWorkspaceSectionId) => ReactNode;
 }) {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const highlightedSectionRef = useRef<HTMLElement | null>(null);
@@ -12941,20 +12946,68 @@ function ProductWorkspaceShell({
           ) : null}
         </section>
 
-        <main className="product-workspace-content">{children}</main>
+        <main className="product-workspace-content">{children(activeSectionId)}</main>
       </div>
     </div>
   );
 }
 
+function ProductWorkspaceAuthenticityProofCard({
+  item,
+  onEditProof,
+  primary = false
+}: {
+  item: InventoryItemDTO;
+  onEditProof: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <section
+      className={`inventory-detail-section product-workspace-proof-card ${primary ? "product-workspace-primary-card" : ""}`}
+      data-workspace-section="authenticity"
+      key="authenticity"
+    >
+      <div className="product-workspace-card-head">
+        <div>
+          <h3>Authenticity Proof</h3>
+          <p>Track private proof for Google review. Do not upload receipts or invoices publicly.</p>
+        </div>
+        <button className="mini-action solid product-workspace-proof-action" type="button" onClick={onEditProof}>
+          <ShieldCheck size={14} />
+          Edit Proof Status
+        </button>
+      </div>
+      <div className="detail-stat-grid">
+        <DetailStat label="Proof status" value={inventoryAuthenticityProofLabel(item)} tone={inventoryAuthenticityProofTone(item) === "good" ? "good" : inventoryAuthenticityProofTone(item) === "warning" ? "bad" : "neutral"} />
+        <DetailStat label="Source proof" value={authenticityReceiptStatusLabel(item.authenticityReceiptStatus)} />
+        <DetailStat label="Photo proof" value={authenticityPhotoStatusLabel(item.authenticityPhotoStatus)} />
+        <DetailStat label="UPC verified" value={item.authenticityUpcVerified ? "Yes" : "No"} tone={item.authenticityUpcVerified ? "good" : "bad"} />
+      </div>
+      <div className="product-workspace-proof-guidance" aria-label="Authenticity proof checklist">
+        <span>Front photo</span>
+        <span>Back/sealed photo</span>
+        <span>UPC/barcode photo</span>
+        <span>Receipt/order proof if available</span>
+      </div>
+      <p className="form-helper">Track private proof for Google review. Do not upload receipts or invoices publicly.</p>
+      <div className="detail-line-list product-workspace-proof-summary">
+        <span>Review state: <strong>{authenticityProofStatusLabel(item.authenticityProofStatus)}</strong></span>
+        <span>Private notes: <strong>{item.authenticityNotes ? "Saved" : "Not saved"}</strong></span>
+      </div>
+    </section>
+  );
+}
+
 function ProductWorkspaceOverview({
   item,
+  activeSectionId,
   shippingProfiles,
   onEditStockLot,
   onDeleteStockLot,
   onEditProof
 }: {
   item: InventoryItemDTO;
+  activeSectionId: ProductWorkspaceSectionId;
   shippingProfiles: ShippingProfileDTO[];
   onEditStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
   onDeleteStockLot: (item: InventoryItemDTO, lot: InventoryStockLotDTO) => void;
@@ -12966,156 +13019,155 @@ function ProductWorkspaceOverview({
   const listingWarnings = storefrontListingStockWarnings(item);
   const listingDetailTone = storeListingTone(item) === "good" ? "good" : storeListingTone(item) === "bad" ? "bad" : "neutral";
   const shippingData = inventoryEffectiveShippingData(item, shippingProfiles);
+  const overviewSection = (
+    <section className="inventory-detail-section" data-workspace-section="overview" key="overview">
+      <h3>Overview</h3>
+      <div className="detail-stat-grid">
+        <DetailStat label="On hand" value={String(item.quantityOwned)} />
+        <DetailStat label="Available online" value={String(listingAvailable)} tone={listingAvailable > 0 ? "good" : "bad"} />
+        <DetailStat label="Sold" value={String(item.quantitySold)} />
+        <DetailStat label="Average Cost" value={money(item.averageCost)} />
+        <DetailStat label="Total Cost Basis" value={money(item.averageCost * item.quantityOwned)} />
+        <DetailStat label="Target Sell Price" value={item.targetSellPrice !== null ? money(item.targetSellPrice) : "Not set"} />
+        <DetailStat label="Actual Sales" value={money(item.totalSalesGross)} />
+        <DetailStat label="Realized Profit" value={item.sales.length ? money(item.realizedProfitLoss) : "No sales yet"} tone={(item.realizedProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
+        <DetailStat label="Realized ROI" value={item.realizedRoiPercent !== null ? percent(item.realizedRoiPercent) : "No sales yet"} />
+      </div>
+      <div className="detail-line-list">
+        <span>Status: <strong>{inventoryStockStatusLabel(item)}</strong></span>
+        <span>Public status: <strong>{storefrontListingPublicStatus(item)}</strong></span>
+        <span>
+          Manual listing cap:{" "}
+          {manualListingAvailable === null || manualListingAvailable === undefined ? "Not set; using on-hand stock" : manualListingAvailable}
+        </span>
+        <span>Linked product: {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
+        <span>Brand {item.brand || "Missing"} - Model {item.model || "Missing"} - MSRP {money(item.msrp)}</span>
+        {item.description ? <span>{item.description}</span> : null}
+        <span>UPC {item.upc || "Missing"} - SKU {item.sku || "Missing"} - DPCI {item.dpci || "Missing"} - ASIN {item.asin || "Missing"}</span>
+      </div>
+    </section>
+  );
+  const listingSection = (
+    <section className="inventory-detail-section" data-workspace-section="listing" key="listing">
+      <h3>Storefront Listing</h3>
+      <div className="detail-stat-grid">
+        <DetailStat label="Publish status" value={storeListingLabel(item)} tone={listingDetailTone} />
+        <DetailStat label="Public price" value={item.publicPrice !== null ? money(item.publicPrice) : "Not set"} />
+        <DetailStat label="Available online" value={String(listingAvailable)} />
+        <DetailStat label="Public status" value={storefrontListingPublicStatus(item)} tone={listingAvailable > 0 ? "good" : "bad"} />
+        <DetailStat label="Category" value={item.storefrontCategory || storefrontPublicCategory(item)} />
+      </div>
+      {listingWarnings.length ? (
+        <div className="inventory-warning-list" role="status">
+          {listingWarnings.map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+      <div className="storefront-quality-list">
+        {listingQuality.map((check) => (
+          <span className={check.complete ? "good" : "watch"} key={check.key}>
+            {storefrontListingQualityText(check)}
+          </span>
+        ))}
+      </div>
+      <p className="form-helper">Public storefront listings never expose cost basis, source receipts, supplier notes, market value, or tracker data.</p>
+    </section>
+  );
+  const imagesSection = (
+    <section className="inventory-detail-section" data-workspace-section="images" key="images">
+      <h3>Product Images</h3>
+      <InventoryDetailImageGallery item={item} />
+    </section>
+  );
+  const stockSection = (
+    <section className="inventory-detail-section" data-workspace-section="stock" key="stock">
+      <h3>Stock Lots</h3>
+      <CompactLotsList item={item} onEditLot={onEditStockLot} onDeleteLot={onDeleteStockLot} />
+    </section>
+  );
+  const salesSection = (
+    <section className="inventory-detail-section" data-workspace-section="sales" key="sales">
+      <h3>Sales History</h3>
+      <CompactSalesList item={item} />
+    </section>
+  );
+  const receiptsSection = (
+    <section className="inventory-detail-section" data-workspace-section="receipts" key="receipts">
+      <h3>Attachments / Receipts</h3>
+      <div className="detail-line-list">
+        <span>Receipt: {item.receiptNumber || "Not saved"}</span>
+        <span>Order: {item.orderNumber || "Not saved"}</span>
+        <span>Transaction: {item.transactionId || "Not saved"}</span>
+        <span>Payment: {item.paymentMethod || "Not saved"}</span>
+        <span>Source store: {item.sourceStore || item.source || "Not saved"}</span>
+        {item.receiptImageUrl ? (
+          <a href={item.receiptImageUrl} target="_blank" rel="noreferrer">Open receipt image</a>
+        ) : (
+          <span>Receipt image missing</span>
+        )}
+      </div>
+    </section>
+  );
+  const proofSection = <ProductWorkspaceAuthenticityProofCard key="authenticity" item={item} onEditProof={onEditProof} primary={activeSectionId === "authenticity"} />;
+  const shippingSection = (
+    <section className="inventory-detail-section" data-workspace-section="shipping" key="shipping">
+      <h3>Shipping & Packing</h3>
+      <div className="detail-stat-grid">
+        <DetailStat label="Profile" value={shippingData.profile?.name ?? (inventoryShippingProfileValue(item) || "Standard")} />
+        <DetailStat label="Weight" value={shippingData.effectiveWeightOz ? `${shippingData.effectiveWeightOz} oz` : "Missing"} tone={shippingData.effectiveWeightOz ? "good" : "bad"} />
+        <DetailStat
+          label="Dimensions"
+          value={
+            shippingData.effectiveLengthIn && shippingData.effectiveWidthIn && shippingData.effectiveHeightIn
+              ? `${shippingData.effectiveLengthIn} x ${shippingData.effectiveWidthIn} x ${shippingData.effectiveHeightIn} in`
+              : "Missing"
+          }
+          tone={shippingData.effectiveLengthIn && shippingData.effectiveWidthIn && shippingData.effectiveHeightIn ? "good" : "bad"}
+        />
+        <DetailStat label="Metadata" value={inventoryShippingMetadataBadgeLabel(item)} />
+      </div>
+      <div className="inventory-detail-badges">
+        {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
+          <span className={`chip compact-chip ${badge.tone === "good" ? "good" : "watch"}`} key={badge.label}>
+            {badge.label}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+  const notesSection = (
+    <section className="inventory-detail-section" key="notes">
+      <h3>Notes</h3>
+      <div className="detail-line-list">
+        <span>Plan: {item.expectedPlan || "Not saved"}</span>
+        <span>Condition: {item.condition || "Not saved"}</span>
+        <span>Target sell: {money(item.targetSellPrice)} - minimum: {money(item.minimumAcceptablePrice)}</span>
+        <span>{item.notes || "No notes saved."}</span>
+      </div>
+    </section>
+  );
+  const overviewPanels = [overviewSection, listingSection, imagesSection, stockSection, salesSection, receiptsSection, proofSection, shippingSection, notesSection];
+  const focusedPanels: Record<ProductWorkspaceSectionId, ReactNode[]> = {
+    overview: overviewPanels,
+    stock: [stockSection],
+    listing: [listingSection],
+    images: [imagesSection],
+    shipping: [shippingSection],
+    sales: [salesSection],
+    authenticity: [proofSection, receiptsSection, shippingSection],
+    receipts: [receiptsSection, notesSection]
+  };
+  const panels = activeSectionId === "overview" ? overviewPanels : focusedPanels[activeSectionId];
   return (
-    <div className="inventory-details-grid product-workspace-overview-grid">
-          <section className="inventory-detail-section" data-workspace-section="overview">
-            <h3>Overview</h3>
-            <div className="detail-stat-grid">
-              <DetailStat label="On hand" value={String(item.quantityOwned)} />
-              <DetailStat label="Available online" value={String(listingAvailable)} tone={listingAvailable > 0 ? "good" : "bad"} />
-              <DetailStat label="Sold" value={String(item.quantitySold)} />
-              <DetailStat label="Average Cost" value={money(item.averageCost)} />
-              <DetailStat label="Total Cost Basis" value={money(item.averageCost * item.quantityOwned)} />
-              <DetailStat label="Target Sell Price" value={item.targetSellPrice !== null ? money(item.targetSellPrice) : "Not set"} />
-              <DetailStat label="Actual Sales" value={money(item.totalSalesGross)} />
-              <DetailStat label="Realized Profit" value={item.sales.length ? money(item.realizedProfitLoss) : "No sales yet"} tone={(item.realizedProfitLoss ?? 0) >= 0 ? "good" : "bad"} />
-              <DetailStat label="Realized ROI" value={item.realizedRoiPercent !== null ? percent(item.realizedRoiPercent) : "No sales yet"} />
-            </div>
-            <div className="detail-line-list">
-              <span>Status: <strong>{inventoryStockStatusLabel(item)}</strong></span>
-              <span>Public status: <strong>{storefrontListingPublicStatus(item)}</strong></span>
-              <span>
-                Manual listing cap:{" "}
-                {manualListingAvailable === null || manualListingAvailable === undefined ? "Not set; using on-hand stock" : manualListingAvailable}
-              </span>
-              <span>Linked product: {item.linkedProductName ? `${item.linkedProductName} (${item.linkedProductRetailer || "retailer unknown"})` : "Not attached"}</span>
-              <span>Brand {item.brand || "Missing"} - Model {item.model || "Missing"} - MSRP {money(item.msrp)}</span>
-              {item.description ? <span>{item.description}</span> : null}
-              <span>UPC {item.upc || "Missing"} - SKU {item.sku || "Missing"} - DPCI {item.dpci || "Missing"} - ASIN {item.asin || "Missing"}</span>
-            </div>
-          </section>
-
-          <section className="inventory-detail-section" data-workspace-section="listing">
-            <h3>Storefront Listing</h3>
-            <div className="detail-stat-grid">
-              <DetailStat label="Publish status" value={storeListingLabel(item)} tone={listingDetailTone} />
-              <DetailStat label="Public price" value={item.publicPrice !== null ? money(item.publicPrice) : "Not set"} />
-              <DetailStat label="Available online" value={String(listingAvailable)} />
-              <DetailStat label="Public status" value={storefrontListingPublicStatus(item)} tone={listingAvailable > 0 ? "good" : "bad"} />
-              <DetailStat label="Category" value={item.storefrontCategory || storefrontPublicCategory(item)} />
-            </div>
-            {listingWarnings.length ? (
-              <div className="inventory-warning-list" role="status">
-                {listingWarnings.map((warning) => (
-                  <span key={warning}>{warning}</span>
-                ))}
-              </div>
-            ) : null}
-            <div className="storefront-quality-list">
-              {listingQuality.map((check) => (
-                <span className={check.complete ? "good" : "watch"} key={check.key}>
-                  {storefrontListingQualityText(check)}
-                </span>
-              ))}
-            </div>
-            <p className="form-helper">Public storefront listings never expose cost basis, source receipts, supplier notes, market value, or tracker data.</p>
-          </section>
-
-          <section className="inventory-detail-section" data-workspace-section="images">
-            <h3>Product Images</h3>
-            <InventoryDetailImageGallery item={item} />
-          </section>
-
-          <section className="inventory-detail-section" data-workspace-section="stock">
-            <h3>Stock Lots</h3>
-            <CompactLotsList item={item} onEditLot={onEditStockLot} onDeleteLot={onDeleteStockLot} />
-          </section>
-
-          <section className="inventory-detail-section" data-workspace-section="sales">
-            <h3>Sales History</h3>
-            <CompactSalesList item={item} />
-          </section>
-
-          <section className="inventory-detail-section" data-workspace-section="receipts">
-            <h3>Attachments / Receipts</h3>
-            <div className="detail-line-list">
-              <span>Receipt: {item.receiptNumber || "Not saved"}</span>
-              <span>Order: {item.orderNumber || "Not saved"}</span>
-              <span>Transaction: {item.transactionId || "Not saved"}</span>
-              <span>Payment: {item.paymentMethod || "Not saved"}</span>
-              <span>Source store: {item.sourceStore || item.source || "Not saved"}</span>
-              {item.receiptImageUrl ? (
-                <a href={item.receiptImageUrl} target="_blank" rel="noreferrer">Open receipt image</a>
-              ) : (
-                <span>Receipt image missing</span>
-              )}
-            </div>
-          </section>
-
-          <section className="inventory-detail-section product-workspace-proof-card" data-workspace-section="authenticity">
-            <div className="product-workspace-card-head">
-              <div>
-                <h3>Authenticity Proof</h3>
-                <p>Track private proof for Google review. Do not upload receipts or invoices publicly.</p>
-              </div>
-              <button className="mini-action solid product-workspace-proof-action" type="button" onClick={onEditProof}>
-                <ShieldCheck size={14} />
-                Edit Proof Status
-              </button>
-            </div>
-            <div className="detail-stat-grid">
-              <DetailStat label="Proof status" value={inventoryAuthenticityProofLabel(item)} tone={inventoryAuthenticityProofTone(item) === "good" ? "good" : inventoryAuthenticityProofTone(item) === "warning" ? "bad" : "neutral"} />
-              <DetailStat label="Source proof" value={authenticityReceiptStatusLabel(item.authenticityReceiptStatus)} />
-              <DetailStat label="Photo proof" value={authenticityPhotoStatusLabel(item.authenticityPhotoStatus)} />
-              <DetailStat label="UPC verified" value={item.authenticityUpcVerified ? "Yes" : "No"} tone={item.authenticityUpcVerified ? "good" : "bad"} />
-            </div>
-            <div className="product-workspace-proof-guidance" aria-label="Authenticity proof checklist">
-              <span>Front photo</span>
-              <span>Back/sealed photo</span>
-              <span>UPC/barcode photo</span>
-              <span>Receipt/order proof if available</span>
-            </div>
-            <p className="form-helper">Track private proof for Google review. Do not upload receipts or invoices publicly.</p>
-            <div className="detail-line-list product-workspace-proof-summary">
-              <span>Review state: <strong>{authenticityProofStatusLabel(item.authenticityProofStatus)}</strong></span>
-              <span>Private notes: <strong>{item.authenticityNotes ? "Saved" : "Not saved"}</strong></span>
-            </div>
-          </section>
-
-          <section className="inventory-detail-section" data-workspace-section="shipping">
-            <h3>Shipping & Packing</h3>
-            <div className="detail-stat-grid">
-              <DetailStat label="Profile" value={shippingData.profile?.name ?? (inventoryShippingProfileValue(item) || "Standard")} />
-              <DetailStat label="Weight" value={shippingData.effectiveWeightOz ? `${shippingData.effectiveWeightOz} oz` : "Missing"} tone={shippingData.effectiveWeightOz ? "good" : "bad"} />
-              <DetailStat
-                label="Dimensions"
-                value={
-                  shippingData.effectiveLengthIn && shippingData.effectiveWidthIn && shippingData.effectiveHeightIn
-                    ? `${shippingData.effectiveLengthIn} x ${shippingData.effectiveWidthIn} x ${shippingData.effectiveHeightIn} in`
-                    : "Missing"
-                }
-                tone={shippingData.effectiveLengthIn && shippingData.effectiveWidthIn && shippingData.effectiveHeightIn ? "good" : "bad"}
-              />
-              <DetailStat label="Metadata" value={inventoryShippingMetadataBadgeLabel(item)} />
-            </div>
-            <div className="inventory-detail-badges">
-              {inventoryShippingProfileBadges(item, shippingProfiles).map((badge) => (
-                <span className={`chip compact-chip ${badge.tone === "good" ? "good" : "watch"}`} key={badge.label}>
-                  {badge.label}
-                </span>
-              ))}
-            </div>
-          </section>
-
-          <section className="inventory-detail-section">
-            <h3>Notes</h3>
-            <div className="detail-line-list">
-              <span>Plan: {item.expectedPlan || "Not saved"}</span>
-              <span>Condition: {item.condition || "Not saved"}</span>
-              <span>Target sell: {money(item.targetSellPrice)} - minimum: {money(item.minimumAcceptablePrice)}</span>
-              <span>{item.notes || "No notes saved."}</span>
-            </div>
-          </section>
+    <div
+      className={`inventory-details-grid ${
+        activeSectionId === "overview"
+          ? "product-workspace-overview-grid"
+          : `product-workspace-focused-grid product-workspace-focused-${activeSectionId}`
+      }`}
+    >
+      {panels}
     </div>
   );
 }
@@ -14050,28 +14102,43 @@ function CompactStockLotGroup({
             const averageLotCost = lot.quantity > 0 ? lot.totalCost / lot.quantity : lot.costPerUnit;
             const remainingCost = averageLotCost * lot.remainingQuantity;
             return (
-              <article className={muted ? "stock-lot-depleted" : ""} key={lot.id}>
-                <strong>{shortDate(lot.purchasedAt)}</strong>
-                <span>{lot.sourceStore || lot.source || "Source unknown"}</span>
-                <span>Starting qty {lot.quantity}</span>
-                <span>Remaining {lot.remainingQuantity}</span>
-                <span>Unit cost {money(averageLotCost)}</span>
-                <b>Remaining cost {money(remainingCost)}</b>
-                <small>{lot.receiptNumber || lot.orderNumber || "No receipt saved"}</small>
+              <article className={`stock-lot-card ${muted ? "stock-lot-depleted" : ""}`} key={lot.id}>
+                <strong className="stock-lot-date">{shortDate(lot.purchasedAt)}</strong>
+                <span className="stock-lot-source" title={lot.sourceStore || lot.source || "Source unknown"}>
+                  {lot.sourceStore || lot.source || "Source unknown"}
+                </span>
+                <span className="stock-lot-quantity">Starting qty {lot.quantity}</span>
+                <span className="stock-lot-quantity">Remaining {lot.remainingQuantity}</span>
+                <span className="stock-lot-cost">Unit cost {money(averageLotCost)}</span>
+                <b className="stock-lot-cost">Remaining cost {money(remainingCost)}</b>
+                <small className="stock-lot-proof" title={lot.receiptNumber || lot.orderNumber || "No receipt saved"}>
+                  {lot.receiptNumber || lot.orderNumber || "No receipt saved"}
+                </small>
                 {onEditLot || onDeleteLot ? (
                   <div className="compact-ledger-actions">
                     {onEditLot ? (
                       <>
-                        <button className="mini-action" type="button" onClick={() => onEditLot(item, lot)}>
+                        <button
+                          aria-label={`Edit stock lot from ${shortDate(lot.purchasedAt)} for ${item.itemName}`}
+                          className="mini-action"
+                          type="button"
+                          onClick={() => onEditLot(item, lot)}
+                        >
                           Edit Lot
                         </button>
-                        <button className="mini-action" type="button" onClick={() => onEditLot(item, lot)}>
+                        <button
+                          aria-label={`Adjust stock lot from ${shortDate(lot.purchasedAt)} for ${item.itemName}`}
+                          className="mini-action"
+                          type="button"
+                          onClick={() => onEditLot(item, lot)}
+                        >
                           Adjust Lot
                         </button>
                       </>
                     ) : null}
                     {onDeleteLot ? (
                       <button
+                        aria-label={`Remove stock lot from ${shortDate(lot.purchasedAt)} for ${item.itemName}`}
                         className="mini-action danger"
                         type="button"
                         disabled={lot.remainingQuantity !== lot.quantity}
