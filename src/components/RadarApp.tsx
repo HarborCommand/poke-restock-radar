@@ -9895,12 +9895,15 @@ function StorefrontOrderDetailsModal({
             <h3>Rewards Summary</h3>
             <div className="storefront-order-summary-list">
               <DetailStat label="Points earned" value={String(order.rewardSummary.pointsEarned)} tone={order.rewardSummary.pointsEarned > 0 ? "good" : "neutral"} />
+              <DetailStat label="Pending points" value={String(order.rewardSummary.pointsPending)} tone="neutral" />
+              <DetailStat label="Available points" value={String(order.rewardSummary.pointsAvailable)} tone={order.rewardSummary.pointsAvailable > 0 ? "good" : "neutral"} />
               <DetailStat label="Points reversed" value={String(order.rewardSummary.pointsReversed)} tone={order.rewardSummary.pointsReversed > 0 ? "bad" : "neutral"} />
               <DetailStat label="Net points" value={String(order.rewardSummary.netPoints)} tone={order.rewardSummary.netPoints > 0 ? "good" : order.rewardSummary.netPoints < 0 ? "bad" : "neutral"} />
               <DetailStat label="Reward status" value={order.rewardSummary.status} />
               {order.customerRewardSummary ? (
                 <>
                   <DetailStat label="Customer available" value={String(order.customerRewardSummary.availablePoints)} tone={order.customerRewardSummary.availablePoints > 0 ? "good" : "neutral"} />
+                  <DetailStat label="Customer pending" value={String(order.customerRewardSummary.pendingPoints)} tone="neutral" />
                   <DetailStat label="Lifetime earned" value={String(order.customerRewardSummary.lifetimeEarnedPoints)} tone={order.customerRewardSummary.lifetimeEarnedPoints > 0 ? "good" : "neutral"} />
                 </>
               ) : (
@@ -9913,7 +9916,7 @@ function StorefrontOrderDetailsModal({
                   <article key={entry.id}>
                     <div>
                       <strong>{entry.reason}</strong>
-                      <span>{entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {shortDate(entry.createdAt)}</span>
+                      <span>{entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {shortDate(entry.createdAt)} - {formatStatus(entry.status)}</span>
                     </div>
                     <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
                   </article>

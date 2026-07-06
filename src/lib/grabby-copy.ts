@@ -34,7 +34,7 @@ export const grabbyCopy: Record<GrabbyVariant, GrabbyCopy> = {
   },
   rewards: {
     title: "Keep earning with Grabby.",
-    message: "Earn points on eligible purchases. Rewards redemption is coming soon."
+    message: "Earn 1 point per eligible product dollar. Rewards redemption is coming soon."
   },
   "order-status": {
     title: "Tracking your order?",
