@@ -93,12 +93,14 @@ import { cleanStorefrontDescription, cleanStorefrontTitle, generatedStorefrontDe
 import { STOREFRONT_CATEGORY_OPTIONS } from "@/lib/storefront-categories";
 import { isProductImageUrlRenderable, isStorefrontDisplayImageUrl, productImageQualityWarnings } from "@/lib/product-image-quality";
 import { DEFAULT_STOREFRONT_PURCHASE_LIMIT } from "@/lib/storefront-purchase-limits";
-import { GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
 import {
   POS_DEFAULT_TAX_RATE,
   POS_PAYMENT_METHOD_LABELS,
   POS_PAYMENT_METHOD_VALUES,
   calculatePosTotals,
+  getPosExcludedReason,
+  getPosSellableReason,
   isPosSellableInventoryItem,
   posItemExactCodeMatch,
   posItemMatchesQuery,
@@ -3500,6 +3502,7 @@ function SalesPanel({
 }
 
 const posQuickFilters = ["All", "Booster Boxes", "ETBs", "Singles", "Accessories"] as const;
+const POS_RESULT_BATCH_SIZE = 24;
 type PosQuickFilter = (typeof posQuickFilters)[number];
 type PosCartLine = { itemId: string; quantity: number };
 
@@ -3535,12 +3538,15 @@ function posPaymentReferenceHelp(method: PosPaymentMethodDTO | null) {
 
 function posReceiptSummary(receipt: PosSaleReceiptDTO) {
   return [
+    "GameDayGrabs",
     `Sale ${receipt.saleReference}`,
+    `Date: ${dateTime(receipt.completedAt)}`,
     `Payment: ${receipt.paymentMethodLabel}${receipt.paymentReference ? ` (${receipt.paymentReference})` : ""}`,
     ...receipt.lines.map((line) => `${line.quantity} x ${line.itemName} - ${money(line.lineTotal)}`),
     `Subtotal: ${money(receipt.subtotal)}`,
     `Tax: ${money(receipt.tax)}`,
-    `Total: ${money(receipt.total)}`
+    `Total: ${money(receipt.total)}`,
+    `Support: ${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`
   ].join("\n");
 }
 
@@ -3567,6 +3573,8 @@ function PosPanel({
   const [receipt, setReceipt] = useState<PosSaleReceiptDTO | null>(null);
   const [recentlyAddedItemId, setRecentlyAddedItemId] = useState<string | null>(null);
   const [maxReachedItemId, setMaxReachedItemId] = useState<string | null>(null);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const [visibleLimit, setVisibleLimit] = useState(POS_RESULT_BATCH_SIZE);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
 
@@ -3574,14 +3582,23 @@ function PosPanel({
     () => dashboard.inventory.filter(isPosSellableInventoryItem).sort((a, b) => posDisplayTitle(a).localeCompare(posDisplayTitle(b))),
     [dashboard.inventory]
   );
+  const onHandItems = useMemo(() => dashboard.inventory.filter((item) => item.quantityOwned > 0), [dashboard.inventory]);
+  const excludedItems = useMemo(
+    () => dashboard.inventory.filter((item) => !isPosSellableInventoryItem(item)).sort((a, b) => posDisplayTitle(a).localeCompare(posDisplayTitle(b))),
+    [dashboard.inventory]
+  );
   const itemsById = useMemo(() => new Map(dashboard.inventory.map((item) => [item.id, item])), [dashboard.inventory]);
-  const visibleItems = useMemo(
-    () =>
-      sellableItems
-        .filter((item) => posFilterMatches(item, filter))
-        .filter((item) => posItemMatchesQuery(item, query))
-        .slice(0, 24),
+  const filteredSellableItems = useMemo(
+    () => sellableItems.filter((item) => posFilterMatches(item, filter)).filter((item) => posItemMatchesQuery(item, query)),
     [filter, query, sellableItems]
+  );
+  const visibleItems = useMemo(
+    () => filteredSellableItems.slice(0, visibleLimit),
+    [filteredSellableItems, visibleLimit]
+  );
+  const filteredExcludedItems = useMemo(
+    () => excludedItems.filter((item) => posFilterMatches(item, filter)).filter((item) => posItemMatchesQuery(item, query)),
+    [excludedItems, filter, query]
   );
   const cartLines = cart
     .map((line) => {
@@ -3602,6 +3619,10 @@ function PosPanel({
       : submitting || busyLabel === "Completing POS sale"
         ? "Completing"
         : `Complete Sale ${money(cartTotals.total)}`;
+
+  useEffect(() => {
+    setVisibleLimit(POS_RESULT_BATCH_SIZE);
+  }, [filter, query]);
 
   useEffect(() => {
     if (!confirmOpen) return;
@@ -3657,6 +3678,7 @@ function PosPanel({
     setReceipt(null);
     setPosMessage(null);
     setPaymentMethod(null);
+    setPaymentReference("");
     setSaleIdempotencyKey(newPosSaleIdempotencyKey());
     setRecentlyAddedItemId(null);
     setMaxReachedItemId(null);
@@ -3665,16 +3687,22 @@ function PosPanel({
 
   function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") return;
-    const exactMatches = sellableItems.filter((item) => posItemExactCodeMatch(item, query));
-    if (exactMatches.length === 1) {
+    const exactMatches = dashboard.inventory.filter((item) => posItemExactCodeMatch(item, query));
+    const exactSellableMatches = exactMatches.filter(isPosSellableInventoryItem);
+    if (exactMatches.length === 1 && exactSellableMatches.length === 1) {
       event.preventDefault();
-      addToCart(exactMatches[0]);
+      addToCart(exactSellableMatches[0]);
       setQuery("");
       searchInputRef.current?.focus();
       return;
     }
     if (query.trim()) {
       event.preventDefault();
+      if (exactMatches.length === 1) {
+        setPosMessage(`Product found but excluded from POS: ${getPosExcludedReason(exactMatches[0]) ?? "not currently POS sellable"}.`);
+        setShowExcluded(true);
+        return;
+      }
       setPosMessage(exactMatches.length > 1 ? "Multiple products matched that code. Choose the right item from results." : "No product found for this UPC/SKU.");
     }
   }
@@ -3732,12 +3760,15 @@ function PosPanel({
         title="POS"
         detail="Fast in-person checkout for display inventory. Manual payments only."
         stats={[
-          { label: "sellable", value: sellableItems.length },
+          { label: "inventory products", value: dashboard.inventory.length },
+          { label: "on hand", value: onHandItems.length },
+          { label: "POS sellable", value: sellableItems.length, tone: "good" },
+          { label: "excluded", value: excludedItems.length, tone: excludedItems.length ? "watch" : "muted" },
           { label: "in cart", value: cartQuantity, tone: cartQuantity ? "good" : "muted" }
         ]}
       />
 
-      {receipt ? <PosReceipt receipt={receipt} /> : null}
+      {receipt ? <PosReceipt receipt={receipt} onNewSale={clearCart} /> : null}
       {posMessage ? <p className="form-error pos-alert" role="alert">{posMessage}</p> : null}
 
       <div className="pos-workspace">
@@ -3769,9 +3800,20 @@ function PosPanel({
               </button>
             ))}
           </div>
+          <div className="pos-inventory-status">
+            <span>{sellableItems.length} POS sellable</span>
+            <span>{dashboard.inventory.length} inventory products</span>
+            <span>{excludedItems.length} excluded</span>
+            <button className="mini-action" type="button" onClick={() => setShowExcluded((current) => !current)}>
+              {showExcluded ? "Hide excluded" : "Show excluded"}
+            </button>
+          </div>
           <div className="pos-results-heading">
-            <strong>Search Results ({visibleItems.length})</strong>
-            <span>{query ? "Filtered by search" : "Available display inventory"}</span>
+            <strong>Search Results ({filteredSellableItems.length})</strong>
+            <span>
+              {query ? "Filtered by search" : "POS sellable display inventory"} - Showing {visibleItems.length}
+              {filteredSellableItems.length > visibleItems.length ? ` of ${filteredSellableItems.length}` : ""}
+            </span>
           </div>
           <div className="pos-result-grid">
             {visibleItems.length ? (
@@ -3792,6 +3834,7 @@ function PosPanel({
                         <b>{money(unitPrice)}</b>
                         <em className={lowStock ? "low-stock" : ""}>On hand: {item.quantityOwned}</em>
                       </div>
+                      <small className="pos-sellable-reason">{getPosSellableReason(item)}</small>
                       {lowStock ? <small className="pos-stock-warning">Low stock</small> : null}
                     </div>
                     <button className="primary-action pos-add-button" type="button" disabled={!canAdd} onClick={() => addToCart(item)}>
@@ -3805,6 +3848,47 @@ function PosPanel({
               <EmptyState icon={PackageSearch} title="No sellable products found" detail="Try another search or add price/on-hand inventory first." />
             )}
           </div>
+          {visibleItems.length < filteredSellableItems.length ? (
+            <button className="mini-action pos-load-more" type="button" onClick={() => setVisibleLimit((current) => current + POS_RESULT_BATCH_SIZE)}>
+              Show more POS products
+            </button>
+          ) : null}
+          {showExcluded ? (
+            <div className="pos-excluded-panel" aria-label="Products excluded from POS">
+              <div className="pos-results-heading">
+                <strong>Excluded from POS ({filteredExcludedItems.length})</strong>
+                <span>Diagnostic only. Add stays disabled.</span>
+              </div>
+              <div className="pos-result-grid">
+                {filteredExcludedItems.length ? (
+                  filteredExcludedItems.slice(0, 12).map((item) => {
+                    const unitPrice = posUnitPrice(item);
+                    return (
+                      <article className="pos-product-card excluded" key={item.id}>
+                        <InventoryImage item={item} />
+                        <div className="pos-product-copy">
+                          <strong>{posDisplayTitle(item)}</strong>
+                          <span className="pos-product-id">{posIdentifier(item)}</span>
+                          <span>{formatStatus(item.category)}</span>
+                          <div className="pos-product-price-row">
+                            <b>{unitPrice !== null ? money(unitPrice) : "No POS price"}</b>
+                            <em>On hand: {item.quantityOwned}</em>
+                          </div>
+                          <small className="pos-excluded-reason">{getPosExcludedReason(item) ?? "Not currently POS sellable"}</small>
+                        </div>
+                        <button className="primary-action pos-add-button" type="button" disabled>
+                          Add disabled
+                        </button>
+                      </article>
+                    );
+                  })
+                ) : (
+                  <EmptyState icon={PackageSearch} title="No excluded products match" detail="Try a broader search or clear filters." />
+                )}
+              </div>
+              {filteredExcludedItems.length > 12 ? <small className="pos-diagnostic-note">Showing first 12 excluded matches to keep checkout focused.</small> : null}
+            </div>
+          ) : null}
         </section>
 
         <aside className="pos-cart-panel" aria-label="POS cart">
@@ -3952,7 +4036,7 @@ function PosPanel({
   );
 }
 
-function PosReceipt({ receipt }: { receipt: PosSaleReceiptDTO }) {
+function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewSale: () => void }) {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
   async function copyReceipt() {
@@ -3968,7 +4052,9 @@ function PosReceipt({ receipt }: { receipt: PosSaleReceiptDTO }) {
     <section className="pos-receipt" aria-live="polite">
       <div>
         <span className="sale-status-badge good">Sale Complete</span>
+        <strong className="pos-receipt-store">GameDayGrabs</strong>
         <h3>{receipt.saleReference}</h3>
+        <p>{dateTime(receipt.completedAt)}</p>
         <p>{receipt.itemCount} item{receipt.itemCount === 1 ? "" : "s"} sold. Inventory updated.</p>
       </div>
       <div className="pos-receipt-lines">
@@ -3982,12 +4068,24 @@ function PosReceipt({ receipt }: { receipt: PosSaleReceiptDTO }) {
       <div className="pos-receipt-total">
         <span>Subtotal <strong>{money(receipt.subtotal)}</strong></span>
         <span>Tax <strong>{money(receipt.tax)}</strong></span>
-        <span>{receipt.paymentMethodLabel}</span>
+        <span>Payment <strong>{receipt.paymentMethodLabel}</strong></span>
+        {receipt.paymentReference ? <span>Reference <strong>{receipt.paymentReference}</strong></span> : null}
         <strong>{money(receipt.total)}</strong>
-        <button className="mini-action" type="button" onClick={() => void copyReceipt()}>
-          <ClipboardList size={14} />
-          Copy Receipt
-        </button>
+        <small>Support: {GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}</small>
+        <div className="pos-receipt-actions">
+          <button className="primary-action" type="button" onClick={onNewSale}>
+            <Plus size={14} />
+            New Sale
+          </button>
+          <button className="mini-action" type="button" onClick={() => void copyReceipt()}>
+            <ClipboardList size={14} />
+            Copy Receipt
+          </button>
+          <button className="mini-action" type="button" onClick={() => window.print()}>
+            <Printer size={14} />
+            Print Receipt
+          </button>
+        </div>
         {copyStatus ? <small>{copyStatus}</small> : null}
       </div>
     </section>

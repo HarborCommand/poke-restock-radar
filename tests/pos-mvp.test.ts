@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   POS_DEFAULT_TAX_RATE,
   calculatePosTotals,
+  getPosExcludedReason,
+  getPosSellableReason,
   isPosSellableInventoryItem,
   posItemExactCodeMatch,
   posItemMatchesQuery,
@@ -169,6 +171,21 @@ test("POS helper blocks out-of-stock and unpriced products", () => {
   assert.equal(isPosSellableInventoryItem(posItem({ quantityOwned: 0 })), false);
   assert.equal(isPosSellableInventoryItem(posItem({ publicPrice: null, targetSellPrice: null })), false);
   assert.equal(isPosSellableInventoryItem(posItem({ listingStatus: "sold" })), false);
+  assert.equal(getPosExcludedReason(posItem({ quantityOwned: 0 })), "No on-hand quantity");
+  assert.equal(getPosExcludedReason(posItem({ publicPrice: null, targetSellPrice: null })), "Missing POS sale price");
+  assert.equal(getPosExcludedReason(posItem({ listingStatus: "sold" })), "Marked sold");
+});
+
+test("POS eligibility is independent of storefront publishing and Google feed readiness", () => {
+  const unpublished = posItem({ publishToStore: false, publicSlug: null, storeStatus: "draft", publicPrice: null, targetSellPrice: 24.99 });
+  assert.equal(isPosSellableInventoryItem(unpublished), true);
+  assert.equal(getPosSellableReason(unpublished), "Ready for POS sale");
+
+  const hiddenStorefrontListing = posItem({ publishToStore: false, storeStatus: "hidden", publicPrice: null, targetSellPrice: 24.99 });
+  assert.equal(isPosSellableInventoryItem(hiddenStorefrontListing), true);
+
+  const heldPlan = posItem({ listingStatus: "held", recommendedAction: "HOLD", expectedPlan: "Hold" });
+  assert.equal(isPosSellableInventoryItem(heldPlan), true);
 });
 
 test("POS totals calculate subtotal, tax, and total from line snapshots", () => {
@@ -214,12 +231,14 @@ test("POS API is private admin-only and delegates to server-side sale creation",
 test("POS server revalidates inventory, price, and availability before recording sale", () => {
   const service = readSource("../src/lib/radar-service.ts");
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
+  assert.match(service, /getPosExcludedReason/);
   assert.match(createPosSale, /tx\.inventoryItem\.findMany/);
   assert.match(createPosSale, /posSaleReferenceFromIdempotencyKey\(currentUser\.id, input\.idempotencyKey\)/);
   assert.match(createPosSale, /receiptForExistingPosSale\(prisma, currentUser, saleReference\)/);
   assert.match(createPosSale, /tx\.inventoryItem\.updateMany/);
   assert.match(createPosSale, /data: \{ updatedAt: soldAt \}/);
   assert.match(createPosSale, /isPosSellableInventoryItem\(dto\)/);
+  assert.match(createPosSale, /getPosExcludedReason\(dto\)/);
   assert.match(createPosSale, /cartItem\.quantity > dto\.quantityOwned/);
   assert.match(createPosSale, /const unitPrice = posUnitPrice\(dto\)/);
   assert.match(createPosSale, /calculatePosTotals\(lines, taxRate\)/);
@@ -272,6 +291,11 @@ test("POS tab renders for admin with scan, cart, payment, and confirmation affor
   assert.match(app, /\{ id: "pos", label: "POS"/);
   assert.match(app, /activeTab === "pos" && isAdmin/);
   assert.match(app, /Scanner tip: scan a barcode or type UPC\/SKU and press Enter\./);
+  assert.match(app, /inventory products/);
+  assert.match(app, /POS sellable/);
+  assert.match(app, /excluded/);
+  assert.match(app, /Show excluded/);
+  assert.match(app, /Excluded from POS/);
   assert.match(app, /Cart \(\{cartQuantity\}\)/);
   assert.match(app, /Payment Method/);
   assert.match(app, /Confirm Sale/);
@@ -295,9 +319,11 @@ test("POS empty cart keeps payment and completion inactive", () => {
 test("POS scanner feedback handles exact add, no match, and ambiguous code safely", () => {
   const app = readSource("../src/components/RadarApp.tsx");
   const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
-  assert.match(posPanel, /posItemExactCodeMatch\(item, query\)/);
-  assert.match(posPanel, /exactMatches\.length === 1/);
-  assert.match(posPanel, /addToCart\(exactMatches\[0\]\)/);
+  assert.match(posPanel, /dashboard\.inventory\.filter\(\(item\) => posItemExactCodeMatch\(item, query\)\)/);
+  assert.match(posPanel, /exactSellableMatches/);
+  assert.match(posPanel, /addToCart\(exactSellableMatches\[0\]\)/);
+  assert.match(posPanel, /Product found but excluded from POS/);
+  assert.match(posPanel, /getPosExcludedReason\(exactMatches\[0\]\)/);
   assert.match(posPanel, /No product found for this UPC\/SKU\./);
   assert.match(posPanel, /Multiple products matched that code/);
   assert.match(posPanel, /searchInputRef\.current\?\.focus\(\)/);
@@ -312,6 +338,7 @@ test("POS quantity and product cards show low stock, added feedback, and max ava
   assert.match(posPanel, /Max available reached\./);
   assert.match(posPanel, /Low stock/);
   assert.match(posPanel, /On hand: \{item\.quantityOwned\}/);
+  assert.match(posPanel, /getPosSellableReason\(item\)/);
   assert.match(css, /\.pos-product-card\.just-added/);
   assert.match(css, /\.pos-stock-warning/);
   assert.match(css, /\.pos-max-message/);
@@ -320,6 +347,23 @@ test("POS quantity and product cards show low stock, added feedback, and max ava
   assert.match(css, /\.pos-payment:focus-visible/);
   assert.match(css, /\.pos-add-button:focus-visible/);
   assert.match(css, /\.pos-cart-quantity\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(38px, 1fr\) 40px/);
+});
+
+test("POS product list does not silently cap results and exposes excluded reasons", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const css = readSource("../src/app/globals.css");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+
+  assert.match(posPanel, /POS_RESULT_BATCH_SIZE/);
+  assert.match(posPanel, /filteredSellableItems\.slice\(0, visibleLimit\)/);
+  assert.match(posPanel, /Show more POS products/);
+  assert.match(posPanel, /filteredExcludedItems\.slice\(0, 12\)/);
+  assert.match(posPanel, /Add disabled/);
+  assert.match(posPanel, /getPosExcludedReason\(item\)/);
+  assert.match(css, /\.pos-inventory-status/);
+  assert.match(css, /\.pos-product-card\.excluded/);
+  assert.match(css, /\.pos-excluded-reason/);
+  assert.match(css, /\.pos-load-more/);
 });
 
 test("POS confirmation modal shows item lines, totals, payment, reference, and warning before final submit", () => {
@@ -340,13 +384,22 @@ test("POS receipt success state includes metadata and copy receipt affordance", 
   const app = readSource("../src/components/RadarApp.tsx");
   const receipt = sourceSlice(app, "function PosReceipt", "function ProfitLossPanel");
   assert.match(app, /function posReceiptSummary/);
+  assert.match(app, /GameDayGrabs/);
+  assert.match(app, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
+  assert.match(app, /Date: \$\{dateTime\(receipt\.completedAt\)\}/);
   assert.match(receipt, /Sale Complete/);
+  assert.match(receipt, /GameDayGrabs/);
   assert.match(receipt, /Inventory updated/);
   assert.match(receipt, /receipt\.saleReference/);
+  assert.match(receipt, /dateTime\(receipt\.completedAt\)/);
   assert.match(receipt, /receipt\.paymentMethodLabel/);
+  assert.match(receipt, /receipt\.paymentReference/);
   assert.match(receipt, /receipt\.subtotal/);
   assert.match(receipt, /receipt\.tax/);
+  assert.match(receipt, /New Sale/);
   assert.match(receipt, /Copy Receipt/);
+  assert.match(receipt, /Print Receipt/);
+  assert.match(receipt, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
 });
 
 test("POS mobile layout keeps cart and product rows stacked without obvious overflow risk", () => {

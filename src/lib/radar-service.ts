@@ -14,6 +14,7 @@ import { getSavedProductImageUrls, uniqueProductImageUrls } from "@/lib/product-
 import {
   calculatePosTotals,
   getConfiguredPosTaxRate,
+  getPosExcludedReason,
   isPosSellableInventoryItem,
   normalizePosPaymentMethod,
   posPaymentMethodLabel,
@@ -6908,7 +6909,7 @@ export async function createPosSale(
       if (!record) throw new Error("One or more POS cart items could not be found.");
       const dto = inventoryItemToDTO(record);
       if (!isPosSellableInventoryItem(dto)) {
-        throw new Error(`${dto.itemName} is not available for POS sale.`);
+        throw new Error(`${dto.itemName} is not available for POS sale: ${getPosExcludedReason(dto) ?? "not currently POS sellable"}.`);
       }
       if (cartItem.quantity > dto.quantityOwned) {
         throw new Error(`Only ${dto.quantityOwned} available to sell for ${dto.itemName}.`);
