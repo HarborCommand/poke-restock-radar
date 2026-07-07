@@ -364,3 +364,11 @@ test("POS change is isolated from public checkout, shipping, refunds, and live p
   assert.doesNotMatch(shippingPolicy, /createPosSale|posSale|api\/radar\/pos|terminal|tapToPay/i);
   assert.doesNotMatch(refundRoute, /createPosSale|posSale|api\/radar\/pos|terminal|tapToPay/i);
 });
+
+test("POS manual sales do not participate in Phase 1 rewards", () => {
+  const service = readSource("../src/lib/radar-service.ts");
+  const route = readSource("../src/app/api/radar/pos/sales/route.ts");
+  const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
+
+  assert.doesNotMatch(createPosSale + route, /awardRewardsForPaidOrder|releasePendingRewardsForOrder|reverseRewardsForOrder|rewardLedgerEntry|RewardLedgerEntry|rewardBalance|points/i);
+});

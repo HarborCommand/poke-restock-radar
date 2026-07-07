@@ -181,6 +181,12 @@ test("customer account and rewards schema foundation exists without touching che
   assert.match(schema, /pendingPoints\s+Int\s+@default\(0\)/);
   assert.match(schema, /type\s+String/);
   assert.match(schema, /idempotencyKey\s+String\?\s+@unique/);
+  assert.match(schema, /status\s+String\?/);
+  assert.match(schema, /availableAt\s+DateTime\?/);
+  assert.match(schema, /settledAt\s+DateTime\?/);
+  assert.match(schema, /eligibleSubtotalCents\s+Int\?/);
+  assert.match(schema, /source\s+String\?/);
+  assert.match(schema, /reversalOfEntryId\s+String\?/);
   assert.match(schema, /metadataJson\s+String\?/);
 
   assert.doesNotMatch(checkoutSession, /CustomerAccount|RewardLedgerEntry|RewardBalance|CUSTOMER_ACCOUNTS_ENABLED|CUSTOMER_REWARDS_ENABLED|customerAccountId|reward|points/i);
@@ -335,6 +341,24 @@ test("reward ledger idempotency migration is additive", () => {
   assert.doesNotMatch(migration, /\bDROP\b|\bDELETE\s+FROM\b|\bTRUNCATE\b|\bUPDATE\s+"|ALTER COLUMN|SET NOT NULL/i);
   assert.match(sqliteInit, /"idempotencyKey" TEXT/);
   assert.match(sqliteInit, /CREATE UNIQUE INDEX IF NOT EXISTS "RewardLedgerEntry_idempotencyKey_key"/);
+});
+
+test("reward pending ledger migration is additive and SQLite-aligned", () => {
+  const migration = readProjectFile("prisma/migrations/20260706103000_rewards_pending_ledger_phase1/migration.sql");
+  const schema = readProjectFile("prisma/schema.prisma");
+  const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
+
+  for (const column of ["status", "availableAt", "settledAt", "eligibleSubtotalCents", "source", "reversalOfEntryId"]) {
+    assert.match(migration, new RegExp(`ALTER TABLE "RewardLedgerEntry" ADD COLUMN "${column}"`), `missing migration column ${column}`);
+    assert.match(sqliteInit, new RegExp(`ALTER TABLE "RewardLedgerEntry" ADD COLUMN "${column}"`), `missing sqlite column ${column}`);
+    assert.match(schema, new RegExp(`${column}\\s+`), `missing schema column ${column}`);
+  }
+  for (const index of ["status", "availableAt", "source", "reversalOfEntryId"]) {
+    assert.match(migration, new RegExp(`CREATE INDEX IF NOT EXISTS "RewardLedgerEntry_${index}_idx"`), `missing migration index ${index}`);
+    assert.match(sqliteInit, new RegExp(`CREATE INDEX IF NOT EXISTS "RewardLedgerEntry_${index}_idx"`), `missing sqlite index ${index}`);
+  }
+  assert.doesNotMatch(migration, /\bDROP\b|\bDELETE\s+FROM\b|\bTRUNCATE\b|\bUPDATE\s+"|ALTER COLUMN|SET NOT NULL/i);
+  assert.doesNotMatch(migration, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv|raw Stripe|webhook body/i);
 });
 
 test("customer password account migration is additive and stores only hashes", () => {
@@ -555,7 +579,7 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   for (const label of ["Orders", "Points", "Saved Addresses", "Support / Order Status"]) {
     assert.match(accountDashboard, new RegExp(label));
   }
-  assert.match(accountDashboard, /Earn points on eligible purchases/);
+  assert.match(accountDashboard, /Earn 1 point per \$1 on eligible product purchases/);
   assert.match(accountDashboard, /Redemption coming soon/);
   assert.match(accountDashboard, /Rewards redemption coming soon/);
   assert.match(accountDashboard, /Display only/);
@@ -1152,9 +1176,32 @@ test("paid webhook awards reward points once without changing checkout totals", 
   assert.match(rewards, /idempotencyKey: `rewards:earn:\$\{order\.id\}`/);
   assert.match(rewards, /shippingCentsExcluded/);
   assert.match(rewards, /taxCentsExcluded/);
-  assert.match(rewards, /availablePoints: \{ increment: points \}/);
-  assert.match(rewards, /lifetimeEarnedPoints: points > 0/);
+  assert.match(rewards, /status: "pending"/);
+  assert.match(rewards, /availableAt: rewardAvailableAt\(now\)/);
+  assert.match(rewards, /pendingDelta: points/);
+  assert.match(rewards, /lifetimeEarnedDelta: points/);
+  assert.doesNotMatch(rewards, /availableDelta:\s*points[,}]/);
   assert.doesNotMatch(checkoutSession, /reward|points|coupon|discount|promotion_code|allow_promotion_codes|redeem/i);
+});
+
+test("pending rewards release after fulfillment without duplicate balance movement", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const rewards = readProjectFile("src/lib/customer-rewards.ts");
+  const updateOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(finalOrder);");
+  const release = sourceSlice(rewards, "export async function releasePendingRewardsForOrder", "export async function reverseRewardsForOrder");
+
+  assert.match(updateOrder, /await releasePendingRewardsForOrder\(finalOrder\.id, nextFulfillmentStatus\)/);
+  assert.match(updateOrder, /nextFulfillmentStatus === "shipped" \|\| nextFulfillmentStatus === "picked_up"/);
+  assert.match(release, /normalizedRewardLedgerStatus\(entry\) !== "pending"/);
+  assert.match(release, /reason !== "delay_elapsed"/);
+  assert.match(release, /availableAt\.getTime\(\) <= now\.getTime\(\)/);
+  assert.match(release, /let claimedReleasePoints = 0/);
+  assert.match(release, /where: \{ id: entry\.id, status: "pending" \}/);
+  assert.match(release, /status: entryReleasePoints > 0 \? "available" : "canceled"/);
+  assert.match(release, /if \(claimed\.count !== 1\) continue/);
+  assert.match(release, /pendingDelta: -claimedReleasePoints/);
+  assert.match(release, /availableDelta: claimedReleasePoints/);
+  assert.doesNotMatch(release, /metadataJson: undefined/);
 });
 
 test("refund cancellation and test markers reverse rewards without redemption", () => {
@@ -1173,6 +1220,12 @@ test("refund cancellation and test markers reverse rewards without redemption", 
   assert.match(rewards, /Math\.floor\(\(earnedPoints \* cumulativeRefundedCents\) \/ eligibleSubtotalCents\)/);
   assert.match(rewards, /points: -currentPointsToReverse/);
   assert.match(rewards, /type: "reverse"/);
+  assert.match(rewards, /pendingToReverse/);
+  assert.match(rewards, /availableToReverse/);
+  assert.match(rewards, /pendingDelta: pendingToReverse > 0 \? -pendingToReverse : 0/);
+  assert.match(rewards, /availableDelta: availableToReverse > 0 \? -availableToReverse : 0/);
+  assert.match(rewards, /partialRefundLimitation/);
+  assert.doesNotMatch(rewards, /lifetimeEarnedDelta:\s*-[^,\n}]+|lifetimeEarnedPoints:\s*\{\s*decrement/i);
   assert.doesNotMatch(rewards + cancelOrRefund + updateOrder, /coupon|promotion_code|allow_promotion_codes|redeem|apply.*discount/i);
 });
 
@@ -1193,17 +1246,18 @@ test("customer rewards page shows balance activity and redemption coming soon", 
   assert.match(accountRewards, /Rookie Collector/);
   assert.match(accountRewards, /nextThreshold = 500/);
   assert.match(accountRewards, /gdg-account-progress/);
-  assert.match(accountRewards, /Earn points on eligible purchases/);
-  assert.match(accountRewards, /Points are added after payment is confirmed/);
-  assert.match(accountRewards, /Shipping, taxes, refunds, canceled orders, discounts, and test\/smoke orders do not earn points/);
+  assert.match(accountRewards, /Earn 1 point per \$1 on eligible product purchases/);
+  assert.match(accountRewards, /Points may remain pending until the order is shipped, picked up, or cleared/);
+  assert.match(accountRewards, /Shipping, tax, discounts, canceled orders, refunded items, and test\/smoke orders do not earn points/);
   assert.match(accountRewards, /Refunds\/cancellations may reverse points/);
   assert.match(accountRewards, /Points have no cash value/);
   assert.match(accountRewards, /Recent activity/);
   assert.match(accountRewards, /activity\.map/);
   assert.match(accountRewards, /entry\.reason/);
   assert.match(accountRewards, /entry\.orderNumber/);
+  assert.match(accountRewards, /entry\.status/);
   assert.match(accountRewards, /No reward activity yet/);
-  assert.match(accountRewards, /Eligible paid orders will appear here after payment is confirmed/);
+  assert.match(accountRewards, /Eligible paid orders will appear here as pending rewards after payment is confirmed/);
   assert.match(accountRewards, /View orders/);
   assert.match(accountRewards, /Rewards rules/);
   assert.match(accountRewards, /Contact support/);
@@ -1245,6 +1299,11 @@ test("admin order detail displays rewards without redemption controls or private
   assert.match(types, /export type StorefrontCustomerRewardSummaryDTO/);
   assert.match(types, /redemptionEnabled: false/);
   assert.match(types, /adminAdjustmentsEnabled: false/);
+  assert.match(types, /pointsPending: number/);
+  assert.match(types, /pointsAvailable: number/);
+  assert.match(types, /status: string/);
+  assert.match(types, /availableAt: string \| null/);
+  assert.match(types, /settledAt: string \| null/);
   assert.match(storefront, /rewardSummary: rewardSummaryForOrder\(order\)/);
   assert.match(storefront, /customerRewardSummary: customerRewardSummaryForOrder\(order\)/);
   assert.match(storefront, /rewardBalance:\s*true/);
@@ -1253,9 +1312,13 @@ test("admin order detail displays rewards without redemption controls or private
   assert.match(config, /customerRewardAdminAdjustmentsEnabled/);
   assert.match(rewardPanel, /Rewards Summary/);
   assert.match(rewardPanel, /Points earned/);
+  assert.match(rewardPanel, /Pending points/);
+  assert.match(rewardPanel, /Available points/);
   assert.match(rewardPanel, /Points reversed/);
   assert.match(rewardPanel, /Customer available/);
+  assert.match(rewardPanel, /Customer pending/);
   assert.match(rewardPanel, /Lifetime earned/);
+  assert.match(rewardPanel, /formatStatus\(entry\.status\)/);
   assert.match(rewardPanel, /Recent customer reward ledger entries/);
   assert.match(rewardPanel, /Manual rewards adjustments disabled/);
   assert.match(rewardPanel, /disabled/);

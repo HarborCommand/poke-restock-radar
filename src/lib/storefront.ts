@@ -27,7 +27,7 @@ import {
 } from "@/lib/shipping-rate-provider";
 import { applyMerchantShippingPolicyToCarrierQuote } from "@/lib/shipping-policy";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
-import { awardRewardsForPaidOrder, reverseRewardsForOrder, rewardSummaryForOrder } from "@/lib/customer-rewards";
+import { awardRewardsForPaidOrder, releasePendingRewardsForOrder, reverseRewardsForOrder, rewardSummaryForOrder } from "@/lib/customer-rewards";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
@@ -120,7 +120,10 @@ const storefrontOrderInclude = {
           id: true,
           points: true,
           type: true,
+          status: true,
           reason: true,
+          availableAt: true,
+          settledAt: true,
           createdAt: true,
           order: {
             select: {
@@ -140,7 +143,10 @@ const storefrontOrderInclude = {
       id: true,
       points: true,
       type: true,
+      status: true,
       reason: true,
+      availableAt: true,
+      settledAt: true,
       createdAt: true
     },
     orderBy: { createdAt: "desc" as const }
@@ -1651,8 +1657,11 @@ function customerRewardSummaryForOrder(order: StorefrontOrderWithItems): Storefr
       id: entry.id,
       points: entry.points,
       type: entry.type,
+      status: entry.status ?? (entry.points < 0 || entry.type === "reverse" ? "reversed" : "available"),
       reason: entry.reason,
       orderNumber: entry.order?.orderNumber ?? null,
+      availableAt: entry.availableAt?.toISOString() ?? null,
+      settledAt: entry.settledAt?.toISOString() ?? null,
       createdAt: entry.createdAt.toISOString()
     })),
     adminAdjustmentsEnabled: false
@@ -3668,6 +3677,9 @@ export async function updateStorefrontOrder(
   }
   if (nextFulfillmentStatus === "pickup_ready") {
     await sendStorefrontLocalPickupEmail(finalOrder);
+  }
+  if (!finalOrder.isTestOrder && finalOrder.paymentStatus === "paid" && (nextFulfillmentStatus === "shipped" || nextFulfillmentStatus === "picked_up")) {
+    await releasePendingRewardsForOrder(finalOrder.id, nextFulfillmentStatus);
   }
   if (requestsTestOrderChange && finalOrder.customerId && finalOrder.customerEmail) {
     await syncStorefrontCustomerTotals(finalOrder.customerId, finalOrder.customerEmail);

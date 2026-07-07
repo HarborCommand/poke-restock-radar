@@ -191,8 +191,8 @@ function AccountHeroGrabby() {
 
 function RewardsInfoStrip({ className = "" }: { className?: string }) {
   const infoItems: Array<{ label: string; copy: string; icon: LucideIcon; tone: "gold" | "violet" | "green" | "blue" }> = [
-    { label: "Earn points", copy: "on eligible purchases.", icon: Trophy, tone: "gold" },
-    { label: "Points added", copy: "after payment is confirmed.", icon: Gift, tone: "violet" },
+    { label: "Earn points", copy: "per eligible product dollar.", icon: Trophy, tone: "gold" },
+    { label: "Points pending", copy: "until shipped, picked up, or cleared.", icon: Gift, tone: "violet" },
     { label: "Refunds may", copy: "reverse points.", icon: ShieldCheck, tone: "green" },
     { label: "No cash value", copy: "or exchange.", icon: ShieldCheck, tone: "blue" }
   ];
@@ -429,7 +429,7 @@ export function AccountDashboard({
               <AccountIconBadge icon={Trophy} tone="gold" />
             </div>
             <strong className="gdg-account-points-display">{availablePoints} points</strong>
-            <p>Earn points on eligible purchases. Rewards redemption coming soon.</p>
+            <p>Earn 1 point per $1 on eligible product purchases. Rewards redemption coming soon.</p>
             <div className="gdg-account-progress" aria-label={`${progressPercent}% toward collector milestone`}>
               <span style={{ width: `${progressPercent}%` }} />
             </div>
@@ -1063,7 +1063,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
         <div className="gdg-rewards-hero-copy">
           <p className="gdg-overline">Customer rewards</p>
           <h1 id="gdg-rewards-title">GameDayGrabs Rewards</h1>
-          <p>Earn points on eligible purchases and track your collector progress from your account.</p>
+          <p>Earn 1 point per $1 on eligible product purchases and track your collector progress from your account.</p>
           <span className="gdg-rewards-coming-soon">Redemption coming soon</span>
         </div>
         <div className="gdg-rewards-balance-card" aria-label="Current rewards balance">
@@ -1092,7 +1092,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
             </div>
             <AccountIconBadge tone="gold" icon={Trophy} />
           </div>
-          <p className="gdg-account-panel-copy">Build points as eligible paid orders are confirmed.</p>
+          <p className="gdg-account-panel-copy">Build points as eligible paid orders are shipped, picked up, or cleared.</p>
           <div className="gdg-account-progress" aria-label={`${progressPoints} of ${nextThreshold} points toward Rookie Collector progress`}>
             <span style={{ width: `${progressPercent}%` }} />
           </div>
@@ -1121,9 +1121,9 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
             <AccountIconBadge tone="green" icon={ShieldCheck} />
           </div>
           <ul>
-            <li>Earn points on eligible purchases.</li>
-            <li>Points are added after payment is confirmed.</li>
-            <li>Shipping, taxes, refunds, canceled orders, discounts, and test/smoke orders do not earn points.</li>
+            <li>Earn 1 point per $1 on eligible product purchases.</li>
+            <li>Points may remain pending until the order is shipped, picked up, or cleared.</li>
+            <li>Shipping, tax, discounts, canceled orders, refunded items, and test/smoke orders do not earn points.</li>
             <li>Refunds/cancellations may reverse points.</li>
             <li>Points have no cash value.</li>
           </ul>
@@ -1144,7 +1144,9 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
                 <article key={entry.id}>
                   <div>
                     <strong>{entry.reason}</strong>
-                    <span>{entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {dateLabel(entry.createdAt)}</span>
+                    <span>
+                      {entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {dateLabel(entry.createdAt)} - {entry.status}
+                    </span>
                   </div>
                   <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
                 </article>
@@ -1154,7 +1156,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
             <div className="gdg-rewards-empty-state">
               <Gift size={24} aria-hidden="true" />
               <strong>No reward activity yet.</strong>
-              <p>Eligible paid orders will appear here after payment is confirmed.</p>
+              <p>Eligible paid orders will appear here as pending rewards after payment is confirmed.</p>
             </div>
           )}
         </section>

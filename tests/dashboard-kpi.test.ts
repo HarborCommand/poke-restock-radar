@@ -309,6 +309,8 @@ function storefrontOrder(overrides: Partial<StorefrontOrderDTO> = {}): Storefron
     rewardSummary: {
       pointsEarned: 0,
       pointsReversed: 0,
+      pointsPending: 0,
+      pointsAvailable: 0,
       netPoints: 0,
       ledgerCount: 0,
       status: "No rewards recorded",
@@ -1094,8 +1096,9 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   assert.match(policiesPage, /No account required to checkout/);
   assert.match(policiesPage, /Customer accounts are optional/);
   assert.match(policiesPage, /guest checkout remains available/);
-  assert.match(policiesPage, /Earn points on eligible purchases/);
-  assert.match(policiesPage, /Points are awarded after payment is confirmed/);
+  assert.match(policiesPage, /Earn 1 point per \$1 on eligible product purchases/);
+  assert.match(policiesPage, /Points start pending after payment/);
+  assert.match(policiesPage, /may become available after fulfillment, pickup, or the configured pending period/);
   assert.match(policiesPage, /Shipping, taxes, refunds, discounts, canceled orders, and test\/smoke orders do not earn points/);
   assert.match(policiesPage, /Refunded or canceled orders can reverse points/);
   assert.match(policiesPage, /Rewards redemption coming soon/);

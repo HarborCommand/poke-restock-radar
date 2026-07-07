@@ -376,6 +376,8 @@ export type StorefrontAddressDTO = {
 export type StorefrontRewardSummaryDTO = {
   pointsEarned: number;
   pointsReversed: number;
+  pointsPending: number;
+  pointsAvailable: number;
   netPoints: number;
   ledgerCount: number;
   status: string;
@@ -386,8 +388,11 @@ export type StorefrontRewardLedgerEntryDTO = {
   id: string;
   points: number;
   type: string;
+  status: string;
   reason: string;
   orderNumber: string | null;
+  availableAt: string | null;
+  settledAt: string | null;
   createdAt: string;
 };
 

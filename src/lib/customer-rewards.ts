@@ -9,6 +9,11 @@ import {
 } from "@/lib/customer-account-auth";
 
 const rewardPointsPerDollar = 1;
+const defaultRewardPendingDays = 0;
+const rewardLedgerStatuses = new Set(["pending", "available", "reversed", "canceled"]);
+const rewardSources = {
+  stripeCheckout: "stripe_checkout"
+} as const;
 
 type RewardOrderItem = {
   lineTotal: number;
@@ -34,25 +39,34 @@ type RewardOrder = {
   } | null;
   items: RewardOrderItem[];
   rewardLedgerEntries?: Array<{
+    id?: string;
     points: number;
     type: string;
+    status?: string | null;
   }>;
 };
 
 type RewardLedgerTx = Prisma.TransactionClient;
+type RewardLedgerStatus = "pending" | "available" | "reversed" | "canceled";
+type RewardReleaseReason = "shipped" | "picked_up" | "fulfilled" | "delay_elapsed";
 
 export type CustomerRewardActivityItem = {
   id: string;
   points: number;
   type: string;
+  status: string;
   reason: string;
   createdAt: string;
+  availableAt: string | null;
+  settledAt: string | null;
   orderNumber: string | null;
 };
 
 export type StorefrontOrderRewardSummary = {
   pointsEarned: number;
   pointsReversed: number;
+  pointsPending: number;
+  pointsAvailable: number;
   netPoints: number;
   ledgerCount: number;
   status: string;
@@ -72,10 +86,29 @@ export function customerRewardsEnabled() {
   return rewardFeatureEnabled();
 }
 
+export function configuredRewardPendingDays(env: Record<string, string | undefined> = process.env) {
+  const raw = env.CUSTOMER_REWARD_PENDING_DAYS?.trim();
+  if (!raw) return defaultRewardPendingDays;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return defaultRewardPendingDays;
+  return Math.floor(parsed);
+}
+
+function rewardAvailableAt(now = new Date()) {
+  return new Date(now.getTime() + configuredRewardPendingDays() * 24 * 60 * 60 * 1000);
+}
+
+function normalizedRewardLedgerStatus(entry: { points: number; type: string; status?: string | null }): RewardLedgerStatus {
+  if (entry.status && rewardLedgerStatuses.has(entry.status)) return entry.status as RewardLedgerStatus;
+  if (entry.points < 0 || entry.type === "reverse") return "reversed";
+  if (entry.points > 0) return "available";
+  return "canceled";
+}
+
 export function rewardEligibleSubtotalCents(order: Pick<RewardOrder, "subtotal" | "items">) {
-  const subtotalCents = centsFromMoney(order.subtotal);
-  if (subtotalCents > 0) return subtotalCents;
-  return order.items.reduce((sum, item) => sum + centsFromMoney(item.lineTotal), 0);
+  const itemSubtotalCents = order.items.reduce((sum, item) => sum + centsFromMoney(item.lineTotal), 0);
+  if (itemSubtotalCents > 0) return itemSubtotalCents;
+  return centsFromMoney(order.subtotal);
 }
 
 export function rewardPointsForOrderSubtotal(order: Pick<RewardOrder, "subtotal" | "items">) {
@@ -106,19 +139,29 @@ async function ensureRewardCustomerAccount(tx: RewardLedgerTx, order: RewardOrde
   return account;
 }
 
-async function upsertRewardBalance(tx: RewardLedgerTx, customerAccountId: string, points: number) {
+async function applyRewardBalanceDelta(
+  tx: RewardLedgerTx,
+  customerAccountId: string,
+  input: { availableDelta?: number; pendingDelta?: number; lifetimeEarnedDelta?: number }
+) {
+  const availableDelta = input.availableDelta ?? 0;
+  const pendingDelta = input.pendingDelta ?? 0;
+  const lifetimeEarnedDelta = input.lifetimeEarnedDelta ?? 0;
+  if (availableDelta === 0 && pendingDelta === 0 && lifetimeEarnedDelta === 0) return;
+  const updateData: Prisma.RewardBalanceUpdateInput = {};
+  if (availableDelta !== 0) updateData.availablePoints = { increment: availableDelta };
+  if (pendingDelta !== 0) updateData.pendingPoints = { increment: pendingDelta };
+  if (lifetimeEarnedDelta !== 0) updateData.lifetimeEarnedPoints = { increment: lifetimeEarnedDelta };
+
   await tx.rewardBalance.upsert({
     where: { customerAccountId },
     create: {
       customerAccountId,
-      availablePoints: points,
-      lifetimeEarnedPoints: Math.max(0, points),
-      pendingPoints: 0
+      availablePoints: availableDelta,
+      lifetimeEarnedPoints: lifetimeEarnedDelta,
+      pendingPoints: pendingDelta
     },
-    update: {
-      availablePoints: { increment: points },
-      lifetimeEarnedPoints: points > 0 ? { increment: points } : undefined
-    }
+    update: updateData
   });
 }
 
@@ -130,6 +173,13 @@ async function createRewardLedgerEntry(input: {
   points: number;
   type: "earn" | "reverse";
   reason: string;
+  status: RewardLedgerStatus;
+  source: string;
+  availableAt?: Date | null;
+  settledAt?: Date | null;
+  eligibleSubtotalCents?: number | null;
+  reversalOfEntryId?: string | null;
+  balanceDelta: { availableDelta?: number; pendingDelta?: number; lifetimeEarnedDelta?: number };
   metadata: Record<string, unknown>;
 }) {
   const existing = await input.tx.rewardLedgerEntry.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
@@ -142,10 +192,16 @@ async function createRewardLedgerEntry(input: {
       points: input.points,
       type: input.type,
       reason: input.reason,
+      status: input.status,
+      source: input.source,
+      availableAt: input.availableAt,
+      settledAt: input.settledAt,
+      eligibleSubtotalCents: input.eligibleSubtotalCents,
+      reversalOfEntryId: input.reversalOfEntryId,
       metadataJson: JSON.stringify(input.metadata)
     }
   });
-  await upsertRewardBalance(input.tx, input.customerAccountId, input.points);
+  await applyRewardBalanceDelta(input.tx, input.customerAccountId, input.balanceDelta);
   return { created: true, points: ledger.points };
 }
 
@@ -159,6 +215,7 @@ export async function awardRewardsForPaidOrder(order: RewardOrder) {
   if (points <= 0) return { status: "no_points" as const, points: 0 };
 
   return prisma.$transaction(async (tx) => {
+    const now = new Date();
     let account: Awaited<ReturnType<typeof ensureRewardCustomerAccount>>;
     try {
       account = await ensureRewardCustomerAccount(tx, order);
@@ -174,16 +231,83 @@ export async function awardRewardsForPaidOrder(order: RewardOrder) {
       idempotencyKey: `rewards:earn:${order.id}`,
       points,
       type: "earn",
-      reason: "Paid order eligible item subtotal",
+      reason: "Paid order eligible item subtotal pending release",
+      status: "pending",
+      source: rewardSources.stripeCheckout,
+      availableAt: rewardAvailableAt(now),
+      settledAt: null,
+      eligibleSubtotalCents,
+      balanceDelta: {
+        pendingDelta: points,
+        lifetimeEarnedDelta: points
+      },
       metadata: {
         orderNumber: order.orderNumber,
         eligibleSubtotalCents,
         shippingCentsExcluded: centsFromMoney(order.shippingCharged),
         taxCentsExcluded: centsFromMoney(order.tax),
+        discountCentsExcluded: 0,
+        releaseRule: "Pending until order is shipped, picked up, or cleared by the configured pending period.",
         rule: "1 point per eligible item subtotal dollar"
       }
     });
-    return { status: result.created ? ("awarded" as const) : ("already_awarded" as const), points: result.points };
+    return { status: result.created ? ("pending" as const) : ("already_awarded" as const), points: result.points };
+  });
+}
+
+export async function releasePendingRewardsForOrder(orderId: string, reason: RewardReleaseReason, now = new Date()) {
+  if (!rewardFeatureEnabled()) return { status: "disabled" as const, points: 0 };
+
+  return prisma.$transaction(async (tx) => {
+    const ledger = await tx.rewardLedgerEntry.findMany({
+      where: { orderId },
+      select: {
+        id: true,
+        customerAccountId: true,
+        points: true,
+        type: true,
+        status: true,
+        availableAt: true
+      }
+    });
+    const pendingEntries = ledger.filter((entry) => {
+      if (entry.points <= 0 || entry.type !== "earn" || normalizedRewardLedgerStatus(entry) !== "pending") return false;
+      if (reason !== "delay_elapsed") return true;
+      return !entry.availableAt || entry.availableAt.getTime() <= now.getTime();
+    });
+    if (!pendingEntries.length) return { status: "no_pending_rewards" as const, points: 0 };
+
+    const pendingEarnPoints = pendingEntries.reduce((sum, entry) => sum + entry.points, 0);
+    const reversedPoints = Math.abs(ledger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
+    const customerAccountId = pendingEntries[0]?.customerAccountId;
+    if (!customerAccountId) return { status: "no_pending_rewards" as const, points: 0 };
+
+    let remainingReversedPoints = reversedPoints;
+    let claimedReleasePoints = 0;
+    let claimedEntries = 0;
+    for (const entry of pendingEntries) {
+      const entryReversedPoints = Math.min(entry.points, remainingReversedPoints);
+      remainingReversedPoints -= entryReversedPoints;
+      const entryReleasePoints = Math.max(0, entry.points - entryReversedPoints);
+      const claimed = await tx.rewardLedgerEntry.updateMany({
+        where: { id: entry.id, status: "pending" },
+        data: {
+          status: entryReleasePoints > 0 ? "available" : "canceled",
+          settledAt: now
+        }
+      });
+      if (claimed.count !== 1) continue;
+      claimedEntries += 1;
+      claimedReleasePoints += entryReleasePoints;
+    }
+
+    if (claimedEntries === 0) return { status: "no_pending_rewards" as const, points: 0 };
+    if (claimedReleasePoints <= 0) return { status: "already_reversed" as const, points: 0 };
+    await applyRewardBalanceDelta(tx, customerAccountId, {
+      pendingDelta: -claimedReleasePoints,
+      availableDelta: claimedReleasePoints
+    });
+    return { status: "released" as const, points: claimedReleasePoints };
   });
 }
 
@@ -193,7 +317,7 @@ export async function reverseRewardsForOrder(
 ) {
   const existingLedger = await prisma.rewardLedgerEntry.findMany({
     where: { orderId: order.id },
-    select: { customerAccountId: true, points: true, type: true }
+    select: { id: true, customerAccountId: true, points: true, type: true, status: true }
   });
   const earnedPoints = existingLedger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
   if (earnedPoints <= 0) return { status: "no_award" as const, points: 0 };
@@ -216,15 +340,23 @@ export async function reverseRewardsForOrder(
   if (pointsToReverse <= 0) return { status: "already_reversed" as const, points: 0 };
 
   return prisma.$transaction(async (tx) => {
+    const now = new Date();
     const currentLedger = await tx.rewardLedgerEntry.findMany({
       where: { orderId: order.id },
-      select: { customerAccountId: true, points: true, type: true }
+      select: { id: true, customerAccountId: true, points: true, type: true, status: true }
     });
     const currentEarned = currentLedger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
     const currentReversed = Math.abs(currentLedger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
     const currentPointsToReverse = Math.max(0, Math.min(currentEarned, targetReversal) - currentReversed);
     const customerAccountId = currentLedger.find((entry) => entry.customerAccountId)?.customerAccountId;
     if (!customerAccountId || currentPointsToReverse <= 0) return { status: "already_reversed" as const, points: 0 };
+    const pendingEarnPoints = currentLedger
+      .filter((entry) => entry.points > 0 && normalizedRewardLedgerStatus(entry) === "pending")
+      .reduce((sum, entry) => sum + entry.points, 0);
+    const pendingRemaining = Math.max(0, pendingEarnPoints - currentReversed);
+    const pendingToReverse = Math.min(currentPointsToReverse, pendingRemaining);
+    const availableToReverse = currentPointsToReverse - pendingToReverse;
+    const earningEntry = currentLedger.find((entry) => entry.points > 0 && entry.type === "earn") ?? null;
 
     const result = await createRewardLedgerEntry({
       tx,
@@ -239,15 +371,37 @@ export async function reverseRewardsForOrder(
           : input.reason === "cancel"
             ? "Canceled order reward reversal"
             : "Refund reward reversal",
+      status: "reversed",
+      source: rewardSources.stripeCheckout,
+      settledAt: now,
+      availableAt: null,
+      eligibleSubtotalCents,
+      reversalOfEntryId: earningEntry?.id ?? null,
+      balanceDelta: {
+        pendingDelta: pendingToReverse > 0 ? -pendingToReverse : 0,
+        availableDelta: availableToReverse > 0 ? -availableToReverse : 0
+      },
       metadata: {
         orderNumber: order.orderNumber,
         reason: input.reason,
         eligibleSubtotalCents,
         cumulativeRefundedCents,
         targetReversalPoints: targetReversal,
-        previousReversedPoints: currentReversed
+        previousReversedPoints: currentReversed,
+        pendingPointsReversed: pendingToReverse,
+        availablePointsReversed: availableToReverse,
+        partialRefundLimitation: "Partial reward reversal is prorated against eligible product subtotal unless future refund metadata captures exact product-subtotal refund amount."
       }
     });
+    if (targetReversal >= currentEarned) {
+      await tx.rewardLedgerEntry.updateMany({
+        where: { orderId: order.id, type: "earn", points: { gt: 0 } },
+        data: {
+          status: "canceled",
+          settledAt: now
+        }
+      });
+    }
     return { status: result.created ? ("reversed" as const) : ("already_reversed" as const), points: Math.abs(result.points) };
   });
 }
@@ -256,17 +410,26 @@ export function rewardSummaryForOrder(order: Pick<RewardOrder, "isTestOrder" | "
   const ledger = order.rewardLedgerEntries ?? [];
   const pointsEarned = ledger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
   const pointsReversed = Math.abs(ledger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
+  const pendingGross = ledger
+    .filter((entry) => entry.points > 0 && normalizedRewardLedgerStatus(entry) === "pending")
+    .reduce((sum, entry) => sum + entry.points, 0);
+  const pointsPending = Math.max(0, pendingGross - pointsReversed);
+  const pointsAvailable = Math.max(0, pointsEarned - pointsReversed - pointsPending);
   const netPoints = pointsEarned - pointsReversed;
   const status = order.isTestOrder
     ? "Test/smoke order: no rewards"
     : pointsEarned > 0
       ? pointsReversed > 0
         ? "Rewards adjusted"
-        : "Rewards earned"
+        : pointsPending > 0
+          ? "Rewards pending"
+          : "Rewards available"
       : "No rewards recorded";
   return {
     pointsEarned,
     pointsReversed,
+    pointsPending,
+    pointsAvailable,
     netPoints,
     ledgerCount: ledger.length,
     status,
@@ -282,7 +445,10 @@ export async function listCustomerRewardActivity(account: CurrentCustomerAccount
       id: true,
       points: true,
       type: true,
+      status: true,
       reason: true,
+      availableAt: true,
+      settledAt: true,
       createdAt: true,
       order: {
         select: {
@@ -297,8 +463,11 @@ export async function listCustomerRewardActivity(account: CurrentCustomerAccount
     id: entry.id,
     points: entry.points,
     type: entry.type,
+    status: normalizedRewardLedgerStatus(entry),
     reason: entry.reason,
     createdAt: entry.createdAt.toISOString(),
+    availableAt: entry.availableAt?.toISOString() ?? null,
+    settledAt: entry.settledAt?.toISOString() ?? null,
     orderNumber: entry.order?.orderNumber ?? null
   }));
 }
