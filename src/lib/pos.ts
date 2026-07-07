@@ -25,9 +25,28 @@ export function posUnitPrice(item: PosPriceItem) {
   return typeof price === "number" && Number.isFinite(price) && price > 0 ? roundPosMoney(price) : null;
 }
 
-export function isPosSellableInventoryItem(item: PosSellableItem) {
+function posBlockedStatusReason(item: Pick<PosSellableItem, "itemStatus" | "listingStatus">) {
   const status = `${item.itemStatus} ${item.listingStatus}`.toLowerCase();
-  return item.quantityOwned > 0 && posUnitPrice(item) !== null && !/\b(sold|archived|disposed)\b/.test(status);
+  if (/\bsold\b/.test(status)) return "Marked sold";
+  if (/\barchived\b/.test(status)) return "Archived";
+  if (/\bdisposed\b/.test(status)) return "Disposed";
+  return null;
+}
+
+export function getPosExcludedReason(item: PosSellableItem) {
+  const blockedStatusReason = posBlockedStatusReason(item);
+  if (blockedStatusReason) return blockedStatusReason;
+  if (item.quantityOwned <= 0) return "No on-hand quantity";
+  if (posUnitPrice(item) === null) return "Missing POS sale price";
+  return null;
+}
+
+export function getPosSellableReason(item: PosSellableItem) {
+  return getPosExcludedReason(item) ?? "Ready for POS sale";
+}
+
+export function isPosSellableInventoryItem(item: PosSellableItem) {
+  return getPosExcludedReason(item) === null;
 }
 
 export function normalizePosCode(value: string | null | undefined) {
