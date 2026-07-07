@@ -3505,6 +3505,13 @@ const posQuickFilters = ["All", "Booster Boxes", "ETBs", "Singles", "Accessories
 const POS_RESULT_BATCH_SIZE = 24;
 type PosQuickFilter = (typeof posQuickFilters)[number];
 type PosCartLine = { itemId: string; quantity: number };
+type PosInventoryView = "sellable" | "excluded" | "all";
+
+const posInventoryViews: Array<{ id: PosInventoryView; label: string }> = [
+  { id: "sellable", label: "Ready for POS" },
+  { id: "excluded", label: "Excluded" },
+  { id: "all", label: "All inventory" }
+];
 
 function posFilterMatches(item: InventoryItemDTO, filter: PosQuickFilter): boolean {
   const text = `${item.category} ${item.itemName} ${item.publicTitle ?? ""}`.toLowerCase();
@@ -3521,6 +3528,24 @@ function posIdentifier(item: InventoryItemDTO) {
 
 function posDisplayTitle(item: InventoryItemDTO) {
   return item.publicTitle || item.itemName;
+}
+
+function posInventoryViewDescriptor(view: PosInventoryView) {
+  if (view === "sellable") return "Ready for POS";
+  if (view === "excluded") return "Excluded";
+  return "inventory";
+}
+
+function posInventoryResultsTitle(view: PosInventoryView, count: number) {
+  if (view === "sellable") return `Search Results (${count})`;
+  if (view === "excluded") return `Excluded Products (${count})`;
+  return `Inventory Results (${count})`;
+}
+
+function posInventoryShowMoreLabel(view: PosInventoryView) {
+  if (view === "sellable") return "Show more Ready for POS";
+  if (view === "excluded") return "Show more excluded";
+  return "Show more inventory";
 }
 
 function newPosSaleIdempotencyKey() {
@@ -3573,7 +3598,7 @@ function PosPanel({
   const [receipt, setReceipt] = useState<PosSaleReceiptDTO | null>(null);
   const [recentlyAddedItemId, setRecentlyAddedItemId] = useState<string | null>(null);
   const [maxReachedItemId, setMaxReachedItemId] = useState<string | null>(null);
-  const [showExcluded, setShowExcluded] = useState(false);
+  const [inventoryView, setInventoryView] = useState<PosInventoryView>("sellable");
   const [visibleLimit, setVisibleLimit] = useState(POS_RESULT_BATCH_SIZE);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
@@ -3587,19 +3612,24 @@ function PosPanel({
     () => dashboard.inventory.filter((item) => !isPosSellableInventoryItem(item)).sort((a, b) => posDisplayTitle(a).localeCompare(posDisplayTitle(b))),
     [dashboard.inventory]
   );
+  const allInventoryItems = useMemo(
+    () => [...dashboard.inventory].sort((a, b) => posDisplayTitle(a).localeCompare(posDisplayTitle(b))),
+    [dashboard.inventory]
+  );
   const itemsById = useMemo(() => new Map(dashboard.inventory.map((item) => [item.id, item])), [dashboard.inventory]);
-  const filteredSellableItems = useMemo(
-    () => sellableItems.filter((item) => posFilterMatches(item, filter)).filter((item) => posItemMatchesQuery(item, query)),
-    [filter, query, sellableItems]
+  const viewItems = inventoryView === "sellable" ? sellableItems : inventoryView === "excluded" ? excludedItems : allInventoryItems;
+  const filteredViewItems = useMemo(
+    () => viewItems.filter((item) => posFilterMatches(item, filter)).filter((item) => posItemMatchesQuery(item, query)),
+    [filter, query, viewItems]
   );
   const visibleItems = useMemo(
-    () => filteredSellableItems.slice(0, visibleLimit),
-    [filteredSellableItems, visibleLimit]
+    () => filteredViewItems.slice(0, visibleLimit),
+    [filteredViewItems, visibleLimit]
   );
-  const filteredExcludedItems = useMemo(
-    () => excludedItems.filter((item) => posFilterMatches(item, filter)).filter((item) => posItemMatchesQuery(item, query)),
-    [excludedItems, filter, query]
-  );
+  const resultDescriptor = posInventoryViewDescriptor(inventoryView);
+  const visibleResultCount = visibleItems.length < filteredViewItems.length ? visibleItems.length : filteredViewItems.length;
+  const resultsNarrowed = filteredViewItems.length !== viewItems.length;
+  const resultDetail = `${resultsNarrowed ? "Filtered - " : ""}Showing ${visibleResultCount} of ${viewItems.length} ${resultDescriptor}`;
   const cartLines = cart
     .map((line) => {
       const item = itemsById.get(line.itemId);
@@ -3622,7 +3652,7 @@ function PosPanel({
 
   useEffect(() => {
     setVisibleLimit(POS_RESULT_BATCH_SIZE);
-  }, [filter, query]);
+  }, [filter, query, inventoryView]);
 
   useEffect(() => {
     if (!confirmOpen) return;
@@ -3635,7 +3665,7 @@ function PosPanel({
     setPosMessage(null);
     setMaxReachedItemId(null);
     if (!isPosSellableInventoryItem(item)) {
-      setPosMessage(`${item.itemName} is not available for POS sale.`);
+      setPosMessage(`${item.itemName} is not available for POS sale: ${getPosExcludedReason(item) ?? "not currently POS sellable"}.`);
       return;
     }
     const currentQuantity = cart.find((line) => line.itemId === item.id)?.quantity ?? 0;
@@ -3700,7 +3730,7 @@ function PosPanel({
       event.preventDefault();
       if (exactMatches.length === 1) {
         setPosMessage(`Product found but excluded from POS: ${getPosExcludedReason(exactMatches[0]) ?? "not currently POS sellable"}.`);
-        setShowExcluded(true);
+        setInventoryView("excluded");
         return;
       }
       setPosMessage(exactMatches.length > 1 ? "Multiple products matched that code. Choose the right item from results." : "No product found for this UPC/SKU.");
@@ -3804,90 +3834,82 @@ function PosPanel({
             <span>{sellableItems.length} POS sellable</span>
             <span>{dashboard.inventory.length} inventory products</span>
             <span>{excludedItems.length} excluded</span>
-            <button className="mini-action" type="button" onClick={() => setShowExcluded((current) => !current)}>
-              {showExcluded ? "Hide excluded" : "Show excluded"}
-            </button>
+          </div>
+          <div className="pos-view-row" aria-label="POS inventory view">
+            {posInventoryViews.map((view) => {
+              const count = view.id === "sellable" ? sellableItems.length : view.id === "excluded" ? excludedItems.length : allInventoryItems.length;
+              return (
+                <button
+                  className={inventoryView === view.id ? "pos-view-chip active" : "pos-view-chip"}
+                  key={view.id}
+                  type="button"
+                  aria-pressed={inventoryView === view.id}
+                  onClick={() => setInventoryView(view.id)}
+                >
+                  {view.label} <b>{count}</b>
+                </button>
+              );
+            })}
           </div>
           <div className="pos-results-heading">
-            <strong>Search Results ({filteredSellableItems.length})</strong>
-            <span>
-              {query ? "Filtered by search" : "POS sellable display inventory"} - Showing {visibleItems.length}
-              {filteredSellableItems.length > visibleItems.length ? ` of ${filteredSellableItems.length}` : ""}
-            </span>
+            <strong>{posInventoryResultsTitle(inventoryView, filteredViewItems.length)}</strong>
+            <span>{resultDetail}</span>
           </div>
           <div className="pos-result-grid">
             {visibleItems.length ? (
               visibleItems.map((item) => {
-                const unitPrice = posUnitPrice(item) ?? 0;
+                const unitPrice = posUnitPrice(item);
+                const sellable = isPosSellableInventoryItem(item);
+                const excludedReason = getPosExcludedReason(item) ?? "Not currently POS sellable";
                 const inCart = cart.find((line) => line.itemId === item.id)?.quantity ?? 0;
-                const canAdd = inCart < item.quantityOwned;
+                const canAdd = sellable && inCart < item.quantityOwned;
                 const lowStock = item.quantityOwned === 1;
                 const added = recentlyAddedItemId === item.id;
                 return (
-                  <article className={added ? "pos-product-card just-added" : "pos-product-card"} key={item.id}>
+                  <article className={`${added ? "pos-product-card just-added" : "pos-product-card"}${sellable ? "" : " excluded"}`} key={item.id}>
                     <InventoryImage item={item} />
                     <div className="pos-product-copy">
                       <strong>{posDisplayTitle(item)}</strong>
                       <span className="pos-product-id">{posIdentifier(item)}</span>
                       <span>{formatStatus(item.category)}</span>
                       <div className="pos-product-price-row">
-                        <b>{money(unitPrice)}</b>
+                        <b>{unitPrice !== null ? money(unitPrice) : "Missing price"}</b>
                         <em className={lowStock ? "low-stock" : ""}>On hand: {item.quantityOwned}</em>
                       </div>
-                      <small className="pos-sellable-reason">{getPosSellableReason(item)}</small>
-                      {lowStock ? <small className="pos-stock-warning">Low stock</small> : null}
+                      {sellable ? (
+                        <>
+                          <small className="pos-sellable-reason">{getPosSellableReason(item)}</small>
+                          {lowStock ? <small className="pos-stock-warning">Low stock</small> : null}
+                        </>
+                      ) : (
+                        <small className="pos-excluded-reason">Excluded from POS: {excludedReason}</small>
+                      )}
                     </div>
-                    <button className="primary-action pos-add-button" type="button" disabled={!canAdd} onClick={() => addToCart(item)}>
+                    <button
+                      className="primary-action pos-add-button"
+                      type="button"
+                      disabled={!canAdd}
+                      title={sellable ? undefined : excludedReason}
+                      onClick={() => addToCart(item)}
+                    >
                       <Plus size={15} />
-                      {added ? "Added" : canAdd ? "Add" : "Max added"}
+                      {sellable ? (added ? "Added" : canAdd ? "Add" : "Max added") : "Excluded"}
                     </button>
                   </article>
                 );
               })
             ) : (
-              <EmptyState icon={PackageSearch} title="No sellable products found" detail="Try another search or add price/on-hand inventory first." />
+              <EmptyState
+                icon={PackageSearch}
+                title={inventoryView === "excluded" ? "No excluded products found" : inventoryView === "all" ? "No inventory products found" : "No sellable products found"}
+                detail={inventoryView === "excluded" ? "Try another search or clear filters to review excluded inventory." : "Try another search or add price/on-hand inventory first."}
+              />
             )}
           </div>
-          {visibleItems.length < filteredSellableItems.length ? (
+          {visibleItems.length < filteredViewItems.length ? (
             <button className="mini-action pos-load-more" type="button" onClick={() => setVisibleLimit((current) => current + POS_RESULT_BATCH_SIZE)}>
-              Show more POS products
+              {posInventoryShowMoreLabel(inventoryView)}
             </button>
-          ) : null}
-          {showExcluded ? (
-            <div className="pos-excluded-panel" aria-label="Products excluded from POS">
-              <div className="pos-results-heading">
-                <strong>Excluded from POS ({filteredExcludedItems.length})</strong>
-                <span>Diagnostic only. Add stays disabled.</span>
-              </div>
-              <div className="pos-result-grid">
-                {filteredExcludedItems.length ? (
-                  filteredExcludedItems.slice(0, 12).map((item) => {
-                    const unitPrice = posUnitPrice(item);
-                    return (
-                      <article className="pos-product-card excluded" key={item.id}>
-                        <InventoryImage item={item} />
-                        <div className="pos-product-copy">
-                          <strong>{posDisplayTitle(item)}</strong>
-                          <span className="pos-product-id">{posIdentifier(item)}</span>
-                          <span>{formatStatus(item.category)}</span>
-                          <div className="pos-product-price-row">
-                            <b>{unitPrice !== null ? money(unitPrice) : "No POS price"}</b>
-                            <em>On hand: {item.quantityOwned}</em>
-                          </div>
-                          <small className="pos-excluded-reason">{getPosExcludedReason(item) ?? "Not currently POS sellable"}</small>
-                        </div>
-                        <button className="primary-action pos-add-button" type="button" disabled>
-                          Add disabled
-                        </button>
-                      </article>
-                    );
-                  })
-                ) : (
-                  <EmptyState icon={PackageSearch} title="No excluded products match" detail="Try a broader search or clear filters." />
-                )}
-              </div>
-              {filteredExcludedItems.length > 12 ? <small className="pos-diagnostic-note">Showing first 12 excluded matches to keep checkout focused.</small> : null}
-            </div>
           ) : null}
         </section>
 

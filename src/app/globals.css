@@ -26227,6 +26227,38 @@ body .catalog-action-menu-floating {
   font-weight: 850;
 }
 
+.pos-view-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pos-view-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  padding: 8px 12px;
+  font-weight: 850;
+}
+
+.pos-view-chip b {
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-view-chip.active {
+  border-color: #4338ca;
+  background: #eef2ff;
+  color: #312e81;
+}
+
 .pos-filter,
 .pos-payment {
   display: inline-flex;
@@ -26371,8 +26403,7 @@ body .catalog-action-menu-floating {
 }
 
 .pos-sellable-reason,
-.pos-excluded-reason,
-.pos-diagnostic-note {
+.pos-excluded-reason {
   color: #475569;
   font-size: 0.75rem;
   font-weight: 850;
@@ -26397,14 +26428,6 @@ body .catalog-action-menu-floating {
 
 .pos-load-more {
   justify-self: center;
-}
-
-.pos-excluded-panel {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 12px;
 }
 
 .pos-cart-lines {
@@ -26655,6 +26678,7 @@ body .catalog-action-menu-floating {
 .gdg-product-body h3 a:focus-visible,
 .gdg-gallery-thumbs button:focus-visible,
 .gdg-quantity-control button:focus-visible,
+.pos-view-chip:focus-visible,
 .pos-filter:focus-visible,
 .pos-payment:focus-visible,
 .pos-add-button:focus-visible,
