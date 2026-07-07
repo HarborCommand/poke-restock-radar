@@ -2,12 +2,23 @@ import type { InventoryItemDTO } from "@/types/radar";
 
 export const POS_PAYMENT_METHOD_VALUES = ["cash", "zelle", "external_card", "other"] as const;
 export type PosPaymentMethod = (typeof POS_PAYMENT_METHOD_VALUES)[number];
+export const POS_DISCOUNT_REASON_VALUES = ["customer_discount", "price_match", "damaged_packaging", "promotion", "owner_override", "other"] as const;
+export type PosDiscountReason = (typeof POS_DISCOUNT_REASON_VALUES)[number];
 
 export const POS_PAYMENT_METHOD_LABELS: Record<PosPaymentMethod, string> = {
   cash: "Cash",
   zelle: "Zelle",
   external_card: "External card/manual",
   other: "Other/manual"
+};
+
+export const POS_DISCOUNT_REASON_LABELS: Record<PosDiscountReason, string> = {
+  customer_discount: "Customer discount",
+  price_match: "Price match",
+  damaged_packaging: "Damaged packaging",
+  promotion: "Promotion",
+  owner_override: "Owner override",
+  other: "Other"
 };
 
 export const POS_TAX_RATE_ENV = "POS_TAX_RATE";
@@ -98,6 +109,15 @@ export function normalizePosPaymentMethod(value: string | null | undefined): Pos
 
 export function posPaymentMethodLabel(method: PosPaymentMethod) {
   return POS_PAYMENT_METHOD_LABELS[method];
+}
+
+export function normalizePosDiscountReason(value: string | null | undefined): PosDiscountReason | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return POS_DISCOUNT_REASON_VALUES.find((reason) => reason === normalized) ?? null;
+}
+
+export function posDiscountReasonLabel(reason: PosDiscountReason) {
+  return POS_DISCOUNT_REASON_LABELS[reason];
 }
 
 export function normalizePosTaxRate(value: string | number | null | undefined) {
