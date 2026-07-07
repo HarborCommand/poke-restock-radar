@@ -26565,6 +26565,13 @@ body .catalog-action-menu-floating {
   flex: 1;
 }
 
+.pos-receipt-store {
+  display: block;
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
 .pos-receipt-total {
   display: grid;
   gap: 8px;

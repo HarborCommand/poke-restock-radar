@@ -4052,6 +4052,7 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
     <section className="pos-receipt" aria-live="polite">
       <div>
         <span className="sale-status-badge good">Sale Complete</span>
+        <strong className="pos-receipt-store">GameDayGrabs</strong>
         <h3>{receipt.saleReference}</h3>
         <p>{dateTime(receipt.completedAt)}</p>
         <p>{receipt.itemCount} item{receipt.itemCount === 1 ? "" : "s"} sold. Inventory updated.</p>
@@ -4070,6 +4071,7 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
         <span>Payment <strong>{receipt.paymentMethodLabel}</strong></span>
         {receipt.paymentReference ? <span>Reference <strong>{receipt.paymentReference}</strong></span> : null}
         <strong>{money(receipt.total)}</strong>
+        <small>Support: {GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}</small>
         <div className="pos-receipt-actions">
           <button className="primary-action" type="button" onClick={onNewSale}>
             <Plus size={14} />

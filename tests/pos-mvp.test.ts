@@ -388,6 +388,7 @@ test("POS receipt success state includes metadata and copy receipt affordance", 
   assert.match(app, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
   assert.match(app, /Date: \$\{dateTime\(receipt\.completedAt\)\}/);
   assert.match(receipt, /Sale Complete/);
+  assert.match(receipt, /GameDayGrabs/);
   assert.match(receipt, /Inventory updated/);
   assert.match(receipt, /receipt\.saleReference/);
   assert.match(receipt, /dateTime\(receipt\.completedAt\)/);
@@ -398,6 +399,7 @@ test("POS receipt success state includes metadata and copy receipt affordance", 
   assert.match(receipt, /New Sale/);
   assert.match(receipt, /Copy Receipt/);
   assert.match(receipt, /Print Receipt/);
+  assert.match(receipt, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
 });
 
 test("POS mobile layout keeps cart and product rows stacked without obvious overflow risk", () => {
