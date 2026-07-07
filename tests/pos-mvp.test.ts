@@ -294,8 +294,11 @@ test("POS tab renders for admin with scan, cart, payment, and confirmation affor
   assert.match(app, /inventory products/);
   assert.match(app, /POS sellable/);
   assert.match(app, /excluded/);
-  assert.match(app, /Show excluded/);
-  assert.match(app, /Excluded from POS/);
+  assert.match(app, /Ready for POS/);
+  assert.match(app, /Excluded/);
+  assert.match(app, /All inventory/);
+  assert.match(app, /aria-label="POS inventory view"/);
+  assert.doesNotMatch(app, /Hide excluded/);
   assert.match(app, /Cart \(\{cartQuantity\}\)/);
   assert.match(app, /Payment Method/);
   assert.match(app, /Confirm Sale/);
@@ -324,6 +327,7 @@ test("POS scanner feedback handles exact add, no match, and ambiguous code safel
   assert.match(posPanel, /addToCart\(exactSellableMatches\[0\]\)/);
   assert.match(posPanel, /Product found but excluded from POS/);
   assert.match(posPanel, /getPosExcludedReason\(exactMatches\[0\]\)/);
+  assert.match(posPanel, /setInventoryView\("excluded"\)/);
   assert.match(posPanel, /No product found for this UPC\/SKU\./);
   assert.match(posPanel, /Multiple products matched that code/);
   assert.match(posPanel, /searchInputRef\.current\?\.focus\(\)/);
@@ -355,12 +359,22 @@ test("POS product list does not silently cap results and exposes excluded reason
   const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
 
   assert.match(posPanel, /POS_RESULT_BATCH_SIZE/);
-  assert.match(posPanel, /filteredSellableItems\.slice\(0, visibleLimit\)/);
-  assert.match(posPanel, /Show more POS products/);
-  assert.match(posPanel, /filteredExcludedItems\.slice\(0, 12\)/);
-  assert.match(posPanel, /Add disabled/);
+  assert.match(app, /type PosInventoryView = "sellable" \| "excluded" \| "all"/);
+  assert.match(app, /posInventoryViews/);
+  assert.match(posPanel, /useState<PosInventoryView>\("sellable"\)/);
+  assert.match(posPanel, /inventoryView === "sellable" \? sellableItems : inventoryView === "excluded" \? excludedItems : allInventoryItems/);
+  assert.match(posPanel, /filteredViewItems\.slice\(0, visibleLimit\)/);
+  assert.match(posPanel, /posInventoryResultsTitle\(inventoryView, filteredViewItems\.length\)/);
+  assert.match(posPanel, /posInventoryShowMoreLabel\(inventoryView\)/);
+  assert.match(app, /Search Results/);
+  assert.match(app, /Excluded Products/);
+  assert.match(app, /Inventory Results/);
+  assert.match(posPanel, /Excluded from POS: \{excludedReason\}/);
+  assert.match(posPanel, /title=\{sellable \? undefined : excludedReason\}/);
+  assert.match(posPanel, /sellable \? \(added \? "Added" : canAdd \? "Add" : "Max added"\) : "Excluded"/);
   assert.match(posPanel, /getPosExcludedReason\(item\)/);
   assert.match(css, /\.pos-inventory-status/);
+  assert.match(css, /\.pos-view-chip/);
   assert.match(css, /\.pos-product-card\.excluded/);
   assert.match(css, /\.pos-excluded-reason/);
   assert.match(css, /\.pos-load-more/);
