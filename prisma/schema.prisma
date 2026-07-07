@@ -938,6 +938,11 @@ model InventorySale {
   saleReference    String?
   paymentMethod    String?
   paymentReference String?
+  originalUnitPrice Float?
+  adjustedUnitPrice Float?
+  discountAmount   Float?
+  discountReason   String?
+  discountNote     String?
   soldAt           DateTime
   notes            String?
   createdAt        DateTime      @default(now())

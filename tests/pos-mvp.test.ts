@@ -3,12 +3,16 @@ import fs from "node:fs";
 import test from "node:test";
 import {
   POS_DEFAULT_TAX_RATE,
+  POS_DISCOUNT_REASON_LABELS,
+  POS_DISCOUNT_REASON_VALUES,
   calculatePosTotals,
   getPosExcludedReason,
   getPosSellableReason,
   isPosSellableInventoryItem,
+  normalizePosDiscountReason,
   posItemExactCodeMatch,
   posItemMatchesQuery,
+  posDiscountReasonLabel,
   posUnitPrice
 } from "../src/lib/pos";
 import { posSaleCreateSchema } from "../src/lib/validation";
@@ -201,6 +205,13 @@ test("POS totals calculate subtotal, tax, and total from line snapshots", () => 
   });
 });
 
+test("POS discount reasons normalize to stable labels", () => {
+  assert.deepEqual(POS_DISCOUNT_REASON_VALUES, ["customer_discount", "price_match", "damaged_packaging", "promotion", "owner_override", "other"]);
+  assert.equal(normalizePosDiscountReason("price_match"), "price_match");
+  assert.equal(posDiscountReasonLabel("damaged_packaging"), POS_DISCOUNT_REASON_LABELS.damaged_packaging);
+  assert.equal(normalizePosDiscountReason("not-real"), null);
+});
+
 test("POS sale request requires payment method and never accepts browser prices or totals", () => {
   const parsed = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-test-sale",
@@ -217,6 +228,40 @@ test("POS sale request requires payment method and never accepts browser prices 
 
   const missingIdempotency = posSaleCreateSchema.safeParse({ items: [{ inventoryItemId: "item-1", quantity: 1 }], paymentMethod: "cash" });
   assert.equal(missingIdempotency.success, false);
+});
+
+test("POS sale request accepts only explicit adjusted price metadata, not fake browser totals", () => {
+  const parsed = posSaleCreateSchema.safeParse({
+    idempotencyKey: "20260702T120000-test-sale",
+    items: [{
+      inventoryItemId: "item-1",
+      quantity: 1,
+      adjustedUnitPrice: "55.00",
+      discountReason: "price_match",
+      discountNote: "Preview discount",
+      unitPrice: 1,
+      total: 1
+    }],
+    paymentMethod: "cash",
+    total: 1
+  });
+  assert.equal(parsed.success, true);
+  assert.deepEqual(parsed.success ? Object.keys(parsed.data.items[0]).sort() : [], ["adjustedUnitPrice", "discountNote", "discountReason", "inventoryItemId", "quantity"]);
+  assert.equal(parsed.success ? parsed.data.items[0].adjustedUnitPrice : null, 55);
+
+  const zeroPrice = posSaleCreateSchema.safeParse({
+    idempotencyKey: "20260702T120000-test-sale",
+    items: [{ inventoryItemId: "item-1", quantity: 1, adjustedUnitPrice: 0, discountReason: "price_match" }],
+    paymentMethod: "cash"
+  });
+  assert.equal(zeroPrice.success, false);
+
+  const invalidReason = posSaleCreateSchema.safeParse({
+    idempotencyKey: "20260702T120000-test-sale",
+    items: [{ inventoryItemId: "item-1", quantity: 1, adjustedUnitPrice: 55, discountReason: "fake_reason" }],
+    paymentMethod: "cash"
+  });
+  assert.equal(invalidReason.success, false);
 });
 
 test("POS API is private admin-only and delegates to server-side sale creation", () => {
@@ -240,7 +285,11 @@ test("POS server revalidates inventory, price, and availability before recording
   assert.match(createPosSale, /isPosSellableInventoryItem\(dto\)/);
   assert.match(createPosSale, /getPosExcludedReason\(dto\)/);
   assert.match(createPosSale, /cartItem\.quantity > dto\.quantityOwned/);
-  assert.match(createPosSale, /const unitPrice = posUnitPrice\(dto\)/);
+  assert.match(createPosSale, /const originalUnitPrice = posUnitPrice\(dto\)/);
+  assert.match(createPosSale, /normalizePosDiscountReason\(cartItem\.discountReason\)/);
+  assert.match(createPosSale, /requestedAdjustedUnitPrice !== null && requestedAdjustedUnitPrice >= originalUnitPrice/);
+  assert.match(createPosSale, /Adjusted POS price for \$\{dto\.itemName\} cannot exceed or equal the current POS price in Phase 1/);
+  assert.match(createPosSale, /Select a discount reason for \$\{dto\.itemName\}/);
   assert.match(createPosSale, /calculatePosTotals\(lines, taxRate\)/);
   assert.match(createPosSale, /saleReference/);
   assert.match(createPosSale, /paymentMethod/);
@@ -259,6 +308,25 @@ test("POS inventory deduction happens only through completed sale creation path"
   assert.match(service, /await tx\.inventorySale\.create/);
 });
 
+test("POS adjusted sale stores original price, adjusted price, discount metadata, and receipt metadata", () => {
+  const service = readSource("../src/lib/radar-service.ts");
+  const createLine = sourceSlice(service, "async function createPosInventorySaleLine", "export async function createPosSale");
+  const receipt = sourceSlice(service, "async function receiptForExistingPosSale", "function inventorySaleAvailability");
+  const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
+  assert.match(createLine, /soldPricePerItem: line\.unitPrice/);
+  assert.match(createLine, /originalUnitPrice: line\.originalUnitPrice/);
+  assert.match(createLine, /adjustedUnitPrice: line\.adjustedUnitPrice/);
+  assert.match(createLine, /discountAmount: line\.discountAmount/);
+  assert.match(createLine, /discountReason: line\.discountReason/);
+  assert.match(createLine, /discountNote: line\.discountNote/);
+  assert.match(receipt, /sale\.originalUnitPrice \?\? sale\.soldPricePerItem/);
+  assert.match(receipt, /sale\.adjustedUnitPrice \?\? sale\.soldPricePerItem/);
+  assert.match(receipt, /normalizePosDiscountReason\(sale\.discountReason\)/);
+  assert.match(receipt, /discountReasonLabel: discountReason \? posDiscountReasonLabel\(discountReason\) : null/);
+  assert.match(createPosSale, /discountAmount: line\.discountAmount/);
+  assert.match(createPosSale, /discountNote: line\.discountNote/);
+});
+
 test("POS duplicate submit and same-item oversell are guarded server-side", () => {
   const service = readSource("../src/lib/radar-service.ts");
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
@@ -270,6 +338,7 @@ test("POS duplicate submit and same-item oversell are guarded server-side", () =
   assert.match(createPosSale, /await tx\.inventoryItem\.updateMany/);
   assert.match(service, /remainingQuantity: \{ gte: quantityFromLot \}/);
   assert.match(service, /if \(updated\.count !== 1\)/);
+  assert.match(service, /Duplicate POS cart lines for the same item must use the same price adjustment/);
 });
 
 test("POS client sends idempotency key and clamps cart quantities to available stock", () => {
@@ -278,6 +347,8 @@ test("POS client sends idempotency key and clamps cart quantities to available s
   assert.match(app, /function newPosSaleIdempotencyKey/);
   assert.match(posPanel, /const \[saleIdempotencyKey, setSaleIdempotencyKey\]/);
   assert.match(posPanel, /idempotencyKey: saleIdempotencyKey/);
+  assert.match(posPanel, /adjustedUnitPrice: line\.discountAmount > 0 \? line\.adjustedUnitPrice : undefined/);
+  assert.match(posPanel, /discountReason: line\.discountAmount > 0 \? line\.discountReason \?\? undefined : undefined/);
   assert.match(posPanel, /setSaleIdempotencyKey\(newPosSaleIdempotencyKey\(\)\)/);
   assert.match(posPanel, /Math\.min\(item\.quantityOwned, quantity\)/);
   assert.match(posPanel, /if \(submitting\) return/);
@@ -304,6 +375,40 @@ test("POS tab renders for admin with scan, cart, payment, and confirmation affor
   assert.match(app, /Confirm Sale/);
   assert.match(app, /Clear/);
   assert.match(app, /Math\.min\(item\.quantityOwned, quantity\)/);
+});
+
+test("POS cart exposes line-item price adjustment UI without saving immediately", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const css = readSource("../src/app/globals.css");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+  assert.match(app, /type PosPriceAdjustmentDraft/);
+  assert.match(posPanel, /priceAdjustmentDraft/);
+  assert.match(posPanel, /openPriceAdjustment\(line\)/);
+  assert.match(posPanel, /Adjust price/);
+  assert.match(posPanel, /Edit discount/);
+  assert.match(posPanel, /Remove discount/);
+  assert.match(posPanel, /aria-label="Adjust POS price"/);
+  assert.match(posPanel, /Current POS unit price/);
+  assert.match(posPanel, /New POS unit price/);
+  assert.match(posPanel, /Discount/);
+  assert.match(posPanel, /POS_DISCOUNT_REASON_VALUES\.map/);
+  assert.match(posPanel, /This only updates the POS cart/);
+  assert.match(posPanel, /setCart\(\(current\) =>\s*current\.map/);
+  assert.doesNotMatch(sourceSlice(posPanel, "function openPriceAdjustment", "function clearCart"), /requestJson|createPosSale|api\/radar\/pos\/sales/);
+  assert.match(css, /\.pos-price-adjust-modal/);
+  assert.match(css, /\.pos-line-price-stack/);
+  assert.match(css, /\.pos-line-discount/);
+});
+
+test("POS price adjustment client validation requires valid lower price and reason", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+  assert.match(posPanel, /Enter a valid POS unit price\./);
+  assert.match(posPanel, /New POS price must be greater than \$0\./);
+  assert.match(posPanel, /Phase 1 only allows lowering the POS unit price\./);
+  assert.match(posPanel, /Select a discount reason\./);
+  assert.match(posPanel, /nextPrice >= line\.originalUnitPrice/);
+  assert.match(posPanel, /discountReason: priceAdjustmentDraft\.reason \|\| undefined/);
 });
 
 test("POS empty cart keeps payment and completion inactive", () => {
@@ -385,6 +490,8 @@ test("POS confirmation modal shows item lines, totals, payment, reference, and w
   const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
   assert.match(posPanel, /aria-label="Confirm POS sale"/);
   assert.match(posPanel, /pos-confirm-lines/);
+  assert.match(posPanel, /Original \{money\(line\.originalUnitPrice\)\} - POS \{money\(line\.adjustedUnitPrice\)\}/);
+  assert.match(posPanel, /line\.discountReasonLabel/);
   assert.match(posPanel, /Subtotal <strong>\{money\(cartTotals\.subtotal\)\}/);
   assert.match(posPanel, /Tax <strong>\{money\(cartTotals\.tax\)\}/);
   assert.match(posPanel, /Payment <strong>\{paymentMethod \? posPaymentMethodLabel\(paymentMethod\) : "Not selected"\}/);
@@ -401,6 +508,8 @@ test("POS receipt success state includes metadata and copy receipt affordance", 
   assert.match(app, /GameDayGrabs/);
   assert.match(app, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
   assert.match(app, /Date: \$\{dateTime\(receipt\.completedAt\)\}/);
+  assert.match(app, /POS price \$\{money\(line\.adjustedUnitPrice\)\}/);
+  assert.match(app, /discount \$\{money\(line\.discountAmount\)\}/);
   assert.match(receipt, /Sale Complete/);
   assert.match(receipt, /GameDayGrabs/);
   assert.match(receipt, /Inventory updated/);
@@ -410,6 +519,8 @@ test("POS receipt success state includes metadata and copy receipt affordance", 
   assert.match(receipt, /receipt\.paymentReference/);
   assert.match(receipt, /receipt\.subtotal/);
   assert.match(receipt, /receipt\.tax/);
+  assert.match(receipt, /line\.discountAmount > 0/);
+  assert.match(receipt, /discount \{money\(line\.discountAmount\)\}/);
   assert.match(receipt, /New Sale/);
   assert.match(receipt, /Copy Receipt/);
   assert.match(receipt, /Print Receipt/);

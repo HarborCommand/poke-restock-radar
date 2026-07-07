@@ -96,6 +96,8 @@ import { DEFAULT_STOREFRONT_PURCHASE_LIMIT } from "@/lib/storefront-purchase-lim
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
 import {
   POS_DEFAULT_TAX_RATE,
+  POS_DISCOUNT_REASON_LABELS,
+  POS_DISCOUNT_REASON_VALUES,
   POS_PAYMENT_METHOD_LABELS,
   POS_PAYMENT_METHOD_VALUES,
   calculatePosTotals,
@@ -105,7 +107,8 @@ import {
   posItemExactCodeMatch,
   posItemMatchesQuery,
   posPaymentMethodLabel,
-  posUnitPrice
+  posUnitPrice,
+  roundPosMoney
 } from "@/lib/pos";
 import { normalizeUPC } from "@/lib/upc";
 import type {
@@ -129,6 +132,7 @@ import type {
   ProductDiscoverySourceDTO,
   ProductStatus,
   ProductVerificationStatus,
+  PosDiscountReasonDTO,
   PosPaymentMethodDTO,
   PosSaleReceiptDTO,
   ProviderHealthStatus,
@@ -3504,8 +3508,21 @@ function SalesPanel({
 const posQuickFilters = ["All", "Booster Boxes", "ETBs", "Singles", "Accessories"] as const;
 const POS_RESULT_BATCH_SIZE = 24;
 type PosQuickFilter = (typeof posQuickFilters)[number];
-type PosCartLine = { itemId: string; quantity: number };
+type PosCartLine = {
+  itemId: string;
+  quantity: number;
+  adjustedUnitPrice?: number;
+  discountReason?: PosDiscountReasonDTO;
+  discountNote?: string;
+};
 type PosInventoryView = "sellable" | "excluded" | "all";
+type PosPriceAdjustmentDraft = {
+  itemId: string;
+  price: string;
+  reason: PosDiscountReasonDTO | "";
+  note: string;
+  error: string | null;
+};
 
 const posInventoryViews: Array<{ id: PosInventoryView; label: string }> = [
   { id: "sellable", label: "Ready for POS" },
@@ -3567,7 +3584,12 @@ function posReceiptSummary(receipt: PosSaleReceiptDTO) {
     `Sale ${receipt.saleReference}`,
     `Date: ${dateTime(receipt.completedAt)}`,
     `Payment: ${receipt.paymentMethodLabel}${receipt.paymentReference ? ` (${receipt.paymentReference})` : ""}`,
-    ...receipt.lines.map((line) => `${line.quantity} x ${line.itemName} - ${money(line.lineTotal)}`),
+    ...receipt.lines.map((line) => {
+      const adjustment = line.discountAmount > 0
+        ? `, POS price ${money(line.adjustedUnitPrice)}, discount ${money(line.discountAmount)}${line.discountReasonLabel ? ` (${line.discountReasonLabel})` : ""}`
+        : `, unit price ${money(line.unitPrice)}`;
+      return `${line.quantity} x ${line.itemName}${adjustment} - ${money(line.lineTotal)}`;
+    }),
     `Subtotal: ${money(receipt.subtotal)}`,
     `Tax: ${money(receipt.tax)}`,
     `Total: ${money(receipt.total)}`,
@@ -3600,6 +3622,7 @@ function PosPanel({
   const [maxReachedItemId, setMaxReachedItemId] = useState<string | null>(null);
   const [inventoryView, setInventoryView] = useState<PosInventoryView>("sellable");
   const [visibleLimit, setVisibleLimit] = useState(POS_RESULT_BATCH_SIZE);
+  const [priceAdjustmentDraft, setPriceAdjustmentDraft] = useState<PosPriceAdjustmentDraft | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
 
@@ -3633,10 +3656,35 @@ function PosPanel({
   const cartLines = cart
     .map((line) => {
       const item = itemsById.get(line.itemId);
-      const unitPrice = item ? posUnitPrice(item) : null;
-      return item && unitPrice !== null ? { ...line, item, unitPrice, lineTotal: unitPrice * line.quantity } : null;
+      const originalUnitPrice = item ? posUnitPrice(item) : null;
+      if (!item || originalUnitPrice === null) return null;
+      const adjustedUnitPrice = line.adjustedUnitPrice ?? originalUnitPrice;
+      const discountAmount = roundPosMoney(Math.max(0, originalUnitPrice - adjustedUnitPrice));
+      const unitPrice = adjustedUnitPrice;
+      return {
+        ...line,
+        item,
+        unitPrice,
+        originalUnitPrice,
+        adjustedUnitPrice,
+        discountAmount,
+        discountReason: line.discountReason ?? null,
+        discountReasonLabel: line.discountReason ? POS_DISCOUNT_REASON_LABELS[line.discountReason] : null,
+        discountNote: line.discountNote?.trim() || null,
+        lineTotal: roundPosMoney(unitPrice * line.quantity)
+      };
     })
-    .filter((line): line is PosCartLine & { item: InventoryItemDTO; unitPrice: number; lineTotal: number } => Boolean(line));
+    .filter((line): line is PosCartLine & {
+      item: InventoryItemDTO;
+      unitPrice: number;
+      originalUnitPrice: number;
+      adjustedUnitPrice: number;
+      discountAmount: number;
+      discountReason: PosDiscountReasonDTO | null;
+      discountReasonLabel: string | null;
+      discountNote: string | null;
+      lineTotal: number;
+    } => Boolean(line));
   const cartQuantity = cartLines.reduce((sum, line) => sum + line.quantity, 0);
   const cartTotals = calculatePosTotals(cartLines, POS_DEFAULT_TAX_RATE);
   const cartInvalid = cartLines.some((line) => !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned);
@@ -3701,6 +3749,75 @@ function PosPanel({
 
   function removeFromCart(itemId: string) {
     setCart((current) => current.filter((line) => line.itemId !== itemId));
+    setPriceAdjustmentDraft((current) => (current?.itemId === itemId ? null : current));
+  }
+
+  function openPriceAdjustment(line: (typeof cartLines)[number]) {
+    setPriceAdjustmentDraft({
+      itemId: line.item.id,
+      price: line.adjustedUnitPrice.toFixed(2),
+      reason: line.discountReason ?? "",
+      note: line.discountNote ?? "",
+      error: null
+    });
+  }
+
+  function updatePriceAdjustmentDraft(patch: Partial<PosPriceAdjustmentDraft>) {
+    setPriceAdjustmentDraft((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function savePriceAdjustment() {
+    if (!priceAdjustmentDraft) return;
+    const line = cartLines.find((candidate) => candidate.item.id === priceAdjustmentDraft.itemId);
+    if (!line) {
+      setPriceAdjustmentDraft(null);
+      return;
+    }
+    const nextPrice = roundPosMoney(Number(priceAdjustmentDraft.price));
+    if (!priceAdjustmentDraft.price.trim() || !Number.isFinite(nextPrice)) {
+      updatePriceAdjustmentDraft({ error: "Enter a valid POS unit price." });
+      return;
+    }
+    if (nextPrice <= 0) {
+      updatePriceAdjustmentDraft({ error: "New POS price must be greater than $0." });
+      return;
+    }
+    if (nextPrice >= line.originalUnitPrice) {
+      updatePriceAdjustmentDraft({ error: "Phase 1 only allows lowering the POS unit price." });
+      return;
+    }
+    if (!priceAdjustmentDraft.reason) {
+      updatePriceAdjustmentDraft({ error: "Select a discount reason." });
+      return;
+    }
+    setCart((current) =>
+      current.map((cartLine) =>
+        cartLine.itemId === line.item.id
+          ? {
+              ...cartLine,
+              adjustedUnitPrice: nextPrice,
+              discountReason: priceAdjustmentDraft.reason || undefined,
+              discountNote: priceAdjustmentDraft.note.trim() || undefined
+            }
+          : cartLine
+      )
+    );
+    setPriceAdjustmentDraft(null);
+    setPosMessage(null);
+  }
+
+  function clearPriceAdjustment(itemId: string) {
+    setCart((current) =>
+      current.map((line) =>
+        line.itemId === itemId
+          ? {
+              itemId: line.itemId,
+              quantity: line.quantity
+            }
+          : line
+      )
+    );
+    setPriceAdjustmentDraft((current) => (current?.itemId === itemId ? null : current));
   }
 
   function clearCart() {
@@ -3712,6 +3829,7 @@ function PosPanel({
     setSaleIdempotencyKey(newPosSaleIdempotencyKey());
     setRecentlyAddedItemId(null);
     setMaxReachedItemId(null);
+    setPriceAdjustmentDraft(null);
     searchInputRef.current?.focus();
   }
 
@@ -3765,7 +3883,13 @@ function PosPanel({
         method: "POST",
         body: JSON.stringify({
           idempotencyKey: saleIdempotencyKey,
-          items: cartLines.map((line) => ({ inventoryItemId: line.item.id, quantity: line.quantity })),
+          items: cartLines.map((line) => ({
+            inventoryItemId: line.item.id,
+            quantity: line.quantity,
+            adjustedUnitPrice: line.discountAmount > 0 ? line.adjustedUnitPrice : undefined,
+            discountReason: line.discountAmount > 0 ? line.discountReason ?? undefined : undefined,
+            discountNote: line.discountAmount > 0 ? line.discountNote ?? undefined : undefined
+          })),
           paymentMethod,
           paymentReference
         })
@@ -3775,6 +3899,7 @@ function PosPanel({
       setPaymentMethod(null);
       setPaymentReference("");
       setSaleIdempotencyKey(newPosSaleIdempotencyKey());
+      setPriceAdjustmentDraft(null);
       setConfirmOpen(false);
       await onCompleted();
     } catch (error) {
@@ -3783,6 +3908,12 @@ function PosPanel({
       setSubmitting(false);
     }
   }
+
+  const adjustmentLine = priceAdjustmentDraft ? cartLines.find((line) => line.item.id === priceAdjustmentDraft.itemId) ?? null : null;
+  const adjustmentPriceValue = priceAdjustmentDraft ? Number(priceAdjustmentDraft.price) : Number.NaN;
+  const adjustmentPreviewPrice = Number.isFinite(adjustmentPriceValue) ? roundPosMoney(adjustmentPriceValue) : null;
+  const adjustmentPreviewDiscount =
+    adjustmentLine && adjustmentPreviewPrice !== null ? roundPosMoney(Math.max(0, adjustmentLine.originalUnitPrice - adjustmentPreviewPrice)) : null;
 
   return (
     <section className="pos-page" aria-label="Admin POS">
@@ -3934,7 +4065,28 @@ function PosPanel({
                     <div className="pos-cart-line-copy">
                       <strong>{posDisplayTitle(line.item)}</strong>
                       <span>{posIdentifier(line.item)}</span>
-                      <small>{money(line.unitPrice)} each - {line.item.quantityOwned} available</small>
+                      <div className="pos-line-price-stack">
+                        {line.discountAmount > 0 ? (
+                          <>
+                            <small className="pos-original-price">{money(line.originalUnitPrice)} each</small>
+                            <small>POS price {money(line.adjustedUnitPrice)} each</small>
+                            <small className="pos-line-discount">Discount {money(line.discountAmount)}{line.discountReasonLabel ? ` - ${line.discountReasonLabel}` : ""}</small>
+                          </>
+                        ) : (
+                          <small>{money(line.unitPrice)} each</small>
+                        )}
+                        <small>{line.item.quantityOwned} available</small>
+                      </div>
+                      <div className="pos-line-actions">
+                        <button className="mini-action" type="button" onClick={() => openPriceAdjustment(line)}>
+                          {line.discountAmount > 0 ? "Edit discount" : "Adjust price"}
+                        </button>
+                        {line.discountAmount > 0 ? (
+                          <button className="mini-action danger" type="button" onClick={() => clearPriceAdjustment(line.item.id)}>
+                            Remove discount
+                          </button>
+                        ) : null}
+                      </div>
                       {unavailable ? <em>Quantity needs review</em> : null}
                       {maxReached || maxReachedItemId === line.item.id ? <em className="pos-max-message">Max available reached.</em> : null}
                     </div>
@@ -4013,6 +4165,71 @@ function PosPanel({
         </aside>
       </div>
 
+      {priceAdjustmentDraft && adjustmentLine ? (
+        <div className="inventory-modal-backdrop" role="presentation">
+          <div className="inventory-modal pos-price-adjust-modal" role="dialog" aria-modal="true" aria-label="Adjust POS price">
+            <div className="edit-card-heading">
+              <div>
+                <h2>Adjust POS Price</h2>
+                <span>{posDisplayTitle(adjustmentLine.item)}</span>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close price adjustment" onClick={() => setPriceAdjustmentDraft(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="pos-price-adjust-summary">
+              <span>Current POS unit price <strong>{money(adjustmentLine.originalUnitPrice)}</strong></span>
+              <span>New POS price <strong>{adjustmentPreviewPrice !== null && adjustmentPreviewPrice > 0 ? money(adjustmentPreviewPrice) : "Enter price"}</strong></span>
+              <span>Discount <strong>{adjustmentPreviewDiscount !== null && adjustmentPreviewDiscount > 0 ? money(adjustmentPreviewDiscount) : money(0)}</strong></span>
+            </div>
+            <label className="pos-adjust-field">
+              New POS unit price
+              <input
+                autoFocus
+                inputMode="decimal"
+                value={priceAdjustmentDraft.price}
+                onChange={(event) => updatePriceAdjustmentDraft({ price: event.currentTarget.value, error: null })}
+                placeholder="55.00"
+              />
+            </label>
+            <label className="pos-adjust-field">
+              Reason
+              <select
+                value={priceAdjustmentDraft.reason}
+                onChange={(event) => updatePriceAdjustmentDraft({ reason: event.currentTarget.value as PosDiscountReasonDTO | "", error: null })}
+              >
+                <option value="">Select reason</option>
+                {POS_DISCOUNT_REASON_VALUES.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {POS_DISCOUNT_REASON_LABELS[reason]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="pos-adjust-field">
+              Optional note
+              <textarea
+                value={priceAdjustmentDraft.note}
+                onChange={(event) => updatePriceAdjustmentDraft({ note: event.currentTarget.value, error: null })}
+                rows={3}
+                placeholder="Optional internal note"
+              />
+            </label>
+            <p className="manual-safety-note">This only updates the POS cart. Product pricing and online checkout prices stay unchanged.</p>
+            {priceAdjustmentDraft.error ? <p className="form-error" role="alert">{priceAdjustmentDraft.error}</p> : null}
+            <div className="modal-action-row">
+              <button className="mini-action" type="button" onClick={() => setPriceAdjustmentDraft(null)}>
+                Cancel
+              </button>
+              <button className="primary-action" type="button" onClick={savePriceAdjustment}>
+                <Check size={15} />
+                Save Discount
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {confirmOpen ? (
         <div className="inventory-modal-backdrop" role="presentation">
           <div className="inventory-modal pos-confirm-modal" role="dialog" aria-modal="true" aria-label="Confirm POS sale">
@@ -4028,7 +4245,17 @@ function PosPanel({
             <div className="pos-confirm-lines" aria-label="POS sale items">
               {cartLines.map((line) => (
                 <span key={line.item.id}>
-                  {line.quantity} x {posDisplayTitle(line.item)}
+                  <span>
+                    {line.quantity} x {posDisplayTitle(line.item)}
+                    {line.discountAmount > 0 ? (
+                      <small>
+                        Original {money(line.originalUnitPrice)} - POS {money(line.adjustedUnitPrice)}
+                        {line.discountReasonLabel ? ` - ${line.discountReasonLabel}` : ""}
+                      </small>
+                    ) : (
+                      <small>{money(line.unitPrice)} each</small>
+                    )}
+                  </span>
                   <strong>{money(line.lineTotal)}</strong>
                 </span>
               ))}
@@ -4082,7 +4309,17 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
       <div className="pos-receipt-lines">
         {receipt.lines.map((line) => (
           <span key={line.inventoryItemId}>
-            {line.quantity} x {line.itemName}
+            <span>
+              {line.quantity} x {line.itemName}
+              {line.discountAmount > 0 ? (
+                <small>
+                  POS {money(line.adjustedUnitPrice)} each - discount {money(line.discountAmount)}
+                  {line.discountReasonLabel ? ` - ${line.discountReasonLabel}` : ""}
+                </small>
+              ) : (
+                <small>{money(line.unitPrice)} each</small>
+              )}
+            </span>
             <strong>{money(line.lineTotal)}</strong>
           </span>
         ))}

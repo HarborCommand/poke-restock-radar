@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { POS_PAYMENT_METHOD_VALUES } from "@/lib/pos";
+import { POS_DISCOUNT_REASON_VALUES, POS_PAYMENT_METHOD_VALUES } from "@/lib/pos";
 
 export const prioritySchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
 export const ratingSchema = z.enum(["BUY", "WATCH", "SKIP", "AVOID"]);
@@ -946,7 +946,13 @@ export const posSaleCreateSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
   items: z.array(z.object({
     inventoryItemId: z.string().trim().min(2),
-    quantity: z.coerce.number().int().min(1).max(1000)
+    quantity: z.coerce.number().int().min(1).max(1000),
+    adjustedUnitPrice: z.preprocess(
+      (value) => (value === "" || value === null || value === undefined ? undefined : value),
+      z.coerce.number().positive("Adjusted POS price must be greater than $0.").max(100000).optional()
+    ),
+    discountReason: z.enum(POS_DISCOUNT_REASON_VALUES).optional(),
+    discountNote: optionalTrimmed
   })).min(1).max(100),
   paymentMethod: z.enum(POS_PAYMENT_METHOD_VALUES),
   paymentReference: optionalTrimmed

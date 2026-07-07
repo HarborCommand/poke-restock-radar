@@ -601,6 +601,11 @@ export type InventorySaleDTO = {
   saleReference: string | null;
   paymentMethod: string | null;
   paymentReference: string | null;
+  originalUnitPrice: number | null;
+  adjustedUnitPrice: number | null;
+  discountAmount: number | null;
+  discountReason: string | null;
+  discountNote: string | null;
   saleStatus: "active" | "partially_refunded" | "refunded" | "canceled" | "test";
   storefrontOrderNumber: string | null;
   storefrontOrderStatus: string | null;
@@ -613,6 +618,7 @@ export type InventorySaleDTO = {
 };
 
 export type PosPaymentMethodDTO = "cash" | "zelle" | "external_card" | "other";
+export type PosDiscountReasonDTO = "customer_discount" | "price_match" | "damaged_packaging" | "promotion" | "owner_override" | "other";
 
 export type PosSaleLineDTO = {
   inventoryItemId: string;
@@ -624,6 +630,12 @@ export type PosSaleLineDTO = {
   availableBeforeSale: number;
   availableAfterSale: number;
   unitPrice: number;
+  originalUnitPrice: number;
+  adjustedUnitPrice: number;
+  discountAmount: number;
+  discountReason: PosDiscountReasonDTO | null;
+  discountReasonLabel: string | null;
+  discountNote: string | null;
   lineTotal: number;
 };
 

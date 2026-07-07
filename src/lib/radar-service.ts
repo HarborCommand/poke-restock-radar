@@ -16,10 +16,13 @@ import {
   getConfiguredPosTaxRate,
   getPosExcludedReason,
   isPosSellableInventoryItem,
+  normalizePosDiscountReason,
   normalizePosPaymentMethod,
+  posDiscountReasonLabel,
   posPaymentMethodLabel,
   posUnitPrice,
-  roundPosMoney
+  roundPosMoney,
+  type PosDiscountReason
 } from "@/lib/pos";
 import { itemNeedsShippingProfile } from "@/lib/shipping";
 import { classifyRetailerProductUrl, exactProductActionUrl, matchProductIdentity, productReadyForBuyAlerts } from "@/lib/product-identity";
@@ -1818,6 +1821,11 @@ function inventorySaleToDTO(
     saleReference: sale.saleReference,
     paymentMethod: sale.paymentMethod,
     paymentReference: sale.paymentReference,
+    originalUnitPrice: sale.originalUnitPrice,
+    adjustedUnitPrice: sale.adjustedUnitPrice,
+    discountAmount: sale.discountAmount,
+    discountReason: sale.discountReason,
+    discountNote: sale.discountNote,
     saleStatus: "active",
     storefrontOrderNumber,
     storefrontOrderStatus: null,
@@ -6658,14 +6666,45 @@ export async function createInventorySale(
   return recomputeInventoryItem(item.id, currentUser);
 }
 
-function compactPosSaleItems(items: Array<{ inventoryItemId: string; quantity: number }>) {
-  const itemMap = new Map<string, number>();
+type PosSaleInputItem = {
+  inventoryItemId: string;
+  quantity: number;
+  adjustedUnitPrice?: number;
+  discountReason?: string;
+  discountNote?: string | null;
+};
+
+type CompactPosSaleItem = {
+  inventoryItemId: string;
+  quantity: number;
+  adjustedUnitPrice?: number;
+  discountReason?: string;
+  discountNote: string | null;
+};
+
+function compactPosSaleItems(items: PosSaleInputItem[]): CompactPosSaleItem[] {
+  const itemMap = new Map<string, CompactPosSaleItem>();
   for (const item of items) {
     const inventoryItemId = item.inventoryItemId.trim();
     if (!inventoryItemId) continue;
-    itemMap.set(inventoryItemId, (itemMap.get(inventoryItemId) ?? 0) + item.quantity);
+    const adjustedUnitPrice = item.adjustedUnitPrice === undefined ? undefined : roundPosMoney(item.adjustedUnitPrice);
+    const discountReason = item.discountReason?.trim() || undefined;
+    const discountNote = item.discountNote?.trim() || null;
+    const existing = itemMap.get(inventoryItemId);
+    if (existing) {
+      const existingPrice = existing.adjustedUnitPrice ?? null;
+      const nextPrice = adjustedUnitPrice ?? null;
+      const existingReason = existing.discountReason ?? null;
+      const nextReason = discountReason ?? null;
+      if (existingPrice !== nextPrice || existingReason !== nextReason || existing.discountNote !== discountNote) {
+        throw new Error("Duplicate POS cart lines for the same item must use the same price adjustment.");
+      }
+      itemMap.set(inventoryItemId, { ...existing, quantity: existing.quantity + item.quantity });
+      continue;
+    }
+    itemMap.set(inventoryItemId, { inventoryItemId, quantity: item.quantity, adjustedUnitPrice, discountReason, discountNote });
   }
-  return [...itemMap.entries()].map(([inventoryItemId, quantity]) => ({ inventoryItemId, quantity }));
+  return [...itemMap.values()];
 }
 
 function posSaleReferenceFromIdempotencyKey(userId: string, idempotencyKey: string) {
@@ -6738,6 +6777,10 @@ async function receiptForExistingPosSale(
     lines: (sales as PosSaleRecordWithItem[]).map((sale) => {
       const item = inventoryItemToDTO(sale.inventoryItem);
       const availableAfterSale = item.quantityOwned;
+      const originalUnitPrice = roundPosMoney(sale.originalUnitPrice ?? sale.soldPricePerItem);
+      const adjustedUnitPrice = roundPosMoney(sale.adjustedUnitPrice ?? sale.soldPricePerItem);
+      const discountAmount = roundPosMoney(sale.discountAmount ?? Math.max(0, originalUnitPrice - adjustedUnitPrice));
+      const discountReason = normalizePosDiscountReason(sale.discountReason);
       return {
         inventoryItemId: item.id,
         itemName: item.itemName,
@@ -6748,6 +6791,12 @@ async function receiptForExistingPosSale(
         availableBeforeSale: availableAfterSale + sale.quantitySold,
         availableAfterSale,
         unitPrice: sale.soldPricePerItem,
+        originalUnitPrice,
+        adjustedUnitPrice,
+        discountAmount,
+        discountReason,
+        discountReasonLabel: discountReason ? posDiscountReasonLabel(discountReason) : null,
+        discountNote: sale.discountNote,
         lineTotal: roundPosMoney(sale.soldPricePerItem * sale.quantitySold)
       };
     })
@@ -6768,6 +6817,11 @@ async function createPosInventorySaleLine(
     dto: InventoryItemDTO;
     quantity: number;
     unitPrice: number;
+    originalUnitPrice: number;
+    adjustedUnitPrice: number;
+    discountAmount: number;
+    discountReason: PosDiscountReason | null;
+    discountNote: string | null;
   },
   sale: {
     saleReference: string;
@@ -6830,6 +6884,11 @@ async function createPosInventorySaleLine(
       saleReference: sale.saleReference,
       paymentMethod: sale.paymentMethod,
       paymentReference: sale.paymentReference,
+      originalUnitPrice: line.originalUnitPrice,
+      adjustedUnitPrice: line.adjustedUnitPrice,
+      discountAmount: line.discountAmount,
+      discountReason: line.discountReason,
+      discountNote: line.discountNote,
       soldAt: sale.soldAt,
       notes: sale.notes
     }
@@ -6858,7 +6917,7 @@ export async function createPosSale(
   currentUser: SessionUser,
   input: {
     idempotencyKey: string;
-    items: Array<{ inventoryItemId: string; quantity: number }>;
+    items: PosSaleInputItem[];
     paymentMethod: string;
     paymentReference?: string | null;
   }
@@ -6914,14 +6973,33 @@ export async function createPosSale(
       if (cartItem.quantity > dto.quantityOwned) {
         throw new Error(`Only ${dto.quantityOwned} available to sell for ${dto.itemName}.`);
       }
-      const unitPrice = posUnitPrice(dto);
-      if (unitPrice === null) throw new Error(`${dto.itemName} needs a public or target sell price before POS sale.`);
+      const originalUnitPrice = posUnitPrice(dto);
+      if (originalUnitPrice === null) throw new Error(`${dto.itemName} needs a public or target sell price before POS sale.`);
+      const requestedAdjustedUnitPrice = cartItem.adjustedUnitPrice ?? null;
+      const hasAdjustedPrice = requestedAdjustedUnitPrice !== null;
+      const discountReason = hasAdjustedPrice ? normalizePosDiscountReason(cartItem.discountReason) : null;
+      if (hasAdjustedPrice && !discountReason) {
+        throw new Error(`Select a discount reason for ${dto.itemName}.`);
+      }
+      if (hasAdjustedPrice && (requestedAdjustedUnitPrice === null || !Number.isFinite(requestedAdjustedUnitPrice) || requestedAdjustedUnitPrice <= 0)) {
+        throw new Error(`Adjusted POS price for ${dto.itemName} must be greater than $0.`);
+      }
+      if (requestedAdjustedUnitPrice !== null && requestedAdjustedUnitPrice >= originalUnitPrice) {
+        throw new Error(`Adjusted POS price for ${dto.itemName} cannot exceed or equal the current POS price in Phase 1.`);
+      }
+      const adjustedUnitPrice = requestedAdjustedUnitPrice !== null ? roundPosMoney(requestedAdjustedUnitPrice) : originalUnitPrice;
+      const discountAmount = roundPosMoney(Math.max(0, originalUnitPrice - adjustedUnitPrice));
       return {
         record,
         dto,
         quantity: cartItem.quantity,
-        unitPrice,
-        lineTotal: roundPosMoney(unitPrice * cartItem.quantity)
+        unitPrice: adjustedUnitPrice,
+        originalUnitPrice,
+        adjustedUnitPrice,
+        discountAmount,
+        discountReason,
+        discountNote: hasAdjustedPrice ? cartItem.discountNote : null,
+        lineTotal: roundPosMoney(adjustedUnitPrice * cartItem.quantity)
       };
     });
 
@@ -6967,6 +7045,12 @@ export async function createPosSale(
         availableBeforeSale: line.dto.quantityOwned,
         availableAfterSale: Math.max(0, line.dto.quantityOwned - line.quantity),
         unitPrice: line.unitPrice,
+        originalUnitPrice: line.originalUnitPrice,
+        adjustedUnitPrice: line.adjustedUnitPrice,
+        discountAmount: line.discountAmount,
+        discountReason: line.discountReason,
+        discountReasonLabel: line.discountReason ? posDiscountReasonLabel(line.discountReason) : null,
+        discountNote: line.discountNote,
         lineTotal: line.lineTotal
       }))
     };

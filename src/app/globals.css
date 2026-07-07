@@ -26371,6 +26371,34 @@ body .catalog-action-menu-floating {
   -webkit-line-clamp: 2;
 }
 
+.pos-line-price-stack,
+.pos-line-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+.pos-line-price-stack {
+  display: grid;
+  justify-items: start;
+}
+
+.pos-line-actions {
+  margin-top: 2px;
+}
+
+.pos-original-price {
+  color: #64748b;
+  text-decoration: line-through;
+}
+
+.pos-line-discount {
+  color: #b45309;
+  font-weight: 900;
+}
+
 .pos-product-id {
   font-variant-numeric: tabular-nums;
 }
@@ -26613,6 +26641,47 @@ body .catalog-action-menu-floating {
   max-width: 440px;
 }
 
+.pos-price-adjust-modal {
+  max-width: 460px;
+}
+
+.pos-price-adjust-summary {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.pos-price-adjust-summary span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pos-adjust-field {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.pos-adjust-field input,
+.pos-adjust-field select,
+.pos-adjust-field textarea {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px 10px;
+  color: #0f172a;
+  font: inherit;
+}
+
 .pos-confirm-lines {
   display: grid;
   gap: 8px;
@@ -26621,6 +26690,21 @@ body .catalog-action-menu-floating {
   border-radius: 8px;
   background: #f8fafc;
   padding: 10px;
+}
+
+.pos-confirm-lines span span,
+.pos-receipt-lines span span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pos-confirm-lines small,
+.pos-receipt-lines small {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.3;
 }
 
 @media (max-width: 1100px) {
