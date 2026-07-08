@@ -121,6 +121,7 @@ import type {
   AdminCustomerRewardsLedgerEntryDTO,
   AdminCustomerRewardsLedgerResponseDTO,
   AdminCustomerRewardsResponseDTO,
+  AdminCustomerProfileUpdateResultDTO,
   AdminRewardAdjustmentResultDTO,
   CardDTO,
   CardCompSaleDTO,
@@ -3522,11 +3523,24 @@ function SalesPanel({
 
 type CustomersRewardsView = "overview" | "customers" | "ledger" | "adjustments";
 
+const rewardAdjustmentReasons = [
+  "Customer service credit",
+  "Correction",
+  "Promotion",
+  "Refund correction",
+  "Manual compensation",
+  "Other"
+];
+
+const rewardAdjustmentDisabledText = "Point adjustments are disabled until admin adjustments are enabled.";
+
 function CustomersRewardsPanel() {
   const [activeView, setActiveView] = useState<CustomersRewardsView>("customers");
   const [customersData, setCustomersData] = useState<AdminCustomerRewardsResponseDTO | null>(null);
   const [ledgerData, setLedgerData] = useState<AdminCustomerRewardsLedgerResponseDTO | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<AdminCustomerRewardsDetailDTO | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<AdminCustomerRewardsDetailDTO | null>(null);
+  const [adjustingCustomer, setAdjustingCustomer] = useState<AdminCustomerRewardsDetailDTO | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("recent");
@@ -3586,8 +3600,10 @@ function CustomersRewardsPanel() {
     try {
       const result = await requestJson<{ customer: AdminCustomerRewardsDetailDTO }>(`/api/radar/customers/${customerAccountId}`);
       setSelectedCustomer(result.customer);
+      return result.customer;
     } catch (error) {
       setPanelError(error instanceof Error ? error.message : "Could not load customer detail.");
+      return null;
     } finally {
       setDetailLoading(false);
     }
@@ -3609,6 +3625,23 @@ function CustomersRewardsPanel() {
     await Promise.all([loadCustomers(), loadLedger(), openCustomer(customerAccountId)]);
   };
 
+  const openAdjustmentForCustomer = async (customerAccountId: string) => {
+    if (!summary?.adjustmentsEnabled) {
+      setActionMessage(rewardAdjustmentDisabledText);
+      setActiveView("adjustments");
+      return;
+    }
+    const customer = await openCustomer(customerAccountId);
+    if (customer) setAdjustingCustomer(customer);
+  };
+
+  const refreshAfterProfileUpdate = async (customer: AdminCustomerRewardsDetailDTO) => {
+    setSelectedCustomer(customer);
+    setEditingCustomer(null);
+    setActionMessage("Customer profile updated.");
+    await loadCustomers();
+  };
+
   return (
     <section className="customers-rewards-page">
       <div className="dashboard-page-header customers-rewards-header">
@@ -3622,7 +3655,7 @@ function CustomersRewardsPanel() {
             <RefreshCw size={16} />
             Refresh
           </button>
-          <button className="primary-action" type="button" disabled={!summary?.adjustmentsEnabled} onClick={() => setActiveView("adjustments")}>
+          <button className="primary-action" type="button" disabled={!summary?.adjustmentsEnabled} onClick={() => selectedCustomer ? void openAdjustmentForCustomer(selectedCustomer.id) : setActiveView("adjustments")}>
             <Plus size={16} />
             Add Points
           </button>
@@ -3724,8 +3757,7 @@ function CustomersRewardsPanel() {
                         adjustmentsEnabled={Boolean(summary?.adjustmentsEnabled)}
                         onOpen={() => void openCustomer(customer.id)}
                         onAdjust={() => {
-                          void openCustomer(customer.id);
-                          setActiveView("adjustments");
+                          void openAdjustmentForCustomer(customer.id);
                         }}
                       />
                     ))}
@@ -3800,13 +3832,13 @@ function CustomersRewardsPanel() {
               <PanelHeader title="Admin Adjustments" />
               {summary?.adjustmentsEnabled ? (
                 selectedCustomer ? (
-                  <RewardAdjustmentForm
-                    customer={selectedCustomer}
-                    onAdjusted={async (result) => {
-                      setActionMessage(result.duplicate ? "Duplicate adjustment ignored safely." : "Reward adjustment saved.");
-                      await refreshAfterAdjustment(result.customer.id);
-                    }}
-                  />
+                  <div className="customers-adjustment-launch">
+                    <p>Adjustments are ledger-based and idempotency-keyed. Open the modal to add or deduct available points for the selected customer.</p>
+                    <button className="primary-action" type="button" onClick={() => setAdjustingCustomer(selectedCustomer)}>
+                      <Plus size={16} />
+                      Add or Deduct Points
+                    </button>
+                  </div>
                 ) : (
                   <EmptyState icon={Users} title="Select a customer first" detail="Open a customer from the table, then add or deduct available reward points." />
                 )
@@ -3814,7 +3846,7 @@ function CustomersRewardsPanel() {
                 <EmptyState
                   icon={Lock}
                   title="Admin adjustments disabled"
-                  detail="CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED is off. Balances can be viewed, but points cannot be changed here."
+                  detail={`${rewardAdjustmentDisabledText} CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED is off. Balances can be viewed, but points cannot be changed here.`}
                 />
               )}
             </section>
@@ -3828,7 +3860,15 @@ function CustomersRewardsPanel() {
             <CustomerRewardDetailPanel
               customer={selectedCustomer}
               adjustmentsEnabled={Boolean(summary?.adjustmentsEnabled)}
-              onAdjust={() => setActiveView("adjustments")}
+              onAdjust={() => {
+                if (summary?.adjustmentsEnabled) {
+                  setAdjustingCustomer(selectedCustomer);
+                } else {
+                  setActionMessage(rewardAdjustmentDisabledText);
+                  setActiveView("adjustments");
+                }
+              }}
+              onEdit={() => setEditingCustomer(selectedCustomer)}
               onClose={() => setSelectedCustomer(null)}
             />
           ) : (
@@ -3836,6 +3876,24 @@ function CustomersRewardsPanel() {
           )}
         </aside>
       </div>
+      {editingCustomer ? (
+        <CustomerProfileEditModal
+          customer={editingCustomer}
+          onClose={() => setEditingCustomer(null)}
+          onSaved={refreshAfterProfileUpdate}
+        />
+      ) : null}
+      {adjustingCustomer && summary?.adjustmentsEnabled ? (
+        <RewardAdjustmentModal
+          customer={adjustingCustomer}
+          onClose={() => setAdjustingCustomer(null)}
+          onAdjusted={async (result) => {
+            setActionMessage(result.duplicate ? "Duplicate adjustment ignored safely." : "Reward adjustment saved.");
+            setAdjustingCustomer(null);
+            await refreshAfterAdjustment(result.customer.id);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -3949,7 +4007,7 @@ function CustomerRewardsRow({
         <button className="secondary-action small" type="button" onClick={onOpen}>
           Open
         </button>
-        <button className="secondary-action small" type="button" disabled={!adjustmentsEnabled} onClick={onAdjust}>
+        <button className="secondary-action small" type="button" disabled={!adjustmentsEnabled} title={!adjustmentsEnabled ? rewardAdjustmentDisabledText : "Add or deduct reward points"} onClick={onAdjust}>
           Adjust
         </button>
       </span>
@@ -4029,11 +4087,13 @@ function CustomerRewardDetailPanel({
   customer,
   adjustmentsEnabled,
   onAdjust,
+  onEdit,
   onClose
 }: {
   customer: AdminCustomerRewardsDetailDTO;
   adjustmentsEnabled: boolean;
   onAdjust: () => void;
+  onEdit: () => void;
   onClose: () => void;
 }) {
   return (
@@ -4053,10 +4113,17 @@ function CustomerRewardDetailPanel({
         <DetailStat label="Lifetime" value={customer.lifetimeEarnedPoints.toLocaleString()} tone="good" />
         <DetailStat label="Spent" value={money(customer.totalSpent + customer.posSpent)} />
       </div>
-      <button className="primary-action full-width" type="button" disabled={!adjustmentsEnabled} onClick={onAdjust}>
-        <Plus size={16} />
-        Add or Deduct Points
-      </button>
+      <div className="customers-detail-actions">
+        <button className="secondary-action full-width" type="button" onClick={onEdit}>
+          <Settings size={16} />
+          Edit Customer
+        </button>
+        <button className="primary-action full-width" type="button" disabled={!adjustmentsEnabled} title={!adjustmentsEnabled ? rewardAdjustmentDisabledText : "Add or deduct reward points"} onClick={onAdjust}>
+          <Plus size={16} />
+          Add or Deduct Points
+        </button>
+      </div>
+      {!adjustmentsEnabled ? <p className="customers-muted-note">{rewardAdjustmentDisabledText}</p> : null}
       <div className="customers-detail-section">
         <h4>Account</h4>
         <p>Status {formatStatus(customer.status)} - Joined {shortDate(customer.joinedAt)} - {customer.emailVerified ? "email verified" : "email unverified"}</p>
@@ -4127,16 +4194,108 @@ function CustomerDetailList({
   );
 }
 
-function RewardAdjustmentForm({
+function CustomerProfileEditModal({
   customer,
+  onClose,
+  onSaved
+}: {
+  customer: AdminCustomerRewardsDetailDTO;
+  onClose: () => void;
+  onSaved: (customer: AdminCustomerRewardsDetailDTO) => Promise<void>;
+}) {
+  const [displayName, setDisplayName] = useState(customer.profile.displayName);
+  const [phone, setPhone] = useState(customer.profile.phone ?? "");
+  const [status, setStatus] = useState(customer.profile.status === "disabled" ? "disabled" : "active");
+  const [adminNote, setAdminNote] = useState(customer.profile.adminNote ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submitProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await requestJson<AdminCustomerProfileUpdateResultDTO>(`/api/radar/customers/${customer.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          displayName,
+          phone,
+          status,
+          adminNote
+        })
+      });
+      await onSaved(result.customer);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Could not update customer profile.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="inventory-modal-backdrop customers-modal-backdrop" role="presentation">
+      <div className="inventory-modal customers-admin-modal" role="dialog" aria-modal="true" aria-label={`Edit customer ${customer.displayName}`}>
+        <div className="modal-heading-row">
+          <div>
+            <span className="eyebrow">Admin-only customer profile</span>
+            <h3>Edit Customer</h3>
+            <p>Update basic profile fields only. Email, account ownership, rewards balances, and auth fields are not editable here.</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close edit customer" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form className="reward-adjustment-form" onSubmit={submitProfile}>
+          <div className="form-grid">
+            <label>
+              <span>Display name</span>
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={120} />
+            </label>
+            <label>
+              <span>Phone</span>
+              <input value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40} inputMode="tel" />
+            </label>
+            <label>
+              <span>Account status</span>
+              <select aria-label="Account status" value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+            <label className="wide">
+              <span>Internal admin note</span>
+              <textarea value={adminNote} onChange={(event) => setAdminNote(event.target.value)} maxLength={1000} placeholder="Private admin note. This is not customer-facing." />
+            </label>
+          </div>
+          {error ? <p className="form-error">{error}</p> : null}
+          <p className="customers-muted-note">Email changes require a separate verified email-change flow and are intentionally unavailable in this phase.</p>
+          <div className="inventory-edit-actions">
+            <button className="secondary-action" type="button" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button className="primary-action" type="submit" disabled={submitting}>
+              <Save size={16} />
+              {submitting ? "Saving" : "Save Customer"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RewardAdjustmentModal({
+  customer,
+  onClose,
   onAdjusted
 }: {
   customer: AdminCustomerRewardsDetailDTO;
+  onClose: () => void;
   onAdjusted: (result: AdminRewardAdjustmentResultDTO) => Promise<void>;
 }) {
   const [action, setAction] = useState<"add" | "deduct">("add");
   const [points, setPoints] = useState("25");
-  const [reason, setReason] = useState("Customer support adjustment");
+  const [reason, setReason] = useState(rewardAdjustmentReasons[0]);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -4171,42 +4330,65 @@ function RewardAdjustmentForm({
   };
 
   return (
-    <form className="reward-adjustment-form" onSubmit={submitAdjustment}>
-      <div className="customers-adjustment-customer">
-        <strong>{customer.displayName}</strong>
-        <span>{customer.maskedEmail} - {customer.availablePoints.toLocaleString()} available</span>
+    <div className="inventory-modal-backdrop customers-modal-backdrop" role="presentation">
+      <div className="inventory-modal customers-admin-modal" role="dialog" aria-modal="true" aria-label={`Adjust reward points for ${customer.displayName}`}>
+        <div className="modal-heading-row">
+          <div>
+            <span className="eyebrow">Admin reward adjustment</span>
+            <h3>Add or Deduct Points</h3>
+            <p>Adjustments always write a reward ledger entry and never enable redemption.</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close reward adjustment" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form className="reward-adjustment-form" onSubmit={submitAdjustment}>
+          <div className="customers-adjustment-customer">
+            <strong>{customer.displayName}</strong>
+            <span>{customer.maskedEmail} - {customer.availablePoints.toLocaleString()} available</span>
+          </div>
+          <div className="segmented-control">
+            <button className={action === "add" ? "active" : ""} type="button" onClick={() => setAction("add")}>
+              Add points
+            </button>
+            <button className={action === "deduct" ? "active" : ""} type="button" onClick={() => setAction("deduct")}>
+              Deduct points
+            </button>
+          </div>
+          <div className="form-grid">
+            <label>
+              <span>Points</span>
+              <input value={points} onChange={(event) => setPoints(event.target.value)} min="1" max="100000" step="1" type="number" required />
+            </label>
+            <label>
+              <span>Reason</span>
+              <select aria-label="Reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
+                {rewardAdjustmentReasons.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+            <label className="wide">
+              <span>Internal admin note</span>
+              <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Optional private context. This is not customer-facing." />
+            </label>
+          </div>
+          {error ? <p className="form-error">{error}</p> : null}
+          <p className="customers-muted-note">
+            Deducting cannot take available points below zero. Duplicate idempotency keys are ignored safely.
+          </p>
+          <div className="inventory-edit-actions">
+            <button className="secondary-action" type="button" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button className="primary-action" type="submit" disabled={submitting}>
+              <Save size={16} />
+              {submitting ? "Saving" : "Save Adjustment"}
+            </button>
+          </div>
+        </form>
       </div>
-      <div className="segmented-control">
-        <button className={action === "add" ? "active" : ""} type="button" onClick={() => setAction("add")}>
-          Add points
-        </button>
-        <button className={action === "deduct" ? "active" : ""} type="button" onClick={() => setAction("deduct")}>
-          Deduct points
-        </button>
-      </div>
-      <div className="form-grid">
-        <label>
-          <span>Points</span>
-          <input value={points} onChange={(event) => setPoints(event.target.value)} min="1" max="100000" step="1" type="number" required />
-        </label>
-        <label>
-          <span>Reason</span>
-          <input value={reason} onChange={(event) => setReason(event.target.value)} minLength={4} maxLength={160} required />
-        </label>
-        <label className="wide">
-          <span>Internal admin note</span>
-          <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Optional private context. This is not customer-facing." />
-        </label>
-      </div>
-      {error ? <p className="form-error">{error}</p> : null}
-      <p className="customers-muted-note">
-        Adjustments always create a reward ledger entry. Deducting cannot take available points below zero.
-      </p>
-      <button className="primary-action" type="submit" disabled={submitting}>
-        <Save size={16} />
-        {submitting ? "Saving" : "Save Adjustment"}
-      </button>
-    </form>
+    </div>
   );
 }
 

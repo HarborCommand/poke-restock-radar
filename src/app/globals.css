@@ -21419,6 +21419,7 @@ body .customers-rewards-header {
 
 body .customers-rewards-actions,
 body .customers-rewards-toolbar,
+body .customers-detail-actions,
 body .customers-row-actions,
 body .customers-pagination {
   display: flex;
@@ -21572,6 +21573,7 @@ body .customers-search-field {
 body .customers-search-field input,
 body .customers-rewards-toolbar select,
 body .reward-adjustment-form input,
+body .reward-adjustment-form select,
 body .reward-adjustment-form textarea {
   width: 100%;
   border: 0;
@@ -21680,6 +21682,10 @@ body .customers-detail {
   gap: 14px;
 }
 
+body .customers-detail-actions {
+  align-items: stretch;
+}
+
 body .customers-detail-header {
   display: flex;
   align-items: flex-start;
@@ -21776,6 +21782,44 @@ body .reward-adjustment-form textarea {
   resize: vertical;
 }
 
+body .customers-adjustment-launch {
+  display: grid;
+  gap: 12px;
+  max-width: 520px;
+}
+
+body .customers-adjustment-launch p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+body .customers-modal-backdrop {
+  align-items: center;
+  justify-content: center;
+}
+
+body .customers-admin-modal {
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: auto;
+}
+
+body .customers-admin-modal .modal-heading-row {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+body .customers-admin-modal .modal-heading-row h3 {
+  margin: 2px 0 4px;
+}
+
+body .customers-admin-modal .modal-heading-row p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 body .full-width {
   width: 100%;
 }
@@ -21803,6 +21847,9 @@ body .full-width {
   body .customers-rewards-actions,
   body .customers-rewards-actions .primary-action,
   body .customers-rewards-actions .secondary-action,
+  body .customers-detail-actions,
+  body .customers-detail-actions .primary-action,
+  body .customers-detail-actions .secondary-action,
   body .customers-rewards-toolbar,
   body .customers-rewards-toolbar select,
   body .customers-search-field,

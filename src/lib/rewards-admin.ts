@@ -9,6 +9,7 @@ import type {
   AdminCustomerRewardsLedgerResponseDTO,
   AdminCustomerRewardsResponseDTO,
   AdminCustomerRewardsSummaryDTO,
+  AdminCustomerProfileUpdateResultDTO,
   AdminRewardAdjustmentResultDTO
 } from "@/types/radar";
 
@@ -19,6 +20,13 @@ type RewardAdminAdjustmentInput = {
   reason: string;
   note?: string;
   idempotencyKey: string;
+};
+
+type AdminCustomerProfileUpdateInput = {
+  displayName: string | null;
+  phone: string | null;
+  status: "active" | "disabled";
+  adminNote: string | null;
 };
 
 type CustomerListFilters = {
@@ -391,6 +399,12 @@ export async function getAdminCustomerRewardDetail(customerAccountId: string): P
     defaultAddressSummary: defaultAddress
       ? [defaultAddress.city, defaultAddress.state, defaultAddress.zip].filter(Boolean).join(", ")
       : null,
+    profile: {
+      displayName: customer.displayName?.trim() || "",
+      phone: customer.phone,
+      status: customer.status,
+      adminNote: customer.adminNote
+    },
     recentOrders: customer.orders
       .slice()
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -418,6 +432,31 @@ export async function getAdminCustomerRewardDetail(customerAccountId: string): P
       })),
     recentLedgerEntries: customer.rewardLedgerEntries.map(mapLedgerEntry)
   };
+}
+
+export async function updateAdminCustomerProfile(
+  customerAccountId: string,
+  input: AdminCustomerProfileUpdateInput
+): Promise<AdminCustomerProfileUpdateResultDTO> {
+  const existing = await prisma.customerAccount.findUnique({
+    where: { id: customerAccountId },
+    select: { id: true }
+  });
+  if (!existing) throw new Error("Customer account was not found.");
+
+  await prisma.customerAccount.update({
+    where: { id: customerAccountId },
+    data: {
+      displayName: input.displayName,
+      phone: input.phone,
+      status: input.status,
+      adminNote: input.adminNote
+    }
+  });
+
+  const customer = await getAdminCustomerRewardDetail(customerAccountId);
+  if (!customer) throw new Error("Customer account was not found after update.");
+  return { customer };
 }
 
 export async function createAdminRewardAdjustment(
