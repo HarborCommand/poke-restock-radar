@@ -977,6 +977,23 @@ export const rewardAdminAdjustmentSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/)
 });
 
+const nullableAdminText = (max: number) => z.preprocess(
+  (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  },
+  z.string().trim().max(max).nullable()
+);
+
+export const adminCustomerProfileUpdateSchema = z.object({
+  displayName: nullableAdminText(120),
+  phone: nullableAdminText(40),
+  status: z.enum(["active", "disabled"]),
+  adminNote: nullableAdminText(1000)
+}).strict();
+
 export const posSaleRefundSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
   refundType: z.enum(["full"]).default("full"),

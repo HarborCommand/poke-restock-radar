@@ -462,6 +462,12 @@ export type AdminCustomerRewardsLedgerEntryDTO = {
 export type AdminCustomerRewardsDetailDTO = AdminCustomerRewardsCustomerDTO & {
   savedAddressCount: number;
   defaultAddressSummary: string | null;
+  profile: {
+    displayName: string;
+    phone: string | null;
+    status: string;
+    adminNote: string | null;
+  };
   recentOrders: Array<{
     id: string;
     orderNumber: string;
@@ -505,8 +511,12 @@ export type AdminCustomerRewardsLedgerResponseDTO = {
 
 export type AdminRewardAdjustmentResultDTO = {
   adjustment: AdminCustomerRewardsLedgerEntryDTO;
-  customer: AdminCustomerRewardsCustomerDTO;
+  customer: AdminCustomerRewardsDetailDTO;
   duplicate: boolean;
+};
+
+export type AdminCustomerProfileUpdateResultDTO = {
+  customer: AdminCustomerRewardsDetailDTO;
 };
 
 export type StorefrontOrderDTO = {

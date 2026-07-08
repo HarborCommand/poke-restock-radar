@@ -1110,6 +1110,7 @@ model CustomerAccount {
   normalizedEmail     String?
   displayName         String?
   phone               String?
+  adminNote           String?
   status              String                   @default("active")
   passwordHash        String?
   passwordSetAt       DateTime?

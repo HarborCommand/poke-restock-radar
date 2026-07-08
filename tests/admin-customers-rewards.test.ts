@@ -31,8 +31,14 @@ const {
   createAdminRewardAdjustment,
   getAdminCustomerRewardDetail,
   listAdminCustomerRewards,
-  listAdminRewardLedger
+  listAdminRewardLedger,
+  updateAdminCustomerProfile
 } = rewardsAdminModule as typeof import("../src/lib/rewards-admin");
+const validationModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/validation.ts")).href);
+const {
+  adminCustomerProfileUpdateSchema,
+  rewardAdminAdjustmentSchema
+} = validationModule as typeof import("../src/lib/validation");
 
 test.after(async () => {
   await prisma.$disconnect();
@@ -201,8 +207,108 @@ test("admin customer detail includes safe summaries without private note content
   const detail = await getAdminCustomerRewardDetail(customer.id);
   assert.ok(detail);
   assert.equal(detail.maskedPhone, "***-***-1234");
+  assert.equal(detail.profile.displayName, "Collector Customer");
+  assert.equal(detail.profile.phone, "+13055551234");
   assert.ok(detail.recentLedgerEntries.some((entry) => entry.hasAdminNote));
   assert.doesNotMatch(JSON.stringify(detail), /Do not expose this private note/);
+});
+
+test("admin can update allowed customer profile fields without touching identity or rewards", async () => {
+  const { customer } = await createCustomerWithRewards();
+  const beforeBalance = await prisma.rewardBalance.findUniqueOrThrow({ where: { customerAccountId: customer.id } });
+  const result = await updateAdminCustomerProfile(customer.id, {
+    displayName: "Updated Collector",
+    phone: "+13055550000",
+    status: "disabled",
+    adminNote: "Private admin-only profile note"
+  });
+
+  assert.equal(result.customer.displayName, "Updated Collector");
+  assert.equal(result.customer.status, "disabled");
+  assert.equal(result.customer.profile.phone, "+13055550000");
+  assert.equal(result.customer.profile.adminNote, "Private admin-only profile note");
+  assert.equal(result.customer.maskedPhone, "***-***-0000");
+  assert.notEqual(result.customer.maskedEmail, customer.email);
+
+  const updated = await prisma.customerAccount.findUniqueOrThrow({ where: { id: customer.id } });
+  assert.equal(updated.email, customer.email);
+  assert.equal(updated.emailVerifiedAt?.toISOString(), customer.emailVerifiedAt?.toISOString());
+  assert.equal(updated.passwordHash, null);
+  const afterBalance = await prisma.rewardBalance.findUniqueOrThrow({ where: { customerAccountId: customer.id } });
+  assert.equal(afterBalance.availablePoints, beforeBalance.availablePoints);
+  assert.equal(afterBalance.pendingPoints, beforeBalance.pendingPoints);
+  assert.equal(afterBalance.lifetimeEarnedPoints, beforeBalance.lifetimeEarnedPoints);
+});
+
+test("admin customer profile validation rejects disallowed identity auth and reward fields", () => {
+  assert.throws(
+    () => adminCustomerProfileUpdateSchema.parse({
+      displayName: "Bad Update",
+      phone: "+13055550000",
+      status: "active",
+      adminNote: "note",
+      email: "changed@example.test"
+    }),
+    /Unrecognized key/
+  );
+  for (const field of ["customerAccountId", "passwordHash", "sessionRevokedBefore", "availablePoints", "rewardBalance", "emailVerifiedAt"]) {
+    assert.throws(
+      () => adminCustomerProfileUpdateSchema.parse({
+        displayName: "Bad Update",
+        phone: "+13055550000",
+        status: "active",
+        adminNote: "note",
+        [field]: "blocked"
+      }),
+      /Unrecognized key/,
+      `${field} should not be editable through customer profile update`
+    );
+  }
+});
+
+test("customer admin note migration is additive and nullable", () => {
+  const schema = readFileSync(path.join(projectRoot, "prisma/schema.prisma"), "utf8");
+  const sqliteInit = readFileSync(path.join(projectRoot, "prisma/init-sqlite.ts"), "utf8");
+  const migration = readFileSync(path.join(projectRoot, "prisma/migrations/20260708204500_customer_account_admin_note/migration.sql"), "utf8");
+
+  assert.match(schema, /adminNote\s+String\?/);
+  assert.match(sqliteInit, /"adminNote" TEXT/);
+  assert.match(sqliteInit, /ALTER TABLE "CustomerAccount" ADD COLUMN "adminNote" TEXT/);
+  assert.match(migration, /ALTER TABLE "CustomerAccount" ADD COLUMN "adminNote" TEXT/);
+  assert.doesNotMatch(migration, /DROP|DELETE|UPDATE|NOT NULL/i);
+});
+
+test("reward adjustment validation requires positive integer points and reason", () => {
+  assert.throws(
+    () => rewardAdminAdjustmentSchema.parse({
+      customerAccountId: "customer-1",
+      action: "add",
+      points: 0,
+      reason: "Customer service credit",
+      idempotencyKey: "adjust-validate-1"
+    }),
+    /greater than 0/
+  );
+  assert.throws(
+    () => rewardAdminAdjustmentSchema.parse({
+      customerAccountId: "customer-1",
+      action: "add",
+      points: 1.5,
+      reason: "Customer service credit",
+      idempotencyKey: "adjust-validate-2"
+    }),
+    /integer/
+  );
+  assert.throws(
+    () => rewardAdminAdjustmentSchema.parse({
+      customerAccountId: "customer-1",
+      action: "add",
+      points: 10,
+      reason: "",
+      idempotencyKey: "adjust-validate-3"
+    }),
+    /at least 4/
+  );
 });
 
 test("admin customer rewards routes require private admin access", () => {
@@ -219,6 +325,11 @@ test("admin customer rewards routes require private admin access", () => {
     assert.match(source, /requireAdmin\(user\)/, `${routePath} must require admin access`);
     assert.match(source, /privateOk|privateJson/, `${routePath} must use private no-store responses`);
   }
+  const customerDetailRoute = readFileSync(path.join(projectRoot, "src/app/api/radar/customers/[customerAccountId]/route.ts"), "utf8");
+  assert.match(customerDetailRoute, /export async function PATCH/);
+  assert.match(customerDetailRoute, /adminCustomerProfileUpdateSchema/);
+  assert.match(customerDetailRoute, /updateAdminCustomerProfile/);
+  assert.doesNotMatch(customerDetailRoute, /emailVerifiedAt|passwordHash|rewardBalance|availablePoints/);
 });
 
 test("customers UI stays admin-only and public rewards surfaces do not expose admin notes", () => {
@@ -236,6 +347,12 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(app, /id: "customers"/);
   assert.match(app, /adminOnlyTabs = new Set<Tab>\(\["admin", "pos", "customers"\]\)/);
   assert.match(app, /Admin adjustments disabled/);
+  assert.match(app, /Point adjustments are disabled until admin adjustments are enabled/);
+  assert.match(app, /CustomerProfileEditModal/);
+  assert.match(app, /RewardAdjustmentModal/);
+  assert.match(app, /Email changes require a separate verified email-change flow/);
+  assert.match(app, /aria-label="Account status"/);
+  assert.match(app, /aria-label="Reason"/);
   assert.match(app, /CustomerRewardDetailPanel/);
   assert.doesNotMatch(storefrontOrderInclude, /metadataJson|adminNote/i);
   assert.doesNotMatch(customerRewardActivity, /metadataJson|adminNote/i);
