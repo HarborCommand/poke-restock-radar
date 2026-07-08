@@ -49,16 +49,15 @@ export function posUnitPrice(item: PosPriceItem) {
 
 function posBlockedStatusReason(item: Pick<PosSellableItem, "itemStatus" | "listingStatus">) {
   const status = `${item.itemStatus} ${item.listingStatus}`.toLowerCase();
-  if (/\bsold\b/.test(status)) return "Marked sold";
-  if (/\barchived\b/.test(status)) return "Archived";
-  if (/\bdisposed\b/.test(status)) return "Disposed";
+  if (/\b(archived|disposed|deleted)\b/.test(status)) return "Archived or disposed";
+  if (/\b(closed|not[-_ ]for[-_ ]sale)\b/.test(status)) return "Marked sold";
   return null;
 }
 
 export function getPosExcludedReason(item: PosSellableItem) {
+  if (item.quantityOwned <= 0) return "No on-hand quantity";
   const blockedStatusReason = posBlockedStatusReason(item);
   if (blockedStatusReason) return blockedStatusReason;
-  if (item.quantityOwned <= 0) return "No on-hand quantity";
   if (posUnitPrice(item) === null) return "Missing POS sale price";
   return null;
 }
