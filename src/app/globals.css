@@ -26651,6 +26651,7 @@ body .catalog-action-menu-floating {
 
 .pos-total-box,
 .pos-payment-panel,
+.pos-customer-panel,
 .pos-confirm-summary,
 .pos-receipt-lines {
   display: grid;
@@ -26687,12 +26688,121 @@ body .catalog-action-menu-floating {
   font-weight: 850;
 }
 
+.pos-customer-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.pos-customer-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pos-customer-heading h3,
+.pos-customer-heading p {
+  margin: 0;
+}
+
+.pos-customer-heading h3 {
+  color: #0f172a;
+}
+
+.pos-customer-heading p {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.pos-customer-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.pos-input-icon-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #64748b;
+  padding: 0 10px;
+}
+
+.pos-input-icon-row:focus-within {
+  border-color: #4338ca;
+  box-shadow: 0 0 0 3px rgba(67, 56, 202, 0.12);
+}
+
+.pos-input-icon-row input {
+  min-height: 38px;
+  border: 0;
+  padding: 0;
+}
+
+.pos-customer-status {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 10px;
+}
+
+.pos-customer-status strong {
+  color: #0f172a;
+  font-size: 0.84rem;
+  line-height: 1.25;
+}
+
+.pos-customer-status small {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.pos-customer-status.good {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.pos-customer-status.good strong {
+  color: #166534;
+}
+
+.pos-customer-status.watch {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.pos-customer-status.watch strong {
+  color: #9a3412;
+}
+
 .pos-reference-input input {
   min-height: 40px;
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   background: #ffffff;
   padding: 0 10px;
+}
+
+.pos-reference-input .pos-input-icon-row input {
+  min-height: 38px;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
 }
 
 .pos-reference-input small,
@@ -26864,6 +26974,15 @@ body .catalog-action-menu-floating {
 
   .pos-cart-quantity {
     width: 136px;
+  }
+
+  .pos-customer-heading,
+  .pos-customer-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-customer-heading {
+    display: grid;
   }
 
   .pos-line-total {

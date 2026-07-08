@@ -39,6 +39,7 @@ import {
   validateDiscoverySourceUrl
 } from "@/lib/product-discovery";
 import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
+import { resolvePosCustomerMatch } from "@/lib/pos-customer";
 import {
   detectRetailerAvailability,
   detectRetailerPrice,
@@ -99,6 +100,7 @@ import type {
   NotificationSettingsDTO,
   OwnerLaunchChecklistItemDTO,
   PosSaleReceiptDTO,
+  PosCustomerMatchResultDTO,
   Priority,
   ProductDTO,
   ProductDiscoveryCandidateDTO,
@@ -1838,6 +1840,11 @@ function inventorySaleToDTO(
     discountAmount: sale.discountAmount,
     discountReason: sale.discountReason,
     discountNote: sale.discountNote,
+    customerAccountId: sale.customerAccountId,
+    customerEmail: sale.customerEmail,
+    customerPhone: sale.customerPhone,
+    customerMatchMethod: sale.customerMatchMethod,
+    rewardsEligible: sale.rewardsEligible,
     saleStatus,
     storefrontOrderNumber,
     storefrontOrderStatus: null,
@@ -6741,6 +6748,11 @@ function posSaleLineNote(input: {
   saleReference: string;
   paymentMethodLabel: string;
   paymentReference: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  customerMatchMethod: string | null;
+  customerLinked: boolean;
+  rewardsEligible: boolean;
   subtotal: number;
   tax: number;
   total: number;
@@ -6749,6 +6761,12 @@ function posSaleLineNote(input: {
     `POS sale ${input.saleReference}.`,
     `Payment method: ${input.paymentMethodLabel}.`,
     input.paymentReference ? `Payment reference: ${input.paymentReference}.` : null,
+    input.customerEmail ? `Customer email: ${input.customerEmail}.` : null,
+    input.customerPhone ? `Customer phone: ${input.customerPhone}.` : null,
+    input.customerMatchMethod && input.customerMatchMethod !== "none"
+      ? `Customer match: ${input.customerMatchMethod}${input.customerLinked ? " linked" : " not linked"}.`
+      : null,
+    input.rewardsEligible ? "Rewards eligibility: linked for future POS rewards." : null,
     `POS subtotal: $${input.subtotal.toFixed(2)}.`,
     `POS tax: $${input.tax.toFixed(2)}.`,
     `POS total: $${input.total.toFixed(2)}.`
@@ -6760,6 +6778,23 @@ function posSaleLineNote(input: {
 function posMoneyFromNote(notes: string | null | undefined, label: "subtotal" | "tax" | "total") {
   const match = notes?.match(new RegExp(`POS ${label}: \\$(\\d+(?:\\.\\d{1,2})?)\\.`));
   return match ? roundPosMoney(Number(match[1])) : null;
+}
+
+const posCustomerMatchMethods = new Set<PosCustomerMatchResultDTO["customerMatchMethod"]>([
+  "none",
+  "email",
+  "email_not_found",
+  "email_unverified",
+  "email_conflict",
+  "phone_possible",
+  "phone_not_found",
+  "phone_multiple"
+]);
+
+function normalizePosCustomerMatchMethod(value: string | null | undefined): PosCustomerMatchResultDTO["customerMatchMethod"] {
+  return posCustomerMatchMethods.has(value as PosCustomerMatchResultDTO["customerMatchMethod"])
+    ? (value as PosCustomerMatchResultDTO["customerMatchMethod"])
+    : "none";
 }
 
 type PosSaleClient = Prisma.TransactionClient | typeof prisma;
@@ -6793,6 +6828,11 @@ async function receiptForExistingPosSale(
     paymentMethod,
     paymentMethodLabel: posPaymentMethodLabel(paymentMethod),
     paymentReference: firstSale.paymentReference,
+    customerAccountId: firstSale.customerAccountId,
+    customerEmail: firstSale.customerEmail,
+    customerPhone: firstSale.customerPhone,
+    customerMatchMethod: normalizePosCustomerMatchMethod(firstSale.customerMatchMethod),
+    rewardsEligible: firstSale.rewardsEligible,
     subtotal,
     tax,
     total,
@@ -6852,6 +6892,11 @@ async function createPosInventorySaleLine(
     saleReference: string;
     paymentMethod: string;
     paymentReference: string | null;
+    customerAccountId: string | null;
+    customerEmail: string | null;
+    customerPhone: string | null;
+    customerMatchMethod: string | null;
+    rewardsEligible: boolean;
     soldAt: Date;
     notes: string;
   }
@@ -6909,6 +6954,11 @@ async function createPosInventorySaleLine(
       saleReference: sale.saleReference,
       paymentMethod: sale.paymentMethod,
       paymentReference: sale.paymentReference,
+      customerAccountId: sale.customerAccountId,
+      customerEmail: sale.customerEmail,
+      customerPhone: sale.customerPhone,
+      customerMatchMethod: sale.customerMatchMethod,
+      rewardsEligible: sale.rewardsEligible,
       originalUnitPrice: line.originalUnitPrice,
       adjustedUnitPrice: line.adjustedUnitPrice,
       discountAmount: line.discountAmount,
@@ -6949,6 +6999,8 @@ export async function createPosSale(
     items: PosSaleInputItem[];
     paymentMethod: string;
     paymentReference?: string | null;
+    customerEmail?: string | null;
+    customerPhone?: string | null;
   }
 ): Promise<PosSaleReceiptDTO> {
   const paymentMethod = normalizePosPaymentMethod(input.paymentMethod);
@@ -7034,10 +7086,19 @@ export async function createPosSale(
 
     const taxRate = getConfiguredPosTaxRate();
     const totals = calculatePosTotals(lines, taxRate);
+    const customerMatch = await resolvePosCustomerMatch({
+      customerEmail: input.customerEmail,
+      customerPhone: input.customerPhone
+    }, tx);
     const notes = posSaleLineNote({
       saleReference,
       paymentMethodLabel,
       paymentReference,
+      customerEmail: customerMatch.customerEmail,
+      customerPhone: customerMatch.customerPhone,
+      customerMatchMethod: customerMatch.customerMatchMethod,
+      customerLinked: Boolean(customerMatch.customerAccountId),
+      rewardsEligible: customerMatch.rewardsEligible,
       subtotal: totals.subtotal,
       tax: totals.tax,
       total: totals.total
@@ -7048,6 +7109,11 @@ export async function createPosSale(
         saleReference,
         paymentMethod,
         paymentReference,
+        customerAccountId: customerMatch.customerAccountId,
+        customerEmail: customerMatch.customerEmail,
+        customerPhone: customerMatch.customerPhone,
+        customerMatchMethod: customerMatch.customerMatchMethod,
+        rewardsEligible: customerMatch.rewardsEligible,
         soldAt,
         notes
       });
@@ -7058,6 +7124,11 @@ export async function createPosSale(
       paymentMethod,
       paymentMethodLabel,
       paymentReference,
+      customerAccountId: customerMatch.customerAccountId,
+      customerEmail: customerMatch.customerEmail,
+      customerPhone: customerMatch.customerPhone,
+      customerMatchMethod: customerMatch.customerMatchMethod,
+      rewardsEligible: customerMatch.rewardsEligible,
       subtotal: totals.subtotal,
       tax: totals.tax,
       total: totals.total,

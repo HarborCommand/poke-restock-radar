@@ -955,7 +955,14 @@ export const posSaleCreateSchema = z.object({
     discountNote: optionalTrimmed
   })).min(1).max(100),
   paymentMethod: z.enum(POS_PAYMENT_METHOD_VALUES),
-  paymentReference: optionalTrimmed
+  paymentReference: optionalTrimmed,
+  customerEmail: z.string().trim().email().optional(),
+  customerPhone: optionalTrimmed
+});
+
+export const posCustomerMatchSchema = z.object({
+  customerEmail: z.string().trim().email().optional(),
+  customerPhone: optionalTrimmed
 });
 
 export const posSaleRefundSchema = z.object({
