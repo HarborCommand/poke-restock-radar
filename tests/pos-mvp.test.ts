@@ -322,8 +322,13 @@ test("POS API is private admin-only and delegates to server-side sale creation",
   assert.match(route, /createPosSale\(user, input\)/);
   assert.match(matchRoute, /requireUser/);
   assert.match(matchRoute, /requireAdmin/);
+  assert.match(matchRoute, /if \(response\) return response/);
+  assert.match(matchRoute, /const adminResponse = requireAdmin\(user\)/);
+  assert.match(matchRoute, /if \(adminResponse\) return adminResponse/);
   assert.match(matchRoute, /posCustomerMatchSchema\.parse\(await readJson\(request\)\)/);
   assert.match(matchRoute, /resolvePosCustomerMatch\(input\)/);
+  assert.match(matchRoute, /return ok\(\{ match \}\)/);
+  assert.doesNotMatch(matchRoute, /passwordHash|tokenHash|sessionToken|rewardBalance|rewardLedger|savedAddresses|address|authenticityNotes|stripePaymentIntent|stripeCheckout/i);
   assert.doesNotMatch(route, /stripe|checkout|terminal|tapToPay/i);
 });
 
@@ -493,12 +498,15 @@ test("POS cart exposes optional customer contact capture and account matching", 
 test("POS receipt includes optional customer contact without account identifiers", () => {
   const app = readSource("../src/components/RadarApp.tsx");
   const receipt = sourceSlice(app, "function PosReceipt", "function ProfitLossPanel");
+  const receiptSummary = sourceSlice(app, "function posReceiptSummary", "function PosPanel");
   assert.match(app, /Customer email: \$\{receipt\.customerEmail\}/);
   assert.match(app, /Customer phone: \$\{receipt\.customerPhone\}/);
   assert.match(receipt, /receipt\.customerEmail/);
   assert.match(receipt, /receipt\.customerPhone/);
   assert.match(receipt, /Contact only/);
-  assert.doesNotMatch(receipt, /Customer account ID|internal ID/i);
+  assert.match(receipt, /receipt\.customerAccountId \? "Rewards are not active for POS yet" : "Contact only"/);
+  assert.match(receiptSummary, /receipt\.customerAccountId \? "Customer linked\. Rewards are not active for POS yet\." : null/);
+  assert.doesNotMatch(receipt + receiptSummary, /Customer account ID|internal ID|\$\{receipt\.customerAccountId\}/i);
 });
 
 test("POS price adjustment client validation requires valid lower price and reason", () => {
@@ -654,6 +662,18 @@ test("POS customer contact fields stay out of public storefront surfaces", () =>
 
   for (const source of [publicProduct, feed, storefrontSeo, storeClient, accountPages]) {
     assert.doesNotMatch(source, /customerMatchMethod|rewardsEligible|customerAccountId.*pos|POS customer|pos customer/i);
+  }
+});
+
+test("POS customer capture stays out of account and public product output", () => {
+  const accountPages = readSource("../src/components/CustomerAccountPages.tsx");
+  const storefront = readSource("../src/lib/storefront.ts");
+  const feed = readSource("../src/lib/storefront-product-feed.ts");
+  const seo = readSource("../src/lib/storefront-seo.ts");
+  const publicProductMapper = sourceSlice(storefront, "function publicProductToDTO", "export async function getStorefrontSettings");
+
+  for (const source of [accountPages, publicProductMapper, feed, seo]) {
+    assert.doesNotMatch(source, /InventorySale|customerMatchMethod|rewardsEligible|customerPhone|POS receipt|POS customer|refundNote|authenticityNotes/i);
   }
 });
 
