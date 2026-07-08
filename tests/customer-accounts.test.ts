@@ -1146,6 +1146,25 @@ test("saved address book is verified-account scoped and checkout-isolated", () =
   assert.doesNotMatch(addressHelper + addressRoute + addressComponents, /stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|webhook body|costBasis|netProfit|supplier|private lot|adminNotes/i);
 });
 
+test("guest order lookup and account surfaces do not expose POS customer capture data", () => {
+  const storefront = readProjectFile("src/lib/storefront.ts");
+  const lookup = sourceSlice(storefront, "export async function lookupPublicOrderStatus", "export async function storefrontSummary");
+  const accountComponents = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const rewards = readProjectFile("src/lib/customer-rewards.ts");
+  const rewardActivity = sourceSlice(rewards, "export async function listCustomerRewardActivity");
+
+  assert.match(lookup, /const orderNumber = input\.orderNumber\.trim\(\)\.toUpperCase\(\)/);
+  assert.match(lookup, /const email = normalizedCustomerEmail\(input\.email\)/);
+  assert.match(lookup, /if \(!order\) return \{ found: false, message: publicOrderLookupMiss \}/);
+  assert.match(lookup, /normalizedCustomerEmail\(order\.customerEmail \?\? order\.customer\?\.email\) !== email/);
+  assert.match(lookup, /return \{ found: false, message: publicOrderLookupMiss \}/);
+  assert.doesNotMatch(lookup, /customerAccountId|rewardBalance|rewardLedgerEntries|stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|adminNotes|costBasis|netProfit|supplier|private lot/i);
+
+  assert.match(rewardActivity, /where: \{ customerAccountId: account\.id \}/);
+  assert.doesNotMatch(rewardActivity, /input\.customerAccountId|searchParams|params\.customerAccountId|query\.customerAccountId/i);
+  assert.doesNotMatch(accountComponents, /customerMatchMethod|rewardsEligible|POS customer|POS receipt|InventorySale|refundNote|authenticityNotes/i);
+});
+
 test("paid webhook awards reward points once without changing checkout totals", () => {
   const storefront = readProjectFile("src/lib/storefront.ts");
   const rewards = readProjectFile("src/lib/customer-rewards.ts");

@@ -290,19 +290,59 @@ test("POS sale request accepts only explicit adjusted price metadata, not fake b
   assert.equal(invalidReason.success, false);
 });
 
+test("POS sale request accepts optional customer contact without trusting reward state", () => {
+  const parsed = posSaleCreateSchema.safeParse({
+    idempotencyKey: "20260702T120000-contact-sale",
+    items: [{ inventoryItemId: "item-1", quantity: 1 }],
+    paymentMethod: "zelle",
+    customerEmail: "collector@example.test",
+    customerPhone: "(555) 123-4567",
+    customerAccountId: "browser-fake",
+    rewardsEligible: true,
+    points: 999
+  });
+  assert.equal(parsed.success, true);
+  assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["customerEmail", "customerPhone", "idempotencyKey", "items", "paymentMethod"]);
+
+  const invalidEmail = posSaleCreateSchema.safeParse({
+    idempotencyKey: "20260702T120000-contact-sale",
+    items: [{ inventoryItemId: "item-1", quantity: 1 }],
+    paymentMethod: "cash",
+    customerEmail: "not-an-email"
+  });
+  assert.equal(invalidEmail.success, false);
+});
+
 test("POS API is private admin-only and delegates to server-side sale creation", () => {
   const route = readSource("../src/app/api/radar/pos/sales/route.ts");
+  const matchRoute = readSource("../src/app/api/radar/pos/customer-match/route.ts");
   assert.match(route, /requireUser/);
   assert.match(route, /requireAdmin/);
   assert.match(route, /posSaleCreateSchema\.parse\(await readJson\(request\)\)/);
   assert.match(route, /createPosSale\(user, input\)/);
+  assert.match(matchRoute, /requireUser/);
+  assert.match(matchRoute, /requireAdmin/);
+  assert.match(matchRoute, /if \(response\) return response/);
+  assert.match(matchRoute, /const adminResponse = requireAdmin\(user\)/);
+  assert.match(matchRoute, /if \(adminResponse\) return adminResponse/);
+  assert.match(matchRoute, /posCustomerMatchSchema\.parse\(await readJson\(request\)\)/);
+  assert.match(matchRoute, /resolvePosCustomerMatch\(input\)/);
+  assert.match(matchRoute, /return ok\(\{ match \}\)/);
+  assert.doesNotMatch(matchRoute, /passwordHash|tokenHash|sessionToken|rewardBalance|rewardLedger|savedAddresses|address|authenticityNotes|stripePaymentIntent|stripeCheckout/i);
   assert.doesNotMatch(route, /stripe|checkout|terminal|tapToPay/i);
 });
 
 test("POS server revalidates inventory, price, and availability before recording sale", () => {
   const service = readSource("../src/lib/radar-service.ts");
+  const posCustomer = readSource("../src/lib/pos-customer.ts");
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
   assert.match(service, /getPosExcludedReason/);
+  assert.match(service, /resolvePosCustomerMatch/);
+  assert.match(posCustomer, /findCustomerAccountByNormalizedEmail/);
+  assert.match(posCustomer, /normalizePosCustomerPhone/);
+  assert.match(posCustomer, /phone_possible/);
+  assert.match(posCustomer, /phone_multiple/);
+  assert.doesNotMatch(posCustomer, /findOrCreateCustomerAccountByNormalizedEmail|customerAccount\.create/);
   assert.match(createPosSale, /tx\.inventoryItem\.findMany/);
   assert.match(createPosSale, /posSaleReferenceFromIdempotencyKey\(currentUser\.id, input\.idempotencyKey\)/);
   assert.match(createPosSale, /receiptForExistingPosSale\(prisma, currentUser, saleReference\)/);
@@ -319,6 +359,10 @@ test("POS server revalidates inventory, price, and availability before recording
   assert.match(createPosSale, /calculatePosTotals\(lines, taxRate\)/);
   assert.match(createPosSale, /saleReference/);
   assert.match(createPosSale, /paymentMethod/);
+  assert.match(createPosSale, /customerMatch\.customerAccountId/);
+  assert.match(createPosSale, /customerMatch\.customerEmail/);
+  assert.match(createPosSale, /customerMatch\.customerPhone/);
+  assert.match(createPosSale, /customerMatch\.rewardsEligible/);
   assert.match(createPosSale, /await createPosInventorySaleLine\(tx, currentUser, line/);
   assert.match(createPosSale, /syncInventoryStoreStatusAfterStockChange/);
 });
@@ -435,6 +479,34 @@ test("POS cart exposes line-item price adjustment UI without saving immediately"
   assert.match(css, /\.pos-price-adjust-modal/);
   assert.match(css, /\.pos-line-price-stack/);
   assert.match(css, /\.pos-line-discount/);
+});
+
+test("POS cart exposes optional customer contact capture and account matching", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+  assert.match(posPanel, /Customer \(optional\)/);
+  assert.match(posPanel, /Customer email/);
+  assert.match(posPanel, /Customer phone/);
+  assert.match(posPanel, /matchCustomerContact/);
+  assert.match(posPanel, /\/api\/radar\/pos\/customer-match/);
+  assert.match(posPanel, /Phone alone never awards points/);
+  assert.match(posPanel, /Rewards are not active for POS yet|Linked for future POS rewards/);
+  assert.match(posPanel, /customerEmail: customerEmail\.trim\(\) \|\| undefined/);
+  assert.match(posPanel, /customerPhone: customerPhone\.trim\(\) \|\| undefined/);
+});
+
+test("POS receipt includes optional customer contact without account identifiers", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const receipt = sourceSlice(app, "function PosReceipt", "function ProfitLossPanel");
+  const receiptSummary = sourceSlice(app, "function posReceiptSummary", "function PosPanel");
+  assert.match(app, /Customer email: \$\{receipt\.customerEmail\}/);
+  assert.match(app, /Customer phone: \$\{receipt\.customerPhone\}/);
+  assert.match(receipt, /receipt\.customerEmail/);
+  assert.match(receipt, /receipt\.customerPhone/);
+  assert.match(receipt, /Contact only/);
+  assert.match(receipt, /receipt\.customerAccountId \? "Rewards are not active for POS yet" : "Contact only"/);
+  assert.match(receiptSummary, /receipt\.customerAccountId \? "Customer linked\. Rewards are not active for POS yet\." : null/);
+  assert.doesNotMatch(receipt + receiptSummary, /Customer account ID|internal ID|\$\{receipt\.customerAccountId\}/i);
 });
 
 test("POS price adjustment client validation requires valid lower price and reason", () => {
@@ -578,6 +650,31 @@ test("POS change is isolated from public checkout, shipping, refunds, and live p
   assert.doesNotMatch(checkoutRoute, /createPosSale|posSale|api\/radar\/pos|terminal|tapToPay/i);
   assert.doesNotMatch(shippingPolicy, /createPosSale|posSale|api\/radar\/pos|terminal|tapToPay/i);
   assert.doesNotMatch(refundRoute, /createPosSale|posSale|api\/radar\/pos|terminal|tapToPay/i);
+});
+
+test("POS customer contact fields stay out of public storefront surfaces", () => {
+  const types = readSource("../src/types/radar.ts");
+  const publicProduct = sourceSlice(types, "export type PublicStoreProductDTO", "export type StorefrontSettingsDTO");
+  const feed = readSource("../src/lib/storefront-product-feed.ts");
+  const storefrontSeo = readSource("../src/lib/storefront-seo.ts");
+  const storeClient = readSource("../src/components/StorefrontClient.tsx");
+  const accountPages = readSource("../src/components/CustomerAccountPages.tsx");
+
+  for (const source of [publicProduct, feed, storefrontSeo, storeClient, accountPages]) {
+    assert.doesNotMatch(source, /customerMatchMethod|rewardsEligible|customerAccountId.*pos|POS customer|pos customer/i);
+  }
+});
+
+test("POS customer capture stays out of account and public product output", () => {
+  const accountPages = readSource("../src/components/CustomerAccountPages.tsx");
+  const storefront = readSource("../src/lib/storefront.ts");
+  const feed = readSource("../src/lib/storefront-product-feed.ts");
+  const seo = readSource("../src/lib/storefront-seo.ts");
+  const publicProductMapper = sourceSlice(storefront, "function publicProductToDTO", "export async function getStorefrontSettings");
+
+  for (const source of [accountPages, publicProductMapper, feed, seo]) {
+    assert.doesNotMatch(source, /InventorySale|customerMatchMethod|rewardsEligible|customerPhone|POS receipt|POS customer|refundNote|authenticityNotes/i);
+  }
 });
 
 test("POS manual sales do not participate in Phase 1 rewards", () => {

@@ -606,6 +606,11 @@ export type InventorySaleDTO = {
   discountAmount: number | null;
   discountReason: string | null;
   discountNote: string | null;
+  customerAccountId: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  customerMatchMethod: string | null;
+  rewardsEligible: boolean;
   saleStatus: "active" | "partially_refunded" | "refunded" | "canceled" | "test";
   storefrontOrderNumber: string | null;
   storefrontOrderStatus: string | null;
@@ -623,6 +628,27 @@ export type InventorySaleDTO = {
 
 export type PosPaymentMethodDTO = "cash" | "zelle" | "external_card" | "other";
 export type PosDiscountReasonDTO = "customer_discount" | "price_match" | "damaged_packaging" | "promotion" | "owner_override" | "other";
+
+export type PosCustomerMatchMethodDTO =
+  | "none"
+  | "email"
+  | "email_not_found"
+  | "email_unverified"
+  | "email_conflict"
+  | "phone_possible"
+  | "phone_not_found"
+  | "phone_multiple";
+
+export type PosCustomerMatchResultDTO = {
+  customerAccountId: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  customerMatchMethod: PosCustomerMatchMethodDTO;
+  rewardsEligible: boolean;
+  displayEmail: string | null;
+  displayPhone: string | null;
+  message: string;
+};
 
 export type PosSaleLineDTO = {
   inventoryItemId: string;
@@ -648,6 +674,11 @@ export type PosSaleReceiptDTO = {
   paymentMethod: PosPaymentMethodDTO;
   paymentMethodLabel: string;
   paymentReference: string | null;
+  customerAccountId: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  customerMatchMethod: PosCustomerMatchMethodDTO;
+  rewardsEligible: boolean;
   subtotal: number;
   tax: number;
   total: number;

@@ -922,45 +922,56 @@ model InventoryStockLot {
 }
 
 model InventorySale {
-  id               String        @id @default(cuid())
-  inventoryItemId  String
-  userId           String?
-  quantitySold     Int
-  soldPricePerItem Float
-  grossSale        Float
-  platform         String
-  fees             Float         @default(0)
-  shippingCost     Float         @default(0)
-  netSale          Float
-  costBasis        Float
-  profitLoss       Float
-  roiPercent       Float?
-  saleReference    String?
-  paymentMethod    String?
-  paymentReference String?
-  originalUnitPrice Float?
-  adjustedUnitPrice Float?
-  discountAmount   Float?
-  discountReason   String?
-  discountNote     String?
-  refundStatus     String?
-  refundedAmount   Float         @default(0)
-  refundedAt       DateTime?
-  refundReason     String?
-  refundNote       String?
-  refundIdempotencyKey String?
-  refundRestockedQuantity Int    @default(0)
-  soldAt           DateTime
-  notes            String?
-  createdAt        DateTime      @default(now())
-  inventoryItem    InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
-  user             User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id                      String           @id @default(cuid())
+  inventoryItemId         String
+  userId                  String?
+  customerAccountId       String?
+  quantitySold            Int
+  soldPricePerItem        Float
+  grossSale               Float
+  platform                String
+  fees                    Float            @default(0)
+  shippingCost            Float            @default(0)
+  netSale                 Float
+  costBasis               Float
+  profitLoss              Float
+  roiPercent              Float?
+  saleReference           String?
+  paymentMethod           String?
+  paymentReference        String?
+  originalUnitPrice       Float?
+  adjustedUnitPrice       Float?
+  discountAmount          Float?
+  discountReason          String?
+  discountNote            String?
+  customerEmail           String?
+  customerPhone           String?
+  customerMatchMethod     String?
+  rewardsEligible         Boolean          @default(false)
+  refundStatus            String?
+  refundedAmount          Float            @default(0)
+  refundedAt              DateTime?
+  refundReason            String?
+  refundNote              String?
+  refundIdempotencyKey    String?
+  refundRestockedQuantity Int              @default(0)
+  soldAt                  DateTime
+  notes                   String?
+  createdAt               DateTime         @default(now())
+  inventoryItem           InventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  user                    User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customerAccount         CustomerAccount? @relation(fields: [customerAccountId], references: [id], onDelete: SetNull)
 
   @@index([inventoryItemId])
   @@index([userId])
+  @@index([customerAccountId])
   @@index([platform])
   @@index([saleReference])
   @@index([paymentMethod])
+  @@index([customerEmail])
+  @@index([customerPhone])
+  @@index([customerMatchMethod])
+  @@index([rewardsEligible])
   @@index([refundStatus])
   @@index([refundIdempotencyKey])
   @@index([soldAt])
@@ -1110,6 +1121,7 @@ model CustomerAccount {
   user                User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
   storefrontCustomers StorefrontCustomer[]
   orders              StorefrontOrder[]
+  posSales            InventorySale[]
   savedAddresses      CustomerSavedAddress[]
   sessions            CustomerSession[]
   magicLinkTokens     CustomerMagicLinkToken[]

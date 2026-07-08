@@ -134,6 +134,7 @@ import type {
   ProductDiscoverySourceDTO,
   ProductStatus,
   ProductVerificationStatus,
+  PosCustomerMatchResultDTO,
   PosDiscountReasonDTO,
   PosPaymentMethodDTO,
   PosSaleReceiptDTO,
@@ -3586,6 +3587,9 @@ function posReceiptSummary(receipt: PosSaleReceiptDTO) {
     `Sale ${receipt.saleReference}`,
     `Date: ${dateTime(receipt.completedAt)}`,
     `Payment: ${receipt.paymentMethodLabel}${receipt.paymentReference ? ` (${receipt.paymentReference})` : ""}`,
+    receipt.customerEmail ? `Customer email: ${receipt.customerEmail}` : null,
+    receipt.customerPhone ? `Customer phone: ${receipt.customerPhone}` : null,
+    receipt.customerAccountId ? "Customer linked. Rewards are not active for POS yet." : null,
     ...receipt.lines.map((line) => {
       const adjustment = line.discountAmount > 0
         ? `, POS price ${money(line.adjustedUnitPrice)}, discount ${money(line.discountAmount)}${line.discountReasonLabel ? ` (${line.discountReasonLabel})` : ""}`
@@ -3596,7 +3600,7 @@ function posReceiptSummary(receipt: PosSaleReceiptDTO) {
     `Tax: ${money(receipt.tax)}`,
     `Total: ${money(receipt.total)}`,
     `Support: ${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function PosPanel({
@@ -3615,6 +3619,10 @@ function PosPanel({
   const [cart, setCart] = useState<PosCartLine[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethodDTO | null>(null);
   const [paymentReference, setPaymentReference] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerMatch, setCustomerMatch] = useState<PosCustomerMatchResultDTO | null>(null);
+  const [matchingCustomer, setMatchingCustomer] = useState(false);
   const [saleIdempotencyKey, setSaleIdempotencyKey] = useState(() => newPosSaleIdempotencyKey());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -3828,11 +3836,53 @@ function PosPanel({
     setPosMessage(null);
     setPaymentMethod(null);
     setPaymentReference("");
+    setCustomerEmail("");
+    setCustomerPhone("");
+    setCustomerMatch(null);
+    setMatchingCustomer(false);
     setSaleIdempotencyKey(newPosSaleIdempotencyKey());
     setRecentlyAddedItemId(null);
     setMaxReachedItemId(null);
     setPriceAdjustmentDraft(null);
     searchInputRef.current?.focus();
+  }
+
+  function updateCustomerEmail(value: string) {
+    setCustomerEmail(value);
+    setCustomerMatch(null);
+  }
+
+  function updateCustomerPhone(value: string) {
+    setCustomerPhone(value);
+    setCustomerMatch(null);
+  }
+
+  async function matchCustomerContact() {
+    if (matchingCustomer) return;
+    const trimmedEmail = customerEmail.trim();
+    const trimmedPhone = customerPhone.trim();
+    if (!trimmedEmail && !trimmedPhone) {
+      setCustomerMatch(null);
+      setPosMessage("Enter customer email or phone to match an account.");
+      return;
+    }
+    setMatchingCustomer(true);
+    setPosMessage(null);
+    try {
+      const result = await requestJson<{ match: PosCustomerMatchResultDTO }>("/api/radar/pos/customer-match", {
+        method: "POST",
+        body: JSON.stringify({
+          customerEmail: trimmedEmail || undefined,
+          customerPhone: trimmedPhone || undefined
+        })
+      });
+      setCustomerMatch(result.match);
+    } catch (error) {
+      setCustomerMatch(null);
+      setPosMessage(error instanceof Error ? error.message : "Customer match failed.");
+    } finally {
+      setMatchingCustomer(false);
+    }
   }
 
   function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
@@ -3893,13 +3943,18 @@ function PosPanel({
             discountNote: line.discountAmount > 0 ? line.discountNote ?? undefined : undefined
           })),
           paymentMethod,
-          paymentReference
+          paymentReference,
+          customerEmail: customerEmail.trim() || undefined,
+          customerPhone: customerPhone.trim() || undefined
         })
       });
       setReceipt(result.sale);
       setCart([]);
       setPaymentMethod(null);
       setPaymentReference("");
+      setCustomerEmail("");
+      setCustomerPhone("");
+      setCustomerMatch(null);
       setSaleIdempotencyKey(newPosSaleIdempotencyKey());
       setPriceAdjustmentDraft(null);
       setConfirmOpen(false);
@@ -3916,6 +3971,20 @@ function PosPanel({
   const adjustmentPreviewPrice = Number.isFinite(adjustmentPriceValue) ? roundPosMoney(adjustmentPriceValue) : null;
   const adjustmentPreviewDiscount =
     adjustmentLine && adjustmentPreviewPrice !== null ? roundPosMoney(Math.max(0, adjustmentLine.originalUnitPrice - adjustmentPreviewPrice)) : null;
+  const customerContactEntered = Boolean(customerEmail.trim() || customerPhone.trim());
+  const customerLinked = customerMatch?.customerMatchMethod === "email" && Boolean(customerMatch.customerAccountId);
+  const customerStatusClass = customerLinked
+    ? "good"
+    : customerMatch && customerMatch.customerMatchMethod !== "none"
+      ? "watch"
+      : "muted";
+  const customerStatusLabel = customerMatch
+    ? customerLinked
+      ? `Customer matched: ${customerMatch.displayEmail ?? customerMatch.customerEmail ?? "verified account"}`
+      : customerMatch.message
+    : customerContactEntered
+      ? "Contact entered. Search to check for a verified account."
+      : "No customer attached.";
 
   return (
     <section className="pos-page" aria-label="Admin POS">
@@ -4125,6 +4194,57 @@ function PosPanel({
             <small>POS tax is centralized and configurable; current default is 0 until configured.</small>
             <span className="total">Total <strong>{money(cartTotals.total)}</strong></span>
           </div>
+          <div className="pos-customer-panel" aria-label="Optional customer contact">
+            <div className="pos-customer-heading">
+              <div>
+                <h3>Customer (optional)</h3>
+                <p>Link a verified account for future rewards eligibility. Phone alone never awards points.</p>
+              </div>
+              <button
+                className="mini-action"
+                type="button"
+                disabled={matchingCustomer || !customerContactEntered}
+                onClick={() => void matchCustomerContact()}
+              >
+                <Search size={14} />
+                {matchingCustomer ? "Matching" : "Match"}
+              </button>
+            </div>
+            <div className="pos-customer-fields">
+              <label className="pos-reference-input">
+                Customer email
+                <span className="pos-input-icon-row">
+                  <Mail size={14} />
+                  <input
+                    value={customerEmail}
+                    onChange={(event) => updateCustomerEmail(event.currentTarget.value)}
+                    placeholder="customer@example.com"
+                    inputMode="email"
+                  />
+                </span>
+              </label>
+              <label className="pos-reference-input">
+                Customer phone
+                <span className="pos-input-icon-row">
+                  <Smartphone size={14} />
+                  <input
+                    value={customerPhone}
+                    onChange={(event) => updateCustomerPhone(event.currentTarget.value)}
+                    placeholder="Optional phone"
+                    inputMode="tel"
+                  />
+                </span>
+              </label>
+            </div>
+            <div className={`pos-customer-status ${customerStatusClass}`} aria-live="polite">
+              <strong>{customerStatusLabel}</strong>
+              <small>
+                {customerLinked
+                  ? customerMatch?.message
+                  : "If there is no verified email match, contact can be saved on the POS receipt only."}
+              </small>
+            </div>
+          </div>
           <div className={cartEmpty ? "pos-payment-panel inactive" : "pos-payment-panel"}>
             <h3>Payment Method</h3>
             {cartEmpty ? <p>Payment options activate after an item is in the cart.</p> : null}
@@ -4268,6 +4388,8 @@ function PosPanel({
               <span>Tax <strong>{money(cartTotals.tax)}</strong></span>
               <span>Payment <strong>{paymentMethod ? posPaymentMethodLabel(paymentMethod) : "Not selected"}</strong></span>
               {paymentReference.trim() ? <span>Reference <strong>{paymentReference.trim()}</strong></span> : null}
+              {customerContactEntered ? <span>Customer <strong>{customerLinked ? customerMatch?.displayEmail ?? customerEmail.trim() : "Contact only"}</strong></span> : null}
+              {customerContactEntered ? <span>Rewards <strong>{customerLinked ? "Rewards are not active for POS yet" : "Not linked"}</strong></span> : null}
               <span>Total <strong>{money(cartTotals.total)}</strong></span>
             </div>
             <p className="manual-safety-note">This will record the sale and deduct inventory. Close or cancel does not save anything.</p>
@@ -4331,6 +4453,11 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
         <span>Tax <strong>{money(receipt.tax)}</strong></span>
         <span>Payment <strong>{receipt.paymentMethodLabel}</strong></span>
         {receipt.paymentReference ? <span>Reference <strong>{receipt.paymentReference}</strong></span> : null}
+        {receipt.customerEmail ? <span>Customer email <strong>{receipt.customerEmail}</strong></span> : null}
+        {receipt.customerPhone ? <span>Customer phone <strong>{receipt.customerPhone}</strong></span> : null}
+        {receipt.customerEmail || receipt.customerPhone ? (
+          <span>Rewards <strong>{receipt.customerAccountId ? "Rewards are not active for POS yet" : "Contact only"}</strong></span>
+        ) : null}
         <strong>{money(receipt.total)}</strong>
         <small>Support: {GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}</small>
         <div className="pos-receipt-actions">
