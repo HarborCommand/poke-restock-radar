@@ -12,7 +12,8 @@ const rewardPointsPerDollar = 1;
 const defaultRewardPendingDays = 0;
 const rewardLedgerStatuses = new Set(["pending", "available", "reversed", "canceled"]);
 const rewardSources = {
-  stripeCheckout: "stripe_checkout"
+  stripeCheckout: "stripe_checkout",
+  pos: "pos"
 } as const;
 
 type RewardOrderItem = {
@@ -50,6 +51,14 @@ type RewardLedgerTx = Prisma.TransactionClient;
 type RewardLedgerStatus = "pending" | "available" | "reversed" | "canceled";
 type RewardReleaseReason = "shipped" | "picked_up" | "fulfilled" | "delay_elapsed";
 
+export type PosRewardLedgerSummary = {
+  pointsEarned: number;
+  pointsReversed: number;
+  netPoints: number;
+  ledgerCount: number;
+  status: "not_eligible" | "available" | "reversed";
+};
+
 export type CustomerRewardActivityItem = {
   id: string;
   points: number;
@@ -82,8 +91,17 @@ function rewardFeatureEnabled() {
   return config.customerAccountsEnabled && config.customerRewardsEnabled;
 }
 
+function posRewardFeatureEnabled() {
+  const config = customerAccountFeatureConfig();
+  return config.customerAccountsEnabled && config.customerRewardsEnabled && config.customerPosRewardsEnabled;
+}
+
 export function customerRewardsEnabled() {
   return rewardFeatureEnabled();
+}
+
+export function customerPosRewardsEnabled() {
+  return posRewardFeatureEnabled();
 }
 
 export function configuredRewardPendingDays(env: Record<string, string | undefined> = process.env) {
@@ -113,6 +131,10 @@ export function rewardEligibleSubtotalCents(order: Pick<RewardOrder, "subtotal" 
 
 export function rewardPointsForOrderSubtotal(order: Pick<RewardOrder, "subtotal" | "items">) {
   return Math.floor((rewardEligibleSubtotalCents(order) / 100) * rewardPointsPerDollar);
+}
+
+export function rewardPointsForEligibleSubtotalCents(eligibleSubtotalCents: number) {
+  return Math.floor((Math.max(0, eligibleSubtotalCents) / 100) * rewardPointsPerDollar);
 }
 
 function orderCustomerEmail(order: RewardOrder) {
@@ -168,7 +190,7 @@ async function applyRewardBalanceDelta(
 async function createRewardLedgerEntry(input: {
   tx: RewardLedgerTx;
   customerAccountId: string;
-  orderId: string;
+  orderId: string | null;
   idempotencyKey: string;
   points: number;
   type: "earn" | "reverse";
@@ -203,6 +225,149 @@ async function createRewardLedgerEntry(input: {
   });
   await applyRewardBalanceDelta(input.tx, input.customerAccountId, input.balanceDelta);
   return { created: true, points: ledger.points };
+}
+
+export async function rewardSummaryForPosSaleReference(
+  saleReference: string,
+  client: RewardLedgerTx | typeof prisma = prisma
+): Promise<PosRewardLedgerSummary> {
+  const ledger = await client.rewardLedgerEntry.findMany({
+    where: {
+      source: rewardSources.pos,
+      idempotencyKey: {
+        in: [`rewards:pos:earn:${saleReference}`, `rewards:pos:refund:${saleReference}`]
+      }
+    },
+    select: {
+      points: true
+    }
+  });
+  const pointsEarned = ledger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
+  const pointsReversed = Math.abs(ledger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
+  const netPoints = pointsEarned - pointsReversed;
+  return {
+    pointsEarned,
+    pointsReversed,
+    netPoints,
+    ledgerCount: ledger.length,
+    status: pointsEarned <= 0 ? "not_eligible" : netPoints <= 0 ? "reversed" : "available"
+  };
+}
+
+export async function awardRewardsForCompletedPosSale(
+  input: {
+    customerAccountId: string | null;
+    saleReference: string;
+    eligibleSubtotalCents: number;
+    taxCentsExcluded: number;
+    itemCount: number;
+  },
+  tx?: RewardLedgerTx
+) {
+  if (!posRewardFeatureEnabled()) return { status: "disabled" as const, points: 0 };
+  if (!input.customerAccountId) return { status: "missing_customer_account" as const, points: 0 };
+
+  const eligibleSubtotalCents = Math.max(0, Math.round(input.eligibleSubtotalCents));
+  const points = rewardPointsForEligibleSubtotalCents(eligibleSubtotalCents);
+  if (points <= 0) return { status: "no_points" as const, points: 0 };
+
+  const run = async (client: RewardLedgerTx) => {
+    const now = new Date();
+    const result = await createRewardLedgerEntry({
+      tx: client,
+      customerAccountId: input.customerAccountId!,
+      orderId: null,
+      idempotencyKey: `rewards:pos:earn:${input.saleReference}`,
+      points,
+      type: "earn",
+      reason: "Completed POS sale eligible item subtotal",
+      status: "available",
+      source: rewardSources.pos,
+      availableAt: now,
+      settledAt: now,
+      eligibleSubtotalCents,
+      balanceDelta: {
+        availableDelta: points,
+        lifetimeEarnedDelta: points
+      },
+      metadata: {
+        saleReference: input.saleReference,
+        eligibleSubtotalCents,
+        taxCentsExcluded: input.taxCentsExcluded,
+        itemCount: input.itemCount,
+        releaseRule: "Manual POS rewards are available immediately after completed sale.",
+        rule: "1 point per eligible adjusted POS subtotal dollar"
+      }
+    });
+    return { status: result.created ? ("available" as const) : ("already_awarded" as const), points: result.points };
+  };
+
+  return tx ? run(tx) : prisma.$transaction(run);
+}
+
+export async function reverseRewardsForPosSale(
+  input: {
+    saleReference: string;
+    reason: "refund";
+  },
+  tx?: RewardLedgerTx
+) {
+  const run = async (client: RewardLedgerTx) => {
+    const earnEntry = await client.rewardLedgerEntry.findUnique({
+      where: { idempotencyKey: `rewards:pos:earn:${input.saleReference}` },
+      select: {
+        id: true,
+        customerAccountId: true,
+        points: true,
+        eligibleSubtotalCents: true
+      }
+    });
+    if (!earnEntry || earnEntry.points <= 0) return { status: "no_award" as const, points: 0 };
+
+    const existingReversed = await client.rewardLedgerEntry.findMany({
+      where: {
+        source: rewardSources.pos,
+        OR: [
+          { idempotencyKey: `rewards:pos:refund:${input.saleReference}` },
+          { reversalOfEntryId: earnEntry.id }
+        ]
+      },
+      select: {
+        points: true
+      }
+    });
+    const reversedPoints = Math.abs(existingReversed.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
+    const pointsToReverse = Math.max(0, earnEntry.points - reversedPoints);
+    if (pointsToReverse <= 0) return { status: "already_reversed" as const, points: 0 };
+
+    const now = new Date();
+    const result = await createRewardLedgerEntry({
+      tx: client,
+      customerAccountId: earnEntry.customerAccountId,
+      orderId: null,
+      idempotencyKey: `rewards:pos:refund:${input.saleReference}`,
+      points: -pointsToReverse,
+      type: "reverse",
+      reason: "Manual POS refund reward reversal",
+      status: "reversed",
+      source: rewardSources.pos,
+      availableAt: null,
+      settledAt: now,
+      eligibleSubtotalCents: earnEntry.eligibleSubtotalCents,
+      reversalOfEntryId: earnEntry.id,
+      balanceDelta: {
+        availableDelta: -pointsToReverse
+      },
+      metadata: {
+        saleReference: input.saleReference,
+        reason: input.reason,
+        pointsPreviouslyEarned: earnEntry.points
+      }
+    });
+    return { status: result.created ? ("reversed" as const) : ("already_reversed" as const), points: Math.abs(result.points) };
+  };
+
+  return tx ? run(tx) : prisma.$transaction(run);
 }
 
 export async function awardRewardsForPaidOrder(order: RewardOrder) {

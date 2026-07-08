@@ -113,17 +113,21 @@ export async function resolvePosCustomerMatch(
         });
       }
 
-      const rewardsEnabled = customerAccountFeatureConfig().customerRewardsEnabled;
+      const rewardsConfig = customerAccountFeatureConfig();
+      const posRewardsEnabled =
+        rewardsConfig.customerAccountsEnabled && rewardsConfig.customerRewardsEnabled && rewardsConfig.customerPosRewardsEnabled;
       return {
         customerAccountId: account.id,
         customerEmail: normalizedEmail,
         customerPhone: normalizedPhone,
         customerMatchMethod: "email",
-        rewardsEligible: false,
+        rewardsEligible: posRewardsEnabled,
         displayEmail: account.email,
         displayPhone: normalizedPhone,
-        message: rewardsEnabled
-          ? "Customer linked. POS rewards still require a future owner-approved rollout before points are awarded."
+        message: posRewardsEnabled
+          ? "Customer linked. Eligible POS subtotal will earn rewards after completed sale."
+          : rewardsConfig.customerRewardsEnabled
+            ? "Customer linked. POS rewards are disabled until the owner enables POS rewards."
           : "Customer linked. Rewards are not active for POS yet."
       };
     } catch (error) {

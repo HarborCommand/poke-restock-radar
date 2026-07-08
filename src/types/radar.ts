@@ -611,6 +611,9 @@ export type InventorySaleDTO = {
   customerPhone: string | null;
   customerMatchMethod: string | null;
   rewardsEligible: boolean;
+  rewardStatus: "not_eligible" | "available" | "reversed";
+  rewardPointsEarned: number | null;
+  rewardPointsReversed: number | null;
   saleStatus: "active" | "partially_refunded" | "refunded" | "canceled" | "test";
   storefrontOrderNumber: string | null;
   storefrontOrderStatus: string | null;
@@ -679,6 +682,9 @@ export type PosSaleReceiptDTO = {
   customerPhone: string | null;
   customerMatchMethod: PosCustomerMatchMethodDTO;
   rewardsEligible: boolean;
+  rewardStatus: "not_eligible" | "available" | "reversed";
+  rewardPointsEarned: number;
+  rewardPointsReversed: number;
   subtotal: number;
   tax: number;
   total: number;
@@ -1513,6 +1519,7 @@ export type AppHealthDTO = {
       configured: boolean;
       customerAccountsEnabled: boolean;
       customerRewardsEnabled: boolean;
+      customerPosRewardsEnabled: boolean;
       customerRewardRedemptionEnabled: boolean;
       customerRewardAdminAdjustmentsEnabled: boolean;
       customerAuthRateLimitEnabled: boolean;
@@ -1524,6 +1531,7 @@ export type AppHealthDTO = {
       accountProvider: "password_magic_link";
       rewardsProvider: "internal_ledger";
       rewardsReady: boolean;
+      posRewardsReady: boolean;
       redemptionReady: boolean;
       adminAdjustmentsReady: boolean;
     };

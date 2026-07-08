@@ -103,6 +103,7 @@ export type EnvironmentReport = {
       configured: boolean;
       customerAccountsEnabled: boolean;
       customerRewardsEnabled: boolean;
+      customerPosRewardsEnabled: boolean;
       customerRewardRedemptionEnabled: boolean;
       customerRewardAdminAdjustmentsEnabled: boolean;
       customerAuthRateLimitEnabled: boolean;
@@ -114,6 +115,7 @@ export type EnvironmentReport = {
       accountProvider: "password_magic_link";
       rewardsProvider: "internal_ledger";
       rewardsReady: boolean;
+      posRewardsReady: boolean;
       redemptionReady: boolean;
       adminAdjustmentsReady: boolean;
     };
@@ -272,6 +274,8 @@ export function getEnvironmentReport(): EnvironmentReport {
       ? "misconfigured"
       : customerAccountFeatures.customerRewardAdminAdjustmentsEnabled && !customerAccountFeatures.customerRewardsEnabled
         ? "misconfigured"
+      : customerAccountFeatures.customerPosRewardsEnabled && !customerAccountFeatures.customerRewardsEnabled
+        ? "misconfigured"
       : (customerAccountFeatures.customerSecurityCenterEnabled || customerAccountFeatures.customerLoginAlertsEnabled) && !customerAccountFeatures.customerAccountsEnabled
         ? "misconfigured"
       : customerAccountFeatures.customerRewardsEnabled && !customerAccountFeatures.customerAccountsEnabled
@@ -346,7 +350,7 @@ export function getEnvironmentReport(): EnvironmentReport {
     warnings.push("Shippo label purchase is enabled but the label provider is not fully configured. Disable SHIPPO_LABEL_PURCHASE_ENABLED or finish Shippo setup.");
   }
   if (customerAccountHealthStatus === "misconfigured") {
-    warnings.push("Customer account flags are inconsistent. Enable CUSTOMER_ACCOUNTS_ENABLED before rewards, account security, or login alerts; enable CUSTOMER_REWARDS_ENABLED before redemption or admin adjustments.");
+    warnings.push("Customer account flags are inconsistent. Enable CUSTOMER_ACCOUNTS_ENABLED before rewards, account security, or login alerts; enable CUSTOMER_REWARDS_ENABLED before POS rewards, redemption, or admin adjustments.");
   }
   if (marketHealthStatus === "misconfigured") {
     warnings.push("Market pricing providers are partially configured. Complete the selected provider env vars or leave automatic pricing disabled.");
@@ -521,6 +525,7 @@ export function getEnvironmentReport(): EnvironmentReport {
               : "Optional customer accounts and rewards are disabled; guest checkout remains available.",
         customerAccountsEnabled: customerAccountFeatures.customerAccountsEnabled,
         customerRewardsEnabled: customerAccountFeatures.customerRewardsEnabled,
+        customerPosRewardsEnabled: customerAccountFeatures.customerPosRewardsEnabled,
         customerRewardRedemptionEnabled: customerAccountFeatures.customerRewardRedemptionEnabled,
         customerRewardAdminAdjustmentsEnabled: customerAccountFeatures.customerRewardAdminAdjustmentsEnabled,
         customerAuthRateLimitEnabled: customerAccountFeatures.customerAuthRateLimitEnabled,
@@ -532,6 +537,10 @@ export function getEnvironmentReport(): EnvironmentReport {
         accountProvider: customerAccountFeatures.accountProvider,
         rewardsProvider: customerAccountFeatures.rewardsProvider,
         rewardsReady: customerAccountFeatures.customerAccountsEnabled && customerAccountFeatures.customerRewardsEnabled,
+        posRewardsReady:
+          customerAccountFeatures.customerAccountsEnabled &&
+          customerAccountFeatures.customerRewardsEnabled &&
+          customerAccountFeatures.customerPosRewardsEnabled,
         redemptionReady:
           customerAccountFeatures.customerAccountsEnabled &&
           customerAccountFeatures.customerRewardsEnabled &&

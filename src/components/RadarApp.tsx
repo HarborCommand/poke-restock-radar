@@ -3582,6 +3582,12 @@ function posPaymentReferenceHelp(method: PosPaymentMethodDTO | null) {
 }
 
 function posReceiptSummary(receipt: PosSaleReceiptDTO) {
+  const rewardLine =
+    receipt.rewardPointsEarned > 0
+      ? `Rewards: ${receipt.rewardPointsEarned} point${receipt.rewardPointsEarned === 1 ? "" : "s"} earned`
+      : receipt.customerAccountId
+        ? "Customer linked. Rewards are not active for POS yet."
+        : null;
   return [
     "GameDayGrabs",
     `Sale ${receipt.saleReference}`,
@@ -3589,7 +3595,7 @@ function posReceiptSummary(receipt: PosSaleReceiptDTO) {
     `Payment: ${receipt.paymentMethodLabel}${receipt.paymentReference ? ` (${receipt.paymentReference})` : ""}`,
     receipt.customerEmail ? `Customer email: ${receipt.customerEmail}` : null,
     receipt.customerPhone ? `Customer phone: ${receipt.customerPhone}` : null,
-    receipt.customerAccountId ? "Customer linked. Rewards are not active for POS yet." : null,
+    rewardLine,
     ...receipt.lines.map((line) => {
       const adjustment = line.discountAmount > 0
         ? `, POS price ${money(line.adjustedUnitPrice)}, discount ${money(line.discountAmount)}${line.discountReasonLabel ? ` (${line.discountReasonLabel})` : ""}`
@@ -4198,7 +4204,7 @@ function PosPanel({
             <div className="pos-customer-heading">
               <div>
                 <h3>Customer (optional)</h3>
-                <p>Link a verified account for future rewards eligibility. Phone alone never awards points.</p>
+                <p>Link a verified email account for POS rewards eligibility. Phone alone never awards points.</p>
               </div>
               <button
                 className="mini-action"
@@ -4389,7 +4395,9 @@ function PosPanel({
               <span>Payment <strong>{paymentMethod ? posPaymentMethodLabel(paymentMethod) : "Not selected"}</strong></span>
               {paymentReference.trim() ? <span>Reference <strong>{paymentReference.trim()}</strong></span> : null}
               {customerContactEntered ? <span>Customer <strong>{customerLinked ? customerMatch?.displayEmail ?? customerEmail.trim() : "Contact only"}</strong></span> : null}
-              {customerContactEntered ? <span>Rewards <strong>{customerLinked ? "Rewards are not active for POS yet" : "Not linked"}</strong></span> : null}
+              {customerContactEntered ? (
+                <span>Rewards <strong>{customerMatch?.rewardsEligible ? "Eligible after sale" : customerLinked ? "Not active for POS" : "Not linked"}</strong></span>
+              ) : null}
               <span>Total <strong>{money(cartTotals.total)}</strong></span>
             </div>
             <p className="manual-safety-note">This will record the sale and deduct inventory. Close or cancel does not save anything.</p>
@@ -4455,7 +4463,9 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
         {receipt.paymentReference ? <span>Reference <strong>{receipt.paymentReference}</strong></span> : null}
         {receipt.customerEmail ? <span>Customer email <strong>{receipt.customerEmail}</strong></span> : null}
         {receipt.customerPhone ? <span>Customer phone <strong>{receipt.customerPhone}</strong></span> : null}
-        {receipt.customerEmail || receipt.customerPhone ? (
+        {receipt.rewardPointsEarned > 0 ? (
+          <span>Rewards <strong>{receipt.rewardPointsEarned} point{receipt.rewardPointsEarned === 1 ? "" : "s"} earned</strong></span>
+        ) : receipt.customerEmail || receipt.customerPhone ? (
           <span>Rewards <strong>{receipt.customerAccountId ? "Rewards are not active for POS yet" : "Contact only"}</strong></span>
         ) : null}
         <strong>{money(receipt.total)}</strong>
@@ -15407,6 +15417,22 @@ function saleLifecycleTone(sale: InventorySaleDTO) {
   return saleProfitTone(sale);
 }
 
+function saleRewardLabel(sale: InventorySaleDTO) {
+  if (sale.platform !== "pos") return null;
+  if (sale.rewardStatus === "available") {
+    return sale.rewardPointsEarned !== null && sale.rewardPointsEarned > 0
+      ? `${sale.rewardPointsEarned} rewards point${sale.rewardPointsEarned === 1 ? "" : "s"} earned`
+      : "POS rewards earned";
+  }
+  if (sale.rewardStatus === "reversed") {
+    return sale.rewardPointsReversed !== null && sale.rewardPointsReversed > 0
+      ? `${sale.rewardPointsReversed} rewards point${sale.rewardPointsReversed === 1 ? "" : "s"} reversed`
+      : "POS rewards reversed";
+  }
+  if (sale.customerAccountId) return "POS rewards not active";
+  return null;
+}
+
 function saleProfitTone(sale: InventorySaleDTO) {
   const status = saleProfitStatus(sale);
   if (status === "PROFIT") return "good";
@@ -15478,6 +15504,7 @@ function SaleCard({
   onViewDetails: () => void;
 }) {
   const tone = saleLifecycleTone(sale);
+  const rewardLabel = saleRewardLabel(sale);
   const productMeta = item
     ? `${saleIdentifier(item)} - ${formatStatus(item.category)}`
     : "UPC/SKU not saved - category unknown";
@@ -15522,6 +15549,7 @@ function SaleCard({
       </div>
       <div className="sale-status-cell">
         <span className={`sale-status-badge ${tone}`}>{saleLifecycleLabel(sale)}</span>
+        {rewardLabel ? <span className={`sale-status-badge ${sale.rewardStatus === "reversed" ? "bad" : sale.rewardStatus === "available" ? "good" : "watch"}`}>{rewardLabel}</span> : null}
         <button className="mini-action" type="button" onClick={onViewDetails}>
           View Details
         </button>
@@ -15597,7 +15625,8 @@ function posReceiptText(rows: SaleDetailRow[]) {
     `Tax: ${money(totals.tax)}`,
     `Total: ${money(totals.total)}`,
     totals.refundedAmount > 0 ? `Refunded: ${money(totals.refundedAmount)}` : null,
-    `Net paid: ${money(totals.netPaid)}`
+    `Net paid: ${money(totals.netPaid)}`,
+    saleRewardLabel(firstSale) ? `Rewards: ${saleRewardLabel(firstSale)}` : null
   ].filter(Boolean).join("\n");
 }
 
@@ -15636,6 +15665,7 @@ function SaleDetailsModal({
   const rows = isPosReceipt && receiptRows.length ? receiptRows : [{ sale, item }];
   const receiptTotals = posReceiptTotals(rows);
   const receiptCopy = posReceiptText(rows);
+  const rewardLabel = saleRewardLabel(sale);
   const canRefundPosReceipt = isPosReceipt && receiptTotals.netRevenue > 0 && !rows.every((row) => row.sale.saleStatus === "refunded");
   const refunding = busy || busyLabel === `Recording POS refund ${sale.saleReference}`;
 
@@ -15703,6 +15733,7 @@ function SaleDetailsModal({
           <DetailStat label="Payment method" value={salePaymentLabel(sale)} />
           <DetailStat label="Payment reference" value={sale.paymentReference || "Not saved"} />
           <DetailStat label="Sale reference" value={sale.saleReference || "Not saved"} />
+          {rewardLabel ? <DetailStat label="Rewards" value={rewardLabel} tone={sale.rewardStatus === "reversed" ? "bad" : sale.rewardStatus === "available" ? "good" : "neutral"} /> : null}
           <DetailStat label="Storefront order" value={sale.storefrontOrderNumber || "Not linked"} />
           <DetailStat label="Cost Basis" value={money(rows.reduce((sum, row) => sum + row.sale.costBasis, 0))} />
           <DetailStat label="Stock Lot Source" value={sale.stockLotSource} />
