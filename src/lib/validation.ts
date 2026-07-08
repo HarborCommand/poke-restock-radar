@@ -965,6 +965,18 @@ export const posCustomerMatchSchema = z.object({
   customerPhone: optionalTrimmed
 });
 
+export const rewardAdminAdjustmentSchema = z.object({
+  customerAccountId: z.string().trim().min(2),
+  action: z.enum(["add", "deduct"]),
+  points: z.coerce.number().int().positive().max(100000),
+  reason: z.string().trim().min(4).max(160),
+  note: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : value),
+    z.string().trim().max(1000).optional()
+  ),
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/)
+});
+
 export const posSaleRefundSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
   refundType: z.enum(["full"]).default("full"),

@@ -404,6 +404,111 @@ export type StorefrontCustomerRewardSummaryDTO = {
   adminAdjustmentsEnabled: false;
 };
 
+export type AdminCustomerRewardsSummaryDTO = {
+  totalCustomers: number;
+  activeCustomers: number;
+  newCustomersThisMonth: number;
+  totalAvailablePoints: number;
+  totalPendingPoints: number;
+  lifetimeIssuedPoints: number;
+  totalReversedPoints: number;
+  adjustmentsEnabled: boolean;
+  redemptionEnabled: false;
+  topCustomer: {
+    customerAccountId: string;
+    displayName: string;
+    maskedEmail: string;
+    lifetimeEarnedPoints: number;
+  } | null;
+};
+
+export type AdminCustomerRewardsCustomerDTO = {
+  id: string;
+  displayName: string;
+  maskedEmail: string;
+  maskedPhone: string | null;
+  status: string;
+  joinedAt: string;
+  emailVerified: boolean;
+  lastLoginAt: string | null;
+  lastActivityAt: string | null;
+  totalOrders: number;
+  totalSpent: number;
+  posSales: number;
+  posSpent: number;
+  availablePoints: number;
+  pendingPoints: number;
+  lifetimeEarnedPoints: number;
+};
+
+export type AdminCustomerRewardsLedgerEntryDTO = {
+  id: string;
+  customerAccountId: string;
+  customerName: string;
+  customerMaskedEmail: string;
+  points: number;
+  type: string;
+  status: string;
+  source: string;
+  reason: string;
+  reference: string | null;
+  hasAdminNote: boolean;
+  createdBy: string | null;
+  availableAt: string | null;
+  settledAt: string | null;
+  createdAt: string;
+};
+
+export type AdminCustomerRewardsDetailDTO = AdminCustomerRewardsCustomerDTO & {
+  savedAddressCount: number;
+  defaultAddressSummary: string | null;
+  recentOrders: Array<{
+    id: string;
+    orderNumber: string;
+    status: string;
+    paymentStatus: string;
+    fulfillmentStatus: string;
+    total: number;
+    refundedAmount: number;
+    createdAt: string;
+  }>;
+  recentPosSales: Array<{
+    id: string;
+    saleReference: string | null;
+    total: number;
+    refundStatus: string | null;
+    soldAt: string;
+  }>;
+  recentLedgerEntries: AdminCustomerRewardsLedgerEntryDTO[];
+};
+
+export type AdminCustomerRewardsResponseDTO = {
+  summary: AdminCustomerRewardsSummaryDTO;
+  customers: AdminCustomerRewardsCustomerDTO[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+};
+
+export type AdminCustomerRewardsLedgerResponseDTO = {
+  ledger: AdminCustomerRewardsLedgerEntryDTO[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+};
+
+export type AdminRewardAdjustmentResultDTO = {
+  adjustment: AdminCustomerRewardsLedgerEntryDTO;
+  customer: AdminCustomerRewardsCustomerDTO;
+  duplicate: boolean;
+};
+
 export type StorefrontOrderDTO = {
   id: string;
   orderNumber: string;

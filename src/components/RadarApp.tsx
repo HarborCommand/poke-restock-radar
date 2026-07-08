@@ -55,6 +55,7 @@ import {
   TrendingUp,
   Trophy,
   Upload,
+  Users,
   Wifi,
   WifiOff,
   X
@@ -115,6 +116,12 @@ import {
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
+  AdminCustomerRewardsCustomerDTO,
+  AdminCustomerRewardsDetailDTO,
+  AdminCustomerRewardsLedgerEntryDTO,
+  AdminCustomerRewardsLedgerResponseDTO,
+  AdminCustomerRewardsResponseDTO,
+  AdminRewardAdjustmentResultDTO,
   CardDTO,
   CardCompSaleDTO,
   CompSourceQuality,
@@ -166,6 +173,7 @@ type Tab =
   | "cards"
   | "inventory"
   | "pos"
+  | "customers"
   | "orders"
   | "shipping"
   | "sales"
@@ -252,6 +260,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSect
   { id: "dashboard", label: "Dashboard", icon: Home, section: "main" },
   { id: "inventory", label: "Inventory", icon: Trophy, section: "inventory" },
   { id: "pos", label: "POS", icon: ShoppingCart, section: "inventory" },
+  { id: "customers", label: "Customers", icon: Users, section: "inventory" },
   { id: "orders", label: "Orders", icon: ShoppingBag, section: "inventory" },
   { id: "shipping", label: "Shipping", icon: Navigation, section: "inventory" },
   { id: "sales", label: "Sales", icon: Receipt, section: "inventory" },
@@ -267,7 +276,7 @@ const deprecatedUiTabs = new Set<Tab>(["field", "products", "stores", "cards", "
 const deprecatedTrackerTabs = new Set<Tab>(["onlineDrops", "checkStock", "watchlist", "keywords"]);
 const deprecatedAnalyticsTabs = new Set<Tab>(["profitLoss", "trends"]);
 const visibleTabIds = new Set<Tab>(tabs.map((tab) => tab.id));
-const adminOnlyTabs = new Set<Tab>(["admin", "pos"]);
+const adminOnlyTabs = new Set<Tab>(["admin", "pos", "customers"]);
 const INVENTORY_PREFILL_STORAGE_KEY = "poke-radar-inventory-prefill";
 
 const productStatuses: ProductStatus[] = [
@@ -2157,6 +2166,9 @@ export function RadarApp() {
         {activeTab === "pos" && isAdmin ? (
           <PosPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} onCompleted={loadDashboard} />
         ) : null}
+        {activeTab === "customers" && isAdmin ? (
+          <CustomersRewardsPanel />
+        ) : null}
         {activeTab === "orders" ? (
           <StorefrontOrdersPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
@@ -3505,6 +3517,696 @@ function SalesPanel({
         onRecordSale={() => undefined}
       />
     </section>
+  );
+}
+
+type CustomersRewardsView = "overview" | "customers" | "ledger" | "adjustments";
+
+function CustomersRewardsPanel() {
+  const [activeView, setActiveView] = useState<CustomersRewardsView>("customers");
+  const [customersData, setCustomersData] = useState<AdminCustomerRewardsResponseDTO | null>(null);
+  const [ledgerData, setLedgerData] = useState<AdminCustomerRewardsLedgerResponseDTO | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<AdminCustomerRewardsDetailDTO | null>(null);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [sort, setSort] = useState("recent");
+  const [ledgerStatus, setLedgerStatus] = useState("all");
+  const [ledgerSource, setLedgerSource] = useState("all");
+  const [page, setPage] = useState(1);
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [panelError, setPanelError] = useState<string | null>(null);
+
+  const loadCustomers = useCallback(async () => {
+    setLoading(true);
+    setPanelError(null);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: "25",
+        status,
+        sort
+      });
+      if (search.trim()) params.set("search", search.trim());
+      const result = await requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`);
+      setCustomersData(result);
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : "Could not load customers.");
+    } finally {
+      setLoading(false);
+    }
+  }, [page, search, sort, status]);
+
+  const loadLedger = useCallback(async () => {
+    setLedgerLoading(true);
+    setPanelError(null);
+    try {
+      const params = new URLSearchParams({
+        page: String(ledgerPage),
+        pageSize: "25",
+        status: ledgerStatus,
+        source: ledgerSource
+      });
+      if (search.trim()) params.set("search", search.trim());
+      const result = await requestJson<AdminCustomerRewardsLedgerResponseDTO>(`/api/radar/rewards/ledger?${params.toString()}`);
+      setLedgerData(result);
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : "Could not load rewards ledger.");
+    } finally {
+      setLedgerLoading(false);
+    }
+  }, [ledgerPage, ledgerSource, ledgerStatus, search]);
+
+  const openCustomer = useCallback(async (customerAccountId: string) => {
+    setDetailLoading(true);
+    setPanelError(null);
+    try {
+      const result = await requestJson<{ customer: AdminCustomerRewardsDetailDTO }>(`/api/radar/customers/${customerAccountId}`);
+      setSelectedCustomer(result.customer);
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : "Could not load customer detail.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCustomers();
+  }, [loadCustomers]);
+
+  useEffect(() => {
+    if (activeView === "ledger" || activeView === "overview") void loadLedger();
+  }, [activeView, loadLedger]);
+
+  const summary = customersData?.summary ?? null;
+  const customers = customersData?.customers ?? [];
+  const ledger = ledgerData?.ledger ?? [];
+
+  const refreshAfterAdjustment = async (customerAccountId: string) => {
+    await Promise.all([loadCustomers(), loadLedger(), openCustomer(customerAccountId)]);
+  };
+
+  return (
+    <section className="customers-rewards-page">
+      <div className="dashboard-page-header customers-rewards-header">
+        <div>
+          <span className="eyebrow">Customers & Rewards</span>
+          <h1>Customer rewards management</h1>
+          <p>View customer accounts, reward balances, ledger activity, and gated admin adjustments.</p>
+        </div>
+        <div className="customers-rewards-actions">
+          <button className="secondary-action" type="button" onClick={() => void Promise.all([loadCustomers(), loadLedger()])}>
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+          <button className="primary-action" type="button" disabled={!summary?.adjustmentsEnabled} onClick={() => setActiveView("adjustments")}>
+            <Plus size={16} />
+            Add Points
+          </button>
+        </div>
+      </div>
+
+      {panelError ? (
+        <div className="error-bar" role="alert">
+          <AlertTriangle size={16} />
+          <span>{panelError}</span>
+        </div>
+      ) : null}
+      {actionMessage ? (
+        <div className="success-bar" role="status">
+          <Check size={16} />
+          <span>{actionMessage}</span>
+        </div>
+      ) : null}
+
+      <div className="customers-rewards-kpis">
+        <CustomerRewardKpi icon={Users} label="Total Customers" value={summary?.totalCustomers ?? 0} detail={`${summary?.newCustomersThisMonth ?? 0} new this month`} />
+        <CustomerRewardKpi icon={Star} label="Available Points" value={summary?.totalAvailablePoints ?? 0} detail={`${summary?.totalPendingPoints ?? 0} pending`} tone="good" />
+        <CustomerRewardKpi icon={Clock} label="Lifetime Issued" value={summary?.lifetimeIssuedPoints ?? 0} detail={`${summary?.totalReversedPoints ?? 0} reversed/refunded`} tone="watch" />
+        <CustomerRewardKpi
+          icon={Trophy}
+          label="Top Customer"
+          value={summary?.topCustomer?.lifetimeEarnedPoints ?? 0}
+          detail={summary?.topCustomer ? `${summary.topCustomer.displayName} (${summary.topCustomer.maskedEmail})` : "No points issued yet"}
+          tone="good"
+        />
+      </div>
+
+      <div className="customers-rewards-tabs" role="tablist" aria-label="Customers and rewards views">
+        {(["overview", "customers", "ledger", "adjustments"] as CustomersRewardsView[]).map((view) => (
+          <button className={activeView === view ? "active" : ""} key={view} type="button" onClick={() => setActiveView(view)}>
+            {formatStatus(view)}
+          </button>
+        ))}
+      </div>
+
+      <div className="customers-rewards-layout">
+        <div className="customers-rewards-main">
+          {activeView === "overview" ? (
+            <CustomersRewardsOverview summary={summary} ledger={ledger.slice(0, 8)} loading={loading || ledgerLoading} />
+          ) : null}
+
+          {activeView === "customers" || activeView === "adjustments" ? (
+            <section className="customers-rewards-card">
+              <div className="customers-rewards-toolbar">
+                <label className="customers-search-field">
+                  <Search size={16} />
+                  <input
+                    value={search}
+                    onChange={(event) => {
+                      setSearch(event.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Search masked email, name, or phone..."
+                    type="search"
+                  />
+                </label>
+                <select value={status} onChange={(event) => {
+                  setStatus(event.target.value);
+                  setPage(1);
+                }}>
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+                <select value={sort} onChange={(event) => {
+                  setSort(event.target.value);
+                  setPage(1);
+                }}>
+                  <option value="recent">Recently joined</option>
+                  <option value="activity">Recent activity</option>
+                  <option value="points">Lifetime points</option>
+                  <option value="spent">Total spent</option>
+                  <option value="name">Name</option>
+                </select>
+              </div>
+
+              {loading ? (
+                <EmptyState icon={RefreshCw} title="Loading customers" detail="Customer reward balances are loading." />
+              ) : customers.length ? (
+                <>
+                  <div className="customers-table" role="table" aria-label="Customer rewards">
+                    <div className="customers-table-row header" role="row">
+                      <span>Customer</span>
+                      <span>Status</span>
+                      <span>Orders</span>
+                      <span>Rewards</span>
+                      <span>Last activity</span>
+                      <span>Actions</span>
+                    </div>
+                    {customers.map((customer) => (
+                      <CustomerRewardsRow
+                        customer={customer}
+                        key={customer.id}
+                        adjustmentsEnabled={Boolean(summary?.adjustmentsEnabled)}
+                        onOpen={() => void openCustomer(customer.id)}
+                        onAdjust={() => {
+                          void openCustomer(customer.id);
+                          setActiveView("adjustments");
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <CustomersRewardsPagination
+                    page={customersData?.pagination.page ?? 1}
+                    totalPages={customersData?.pagination.totalPages ?? 1}
+                    onPage={setPage}
+                  />
+                </>
+              ) : (
+                <EmptyState icon={Users} title="No customers found" detail="Adjust the search or status filter to find customer accounts." />
+              )}
+            </section>
+          ) : null}
+
+          {activeView === "ledger" ? (
+            <section className="customers-rewards-card">
+              <div className="customers-rewards-toolbar">
+                <label className="customers-search-field">
+                  <Search size={16} />
+                  <input
+                    value={search}
+                    onChange={(event) => {
+                      setSearch(event.target.value);
+                      setLedgerPage(1);
+                    }}
+                    placeholder="Search customer, order, source, or reason..."
+                    type="search"
+                  />
+                </label>
+                <select value={ledgerStatus} onChange={(event) => {
+                  setLedgerStatus(event.target.value);
+                  setLedgerPage(1);
+                }}>
+                  <option value="all">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="available">Available</option>
+                  <option value="reversed">Reversed</option>
+                  <option value="canceled">Canceled</option>
+                </select>
+                <select value={ledgerSource} onChange={(event) => {
+                  setLedgerSource(event.target.value);
+                  setLedgerPage(1);
+                }}>
+                  <option value="all">All sources</option>
+                  <option value="stripe_checkout">Stripe checkout</option>
+                  <option value="pos">POS</option>
+                  <option value="admin_adjustment">Admin adjustment</option>
+                  <option value="legacy">Legacy</option>
+                </select>
+              </div>
+              {ledgerLoading ? (
+                <EmptyState icon={RefreshCw} title="Loading ledger" detail="Reward ledger entries are loading." />
+              ) : ledger.length ? (
+                <>
+                  <RewardLedgerTable ledger={ledger} onOpenCustomer={(id) => void openCustomer(id)} />
+                  <CustomersRewardsPagination
+                    page={ledgerData?.pagination.page ?? 1}
+                    totalPages={ledgerData?.pagination.totalPages ?? 1}
+                    onPage={setLedgerPage}
+                  />
+                </>
+              ) : (
+                <EmptyState icon={Receipt} title="No ledger entries" detail="Reward activity will appear here after points are earned, released, reversed, or adjusted." />
+              )}
+            </section>
+          ) : null}
+
+          {activeView === "adjustments" ? (
+            <section className="customers-rewards-card">
+              <PanelHeader title="Admin Adjustments" />
+              {summary?.adjustmentsEnabled ? (
+                selectedCustomer ? (
+                  <RewardAdjustmentForm
+                    customer={selectedCustomer}
+                    onAdjusted={async (result) => {
+                      setActionMessage(result.duplicate ? "Duplicate adjustment ignored safely." : "Reward adjustment saved.");
+                      await refreshAfterAdjustment(result.customer.id);
+                    }}
+                  />
+                ) : (
+                  <EmptyState icon={Users} title="Select a customer first" detail="Open a customer from the table, then add or deduct available reward points." />
+                )
+              ) : (
+                <EmptyState
+                  icon={Lock}
+                  title="Admin adjustments disabled"
+                  detail="CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED is off. Balances can be viewed, but points cannot be changed here."
+                />
+              )}
+            </section>
+          ) : null}
+        </div>
+
+        <aside className="customers-detail-panel" aria-live="polite">
+          {detailLoading ? (
+            <EmptyState icon={RefreshCw} title="Loading customer" detail="Opening customer detail." />
+          ) : selectedCustomer ? (
+            <CustomerRewardDetailPanel
+              customer={selectedCustomer}
+              adjustmentsEnabled={Boolean(summary?.adjustmentsEnabled)}
+              onAdjust={() => setActiveView("adjustments")}
+              onClose={() => setSelectedCustomer(null)}
+            />
+          ) : (
+            <EmptyState icon={Users} title="No customer selected" detail="Open a customer to see safe account, order, POS, and reward summaries." />
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function CustomerRewardKpi({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone = "neutral"
+}: {
+  icon: typeof Radar;
+  label: string;
+  value: number;
+  detail: string;
+  tone?: "neutral" | "good" | "watch";
+}) {
+  return (
+    <article className={`customers-kpi ${tone}`}>
+      <span>
+        <Icon size={18} />
+      </span>
+      <small>{label}</small>
+      <strong>{value.toLocaleString()}</strong>
+      <p>{detail}</p>
+    </article>
+  );
+}
+
+function CustomersRewardsOverview({
+  summary,
+  ledger,
+  loading
+}: {
+  summary: AdminCustomerRewardsResponseDTO["summary"] | null;
+  ledger: AdminCustomerRewardsLedgerEntryDTO[];
+  loading: boolean;
+}) {
+  if (loading) return <EmptyState icon={RefreshCw} title="Loading overview" detail="Customer rewards summary is loading." />;
+  return (
+    <section className="customers-rewards-card customers-overview-grid">
+      <div>
+        <PanelHeader title="Program Snapshot" />
+        <div className="detail-stat-grid">
+          <DetailStat label="Active customers" value={summary?.activeCustomers ?? 0} tone="good" />
+          <DetailStat label="Pending points" value={summary?.totalPendingPoints ?? 0} />
+          <DetailStat label="Available points" value={summary?.totalAvailablePoints ?? 0} tone="good" />
+          <DetailStat label="Redemption" value="Coming soon" />
+        </div>
+        <p className="customers-muted-note">
+          Customers earn server-calculated points from eligible purchases. Redemption controls remain disabled.
+        </p>
+      </div>
+      <div>
+        <PanelHeader title="Recent Ledger Activity" />
+        {ledger.length ? (
+          <div className="customers-mini-ledger">
+            {ledger.map((entry) => (
+              <div key={entry.id}>
+                <span className={entry.points >= 0 ? "positive" : "negative"}>
+                  {entry.points >= 0 ? "+" : ""}
+                  {entry.points} pts
+                </span>
+                <strong>{entry.customerName}</strong>
+                <small>{formatStatus(entry.source)} - {formatStatus(entry.status)} - {shortDate(entry.createdAt)}</small>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Receipt} title="No reward activity" detail="Ledger entries will appear after rewards are earned or adjusted." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CustomerRewardsRow({
+  customer,
+  adjustmentsEnabled,
+  onOpen,
+  onAdjust
+}: {
+  customer: AdminCustomerRewardsCustomerDTO;
+  adjustmentsEnabled: boolean;
+  onOpen: () => void;
+  onAdjust: () => void;
+}) {
+  return (
+    <div className="customers-table-row" role="row">
+      <span>
+        <strong>{customer.displayName}</strong>
+        <small>{customer.maskedEmail}{customer.maskedPhone ? ` - ${customer.maskedPhone}` : ""}</small>
+      </span>
+      <span>
+        <b className={`chip compact-chip ${customer.status === "active" ? "good" : "muted"}`}>{formatStatus(customer.status)}</b>
+        <small>{customer.emailVerified ? "Verified" : "Unverified"}</small>
+      </span>
+      <span>
+        <strong>{customer.totalOrders}</strong>
+        <small>{money(customer.totalSpent)} online - {customer.posSales} POS</small>
+      </span>
+      <span>
+        <strong>{customer.availablePoints.toLocaleString()} available</strong>
+        <small>{customer.pendingPoints.toLocaleString()} pending - {customer.lifetimeEarnedPoints.toLocaleString()} lifetime</small>
+      </span>
+      <span>
+        <strong>{shortDate(customer.lastActivityAt)}</strong>
+        <small>Joined {shortDate(customer.joinedAt)}</small>
+      </span>
+      <span className="customers-row-actions">
+        <button className="secondary-action small" type="button" onClick={onOpen}>
+          Open
+        </button>
+        <button className="secondary-action small" type="button" disabled={!adjustmentsEnabled} onClick={onAdjust}>
+          Adjust
+        </button>
+      </span>
+    </div>
+  );
+}
+
+function RewardLedgerTable({
+  ledger,
+  onOpenCustomer
+}: {
+  ledger: AdminCustomerRewardsLedgerEntryDTO[];
+  onOpenCustomer: (customerAccountId: string) => void;
+}) {
+  return (
+    <div className="customers-ledger-table" role="table" aria-label="Rewards ledger">
+      <div className="customers-ledger-row header" role="row">
+        <span>Date</span>
+        <span>Customer</span>
+        <span>Type</span>
+        <span>Source</span>
+        <span>Status</span>
+        <span>Points</span>
+        <span>Reference</span>
+      </div>
+      {ledger.map((entry) => (
+        <div className="customers-ledger-row" key={entry.id} role="row">
+          <span>{shortDate(entry.createdAt)}</span>
+          <button type="button" onClick={() => onOpenCustomer(entry.customerAccountId)}>
+            <strong>{entry.customerName}</strong>
+            <small>{entry.customerMaskedEmail}</small>
+          </button>
+          <span>{formatStatus(entry.type)}</span>
+          <span>{formatStatus(entry.source)}</span>
+          <span>
+            <b className={`chip compact-chip ${entry.status === "available" ? "good" : entry.status === "pending" ? "watch" : "bad"}`}>
+              {formatStatus(entry.status)}
+            </b>
+            {entry.hasAdminNote ? <small>Admin note</small> : null}
+          </span>
+          <span className={entry.points >= 0 ? "positive" : "negative"}>
+            {entry.points >= 0 ? "+" : ""}
+            {entry.points}
+          </span>
+          <span>{entry.reference ?? "Account"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CustomersRewardsPagination({
+  page,
+  totalPages,
+  onPage
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="customers-pagination">
+      <button className="secondary-action small" type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+        Previous
+      </button>
+      <span>
+        Page {page} of {totalPages}
+      </span>
+      <button className="secondary-action small" type="button" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
+        Next
+      </button>
+    </div>
+  );
+}
+
+function CustomerRewardDetailPanel({
+  customer,
+  adjustmentsEnabled,
+  onAdjust,
+  onClose
+}: {
+  customer: AdminCustomerRewardsDetailDTO;
+  adjustmentsEnabled: boolean;
+  onAdjust: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="customers-detail">
+      <div className="customers-detail-header">
+        <div>
+          <h3>{customer.displayName}</h3>
+          <p>{customer.maskedEmail}{customer.maskedPhone ? ` - ${customer.maskedPhone}` : ""}</p>
+        </div>
+        <button className="icon-button" type="button" aria-label="Close customer detail" onClick={onClose}>
+          <X size={17} />
+        </button>
+      </div>
+      <div className="detail-stat-grid">
+        <DetailStat label="Available" value={customer.availablePoints.toLocaleString()} tone="good" />
+        <DetailStat label="Pending" value={customer.pendingPoints.toLocaleString()} />
+        <DetailStat label="Lifetime" value={customer.lifetimeEarnedPoints.toLocaleString()} tone="good" />
+        <DetailStat label="Spent" value={money(customer.totalSpent + customer.posSpent)} />
+      </div>
+      <button className="primary-action full-width" type="button" disabled={!adjustmentsEnabled} onClick={onAdjust}>
+        <Plus size={16} />
+        Add or Deduct Points
+      </button>
+      <div className="customers-detail-section">
+        <h4>Account</h4>
+        <p>Status {formatStatus(customer.status)} - Joined {shortDate(customer.joinedAt)} - {customer.emailVerified ? "email verified" : "email unverified"}</p>
+        <p>{customer.savedAddressCount} saved address{customer.savedAddressCount === 1 ? "" : "es"}{customer.defaultAddressSummary ? ` - Default area ${customer.defaultAddressSummary}` : ""}</p>
+      </div>
+      <CustomerDetailList
+        title="Recent Orders"
+        empty="No online orders linked yet."
+        rows={customer.recentOrders.map((order) => ({
+          id: order.id,
+          primary: `Order ${order.orderNumber}`,
+          secondary: `${formatStatus(order.paymentStatus)} - ${formatStatus(order.fulfillmentStatus)} - ${shortDate(order.createdAt)}`,
+          value: money(Math.max(0, order.total - order.refundedAmount))
+        }))}
+      />
+      <CustomerDetailList
+        title="Recent POS Sales"
+        empty="No POS sales linked yet."
+        rows={customer.recentPosSales.map((sale) => ({
+          id: sale.id,
+          primary: sale.saleReference ?? "POS sale",
+          secondary: `${sale.refundStatus ? formatStatus(sale.refundStatus) : "Active"} - ${shortDate(sale.soldAt)}`,
+          value: money(sale.total)
+        }))}
+      />
+      <CustomerDetailList
+        title="Recent Reward Activity"
+        empty="No reward activity yet."
+        rows={customer.recentLedgerEntries.map((entry) => ({
+          id: entry.id,
+          primary: `${entry.points >= 0 ? "+" : ""}${entry.points} pts - ${entry.reason}`,
+          secondary: `${formatStatus(entry.source)} - ${formatStatus(entry.status)} - ${shortDate(entry.createdAt)}${entry.hasAdminNote ? " - admin note saved" : ""}`,
+          value: entry.reference ?? "Account"
+        }))}
+      />
+    </div>
+  );
+}
+
+function CustomerDetailList({
+  title,
+  empty,
+  rows
+}: {
+  title: string;
+  empty: string;
+  rows: Array<{ id: string; primary: string; secondary: string; value: string }>;
+}) {
+  return (
+    <div className="customers-detail-section">
+      <h4>{title}</h4>
+      {rows.length ? (
+        <div className="customers-detail-list">
+          {rows.map((row) => (
+            <div key={row.id}>
+              <span>
+                <strong>{row.primary}</strong>
+                <small>{row.secondary}</small>
+              </span>
+              <b>{row.value}</b>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p>{empty}</p>
+      )}
+    </div>
+  );
+}
+
+function RewardAdjustmentForm({
+  customer,
+  onAdjusted
+}: {
+  customer: AdminCustomerRewardsDetailDTO;
+  onAdjusted: (result: AdminRewardAdjustmentResultDTO) => Promise<void>;
+}) {
+  const [action, setAction] = useState<"add" | "deduct">("add");
+  const [points, setPoints] = useState("25");
+  const [reason, setReason] = useState("Customer support adjustment");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submitAdjustment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const idempotencyKey =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `admin-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const result = await requestJson<AdminRewardAdjustmentResultDTO>("/api/radar/rewards/adjustments", {
+        method: "POST",
+        body: JSON.stringify({
+          customerAccountId: customer.id,
+          action,
+          points,
+          reason,
+          note,
+          idempotencyKey
+        })
+      });
+      await onAdjusted(result);
+      setNote("");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Could not save reward adjustment.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form className="reward-adjustment-form" onSubmit={submitAdjustment}>
+      <div className="customers-adjustment-customer">
+        <strong>{customer.displayName}</strong>
+        <span>{customer.maskedEmail} - {customer.availablePoints.toLocaleString()} available</span>
+      </div>
+      <div className="segmented-control">
+        <button className={action === "add" ? "active" : ""} type="button" onClick={() => setAction("add")}>
+          Add points
+        </button>
+        <button className={action === "deduct" ? "active" : ""} type="button" onClick={() => setAction("deduct")}>
+          Deduct points
+        </button>
+      </div>
+      <div className="form-grid">
+        <label>
+          <span>Points</span>
+          <input value={points} onChange={(event) => setPoints(event.target.value)} min="1" max="100000" step="1" type="number" required />
+        </label>
+        <label>
+          <span>Reason</span>
+          <input value={reason} onChange={(event) => setReason(event.target.value)} minLength={4} maxLength={160} required />
+        </label>
+        <label className="wide">
+          <span>Internal admin note</span>
+          <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Optional private context. This is not customer-facing." />
+        </label>
+      </div>
+      {error ? <p className="form-error">{error}</p> : null}
+      <p className="customers-muted-note">
+        Adjustments always create a reward ledger entry. Deducting cannot take available points below zero.
+      </p>
+      <button className="primary-action" type="submit" disabled={submitting}>
+        <Save size={16} />
+        {submitting ? "Saving" : "Save Adjustment"}
+      </button>
+    </form>
   );
 }
 

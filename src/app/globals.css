@@ -21406,6 +21406,420 @@ body .stock-adjustment-warning .mini-action {
   white-space: nowrap;
 }
 
+body .customers-rewards-page {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+}
+
+body .customers-rewards-header {
+  align-items: center;
+}
+
+body .customers-rewards-actions,
+body .customers-rewards-toolbar,
+body .customers-row-actions,
+body .customers-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+body .customers-rewards-actions {
+  justify-content: flex-end;
+}
+
+body .customers-rewards-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body .customers-kpi,
+body .customers-rewards-card,
+body .customers-detail-panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+body .customers-kpi {
+  display: grid;
+  gap: 6px;
+  min-height: 138px;
+  padding: 16px;
+}
+
+body .customers-kpi > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
+body .customers-kpi.good > span {
+  background: var(--green-bg);
+  color: #15803d;
+}
+
+body .customers-kpi.watch > span {
+  background: var(--yellow-bg);
+  color: #b45309;
+}
+
+body .customers-kpi small,
+body .customers-table-row.header,
+body .customers-ledger-row.header {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .customers-kpi strong {
+  color: var(--text);
+  font-size: clamp(1.45rem, 2vw, 2rem);
+  line-height: 1.1;
+}
+
+body .customers-kpi p,
+body .customers-muted-note,
+body .customers-detail-section p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+body .customers-rewards-tabs {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 4px;
+}
+
+body .customers-rewards-tabs button,
+body .segmented-control button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+body .customers-rewards-tabs button.active,
+body .segmented-control button.active {
+  background: var(--text);
+  color: #ffffff;
+}
+
+body .customers-rewards-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 360px);
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
+body .customers-rewards-main,
+body .customers-rewards-card,
+body .customers-detail-panel {
+  min-width: 0;
+}
+
+body .customers-rewards-card,
+body .customers-detail-panel {
+  padding: 16px;
+}
+
+body .customers-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+  gap: 16px;
+}
+
+body .customers-rewards-toolbar {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+body .customers-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 260px;
+  min-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 0 12px;
+}
+
+body .customers-search-field input,
+body .customers-rewards-toolbar select,
+body .reward-adjustment-form input,
+body .reward-adjustment-form textarea {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+body .customers-search-field input {
+  min-height: 42px;
+}
+
+body .customers-rewards-toolbar select {
+  width: auto;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 0 14px;
+  font-weight: 800;
+}
+
+body .customers-table,
+body .customers-ledger-table {
+  display: grid;
+  overflow-x: auto;
+}
+
+body .customers-table-row,
+body .customers-ledger-row {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  min-width: 850px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+body .customers-table-row {
+  grid-template-columns: minmax(220px, 1.4fr) minmax(110px, 0.7fr) minmax(120px, 0.75fr) minmax(170px, 1fr) minmax(130px, 0.85fr) minmax(130px, 0.7fr);
+}
+
+body .customers-ledger-row {
+  grid-template-columns: minmax(92px, 0.6fr) minmax(190px, 1.2fr) minmax(96px, 0.65fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(80px, 0.5fr) minmax(130px, 0.8fr);
+}
+
+body .customers-table-row:last-child,
+body .customers-ledger-row:last-child {
+  border-bottom: 0;
+}
+
+body .customers-table-row > span,
+body .customers-ledger-row > span,
+body .customers-ledger-row > button,
+body .customers-detail-list span,
+body .customers-mini-ledger div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+body .customers-ledger-row > button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+body .customers-table-row strong,
+body .customers-ledger-row strong,
+body .customers-detail-list strong {
+  overflow-wrap: anywhere;
+}
+
+body .customers-table-row small,
+body .customers-ledger-row small,
+body .customers-detail-list small,
+body .customers-adjustment-customer span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+body .customers-row-actions {
+  justify-content: flex-end;
+}
+
+body .secondary-action.small {
+  min-height: 34px;
+  padding: 7px 11px;
+  font-size: 0.78rem;
+}
+
+body .customers-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+body .customers-detail {
+  display: grid;
+  gap: 14px;
+}
+
+body .customers-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body .customers-detail-header h3,
+body .customers-detail-section h4 {
+  margin: 0;
+}
+
+body .customers-detail-header p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+body .customers-detail-section {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+body .customers-detail-list,
+body .customers-mini-ledger,
+body .reward-adjustment-form {
+  display: grid;
+  gap: 10px;
+}
+
+body .customers-detail-list > div,
+body .customers-mini-ledger > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+body .positive {
+  color: #16a34a;
+  font-weight: 900;
+}
+
+body .negative {
+  color: #dc2626;
+  font-weight: 900;
+}
+
+body .customers-adjustment-customer {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+body .segmented-control {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 4px;
+}
+
+body .reward-adjustment-form .form-grid label {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+body .reward-adjustment-form .form-grid label span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+body .reward-adjustment-form textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+body .full-width {
+  width: 100%;
+}
+
+@media (max-width: 1450px) {
+  body .customers-rewards-layout,
+  body .customers-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body .customers-detail-panel {
+    order: -1;
+  }
+}
+
+@media (max-width: 760px) {
+  body .customers-rewards-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  body .customers-rewards-header {
+    align-items: stretch;
+  }
+
+  body .customers-rewards-actions,
+  body .customers-rewards-actions .primary-action,
+  body .customers-rewards-actions .secondary-action,
+  body .customers-rewards-toolbar,
+  body .customers-rewards-toolbar select,
+  body .customers-search-field,
+  body .segmented-control {
+    width: 100%;
+  }
+
+  body .customers-rewards-tabs {
+    width: 100%;
+  }
+
+  body .customers-rewards-tabs button,
+  body .segmented-control button {
+    flex: 1 1 45%;
+  }
+}
+
 body .stock-lot-groups,
 body .stock-lot-group {
   display: grid;
