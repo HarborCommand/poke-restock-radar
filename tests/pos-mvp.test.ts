@@ -176,10 +176,31 @@ test("POS helper blocks out-of-stock and unpriced products", () => {
   assert.equal(isPosSellableInventoryItem(posItem({ quantityOwned: 1 })), true);
   assert.equal(isPosSellableInventoryItem(posItem({ quantityOwned: 0 })), false);
   assert.equal(isPosSellableInventoryItem(posItem({ publicPrice: null, targetSellPrice: null })), false);
-  assert.equal(isPosSellableInventoryItem(posItem({ listingStatus: "sold" })), false);
   assert.equal(getPosExcludedReason(posItem({ quantityOwned: 0 })), "No on-hand quantity");
   assert.equal(getPosExcludedReason(posItem({ publicPrice: null, targetSellPrice: null })), "Missing POS sale price");
-  assert.equal(getPosExcludedReason(posItem({ listingStatus: "sold" })), "Marked sold");
+  assert.equal(isPosSellableInventoryItem(posItem({ itemStatus: "archived" })), false);
+  assert.equal(isPosSellableInventoryItem(posItem({ itemStatus: "disposed" })), false);
+  assert.equal(getPosExcludedReason(posItem({ itemStatus: "archived" })), "Archived or disposed");
+  assert.equal(getPosExcludedReason(posItem({ itemStatus: "disposed" })), "Archived or disposed");
+});
+
+test("POS helper keeps sold-status items sellable when on-hand inventory remains", () => {
+  const soldWithInventory = posItem({
+    quantity: 4,
+    quantityOwned: 3,
+    quantitySold: 1,
+    listingStatus: "sold",
+    publicPrice: 60,
+    targetSellPrice: 60
+  });
+
+  assert.equal(isPosSellableInventoryItem(soldWithInventory), true);
+  assert.equal(getPosSellableReason(soldWithInventory), "Ready for POS sale");
+  assert.equal(getPosExcludedReason(soldWithInventory), null);
+  assert.equal(posItemExactCodeMatch(soldWithInventory, "820650858585"), true);
+  assert.notEqual(getPosExcludedReason(soldWithInventory), "Marked sold");
+  assert.equal(isPosSellableInventoryItem(posItem({ quantityOwned: 0, listingStatus: "sold" })), false);
+  assert.equal(getPosExcludedReason(posItem({ quantityOwned: 0, listingStatus: "sold" })), "No on-hand quantity");
 });
 
 test("POS eligibility is independent of storefront publishing and Google feed readiness", () => {
@@ -189,6 +210,9 @@ test("POS eligibility is independent of storefront publishing and Google feed re
 
   const hiddenStorefrontListing = posItem({ publishToStore: false, storeStatus: "hidden", publicPrice: null, targetSellPrice: 24.99 });
   assert.equal(isPosSellableInventoryItem(hiddenStorefrontListing), true);
+
+  const soldOutStorefrontWithStock = posItem({ storeStatus: "sold_out", quantityOwned: 3, publicPrice: null, targetSellPrice: 24.99 });
+  assert.equal(isPosSellableInventoryItem(soldOutStorefrontWithStock), true);
 
   const heldPlan = posItem({ listingStatus: "held", recommendedAction: "HOLD", expectedPlan: "Hold" });
   assert.equal(isPosSellableInventoryItem(heldPlan), true);
@@ -308,6 +332,17 @@ test("POS inventory deduction happens only through completed sale creation path"
   assert.match(service, /await tx\.inventoryStockLot\.updateMany/);
   assert.match(service, /remainingQuantity: \{ decrement: quantityFromLot \}/);
   assert.match(service, /await tx\.inventorySale\.create/);
+});
+
+test("POS partial sale does not mark the whole product sold while on-hand inventory remains", () => {
+  const service = readSource("../src/lib/radar-service.ts");
+  const createLine = sourceSlice(service, "async function createPosInventorySaleLine", "export async function createPosSale");
+
+  assert.match(createLine, /const availabilityBeforeSale = inventorySaleAvailability\(item\)/);
+  assert.match(createLine, /const availabilityAfterSale = Math\.max\(0, availabilityBeforeSale - line\.quantity\)/);
+  assert.match(createLine, /availabilityBeforeSale > 0 && availabilityAfterSale <= 0\s*\?\s*"sold"/);
+  assert.match(createLine, /item\.listingStatus === "sold" && availabilityAfterSale > 0\s*\?\s*"held"/);
+  assert.doesNotMatch(createLine, /totalSold >= item\.quantity && item\.quantity > 0\s*\?\s*"sold"/);
 });
 
 test("POS adjusted sale stores original price, adjusted price, discount metadata, and receipt metadata", () => {

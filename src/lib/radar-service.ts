@@ -6919,17 +6919,21 @@ async function createPosInventorySaleLine(
     }
   });
 
+  const availabilityBeforeSale = inventorySaleAvailability(item);
+  const availabilityAfterSale = Math.max(0, availabilityBeforeSale - line.quantity);
   const totalSold = item.sales.reduce((sum, existingSale) => sum + existingSale.quantitySold, 0) + line.quantity;
   const totalProfitLoss = item.sales.reduce((sum, existingSale) => sum + existingSale.profitLoss, 0) + profitLoss;
   await tx.inventoryItem.update({
     where: { id: item.id },
     data: {
       listingStatus:
-        totalSold >= item.quantity && item.quantity > 0
+        availabilityBeforeSale > 0 && availabilityAfterSale <= 0
           ? "sold"
-          : item.listingStatus === "not_listed" && totalSold > 0
+          : item.listingStatus === "sold" && availabilityAfterSale > 0
             ? "held"
-            : item.listingStatus,
+            : item.listingStatus === "not_listed" && totalSold > 0
+              ? "held"
+              : item.listingStatus,
       soldPrice: line.unitPrice,
       soldAt: sale.soldAt,
       buyerPlatform: "pos",
