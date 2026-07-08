@@ -41,6 +41,11 @@ import {
 import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
 import { resolvePosCustomerMatch } from "@/lib/pos-customer";
 import {
+  awardRewardsForCompletedPosSale,
+  reverseRewardsForPosSale,
+  rewardSummaryForPosSaleReference
+} from "@/lib/customer-rewards";
+import {
   detectRetailerAvailability,
   detectRetailerPrice,
   detectTargetAvailability,
@@ -1812,6 +1817,11 @@ function inventorySaleToDTO(
   const activeGrossSale = saleStatus === "refunded" ? 0 : roundPosMoney(Math.max(0, sale.grossSale - refundedAmount));
   const activeNetSale = saleStatus === "refunded" ? 0 : roundPosMoney(Math.max(0, sale.netSale - refundedAmount));
   const activeProfitLoss = saleStatus === "refunded" ? 0 : roundPosMoney(activeNetSale - sale.costBasis);
+  const rewardStatus: InventorySaleDTO["rewardStatus"] = !sale.rewardsEligible
+    ? "not_eligible"
+    : saleStatus === "refunded"
+      ? "reversed"
+      : "available";
   return {
     id: sale.id,
     inventoryItemId: sale.inventoryItemId,
@@ -1845,6 +1855,9 @@ function inventorySaleToDTO(
     customerPhone: sale.customerPhone,
     customerMatchMethod: sale.customerMatchMethod,
     rewardsEligible: sale.rewardsEligible,
+    rewardStatus,
+    rewardPointsEarned: null,
+    rewardPointsReversed: null,
     saleStatus,
     storefrontOrderNumber,
     storefrontOrderStatus: null,
@@ -6766,7 +6779,7 @@ function posSaleLineNote(input: {
     input.customerMatchMethod && input.customerMatchMethod !== "none"
       ? `Customer match: ${input.customerMatchMethod}${input.customerLinked ? " linked" : " not linked"}.`
       : null,
-    input.rewardsEligible ? "Rewards eligibility: linked for future POS rewards." : null,
+    input.rewardsEligible ? "Rewards eligibility: verified linked account eligible for POS rewards." : null,
     `POS subtotal: $${input.subtotal.toFixed(2)}.`,
     `POS tax: $${input.tax.toFixed(2)}.`,
     `POS total: $${input.total.toFixed(2)}.`
@@ -6823,6 +6836,7 @@ async function receiptForExistingPosSale(
   const noteTotal = posMoneyFromNote(firstSale.notes, "total");
   const tax = noteTax ?? 0;
   const total = noteTotal ?? roundPosMoney(subtotal + tax);
+  const rewardSummary = await rewardSummaryForPosSaleReference(saleReference, client);
   return {
     saleReference,
     paymentMethod,
@@ -6833,6 +6847,9 @@ async function receiptForExistingPosSale(
     customerPhone: firstSale.customerPhone,
     customerMatchMethod: normalizePosCustomerMatchMethod(firstSale.customerMatchMethod),
     rewardsEligible: firstSale.rewardsEligible,
+    rewardStatus: rewardSummary.status,
+    rewardPointsEarned: rewardSummary.pointsEarned,
+    rewardPointsReversed: rewardSummary.pointsReversed,
     subtotal,
     tax,
     total,
@@ -7119,6 +7136,20 @@ export async function createPosSale(
       });
     }
 
+    const rewardAward = await awardRewardsForCompletedPosSale(
+      {
+        customerAccountId: customerMatch.customerAccountId,
+        saleReference,
+        eligibleSubtotalCents: Math.round(totals.subtotal * 100),
+        taxCentsExcluded: Math.round(totals.tax * 100),
+        itemCount: lines.reduce((sum, line) => sum + line.quantity, 0)
+      },
+      tx
+    );
+    const rewardPointsEarned =
+      rewardAward.status === "available" || rewardAward.status === "already_awarded" ? rewardAward.points : 0;
+    const rewardStatus: PosSaleReceiptDTO["rewardStatus"] = rewardPointsEarned > 0 ? "available" : "not_eligible";
+
     return {
       saleReference,
       paymentMethod,
@@ -7129,6 +7160,9 @@ export async function createPosSale(
       customerPhone: customerMatch.customerPhone,
       customerMatchMethod: customerMatch.customerMatchMethod,
       rewardsEligible: customerMatch.rewardsEligible,
+      rewardStatus,
+      rewardPointsEarned,
+      rewardPointsReversed: 0,
       subtotal: totals.subtotal,
       tax: totals.tax,
       total: totals.total,
@@ -7296,6 +7330,14 @@ export async function refundPosSale(
         });
       }
     }
+
+    await reverseRewardsForPosSale(
+      {
+        saleReference: normalizedReference,
+        reason: "refund"
+      },
+      tx
+    );
   });
 
   for (const itemId of itemIds) {

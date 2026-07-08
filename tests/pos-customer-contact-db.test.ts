@@ -14,6 +14,7 @@ const testDbPath = path.join(testDbDir, "pos-customer-contact.sqlite");
 process.env.DATABASE_URL = `file:${testDbPath}`;
 process.env.CUSTOMER_ACCOUNTS_ENABLED = "true";
 process.env.CUSTOMER_REWARDS_ENABLED = "false";
+process.env.CUSTOMER_POS_REWARDS_ENABLED = "false";
 process.env.CUSTOMER_REWARD_REDEMPTION_ENABLED = "false";
 process.env.CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED = "false";
 
@@ -27,7 +28,7 @@ const dbModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/db.t
 const radarServiceModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/radar-service.ts")).href);
 const posCustomerModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/pos-customer.ts")).href);
 const { prisma } = dbModule as { prisma: PrismaClient };
-const { createPosSale } = radarServiceModule as typeof import("../src/lib/radar-service");
+const { createPosSale, refundPosSale } = radarServiceModule as typeof import("../src/lib/radar-service");
 const {
   normalizePosCustomerPhone,
   resolvePosCustomerMatch
@@ -44,6 +45,15 @@ function unique(prefix: string) {
   uniqueCounter += 1;
   return `${prefix}-${Date.now()}-${uniqueCounter}`;
 }
+
+function setPosRewardsEnabled(enabled: boolean) {
+  process.env.CUSTOMER_REWARDS_ENABLED = enabled ? "true" : "false";
+  process.env.CUSTOMER_POS_REWARDS_ENABLED = enabled ? "true" : "false";
+}
+
+test.beforeEach(() => {
+  setPosRewardsEnabled(false);
+});
 
 async function createAdminUser(): Promise<SessionUser> {
   const user = await prisma.user.create({
@@ -277,6 +287,151 @@ test("POS sale still works without customer contact", async () => {
   assert.equal(receipt.customerMatchMethod, "none");
   assert.equal(receipt.rewardsEligible, false);
   assert.equal(await prisma.rewardLedgerEntry.count(), 0);
+});
+
+test("POS rewards award available points once for verified email match when explicitly enabled", async () => {
+  setPosRewardsEnabled(true);
+  const user = await createAdminUser();
+  const item = await createInventoryItem(user.id);
+  const account = await createVerifiedCustomer({ email: `${unique("pos-reward-buyer")}@example.test`, phone: "+15550004444" });
+  const idempotencyKey = unique("pos-reward-sale");
+
+  const match = await resolvePosCustomerMatch({ customerEmail: account.email.toUpperCase() });
+  assert.equal(match.customerAccountId, account.id);
+  assert.equal(match.rewardsEligible, true);
+
+  const receipt = await createPosSale(user, {
+    idempotencyKey,
+    items: [{ inventoryItemId: item.id, quantity: 1 }],
+    paymentMethod: "cash",
+    customerEmail: account.email
+  });
+  const duplicateReceipt = await createPosSale(user, {
+    idempotencyKey,
+    items: [{ inventoryItemId: item.id, quantity: 1 }],
+    paymentMethod: "cash",
+    customerEmail: account.email
+  });
+
+  assert.equal(duplicateReceipt.saleReference, receipt.saleReference);
+  assert.equal(receipt.customerAccountId, account.id);
+  assert.equal(receipt.rewardsEligible, true);
+  assert.equal(receipt.rewardStatus, "available");
+  assert.equal(receipt.rewardPointsEarned, 25);
+  assert.equal(receipt.rewardPointsReversed, 0);
+
+  const saleRows = await prisma.inventorySale.findMany({ where: { saleReference: receipt.saleReference } });
+  assert.equal(saleRows.length, 1);
+  assert.equal(saleRows[0].customerAccountId, account.id);
+  assert.equal(saleRows[0].rewardsEligible, true);
+
+  const ledger = await prisma.rewardLedgerEntry.findMany({
+    where: { idempotencyKey: `rewards:pos:earn:${receipt.saleReference}` }
+  });
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].customerAccountId, account.id);
+  assert.equal(ledger[0].orderId, null);
+  assert.equal(ledger[0].points, 25);
+  assert.equal(ledger[0].type, "earn");
+  assert.equal(ledger[0].status, "available");
+  assert.equal(ledger[0].source, "pos");
+  assert.equal(ledger[0].eligibleSubtotalCents, 2500);
+  assert.ok(ledger[0].settledAt);
+  assert.match(ledger[0].metadataJson ?? "", /Manual POS rewards are available immediately/);
+
+  const balance = await prisma.rewardBalance.findUniqueOrThrow({ where: { customerAccountId: account.id } });
+  assert.equal(balance.pendingPoints, 0);
+  assert.equal(balance.availablePoints, 25);
+  assert.equal(balance.lifetimeEarnedPoints, 25);
+});
+
+test("POS rewards use adjusted subtotal and do not award for phone-only contact", async () => {
+  setPosRewardsEnabled(true);
+  const user = await createAdminUser();
+  const adjustedItem = await createInventoryItem(user.id);
+  const phoneOnlyItem = await createInventoryItem(user.id);
+  const account = await createVerifiedCustomer({ email: `${unique("adjusted-pos-buyer")}@example.test`, phone: "+15550005555" });
+
+  const adjustedReceipt = await createPosSale(user, {
+    idempotencyKey: unique("adjusted-pos-reward-sale"),
+    items: [{
+      inventoryItemId: adjustedItem.id,
+      quantity: 2,
+      adjustedUnitPrice: 19.99,
+      discountReason: "customer_discount",
+      discountNote: "test discount"
+    }],
+    paymentMethod: "cash",
+    customerEmail: account.email
+  });
+
+  assert.equal(adjustedReceipt.subtotal, 39.98);
+  assert.equal(adjustedReceipt.rewardPointsEarned, 39);
+  const adjustedLedger = await prisma.rewardLedgerEntry.findUniqueOrThrow({
+    where: { idempotencyKey: `rewards:pos:earn:${adjustedReceipt.saleReference}` }
+  });
+  assert.equal(adjustedLedger.eligibleSubtotalCents, 3998);
+  assert.equal(adjustedLedger.points, 39);
+
+  const phoneOnlyReceipt = await createPosSale(user, {
+    idempotencyKey: unique("phone-only-no-pos-reward"),
+    items: [{ inventoryItemId: phoneOnlyItem.id, quantity: 1 }],
+    paymentMethod: "cash",
+    customerPhone: "555-000-5555"
+  });
+  assert.equal(phoneOnlyReceipt.customerAccountId, null);
+  assert.equal(phoneOnlyReceipt.rewardsEligible, false);
+  assert.equal(phoneOnlyReceipt.rewardStatus, "not_eligible");
+  assert.equal(phoneOnlyReceipt.rewardPointsEarned, 0);
+  assert.equal(await prisma.rewardLedgerEntry.count({ where: { idempotencyKey: `rewards:pos:earn:${phoneOnlyReceipt.saleReference}` } }), 0);
+});
+
+test("POS manual refund reverses awarded POS rewards once", async () => {
+  setPosRewardsEnabled(true);
+  const user = await createAdminUser();
+  const item = await createInventoryItem(user.id);
+  const account = await createVerifiedCustomer({ email: `${unique("pos-refund-buyer")}@example.test`, phone: "+15550006666" });
+
+  const receipt = await createPosSale(user, {
+    idempotencyKey: unique("pos-reward-refund-sale"),
+    items: [{ inventoryItemId: item.id, quantity: 1 }],
+    paymentMethod: "cash",
+    customerEmail: account.email
+  });
+  assert.equal(receipt.rewardPointsEarned, 25);
+
+  const refundedReceipt = await refundPosSale(user, receipt.saleReference, {
+    idempotencyKey: "pos-reward-refund-key",
+    refundType: "full",
+    reason: "customer_return",
+    restoreInventory: false
+  });
+  const duplicateRefundReceipt = await refundPosSale(user, receipt.saleReference, {
+    idempotencyKey: "pos-reward-refund-key",
+    refundType: "full",
+    reason: "customer_return",
+    restoreInventory: false
+  });
+
+  assert.equal(refundedReceipt.rewardStatus, "reversed");
+  assert.equal(refundedReceipt.rewardPointsEarned, 25);
+  assert.equal(refundedReceipt.rewardPointsReversed, 25);
+  assert.equal(duplicateRefundReceipt.rewardStatus, "reversed");
+  const ledger = await prisma.rewardLedgerEntry.findMany({
+    where: { idempotencyKey: { in: [`rewards:pos:earn:${receipt.saleReference}`, `rewards:pos:refund:${receipt.saleReference}`] } },
+    orderBy: { createdAt: "asc" }
+  });
+  assert.equal(ledger.length, 2);
+  assert.equal(ledger[0].points, 25);
+  assert.equal(ledger[1].points, -25);
+  assert.equal(ledger[1].type, "reverse");
+  assert.equal(ledger[1].status, "reversed");
+  assert.equal(ledger[1].reversalOfEntryId, ledger[0].id);
+
+  const balance = await prisma.rewardBalance.findUniqueOrThrow({ where: { customerAccountId: account.id } });
+  assert.equal(balance.pendingPoints, 0);
+  assert.equal(balance.availablePoints, 0);
+  assert.equal(balance.lifetimeEarnedPoints, 25);
 });
 
 test("POS phone normalization supports common owner-entered formats", () => {

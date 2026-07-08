@@ -32,6 +32,7 @@ test("customer account and rewards feature flags default disabled", () => {
 
   assert.equal(config.customerAccountsEnabled, false);
   assert.equal(config.customerRewardsEnabled, false);
+  assert.equal(config.customerPosRewardsEnabled, false);
   assert.equal(config.customerRewardRedemptionEnabled, false);
   assert.equal(config.customerAuthRateLimitEnabled, false);
   assert.equal(config.customerSecurityCenterEnabled, false);
@@ -46,6 +47,7 @@ test("customer account and rewards feature flags default disabled", () => {
   assert.deepEqual(config.envVars, [
     "CUSTOMER_ACCOUNTS_ENABLED",
     "CUSTOMER_REWARDS_ENABLED",
+    "CUSTOMER_POS_REWARDS_ENABLED",
     "CUSTOMER_REWARD_REDEMPTION_ENABLED",
     "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED",
     "CUSTOMER_AUTH_RATE_LIMIT_ENABLED",
@@ -1178,6 +1180,11 @@ test("paid webhook awards reward points once without changing checkout totals", 
     "export async function handleStripeWebhook",
     "export async function updateInventoryStoreListing"
   );
+  const onlineAward = sourceSlice(
+    rewards,
+    "export async function awardRewardsForPaidOrder",
+    "export async function releasePendingRewardsForOrder"
+  );
 
   assert.ok(
     webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") >= 0,
@@ -1190,16 +1197,16 @@ test("paid webhook awards reward points once without changing checkout totals", 
   assert.match(webhook, /if \(!wasPaid && order\.paymentStatus === "paid"\) await awardRewardsForPaidOrder\(order\)/);
   assert.match(rewards, /export async function awardRewardsForPaidOrder/);
   assert.match(rewards, /config\.customerAccountsEnabled && config\.customerRewardsEnabled/);
-  assert.match(rewards, /if \(order\.isTestOrder\) return \{ status: "test_order" as const, points: 0 \}/);
-  assert.match(rewards, /if \(order\.paymentStatus !== "paid"\) return \{ status: "not_paid" as const, points: 0 \}/);
-  assert.match(rewards, /idempotencyKey: `rewards:earn:\$\{order\.id\}`/);
-  assert.match(rewards, /shippingCentsExcluded/);
-  assert.match(rewards, /taxCentsExcluded/);
-  assert.match(rewards, /status: "pending"/);
-  assert.match(rewards, /availableAt: rewardAvailableAt\(now\)/);
-  assert.match(rewards, /pendingDelta: points/);
-  assert.match(rewards, /lifetimeEarnedDelta: points/);
-  assert.doesNotMatch(rewards, /availableDelta:\s*points[,}]/);
+  assert.match(onlineAward, /if \(order\.isTestOrder\) return \{ status: "test_order" as const, points: 0 \}/);
+  assert.match(onlineAward, /if \(order\.paymentStatus !== "paid"\) return \{ status: "not_paid" as const, points: 0 \}/);
+  assert.match(onlineAward, /idempotencyKey: `rewards:earn:\$\{order\.id\}`/);
+  assert.match(onlineAward, /shippingCentsExcluded/);
+  assert.match(onlineAward, /taxCentsExcluded/);
+  assert.match(onlineAward, /status: "pending"/);
+  assert.match(onlineAward, /availableAt: rewardAvailableAt\(now\)/);
+  assert.match(onlineAward, /pendingDelta: points/);
+  assert.match(onlineAward, /lifetimeEarnedDelta: points/);
+  assert.doesNotMatch(onlineAward, /availableDelta:\s*points[,}]/);
   assert.doesNotMatch(checkoutSession, /reward|points|coupon|discount|promotion_code|allow_promotion_codes|redeem/i);
 });
 
@@ -1327,6 +1334,8 @@ test("admin order detail displays rewards without redemption controls or private
   assert.match(storefront, /customerRewardSummary: customerRewardSummaryForOrder\(order\)/);
   assert.match(storefront, /rewardBalance:\s*true/);
   assert.match(storefront, /rewardLedgerEntries:\s*\{/);
+  assert.match(config, /CUSTOMER_POS_REWARDS_ENABLED/);
+  assert.match(config, /customerPosRewardsEnabled/);
   assert.match(config, /CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED/);
   assert.match(config, /customerRewardAdminAdjustmentsEnabled/);
   assert.match(rewardPanel, /Rewards Summary/);

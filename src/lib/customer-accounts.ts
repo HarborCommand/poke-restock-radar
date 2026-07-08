@@ -1,6 +1,7 @@
 export type CustomerAccountFeatureConfig = {
   customerAccountsEnabled: boolean;
   customerRewardsEnabled: boolean;
+  customerPosRewardsEnabled: boolean;
   customerRewardRedemptionEnabled: boolean;
   customerRewardAdminAdjustmentsEnabled: boolean;
   customerAuthRateLimitEnabled: boolean;
@@ -19,6 +20,7 @@ export type CustomerAccountFeatureConfig = {
 const customerAccountEnvVars = [
   "CUSTOMER_ACCOUNTS_ENABLED",
   "CUSTOMER_REWARDS_ENABLED",
+  "CUSTOMER_POS_REWARDS_ENABLED",
   "CUSTOMER_REWARD_REDEMPTION_ENABLED",
   "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED",
   "CUSTOMER_AUTH_RATE_LIMIT_ENABLED",
@@ -46,6 +48,7 @@ export function customerAccountFeatureConfig(env: Record<string, string | undefi
   return {
     customerAccountsEnabled: envFlag(env, "CUSTOMER_ACCOUNTS_ENABLED"),
     customerRewardsEnabled: envFlag(env, "CUSTOMER_REWARDS_ENABLED"),
+    customerPosRewardsEnabled: envFlag(env, "CUSTOMER_POS_REWARDS_ENABLED"),
     customerRewardRedemptionEnabled: envFlag(env, "CUSTOMER_REWARD_REDEMPTION_ENABLED"),
     customerRewardAdminAdjustmentsEnabled: envFlag(env, "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED"),
     customerAuthRateLimitEnabled: envFlag(env, "CUSTOMER_AUTH_RATE_LIMIT_ENABLED"),

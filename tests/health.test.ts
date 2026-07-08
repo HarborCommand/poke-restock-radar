@@ -148,6 +148,7 @@ test("health stays OK when required systems pass and optional providers are disa
     assert.equal(report.providers.customerAccounts.healthStatus, "disabled");
     assert.equal(report.providers.customerAccounts.customerAccountsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerPosRewardsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardAdminAdjustmentsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerAuthRateLimitEnabled, false);
@@ -389,6 +390,7 @@ test("health reports customer account reward flags without exposing values or af
       assert.equal(report.providers.customerAccounts.healthStatus, "configured");
       assert.equal(report.providers.customerAccounts.customerAccountsEnabled, true);
       assert.equal(report.providers.customerAccounts.customerRewardsEnabled, true);
+      assert.equal(report.providers.customerAccounts.customerPosRewardsEnabled, false);
       assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, false);
       assert.equal(report.providers.customerAccounts.customerRewardAdminAdjustmentsEnabled, false);
       assert.equal(report.providers.customerAccounts.customerAuthRateLimitEnabled, false);
@@ -398,11 +400,13 @@ test("health reports customer account reward flags without exposing values or af
       assert.equal(report.providers.customerAccounts.customerSessionIdleTimeoutMinutes, 10);
       assert.equal(report.providers.customerAccounts.customerSessionAbsoluteTimeoutHours, 12);
       assert.equal(report.providers.customerAccounts.rewardsReady, true);
+      assert.equal(report.providers.customerAccounts.posRewardsReady, false);
       assert.equal(report.providers.customerAccounts.redemptionReady, false);
       assert.equal(report.providers.customerAccounts.adminAdjustmentsReady, false);
       assert.deepEqual(report.providers.customerAccounts.envVars, [
         "CUSTOMER_ACCOUNTS_ENABLED",
         "CUSTOMER_REWARDS_ENABLED",
+        "CUSTOMER_POS_REWARDS_ENABLED",
         "CUSTOMER_REWARD_REDEMPTION_ENABLED",
         "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED",
         "CUSTOMER_AUTH_RATE_LIMIT_ENABLED",
@@ -427,7 +431,22 @@ test("health warns when reward redemption is enabled without the required accoun
     assert.equal(report.providers.customerAccounts.healthStatus, "misconfigured");
     assert.equal(report.providers.customerAccounts.customerAccountsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerPosRewardsEnabled, false);
     assert.equal(report.providers.customerAccounts.customerRewardRedemptionEnabled, true);
+    assert.match(report.warnings.join("\n"), /Customer account flags are inconsistent/);
+    assert.equal(statusForReport(report.warnings), "WARN");
+  });
+});
+
+test("health warns when POS rewards are enabled without customer rewards", () => {
+  withEnv({ CUSTOMER_POS_REWARDS_ENABLED: "true" }, () => {
+    const report = getEnvironmentReport();
+
+    assert.equal(report.providers.customerAccounts.healthStatus, "misconfigured");
+    assert.equal(report.providers.customerAccounts.customerAccountsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerRewardsEnabled, false);
+    assert.equal(report.providers.customerAccounts.customerPosRewardsEnabled, true);
+    assert.equal(report.providers.customerAccounts.posRewardsReady, false);
     assert.match(report.warnings.join("\n"), /Customer account flags are inconsistent/);
     assert.equal(statusForReport(report.warnings), "WARN");
   });

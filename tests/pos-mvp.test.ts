@@ -490,7 +490,8 @@ test("POS cart exposes optional customer contact capture and account matching", 
   assert.match(posPanel, /matchCustomerContact/);
   assert.match(posPanel, /\/api\/radar\/pos\/customer-match/);
   assert.match(posPanel, /Phone alone never awards points/);
-  assert.match(posPanel, /Rewards are not active for POS yet|Linked for future POS rewards/);
+  assert.match(posPanel, /Eligible after sale/);
+  assert.match(posPanel, /Not active for POS/);
   assert.match(posPanel, /customerEmail: customerEmail\.trim\(\) \|\| undefined/);
   assert.match(posPanel, /customerPhone: customerPhone\.trim\(\) \|\| undefined/);
 });
@@ -504,8 +505,10 @@ test("POS receipt includes optional customer contact without account identifiers
   assert.match(receipt, /receipt\.customerEmail/);
   assert.match(receipt, /receipt\.customerPhone/);
   assert.match(receipt, /Contact only/);
+  assert.match(receipt, /receipt\.rewardPointsEarned > 0/);
+  assert.match(receipt, /point\{receipt\.rewardPointsEarned === 1 \? "" : "s"\} earned/);
   assert.match(receipt, /receipt\.customerAccountId \? "Rewards are not active for POS yet" : "Contact only"/);
-  assert.match(receiptSummary, /receipt\.customerAccountId \? "Customer linked\. Rewards are not active for POS yet\." : null/);
+  assert.match(receiptSummary, /receipt\.rewardPointsEarned > 0/);
   assert.doesNotMatch(receipt + receiptSummary, /Customer account ID|internal ID|\$\{receipt\.customerAccountId\}/i);
 });
 
@@ -677,12 +680,27 @@ test("POS customer capture stays out of account and public product output", () =
   }
 });
 
-test("POS manual sales do not participate in Phase 1 rewards", () => {
+test("POS rewards are server-side, separately flagged, and excluded from browser authority", () => {
   const service = readSource("../src/lib/radar-service.ts");
   const route = readSource("../src/app/api/radar/pos/sales/route.ts");
+  const posCustomer = readSource("../src/lib/pos-customer.ts");
+  const rewards = readSource("../src/lib/customer-rewards.ts");
+  const customerConfig = readSource("../src/lib/customer-accounts.ts");
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
 
-  assert.doesNotMatch(createPosSale + route, /awardRewardsForPaidOrder|releasePendingRewardsForOrder|reverseRewardsForOrder|rewardLedgerEntry|RewardLedgerEntry|rewardBalance|points/i);
+  assert.match(posCustomer, /customerPosRewardsEnabled/);
+  assert.match(createPosSale, /await awardRewardsForCompletedPosSale/);
+  assert.match(createPosSale, /eligibleSubtotalCents: Math\.round\(totals\.subtotal \* 100\)/);
+  assert.match(customerConfig, /CUSTOMER_POS_REWARDS_ENABLED/);
+  assert.match(rewards, /customerPosRewardsEnabled/);
+  assert.match(rewards, /idempotencyKey: `rewards:pos:earn:\$\{input\.saleReference\}`/);
+  assert.match(rewards, /source: rewardSources\.pos/);
+  assert.match(rewards, /availableDelta: points/);
+  assert.match(rewards, /lifetimeEarnedDelta: points/);
+  assert.match(rewards, /Manual POS rewards are available immediately after completed sale/);
+  assert.doesNotMatch(route, /rewardPoints|points|customerAccountId|rewardsEligible/i);
+  assert.doesNotMatch(createPosSale, /input\.customerAccountId|input\.rewardsEligible|input\.points/i);
+  assert.doesNotMatch(createPosSale, /releasePendingRewardsForOrder|awardRewardsForPaidOrder/i);
 });
 
 test("POS refund request requires an idempotency key, reason, and full manual refund type", () => {
@@ -721,6 +739,10 @@ test("Sales detail shows POS metadata and discount details", () => {
   assert.match(saleDetails, /Payment method/);
   assert.match(saleDetails, /Payment reference/);
   assert.match(saleDetails, /Sale reference/);
+  assert.match(saleDetails, /Rewards/);
+  assert.match(app, /function saleRewardLabel/);
+  assert.match(app, /POS rewards earned/);
+  assert.match(app, /POS rewards reversed/);
   assert.match(saleDetails, /Discount details/);
   assert.match(saleDetails, /Original \{money\(rowSale\.originalUnitPrice/);
   assert.match(saleDetails, /adjusted \{money\(rowSale\.adjustedUnitPrice/);
@@ -730,6 +752,7 @@ test("Sales detail shows POS metadata and discount details", () => {
 test("POS refund route is admin-only, records manual refunds, and does not call Stripe", () => {
   const route = readSource("../src/app/api/radar/pos/sales/[saleReference]/refund/route.ts");
   const service = readSource("../src/lib/radar-service.ts");
+  const rewards = readSource("../src/lib/customer-rewards.ts");
   const refundPosSale = sourceSlice(service, "export async function refundPosSale", "export async function updateInventorySale");
 
   assert.match(route, /requireUser/);
@@ -741,6 +764,9 @@ test("POS refund route is admin-only, records manual refunds, and does not call 
   assert.match(refundPosSale, /This POS sale has already been fully refunded/);
   assert.match(refundPosSale, /inventoryStockLot\.create/);
   assert.match(refundPosSale, /POS refund return/);
+  assert.match(refundPosSale, /await reverseRewardsForPosSale/);
+  assert.match(refundPosSale, /saleReference: normalizedReference/);
+  assert.match(rewards, /idempotencyKey: `rewards:pos:refund:\$\{input\.saleReference\}`/);
   assert.match(service, /Manual refund record only/);
   assert.doesNotMatch(route + refundPosSale, /stripeClient|stripe\.refunds|refunds\.create|Stripe Terminal|tapToPay/i);
 });
