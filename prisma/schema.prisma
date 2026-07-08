@@ -943,6 +943,13 @@ model InventorySale {
   discountAmount   Float?
   discountReason   String?
   discountNote     String?
+  refundStatus     String?
+  refundedAmount   Float         @default(0)
+  refundedAt       DateTime?
+  refundReason     String?
+  refundNote       String?
+  refundIdempotencyKey String?
+  refundRestockedQuantity Int    @default(0)
   soldAt           DateTime
   notes            String?
   createdAt        DateTime      @default(now())
@@ -954,6 +961,8 @@ model InventorySale {
   @@index([platform])
   @@index([saleReference])
   @@index([paymentMethod])
+  @@index([refundStatus])
+  @@index([refundIdempotencyKey])
   @@index([soldAt])
 }
 

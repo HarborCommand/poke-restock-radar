@@ -5,6 +5,8 @@ import {
   POS_DEFAULT_TAX_RATE,
   POS_DISCOUNT_REASON_LABELS,
   POS_DISCOUNT_REASON_VALUES,
+  POS_REFUND_REASON_LABELS,
+  POS_REFUND_REASON_VALUES,
   calculatePosTotals,
   getPosExcludedReason,
   getPosSellableReason,
@@ -15,7 +17,7 @@ import {
   posDiscountReasonLabel,
   posUnitPrice
 } from "../src/lib/pos";
-import { posSaleCreateSchema } from "../src/lib/validation";
+import { posSaleCreateSchema, posSaleRefundSchema } from "../src/lib/validation";
 import type { InventoryItemDTO } from "../src/types/radar";
 
 function readSource(path: string) {
@@ -549,4 +551,73 @@ test("POS manual sales do not participate in Phase 1 rewards", () => {
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
 
   assert.doesNotMatch(createPosSale + route, /awardRewardsForPaidOrder|releasePendingRewardsForOrder|reverseRewardsForOrder|rewardLedgerEntry|RewardLedgerEntry|rewardBalance|points/i);
+});
+
+test("POS refund request requires an idempotency key, reason, and full manual refund type", () => {
+  const parsed = posSaleRefundSchema.safeParse({
+    idempotencyKey: "pos-refund-test-1",
+    refundType: "full",
+    reason: "customer_return",
+    restoreInventory: "true"
+  });
+  assert.equal(parsed.success, true);
+  assert.equal(parsed.success ? parsed.data.reason : null, "customer_return");
+  assert.equal(parsed.success ? parsed.data.restoreInventory : null, true);
+  assert.deepEqual(POS_REFUND_REASON_VALUES, ["customer_return", "damaged_product", "wrong_item", "duplicate_sale", "price_correction", "other"]);
+  assert.equal(POS_REFUND_REASON_LABELS.price_correction, "Price correction");
+
+  assert.equal(posSaleRefundSchema.safeParse({ idempotencyKey: "pos-refund-test-2", refundType: "full", restoreInventory: "true" }).success, false);
+  assert.equal(posSaleRefundSchema.safeParse({ idempotencyKey: "pos-refund-test-3", refundType: "partial", reason: "customer_return" }).success, false);
+});
+
+test("Sales detail exposes POS receipt copy print and refund controls", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const saleDetails = sourceSlice(app, "function SaleDetailsModal", "function EditSaleModal");
+  assert.match(saleDetails, /Print receipt/);
+  assert.match(saleDetails, /Copy receipt/);
+  assert.match(saleDetails, /Manual refund records the refund in admin/);
+  assert.match(saleDetails, /It does not send money through Stripe or Zelle automatically/);
+  assert.match(saleDetails, /Record Refund/);
+  assert.match(saleDetails, /POS_REFUND_REASON_VALUES\.map/);
+  assert.match(saleDetails, /restoreInventory/);
+  assert.match(saleDetails, /encodeURIComponent\(sale\.saleReference/);
+});
+
+test("Sales detail shows POS metadata and discount details", () => {
+  const app = readSource("../src/components/RadarApp.tsx");
+  const saleDetails = sourceSlice(app, "function SaleDetailsModal", "function EditSaleModal");
+  assert.match(saleDetails, /Payment method/);
+  assert.match(saleDetails, /Payment reference/);
+  assert.match(saleDetails, /Sale reference/);
+  assert.match(saleDetails, /Discount details/);
+  assert.match(saleDetails, /Original \{money\(rowSale\.originalUnitPrice/);
+  assert.match(saleDetails, /adjusted \{money\(rowSale\.adjustedUnitPrice/);
+  assert.match(saleDetails, /Discount \{money\(rowSale\.discountAmount\)/);
+});
+
+test("POS refund route is admin-only, records manual refunds, and does not call Stripe", () => {
+  const route = readSource("../src/app/api/radar/pos/sales/[saleReference]/refund/route.ts");
+  const service = readSource("../src/lib/radar-service.ts");
+  const refundPosSale = sourceSlice(service, "export async function refundPosSale", "export async function updateInventorySale");
+
+  assert.match(route, /requireUser/);
+  assert.match(route, /requireAdmin\(user\)/);
+  assert.match(route, /posSaleRefundSchema\.parse/);
+  assert.match(route, /refundPosSale/);
+  assert.match(refundPosSale, /platform:\s*"pos"/);
+  assert.match(refundPosSale, /refundIdempotencyKey/);
+  assert.match(refundPosSale, /This POS sale has already been fully refunded/);
+  assert.match(refundPosSale, /inventoryStockLot\.create/);
+  assert.match(refundPosSale, /POS refund return/);
+  assert.match(service, /Manual refund record only/);
+  assert.doesNotMatch(route + refundPosSale, /stripeClient|stripe\.refunds|refunds\.create|Stripe Terminal|tapToPay/i);
+});
+
+test("POS refund inventory restoration clears stale sold listing state", () => {
+  const service = readSource("../src/lib/radar-service.ts");
+  const recalculate = sourceSlice(service, "async function recalculateInventorySalesAndLots", "export async function createInventoryItem");
+
+  assert.match(recalculate, /const totalOnHand = \[\.\.\.virtualRemaining\.values\(\)\]\.reduce/);
+  assert.match(recalculate, /item\.listingStatus === "sold" && totalOnHand > 0\s*\?\s*"held"/);
+  assert.match(recalculate, /totalSold >= item\.quantity && item\.quantity > 0 && totalOnHand <= 0/);
 });

@@ -611,6 +611,10 @@ export type InventorySaleDTO = {
   storefrontOrderStatus: string | null;
   refundStatus: string | null;
   refundedAmount: number;
+  refundedAt: string | null;
+  refundReason: string | null;
+  refundNote: string | null;
+  refundRestockedQuantity: number;
   netRevenueAfterRefund: number;
   soldAt: string;
   notes: string | null;
