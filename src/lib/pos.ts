@@ -4,6 +4,8 @@ export const POS_PAYMENT_METHOD_VALUES = ["cash", "zelle", "external_card", "oth
 export type PosPaymentMethod = (typeof POS_PAYMENT_METHOD_VALUES)[number];
 export const POS_DISCOUNT_REASON_VALUES = ["customer_discount", "price_match", "damaged_packaging", "promotion", "owner_override", "other"] as const;
 export type PosDiscountReason = (typeof POS_DISCOUNT_REASON_VALUES)[number];
+export const POS_REFUND_REASON_VALUES = ["customer_return", "damaged_product", "wrong_item", "duplicate_sale", "price_correction", "other"] as const;
+export type PosRefundReason = (typeof POS_REFUND_REASON_VALUES)[number];
 
 export const POS_PAYMENT_METHOD_LABELS: Record<PosPaymentMethod, string> = {
   cash: "Cash",
@@ -18,6 +20,15 @@ export const POS_DISCOUNT_REASON_LABELS: Record<PosDiscountReason, string> = {
   damaged_packaging: "Damaged packaging",
   promotion: "Promotion",
   owner_override: "Owner override",
+  other: "Other"
+};
+
+export const POS_REFUND_REASON_LABELS: Record<PosRefundReason, string> = {
+  customer_return: "Customer return",
+  damaged_product: "Damaged product",
+  wrong_item: "Wrong item",
+  duplicate_sale: "Duplicate sale",
+  price_correction: "Price correction",
   other: "Other"
 };
 
@@ -118,6 +129,15 @@ export function normalizePosDiscountReason(value: string | null | undefined): Po
 
 export function posDiscountReasonLabel(reason: PosDiscountReason) {
   return POS_DISCOUNT_REASON_LABELS[reason];
+}
+
+export function normalizePosRefundReason(value: string | null | undefined): PosRefundReason | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return POS_REFUND_REASON_VALUES.find((reason) => reason === normalized) ?? null;
+}
+
+export function posRefundReasonLabel(reason: PosRefundReason) {
+  return POS_REFUND_REASON_LABELS[reason];
 }
 
 export function normalizePosTaxRate(value: string | number | null | undefined) {

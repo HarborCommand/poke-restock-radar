@@ -100,6 +100,8 @@ import {
   POS_DISCOUNT_REASON_VALUES,
   POS_PAYMENT_METHOD_LABELS,
   POS_PAYMENT_METHOD_VALUES,
+  POS_REFUND_REASON_LABELS,
+  POS_REFUND_REASON_VALUES,
   calculatePosTotals,
   getPosExcludedReason,
   getPosSellableReason,
@@ -15113,6 +15115,13 @@ function SalesLog({
     [filters, itemById, sorted]
   );
   const selectedSaleRow = saleRows.find(({ sale }) => sale.id === selectedSaleId) ?? null;
+  const selectedReceiptRows = selectedSaleRow?.sale.platform === "pos" && selectedSaleRow.sale.saleReference
+    ? sorted
+      .filter((candidate) => candidate.platform === "pos" && candidate.saleReference === selectedSaleRow.sale.saleReference)
+      .map((candidate) => ({ sale: candidate, item: itemById.get(candidate.inventoryItemId) ?? null }))
+    : selectedSaleRow
+      ? [selectedSaleRow]
+      : [];
   const editSaleRow = saleRows.find(({ sale }) => sale.id === editSaleId) ?? null;
   const averageSalePrice = summary.itemsSold > 0 ? summary.totalSalesGross / summary.itemsSold : 0;
 
@@ -15213,6 +15222,10 @@ function SalesLog({
         <SaleDetailsModal
           item={selectedSaleRow.item}
           sale={selectedSaleRow.sale}
+          receiptRows={selectedReceiptRows}
+          busy={busy}
+          busyLabel={busyLabel}
+          submit={submit}
           onEdit={() => setEditSaleId(selectedSaleRow.sale.id)}
           onClose={() => setSelectedSaleId("")}
         />
@@ -15390,18 +15403,136 @@ function SaleCard({
   );
 }
 
+type SaleDetailRow = { sale: InventorySaleDTO; item: InventoryItemDTO | null };
+
+function posReceiptMoneyFromNote(notes: string | null | undefined, label: "subtotal" | "tax" | "total") {
+  const match = notes?.match(new RegExp(`POS ${label}: \\$(\\d+(?:\\.\\d{1,2})?)\\.`));
+  return match ? roundPosMoney(Number(match[1])) : null;
+}
+
+function saleDiscountReasonLabel(sale: InventorySaleDTO) {
+  return sale.discountReason && sale.discountReason in POS_DISCOUNT_REASON_LABELS
+    ? POS_DISCOUNT_REASON_LABELS[sale.discountReason as keyof typeof POS_DISCOUNT_REASON_LABELS]
+    : sale.discountReason
+      ? formatStatus(sale.discountReason)
+      : null;
+}
+
+function salePaymentLabel(sale: InventorySaleDTO) {
+  return sale.paymentMethod && sale.paymentMethod in POS_PAYMENT_METHOD_LABELS
+    ? POS_PAYMENT_METHOD_LABELS[sale.paymentMethod as keyof typeof POS_PAYMENT_METHOD_LABELS]
+    : sale.paymentMethod
+      ? formatStatus(sale.paymentMethod)
+      : "Not saved";
+}
+
+function posReceiptTotals(rows: SaleDetailRow[]) {
+  const subtotal = roundPosMoney(rows.reduce((sum, row) => sum + row.sale.grossSale, 0));
+  const refundedAmount = roundPosMoney(rows.reduce((sum, row) => sum + row.sale.refundedAmount, 0));
+  const firstSale = rows[0]?.sale ?? null;
+  const tax = posReceiptMoneyFromNote(firstSale?.notes, "tax") ?? 0;
+  const total = posReceiptMoneyFromNote(firstSale?.notes, "total") ?? roundPosMoney(subtotal + tax);
+  return {
+    subtotal,
+    tax,
+    total,
+    refundedAmount,
+    netPaid: roundPosMoney(Math.max(0, total - refundedAmount)),
+    netRevenue: roundPosMoney(Math.max(0, subtotal - refundedAmount)),
+    netProfit: roundPosMoney(rows.reduce((sum, row) => sum + row.sale.activeProfitLoss, 0))
+  };
+}
+
+function posReceiptText(rows: SaleDetailRow[]) {
+  const firstSale = rows[0]?.sale;
+  if (!firstSale) return "";
+  const totals = posReceiptTotals(rows);
+  return [
+    "GameDayGrabs",
+    `Support: ${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`,
+    "",
+    `Sale reference: ${firstSale.saleReference ?? "Not saved"}`,
+    `Sale date: ${dateTime(firstSale.soldAt)}`,
+    `Payment method: ${salePaymentLabel(firstSale)}`,
+    firstSale.paymentReference ? `Payment reference: ${firstSale.paymentReference}` : null,
+    "",
+    "Items:",
+    ...rows.map(({ sale, item }) => {
+      const identifier = item?.upc ? `UPC ${item.upc}` : item?.sku ? `SKU ${item.sku}` : "UPC/SKU not saved";
+      const discountLabel = saleDiscountReasonLabel(sale);
+      const discountLine = sale.discountAmount && sale.discountAmount > 0
+        ? ` Original ${money(sale.originalUnitPrice ?? sale.soldPricePerItem)} / POS ${money(sale.adjustedUnitPrice ?? sale.soldPricePerItem)} / Discount ${money(sale.discountAmount)}${discountLabel ? ` (${discountLabel})` : ""}`
+        : "";
+      return `${sale.quantitySold} x ${sale.itemName} (${identifier}) @ ${money(sale.soldPricePerItem)} = ${money(sale.grossSale)}${discountLine}`;
+    }),
+    "",
+    `Subtotal: ${money(totals.subtotal)}`,
+    `Tax: ${money(totals.tax)}`,
+    `Total: ${money(totals.total)}`,
+    totals.refundedAmount > 0 ? `Refunded: ${money(totals.refundedAmount)}` : null,
+    `Net paid: ${money(totals.netPaid)}`
+  ].filter(Boolean).join("\n");
+}
+
+function escapeReceiptHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function SaleDetailsModal({
   item,
   sale,
+  receiptRows,
+  busy,
+  busyLabel,
+  submit,
   onEdit,
   onClose
 }: {
   item: InventoryItemDTO | null;
   sale: InventorySaleDTO;
+  receiptRows: SaleDetailRow[];
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
   onEdit: () => void;
   onClose: () => void;
 }) {
   const tone = saleLifecycleTone(sale);
+  const [receiptMessage, setReceiptMessage] = useState<string | null>(null);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundIdempotencyKey] = useState(() => `pos-refund:${Date.now()}:${Math.random().toString(36).slice(2)}`);
+  const isPosReceipt = sale.platform === "pos" && Boolean(sale.saleReference);
+  const rows = isPosReceipt && receiptRows.length ? receiptRows : [{ sale, item }];
+  const receiptTotals = posReceiptTotals(rows);
+  const receiptCopy = posReceiptText(rows);
+  const canRefundPosReceipt = isPosReceipt && receiptTotals.netRevenue > 0 && !rows.every((row) => row.sale.saleStatus === "refunded");
+  const refunding = busy || busyLabel === `Recording POS refund ${sale.saleReference}`;
+
+  async function copyReceipt() {
+    try {
+      await navigator.clipboard.writeText(receiptCopy);
+      setReceiptMessage("Receipt copied.");
+    } catch {
+      setReceiptMessage("Copy failed. Select and copy the receipt text manually.");
+    }
+  }
+
+  function printReceipt() {
+    const popup = window.open("", "_blank", "noopener,noreferrer,width=480,height=720");
+    if (!popup) {
+      setReceiptMessage("Popup blocked. Use Copy receipt instead.");
+      return;
+    }
+    popup.document.write(`<!doctype html><html><head><title>GameDayGrabs receipt ${escapeReceiptHtml(sale.saleReference ?? sale.id)}</title><style>body{font-family:Arial,sans-serif;padding:24px;line-height:1.45;color:#111827}pre{white-space:pre-wrap;font:inherit}</style></head><body><pre>${escapeReceiptHtml(receiptCopy)}</pre></body></html>`);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+  }
+
   return (
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-modal sale-details-modal" role="dialog" aria-modal="true" aria-label={`${sale.itemName} sale details`}>
@@ -15418,17 +15549,17 @@ function SaleDetailsModal({
         <div className="sale-detail-hero">
           <span>
             <small>Original Sale</small>
-            <strong>{money(sale.grossSale)}</strong>
+            <strong>{money(receiptTotals.subtotal)}</strong>
           </span>
           <span>
             <small>Net Revenue</small>
-            <strong>{money(sale.netRevenueAfterRefund)}</strong>
+            <strong>{money(receiptTotals.netRevenue)}</strong>
           </span>
           <span>
             <small>Net Profit / Loss</small>
             <strong className={tone === "good" ? "profit-good" : tone === "bad" ? "profit-bad" : "profit-watch"}>
-              {sale.activeProfitLoss >= 0 ? "+" : ""}
-              {money(sale.activeProfitLoss)}
+              {receiptTotals.netProfit >= 0 ? "+" : ""}
+              {money(receiptTotals.netProfit)}
             </strong>
           </span>
           <span className={`sale-status-badge ${tone}`}>{saleLifecycleLabel(sale)}</span>
@@ -15436,27 +15567,158 @@ function SaleDetailsModal({
         <div className="sale-detail-grid">
           <DetailStat label="Sale Date" value={dateTime(sale.soldAt)} />
           <DetailStat label="Platform" value={formatStatus(sale.platform || "Unknown platform")} />
-          <DetailStat label="Quantity Sold" value={String(sale.quantitySold)} />
+          <DetailStat label="Quantity Sold" value={String(rows.reduce((sum, row) => sum + row.sale.quantitySold, 0))} />
           <DetailStat label="Actual Sale Price" value={money(sale.actualSalePrice)} />
-          <DetailStat label="Original sale amount" value={money(sale.grossSale)} />
-          <DetailStat label="Refunded amount" value={money(sale.refundedAmount)} tone={sale.refundedAmount > 0 ? "bad" : "neutral"} />
-          <DetailStat label="Net revenue after refund" value={money(sale.netRevenueAfterRefund)} tone={saleCountsAsActive(sale) ? "good" : "neutral"} />
+          <DetailStat label="Original sale amount" value={money(receiptTotals.subtotal)} />
+          <DetailStat label="Refunded amount" value={money(receiptTotals.refundedAmount)} tone={receiptTotals.refundedAmount > 0 ? "bad" : "neutral"} />
+          <DetailStat label="Net revenue after refund" value={money(receiptTotals.netRevenue)} tone={receiptTotals.netRevenue > 0 ? "good" : "neutral"} />
           <DetailStat label="Refund status" value={sale.refundStatus ? formatStatus(sale.refundStatus) : saleLifecycleLabel(sale)} tone={tone === "bad" ? "bad" : "neutral"} />
+          <DetailStat label="Payment method" value={salePaymentLabel(sale)} />
+          <DetailStat label="Payment reference" value={sale.paymentReference || "Not saved"} />
+          <DetailStat label="Sale reference" value={sale.saleReference || "Not saved"} />
           <DetailStat label="Storefront order" value={sale.storefrontOrderNumber || "Not linked"} />
-          <DetailStat label="Cost Basis" value={sale.costBasis ? money(sale.costBasis) : "Cost not set"} />
+          <DetailStat label="Cost Basis" value={money(rows.reduce((sum, row) => sum + row.sale.costBasis, 0))} />
           <DetailStat label="Stock Lot Source" value={sale.stockLotSource} />
           <DetailStat label="Fees" value={money(sale.fees)} />
           <DetailStat label="Shipping" value={money(sale.shippingCost)} />
           <DetailStat label="ROI" value={percent(sale.roiPercent)} tone={tone === "bad" ? "bad" : tone === "good" ? "good" : "neutral"} />
         </div>
+        {rows.some((row) => row.sale.discountAmount && row.sale.discountAmount > 0) ? (
+          <section className="inventory-detail-section">
+            <h3>Discount details</h3>
+            <div className="sale-line-list">
+              {rows.map(({ sale: rowSale }) => {
+                const discountLabel = saleDiscountReasonLabel(rowSale);
+                return rowSale.discountAmount && rowSale.discountAmount > 0 ? (
+                  <div className="sale-detail-line" key={`discount-${rowSale.id}`}>
+                    <strong>{rowSale.itemName}</strong>
+                    <span>Original {money(rowSale.originalUnitPrice ?? rowSale.soldPricePerItem)} - adjusted {money(rowSale.adjustedUnitPrice ?? rowSale.soldPricePerItem)}</span>
+                    <span>Discount {money(rowSale.discountAmount)}{discountLabel ? ` - ${discountLabel}` : ""}</span>
+                  </div>
+                ) : null;
+              })}
+            </div>
+          </section>
+        ) : null}
+        {isPosReceipt ? (
+          <section className="inventory-detail-section">
+            <div className="sale-section-heading">
+              <h3>Receipt</h3>
+              <div className="sale-detail-actions">
+                <button className="mini-action" type="button" onClick={printReceipt}>
+                  <Printer size={14} />
+                  Print receipt
+                </button>
+                <button className="mini-action" type="button" onClick={copyReceipt}>
+                  <ClipboardList size={14} />
+                  Copy receipt
+                </button>
+              </div>
+            </div>
+            <div className="sale-line-list">
+              {rows.map(({ sale: rowSale, item: rowItem }) => (
+                <div className="sale-detail-line" key={rowSale.id}>
+                  <strong>{rowSale.itemName}</strong>
+                  <span>{saleIdentifier(rowItem)} - Qty {rowSale.quantitySold} - {money(rowSale.soldPricePerItem)} each</span>
+                  <span>Line total {money(rowSale.grossSale)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="sale-receipt-totals">
+              <span>Subtotal <strong>{money(receiptTotals.subtotal)}</strong></span>
+              <span>Tax <strong>{money(receiptTotals.tax)}</strong></span>
+              <span>Total <strong>{money(receiptTotals.total)}</strong></span>
+              <span>Refunded <strong>{money(receiptTotals.refundedAmount)}</strong></span>
+              <span>Net paid <strong>{money(receiptTotals.netPaid)}</strong></span>
+            </div>
+            {receiptMessage ? <p className="form-success">{receiptMessage}</p> : null}
+          </section>
+        ) : null}
         <section className="inventory-detail-section">
           <h3>Notes</h3>
           <div className="detail-line-list">
             <span>{sale.notes || "No notes saved."}</span>
             <span>{item?.category ? `Category: ${formatStatus(item.category)}` : "Category not saved"}</span>
             <span>{item?.source ? `Original source: ${item.source}` : "Original source not saved"}</span>
+            {sale.refundReason ? <span>Refund reason: {formatStatus(sale.refundReason)}</span> : null}
+            {sale.refundNote ? <span>Refund note saved.</span> : null}
           </div>
         </section>
+        {isPosReceipt ? (
+          <section className="inventory-detail-section refund-panel">
+            <div className="sale-section-heading">
+              <div>
+                <h3>Manual POS refund</h3>
+                <p>Manual refund records the refund in admin. It does not send money through Stripe or Zelle automatically.</p>
+              </div>
+              <button className="mini-action" type="button" disabled={!canRefundPosReceipt || refunding} onClick={() => setRefundOpen((current) => !current)}>
+                <RotateCcw size={14} />
+                {canRefundPosReceipt ? "Refund" : "Refunded"}
+              </button>
+            </div>
+            {refundOpen && canRefundPosReceipt ? (
+              <form
+                className="record-sale-form pos-refund-form"
+                onSubmit={(event) =>
+                  submit(
+                    event,
+                    `Recording POS refund ${sale.saleReference}`,
+                    (form) =>
+                      requestJson(`/api/radar/pos/sales/${encodeURIComponent(sale.saleReference ?? "")}/refund`, {
+                        method: "POST",
+                        body: JSON.stringify(formJson(form))
+                      }),
+                    {
+                      reset: false,
+                      success: "Manual POS refund recorded",
+                      onSuccess: () => {
+                        setRefundOpen(false);
+                        onClose();
+                      }
+                    }
+                  )
+                }
+              >
+                <input type="hidden" name="idempotencyKey" value={refundIdempotencyKey} />
+                <input type="hidden" name="refundType" value="full" />
+                <input type="hidden" name="restoreInventory" value="false" />
+                <div className="form-grid compact">
+                  <SelectInput
+                    name="reason"
+                    label="Refund reason"
+                    required
+                    defaultValue=""
+                    options={[
+                      { value: "", label: "Select reason" },
+                      ...POS_REFUND_REASON_VALUES.map((reason) => ({ value: reason, label: POS_REFUND_REASON_LABELS[reason] }))
+                    ]}
+                  />
+                  <label className="checkbox-card">
+                    <input name="restoreInventory" type="checkbox" value="true" defaultChecked />
+                    <span>
+                      <strong>Restore inventory</strong>
+                      <small>Add returned units back to inventory with a private audit note.</small>
+                    </span>
+                  </label>
+                </div>
+                <TextareaInput name="note" label="Refund note" placeholder="Optional private context. Do not enter payment secrets." />
+                <div className="sale-receipt-totals">
+                  <span>Refund amount <strong>{money(receiptTotals.netRevenue)}</strong></span>
+                  <span>Items to restore <strong>{rows.reduce((sum, row) => sum + row.sale.quantitySold - row.sale.refundRestockedQuantity, 0)}</strong></span>
+                </div>
+                <div className="inventory-edit-actions">
+                  <button className="secondary-action" type="button" onClick={() => setRefundOpen(false)}>
+                    Cancel
+                  </button>
+                  <button className="mini-action danger" type="submit" disabled={refunding}>
+                    <RotateCcw size={14} />
+                    Record Refund
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </section>
+        ) : null}
         <div className="inventory-edit-actions">
           <button className="mini-action" type="button" onClick={onEdit}>
             <Settings size={14} />

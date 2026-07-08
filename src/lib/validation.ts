@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { POS_DISCOUNT_REASON_VALUES, POS_PAYMENT_METHOD_VALUES } from "@/lib/pos";
+import { POS_DISCOUNT_REASON_VALUES, POS_PAYMENT_METHOD_VALUES, POS_REFUND_REASON_VALUES } from "@/lib/pos";
 
 export const prioritySchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
 export const ratingSchema = z.enum(["BUY", "WATCH", "SKIP", "AVOID"]);
@@ -956,6 +956,14 @@ export const posSaleCreateSchema = z.object({
   })).min(1).max(100),
   paymentMethod: z.enum(POS_PAYMENT_METHOD_VALUES),
   paymentReference: optionalTrimmed
+});
+
+export const posSaleRefundSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
+  refundType: z.enum(["full"]).default("full"),
+  reason: z.enum(POS_REFUND_REASON_VALUES),
+  note: optionalTrimmed,
+  restoreInventory: checkboxBoolean.default(true)
 });
 
 export const storefrontCartItemSchema = z.object({

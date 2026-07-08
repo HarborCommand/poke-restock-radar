@@ -5732,6 +5732,70 @@ textarea {
   gap: 8px;
 }
 
+.sale-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sale-section-heading h3,
+.sale-section-heading p {
+  margin: 0;
+}
+
+.sale-section-heading p {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.sale-detail-actions,
+.sale-receipt-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sale-line-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sale-detail-line {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(170, 255, 219, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+}
+
+.sale-detail-line span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.sale-receipt-totals {
+  border: 1px solid rgba(170, 255, 219, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+}
+
+.sale-receipt-totals span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.sale-receipt-totals strong {
+  color: var(--text);
+}
+
+.pos-refund-form {
+  margin-top: 12px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -22071,10 +22135,60 @@ body .inventory-edit-actions .primary-action {
 }
 
 body .inventory-edit-actions .mini-action.danger,
-body .inventory-edit-actions .danger {
+body .inventory-edit-actions .danger,
+body .inventory-edit-actions .danger-action {
   border-color: #fecaca !important;
   background: #fff1f2 !important;
   color: #b91c1c !important;
+}
+
+body .sale-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+body .sale-section-heading h3,
+body .sale-section-heading p {
+  margin: 0;
+}
+
+body .sale-section-heading p,
+body .sale-detail-line span,
+body .sale-receipt-totals span {
+  color: #64748b !important;
+}
+
+body .sale-detail-actions,
+body .sale-receipt-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body .sale-line-list {
+  display: grid;
+  gap: 8px;
+}
+
+body .sale-detail-line,
+body .sale-receipt-totals {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 14px;
+  background: #f8fafc !important;
+  padding: 10px;
+}
+
+body .sale-detail-line {
+  display: grid;
+  gap: 3px;
+}
+
+body .sale-detail-line strong,
+body .sale-receipt-totals strong {
+  color: #0f172a !important;
 }
 
 body .cancel-refund-success-state,
@@ -22145,9 +22259,15 @@ body .inventory-modal textarea:focus {
 
   body .inventory-edit-actions .mini-action,
   body .inventory-edit-actions .primary-action,
+  body .inventory-edit-actions .danger-action,
   body .inventory-edit-actions a.mini-action {
     width: 100%;
     justify-content: center;
+  }
+
+  body .sale-section-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   body .product-image-manager-head .chip {

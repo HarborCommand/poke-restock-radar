@@ -18,8 +18,10 @@ import {
   isPosSellableInventoryItem,
   normalizePosDiscountReason,
   normalizePosPaymentMethod,
+  normalizePosRefundReason,
   posDiscountReasonLabel,
   posPaymentMethodLabel,
+  posRefundReasonLabel,
   posUnitPrice,
   roundPosMoney,
   type PosDiscountReason
@@ -1798,25 +1800,35 @@ function inventorySaleToDTO(
   stockLotSource = "FIFO stock lots"
 ): InventorySaleDTO {
   const storefrontOrderNumber = storefrontOrderNumberFromSaleNotes(sale.notes);
+  const refundedAmount = roundPosMoney(Math.min(Math.max(0, sale.refundedAmount ?? 0), Math.max(0, sale.grossSale)));
+  const saleStatus: InventorySaleDTO["saleStatus"] =
+    refundedAmount >= sale.grossSale && refundedAmount > 0
+      ? "refunded"
+      : refundedAmount > 0
+        ? "partially_refunded"
+        : "active";
+  const activeGrossSale = saleStatus === "refunded" ? 0 : roundPosMoney(Math.max(0, sale.grossSale - refundedAmount));
+  const activeNetSale = saleStatus === "refunded" ? 0 : roundPosMoney(Math.max(0, sale.netSale - refundedAmount));
+  const activeProfitLoss = saleStatus === "refunded" ? 0 : roundPosMoney(activeNetSale - sale.costBasis);
   return {
     id: sale.id,
     inventoryItemId: sale.inventoryItemId,
     itemName,
     quantitySold: sale.quantitySold,
-    activeQuantitySold: sale.quantitySold,
+    activeQuantitySold: saleStatus === "refunded" ? 0 : sale.quantitySold,
     actualSalePrice: sale.soldPricePerItem,
     soldPricePerItem: sale.soldPricePerItem,
     grossSale: sale.grossSale,
-    activeGrossSale: sale.grossSale,
+    activeGrossSale,
     platform: sale.platform,
     fees: sale.fees,
     shippingCost: sale.shippingCost,
     netSale: sale.netSale,
-    activeNetSale: sale.netSale,
+    activeNetSale,
     costBasis: sale.costBasis,
     stockLotSource,
     profitLoss: sale.profitLoss,
-    activeProfitLoss: sale.profitLoss,
+    activeProfitLoss,
     roiPercent: sale.roiPercent,
     saleReference: sale.saleReference,
     paymentMethod: sale.paymentMethod,
@@ -1826,12 +1838,16 @@ function inventorySaleToDTO(
     discountAmount: sale.discountAmount,
     discountReason: sale.discountReason,
     discountNote: sale.discountNote,
-    saleStatus: "active",
+    saleStatus,
     storefrontOrderNumber,
     storefrontOrderStatus: null,
-    refundStatus: null,
-    refundedAmount: 0,
-    netRevenueAfterRefund: sale.grossSale,
+    refundStatus: sale.refundStatus,
+    refundedAmount,
+    refundedAt: sale.refundedAt?.toISOString() ?? null,
+    refundReason: sale.refundReason,
+    refundNote: sale.refundNote,
+    refundRestockedQuantity: sale.refundRestockedQuantity ?? 0,
+    netRevenueAfterRefund: activeGrossSale,
     soldAt: sale.soldAt.toISOString(),
     notes: sale.notes,
     createdAt: sale.createdAt.toISOString()
@@ -5836,12 +5852,21 @@ async function recalculateInventorySalesAndLots(itemId: string) {
   }
 
   const totalSold = sortedSales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+  const totalOnHand = [...virtualRemaining.values()].reduce((sum, quantity) => sum + quantity, 0);
   const latestSale = sortedSales.at(-1);
+  const listingStatus =
+    totalSold >= item.quantity && item.quantity > 0 && totalOnHand <= 0
+      ? "sold"
+      : item.listingStatus === "sold" && totalOnHand > 0
+        ? "held"
+        : item.listingStatus === "not_listed" && totalSold > 0
+          ? "held"
+          : item.listingStatus;
   operations.push(
     prisma.inventoryItem.update({
       where: { id: item.id },
       data: {
-        listingStatus: totalSold >= item.quantity && item.quantity > 0 ? "sold" : item.listingStatus === "not_listed" && totalSold > 0 ? "held" : item.listingStatus,
+        listingStatus,
         soldPrice: latestSale?.soldPricePerItem ?? item.soldPrice,
         soldAt: latestSale?.soldAt ?? item.soldAt,
         buyerPlatform: latestSale?.platform ?? item.buyerPlatform,
@@ -7061,6 +7086,150 @@ export async function createPosSale(
   }
 
   return receipt;
+}
+
+function posRefundLineNote(input: {
+  saleReference: string;
+  reasonLabel: string;
+  refundedAmount: number;
+  restoreInventory: boolean;
+  restoredQuantity: number;
+  note: string | null;
+}) {
+  return [
+    `Manual POS refund recorded for ${input.saleReference}.`,
+    `Refund reason: ${input.reasonLabel}.`,
+    `Refund amount: $${input.refundedAmount.toFixed(2)}.`,
+    input.restoreInventory
+      ? `Inventory restored: ${input.restoredQuantity}.`
+      : "Inventory restored: no.",
+    input.note ? `Refund note: ${input.note}` : null,
+    "Manual refund record only. No Stripe, Zelle, or payment-provider refund was sent."
+  ].filter(Boolean).join("\n");
+}
+
+export async function refundPosSale(
+  currentUser: SessionUser,
+  saleReference: string,
+  input: {
+    idempotencyKey: string;
+    refundType: "full";
+    reason: string;
+    note?: string | null;
+    restoreInventory: boolean;
+  }
+): Promise<PosSaleReceiptDTO> {
+  const normalizedReference = saleReference.trim();
+  if (!normalizedReference) throw new Error("Sale reference is required.");
+
+  const refundReason = normalizePosRefundReason(input.reason);
+  if (!refundReason) throw new Error("Select a valid POS refund reason.");
+  const reasonLabel = posRefundReasonLabel(refundReason);
+  const idempotencyKey = input.idempotencyKey.trim();
+  const note = input.note?.trim() || null;
+  const refundedAt = new Date();
+
+  const existingReceipt = await receiptForExistingPosSale(prisma, currentUser, normalizedReference);
+  if (!existingReceipt) throw new Error("POS sale not found.");
+
+  const sales = await prisma.inventorySale.findMany({
+    where: {
+      userId: currentUser.id,
+      saleReference: normalizedReference,
+      platform: "pos"
+    },
+    include: { inventoryItem: { include: inventoryItemInclude } },
+    orderBy: { createdAt: "asc" }
+  });
+  if (!sales.length) throw new Error("POS sale not found.");
+
+  const alreadyCompletedWithSameKey = sales.every((sale) => sale.refundStatus === "refunded" && sale.refundIdempotencyKey === idempotencyKey);
+  if (alreadyCompletedWithSameKey) return existingReceipt;
+  if (sales.some((sale) => sale.refundStatus === "refunded" || (sale.refundedAmount ?? 0) >= sale.grossSale)) {
+    throw new Error("This POS sale has already been fully refunded.");
+  }
+
+  const remainingRefundable = roundPosMoney(
+    sales.reduce((sum, sale) => sum + Math.max(0, sale.grossSale - (sale.refundedAmount ?? 0)), 0)
+  );
+  if (remainingRefundable <= 0) throw new Error("This POS sale has no remaining refundable amount.");
+
+  const itemIds = Array.from(new Set(sales.map((sale) => sale.inventoryItemId)));
+  await prisma.$transaction(async (tx) => {
+    const lockedSales = await tx.inventorySale.findMany({
+      where: {
+        userId: currentUser.id,
+        saleReference: normalizedReference,
+        platform: "pos"
+      },
+      include: { inventoryItem: { include: inventoryItemInclude } },
+      orderBy: { createdAt: "asc" }
+    });
+    if (!lockedSales.length) throw new Error("POS sale not found.");
+
+    if (lockedSales.every((sale) => sale.refundStatus === "refunded" && sale.refundIdempotencyKey === idempotencyKey)) return;
+    if (lockedSales.some((sale) => sale.refundStatus === "refunded" || (sale.refundedAmount ?? 0) >= sale.grossSale)) {
+      throw new Error("This POS sale has already been fully refunded.");
+    }
+
+    for (const sale of lockedSales) {
+      const remainingLineRefund = roundPosMoney(Math.max(0, sale.grossSale - (sale.refundedAmount ?? 0)));
+      if (remainingLineRefund <= 0) continue;
+      const restoredQuantity = input.restoreInventory ? Math.max(0, sale.quantitySold - (sale.refundRestockedQuantity ?? 0)) : 0;
+      const refundAuditNote = posRefundLineNote({
+        saleReference: normalizedReference,
+        reasonLabel,
+        refundedAmount: remainingLineRefund,
+        restoreInventory: input.restoreInventory,
+        restoredQuantity,
+        note
+      });
+
+      await tx.inventorySale.update({
+        where: { id: sale.id },
+        data: {
+          refundStatus: "refunded",
+          refundedAmount: roundPosMoney((sale.refundedAmount ?? 0) + remainingLineRefund),
+          refundedAt,
+          refundReason,
+          refundNote: note,
+          refundIdempotencyKey: idempotencyKey,
+          refundRestockedQuantity: (sale.refundRestockedQuantity ?? 0) + restoredQuantity,
+          notes: [sale.notes, refundAuditNote].filter(Boolean).join("\n\n")
+        }
+      });
+
+      if (restoredQuantity > 0) {
+        const unitCost = sale.quantitySold > 0 ? roundPosMoney(sale.costBasis / sale.quantitySold) : 0;
+        await tx.inventoryStockLot.create({
+          data: {
+            inventoryItemId: sale.inventoryItemId,
+            purchasedAt: refundedAt,
+            source: "POS refund return",
+            quantity: restoredQuantity,
+            costPerUnit: unitCost,
+            totalCost: roundPosMoney(unitCost * restoredQuantity),
+            remainingQuantity: restoredQuantity,
+            notes: [
+              `Returned from POS refund ${normalizedReference}.`,
+              `Original sale line: ${sale.inventoryItem.itemName}.`,
+              `Reason: ${reasonLabel}.`,
+              note ? `Note: ${note}` : null
+            ].filter(Boolean).join("\n"),
+            paymentMethod: sale.paymentMethod
+          }
+        });
+      }
+    }
+  });
+
+  for (const itemId of itemIds) {
+    await syncInventoryItemTotalsFromLots(itemId);
+    await recalculateInventorySalesAndLots(itemId);
+    await syncInventoryStoreStatusAfterStockChange(itemId);
+  }
+
+  return (await receiptForExistingPosSale(prisma, currentUser, normalizedReference)) ?? existingReceipt;
 }
 
 export async function updateInventorySale(
