@@ -1769,6 +1769,7 @@ export function RadarApp() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const busyRequestRef = useRef(false);
 
   const busy = busyLabel !== null;
   const isAdmin = user?.role === "ADMIN";
@@ -1922,6 +1923,8 @@ export function RadarApp() {
 
   const submit: SubmitHandler = async (event, label, run, options = {}) => {
     event.preventDefault();
+    if (busyRequestRef.current) return;
+    busyRequestRef.current = true;
     const form = event.currentTarget;
     setBusyLabel(label);
     setError(null);
@@ -1944,12 +1947,15 @@ export function RadarApp() {
       options.onError?.(message);
       showToast({ type: "error", message });
     } finally {
+      busyRequestRef.current = false;
       setBusyLabel(null);
     }
   };
 
   const runAction: ActionHandler = async (label, run, options = {}) => {
+    if (busyRequestRef.current) return;
     if (options.confirm && !window.confirm(options.confirm)) return;
+    busyRequestRef.current = true;
     setBusyLabel(label);
     setError(null);
     try {
@@ -1962,6 +1968,7 @@ export function RadarApp() {
       setError(message);
       showToast({ type: "error", message });
     } finally {
+      busyRequestRef.current = false;
       setBusyLabel(null);
     }
   };
@@ -10108,19 +10115,6 @@ function ProductShippingEditorModal({
             )
           }
         >
-          <input type="hidden" name="publishToStore" value={item.publishToStore ? "true" : "false"} />
-          <input type="hidden" name="publicSlug" value={item.publicSlug ?? ""} />
-          <input type="hidden" name="publicTitle" value={item.publicTitle || item.itemName} />
-          <input type="hidden" name="publicDescription" value={item.publicDescription ?? ""} />
-          <input type="hidden" name="publicPrice" value={item.publicPrice ?? ""} />
-          <input type="hidden" name="compareAtPrice" value={item.compareAtPrice ?? ""} />
-          <input type="hidden" name="availableForSale" value={item.availableForSale ?? ""} />
-          <input type="hidden" name="purchaseLimitEnabled" value={purchaseLimitActive ? "true" : "false"} />
-          <input type="hidden" name="maxQuantityPerOrder" value={purchaseLimitActive ? item.maxQuantityPerOrder : ""} />
-          <input type="hidden" name="storeStatus" value={item.storeStatus} />
-          <input type="hidden" name="storefrontCategory" value={item.storefrontCategory ?? ""} />
-          <input type="hidden" name="storefrontTags" value={item.storefrontTags.join(", ")} />
-
           <section className="shipping-editor-summary">
             <ProductImagePreview imageUrl={item.publicImages[0] ?? item.imageUrl} itemName={item.itemName} />
             <div>
@@ -15056,6 +15050,7 @@ function StoreListingModal({
             <h3>Storefront visibility</h3>
             <div className="form-grid compact">
               <label className="checkbox-label">
+                <input name="publishToStore" type="hidden" value="false" />
                 <input
                   name="publishToStore"
                   type="checkbox"
@@ -15134,6 +15129,7 @@ function StoreListingModal({
               <TextInput name="compareAtPrice" label="Compare at price" type="number" min="0" step="0.01" defaultValue={item.compareAtPrice ?? ""} />
               <TextInput name="availableForSale" label="Available for sale" type="number" min="0" max={String(Math.max(0, item.quantityOwned))} step="1" defaultValue={availableForSale} />
               <label className="shipping-toggle-card wide-field">
+                <input name="purchaseLimitEnabled" type="hidden" value="false" />
                 <input name="purchaseLimitEnabled" type="checkbox" value="true" defaultChecked={purchaseLimitActive} />
                 <span>
                   <strong>Enable purchase limit</strong>
@@ -15260,6 +15256,7 @@ function StoreListingModal({
                 </div>
                 <div className="shipping-option-grid">
                   <label className="shipping-toggle-card">
+                    <input name="shippingAvailable" type="hidden" value="false" />
                     <input name="shippingAvailable" type="checkbox" value="true" defaultChecked={item.shippingAvailable} />
                     <span>
                       <strong>Shipping available</strong>
@@ -15267,6 +15264,7 @@ function StoreListingModal({
                     </span>
                   </label>
                   <label className="shipping-toggle-card">
+                    <input name="localPickupAvailable" type="hidden" value="false" />
                     <input name="localPickupAvailable" type="checkbox" value="true" defaultChecked={item.localPickupAvailable} />
                     <span>
                       <strong>Local pickup eligible</strong>
@@ -15274,6 +15272,7 @@ function StoreListingModal({
                     </span>
                   </label>
                   <label className="shipping-toggle-card">
+                    <input name="freeShippingEligible" type="hidden" value="false" />
                     <input name="freeShippingEligible" type="checkbox" value="true" defaultChecked={item.freeShippingEligible} />
                     <span>
                       <strong>Free shipping eligible</strong>
@@ -15281,6 +15280,7 @@ function StoreListingModal({
                     </span>
                   </label>
                   <label className="shipping-toggle-card">
+                    <input name="requiresBox" type="hidden" value="false" />
                     <input name="requiresBox" type="checkbox" value="true" defaultChecked={item.requiresBox} />
                     <span>
                       <strong>Requires box</strong>
@@ -15288,6 +15288,7 @@ function StoreListingModal({
                     </span>
                   </label>
                   <label className="shipping-toggle-card">
+                    <input name="insuranceRecommended" type="hidden" value="false" />
                     <input name="insuranceRecommended" type="checkbox" value="true" defaultChecked={item.insuranceRecommended} />
                     <span>
                       <strong>Insurance recommended</strong>

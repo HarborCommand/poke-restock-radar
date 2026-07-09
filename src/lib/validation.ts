@@ -831,6 +831,39 @@ export const inventoryStoreListingSchema = z.object({
   };
 });
 
+export const inventoryStoreListingUpdateSchema = z.object({
+  publishToStore: checkboxBoolean.optional(),
+  publicSlug: optionalTrimmed,
+  publicTitle: z.string().trim().min(2).max(180).optional(),
+  publicDescription: z.string().trim().max(4000).optional(),
+  publicPrice: optionalMoney,
+  compareAtPrice: optionalMoney,
+  publicImages: publicImageUrlListSchema("publicImages"),
+  availableForSale: z.coerce.number().int().min(0).max(10000).optional(),
+  purchaseLimitEnabled: checkboxBoolean.optional(),
+  maxQuantityPerOrder: optionalPurchaseLimit,
+  shippingProfile: z.string().trim().min(1).max(80).optional(),
+  packageWeightOz: optionalProductPackageWeightOz,
+  packageLengthIn: optionalProductPackageDimensionIn,
+  packageWidthIn: optionalProductPackageDimensionIn,
+  packageHeightIn: optionalProductPackageDimensionIn,
+  shippingMetadataSource: shippingMetadataSourceSchema,
+  freeShippingEligible: checkboxBoolean.optional(),
+  requiresBox: checkboxBoolean.optional(),
+  insuranceRecommended: checkboxBoolean.optional(),
+  storeStatus: storeStatusSchema.optional(),
+  localPickupAvailable: checkboxBooleanDefaultTrue.optional(),
+  shippingAvailable: checkboxBooleanDefaultTrue.optional(),
+  storefrontCategory: optionalTrimmed,
+  storefrontTags: z.union([z.array(z.string().trim().min(1).max(80)), z.string().trim().max(500)]).optional()
+}).transform((input) => {
+  const hasAnyProductPackageField = Boolean(input.packageWeightOz || input.packageLengthIn || input.packageWidthIn || input.packageHeightIn);
+  return {
+    ...input,
+    shippingMetadataSource: hasAnyProductPackageField ? input.shippingMetadataSource ?? "estimated" : null
+  };
+});
+
 export const inventoryBulkStorePublishSchema = z.object({
   mode: z.enum(["selected", "eligible"]),
   itemIds: z.array(z.string().trim().min(1)).max(250).optional()

@@ -14,6 +14,7 @@ import {
   inventoryProductImageUpdateSchema,
   inventoryStockLotUpdateSchema,
   inventoryStoreListingSchema,
+  inventoryStoreListingUpdateSchema,
   sanitizeInventoryImagePayload,
   sanitizePublicImageUrl
 } from "../src/lib/validation";
@@ -436,18 +437,24 @@ test("admin inventory can find products that need shipping profiles", () => {
 test("store listing save path persists shipping metadata without stock quantity mutation", () => {
   const appSource = readFileSync("src/components/RadarApp.tsx", "utf8");
   const validation = readFileSync("src/lib/validation.ts", "utf8");
+  const route = readFileSync("src/app/api/radar/inventory/[itemId]/store-listing/route.ts", "utf8");
   const storefront = readFileSync("src/lib/storefront.ts", "utf8");
   const listingModal = sourceSlice(appSource, "function StoreListingModal", "function InventoryMarketHero");
   const listingSchema = sourceSlice(validation, "export const inventoryStoreListingSchema", "export const inventoryBulkStorePublishSchema");
+  const listingUpdateSchema = sourceSlice(validation, "export const inventoryStoreListingUpdateSchema", "export const inventoryBulkStorePublishSchema");
   const updateListing = sourceSlice(storefront, "export async function updateInventoryStoreListing", "export async function bulkPublishInventoryStoreListings");
 
   assert.match(listingModal, /body: JSON\.stringify\(formJson\(form\)\)/);
+  assert.match(route, /inventoryStoreListingUpdateSchema/);
+  assert.match(listingUpdateSchema, /publishToStore: checkboxBoolean\.optional\(\)/);
+  assert.match(listingUpdateSchema, /storeStatus: storeStatusSchema\.optional\(\)/);
+  assert.match(listingUpdateSchema, /publicPrice: optionalMoney/);
   for (const field of ["purchaseLimitEnabled", "maxQuantityPerOrder", "packageWeightOz", "packageLengthIn", "packageWidthIn", "packageHeightIn", "shippingMetadataSource", "freeShippingEligible", "requiresBox", "insuranceRecommended"]) {
     assert.match(listingSchema, new RegExp(`${field}:`), `schema should accept ${field}`);
     if (field === "maxQuantityPerOrder") {
-      assert.match(updateListing, /maxQuantityPerOrder,/);
+      assert.match(updateListing, /maxQuantityPerOrder: input\.purchaseLimitEnabled !== undefined \|\| input\.maxQuantityPerOrder !== undefined \? maxQuantityPerOrder : undefined/);
     } else if (field === "purchaseLimitEnabled") {
-      assert.match(updateListing, /purchaseLimitEnabled,/);
+      assert.match(updateListing, /purchaseLimitEnabled:/);
     } else {
       assert.match(updateListing, new RegExp(`${field}: input\\.${field}`), `save path should persist ${field}`);
     }
@@ -455,8 +462,13 @@ test("store listing save path persists shipping metadata without stock quantity 
   assert.match(listingModal, /name="purchaseLimitEnabled"/);
   assert.match(listingModal, /Enable purchase limit/);
   assert.match(listingModal, /Entering a max quantity enables the limit/);
-  assert.match(updateListing, /const purchaseLimitEnabled = Boolean\(input\.purchaseLimitEnabled \|\| enteredPurchaseLimit !== null\)/);
+  assert.match(updateListing, /input\.purchaseLimitEnabled \?\? \(input\.maxQuantityPerOrder !== undefined \? enteredPurchaseLimit !== null : item\.purchaseLimitEnabled\)/);
   assert.match(updateListing, /: DEFAULT_STOREFRONT_PURCHASE_LIMIT/);
+  assert.match(updateListing, /publishToStore = input\.publishToStore \?\? item\.publishToStore/);
+  assert.match(updateListing, /publicPrice = input\.publicPrice \?\? item\.publicPrice/);
+  assert.match(updateListing, /publicStatusTouched/);
+  assert.match(updateListing, /publicPrice: input\.publicPrice/);
+  assert.match(updateListing, /storeStatus: input\.storeStatus !== undefined \|\| input\.publishToStore !== undefined \|\| input\.availableForSale !== undefined \? normalizedStoreStatus : undefined/);
 
   const parsed = inventoryStoreListingSchema.parse({
     publishToStore: true,
@@ -527,6 +539,29 @@ test("store listing save path persists shipping metadata without stock quantity 
     storeStatus: "draft"
   });
   assert.equal(defaultSource.shippingMetadataSource, "estimated");
+
+  const partialShippingUpdate = inventoryStoreListingUpdateSchema.parse({
+    shippingProfile: "small_box",
+    packageWeightOz: "12",
+    packageLengthIn: "10",
+    packageWidthIn: "7",
+    packageHeightIn: "4"
+  });
+  assert.equal(partialShippingUpdate.publishToStore, undefined);
+  assert.equal(partialShippingUpdate.storeStatus, undefined);
+  assert.equal(partialShippingUpdate.publicPrice, undefined);
+  assert.equal(partialShippingUpdate.shippingMetadataSource, "estimated");
+
+  const partialBooleanOffUpdate = inventoryStoreListingUpdateSchema.parse({
+    publishToStore: "false",
+    purchaseLimitEnabled: "false",
+    shippingAvailable: "false",
+    localPickupAvailable: "false"
+  });
+  assert.equal(partialBooleanOffUpdate.publishToStore, false);
+  assert.equal(partialBooleanOffUpdate.purchaseLimitEnabled, false);
+  assert.equal(partialBooleanOffUpdate.shippingAvailable, false);
+  assert.equal(partialBooleanOffUpdate.localPickupAvailable, false);
 
   assert.throws(
     () =>
@@ -629,7 +664,7 @@ test("admin inventory storefront availability is capped by on-hand stock", () =>
   assert.match(updateListing, /const onHandQuantity = Math\.max\(0, quantityOwned\(item\)\)/);
   assert.match(updateListing, /const requestedAvailableForSale/);
   assert.match(updateListing, /const availableForSale = Math\.min\(onHandQuantity, requestedAvailableForSale\)/);
-  assert.match(updateListing, /input\.publishToStore && availableForSale <= 0 \? "sold_out"/);
+  assert.match(updateListing, /publishToStore && availableForSale <= 0 \? "sold_out"/);
   assert.match(service, /async function syncInventoryStoreStatusAfterStockChange/);
   assert.match(service, /availableOnline > 0 && item\.storeStatus === "sold_out"/);
   assert.match(service, /onHand <= 0 && item\.storeStatus === "active"/);
