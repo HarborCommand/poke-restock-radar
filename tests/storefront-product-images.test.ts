@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { syncedProductImageFields } from "../src/lib/product-images";
 import { isPublicStorefrontListingSellable, isPublicStorefrontListingVisible, publicProductToDTO } from "../src/lib/storefront";
+import { storefrontProductFeedXml } from "../src/lib/storefront-product-feed";
 
 function storefrontItem(overrides: Record<string, unknown> = {}) {
   return {
@@ -108,8 +110,7 @@ test("storefront DTO uses saved gallery images as the public image source of tru
   assert.ok(dto);
   assert.equal(dto.primaryImageUrl, "https://abc.public.blob.vercel-storage.com/clean-uploaded-product.webp");
   assert.deepEqual(dto.images, [
-    "https://abc.public.blob.vercel-storage.com/clean-uploaded-product.webp",
-    "https://cdn.example.com/legacy-product.webp"
+    "https://abc.public.blob.vercel-storage.com/clean-uploaded-product.webp"
   ]);
 });
 
@@ -127,6 +128,82 @@ test("storefront DTO uses clean image candidates instead of low-resolution or pr
   assert.ok(dto);
   assert.equal(dto.primaryImageUrl, "https://cdn.example.com/pokemon-world-championship-deck-1280.webp");
   assert.deepEqual(dto.images, ["https://cdn.example.com/pokemon-world-championship-deck-1280.webp"]);
+});
+
+test("deleted product image is absent from storefront DTO and product feed after image sync", () => {
+  const deletedUrl = "https://cdn.example.com/deleted-wrong-image.webp";
+  const replacementUrl = "https://cdn.example.com/replacement-image.webp";
+  const synced = syncedProductImageFields(
+    {
+      imageUrl: deletedUrl,
+      publicImages: JSON.stringify([deletedUrl, replacementUrl]),
+      productImages: [{ url: replacementUrl, isPrimary: true, sortOrder: 0, showInStore: true }]
+    },
+    { removedUrls: [deletedUrl] }
+  );
+  const dto = publicProductToDTO(
+    storefrontItem({
+      imageUrl: synced.imageUrl,
+      publicImages: JSON.stringify(synced.publicImages),
+      productImages: [{ url: replacementUrl, isPrimary: true, sortOrder: 0, showInStore: true }],
+      upc: "196214155787"
+    })
+  );
+
+  assert.ok(dto);
+  assert.equal(dto.primaryImageUrl, replacementUrl);
+  assert.deepEqual(dto.images, [replacementUrl]);
+  assert.doesNotMatch(JSON.stringify(dto), /deleted-wrong-image/);
+
+  const feed = storefrontProductFeedXml([dto]);
+  assert.match(feed, /replacement-image\.webp/);
+  assert.doesNotMatch(feed, /deleted-wrong-image/);
+});
+
+test("stale legacy product images do not reappear when gallery rows already exist", () => {
+  const deletedUrl = "https://cdn.example.com/already-deleted-legacy-image.webp";
+  const replacementUrl = "https://cdn.example.com/current-gallery-image.webp";
+  const dto = publicProductToDTO(
+    storefrontItem({
+      imageUrl: deletedUrl,
+      publicImages: JSON.stringify([deletedUrl, replacementUrl]),
+      productImages: [{ url: replacementUrl, isPrimary: true, sortOrder: 0, showInStore: true }],
+      upc: "196214155787"
+    })
+  );
+
+  assert.ok(dto);
+  assert.equal(dto.primaryImageUrl, replacementUrl);
+  assert.deepEqual(dto.images, [replacementUrl]);
+  assert.doesNotMatch(JSON.stringify(dto), /already-deleted-legacy-image/);
+
+  const feed = storefrontProductFeedXml([dto]);
+  assert.match(feed, /current-gallery-image\.webp/);
+  assert.doesNotMatch(feed, /already-deleted-legacy-image/);
+});
+
+test("storefront DTO shows no image when the only product image was deleted", () => {
+  const deletedUrl = "https://cdn.example.com/only-deleted-image.webp";
+  const synced = syncedProductImageFields(
+    {
+      imageUrl: deletedUrl,
+      publicImages: JSON.stringify([deletedUrl]),
+      productImages: []
+    },
+    { removedUrls: [deletedUrl] }
+  );
+  const dto = publicProductToDTO(
+    storefrontItem({
+      imageUrl: synced.imageUrl,
+      publicImages: JSON.stringify(synced.publicImages),
+      productImages: []
+    })
+  );
+
+  assert.ok(dto);
+  assert.equal(dto.primaryImageUrl, null);
+  assert.deepEqual(dto.images, []);
+  assert.doesNotMatch(JSON.stringify(dto), /only-deleted-image/);
 });
 
 test("storefront DTO falls back to app placeholder when every image candidate needs QA", () => {

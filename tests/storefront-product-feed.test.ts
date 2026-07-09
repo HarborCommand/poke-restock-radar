@@ -311,6 +311,7 @@ test("Google Merchant feed endpoint and robots are wired for crawler access", ()
   assert.match(route, /listPublicStoreProducts/);
   assert.match(route, /storefrontProductFeedXml/);
   assert.match(route, /application\/xml/);
+  assert.match(route, /no-store, no-cache, max-age=0, must-revalidate/);
   assert.doesNotMatch(route, /listDashboard|requireUser|InventoryItem|costBasis|stockLots/);
 
   assert.match(robots, /"\/product-feed\.xml"/);

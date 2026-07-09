@@ -10,7 +10,7 @@ export async function GET() {
   return new Response(storefrontProductFeedXml(products, { profileDefinitions }), {
     headers: {
       "content-type": "application/xml; charset=utf-8",
-      "cache-control": "public, max-age=900, s-maxage=900"
+      "cache-control": "no-store, no-cache, max-age=0, must-revalidate"
     }
   });
 }

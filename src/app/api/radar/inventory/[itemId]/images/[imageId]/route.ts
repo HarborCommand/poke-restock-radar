@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { del } from "@vercel/blob";
 import { requireAdmin, requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
@@ -7,6 +8,17 @@ import { inventoryProductImageUpdateSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function revalidateStorefrontImagePaths(item: { publicSlug?: string | null }) {
+  revalidatePath("/");
+  revalidatePath("/shop");
+  revalidatePath("/product-feed.xml");
+  revalidatePath("/sitemap.xml");
+  if (item.publicSlug) {
+    revalidatePath(`/product/${item.publicSlug}`);
+    revalidatePath(`/shop/product/${item.publicSlug}`);
+  }
+}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ itemId: string; imageId: string }> }) {
   const { user, response } = await requireUser();
@@ -18,6 +30,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
     const { itemId, imageId } = await params;
     const input = inventoryProductImageUpdateSchema.parse(await readJson(request));
     const item = await updateInventoryProductImage(user, itemId, imageId, input);
+    revalidateStorefrontImagePaths(item);
     await logAudit({
       user,
       action: "inventory.image.updated",
@@ -40,6 +53,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   try {
     const { itemId, imageId } = await params;
     const result = await deleteInventoryProductImage(user, itemId, imageId);
+    revalidateStorefrontImagePaths(result.item);
     if (result.deletedImage.source === "uploaded" && process.env.BLOB_READ_WRITE_TOKEN) {
       await del(result.deletedImage.url).catch(() => null);
     }
