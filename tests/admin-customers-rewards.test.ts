@@ -354,6 +354,16 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(app, /aria-label="Account status"/);
   assert.match(app, /aria-label="Reason"/);
   assert.match(app, /CustomerRewardDetailPanel/);
+  const customerEditModal = app.slice(
+    app.indexOf("function CustomerProfileEditModal"),
+    app.indexOf("function RewardAdjustmentModal")
+  );
+  assert.match(customerEditModal, /aria-label="Close edit customer"/);
+  assert.match(customerEditModal, /customer-profile-edit-modal/);
+  assert.match(customerEditModal, /customer-profile-note-field/);
+  assert.match(customerEditModal, /Internal admin note/);
+  assert.match(customerEditModal, /Save Customer/);
+  assert.doesNotMatch(customerEditModal, /type="email"|name="email"|setEmail|value=\{customer\.email\}/);
   assert.doesNotMatch(storefrontOrderInclude, /metadataJson|adminNote/i);
   assert.doesNotMatch(customerRewardActivity, /metadataJson|adminNote/i);
 });
@@ -366,4 +376,21 @@ test("customers rewards workspace has compact mobile table and modal layouts", (
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customers-table-row\.header,[\s\S]*?body \.customers-ledger-row\.header\s*\{[\s\S]*?display: none;/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customers-row-actions \.secondary-action,[\s\S]*?body \.customers-ledger-row > button\s*\{[\s\S]*?width: 100%;/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customers-admin-modal\s*\{[\s\S]*?width: calc\(100vw - 24px\);[\s\S]*?max-height: calc\(100dvh - 24px\);/);
+});
+
+test("edit customer modal keeps profile fields aligned and actions visible", () => {
+  const css = readFileSync(path.join(projectRoot, "src/app/globals.css"), "utf8");
+
+  assert.match(css, /body \.customers-admin-modal\.customer-profile-edit-modal\s*\{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\);[\s\S]*?overflow: hidden;/);
+  assert.match(css, /body \.customer-profile-edit-modal \.customer-profile-edit-header\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /body \.customer-profile-edit-form \.customer-profile-form-grid\s*\{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  assert.match(css, /body \.customer-profile-edit-form \.customer-profile-form-grid \.customer-profile-field\s*\{[\s\S]*?border: 0;[\s\S]*?padding: 0;/);
+  assert.match(css, /body \.customer-profile-edit-form \.customer-profile-note-field\s*\{[\s\S]*?grid-column: 1 \/ -1;/);
+  assert.match(css, /body \.customer-profile-edit-modal \.customer-profile-edit-actions\s*\{[\s\S]*?position: static;[\s\S]*?box-shadow: none;/);
+  assert.ok(
+    css.lastIndexOf("body .customer-profile-edit-modal .customer-profile-edit-actions") >
+      css.indexOf("body .inventory-edit-actions,\nbody .inventory-modal .inventory-edit-actions"),
+    "customer profile edit modal footer override must come after the shared sticky inventory footer rule"
+  );
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customer-profile-edit-form \.customer-profile-form-grid\s*\{[\s\S]*?grid-template-columns: 1fr;/);
 });

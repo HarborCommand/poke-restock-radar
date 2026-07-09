@@ -4241,42 +4241,44 @@ function CustomerProfileEditModal({
 
   return (
     <div className="inventory-modal-backdrop customers-modal-backdrop" role="presentation">
-      <div className="inventory-modal customers-admin-modal" role="dialog" aria-modal="true" aria-label={`Edit customer ${customer.displayName}`}>
-        <div className="modal-heading-row">
+      <div className="inventory-modal customers-admin-modal customer-profile-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit customer ${customer.displayName}`}>
+        <div className="modal-heading-row customer-profile-edit-header">
           <div>
             <span className="eyebrow">Admin-only customer profile</span>
             <h3>Edit Customer</h3>
             <p>Update basic profile fields only. Email, account ownership, rewards balances, and auth fields are not editable here.</p>
           </div>
-          <button className="icon-button" type="button" aria-label="Close edit customer" onClick={onClose}>
+          <button className="icon-button compact customer-profile-close" type="button" aria-label="Close edit customer" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
-        <form className="reward-adjustment-form" onSubmit={submitProfile}>
-          <div className="form-grid">
-            <label>
-              <span>Display name</span>
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={120} />
-            </label>
-            <label>
-              <span>Phone</span>
-              <input value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40} inputMode="tel" />
-            </label>
-            <label>
-              <span>Account status</span>
-              <select aria-label="Account status" value={status} onChange={(event) => setStatus(event.target.value)}>
-                <option value="active">Active</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </label>
-            <label className="wide">
-              <span>Internal admin note</span>
-              <textarea value={adminNote} onChange={(event) => setAdminNote(event.target.value)} maxLength={1000} placeholder="Private admin note. This is not customer-facing." />
-            </label>
+        <form className="reward-adjustment-form customer-profile-edit-form" onSubmit={submitProfile}>
+          <div className="customer-profile-edit-body">
+            <div className="form-grid customer-profile-form-grid">
+              <label className="customer-profile-field">
+                <span>Display name</span>
+                <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={120} />
+              </label>
+              <label className="customer-profile-field">
+                <span>Phone</span>
+                <input value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40} inputMode="tel" />
+              </label>
+              <label className="customer-profile-field">
+                <span>Account status</span>
+                <select aria-label="Account status" value={status} onChange={(event) => setStatus(event.target.value)}>
+                  <option value="active">Active</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </label>
+              <label className="customer-profile-field customer-profile-note-field">
+                <span>Internal admin note</span>
+                <textarea value={adminNote} onChange={(event) => setAdminNote(event.target.value)} maxLength={1000} placeholder="Private admin note. This is not customer-facing." />
+              </label>
+            </div>
+            {error ? <p className="form-error">{error}</p> : null}
+            <p className="customers-muted-note customer-profile-helper">Email changes require a separate verified email-change flow and are intentionally unavailable in this phase.</p>
           </div>
-          {error ? <p className="form-error">{error}</p> : null}
-          <p className="customers-muted-note">Email changes require a separate verified email-change flow and are intentionally unavailable in this phase.</p>
-          <div className="inventory-edit-actions">
+          <div className="inventory-edit-actions customer-profile-edit-actions">
             <button className="secondary-action" type="button" onClick={onClose} disabled={submitting}>
               Cancel
             </button>
