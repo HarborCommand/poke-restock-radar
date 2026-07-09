@@ -10,7 +10,7 @@ import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
 import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMinutes } from "@/lib/monitor";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
-import { getSavedProductImageUrls, uniqueProductImageUrls } from "@/lib/product-images";
+import { getSavedProductImageUrls, syncedProductImageFields, uniqueProductImageUrls } from "@/lib/product-images";
 import {
   calculatePosTotals,
   getConfiguredPosTaxRate,
@@ -1657,7 +1657,10 @@ function uniqueImageUrls(values: Array<string | null | undefined>) {
   return uniqueProductImageUrls(values);
 }
 
-async function syncInventoryImageFields(itemId: string) {
+async function syncInventoryImageFields(
+  itemId: string,
+  options: { removedUrls?: Array<string | null | undefined> } = {}
+) {
   const item = await prisma.inventoryItem.findUnique({
     where: { id: itemId },
     select: { imageUrl: true, publicImages: true }
@@ -1679,17 +1682,19 @@ async function syncInventoryImageFields(itemId: string) {
       ordered = ordered.map((image) => ({ ...image, isPrimary: image.id === desiredPrimary.id }));
     }
   }
-  const primary = ordered.find((image) => image.isPrimary) ?? ordered[0] ?? null;
-  const publicUrls = uniqueImageUrls([
-    ...ordered.filter((image) => image.showInStore).map((image) => image.url),
-    item?.imageUrl,
-    ...parseJsonStringArray(item?.publicImages)
-  ]);
+  const syncedImages = syncedProductImageFields(
+    {
+      imageUrl: item?.imageUrl,
+      publicImages: item?.publicImages,
+      productImages: ordered
+    },
+    options
+  );
   await prisma.inventoryItem.update({
     where: { id: itemId },
     data: {
-      imageUrl: primary?.url ?? item?.imageUrl ?? publicUrls[0] ?? null,
-      publicImages: publicUrls.length ? JSON.stringify(publicUrls) : item?.publicImages ?? null
+      imageUrl: syncedImages.imageUrl,
+      publicImages: syncedImages.publicImages.length ? JSON.stringify(syncedImages.publicImages) : null
     }
   });
 }
@@ -6581,7 +6586,7 @@ export async function deleteInventoryProductImage(currentUser: SessionUser, item
   });
   if (!image) throw new Error("Product image not found");
   await prisma.inventoryProductImage.delete({ where: { id: image.id } });
-  await syncInventoryImageFields(itemId);
+  await syncInventoryImageFields(itemId, { removedUrls: [image.url] });
   const item = await inventoryItemDTOById(currentUser, itemId);
   return { item, deletedImage: inventoryProductImageToDTO(image) };
 }

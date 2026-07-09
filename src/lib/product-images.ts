@@ -24,6 +24,10 @@ export type ProductImageResolverOptions = {
   publicOnly?: boolean;
 };
 
+export type SyncedProductImageFieldsOptions = {
+  removedUrls?: Array<string | null | undefined>;
+};
+
 export function parseProductImageList(value: string | string[] | null | undefined) {
   if (!value) return [];
   if (Array.isArray(value)) return value;
@@ -68,7 +72,9 @@ export function orderedProductGalleryImages(images: ProductImageCandidate[] | nu
 }
 
 export function getSavedProductImageUrls(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {
+  const hasGalleryRows = Boolean(product.productImages?.length);
   const galleryImages = orderedProductGalleryImages(product.productImages, options).map((image) => image.url ?? null);
+  if (hasGalleryRows) return uniqueProductImageUrls(galleryImages);
   return uniqueProductImageUrls([
     ...galleryImages,
     product.imageUrl,
@@ -88,4 +94,43 @@ export function getProductImageUrls(product: ProductImageResolverInput, options:
 
 export function getPrimaryProductImage(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {
   return getProductImageUrls(product, options)[0] ?? null;
+}
+
+function productImageUrlSet(values: Array<string | null | undefined>) {
+  return new Set(uniqueProductImageUrls(values));
+}
+
+export function syncedProductImageFields(product: ProductImageResolverInput, options: SyncedProductImageFieldsOptions = {}) {
+  const ordered = orderedProductGalleryImages(product.productImages);
+  const publicGalleryImages = ordered.filter((image) => image.showInStore !== false);
+  if (ordered.length) {
+    const publicImages = uniqueProductImageUrls(publicGalleryImages.map((image) => image.url));
+    return {
+      imageUrl: publicImages[0] ?? null,
+      publicImages
+    };
+  }
+  const blockedUrls = productImageUrlSet([
+    ...(options.removedUrls ?? []),
+    ...ordered.filter((image) => image.showInStore === false).map((image) => image.url)
+  ]);
+  const keepPublicUrl = (url: string | null | undefined) => {
+    const sanitized = sanitizePublicImageUrl(url, "imageUrl").value;
+    return Boolean(sanitized && !blockedUrls.has(sanitized));
+  };
+  const legacyImageUrl = keepPublicUrl(product.imageUrl) ? product.imageUrl ?? null : null;
+  const legacyPublicImages = parseProductImageList(product.publicImages).filter(keepPublicUrl);
+  const publicImages = uniqueProductImageUrls([
+    ...publicGalleryImages.map((image) => image.url),
+    legacyImageUrl,
+    ...legacyPublicImages
+  ]);
+  const primary = ordered.find((image) => image.isPrimary) ?? ordered[0] ?? null;
+  const publicPrimary = (primary?.showInStore !== false ? primary : publicGalleryImages[0]) ?? null;
+  const primaryUrl = uniqueProductImageUrls([publicPrimary?.url])[0] ?? null;
+  const legacyUrl = uniqueProductImageUrls([legacyImageUrl])[0] ?? null;
+  return {
+    imageUrl: primaryUrl ?? legacyUrl ?? publicImages[0] ?? null,
+    publicImages
+  };
 }

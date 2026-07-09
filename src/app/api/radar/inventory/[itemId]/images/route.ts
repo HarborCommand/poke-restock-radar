@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { requireAdmin, requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
@@ -6,6 +7,17 @@ import { inventoryProductImageCreateSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function revalidateStorefrontImagePaths(item: { publicSlug?: string | null }) {
+  revalidatePath("/");
+  revalidatePath("/shop");
+  revalidatePath("/product-feed.xml");
+  revalidatePath("/sitemap.xml");
+  if (item.publicSlug) {
+    revalidatePath(`/product/${item.publicSlug}`);
+    revalidatePath(`/shop/product/${item.publicSlug}`);
+  }
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ itemId: string }> }) {
   const { user, response } = await requireUser();
@@ -25,6 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
       source: input.source,
       showInStore: input.showInStore
     });
+    revalidateStorefrontImagePaths(item);
     await logAudit({
       user,
       action: "inventory.image.created",
