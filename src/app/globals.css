@@ -21820,6 +21820,113 @@ body .customers-admin-modal .modal-heading-row p {
   line-height: 1.45;
 }
 
+body .customers-admin-modal.customer-profile-edit-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 32px));
+  overflow: hidden;
+  padding: 0;
+}
+
+body .customer-profile-edit-modal .customer-profile-edit-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 18px;
+  margin: 0;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 22px 24px 16px;
+}
+
+body .customer-profile-edit-header > div {
+  min-width: 0;
+}
+
+body .customer-profile-edit-modal .customer-profile-close {
+  justify-self: end;
+  align-self: start;
+}
+
+body .customer-profile-edit-form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body .customer-profile-edit-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 24px 18px;
+}
+
+body .customer-profile-edit-form .customer-profile-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+body .customer-profile-edit-form .customer-profile-form-grid .customer-profile-field {
+  gap: 7px;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+body .customer-profile-edit-form .customer-profile-form-grid .customer-profile-field > span {
+  margin: 0 0 1px;
+}
+
+body .customer-profile-edit-form input,
+body .customer-profile-edit-form select,
+body .customer-profile-edit-form textarea {
+  min-height: 42px;
+  border: 1px solid #dbe3ea !important;
+  border-radius: 12px;
+  background: #ffffff !important;
+  padding: 0 12px;
+  box-shadow: none;
+}
+
+body .customer-profile-edit-form textarea {
+  min-height: 132px;
+  padding: 11px 12px;
+  line-height: 1.45;
+}
+
+body .customer-profile-edit-form .customer-profile-note-field {
+  grid-column: 1 / -1;
+}
+
+body .customer-profile-helper {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+body .customer-profile-edit-modal .customer-profile-edit-actions {
+  position: static;
+  justify-content: flex-end;
+  margin: 0;
+  border-top: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  box-shadow: none;
+  padding: 16px 24px;
+  backdrop-filter: none;
+}
+
+body .customer-profile-edit-actions .secondary-action,
+body .customer-profile-edit-actions .primary-action {
+  min-height: 42px;
+}
+
 body .full-width {
   width: 100%;
 }
@@ -22601,6 +22708,17 @@ body .inventory-edit-actions .danger-action {
   border-color: #fecaca !important;
   background: #fff1f2 !important;
   color: #b91c1c !important;
+}
+
+body .customer-profile-edit-modal .customer-profile-edit-actions {
+  position: static;
+  justify-content: flex-end;
+  margin: 0;
+  border-top: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  box-shadow: none;
+  padding: 16px 24px;
+  backdrop-filter: none;
 }
 
 body .sale-section-heading {
@@ -28473,6 +28591,45 @@ body .customers-rewards-tabs {
   body .customers-admin-modal {
     width: calc(100vw - 24px);
     max-height: calc(100dvh - 24px);
+  }
+
+  body .customers-admin-modal.customer-profile-edit-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 18px;
+  }
+
+  body .customer-profile-edit-modal .customer-profile-edit-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 18px 16px 14px;
+  }
+
+  body .customer-profile-edit-body {
+    padding: 16px;
+  }
+
+  body .customer-profile-edit-form .customer-profile-form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  body .customer-profile-edit-form textarea {
+    min-height: 118px;
+  }
+
+  body .customer-profile-edit-modal .customer-profile-edit-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  body .customer-profile-edit-actions .secondary-action,
+  body .customer-profile-edit-actions .primary-action {
+    width: 100%;
+    justify-content: center;
   }
 }
 
