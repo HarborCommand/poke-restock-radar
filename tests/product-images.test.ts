@@ -59,6 +59,23 @@ test("public image field and linked product images are fallback candidates", () 
   assert.deepEqual(getSavedProductImageUrls(product, { publicOnly: true }), ["https://example.com/public-a.png"]);
 });
 
+test("linked product fallback images do not override existing gallery rows", () => {
+  const product = {
+    imageUrl: "https://example.com/deleted-legacy.png",
+    publicImages: JSON.stringify(["https://example.com/deleted-legacy.png"]),
+    productImages: [
+      { url: "https://example.com/current-gallery.webp", isPrimary: true, sortOrder: 0, showInStore: true }
+    ],
+    product: {
+      liveImageUrl: "https://example.com/stale-linked-live.png",
+      imageUrl: "https://example.com/stale-linked-product.png"
+    }
+  };
+
+  assert.deepEqual(getProductImageUrls(product, { publicOnly: true }), ["https://example.com/current-gallery.webp"]);
+  assert.equal(getPrimaryProductImage(product, { publicOnly: true }), "https://example.com/current-gallery.webp");
+});
+
 test("blob gallery primary wins over legacy imageUrl fallback", () => {
   const product = {
     imageUrl: "https://example.com/legacy.png",
@@ -96,6 +113,19 @@ test("synced product image fields remove deleted secondary images from storefron
 
   assert.equal(synced.imageUrl, "https://cdn.example.com/front.webp");
   assert.deepEqual(synced.publicImages, ["https://cdn.example.com/front.webp"]);
+});
+
+test("synced product image fields clean stale legacy URLs when gallery rows are authoritative", () => {
+  const staleUrl = "https://cdn.example.com/deleted-gallery-image.webp";
+  const currentUrl = "https://cdn.example.com/current-gallery-image.webp";
+  const synced = syncedProductImageFields({
+    imageUrl: staleUrl,
+    publicImages: JSON.stringify([staleUrl, currentUrl]),
+    productImages: [{ url: currentUrl, isPrimary: true, sortOrder: 0, showInStore: true }]
+  });
+
+  assert.equal(synced.imageUrl, currentUrl);
+  assert.deepEqual(synced.publicImages, [currentUrl]);
 });
 
 test("synced product image fields promote next image after primary deletion", () => {

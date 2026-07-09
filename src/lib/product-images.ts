@@ -83,8 +83,10 @@ export function getSavedProductImageUrls(product: ProductImageResolverInput, opt
 }
 
 export function getProductImageUrls(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {
+  const savedImageUrls = getSavedProductImageUrls(product, options);
+  if (product.productImages?.length) return savedImageUrls;
   return uniqueProductImageUrls([
-    ...getSavedProductImageUrls(product, options),
+    ...savedImageUrls,
     product.liveImageUrl,
     product.retailerImageUrl,
     product.product?.liveImageUrl,

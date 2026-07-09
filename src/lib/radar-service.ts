@@ -1699,6 +1699,16 @@ async function syncInventoryImageFields(
   });
 }
 
+export async function resyncProductStorefrontImages(
+  currentUser: SessionUser,
+  itemId: string,
+  options: { removedUrls?: Array<string | null | undefined> } = {}
+) {
+  const item = await findInventoryItemForImageEdit(currentUser, itemId);
+  await syncInventoryImageFields(item.id, options);
+  return inventoryItemDTOById(currentUser, item.id);
+}
+
 async function ensureInventoryProductImage(
   itemId: string,
   input: {
@@ -6544,7 +6554,7 @@ export async function attachInventoryProductImage(
     showInStore: input.showInStore
   });
   if (!image) throw new Error("Product image URL is required.");
-  return inventoryItemDTOById(currentUser, item.id);
+  return resyncProductStorefrontImages(currentUser, item.id);
 }
 
 export async function updateInventoryProductImage(
@@ -6575,8 +6585,7 @@ export async function updateInventoryProductImage(
       showInStore: input.showInStore
     }
   });
-  await syncInventoryImageFields(itemId);
-  return inventoryItemDTOById(currentUser, itemId);
+  return resyncProductStorefrontImages(currentUser, itemId);
 }
 
 export async function deleteInventoryProductImage(currentUser: SessionUser, itemId: string, imageId: string) {
@@ -6586,8 +6595,7 @@ export async function deleteInventoryProductImage(currentUser: SessionUser, item
   });
   if (!image) throw new Error("Product image not found");
   await prisma.inventoryProductImage.delete({ where: { id: image.id } });
-  await syncInventoryImageFields(itemId, { removedUrls: [image.url] });
-  const item = await inventoryItemDTOById(currentUser, itemId);
+  const item = await resyncProductStorefrontImages(currentUser, itemId, { removedUrls: [image.url] });
   return { item, deletedImage: inventoryProductImageToDTO(image) };
 }
 

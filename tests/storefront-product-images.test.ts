@@ -182,6 +182,32 @@ test("stale legacy product images do not reappear when gallery rows already exis
   assert.doesNotMatch(feed, /already-deleted-legacy-image/);
 });
 
+test("storefront detail images stay consistent with feed primary when legacy images are stale", () => {
+  const staleUrl = "https://cdn.example.com/stale-related-product-image.webp";
+  const primaryUrl = "https://cdn.example.com/valid-gallery-primary.webp";
+  const secondaryUrl = "https://cdn.example.com/valid-gallery-secondary.webp";
+  const dto = publicProductToDTO(
+    storefrontItem({
+      imageUrl: staleUrl,
+      publicImages: JSON.stringify([staleUrl, primaryUrl, secondaryUrl]),
+      productImages: [
+        { url: primaryUrl, isPrimary: true, sortOrder: 0, showInStore: true },
+        { url: secondaryUrl, isPrimary: false, sortOrder: 1, showInStore: true }
+      ],
+      upc: "196214155787"
+    })
+  );
+
+  assert.ok(dto);
+  assert.equal(dto.primaryImageUrl, primaryUrl);
+  assert.deepEqual(dto.images, [primaryUrl, secondaryUrl]);
+  assert.doesNotMatch(JSON.stringify(dto), /stale-related-product-image/);
+
+  const feed = storefrontProductFeedXml([dto]);
+  assert.match(feed, /valid-gallery-primary\.webp/);
+  assert.doesNotMatch(feed, /stale-related-product-image/);
+});
+
 test("storefront DTO shows no image when the only product image was deleted", () => {
   const deletedUrl = "https://cdn.example.com/only-deleted-image.webp";
   const synced = syncedProductImageFields(

@@ -185,6 +185,9 @@ test("product image gallery model and API routes are wired", () => {
   assert.match(service, /removedUrls: \[image\.url\]/);
   assert.match(service, /source: "existing_image_url"/);
   assert.match(service, /syncInventoryImageFields/);
+  assert.match(service, /export async function resyncProductStorefrontImages/);
+  assert.match(service, /return resyncProductStorefrontImages\(currentUser, item\.id\)/);
+  assert.match(service, /return resyncProductStorefrontImages\(currentUser, itemId\)/);
   assert.match(storefront, /productImages/);
   assert.match(storefront, /getSavedProductImageUrls/);
   assert.match(appSource, /ProductImageGalleryManager/);
