@@ -924,3 +924,17 @@ test("admin and storefront image surfaces handle broken or unsafe product images
   assert.match(storefront, /\.filter\(isStorefrontDisplayImageUrl\)/);
   assert.match(storefront, /const primaryImageUrl = images\[0\] \?\? null/);
 });
+
+test("product workspace mobile polish keeps proof, image, and stock editors usable", () => {
+  const css = readFileSync("src/app/globals.css", "utf8");
+
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.inventory-details-modal\.product-workspace\s*\{[\s\S]*?width: calc\(100vw - 20px\);[\s\S]*?max-height: calc\(100dvh - 20px\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.app-main-inventory \.catalog-row,[\s\S]*?body \.catalog-row\s*\{[\s\S]*?grid-template-columns: 1fr !important;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.catalog-cell::before\s*\{[\s\S]*?content: attr\(data-label\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.catalog-action-trigger\s*\{[\s\S]*?width: 100% !important;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.product-workspace-section-tabs\s*\{[\s\S]*?display: flex;[\s\S]*?overflow-x: auto;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.product-workspace-actions\s*\{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.inventory-edit-actions\s*\{[\s\S]*?position: sticky;[\s\S]*?bottom: 0;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.product-image-add-fields,[\s\S]*?body \.shipping-package-grid,[\s\S]*?body \.shipping-option-grid\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.compact-ledger-list article\.stock-lot-card\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+});

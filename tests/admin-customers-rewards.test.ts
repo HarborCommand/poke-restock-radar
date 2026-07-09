@@ -357,3 +357,13 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.doesNotMatch(storefrontOrderInclude, /metadataJson|adminNote/i);
   assert.doesNotMatch(customerRewardActivity, /metadataJson|adminNote/i);
 });
+
+test("customers rewards workspace has compact mobile table and modal layouts", () => {
+  const css = readFileSync(path.join(projectRoot, "src/app/globals.css"), "utf8");
+
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customers-rewards-layout,[\s\S]*?body \.customers-overview-grid\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customers-table-row,[\s\S]*?body \.customers-ledger-row\s*\{[\s\S]*?min-width: 0;[\s\S]*?grid-template-columns: 1fr;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customers-table-row\.header,[\s\S]*?body \.customers-ledger-row\.header\s*\{[\s\S]*?display: none;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customers-row-actions \.secondary-action,[\s\S]*?body \.customers-ledger-row > button\s*\{[\s\S]*?width: 100%;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?body \.customers-admin-modal\s*\{[\s\S]*?width: calc\(100vw - 24px\);[\s\S]*?max-height: calc\(100dvh - 24px\);/);
+});
