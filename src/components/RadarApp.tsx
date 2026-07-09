@@ -4340,8 +4340,8 @@ function RewardAdjustmentModal({
 
   return (
     <div className="inventory-modal-backdrop customers-modal-backdrop" role="presentation">
-      <div className="inventory-modal customers-admin-modal" role="dialog" aria-modal="true" aria-label={`Adjust reward points for ${customer.displayName}`}>
-        <div className="modal-heading-row">
+      <div className="inventory-modal customers-admin-modal reward-adjustment-modal" role="dialog" aria-modal="true" aria-label={`Adjust reward points for ${customer.displayName}`}>
+        <div className="modal-heading-row reward-adjustment-modal-header">
           <div>
             <span className="eyebrow">Admin reward adjustment</span>
             <h3>Add or Deduct Points</h3>
@@ -4352,41 +4352,43 @@ function RewardAdjustmentModal({
           </button>
         </div>
         <form className="reward-adjustment-form" onSubmit={submitAdjustment}>
-          <div className="customers-adjustment-customer">
-            <strong>{customer.displayName}</strong>
-            <span>{customer.maskedEmail} - {customer.availablePoints.toLocaleString()} available</span>
+          <div className="reward-adjustment-modal-body">
+            <div className="customers-adjustment-customer">
+              <strong>{customer.displayName}</strong>
+              <span>{customer.maskedEmail} - {customer.availablePoints.toLocaleString()} available</span>
+            </div>
+            <div className="segmented-control reward-adjustment-action-toggle" aria-label="Reward adjustment action">
+              <button className={action === "add" ? "active" : ""} type="button" onClick={() => setAction("add")}>
+                Add points
+              </button>
+              <button className={action === "deduct" ? "active" : ""} type="button" onClick={() => setAction("deduct")}>
+                Deduct points
+              </button>
+            </div>
+            <div className="form-grid reward-adjustment-grid">
+              <label>
+                <span>Points</span>
+                <input aria-label="Point amount" value={points} onChange={(event) => setPoints(event.target.value)} min="1" max="100000" step="1" type="number" required />
+              </label>
+              <label>
+                <span>Reason</span>
+                <select aria-label="Reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
+                  {rewardAdjustmentReasons.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="wide reward-adjustment-note-field">
+                <span>Internal admin note</span>
+                <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Optional private context. This is not customer-facing." />
+              </label>
+            </div>
+            {error ? <p className="form-error">{error}</p> : null}
+            <p className="customers-muted-note reward-adjustment-helper">
+              Deducting cannot take available points below zero. Duplicate idempotency keys are ignored safely.
+            </p>
           </div>
-          <div className="segmented-control">
-            <button className={action === "add" ? "active" : ""} type="button" onClick={() => setAction("add")}>
-              Add points
-            </button>
-            <button className={action === "deduct" ? "active" : ""} type="button" onClick={() => setAction("deduct")}>
-              Deduct points
-            </button>
-          </div>
-          <div className="form-grid">
-            <label>
-              <span>Points</span>
-              <input value={points} onChange={(event) => setPoints(event.target.value)} min="1" max="100000" step="1" type="number" required />
-            </label>
-            <label>
-              <span>Reason</span>
-              <select aria-label="Reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
-                {rewardAdjustmentReasons.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-            </label>
-            <label className="wide">
-              <span>Internal admin note</span>
-              <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Optional private context. This is not customer-facing." />
-            </label>
-          </div>
-          {error ? <p className="form-error">{error}</p> : null}
-          <p className="customers-muted-note">
-            Deducting cannot take available points below zero. Duplicate idempotency keys are ignored safely.
-          </p>
-          <div className="inventory-edit-actions">
+          <div className="inventory-edit-actions reward-adjustment-actions">
             <button className="secondary-action" type="button" onClick={onClose} disabled={submitting}>
               Cancel
             </button>

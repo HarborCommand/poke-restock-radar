@@ -22721,6 +22721,137 @@ body .customer-profile-edit-modal .customer-profile-edit-actions {
   backdrop-filter: none;
 }
 
+body .customers-admin-modal.reward-adjustment-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 32px));
+  overflow: hidden;
+  padding: 0;
+}
+
+body .reward-adjustment-modal .reward-adjustment-modal-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 18px;
+  margin: 0;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 22px 24px 16px;
+}
+
+body .reward-adjustment-modal-header > div {
+  min-width: 0;
+}
+
+body .reward-adjustment-modal .icon-button {
+  justify-self: end;
+  align-self: start;
+}
+
+body .reward-adjustment-form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body .reward-adjustment-modal-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 24px;
+}
+
+body .reward-adjustment-modal .customers-adjustment-customer {
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+body .reward-adjustment-modal .reward-adjustment-action-toggle {
+  width: 100%;
+  justify-self: start;
+}
+
+body .reward-adjustment-modal .reward-adjustment-action-toggle button {
+  flex: 1 1 0;
+  min-height: 38px;
+  padding: 8px 14px;
+}
+
+body .reward-adjustment-form .reward-adjustment-grid {
+  grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+body .reward-adjustment-form .reward-adjustment-grid label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+body .reward-adjustment-form .reward-adjustment-grid label span {
+  margin: 0 0 1px;
+}
+
+body .reward-adjustment-form .reward-adjustment-grid input,
+body .reward-adjustment-form .reward-adjustment-grid select,
+body .reward-adjustment-form .reward-adjustment-grid textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #dbe3ea !important;
+  border-radius: 12px;
+  background: #ffffff !important;
+  padding: 0 12px;
+  box-shadow: none;
+}
+
+body .reward-adjustment-form .reward-adjustment-grid select {
+  min-width: 0;
+  padding-right: 34px;
+}
+
+body .reward-adjustment-form .reward-adjustment-note-field {
+  grid-column: 1 / -1;
+}
+
+body .reward-adjustment-form .reward-adjustment-grid textarea {
+  min-height: 116px;
+  padding: 11px 12px;
+  line-height: 1.45;
+}
+
+body .reward-adjustment-helper {
+  margin: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+body .reward-adjustment-modal .reward-adjustment-actions {
+  position: static;
+  justify-content: flex-end;
+  margin: 0;
+  border-top: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  box-shadow: none;
+  padding: 16px 24px;
+  backdrop-filter: none;
+}
+
+body .reward-adjustment-actions .secondary-action,
+body .reward-adjustment-actions .primary-action {
+  min-height: 42px;
+}
+
 body .sale-section-heading {
   display: flex;
   align-items: flex-start;
@@ -28599,7 +28730,19 @@ body .customers-rewards-tabs {
     border-radius: 18px;
   }
 
+  body .customers-admin-modal.reward-adjustment-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 18px;
+  }
+
   body .customer-profile-edit-modal .customer-profile-edit-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 18px 16px 14px;
+  }
+
+  body .reward-adjustment-modal .reward-adjustment-modal-header {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
     padding: 18px 16px 14px;
@@ -28609,13 +28752,26 @@ body .customers-rewards-tabs {
     padding: 16px;
   }
 
+  body .reward-adjustment-modal-body {
+    padding: 16px;
+  }
+
   body .customer-profile-edit-form .customer-profile-form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  body .reward-adjustment-form .reward-adjustment-grid {
     grid-template-columns: 1fr;
     gap: 12px;
   }
 
   body .customer-profile-edit-form textarea {
     min-height: 118px;
+  }
+
+  body .reward-adjustment-form .reward-adjustment-grid textarea {
+    min-height: 108px;
   }
 
   body .customer-profile-edit-modal .customer-profile-edit-actions {
@@ -28626,8 +28782,22 @@ body .customers-rewards-tabs {
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   }
 
+  body .reward-adjustment-modal .reward-adjustment-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+
   body .customer-profile-edit-actions .secondary-action,
   body .customer-profile-edit-actions .primary-action {
+    width: 100%;
+    justify-content: center;
+  }
+
+  body .reward-adjustment-actions .secondary-action,
+  body .reward-adjustment-actions .primary-action {
     width: 100%;
     justify-content: center;
   }

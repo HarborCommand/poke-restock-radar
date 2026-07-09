@@ -537,8 +537,9 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountLogin, /Forgot Password\?/);
   assert.match(accountLogin, /Email sign-in link/);
   assert.match(accountLogin, /No password\? We'll send a secure one-time sign-in link\./);
-  assert.match(accountLogin, /Customer accounts are optional\./);
+  assert.match(accountLogin, /New rewards account\? Create or verify it first\./);
   assert.match(accountLogin, /Guest checkout is always available\./);
+  assert.match(accountLogin, /Use your checkout email for rewards\./);
   assert.doesNotMatch(accountLogin, /Create an account to track orders and rewards\. Guest checkout is still available/);
   assert.match(accountLogin, /Rewards redemption coming soon\./);
   assert.match(accountLogin, /Your session expired\. Sign in again to continue\./);
@@ -547,7 +548,8 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountLogin, /action="\/api\/account\/magic-link\/request"/);
   assert.match(accountLogin, /action="\/api\/account\/forgot-password"/);
   assert.match(accountLogin, /action="\/api\/account\/reset-password"/);
-  assert.match(accountLogin, /Use the same email you used at checkout to see matching order history after verification/);
+  assert.match(accountLogin, /Use the same email you used at checkout or POS/);
+  assert.match(accountLogin, /If points were earned before you created a password/);
   assert.doesNotMatch(accountLogin, /Keep me signed in/);
   assert.doesNotMatch(accountLogin, /Pok[e\u00e9] Ball|official Pok[e\u00e9]mon|Nintendo|protected artwork|franchise-protected/i);
   assert.match(accountComponents, /Account Overview/);
@@ -865,7 +867,9 @@ test("customer password login register and reset are hashed token-based and gues
   assert.doesNotMatch(resetRoute, /searchParams\.set\("token"/);
   assert.match(registerRoute, /registerCustomerAccountWithPassword/);
   assert.match(forgotRoute, /sent_if_eligible/);
+  assert.match(accountComponents, /Use your checkout email for rewards/);
   assert.match(accountComponents, /No password\? We'll send a secure one-time sign-in link/);
+  assert.match(accountComponents, /If points were earned before you created a password/);
   assert.match(accountComponents, /Guest checkout is always available/);
   assert.match(accountComponents, /Redemption coming soon/);
   assert.doesNotMatch(checkoutSession, /CustomerPasswordResetToken|passwordHash|passwordSetAt|customerPassword|redeem|points discount|reward discount/i);
@@ -902,6 +906,7 @@ test("password registration repairs magic-link accounts without replacing existi
   assert.match(addressRoute, /currentCustomerAccount\(\)/);
   assert.match(addressRoute, /createCustomerSavedAddress\(account, input\.input\)/);
   assert.match(accountComponents, /Use the email sign-in link or reset your password if needed/);
+  assert.match(accountComponents, /Use the same email you used at checkout or POS/);
 });
 
 test("customer account dashboard and order pages require a verified customer session", () => {
