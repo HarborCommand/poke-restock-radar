@@ -595,6 +595,7 @@ export function CustomerLoginPageContent({
         </div>
         <div className="gdg-login-pill-row" aria-label="Account reminders">
           <span>Guest checkout is always available.</span>
+          <span>Use your checkout email for rewards.</span>
           <span>Rewards redemption coming soon.</span>
         </div>
         <div className="gdg-login-notices">
@@ -635,7 +636,7 @@ export function CustomerLoginPageContent({
               </span>
             </label>
             <div className="gdg-login-form-meta">
-              <span>Customer accounts are optional.</span>
+              <span>New rewards account? Create or verify it first.</span>
               <Link href="/account/forgot-password" className="gdg-inline-link">Forgot Password?</Link>
             </div>
             <button className="gdg-primary-button wide gdg-login-submit" type="submit">
@@ -700,7 +701,8 @@ export function CustomerLoginPageContent({
           </form>
         </div>
         <p className="gdg-account-helper gdg-login-helper">
-          Use the same email you used at checkout to see matching order history after verification.
+          Use the same email you used at checkout or POS. If points were earned before you created a password, create
+          the account or use the email sign-in link to verify that same email first.
         </p>
       </section>
     </div>
