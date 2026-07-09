@@ -958,6 +958,7 @@ function ProductCard({
   const actionDisabled = storefrontPrimaryActionDisabled(product);
   const isSoldOut = isSoldOutProduct(product);
   const actionText = actionDisabled ? "Sold Out" : actionLabel;
+  const compactActionText = actionDisabled ? actionText : settings.checkoutConfigured ? "Add" : "Request";
   const displayCategory = publicCategoryLabel(displayStorefrontCategory(product));
   const productTitle = cleanStorefrontTitle(product.title);
 
@@ -976,12 +977,13 @@ function ProductCard({
       <footer>
         <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
         <div className="gdg-card-actions">
-          <Link href={`/product/${product.slug}`} className="gdg-secondary-button" aria-label={`View ${productTitle}`}>
-            View Product
+          <Link href={`/product/${product.slug}`} className="gdg-secondary-button gdg-product-card-action" aria-label={`View ${productTitle}`}>
+            <span className="gdg-product-action-label-full">View Product</span>
+            <span className="gdg-product-action-label-short" aria-hidden="true">View</span>
           </Link>
           <button
             type="button"
-            className="gdg-primary-button compact"
+            className="gdg-primary-button compact gdg-product-card-action"
             disabled={actionDisabled}
             aria-label={`${actionText} ${productTitle}`}
             onClick={() => {
@@ -989,7 +991,8 @@ function ProductCard({
               onAdded?.(product);
             }}
           >
-            {actionText}
+            <span className="gdg-product-action-label-full">{actionText}</span>
+            <span className="gdg-product-action-label-short" aria-hidden="true">{compactActionText}</span>
           </button>
         </div>
       </footer>

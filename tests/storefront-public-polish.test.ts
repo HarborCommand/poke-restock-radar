@@ -35,8 +35,17 @@ test("storefront logo images preserve the asset aspect ratio", () => {
 });
 
 test("storefront product actions have product-specific accessible labels", () => {
+  assert.match(productCard, /const compactActionText = actionDisabled \? actionText : settings\.checkoutConfigured \? "Add" : "Request"/);
+  assert.match(productCard, /className="gdg-secondary-button gdg-product-card-action"/);
+  assert.match(productCard, /className="gdg-primary-button compact gdg-product-card-action"/);
   assert.match(productCard, /aria-label=\{`View \$\{productTitle\}`\}/);
   assert.match(productCard, /aria-label=\{`\$\{actionText\} \$\{productTitle\}`\}/);
+  assert.match(productCard, /<span className="gdg-product-action-label-full">View Product<\/span>/);
+  assert.match(productCard, /<span className="gdg-product-action-label-short" aria-hidden="true">View<\/span>/);
+  assert.match(productCard, /<span className="gdg-product-action-label-full">\{actionText\}<\/span>/);
+  assert.match(productCard, /<span className="gdg-product-action-label-short" aria-hidden="true">\{compactActionText\}<\/span>/);
+  assert.match(productCard, /href=\{`\/product\/\$\{product\.slug\}`\}/);
+  assert.match(productCard, /onClick=\{\(\) => \{\s*\r?\n\s*addToCart\(product\);/);
   assert.match(productDetail, /aria-label=\{`Decrease \$\{productTitle\} quantity`\}/);
   assert.match(productDetail, /aria-label=\{`Increase \$\{productTitle\} quantity`\}/);
   assert.match(productDetail, /aria-label=\{`\$\{soldOutActionLabel\} \$\{productTitle\}`\}/);
@@ -88,7 +97,12 @@ test("mobile storefront polish prevents common narrow-viewport overflow", () => 
   assert.match(css, /@media \(max-width: 820px\)\s*\{[\s\S]*?\.gdg-shop-toolbar label,\s*\r?\n\s*\.gdg-shop-toolbar select\s*\{[\s\S]*?width: 100%;/);
   assert.match(css, /@media \(max-width: 820px\)\s*\{[\s\S]*?\.gdg-cart-line-price\s*\{[\s\S]*?justify-items: start;/);
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-card-actions > \*,\s*\r?\n\s*\.gdg-hero-actions > \*,\s*\r?\n\s*\.gdg-result-actions > \*\s*\{[\s\S]*?width: 100%;/);
-  assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card \.gdg-card-actions\s*\{[\s\S]*?flex-direction: column;/);
+  assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card \.gdg-card-actions\s*\{[\s\S]*?grid-template-columns: minmax\(0, 0\.82fr\) minmax\(0, 1\.18fr\);/);
+  assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card \.gdg-card-actions > \*\s*\{[\s\S]*?min-height: 44px;/);
+  assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card \.gdg-primary-button\.compact\.gdg-product-card-action,\s*\r?\n\s*\.gdg-product-card \.gdg-secondary-button\.gdg-product-card-action\s*\{[\s\S]*?min-height: 44px;/);
+  assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-action-label-full\s*\{[\s\S]*?display: none;/);
+  assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-action-label-short\s*\{[\s\S]*?display: inline;/);
+  assert.doesNotMatch(css, /\.gdg-product-card \.gdg-card-actions\s*\{[\s\S]{0,120}?flex-direction: column;/);
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-usps-quote-controls\s*\{[\s\S]*?grid-template-columns: 1fr;/);
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-login-pill-row\s*\{[\s\S]*?grid-template-columns: 1fr;/);
 });
