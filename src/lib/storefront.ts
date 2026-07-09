@@ -2985,7 +2985,7 @@ export async function updateInventoryStoreListing(
   currentUser: SessionUser,
   itemId: string,
   input: {
-    publishToStore: boolean;
+    publishToStore?: boolean;
     publicSlug?: string;
     publicTitle?: string;
     publicDescription?: string;
@@ -2995,7 +2995,7 @@ export async function updateInventoryStoreListing(
     availableForSale?: number;
     purchaseLimitEnabled?: boolean;
     maxQuantityPerOrder?: number | null;
-    shippingProfile: string;
+    shippingProfile?: string;
     packageWeightOz?: number | null;
     packageLengthIn?: number | null;
     packageWidthIn?: number | null;
@@ -3004,9 +3004,9 @@ export async function updateInventoryStoreListing(
     freeShippingEligible?: boolean;
     requiresBox?: boolean;
     insuranceRecommended?: boolean;
-    storeStatus: "draft" | "active" | "hidden" | "sold_out";
-    localPickupAvailable: boolean;
-    shippingAvailable: boolean;
+    storeStatus?: "draft" | "active" | "hidden" | "sold_out";
+    localPickupAvailable?: boolean;
+    shippingAvailable?: boolean;
     storefrontCategory?: string;
     storefrontTags?: unknown;
   }
@@ -3016,21 +3016,38 @@ export async function updateInventoryStoreListing(
     include: storefrontInventoryInclude
   });
   if (!item) throw new Error("Inventory item not found");
+  const publishToStore = input.publishToStore ?? item.publishToStore;
   const publicTitle = cleanStorefrontTitle(input.publicTitle || item.publicTitle || item.itemName);
-  const publicSlug = input.publicSlug ? await uniqueSlug(input.publicSlug, item.id) : item.publicSlug || (input.publishToStore ? await uniqueSlug(publicTitle, item.id) : null);
-  const publicImageList = stringifyList(input.publicImages) ?? stringifyList(publicImages(item));
+  const shouldEnsurePublicSlug = input.publicSlug !== undefined || (input.publishToStore === true && !item.publicSlug);
+  const publicSlug =
+    input.publicSlug !== undefined
+      ? input.publicSlug
+        ? await uniqueSlug(input.publicSlug, item.id)
+        : null
+      : item.publicSlug || (shouldEnsurePublicSlug ? await uniqueSlug(publicTitle, item.id) : null);
+  const publicImageList = input.publicImages !== undefined ? stringifyList(input.publicImages) : undefined;
   const storefrontCategory = input.storefrontCategory || item.storefrontCategory || publicCategoryForItem(item);
   const onHandQuantity = Math.max(0, quantityOwned(item));
   const requestedAvailableForSale =
     input.availableForSale === undefined ? item.availableForSale ?? onHandQuantity : Math.max(0, input.availableForSale);
   const availableForSale = Math.min(onHandQuantity, requestedAvailableForSale);
-  const normalizedStoreStatus = input.publishToStore && availableForSale <= 0 ? "sold_out" : input.storeStatus;
+  const requestedStoreStatus = input.storeStatus ?? item.storeStatus;
+  const normalizedStoreStatus = publishToStore && availableForSale <= 0 ? "sold_out" : requestedStoreStatus;
   const enteredPurchaseLimit = input.maxQuantityPerOrder ?? null;
-  const purchaseLimitEnabled = Boolean(input.purchaseLimitEnabled || enteredPurchaseLimit !== null);
+  const purchaseLimitEnabled = Boolean(
+    input.purchaseLimitEnabled ?? (input.maxQuantityPerOrder !== undefined ? enteredPurchaseLimit !== null : item.purchaseLimitEnabled)
+  );
   const maxQuantityPerOrder = purchaseLimitEnabled
     ? enteredPurchaseLimit ?? item.maxQuantityPerOrder ?? DEFAULT_STOREFRONT_PURCHASE_LIMIT
     : DEFAULT_STOREFRONT_PURCHASE_LIMIT;
-  const publicDescription = cleanStorefrontDescription({
+  const shouldUpdatePublicDescription =
+    input.publicDescription !== undefined ||
+    input.publicTitle !== undefined ||
+    input.storefrontCategory !== undefined ||
+    input.storeStatus !== undefined ||
+    input.availableForSale !== undefined ||
+    input.publishToStore !== undefined;
+  const publicDescription = shouldUpdatePublicDescription ? cleanStorefrontDescription({
     title: publicTitle,
     itemName: item.itemName,
     brand: item.brand,
@@ -3040,12 +3057,13 @@ export async function updateInventoryStoreListing(
     description: item.description,
     status: normalizedStoreStatus,
     availableQuantity: availableForSale
-  });
-  const publicPrice = input.publicPrice ?? publicListingPrice(item) ?? undefined;
+  }) : undefined;
+  const publicPrice = input.publicPrice ?? item.publicPrice;
   const isPublicStatus = ["active", "sold_out"].includes(normalizedStoreStatus);
-  const shouldStampPublishedAt = input.publishToStore && isPublicStatus && !item.publishedAt;
+  const shouldStampPublishedAt = publishToStore && isPublicStatus && !item.publishedAt;
+  const publicStatusTouched = input.publishToStore !== undefined || input.storeStatus !== undefined || input.publicPrice !== undefined;
 
-  if (isPublicStatus && (!publicPrice || publicPrice <= 0)) {
+  if (publicStatusTouched && isPublicStatus && (!publicPrice || publicPrice <= 0)) {
     throw new Error("Set a public price before activating a store listing.");
   }
 
@@ -3053,15 +3071,15 @@ export async function updateInventoryStoreListing(
     where: { id: item.id },
     data: {
       publishToStore: input.publishToStore,
-      publicSlug,
-      publicTitle,
+      publicSlug: shouldEnsurePublicSlug ? publicSlug : input.publicSlug !== undefined ? publicSlug : undefined,
+      publicTitle: input.publicTitle !== undefined ? publicTitle : undefined,
       publicDescription,
-      publicPrice,
+      publicPrice: input.publicPrice,
       compareAtPrice: input.compareAtPrice,
       publicImages: publicImageList,
-      availableForSale,
-      maxQuantityPerOrder,
-      purchaseLimitEnabled,
+      availableForSale: input.availableForSale !== undefined ? availableForSale : undefined,
+      maxQuantityPerOrder: input.purchaseLimitEnabled !== undefined || input.maxQuantityPerOrder !== undefined ? maxQuantityPerOrder : undefined,
+      purchaseLimitEnabled: input.purchaseLimitEnabled !== undefined || input.maxQuantityPerOrder !== undefined ? purchaseLimitEnabled : undefined,
       shippingProfile: input.shippingProfile,
       packageWeightOz: input.packageWeightOz,
       packageLengthIn: input.packageLengthIn,
@@ -3071,12 +3089,12 @@ export async function updateInventoryStoreListing(
       freeShippingEligible: input.freeShippingEligible,
       requiresBox: input.requiresBox,
       insuranceRecommended: input.insuranceRecommended,
-      storeStatus: normalizedStoreStatus,
+      storeStatus: input.storeStatus !== undefined || input.publishToStore !== undefined || input.availableForSale !== undefined ? normalizedStoreStatus : undefined,
       localPickupAvailable: input.localPickupAvailable,
       shippingAvailable: input.shippingAvailable,
-      storefrontCategory,
-      storefrontTags: stringifyList(input.storefrontTags),
-      publishedAt: shouldStampPublishedAt ? new Date() : item.publishedAt
+      storefrontCategory: input.storefrontCategory !== undefined ? storefrontCategory : undefined,
+      storefrontTags: input.storefrontTags !== undefined ? stringifyList(input.storefrontTags) : undefined,
+      publishedAt: shouldStampPublishedAt ? new Date() : undefined
     },
     include: storefrontInventoryInclude
   });

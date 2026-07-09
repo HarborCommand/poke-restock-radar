@@ -744,6 +744,10 @@ test("inventory mutations reveal or explain saved rows after refresh", () => {
   assert.match(app, /type InventoryMutationIntent/);
   assert.match(app, /inventoryItemMatchesFilters\(item, filters, dashboard\.shippingProfiles\)/);
   assert.match(app, /findMutatedInventoryItem\(dashboard\.inventory, pendingInventoryMutation\)/);
+  assert.match(app, /const busyRequestRef = useRef\(false\)/);
+  assert.match(app, /if \(busyRequestRef\.current\) return/);
+  assert.match(app, /busyRequestRef\.current = true/);
+  assert.match(app, /busyRequestRef\.current = false/);
   assert.match(app, /saved, but hidden by current filters/);
   assert.match(app, /Clear filters and show item/);
   assert.match(app, /id=\{`inventory-row-\$\{item\.id\}`\}/);
@@ -2288,6 +2292,9 @@ test("shipping product editor saves package metadata without inventory or price 
   for (const privateField of ["quantityOwned", "quantitySold", "quantity", "soldCount", "costBasis", "supplier", "stockLots"]) {
     assert.doesNotMatch(editor, new RegExp(`name="${privateField}"`), `shipping editor should not submit ${privateField}`);
   }
+  for (const listingField of ["publishToStore", "publicSlug", "publicTitle", "publicDescription", "publicPrice", "compareAtPrice", "availableForSale", "storeStatus", "storefrontCategory", "storefrontTags"]) {
+    assert.doesNotMatch(editor, new RegExp(`name="${listingField}"`), `shipping editor should not submit unrelated listing field ${listingField}`);
+  }
   assert.match(editor, /options=\{shippingProfileSelectOptions\(shippingProfiles, item\.shippingProfile\)\}/);
   assert.match(editor, /shippingMetadataDraftFromItem\(item\)/);
   assert.match(editor, /inventoryItemWithShippingDraft\(item, shippingDraft\)/);
@@ -2299,8 +2306,7 @@ test("shipping product editor saves package metadata without inventory or price 
   assert.match(editor, /profileDefaultPlaceholder\(selectedShippingProfile, "defaultWeightOz", "oz"\)/);
   assert.match(editor, /profileDefaultPlaceholder\(selectedShippingProfile, "packageLengthIn", "in"\)/);
   assert.match(app, /inactive - existing products only/);
-  assert.match(editor, /name="publicPrice" value=\{item\.publicPrice \?\? ""\}/);
-  assert.match(editor, /name="storeStatus" value=\{item\.storeStatus\}/);
+  assert.match(editor, /Quantity, sold count, orders, sales, refunds, and price are preserved\./);
 });
 
 test("checkout shipping uses persisted active profiles while preserving hardcoded fallback", () => {
