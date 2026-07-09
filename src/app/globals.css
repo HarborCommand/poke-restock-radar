@@ -27890,3 +27890,610 @@ body .app-main-inventory .inventory-filter-row > * {
     gap: 8px;
   }
 }
+
+/* Mobile detail/cart/account/admin polish: layout-only refinements. */
+.gdg-detail-actions .gdg-primary-button,
+.gdg-detail-actions .gdg-secondary-button,
+.gdg-checkout-button,
+.pos-complete-button,
+.product-workspace-actions button,
+.product-workspace-actions a,
+body .customers-detail-actions .primary-action,
+body .customers-detail-actions .secondary-action {
+  touch-action: manipulation;
+}
+
+.gdg-gallery-thumbs,
+.gdg-account-nav,
+.product-workspace-section-tabs,
+body .customers-rewards-tabs {
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+  .gdg-detail-grid {
+    gap: 18px;
+  }
+
+  .gdg-detail-info {
+    gap: 12px;
+  }
+
+  .gdg-detail-info h1 {
+    font-size: clamp(1.7rem, 8vw, 2.45rem);
+    line-height: 1.08;
+  }
+
+  .gdg-detail-price {
+    gap: 8px;
+  }
+
+  .gdg-gallery-main {
+    min-height: clamp(240px, 72vw, 360px);
+    border-radius: 20px;
+    padding: 14px;
+  }
+
+  .gdg-gallery-thumbs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 2px 2px 6px;
+    scroll-snap-type: x proximity;
+  }
+
+  .gdg-gallery-thumbs button {
+    width: 58px;
+    height: 58px;
+    flex: 0 0 58px;
+    border-radius: 12px;
+    scroll-snap-align: start;
+  }
+
+  .gdg-product-status-list,
+  .gdg-product-trust {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-detail-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .gdg-detail-actions .gdg-primary-button,
+  .gdg-detail-actions .gdg-secondary-button {
+    min-height: 46px;
+    border-radius: 14px;
+    padding-inline: 10px;
+    font-size: 0.86rem;
+  }
+
+  .gdg-quantity-control {
+    width: 100%;
+    max-width: 280px;
+    justify-content: space-between;
+    border-radius: 16px;
+  }
+
+  .gdg-description-section article {
+    border-radius: 16px;
+    padding: 14px;
+  }
+
+  .gdg-product-detail-sections {
+    gap: 10px;
+  }
+
+  .gdg-cart-page {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+
+  .gdg-cart-header {
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .gdg-cart-header h1 {
+    font-size: clamp(1.9rem, 10vw, 3rem);
+  }
+
+  .gdg-checkout-trust-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-radius: 16px;
+  }
+
+  .gdg-checkout-trust-row article {
+    grid-template-columns: 32px minmax(0, 1fr);
+    min-height: 0;
+    padding: 10px;
+  }
+
+  .gdg-checkout-trust-row svg {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    padding: 6px;
+  }
+
+  .gdg-cart-line {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 10px;
+    border-radius: 16px;
+    padding: 12px;
+  }
+
+  .gdg-cart-line .gdg-product-image-thumb {
+    width: 64px;
+    height: 64px;
+    min-width: 64px;
+    border-radius: 14px;
+  }
+
+  .gdg-cart-line h2 {
+    font-size: 0.94rem;
+    line-height: 1.22;
+  }
+
+  .gdg-cart-stock {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+  }
+
+  .gdg-quantity-control.compact {
+    margin-top: 6px;
+  }
+
+  .gdg-cart-line-price {
+    grid-column: 2;
+    justify-items: start;
+    gap: 2px;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .gdg-cart-line > .gdg-icon-button {
+    grid-column: 1 / -1;
+    justify-self: end;
+    width: 42px;
+    height: 42px;
+  }
+
+  .gdg-cart-summary {
+    border-radius: 18px;
+    padding: 14px;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+
+  .gdg-summary-rows span,
+  .gdg-summary-rows strong {
+    align-items: flex-start;
+  }
+
+  .gdg-checkout-button {
+    min-height: 52px;
+    border-radius: 14px;
+  }
+
+  .gdg-fulfillment-choice {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-account-shell {
+    overflow-x: hidden;
+    padding-inline: 0;
+  }
+
+  .gdg-account-card,
+  .gdg-account-panel,
+  .gdg-account-stat-card,
+  .gdg-account-order-card {
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .gdg-account-nav {
+    gap: 6px;
+    padding: 4px;
+  }
+
+  .gdg-account-nav a {
+    min-height: 42px;
+  }
+
+  .gdg-rewards-hero,
+  .gdg-rewards-grid,
+  .gdg-account-dashboard-layout {
+    gap: 14px;
+  }
+
+  .gdg-rewards-balance-card {
+    padding: 20px 18px;
+  }
+
+  .gdg-rewards-balance-card > * {
+    max-width: 100%;
+  }
+
+  .gdg-rewards-balance-card::before {
+    width: 78px;
+    top: -28px;
+    right: -28px;
+    opacity: 0.28;
+  }
+
+  .gdg-rewards-balance-card strong {
+    font-size: clamp(2.8rem, 16vw, 3.6rem);
+  }
+
+  .gdg-rewards-stat-row {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-rewards-info-strip {
+    border-radius: 18px;
+    padding: 16px;
+  }
+
+  .pos-page {
+    gap: 12px;
+  }
+
+  .pos-search-panel,
+  .pos-cart-panel,
+  .pos-receipt {
+    padding: 12px;
+  }
+
+  .pos-view-row,
+  .pos-filter-row,
+  .pos-payment-options {
+    gap: 8px;
+  }
+
+  .pos-view-row,
+  .pos-filter-row {
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-bottom: 2px;
+  }
+
+  .pos-view-chip,
+  .pos-filter,
+  .pos-payment {
+    min-height: 42px;
+  }
+
+  .pos-view-chip,
+  .pos-filter {
+    flex: 0 0 auto;
+  }
+
+  .pos-result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-product-card {
+    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: start;
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .pos-product-card .inventory-image-frame {
+    width: 64px;
+    height: 64px;
+  }
+
+  .pos-product-copy strong {
+    min-height: 0;
+    -webkit-line-clamp: 3;
+  }
+
+  .pos-add-button {
+    grid-column: 1 / -1;
+    min-height: 44px;
+  }
+
+  .pos-cart-line {
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .pos-cart-line .inventory-image-frame {
+    width: 56px;
+    height: 56px;
+  }
+
+  .pos-line-price-stack,
+  .pos-line-actions,
+  .pos-line-total,
+  .pos-cart-quantity {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .pos-cart-quantity {
+    width: min(100%, 142px);
+  }
+
+  .pos-payment-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pos-payment {
+    flex: initial;
+  }
+
+  .pos-customer-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-confirm-modal,
+  .pos-price-adjust-modal,
+  body .inventory-modal.pos-confirm-modal,
+  body .inventory-modal.pos-price-adjust-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+  }
+
+  body .product-workspace-backdrop,
+  body .inventory-modal-backdrop {
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  body .app-main-inventory .catalog-panel,
+  body .app-main-inventory .catalog-table,
+  body .catalog-panel,
+  body .catalog-table {
+    overflow: clip !important;
+  }
+
+  body .app-main-inventory .catalog-row.catalog-head,
+  body .catalog-row.catalog-head {
+    display: none !important;
+  }
+
+  body .app-main-inventory .catalog-row,
+  body .catalog-row {
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+    align-items: stretch !important;
+    padding: 12px !important;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+  }
+
+  body .catalog-product-wrap {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  body .catalog-cell {
+    display: grid;
+    grid-template-columns: minmax(86px, 0.42fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+  }
+
+  body .catalog-cell::before {
+    content: attr(data-label);
+    color: #64748b;
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  body .catalog-cell[data-label="Status"] {
+    grid-template-columns: minmax(86px, 0.42fr) minmax(0, 1fr);
+  }
+
+  body .catalog-cell[data-label="Status"] .chip {
+    width: max-content;
+    max-width: 100%;
+  }
+
+  body .catalog-actions {
+    justify-content: stretch !important;
+  }
+
+  body .catalog-action-trigger {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 42px;
+  }
+
+  body .inventory-details-modal.product-workspace {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+    border-radius: 18px;
+  }
+
+  body .product-workspace-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  body .product-workspace-title h2 {
+    font-size: 1.12rem;
+  }
+
+  body .product-workspace-stats {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body .product-workspace-section-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 8px 12px;
+  }
+
+  body .product-workspace-section-tabs button {
+    flex: 0 0 auto;
+    min-height: 40px;
+  }
+
+  body .product-workspace-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  body .product-workspace-actions > * {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+  }
+
+  body .product-workspace-content {
+    padding: 12px;
+  }
+
+  body .inventory-details-grid,
+  body .product-workspace-focused-grid,
+  body .product-workspace-overview-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  body .product-workspace-card-head,
+  body .product-image-manager-head,
+  body .product-image-legacy-import,
+  body .product-image-add-row,
+  body .product-image-add-fields,
+  body .shipping-package-grid,
+  body .shipping-option-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body .inventory-edit-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin-inline: -12px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid #e5e7eb;
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  body .inventory-edit-actions .mini-action,
+  body .inventory-edit-actions .primary-action {
+    flex: 1 1 140px;
+    min-height: 42px;
+    justify-content: center;
+  }
+
+  body .compact-ledger-list article.stock-lot-card {
+    grid-template-columns: 1fr;
+  }
+
+  body .compact-ledger-list article.stock-lot-card .compact-ledger-actions {
+    justify-content: stretch;
+  }
+
+  body .compact-ledger-list article.stock-lot-card .compact-ledger-actions .mini-action {
+    flex: 1 1 130px;
+  }
+
+  body .customers-rewards-page {
+    gap: 14px;
+  }
+
+  body .customers-rewards-card,
+  body .customers-detail-panel,
+  body .customers-kpi {
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  body .customers-kpi {
+    min-height: 0;
+  }
+
+  body .customers-rewards-layout,
+  body .customers-overview-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  body .customers-rewards-toolbar {
+    align-items: stretch;
+  }
+
+  body .customers-table,
+  body .customers-ledger-table {
+    overflow-x: visible;
+  }
+
+  body .customers-table-row,
+  body .customers-ledger-row {
+    min-width: 0;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+
+  body .customers-table-row.header,
+  body .customers-ledger-row.header {
+    display: none;
+  }
+
+  body .customers-row-actions {
+    justify-content: stretch;
+  }
+
+  body .customers-row-actions .secondary-action,
+  body .customers-ledger-row > button {
+    width: 100%;
+    min-height: 40px;
+    justify-content: center;
+  }
+
+  body .customers-detail-header {
+    display: grid;
+  }
+
+  body .customers-detail-list > div,
+  body .customers-mini-ledger > div,
+  body .admin-reward-ledger-list article {
+    display: grid;
+    justify-items: start;
+  }
+
+  body .customers-admin-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+}
+
+@media (max-width: 430px) {
+  .gdg-detail-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-checkout-trust-row {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-rewards-grabby-card {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  body .product-workspace-stats,
+  body .product-workspace-actions,
+  .pos-payment-options {
+    grid-template-columns: 1fr;
+  }
+}

@@ -639,10 +639,15 @@ test("POS receipt success state includes metadata and copy receipt affordance", 
   assert.match(receipt, /GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL/);
 });
 
-test("POS mobile layout keeps cart and product rows stacked without obvious overflow risk", () => {
+test("POS mobile layout keeps cart and product rows compact without obvious overflow risk", () => {
   const css = readSource("../src/app/globals.css");
   assert.match(css, /@media \(max-width: 1100px\)[\s\S]*\.pos-workspace\s*\{[\s\S]*grid-template-columns:\s*1fr/);
   assert.match(css, /@media \(max-width: 720px\)[\s\S]*\.pos-scan-row,[\s\S]*\.pos-result-grid,[\s\S]*\.pos-product-card,[\s\S]*\.pos-cart-line,[\s\S]*\.pos-receipt/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.pos-view-row,[\s\S]*?\.pos-filter-row\s*\{[\s\S]*?flex-wrap: wrap;[\s\S]*?overflow: visible;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.pos-product-card\s*\{[\s\S]*?grid-template-columns: 64px minmax\(0, 1fr\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.pos-product-card \.inventory-image-frame\s*\{[\s\S]*?width: 64px;[\s\S]*?height: 64px;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.pos-cart-line\s*\{[\s\S]*?grid-template-columns: 56px minmax\(0, 1fr\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.pos-confirm-modal,[\s\S]*?\.pos-price-adjust-modal,[\s\S]*?max-height: calc\(100dvh - 24px\);/);
   assert.match(css, /\.pos-cart-panel\s*\{[\s\S]*position:\s*sticky/);
 });
 

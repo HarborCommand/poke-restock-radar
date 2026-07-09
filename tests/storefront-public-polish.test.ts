@@ -107,6 +107,19 @@ test("mobile storefront polish prevents common narrow-viewport overflow", () => 
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-login-pill-row\s*\{[\s\S]*?grid-template-columns: 1fr;/);
 });
 
+test("mobile detail, cart, and rewards surfaces use compact safe layouts", () => {
+  assert.match(css, /Mobile detail\/cart\/account\/admin polish: layout-only refinements/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-gallery-thumbs\s*\{[\s\S]*?flex-wrap: nowrap;[\s\S]*?overflow-x: auto;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-gallery-thumbs button\s*\{[\s\S]*?width: 58px;[\s\S]*?height: 58px;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-detail-actions\s*\{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-detail-actions \.gdg-primary-button,[\s\S]*?\.gdg-detail-actions \.gdg-secondary-button\s*\{[\s\S]*?min-height: 46px;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-cart-line\s*\{[\s\S]*?grid-template-columns: 64px minmax\(0, 1fr\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-checkout-button\s*\{[\s\S]*?min-height: 52px;/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-rewards-balance-card strong\s*\{[\s\S]*?font-size: clamp\(2\.8rem, 16vw, 3\.6rem\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-rewards-stat-row\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+  assert.match(css, /@media \(max-width: 430px\)\s*\{[\s\S]*?\.gdg-rewards-grabby-card\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+});
+
 test("public trust copy remains careful and does not imply official authorization", () => {
   const publicCopy = [productCard, productDetail, cartClient, storefrontFooter].join("\n");
 
