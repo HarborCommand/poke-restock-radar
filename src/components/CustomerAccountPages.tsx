@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import {
   ArrowRight,
   ChevronRight,
+  CheckCircle2,
+  Coins,
   Gift,
   Headphones,
   Home,
@@ -10,12 +12,16 @@ import {
   MapPin,
   Mail,
   PackageCheck,
+  RefreshCcw,
+  Rocket,
   Search,
   Send,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
+  Star,
   Trophy,
+  TrendingUp,
   UserRound,
   type LucideIcon
 } from "lucide-react";
@@ -28,7 +34,6 @@ import {
   type CustomerAccountOrderDetail,
   type CustomerAccountOrderHistoryItem
 } from "@/lib/customer-account-auth";
-import { GrabbyCard } from "@/components/brand/GrabbyCard";
 import { GrabbyMascot } from "@/components/brand/GrabbyMascot";
 import type { CustomerRewardActivityItem } from "@/lib/customer-rewards";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
@@ -1050,67 +1055,200 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
   );
 }
 
+const rewardLevels = [
+  { label: "Rookie Collector", points: 0 },
+  { label: "Card Hunter", points: 500 },
+  { label: "Pack Pro", points: 1500 },
+  { label: "Elite Trainer", points: 3000 },
+  { label: "Master Collector", points: 5000 }
+] as const;
+
+function rewardLevelProgress(lifetimeEarnedPoints: number) {
+  const points = Math.max(0, lifetimeEarnedPoints);
+  const currentIndex = rewardLevels.reduce((selectedIndex, level, index) => (points >= level.points ? index : selectedIndex), 0);
+  const currentLevel = rewardLevels[currentIndex] ?? rewardLevels[0];
+  const nextLevel = rewardLevels[currentIndex + 1] ?? null;
+  const nextThreshold = nextLevel?.points ?? currentLevel.points;
+  const pointsToNext = nextLevel ? Math.max(0, nextLevel.points - points) : 0;
+  const fullTrackMax = rewardLevels[rewardLevels.length - 1]?.points ?? 5000;
+  const rawTrackPercent = fullTrackMax > 0 ? (Math.min(points, fullTrackMax) / fullTrackMax) * 100 : 100;
+  const visualTrackPercent = points > 0 ? Math.max(3, Math.min(100, rawTrackPercent)) : 0;
+  return { currentLevel, nextLevel, nextThreshold, points, pointsToNext, visualTrackPercent };
+}
+
+function rewardActivityView(entry: CustomerRewardActivityItem) {
+  const lowerReason = entry.reason.toLowerCase();
+  const reversed = entry.points < 0 || entry.status === "reversed";
+  const pending = entry.status === "pending";
+  const pos = lowerReason.includes("pos");
+  const online = Boolean(entry.orderNumber);
+  const title = reversed
+    ? "Points reversed"
+    : pending
+      ? online
+        ? "Online order pending"
+        : pos
+          ? "POS sale pending"
+          : "Points pending"
+      : online
+        ? "Online order earned"
+        : pos
+          ? "POS sale earned"
+          : "Points earned";
+  const status = reversed ? "Reversed" : pending ? "Pending" : "Earned";
+  const tone = reversed ? "reversed" : pending ? "pending" : "earned";
+  const Icon = reversed ? RefreshCcw : pending ? Gift : CheckCircle2;
+  return { title, status, tone, Icon };
+}
+
 export function AccountRewards({ account, activity = [] }: { account: CurrentCustomerAccount; activity?: CustomerRewardActivityItem[] }) {
   const balance = account.rewardBalance;
   const availablePoints = balance?.availablePoints ?? 0;
   const lifetimeEarnedPoints = balance?.lifetimeEarnedPoints ?? 0;
   const pendingPoints = balance?.pendingPoints ?? 0;
-  const nextThreshold = 500;
-  const progressPoints = Math.min(availablePoints, nextThreshold);
-  const progressPercent = Math.max(2, Math.min(100, Math.round((progressPoints / nextThreshold) * 100)));
+  const visibleReversedPoints = Math.abs(activity.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
+  const progress = rewardLevelProgress(lifetimeEarnedPoints);
+  const progressMax = progress.nextLevel ? progress.nextThreshold : progress.points || progress.nextThreshold || 1;
+  const progressNow = Math.min(progress.points, progressMax);
+  const milestoneMax = rewardLevels[rewardLevels.length - 1]?.points ?? 5000;
+  const pointsLabel = (value: number) => value.toLocaleString();
+  const summaryCards = [
+    {
+      label: "Available points",
+      value: availablePoints,
+      detail: "Ready when redemption launches",
+      tone: "gold",
+      icon: Star
+    },
+    {
+      label: "Points pending",
+      value: pendingPoints,
+      detail: "Until shipped, picked up, or cleared",
+      tone: "violet",
+      icon: Gift
+    },
+    {
+      label: "Lifetime earned",
+      value: lifetimeEarnedPoints,
+      detail: "Collector progress total",
+      tone: "green",
+      icon: TrendingUp
+    },
+    {
+      label: "Points reversed",
+      value: visibleReversedPoints,
+      detail: "Visible recent activity",
+      tone: "blue",
+      icon: RefreshCcw
+    }
+  ] as const;
+
   return (
     <>
       <AccountNavigation active="rewards" />
-      <section className="gdg-account-card gdg-rewards-hero" aria-labelledby="gdg-rewards-title">
-        <div className="gdg-rewards-hero-copy">
-          <p className="gdg-overline">Customer rewards</p>
-          <h1 id="gdg-rewards-title">GameDayGrabs Rewards</h1>
-          <p>Earn 1 point per $1 on eligible product purchases and track your collector progress from your account.</p>
-          <span className="gdg-rewards-coming-soon">Redemption coming soon</span>
+      <section className="gdg-account-card gdg-rewards-spotlight" aria-labelledby="gdg-rewards-title">
+        <div className="gdg-rewards-spotlight-mascot">
+          <GrabbyMascot variant="rewards" size="large" />
         </div>
-        <div className="gdg-rewards-balance-card" aria-label="Current rewards balance">
-          <span>Available points</span>
-          <strong>{availablePoints}</strong>
-          <small>Points are display-only and do not affect checkout totals yet.</small>
+        <div className="gdg-rewards-spotlight-copy">
+          <h1 id="gdg-rewards-title">Keep earning with Grabby!</h1>
+          <p>Earn 1 point per $1 spent on eligible product purchases.</p>
+          <p>Rewards redemption is coming soon. Points are display-only and do not affect checkout totals yet.</p>
+          <div className="gdg-rewards-spotlight-actions">
+            <Link href="/policies" className="gdg-primary-button">
+              Rewards rules
+              <ChevronRight size={16} aria-hidden="true" />
+            </Link>
+            <span className="gdg-rewards-coming-soon">
+              <Gift size={15} aria-hidden="true" />
+              Redemption coming soon
+            </span>
+          </div>
+        </div>
+        <div className="gdg-rewards-spotlight-rules" aria-label="Rewards quick rules">
+          <div>
+            <AccountIconBadge tone="gold" icon={Trophy} />
+            <p><strong>Earn points</strong><span>1 pt per $1 spent</span></p>
+          </div>
+          <div>
+            <AccountIconBadge tone="violet" icon={Gift} />
+            <p><strong>Points pending</strong><span>Until shipped, picked up, or cleared</span></p>
+          </div>
+          <div>
+            <AccountIconBadge tone="green" icon={ShieldCheck} />
+            <p><strong>Refunds may</strong><span>Reverse points</span></p>
+          </div>
+          <div>
+            <AccountIconBadge tone="blue" icon={Coins} />
+            <p><strong>No cash value</strong><span>Or exchange</span></p>
+          </div>
         </div>
       </section>
-      <div className="gdg-rewards-sidekick">
-        <GrabbyCard
-          variant="rewards"
-          compact
-          ctaHref="/policies"
-          ctaLabel="Rewards rules"
-          className="gdg-rewards-grabby-card"
-        />
-      </div>
-      <RewardsInfoStrip />
 
-      <div className="gdg-rewards-grid">
+      <div className="gdg-rewards-summary-grid" aria-label="Rewards points summary">
+        {summaryCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <article key={card.label} className={`gdg-rewards-summary-card ${card.tone}`}>
+              <span className="gdg-rewards-summary-icon">
+                <Icon size={24} aria-hidden="true" />
+              </span>
+              <div>
+                <span>{card.label}</span>
+                <strong>{pointsLabel(card.value)}</strong>
+                <small>{card.detail}</small>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="gdg-rewards-dashboard-grid">
         <section className="gdg-account-card gdg-rewards-level-card" aria-labelledby="gdg-rewards-level-title">
           <div className="gdg-account-panel-heading">
             <div>
-              <p className="gdg-overline">Level</p>
-              <h2 id="gdg-rewards-level-title">Rookie Collector</h2>
+              <p className="gdg-overline">Your level</p>
+              <h2 id="gdg-rewards-level-title">{progress.currentLevel.label}</h2>
+              <p className="gdg-account-panel-copy">Keep going. You are on your way to the next level.</p>
             </div>
             <AccountIconBadge tone="gold" icon={Trophy} />
           </div>
-          <p className="gdg-account-panel-copy">Build points as eligible paid orders are shipped, picked up, or cleared.</p>
-          <div className="gdg-account-progress" aria-label={`${progressPoints} of ${nextThreshold} points toward Rookie Collector progress`}>
-            <span style={{ width: `${progressPercent}%` }} />
+          <div
+            className="gdg-rewards-progress-track"
+            role="progressbar"
+            aria-label={`${pointsLabel(progress.points)} of ${pointsLabel(progressMax)} points toward ${progress.nextLevel?.label ?? progress.currentLevel.label}`}
+            aria-valuemin={progress.currentLevel.points}
+            aria-valuemax={progressMax}
+            aria-valuenow={progressNow}
+          >
+            <span style={{ width: `${progress.visualTrackPercent}%` }} />
           </div>
-          <div className="gdg-account-progress-label">
-            <span>{progressPoints} / {nextThreshold} points</span>
-            <span>Next threshold</span>
+          <div className="gdg-rewards-progress-label">
+            <strong>{pointsLabel(progress.points)} / {pointsLabel(progressMax)} points</strong>
+            <span>{progress.nextLevel ? `Next level: ${progress.nextLevel.label}` : "Top level reached"}</span>
           </div>
-          <div className="gdg-rewards-stat-row" aria-label="Rewards summary">
-            <div>
-              <span>Lifetime earned</span>
-              <strong>{lifetimeEarnedPoints}</strong>
-            </div>
-            <div>
-              <span>Pending</span>
-              <strong>{pendingPoints}</strong>
-            </div>
+          <div className="gdg-rewards-milestones" aria-hidden="true">
+            {rewardLevels.map((level) => (
+              <span
+                key={level.points}
+                className={progress.points >= level.points ? "reached" : ""}
+                style={{ left: `${milestoneMax > 0 ? (level.points / milestoneMax) * 100 : 0}%` }}
+              >
+                <i />
+                <b>{level.points.toLocaleString()}</b>
+              </span>
+            ))}
+          </div>
+          <div className="gdg-rewards-next-callout">
+            <Rocket size={22} aria-hidden="true" />
+            <p>
+              <strong>
+                {progress.nextLevel
+                  ? `Earn ${pointsLabel(progress.pointsToNext)} more points to reach ${progress.nextLevel.label}`
+                  : "You have reached the current top rewards level"}
+              </strong>
+              <span>More points unlock more rewards when redemption launches.</span>
+            </p>
           </div>
         </section>
 
@@ -1118,55 +1256,74 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
           <div className="gdg-account-panel-heading">
             <div>
               <p className="gdg-overline">How points work</p>
-              <h2 id="gdg-rewards-how-title">Points explainer</h2>
+              <h2 id="gdg-rewards-how-title">Rewards rules</h2>
             </div>
             <AccountIconBadge tone="green" icon={ShieldCheck} />
           </div>
           <ul>
-            <li>Earn 1 point per $1 on eligible product purchases.</li>
-            <li>Points may remain pending until the order is shipped, picked up, or cleared.</li>
-            <li>Shipping, tax, discounts, canceled orders, refunded items, and test/smoke orders do not earn points.</li>
-            <li>Refunds/cancellations may reverse points.</li>
-            <li>Points have no cash value.</li>
+            {[
+              "Earn 1 point per $1 on eligible product purchases.",
+              "Points may remain pending until the order is shipped, picked up, or cleared.",
+              "Shipping, tax, discounts, canceled orders, refunded items, and test/smoke orders do not earn points.",
+              "Refunds/cancellations may reverse points.",
+              "Points have no cash value."
+            ].map((copy) => (
+              <li key={copy}>
+                <CheckCircle2 size={17} aria-hidden="true" />
+                <span>{copy}</span>
+              </li>
+            ))}
           </ul>
         </section>
       </div>
 
-      <div className="gdg-rewards-grid">
+      <div className="gdg-rewards-bottom-grid">
         <section className="gdg-account-card compact gdg-rewards-activity-card" aria-labelledby="gdg-rewards-activity-title">
           <div className="gdg-account-panel-heading">
             <div>
-              <p className="gdg-overline">Ledger</p>
+              <p className="gdg-overline">Recent activity</p>
               <h2 id="gdg-rewards-activity-title">Recent activity</h2>
             </div>
+            <Link href="/account/orders">View orders <ArrowRight size={14} aria-hidden="true" /></Link>
           </div>
           {activity.length ? (
             <div className="gdg-reward-activity-list">
-              {activity.map((entry) => (
-                <article key={entry.id}>
-                  <div>
-                    <strong>{entry.reason}</strong>
-                    <span>
-                      {entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {dateLabel(entry.createdAt)} - {entry.status}
+              {activity.map((entry) => {
+                const item = rewardActivityView(entry);
+                const Icon = item.Icon;
+                return (
+                  <article key={entry.id} className={item.tone}>
+                    <span className="gdg-reward-activity-icon">
+                      <Icon size={18} aria-hidden="true" />
                     </span>
-                  </div>
-                  <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
-                </article>
-              ))}
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>
+                        {entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {dateLabel(entry.createdAt)}
+                      </span>
+                    </div>
+                    <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
+                    <em>{item.status}</em>
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <div className="gdg-rewards-empty-state">
               <Gift size={24} aria-hidden="true" />
-              <strong>No reward activity yet.</strong>
-              <p>Eligible paid orders will appear here as pending rewards after payment is confirmed.</p>
+              <strong>Start earning points on your next eligible purchase.</strong>
+              <p>Eligible paid orders and matched POS sales will appear here after points are recorded.</p>
             </div>
           )}
         </section>
 
         <aside className="gdg-account-card compact gdg-rewards-links-card" aria-labelledby="gdg-rewards-links-title">
-          <p className="gdg-overline">Helpful links</p>
-          <h2 id="gdg-rewards-links-title">Keep going</h2>
-          <p>Review your orders, read the current rewards rules, or contact support if something looks off.</p>
+          <div className="gdg-rewards-help-icon">
+            <Headphones size={24} aria-hidden="true" />
+          </div>
+          <p className="gdg-overline">Need help?</p>
+          <h2 id="gdg-rewards-links-title">We are here for you.</h2>
+          <p>If you have any questions about rewards, reach out or review the current rules.</p>
           <div className="gdg-account-support-links">
             <Link href="/account/orders">
               <ShoppingBag size={15} aria-hidden="true" />

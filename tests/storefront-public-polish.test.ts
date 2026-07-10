@@ -115,9 +115,9 @@ test("mobile detail, cart, and rewards surfaces use compact safe layouts", () =>
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-detail-actions \.gdg-primary-button,[\s\S]*?\.gdg-detail-actions \.gdg-secondary-button\s*\{[\s\S]*?min-height: 46px;/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-cart-line\s*\{[\s\S]*?grid-template-columns: 64px minmax\(0, 1fr\);/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-checkout-button\s*\{[\s\S]*?min-height: 52px;/);
-  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-rewards-balance-card strong\s*\{[\s\S]*?font-size: clamp\(2\.8rem, 16vw, 3\.6rem\);/);
-  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-rewards-stat-row\s*\{[\s\S]*?grid-template-columns: 1fr;/);
-  assert.match(css, /@media \(max-width: 430px\)\s*\{[\s\S]*?\.gdg-rewards-grabby-card\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+  assert.match(css, /@media \(max-width: 900px\)\s*\{[\s\S]*?\.gdg-rewards-summary-grid\s*\{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(css, /@media \(max-width: 640px\)\s*\{[\s\S]*?\.gdg-reward-activity-list article\s*\{[\s\S]*?grid-template-columns: 38px minmax\(0, 1fr\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-rewards-summary-grid\s*\{[\s\S]*?grid-template-columns: 1fr;/);
 });
 
 test("public trust copy remains careful and does not imply official authorization", () => {
