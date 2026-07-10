@@ -4315,11 +4315,11 @@ function CustomerSearchProfileCard({
         <span><b>{customer.availablePoints.toLocaleString()}</b><small>Available points</small></span>
       </div>
       <div className="customer-search-profile-actions">
-        <button className="secondary-action small" type="button" onClick={onView}>
+        <button className="secondary-action small" type="button" onClick={onView} aria-label={`View profile for ${customer.displayName}`}>
           <Eye size={14} />
           View Profile
         </button>
-        <button className="primary-action small" type="button" onClick={onSelect}>
+        <button className="primary-action small" type="button" onClick={onSelect} aria-label={`Select customer ${customer.displayName}`}>
           <Check size={14} />
           Select Customer
         </button>
@@ -4902,8 +4902,11 @@ function PosPanel({
   const [cart, setCart] = useState<PosCartLine[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethodDTO | null>(null);
   const [paymentReference, setPaymentReference] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerResults, setCustomerResults] = useState<AdminCustomerRewardsCustomerDTO[]>([]);
+  const [customerSearchMessage, setCustomerSearchMessage] = useState<string | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<AdminCustomerRewardsCustomerDTO | null>(null);
+  const [previewCustomer, setPreviewCustomer] = useState<AdminCustomerRewardsCustomerDTO | null>(null);
   const [customerMatch, setCustomerMatch] = useState<PosCustomerMatchResultDTO | null>(null);
   const [matchingCustomer, setMatchingCustomer] = useState(false);
   const [saleIdempotencyKey, setSaleIdempotencyKey] = useState(() => newPosSaleIdempotencyKey());
@@ -5119,8 +5122,11 @@ function PosPanel({
     setPosMessage(null);
     setPaymentMethod(null);
     setPaymentReference("");
-    setCustomerEmail("");
-    setCustomerPhone("");
+    setCustomerSearch("");
+    setCustomerResults([]);
+    setCustomerSearchMessage(null);
+    setSelectedCustomer(null);
+    setPreviewCustomer(null);
     setCustomerMatch(null);
     setMatchingCustomer(false);
     setSaleIdempotencyKey(newPosSaleIdempotencyKey());
@@ -5130,42 +5136,70 @@ function PosPanel({
     searchInputRef.current?.focus();
   }
 
-  function updateCustomerEmail(value: string) {
-    setCustomerEmail(value);
-    setCustomerMatch(null);
-  }
-
-  function updateCustomerPhone(value: string) {
-    setCustomerPhone(value);
-    setCustomerMatch(null);
-  }
-
-  async function matchCustomerContact() {
+  async function searchPosCustomers() {
     if (matchingCustomer) return;
-    const trimmedEmail = customerEmail.trim();
-    const trimmedPhone = customerPhone.trim();
-    if (!trimmedEmail && !trimmedPhone) {
-      setCustomerMatch(null);
-      setPosMessage("Enter customer email or phone to match an account.");
+    const trimmedSearch = customerSearch.trim();
+    if (trimmedSearch.length < 2) {
+      setCustomerResults([]);
+      setCustomerSearchMessage("Enter at least 2 characters to search by name, email, or phone.");
       return;
     }
     setMatchingCustomer(true);
+    setCustomerSearchMessage(null);
+    try {
+      const params = new URLSearchParams({
+        search: trimmedSearch,
+        page: "1",
+        pageSize: "6",
+        status: "all",
+        sort: "name"
+      });
+      const result = await requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`);
+      setCustomerResults(result.customers);
+      setCustomerSearchMessage(result.customers.length ? "Search is discovery only. Select a customer to link this POS cart." : "No customers matched that search.");
+    } catch (error) {
+      setCustomerResults([]);
+      setCustomerSearchMessage(error instanceof Error ? error.message : "Customer search failed.");
+    } finally {
+      setMatchingCustomer(false);
+    }
+  }
+
+  async function selectPosCustomer(customer: AdminCustomerRewardsCustomerDTO) {
+    if (matchingCustomer) return;
+    setMatchingCustomer(true);
     setPosMessage(null);
+    setCustomerSearchMessage(null);
     try {
       const result = await requestJson<{ match: PosCustomerMatchResultDTO }>("/api/radar/pos/customer-match", {
         method: "POST",
         body: JSON.stringify({
-          customerEmail: trimmedEmail || undefined,
-          customerPhone: trimmedPhone || undefined
+          selectedCustomerAccountId: customer.id
         })
       });
+      setSelectedCustomer(customer);
       setCustomerMatch(result.match);
+      setPreviewCustomer(null);
+      setCustomerResults([]);
     } catch (error) {
       setCustomerMatch(null);
-      setPosMessage(error instanceof Error ? error.message : "Customer match failed.");
+      setPosMessage(error instanceof Error ? error.message : "Customer selection failed.");
     } finally {
       setMatchingCustomer(false);
     }
+  }
+
+  function clearSelectedCustomer() {
+    setSelectedCustomer(null);
+    setPreviewCustomer(null);
+    setCustomerMatch(null);
+    setCustomerSearchMessage(null);
+  }
+
+  function handleCustomerSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    void searchPosCustomers();
   }
 
   function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
@@ -5227,16 +5261,18 @@ function PosPanel({
           })),
           paymentMethod,
           paymentReference,
-          customerEmail: customerEmail.trim() || undefined,
-          customerPhone: customerPhone.trim() || undefined
+          selectedCustomerAccountId: selectedCustomer?.id
         })
       });
       setReceipt(result.sale);
       setCart([]);
       setPaymentMethod(null);
       setPaymentReference("");
-      setCustomerEmail("");
-      setCustomerPhone("");
+      setCustomerSearch("");
+      setCustomerResults([]);
+      setCustomerSearchMessage(null);
+      setSelectedCustomer(null);
+      setPreviewCustomer(null);
       setCustomerMatch(null);
       setSaleIdempotencyKey(newPosSaleIdempotencyKey());
       setPriceAdjustmentDraft(null);
@@ -5254,7 +5290,7 @@ function PosPanel({
   const adjustmentPreviewPrice = Number.isFinite(adjustmentPriceValue) ? roundPosMoney(adjustmentPriceValue) : null;
   const adjustmentPreviewDiscount =
     adjustmentLine && adjustmentPreviewPrice !== null ? roundPosMoney(Math.max(0, adjustmentLine.originalUnitPrice - adjustmentPreviewPrice)) : null;
-  const customerContactEntered = Boolean(customerEmail.trim() || customerPhone.trim());
+  const customerContactEntered = Boolean(selectedCustomer);
   const customerLinked = customerMatch?.customerMatchMethod === "email" && Boolean(customerMatch.customerAccountId);
   const customerStatusClass = customerLinked
     ? "good"
@@ -5263,10 +5299,10 @@ function PosPanel({
       : "muted";
   const customerStatusLabel = customerMatch
     ? customerLinked
-      ? `Customer matched: ${customerMatch.displayEmail ?? customerMatch.customerEmail ?? "verified account"}`
+      ? customerMatch.message
       : customerMatch.message
     : customerContactEntered
-      ? "Contact entered. Search to check for a verified account."
+      ? "Customer selected, but server validation has not completed."
       : "No customer attached.";
 
   return (
@@ -5481,50 +5517,89 @@ function PosPanel({
             <div className="pos-customer-heading">
               <div>
                 <h3>Customer (optional)</h3>
-                <p>Link a verified email account for POS rewards eligibility. Phone alone never awards points.</p>
+                <p>Search by name, email, or phone. Results are discovery only until you select a customer.</p>
               </div>
+            </div>
+            <div className="pos-customer-search-row">
+              <label className="pos-reference-input">
+                Search customer
+                <span className="pos-input-icon-row">
+                  <Search size={14} />
+                  <input
+                    value={customerSearch}
+                    onChange={(event) => {
+                      setCustomerSearch(event.currentTarget.value);
+                      setCustomerSearchMessage(null);
+                    }}
+                    onKeyDown={handleCustomerSearchKeyDown}
+                    placeholder="Search by name, email, or phone"
+                    autoComplete="off"
+                  />
+                </span>
+              </label>
               <button
                 className="mini-action"
                 type="button"
-                disabled={matchingCustomer || !customerContactEntered}
-                onClick={() => void matchCustomerContact()}
+                disabled={matchingCustomer || customerSearch.trim().length < 2}
+                onClick={() => void searchPosCustomers()}
               >
                 <Search size={14} />
-                {matchingCustomer ? "Matching" : "Match"}
+                {matchingCustomer ? "Searching" : "Search"}
               </button>
             </div>
-            <div className="pos-customer-fields">
-              <label className="pos-reference-input">
-                Customer email
-                <span className="pos-input-icon-row">
-                  <Mail size={14} />
-                  <input
-                    value={customerEmail}
-                    onChange={(event) => updateCustomerEmail(event.currentTarget.value)}
-                    placeholder="customer@example.com"
-                    inputMode="email"
+            {customerSearchMessage ? <p className="customers-muted-note">{customerSearchMessage}</p> : null}
+            {customerResults.length ? (
+              <div className="pos-customer-results" aria-label="POS customer search results">
+                {customerResults.map((customer) => (
+                  <CustomerSearchProfileCard
+                    key={customer.id}
+                    customer={customer}
+                    selected={selectedCustomer?.id === customer.id}
+                    previewed={previewCustomer?.id === customer.id}
+                    onView={() => setPreviewCustomer(customer)}
+                    onSelect={() => void selectPosCustomer(customer)}
                   />
-                </span>
-              </label>
-              <label className="pos-reference-input">
-                Customer phone
-                <span className="pos-input-icon-row">
-                  <Smartphone size={14} />
-                  <input
-                    value={customerPhone}
-                    onChange={(event) => updateCustomerPhone(event.currentTarget.value)}
-                    placeholder="Optional phone"
-                    inputMode="tel"
-                  />
-                </span>
-              </label>
-            </div>
+                ))}
+              </div>
+            ) : null}
+            {previewCustomer ? (
+              <div className="pos-customer-preview">
+                <CustomerProfileSummaryCard customer={previewCustomer} title="Customer Profile Preview" compact />
+              </div>
+            ) : null}
+            {selectedCustomer ? (
+              <div className="pos-selected-customer">
+                <CustomerProfileSummaryCard customer={selectedCustomer} title="Selected Customer" compact />
+                <div className="pos-selected-customer-actions">
+                  <button
+                    className="secondary-action small"
+                    type="button"
+                    onClick={() => setPreviewCustomer(selectedCustomer)}
+                    aria-label={`View profile for selected customer ${selectedCustomer.displayName}`}
+                  >
+                    <Eye size={14} />
+                    View Profile
+                  </button>
+                  <button
+                    className="secondary-action small"
+                    type="button"
+                    onClick={clearSelectedCustomer}
+                    aria-label={`Clear selected POS customer ${selectedCustomer.displayName}`}
+                  >
+                    <X size={14} />
+                    Clear Customer
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className={`pos-customer-status ${customerStatusClass}`} aria-live="polite">
               <strong>{customerStatusLabel}</strong>
               <small>
                 {customerLinked
-                  ? customerMatch?.message
-                  : "If there is no verified email match, contact can be saved on the POS receipt only."}
+                  ? "Server will calculate any eligible POS rewards from the completed sale subtotal."
+                  : selectedCustomer
+                    ? "Name and phone help discovery only. Rewards require a verified active account match."
+                    : "No customer is attached to this POS cart."}
               </small>
             </div>
           </div>
@@ -5671,9 +5746,9 @@ function PosPanel({
               <span>Tax <strong>{money(cartTotals.tax)}</strong></span>
               <span>Payment <strong>{paymentMethod ? posPaymentMethodLabel(paymentMethod) : "Not selected"}</strong></span>
               {paymentReference.trim() ? <span>Reference <strong>{paymentReference.trim()}</strong></span> : null}
-              {customerContactEntered ? <span>Customer <strong>{customerLinked ? customerMatch?.displayEmail ?? customerEmail.trim() : "Contact only"}</strong></span> : null}
-              {customerContactEntered ? (
-                <span>Rewards <strong>{customerMatch?.rewardsEligible ? "Eligible after sale" : customerLinked ? "Not active for POS" : "Not linked"}</strong></span>
+              {selectedCustomer ? <span>Customer <strong>{selectedCustomer.displayName}</strong></span> : null}
+              {selectedCustomer ? (
+                <span>Rewards <strong>{customerMatch?.rewardsEligible ? "Eligible after sale" : customerLinked ? "Selected account" : "Not eligible"}</strong></span>
               ) : null}
               <span>Total <strong>{money(cartTotals.total)}</strong></span>
             </div>

@@ -295,6 +295,7 @@ test("POS sale request accepts optional customer contact without trusting reward
     idempotencyKey: "20260702T120000-contact-sale",
     items: [{ inventoryItemId: "item-1", quantity: 1 }],
     paymentMethod: "zelle",
+    selectedCustomerAccountId: "selected-customer",
     customerEmail: "collector@example.test",
     customerPhone: "(555) 123-4567",
     customerAccountId: "browser-fake",
@@ -302,7 +303,7 @@ test("POS sale request accepts optional customer contact without trusting reward
     points: 999
   });
   assert.equal(parsed.success, true);
-  assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["customerEmail", "customerPhone", "idempotencyKey", "items", "paymentMethod"]);
+  assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["customerEmail", "customerPhone", "idempotencyKey", "items", "paymentMethod", "selectedCustomerAccountId"]);
 
   const invalidEmail = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-contact-sale",
@@ -481,19 +482,27 @@ test("POS cart exposes line-item price adjustment UI without saving immediately"
   assert.match(css, /\.pos-line-discount/);
 });
 
-test("POS cart exposes optional customer contact capture and account matching", () => {
+test("POS cart exposes customer profile search and explicit selection", () => {
   const app = readSource("../src/components/RadarApp.tsx");
   const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
   assert.match(posPanel, /Customer \(optional\)/);
-  assert.match(posPanel, /Customer email/);
-  assert.match(posPanel, /Customer phone/);
-  assert.match(posPanel, /matchCustomerContact/);
+  assert.match(posPanel, /Search by name, email, or phone/);
+  assert.match(posPanel, /searchPosCustomers/);
+  assert.match(posPanel, /\/api\/radar\/customers\?/);
   assert.match(posPanel, /\/api\/radar\/pos\/customer-match/);
-  assert.match(posPanel, /Phone alone never awards points/);
+  assert.match(posPanel, /CustomerSearchProfileCard/);
+  assert.match(posPanel, /CustomerProfileSummaryCard/);
+  assert.match(posPanel, /View Profile/);
+  assert.match(app, /Select Customer/);
+  assert.match(posPanel, /Clear Customer/);
+  assert.match(posPanel, /Search is discovery only/);
   assert.match(posPanel, /Eligible after sale/);
-  assert.match(posPanel, /Not active for POS/);
-  assert.match(posPanel, /customerEmail: customerEmail\.trim\(\) \|\| undefined/);
-  assert.match(posPanel, /customerPhone: customerPhone\.trim\(\) \|\| undefined/);
+  assert.match(posPanel, /selectedCustomerAccountId: selectedCustomer\?\.id/);
+  assert.doesNotMatch(posPanel, /Customer email/);
+  assert.doesNotMatch(posPanel, /Customer phone/);
+  assert.doesNotMatch(posPanel, /Phone alone never awards points/);
+  assert.doesNotMatch(posPanel, /customerEmail: customerEmail\.trim\(\) \|\| undefined/);
+  assert.doesNotMatch(posPanel, /customerPhone: customerPhone\.trim\(\) \|\| undefined/);
 });
 
 test("POS receipt includes optional customer contact without account identifiers", () => {
@@ -694,6 +703,8 @@ test("POS rewards are server-side, separately flagged, and excluded from browser
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
 
   assert.match(posCustomer, /customerPosRewardsEnabled/);
+  assert.match(posCustomer, /selectedCustomerAccountId/);
+  assert.match(posCustomer, /accountById\(client, selectedCustomerAccountId\)/);
   assert.match(createPosSale, /await awardRewardsForCompletedPosSale/);
   assert.match(createPosSale, /eligibleSubtotalCents: Math\.round\(totals\.subtotal \* 100\)/);
   assert.match(customerConfig, /CUSTOMER_POS_REWARDS_ENABLED/);
@@ -704,6 +715,7 @@ test("POS rewards are server-side, separately flagged, and excluded from browser
   assert.match(rewards, /lifetimeEarnedDelta: points/);
   assert.match(rewards, /Manual POS rewards are available immediately after completed sale/);
   assert.doesNotMatch(route, /rewardPoints|points|customerAccountId|rewardsEligible/i);
+  assert.match(createPosSale, /selectedCustomerAccountId: input\.selectedCustomerAccountId/);
   assert.doesNotMatch(createPosSale, /input\.customerAccountId|input\.rewardsEligible|input\.points/i);
   assert.doesNotMatch(createPosSale, /releasePendingRewardsForOrder|awardRewardsForPaidOrder/i);
 });

@@ -7029,6 +7029,7 @@ export async function createPosSale(
     items: PosSaleInputItem[];
     paymentMethod: string;
     paymentReference?: string | null;
+    selectedCustomerAccountId?: string | null;
     customerEmail?: string | null;
     customerPhone?: string | null;
   }
@@ -7117,6 +7118,7 @@ export async function createPosSale(
     const taxRate = getConfiguredPosTaxRate();
     const totals = calculatePosTotals(lines, taxRate);
     const customerMatch = await resolvePosCustomerMatch({
+      selectedCustomerAccountId: input.selectedCustomerAccountId,
       customerEmail: input.customerEmail,
       customerPhone: input.customerPhone
     }, tx);

@@ -78,11 +78,51 @@ async function findPhoneMatches(client: PosCustomerMatchClient, normalizedPhone:
 }
 
 export async function resolvePosCustomerMatch(
-  input: { customerEmail?: string | null; customerPhone?: string | null },
+  input: { selectedCustomerAccountId?: string | null; customerEmail?: string | null; customerPhone?: string | null },
   client: PosCustomerMatchClient = prisma
 ): Promise<PosCustomerMatchResultDTO> {
+  const selectedCustomerAccountId = input.selectedCustomerAccountId?.trim();
   const normalizedEmail = normalizeCustomerAccountEmail(input.customerEmail);
   const normalizedPhone = normalizePosCustomerPhone(input.customerPhone);
+
+  if (selectedCustomerAccountId) {
+    const account = await accountById(client, selectedCustomerAccountId);
+    if (!account) {
+      return inactiveMatch({
+        customerEmail: normalizedEmail,
+        customerPhone: normalizedPhone,
+        customerMatchMethod: "email_not_found",
+        message: "Selected customer could not be verified. Search again before completing the sale."
+      });
+    }
+    const accountPhone = normalizePosCustomerPhone(account.phone);
+    if (!isVerifiedActiveCustomer(account)) {
+      return inactiveMatch({
+        customerEmail: account.email,
+        customerPhone: accountPhone,
+        customerMatchMethod: "email_unverified",
+        message: "Customer selected, but rewards require a verified active account match."
+      });
+    }
+
+    const rewardsConfig = customerAccountFeatureConfig();
+    const posRewardsEnabled =
+      rewardsConfig.customerAccountsEnabled && rewardsConfig.customerRewardsEnabled && rewardsConfig.customerPosRewardsEnabled;
+    return {
+      customerAccountId: account.id,
+      customerEmail: account.email,
+      customerPhone: accountPhone,
+      customerMatchMethod: "email",
+      rewardsEligible: posRewardsEnabled,
+      displayEmail: account.email,
+      displayPhone: accountPhone,
+      message: posRewardsEnabled
+        ? "Customer linked. Eligible POS subtotal will earn rewards after completed sale."
+        : rewardsConfig.customerRewardsEnabled
+          ? "Customer linked. POS rewards are disabled until the owner enables POS rewards."
+          : "Customer linked. Rewards are not active for POS yet."
+    };
+  }
 
   if (!normalizedEmail && !normalizedPhone) {
     return inactiveMatch({

@@ -28241,11 +28241,56 @@ body .catalog-action-menu-floating {
   line-height: 1.35;
 }
 
-.pos-customer-fields {
+.pos-customer-fields,
+.pos-customer-search-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+}
+
+.pos-customer-search-row .mini-action {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.pos-customer-results,
+.pos-customer-preview,
+.pos-selected-customer {
+  display: grid;
   gap: 10px;
   min-width: 0;
+}
+
+.pos-customer-results {
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.pos-customer-panel .customer-search-profile-card,
+.pos-customer-panel .customer-profile-summary-card {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.pos-customer-panel .customer-search-profile-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pos-customer-panel .customer-search-profile-stats span:last-child {
+  grid-column: 1 / -1;
+}
+
+.pos-selected-customer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pos-selected-customer-actions .secondary-action {
+  min-height: 36px;
 }
 
 .pos-input-icon-row {
@@ -28499,12 +28544,21 @@ body .catalog-action-menu-floating {
   }
 
   .pos-customer-heading,
-  .pos-customer-fields {
+  .pos-customer-fields,
+  .pos-customer-search-row {
     grid-template-columns: 1fr;
   }
 
   .pos-customer-heading {
     display: grid;
+  }
+
+  .pos-customer-search-row .mini-action,
+  .pos-selected-customer-actions .secondary-action,
+  .pos-customer-panel .customer-search-profile-actions .secondary-action,
+  .pos-customer-panel .customer-search-profile-actions .primary-action {
+    width: 100%;
+    justify-content: center;
   }
 
   .pos-line-total {
@@ -29290,7 +29344,8 @@ body .customers-rewards-tabs {
     flex: initial;
   }
 
-  .pos-customer-fields {
+  .pos-customer-fields,
+  .pos-customer-search-row {
     grid-template-columns: 1fr;
   }
 
