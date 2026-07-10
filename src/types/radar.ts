@@ -519,6 +519,55 @@ export type AdminCustomerProfileUpdateResultDTO = {
   customer: AdminCustomerRewardsDetailDTO;
 };
 
+export type AdminCustomerAttachOrderCandidateDTO = {
+  id: string;
+  type: "storefront_order" | "pos_sale";
+  reference: string;
+  date: string;
+  source: "website" | "pos" | "manual";
+  maskedCustomerEmail: string | null;
+  maskedCustomerPhone: string | null;
+  total: number;
+  status: string;
+  currentLinkedCustomer: {
+    id: string;
+    displayName: string;
+    maskedEmail: string;
+  } | null;
+  emailMatchesCustomer: boolean;
+  rewards: {
+    eligible: boolean;
+    alreadyAwarded: boolean;
+    defaultApply: boolean;
+    disabledReason: string | null;
+  };
+};
+
+export type AdminCustomerAttachOrderSearchResponseDTO = {
+  customer: {
+    id: string;
+    displayName: string;
+    maskedEmail: string;
+    status: string;
+    emailVerified: boolean;
+  };
+  candidates: AdminCustomerAttachOrderCandidateDTO[];
+};
+
+export type AdminCustomerAttachOrderResultDTO = {
+  customer: AdminCustomerRewardsDetailDTO;
+  candidate: AdminCustomerAttachOrderCandidateDTO;
+  duplicate: boolean;
+  rewardsApplied: boolean;
+  rewardStatus:
+    | "not_requested"
+    | "awarded"
+    | "already_awarded"
+    | "not_eligible"
+    | "disabled";
+  rewardPoints: number;
+};
+
 export type StorefrontOrderDTO = {
   id: string;
   orderNumber: string;

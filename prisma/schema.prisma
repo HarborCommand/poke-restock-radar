@@ -947,6 +947,11 @@ model InventorySale {
   customerEmail           String?
   customerPhone           String?
   customerMatchMethod     String?
+  customerLinkSource      String?
+  customerLinkedAt        DateTime?
+  customerLinkedByUserId  String?
+  customerLinkReason      String?
+  customerLinkNote        String?
   rewardsEligible         Boolean          @default(false)
   refundStatus            String?
   refundedAmount          Float            @default(0)
@@ -971,6 +976,8 @@ model InventorySale {
   @@index([customerEmail])
   @@index([customerPhone])
   @@index([customerMatchMethod])
+  @@index([customerLinkSource])
+  @@index([customerLinkedByUserId])
   @@index([rewardsEligible])
   @@index([refundStatus])
   @@index([refundIdempotencyKey])
@@ -1257,6 +1264,11 @@ model StorefrontOrder {
   userId                           String?
   customerId                       String?
   customerAccountId                String?
+  customerLinkSource               String?
+  customerLinkedAt                 DateTime?
+  customerLinkedByUserId           String?
+  customerLinkReason               String?
+  customerLinkNote                 String?
   customerEmail                    String?
   customerName                     String?
   customerPhone                    String?
@@ -1353,6 +1365,8 @@ model StorefrontOrder {
   @@index([userId])
   @@index([customerId])
   @@index([customerAccountId])
+  @@index([customerLinkSource])
+  @@index([customerLinkedByUserId])
   @@index([status])
   @@index([paymentStatus])
   @@index([fulfillmentStatus])
