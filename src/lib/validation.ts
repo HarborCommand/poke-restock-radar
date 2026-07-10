@@ -1027,6 +1027,30 @@ export const adminCustomerProfileUpdateSchema = z.object({
   adminNote: nullableAdminText(1000)
 }).strict();
 
+export const adminCustomerAttachOrderSearchSchema = z.object({
+  query: z.string().trim().max(160).optional()
+}).strict();
+
+export const adminCustomerAttachOrderSchema = z.object({
+  type: z.enum(["storefront_order", "pos_sale"]),
+  orderId: z.string().trim().min(2).optional(),
+  saleReference: z.string().trim().min(2).optional(),
+  reason: z.string().trim().min(4).max(160),
+  note: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : value),
+    z.string().trim().max(1000).optional()
+  ),
+  confirmEmailMismatch: z.boolean().default(false),
+  applyRewards: z.boolean().default(false)
+}).strict().superRefine((input, context) => {
+  if (input.type === "storefront_order" && !input.orderId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["orderId"], message: "Order ID is required." });
+  }
+  if (input.type === "pos_sale" && !input.saleReference) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["saleReference"], message: "Sale reference is required." });
+  }
+});
+
 export const posSaleRefundSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
   refundType: z.enum(["full"]).default("full"),

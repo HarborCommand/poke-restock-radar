@@ -122,6 +122,9 @@ import type {
   AdminCustomerRewardsLedgerResponseDTO,
   AdminCustomerRewardsResponseDTO,
   AdminCustomerProfileUpdateResultDTO,
+  AdminCustomerAttachOrderCandidateDTO,
+  AdminCustomerAttachOrderResultDTO,
+  AdminCustomerAttachOrderSearchResponseDTO,
   AdminRewardAdjustmentResultDTO,
   CardDTO,
   CardCompSaleDTO,
@@ -3541,6 +3544,15 @@ const rewardAdjustmentReasons = [
 
 const rewardAdjustmentDisabledText = "Point adjustments are disabled until admin adjustments are enabled.";
 
+const customerAttachOrderReasons = [
+  "Verified customer request",
+  "Receipt/order lookup",
+  "Email ownership confirmed",
+  "POS sale follow-up",
+  "Support correction",
+  "Other"
+];
+
 function CustomersRewardsPanel() {
   const [activeView, setActiveView] = useState<CustomersRewardsView>("customers");
   const [customersData, setCustomersData] = useState<AdminCustomerRewardsResponseDTO | null>(null);
@@ -3548,6 +3560,7 @@ function CustomersRewardsPanel() {
   const [selectedCustomer, setSelectedCustomer] = useState<AdminCustomerRewardsDetailDTO | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<AdminCustomerRewardsDetailDTO | null>(null);
   const [adjustingCustomer, setAdjustingCustomer] = useState<AdminCustomerRewardsDetailDTO | null>(null);
+  const [attachingCustomer, setAttachingCustomer] = useState<AdminCustomerRewardsDetailDTO | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("recent");
@@ -3647,6 +3660,19 @@ function CustomersRewardsPanel() {
     setEditingCustomer(null);
     setActionMessage("Customer profile updated.");
     await loadCustomers();
+  };
+
+  const refreshAfterAttachOrder = async (result: AdminCustomerAttachOrderResultDTO) => {
+    setSelectedCustomer(result.customer);
+    setAttachingCustomer(null);
+    setActionMessage(
+      result.duplicate
+        ? "Order was already linked to this customer."
+        : result.rewardsApplied
+          ? `Past order linked and ${result.rewardPoints.toLocaleString()} points recorded.`
+          : "Past order linked to customer."
+    );
+    await Promise.all([loadCustomers(), loadLedger()]);
   };
 
   return (
@@ -3876,6 +3902,7 @@ function CustomersRewardsPanel() {
                 }
               }}
               onEdit={() => setEditingCustomer(selectedCustomer)}
+              onAttachOrder={() => setAttachingCustomer(selectedCustomer)}
               onClose={() => setSelectedCustomer(null)}
             />
           ) : (
@@ -3899,6 +3926,13 @@ function CustomersRewardsPanel() {
             setAdjustingCustomer(null);
             await refreshAfterAdjustment(result.customer.id);
           }}
+        />
+      ) : null}
+      {attachingCustomer ? (
+        <CustomerAttachOrderModal
+          customer={attachingCustomer}
+          onClose={() => setAttachingCustomer(null)}
+          onAttached={refreshAfterAttachOrder}
         />
       ) : null}
     </section>
@@ -4095,12 +4129,14 @@ function CustomerRewardDetailPanel({
   adjustmentsEnabled,
   onAdjust,
   onEdit,
+  onAttachOrder,
   onClose
 }: {
   customer: AdminCustomerRewardsDetailDTO;
   adjustmentsEnabled: boolean;
   onAdjust: () => void;
   onEdit: () => void;
+  onAttachOrder: () => void;
   onClose: () => void;
 }) {
   return (
@@ -4124,6 +4160,10 @@ function CustomerRewardDetailPanel({
         <button className="secondary-action full-width" type="button" onClick={onEdit}>
           <Settings size={16} />
           Edit Customer
+        </button>
+        <button className="secondary-action full-width" type="button" onClick={onAttachOrder}>
+          <Receipt size={16} />
+          Attach Past Order
         </button>
         <button className="primary-action full-width" type="button" disabled={!adjustmentsEnabled} title={!adjustmentsEnabled ? rewardAdjustmentDisabledText : "Add or deduct reward points"} onClick={onAdjust}>
           <Plus size={16} />
@@ -4197,6 +4237,211 @@ function CustomerDetailList({
       ) : (
         <p>{empty}</p>
       )}
+    </div>
+  );
+}
+
+function CustomerAttachOrderModal({
+  customer,
+  onClose,
+  onAttached
+}: {
+  customer: AdminCustomerRewardsDetailDTO;
+  onClose: () => void;
+  onAttached: (result: AdminCustomerAttachOrderResultDTO) => Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [searchResult, setSearchResult] = useState<AdminCustomerAttachOrderSearchResponseDTO | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<AdminCustomerAttachOrderCandidateDTO | null>(null);
+  const [reason, setReason] = useState(customerAttachOrderReasons[0]);
+  const [note, setNote] = useState("");
+  const [confirmEmailMismatch, setConfirmEmailMismatch] = useState(false);
+  const [applyRewards, setApplyRewards] = useState(false);
+  const [searching, setSearching] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadCandidates = useCallback(async (searchText: string) => {
+    setSearching(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (searchText.trim()) params.set("query", searchText.trim());
+      const result = await requestJson<AdminCustomerAttachOrderSearchResponseDTO>(
+        `/api/radar/customers/${customer.id}/attach-order${params.toString() ? `?${params.toString()}` : ""}`
+      );
+      setSearchResult(result);
+      setSelectedCandidate((current) => result.candidates.find((candidate) => candidate.id === current?.id && candidate.type === current.type) ?? null);
+    } catch (searchError) {
+      setError(searchError instanceof Error ? searchError.message : "Could not search past orders.");
+    } finally {
+      setSearching(false);
+    }
+  }, [customer.id]);
+
+  useEffect(() => {
+    void loadCandidates("");
+  }, [loadCandidates]);
+
+  const chooseCandidate = (candidate: AdminCustomerAttachOrderCandidateDTO) => {
+    setSelectedCandidate(candidate);
+    setApplyRewards(candidate.rewards.defaultApply);
+    setConfirmEmailMismatch(false);
+    setNote("");
+    setError(null);
+  };
+
+  const submitAttach = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCandidate) {
+      setError("Select an order or POS sale to attach.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await requestJson<AdminCustomerAttachOrderResultDTO>(`/api/radar/customers/${customer.id}/attach-order`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: selectedCandidate.type,
+          orderId: selectedCandidate.type === "storefront_order" ? selectedCandidate.id : undefined,
+          saleReference: selectedCandidate.type === "pos_sale" ? selectedCandidate.id : undefined,
+          reason,
+          note,
+          confirmEmailMismatch,
+          applyRewards
+        })
+      });
+      await onAttached(result);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Could not attach this order.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const selectedNeedsManualConfirmation = Boolean(selectedCandidate && !selectedCandidate.emailMatchesCustomer);
+  const rewardsDisabledReason = selectedCandidate?.rewards.disabledReason;
+
+  return (
+    <div className="inventory-modal-backdrop customers-modal-backdrop" role="presentation">
+      <div className="inventory-modal customers-admin-modal customer-attach-order-modal" role="dialog" aria-modal="true" aria-label={`Attach past order to ${customer.displayName}`}>
+        <div className="modal-heading-row customer-attach-order-header">
+          <div>
+            <span className="eyebrow">Admin-only customer link</span>
+            <h3>Attach Past Order</h3>
+            <p>Search online orders or POS receipts, verify ownership, then link the record to this customer account.</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close attach past order" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form className="customer-attach-order-form" onSubmit={submitAttach}>
+          <div className="customer-attach-order-body">
+            <div className="customers-adjustment-customer">
+              <strong>{customer.displayName}</strong>
+              <span>{customer.maskedEmail} - {customer.emailVerified ? "verified email" : "email not verified"}</span>
+            </div>
+            <div className="customer-attach-search-row">
+              <label className="customers-search-field">
+                <Search size={16} />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search order number, POS reference, product, or contact..."
+                  type="search"
+                />
+              </label>
+              <button className="secondary-action" type="button" onClick={() => void loadCandidates(query)} disabled={searching}>
+                <Search size={16} />
+                {searching ? "Searching" : "Search"}
+              </button>
+            </div>
+            <div className="customer-attach-candidates" aria-label="Attachable past orders">
+              {searching ? (
+                <EmptyState icon={RefreshCw} title="Searching past orders" detail="Loading recent online orders and POS receipts." />
+              ) : searchResult?.candidates.length ? (
+                searchResult.candidates.map((candidate) => (
+                  <button
+                    className={`customer-attach-candidate ${selectedCandidate?.id === candidate.id && selectedCandidate.type === candidate.type ? "selected" : ""}`}
+                    key={`${candidate.type}-${candidate.id}`}
+                    type="button"
+                    onClick={() => chooseCandidate(candidate)}
+                    aria-pressed={selectedCandidate?.id === candidate.id && selectedCandidate.type === candidate.type}
+                  >
+                    <span>
+                      <strong>{candidate.type === "storefront_order" ? `Order ${candidate.reference}` : `POS ${candidate.reference}`}</strong>
+                      <small>{formatStatus(candidate.source)} - {shortDate(candidate.date)} - {candidate.status}</small>
+                      <small>{candidate.maskedCustomerEmail ?? "No email"}{candidate.maskedCustomerPhone ? ` - ${candidate.maskedCustomerPhone}` : ""}</small>
+                    </span>
+                    <span>
+                      <b>{money(candidate.total)}</b>
+                      <small>{candidate.currentLinkedCustomer ? `Linked to ${candidate.currentLinkedCustomer.displayName}` : candidate.emailMatchesCustomer ? "Email match" : "Manual review"}</small>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <EmptyState icon={Receipt} title="No matching orders" detail="Search by order number, POS receipt, product title, or contact details." />
+              )}
+            </div>
+            {selectedCandidate ? (
+              <div className="customer-attach-review">
+                <div>
+                  <span className={`status-pill ${selectedCandidate.emailMatchesCustomer ? "good" : "watch"}`}>
+                    {selectedCandidate.emailMatchesCustomer ? "Email match verified" : "Manual ownership review required"}
+                  </span>
+                  {selectedCandidate.currentLinkedCustomer ? (
+                    <span className="status-pill watch">Already linked: {selectedCandidate.currentLinkedCustomer.displayName}</span>
+                  ) : null}
+                </div>
+                <label>
+                  <span>Reason</span>
+                  <select aria-label="Attach reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
+                    {customerAttachOrderReasons.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                {selectedNeedsManualConfirmation ? (
+                  <label className="checkbox-label">
+                    <input checked={confirmEmailMismatch} onChange={(event) => setConfirmEmailMismatch(event.target.checked)} type="checkbox" />
+                    <span>Confirm ownership was reviewed outside the automatic email match.</span>
+                  </label>
+                ) : null}
+                <label>
+                  <span>Internal link note{selectedNeedsManualConfirmation ? " (required)" : ""}</span>
+                  <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Private admin note. Do not paste sensitive documents here." />
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    checked={applyRewards}
+                    disabled={!selectedCandidate.rewards.eligible}
+                    onChange={(event) => setApplyRewards(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>Backfill rewards for this linked purchase when eligible.</span>
+                </label>
+                <p className="customers-muted-note">
+                  {rewardsDisabledReason ?? "Rewards are server-calculated from eligible product subtotal. Shipping, tax, discounts, refunded/canceled items, and already-awarded purchases are excluded."}
+                </p>
+              </div>
+            ) : null}
+            {error ? <p className="form-error">{error}</p> : null}
+            <p className="customers-muted-note customer-attach-helper">
+              This admin-only workflow links a past order or POS sale after ownership review. It does not edit checkout totals, payments, product prices, inventory, or customer auth fields.
+            </p>
+          </div>
+          <div className="inventory-edit-actions customer-attach-actions">
+            <button className="secondary-action" type="button" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button className="primary-action" type="submit" disabled={submitting || !selectedCandidate}>
+              <Save size={16} />
+              {submitting ? "Linking" : "Attach Order"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
