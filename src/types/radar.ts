@@ -533,6 +533,13 @@ export type AdminCustomerAttachRewardStatus =
   | "customer_not_verified"
   | "ineligible";
 
+export type AdminCustomerPurchaseMatchStatus =
+  | "email_match"
+  | "email_mismatch"
+  | "no_email_recorded"
+  | "customer_unverified"
+  | "no_customer_selected";
+
 export type AdminCustomerAttachOrderCandidateDTO = {
   id: string;
   type: "storefront_order" | "pos_sale";
@@ -550,6 +557,15 @@ export type AdminCustomerAttachOrderCandidateDTO = {
     displayName: string;
     maskedEmail: string;
   } | null;
+  itemSummary: string;
+  itemCount: number;
+  matchStatus: AdminCustomerPurchaseMatchStatus;
+  matchMessage: string;
+  requiresManualConfirmation: boolean;
+  requiresInternalNote: boolean;
+  ownershipReviewCompleted: boolean;
+  rewardsEligible: boolean;
+  rewardsBlockedReason: string | null;
   emailMatchesCustomer: boolean;
   rewards: {
     eligible: boolean;

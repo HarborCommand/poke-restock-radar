@@ -9,6 +9,7 @@ import type {
   AdminCustomerAttachOrderResultDTO,
   AdminCustomerAttachOrderSearchResponseDTO,
   AdminCustomerRewardsDetailDTO,
+  AdminCustomerPurchaseMatchStatus,
   SessionUser
 } from "@/types/radar";
 
@@ -42,6 +43,15 @@ type RewardCandidate = {
 };
 
 type CustomerLinkSource = "email_match" | "admin_manual" | "pos_match";
+type OwnershipAuditStatus = "email_match" | "email_mismatch_manual" | "no_email_manual_review";
+
+type OwnershipMatch = {
+  status: AdminCustomerPurchaseMatchStatus;
+  message: string;
+  requiresManualConfirmation: boolean;
+  requiresInternalNote: boolean;
+  ownershipReviewCompleted: boolean;
+};
 
 const candidateLimit = 10;
 
@@ -56,7 +66,8 @@ const candidateOrderInclude = {
   items: {
     select: {
       publicTitle: true,
-      lineTotal: true
+      lineTotal: true,
+      quantity: true
     }
   },
   rewardLedgerEntries: {
@@ -122,6 +133,68 @@ function normalizeEmail(value: string | null | undefined) {
   return normalizeCustomerAccountEmail(value);
 }
 
+function hasRecordedOwnershipReview(record: {
+  customerAccountId: string | null;
+  customerLinkSource: string | null;
+  customerLinkReason: string | null;
+  customerLinkNote: string | null;
+}) {
+  return Boolean(
+    record.customerAccountId &&
+    record.customerLinkSource === "admin_manual" &&
+    record.customerLinkReason?.trim() &&
+    record.customerLinkNote?.trim()
+  );
+}
+
+function ownershipMatch(
+  recordEmail: string | null | undefined,
+  customer: { email: string; status: string; emailVerifiedAt: Date | null },
+  ownershipReviewCompleted = false
+): OwnershipMatch {
+  if (customer.status !== "active" || !customer.emailVerifiedAt) {
+    return {
+      status: "customer_unverified",
+      message: "The selected customer account must be active with a verified email.",
+      requiresManualConfirmation: false,
+      requiresInternalNote: false,
+      ownershipReviewCompleted
+    };
+  }
+  const purchaseEmail = normalizeEmail(recordEmail);
+  if (!purchaseEmail) {
+    return {
+      status: "no_email_recorded",
+      message: "No customer email was saved on this historical sale.",
+      requiresManualConfirmation: !ownershipReviewCompleted,
+      requiresInternalNote: !ownershipReviewCompleted,
+      ownershipReviewCompleted
+    };
+  }
+  const customerEmail = normalizeEmail(customer.email) ?? customer.email.toLowerCase();
+  if (purchaseEmail === customerEmail) {
+    return {
+      status: "email_match",
+      message: "Verified email match.",
+      requiresManualConfirmation: false,
+      requiresInternalNote: false,
+      ownershipReviewCompleted
+    };
+  }
+  return {
+    status: "email_mismatch",
+    message: "Sale email does not match the verified customer email.",
+    requiresManualConfirmation: !ownershipReviewCompleted,
+    requiresInternalNote: !ownershipReviewCompleted,
+    ownershipReviewCompleted
+  };
+}
+
+function ownershipAuditStatus(matchStatus: AdminCustomerPurchaseMatchStatus): OwnershipAuditStatus {
+  if (matchStatus === "email_match") return "email_match";
+  return matchStatus === "no_email_recorded" ? "no_email_manual_review" : "email_mismatch_manual";
+}
+
 function orderSource(order: CandidateOrder): AdminCustomerAttachOrderCandidateDTO["source"] {
   return order.stripeCheckoutSessionId || order.stripePaymentIntentId ? "website" : "manual";
 }
@@ -139,16 +212,18 @@ function hasPositiveRewardLedger(order: CandidateOrder) {
   return order.rewardLedgerEntries.some((entry) => entry.points > 0 && entry.type === "earn");
 }
 
-function rewardMessage(status: AdminCustomerAttachRewardStatus, points = 0) {
+function rewardMessage(status: AdminCustomerAttachRewardStatus, points = 0, matchStatus?: AdminCustomerPurchaseMatchStatus) {
   switch (status) {
     case "eligible":
       return "Rewards can be applied for this linked purchase.";
     case "applied":
-      return `${points.toLocaleString()} reward point${points === 1 ? "" : "s"} awarded.`;
+      return matchStatus === "no_email_recorded"
+        ? `${points.toLocaleString()} reward point${points === 1 ? "" : "s"} awarded after admin ownership review.`
+        : `${points.toLocaleString()} reward point${points === 1 ? "" : "s"} awarded.`;
     case "checkbox_not_selected":
       return "Rewards not applied because Apply Rewards was not selected.";
     case "blocked_email_mismatch":
-      return "Rewards not applied because the purchase email does not match the verified customer email.";
+      return "Rewards cannot be applied because the recorded sale email belongs to a different email address.";
     case "canceled_or_refunded":
       return "Rewards not applied because canceled, refunded, or partially refunded purchases do not earn points.";
     case "no_eligible_subtotal":
@@ -169,11 +244,11 @@ function rewardMessage(status: AdminCustomerAttachRewardStatus, points = 0) {
   }
 }
 
-function rewardCandidate(status: AdminCustomerAttachRewardStatus, points = 0, alreadyAwarded = false): RewardCandidate {
+function rewardCandidate(status: AdminCustomerAttachRewardStatus, points = 0, alreadyAwarded = false, defaultApply = status === "eligible"): RewardCandidate {
   return {
     eligible: status === "eligible",
     alreadyAwarded,
-    defaultApply: status === "eligible",
+    defaultApply,
     status,
     points,
     message: rewardMessage(status, points),
@@ -181,7 +256,7 @@ function rewardCandidate(status: AdminCustomerAttachRewardStatus, points = 0, al
   };
 }
 
-function orderRewardCandidate(order: CandidateOrder, emailMatchesCustomer: boolean): RewardCandidate {
+function orderRewardCandidate(order: CandidateOrder, match: OwnershipMatch): RewardCandidate {
   if (!rewardsFeatureEnabledForBackfill()) return rewardCandidate("rewards_disabled");
   const alreadyAwarded = hasPositiveRewardLedger(order);
   const refunded = order.refundedAmount > 0 || order.status === "refunded" || order.paymentStatus === "refunded" || order.paymentStatus === "partially_refunded";
@@ -195,14 +270,17 @@ function orderRewardCandidate(order: CandidateOrder, emailMatchesCustomer: boole
   if (order.paymentStatus !== "paid") return rewardCandidate("unpaid");
   if (alreadyAwarded) return rewardCandidate("already_awarded", 0, true);
   if (points <= 0) return rewardCandidate("no_eligible_subtotal");
-  if (!emailMatchesCustomer) return rewardCandidate("blocked_email_mismatch");
-  return rewardCandidate("eligible", points);
+  if (match.status === "customer_unverified") return rewardCandidate("customer_not_verified");
+  if (match.status === "email_mismatch") return rewardCandidate("blocked_email_mismatch");
+  return rewardCandidate("eligible", points, false, match.status === "email_match");
 }
 
-function mapOrderCandidate(order: CandidateOrder, customer: { id: string; email: string }): AdminCustomerAttachOrderCandidateDTO {
-  const customerEmail = normalizeEmail(customer.email) ?? customer.email.toLowerCase();
-  const orderEmail = normalizeEmail(order.customerEmail);
-  const emailMatchesCustomer = Boolean(orderEmail && orderEmail === customerEmail);
+function mapOrderCandidate(
+  order: CandidateOrder,
+  customer: { id: string; email: string; status: string; emailVerifiedAt: Date | null }
+): AdminCustomerAttachOrderCandidateDTO {
+  const match = ownershipMatch(order.customerEmail, customer, hasRecordedOwnershipReview(order));
+  const rewards = orderRewardCandidate(order, match);
   return {
     id: order.id,
     type: "storefront_order",
@@ -216,8 +294,17 @@ function mapOrderCandidate(order: CandidateOrder, customer: { id: string; email:
     total: order.total,
     status: orderStatusLabel(order),
     currentLinkedCustomer: customerSummary(order.customerAccount),
-    emailMatchesCustomer,
-    rewards: orderRewardCandidate(order, emailMatchesCustomer)
+    itemSummary: order.items.map((item) => item.publicTitle).filter(Boolean).join(", ") || "Order items",
+    itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+    matchStatus: match.status,
+    matchMessage: match.message,
+    requiresManualConfirmation: match.requiresManualConfirmation,
+    requiresInternalNote: match.requiresInternalNote,
+    ownershipReviewCompleted: match.ownershipReviewCompleted,
+    rewardsEligible: rewards.eligible,
+    rewardsBlockedReason: rewards.disabledReason,
+    emailMatchesCustomer: match.status === "email_match",
+    rewards
   };
 }
 
@@ -232,14 +319,14 @@ function saleAlreadyAwarded(saleKey: string, ledger: Array<{ idempotencyKey: str
   return ledger.some((entry) => {
     if (entry.points <= 0) return false;
     if (entry.idempotencyKey === `rewards:pos:earn:${saleKey}` || entry.idempotencyKey === `rewards:backfill:pos:${saleKey}`) return true;
-    if (entry.source === "pos" || entry.source === "admin_pos_link_backfill") {
+    if (entry.source === "pos" || entry.source === "admin_pos_link_backfill" || entry.source === "admin_legacy_sale_backfill") {
       return typeof entry.metadataJson === "string" && (entry.metadataJson.includes(`"saleReference":"${saleKey}"`) || entry.metadataJson.includes(`"saleId":"${saleKey}"`) || entry.metadataJson.includes(`"saleKey":"${saleKey}"`));
     }
     return false;
   });
 }
 
-function saleRewardCandidate(sales: CandidateSale[], alreadyAwarded: boolean, emailMatchesCustomer: boolean): RewardCandidate {
+function saleRewardCandidate(sales: CandidateSale[], alreadyAwarded: boolean, match: OwnershipMatch): RewardCandidate {
   if (!rewardsFeatureEnabledForBackfill()) return rewardCandidate("rewards_disabled");
   const refunded = sales.some((sale) => sale.refundStatus || sale.refundedAmount > 0);
   const eligibleSubtotalCents = sales.reduce((sum, sale) => sum + Math.max(0, Math.round(sale.grossSale * 100)), 0);
@@ -247,8 +334,9 @@ function saleRewardCandidate(sales: CandidateSale[], alreadyAwarded: boolean, em
   if (refunded) return rewardCandidate("canceled_or_refunded");
   if (alreadyAwarded) return rewardCandidate("already_awarded", 0, true);
   if (points <= 0) return rewardCandidate("no_eligible_subtotal");
-  if (!emailMatchesCustomer) return rewardCandidate("blocked_email_mismatch");
-  return rewardCandidate("eligible", points);
+  if (match.status === "customer_unverified") return rewardCandidate("customer_not_verified");
+  if (match.status === "email_mismatch") return rewardCandidate("blocked_email_mismatch");
+  return rewardCandidate("eligible", points, false, match.status === "email_match");
 }
 
 function saleAttachKey(sale: Pick<CandidateSale, "id" | "saleReference">) {
@@ -257,7 +345,7 @@ function saleAttachKey(sale: Pick<CandidateSale, "id" | "saleReference">) {
 
 async function mapSaleCandidates(
   groupedSales: CandidateSale[][],
-  customer: { id: string; email: string },
+  customer: { id: string; email: string; status: string; emailVerifiedAt: Date | null },
   client: Prisma.TransactionClient | typeof prisma = prisma
 ): Promise<AdminCustomerAttachOrderCandidateDTO[]> {
   const keys = groupedSales.map((sales) => sales[0] ? saleAttachKey(sales[0]) : null).filter((value): value is string => Boolean(value));
@@ -266,21 +354,21 @@ async function mapSaleCandidates(
         where: {
           OR: [
             { idempotencyKey: { in: keys.flatMap((ref) => [`rewards:pos:earn:${ref}`, `rewards:backfill:pos:${ref}`]) } },
-            { source: { in: ["pos", "admin_pos_link_backfill"] } }
+            { source: { in: ["pos", "admin_pos_link_backfill", "admin_legacy_sale_backfill"] } }
           ]
         },
         select: { idempotencyKey: true, points: true, source: true, metadataJson: true }
       })
     : [];
-  const customerEmail = normalizeEmail(customer.email) ?? customer.email.toLowerCase();
   return groupedSales.map((sales) => {
     const first = sales[0]!;
     const key = saleAttachKey(first);
     const saleReference = first.saleReference?.trim() || null;
-    const saleEmail = normalizeEmail(first.customerEmail);
-    const emailMatchesCustomer = Boolean(saleEmail && saleEmail === customerEmail);
+    const reviewCompleted = sales.every((sale) => hasRecordedOwnershipReview(sale));
+    const match = ownershipMatch(first.customerEmail, customer, reviewCompleted);
     const alreadyAwarded = saleAlreadyAwarded(key, ledger);
     const total = sales.reduce((sum, sale) => sum + Math.max(0, sale.grossSale - sale.refundedAmount), 0);
+    const rewards = saleRewardCandidate(sales, alreadyAwarded, match);
     return {
       id: key,
       type: "pos_sale",
@@ -294,8 +382,17 @@ async function mapSaleCandidates(
       total,
       status: saleStatusLabel(sales),
       currentLinkedCustomer: customerSummary(first.customerAccount),
-      emailMatchesCustomer,
-      rewards: saleRewardCandidate(sales, alreadyAwarded, emailMatchesCustomer)
+      itemSummary: sales.map((sale) => sale.inventoryItem.itemName).filter(Boolean).join(", "),
+      itemCount: sales.reduce((sum, sale) => sum + sale.quantitySold, 0),
+      matchStatus: match.status,
+      matchMessage: match.message,
+      requiresManualConfirmation: match.requiresManualConfirmation,
+      requiresInternalNote: match.requiresInternalNote,
+      ownershipReviewCompleted: match.ownershipReviewCompleted,
+      rewardsEligible: rewards.eligible,
+      rewardsBlockedReason: rewards.disabledReason,
+      emailMatchesCustomer: match.status === "email_match",
+      rewards
     };
   });
 }
@@ -407,15 +504,24 @@ function assertAttachCustomerIsEligible(customer: Awaited<ReturnType<typeof load
   if (!customer.emailVerifiedAt) throw new Error("Customer account email must be verified before attaching orders.");
 }
 
-function linkSourceFor(emailMatchesCustomer: boolean, existingPosMatch = false): CustomerLinkSource {
-  if (existingPosMatch) return "pos_match";
-  return emailMatchesCustomer ? "email_match" : "admin_manual";
+function linkSourceFor(matchStatus: AdminCustomerPurchaseMatchStatus, existingPosMatch = false): CustomerLinkSource {
+  if (matchStatus === "email_match" && existingPosMatch) return "pos_match";
+  return matchStatus === "email_match" ? "email_match" : "admin_manual";
 }
 
-function assertManualMismatchConfirmation(input: AttachInput, emailMatchesCustomer: boolean, label: string) {
-  if (emailMatchesCustomer) return;
-  if (!input.confirmEmailMismatch) throw new Error(`${label} email does not match this customer. Confirm the manual override to attach anyway.`);
-  if (!input.note?.trim()) throw new Error("Manual mismatch overrides require an internal note.");
+function assertOwnershipReview(input: AttachInput, match: OwnershipMatch, label: string) {
+  if (match.status === "email_match" || match.ownershipReviewCompleted) return;
+  if (match.status === "customer_unverified") throw new Error("The selected customer account must be active with a verified email.");
+  if (!input.confirmEmailMismatch) {
+    throw new Error(
+      match.status === "no_email_recorded"
+        ? `${label} has no historical customer email. Confirm the ownership review before attaching.`
+        : `${label} email does not match this customer. Confirm the manual override to attach anyway.`
+    );
+  }
+  if (!input.note?.trim()) {
+    throw new Error(match.status === "no_email_recorded" ? "Legacy ownership reviews require an internal note." : "Manual mismatch overrides require an internal note.");
+  }
 }
 
 function rewardsFeatureEnabledForBackfill() {
@@ -429,14 +535,15 @@ async function awardOrderBackfillIfRequested(
     order: CandidateOrder;
     customerAccountId: string;
     applyRewards: boolean;
-    emailMatchesCustomer: boolean;
+    match: OwnershipMatch;
     adminUser: SessionUser;
     reason: string;
   }
 ) : Promise<BackfillRewardResult> {
   if (!input.applyRewards) return { status: "checkbox_not_selected", points: 0, message: rewardMessage("checkbox_not_selected") };
-  if (!input.emailMatchesCustomer) return { status: "blocked_email_mismatch", points: 0, message: rewardMessage("blocked_email_mismatch") };
-  const candidate = orderRewardCandidate(input.order, input.emailMatchesCustomer);
+  if (input.match.status === "email_mismatch") return { status: "blocked_email_mismatch", points: 0, message: rewardMessage("blocked_email_mismatch") };
+  if (input.match.status === "customer_unverified") return { status: "customer_not_verified", points: 0, message: rewardMessage("customer_not_verified") };
+  const candidate = orderRewardCandidate(input.order, input.match);
   if (!candidate.eligible) return { status: candidate.status, points: 0, message: candidate.message };
 
   const eligibleSubtotalCents = rewardEligibleSubtotalCents({
@@ -459,9 +566,9 @@ async function awardOrderBackfillIfRequested(
       idempotencyKey,
       points,
       type: "earn",
-      reason: "Admin-linked past order eligible item subtotal",
+      reason: input.match.status === "no_email_recorded" ? "Admin-reviewed legacy order eligible item subtotal" : "Admin-linked past order eligible item subtotal",
       status: available ? "available" : "pending",
-      source: "admin_order_link_backfill",
+      source: input.match.status === "no_email_recorded" ? "admin_legacy_order_backfill" : "admin_order_link_backfill",
       availableAt: now,
       settledAt: available ? now : null,
       eligibleSubtotalCents,
@@ -470,6 +577,7 @@ async function awardOrderBackfillIfRequested(
         adminUserId: input.adminUser.id,
         orderNumber: input.order.orderNumber,
         reason: input.reason,
+        ownershipMatchStatus: ownershipAuditStatus(input.match.status),
         shippingCentsExcluded: Math.max(0, Math.round(input.order.shippingCharged * 100)),
         taxCentsExcluded: Math.max(0, Math.round(input.order.tax * 100)),
         rule: "1 point per eligible item subtotal dollar"
@@ -490,7 +598,7 @@ async function awardOrderBackfillIfRequested(
       lifetimeEarnedPoints: { increment: points }
     }
   });
-  return { status: "applied", points, message: rewardMessage("applied", points) };
+  return { status: "applied", points, message: rewardMessage("applied", points, input.match.status) };
 }
 
 async function awardPosBackfillIfRequested(
@@ -500,24 +608,25 @@ async function awardPosBackfillIfRequested(
     customerAccountId: string;
     saleKey: string;
     applyRewards: boolean;
-    emailMatchesCustomer: boolean;
+    match: OwnershipMatch;
     adminUser: SessionUser;
     reason: string;
   }
 ) : Promise<BackfillRewardResult> {
   if (!input.applyRewards) return { status: "checkbox_not_selected", points: 0, message: rewardMessage("checkbox_not_selected") };
-  if (!input.emailMatchesCustomer) return { status: "blocked_email_mismatch", points: 0, message: rewardMessage("blocked_email_mismatch") };
+  if (input.match.status === "email_mismatch") return { status: "blocked_email_mismatch", points: 0, message: rewardMessage("blocked_email_mismatch") };
+  if (input.match.status === "customer_unverified") return { status: "customer_not_verified", points: 0, message: rewardMessage("customer_not_verified") };
   const existing = await tx.rewardLedgerEntry.findMany({
     where: {
       OR: [
         { idempotencyKey: { in: [`rewards:pos:earn:${input.saleKey}`, `rewards:backfill:pos:${input.saleKey}`] } },
-        { source: { in: ["pos", "admin_pos_link_backfill"] }, metadataJson: { contains: input.saleKey } }
+        { source: { in: ["pos", "admin_pos_link_backfill", "admin_legacy_sale_backfill"] }, metadataJson: { contains: input.saleKey } }
       ]
     },
     select: { idempotencyKey: true, points: true, source: true, metadataJson: true }
   });
   if (saleAlreadyAwarded(input.saleKey, existing)) return { status: "already_awarded", points: 0, message: rewardMessage("already_awarded") };
-  const candidate = saleRewardCandidate(input.sales, false, input.emailMatchesCustomer);
+  const candidate = saleRewardCandidate(input.sales, false, input.match);
   if (!candidate.eligible) return { status: candidate.status, points: 0, message: candidate.message };
   const refunded = input.sales.some((sale) => sale.refundStatus || sale.refundedAmount > 0);
   if (refunded) return { status: "canceled_or_refunded", points: 0, message: rewardMessage("canceled_or_refunded") };
@@ -534,9 +643,9 @@ async function awardPosBackfillIfRequested(
       idempotencyKey: `rewards:backfill:pos:${input.saleKey}`,
       points,
       type: "earn",
-      reason: "Admin-linked POS sale eligible subtotal",
+      reason: input.match.status === "no_email_recorded" ? "Admin-reviewed legacy sale eligible subtotal" : "Admin-linked POS sale eligible subtotal",
       status: "available",
-      source: "admin_pos_link_backfill",
+      source: input.match.status === "no_email_recorded" ? "admin_legacy_sale_backfill" : "admin_pos_link_backfill",
       availableAt: now,
       settledAt: now,
       eligibleSubtotalCents,
@@ -547,6 +656,7 @@ async function awardPosBackfillIfRequested(
         saleReference: firstSale.saleReference,
         saleId: firstSale.saleReference ? null : firstSale.id,
         reason: input.reason,
+        ownershipMatchStatus: ownershipAuditStatus(input.match.status),
         itemCount: input.sales.reduce((sum, sale) => sum + sale.quantitySold, 0),
         rule: "1 point per eligible adjusted POS subtotal dollar"
       })
@@ -565,7 +675,7 @@ async function awardPosBackfillIfRequested(
       lifetimeEarnedPoints: { increment: points }
     }
   });
-  return { status: "applied", points, message: rewardMessage("applied", points) };
+  return { status: "applied", points, message: rewardMessage("applied", points, input.match.status) };
 }
 
 async function attachStorefrontOrder(
@@ -583,13 +693,15 @@ async function attachStorefrontOrder(
     throw new Error("This order is already linked to another customer.");
   }
   const duplicate = order.customerAccountId === customer.id;
-  const customerEmail = normalizeEmail(customer.email) ?? customer.email.toLowerCase();
-  const emailMatchesCustomer = Boolean(normalizeEmail(order.customerEmail) && normalizeEmail(order.customerEmail) === customerEmail);
-  assertManualMismatchConfirmation(input, emailMatchesCustomer, "Order");
+  const initialMatch = ownershipMatch(order.customerEmail, customer, hasRecordedOwnershipReview(order));
+  assertOwnershipReview(input, initialMatch, "Order");
+  const reviewRecordedNow = !initialMatch.ownershipReviewCompleted && initialMatch.requiresManualConfirmation && Boolean(input.confirmEmailMismatch && input.note?.trim());
+  const match: OwnershipMatch = reviewRecordedNow
+    ? { ...initialMatch, requiresManualConfirmation: false, requiresInternalNote: false, ownershipReviewCompleted: true }
+    : initialMatch;
 
-  let linkSource: CustomerLinkSource | null = null;
+  const linkSource = linkSourceFor(match.status);
   if (!duplicate) {
-    linkSource = linkSourceFor(emailMatchesCustomer);
     await tx.storefrontOrder.update({
       where: { id: order.id },
       data: {
@@ -601,7 +713,7 @@ async function attachStorefrontOrder(
         customerLinkNote: input.note ?? null
       }
     });
-    if (order.customerId && emailMatchesCustomer) {
+    if (order.customerId && match.status === "email_match") {
       await tx.storefrontCustomer.updateMany({
         where: {
           id: order.customerId,
@@ -610,22 +722,32 @@ async function attachStorefrontOrder(
         data: { customerAccountId: customer.id }
       });
     }
+  } else if (reviewRecordedNow) {
+    await tx.storefrontOrder.update({
+      where: { id: order.id },
+      data: {
+        customerLinkSource: "admin_manual",
+        customerLinkedByUserId: adminUser.id,
+        customerLinkReason: input.reason,
+        customerLinkNote: input.note?.trim() ?? null
+      }
+    });
   }
 
   const reward = await awardOrderBackfillIfRequested(tx, {
     order,
     customerAccountId: customer.id,
     applyRewards: input.applyRewards,
-    emailMatchesCustomer,
+    match,
     adminUser,
     reason: input.reason
   });
-  if (!duplicate && linkSource) {
+  if (!duplicate || reviewRecordedNow) {
     await tx.auditLog.create({
       data: {
         userId: adminUser.id,
         actorEmail: adminUser.email,
-        action: "customer.order.attached",
+        action: duplicate ? "customer.order.ownership_reviewed" : "customer.order.attached",
         entityType: "STOREFRONT_ORDER",
         entityId: order.id,
         summary: `${adminUser.email} linked order ${order.orderNumber} to a customer account.`,
@@ -633,6 +755,7 @@ async function attachStorefrontOrder(
           customerAccountId: customer.id,
           orderNumber: order.orderNumber,
           linkSource,
+          ownershipMatchStatus: ownershipAuditStatus(match.status),
           reason: input.reason,
           hasInternalNote: Boolean(input.note),
           rewardsApplied: reward.status === "applied",
@@ -670,14 +793,15 @@ async function attachPosSale(
   const duplicate = sales.every((sale) => sale.customerAccountId === customer.id);
   const firstSale = sales[0]!;
   const saleKey = saleAttachKey(firstSale);
-  const customerEmail = normalizeEmail(customer.email) ?? customer.email.toLowerCase();
-  const saleEmail = normalizeEmail(firstSale.customerEmail);
-  const emailMatchesCustomer = Boolean(saleEmail && saleEmail === customerEmail);
-  assertManualMismatchConfirmation(input, emailMatchesCustomer, "Sale");
+  const initialMatch = ownershipMatch(firstSale.customerEmail, customer, sales.every((sale) => hasRecordedOwnershipReview(sale)));
+  assertOwnershipReview(input, initialMatch, "Sale");
+  const reviewRecordedNow = !initialMatch.ownershipReviewCompleted && initialMatch.requiresManualConfirmation && Boolean(input.confirmEmailMismatch && input.note?.trim());
+  const match: OwnershipMatch = reviewRecordedNow
+    ? { ...initialMatch, requiresManualConfirmation: false, requiresInternalNote: false, ownershipReviewCompleted: true }
+    : initialMatch;
 
-  let linkSource: CustomerLinkSource | null = null;
+  const linkSource = linkSourceFor(match.status, sales.some((sale) => sale.customerMatchMethod === "email"));
   if (!duplicate) {
-    linkSource = linkSourceFor(emailMatchesCustomer, sales.some((sale) => sale.customerMatchMethod === "email"));
     await tx.inventorySale.updateMany({
       where: saleWhere,
       data: {
@@ -687,9 +811,20 @@ async function attachPosSale(
         customerLinkedByUserId: adminUser.id,
         customerLinkReason: input.reason,
         customerLinkNote: input.note ?? null,
-        customerEmail: emailMatchesCustomer ? customer.email : undefined,
-        customerMatchMethod: emailMatchesCustomer ? "email" : "admin_manual",
-        rewardsEligible: input.applyRewards && emailMatchesCustomer
+        customerEmail: match.status === "email_match" ? customer.email : undefined,
+        customerMatchMethod: match.status === "email_match" ? "email" : "admin_manual",
+        rewardsEligible: false
+      }
+    });
+  } else if (reviewRecordedNow) {
+    await tx.inventorySale.updateMany({
+      where: saleWhere,
+      data: {
+        customerLinkSource: "admin_manual",
+        customerLinkedByUserId: adminUser.id,
+        customerLinkReason: input.reason,
+        customerLinkNote: input.note?.trim() ?? null,
+        customerMatchMethod: "admin_manual"
       }
     });
   }
@@ -699,22 +834,22 @@ async function attachPosSale(
     customerAccountId: customer.id,
     saleKey,
     applyRewards: input.applyRewards,
-    emailMatchesCustomer,
+    match,
     adminUser,
     reason: input.reason
   });
-  if (duplicate && reward.status === "applied") {
+  if (reward.status === "applied") {
     await tx.inventorySale.updateMany({
       where: saleWhere,
       data: { rewardsEligible: true }
     });
   }
-  if (!duplicate && linkSource) {
+  if (!duplicate || reviewRecordedNow) {
     await tx.auditLog.create({
       data: {
         userId: adminUser.id,
         actorEmail: adminUser.email,
-        action: "customer.pos_sale.attached",
+        action: duplicate ? "customer.pos_sale.ownership_reviewed" : "customer.pos_sale.attached",
         entityType: "INVENTORY_SALE",
         entityId: saleKey,
         summary: `${adminUser.email} linked sale ${saleKey} to a customer account.`,
@@ -724,6 +859,7 @@ async function attachPosSale(
           saleReference: saleReference ?? null,
           saleId: saleReference ? null : saleId,
           linkSource,
+          ownershipMatchStatus: ownershipAuditStatus(match.status),
           reason: input.reason,
           hasInternalNote: Boolean(input.note),
           rewardsApplied: reward.status === "applied",
