@@ -97,7 +97,7 @@ test("Grabby is integrated into the first useful storefront and account surfaces
 
   assert.doesNotMatch(account, /className="gdg-account-grabby-card"/);
   assert.match(account, /variant="rewards"/);
-  assert.match(account, /className="gdg-rewards-grabby-card"/);
+  assert.match(account, /className="gdg-rewards-spotlight-mascot"/);
   assert.match(account, /Rewards redemption coming soon/);
   assert.doesNotMatch(account, /redeem points|apply points|points discount|reward discount|coupon/i);
 
