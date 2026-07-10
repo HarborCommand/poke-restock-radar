@@ -24962,7 +24962,7 @@ body .catalog-action-menu-floating {
 .gdg-rewards-spotlight {
   display: grid;
   grid-template-columns: 170px minmax(0, 1fr) minmax(330px, 0.72fr);
-  gap: 26px;
+  gap: 22px;
   align-items: center;
   overflow: hidden;
   border-color: rgba(245, 166, 35, 0.26);
@@ -24971,6 +24971,7 @@ body .catalog-action-menu-floating {
     radial-gradient(circle at 92% 88%, rgba(34, 197, 94, 0.1), transparent 24%),
     linear-gradient(135deg, #fffdf7 0%, #fff8e8 48%, #ffffff 100%);
   box-shadow: 0 18px 52px rgba(15, 61, 46, 0.08);
+  padding: 24px;
 }
 
 .gdg-rewards-spotlight-mascot {
@@ -25083,14 +25084,14 @@ body .catalog-action-menu-floating {
 .gdg-rewards-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .gdg-rewards-summary-card {
   position: relative;
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 13px;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
   min-width: 0;
   overflow: hidden;
@@ -25098,7 +25099,7 @@ body .catalog-action-menu-floating {
   border-radius: 18px;
   background: #ffffff;
   box-shadow: 0 14px 38px rgba(15, 61, 46, 0.06);
-  padding: 16px;
+  padding: 14px;
 }
 
 .gdg-rewards-summary-card::after {
@@ -25132,8 +25133,8 @@ body .catalog-action-menu-floating {
   position: relative;
   z-index: 1;
   display: inline-grid;
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   place-items: center;
   border-radius: 16px;
 }
@@ -25191,7 +25192,8 @@ body .catalog-action-menu-floating {
 .gdg-rewards-bottom-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-  gap: 16px;
+  align-items: start;
+  gap: 14px;
 }
 
 .gdg-rewards-bottom-grid {
@@ -25203,11 +25205,19 @@ body .catalog-action-menu-floating {
 .gdg-rewards-activity-card,
 .gdg-rewards-links-card {
   min-width: 0;
+  padding: 22px;
 }
 
 .gdg-rewards-level-card {
   position: relative;
+  display: grid;
+  gap: 11px;
   overflow: hidden;
+}
+
+.gdg-rewards-level-card .gdg-account-icon-badge {
+  width: 54px;
+  height: 54px;
 }
 
 .gdg-rewards-level-card::after {
@@ -25228,8 +25238,8 @@ body .catalog-action-menu-floating {
 .gdg-rewards-progress-track {
   position: relative;
   overflow: hidden;
-  height: 11px;
-  margin-top: 12px;
+  height: 10px;
+  margin-top: 0;
   border-radius: 999px;
   background: #edf1f4;
 }
@@ -25246,7 +25256,7 @@ body .catalog-action-menu-floating {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 10px;
+  margin-top: -1px;
   color: #667085;
   font-size: 0.84rem;
   font-weight: 850;
@@ -25258,8 +25268,8 @@ body .catalog-action-menu-floating {
 
 .gdg-rewards-milestones {
   position: relative;
-  height: 42px;
-  margin-top: 6px;
+  height: 34px;
+  margin-top: -1px;
 }
 
 .gdg-rewards-milestones span {
@@ -25267,7 +25277,7 @@ body .catalog-action-menu-floating {
   top: 0;
   display: grid;
   justify-items: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 28px;
   color: #667085;
   font-size: 0.7rem;
@@ -25304,13 +25314,13 @@ body .catalog-action-menu-floating {
 
 .gdg-rewards-next-callout {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border: 1px solid rgba(245, 166, 35, 0.28);
-  border-radius: 16px;
+  border-radius: 14px;
   background: #fffaf0;
-  padding: 13px 14px;
+  padding: 11px 12px;
 }
 
 .gdg-rewards-next-callout svg {
@@ -25332,7 +25342,7 @@ body .catalog-action-menu-floating {
 
 .gdg-rewards-explainer ul {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -25341,17 +25351,17 @@ body .catalog-action-menu-floating {
 .gdg-rewards-explainer li {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
+  align-items: center;
+  gap: 9px;
   min-width: 0;
   border: 1px solid rgba(16, 24, 40, 0.08);
   border-radius: 14px;
   background: #fffdf7;
-  padding: 11px 12px;
+  padding: 9px 11px;
   color: #344054;
-  font-size: 0.91rem;
+  font-size: 0.88rem;
   font-weight: 780;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .gdg-rewards-explainer li svg {
@@ -25359,29 +25369,35 @@ body .catalog-action-menu-floating {
   color: #f59e0b;
 }
 
+.gdg-rewards-explainer,
+.gdg-rewards-activity-card {
+  display: grid;
+  gap: 12px;
+}
+
 .gdg-reward-activity-list {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
 .gdg-reward-activity-list article {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto auto;
+  grid-template-columns: 38px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   border: 1px solid rgba(16, 24, 40, 0.08);
-  border-radius: 16px;
+  border-radius: 14px;
   background: #ffffff;
-  padding: 10px 12px;
+  padding: 9px 10px;
 }
 
 .gdg-reward-activity-icon {
   display: inline-grid;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   place-items: center;
-  border-radius: 13px;
+  border-radius: 12px;
 }
 
 .gdg-reward-activity-list article.earned .gdg-reward-activity-icon {
@@ -25437,7 +25453,7 @@ body .catalog-action-menu-floating {
 .gdg-reward-activity-list article em {
   border-radius: 999px;
   background: #f8fafc;
-  padding: 5px 9px;
+  padding: 4px 8px;
   color: #475467;
   font-size: 0.72rem;
   font-style: normal;
@@ -25452,7 +25468,7 @@ body .catalog-action-menu-floating {
   border: 1px dashed rgba(16, 24, 40, 0.18);
   border-radius: 18px;
   background: #fff7eb;
-  padding: 18px;
+  padding: 15px;
   color: #475467;
 }
 
@@ -25470,6 +25486,9 @@ body .catalog-action-menu-floating {
 
 .gdg-rewards-links-card {
   position: relative;
+  display: grid;
+  align-content: start;
+  gap: 8px;
   overflow: hidden;
   background:
     radial-gradient(circle at 96% 94%, rgba(34, 197, 94, 0.14), transparent 24%),
@@ -25478,18 +25497,18 @@ body .catalog-action-menu-floating {
 
 .gdg-rewards-help-icon {
   display: inline-grid;
-  width: 52px;
-  height: 52px;
-  margin-bottom: 8px;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 2px;
   place-items: center;
-  border-radius: 18px;
+  border-radius: 16px;
   background: #dcfce7;
   color: #15803d;
 }
 
 .gdg-rewards-links-card .gdg-account-support-links {
   grid-template-columns: 1fr;
-  margin-top: 10px;
+  margin-top: 4px;
 }
 
 .gdg-account-progress {
@@ -26972,8 +26991,8 @@ body .catalog-action-menu-floating {
   }
 
   .gdg-rewards-level-card .gdg-account-icon-badge {
-    width: 58px;
-    height: 58px;
+    width: 50px;
+    height: 50px;
   }
 
   .gdg-rewards-progress-label {
@@ -26983,12 +27002,12 @@ body .catalog-action-menu-floating {
   }
 
   .gdg-rewards-explainer ul {
-    gap: 12px;
+    gap: 8px;
   }
 
   .gdg-rewards-explainer li {
-    padding: 14px;
-    line-height: 1.4;
+    padding: 10px 11px;
+    line-height: 1.35;
   }
 
   .gdg-account-preview-row {
@@ -27039,13 +27058,19 @@ body .catalog-action-menu-floating {
   }
 
   .gdg-reward-activity-list article {
-    grid-template-columns: 38px minmax(0, 1fr);
+    grid-template-columns: 34px minmax(0, 1fr) auto;
     align-items: flex-start;
+    gap: 8px;
   }
 
-  .gdg-reward-activity-list b,
+  .gdg-reward-activity-list b {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+  }
+
   .gdg-reward-activity-list article em {
-    grid-column: 2;
+    grid-column: 2 / -1;
     justify-self: start;
   }
 }
@@ -27062,8 +27087,8 @@ body .catalog-action-menu-floating {
 
   .gdg-rewards-info-strip .gdg-account-icon-badge,
   .gdg-rewards-level-card .gdg-account-icon-badge {
-    width: 52px;
-    height: 52px;
+    width: 48px;
+    height: 48px;
   }
 
   .gdg-account-progress-label {

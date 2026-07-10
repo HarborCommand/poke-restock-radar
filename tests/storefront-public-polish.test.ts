@@ -116,7 +116,7 @@ test("mobile detail, cart, and rewards surfaces use compact safe layouts", () =>
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-cart-line\s*\{[\s\S]*?grid-template-columns: 64px minmax\(0, 1fr\);/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-checkout-button\s*\{[\s\S]*?min-height: 52px;/);
   assert.match(css, /@media \(max-width: 900px\)\s*\{[\s\S]*?\.gdg-rewards-summary-grid\s*\{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
-  assert.match(css, /@media \(max-width: 640px\)\s*\{[\s\S]*?\.gdg-reward-activity-list article\s*\{[\s\S]*?grid-template-columns: 38px minmax\(0, 1fr\);/);
+  assert.match(css, /@media \(max-width: 640px\)\s*\{[\s\S]*?\.gdg-reward-activity-list article\s*\{[\s\S]*?grid-template-columns: 34px minmax\(0, 1fr\) auto;/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-rewards-summary-grid\s*\{[\s\S]*?grid-template-columns: 1fr;/);
 });
 
