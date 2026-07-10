@@ -14,8 +14,8 @@ import {
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
 
-const orderDetailTitle = "Customer Order Details | GameDayGrabs LLC";
-const orderDetailDescription = "View safe customer-facing GameDayGrabs order details after verifying your checkout email.";
+const orderDetailTitle = "Customer Purchase Details | GameDayGrabs LLC";
+const orderDetailDescription = "View safe customer-facing GameDayGrabs purchase details after verifying your account.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

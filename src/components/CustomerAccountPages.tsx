@@ -74,16 +74,15 @@ function customerAuthAttemptMessage(value: string | null | undefined) {
   return null;
 }
 
-type AccountOrderHistoryView = "active" | "completed" | "refunded-canceled" | "all";
+type AccountOrderHistoryView = "all" | "online" | "in-store";
 
 const orderHistoryFilters: Array<{ view: AccountOrderHistoryView; label: string; href: string }> = [
-  { view: "active", label: "Active", href: "/account/orders" },
-  { view: "completed", label: "Completed", href: "/account/orders?view=completed" },
-  { view: "refunded-canceled", label: "Refunded / Canceled", href: "/account/orders?view=refunded-canceled" },
-  { view: "all", label: "All", href: "/account/orders?view=all" }
+  { view: "all", label: "All", href: "/account/orders" },
+  { view: "online", label: "Online", href: "/account/orders?view=online" },
+  { view: "in-store", label: "In-Store", href: "/account/orders?view=in-store" }
 ];
 
-function orderHistoryCategory(order: CustomerAccountOrderHistoryItem): Exclude<AccountOrderHistoryView, "all"> {
+function orderHistoryStatusCategory(order: CustomerAccountOrderHistoryItem): "active" | "completed" | "refunded-canceled" {
   const status = order.status.toLowerCase();
   if (
     status.includes("refunded") ||
@@ -102,7 +101,7 @@ function orderHistoryCategory(order: CustomerAccountOrderHistoryItem): Exclude<A
 }
 
 function orderHistoryRank(order: CustomerAccountOrderHistoryItem) {
-  const category = orderHistoryCategory(order);
+  const category = orderHistoryStatusCategory(order);
   if (category === "active") return 0;
   if (category === "completed") return 1;
   return 2;
@@ -119,19 +118,20 @@ function orderHistoryFiltered(
       return new Date(right.orderDate).getTime() - new Date(left.orderDate).getTime();
     });
   }
-  return orders.filter((order) => orderHistoryCategory(order) === view);
+  return orders.filter((order) => (view === "online" ? order.sourceType === "online" : order.sourceType !== "online"));
 }
 
 function orderHistoryEmptyTitle(view: AccountOrderHistoryView, hasAnyOrders: boolean) {
-  if (!hasAnyOrders || view === "all") return "No orders found for this verified email yet.";
-  if (view === "completed") return "No completed orders found.";
-  if (view === "refunded-canceled") return "No refunded or canceled orders found.";
-  return "No active orders found.";
+  if (!hasAnyOrders || view === "all") return "No purchases found for this account yet.";
+  if (view === "online") return "No online orders found.";
+  return "No in-store purchases found.";
 }
 
 function orderHistoryEmptyMessage(view: AccountOrderHistoryView, hasAnyOrders: boolean) {
-  if (!hasAnyOrders || view === "all") return "Orders will appear here after your verified account email matches a checkout email.";
-  return "Try All to see every non-test order placed with this verified email.";
+  if (!hasAnyOrders || view === "all") {
+    return "Online orders and linked in-store purchases will appear here after they are tied to your verified account.";
+  }
+  return "Try All to see your complete GameDayGrabs purchase history.";
 }
 
 function refundedCanceledNote(order: CustomerAccountOrderHistoryItem) {
@@ -148,7 +148,7 @@ type AccountSection = "overview" | "orders" | "rewards" | "addresses" | "support
 
 const accountNavigation: Array<{ section: AccountSection; label: string; href: string; icon: LucideIcon }> = [
   { section: "overview", label: "Overview", href: "/account", icon: Home },
-  { section: "orders", label: "Orders", href: "/account/orders", icon: PackageCheck },
+  { section: "orders", label: "Purchases", href: "/account/orders", icon: PackageCheck },
   { section: "rewards", label: "Rewards", href: "/account/rewards", icon: Gift },
   { section: "addresses", label: "Addresses", href: "/account/addresses", icon: MapPin },
   { section: "support", label: "Support", href: "/contact", icon: Headphones }
@@ -179,10 +179,18 @@ function AccountIconBadge({ icon: Icon, tone = "gold" }: { icon: LucideIcon; ton
 }
 
 function orderStatusTone(order: CustomerAccountOrderHistoryItem) {
-  const category = orderHistoryCategory(order);
+  const category = orderHistoryStatusCategory(order);
   if (category === "refunded-canceled") return "muted";
   if (category === "completed") return "good";
   return "active";
+}
+
+function purchaseCountLabel(count: number) {
+  return count === 1 ? "1 Purchase" : `${count} Purchases`;
+}
+
+function purchaseDetailHref(order: CustomerAccountOrderHistoryItem) {
+  return `/account/orders/${encodeURIComponent(order.detailKey)}`;
 }
 
 function AccountHeroGrabby() {
@@ -283,8 +291,8 @@ export function AccountDashboard({
   const recentOrderItem = previewOrders[0]?.items.find((item) => item.imageUrl) ?? previewOrders[0]?.items[0] ?? null;
   const recentOrderImageUrl = recentOrderItem?.imageUrl ?? null;
   const recentOrderImageAlt = recentOrderItem?.title
-    ? `${recentOrderItem.title} from your most recent order`
-    : "Most recent order product image";
+    ? `${recentOrderItem.title} from your most recent purchase`
+    : "Most recent purchase product image";
   const progressPercent = Math.min(100, Math.max(0, Math.round((availablePoints / 500) * 100)));
   const stats: Array<{
     href: string;
@@ -296,9 +304,9 @@ export function AccountDashboard({
   }> = [
     {
       href: "/account/orders",
-      label: "Orders",
-      value: `${recentOrders.length}`,
-      copy: recentOrders.length === 1 ? "order tied to this email" : "orders tied to this email",
+      label: "Purchase History",
+      value: purchaseCountLabel(recentOrders.length),
+      copy: "Online orders and in-store purchases",
       icon: ShoppingBag,
       tone: "green"
     },
@@ -373,28 +381,28 @@ export function AccountDashboard({
             ) : (
               <>
                 <PackageCheck size={28} aria-hidden="true" />
-                <span>{previewOrders.length ? "Image unavailable" : "Orders will appear here"}</span>
+                <span>{previewOrders.length ? "Image unavailable" : "Purchases will appear here"}</span>
               </>
             )}
           </div>
           <div className="gdg-account-orders-preview-body">
             <header className="gdg-account-panel-heading">
               <div>
-                <p className="gdg-overline">My Orders</p>
-                <h2>Recent orders</h2>
+                <p className="gdg-overline">Purchase History</p>
+                <h2>Recent purchases</h2>
               </div>
-              <Link href="/account/orders">View all orders <ChevronRight size={16} aria-hidden="true" /></Link>
+              <Link href="/account/orders">View all purchases <ChevronRight size={16} aria-hidden="true" /></Link>
             </header>
             <p className="gdg-account-panel-copy">
-              Orders placed with this verified email, including guest checkout orders, appear here. No payment method
-              details are shown.
+              Online orders and linked in-store purchases appear here. Private payment references and internal notes are
+              not shown.
             </p>
             {previewOrders.length ? (
               <div className="gdg-account-preview-list">
                 {previewOrders.map((order) => {
                   const previewItem = order.items[0];
                   return (
-                    <Link key={order.orderNumber} href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-account-preview-row">
+                    <Link key={order.detailKey} href={purchaseDetailHref(order)} className="gdg-account-preview-row">
                       <div className="gdg-account-preview-thumb">
                         {previewItem?.imageUrl ? (
                           // Safe public order snapshot image.
@@ -405,7 +413,7 @@ export function AccountDashboard({
                       </div>
                       <div className="gdg-account-preview-main">
                         <strong>{previewItem?.title || order.orderNumber}</strong>
-                        <span>{order.orderNumber} - {dateLabel(order.orderDate)}</span>
+                        <span>{order.sourceLabel} - {order.displayReference} - {dateLabel(order.orderDate)}</span>
                       </div>
                       <span className={`gdg-account-status-pill ${orderStatusTone(order)}`}>{order.status}</span>
                       <b>{money(order.totalPaid)}</b>
@@ -417,8 +425,8 @@ export function AccountDashboard({
             ) : (
               <div className="gdg-account-empty-panel">
                 <PackageCheck size={22} aria-hidden="true" />
-                <strong>No orders found for this verified email yet.</strong>
-                <p>Guest checkout orders will appear here after they match your verified account email.</p>
+                <strong>No purchases found for this account yet.</strong>
+                <p>Online orders and linked in-store purchases will appear here after they are tied to your account.</p>
               </div>
             )}
           </div>
@@ -835,7 +843,7 @@ export function AccountResetPasswordPageContent({
 export function AccountOrders({
   account,
   orders,
-  view = "active"
+  view = "all"
 }: {
   account: CurrentCustomerAccount;
   orders: CustomerAccountOrderHistoryItem[];
@@ -847,17 +855,17 @@ export function AccountOrders({
     <>
       <AccountNavigation active="orders" />
       <div className="gdg-account-card hero">
-        <p className="gdg-overline">Order History</p>
-        <h1>Your GameDayGrabs orders.</h1>
+        <p className="gdg-overline">Purchase History</p>
+        <h1>Your GameDayGrabs purchases.</h1>
         <p>
-          These orders were placed with your verified email, including guest checkout orders. No payment method details
-          are shown.
+          Online orders and linked in-store purchases tied to your verified account appear here. No private payment
+          references or internal notes are shown.
         </p>
         <p>Verified email: <strong>{account.email}</strong>. Guest order lookup remains available.</p>
         <div className="gdg-account-mini-grid" aria-label="Order history privacy notes">
-          <span>Verified email only</span>
-          <span>No payment method details shown</span>
-          <span>Test orders hidden</span>
+          <span>Verified account only</span>
+          <span>Online + in-store history</span>
+          <span>Private payment references hidden</span>
           <span>Guest checkout unchanged</span>
         </div>
         <nav className="gdg-account-order-filters" aria-label="Order history filters">
@@ -873,11 +881,12 @@ export function AccountOrders({
           {visibleOrders.map((order) => {
             const historyNote = refundedCanceledNote(order);
             return (
-            <article key={order.orderNumber} className="gdg-account-order-card">
+            <article key={order.detailKey} className="gdg-account-order-card">
               <header>
                 <div>
+                  <span className={`gdg-account-source-pill ${order.sourceType}`}>{order.sourceLabel}</span>
                   <span>{dateLabel(order.orderDate)}</span>
-                  <h2>{order.orderNumber}</h2>
+                  <h2>{order.displayReference}</h2>
                 </div>
                 <strong>{money(order.totalPaid)}</strong>
               </header>
@@ -887,16 +896,24 @@ export function AccountOrders({
                   <strong>{order.status}</strong>
                 </div>
                 <div>
-                  <span>Fulfillment</span>
-                  <strong>{order.fulfillmentMethod === "local_pickup" ? "Local Pickup" : order.shippingMethodLabel || "Standard Shipping"}</strong>
+                  <span>Items</span>
+                  <strong>{order.itemCount} item{order.itemCount === 1 ? "" : "s"}</strong>
                 </div>
                 <div>
-                  <span>Shipping charged</span>
-                  <strong>{money(order.shippingCharged)}</strong>
+                  <span>{order.fulfillmentMethod === "in_store" ? "Purchase type" : "Fulfillment"}</span>
+                  <strong>
+                    {order.fulfillmentMethod === "in_store"
+                      ? order.sourceLabel
+                      : order.fulfillmentMethod === "local_pickup"
+                        ? "Local Pickup"
+                        : order.shippingMethodLabel || "Standard Shipping"}
+                  </strong>
                 </div>
                 <div>
-                  <span>{order.fulfillmentMethod === "local_pickup" ? "Pickup status" : "Tracking"}</span>
-                  {order.fulfillmentMethod === "local_pickup" ? (
+                  <span>{order.fulfillmentMethod === "in_store" ? "Receipt" : order.fulfillmentMethod === "local_pickup" ? "Pickup status" : "Tracking"}</span>
+                  {order.fulfillmentMethod === "in_store" ? (
+                    <strong>Available in account</strong>
+                  ) : order.fulfillmentMethod === "local_pickup" ? (
                     <strong>{order.pickupStatus || "Pickup pending"}</strong>
                   ) : order.trackingNumber ? (
                     order.trackingUrl ? <a href={order.trackingUrl}>{order.trackingNumber}</a> : <strong>{order.trackingNumber}</strong>
@@ -909,9 +926,12 @@ export function AccountOrders({
               <section>
                 <h3>Items</h3>
                 {order.items.map((item) => (
-                  <p key={`${order.orderNumber}-${item.title}`}>{item.quantity} x {item.title}</p>
+                  <p key={`${order.detailKey}-${item.title}`}>{item.quantity} x {item.title}</p>
                 ))}
               </section>
+              {order.rewardsEarned ? (
+                <p className="gdg-account-notice">Rewards earned: {order.rewardsEarned.toLocaleString()} point{order.rewardsEarned === 1 ? "" : "s"}.</p>
+              ) : null}
               {order.refundStatus ? (
                 <p className="gdg-account-notice">
                   Refund/cancel status: {order.refundStatus}
@@ -919,7 +939,7 @@ export function AccountOrders({
                 </p>
               ) : null}
               <div className="gdg-account-actions">
-                <Link href={`/account/orders/${encodeURIComponent(order.orderNumber)}`} className="gdg-secondary-button">View Details</Link>
+                <Link href={purchaseDetailHref(order)} className="gdg-secondary-button">View Details</Link>
               </div>
             </article>
             );
@@ -953,21 +973,27 @@ export function AccountOrderNotFound() {
 }
 
 export function AccountOrderDetail({ account, order }: { account: CurrentCustomerAccount; order: CustomerAccountOrderDetail }) {
-  const fulfillmentLabel = order.fulfillmentMethod === "local_pickup" ? "Local Pickup" : order.shippingMethodLabel || "Standard Shipping";
+  const isInStorePurchase = order.fulfillmentMethod === "in_store";
+  const fulfillmentLabel = isInStorePurchase
+    ? order.sourceLabel
+    : order.fulfillmentMethod === "local_pickup"
+      ? "Local Pickup"
+      : order.shippingMethodLabel || "Standard Shipping";
   const carrierService = [order.shippingCarrier, order.shippingService].filter(Boolean).join(" / ") || "Not provided yet";
 
   return (
     <>
       <AccountNavigation active="orders" />
       <div className="gdg-account-card hero">
-        <p className="gdg-overline">Order Details</p>
-        <h1>{order.orderNumber}</h1>
+        <p className="gdg-overline">{isInStorePurchase ? "Purchase Details" : "Order Details"}</p>
+        <h1>{order.displayReference}</h1>
         <p>
-          Showing safe customer-facing details for <strong>{account.email}</strong>. Guest checkout and order status
-          lookup remain available.
+          Showing safe customer-facing {isInStorePurchase ? "purchase" : "order"} details for{" "}
+          <strong>{account.email}</strong>. Private payment references, internal notes, cost basis, and profit details
+          are not shown.
         </p>
         <div className="gdg-account-actions">
-          <Link href="/account/orders" className="gdg-secondary-button">Back to My Orders</Link>
+          <Link href="/account/orders" className="gdg-secondary-button">Back to Purchase History</Link>
           <Link href="/policies" className="gdg-secondary-button">View Policies</Link>
         </div>
       </div>
@@ -987,16 +1013,24 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
               <strong>{order.status}</strong>
             </div>
             <div>
-              <span>Fulfillment method</span>
+              <span>{isInStorePurchase ? "Purchase type" : "Fulfillment method"}</span>
               <strong>{fulfillmentLabel}</strong>
             </div>
             <div>
-              <span>{order.fulfillmentMethod === "local_pickup" ? "Pickup status" : "Carrier / service"}</span>
-              <strong>{order.fulfillmentMethod === "local_pickup" ? order.pickupStatus || "Pickup pending" : carrierService}</strong>
+              <span>{isInStorePurchase ? "Payment method" : order.fulfillmentMethod === "local_pickup" ? "Pickup status" : "Carrier / service"}</span>
+              <strong>
+                {isInStorePurchase
+                  ? order.paymentMethodLabel || "Other"
+                  : order.fulfillmentMethod === "local_pickup"
+                    ? order.pickupStatus || "Pickup pending"
+                    : carrierService}
+              </strong>
             </div>
             <div>
-              <span>{order.fulfillmentMethod === "local_pickup" ? "Tracking" : "Tracking number"}</span>
-              {order.fulfillmentMethod === "local_pickup" ? (
+              <span>{isInStorePurchase ? "Receipt reference" : order.fulfillmentMethod === "local_pickup" ? "Tracking" : "Tracking number"}</span>
+              {isInStorePurchase ? (
+                <strong>{order.displayReference}</strong>
+              ) : order.fulfillmentMethod === "local_pickup" ? (
                 <strong>Not required</strong>
               ) : order.trackingNumber ? (
                 order.trackingUrl ? <a href={order.trackingUrl}>{order.trackingNumber}</a> : <strong>{order.trackingNumber}</strong>
@@ -1008,7 +1042,7 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
           <section>
             <h3>Items</h3>
             {order.items.map((item) => (
-              <p key={`${order.orderNumber}-${item.title}`}>
+              <p key={`${order.detailKey}-${item.title}`}>
                 {item.quantity} x {item.title} - {money(item.lineTotal)}
               </p>
             ))}
@@ -1016,20 +1050,39 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
         </article>
 
         <aside className="gdg-account-card compact">
-          <h2>Order Summary</h2>
+          <h2>{isInStorePurchase ? "Purchase Summary" : "Order Summary"}</h2>
           <div className="gdg-account-order-grid two">
             <div>
               <span>Subtotal</span>
               <strong>{money(order.subtotal)}</strong>
             </div>
-            <div>
-              <span>Shipping charged</span>
-              <strong>{money(order.shippingCharged)}</strong>
-            </div>
+            {isInStorePurchase ? (
+              <>
+                <div>
+                  <span>Tax</span>
+                  <strong>{order.tax === null ? "Not recorded" : money(order.tax)}</strong>
+                </div>
+                <div>
+                  <span>Discount</span>
+                  <strong>{order.discountTotal > 0 ? `-${money(order.discountTotal)}` : money(0)}</strong>
+                </div>
+              </>
+            ) : (
+              <div>
+                <span>Shipping charged</span>
+                <strong>{money(order.shippingCharged)}</strong>
+              </div>
+            )}
             <div>
               <span>Total paid</span>
               <strong>{money(order.totalPaid)}</strong>
             </div>
+            {order.rewardsEarned ? (
+              <div>
+                <span>Rewards earned</span>
+                <strong>{order.rewardsEarned.toLocaleString()} pts</strong>
+              </div>
+            ) : null}
             <div>
               <span>Support</span>
               <a href={`mailto:${order.supportEmail}`}>{order.supportEmail}</a>
@@ -1042,7 +1095,8 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
             </p>
           ) : null}
           <p>
-            Need help with this order? Contact support and include your order number. Customer account pages do not provide
+            Need help with this {isInStorePurchase ? "purchase" : "order"}? Contact support and include your{" "}
+            {isInStorePurchase ? "receipt reference" : "order number"}. Customer account pages do not provide
             cancellation or refund actions.
           </p>
           <div className="gdg-account-actions">
