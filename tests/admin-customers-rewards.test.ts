@@ -659,6 +659,8 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(app, /CustomerProfileEditModal/);
   assert.match(app, /RewardAdjustmentModal/);
   assert.match(app, /CustomerAttachOrderModal/);
+  assert.match(app, /SalesAttachCustomerModal/);
+  assert.match(app, /Attach to Customer/);
   assert.match(app, /Attach Past Order/);
   assert.match(app, /Backfill rewards for this linked purchase when eligible/);
   assert.match(app, /Manual ownership review required/);
@@ -692,6 +694,30 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(attachModal, /selectedCandidate\.type === "storefront_order" \? selectedCandidate\.id : undefined/);
   assert.match(attachModal, /selectedCandidate\.type === "pos_sale" \? selectedCandidate\.id : undefined/);
   assert.match(attachModal, /disabled=\{!selectedCandidate\.rewards\.eligible\}/);
+  const salesAttachModal = app.slice(
+    app.indexOf("function SalesAttachCustomerModal"),
+    app.indexOf("function SaleDetailsModal")
+  );
+  assert.match(salesAttachModal, /aria-label=\{`Attach \$\{target\.label\} to a customer`\}/);
+  assert.ok(salesAttachModal.includes("requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`)"));
+  assert.match(salesAttachModal, /requestJson<AdminCustomerAttachOrderSearchResponseDTO>/);
+  assert.ok(salesAttachModal.includes("`/api/radar/customers/${customer.id}/attach-order?${params.toString()}`"));
+  assert.match(salesAttachModal, /requestJson<AdminCustomerAttachOrderResultDTO>/);
+  assert.ok(salesAttachModal.includes("`/api/radar/customers/${selectedCustomer.id}/attach-order`"));
+  assert.match(salesAttachModal, /selectedCandidate\.type === "storefront_order" \? selectedCandidate\.id : undefined/);
+  assert.match(salesAttachModal, /selectedCandidate\.type === "pos_sale" \? selectedCandidate\.id : undefined/);
+  assert.match(salesAttachModal, /Confirm ownership was reviewed outside the automatic email match/);
+  assert.match(salesAttachModal, /Backfill rewards for this linked purchase when eligible/);
+  assert.match(salesAttachModal, /customer\.maskedEmail/);
+  assert.doesNotMatch(salesAttachModal, /customerEmail|passwordHash|sessionToken|resetToken|authSecret/i);
+  const saleDetailsModal = app.slice(
+    app.indexOf("function SaleDetailsModal"),
+    app.indexOf("function EditSaleModal")
+  );
+  assert.match(saleDetailsModal, /isAdmin && attachTarget/);
+  assert.match(saleDetailsModal, /Customer link/);
+  assert.match(saleDetailsModal, /Linked customer saved/);
+  assert.match(saleDetailsModal, /SalesAttachCustomerModal/);
   assert.doesNotMatch(storefrontOrderInclude, /metadataJson|adminNote/i);
   assert.doesNotMatch(customerRewardActivity, /metadataJson|adminNote/i);
 });
@@ -752,6 +778,8 @@ test("attach past order modal has compact desktop and mobile layout", () => {
   assert.match(css, /body \.customer-attach-search-row\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;/);
   assert.match(css, /body \.customer-attach-candidate\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;/);
   assert.match(css, /body \.customer-attach-order-modal \.customer-attach-actions\s*\{[\s\S]*?position: static;[\s\S]*?box-shadow: none;/);
-  assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?body \.customer-attach-search-row,[\s\S]*?body \.customer-attach-candidate\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+  assert.match(css, /body \.sales-attach-target-card\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /body \.sales-attach-customer\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?body \.customer-attach-search-row,[\s\S]*?body \.customer-attach-candidate,[\s\S]*?body \.sales-attach-target-card,[\s\S]*?body \.sales-attach-customer\s*\{[\s\S]*?grid-template-columns: 1fr;/);
   assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?body \.customer-attach-order-modal \.customer-attach-actions\s*\{[\s\S]*?grid-template-columns: 1fr;/);
 });
