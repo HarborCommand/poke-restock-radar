@@ -10,8 +10,8 @@ import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
 
 const ordersUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/account/orders`;
-const ordersTitle = "Customer Order History | GameDayGrabs LLC";
-const ordersDescription = "View your own GameDayGrabs order history after verifying your checkout email.";
+const ordersTitle = "Customer Purchase History | GameDayGrabs LLC";
+const ordersDescription = "View your own GameDayGrabs online orders and linked in-store purchases after verifying your account.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +50,7 @@ function firstParam(value: string | string[] | undefined) {
 
 function orderHistoryView(value: string | string[] | undefined) {
   const view = firstParam(value);
-  return view === "completed" || view === "refunded-canceled" || view === "all" ? view : "active";
+  return view === "online" || view === "in-store" || view === "all" ? view : "all";
 }
 
 export default async function AccountOrdersPage({ searchParams }: AccountOrdersPageProps) {

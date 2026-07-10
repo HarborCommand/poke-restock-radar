@@ -41,6 +41,25 @@ export function customerVisibleOrderWhere(account: VerifiedCustomerIdentityInput
   };
 }
 
+export function customerVisiblePosSaleWhere(account: VerifiedCustomerIdentityInput, saleKey?: string | null) {
+  const identity = verifiedCustomerIdentity(account);
+  const cleanSaleKey = saleKey?.trim();
+  if (!identity || saleKey !== undefined && !cleanSaleKey) return null;
+
+  return {
+    customerAccountId: identity.customerAccountId,
+    platform: { notIn: ["website", "test", "smoke"] },
+    ...(cleanSaleKey
+      ? {
+          OR: [
+            { saleReference: cleanSaleKey },
+            { id: cleanSaleKey }
+          ]
+        }
+      : {})
+  };
+}
+
 export function hasClientSuppliedCustomerOwnership(input: unknown) {
   if (!input || typeof input !== "object") return false;
   const blockedKeys = new Set([

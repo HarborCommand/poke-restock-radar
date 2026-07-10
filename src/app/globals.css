@@ -25272,6 +25272,31 @@ body .catalog-action-menu-floating {
   white-space: nowrap;
 }
 
+.gdg-account-source-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 61, 46, 0.1);
+  background: #f5fbf7;
+  color: #0b6b3a;
+  font-size: 0.72rem;
+  font-weight: 950;
+  padding: 4px 9px;
+}
+
+.gdg-account-source-pill.online {
+  background: #eef6ff;
+  color: #175cd3;
+}
+
+.gdg-account-source-pill.pos,
+.gdg-account-source-pill.local {
+  background: #fff7df;
+  color: #9a5b00;
+}
+
 .gdg-account-status-pill.active {
   background: #ffedd5;
   color: #c2410c;
@@ -26189,9 +26214,9 @@ body .catalog-action-menu-floating {
 
 .gdg-account-order-filters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  width: min(100%, 720px);
+  width: min(100%, 560px);
   margin-top: 8px;
   border: 1px solid rgba(15, 61, 46, 0.12);
   border-radius: 18px;

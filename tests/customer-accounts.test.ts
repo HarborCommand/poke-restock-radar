@@ -574,13 +574,13 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountDashboard, /gdg-account-orders-preview-visual has-image/);
   assert.match(accountDashboard, /alt=\{recentOrderImageAlt\}/);
   assert.match(accountDashboard, /Image unavailable/);
-  assert.match(accountDashboard, /Orders will appear here/);
+  assert.match(accountDashboard, /Purchases will appear here/);
   assert.match(accountDashboard, /previewItem\?\.imageUrl/);
   assert.match(accountDashboard, /thumbnail/);
-  for (const label of ["My Orders", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
+  for (const label of ["Purchases", "Rewards", "Saved Addresses", "Order Status", "Support"]) {
     assert.match(accountComponents, new RegExp(label));
   }
-  for (const label of ["Orders", "Points", "Saved Addresses", "Support / Order Status"]) {
+  for (const label of ["Purchase History", "Points", "Saved Addresses", "Support / Order Status"]) {
     assert.match(accountDashboard, new RegExp(label));
   }
   assert.match(accountDashboard, /Earn 1 point per \$1 on eligible product purchases/);
@@ -591,7 +591,7 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountComponents, /const lifetimeEarnedPoints = balance\?\.lifetimeEarnedPoints \?\? 0/);
   assert.match(accountComponents, /const pendingPoints = balance\?\.pendingPoints \?\? 0/);
   assert.match(accountComponents, /Points are display-only and do not affect checkout totals yet\./);
-  assert.match(accountDashboard, /Orders placed with this verified email, including guest checkout orders, appear here/);
+  assert.match(accountDashboard, /Online orders and linked in-store purchases appear here/);
   assert.doesNotMatch(accountDashboard, /gdg-account-grabby-card/);
   assert.doesNotMatch(accountDashboard, /variant="support"/);
   assert.doesNotMatch(accountDashboard, /Grabby can point you to order status, policies, and support/);
@@ -676,7 +676,7 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(css, /\.gdg-address-form,\s*\r?\n\s*\.gdg-address-actions\s*\{\s*\r?\n\s*grid-template-columns: 1fr/);
   assert.match(cartClient, /No account required/);
   assert.match(cartClient, /Guest checkout available/);
-  assert.doesNotMatch(accountComponents, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|payment_method|paymentMethod|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|costBasis|netProfit|supplier|private lot|passwordHash|magic-link token|reset token/i);
+  assert.doesNotMatch(accountComponents, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|payment_method|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|costBasis|netProfit|supplier|private lot|passwordHash|magic-link token|reset token/i);
 });
 
 test("storefront exposes optional account entry points without requiring login for checkout", () => {
@@ -1027,7 +1027,7 @@ test("customer security center backend remains gated while customer-facing UI is
   assert.doesNotMatch(accountSecurityUnavailable, /tokenHash|sessionId|customerAccountId|passwordHash|magic-link token|reset token|stripePaymentIntentId|stripeCheckoutSessionId|payment_method|cardNumber|cvc|raw Stripe|adminNotes|costBasis|supplier|private lot|ipAddress|fullIp/i);
 });
 
-test("customer order history is linked by verified email and exposes safe fields only", () => {
+test("customer purchase history combines verified-email orders and linked POS sales safely", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const security = readProjectFile("src/lib/customer-account-security.ts");
   const ordersPage = readProjectFile("src/app/account/orders/page.tsx");
@@ -1037,39 +1037,54 @@ test("customer order history is linked by verified email and exposes safe fields
   assert.match(orderHistory, /const where = customerVisibleOrderWhere\(account\)/);
   assert.match(orderHistory, /if \(!where\) return \[\]/);
   assert.match(security, /export function customerVisibleOrderWhere/);
+  assert.match(security, /export function customerVisiblePosSaleWhere/);
   assert.match(security, /isTestOrder:\s*false/);
   assert.match(security, /customerAccountId: identity\.customerAccountId/);
   assert.match(security, /\{ customerAccountId: null, customerEmail: identity\.email \}/);
   assert.match(security, /customerAccountId: null,\s*\r?\n\s*customer: \{ is: \{ email: identity\.email \} \}/);
+  assert.match(security, /platform: \{ notIn: \["website", "test", "smoke"\] \}/);
+  assert.match(orderHistory, /const posWhere = customerVisiblePosSaleWhere\(account\)/);
+  assert.match(orderHistory, /prisma\.inventorySale\.findMany/);
+  assert.match(orderHistory, /include: customerVisiblePosSaleInclude/);
+  assert.match(orderHistory, /groupCustomerPosSales\(posSales\)/);
+  assert.match(orderHistory, /customerPosSaleHistoryItem/);
+  assert.match(auth, /detailKey: `pos:\$\{key\}`/);
+  assert.match(auth, /sourceLabel: customerPosSourceLabel\(sourceType\)/);
+  assert.match(orderHistory, /rewardPointsByPosSaleKey\(account\.id/);
   assert.match(orderHistory, /select:\s*\{\s*\r?\n\s*publicTitle:\s*true,\s*\r?\n\s*imageUrl:\s*true,\s*\r?\n\s*quantity:\s*true/);
   assert.match(orderHistory, /imageUrl:\s*item\.imageUrl/);
   assert.match(orderHistory, /take:\s*100/);
   assert.match(ordersPage, /searchParams/);
   assert.match(ordersPage, /orderHistoryView\(params\.view\)/);
-  assert.match(accountComponents, /These orders were placed with your verified email, including guest checkout orders/);
-  assert.match(accountComponents, /No payment method details\s+are shown/);
-  assert.match(accountComponents, /Test orders hidden/);
-  assert.match(accountComponents, /No orders found for this verified email yet/);
+  assert.match(ordersPage, /view === "online" \|\| view === "in-store" \|\| view === "all"/);
+  assert.match(accountComponents, /Online orders and linked in-store purchases tied to your verified account appear here/);
+  assert.match(accountComponents, /Private payment references hidden/);
+  assert.match(accountComponents, /No purchases found for this account yet/);
+  assert.match(accountComponents, /Purchase History/);
+  assert.match(auth, /In-Store Purchase/);
+  assert.match(auth, /Local Purchase/);
   assert.match(accountComponents, /Guest order lookup remains available/);
   assert.match(accountComponents, /Tracking/);
   assert.match(accountComponents, /Pickup status/);
+  assert.match(accountComponents, /Receipt/);
+  assert.match(accountComponents, /Purchase type/);
+  assert.match(accountComponents, /Rewards earned/);
   assert.match(accountComponents, /Refund\/cancel status/);
   assert.match(accountComponents, /orderHistoryFilters/);
-  assert.match(accountComponents, /Active/);
-  assert.match(accountComponents, /Completed/);
-  assert.match(accountComponents, /Refunded \/ Canceled/);
-  assert.match(accountComponents, /view=completed/);
-  assert.match(accountComponents, /view=refunded-canceled/);
+  assert.match(accountComponents, /Online/);
+  assert.match(accountComponents, /In-Store/);
+  assert.match(accountComponents, /view=online/);
+  assert.match(accountComponents, /view=in-store/);
   assert.match(accountComponents, /orderHistoryFiltered\(orders, view\)/);
-  assert.match(accountComponents, /orderHistoryCategory/);
+  assert.match(accountComponents, /orderHistoryStatusCategory/);
   assert.match(accountComponents, /This order was refunded/);
   assert.match(accountComponents, /This order was canceled/);
   assert.match(accountComponents, /This checkout expired/);
 
-  assert.doesNotMatch(orderHistory + accountComponents, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|payment_method|paymentMethod|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|costBasis|netProfit|supplier|private lot|billingAddress/i);
+  assert.doesNotMatch(orderHistory + accountComponents, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|payment_method|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|customerLinkNote|customerLinkReason|paymentReference|costBasis|netProfit|profitLoss|roiPercent|supplier|private lot|billingAddress/i);
 });
 
-test("customer account order detail is verified-email scoped and customer safe", () => {
+test("customer account purchase detail is verified scoped and customer safe", () => {
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const security = readProjectFile("src/lib/customer-account-security.ts");
   const detailPage = readProjectFile("src/app/account/orders/[orderNumber]/page.tsx");
@@ -1085,9 +1100,18 @@ test("customer account order detail is verified-email scoped and customer safe",
   assert.match(detailPage, /robots:\s*\{\s*\r?\n\s*index:\s*false/);
 
   assert.match(detailPage, /noStore\(\)/);
+  assert.match(detailFunction, /cleanOrderNumber\.startsWith\("pos:"\)/);
+  assert.match(detailFunction, /const saleKey = cleanOrderNumber\.slice\(4\)\.trim\(\)/);
+  assert.match(detailFunction, /const where = customerVisiblePosSaleWhere\(account, saleKey\)/);
+  assert.match(detailFunction, /prisma\.inventorySale\.findMany/);
+  assert.match(detailFunction, /return customerPosSaleDetail\(group\.key, group\.sales/);
   assert.match(detailFunction, /const where = customerVisibleOrderWhere\(account, cleanOrderNumber\)/);
   assert.match(detailFunction, /if \(!where\) return null/);
   assert.match(security, /orderNumber: cleanOrderNumber/);
+  assert.match(security, /customerVisiblePosSaleWhere/);
+  assert.match(security, /customerAccountId: identity\.customerAccountId/);
+  assert.match(security, /saleReference: cleanSaleKey/);
+  assert.match(security, /id: cleanSaleKey/);
   assert.match(security, /isTestOrder:\s*false/);
   assert.match(security, /customerAccountId: identity\.customerAccountId/);
   assert.match(detailFunction, /select:\s*\{/);
@@ -1099,7 +1123,14 @@ test("customer account order detail is verified-email scoped and customer safe",
   assert.match(detailFunction, /lineTotal:\s*true/);
 
   assert.match(detailComponent, /export function AccountOrderDetail/);
-  assert.match(detailComponent, /safe customer-facing details/);
+  assert.match(detailComponent, /safe customer-facing/);
+  assert.match(detailComponent, /Private payment references, internal notes, cost basis, and profit details\s+are not shown/);
+  assert.match(detailComponent, /Purchase Details/);
+  assert.match(detailComponent, /Payment method/);
+  assert.match(detailComponent, /Receipt reference/);
+  assert.match(detailComponent, /Purchase Summary/);
+  assert.match(detailComponent, /Rewards earned/);
+  assert.match(detailComponent, /order\.tax === null \? "Not recorded" : money\(order\.tax\)/);
   assert.match(detailComponent, /Carrier \/ service/);
   assert.match(detailComponent, /Tracking number/);
   assert.match(detailComponent, /Pickup status/);
@@ -1110,7 +1141,7 @@ test("customer account order detail is verified-email scoped and customer safe",
   assert.match(accountComponents, /View Details/);
   assert.match(orderStatusRoute, /lookupPublicOrderStatus\(input\)/);
 
-  assert.doesNotMatch(detailFunction + detailPage + detailComponent, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|stripeRefundId|payment_method|paymentMethod|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|notes:\s*true|costBasis|netProfit|profitLoss|supplier|private lot|billingLine|billingAddress/i);
+  assert.doesNotMatch(detailFunction + detailPage + detailComponent, /stripePaymentIntentId|stripeCheckoutSessionId|stripeCustomerId|stripeRefundId|payment_method|cardNumber|cvc|raw Stripe|webhook body|adminNotes|internalNote|notes:\s*true|customerLinkNote|customerLinkReason|paymentReference|costBasis|netProfit|profitLoss|roiPercent|supplier|private lot|billingLine|billingAddress/i);
 });
 
 test("saved address book is verified-account scoped and checkout-isolated", () => {

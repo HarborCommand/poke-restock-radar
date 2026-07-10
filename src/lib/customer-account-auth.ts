@@ -7,7 +7,12 @@ import { prisma } from "@/lib/db";
 import { sendEmailViaProvider, type EmailSendResult } from "@/lib/email-provider";
 import { authRuntimeConfig } from "@/lib/auth";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
-import { customerVisibleOrderWhere, normalizeCustomerEmail, verifiedCustomerIdentity } from "@/lib/customer-account-security";
+import {
+  customerVisibleOrderWhere,
+  customerVisiblePosSaleWhere,
+  normalizeCustomerEmail,
+  verifiedCustomerIdentity
+} from "@/lib/customer-account-security";
 import {
   customerSessionAbsoluteExpiresAt,
   resolveCustomerSessionTimeout,
@@ -92,13 +97,20 @@ export type CustomerAccountSecuritySession = {
   expired: boolean;
 };
 
+export type CustomerPurchaseSourceType = "online" | "pos" | "local";
+
 export type CustomerAccountOrderHistoryItem = {
   orderNumber: string;
+  detailKey: string;
+  displayReference: string;
+  sourceType: CustomerPurchaseSourceType;
+  sourceLabel: string;
   orderDate: string;
   status: string;
   paymentStatus: string;
   fulfillmentStatus: string;
-  fulfillmentMethod: "shipping" | "local_pickup";
+  fulfillmentMethod: "shipping" | "local_pickup" | "in_store";
+  itemCount: number;
   totalPaid: number;
   shippingCharged: number;
   shippingMethodLabel: string | null;
@@ -110,16 +122,23 @@ export type CustomerAccountOrderHistoryItem = {
   refundedAmount: number;
   canceledAt: string | null;
   refundedAt: string | null;
+  rewardsEarned: number | null;
+  receiptAvailable: boolean;
+  orderDetailAvailable: boolean;
   items: Array<{ title: string; quantity: number; imageUrl: string | null }>;
 };
 
 export type CustomerAccountOrderDetail = Omit<CustomerAccountOrderHistoryItem, "items"> & {
   subtotal: number;
+  tax: number | null;
+  discountTotal: number;
+  paymentMethodLabel: string | null;
   items: Array<{
     title: string;
     quantity: number;
     unitPrice: number;
     lineTotal: number;
+    imageUrl: string | null;
   }>;
   shippingCarrier: string | null;
   shippingService: string | null;
@@ -1222,36 +1241,266 @@ function safeOrderStatus(order: {
   return "Pending";
 }
 
+const customerVisiblePosSaleInclude = {
+  inventoryItem: {
+    select: {
+      itemName: true,
+      imageUrl: true,
+      publicTitle: true,
+      publicImages: true
+    }
+  }
+} satisfies Prisma.InventorySaleInclude;
+
+type CustomerVisiblePosSale = Prisma.InventorySaleGetPayload<{ include: typeof customerVisiblePosSaleInclude }>;
+
+function roundAccountMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function parseJsonStringArray(value: string | null | undefined) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+function publicImageForInventoryItem(item: CustomerVisiblePosSale["inventoryItem"]) {
+  return parseJsonStringArray(item.publicImages)[0] ?? item.imageUrl ?? null;
+}
+
+function customerPosSaleKey(sale: Pick<CustomerVisiblePosSale, "id" | "saleReference">) {
+  return sale.saleReference?.trim() || sale.id;
+}
+
+function customerPosSourceType(sale: Pick<CustomerVisiblePosSale, "platform">): CustomerPurchaseSourceType {
+  return sale.platform.trim().toLowerCase() === "pos" ? "pos" : "local";
+}
+
+function customerPosSourceLabel(sourceType: CustomerPurchaseSourceType) {
+  if (sourceType === "pos") return "In-Store Purchase";
+  if (sourceType === "local") return "Local Purchase";
+  return "Online Order";
+}
+
+function safePosPaymentMethodLabel(value: string | null | undefined) {
+  const method = value?.trim().toLowerCase();
+  if (!method) return null;
+  if (method === "cash") return "Cash";
+  if (method === "zelle") return "Zelle";
+  if (method === "card" || method === "stripe" || method === "terminal") return "Card";
+  return "Other";
+}
+
+function posMoneyFromNote(notes: string | null | undefined, label: "subtotal" | "tax" | "total") {
+  const match = notes?.match(new RegExp(`POS ${label}: \\$(\\d+(?:\\.\\d{1,2})?)\\.`));
+  return match ? roundAccountMoney(Number(match[1])) : null;
+}
+
+function customerPosSaleStatus(sales: CustomerVisiblePosSale[]) {
+  if (sales.some((sale) => sale.refundStatus === "canceled")) return "Canceled";
+  const refundedSales = sales.filter((sale) => sale.refundStatus === "refunded" || (sale.refundedAmount ?? 0) >= sale.grossSale);
+  if (refundedSales.length === sales.length && sales.length > 0) return "Refunded";
+  if (sales.some((sale) => (sale.refundedAmount ?? 0) > 0 || sale.refundStatus)) return "Partially refunded";
+  return "Completed";
+}
+
+function safePositiveRewardPoints(entries: Array<{ points: number; type?: string | null }>) {
+  return entries.filter((entry) => entry.points > 0 && (!entry.type || entry.type === "earn")).reduce((sum, entry) => sum + entry.points, 0);
+}
+
+function groupCustomerPosSales(sales: CustomerVisiblePosSale[]) {
+  const groups = new Map<string, CustomerVisiblePosSale[]>();
+  for (const sale of sales) {
+    const key = customerPosSaleKey(sale);
+    groups.set(key, [...(groups.get(key) ?? []), sale]);
+  }
+  return [...groups.entries()]
+    .map(([key, group]) => ({ key, sales: group }))
+    .sort((left, right) => right.sales[0]!.soldAt.getTime() - left.sales[0]!.soldAt.getTime());
+}
+
+function customerPosSaleTotals(sales: CustomerVisiblePosSale[]) {
+  const first = sales[0] ?? null;
+  const noteSubtotal = first ? posMoneyFromNote(first.notes, "subtotal") : null;
+  const noteTax = first ? posMoneyFromNote(first.notes, "tax") : null;
+  const noteTotal = first ? posMoneyFromNote(first.notes, "total") : null;
+  const subtotal = roundAccountMoney(noteSubtotal ?? sales.reduce((sum, sale) => sum + Math.max(0, sale.grossSale), 0));
+  const tax = noteTax === null ? null : roundAccountMoney(noteTax);
+  const refundedAmount = roundAccountMoney(sales.reduce((sum, sale) => sum + Math.max(0, Math.min(sale.refundedAmount ?? 0, sale.grossSale)), 0));
+  const totalBeforeRefund = roundAccountMoney(noteTotal ?? subtotal + (tax ?? 0));
+  const totalPaid = roundAccountMoney(Math.max(0, totalBeforeRefund - refundedAmount));
+  const discountTotal = roundAccountMoney(sales.reduce((sum, sale) => sum + Math.max(0, sale.discountAmount ?? 0), 0));
+  return { subtotal, tax, refundedAmount, totalPaid, discountTotal };
+}
+
+function customerPosSaleHistoryItem(key: string, sales: CustomerVisiblePosSale[], rewardPoints: number): CustomerAccountOrderHistoryItem {
+  const first = sales[0]!;
+  const sourceType = customerPosSourceType(first);
+  const totals = customerPosSaleTotals(sales);
+  const itemCount = sales.reduce((sum, sale) => sum + sale.quantitySold, 0);
+  const status = customerPosSaleStatus(sales);
+  const refundedAt = sales
+    .map((sale) => sale.refundedAt)
+    .filter((value): value is Date => Boolean(value))
+    .sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+  return {
+    orderNumber: first.saleReference?.trim() || key,
+    detailKey: `pos:${key}`,
+    displayReference: first.saleReference?.trim() || `POS-${key.slice(-8).toUpperCase()}`,
+    sourceType,
+    sourceLabel: customerPosSourceLabel(sourceType),
+    orderDate: first.soldAt.toISOString(),
+    status,
+    paymentStatus: status === "Refunded" ? "refunded" : totals.refundedAmount > 0 ? "partially_refunded" : "paid",
+    fulfillmentStatus: "picked_up",
+    fulfillmentMethod: "in_store",
+    itemCount,
+    totalPaid: totals.totalPaid,
+    shippingCharged: 0,
+    shippingMethodLabel: null,
+    pickupStatus: "Completed",
+    trackingNumber: null,
+    trackingUrl: null,
+    carrier: null,
+    refundStatus: totals.refundedAmount > 0 ? status.toLowerCase().replace(/\s+/g, "_") : null,
+    refundedAmount: totals.refundedAmount,
+    canceledAt: null,
+    refundedAt: refundedAt?.toISOString() ?? null,
+    rewardsEarned: rewardPoints > 0 ? rewardPoints : null,
+    receiptAvailable: true,
+    orderDetailAvailable: true,
+    items: sales.map((sale) => ({
+      title: sale.inventoryItem.publicTitle || sale.inventoryItem.itemName,
+      quantity: sale.quantitySold,
+      imageUrl: publicImageForInventoryItem(sale.inventoryItem)
+    }))
+  };
+}
+
+function customerPosSaleDetail(key: string, sales: CustomerVisiblePosSale[], rewardPoints: number): CustomerAccountOrderDetail {
+  const history = customerPosSaleHistoryItem(key, sales, rewardPoints);
+  const totals = customerPosSaleTotals(sales);
+  const first = sales[0]!;
+  return {
+    ...history,
+    subtotal: totals.subtotal,
+    tax: totals.tax,
+    discountTotal: totals.discountTotal,
+    paymentMethodLabel: safePosPaymentMethodLabel(first.paymentMethod),
+    shippingCarrier: null,
+    shippingService: null,
+    supportEmail: GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL,
+    items: sales.map((sale) => ({
+      title: sale.inventoryItem.publicTitle || sale.inventoryItem.itemName,
+      quantity: sale.quantitySold,
+      unitPrice: sale.soldPricePerItem,
+      lineTotal: roundAccountMoney(sale.soldPricePerItem * sale.quantitySold),
+      imageUrl: publicImageForInventoryItem(sale.inventoryItem)
+    }))
+  };
+}
+
+async function rewardPointsByPosSaleKey(customerAccountId: string, keys: string[]) {
+  const uniqueKeys = [...new Set(keys.filter(Boolean))];
+  const result = new Map<string, number>();
+  if (!uniqueKeys.length) return result;
+
+  const ledger = await prisma.rewardLedgerEntry.findMany({
+    where: {
+      customerAccountId,
+      OR: [
+        {
+          idempotencyKey: {
+            in: uniqueKeys.flatMap((key) => [`rewards:pos:earn:${key}`, `rewards:pos:refund:${key}`, `rewards:backfill:pos:${key}`])
+          }
+        },
+        {
+          source: { in: ["pos", "admin_pos_link_backfill"] },
+          OR: uniqueKeys.map((key) => ({ metadataJson: { contains: key } }))
+        }
+      ]
+    },
+    select: {
+      idempotencyKey: true,
+      metadataJson: true,
+      points: true,
+      type: true
+    }
+  });
+
+  for (const key of uniqueKeys) {
+    const matching = ledger.filter((entry) => {
+      if (entry.idempotencyKey === `rewards:pos:earn:${key}` || entry.idempotencyKey === `rewards:backfill:pos:${key}`) return true;
+      if (entry.idempotencyKey === `rewards:pos:refund:${key}`) return true;
+      return typeof entry.metadataJson === "string" && entry.metadataJson.includes(key);
+    });
+    const netPoints = matching.reduce((sum, entry) => sum + entry.points, 0);
+    result.set(key, Math.max(0, netPoints));
+  }
+  return result;
+}
+
 export async function listCustomerAccountOrders(account: CurrentCustomerAccount): Promise<CustomerAccountOrderHistoryItem[]> {
   const where = customerVisibleOrderWhere(account);
   if (!where) return [];
 
-  const orders = await prisma.storefrontOrder.findMany({
-    where,
-    include: {
-      items: {
-        select: {
-          publicTitle: true,
-          imageUrl: true,
-          quantity: true
+  const posWhere = customerVisiblePosSaleWhere(account);
+  const [orders, posSales] = await Promise.all([
+    prisma.storefrontOrder.findMany({
+      where,
+      include: {
+        items: {
+          select: {
+            publicTitle: true,
+            imageUrl: true,
+            quantity: true
+          }
+        },
+        rewardLedgerEntries: {
+          select: {
+            points: true,
+            type: true
+          }
         }
-      }
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100
-  });
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    }),
+    posWhere
+      ? prisma.inventorySale.findMany({
+          where: posWhere,
+          include: customerVisiblePosSaleInclude,
+          orderBy: [{ soldAt: "desc" }, { createdAt: "asc" }],
+          take: 200
+        })
+      : Promise.resolve([])
+  ]);
 
-  return orders.map((order) => {
+  const posGroups = groupCustomerPosSales(posSales);
+  const posRewards = await rewardPointsByPosSaleKey(account.id, posGroups.map((group) => group.key));
+
+  const onlineHistory = orders.map((order) => {
     const localPickup = orderIsLocalPickup(order);
     const carrier = localPickup ? null : order.shippingCarrier ?? order.carrier;
     const trackingNumber = localPickup ? null : order.shippingTrackingNumber ?? order.trackingNumber;
+    const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+    const rewardPoints = safePositiveRewardPoints(order.rewardLedgerEntries);
     return {
       orderNumber: order.orderNumber,
+      detailKey: order.orderNumber,
+      displayReference: order.orderNumber,
+      sourceType: "online" as const,
+      sourceLabel: "Online Order",
       orderDate: order.createdAt.toISOString(),
       status: safeOrderStatus(order),
       paymentStatus: order.paymentStatus,
       fulfillmentStatus: order.fulfillmentStatus,
-      fulfillmentMethod: localPickup ? "local_pickup" : "shipping",
+      fulfillmentMethod: localPickup ? ("local_pickup" as const) : ("shipping" as const),
+      itemCount,
       totalPaid: order.total,
       shippingCharged: order.shippingCharged,
       shippingMethodLabel: order.shippingMethodLabel,
@@ -1263,6 +1512,9 @@ export async function listCustomerAccountOrders(account: CurrentCustomerAccount)
       refundedAmount: order.refundedAmount,
       canceledAt: order.canceledAt?.toISOString() ?? null,
       refundedAt: order.refundedAt?.toISOString() ?? null,
+      rewardsEarned: rewardPoints > 0 ? rewardPoints : null,
+      receiptAvailable: true,
+      orderDetailAvailable: true,
       items: order.items.map((item) => ({
         title: item.publicTitle,
         quantity: item.quantity,
@@ -1270,6 +1522,12 @@ export async function listCustomerAccountOrders(account: CurrentCustomerAccount)
       }))
     };
   });
+
+  const posHistory = posGroups.map((group) => customerPosSaleHistoryItem(group.key, group.sales, posRewards.get(group.key) ?? 0));
+
+  return [...onlineHistory, ...posHistory]
+    .sort((left, right) => new Date(right.orderDate).getTime() - new Date(left.orderDate).getTime())
+    .slice(0, 100);
 }
 
 export async function getCustomerAccountOrderDetail(
@@ -1277,6 +1535,22 @@ export async function getCustomerAccountOrderDetail(
   orderNumber: string
 ): Promise<CustomerAccountOrderDetail | null> {
   const cleanOrderNumber = orderNumber.trim();
+  if (cleanOrderNumber.startsWith("pos:")) {
+    const saleKey = cleanOrderNumber.slice(4).trim();
+    const where = customerVisiblePosSaleWhere(account, saleKey);
+    if (!where) return null;
+    const sales = await prisma.inventorySale.findMany({
+      where,
+      include: customerVisiblePosSaleInclude,
+      orderBy: [{ soldAt: "desc" }, { createdAt: "asc" }]
+    });
+    if (!sales.length) return null;
+    const group = groupCustomerPosSales(sales).find((candidate) => candidate.key === saleKey) ?? groupCustomerPosSales(sales)[0];
+    if (!group) return null;
+    const posRewards = await rewardPointsByPosSaleKey(account.id, [group.key]);
+    return customerPosSaleDetail(group.key, group.sales, posRewards.get(group.key) ?? 0);
+  }
+
   const where = customerVisibleOrderWhere(account, cleanOrderNumber);
   if (!where) return null;
 
@@ -1289,6 +1563,7 @@ export async function getCustomerAccountOrderDetail(
       paymentStatus: true,
       fulfillmentStatus: true,
       subtotal: true,
+      tax: true,
       shippingCharged: true,
       shippingMethodLabel: true,
       shippingPackageProfile: true,
@@ -1303,9 +1578,16 @@ export async function getCustomerAccountOrderDetail(
       refundedAmount: true,
       canceledAt: true,
       refundedAt: true,
+      rewardLedgerEntries: {
+        select: {
+          points: true,
+          type: true
+        }
+      },
       items: {
         select: {
           publicTitle: true,
+          imageUrl: true,
           quantity: true,
           unitPrice: true,
           lineTotal: true
@@ -1318,15 +1600,25 @@ export async function getCustomerAccountOrderDetail(
   const localPickup = orderIsLocalPickup(order);
   const carrier = localPickup ? null : order.shippingCarrier ?? order.carrier;
   const trackingNumber = localPickup ? null : order.shippingTrackingNumber ?? order.trackingNumber;
+  const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const rewardPoints = safePositiveRewardPoints(order.rewardLedgerEntries);
 
   return {
     orderNumber: order.orderNumber,
+    detailKey: order.orderNumber,
+    displayReference: order.orderNumber,
+    sourceType: "online",
+    sourceLabel: "Online Order",
     orderDate: order.createdAt.toISOString(),
     status: safeOrderStatus(order),
     paymentStatus: order.paymentStatus,
     fulfillmentStatus: order.fulfillmentStatus,
     fulfillmentMethod: localPickup ? "local_pickup" : "shipping",
+    itemCount,
     subtotal: order.subtotal,
+    tax: order.tax,
+    discountTotal: 0,
+    paymentMethodLabel: null,
     totalPaid: order.total,
     shippingCharged: order.shippingCharged,
     shippingMethodLabel: order.shippingMethodLabel,
@@ -1342,12 +1634,16 @@ export async function getCustomerAccountOrderDetail(
     refundedAmount: order.refundedAmount,
     canceledAt: order.canceledAt?.toISOString() ?? null,
     refundedAt: order.refundedAt?.toISOString() ?? null,
+    rewardsEarned: rewardPoints > 0 ? rewardPoints : null,
+    receiptAvailable: true,
+    orderDetailAvailable: true,
     supportEmail: GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL,
     items: order.items.map((item) => ({
       title: item.publicTitle,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
-      lineTotal: item.lineTotal
+      lineTotal: item.lineTotal,
+      imageUrl: item.imageUrl
     }))
   };
 }
