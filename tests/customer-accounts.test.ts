@@ -1307,11 +1307,14 @@ test("customer rewards page shows balance activity and redemption coming soon", 
   assert.match(accountRewards, /Rewards rules/);
   assert.match(accountRewards, /Contact support/);
   assert.match(css, /\.gdg-rewards-spotlight\s*\{[\s\S]*?grid-template-columns: 170px minmax\(0, 1fr\) minmax\(330px, 0\.72fr\);/);
-  assert.match(css, /\.gdg-rewards-summary-card\s*\{[\s\S]*?grid-template-columns: 58px minmax\(0, 1fr\);/);
-  assert.match(css, /\.gdg-rewards-progress-track\s*\{[\s\S]*?height: 11px;/);
-  assert.match(css, /\.gdg-rewards-milestones\s*\{[\s\S]*?position: relative;/);
+  assert.match(css, /\.gdg-rewards-summary-card\s*\{[\s\S]*?grid-template-columns: 54px minmax\(0, 1fr\);/);
+  assert.match(css, /\.gdg-rewards-dashboard-grid,\s*\r?\n\.gdg-rewards-bottom-grid\s*\{[\s\S]*?align-items: start;/);
+  assert.match(css, /\.gdg-rewards-level-card\s*\{[\s\S]*?display: grid;[\s\S]*?gap: 11px;/);
+  assert.match(css, /\.gdg-rewards-progress-track\s*\{[\s\S]*?height: 10px;/);
+  assert.match(css, /\.gdg-rewards-milestones\s*\{[\s\S]*?height: 34px;/);
   assert.match(css, /\.gdg-rewards-explainer li\s*\{[\s\S]*?grid-template-columns: 22px minmax\(0, 1fr\);/);
-  assert.match(css, /\.gdg-reward-activity-list article\s*\{[\s\S]*?grid-template-columns: 42px minmax\(0, 1fr\) auto auto;/);
+  assert.match(css, /\.gdg-rewards-next-callout\s*\{[\s\S]*?grid-template-columns: 36px minmax\(0, 1fr\);/);
+  assert.match(css, /\.gdg-reward-activity-list article\s*\{[\s\S]*?grid-template-columns: 38px minmax\(0, 1fr\) auto auto;/);
   assert.match(css, /@media \(max-width: 900px\)\s*\{[\s\S]*?\.gdg-rewards-summary-grid\s*\{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-rewards-summary-grid\s*\{[\s\S]*?grid-template-columns: 1fr;/);
   assert.doesNotMatch(accountRewards, /redeem points|apply points|points discount|reward discount|coupon/i);
