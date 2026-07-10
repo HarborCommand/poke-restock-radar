@@ -2172,7 +2172,7 @@ export function RadarApp() {
           <ReleasesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
         ) : null}
         {activeTab === "inventory" ? (
-          <InventoryPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+          <InventoryPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} onRefresh={loadDashboard} />
         ) : null}
         {activeTab === "pos" && isAdmin ? (
           <PosPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} onCompleted={loadDashboard} />
@@ -2186,7 +2186,7 @@ export function RadarApp() {
         {activeTab === "shipping" ? (
           <ShippingHubPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
-        {activeTab === "sales" ? <SalesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} /> : null}
+        {activeTab === "sales" ? <SalesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} onRefresh={loadDashboard} /> : null}
         {activeTab === "alerts" ? (
           <AlertsPanel
             dashboard={dashboard}
@@ -3508,13 +3508,15 @@ function SalesPanel({
   isAdmin,
   busy,
   busyLabel,
-  submit
+  submit,
+  onRefresh
 }: {
   dashboard: DashboardDTO;
   isAdmin: boolean;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  onRefresh: () => Promise<void>;
 }) {
   const sales = dashboard.inventory.flatMap((item) => item.sales);
   return (
@@ -3529,6 +3531,7 @@ function SalesPanel({
         submit={submit}
         isAdmin={isAdmin}
         onRecordSale={() => undefined}
+        onRefresh={onRefresh}
       />
     </section>
   );
@@ -3668,13 +3671,8 @@ function CustomersRewardsPanel() {
   const refreshAfterAttachOrder = async (result: AdminCustomerAttachOrderResultDTO) => {
     setSelectedCustomer(result.customer);
     setAttachingCustomer(null);
-    setActionMessage(
-      result.duplicate
-        ? "Order was already linked to this customer."
-        : result.rewardsApplied
-          ? `Past order linked and ${result.rewardPoints.toLocaleString()} points recorded.`
-          : "Past order linked to customer."
-    );
+    const linkedMessage = result.duplicate ? "Past order was already linked to this customer." : "Past order linked to customer.";
+    setActionMessage(`${linkedMessage} ${result.rewardMessage}`);
     await Promise.all([loadCustomers(), loadLedger()]);
   };
 
@@ -4308,7 +4306,8 @@ function CustomerAttachOrderModal({
         body: JSON.stringify({
           type: selectedCandidate.type,
           orderId: selectedCandidate.type === "storefront_order" ? selectedCandidate.id : undefined,
-          saleReference: selectedCandidate.type === "pos_sale" ? selectedCandidate.id : undefined,
+          saleReference: selectedCandidate.type === "pos_sale" ? selectedCandidate.saleReference ?? undefined : undefined,
+          saleId: selectedCandidate.type === "pos_sale" ? selectedCandidate.saleId ?? undefined : undefined,
           reason,
           note,
           confirmEmailMismatch,
@@ -4373,7 +4372,7 @@ function CustomerAttachOrderModal({
                     aria-pressed={selectedCandidate?.id === candidate.id && selectedCandidate.type === candidate.type}
                   >
                     <span>
-                      <strong>{candidate.type === "storefront_order" ? `Order ${candidate.reference}` : `POS ${candidate.reference}`}</strong>
+                      <strong>{candidate.type === "storefront_order" ? `Order ${candidate.reference}` : `${candidate.source === "pos" ? "POS" : "Manual"} sale ${candidate.reference}`}</strong>
                       <small>{formatStatus(candidate.source)} - {shortDate(candidate.date)} - {candidate.status}</small>
                       <small>{candidate.maskedCustomerEmail ?? "No email"}{candidate.maskedCustomerPhone ? ` - ${candidate.maskedCustomerPhone}` : ""}</small>
                     </span>
@@ -9022,7 +9021,8 @@ function InventoryPanel({
   busy,
   busyLabel,
   submit,
-  runAction
+  runAction,
+  onRefresh
 }: {
   dashboard: DashboardDTO;
   isAdmin: boolean;
@@ -9030,6 +9030,7 @@ function InventoryPanel({
   busyLabel: string | null;
   submit: SubmitHandler;
   runAction: ActionHandler;
+  onRefresh: () => Promise<void>;
 }) {
   const [view, setView] = useState<"items" | "purchases" | "sales">("items");
   const [addProductChoiceOpen, setAddProductChoiceOpen] = useState(false);
@@ -9444,6 +9445,7 @@ function InventoryPanel({
           submit={submit}
           isAdmin={isAdmin}
           onRecordSale={() => selectedItem && openProductWorkspace(selectedItem, "record-sale")}
+          onRefresh={onRefresh}
         />
       ) : null}
       {addProductChoiceOpen ? (
@@ -16328,7 +16330,8 @@ function SalesLog({
   busyLabel,
   submit,
   isAdmin,
-  onRecordSale
+  onRecordSale,
+  onRefresh
 }: {
   items: InventoryItemDTO[];
   sales: InventorySaleDTO[];
@@ -16339,6 +16342,7 @@ function SalesLog({
   submit: SubmitHandler;
   isAdmin: boolean;
   onRecordSale: () => void;
+  onRefresh: () => Promise<void>;
 }) {
   const [selectedSaleId, setSelectedSaleId] = useState<string>("");
   const [editSaleId, setEditSaleId] = useState<string>("");
@@ -16507,6 +16511,7 @@ function SalesLog({
           submit={submit}
           isAdmin={isAdmin}
           onEdit={() => setEditSaleId(selectedSaleRow.sale.id)}
+          onRefresh={onRefresh}
           onClose={() => setSelectedSaleId("")}
         />
       ) : null}
@@ -16561,18 +16566,47 @@ function saleLifecycleTone(sale: InventorySaleDTO) {
 }
 
 function saleRewardLabel(sale: InventorySaleDTO) {
-  if (sale.platform !== "pos") return null;
   if (sale.rewardStatus === "available") {
     return sale.rewardPointsEarned !== null && sale.rewardPointsEarned > 0
-      ? `${sale.rewardPointsEarned} rewards point${sale.rewardPointsEarned === 1 ? "" : "s"} earned`
-      : "POS rewards earned";
+      ? `Rewards awarded: ${sale.rewardPointsEarned} point${sale.rewardPointsEarned === 1 ? "" : "s"}`
+      : "Rewards awarded";
   }
   if (sale.rewardStatus === "reversed") {
     return sale.rewardPointsReversed !== null && sale.rewardPointsReversed > 0
-      ? `${sale.rewardPointsReversed} rewards point${sale.rewardPointsReversed === 1 ? "" : "s"} reversed`
-      : "POS rewards reversed";
+      ? `Rewards reversed: ${sale.rewardPointsReversed} point${sale.rewardPointsReversed === 1 ? "" : "s"}`
+      : "Rewards reversed";
   }
-  if (sale.customerAccountId) return "POS rewards not active";
+  if (!sale.customerAccountId) return "Not linked to customer";
+  if (sale.saleStatus === "canceled" || sale.saleStatus === "refunded" || sale.saleStatus === "partially_refunded" || sale.refundedAmount > 0) {
+    return "Rewards unavailable: canceled/refunded";
+  }
+  if (sale.customerMatchMethod === "admin_manual" || !sale.customerEmail) {
+    return "Rewards not applied: verified email match required";
+  }
+  if (sale.rewardsEligible) return "Rewards eligible";
+  if (sale.storefrontOrderNumber) return "Rewards status tracked on storefront order";
+  return "Rewards not applied: use Apply Rewards Now if eligible";
+}
+
+function saleRewardTone(sale: InventorySaleDTO) {
+  if (sale.rewardStatus === "available") return "good";
+  if (sale.rewardStatus === "reversed") return "bad";
+  if (sale.saleStatus === "canceled" || sale.saleStatus === "refunded" || sale.saleStatus === "partially_refunded" || sale.refundedAmount > 0) return "bad";
+  if (sale.customerAccountId && (sale.rewardsEligible || sale.storefrontOrderNumber)) return "good";
+  return "neutral";
+}
+
+function saleApplyRewardsDisabledReason(sale: InventorySaleDTO) {
+  if (!sale.customerAccountId) return "Link a verified customer before applying rewards.";
+  if (sale.rewardStatus === "available") return "Rewards already awarded.";
+  if (sale.rewardStatus === "reversed") return "Rewards were already reversed.";
+  if (sale.saleStatus === "canceled" || sale.saleStatus === "refunded" || sale.saleStatus === "partially_refunded" || sale.refundedAmount > 0) {
+    return "Canceled or refunded sales are not eligible for rewards.";
+  }
+  if (sale.saleStatus === "test") return "Test or smoke sales do not earn rewards.";
+  if (sale.customerMatchMethod === "admin_manual" || !sale.customerEmail) {
+    return "A verified matching customer email is required before rewards can be applied.";
+  }
   return null;
 }
 
@@ -16776,6 +16810,8 @@ function posReceiptText(rows: SaleDetailRow[]) {
 type SaleAttachTarget = {
   type: AdminCustomerAttachOrderCandidateDTO["type"];
   reference: string;
+  saleId: string | null;
+  saleReference: string | null;
   label: string;
 };
 
@@ -16784,6 +16820,8 @@ function saleAttachTarget(sale: InventorySaleDTO): SaleAttachTarget | null {
     return {
       type: "pos_sale",
       reference: sale.saleReference.trim(),
+      saleId: null,
+      saleReference: sale.saleReference.trim(),
       label: `POS sale ${sale.saleReference.trim()}`
     };
   }
@@ -16791,22 +16829,39 @@ function saleAttachTarget(sale: InventorySaleDTO): SaleAttachTarget | null {
     return {
       type: "storefront_order",
       reference: sale.storefrontOrderNumber.trim(),
+      saleId: null,
+      saleReference: null,
       label: `order ${sale.storefrontOrderNumber.trim()}`
+    };
+  }
+  if (sale.id) {
+    return {
+      type: "pos_sale",
+      reference: sale.id,
+      saleId: sale.id,
+      saleReference: null,
+      label: `${formatStatus(sale.platform || "local")} sale ${shortDate(sale.soldAt)}`
     };
   }
   return null;
 }
 
 function saleAttachCandidateMatches(candidate: AdminCustomerAttachOrderCandidateDTO, target: SaleAttachTarget) {
-  return candidate.type === target.type && (candidate.reference === target.reference || candidate.id === target.reference);
+  if (candidate.type !== target.type) return false;
+  if (target.type === "pos_sale") {
+    return Boolean(
+      (target.saleReference && candidate.saleReference === target.saleReference) ||
+      (target.saleId && candidate.saleId === target.saleId) ||
+      candidate.reference === target.reference ||
+      candidate.id === target.reference
+    );
+  }
+  return candidate.reference === target.reference || candidate.id === target.reference;
 }
 
 function saleAttachSuccessMessage(result: AdminCustomerAttachOrderResultDTO, target: SaleAttachTarget) {
-  if (result.duplicate) return `${target.label} was already linked to this customer.`;
-  if (result.rewardsApplied) {
-    return `${target.label} linked and ${result.rewardPoints.toLocaleString()} reward point${result.rewardPoints === 1 ? "" : "s"} backfilled.`;
-  }
-  return `${target.label} linked to customer.`;
+  const linkedMessage = result.duplicate ? `${target.label} was already linked to this customer.` : `${target.label} linked to customer.`;
+  return `${linkedMessage} ${result.rewardMessage}`;
 }
 
 function escapeReceiptHtml(value: string) {
@@ -16911,7 +16966,8 @@ function SalesAttachCustomerModal({
           body: JSON.stringify({
             type: selectedCandidate.type,
             orderId: selectedCandidate.type === "storefront_order" ? selectedCandidate.id : undefined,
-            saleReference: selectedCandidate.type === "pos_sale" ? selectedCandidate.id : undefined,
+            saleReference: selectedCandidate.type === "pos_sale" ? selectedCandidate.saleReference ?? undefined : undefined,
+            saleId: selectedCandidate.type === "pos_sale" ? selectedCandidate.saleId ?? undefined : undefined,
             reason,
             note,
             confirmEmailMismatch,
@@ -17076,6 +17132,7 @@ function SaleDetailsModal({
   submit,
   isAdmin,
   onEdit,
+  onRefresh,
   onClose
 }: {
   item: InventoryItemDTO | null;
@@ -17086,22 +17143,32 @@ function SaleDetailsModal({
   submit: SubmitHandler;
   isAdmin: boolean;
   onEdit: () => void;
+  onRefresh: () => Promise<void>;
   onClose: () => void;
 }) {
-  const tone = saleLifecycleTone(sale);
   const [receiptMessage, setReceiptMessage] = useState<string | null>(null);
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
   const [refundOpen, setRefundOpen] = useState(false);
   const [attachCustomerOpen, setAttachCustomerOpen] = useState(false);
+  const [applyingRewards, setApplyingRewards] = useState(false);
+  const [rewardOverride, setRewardOverride] = useState<Partial<InventorySaleDTO> & { id: string } | null>(null);
+  useEffect(() => {
+    setRewardOverride(null);
+  }, [sale.id]);
+  const displaySale: InventorySaleDTO = rewardOverride?.id === sale.id ? { ...sale, ...rewardOverride } : sale;
+  const tone = saleLifecycleTone(displaySale);
   const [refundIdempotencyKey] = useState(() => `pos-refund:${Date.now()}:${Math.random().toString(36).slice(2)}`);
-  const isPosReceipt = sale.platform === "pos" && Boolean(sale.saleReference);
-  const rows = isPosReceipt && receiptRows.length ? receiptRows : [{ sale, item }];
+  const isPosReceipt = displaySale.platform === "pos" && Boolean(displaySale.saleReference);
+  const rows = isPosReceipt && receiptRows.length
+    ? receiptRows.map((row) => row.sale.id === displaySale.id ? { ...row, sale: displaySale } : row)
+    : [{ sale: displaySale, item }];
   const receiptTotals = posReceiptTotals(rows);
   const receiptCopy = posReceiptText(rows);
-  const rewardLabel = saleRewardLabel(sale);
-  const attachTarget = saleAttachTarget(sale);
+  const rewardLabel = saleRewardLabel(displaySale);
+  const attachTarget = saleAttachTarget(displaySale);
+  const applyRewardsDisabledReason = saleApplyRewardsDisabledReason(displaySale);
   const canRefundPosReceipt = isPosReceipt && receiptTotals.netRevenue > 0 && !rows.every((row) => row.sale.saleStatus === "refunded");
-  const refunding = busy || busyLabel === `Recording POS refund ${sale.saleReference}`;
+  const refunding = busy || busyLabel === `Recording POS refund ${displaySale.saleReference}`;
 
   async function copyReceipt() {
     try {
@@ -17124,14 +17191,64 @@ function SaleDetailsModal({
     popup.print();
   }
 
+  async function applyRewardsNow() {
+    if (!displaySale.customerAccountId || !attachTarget || applyRewardsDisabledReason) {
+      setSaleMessage(applyRewardsDisabledReason ?? "This sale is not ready for reward backfill.");
+      return;
+    }
+    setApplyingRewards(true);
+    setSaleMessage(null);
+    try {
+      const params = new URLSearchParams({ query: attachTarget.reference });
+      const search = await requestJson<AdminCustomerAttachOrderSearchResponseDTO>(
+        `/api/radar/customers/${displaySale.customerAccountId}/attach-order?${params.toString()}`
+      );
+      const candidate = search.candidates.find((candidate) => saleAttachCandidateMatches(candidate, attachTarget));
+      if (!candidate) throw new Error(`${attachTarget.label} was not found in linked reward candidates.`);
+      const result = await requestJson<AdminCustomerAttachOrderResultDTO>(`/api/radar/customers/${displaySale.customerAccountId}/attach-order`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: candidate.type,
+          orderId: candidate.type === "storefront_order" ? candidate.id : undefined,
+          saleReference: candidate.type === "pos_sale" ? candidate.saleReference ?? undefined : undefined,
+          saleId: candidate.type === "pos_sale" ? candidate.saleId ?? undefined : undefined,
+          reason: "Admin rewards backfill after customer link",
+          note: "",
+          confirmEmailMismatch: false,
+          applyRewards: true
+        })
+      });
+      if (result.rewardsApplied || result.rewardStatus === "already_awarded") {
+        setRewardOverride({
+          id: sale.id,
+          rewardsEligible: true,
+          rewardStatus: "available",
+          rewardPointsEarned: result.rewardsApplied ? result.rewardPointsAwarded : displaySale.rewardPointsEarned,
+          rewardPointsReversed: null
+        });
+      }
+      const successMessage = saleAttachSuccessMessage(result, attachTarget);
+      setSaleMessage(successMessage);
+      try {
+        await onRefresh();
+      } catch {
+        setSaleMessage(`${successMessage} Refresh the sales list if totals still look stale.`);
+      }
+    } catch (error) {
+      setSaleMessage(error instanceof Error ? error.message : "Could not apply rewards for this sale.");
+    } finally {
+      setApplyingRewards(false);
+    }
+  }
+
   return (
     <>
     <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-modal sale-details-modal" role="dialog" aria-modal="true" aria-label={`${sale.itemName} sale details`}>
+      <div className="inventory-modal sale-details-modal" role="dialog" aria-modal="true" aria-label={`${displaySale.itemName} sale details`}>
         <div className="sales-detail-header">
-          <SaleProductThumb item={item} sale={sale} />
+          <SaleProductThumb item={item} sale={displaySale} />
           <div>
-            <h2>{sale.itemName}</h2>
+            <h2>{displaySale.itemName}</h2>
             <span>{saleIdentifier(item)}</span>
           </div>
           <button className="icon-button" type="button" aria-label="Close sale details" onClick={onClose}>
@@ -17154,28 +17271,28 @@ function SaleDetailsModal({
               {money(receiptTotals.netProfit)}
             </strong>
           </span>
-          <span className={`sale-status-badge ${tone}`}>{saleLifecycleLabel(sale)}</span>
+          <span className={`sale-status-badge ${tone}`}>{saleLifecycleLabel(displaySale)}</span>
         </div>
         <div className="sale-detail-grid">
-          <DetailStat label="Sale Date" value={dateTime(sale.soldAt)} />
-          <DetailStat label="Platform" value={formatStatus(sale.platform || "Unknown platform")} />
+          <DetailStat label="Sale Date" value={dateTime(displaySale.soldAt)} />
+          <DetailStat label="Platform" value={formatStatus(displaySale.platform || "Unknown platform")} />
           <DetailStat label="Quantity Sold" value={String(rows.reduce((sum, row) => sum + row.sale.quantitySold, 0))} />
-          <DetailStat label="Actual Sale Price" value={money(sale.actualSalePrice)} />
+          <DetailStat label="Actual Sale Price" value={money(displaySale.actualSalePrice)} />
           <DetailStat label="Original sale amount" value={money(receiptTotals.subtotal)} />
           <DetailStat label="Refunded amount" value={money(receiptTotals.refundedAmount)} tone={receiptTotals.refundedAmount > 0 ? "bad" : "neutral"} />
           <DetailStat label="Net revenue after refund" value={money(receiptTotals.netRevenue)} tone={receiptTotals.netRevenue > 0 ? "good" : "neutral"} />
-          <DetailStat label="Refund status" value={sale.refundStatus ? formatStatus(sale.refundStatus) : saleLifecycleLabel(sale)} tone={tone === "bad" ? "bad" : "neutral"} />
-          <DetailStat label="Payment method" value={salePaymentLabel(sale)} />
-          <DetailStat label="Payment reference" value={sale.paymentReference || "Not saved"} />
-          <DetailStat label="Sale reference" value={sale.saleReference || "Not saved"} />
-          {rewardLabel ? <DetailStat label="Rewards" value={rewardLabel} tone={sale.rewardStatus === "reversed" ? "bad" : sale.rewardStatus === "available" ? "good" : "neutral"} /> : null}
-          <DetailStat label="Customer link" value={sale.customerAccountId ? "Linked customer saved" : "Not linked"} tone={sale.customerAccountId ? "good" : "neutral"} />
-          <DetailStat label="Storefront order" value={sale.storefrontOrderNumber || "Not linked"} />
+          <DetailStat label="Refund status" value={displaySale.refundStatus ? formatStatus(displaySale.refundStatus) : saleLifecycleLabel(displaySale)} tone={tone === "bad" ? "bad" : "neutral"} />
+          <DetailStat label="Payment method" value={salePaymentLabel(displaySale)} />
+          <DetailStat label="Payment reference" value={displaySale.paymentReference || "Not saved"} />
+          <DetailStat label="Sale reference" value={displaySale.saleReference || "Not saved"} />
+          {rewardLabel ? <DetailStat label="Rewards" value={rewardLabel} tone={saleRewardTone(displaySale)} /> : null}
+          <DetailStat label="Customer link" value={displaySale.customerAccountId ? "Linked customer saved" : "Not linked"} tone={displaySale.customerAccountId ? "good" : "neutral"} />
+          <DetailStat label="Storefront order" value={displaySale.storefrontOrderNumber || "Not linked"} />
           <DetailStat label="Cost Basis" value={money(rows.reduce((sum, row) => sum + row.sale.costBasis, 0))} />
-          <DetailStat label="Stock Lot Source" value={sale.stockLotSource} />
-          <DetailStat label="Fees" value={money(sale.fees)} />
-          <DetailStat label="Shipping" value={money(sale.shippingCost)} />
-          <DetailStat label="ROI" value={percent(sale.roiPercent)} tone={tone === "bad" ? "bad" : tone === "good" ? "good" : "neutral"} />
+          <DetailStat label="Stock Lot Source" value={displaySale.stockLotSource} />
+          <DetailStat label="Fees" value={money(displaySale.fees)} />
+          <DetailStat label="Shipping" value={money(displaySale.shippingCost)} />
+          <DetailStat label="ROI" value={percent(displaySale.roiPercent)} tone={tone === "bad" ? "bad" : tone === "good" ? "good" : "neutral"} />
         </div>
         {rows.some((row) => row.sale.discountAmount && row.sale.discountAmount > 0) ? (
           <section className="inventory-detail-section">
@@ -17231,11 +17348,11 @@ function SaleDetailsModal({
         <section className="inventory-detail-section">
           <h3>Notes</h3>
           <div className="detail-line-list">
-            <span>{sale.notes || "No notes saved."}</span>
+            <span>{displaySale.notes || "No notes saved."}</span>
             <span>{item?.category ? `Category: ${formatStatus(item.category)}` : "Category not saved"}</span>
             <span>{item?.source ? `Original source: ${item.source}` : "Original source not saved"}</span>
-            {sale.refundReason ? <span>Refund reason: {formatStatus(sale.refundReason)}</span> : null}
-            {sale.refundNote ? <span>Refund note saved.</span> : null}
+            {displaySale.refundReason ? <span>Refund reason: {formatStatus(displaySale.refundReason)}</span> : null}
+            {displaySale.refundNote ? <span>Refund note saved.</span> : null}
             {saleMessage ? <span className="form-success">{saleMessage}</span> : null}
           </div>
         </section>
@@ -17315,11 +17432,26 @@ function SaleDetailsModal({
           </section>
         ) : null}
         <div className="inventory-edit-actions">
-          {isAdmin && attachTarget ? (
+          {isAdmin && attachTarget && !displaySale.customerAccountId ? (
             <button className="mini-action" type="button" onClick={() => setAttachCustomerOpen(true)}>
               <Users size={14} />
               Attach to Customer
             </button>
+          ) : null}
+          {isAdmin && attachTarget && displaySale.customerAccountId ? (
+            <button
+              className="mini-action"
+              type="button"
+              disabled={applyingRewards || Boolean(applyRewardsDisabledReason)}
+              title={applyRewardsDisabledReason ?? "Apply rewards for this already-linked purchase"}
+              onClick={() => void applyRewardsNow()}
+            >
+              <Star size={14} />
+              {applyingRewards ? "Applying Rewards" : applyRewardsDisabledReason === "Rewards already awarded." ? "Already Awarded" : "Apply Rewards Now"}
+            </button>
+          ) : null}
+          {isAdmin && attachTarget && displaySale.customerAccountId && applyRewardsDisabledReason ? (
+            <span className="customers-muted-note sale-action-note">{applyRewardsDisabledReason}</span>
           ) : null}
           <button className="mini-action" type="button" onClick={onEdit}>
             <Settings size={14} />
