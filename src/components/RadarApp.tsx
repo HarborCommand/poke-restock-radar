@@ -2172,7 +2172,7 @@ export function RadarApp() {
           <ReleasesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} runAction={runAction} />
         ) : null}
         {activeTab === "inventory" ? (
-          <InventoryPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
+          <InventoryPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
         {activeTab === "pos" && isAdmin ? (
           <PosPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} onCompleted={loadDashboard} />
@@ -2186,7 +2186,7 @@ export function RadarApp() {
         {activeTab === "shipping" ? (
           <ShippingHubPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
-        {activeTab === "sales" ? <SalesPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} /> : null}
+        {activeTab === "sales" ? <SalesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} /> : null}
         {activeTab === "alerts" ? (
           <AlertsPanel
             dashboard={dashboard}
@@ -3505,11 +3505,13 @@ function KeywordsPanel({ dashboard }: { dashboard: DashboardDTO }) {
 
 function SalesPanel({
   dashboard,
+  isAdmin,
   busy,
   busyLabel,
   submit
 }: {
   dashboard: DashboardDTO;
+  isAdmin: boolean;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
@@ -3525,6 +3527,7 @@ function SalesPanel({
         busy={busy}
         busyLabel={busyLabel}
         submit={submit}
+        isAdmin={isAdmin}
         onRecordSale={() => undefined}
       />
     </section>
@@ -9015,12 +9018,14 @@ function formStringValue(formData: FormData, name: string) {
 
 function InventoryPanel({
   dashboard,
+  isAdmin,
   busy,
   busyLabel,
   submit,
   runAction
 }: {
   dashboard: DashboardDTO;
+  isAdmin: boolean;
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
@@ -9437,6 +9442,7 @@ function InventoryPanel({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
+          isAdmin={isAdmin}
           onRecordSale={() => selectedItem && openProductWorkspace(selectedItem, "record-sale")}
         />
       ) : null}
@@ -16321,6 +16327,7 @@ function SalesLog({
   busy,
   busyLabel,
   submit,
+  isAdmin,
   onRecordSale
 }: {
   items: InventoryItemDTO[];
@@ -16330,6 +16337,7 @@ function SalesLog({
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  isAdmin: boolean;
   onRecordSale: () => void;
 }) {
   const [selectedSaleId, setSelectedSaleId] = useState<string>("");
@@ -16497,6 +16505,7 @@ function SalesLog({
           busy={busy}
           busyLabel={busyLabel}
           submit={submit}
+          isAdmin={isAdmin}
           onEdit={() => setEditSaleId(selectedSaleRow.sale.id)}
           onClose={() => setSelectedSaleId("")}
         />
@@ -16764,12 +16773,298 @@ function posReceiptText(rows: SaleDetailRow[]) {
   ].filter(Boolean).join("\n");
 }
 
+type SaleAttachTarget = {
+  type: AdminCustomerAttachOrderCandidateDTO["type"];
+  reference: string;
+  label: string;
+};
+
+function saleAttachTarget(sale: InventorySaleDTO): SaleAttachTarget | null {
+  if (sale.saleReference?.trim()) {
+    return {
+      type: "pos_sale",
+      reference: sale.saleReference.trim(),
+      label: `POS sale ${sale.saleReference.trim()}`
+    };
+  }
+  if (sale.storefrontOrderNumber?.trim()) {
+    return {
+      type: "storefront_order",
+      reference: sale.storefrontOrderNumber.trim(),
+      label: `order ${sale.storefrontOrderNumber.trim()}`
+    };
+  }
+  return null;
+}
+
+function saleAttachCandidateMatches(candidate: AdminCustomerAttachOrderCandidateDTO, target: SaleAttachTarget) {
+  return candidate.type === target.type && (candidate.reference === target.reference || candidate.id === target.reference);
+}
+
+function saleAttachSuccessMessage(result: AdminCustomerAttachOrderResultDTO, target: SaleAttachTarget) {
+  if (result.duplicate) return `${target.label} was already linked to this customer.`;
+  if (result.rewardsApplied) {
+    return `${target.label} linked and ${result.rewardPoints.toLocaleString()} reward point${result.rewardPoints === 1 ? "" : "s"} backfilled.`;
+  }
+  return `${target.label} linked to customer.`;
+}
+
 function escapeReceiptHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function SalesAttachCustomerModal({
+  sale,
+  target,
+  busy,
+  submit,
+  onClose,
+  onAttached
+}: {
+  sale: InventorySaleDTO;
+  target: SaleAttachTarget;
+  busy: boolean;
+  submit: SubmitHandler;
+  onClose: () => void;
+  onAttached: (result: AdminCustomerAttachOrderResultDTO) => void | Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [customersData, setCustomersData] = useState<AdminCustomerRewardsResponseDTO | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<AdminCustomerRewardsCustomerDTO | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<AdminCustomerAttachOrderCandidateDTO | null>(null);
+  const [reason, setReason] = useState(customerAttachOrderReasons[0]);
+  const [note, setNote] = useState("");
+  const [confirmEmailMismatch, setConfirmEmailMismatch] = useState(false);
+  const [applyRewards, setApplyRewards] = useState(false);
+  const [searching, setSearching] = useState(true);
+  const [candidateLoading, setCandidateLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadCustomers = useCallback(async (searchText: string) => {
+    setSearching(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        page: "1",
+        pageSize: "8",
+        status: "active",
+        sort: "recent"
+      });
+      if (searchText.trim()) params.set("search", searchText.trim());
+      const result = await requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`);
+      setCustomersData(result);
+    } catch (searchError) {
+      setError(searchError instanceof Error ? searchError.message : "Could not search customers.");
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCustomers("");
+  }, [loadCustomers]);
+
+  const chooseCustomer = async (customer: AdminCustomerRewardsCustomerDTO) => {
+    setSelectedCustomer(customer);
+    setSelectedCandidate(null);
+    setConfirmEmailMismatch(false);
+    setApplyRewards(false);
+    setNote("");
+    setError(null);
+    setCandidateLoading(true);
+    try {
+      const params = new URLSearchParams({ query: target.reference });
+      const result = await requestJson<AdminCustomerAttachOrderSearchResponseDTO>(
+        `/api/radar/customers/${customer.id}/attach-order?${params.toString()}`
+      );
+      const candidate = result.candidates.find((candidate) => saleAttachCandidateMatches(candidate, target)) ?? null;
+      if (!candidate) {
+        setError(`${target.label} was not found in attachable sales for this customer search.`);
+        return;
+      }
+      setSelectedCandidate(candidate);
+      setApplyRewards(candidate.rewards.defaultApply);
+    } catch (candidateError) {
+      setError(candidateError instanceof Error ? candidateError.message : "Could not load sale link details.");
+    } finally {
+      setCandidateLoading(false);
+    }
+  };
+
+  const submitAttach = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCustomer || !selectedCandidate) {
+      setError("Select a customer before attaching this sale.");
+      return;
+    }
+    setError(null);
+    await submit(
+      event,
+      `Attaching ${target.label} to customer`,
+      () =>
+        requestJson<AdminCustomerAttachOrderResultDTO>(`/api/radar/customers/${selectedCustomer.id}/attach-order`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: selectedCandidate.type,
+            orderId: selectedCandidate.type === "storefront_order" ? selectedCandidate.id : undefined,
+            saleReference: selectedCandidate.type === "pos_sale" ? selectedCandidate.id : undefined,
+            reason,
+            note,
+            confirmEmailMismatch,
+            applyRewards
+          })
+        }),
+      {
+        reset: false,
+        success: "Customer link saved.",
+        onSuccess: onAttached,
+        onError: setError
+      }
+    );
+  };
+
+  const customers = customersData?.customers ?? [];
+  const selectedNeedsManualConfirmation = Boolean(selectedCandidate && !selectedCandidate.emailMatchesCustomer);
+  const selectedCustomerEligible = Boolean(selectedCustomer && selectedCustomer.status === "active" && selectedCustomer.emailVerified);
+  const rewardsDisabledReason = selectedCandidate?.rewards.disabledReason;
+  const submitDisabled = busy || candidateLoading || !selectedCustomer || !selectedCandidate || !selectedCustomerEligible;
+
+  return (
+    <div className="inventory-modal-backdrop customers-modal-backdrop" role="presentation">
+      <div className="inventory-modal customers-admin-modal customer-attach-order-modal sales-attach-customer-modal" role="dialog" aria-modal="true" aria-label={`Attach ${target.label} to a customer`}>
+        <div className="modal-heading-row customer-attach-order-header">
+          <div>
+            <span className="eyebrow">Admin-only sale link</span>
+            <h3>Attach to Customer</h3>
+            <p>Search a verified customer account, review the sale match, then link this record through the existing protected attach workflow.</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close attach customer" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form className="customer-attach-order-form" onSubmit={submitAttach}>
+          <div className="customer-attach-order-body">
+            <div className="sales-attach-target-card">
+              <span>
+                <strong>{target.label}</strong>
+                <small>{sale.itemName} - {money(sale.netRevenueAfterRefund)} net revenue</small>
+              </span>
+              <span className={`status-pill ${sale.customerAccountId ? "watch" : "good"}`}>
+                {sale.customerAccountId ? "Customer already linked" : "No customer attached"}
+              </span>
+            </div>
+            <div className="customer-attach-search-row">
+              <label className="customers-search-field">
+                <Search size={16} />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search customer name, email, or phone..."
+                  type="search"
+                />
+              </label>
+              <button className="secondary-action" type="button" onClick={() => void loadCustomers(query)} disabled={searching}>
+                <Search size={16} />
+                {searching ? "Searching" : "Search"}
+              </button>
+            </div>
+            <div className="sales-attach-customer-list" aria-label="Customer matches">
+              {searching ? (
+                <EmptyState icon={RefreshCw} title="Searching customers" detail="Loading active customer accounts." />
+              ) : customers.length ? (
+                customers.map((customer) => (
+                  <button
+                    className={`sales-attach-customer ${selectedCustomer?.id === customer.id ? "selected" : ""}`}
+                    key={customer.id}
+                    type="button"
+                    onClick={() => void chooseCustomer(customer)}
+                    aria-pressed={selectedCustomer?.id === customer.id}
+                  >
+                    <span>
+                      <strong>{customer.displayName}</strong>
+                      <small>{customer.maskedEmail}{customer.maskedPhone ? ` - ${customer.maskedPhone}` : ""}</small>
+                    </span>
+                    <span>
+                      <b>{customer.availablePoints.toLocaleString()} pts</b>
+                      <small>{customer.emailVerified ? "Verified email" : "Email not verified"}</small>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <EmptyState icon={Users} title="No customers found" detail="Search by customer name, email, or phone." />
+              )}
+            </div>
+            {candidateLoading ? (
+              <EmptyState icon={RefreshCw} title="Checking sale match" detail="Loading server-verified attach details." />
+            ) : selectedCustomer ? (
+              <div className="customer-attach-review">
+                <div>
+                  <span className={`status-pill ${selectedCustomerEligible ? "good" : "watch"}`}>
+                    {selectedCustomerEligible ? "Verified active customer" : "Customer must be active and verified"}
+                  </span>
+                  {selectedCandidate ? (
+                    <span className={`status-pill ${selectedCandidate.emailMatchesCustomer ? "good" : "watch"}`}>
+                      {selectedCandidate.emailMatchesCustomer ? "Email match verified" : "Manual ownership review required"}
+                    </span>
+                  ) : null}
+                  {selectedCandidate?.currentLinkedCustomer ? (
+                    <span className="status-pill watch">Already linked: {selectedCandidate.currentLinkedCustomer.displayName}</span>
+                  ) : null}
+                </div>
+                <label>
+                  <span>Reason</span>
+                  <select aria-label="Attach reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
+                    {customerAttachOrderReasons.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                {selectedNeedsManualConfirmation ? (
+                  <label className="checkbox-label">
+                    <input checked={confirmEmailMismatch} onChange={(event) => setConfirmEmailMismatch(event.target.checked)} type="checkbox" />
+                    <span>Confirm ownership was reviewed outside the automatic email match.</span>
+                  </label>
+                ) : null}
+                <label>
+                  <span>Internal link note{selectedNeedsManualConfirmation ? " (required)" : ""}</span>
+                  <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Private admin note. Do not paste sensitive customer documents here." />
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    checked={applyRewards}
+                    disabled={!selectedCandidate?.rewards.eligible}
+                    onChange={(event) => setApplyRewards(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>Backfill rewards for this linked purchase when eligible.</span>
+                </label>
+                <p className="customers-muted-note">
+                  {rewardsDisabledReason ?? "Rewards are server-calculated from eligible product subtotal. Shipping, tax, discounts, refunded/canceled items, and already-awarded purchases are excluded."}
+                </p>
+              </div>
+            ) : null}
+            {error ? <p className="form-error">{error}</p> : null}
+            <p className="customers-muted-note customer-attach-helper">
+              This links the current sale to a customer account only. It does not edit checkout totals, payments, product prices, inventory, refunds, or customer auth fields.
+            </p>
+          </div>
+          <div className="inventory-edit-actions customer-attach-actions">
+            <button className="secondary-action" type="button" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button className="primary-action" type="submit" disabled={submitDisabled}>
+              <Save size={16} />
+              Attach to Customer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function SaleDetailsModal({
@@ -16779,6 +17074,7 @@ function SaleDetailsModal({
   busy,
   busyLabel,
   submit,
+  isAdmin,
   onEdit,
   onClose
 }: {
@@ -16788,18 +17084,22 @@ function SaleDetailsModal({
   busy: boolean;
   busyLabel: string | null;
   submit: SubmitHandler;
+  isAdmin: boolean;
   onEdit: () => void;
   onClose: () => void;
 }) {
   const tone = saleLifecycleTone(sale);
   const [receiptMessage, setReceiptMessage] = useState<string | null>(null);
+  const [saleMessage, setSaleMessage] = useState<string | null>(null);
   const [refundOpen, setRefundOpen] = useState(false);
+  const [attachCustomerOpen, setAttachCustomerOpen] = useState(false);
   const [refundIdempotencyKey] = useState(() => `pos-refund:${Date.now()}:${Math.random().toString(36).slice(2)}`);
   const isPosReceipt = sale.platform === "pos" && Boolean(sale.saleReference);
   const rows = isPosReceipt && receiptRows.length ? receiptRows : [{ sale, item }];
   const receiptTotals = posReceiptTotals(rows);
   const receiptCopy = posReceiptText(rows);
   const rewardLabel = saleRewardLabel(sale);
+  const attachTarget = saleAttachTarget(sale);
   const canRefundPosReceipt = isPosReceipt && receiptTotals.netRevenue > 0 && !rows.every((row) => row.sale.saleStatus === "refunded");
   const refunding = busy || busyLabel === `Recording POS refund ${sale.saleReference}`;
 
@@ -16825,6 +17125,7 @@ function SaleDetailsModal({
   }
 
   return (
+    <>
     <div className="inventory-modal-backdrop" role="presentation">
       <div className="inventory-modal sale-details-modal" role="dialog" aria-modal="true" aria-label={`${sale.itemName} sale details`}>
         <div className="sales-detail-header">
@@ -16868,6 +17169,7 @@ function SaleDetailsModal({
           <DetailStat label="Payment reference" value={sale.paymentReference || "Not saved"} />
           <DetailStat label="Sale reference" value={sale.saleReference || "Not saved"} />
           {rewardLabel ? <DetailStat label="Rewards" value={rewardLabel} tone={sale.rewardStatus === "reversed" ? "bad" : sale.rewardStatus === "available" ? "good" : "neutral"} /> : null}
+          <DetailStat label="Customer link" value={sale.customerAccountId ? "Linked customer saved" : "Not linked"} tone={sale.customerAccountId ? "good" : "neutral"} />
           <DetailStat label="Storefront order" value={sale.storefrontOrderNumber || "Not linked"} />
           <DetailStat label="Cost Basis" value={money(rows.reduce((sum, row) => sum + row.sale.costBasis, 0))} />
           <DetailStat label="Stock Lot Source" value={sale.stockLotSource} />
@@ -16934,6 +17236,7 @@ function SaleDetailsModal({
             <span>{item?.source ? `Original source: ${item.source}` : "Original source not saved"}</span>
             {sale.refundReason ? <span>Refund reason: {formatStatus(sale.refundReason)}</span> : null}
             {sale.refundNote ? <span>Refund note saved.</span> : null}
+            {saleMessage ? <span className="form-success">{saleMessage}</span> : null}
           </div>
         </section>
         {isPosReceipt ? (
@@ -17012,6 +17315,12 @@ function SaleDetailsModal({
           </section>
         ) : null}
         <div className="inventory-edit-actions">
+          {isAdmin && attachTarget ? (
+            <button className="mini-action" type="button" onClick={() => setAttachCustomerOpen(true)}>
+              <Users size={14} />
+              Attach to Customer
+            </button>
+          ) : null}
           <button className="mini-action" type="button" onClick={onEdit}>
             <Settings size={14} />
             Edit Sale
@@ -17022,6 +17331,20 @@ function SaleDetailsModal({
         </div>
       </div>
     </div>
+    {isAdmin && attachCustomerOpen && attachTarget ? (
+      <SalesAttachCustomerModal
+        sale={sale}
+        target={attachTarget}
+        busy={busy}
+        submit={submit}
+        onClose={() => setAttachCustomerOpen(false)}
+        onAttached={(result) => {
+          setAttachCustomerOpen(false);
+          setSaleMessage(saleAttachSuccessMessage(result, attachTarget));
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 
