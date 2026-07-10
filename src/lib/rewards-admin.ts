@@ -212,18 +212,34 @@ function mapLedgerEntry(entry: LedgerWithCustomer): AdminCustomerRewardsLedgerEn
 }
 
 function buildCustomerWhere(filters: CustomerListFilters): Prisma.CustomerAccountWhereInput {
-  const search = filters.search?.trim();
   const where: Prisma.CustomerAccountWhereInput = {};
   if (filters.status && filters.status !== "all") where.status = filters.status;
-  if (search) {
-    where.OR = [
-      { email: { contains: search } },
-      { normalizedEmail: { contains: search.toLowerCase() } },
-      { displayName: { contains: search } },
-      { phone: { contains: search } }
-    ];
-  }
   return where;
+}
+
+function normalizedSearch(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function phoneDigits(value: string | null | undefined) {
+  return value?.replace(/\D/g, "") ?? "";
+}
+
+function customerMatchesSearch(customer: CustomerWithActivity, rawSearch: string | null | undefined) {
+  const search = normalizedSearch(rawSearch);
+  if (!search) return true;
+  const searchDigits = phoneDigits(search);
+  const haystacks = [
+    customer.email,
+    customer.normalizedEmail,
+    customer.displayName,
+    displayNameForCustomer(customer)
+  ].map(normalizedSearch);
+  if (haystacks.some((value) => value.includes(search))) return true;
+  const tokens = search.split(/\s+/).filter(Boolean);
+  const displayName = normalizedSearch(customer.displayName);
+  if (tokens.length > 1 && tokens.every((token) => displayName.includes(token))) return true;
+  return Boolean(searchDigits && phoneDigits(customer.phone).includes(searchDigits));
 }
 
 function sortCustomers(customers: AdminCustomerRewardsCustomerDTO[], sort: string | null | undefined) {
@@ -308,7 +324,7 @@ export async function listAdminCustomerRewards(filters: CustomerListFilters = {}
     })
   ]);
 
-  const customers = sortCustomers(rows.map(mapCustomerListItem), filters.sort);
+  const customers = sortCustomers(rows.filter((customer) => customerMatchesSearch(customer, filters.search)).map(mapCustomerListItem), filters.sort);
   const total = customers.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
