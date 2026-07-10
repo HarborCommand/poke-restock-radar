@@ -1203,7 +1203,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
         })}
       </div>
 
-      <div className="gdg-rewards-dashboard-grid">
+      <div className="gdg-rewards-main-grid">
         <section className="gdg-account-card gdg-rewards-level-card" aria-labelledby="gdg-rewards-level-title">
           <div className="gdg-account-panel-heading">
             <div>
@@ -1251,95 +1251,126 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
             </p>
           </div>
         </section>
-
-        <section className="gdg-account-card gdg-rewards-explainer" aria-labelledby="gdg-rewards-how-title">
-          <div className="gdg-account-panel-heading">
-            <div>
-              <p className="gdg-overline">How points work</p>
-              <h2 id="gdg-rewards-how-title">Rewards rules</h2>
-            </div>
-            <AccountIconBadge tone="green" icon={ShieldCheck} />
-          </div>
-          <ul>
-            {[
-              "Earn 1 point per $1 on eligible product purchases.",
-              "Points may remain pending until the order is shipped, picked up, or cleared.",
-              "Shipping, tax, discounts, canceled orders, refunded items, and test/smoke orders do not earn points.",
-              "Refunds/cancellations may reverse points.",
-              "Points have no cash value."
-            ].map((copy) => (
-              <li key={copy}>
-                <CheckCircle2 size={17} aria-hidden="true" />
-                <span>{copy}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
       </div>
 
-      <div className="gdg-rewards-bottom-grid">
-        <section className="gdg-account-card compact gdg-rewards-activity-card" aria-labelledby="gdg-rewards-activity-title">
-          <div className="gdg-account-panel-heading">
-            <div>
-              <p className="gdg-overline">Recent activity</p>
-              <h2 id="gdg-rewards-activity-title">Recent activity</h2>
-            </div>
-            <Link href="/account/orders">View orders <ArrowRight size={14} aria-hidden="true" /></Link>
+      <section className="gdg-account-card compact gdg-rewards-secondary" aria-labelledby="gdg-rewards-secondary-title">
+        <div className="gdg-rewards-secondary-header">
+          <div>
+            <p className="gdg-overline">Details</p>
+            <h2 id="gdg-rewards-secondary-title">Activity, rules, and help</h2>
           </div>
-          {activity.length ? (
-            <div className="gdg-reward-activity-list">
-              {activity.map((entry) => {
-                const item = rewardActivityView(entry);
-                const Icon = item.Icon;
-                return (
-                  <article key={entry.id} className={item.tone}>
-                    <span className="gdg-reward-activity-icon">
-                      <Icon size={18} aria-hidden="true" />
-                    </span>
-                    <div>
-                      <strong>{item.title}</strong>
-                      <span>
-                        {entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {dateLabel(entry.createdAt)}
-                      </span>
-                    </div>
-                    <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
-                    <em>{item.status}</em>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="gdg-rewards-empty-state">
-              <Gift size={24} aria-hidden="true" />
-              <strong>Start earning points on your next eligible purchase.</strong>
-              <p>Eligible paid orders and matched POS sales will appear here after points are recorded.</p>
-            </div>
-          )}
-        </section>
+          <span>Open only what you need.</span>
+        </div>
 
-        <aside className="gdg-account-card compact gdg-rewards-links-card" aria-labelledby="gdg-rewards-links-title">
-          <div className="gdg-rewards-help-icon">
-            <Headphones size={24} aria-hidden="true" />
-          </div>
-          <p className="gdg-overline">Need help?</p>
-          <h2 id="gdg-rewards-links-title">We are here for you.</h2>
-          <p>If you have any questions about rewards, reach out or review the current rules.</p>
-          <div className="gdg-account-support-links">
-            <Link href="/account/orders">
-              <ShoppingBag size={15} aria-hidden="true" />
-              View orders
-            </Link>
-            <Link href="/policies">
-              <ShieldCheck size={15} aria-hidden="true" />
-              Rewards rules
-            </Link>
-            <a href={`mailto:${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`}>
-              <Headphones size={15} aria-hidden="true" />
-              Contact support
-            </a>
-          </div>
-        </aside>
-      </div>
+        <div className="gdg-rewards-accordion" aria-label="Rewards details">
+          <details className="gdg-rewards-panel activity">
+            <summary>
+              <span className="gdg-rewards-panel-icon"><RefreshCcw size={18} aria-hidden="true" /></span>
+              <span>
+                <strong>Activity</strong>
+                <small>Recent earned, pending, and reversed points</small>
+              </span>
+              <ChevronRight size={17} aria-hidden="true" />
+            </summary>
+            <div className="gdg-rewards-panel-body">
+              <div className="gdg-rewards-panel-heading">
+                <h3 id="gdg-rewards-activity-title">Recent activity</h3>
+                <Link href="/account/orders">View orders <ArrowRight size={14} aria-hidden="true" /></Link>
+              </div>
+              {activity.length ? (
+                <div className="gdg-reward-activity-list">
+                  {activity.map((entry) => {
+                    const item = rewardActivityView(entry);
+                    const Icon = item.Icon;
+                    return (
+                      <article key={entry.id} className={item.tone}>
+                        <span className="gdg-reward-activity-icon">
+                          <Icon size={18} aria-hidden="true" />
+                        </span>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <span>
+                            {entry.orderNumber ? `Order ${entry.orderNumber}` : "Account activity"} - {dateLabel(entry.createdAt)}
+                          </span>
+                        </div>
+                        <b className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{entry.points} pts</b>
+                        <em>{item.status}</em>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="gdg-rewards-empty-state">
+                  <Gift size={24} aria-hidden="true" />
+                  <strong>Start earning points on your next eligible purchase.</strong>
+                  <p>Eligible paid orders and matched POS sales will appear here after points are recorded.</p>
+                </div>
+              )}
+            </div>
+          </details>
+
+          <details className="gdg-rewards-panel rules">
+            <summary>
+              <span className="gdg-rewards-panel-icon"><ShieldCheck size={18} aria-hidden="true" /></span>
+              <span>
+                <strong>Rules</strong>
+                <small>How earning and reversals work</small>
+              </span>
+              <ChevronRight size={17} aria-hidden="true" />
+            </summary>
+            <div className="gdg-rewards-panel-body">
+              <ul className="gdg-rewards-rules-list">
+                {[
+                  "Earn 1 point per $1 on eligible product purchases.",
+                  "Points may remain pending until shipped, picked up, or cleared.",
+                  "Shipping, tax, discounts, canceled/refunded items, and test/smoke orders do not earn points.",
+                  "Refunds/cancellations may reverse points.",
+                  "Points have no cash value.",
+                  "Redemption coming soon."
+                ].map((copy) => (
+                  <li key={copy}>
+                    <CheckCircle2 size={17} aria-hidden="true" />
+                    <span>{copy}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </details>
+
+          <details className="gdg-rewards-panel help">
+            <summary>
+              <span className="gdg-rewards-panel-icon"><Headphones size={18} aria-hidden="true" /></span>
+              <span>
+                <strong>Help</strong>
+                <small>Orders, rules, and support links</small>
+              </span>
+              <ChevronRight size={17} aria-hidden="true" />
+            </summary>
+            <div className="gdg-rewards-panel-body">
+              <div className="gdg-rewards-help-panel">
+                <div>
+                  <h3>Need help?</h3>
+                  <p>If you have any questions about rewards, reach out or review the current rules.</p>
+                </div>
+                <div className="gdg-account-support-links">
+                  <Link href="/account/orders">
+                    <ShoppingBag size={15} aria-hidden="true" />
+                    View orders
+                  </Link>
+                  <Link href="/policies">
+                    <ShieldCheck size={15} aria-hidden="true" />
+                    Rewards rules
+                  </Link>
+                  <a href={`mailto:${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`}>
+                    <Headphones size={15} aria-hidden="true" />
+                    Contact support
+                  </a>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
     </>
   );
 }
