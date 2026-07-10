@@ -22713,6 +22713,12 @@ body .inventory-edit-actions .danger-action {
   color: #b91c1c !important;
 }
 
+body .sale-details-modal .inventory-edit-actions .sale-action-note {
+  flex: 1 1 240px;
+  align-self: center;
+  text-align: right;
+}
+
 body .customer-profile-edit-modal .customer-profile-edit-actions {
   position: static;
   justify-content: flex-end;
@@ -23218,6 +23224,11 @@ body .inventory-modal textarea:focus {
   body .inventory-edit-actions a.mini-action {
     width: 100%;
     justify-content: center;
+  }
+
+  body .sale-details-modal .inventory-edit-actions .sale-action-note {
+    flex-basis: auto;
+    text-align: left;
   }
 
   body .sale-section-heading {

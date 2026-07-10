@@ -746,8 +746,8 @@ test("Sales detail shows POS metadata and discount details", () => {
   assert.match(saleDetails, /Sale reference/);
   assert.match(saleDetails, /Rewards/);
   assert.match(app, /function saleRewardLabel/);
-  assert.match(app, /POS rewards earned/);
-  assert.match(app, /POS rewards reversed/);
+  assert.match(app, /Rewards awarded/);
+  assert.match(app, /Rewards reversed/);
   assert.match(saleDetails, /Discount details/);
   assert.match(saleDetails, /Original \{money\(rowSale\.originalUnitPrice/);
   assert.match(saleDetails, /adjusted \{money\(rowSale\.adjustedUnitPrice/);

@@ -1034,6 +1034,7 @@ export const adminCustomerAttachOrderSearchSchema = z.object({
 export const adminCustomerAttachOrderSchema = z.object({
   type: z.enum(["storefront_order", "pos_sale"]),
   orderId: z.string().trim().min(2).optional(),
+  saleId: z.string().trim().min(2).optional(),
   saleReference: z.string().trim().min(2).optional(),
   reason: z.string().trim().min(4).max(160),
   note: z.preprocess(
@@ -1046,8 +1047,8 @@ export const adminCustomerAttachOrderSchema = z.object({
   if (input.type === "storefront_order" && !input.orderId) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["orderId"], message: "Order ID is required." });
   }
-  if (input.type === "pos_sale" && !input.saleReference) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["saleReference"], message: "Sale reference is required." });
+  if (input.type === "pos_sale" && !input.saleReference && !input.saleId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["saleReference"], message: "Sale reference or sale ID is required." });
   }
 });
 

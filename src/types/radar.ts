@@ -519,10 +519,26 @@ export type AdminCustomerProfileUpdateResultDTO = {
   customer: AdminCustomerRewardsDetailDTO;
 };
 
+export type AdminCustomerAttachRewardStatus =
+  | "eligible"
+  | "applied"
+  | "checkbox_not_selected"
+  | "blocked_email_mismatch"
+  | "canceled_or_refunded"
+  | "no_eligible_subtotal"
+  | "rewards_disabled"
+  | "already_awarded"
+  | "unpaid"
+  | "test_or_smoke"
+  | "customer_not_verified"
+  | "ineligible";
+
 export type AdminCustomerAttachOrderCandidateDTO = {
   id: string;
   type: "storefront_order" | "pos_sale";
   reference: string;
+  saleId: string | null;
+  saleReference: string | null;
   date: string;
   source: "website" | "pos" | "manual";
   maskedCustomerEmail: string | null;
@@ -539,6 +555,9 @@ export type AdminCustomerAttachOrderCandidateDTO = {
     eligible: boolean;
     alreadyAwarded: boolean;
     defaultApply: boolean;
+    status: AdminCustomerAttachRewardStatus;
+    points: number;
+    message: string;
     disabledReason: string | null;
   };
 };
@@ -559,13 +578,11 @@ export type AdminCustomerAttachOrderResultDTO = {
   candidate: AdminCustomerAttachOrderCandidateDTO;
   duplicate: boolean;
   rewardsApplied: boolean;
-  rewardStatus:
-    | "not_requested"
-    | "awarded"
-    | "already_awarded"
-    | "not_eligible"
-    | "disabled";
+  linked: boolean;
+  rewardStatus: AdminCustomerAttachRewardStatus;
   rewardPoints: number;
+  rewardPointsAwarded: number;
+  rewardMessage: string;
 };
 
 export type StorefrontOrderDTO = {
