@@ -181,6 +181,68 @@ test("admin customers rewards list returns masked customer fields and summary", 
   assert.equal(result.summary.adjustmentsEnabled, false);
 });
 
+test("admin customer search matches first name last name partial name email and phone", async () => {
+  const adrianRivera = await prisma.customerAccount.create({
+    data: {
+      email: `${unique("adrian.rivera")}@gmail.com`,
+      normalizedEmail: `${unique("adrian-rivera-normalized")}@gmail.com`,
+      displayName: "Adrian Rivera",
+      phone: "+13055551234",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  const adrianRodriguez = await prisma.customerAccount.create({
+    data: {
+      email: `${unique("adrian.rodriguez")}@hotmail.com`,
+      normalizedEmail: `${unique("adrian-rodriguez-normalized")}@hotmail.com`,
+      displayName: "Adrian Rodriguez",
+      phone: "+13055559834",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  const mayaRivera = await prisma.customerAccount.create({
+    data: {
+      email: `${unique("maya.rivera")}@example.test`,
+      normalizedEmail: `${unique("maya-rivera-normalized")}@example.test`,
+      displayName: "Maya Rivera",
+      phone: "+13055550000",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  await prisma.rewardBalance.createMany({
+    data: [
+      { customerAccountId: adrianRivera.id, availablePoints: 25, pendingPoints: 0, lifetimeEarnedPoints: 25 },
+      { customerAccountId: adrianRodriguez.id, availablePoints: 102, pendingPoints: 3, lifetimeEarnedPoints: 105 },
+      { customerAccountId: mayaRivera.id, availablePoints: 14, pendingPoints: 0, lifetimeEarnedPoints: 14 }
+    ]
+  });
+
+  const firstName = await listAdminCustomerRewards({ search: "Adrian", status: "active", sort: "name" });
+  assert.deepEqual(firstName.customers.map((customer) => customer.displayName).filter((name) => name.startsWith("Adrian")), [
+    "Adrian Rivera",
+    "Adrian Rodriguez"
+  ]);
+
+  const lastName = await listAdminCustomerRewards({ search: "Rivera", status: "active", sort: "name" });
+  assert.ok(lastName.customers.some((customer) => customer.id === adrianRivera.id));
+  assert.ok(lastName.customers.some((customer) => customer.id === mayaRivera.id));
+
+  const partialName = await listAdminCustomerRewards({ search: "drian Riv", status: "active", sort: "name" });
+  assert.equal(partialName.customers.some((customer) => customer.id === adrianRivera.id), true);
+  assert.equal(partialName.customers.some((customer) => customer.id === adrianRodriguez.id), false);
+
+  const email = await listAdminCustomerRewards({ search: "hotmail", status: "active" });
+  assert.equal(email.customers.some((customer) => customer.id === adrianRodriguez.id), true);
+
+  const phone = await listAdminCustomerRewards({ search: "9834", status: "active" });
+  assert.equal(phone.customers.length, 1);
+  assert.equal(phone.customers[0]?.id, adrianRodriguez.id);
+  assert.equal(phone.customers[0]?.availablePoints, 102);
+});
+
 test("admin reward adjustments are feature-flagged, idempotent, and never deduct below zero", async () => {
   const { user, customer } = await createCustomerWithRewards();
   await assert.rejects(
@@ -819,7 +881,20 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(app, /Attach to Customer/);
   assert.match(app, /Attach Past Order/);
   assert.match(app, /Backfill rewards for this linked purchase when eligible/);
-  assert.match(app, /Manual ownership review required/);
+  assert.match(app, /Email mismatch - explicit confirmation and an internal note are required/);
+  assert.match(app, /Search is discovery only/);
+  assert.match(app, /CustomerSearchProfileCard/);
+  assert.match(app, /View Profile/);
+  assert.match(app, /Select Customer/);
+  assert.match(app, /Selected Customer/);
+  assert.match(app, /CustomerProfileSummaryCard/);
+  assert.match(app, /CustomerAttachVerificationPanel/);
+  assert.match(app, /Order email/);
+  assert.match(app, /Customer email/);
+  assert.match(app, /Email matches/);
+  assert.match(app, /Email mismatch/);
+  assert.match(app, /Rewards: Applied/);
+  assert.match(app, /Rewards: Skipped/);
   assert.match(app, /Confirm ownership was reviewed outside the automatic email match/);
   assert.match(app, /Email changes require a separate verified email-change flow/);
   assert.match(app, /aria-label="Account status"/);
@@ -861,12 +936,14 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.ok(salesAttachModal.includes("`/api/radar/customers/${customer.id}/attach-order?${params.toString()}`"));
   assert.match(salesAttachModal, /requestJson<AdminCustomerAttachOrderResultDTO>/);
   assert.ok(salesAttachModal.includes("`/api/radar/customers/${selectedCustomer.id}/attach-order`"));
+  assert.match(salesAttachModal, /setPreviewCustomer\(customer\)/);
+  assert.match(salesAttachModal, /onSelect=\{\(\) => void chooseCustomer\(customer\)\}/);
   assert.match(salesAttachModal, /selectedCandidate\.type === "storefront_order" \? selectedCandidate\.id : undefined/);
   assert.match(salesAttachModal, /selectedCandidate\.type === "pos_sale" \? selectedCandidate\.saleReference \?\? undefined : undefined/);
   assert.match(salesAttachModal, /selectedCandidate\.type === "pos_sale" \? selectedCandidate\.saleId \?\? undefined : undefined/);
   assert.match(salesAttachModal, /Confirm ownership was reviewed outside the automatic email match/);
   assert.match(salesAttachModal, /Backfill rewards for this linked purchase when eligible/);
-  assert.match(salesAttachModal, /customer\.maskedEmail/);
+  assert.match(app, /customer\.maskedEmail/);
   assert.doesNotMatch(salesAttachModal, /customerEmail|passwordHash|sessionToken|resetToken|authSecret/i);
   const saleDetailsModal = app.slice(
     app.indexOf("function SaleDetailsModal"),

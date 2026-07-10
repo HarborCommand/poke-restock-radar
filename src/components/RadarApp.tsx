@@ -3671,8 +3671,7 @@ function CustomersRewardsPanel() {
   const refreshAfterAttachOrder = async (result: AdminCustomerAttachOrderResultDTO) => {
     setSelectedCustomer(result.customer);
     setAttachingCustomer(null);
-    const linkedMessage = result.duplicate ? "Past order was already linked to this customer." : "Past order linked to customer.";
-    setActionMessage(`${linkedMessage} ${result.rewardMessage}`);
+    setActionMessage(attachResultMessage(result, result.candidate.type === "storefront_order" ? `Order ${result.candidate.reference}` : `${formatStatus(result.candidate.source)} sale ${result.candidate.reference}`));
     await Promise.all([loadCustomers(), loadLedger()]);
   };
 
@@ -4242,6 +4241,143 @@ function CustomerDetailList({
   );
 }
 
+function customerTotalSpend(customer: Pick<AdminCustomerRewardsCustomerDTO, "totalSpent" | "posSpent">) {
+  return customer.totalSpent + customer.posSpent;
+}
+
+function customerInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0]![0]}${parts[1]![0]}` : name.slice(0, 2)).toUpperCase();
+}
+
+function CustomerProfileSummaryCard({
+  customer,
+  title = "Selected Customer",
+  compact = false
+}: {
+  customer: AdminCustomerRewardsCustomerDTO;
+  title?: string;
+  compact?: boolean;
+}) {
+  return (
+    <section className={`customer-profile-summary-card${compact ? " compact" : ""}`} aria-label={`${title}: ${customer.displayName}`}>
+      <div className="customer-profile-summary-heading">
+        <span className="customer-profile-avatar" aria-hidden="true">{customerInitials(customer.displayName)}</span>
+        <div>
+          <span className="eyebrow">{title}</span>
+          <h4>{customer.displayName}</h4>
+          <p>{customer.maskedEmail}{customer.maskedPhone ? ` - ${customer.maskedPhone}` : ""}</p>
+        </div>
+        <span className={`status-pill ${customer.emailVerified ? "good" : "watch"}`}>
+          {customer.emailVerified ? "Verified" : "Unverified"}
+        </span>
+      </div>
+      <div className="customer-profile-summary-grid">
+        <DetailStat label="Customer since" value={shortDate(customer.joinedAt)} />
+        <DetailStat label="Orders" value={customer.totalOrders.toLocaleString()} />
+        <DetailStat label="Lifetime spend" value={money(customerTotalSpend(customer))} />
+        <DetailStat label="Available points" value={customer.availablePoints.toLocaleString()} tone="good" />
+        <DetailStat label="Pending points" value={customer.pendingPoints.toLocaleString()} />
+      </div>
+    </section>
+  );
+}
+
+function CustomerSearchProfileCard({
+  customer,
+  selected,
+  previewed,
+  onView,
+  onSelect
+}: {
+  customer: AdminCustomerRewardsCustomerDTO;
+  selected: boolean;
+  previewed: boolean;
+  onView: () => void;
+  onSelect: () => void;
+}) {
+  return (
+    <article className={`customer-search-profile-card${selected ? " selected" : ""}${previewed ? " previewed" : ""}`}>
+      <div className="customer-search-profile-main">
+        <span className="customer-profile-avatar" aria-hidden="true">{customerInitials(customer.displayName)}</span>
+        <div>
+          <strong>{customer.displayName}</strong>
+          <small>{customer.maskedEmail}</small>
+          {customer.maskedPhone ? <small>{customer.maskedPhone}</small> : null}
+        </div>
+        <span className={`status-pill ${customer.emailVerified ? "good" : "watch"}`}>
+          {customer.emailVerified ? "Verified" : "Unverified"}
+        </span>
+      </div>
+      <div className="customer-search-profile-stats">
+        <span><b>{customer.totalOrders.toLocaleString()}</b><small>Orders</small></span>
+        <span><b>{money(customerTotalSpend(customer))}</b><small>Total spent</small></span>
+        <span><b>{customer.availablePoints.toLocaleString()}</b><small>Available points</small></span>
+      </div>
+      <div className="customer-search-profile-actions">
+        <button className="secondary-action small" type="button" onClick={onView}>
+          <Eye size={14} />
+          View Profile
+        </button>
+        <button className="primary-action small" type="button" onClick={onSelect}>
+          <Check size={14} />
+          Select Customer
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function CustomerAttachVerificationPanel({
+  customer,
+  candidate
+}: {
+  customer: AdminCustomerRewardsCustomerDTO;
+  candidate: AdminCustomerAttachOrderCandidateDTO | null;
+}) {
+  return (
+    <section className="customer-attach-verification-card" aria-label="Customer and purchase verification">
+      <div className="customer-attach-comparison-grid">
+        <span>
+          <small>Order email</small>
+          <strong>{candidate?.maskedCustomerEmail ?? "No order email saved"}</strong>
+        </span>
+        <span>
+          <small>Customer email</small>
+          <strong>{customer.maskedEmail}</strong>
+        </span>
+      </div>
+      {candidate ? (
+        <div className={`customer-attach-match-banner ${candidate.emailMatchesCustomer ? "good" : "watch"}`}>
+          {candidate.emailMatchesCustomer ? <Check size={16} /> : <AlertTriangle size={16} />}
+          <span>{candidate.emailMatchesCustomer ? "Email matches" : "Email mismatch - explicit confirmation and an internal note are required"}</span>
+        </div>
+      ) : (
+        <p className="customers-muted-note">Select a matching order or sale to verify the purchase email against this customer.</p>
+      )}
+    </section>
+  );
+}
+
+function RewardOutcomeText({ candidate }: { candidate: AdminCustomerAttachOrderCandidateDTO | null }) {
+  if (!candidate) return null;
+  return (
+    <div className={`customer-reward-outcome ${candidate.rewards.eligible ? "good" : "watch"}`}>
+      <strong>{candidate.rewards.eligible ? "Rewards can be applied" : "Rewards skipped if linked now"}</strong>
+      <span>{candidate.rewards.message}</span>
+      {candidate.rewards.points > 0 ? <small>{candidate.rewards.points.toLocaleString()} point{candidate.rewards.points === 1 ? "" : "s"} available from eligible subtotal.</small> : null}
+    </div>
+  );
+}
+
+function attachResultMessage(result: AdminCustomerAttachOrderResultDTO, label = "Purchase") {
+  const linkedMessage = result.duplicate ? `${label} was already linked.` : `${label} linked successfully.`;
+  const rewardMessage = result.rewardsApplied
+    ? `Rewards: Applied - ${result.rewardPointsAwarded.toLocaleString()} point${result.rewardPointsAwarded === 1 ? "" : "s"} awarded.`
+    : `Rewards: Skipped - ${result.rewardMessage}`;
+  return `${linkedMessage} ${rewardMessage}`;
+}
+
 function CustomerAttachOrderModal({
   customer,
   onClose,
@@ -4340,10 +4476,7 @@ function CustomerAttachOrderModal({
         </div>
         <form className="customer-attach-order-form" onSubmit={submitAttach}>
           <div className="customer-attach-order-body">
-            <div className="customers-adjustment-customer">
-              <strong>{customer.displayName}</strong>
-              <span>{customer.maskedEmail} - {customer.emailVerified ? "verified email" : "email not verified"}</span>
-            </div>
+            <CustomerProfileSummaryCard customer={customer} title="Selected Customer" compact />
             <div className="customer-attach-search-row">
               <label className="customers-search-field">
                 <Search size={16} />
@@ -4388,14 +4521,16 @@ function CustomerAttachOrderModal({
             </div>
             {selectedCandidate ? (
               <div className="customer-attach-review">
+                <CustomerAttachVerificationPanel customer={customer} candidate={selectedCandidate} />
                 <div>
                   <span className={`status-pill ${selectedCandidate.emailMatchesCustomer ? "good" : "watch"}`}>
-                    {selectedCandidate.emailMatchesCustomer ? "Email match verified" : "Manual ownership review required"}
+                    {selectedCandidate.emailMatchesCustomer ? "Email matches" : "Email mismatch"}
                   </span>
                   {selectedCandidate.currentLinkedCustomer ? (
                     <span className="status-pill watch">Already linked: {selectedCandidate.currentLinkedCustomer.displayName}</span>
                   ) : null}
                 </div>
+                <RewardOutcomeText candidate={selectedCandidate} />
                 <label>
                   <span>Reason</span>
                   <select aria-label="Attach reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
@@ -16860,8 +16995,7 @@ function saleAttachCandidateMatches(candidate: AdminCustomerAttachOrderCandidate
 }
 
 function saleAttachSuccessMessage(result: AdminCustomerAttachOrderResultDTO, target: SaleAttachTarget) {
-  const linkedMessage = result.duplicate ? `${target.label} was already linked to this customer.` : `${target.label} linked to customer.`;
-  return `${linkedMessage} ${result.rewardMessage}`;
+  return attachResultMessage(result, target.label);
 }
 
 function escapeReceiptHtml(value: string) {
@@ -16890,6 +17024,7 @@ function SalesAttachCustomerModal({
   const [query, setQuery] = useState("");
   const [customersData, setCustomersData] = useState<AdminCustomerRewardsResponseDTO | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<AdminCustomerRewardsCustomerDTO | null>(null);
+  const [previewCustomer, setPreviewCustomer] = useState<AdminCustomerRewardsCustomerDTO | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<AdminCustomerAttachOrderCandidateDTO | null>(null);
   const [reason, setReason] = useState(customerAttachOrderReasons[0]);
   const [note, setNote] = useState("");
@@ -16912,6 +17047,7 @@ function SalesAttachCustomerModal({
       if (searchText.trim()) params.set("search", searchText.trim());
       const result = await requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`);
       setCustomersData(result);
+      setPreviewCustomer((current) => current && result.customers.some((customer) => customer.id === current.id) ? current : null);
     } catch (searchError) {
       setError(searchError instanceof Error ? searchError.message : "Could not search customers.");
     } finally {
@@ -16925,6 +17061,7 @@ function SalesAttachCustomerModal({
 
   const chooseCustomer = async (customer: AdminCustomerRewardsCustomerDTO) => {
     setSelectedCustomer(customer);
+    setPreviewCustomer(null);
     setSelectedCandidate(null);
     setConfirmEmailMismatch(false);
     setApplyRewards(false);
@@ -16948,6 +17085,15 @@ function SalesAttachCustomerModal({
     } finally {
       setCandidateLoading(false);
     }
+  };
+
+  const changeCustomer = () => {
+    setSelectedCustomer(null);
+    setSelectedCandidate(null);
+    setConfirmEmailMismatch(false);
+    setApplyRewards(false);
+    setNote("");
+    setError(null);
   };
 
   const submitAttach = async (event: FormEvent<HTMLFormElement>) => {
@@ -17013,64 +17159,73 @@ function SalesAttachCustomerModal({
                 {sale.customerAccountId ? "Customer already linked" : "No customer attached"}
               </span>
             </div>
-            <div className="customer-attach-search-row">
-              <label className="customers-search-field">
-                <Search size={16} />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search customer name, email, or phone..."
-                  type="search"
-                />
-              </label>
-              <button className="secondary-action" type="button" onClick={() => void loadCustomers(query)} disabled={searching}>
-                <Search size={16} />
-                {searching ? "Searching" : "Search"}
-              </button>
-            </div>
-            <div className="sales-attach-customer-list" aria-label="Customer matches">
-              {searching ? (
-                <EmptyState icon={RefreshCw} title="Searching customers" detail="Loading active customer accounts." />
-              ) : customers.length ? (
-                customers.map((customer) => (
-                  <button
-                    className={`sales-attach-customer ${selectedCustomer?.id === customer.id ? "selected" : ""}`}
-                    key={customer.id}
-                    type="button"
-                    onClick={() => void chooseCustomer(customer)}
-                    aria-pressed={selectedCustomer?.id === customer.id}
-                  >
-                    <span>
-                      <strong>{customer.displayName}</strong>
-                      <small>{customer.maskedEmail}{customer.maskedPhone ? ` - ${customer.maskedPhone}` : ""}</small>
-                    </span>
-                    <span>
-                      <b>{customer.availablePoints.toLocaleString()} pts</b>
-                      <small>{customer.emailVerified ? "Verified email" : "Email not verified"}</small>
-                    </span>
+            {!selectedCustomer ? (
+              <>
+                <div className="customer-attach-search-row">
+                  <label className="customers-search-field">
+                    <Search size={16} />
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search customer name, email, or phone..."
+                      type="search"
+                    />
+                  </label>
+                  <button className="secondary-action" type="button" onClick={() => void loadCustomers(query)} disabled={searching}>
+                    <Search size={16} />
+                    {searching ? "Searching" : "Search"}
                   </button>
-                ))
-              ) : (
-                <EmptyState icon={Users} title="No customers found" detail="Search by customer name, email, or phone." />
-              )}
-            </div>
+                </div>
+                <p className="customers-muted-note">Search is discovery only. It never links a sale, selects a customer, or awards points until Select Customer and Attach are pressed.</p>
+                <div className="sales-attach-customer-list" aria-label="Customer matches">
+                  {searching ? (
+                    <EmptyState icon={RefreshCw} title="Searching customers" detail="Loading active customer accounts." />
+                  ) : customers.length ? (
+                    customers.map((customer) => (
+                      <CustomerSearchProfileCard
+                        customer={customer}
+                        key={customer.id}
+                        selected={false}
+                        previewed={previewCustomer?.id === customer.id}
+                        onView={() => setPreviewCustomer(customer)}
+                        onSelect={() => void chooseCustomer(customer)}
+                      />
+                    ))
+                  ) : (
+                    <EmptyState icon={Users} title="No customers found" detail="Search by customer name, email, or phone." />
+                  )}
+                </div>
+                {previewCustomer ? (
+                  <CustomerProfileSummaryCard customer={previewCustomer} title="Customer Profile Preview" />
+                ) : null}
+              </>
+            ) : (
+              <div className="selected-customer-review">
+                <CustomerProfileSummaryCard customer={selectedCustomer} title="Selected Customer" />
+                <button className="secondary-action small" type="button" onClick={changeCustomer} disabled={busy || candidateLoading}>
+                  Change Customer
+                </button>
+              </div>
+            )}
             {candidateLoading ? (
               <EmptyState icon={RefreshCw} title="Checking sale match" detail="Loading server-verified attach details." />
             ) : selectedCustomer ? (
               <div className="customer-attach-review">
+                <CustomerAttachVerificationPanel customer={selectedCustomer} candidate={selectedCandidate} />
                 <div>
                   <span className={`status-pill ${selectedCustomerEligible ? "good" : "watch"}`}>
                     {selectedCustomerEligible ? "Verified active customer" : "Customer must be active and verified"}
                   </span>
                   {selectedCandidate ? (
                     <span className={`status-pill ${selectedCandidate.emailMatchesCustomer ? "good" : "watch"}`}>
-                      {selectedCandidate.emailMatchesCustomer ? "Email match verified" : "Manual ownership review required"}
+                      {selectedCandidate.emailMatchesCustomer ? "Email matches" : "Email mismatch"}
                     </span>
                   ) : null}
                   {selectedCandidate?.currentLinkedCustomer ? (
                     <span className="status-pill watch">Already linked: {selectedCandidate.currentLinkedCustomer.displayName}</span>
                   ) : null}
                 </div>
+                <RewardOutcomeText candidate={selectedCandidate} />
                 <label>
                   <span>Reason</span>
                   <select aria-label="Attach reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
@@ -17239,6 +17394,22 @@ function SaleDetailsModal({
     } finally {
       setApplyingRewards(false);
     }
+  }
+
+  function applyAttachResultToOpenSale(result: AdminCustomerAttachOrderResultDTO) {
+    if (!attachTarget) return;
+    if (result.linked) {
+      setRewardOverride({
+        id: sale.id,
+        customerAccountId: result.customer.id,
+        customerMatchMethod: result.candidate.emailMatchesCustomer ? "email" : "admin_manual",
+        rewardsEligible: result.rewardsApplied ? true : displaySale.rewardsEligible,
+        rewardStatus: result.rewardsApplied || result.rewardStatus === "already_awarded" ? "available" : displaySale.rewardStatus,
+        rewardPointsEarned: result.rewardsApplied ? result.rewardPointsAwarded : displaySale.rewardPointsEarned,
+        rewardPointsReversed: result.rewardsApplied ? null : displaySale.rewardPointsReversed
+      });
+    }
+    setSaleMessage(saleAttachSuccessMessage(result, attachTarget));
   }
 
   return (
@@ -17472,7 +17643,11 @@ function SaleDetailsModal({
         onClose={() => setAttachCustomerOpen(false)}
         onAttached={(result) => {
           setAttachCustomerOpen(false);
-          setSaleMessage(saleAttachSuccessMessage(result, attachTarget));
+          const message = attachTarget ? saleAttachSuccessMessage(result, attachTarget) : attachResultMessage(result);
+          applyAttachResultToOpenSale(result);
+          void onRefresh().catch(() => {
+            setSaleMessage(`${message} Refresh the sales list if totals still look stale.`);
+          });
         }}
       />
     ) : null}

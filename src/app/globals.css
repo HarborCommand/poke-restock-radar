@@ -22922,6 +22922,122 @@ body .customer-attach-candidates {
   gap: 10px;
 }
 
+body .customer-profile-summary-card,
+body .customer-search-profile-card,
+body .customer-attach-verification-card,
+body .customer-reward-outcome {
+  border: 1px solid #dbe3ea;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+body .customer-profile-summary-card {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+body .customer-profile-summary-card.compact {
+  box-shadow: none;
+}
+
+body .customer-profile-summary-heading,
+body .customer-search-profile-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+body .customer-profile-avatar {
+  display: inline-grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #dcfce7, #dbeafe);
+  color: #14532d;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+body .customer-profile-summary-heading h4,
+body .customer-search-profile-main strong {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+body .customer-profile-summary-heading p,
+body .customer-search-profile-main small {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+body .customer-profile-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body .customer-search-profile-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+body .customer-search-profile-card.previewed,
+body .customer-search-profile-card.selected {
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+body .customer-search-profile-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body .customer-search-profile-stats span {
+  display: grid;
+  gap: 2px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 8px 10px;
+}
+
+body .customer-search-profile-stats b {
+  color: #0f172a;
+}
+
+body .customer-search-profile-stats small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+body .customer-search-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+body .selected-customer-review {
+  display: grid;
+  gap: 10px;
+}
+
+body .selected-customer-review > .secondary-action {
+  justify-self: end;
+}
+
 body .sales-attach-target-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -23016,6 +23132,75 @@ body .customer-attach-review {
   border-radius: 16px;
   background: #f8fafc;
   padding: 14px;
+}
+
+body .customer-attach-verification-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+body .customer-attach-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body .customer-attach-comparison-grid span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 9px 10px;
+}
+
+body .customer-attach-comparison-grid small {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body .customer-attach-comparison-grid strong {
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+body .customer-attach-match-banner,
+body .customer-reward-outcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 850;
+}
+
+body .customer-attach-match-banner.good,
+body .customer-reward-outcome.good {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #047857;
+}
+
+body .customer-attach-match-banner.watch,
+body .customer-reward-outcome.watch {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+body .customer-reward-outcome {
+  display: grid;
+  gap: 4px;
+  box-shadow: none;
+}
+
+body .customer-reward-outcome span,
+body .customer-reward-outcome small {
+  color: inherit;
 }
 
 body .customer-attach-review > div:first-child {
@@ -29405,8 +29590,33 @@ body .customers-rewards-tabs {
   body .customer-attach-search-row,
   body .customer-attach-candidate,
   body .sales-attach-target-card,
-  body .sales-attach-customer {
+  body .sales-attach-customer,
+  body .customer-profile-summary-heading,
+  body .customer-search-profile-main,
+  body .customer-search-profile-stats,
+  body .customer-attach-comparison-grid {
     grid-template-columns: 1fr;
+  }
+
+  body .customer-profile-avatar {
+    width: 38px;
+    height: 38px;
+  }
+
+  body .customer-profile-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body .customer-search-profile-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  body .customer-search-profile-actions .secondary-action,
+  body .customer-search-profile-actions .primary-action,
+  body .selected-customer-review > .secondary-action {
+    width: 100%;
+    justify-content: center;
   }
 
   body .customer-attach-search-row .secondary-action,
