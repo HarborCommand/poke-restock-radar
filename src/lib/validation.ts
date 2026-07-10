@@ -989,11 +989,13 @@ export const posSaleCreateSchema = z.object({
   })).min(1).max(100),
   paymentMethod: z.enum(POS_PAYMENT_METHOD_VALUES),
   paymentReference: optionalTrimmed,
+  selectedCustomerAccountId: z.string().trim().min(2).optional(),
   customerEmail: z.string().trim().email().optional(),
   customerPhone: optionalTrimmed
 });
 
 export const posCustomerMatchSchema = z.object({
+  selectedCustomerAccountId: z.string().trim().min(2).optional(),
   customerEmail: z.string().trim().email().optional(),
   customerPhone: optionalTrimmed
 });

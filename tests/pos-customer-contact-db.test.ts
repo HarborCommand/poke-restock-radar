@@ -164,6 +164,12 @@ test("POS customer matching rejects unverified and inactive accounts", async () 
   assert.equal(inactiveMatch.customerAccountId, null);
   assert.equal(inactiveMatch.customerMatchMethod, "email_unverified");
   assert.equal(inactiveMatch.rewardsEligible, false);
+
+  const unverifiedSelection = await resolvePosCustomerMatch({ selectedCustomerAccountId: unverified.id });
+  assert.equal(unverifiedSelection.customerAccountId, null);
+  assert.equal(unverifiedSelection.customerMatchMethod, "email_unverified");
+  assert.equal(unverifiedSelection.rewardsEligible, false);
+  assert.match(unverifiedSelection.message, /verified active account/);
 });
 
 test("POS customer matching keeps email primary and returns minimal admin-safe fields", async () => {
@@ -343,6 +349,35 @@ test("POS rewards award available points once for verified email match when expl
   assert.equal(balance.pendingPoints, 0);
   assert.equal(balance.availablePoints, 25);
   assert.equal(balance.lifetimeEarnedPoints, 25);
+});
+
+test("POS selected verified customer account earns rewards without trusting browser reward fields", async () => {
+  setPosRewardsEnabled(true);
+  const user = await createAdminUser();
+  const item = await createInventoryItem(user.id);
+  const account = await createVerifiedCustomer({ email: `${unique("selected-pos-buyer")}@example.test`, phone: "+15550007777" });
+  const otherAccount = await createVerifiedCustomer({ email: `${unique("spoofed-selected-pos-buyer")}@example.test`, phone: "+15550008888" });
+
+  const match = await resolvePosCustomerMatch({ selectedCustomerAccountId: account.id });
+  assert.equal(match.customerAccountId, account.id);
+  assert.equal(match.customerMatchMethod, "email");
+  assert.equal(match.rewardsEligible, true);
+
+  const receipt = await createPosSale(user, {
+    idempotencyKey: unique("selected-pos-reward-sale"),
+    items: [{ inventoryItemId: item.id, quantity: 1 }],
+    paymentMethod: "cash",
+    selectedCustomerAccountId: account.id,
+    customerAccountId: otherAccount.id,
+    rewardsEligible: true,
+    points: 999
+  } as Parameters<typeof createPosSale>[1] & Record<string, unknown>);
+
+  assert.equal(receipt.customerAccountId, account.id);
+  assert.notEqual(receipt.customerAccountId, otherAccount.id);
+  assert.equal(receipt.customerEmail, account.email);
+  assert.equal(receipt.rewardsEligible, true);
+  assert.equal(receipt.rewardPointsEarned, 25);
 });
 
 test("POS rewards use adjusted subtotal and do not award for phone-only contact", async () => {
