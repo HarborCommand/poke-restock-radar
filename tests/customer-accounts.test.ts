@@ -1047,7 +1047,7 @@ test("customer purchase history combines verified-email orders and linked POS sa
   assert.match(security, /platform: \{ notIn: \["website", "test", "smoke"\] \}/);
   assert.match(orderHistory, /const posWhere = customerVisiblePosSaleWhere\(account\)/);
   assert.match(orderHistory, /prisma\.inventorySale\.findMany/);
-  assert.match(orderHistory, /include: customerVisiblePosSaleInclude/);
+  assert.match(orderHistory, /select: customerVisiblePosSaleSelect/);
   assert.match(orderHistory, /groupCustomerPosSales\(posSales\)/);
   assert.match(orderHistory, /customerPosSaleHistoryItem/);
   assert.match(auth, /detailKey: `pos:\$\{key\}`/);
@@ -1174,6 +1174,10 @@ test("saved address book is verified-account scoped and checkout-isolated", () =
   assert.match(addressHelper, /updateMany\(\{\s*\r?\n\s*where: \{ id: addressId, customerAccountId: account\.id \}/);
   assert.match(addressHelper, /deleteMany\(\{\s*\r?\n\s*where: \{ id: addressId, customerAccountId: account\.id \}/);
   assert.match(addressHelper, /findFirst\(\{\s*\r?\n\s*where: \{ id: addressId, customerAccountId: account\.id \}/);
+  assert.match(addressRoute, /addressActionSchema/);
+  assert.match(addressRoute, /\.strict\(\)/);
+  assert.match(addressRoute, /z\.enum\(\["create", "update", "delete", "default"\]\)/);
+  assert.doesNotMatch(addressRoute, /Boolean\(json\.isDefault\)/);
   assert.match(addressHelper, /\^\\d\{5\}\(\?:-\\d\{4\}\)\?\$/);
   assert.match(addressHelper, /country.*\|\| "US"/);
 

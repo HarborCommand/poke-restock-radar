@@ -12,14 +12,16 @@ export type CustomerSavedAddressInput = {
   isDefault?: boolean;
 };
 
-function cleanOptional(value: unknown) {
+function cleanOptional(value: unknown, field = "Value", maxLength = 160) {
   const text = typeof value === "string" ? value.trim() : "";
+  if (text.length > maxLength) throw new Error(`${field} is too long.`);
   return text.length ? text : null;
 }
 
-function cleanRequired(value: unknown, field: string) {
+function cleanRequired(value: unknown, field: string, maxLength = 160) {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) throw new Error(`${field} is required.`);
+  if (text.length > maxLength) throw new Error(`${field} is too long.`);
   return text;
 }
 
@@ -44,10 +46,10 @@ function normalizeCountry(value: string | null | undefined) {
 
 export function normalizeCustomerSavedAddressInput(input: CustomerSavedAddressInput) {
   return {
-    name: cleanOptional(input.name),
+    name: cleanOptional(input.name, "Address name", 80),
     street1: cleanRequired(input.street1, "Street address"),
-    street2: cleanOptional(input.street2),
-    city: cleanRequired(input.city, "City"),
+    street2: cleanOptional(input.street2, "Address line 2"),
+    city: cleanRequired(input.city, "City", 100),
     state: normalizeState(input.state),
     zip: normalizeZip(input.zip),
     country: normalizeCountry(input.country),
@@ -57,13 +59,13 @@ export function normalizeCustomerSavedAddressInput(input: CustomerSavedAddressIn
 
 export function customerSavedAddressInputFromForm(form: FormData): CustomerSavedAddressInput {
   return {
-    name: cleanOptional(form.get("name")),
+    name: cleanOptional(form.get("name"), "Address name", 80),
     street1: String(form.get("street1") || ""),
-    street2: cleanOptional(form.get("street2")),
+    street2: cleanOptional(form.get("street2"), "Address line 2"),
     city: String(form.get("city") || ""),
     state: String(form.get("state") || ""),
     zip: String(form.get("zip") || ""),
-    country: cleanOptional(form.get("country")) || "US",
+    country: cleanOptional(form.get("country"), "Country", 2) || "US",
     isDefault: form.get("isDefault") === "on" || form.get("isDefault") === "true"
   };
 }

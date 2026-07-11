@@ -884,8 +884,27 @@ async function findCurrentCustomerAccountFromPayload(payload: CustomerSessionPay
       emailVerifiedAt: true,
       lastLoginAt: true,
       createdAt: true,
-      rewardBalance: true,
+      rewardBalance: {
+        select: {
+          availablePoints: true,
+          lifetimeEarnedPoints: true,
+          pendingPoints: true,
+          updatedAt: true
+        }
+      },
       savedAddresses: {
+        select: {
+          id: true,
+          name: true,
+          street1: true,
+          street2: true,
+          city: true,
+          state: true,
+          zip: true,
+          country: true,
+          isDefault: true,
+          createdAt: true
+        },
         orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }]
       }
     }
@@ -1270,7 +1289,20 @@ function safeOrderStatus(order: {
   return "Pending";
 }
 
-const customerVisiblePosSaleInclude = {
+const customerVisiblePosSaleSelect = {
+  id: true,
+  saleReference: true,
+  platform: true,
+  quantitySold: true,
+  soldPricePerItem: true,
+  grossSale: true,
+  discountAmount: true,
+  refundStatus: true,
+  refundedAmount: true,
+  refundedAt: true,
+  soldAt: true,
+  paymentMethod: true,
+  notes: true,
   inventoryItem: {
     select: {
       itemName: true,
@@ -1279,9 +1311,9 @@ const customerVisiblePosSaleInclude = {
       publicImages: true
     }
   }
-} satisfies Prisma.InventorySaleInclude;
+} satisfies Prisma.InventorySaleSelect;
 
-type CustomerVisiblePosSale = Prisma.InventorySaleGetPayload<{ include: typeof customerVisiblePosSaleInclude }>;
+type CustomerVisiblePosSale = Prisma.InventorySaleGetPayload<{ select: typeof customerVisiblePosSaleSelect }>;
 
 function roundAccountMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -1481,7 +1513,25 @@ export async function listCustomerAccountOrders(account: CurrentCustomerAccount)
   const [orders, posSales] = await Promise.all([
     prisma.storefrontOrder.findMany({
       where,
-      include: {
+      select: {
+        orderNumber: true,
+        createdAt: true,
+        status: true,
+        paymentStatus: true,
+        fulfillmentStatus: true,
+        shippingMethodLabel: true,
+        shippingPackageProfile: true,
+        shippingCarrier: true,
+        shippingTrackingNumber: true,
+        shippingTrackingUrl: true,
+        carrier: true,
+        trackingNumber: true,
+        total: true,
+        shippingCharged: true,
+        refundStatus: true,
+        refundedAmount: true,
+        canceledAt: true,
+        refundedAt: true,
         items: {
           select: {
             publicTitle: true,
@@ -1502,7 +1552,7 @@ export async function listCustomerAccountOrders(account: CurrentCustomerAccount)
     posWhere
       ? prisma.inventorySale.findMany({
           where: posWhere,
-          include: customerVisiblePosSaleInclude,
+          select: customerVisiblePosSaleSelect,
           orderBy: [{ soldAt: "desc" }, { createdAt: "asc" }],
           take: 200
         })
@@ -1570,7 +1620,7 @@ export async function getCustomerAccountOrderDetail(
     if (!where) return null;
     const sales = await prisma.inventorySale.findMany({
       where,
-      include: customerVisiblePosSaleInclude,
+      select: customerVisiblePosSaleSelect,
       orderBy: [{ soldAt: "desc" }, { createdAt: "asc" }]
     });
     if (!sales.length) return null;

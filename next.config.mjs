@@ -2,7 +2,19 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  devIndicators: false
+  devIndicators: false,
+  async headers() {
+    return [
+      {
+        source: "/account/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, no-cache, max-age=0, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" }
+        ]
+      }
+    ];
+  }
 };
 
 export default nextConfig;
