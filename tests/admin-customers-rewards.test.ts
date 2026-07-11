@@ -1220,7 +1220,7 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(app, /Attach Past Order/);
   assert.match(app, /Apply eligible rewards after linking/);
   assert.match(app, /Legacy sale - no email recorded/);
-  assert.match(app, /No customer email was saved on this sale/);
+  assert.match(app, /No customer email was saved on this historical sale/);
   assert.match(app, /I reviewed available records and confirmed this purchase belongs to the selected customer/);
   assert.match(app, /Search is discovery only/);
   assert.match(app, /CustomerSearchProfileCard/);
@@ -1341,6 +1341,68 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(saleDetailsModal, /SalesAttachCustomerModal/);
   assert.doesNotMatch(storefrontOrderInclude, /metadataJson|adminNote/i);
   assert.doesNotMatch(customerRewardActivity, /metadataJson|adminNote/i);
+});
+
+test("sales detail and customer linking use full-screen accessible workspaces", () => {
+  const app = readFileSync(path.join(projectRoot, "src/components/RadarApp.tsx"), "utf8");
+  const css = readFileSync(path.join(projectRoot, "src/app/globals.css"), "utf8");
+  const salesAttachModal = app.slice(
+    app.indexOf("function SalesAttachCustomerModal"),
+    app.indexOf("function ApplyLinkedRewardsModal")
+  );
+  const saleDetailsModal = app.slice(
+    app.indexOf("function SaleDetailsModal"),
+    app.indexOf("function EditSaleModal")
+  );
+  const focusTrap = app.slice(
+    app.indexOf("function useAdminSheetFocusTrap"),
+    app.indexOf("function SalesAttachCustomerModal")
+  );
+
+  assert.match(saleDetailsModal, /sale-detail-workspace/);
+  assert.match(saleDetailsModal, /sale-workspace-header/);
+  assert.match(saleDetailsModal, /sale-workspace-main/);
+  assert.match(saleDetailsModal, /sale-workspace-layout/);
+  assert.match(saleDetailsModal, /sale-workspace-primary/);
+  assert.match(saleDetailsModal, /sale-workspace-sidebar/);
+  assert.match(saleDetailsModal, /Sale Summary/);
+  assert.match(saleDetailsModal, /Payment/);
+  assert.match(saleDetailsModal, /Customer &amp; Rewards/);
+  assert.match(saleDetailsModal, /Inventory &amp; Profitability/);
+  assert.match(saleDetailsModal, /sale-workspace-actions/);
+
+  assert.match(salesAttachModal, /sales-customer-linking-workspace/);
+  assert.match(salesAttachModal, /Attach Sale to Customer/);
+  assert.match(salesAttachModal, /Find Customer/);
+  assert.match(salesAttachModal, /Review Match/);
+  assert.match(salesAttachModal, /Confirm Link/);
+  assert.match(salesAttachModal, /ref=\{searchInputRef\}/);
+  assert.match(salesAttachModal, /event\.key !== "Enter"/);
+  assert.match(salesAttachModal, /setPreviewCustomer\(customer\)/);
+  assert.match(salesAttachModal, /onSelect=\{\(\) => void chooseCustomer\(customer\)\}/);
+  assert.match(salesAttachModal, /Change Customer/);
+  assert.match(salesAttachModal, /Search is discovery only/);
+  assert.match(salesAttachModal, /sales-linking-workspace-actions/);
+  assert.equal((app.match(/No customer email was saved on this historical sale/g) ?? []).length, 1);
+  assert.match(app, /Email mismatch/);
+
+  assert.match(focusTrap, /event\.key === "Escape"/);
+  assert.match(focusTrap, /event\.key !== "Tab"/);
+  assert.match(focusTrap, /previousFocus\?\.focus\(\)/);
+  assert.match(saleDetailsModal, /useAdminSheetFocusTrap\(workspaceRef, onClose, !attachCustomerOpen && !rewardConfirmationOpen\)/);
+  assert.match(salesAttachModal, /useAdminSheetFocusTrap\(workspaceRef, onClose, true, searchInputRef\)/);
+
+  assert.match(css, /body \.inventory-modal\.sale-details-modal\.sale-detail-workspace,[\s\S]*?width: 100vw;[\s\S]*?height: 100dvh;[\s\S]*?border-radius: 0;/);
+  assert.match(css, /body \.inventory-modal\.customers-admin-modal\.customer-attach-order-modal\.sales-customer-linking-workspace[\s\S]*?width: 100vw;[\s\S]*?height: 100dvh;/);
+  assert.match(css, /body \.sale-workspace-main[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/);
+  assert.match(css, /body \.sales-linking-workspace-main[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/);
+  assert.match(css, /body \.sale-detail-workspace button:focus-visible,[\s\S]*?body \.sales-customer-linking-workspace button:focus-visible[\s\S]*?outline: 3px solid/);
+  assert.match(css, /@media \(max-width: 860px\)[\s\S]*?body \.sale-workspace-layout[\s\S]*?grid-template-columns: 1fr;/);
+  assert.match(css, /@media \(max-width: 560px\)[\s\S]*?sales-linking-workspace-actions \.primary-action[\s\S]*?white-space: normal;/);
+  assert.ok(
+    css.lastIndexOf("Keep full-screen Sales workspaces authoritative") > css.indexOf("body .customers-admin-modal.customer-attach-order-modal"),
+    "full-screen Sales overrides must follow shared modal sizing rules"
+  );
 });
 
 test("customers rewards workspace has compact mobile table and modal layouts", () => {

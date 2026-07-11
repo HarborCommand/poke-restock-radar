@@ -4,6 +4,7 @@ import Image from "next/image";
 import {
   AlertTriangle,
   Activity,
+  ArrowLeft,
   Bell,
   BarChart3,
   Boxes,
@@ -4310,9 +4311,11 @@ function CustomerSearchProfileCard({
         </span>
       </div>
       <div className="customer-search-profile-stats">
-        <span><b>{customer.totalOrders.toLocaleString()}</b><small>Orders</small></span>
+        <span><b>{shortDate(customer.joinedAt)}</b><small>Customer since</small></span>
+        <span><b>{(customer.totalOrders + customer.posSales).toLocaleString()}</b><small>Purchases</small></span>
         <span><b>{money(customerTotalSpend(customer))}</b><small>Total spent</small></span>
         <span><b>{customer.availablePoints.toLocaleString()}</b><small>Available points</small></span>
+        <span><b>{customer.pendingPoints.toLocaleString()}</b><small>Pending points</small></span>
       </div>
       <div className="customer-search-profile-actions">
         <button className="secondary-action small" type="button" onClick={onView} aria-label={`View profile for ${customer.displayName}`}>
@@ -4357,14 +4360,16 @@ function CustomerAttachVerificationPanel({
       </div>
       {candidate ? (
         <>
-          <div className={`customer-attach-match-banner ${statusTone}`}>
-            {candidate.matchStatus === "email_match" ? <Check size={16} /> : <AlertTriangle size={16} />}
-            <span>{statusLabel}: {candidate.matchMessage}</span>
-          </div>
+          {candidate.matchStatus !== "no_email_recorded" ? (
+            <div className={`customer-attach-match-banner ${statusTone}`}>
+              {candidate.matchStatus === "email_match" ? <Check size={16} /> : <AlertTriangle size={16} />}
+              <span>{statusLabel}: {candidate.matchMessage}</span>
+            </div>
+          ) : null}
           {candidate.matchStatus === "no_email_recorded" ? (
             <div className="customer-attach-legacy-review">
-              <strong>No customer email was saved on this sale. Confirm ownership before linking.</strong>
-              <p>Verify ownership using the receipt, customer name, phone, sale date, product, or other records before attaching.</p>
+              <strong>No customer email was saved on this historical sale</strong>
+              <p>Review the available sale details and confirm ownership before linking.</p>
               <div className="customer-attach-legacy-grid">
                 <span><small>Date</small><b>{shortDate(candidate.date)}</b></span>
                 <span><small>Product</small><b>{candidate.itemSummary}</b></span>
@@ -17121,6 +17126,66 @@ function escapeReceiptHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
+function useAdminSheetFocusTrap(
+  rootRef: { current: HTMLElement | null },
+  onClose: () => void,
+  active = true,
+  initialFocusRef?: { current: HTMLElement | null }
+) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    if (!active) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const rootElement = root;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])"
+    ].join(",");
+    const focusInitialControl = () => {
+      const target = initialFocusRef?.current ?? rootElement.querySelector<HTMLElement>(focusableSelector);
+      target?.focus();
+    };
+    const frame = window.requestAnimationFrame(focusInitialControl);
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(rootElement.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true"
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [active, initialFocusRef, rootRef]);
+}
+
 function SalesAttachCustomerModal({
   sale,
   target,
@@ -17136,6 +17201,8 @@ function SalesAttachCustomerModal({
   onClose: () => void;
   onAttached: (result: AdminCustomerAttachOrderResultDTO) => void | Promise<void>;
 }) {
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [customersData, setCustomersData] = useState<AdminCustomerRewardsResponseDTO | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<AdminCustomerRewardsCustomerDTO | null>(null);
@@ -17148,6 +17215,7 @@ function SalesAttachCustomerModal({
   const [searching, setSearching] = useState(true);
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useAdminSheetFocusTrap(workspaceRef, onClose, true, searchInputRef);
 
   const loadCustomers = useCallback(async (searchText: string) => {
     setSearching(true);
@@ -17209,6 +17277,7 @@ function SalesAttachCustomerModal({
     setApplyRewards(false);
     setNote("");
     setError(null);
+    window.requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
   const submitAttach = async (event: FormEvent<HTMLFormElement>) => {
@@ -17254,39 +17323,54 @@ function SalesAttachCustomerModal({
   const submitDisabled = busy || candidateLoading || !selectedCustomer || !selectedCandidate || !selectedCustomerEligible || (selectedNeedsManualConfirmation && !confirmEmailMismatch) || (internalNoteRequired && !note.trim());
 
   return (
-    <div className="inventory-modal-backdrop customers-modal-backdrop" role="presentation">
-      <div className="inventory-modal customers-admin-modal customer-attach-order-modal sales-attach-customer-modal" role="dialog" aria-modal="true" aria-label={`Attach ${target.label} to a customer`}>
-        <div className="modal-heading-row customer-attach-order-header">
-          <div>
-            <span className="eyebrow">Admin-only sale link</span>
-            <h3>Attach to Customer</h3>
-            <p>Search a verified customer account, review the sale match, then link this record through the existing protected attach workflow.</p>
-          </div>
-          <button className="icon-button" type="button" aria-label="Close attach customer" onClick={onClose}>
-            <X size={18} />
+    <div className="inventory-modal-backdrop customers-modal-backdrop sales-customer-linking-workspace-backdrop" role="presentation">
+      <div ref={workspaceRef} className="inventory-modal customers-admin-modal customer-attach-order-modal sales-attach-customer-modal sales-customer-linking-workspace" role="dialog" aria-modal="true" aria-label={`Attach ${target.label} to a customer`}>
+        <header className="customer-attach-order-header sales-linking-workspace-header">
+          <button className="icon-button sales-workspace-back-button" type="button" aria-label="Back to sale details" onClick={onClose}>
+            <ArrowLeft size={20} />
           </button>
-        </div>
+          <div className="sales-linking-workspace-title">
+            <span className="eyebrow">Sales / Sale Details</span>
+            <h2>Attach Sale to Customer</h2>
+            <p>Find the customer, review ownership, then confirm the protected link.</p>
+          </div>
+          <div className="sales-attach-target-card">
+            <span>
+              <strong>{target.label}</strong>
+              <small>{sale.itemName}</small>
+            </span>
+            <span>
+              <small>{shortDate(sale.soldAt)}</small>
+              <strong>{money(sale.netRevenueAfterRefund)}</strong>
+            </span>
+          </div>
+        </header>
         <form className="customer-attach-order-form" onSubmit={submitAttach}>
-          <div className="customer-attach-order-body">
-            <div className="sales-attach-target-card">
-              <span>
-                <strong>{target.label}</strong>
-                <small>{sale.itemName} - {money(sale.netRevenueAfterRefund)} net revenue</small>
-              </span>
-              <span className={`status-pill ${sale.customerAccountId ? "watch" : "good"}`}>
-                {sale.customerAccountId ? "Customer already linked" : "No customer attached"}
-              </span>
-            </div>
+          <main className="customer-attach-order-body sales-linking-workspace-main">
             {!selectedCustomer ? (
-              <>
+              <section className="sales-linking-step sales-linking-find-step" aria-labelledby="sales-linking-find-heading">
+                <div className="sales-linking-step-heading">
+                  <span>1</span>
+                  <div>
+                    <h3 id="sales-linking-find-heading">Find Customer</h3>
+                    <p>Search by name, email, or phone. Results are discovery-only until you select one.</p>
+                  </div>
+                </div>
                 <div className="customer-attach-search-row">
                   <label className="customers-search-field">
                     <Search size={16} />
                     <input
+                      ref={searchInputRef}
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        void loadCustomers(query);
+                      }}
                       placeholder="Search customer name, email, or phone..."
                       type="search"
+                      aria-label="Search customers by name, email, or phone"
                     />
                   </label>
                   <button className="secondary-action" type="button" onClick={() => void loadCustomers(query)} disabled={searching}>
@@ -17316,29 +17400,44 @@ function SalesAttachCustomerModal({
                 {previewCustomer ? (
                   <CustomerProfileSummaryCard customer={previewCustomer} title="Customer Profile Preview" />
                 ) : null}
-              </>
-            ) : (
-              <div className="selected-customer-review">
-                <CustomerProfileSummaryCard customer={selectedCustomer} title="Selected Customer" />
-                <button className="secondary-action small" type="button" onClick={changeCustomer} disabled={busy || candidateLoading}>
-                  Change Customer
-                </button>
-              </div>
-            )}
+              </section>
+            ) : null}
+            {selectedCustomer ? (
+              <section className="sales-linking-step sales-linking-review-step" aria-labelledby="sales-linking-review-heading">
+                <div className="sales-linking-step-heading">
+                  <span>2</span>
+                  <div>
+                    <h3 id="sales-linking-review-heading">Review Match</h3>
+                    <p>Compare the selected account with the saved purchase evidence.</p>
+                  </div>
+                  <button className="secondary-action" type="button" onClick={changeCustomer} disabled={busy || candidateLoading}>
+                    Change Customer
+                  </button>
+                </div>
+                <div className="selected-customer-review">
+                  <CustomerProfileSummaryCard customer={selectedCustomer} title="Selected Customer" />
+                </div>
             {candidateLoading ? (
               <EmptyState icon={RefreshCw} title="Checking sale match" detail="Loading server-verified attach details." />
-            ) : selectedCustomer ? (
-              <div className="customer-attach-review">
-                <CustomerAttachVerificationPanel customer={selectedCustomer} candidate={selectedCandidate} />
-                <div>
+            ) : (
+                  <CustomerAttachVerificationPanel customer={selectedCustomer} candidate={selectedCandidate} />
+                )}
+              </section>
+            ) : null}
+            {selectedCustomer && !candidateLoading ? (
+              <section className="sales-linking-step sales-linking-confirm-step" aria-labelledby="sales-linking-confirm-heading">
+                <div className="sales-linking-step-heading">
+                  <span>3</span>
+                  <div>
+                    <h3 id="sales-linking-confirm-heading">Confirm Link</h3>
+                    <p>Record the review and choose whether eligible rewards should be applied.</p>
+                  </div>
+                </div>
+                <div className="customer-attach-review">
+                <div className="customer-attach-status-row">
                   <span className={`status-pill ${selectedCustomerEligible ? "good" : "watch"}`}>
                     {selectedCustomerEligible ? "Verified active customer" : "Customer must be active and verified"}
                   </span>
-                  {selectedCandidate ? (
-                    <span className={`status-pill ${selectedCandidate.matchStatus === "email_match" ? "good" : "watch"}`}>
-                      {customerAttachMatchLabel(selectedCandidate)}
-                    </span>
-                  ) : null}
                   {selectedCandidate?.currentLinkedCustomer ? (
                     <span className="status-pill watch">Already linked: {selectedCandidate.currentLinkedCustomer.displayName}</span>
                   ) : null}
@@ -17377,21 +17476,26 @@ function SalesAttachCustomerModal({
                     : "Rewards are server-calculated from eligible product subtotal. Shipping, tax, discounts, refunded/canceled items, and already-awarded purchases are excluded.")}
                 </p>
               </div>
+              </section>
             ) : null}
             {error ? <p className="form-error">{error}</p> : null}
             <p className="customers-muted-note customer-attach-helper">
               This links the current sale to a customer account only. It does not edit checkout totals, payments, product prices, inventory, refunds, or customer auth fields.
             </p>
-          </div>
-          <div className="inventory-edit-actions customer-attach-actions">
+          </main>
+          <footer className="inventory-edit-actions customer-attach-actions sales-linking-workspace-actions">
             <button className="secondary-action" type="button" onClick={onClose} disabled={busy}>
-              Cancel
+              <ArrowLeft size={18} />
+              Back to Sale Details
             </button>
-            <button className="primary-action" type="submit" disabled={submitDisabled}>
+            <span className="sales-linking-action-status" aria-live="polite">
+              {submitDisabled ? "Complete the current review step to enable attachment." : "Ready to attach this sale."}
+            </span>
+            <button className="primary-action" type="submit" disabled={submitDisabled} title={submitDisabled ? "Select a verified customer and complete required ownership review" : undefined}>
               <Save size={16} />
-              Attach to Customer
+              Attach Sale to Customer
             </button>
-          </div>
+          </footer>
         </form>
       </div>
     </div>
@@ -17417,6 +17521,7 @@ function ApplyLinkedRewardsModal({
   onClose: () => void;
   onConfirm: (input: { reason: string; note: string; confirmOwnership: boolean }) => Promise<void>;
 }) {
+  const modalRef = useRef<HTMLDivElement | null>(null);
   const [reason, setReason] = useState("POS sale follow-up");
   const [note, setNote] = useState("");
   const [confirmOwnership, setConfirmOwnership] = useState(false);
@@ -17425,6 +17530,9 @@ function ApplyLinkedRewardsModal({
   const canApply = Boolean(candidate?.rewardsEligible && points > 0);
   const confirmationComplete = !legacyReviewRequired || (confirmOwnership && note.trim().length > 0);
   const submitDisabled = loading || applying || !canApply || !confirmationComplete || reason.trim().length < 4;
+  useAdminSheetFocusTrap(modalRef, () => {
+    if (!applying) onClose();
+  });
 
   async function submitConfirmation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -17434,7 +17542,7 @@ function ApplyLinkedRewardsModal({
 
   return (
     <div className="inventory-modal-backdrop customers-modal-backdrop reward-confirmation-backdrop" role="presentation">
-      <div className="inventory-modal customers-admin-modal reward-confirmation-modal" role="dialog" aria-modal="true" aria-label="Apply Rewards to Linked Purchase">
+      <div ref={modalRef} className="inventory-modal customers-admin-modal reward-confirmation-modal" role="dialog" aria-modal="true" aria-label="Apply Rewards to Linked Purchase">
         <div className="modal-heading-row reward-confirmation-header">
           <div>
             <span className="eyebrow">Admin-only reward backfill</span>
@@ -17546,6 +17654,7 @@ function SaleDetailsModal({
   onRefresh: () => Promise<void>;
   onClose: () => void;
 }) {
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
   const [receiptMessage, setReceiptMessage] = useState<string | null>(null);
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
   const [refundOpen, setRefundOpen] = useState(false);
@@ -17557,6 +17666,7 @@ function SaleDetailsModal({
   const [rewardCustomer, setRewardCustomer] = useState<AdminCustomerAttachOrderSearchResponseDTO["customer"] | null>(null);
   const [applyingRewards, setApplyingRewards] = useState(false);
   const [rewardOverride, setRewardOverride] = useState<Partial<InventorySaleDTO> & { id: string } | null>(null);
+  useAdminSheetFocusTrap(workspaceRef, onClose, !attachCustomerOpen && !rewardConfirmationOpen);
   useEffect(() => {
     setRewardOverride(null);
     setRewardConfirmationOpen(false);
@@ -17691,18 +17801,26 @@ function SaleDetailsModal({
 
   return (
     <>
-    <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-modal sale-details-modal" role="dialog" aria-modal="true" aria-label={`${displaySale.itemName} sale details`}>
-        <div className="sales-detail-header">
-          <SaleProductThumb item={item} sale={displaySale} />
-          <div>
-            <h2>{displaySale.itemName}</h2>
-            <span>{saleIdentifier(item)}</span>
+    <div className="inventory-modal-backdrop sale-workspace-backdrop" role="presentation">
+      <div ref={workspaceRef} className="inventory-modal sale-details-modal sale-detail-workspace" role="dialog" aria-modal="true" aria-label={`${displaySale.itemName} sale details`}>
+        <header className="sales-detail-header sale-workspace-header">
+          <div className="sale-workspace-breadcrumb" aria-label="Breadcrumb">Sales <ChevronRight size={14} /> Sale Details</div>
+          <div className="sale-workspace-identity">
+            <SaleProductThumb item={item} sale={displaySale} />
+            <div>
+              <h2>{displaySale.itemName}</h2>
+              <div className="sale-workspace-header-meta">
+                <span>{saleIdentifier(item)}</span>
+                <span>{displaySale.saleReference || displaySale.storefrontOrderNumber || `${formatStatus(displaySale.platform || "Local")} sale`}</span>
+                <span className={`sale-status-badge ${tone}`}>{saleLifecycleLabel(displaySale)}</span>
+              </div>
+            </div>
           </div>
           <button className="icon-button" type="button" aria-label="Close sale details" onClick={onClose}>
-            <X size={18} />
+            <X size={20} />
           </button>
-        </div>
+        </header>
+        <main className="sale-workspace-main">
         <div className="sale-detail-hero">
           <span>
             <small>Original Sale</small>
@@ -17719,29 +17837,25 @@ function SaleDetailsModal({
               {money(receiptTotals.netProfit)}
             </strong>
           </span>
-          <span className={`sale-status-badge ${tone}`}>{saleLifecycleLabel(displaySale)}</span>
         </div>
-        <div className="sale-detail-grid">
-          <DetailStat label="Sale Date" value={dateTime(displaySale.soldAt)} />
-          <DetailStat label="Platform" value={formatStatus(displaySale.platform || "Unknown platform")} />
-          <DetailStat label="Quantity Sold" value={String(rows.reduce((sum, row) => sum + row.sale.quantitySold, 0))} />
-          <DetailStat label="Actual Sale Price" value={money(displaySale.actualSalePrice)} />
-          <DetailStat label="Original sale amount" value={money(receiptTotals.subtotal)} />
-          <DetailStat label="Refunded amount" value={money(receiptTotals.refundedAmount)} tone={receiptTotals.refundedAmount > 0 ? "bad" : "neutral"} />
-          <DetailStat label="Net revenue after refund" value={money(receiptTotals.netRevenue)} tone={receiptTotals.netRevenue > 0 ? "good" : "neutral"} />
-          <DetailStat label="Refund status" value={displaySale.refundStatus ? formatStatus(displaySale.refundStatus) : saleLifecycleLabel(displaySale)} tone={tone === "bad" ? "bad" : "neutral"} />
-          <DetailStat label="Payment method" value={salePaymentLabel(displaySale)} />
-          <DetailStat label="Payment reference" value={displaySale.paymentReference || "Not saved"} />
-          <DetailStat label="Sale reference" value={displaySale.saleReference || "Not saved"} />
-          {rewardLabel ? <DetailStat label="Rewards" value={rewardLabel} tone={saleRewardTone(displaySale)} /> : null}
-          <DetailStat label="Customer link" value={displaySale.customerAccountId ? "Linked customer saved" : "Not linked"} tone={displaySale.customerAccountId ? "good" : "neutral"} />
-          <DetailStat label="Storefront order" value={displaySale.storefrontOrderNumber || "Not linked"} />
-          <DetailStat label="Cost Basis" value={money(rows.reduce((sum, row) => sum + row.sale.costBasis, 0))} />
-          <DetailStat label="Stock Lot Source" value={displaySale.stockLotSource} />
-          <DetailStat label="Fees" value={money(displaySale.fees)} />
-          <DetailStat label="Shipping" value={money(displaySale.shippingCost)} />
-          <DetailStat label="ROI" value={percent(displaySale.roiPercent)} tone={tone === "bad" ? "bad" : tone === "good" ? "good" : "neutral"} />
-        </div>
+        <div className="sale-workspace-layout">
+          <div className="sale-workspace-primary">
+            <section className="inventory-detail-section sale-workspace-section sale-summary-section">
+              <div className="sale-section-heading">
+                <div>
+                  <h3>Sale Summary</h3>
+                  <p>Core transaction status and customer-facing totals.</p>
+                </div>
+              </div>
+              <div className="sale-workspace-facts sale-summary-facts">
+                <DetailStat label="Sale Date" value={dateTime(displaySale.soldAt)} />
+                <DetailStat label="Platform" value={formatStatus(displaySale.platform || "Unknown platform")} />
+                <DetailStat label="Quantity Sold" value={String(rows.reduce((sum, row) => sum + row.sale.quantitySold, 0))} />
+                <DetailStat label="Actual Sale Price" value={money(displaySale.actualSalePrice)} />
+                <DetailStat label="Refunded Amount" value={money(receiptTotals.refundedAmount)} tone={receiptTotals.refundedAmount > 0 ? "bad" : "neutral"} />
+                <DetailStat label="Refund Status" value={displaySale.refundStatus ? formatStatus(displaySale.refundStatus) : saleLifecycleLabel(displaySale)} tone={tone === "bad" ? "bad" : "neutral"} />
+              </div>
+            </section>
         {rows.some((row) => row.sale.discountAmount && row.sale.discountAmount > 0) ? (
           <section className="inventory-detail-section">
             <h3>Discount details</h3>
@@ -17879,9 +17993,45 @@ function SaleDetailsModal({
             ) : null}
           </section>
         ) : null}
-        <div className="inventory-edit-actions">
+          </div>
+          <aside className="sale-workspace-sidebar" aria-label="Sale metadata">
+            <section className="inventory-detail-section sale-workspace-section">
+              <h3>Payment</h3>
+              <div className="sale-workspace-facts sidebar-facts">
+                <DetailStat label="Payment Method" value={salePaymentLabel(displaySale)} />
+                <DetailStat label="Payment Reference" value={displaySale.paymentReference || "Not saved"} />
+                <DetailStat label="Sale Reference" value={displaySale.saleReference || "Not saved"} />
+                <DetailStat label="Storefront Order" value={displaySale.storefrontOrderNumber || "Not linked"} />
+              </div>
+            </section>
+            <section className="inventory-detail-section sale-workspace-section">
+              <h3>Customer &amp; Rewards</h3>
+              <div className="sale-workspace-facts sidebar-facts">
+                <DetailStat label="Customer Link" value={displaySale.customerAccountId ? "Linked customer saved" : "Not linked"} tone={displaySale.customerAccountId ? "good" : "neutral"} />
+                <DetailStat label="Rewards" value={rewardLabel || "Not applied"} tone={rewardLabel ? saleRewardTone(displaySale) : "neutral"} />
+              </div>
+            </section>
+            <section className="inventory-detail-section sale-workspace-section">
+              <h3>Inventory &amp; Profitability</h3>
+              <div className="sale-workspace-facts sidebar-facts">
+                <DetailStat label="Cost Basis" value={money(rows.reduce((sum, row) => sum + row.sale.costBasis, 0))} />
+                <DetailStat label="Stock Lot Source" value={displaySale.stockLotSource} />
+                <DetailStat label="Fees" value={money(displaySale.fees)} />
+                <DetailStat label="Shipping" value={money(displaySale.shippingCost)} />
+                <DetailStat label="ROI" value={percent(displaySale.roiPercent)} tone={tone === "bad" ? "bad" : tone === "good" ? "good" : "neutral"} />
+              </div>
+            </section>
+          </aside>
+        </div>
+        </main>
+        <footer className="inventory-edit-actions sale-workspace-actions">
+          <div className="sale-workspace-action-status" aria-live="polite">
+            <strong>{displaySale.customerAccountId ? "Customer linked" : "Customer not linked"}</strong>
+            <span>{applyRewardsDisabledReason ?? "Review sale actions before making changes."}</span>
+          </div>
+          <div className="sale-workspace-footer-actions">
           {isAdmin && attachTarget && !displaySale.customerAccountId ? (
-            <button className="mini-action" type="button" onClick={() => setAttachCustomerOpen(true)}>
+            <button className="secondary-action" type="button" onClick={() => setAttachCustomerOpen(true)}>
               <Users size={14} />
               Attach to Customer
             </button>
@@ -17898,17 +18048,15 @@ function SaleDetailsModal({
               {applyingRewards ? "Applying Rewards" : applyRewardsDisabledReason === "Rewards already awarded." ? "Already Awarded" : "Apply Rewards Now"}
             </button>
           ) : null}
-          {isAdmin && attachTarget && displaySale.customerAccountId && applyRewardsDisabledReason ? (
-            <span className="customers-muted-note sale-action-note">{applyRewardsDisabledReason}</span>
-          ) : null}
-          <button className="mini-action" type="button" onClick={onEdit}>
+          <button className="secondary-action" type="button" onClick={onEdit}>
             <Settings size={14} />
             Edit Sale
           </button>
           <button className="primary-action" type="button" onClick={onClose}>
             Close
           </button>
-        </div>
+          </div>
+        </footer>
       </div>
     </div>
     {isAdmin && attachCustomerOpen && attachTarget ? (

@@ -753,9 +753,9 @@ test("Sales detail exposes POS receipt copy print and refund controls", () => {
 test("Sales detail shows POS metadata and discount details", () => {
   const app = readSource("../src/components/RadarApp.tsx");
   const saleDetails = sourceSlice(app, "function SaleDetailsModal", "function EditSaleModal");
-  assert.match(saleDetails, /Payment method/);
-  assert.match(saleDetails, /Payment reference/);
-  assert.match(saleDetails, /Sale reference/);
+  assert.match(saleDetails, /Payment Method/i);
+  assert.match(saleDetails, /Payment Reference/i);
+  assert.match(saleDetails, /Sale Reference/i);
   assert.match(saleDetails, /Rewards/);
   assert.match(app, /function saleRewardLabel/);
   assert.match(app, /Rewards awarded/);
