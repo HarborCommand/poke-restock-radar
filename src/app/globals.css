@@ -30794,6 +30794,168 @@ body .customers-rewards-tabs {
   }
 }
 
+/* Shared admin workspace polish */
+body .section-intro.admin-workspace-heading {
+  align-items: flex-end;
+  border: 0;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+  padding: 4px 0 16px;
+  overflow: visible;
+}
+
+body .admin-workspace-heading-copy {
+  min-width: 0;
+  max-width: 760px;
+}
+
+body .section-intro.admin-workspace-heading h2 {
+  margin: 0 0 5px;
+  font-size: clamp(1.45rem, 2vw, 1.9rem);
+  line-height: 1.15;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+body .section-intro.admin-workspace-heading p {
+  max-width: 68ch;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+body .section-intro-stats {
+  margin: 0;
+}
+
+body .section-intro-stats .chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+
+body .section-intro-stats dt,
+body .section-intro-stats dd {
+  margin: 0;
+}
+
+body .section-intro-stats dd {
+  color: currentColor;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+body .section-intro-stats dt {
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+body .empty-state {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 82px;
+  padding: 16px;
+  border: 1px dashed #dbe3ea;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+body .empty-state > svg {
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+body .empty-state.is-loading {
+  border-style: solid;
+}
+
+body .empty-state-action {
+  grid-column: auto;
+  margin-top: 0;
+}
+
+body .admin-workspace-loader {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  text-align: left;
+}
+
+body .admin-workspace-loader > div {
+  display: grid;
+  gap: 4px;
+}
+
+body .admin-workspace-loader strong {
+  color: #111827;
+  font-size: 0.96rem;
+}
+
+body .admin-workspace-loader span {
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+body :is(.primary-action, .secondary-action, .ghost-action, .text-button, .icon-button, .mini-action, .compact-action):focus-visible,
+body .section-intro a:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.34);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  body .section-intro.admin-workspace-heading {
+    align-items: stretch;
+    gap: 12px;
+    padding-bottom: 14px;
+  }
+
+  body .section-intro-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  body .section-intro-stats .chip {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  body .empty-state {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  body .empty-state-action {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 430px) {
+  body .section-intro-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body .spin-slow {
+    animation: none !important;
+  }
+}
+
 /* Keep full-screen Sales workspaces authoritative over shared modal rules above. */
 body .sale-detail-workspace .sale-detail-hero {
   min-height: 98px;
