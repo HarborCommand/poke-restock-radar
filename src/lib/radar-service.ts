@@ -42,9 +42,11 @@ import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate }
 import { resolvePosCustomerMatch } from "@/lib/pos-customer";
 import {
   awardRewardsForCompletedPosSale,
+  rewardMoneyToCents,
   reverseRewardsForPosSale,
   rewardSummaryForPosSaleReference
 } from "@/lib/customer-rewards";
+import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import {
   detectRetailerAvailability,
   detectRetailerPrice,
@@ -7002,7 +7004,7 @@ export async function createPosSale(
   const existingReceipt = await receiptForExistingPosSale(prisma, currentUser, saleReference);
   if (existingReceipt) return existingReceipt;
 
-  const receipt = await prisma.$transaction(async (tx) => {
+  const receipt = await runRewardSerializableTransaction(async (tx) => {
     const sortedCartItems = [...cartItems].sort((a, b) => a.inventoryItemId.localeCompare(b.inventoryItemId));
     for (const cartItem of sortedCartItems) {
       const locked = await tx.inventoryItem.updateMany({
@@ -7109,8 +7111,8 @@ export async function createPosSale(
       {
         customerAccountId: customerMatch.customerAccountId,
         saleReference,
-        eligibleSubtotalCents: Math.round(totals.subtotal * 100),
-        taxCentsExcluded: Math.round(totals.tax * 100),
+        eligibleSubtotalCents: rewardMoneyToCents(totals.subtotal),
+        taxCentsExcluded: rewardMoneyToCents(totals.tax),
         itemCount: lines.reduce((sum, line) => sum + line.quantity, 0)
       },
       tx
@@ -7233,7 +7235,7 @@ export async function refundPosSale(
   if (remainingRefundable <= 0) throw new Error("This POS sale has no remaining refundable amount.");
 
   const itemIds = Array.from(new Set(sales.map((sale) => sale.inventoryItemId)));
-  await prisma.$transaction(async (tx) => {
+  await runRewardSerializableTransaction(async (tx) => {
     const lockedSales = await tx.inventorySale.findMany({
       where: {
         userId: currentUser.id,

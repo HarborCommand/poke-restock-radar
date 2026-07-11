@@ -1,6 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { rewardEligibleSubtotalCents, rewardPointsForEligibleSubtotalCents } from "@/lib/customer-rewards";
+import {
+  rewardEligibleSubtotalCents,
+  rewardEligibleSubtotalCentsFromAmounts,
+  rewardMoneyToCents,
+  rewardPointsForEligibleSubtotalCents
+} from "@/lib/customer-rewards";
+import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import type {
@@ -333,7 +340,7 @@ function saleAlreadyAwarded(saleKey: string, ledger: Array<{ idempotencyKey: str
 }
 
 function saleEligibleSubtotalCents(sales: CandidateSale[]) {
-  return sales.reduce((sum, sale) => sum + Math.max(0, Math.round(sale.grossSale * 100)), 0);
+  return rewardEligibleSubtotalCentsFromAmounts(sales.map((sale) => sale.grossSale));
 }
 
 function saleRewardCandidate(sales: CandidateSale[], alreadyAwarded: boolean, match: OwnershipMatch): RewardCandidate {
@@ -579,13 +586,23 @@ async function awardOrderBackfillIfRequested(
   if (points <= 0) return { status: "no_eligible_subtotal", points: 0, message: rewardMessage("no_eligible_subtotal") };
 
   const idempotencyKey = `rewards:backfill:order:${input.order.id}`;
-  const existing = await tx.rewardLedgerEntry.findUnique({ where: { idempotencyKey } });
-  if (existing) return { status: "already_awarded", points: 0, message: rewardMessage("already_awarded") };
-
   const now = new Date();
   const available = input.order.fulfillmentStatus === "shipped" || input.order.fulfillmentStatus === "picked_up";
-  await tx.rewardLedgerEntry.create({
-    data: {
+  const ledgerCreationNonce = randomUUID();
+  const metadataJson = JSON.stringify({
+    createdBy: "admin",
+    adminUserId: input.adminUser.id,
+    orderNumber: input.order.orderNumber,
+    reason: input.reason,
+    ownershipMatchStatus: ownershipAuditStatus(input.match.status),
+    shippingCentsExcluded: rewardMoneyToCents(input.order.shippingCharged),
+    taxCentsExcluded: rewardMoneyToCents(input.order.tax),
+    rule: "1 point per eligible item subtotal dollar",
+    ledgerCreationNonce
+  });
+  const ledger = await tx.rewardLedgerEntry.upsert({
+    where: { idempotencyKey },
+    create: {
       customerAccountId: input.customerAccountId,
       orderId: input.order.id,
       idempotencyKey,
@@ -597,18 +614,11 @@ async function awardOrderBackfillIfRequested(
       availableAt: now,
       settledAt: available ? now : null,
       eligibleSubtotalCents,
-      metadataJson: JSON.stringify({
-        createdBy: "admin",
-        adminUserId: input.adminUser.id,
-        orderNumber: input.order.orderNumber,
-        reason: input.reason,
-        ownershipMatchStatus: ownershipAuditStatus(input.match.status),
-        shippingCentsExcluded: Math.max(0, Math.round(input.order.shippingCharged * 100)),
-        taxCentsExcluded: Math.max(0, Math.round(input.order.tax * 100)),
-        rule: "1 point per eligible item subtotal dollar"
-      })
-    }
+      metadataJson
+    },
+    update: {}
   });
+  if (ledger.metadataJson !== metadataJson) return { status: "already_awarded", points: 0, message: rewardMessage("already_awarded") };
   await tx.rewardBalance.upsert({
     where: { customerAccountId: input.customerAccountId },
     create: {
@@ -655,17 +665,32 @@ async function awardPosBackfillIfRequested(
   if (!candidate.eligible) return { status: candidate.status, points: 0, message: candidate.message };
   const refunded = input.sales.some((sale) => sale.refundStatus || sale.refundedAmount > 0);
   if (refunded) return { status: "canceled_or_refunded", points: 0, message: rewardMessage("canceled_or_refunded") };
-  const eligibleSubtotalCents = input.sales.reduce((sum, sale) => sum + Math.max(0, Math.round(sale.grossSale * 100)), 0);
+  const eligibleSubtotalCents = saleEligibleSubtotalCents(input.sales);
   const points = rewardPointsForEligibleSubtotalCents(eligibleSubtotalCents);
   if (points <= 0) return { status: "no_eligible_subtotal", points: 0, message: rewardMessage("no_eligible_subtotal") };
 
   const now = new Date();
   const firstSale = input.sales[0]!;
-  await tx.rewardLedgerEntry.create({
-    data: {
+  const idempotencyKey = `rewards:backfill:pos:${input.saleKey}`;
+  const ledgerCreationNonce = randomUUID();
+  const metadataJson = JSON.stringify({
+    createdBy: "admin",
+    adminUserId: input.adminUser.id,
+    saleKey: input.saleKey,
+    saleReference: firstSale.saleReference,
+    saleId: firstSale.saleReference ? null : firstSale.id,
+    reason: input.reason,
+    ownershipMatchStatus: ownershipAuditStatus(input.match.status),
+    itemCount: input.sales.reduce((sum, sale) => sum + sale.quantitySold, 0),
+    rule: "1 point per eligible adjusted POS subtotal dollar",
+    ledgerCreationNonce
+  });
+  const ledger = await tx.rewardLedgerEntry.upsert({
+    where: { idempotencyKey },
+    create: {
       customerAccountId: input.customerAccountId,
       orderId: null,
-      idempotencyKey: `rewards:backfill:pos:${input.saleKey}`,
+      idempotencyKey,
       points,
       type: "earn",
       reason: input.match.status === "no_email_recorded" ? "Admin-reviewed legacy sale eligible subtotal" : "Admin-linked POS sale eligible subtotal",
@@ -674,19 +699,11 @@ async function awardPosBackfillIfRequested(
       availableAt: now,
       settledAt: now,
       eligibleSubtotalCents,
-      metadataJson: JSON.stringify({
-        createdBy: "admin",
-        adminUserId: input.adminUser.id,
-        saleKey: input.saleKey,
-        saleReference: firstSale.saleReference,
-        saleId: firstSale.saleReference ? null : firstSale.id,
-        reason: input.reason,
-        ownershipMatchStatus: ownershipAuditStatus(input.match.status),
-        itemCount: input.sales.reduce((sum, sale) => sum + sale.quantitySold, 0),
-        rule: "1 point per eligible adjusted POS subtotal dollar"
-      })
-    }
+      metadataJson
+    },
+    update: {}
   });
+  if (ledger.metadataJson !== metadataJson) return { status: "already_awarded", points: 0, message: rewardMessage("already_awarded") };
   await tx.rewardBalance.upsert({
     where: { customerAccountId: input.customerAccountId },
     create: {
@@ -913,7 +930,7 @@ export async function attachAdminCustomerOrder(
   input: AttachInput,
   getDetail: (customerAccountId: string) => Promise<AdminCustomerRewardsDetailDTO | null>
 ): Promise<AdminCustomerAttachOrderResultDTO> {
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await runRewardSerializableTransaction(async (tx) => {
     const customer = await loadAttachCustomer(customerAccountId, tx);
     assertAttachCustomerIsEligible(customer);
     if (input.type === "storefront_order") {

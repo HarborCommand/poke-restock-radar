@@ -1,6 +1,6 @@
 # Rewards Ledger Reconciliation Helper Design
 
-Status: design only. This should not be implemented on `main` until the Phase 1 pending rewards ledger schema is merged.
+Status: implemented as a bounded read-only helper in `src/lib/reward-reconciliation.ts` and exposed through the admin-only GET route `/api/radar/rewards/reconciliation`. No automatic repair path exists.
 
 ## Goal
 
@@ -52,7 +52,8 @@ Reversed and canceled entries:
 
 ```ts
 type RewardBalanceAudit = {
-  customerAccountId: string;
+  accountRef: string;
+  isComplete: boolean;
   stored: {
     availablePoints: number;
     pendingPoints: number;
@@ -70,6 +71,7 @@ type RewardBalanceAudit = {
   };
   ledgerCounts: {
     total: number;
+    scanned: number;
     pending: number;
     available: number;
     reversed: number;
@@ -81,7 +83,13 @@ type RewardBalanceAudit = {
 };
 ```
 
-## CLI Or Admin Use
+## Admin Use
+
+The GET route requires an authenticated admin session and returns a private, no-store response. It accepts one server-validated customer account identifier, returns only the masked account reference and aggregate values, and has no write method.
+
+The helper reads at most 1,000 ledger rows. If the account exceeds that bound, `isComplete` is false, `entry_limit_reached` is included in warnings, and `isBalanced` is always false. This prevents a partial sample from being mistaken for a complete reconciliation. A future paginated implementation may replace this conservative bound.
+
+## CLI Use
 
 An optional CLI can be added later for local/staging checks:
 
@@ -108,11 +116,14 @@ Add tests for:
 - Reversed entries reduce the correct expected balance.
 - Canceled pending entries do not count as pending or available.
 - The helper performs no writes.
+- The admin route rejects unauthenticated and non-admin callers.
+- A truncated audit cannot report `isBalanced: true`.
 - The helper does not expose customer email, addresses, payment data, or private notes.
 
 ## Implementation Preconditions
 
 - Phase 1 pending rewards ledger schema is merged.
-- Reward status semantics are reviewed by the owner.
+- Reward status semantics remain: reversals do not reduce lifetime earned points.
 - Any production runbook explicitly says the helper is read-only.
+- Any future repair remains a separate owner-approved operation that appends ledger history rather than rewriting it.
 

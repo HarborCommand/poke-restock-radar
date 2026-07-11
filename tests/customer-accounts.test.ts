@@ -1239,9 +1239,10 @@ test("paid webhook awards reward points once without changing checkout totals", 
   assert.match(webhook, /if \(!wasPaid && order\.paymentStatus === "paid"\) await awardRewardsForPaidOrder\(order\)/);
   assert.match(rewards, /export async function awardRewardsForPaidOrder/);
   assert.match(rewards, /config\.customerAccountsEnabled && config\.customerRewardsEnabled/);
-  assert.match(onlineAward, /if \(order\.isTestOrder\) return \{ status: "test_order" as const, points: 0 \}/);
-  assert.match(onlineAward, /if \(order\.paymentStatus !== "paid"\) return \{ status: "not_paid" as const, points: 0 \}/);
-  assert.match(onlineAward, /idempotencyKey: `rewards:earn:\$\{order\.id\}`/);
+  assert.match(onlineAward, /const persistedOrder = await loadRewardOrder\(tx, order\.id\)/);
+  assert.match(onlineAward, /if \(persistedOrder\.isTestOrder\) return \{ status: "test_order" as const, points: 0 \}/);
+  assert.match(onlineAward, /if \(persistedOrder\.paymentStatus !== "paid"\) return \{ status: "not_paid" as const, points: 0 \}/);
+  assert.match(onlineAward, /idempotencyKey: `rewards:earn:\$\{persistedOrder\.id\}`/);
   assert.match(onlineAward, /shippingCentsExcluded/);
   assert.match(onlineAward, /taxCentsExcluded/);
   assert.match(onlineAward, /status: "pending"/);
@@ -1278,15 +1279,17 @@ test("refund cancellation and test markers reverse rewards without redemption", 
   const cancelOrRefund = sourceSlice(storefront, "export async function cancelOrRefundStorefrontOrder", "export async function updateStorefrontOrder");
   const updateOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(finalOrder);");
 
-  assert.match(cancelOrRefund, /await reverseRewardsForOrder\(updatedOrder/);
+  assert.match(cancelOrRefund, /const updatedOrder = await runRewardSerializableTransaction\(async \(tx\) =>/);
+  assert.match(cancelOrRefund, /await reverseRewardsForOrder\(\s*updated,/);
+  assert.match(cancelOrRefund, /refundedAmount: moneyFromCents\(newRefundedCents\)[\s\S]*?tx\s*\)/);
   assert.match(cancelOrRefund, /reason: refundCents > 0 \? "refund" : "cancel"/);
   assert.match(cancelOrRefund, /idempotencyKey: input\.idempotencyKey/);
   assert.match(updateOrder, /await reverseRewardsForOrder\(finalOrder/);
   assert.match(updateOrder, /reason: "test_order"/);
   assert.match(rewards, /targetReversal/);
   assert.match(rewards, /cumulativeRefundedCents/);
-  assert.match(rewards, /Math\.floor\(\(earnedPoints \* cumulativeRefundedCents\) \/ eligibleSubtotalCents\)/);
-  assert.match(rewards, /points: -currentPointsToReverse/);
+  assert.match(rewards, /Math\.floor\(\(currentEarned \* cumulativeRefundedCents\) \/ eligibleSubtotalCents\)/);
+  assert.match(rewards, /points: -actualPointsToReverse/);
   assert.match(rewards, /type: "reverse"/);
   assert.match(rewards, /pendingToReverse/);
   assert.match(rewards, /availableToReverse/);

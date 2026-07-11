@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
+import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import type { SessionUser } from "@/types/radar";
 import type {
   AdminCustomerRewardsCustomerDTO,
@@ -488,11 +490,15 @@ export async function createAdminRewardAdjustment(
     throw new Error("Admin reward adjustments are disabled.");
   }
 
-  const idempotencyKey = `rewards:admin:${input.action}:${input.idempotencyKey}`;
+  const legacyIdempotencyKey = `rewards:admin:${input.action}:${input.idempotencyKey}`;
+  const idempotencyKey = `rewards:admin:${input.customerAccountId}:${input.action}:${input.idempotencyKey}`;
   const now = new Date();
-  const ledger = await prisma.$transaction(async (tx) => {
-    const existing = await tx.rewardLedgerEntry.findUnique({
-      where: { idempotencyKey },
+  const ledger = await runRewardSerializableTransaction(async (tx) => {
+    const existing = await tx.rewardLedgerEntry.findFirst({
+      where: {
+        customerAccountId: input.customerAccountId,
+        idempotencyKey: { in: [idempotencyKey, legacyIdempotencyKey] }
+      },
       include: ledgerInclude
     });
     if (existing) return { entry: existing, duplicate: true };
@@ -503,14 +509,18 @@ export async function createAdminRewardAdjustment(
     });
     if (!customer) throw new Error("Customer account was not found.");
 
-    const balance = await tx.rewardBalance.findUnique({ where: { customerAccountId: input.customerAccountId } });
-    if (input.action === "deduct" && (balance?.availablePoints ?? 0) < input.points) {
-      throw new Error("Cannot deduct more than the customer's available points.");
-    }
-
     const points = input.action === "add" ? input.points : -input.points;
-    const entry = await tx.rewardLedgerEntry.create({
-      data: {
+    const creationNonce = randomUUID();
+    const metadataJson = JSON.stringify({
+      createdBy: "admin",
+      adminUserId: adminUser.id,
+      action: input.action,
+      adminNote: input.note ?? null,
+      ledgerCreationNonce: creationNonce
+    });
+    const entry = await tx.rewardLedgerEntry.upsert({
+      where: { idempotencyKey },
+      create: {
         customerAccountId: input.customerAccountId,
         idempotencyKey,
         points,
@@ -520,15 +530,12 @@ export async function createAdminRewardAdjustment(
         source: "admin_adjustment",
         availableAt: now,
         settledAt: now,
-        metadataJson: JSON.stringify({
-          createdBy: "admin",
-          adminUserId: adminUser.id,
-          action: input.action,
-          adminNote: input.note ?? null
-        })
+        metadataJson
       },
+      update: {},
       include: ledgerInclude
     });
+    if (entry.metadataJson !== metadataJson) return { entry, duplicate: true };
 
     if (input.action === "add") {
       await tx.rewardBalance.upsert({
@@ -545,12 +552,16 @@ export async function createAdminRewardAdjustment(
         }
       });
     } else {
-      await tx.rewardBalance.update({
-        where: { customerAccountId: input.customerAccountId },
+      const updated = await tx.rewardBalance.updateMany({
+        where: {
+          customerAccountId: input.customerAccountId,
+          availablePoints: { gte: input.points }
+        },
         data: {
           availablePoints: { decrement: input.points }
         }
       });
+      if (updated.count !== 1) throw new Error("Cannot deduct more than the customer's available points.");
     }
 
     return { entry, duplicate: false };
