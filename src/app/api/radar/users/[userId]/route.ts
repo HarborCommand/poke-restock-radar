@@ -1,4 +1,5 @@
-import { requireAdmin, requireUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { updateUserAccess } from "@/lib/access";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { userAccessUpdateSchema } from "@/lib/validation";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function PATCH(request: Request, { params }: { params: Promise<{ userId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
-  const adminResponse = requireAdmin(user);
+  const adminResponse = authorizeAdminMutation(request, user);
   if (adminResponse) return adminResponse;
 
   try {

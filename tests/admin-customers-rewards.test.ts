@@ -1182,7 +1182,7 @@ test("admin customer rewards routes require private admin access", () => {
   for (const routePath of routePaths) {
     const source = readFileSync(path.join(projectRoot, routePath), "utf8");
     assert.match(source, /requireUser\(/, `${routePath} must require a signed-in user`);
-    assert.match(source, /requireAdmin\(user\)/, `${routePath} must require admin access`);
+    assert.match(source, /(?:requireAdmin\(user\)|authorizeAdminMutation\(request, user\))/, `${routePath} must require admin access`);
     assert.match(source, /privateOk|privateJson/, `${routePath} must use private no-store responses`);
   }
   const customerDetailRoute = readFileSync(path.join(projectRoot, "src/app/api/radar/customers/[customerAccountId]/route.ts"), "utf8");

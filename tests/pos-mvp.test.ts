@@ -238,7 +238,7 @@ test("POS discount reasons normalize to stable labels", () => {
   assert.equal(normalizePosDiscountReason("not-real"), null);
 });
 
-test("POS sale request requires payment method and never accepts browser prices or totals", () => {
+test("POS sale request requires payment method and rejects browser prices or totals", () => {
   const parsed = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-test-sale",
     items: [{ inventoryItemId: "item-1", quantity: 2 }],
@@ -246,8 +246,7 @@ test("POS sale request requires payment method and never accepts browser prices 
     total: 0,
     unitPrice: 0
   });
-  assert.equal(parsed.success, true);
-  assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["idempotencyKey", "items", "paymentMethod"]);
+  assert.equal(parsed.success, false);
 
   const missingPayment = posSaleCreateSchema.safeParse({ idempotencyKey: "20260702T120000-test-sale", items: [{ inventoryItemId: "item-1", quantity: 1 }] });
   assert.equal(missingPayment.success, false);
@@ -257,7 +256,7 @@ test("POS sale request requires payment method and never accepts browser prices 
 });
 
 test("POS sale request accepts only explicit adjusted price metadata, not fake browser totals", () => {
-  const parsed = posSaleCreateSchema.safeParse({
+  const rejected = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-test-sale",
     items: [{
       inventoryItemId: "item-1",
@@ -270,6 +269,19 @@ test("POS sale request accepts only explicit adjusted price metadata, not fake b
     }],
     paymentMethod: "cash",
     total: 1
+  });
+  assert.equal(rejected.success, false);
+
+  const parsed = posSaleCreateSchema.safeParse({
+    idempotencyKey: "20260702T120000-test-sale",
+    items: [{
+      inventoryItemId: "item-1",
+      quantity: 1,
+      adjustedUnitPrice: "55.00",
+      discountReason: "price_match",
+      discountNote: "Preview discount"
+    }],
+    paymentMethod: "cash"
   });
   assert.equal(parsed.success, true);
   assert.deepEqual(parsed.success ? Object.keys(parsed.data.items[0]).sort() : [], ["adjustedUnitPrice", "discountNote", "discountReason", "inventoryItemId", "quantity"]);
@@ -291,7 +303,7 @@ test("POS sale request accepts only explicit adjusted price metadata, not fake b
 });
 
 test("POS sale request accepts optional customer contact without trusting reward state", () => {
-  const parsed = posSaleCreateSchema.safeParse({
+  const rejected = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-contact-sale",
     items: [{ inventoryItemId: "item-1", quantity: 1 }],
     paymentMethod: "zelle",
@@ -301,6 +313,16 @@ test("POS sale request accepts optional customer contact without trusting reward
     customerAccountId: "browser-fake",
     rewardsEligible: true,
     points: 999
+  });
+  assert.equal(rejected.success, false);
+
+  const parsed = posSaleCreateSchema.safeParse({
+    idempotencyKey: "20260702T120000-contact-sale",
+    items: [{ inventoryItemId: "item-1", quantity: 1 }],
+    paymentMethod: "zelle",
+    selectedCustomerAccountId: "selected-customer",
+    customerEmail: "collector@example.test",
+    customerPhone: "(555) 123-4567"
   });
   assert.equal(parsed.success, true);
   assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["customerEmail", "customerPhone", "idempotencyKey", "items", "paymentMethod", "selectedCustomerAccountId"]);
@@ -318,7 +340,7 @@ test("POS API is private admin-only and delegates to server-side sale creation",
   const route = readSource("../src/app/api/radar/pos/sales/route.ts");
   const matchRoute = readSource("../src/app/api/radar/pos/customer-match/route.ts");
   assert.match(route, /requireUser/);
-  assert.match(route, /requireAdmin/);
+  assert.match(route, /authorizeAdminMutation/);
   assert.match(route, /posSaleCreateSchema\.parse\(await readJson\(request\)\)/);
   assert.match(route, /createPosSale\(user, input\)/);
   assert.match(matchRoute, /requireUser/);
@@ -773,7 +795,7 @@ test("POS refund route is admin-only, records manual refunds, and does not call 
   const refundPosSale = sourceSlice(service, "export async function refundPosSale", "export async function updateInventorySale");
 
   assert.match(route, /requireUser/);
-  assert.match(route, /requireAdmin\(user\)/);
+  assert.match(route, /authorizeAdminMutation\(request, user\)/);
   assert.match(route, /posSaleRefundSchema\.parse/);
   assert.match(route, /refundPosSale/);
   assert.match(refundPosSale, /platform:\s*"pos"/);

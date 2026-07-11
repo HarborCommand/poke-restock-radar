@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { createInventoryItem, listDashboard } from "@/lib/radar-service";
@@ -285,6 +286,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const authorizationResponse = authorizeAdminMutation(request, user);
+  if (authorizationResponse) return authorizationResponse;
 
   try {
     const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));

@@ -38,7 +38,7 @@ const targetDiscoveryActionSchema = z.object({
   ]),
   url: z.string().url().optional(),
   candidateIds: z.array(z.string().trim().min(1)).max(100).optional()
-});
+}).strict();
 
 export async function POST(request: Request) {
   const { user, response } = await requireUser();

@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { createInventoryItem } from "@/lib/radar-service";
 import { bulkImportSchema, inventoryCreateSchema } from "@/lib/validation";
@@ -20,6 +21,8 @@ function parseCsv(data: string) {
 export async function POST(request: Request) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const authorizationResponse = authorizeAdminMutation(request, user);
+  if (authorizationResponse) return authorizationResponse;
   try {
     const input = bulkImportSchema.parse(await readJson(request));
     const rawRows = input.format === "json" ? JSON.parse(input.data) : parseCsv(input.data);

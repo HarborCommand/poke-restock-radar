@@ -1559,6 +1559,27 @@ function notificationSettingsToDTO(
   };
 }
 
+function defaultNotificationSettingsDTO(currentUser: SessionUser): NotificationSettingsDTO {
+  return {
+    id: `default-notification-settings-${currentUser.id}`,
+    inApp: true,
+    email: false,
+    sms: false,
+    browserPush: false,
+    phone: null,
+    emailTo: currentUser.email,
+    quietHoursStart: null,
+    quietHoursEnd: null,
+    minimumPriority: "LOW",
+    alertDigestMode: false,
+    urgentOnlyMode: false,
+    highPriorityOverride: true,
+    watchedRetailers: null,
+    watchedProducts: null,
+    alertCooldownMinutes: 30
+  };
+}
+
 function notificationDeliveryLogToDTO(
   log: Prisma.NotificationDeliveryLogGetPayload<Record<string, never>>
 ): NotificationDeliveryLogDTO {
@@ -1586,6 +1607,16 @@ function investmentSettingsToDTO(settings: Prisma.InvestmentSettingsGetPayload<R
     ebaySellingFee: settings.ebaySellingFee,
     shippingCost: settings.shippingCost,
     minimumProfitTarget: settings.minimumProfitTarget
+  };
+}
+
+function defaultInvestmentSettingsDTO(currentUser: SessionUser): InvestmentSettingsDTO {
+  return {
+    id: `default-investment-settings-${currentUser.id}`,
+    gradingCost: 20,
+    ebaySellingFee: 0.1325,
+    shippingCost: 5,
+    minimumProfitTarget: 20
   };
 }
 
@@ -2650,46 +2681,14 @@ async function createAlertOnce(input: {
   });
 }
 
-async function refreshReleaseAlerts(releases: ReleaseScoreInput[]) {
-  for (const release of releases) {
-    if (!release.officialReleaseDate) continue;
-    const releaseDays = daysUntil(release.officialReleaseDate);
-    const preorderDays = release.preorderDate ? daysUntil(release.preorderDate) : null;
-    const actionUrl = release.productLinks
-      ?.split(/[\n,]/)
-      .map((item) => item.trim())
-      .find(Boolean);
-    if (releaseDays >= 0 && releaseDays <= 7) {
-      await createAlertOnce({
-        title: `${release.setName} releases within 7 days`,
-        reason: `${release.setName} releases on ${release.officialReleaseDate.toISOString().slice(0, 10)}.`,
-        priority: release.priority as Priority,
-        entityType: "RELEASE",
-        entityId: release.id,
-        actionUrl
-      });
-    }
-    if (preorderDays !== null && preorderDays >= 0 && preorderDays <= 1) {
-      await createAlertOnce({
-        title: `${release.setName} preorder window ${preorderDays === 0 ? "today" : "tomorrow"}`,
-        reason: `${release.setName} preorder date is ${release.preorderDate!.toISOString().slice(0, 10)}.`,
-        priority: "HIGH",
-        entityType: "RELEASE",
-        entityId: release.id,
-        actionUrl
-      });
-    }
-  }
-}
-
-async function refreshProductPriorityScores(
+function calculateProductPriorityScores(
   products: ProductScoreInput[],
   releases: ReleaseScoreInput[],
   cards: CardScoreInput[]
 ) {
   const scores = new Map<string, ProductPriorityScoreDTO>();
   if (!products.length) return scores;
-  const data = products.map((product) => {
+  for (const product of products) {
     const release = releaseForProduct(product, releases);
     const cardsInSet = cards.filter((card) => {
       if (release && (card.releaseId === release.id || card.setName.toLowerCase() === release.setName.toLowerCase())) {
@@ -2699,60 +2698,11 @@ async function refreshProductPriorityScores(
     });
     const score = computeProductPriorityScore(product, release, cardsInSet);
     scores.set(product.id, score);
-    return {
-      productId: product.id,
-      releaseId: release?.id ?? product.releaseId ?? null,
-      buyWatchSkip: score.buyWatchSkip,
-      score: score.score,
-      retailPriceScore: score.retailPriceScore,
-      resaleDemandScore: score.resaleDemandScore,
-      setPopularityScore: score.setPopularityScore,
-      scarcityScore: score.scarcityScore,
-      chaseCardScore: score.chaseCardScore,
-      sealedValueScore: score.sealedValueScore,
-      cardInvestmentScore: score.cardInvestmentScore,
-      profitablePsa9Count: score.profitablePsa9Count,
-      psa10Upside: score.psa10Upside,
-      manualOverride: score.manualOverride,
-      reason: score.reason,
-      userNotes: product.notes,
-      computedAt: new Date()
-    };
-  });
-
-  await prisma.productPriorityScore.deleteMany({ where: { productId: { in: products.map((product) => product.id) } } });
-  await prisma.productPriorityScore.createMany({ data });
-
-  for (const product of products) {
-    const score = scores.get(product.id);
-    if (
-      !score ||
-      score.score < 70 ||
-      !["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.stockStatus) ||
-      !productReadyForBuyAlerts(product)
-    ) {
-      continue;
-    }
-    const actionUrl = exactProductActionUrl(product);
-    await createAlertOnce({
-      title: `High-priority chase live: ${product.name}`,
-      reason: score.reason,
-      priority: "HIGH",
-      entityType: "PRODUCT",
-      entityId: product.id,
-      productId: product.id,
-      actionUrl: actionUrl ?? undefined
-    });
   }
   return scores;
 }
 
 export async function listDashboard(currentUser: SessionUser): Promise<DashboardDTO> {
-  await ensureProductionInventoryMetadataColumns();
-  await ensureInventoryProductImageTable();
-  await autoLinkInventoryProducts(currentUser);
-  await backfillMissingMsrpInventoryCosts(currentUser);
-  await backfillInventoryProductImages(currentUser);
   const [
     retailers,
     products,
@@ -2797,8 +2747,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     prisma.card.findMany({ include: cardInclude, orderBy: [{ top10Score: "desc" }, { psa10EstimatedProfit: "desc" }] }),
     prisma.cardCompSale.findMany({ include: compSaleInclude, orderBy: { soldAt: "desc" }, take: 60 }),
     prisma.monitorLog.findMany({ include: monitorLogInclude, orderBy: { startedAt: "desc" }, take: 50 }),
-    ensureNotificationSettings(currentUser),
-    ensureInvestmentSettings(currentUser),
+    prisma.notificationSettings.findUnique({ where: { userId: currentUser.id } }),
+    prisma.investmentSettings.findUnique({ where: { userId: currentUser.id } }),
     prisma.investmentReport.findMany({ orderBy: { generatedAt: "desc" }, take: 12 }),
     prisma.inventoryItem.findMany({
       where: { OR: [{ userId: null }, { userId: currentUser.id }] },
@@ -2844,8 +2794,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       ? await listAccessOverview()
       : { users: [], friendInvites: [], auditLogs: [] };
 
-  await refreshReleaseAlerts(releases);
-  const priorityScoreMap = await refreshProductPriorityScores(products, releases, cards);
+  const priorityScoreMap = calculateProductPriorityScores(products, releases, cards);
   const alerts = await prisma.alert.findMany({
     where: { OR: [{ userId: null }, { userId: currentUser.id }] },
     orderBy: { timestamp: "desc" },
@@ -2917,7 +2866,12 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const releaseDTOs = calendarReleases.map((release) => releaseToDTO(release, releaseMetrics(release, products, cards)));
   const health = currentUser.role === "ADMIN" ? await getAppHealth(currentUser) : null;
   const accuracyStats = await monitorAccuracyStats();
-  const notificationSettingsDTO = notificationSettingsToDTO(notificationSettings);
+  const notificationSettingsDTO = notificationSettings
+    ? notificationSettingsToDTO(notificationSettings)
+    : defaultNotificationSettingsDTO(currentUser);
+  const investmentSettingsDTO = investmentSettings
+    ? investmentSettingsToDTO(investmentSettings)
+    : defaultInvestmentSettingsDTO(currentUser);
   const pendingDiscoveryCount = productDiscoveryCandidates.filter((candidate) => candidate.status === "PENDING").length;
   const activeDiscoverySourcesScanned = productDiscoverySources.filter((source) => source.enabled).length;
   const nextDiscoveryCheck = productDiscoverySources
@@ -3212,7 +3166,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     alertAnalytics: alertStats,
     notificationSettings: notificationSettingsDTO,
     notificationDeliveryLogs: notificationDeliveryLogs.map(notificationDeliveryLogToDTO),
-    investmentSettings: investmentSettingsToDTO(investmentSettings),
+    investmentSettings: investmentSettingsDTO,
     health,
     setupChecklist: setup,
     dataQualityWarnings: qualityWarnings,
@@ -9322,16 +9276,18 @@ export async function updateNotificationSettings(
   return notificationSettingsToDTO(settings);
 }
 
-async function clearRadarData(includeUsers: boolean) {
+async function clearRadarData(includeUsers: boolean, preserveSecurityRecords = false) {
   await prisma.productPriorityScore.deleteMany();
   await prisma.productDiscoveryCandidate.deleteMany();
   await prisma.productDiscoverySource.deleteMany();
-  await prisma.notificationDeliveryLog.deleteMany();
+  if (!preserveSecurityRecords) await prisma.notificationDeliveryLog.deleteMany();
   await prisma.monitorLog.deleteMany();
   await prisma.investmentReport.deleteMany();
-  await prisma.passwordResetToken.deleteMany();
-  await prisma.friendInvite.deleteMany();
-  await prisma.auditLog.deleteMany();
+  if (!preserveSecurityRecords) {
+    await prisma.passwordResetToken.deleteMany();
+    await prisma.friendInvite.deleteMany();
+    await prisma.auditLog.deleteMany();
+  }
   await prisma.savedFilterPreset.deleteMany();
   await prisma.dailyRecap.deleteMany();
   await prisma.inventoryMarketComp.deleteMany();
@@ -9693,7 +9649,6 @@ export async function exportBackup() {
     version: 1,
     exportedAt: new Date().toISOString(),
     tables: {
-      users: await prisma.user.findMany(),
       retailers: await prisma.retailer.findMany(),
       products: await prisma.product.findMany(),
       productDiscoverySources: await prisma.productDiscoverySource.findMany(),
@@ -9702,7 +9657,6 @@ export async function exportBackup() {
       storeSightings: await prisma.storeSighting.findMany(),
       releases: await prisma.release.findMany(),
       alerts: await prisma.alert.findMany(),
-      notificationDeliveryLogs: await prisma.notificationDeliveryLog.findMany(),
       monitorLogs: await prisma.monitorLog.findMany(),
       restockHistory: await prisma.restockHistory.findMany(),
       cards: await prisma.card.findMany(),
@@ -9710,11 +9664,7 @@ export async function exportBackup() {
       cardCompSales: await prisma.cardCompSale.findMany(),
       investmentReports: await prisma.investmentReport.findMany(),
       productPriorityScores: await prisma.productPriorityScore.findMany(),
-      notificationSettings: await prisma.notificationSettings.findMany(),
       investmentSettings: await prisma.investmentSettings.findMany(),
-      browserPushSubscriptions: await prisma.browserPushSubscription.findMany(),
-      friendInvites: await prisma.friendInvite.findMany(),
-      auditLogs: await prisma.auditLog.findMany(),
       storePreferences: await prisma.userStorePreference.findMany(),
       inventoryItems: await prisma.inventoryItem.findMany(),
       inventoryStockLots: await prisma.inventoryStockLot.findMany(),
@@ -9747,65 +9697,7 @@ function rows<T extends Record<string, unknown>>(tables: Record<string, unknown[
 
 export async function importBackup(payload: { tables: Record<string, unknown[]> }) {
   const tables = payload.tables;
-  await clearRadarData(true);
-
-  await prisma.user.createMany({
-    data: rows(tables, "users").map((row) => ({
-      id: String(row.id),
-      email: String(row.email),
-      name: String(row.name),
-      role: String(row.role),
-      passwordHash: String(row.passwordHash),
-      canAddSightings: row.canAddSightings === undefined ? true : Boolean(row.canAddSightings),
-      canAddComps: row.canAddComps === undefined ? false : Boolean(row.canAddComps),
-      canRunChecks: row.canRunChecks === undefined ? false : Boolean(row.canRunChecks),
-      canReceivePushAlerts: row.canReceivePushAlerts === undefined ? true : Boolean(row.canReceivePushAlerts),
-      preferredZone: row.preferredZone ? String(row.preferredZone) : "MIAMI",
-      customZoneName: row.customZoneName ? String(row.customZoneName) : null,
-      hideDistantStores: row.hideDistantStores === undefined ? false : Boolean(row.hideDistantStores),
-      currentLatitude: row.currentLatitude === null || row.currentLatitude === undefined ? null : Number(row.currentLatitude),
-      currentLongitude: row.currentLongitude === null || row.currentLongitude === undefined ? null : Number(row.currentLongitude),
-      locationUpdatedAt: toNullableDate(row.locationUpdatedAt),
-      disabledAt: toNullableDate(row.disabledAt),
-      sessionVersion: row.sessionVersion === undefined ? 0 : Number(row.sessionVersion),
-      lastLoginAt: toNullableDate(row.lastLoginAt),
-      passwordChangedAt: toNullableDate(row.passwordChangedAt),
-      createdAt: toDate(row.createdAt),
-      updatedAt: toDate(row.updatedAt)
-    }))
-  });
-  await prisma.friendInvite.createMany({
-    data: rows(tables, "friendInvites").map((row) => ({
-      id: String(row.id),
-      email: String(row.email),
-      name: row.name ? String(row.name) : null,
-      tokenHash: String(row.tokenHash),
-      role: row.role ? String(row.role) : "FRIEND",
-      canAddSightings: row.canAddSightings === undefined ? true : Boolean(row.canAddSightings),
-      canAddComps: row.canAddComps === undefined ? false : Boolean(row.canAddComps),
-      canRunChecks: row.canRunChecks === undefined ? false : Boolean(row.canRunChecks),
-      canReceivePushAlerts: row.canReceivePushAlerts === undefined ? true : Boolean(row.canReceivePushAlerts),
-      expiresAt: toDate(row.expiresAt),
-      acceptedAt: toNullableDate(row.acceptedAt),
-      revokedAt: toNullableDate(row.revokedAt),
-      createdAt: toDate(row.createdAt),
-      createdById: row.createdById ? String(row.createdById) : null,
-      acceptedById: row.acceptedById ? String(row.acceptedById) : null
-    }))
-  });
-  await prisma.auditLog.createMany({
-    data: rows(tables, "auditLogs").map((row) => ({
-      id: String(row.id),
-      userId: row.userId ? String(row.userId) : null,
-      actorEmail: row.actorEmail ? String(row.actorEmail) : null,
-      action: String(row.action),
-      entityType: String(row.entityType),
-      entityId: row.entityId ? String(row.entityId) : null,
-      summary: String(row.summary),
-      metadata: row.metadata ? String(row.metadata) : null,
-      createdAt: toDate(row.createdAt)
-    }))
-  });
+  await clearRadarData(false, true);
   await prisma.retailer.createMany({
     data: rows(tables, "retailers").map((row) => ({
       id: String(row.id),

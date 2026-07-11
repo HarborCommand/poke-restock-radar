@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { deleteInventoryStockLot, updateInventoryStockLot } from "@/lib/radar-service";
@@ -14,6 +15,8 @@ function adjustmentReasonLabel(value: string) {
 export async function PATCH(request: Request, { params }: { params: Promise<{ itemId: string; lotId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const authorizationResponse = authorizeAdminMutation(request, user);
+  if (authorizationResponse) return authorizationResponse;
   try {
     const { itemId, lotId } = await params;
     const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));
@@ -49,9 +52,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
   }
 }
 
-export async function DELETE(_request: Request, { params }: { params: Promise<{ itemId: string; lotId: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ itemId: string; lotId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const authorizationResponse = authorizeAdminMutation(request, user);
+  if (authorizationResponse) return authorizationResponse;
   try {
     const { itemId, lotId } = await params;
     const item = await deleteInventoryStockLot(user, itemId, lotId);
