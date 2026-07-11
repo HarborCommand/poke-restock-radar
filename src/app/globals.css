@@ -30854,6 +30854,15 @@ body .customer-attach-order-modal.sales-customer-linking-workspace .sales-linkin
   min-height: 48px !important;
 }
 
+body .sale-detail-workspace button:focus-visible,
+body .sales-customer-linking-workspace button:focus-visible,
+body .sales-customer-linking-workspace input:focus-visible,
+body .sales-customer-linking-workspace select:focus-visible,
+body .sales-customer-linking-workspace textarea:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.48);
+  outline-offset: 3px;
+}
+
 @media (max-width: 860px) {
   body .customer-attach-order-modal.sales-customer-linking-workspace .sales-linking-workspace-header {
     grid-template-columns: auto minmax(0, 1fr);

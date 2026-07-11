@@ -1396,6 +1396,7 @@ test("sales detail and customer linking use full-screen accessible workspaces", 
   assert.match(css, /body \.inventory-modal\.customers-admin-modal\.customer-attach-order-modal\.sales-customer-linking-workspace[\s\S]*?width: 100vw;[\s\S]*?height: 100dvh;/);
   assert.match(css, /body \.sale-workspace-main[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/);
   assert.match(css, /body \.sales-linking-workspace-main[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/);
+  assert.match(css, /body \.sale-detail-workspace button:focus-visible,[\s\S]*?body \.sales-customer-linking-workspace button:focus-visible[\s\S]*?outline: 3px solid/);
   assert.match(css, /@media \(max-width: 860px\)[\s\S]*?body \.sale-workspace-layout[\s\S]*?grid-template-columns: 1fr;/);
   assert.match(css, /@media \(max-width: 560px\)[\s\S]*?sales-linking-workspace-actions \.primary-action[\s\S]*?white-space: normal;/);
   assert.ok(
