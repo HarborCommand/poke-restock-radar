@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
+import { safeAuthBaseUrl } from "@/lib/auth-origin";
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import type { FriendInviteDTO, FriendUserDTO, Role, SessionUser, UserPermissions } from "@/types/radar";
@@ -45,9 +46,7 @@ function hashToken(token: string) {
 }
 
 function appUrl() {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3020";
+  return safeAuthBaseUrl();
 }
 
 function permissionsFrom(input: Partial<UserPermissions>): UserPermissions {
@@ -233,7 +232,19 @@ export async function acceptFriendInvite(input: {
   if (await existingUserIdForEmail(email)) throw new Error("That email already has an account.");
 
   const passwordHash = await bcrypt.hash(input.password, 12);
+  const acceptedAt = new Date();
   const user = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.friendInvite.updateMany({
+      where: {
+        id: invite.id,
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: acceptedAt }
+      },
+      data: { acceptedAt }
+    });
+    if (claimed.count !== 1) throw new Error("Invite link is invalid or expired. Ask the admin for a fresh invite.");
+
     const created = await tx.user.create({
       data: {
         email,
@@ -250,7 +261,7 @@ export async function acceptFriendInvite(input: {
     });
     await tx.friendInvite.update({
       where: { id: invite.id },
-      data: { acceptedAt: new Date(), acceptedById: created.id }
+      data: { acceptedById: created.id }
     });
     await tx.notificationSettings.create({
       data: {

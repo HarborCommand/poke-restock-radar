@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
@@ -17,9 +17,9 @@ const defaultFriendPermissions: UserPermissions = {
 
 type TokenPayload = {
   userId: string;
-  email: string;
-  role: Role;
   sessionVersion?: number;
+  iat?: number;
+  jti?: string;
   exp: number;
 };
 
@@ -74,19 +74,22 @@ function sign(data: string) {
 }
 
 export function createSessionToken(user: SessionUser) {
+  const now = Date.now();
   const payload: TokenPayload = {
     userId: user.id,
-    email: user.email,
-    role: user.role,
     sessionVersion: user.sessionVersion ?? 0,
-    exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000
+    iat: now,
+    jti: randomBytes(16).toString("base64url"),
+    exp: now + SESSION_DAYS * 24 * 60 * 60 * 1000
   };
   const body = encode(JSON.stringify(payload));
   return `${body}.${sign(body)}`;
 }
 
 export function verifySessionToken(token: string): TokenPayload | null {
-  const [body, signature] = token.split(".");
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [body, signature] = parts;
   if (!body || !signature) return null;
   let expected: string;
   try {
@@ -100,7 +103,16 @@ export function verifySessionToken(token: string): TokenPayload | null {
 
   try {
     const payload = JSON.parse(decode(body)) as TokenPayload;
-    if (!payload.userId || !payload.exp || payload.exp < Date.now()) return null;
+    const now = Date.now();
+    const maxLifetimeMs = SESSION_DAYS * 24 * 60 * 60 * 1000 + 5 * 60 * 1000;
+    if (
+      !payload.userId ||
+      !payload.exp ||
+      payload.exp < now ||
+      payload.exp > now + maxLifetimeMs ||
+      Boolean(payload.iat) !== Boolean(payload.jti) ||
+      (payload.iat !== undefined && (payload.iat > now + 60_000 || payload.exp - payload.iat > maxLifetimeMs))
+    ) return null;
     return payload;
   } catch {
     return null;
@@ -194,7 +206,8 @@ export function setSessionCookie(response: NextResponse, token: string) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SESSION_DAYS * 24 * 60 * 60
+    maxAge: SESSION_DAYS * 24 * 60 * 60,
+    priority: "high"
   });
 }
 
@@ -205,7 +218,8 @@ export function clearSessionCookie(response: NextResponse) {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 0
+      maxAge: 0,
+      priority: "high"
     });
   }
 }

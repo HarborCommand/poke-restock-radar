@@ -1,19 +1,20 @@
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
+import { safeAuthBaseUrl } from "@/lib/auth-origin";
 import { prisma } from "@/lib/db";
 import { sendEmailViaProvider } from "@/lib/email-provider";
 import type { SessionUser } from "@/types/radar";
 
 const RESET_TOKEN_MINUTES = 30;
 
+class ResetTokenUnavailableError extends Error {}
+
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
 function appUrl() {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3020";
+  return safeAuthBaseUrl();
 }
 
 async function sendPasswordResetEmail(email: string, resetUrl: string) {
@@ -47,13 +48,20 @@ export async function requestPasswordReset(emailInput: string) {
 
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000);
-  await prisma.passwordResetToken.create({
-    data: {
-      userId: user.id,
-      tokenHash: hashToken(token),
-      expiresAt
-    }
-  });
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: now }
+    }),
+    prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashToken(token),
+        expiresAt
+      }
+    })
+  ]);
 
   const resetUrl = `${appUrl()}/?resetToken=${encodeURIComponent(token)}`;
   const emailSent = await sendPasswordResetEmail(user.email, resetUrl);
@@ -72,27 +80,40 @@ export async function resetPasswordWithToken(token: string, password: string) {
 
   const passwordHash = await bcrypt.hash(password, 12);
   const now = new Date();
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: resetToken.userId },
-      data: {
-        passwordHash,
-        passwordChangedAt: now,
-        sessionVersion: { increment: 1 }
-      }
-    }),
-    prisma.passwordResetToken.update({
-      where: { id: resetToken.id },
-      data: { usedAt: now }
-    }),
-    prisma.passwordResetToken.deleteMany({
-      where: {
-        userId: resetToken.userId,
-        usedAt: null,
-        id: { not: resetToken.id }
-      }
-    })
-  ]);
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: {
+          id: resetToken.id,
+          usedAt: null,
+          expiresAt: { gt: now }
+        },
+        data: { usedAt: now }
+      });
+      if (claimed.count !== 1) throw new ResetTokenUnavailableError();
+
+      await tx.user.update({
+        where: { id: resetToken.userId },
+        data: {
+          passwordHash,
+          passwordChangedAt: now,
+          sessionVersion: { increment: 1 }
+        }
+      });
+      await tx.passwordResetToken.deleteMany({
+        where: {
+          userId: resetToken.userId,
+          usedAt: null,
+          id: { not: resetToken.id }
+        }
+      });
+    });
+  } catch (error) {
+    if (error instanceof ResetTokenUnavailableError) {
+      throw new Error("Reset link is invalid or expired. Request a new password reset.");
+    }
+    throw error;
+  }
   return { ok: true };
 }
 
@@ -155,7 +176,7 @@ export async function updateAdminLoginEmail(currentUser: SessionUser, currentPas
 
   const updated = await prisma.user.update({
     where: { id: user.id },
-    data: { email },
+    data: { email, sessionVersion: { increment: 1 } },
     select: {
       id: true,
       email: true,

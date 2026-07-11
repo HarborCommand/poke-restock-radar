@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { normalizeCustomerEmail } from "@/lib/customer-account-security";
+import { AuthOriginError, assertSameOriginRequest, authOriginErrorResponse } from "@/lib/auth-origin";
 import { privateNoStoreHeaders } from "@/lib/http";
 
 export type CustomerAuthRateLimitAction =
@@ -42,12 +43,7 @@ export class CustomerAuthRateLimitExceededError extends Error {
   }
 }
 
-export class CustomerAuthOriginError extends Error {
-  constructor() {
-    super("Invalid account request origin.");
-    this.name = "CustomerAuthOriginError";
-  }
-}
+export { AuthOriginError as CustomerAuthOriginError };
 
 export function customerAuthRateLimitingEnabled() {
   return customerAccountFeatureConfig().customerAuthRateLimitEnabled;
@@ -131,37 +127,8 @@ export async function enforceCustomerAuthRateLimit(input: {
   throw new CustomerAuthRateLimitExceededError(rule.blockSeconds);
 }
 
-function configuredOrigins(request: Request) {
-  const origins = new Set<string>();
-  origins.add(new URL(request.url).origin);
-  for (const value of [envValue("STORE_BASE_URL"), envValue("APP_URL")]) {
-    if (!value) continue;
-    try {
-      origins.add(new URL(value).origin);
-    } catch {
-      // Ignore malformed optional config here; health reports env configuration separately.
-    }
-  }
-  return origins;
-}
-
 export function assertCustomerSameOriginRequest(request: Request) {
-  const method = request.method.toUpperCase();
-  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
-
-  const origin = request.headers.get("origin");
-  if (!origin) return;
-
-  let requestOrigin: string;
-  try {
-    requestOrigin = new URL(origin).origin;
-  } catch {
-    throw new CustomerAuthOriginError();
-  }
-
-  if (!configuredOrigins(request).has(requestOrigin)) {
-    throw new CustomerAuthOriginError();
-  }
+  assertSameOriginRequest(request);
 }
 
 export function customerAuthRateLimitResponse(error: CustomerAuthRateLimitExceededError) {
@@ -180,11 +147,5 @@ export function customerAuthRateLimitResponse(error: CustomerAuthRateLimitExceed
 }
 
 export function customerAuthOriginErrorResponse() {
-  return NextResponse.json(
-    { error: "This account request could not be verified. Refresh the page and try again." },
-    {
-      status: 403,
-      headers: privateNoStoreHeaders
-    }
-  );
+  return authOriginErrorResponse();
 }

@@ -259,6 +259,7 @@ test("customer auth hardening uses persistent hashed rate limits and session rev
   const schema = readProjectFile("prisma/schema.prisma");
   const sqliteInit = readProjectFile("prisma/init-sqlite.ts");
   const rateLimit = readProjectFile("src/lib/customer-auth-rate-limit.ts");
+  const authOrigin = readProjectFile("src/lib/auth-origin.ts");
   const auth = readProjectFile("src/lib/customer-account-auth.ts");
   const loginRoute = readProjectFile("src/app/api/account/login/route.ts");
   const registerRoute = readProjectFile("src/app/api/account/register/route.ts");
@@ -299,7 +300,8 @@ test("customer auth hardening uses persistent hashed rate limits and session rev
   assert.match(rateLimit, /CustomerAuthRateLimitExceededError/);
   assert.match(rateLimit, /Retry-After/);
   assert.match(rateLimit, /assertCustomerSameOriginRequest/);
-  assert.match(rateLimit, /request\.headers\.get\("origin"\)/);
+  assert.match(authOrigin, /request\.headers\.get\("origin"\)/);
+  assert.match(authOrigin, /sec-fetch-site/);
   assert.doesNotMatch(rateLimit + migration + limiterModel, /rawEmail|plainEmail|rawIp|ipAddress\s+String|email\s+String\s+\/\/ rate|clientIp|passwordHash|tokenHash|cardNumber|cvc|payment_method_details|raw Stripe|webhook body/i);
 
   for (const [route, action] of [
