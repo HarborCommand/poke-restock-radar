@@ -1060,9 +1060,9 @@ test("refunded storefront orders are netted out of sales and revenue summaries",
   assert.match(saleCard, /Refunded/);
   assert.match(saleCard, /Net Revenue/);
   assert.match(saleCard, /saleLifecycleLabel\(sale\)/);
-  assert.match(saleDetails, /Original sale amount/);
-  assert.match(saleDetails, /Net revenue after refund/);
-  assert.match(saleDetails, /Refund status/);
+  assert.match(saleDetails, /Original Sale/);
+  assert.match(saleDetails, /Net Revenue/);
+  assert.match(saleDetails, /Refund Status/i);
   assert.match(inventoryRoute, /activeQuantitySold/);
   assert.match(inventoryRoute, /originalSaleAmount/);
   assert.match(inventoryRoute, /refundedAmount/);
