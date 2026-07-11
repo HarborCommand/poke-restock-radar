@@ -1,4 +1,4 @@
-import { badRequest, ok, readJson } from "@/lib/http";
+import { badRequest, privateOk, readJson, withPrivateNoStore } from "@/lib/http";
 import { checkPublicRateLimit, PublicRateLimitExceededError, publicRateLimitResponse } from "@/lib/rate-limit";
 import { lookupPublicOrderStatus } from "@/lib/storefront";
 import { publicOrderStatusLookupSchema } from "@/lib/validation";
@@ -18,9 +18,9 @@ export async function POST(request: Request) {
       ]
     });
     const result = await lookupPublicOrderStatus(input);
-    return ok(result);
+    return privateOk(result);
   } catch (error) {
     if (error instanceof PublicRateLimitExceededError) return publicRateLimitResponse(error);
-    return badRequest(error);
+    return withPrivateNoStore(badRequest(error));
   }
 }

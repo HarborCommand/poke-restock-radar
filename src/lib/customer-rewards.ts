@@ -64,12 +64,20 @@ export type CustomerRewardActivityItem = {
   points: number;
   type: string;
   status: string;
-  reason: string;
+  sourceType: "online" | "pos" | "adjustment" | "other";
   createdAt: string;
   availableAt: string | null;
   settledAt: string | null;
   orderNumber: string | null;
 };
+
+function customerRewardActivitySource(entry: { source: string | null; order: { orderNumber: string } | null }) {
+  if (entry.order) return "online" as const;
+  const source = entry.source?.trim().toLowerCase() ?? "";
+  if (source === "pos" || source === "admin_pos_link_backfill" || source === "admin_legacy_sale_backfill") return "pos" as const;
+  if (source === "admin_adjustment") return "adjustment" as const;
+  return "other" as const;
+}
 
 export type StorefrontOrderRewardSummary = {
   pointsEarned: number;
@@ -604,6 +612,7 @@ export function rewardSummaryForOrder(order: Pick<RewardOrder, "isTestOrder" | "
 
 export async function listCustomerRewardActivity(account: CurrentCustomerAccount, take = 12): Promise<CustomerRewardActivityItem[]> {
   if (!rewardFeatureEnabled() || !account.emailVerifiedAt) return [];
+  const boundedTake = Math.max(1, Math.min(50, Number.isFinite(take) ? Math.floor(take) : 12));
   const ledger = await prisma.rewardLedgerEntry.findMany({
     where: { customerAccountId: account.id },
     select: {
@@ -611,7 +620,7 @@ export async function listCustomerRewardActivity(account: CurrentCustomerAccount
       points: true,
       type: true,
       status: true,
-      reason: true,
+      source: true,
       availableAt: true,
       settledAt: true,
       createdAt: true,
@@ -622,14 +631,14 @@ export async function listCustomerRewardActivity(account: CurrentCustomerAccount
       }
     },
     orderBy: { createdAt: "desc" },
-    take
+    take: boundedTake
   });
   return ledger.map((entry) => ({
     id: entry.id,
     points: entry.points,
     type: entry.type,
     status: normalizedRewardLedgerStatus(entry),
-    reason: entry.reason,
+    sourceType: customerRewardActivitySource(entry),
     createdAt: entry.createdAt.toISOString(),
     availableAt: entry.availableAt?.toISOString() ?? null,
     settledAt: entry.settledAt?.toISOString() ?? null,

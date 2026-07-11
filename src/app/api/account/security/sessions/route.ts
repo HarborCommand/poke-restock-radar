@@ -65,21 +65,22 @@ export async function POST(request: Request) {
   const redirect = !contentType.includes("application/json");
   try {
     assertCustomerSameOriginRequest(request);
-    const input = await actionInput(request);
-    if (hasClientSuppliedCustomerOwnership(input.raw)) {
-      return input.redirect ? redirectToSecurity(request, "error") : privateJson({ error: "Not found." }, 404);
-    }
     if (!customerAccountsEnabled() || !customerSecurityCenterEnabled()) {
-      return input.redirect
+      return redirect
         ? redirectToSecurity(request, "disabled")
         : privateJson({ error: "Account security is not enabled yet." }, 404);
     }
 
     const account = await currentCustomerAccount();
     if (!account) {
-      return input.redirect
+      return redirect
         ? redirectToLogin(request)
         : privateJson({ error: "Sign in required." }, 401);
+    }
+
+    const input = await actionInput(request);
+    if (hasClientSuppliedCustomerOwnership(input.raw)) {
+      return input.redirect ? redirectToSecurity(request, "error") : privateJson({ error: "Not found." }, 404);
     }
 
     if (input.action === "sign_out_others") {

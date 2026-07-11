@@ -26,9 +26,14 @@ execFileSync(process.execPath, [path.join(projectRoot, "node_modules/tsx/dist/cl
 
 const dbModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/db.ts")).href);
 const accountAuthModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/customer-account-auth.ts")).href);
+const customerRewardsModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/customer-rewards.ts")).href);
+const customerAddressesModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/customer-addresses.ts")).href);
 const { prisma } = dbModule as { prisma: PrismaClient };
 const { listCustomerAccountOrders, getCustomerAccountOrderDetail } =
   accountAuthModule as typeof import("../src/lib/customer-account-auth");
+const { listCustomerRewardActivity } = customerRewardsModule as typeof import("../src/lib/customer-rewards");
+const { createCustomerSavedAddress, updateCustomerSavedAddress, deleteCustomerSavedAddress } =
+  customerAddressesModule as typeof import("../src/lib/customer-addresses");
 
 test.after(async () => {
   await prisma.$disconnect();
@@ -183,7 +188,12 @@ test("linked POS sales appear in customer purchase history without exposing priv
     grossSale: 12,
     includeReceiptTotals: false
   });
-  const unlinkedSale = await createLinkedPosSale({ customerAccountId: null, saleReference: unique("UNLINKED"), grossSale: 99 });
+  const unlinkedSale = await createLinkedPosSale({
+    customerAccountId: null,
+    customerEmail: account.email,
+    saleReference: unique("UNLINKED"),
+    grossSale: 99
+  });
   await createLinkedPosSale({ customerAccountId: otherAccount.id, customerEmail: otherAccount.email, saleReference: unique("OTHER"), grossSale: 88 });
   await createLinkedPosSale({ customerAccountId: account.id, customerEmail: account.email, saleReference: unique("SMOKE"), platform: "test", grossSale: 77 });
   const refundedSale = await createLinkedPosSale({
@@ -249,4 +259,117 @@ test("linked POS sales appear in customer purchase history without exposing priv
   assert.doesNotMatch(serialized, /PRIVATE-ZELLE-REFERENCE|costBasis|profitLoss|roiPercent|stockLot|customerAccountId|customerLinkNote|admin/i);
   assert.equal(await getCustomerAccountOrderDetail(account, `pos:${unlinkedSale.saleReference}`), null);
   assert.equal(await getCustomerAccountOrderDetail(currentAccount(otherAccount), `pos:${saleReference}`), null);
+});
+
+test("online order detail never crosses an existing customer link", async () => {
+  const accountARecord = await createCustomer("online-a");
+  const accountBRecord = await createCustomer("online-b");
+  const accountA = currentAccount(accountARecord);
+  const item = await createInventoryItem({ name: unique("Online isolation item") });
+
+  async function createOrder(input: { customerAccountId: string | null; customerEmail: string; orderNumber: string }) {
+    return prisma.storefrontOrder.create({
+      data: {
+        orderNumber: input.orderNumber,
+        customerAccountId: input.customerAccountId,
+        customerEmail: input.customerEmail,
+        status: "paid",
+        paymentStatus: "paid",
+        fulfillmentStatus: "unfulfilled",
+        subtotal: 20,
+        shippingCharged: 0,
+        tax: 0,
+        total: 20,
+        isTestOrder: false,
+        items: {
+          create: {
+            inventoryItemId: item.id,
+            publicTitle: "Online isolation item",
+            publicSlug: unique("online-isolation"),
+            quantity: 1,
+            unitPrice: 20,
+            lineTotal: 20
+          }
+        }
+      }
+    });
+  }
+
+  const own = await createOrder({ customerAccountId: accountA.id, customerEmail: accountA.email, orderNumber: unique("GDG-A") });
+  const other = await createOrder({ customerAccountId: accountBRecord.id, customerEmail: accountA.email, orderNumber: unique("GDG-B") });
+  const legacy = await createOrder({ customerAccountId: null, customerEmail: accountA.email, orderNumber: unique("GDG-LEGACY") });
+
+  assert.ok(await getCustomerAccountOrderDetail(accountA, own.orderNumber));
+  assert.equal(await getCustomerAccountOrderDetail(accountA, other.orderNumber), null);
+  assert.ok(await getCustomerAccountOrderDetail(accountA, legacy.orderNumber));
+  assert.equal(await getCustomerAccountOrderDetail(currentAccount(accountBRecord), own.orderNumber), null);
+  assert.equal(await getCustomerAccountOrderDetail(accountA, unique("GDG-MISSING")), null);
+});
+
+test("reward activity is account-scoped, bounded, and omits internal metadata", async () => {
+  const accountARecord = await createCustomer("rewards-a");
+  const accountBRecord = await createCustomer("rewards-b");
+  const accountA = currentAccount(accountARecord);
+
+  await prisma.rewardLedgerEntry.createMany({
+    data: Array.from({ length: 55 }, (_, index) => ({
+      customerAccountId: accountA.id,
+      points: 1,
+      type: "earn",
+      status: "available",
+      source: "admin_adjustment",
+      reason: `PRIVATE-REASON-${index}`,
+      idempotencyKey: unique(`private-key-${index}`),
+      metadataJson: JSON.stringify({ private: true, index }),
+      createdAt: new Date(Date.now() + index)
+    }))
+  });
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: accountBRecord.id,
+      points: 999,
+      type: "earn",
+      status: "available",
+      source: "admin_adjustment",
+      reason: "OTHER-CUSTOMER-PRIVATE-REASON",
+      idempotencyKey: unique("other-private-key")
+    }
+  });
+
+  const activity = await listCustomerRewardActivity(accountA, 500);
+  assert.equal(activity.length, 50);
+  assert.equal(activity.every((entry) => entry.points === 1 && entry.sourceType === "adjustment"), true);
+  assert.doesNotMatch(JSON.stringify(activity), /PRIVATE-REASON|private-key|metadataJson|idempotencyKey|999/);
+});
+
+test("saved address writes stay inside the authenticated account", async () => {
+  const accountARecord = await createCustomer("address-a");
+  const accountBRecord = await createCustomer("address-b");
+  const accountA = currentAccount(accountARecord);
+  const accountB = currentAccount(accountBRecord);
+  const addressB = await createCustomerSavedAddress(accountB, {
+    name: "Private B",
+    street1: "2 Private St",
+    city: "Miami",
+    state: "FL",
+    zip: "33101",
+    country: "US"
+  });
+
+  await assert.rejects(
+    updateCustomerSavedAddress(accountA, addressB.id, {
+      name: "Cross-account change",
+      street1: "1 Wrong St",
+      city: "Miami",
+      state: "FL",
+      zip: "33101",
+      country: "US"
+    }),
+    /not found/i
+  );
+  await assert.rejects(deleteCustomerSavedAddress(accountA, addressB.id), /not found/i);
+
+  const persisted = await prisma.customerSavedAddress.findUnique({ where: { id: addressB.id } });
+  assert.equal(persisted?.customerAccountId, accountB.id);
+  assert.equal(persisted?.street1, "2 Private St");
 });

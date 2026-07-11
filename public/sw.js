@@ -1,4 +1,4 @@
-const CACHE_NAME = "poke-radar-sw-2026-06-12-login-recovery-v1";
+const CACHE_NAME = "poke-radar-sw-2026-07-11-account-privacy-v1";
 const OFFLINE_ASSETS = [
   "/offline.html",
   "/manifest.webmanifest",
@@ -56,6 +56,13 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.pathname.startsWith("/api/")) return;
 
+  // Account HTML and App Router payloads can contain authenticated customer data.
+  // Always use the network so they cannot survive logout in a shared worker cache.
+  if (url.pathname === "/account" || url.pathname.startsWith("/account/") || request.headers.get("RSC") === "1") {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
@@ -87,7 +94,13 @@ self.addEventListener("fetch", (event) => {
       if (cached) return cached;
       return fetch(request)
         .then((response) => {
-          if (response.ok && url.origin === self.location.origin) {
+          const cacheControl = response.headers.get("Cache-Control")?.toLowerCase() || "";
+          if (
+            response.ok &&
+            url.origin === self.location.origin &&
+            !cacheControl.includes("private") &&
+            !cacheControl.includes("no-store")
+          ) {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           }

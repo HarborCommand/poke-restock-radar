@@ -1131,10 +1131,9 @@ function rewardLevelProgress(lifetimeEarnedPoints: number) {
 }
 
 function rewardActivityView(entry: CustomerRewardActivityItem) {
-  const lowerReason = entry.reason.toLowerCase();
   const reversed = entry.points < 0 || entry.status === "reversed";
   const pending = entry.status === "pending";
-  const pos = lowerReason.includes("pos");
+  const pos = entry.sourceType === "pos";
   const online = Boolean(entry.orderNumber);
   const title = reversed
     ? "Points reversed"
