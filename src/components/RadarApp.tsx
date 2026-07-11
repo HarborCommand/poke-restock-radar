@@ -1643,6 +1643,19 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   return data as T;
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+  return debouncedValue;
+}
+
+function requestWasAborted(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 function formJson(form: HTMLFormElement) {
   return Object.fromEntries(new FormData(form).entries());
 }
@@ -3583,8 +3596,16 @@ function CustomersRewardsPanel() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const [submittedSearch, setSubmittedSearch] = useState(search);
+  const effectiveSearch = submittedSearch === search ? submittedSearch : debouncedSearch;
+  const customerRequestRef = useRef<AbortController | null>(null);
+  const ledgerRequestRef = useRef<AbortController | null>(null);
 
   const loadCustomers = useCallback(async () => {
+    customerRequestRef.current?.abort();
+    const controller = new AbortController();
+    customerRequestRef.current = controller;
     setLoading(true);
     setPanelError(null);
     try {
@@ -3594,17 +3615,22 @@ function CustomersRewardsPanel() {
         status,
         sort
       });
-      if (search.trim()) params.set("search", search.trim());
-      const result = await requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`);
+      if (effectiveSearch.trim()) params.set("search", effectiveSearch.trim());
+      const result = await requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setCustomersData(result);
     } catch (error) {
+      if (requestWasAborted(error)) return;
       setPanelError(error instanceof Error ? error.message : "Could not load customers.");
     } finally {
-      setLoading(false);
+      if (customerRequestRef.current === controller) setLoading(false);
     }
-  }, [page, search, sort, status]);
+  }, [effectiveSearch, page, sort, status]);
 
   const loadLedger = useCallback(async () => {
+    ledgerRequestRef.current?.abort();
+    const controller = new AbortController();
+    ledgerRequestRef.current = controller;
     setLedgerLoading(true);
     setPanelError(null);
     try {
@@ -3614,15 +3640,29 @@ function CustomersRewardsPanel() {
         status: ledgerStatus,
         source: ledgerSource
       });
-      if (search.trim()) params.set("search", search.trim());
-      const result = await requestJson<AdminCustomerRewardsLedgerResponseDTO>(`/api/radar/rewards/ledger?${params.toString()}`);
+      if (effectiveSearch.trim()) params.set("search", effectiveSearch.trim());
+      const result = await requestJson<AdminCustomerRewardsLedgerResponseDTO>(`/api/radar/rewards/ledger?${params.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setLedgerData(result);
     } catch (error) {
+      if (requestWasAborted(error)) return;
       setPanelError(error instanceof Error ? error.message : "Could not load rewards ledger.");
     } finally {
-      setLedgerLoading(false);
+      if (ledgerRequestRef.current === controller) setLedgerLoading(false);
     }
-  }, [ledgerPage, ledgerSource, ledgerStatus, search]);
+  }, [effectiveSearch, ledgerPage, ledgerSource, ledgerStatus]);
+
+  const submitSearchNow = useCallback((nextSearch = search) => {
+    setSubmittedSearch(nextSearch);
+    setPage(1);
+    setLedgerPage(1);
+  }, [search]);
+
+  const handleSearchKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    submitSearchNow(event.currentTarget.value);
+  }, [submitSearchNow]);
 
   const openCustomer = useCallback(async (customerAccountId: string) => {
     setDetailLoading(true);
@@ -3646,6 +3686,13 @@ function CustomersRewardsPanel() {
   useEffect(() => {
     if (activeView === "ledger" || activeView === "overview") void loadLedger();
   }, [activeView, loadLedger]);
+
+  useEffect(() => () => {
+    customerRequestRef.current?.abort();
+    ledgerRequestRef.current?.abort();
+    customerRequestRef.current = null;
+    ledgerRequestRef.current = null;
+  }, []);
 
   const summary = customersData?.summary ?? null;
   const customers = customersData?.customers ?? [];
@@ -3726,15 +3773,42 @@ function CustomersRewardsPanel() {
       </div>
 
       <div className="customers-rewards-tabs" role="tablist" aria-label="Customers and rewards views">
-        {(["overview", "customers", "ledger", "adjustments"] as CustomersRewardsView[]).map((view) => (
-          <button className={activeView === view ? "active" : ""} key={view} type="button" onClick={() => setActiveView(view)}>
+        {(["overview", "customers", "ledger", "adjustments"] as CustomersRewardsView[]).map((view, index, views) => (
+          <button
+            aria-controls="customers-rewards-panel"
+            aria-selected={activeView === view}
+            className={activeView === view ? "active" : ""}
+            id={`customers-rewards-tab-${view}`}
+            key={view}
+            role="tab"
+            tabIndex={activeView === view ? 0 : -1}
+            type="button"
+            onClick={() => setActiveView(view)}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowRight" && event.key !== "ArrowLeft" && event.key !== "Home" && event.key !== "End") return;
+              event.preventDefault();
+              const nextIndex = event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? views.length - 1
+                  : (index + (event.key === "ArrowRight" ? 1 : -1) + views.length) % views.length;
+              const nextView = views[nextIndex]!;
+              setActiveView(nextView);
+              window.requestAnimationFrame(() => document.getElementById(`customers-rewards-tab-${nextView}`)?.focus());
+            }}
+          >
             {formatStatus(view)}
           </button>
         ))}
       </div>
 
       <div className="customers-rewards-layout">
-        <div className="customers-rewards-main">
+        <div
+          aria-labelledby={`customers-rewards-tab-${activeView}`}
+          className="customers-rewards-main"
+          id="customers-rewards-panel"
+          role="tabpanel"
+        >
           {activeView === "overview" ? (
             <CustomersRewardsOverview summary={summary} ledger={ledger.slice(0, 8)} loading={loading || ledgerLoading} />
           ) : null}
@@ -3750,6 +3824,7 @@ function CustomersRewardsPanel() {
                       setSearch(event.target.value);
                       setPage(1);
                     }}
+                    onKeyDown={handleSearchKeyDown}
                     placeholder="Search masked email, name, or phone..."
                     type="search"
                   />
@@ -3822,6 +3897,7 @@ function CustomersRewardsPanel() {
                       setSearch(event.target.value);
                       setLedgerPage(1);
                     }}
+                    onKeyDown={handleSearchKeyDown}
                     placeholder="Search customer, order, source, or reason..."
                     type="search"
                   />
