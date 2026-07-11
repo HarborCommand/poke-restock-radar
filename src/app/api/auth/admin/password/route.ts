@@ -1,5 +1,5 @@
-import { clearSessionCookie, requireAdmin, requireUser } from "@/lib/auth";
-import { AuthOriginError, assertSameOriginRequest, authOriginErrorResponse } from "@/lib/auth-origin";
+import { clearSessionCookie, requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { badRequest, privateJson, readJson, withPrivateNoStore } from "@/lib/http";
 import { resetAdminPassword } from "@/lib/password-reset";
@@ -10,15 +10,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  try {
-    assertSameOriginRequest(request);
-  } catch (error) {
-    if (error instanceof AuthOriginError) return authOriginErrorResponse();
-    throw error;
-  }
   const { user, response } = await requireUser();
   if (response) return response;
-  const adminResponse = requireAdmin(user);
+  const adminResponse = authorizeAdminMutation(request, user);
   if (adminResponse) return adminResponse;
 
   try {

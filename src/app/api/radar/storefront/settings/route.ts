@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { badRequest, ok, readJson } from "@/lib/http";
@@ -26,8 +27,9 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const authorizationResponse = authorizeAdminMutation(request, user);
+  if (authorizationResponse) return authorizationResponse;
   try {
-    if (user.role !== "ADMIN") throw new Error("Admin access required.");
     const input = storefrontSettingsSchema.parse(await readJson(request));
     const existing = await prisma.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" }, select: { id: true } });
     const data = {

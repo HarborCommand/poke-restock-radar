@@ -1,4 +1,5 @@
-import { requireAdmin, requireUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { POS_REFUND_REASON_LABELS } from "@/lib/pos";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, { params }: { params: Promise<{ saleReference: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
-  const adminResponse = requireAdmin(user);
+  const adminResponse = authorizeAdminMutation(request, user);
   if (adminResponse) return adminResponse;
 
   try {

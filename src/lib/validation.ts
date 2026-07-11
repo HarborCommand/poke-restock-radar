@@ -287,7 +287,7 @@ export const shippingProfileCreateSchema = z.object({
   requiresBoxDefault: checkboxBoolean.default(false),
   insuranceRecommendedDefault: checkboxBoolean.default(false),
   active: checkboxBoolean.default(true)
-});
+}).strict();
 
 export const shippingProfileUpdateSchema = shippingProfileCreateSchema.partial();
 
@@ -462,7 +462,7 @@ export const productCreateSchema = z.object({
   scarcityNotes: optionalTrimmed,
   manualPriorityOverride: z.enum(["BUY", "WATCH", "SKIP"]).optional(),
   notes: optionalTrimmed
-});
+}).strict();
 
 export const productUpdateSchema = productCreateSchema.extend({
   reason: optionalTrimmed
@@ -475,7 +475,7 @@ export const productDiscoverySourceCreateSchema = z.object({
   notes: optionalTrimmed,
   enabled: checkboxBooleanDefaultTrue,
   checkFrequencyMinutes: z.coerce.number().int().min(30).max(10080).default(360)
-});
+}).strict();
 
 export const productDiscoveryReviewSchema = z.object({
   action: z.enum(["approve", "ignore", "reject_non_tcg"]),
@@ -483,7 +483,7 @@ export const productDiscoveryReviewSchema = z.object({
   rating: z.enum(["BUY", "WATCH", "SKIP"]).default("WATCH"),
   checkFrequencyMinutes: z.coerce.number().int().min(15).max(10080).default(60),
   notes: optionalTrimmed
-});
+}).strict();
 
 export const productDiscoveryIdentifierSchema = z.object({
   upc: optionalTrimmed,
@@ -491,7 +491,7 @@ export const productDiscoveryIdentifierSchema = z.object({
   retailerProductId: optionalTrimmed,
   sku: optionalTrimmed,
   productType: optionalTrimmed
-});
+}).strict();
 
 export const storeCreateSchema = z.object({
   retailerId: z.string().min(1),
@@ -507,7 +507,7 @@ export const storeCreateSchema = z.object({
   vendorNotes: optionalTrimmed,
   confidenceScore: z.coerce.number().int().min(0).max(100).default(50),
   notes: optionalTrimmed
-});
+}).strict();
 
 export const userAreaPreferencesSchema = z.object({
   preferredZone: zoneSchema.default("MIAMI"),
@@ -561,7 +561,7 @@ const storeDiscoveryCandidateSchema = z.object({
 
 export const storeDiscoveryAddSchema = z.object({
   candidates: z.array(storeDiscoveryCandidateSchema).min(1, "Select at least one store").max(80)
-});
+}).strict();
 
 export const sightingCreateSchema = z.object({
   storeId: z.string().min(1),
@@ -606,7 +606,7 @@ export const releaseCreateSchema = z.object({
   createdByManualEntry: checkboxBoolean.default(true),
   needsReview: checkboxBoolean.default(false),
   reviewReason: optionalTrimmed
-}).refine((value) => !value.preorderDate || !value.officialReleaseDate || value.preorderDate <= value.officialReleaseDate, {
+}).strict().refine((value) => !value.preorderDate || !value.officialReleaseDate || value.preorderDate <= value.officialReleaseDate, {
   message: "Preorder date cannot be after official release date",
   path: ["preorderDate"]
 });
@@ -645,22 +645,50 @@ export const cardCreateSchema = z.object({
   ebayPsa9Keywords: optionalDetectionWords,
   ebayPsa10Keywords: optionalDetectionWords,
   ebayAllowNonEnglish: checkboxBoolean.default(false)
-});
+}).strict();
+
+const backupRows = z.array(z.record(z.string(), z.unknown())).max(10000);
 
 export const backupImportSchema = z.object({
   version: z.literal(1),
-  tables: z.record(z.string(), z.array(z.unknown()))
-});
+  confirm: z.literal("RESTORE_OPERATIONAL_DATA"),
+  tables: z.object({
+    retailers: backupRows.optional(),
+    products: backupRows.optional(),
+    productDiscoverySources: backupRows.optional(),
+    productDiscoveryCandidates: backupRows.optional(),
+    stores: backupRows.optional(),
+    storeSightings: backupRows.optional(),
+    releases: backupRows.optional(),
+    alerts: backupRows.optional(),
+    monitorLogs: backupRows.optional(),
+    restockHistory: backupRows.optional(),
+    cards: backupRows.optional(),
+    cardPriceSnapshots: backupRows.optional(),
+    cardCompSales: backupRows.optional(),
+    investmentReports: backupRows.optional(),
+    productPriorityScores: backupRows.optional(),
+    investmentSettings: backupRows.optional(),
+    storePreferences: backupRows.optional(),
+    inventoryItems: backupRows.optional(),
+    inventoryStockLots: backupRows.optional(),
+    inventorySales: backupRows.optional(),
+    inventoryMarketComps: backupRows.optional(),
+    barcodeScans: backupRows.optional(),
+    dailyRecaps: backupRows.optional(),
+    savedFilterPresets: backupRows.optional()
+  }).strict()
+}).strict();
 
 export const monitorRunSchema = z.object({
   mode: z.enum(["due", "all", "target_due", "target_priority"]).default("due")
-});
+}).strict();
 
 export const productMonitorActionSchema = z.object({
   action: z.enum(["pause", "resume", "force_alert", "simulate_tracker_drop", "mark_false_positive"]),
   monitorLogId: optionalTrimmed,
   reason: optionalTrimmed
-});
+}).strict();
 
 export const notificationSettingsSchema = z.object({
   inApp: checkboxBoolean,
@@ -879,7 +907,7 @@ export const inventoryProductImageCreateSchema = z.object({
   isPrimary: checkboxBoolean.default(false),
   showInStore: checkboxBooleanDefaultTrue.default(true),
   source: inventoryProductImageSourceSchema.default("manual")
-}).refine((input) => Boolean(input.url), {
+}).strict().refine((input) => Boolean(input.url), {
   path: ["url"],
   message: "Use a valid http/https image URL or public path."
 });
@@ -892,7 +920,7 @@ export const inventoryProductImageUpdateSchema = z.object({
   sortOrder: z.coerce.number().int().min(0).max(1000).optional(),
   isPrimary: checkboxBoolean.optional(),
   showInStore: checkboxBoolean.optional()
-});
+}).strict();
 
 const inventoryStockAdjustmentReasonSchema = z.enum([
   "physical_count_correction",
@@ -939,7 +967,7 @@ export const inventorySaleCreateSchema = z.object({
   shippingCost: optionalMoney.default(0),
   soldAt: boundedDate.default(() => new Date()),
   notes: optionalTrimmed
-}).transform((input, context) => {
+}).strict().transform((input, context) => {
   const actualSalePrice = input.actualSalePrice ?? input.soldPricePerItem;
   if (actualSalePrice === undefined || actualSalePrice === null) {
     context.addIssue({
@@ -965,7 +993,7 @@ export const inventorySaleUpdateSchema = z.object({
   shippingCost: optionalMoney,
   soldAt: boundedDate.optional(),
   notes: optionalTrimmed
-}).transform((input) => {
+}).strict().transform((input) => {
   const actualSalePrice = input.actualSalePrice ?? input.soldPricePerItem;
   return {
     ...input,
@@ -992,13 +1020,13 @@ export const posSaleCreateSchema = z.object({
   selectedCustomerAccountId: z.string().trim().min(2).optional(),
   customerEmail: z.string().trim().email().optional(),
   customerPhone: optionalTrimmed
-});
+}).strict();
 
 export const posCustomerMatchSchema = z.object({
-  selectedCustomerAccountId: z.string().trim().min(2).optional(),
-  customerEmail: z.string().trim().email().optional(),
-  customerPhone: optionalTrimmed
-});
+  selectedCustomerAccountId: z.string().trim().min(2).max(128).optional(),
+  customerEmail: z.string().trim().email().max(254).optional(),
+  customerPhone: z.string().trim().max(32).optional().transform((value) => value || undefined)
+}).strict();
 
 export const rewardAdminAdjustmentSchema = z.object({
   customerAccountId: z.string().trim().min(2),
@@ -1010,7 +1038,7 @@ export const rewardAdminAdjustmentSchema = z.object({
     z.string().trim().max(1000).optional()
   ),
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/)
-});
+}).strict();
 
 const nullableAdminText = (max: number) => z.preprocess(
   (value) => {
@@ -1061,7 +1089,7 @@ export const posSaleRefundSchema = z.object({
   reason: z.enum(POS_REFUND_REASON_VALUES),
   note: optionalTrimmed,
   restoreInventory: checkboxBoolean.default(true)
-});
+}).strict();
 
 export const storefrontCartItemSchema = z.object({
   id: z.string().trim().min(2),
@@ -1124,6 +1152,7 @@ export const storefrontOrderCancelRefundSchema = z
     sendCustomerEmail: checkboxBoolean,
     idempotencyKey: z.string().trim().min(8).max(120)
   })
+  .strict()
   .superRefine((input, context) => {
     if (input.refundType === "partial" && (!input.partialRefundAmount || input.partialRefundAmount <= 0)) {
       context.addIssue({
@@ -1170,7 +1199,7 @@ export const orderFulfillmentUpdateSchema = z.object({
   notes: optionalTrimmed,
   isTestOrder: checkboxBoolean.optional(),
   testOrderReason: z.enum(["stripe_test_mode", "live_checkout_smoke", "email_smoke_test", "shipping_smoke_test", "refund_smoke_test", "other"]).optional()
-}).superRefine((input, context) => {
+}).strict().superRefine((input, context) => {
   if (input.isTestOrder === true && !input.testOrderReason) {
     context.addIssue({
       code: z.ZodIssueCode.custom,

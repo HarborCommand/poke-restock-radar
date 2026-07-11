@@ -20,6 +20,21 @@ function revalidateStorefrontImagePaths(item: { publicSlug?: string | null }) {
   }
 }
 
+function isOwnedUploadedBlob(url: string, userId: string) {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = decodeURIComponent(parsed.pathname).replace(/^\/+/, "");
+    return (
+      parsed.protocol === "https:" &&
+      hostname.endsWith(".public.blob.vercel-storage.com") &&
+      (pathname.startsWith(`products/${userId}/`) || pathname.startsWith(`receipts/${userId}/`))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ itemId: string; imageId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
@@ -54,7 +69,11 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     const { itemId, imageId } = await params;
     const result = await deleteInventoryProductImage(user, itemId, imageId);
     revalidateStorefrontImagePaths(result.item);
-    if (result.deletedImage.source === "uploaded" && process.env.BLOB_READ_WRITE_TOKEN) {
+    if (
+      result.deletedImage.source === "uploaded" &&
+      process.env.BLOB_READ_WRITE_TOKEN &&
+      isOwnedUploadedBlob(result.deletedImage.url, user.id)
+    ) {
       await del(result.deletedImage.url).catch(() => null);
     }
     await logAudit({

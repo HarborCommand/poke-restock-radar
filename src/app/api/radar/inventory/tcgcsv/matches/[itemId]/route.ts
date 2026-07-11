@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { reviewTcgcsvMarketMatch } from "@/lib/radar-service";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 export async function PATCH(request: Request, { params }: { params: Promise<{ itemId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const authorizationResponse = authorizeAdminMutation(request, user);
+  if (authorizationResponse) return authorizationResponse;
   try {
     if (user.role !== "ADMIN") throw new Error("Admin access required.");
     const { itemId } = await params;

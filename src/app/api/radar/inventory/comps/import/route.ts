@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { badRequest, ok, readJson } from "@/lib/http";
@@ -62,6 +63,8 @@ function sourceQuality(value: string | undefined) {
 export async function POST(request: Request) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const authorizationResponse = authorizeAdminMutation(request, user);
+  if (authorizationResponse) return authorizationResponse;
   try {
     const body = (await readJson(request)) as { csv?: string };
     const rows = parseCsv(body.csv ?? "");

@@ -11,7 +11,7 @@ function cronAuthorized(request: Request) {
   const secrets = [process.env.MONITOR_JOB_SECRET, process.env.CRON_SECRET].filter(
     (value): value is string => Boolean(value && value.length > 0)
   );
-  if (!secrets.length) return process.env.NODE_ENV !== "production";
+  if (!secrets.length) return false;
 
   const authHeader = request.headers.get("authorization");
   const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;

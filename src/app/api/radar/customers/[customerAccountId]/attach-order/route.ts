@@ -1,4 +1,5 @@
 import { requireAdmin, requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { badRequest, privateJson, privateOk, readJson } from "@/lib/http";
 import { attachAdminCustomerOrder, searchAdminCustomerAttachCandidates } from "@/lib/admin-customer-order-links";
 import { getAdminCustomerRewardDetail } from "@/lib/rewards-admin";
@@ -29,7 +30,7 @@ export async function GET(request: Request, context: { params: Promise<{ custome
 export async function POST(request: Request, context: { params: Promise<{ customerAccountId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
-  const adminResponse = requireAdmin(user);
+  const adminResponse = authorizeAdminMutation(request, user);
   if (adminResponse) return adminResponse;
 
   try {

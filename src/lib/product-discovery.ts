@@ -538,7 +538,9 @@ function retailerHostMatches(url: string, retailerName: string) {
   const host = hostForRetailer(retailerName);
   if (!host) return true;
   try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase().endsWith(host);
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return parsed.protocol === "https:" && (hostname === host || hostname.endsWith(`.${host}`));
   } catch {
     return false;
   }

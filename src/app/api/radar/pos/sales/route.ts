@@ -1,4 +1,5 @@
-import { requireAdmin, requireUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { createPosSale } from "@/lib/radar-service";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const { user, response } = await requireUser();
   if (response) return response;
-  const adminResponse = requireAdmin(user);
+  const adminResponse = authorizeAdminMutation(request, user);
   if (adminResponse) return adminResponse;
 
   try {

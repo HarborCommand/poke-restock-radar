@@ -13,6 +13,7 @@ function safeFilename(value: string, contentType: string) {
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/-+/g, "-")
+    .replace(/^\.+/, "")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
   const fallbackExtension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";

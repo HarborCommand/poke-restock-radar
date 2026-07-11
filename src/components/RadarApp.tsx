@@ -26487,7 +26487,16 @@ function AdminTools({
               } catch {
                 throw new Error("Backup JSON is invalid.");
               }
-              return requestJson("/api/radar/backup", { method: "POST", body: JSON.stringify(payload) });
+              if (!window.confirm("Import this operational backup? Existing radar business data will be replaced. Authentication and security records are preserved.")) {
+                throw new Error("Backup import canceled.");
+              }
+              if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+                throw new Error("Backup JSON must contain an object.");
+              }
+              return requestJson("/api/radar/backup", {
+                method: "POST",
+                body: JSON.stringify({ ...payload, confirm: "RESTORE_OPERATIONAL_DATA" })
+              });
             },
             { success: "Backup imported" }
           )

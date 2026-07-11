@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { updateInventoryStoreListing } from "@/lib/storefront";
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
 export async function PATCH(request: Request, { params }: { params: Promise<{ itemId: string }> }) {
   const { user, response } = await requireUser();
   if (response) return response;
+  const authorizationResponse = authorizeAdminMutation(request, user);
+  if (authorizationResponse) return authorizationResponse;
   try {
     const { itemId } = await params;
     const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));
