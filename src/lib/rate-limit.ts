@@ -13,7 +13,11 @@ export type PublicRateLimitAction =
   | "customer_magic_link"
   | "customer_registration"
   | "customer_forgot_password"
-  | "customer_reset_password";
+  | "customer_reset_password"
+  | "admin_login"
+  | "admin_forgot_password"
+  | "admin_reset_password"
+  | "admin_invite_accept";
 
 type PublicRateLimitScope = "client" | "email" | "order" | "cart" | "zip" | "token";
 
@@ -95,6 +99,23 @@ export const publicRateLimitRules: Record<PublicRateLimitAction, PublicRateLimit
   ],
   customer_reset_password: [
     { rule: "client_15m", scope: "client", windowSeconds: 15 * 60, maxAttempts: 5, blockSeconds: 15 * 60 },
+    { rule: "token_15m", scope: "token", windowSeconds: 15 * 60, maxAttempts: 5, blockSeconds: 15 * 60 }
+  ],
+  admin_login: [
+    { rule: "client_15m", scope: "client", windowSeconds: 15 * 60, maxAttempts: 8, blockSeconds: 15 * 60 },
+    { rule: "email_1h", scope: "email", windowSeconds: 60 * 60, maxAttempts: 5, blockSeconds: 30 * 60 }
+  ],
+  admin_forgot_password: [
+    { rule: "client_1h", scope: "client", windowSeconds: 60 * 60, maxAttempts: 5, blockSeconds: 30 * 60 },
+    { rule: "email_1h", scope: "email", windowSeconds: 60 * 60, maxAttempts: 3, blockSeconds: 60 * 60 }
+  ],
+  admin_reset_password: [
+    { rule: "client_15m", scope: "client", windowSeconds: 15 * 60, maxAttempts: 8, blockSeconds: 15 * 60 },
+    { rule: "token_15m", scope: "token", windowSeconds: 15 * 60, maxAttempts: 5, blockSeconds: 15 * 60 }
+  ],
+  admin_invite_accept: [
+    { rule: "client_1h", scope: "client", windowSeconds: 60 * 60, maxAttempts: 8, blockSeconds: 30 * 60 },
+    { rule: "email_1h", scope: "email", windowSeconds: 60 * 60, maxAttempts: 5, blockSeconds: 30 * 60 },
     { rule: "token_15m", scope: "token", windowSeconds: 15 * 60, maxAttempts: 5, blockSeconds: 15 * 60 }
   ]
 };

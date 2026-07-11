@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendEmailViaProvider, type EmailSendResult } from "@/lib/email-provider";
 import { authRuntimeConfig } from "@/lib/auth";
+import { safeAuthBaseUrl } from "@/lib/auth-origin";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import {
   customerVisibleOrderWhere,
@@ -31,10 +32,13 @@ const customerPasswordMaxLength = 128;
 const customerDummyPasswordHash = "$2b$12$w1Njzk8SIIBx56u6pmcwpONxNv2ODRfq/fGRFd7kd49r2pzUpkOmW";
 const devFallbackSecret = "local-dev-customer-account-secret-change-before-sharing";
 
+class CustomerOneTimeTokenUnavailableError extends Error {}
+
 type CustomerSessionPayload = {
   customerAccountId: string;
   email: string;
   iat?: number;
+  jti?: string;
   exp: number;
 };
 
@@ -227,6 +231,7 @@ function createCustomerSessionToken(account: { id: string; email: string }, abso
     customerAccountId: account.id,
     email: normalizeCustomerAccountEmail(account.email) ?? account.email,
     iat: now,
+    jti: randomBytes(16).toString("base64url"),
     exp: absoluteExpiresAt?.getTime() ?? now + customerSessionDays * 24 * 60 * 60 * 1000
   };
   const body = encode(JSON.stringify(payload));
@@ -234,7 +239,9 @@ function createCustomerSessionToken(account: { id: string; email: string }, abso
 }
 
 function verifyCustomerSessionToken(token: string, options: { ignoreExpiration?: boolean } = {}): CustomerSessionPayload | null {
-  const [body, signature] = token.split(".");
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [body, signature] = parts;
   if (!body || !signature) return null;
   let expected: string;
   try {
@@ -249,6 +256,8 @@ function verifyCustomerSessionToken(token: string, options: { ignoreExpiration?:
   try {
     const payload = JSON.parse(decode(body)) as CustomerSessionPayload;
     if (!payload.customerAccountId || !payload.email || !payload.exp) return null;
+    if (Boolean(payload.iat) !== Boolean(payload.jti)) return null;
+    if (payload.iat !== undefined && (payload.iat > Date.now() + 60_000 || payload.exp <= payload.iat)) return null;
     if (!options.ignoreExpiration && payload.exp < Date.now()) return null;
     return payload;
   } catch {
@@ -389,10 +398,7 @@ async function hashCustomerPassword(password: string) {
 }
 
 function safeBaseUrl(requestUrl?: string | null) {
-  const configured = envValue("STORE_BASE_URL") || envValue("APP_URL");
-  if (configured) return configured.replace(/\/+$/, "");
-  if (requestUrl) return new URL(requestUrl).origin;
-  return "http://localhost:3000";
+  return safeAuthBaseUrl(requestUrl, "store");
 }
 
 function customerMagicLinkText(link: string) {
@@ -459,15 +465,22 @@ export async function requestCustomerMagicLink(input: {
 
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashCustomerMagicLinkToken(token);
-  const expiresAt = new Date(Date.now() + magicLinkMinutes * 60 * 1000);
-  await prisma.customerMagicLinkToken.create({
-    data: {
-      customerAccountId: account.id,
-      email,
-      tokenHash,
-      expiresAt
-    }
-  });
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + magicLinkMinutes * 60 * 1000);
+  await prisma.$transaction([
+    prisma.customerMagicLinkToken.updateMany({
+      where: { customerAccountId: account.id, usedAt: null },
+      data: { usedAt: now }
+    }),
+    prisma.customerMagicLinkToken.create({
+      data: {
+        customerAccountId: account.id,
+        email,
+        tokenHash,
+        expiresAt
+      }
+    })
+  ]);
 
   const link = `${safeBaseUrl(input.requestUrl)}/api/account/magic-link/verify?token=${encodeURIComponent(token)}`;
   const result = await sendEmailViaProvider(
@@ -599,14 +612,21 @@ export async function requestCustomerPasswordReset(input: {
 
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashCustomerPasswordResetToken(token);
-  const expiresAt = new Date(Date.now() + passwordResetMinutes * 60 * 1000);
-  await prisma.customerPasswordResetToken.create({
-    data: {
-      customerAccountId: account.id,
-      tokenHash,
-      expiresAt
-    }
-  });
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + passwordResetMinutes * 60 * 1000);
+  await prisma.$transaction([
+    prisma.customerPasswordResetToken.updateMany({
+      where: { customerAccountId: account.id, usedAt: null },
+      data: { usedAt: now }
+    }),
+    prisma.customerPasswordResetToken.create({
+      data: {
+        customerAccountId: account.id,
+        tokenHash,
+        expiresAt
+      }
+    })
+  ]);
 
   const link = `${safeBaseUrl(input.requestUrl)}/account/reset-password?token=${encodeURIComponent(token)}`;
   const result = await sendEmailViaProvider(
@@ -653,34 +673,45 @@ export async function resetCustomerPassword(input: {
   }
 
   const passwordHash = await hashCustomerPassword(input.password);
-  const [updatedAccount] = await prisma.$transaction([
-    prisma.customerAccount.update({
-      where: { id: record.customerAccount.id },
-      data: {
-        normalizedEmail: normalizeCustomerAccountEmail(record.customerAccount.email),
-        passwordHash,
-        passwordSetAt: now,
-        sessionRevokedBefore: now,
-        emailVerifiedAt: record.customerAccount.emailVerifiedAt ?? now,
-        lastLoginAt: now
-      },
-      select: { id: true, email: true }
-    }),
-    prisma.customerPasswordResetToken.update({
-      where: { id: record.id },
-      data: { usedAt: now }
-    }),
-    prisma.customerSession.updateMany({
-      where: {
-        customerAccountId: record.customerAccount.id,
-        revokedAt: null
-      },
-      data: {
-        revokedAt: now,
-        revokeReason: "password_reset"
-      }
-    })
-  ]);
+  let updatedAccount: { id: string; email: string };
+  try {
+    updatedAccount = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.customerPasswordResetToken.updateMany({
+        where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now }
+      });
+      if (claimed.count !== 1) throw new CustomerOneTimeTokenUnavailableError();
+
+      const account = await tx.customerAccount.update({
+        where: { id: record.customerAccount.id },
+        data: {
+          normalizedEmail: normalizeCustomerAccountEmail(record.customerAccount.email),
+          passwordHash,
+          passwordSetAt: now,
+          sessionRevokedBefore: now,
+          emailVerifiedAt: record.customerAccount.emailVerifiedAt ?? now,
+          lastLoginAt: now
+        },
+        select: { id: true, email: true }
+      });
+      await tx.customerSession.updateMany({
+        where: {
+          customerAccountId: record.customerAccount.id,
+          revokedAt: null
+        },
+        data: {
+          revokedAt: now,
+          revokeReason: "password_reset"
+        }
+      });
+      return account;
+    });
+  } catch (error) {
+    if (error instanceof CustomerOneTimeTokenUnavailableError) {
+      return { ok: false, reason: "invalid" as const, account: null };
+    }
+    throw error;
+  }
 
   return { ok: true, reason: "reset" as const, account: updatedAccount };
 }
@@ -700,52 +731,48 @@ export async function verifyCustomerMagicLink(token: string | null | undefined) 
   const email = normalizeCustomerAccountEmail(record.email);
   if (!email) return { ok: false, reason: "invalid" as const, account: null };
 
-  let account: CustomerAccountLookup | null;
+  if (record.customerAccount && record.customerAccount.status !== "active") {
+    return { ok: false, reason: "disabled_account" as const, account: null };
+  }
+
+  let updatedAccount: { id: string; email: string };
   try {
-    account = record.customerAccount
-      ? await touchCustomerAccountNormalizedEmail(
-          prisma,
-          {
-            id: record.customerAccount.id,
-            email: record.customerAccount.email,
-            normalizedEmail: record.customerAccount.normalizedEmail,
-            displayName: record.customerAccount.displayName,
-            status: record.customerAccount.status,
-            passwordHash: record.customerAccount.passwordHash,
-            sessionRevokedBefore: record.customerAccount.sessionRevokedBefore,
-            emailVerifiedAt: record.customerAccount.emailVerifiedAt
-          },
-          email
-        )
-      : await findOrCreateCustomerAccountByNormalizedEmail(email);
+    updatedAccount = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.customerMagicLinkToken.updateMany({
+        where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now }
+      });
+      if (claimed.count !== 1) throw new CustomerOneTimeTokenUnavailableError();
+
+      const account = record.customerAccount
+        ? await touchCustomerAccountNormalizedEmail(tx, record.customerAccount, email)
+        : await findOrCreateCustomerAccountByNormalizedEmail(email, tx);
+      if (!account || account.status !== "active") throw new CustomerOneTimeTokenUnavailableError();
+      if (normalizeCustomerAccountEmail(account.email) !== email && account.normalizedEmail !== email) {
+        throw new CustomerOneTimeTokenUnavailableError();
+      }
+
+      const verified = await tx.customerAccount.update({
+        where: { id: account.id },
+        data: {
+          normalizedEmail: email,
+          emailVerifiedAt: account.emailVerifiedAt ?? now,
+          lastLoginAt: now
+        },
+        select: { id: true, email: true }
+      });
+      await tx.customerMagicLinkToken.update({
+        where: { id: record.id },
+        data: { customerAccountId: account.id }
+      });
+      return verified;
+    });
   } catch (error) {
-    if (error instanceof CustomerAccountIdentityConflictError) return { ok: false, reason: "invalid" as const, account: null };
+    if (error instanceof CustomerOneTimeTokenUnavailableError || error instanceof CustomerAccountIdentityConflictError) {
+      return { ok: false, reason: "invalid" as const, account: null };
+    }
     throw error;
   }
-  if (!account) return { ok: false, reason: "invalid" as const, account: null };
-  if (normalizeCustomerAccountEmail(account.email) !== email && account.normalizedEmail !== email) {
-    return { ok: false, reason: "invalid" as const, account: null };
-  }
-  if (account.status !== "active") return { ok: false, reason: "disabled_account" as const, account: null };
-
-  const [updatedAccount] = await prisma.$transaction([
-    prisma.customerAccount.update({
-      where: { id: account.id },
-      data: {
-        normalizedEmail: email,
-        emailVerifiedAt: account.emailVerifiedAt ?? now,
-        lastLoginAt: now
-      },
-      select: { id: true, email: true }
-    }),
-    prisma.customerMagicLinkToken.update({
-      where: { id: record.id },
-      data: {
-        customerAccountId: account.id,
-        usedAt: now
-      }
-    })
-  ]);
 
   return { ok: true, reason: "verified" as const, account: updatedAccount };
 }
@@ -915,7 +942,8 @@ export async function setCustomerSessionCookie(response: NextResponse, account: 
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: customerSessionMaxAgeSeconds()
+    maxAge: customerSessionMaxAgeSeconds(),
+    priority: "high"
   });
 }
 
@@ -1083,7 +1111,8 @@ export function clearCustomerSessionCookie(response: NextResponse) {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 0
+      maxAge: 0,
+      priority: "high"
     });
   }
 }

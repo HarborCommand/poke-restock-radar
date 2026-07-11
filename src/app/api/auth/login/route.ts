@@ -1,27 +1,36 @@
 import bcrypt from "bcryptjs";
-import { NextResponse } from "next/server";
 import { authRuntimeConfig, createSessionToken, setSessionCookie } from "@/lib/auth";
+import { AuthOriginError, assertSameOriginRequest, authOriginErrorResponse } from "@/lib/auth-origin";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
-import { badRequest, readJson } from "@/lib/http";
+import { badRequest, privateJson, readJson, withPrivateNoStore } from "@/lib/http";
+import { checkPublicRateLimit, PublicRateLimitExceededError, publicRateLimitResponse } from "@/lib/rate-limit";
 import { loginSchema } from "@/lib/validation";
 import type { Role } from "@/types/radar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const adminDummyPasswordHash = "$2b$12$w1Njzk8SIIBx56u6pmcwpONxNv2ODRfq/fGRFd7kd49r2pzUpkOmW";
+const invalidLoginMessage = "Email or password did not match a private account.";
 
 export async function POST(request: Request) {
   try {
+    assertSameOriginRequest(request);
     const input = loginSchema.parse(await readJson(request));
     const authConfig = authRuntimeConfig();
     if (!authConfig.authReady) {
-      return NextResponse.json(
+      return privateJson(
         { error: "Authentication is not configured correctly. Ask the admin to verify AUTH_SECRET in production." },
-        { status: 503 }
+        503
       );
     }
 
     const normalizedEmail = input.email.trim().toLowerCase();
+    await checkPublicRateLimit({
+      request,
+      action: "admin_login",
+      identifiers: [{ scope: "email", value: normalizedEmail }]
+    });
     const matchingUsers = await prisma.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "User" WHERE lower("email") = ${normalizedEmail} LIMIT 1
     `;
@@ -29,29 +38,15 @@ export async function POST(request: Request) {
       ? await prisma.user.findUnique({ where: { id: matchingUsers[0].id } })
       : null;
 
-    if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) {
+    const passwordMatches = await bcrypt.compare(input.password, user?.passwordHash ?? adminDummyPasswordHash);
+    if (!user || !passwordMatches || user.disabledAt) {
       await logAudit({
-        actorEmail: normalizedEmail,
+        actorEmail: "anonymous-auth",
         action: "auth.login.failed",
         entityType: "USER",
-        summary: `Failed login attempt for ${normalizedEmail}.`
+        summary: "Failed private account login attempt."
       });
-      return NextResponse.json(
-        { error: "Email or password did not match a private account. Check the credentials or use password reset." },
-        { status: 401 }
-      );
-    }
-
-    if (user.disabledAt) {
-      await logAudit({
-        userId: user.id,
-        actorEmail: user.email,
-        action: "auth.login.disabled",
-        entityType: "USER",
-        entityId: user.id,
-        summary: `Disabled account login blocked for ${user.email}.`
-      });
-      return NextResponse.json({ error: "This private account is disabled. Ask the admin to re-enable access." }, { status: 403 });
+      return privateJson({ error: invalidLoginMessage }, 401);
     }
 
     const updatedUser = await prisma.user.update({
@@ -85,15 +80,17 @@ export async function POST(request: Request) {
       action: "auth.login.success",
       entityType: "USER",
       entityId: sessionUser.id,
-      summary: `${sessionUser.email} signed in.`
+      summary: "Private account signed in."
     });
-    const response = NextResponse.json({ user: sessionUser });
+    const response = privateJson({ user: sessionUser });
     setSessionCookie(response, createSessionToken(sessionUser));
     return response;
   } catch (error) {
+    if (error instanceof PublicRateLimitExceededError) return publicRateLimitResponse(error);
+    if (error instanceof AuthOriginError) return authOriginErrorResponse();
     if (error instanceof Error && error.message.includes("AUTH_SECRET")) {
-      return NextResponse.json({ error: error.message }, { status: 503 });
+      return privateJson({ error: "Authentication is temporarily unavailable." }, 503);
     }
-    return badRequest(error);
+    return withPrivateNoStore(badRequest(error));
   }
 }
