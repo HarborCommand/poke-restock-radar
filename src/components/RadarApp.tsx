@@ -4484,6 +4484,7 @@ function CustomerAttachOrderModal({
           reason,
           note,
           confirmEmailMismatch,
+          confirmRewardApplication: Boolean(selectedCandidate.currentLinkedCustomer && applyRewards),
           applyRewards
         })
       });
@@ -4495,7 +4496,10 @@ function CustomerAttachOrderModal({
     }
   };
 
-  const selectedNeedsManualConfirmation = Boolean(selectedCandidate?.requiresManualConfirmation);
+  const legacyRewardReviewRequired = Boolean(selectedCandidate?.currentLinkedCustomer && applyRewards && selectedCandidate.matchStatus === "no_email_recorded");
+  const selectedNeedsManualConfirmation = Boolean(selectedCandidate?.requiresManualConfirmation || legacyRewardReviewRequired);
+  const internalNoteRequired = Boolean(selectedCandidate?.requiresInternalNote || legacyRewardReviewRequired);
+  const attachSubmitDisabled = submitting || !selectedCandidate || (selectedNeedsManualConfirmation && !confirmEmailMismatch) || (internalNoteRequired && !note.trim());
   const rewardsDisabledReason = selectedCandidate?.rewards.disabledReason;
 
   return (
@@ -4583,7 +4587,7 @@ function CustomerAttachOrderModal({
                   </label>
                 ) : null}
                 <label>
-                  <span>Internal link note{selectedCandidate.requiresInternalNote ? " (required)" : ""}</span>
+                  <span>Internal link note{internalNoteRequired ? " (required)" : ""}</span>
                   <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Private admin note. Do not paste sensitive documents here." />
                 </label>
                 <label className="checkbox-label">
@@ -4611,7 +4615,7 @@ function CustomerAttachOrderModal({
             <button className="secondary-action" type="button" onClick={onClose} disabled={submitting}>
               Cancel
             </button>
-            <button className="primary-action" type="submit" disabled={submitting || !selectedCandidate}>
+            <button className="primary-action" type="submit" disabled={attachSubmitDisabled}>
               <Save size={16} />
               {submitting ? "Linking" : "Attach Order"}
             </button>
@@ -17228,6 +17232,7 @@ function SalesAttachCustomerModal({
             reason,
             note,
             confirmEmailMismatch,
+            confirmRewardApplication: Boolean(selectedCandidate.currentLinkedCustomer && applyRewards),
             applyRewards
           })
         }),
@@ -17241,10 +17246,12 @@ function SalesAttachCustomerModal({
   };
 
   const customers = customersData?.customers ?? [];
-  const selectedNeedsManualConfirmation = Boolean(selectedCandidate?.requiresManualConfirmation);
+  const legacyRewardReviewRequired = Boolean(selectedCandidate?.currentLinkedCustomer && applyRewards && selectedCandidate.matchStatus === "no_email_recorded");
+  const selectedNeedsManualConfirmation = Boolean(selectedCandidate?.requiresManualConfirmation || legacyRewardReviewRequired);
+  const internalNoteRequired = Boolean(selectedCandidate?.requiresInternalNote || legacyRewardReviewRequired);
   const selectedCustomerEligible = Boolean(selectedCustomer && selectedCustomer.status === "active" && selectedCustomer.emailVerified);
   const rewardsDisabledReason = selectedCandidate?.rewards.disabledReason;
-  const submitDisabled = busy || candidateLoading || !selectedCustomer || !selectedCandidate || !selectedCustomerEligible;
+  const submitDisabled = busy || candidateLoading || !selectedCustomer || !selectedCandidate || !selectedCustomerEligible || (selectedNeedsManualConfirmation && !confirmEmailMismatch) || (internalNoteRequired && !note.trim());
 
   return (
     <div className="inventory-modal-backdrop customers-modal-backdrop" role="presentation">
@@ -17352,7 +17359,7 @@ function SalesAttachCustomerModal({
                   </label>
                 ) : null}
                 <label>
-                  <span>Internal link note{selectedCandidate?.requiresInternalNote ? " (required)" : ""}</span>
+                  <span>Internal link note{internalNoteRequired ? " (required)" : ""}</span>
                   <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Private admin note. Do not paste sensitive customer documents here." />
                 </label>
                 <label className="checkbox-label">
@@ -17391,6 +17398,131 @@ function SalesAttachCustomerModal({
   );
 }
 
+function ApplyLinkedRewardsModal({
+  candidate,
+  customer,
+  target,
+  loading,
+  applying,
+  error,
+  onClose,
+  onConfirm
+}: {
+  candidate: AdminCustomerAttachOrderCandidateDTO | null;
+  customer: AdminCustomerAttachOrderSearchResponseDTO["customer"] | null;
+  target: SaleAttachTarget;
+  loading: boolean;
+  applying: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConfirm: (input: { reason: string; note: string; confirmOwnership: boolean }) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("POS sale follow-up");
+  const [note, setNote] = useState("");
+  const [confirmOwnership, setConfirmOwnership] = useState(false);
+  const legacyReviewRequired = candidate?.matchStatus === "no_email_recorded";
+  const points = candidate?.rewards.points ?? 0;
+  const canApply = Boolean(candidate?.rewardsEligible && points > 0);
+  const confirmationComplete = !legacyReviewRequired || (confirmOwnership && note.trim().length > 0);
+  const submitDisabled = loading || applying || !canApply || !confirmationComplete || reason.trim().length < 4;
+
+  async function submitConfirmation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitDisabled) return;
+    await onConfirm({ reason, note, confirmOwnership });
+  }
+
+  return (
+    <div className="inventory-modal-backdrop customers-modal-backdrop reward-confirmation-backdrop" role="presentation">
+      <div className="inventory-modal customers-admin-modal reward-confirmation-modal" role="dialog" aria-modal="true" aria-label="Apply Rewards to Linked Purchase">
+        <div className="modal-heading-row reward-confirmation-header">
+          <div>
+            <span className="eyebrow">Admin-only reward backfill</span>
+            <h3>Apply Rewards to Linked Purchase?</h3>
+            <p>Review the server-calculated award before adding points to this customer.</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close reward confirmation" onClick={onClose} disabled={applying}>
+            <X size={18} />
+          </button>
+        </div>
+        <form className="reward-confirmation-form" onSubmit={submitConfirmation}>
+          <div className="reward-confirmation-body">
+            {loading ? (
+              <EmptyState icon={RefreshCw} title="Checking reward eligibility" detail="Loading the latest server-verified purchase and reward state." />
+            ) : candidate && customer ? (
+              <>
+                <section className="reward-confirmation-customer" aria-label="Selected customer">
+                  <span className="customer-profile-avatar" aria-hidden="true">{customer.displayName.slice(0, 1).toUpperCase()}</span>
+                  <div>
+                    <small>Selected customer</small>
+                    <strong>{customer.displayName}</strong>
+                    <span>{customer.maskedEmail} - {customer.emailVerified ? "Verified account" : "Unverified account"}</span>
+                  </div>
+                </section>
+                <div className="reward-confirmation-grid">
+                  <span><small>Purchase</small><strong>{target.label}</strong></span>
+                  <span><small>Date</small><strong>{shortDate(candidate.date)}</strong></span>
+                  <span><small>Source</small><strong>{formatStatus(candidate.source)}</strong></span>
+                  <span><small>Eligible subtotal</small><strong>{money(candidate.eligibleSubtotal)}</strong></span>
+                  <span><small>Calculated award</small><strong>{points.toLocaleString()} point{points === 1 ? "" : "s"}</strong></span>
+                  <span><small>Reward status</small><strong>{formatStatus(candidate.rewards.status)}</strong></span>
+                  <span><small>Ownership match</small><strong>{customerAttachMatchLabel(candidate)}</strong></span>
+                  <span><small>Review evidence</small><strong>{candidate.ownershipReviewCompleted ? "Prior review recorded" : "Fresh review required"}</strong></span>
+                </div>
+                {legacyReviewRequired ? (
+                  <div className="reward-confirmation-legacy">
+                    <div className="customer-attach-match-banner watch">
+                      <AlertTriangle size={16} />
+                      <span>Legacy sale - no email recorded</span>
+                    </div>
+                    <p>Confirm ownership from the receipt, purchase date, product, phone, or other private records before applying rewards.</p>
+                    <label className="checkbox-label">
+                      <input checked={confirmOwnership} onChange={(event) => setConfirmOwnership(event.target.checked)} type="checkbox" />
+                      <span>I reviewed available records and confirmed this purchase belongs to the selected customer.</span>
+                    </label>
+                  </div>
+                ) : null}
+                <label>
+                  <span>Reason</span>
+                  <select aria-label="Reward application reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
+                    {customerAttachOrderReasons.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Internal note{legacyReviewRequired ? " (required)" : " (optional)"}</span>
+                  <textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    maxLength={1000}
+                    required={legacyReviewRequired}
+                    placeholder="Private admin note. Do not paste sensitive documents here."
+                  />
+                </label>
+                <div className={`reward-confirmation-warning ${canApply ? "watch" : "bad"}`}>
+                  <AlertTriangle size={17} />
+                  <span>{canApply
+                    ? `Confirming will add ${points.toLocaleString()} point${points === 1 ? "" : "s"} immediately. This action creates an auditable ledger entry.`
+                    : candidate.rewardsBlockedReason ?? candidate.rewards.message}</span>
+                </div>
+              </>
+            ) : null}
+            {error ? <p className="form-error">{error}</p> : null}
+          </div>
+          <div className="inventory-edit-actions reward-confirmation-actions">
+            <button className="secondary-action" type="button" onClick={onClose} disabled={applying}>Cancel</button>
+            <button className="primary-action" type="submit" disabled={submitDisabled}>
+              <Star size={16} />
+              {applying ? "Applying Rewards" : `Confirm and Apply ${points.toLocaleString()} Point${points === 1 ? "" : "s"}`}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function SaleDetailsModal({
   item,
   sale,
@@ -17418,10 +17550,19 @@ function SaleDetailsModal({
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
   const [refundOpen, setRefundOpen] = useState(false);
   const [attachCustomerOpen, setAttachCustomerOpen] = useState(false);
+  const [rewardConfirmationOpen, setRewardConfirmationOpen] = useState(false);
+  const [rewardConfirmationLoading, setRewardConfirmationLoading] = useState(false);
+  const [rewardConfirmationError, setRewardConfirmationError] = useState<string | null>(null);
+  const [rewardCandidate, setRewardCandidate] = useState<AdminCustomerAttachOrderCandidateDTO | null>(null);
+  const [rewardCustomer, setRewardCustomer] = useState<AdminCustomerAttachOrderSearchResponseDTO["customer"] | null>(null);
   const [applyingRewards, setApplyingRewards] = useState(false);
   const [rewardOverride, setRewardOverride] = useState<Partial<InventorySaleDTO> & { id: string } | null>(null);
   useEffect(() => {
     setRewardOverride(null);
+    setRewardConfirmationOpen(false);
+    setRewardCandidate(null);
+    setRewardCustomer(null);
+    setRewardConfirmationError(null);
   }, [sale.id]);
   const displaySale: InventorySaleDTO = rewardOverride?.id === sale.id ? { ...sale, ...rewardOverride } : sale;
   const tone = saleLifecycleTone(displaySale);
@@ -17459,12 +17600,16 @@ function SaleDetailsModal({
     popup.print();
   }
 
-  async function applyRewardsNow() {
+  async function openRewardsConfirmation() {
     if (!displaySale.customerAccountId || !attachTarget || applyRewardsDisabledReason) {
       setSaleMessage(applyRewardsDisabledReason ?? "This sale is not ready for reward backfill.");
       return;
     }
-    setApplyingRewards(true);
+    setRewardConfirmationOpen(true);
+    setRewardConfirmationLoading(true);
+    setRewardConfirmationError(null);
+    setRewardCandidate(null);
+    setRewardCustomer(null);
     setSaleMessage(null);
     try {
       const params = new URLSearchParams({ query: attachTarget.reference });
@@ -17473,19 +17618,21 @@ function SaleDetailsModal({
       );
       const candidate = search.candidates.find((candidate) => saleAttachCandidateMatches(candidate, attachTarget));
       if (!candidate) throw new Error(`${attachTarget.label} was not found in linked reward candidates.`);
-      if (candidate.matchStatus === "email_mismatch" || candidate.matchStatus === "customer_unverified") {
-        setSaleMessage(candidate.rewardsBlockedReason ?? candidate.matchMessage);
-        return;
-      }
-      if (candidate.requiresManualConfirmation || candidate.requiresInternalNote) {
-        setSaleMessage("Ownership review required before rewards can be applied. Complete the review in Attach to Customer.");
-        setAttachCustomerOpen(true);
-        return;
-      }
-      if (!candidate.rewardsEligible) {
-        setSaleMessage(candidate.rewardsBlockedReason ?? candidate.rewards.message);
-        return;
-      }
+      setRewardCandidate(candidate);
+      setRewardCustomer(search.customer);
+    } catch (error) {
+      setRewardConfirmationError(error instanceof Error ? error.message : "Could not load reward confirmation details.");
+    } finally {
+      setRewardConfirmationLoading(false);
+    }
+  }
+
+  async function confirmApplyRewards(input: { reason: string; note: string; confirmOwnership: boolean }) {
+    if (applyingRewards || !displaySale.customerAccountId || !attachTarget || !rewardCandidate) return;
+    setApplyingRewards(true);
+    setRewardConfirmationError(null);
+    try {
+      const candidate = rewardCandidate;
       const result = await requestJson<AdminCustomerAttachOrderResultDTO>(`/api/radar/customers/${displaySale.customerAccountId}/attach-order`, {
         method: "POST",
         body: JSON.stringify({
@@ -17493,9 +17640,10 @@ function SaleDetailsModal({
           orderId: candidate.type === "storefront_order" ? candidate.id : undefined,
           saleReference: candidate.type === "pos_sale" ? candidate.saleReference ?? undefined : undefined,
           saleId: candidate.type === "pos_sale" ? candidate.saleId ?? undefined : undefined,
-          reason: "Admin rewards backfill after customer link",
-          note: "",
-          confirmEmailMismatch: false,
+          reason: input.reason,
+          note: input.note,
+          confirmEmailMismatch: candidate.matchStatus === "no_email_recorded" ? input.confirmOwnership : false,
+          confirmRewardApplication: true,
           applyRewards: true
         })
       });
@@ -17510,13 +17658,16 @@ function SaleDetailsModal({
       }
       const successMessage = saleAttachSuccessMessage(result, attachTarget);
       setSaleMessage(successMessage);
+      setRewardConfirmationOpen(false);
+      setRewardCandidate(null);
+      setRewardCustomer(null);
       try {
         await onRefresh();
       } catch {
         setSaleMessage(`${successMessage} Refresh the sales list if totals still look stale.`);
       }
     } catch (error) {
-      setSaleMessage(error instanceof Error ? error.message : "Could not apply rewards for this sale.");
+      setRewardConfirmationError(error instanceof Error ? error.message : "Could not apply rewards for this sale.");
     } finally {
       setApplyingRewards(false);
     }
@@ -17741,7 +17892,7 @@ function SaleDetailsModal({
               type="button"
               disabled={applyingRewards || Boolean(applyRewardsDisabledReason)}
               title={applyRewardsDisabledReason ?? "Apply rewards for this already-linked purchase"}
-              onClick={() => void applyRewardsNow()}
+              onClick={() => void openRewardsConfirmation()}
             >
               <Star size={14} />
               {applyingRewards ? "Applying Rewards" : applyRewardsDisabledReason === "Rewards already awarded." ? "Already Awarded" : "Apply Rewards Now"}
@@ -17775,6 +17926,24 @@ function SaleDetailsModal({
             setSaleMessage(`${message} Refresh the sales list if totals still look stale.`);
           });
         }}
+      />
+    ) : null}
+    {isAdmin && rewardConfirmationOpen && attachTarget ? (
+      <ApplyLinkedRewardsModal
+        candidate={rewardCandidate}
+        customer={rewardCustomer}
+        target={attachTarget}
+        loading={rewardConfirmationLoading}
+        applying={applyingRewards}
+        error={rewardConfirmationError}
+        onClose={() => {
+          if (applyingRewards) return;
+          setRewardConfirmationOpen(false);
+          setRewardCandidate(null);
+          setRewardCustomer(null);
+          setRewardConfirmationError(null);
+        }}
+        onConfirm={confirmApplyRewards}
       />
     ) : null}
     </>

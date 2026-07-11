@@ -23331,6 +23331,173 @@ body .customer-attach-actions .primary-action {
   min-height: 42px;
 }
 
+body .customers-admin-modal.reward-confirmation-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(780px, calc(100dvh - 32px));
+  overflow: hidden;
+  padding: 0;
+}
+
+body .reward-confirmation-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 18px;
+  margin: 0;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 22px 24px 16px;
+}
+
+body .reward-confirmation-header > div {
+  min-width: 0;
+}
+
+body .reward-confirmation-header .icon-button {
+  justify-self: end;
+  align-self: start;
+}
+
+body .reward-confirmation-form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body .reward-confirmation-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 24px;
+}
+
+body .reward-confirmation-body > label {
+  display: grid;
+  gap: 7px;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+body .reward-confirmation-body select,
+body .reward-confirmation-body textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+}
+
+body .reward-confirmation-body select {
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+body .reward-confirmation-body textarea {
+  min-height: 96px;
+  resize: vertical;
+  padding: 11px 12px;
+}
+
+body .reward-confirmation-customer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #dbe3ea;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+body .reward-confirmation-customer > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+body .reward-confirmation-customer small,
+body .reward-confirmation-grid small {
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+body .reward-confirmation-customer strong,
+body .reward-confirmation-customer span,
+body .reward-confirmation-grid strong {
+  overflow-wrap: anywhere;
+}
+
+body .reward-confirmation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body .reward-confirmation-grid > span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+body .reward-confirmation-legacy {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #fbbf24;
+  border-radius: 12px;
+  background: #fffbeb;
+  padding: 12px;
+}
+
+body .reward-confirmation-legacy p {
+  margin: 0;
+  color: #78350f;
+}
+
+body .reward-confirmation-warning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid #fbbf24;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #78350f;
+  padding: 11px 12px;
+}
+
+body .reward-confirmation-warning.bad {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+body .reward-confirmation-actions {
+  position: static;
+  justify-content: flex-end;
+  margin: 0;
+  border-top: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  box-shadow: none;
+  padding: 16px 24px;
+  backdrop-filter: none;
+}
+
+body .reward-confirmation-actions .secondary-action,
+body .reward-confirmation-actions .primary-action {
+  min-height: 42px;
+}
+
 body .sale-section-heading {
   display: flex;
   align-items: flex-start;
@@ -29680,6 +29847,12 @@ body .customers-rewards-tabs {
     border-radius: 18px;
   }
 
+  body .customers-admin-modal.reward-confirmation-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 18px;
+  }
+
   body .customer-profile-edit-modal .customer-profile-edit-header {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
@@ -29698,6 +29871,12 @@ body .customers-rewards-tabs {
     padding: 18px 16px 14px;
   }
 
+  body .reward-confirmation-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 18px 16px 14px;
+  }
+
   body .customer-profile-edit-body {
     padding: 16px;
   }
@@ -29707,6 +29886,10 @@ body .customers-rewards-tabs {
   }
 
   body .customer-attach-order-body {
+    padding: 16px;
+  }
+
+  body .reward-confirmation-body {
     padding: 16px;
   }
 
@@ -29722,6 +29905,11 @@ body .customers-rewards-tabs {
   }
 
   body .customer-attach-legacy-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body .reward-confirmation-grid,
+  body .reward-confirmation-customer {
     grid-template-columns: 1fr;
   }
 
@@ -29794,6 +29982,14 @@ body .customers-rewards-tabs {
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   }
 
+  body .reward-confirmation-modal .reward-confirmation-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+
   body .customer-profile-edit-actions .secondary-action,
   body .customer-profile-edit-actions .primary-action {
     width: 100%;
@@ -29808,6 +30004,12 @@ body .customers-rewards-tabs {
 
   body .customer-attach-actions .secondary-action,
   body .customer-attach-actions .primary-action {
+    width: 100%;
+    justify-content: center;
+  }
+
+  body .reward-confirmation-actions .secondary-action,
+  body .reward-confirmation-actions .primary-action {
     width: 100%;
     justify-content: center;
   }

@@ -551,6 +551,7 @@ export type AdminCustomerAttachOrderCandidateDTO = {
   maskedCustomerEmail: string | null;
   maskedCustomerPhone: string | null;
   total: number;
+  eligibleSubtotal: number;
   status: string;
   currentLinkedCustomer: {
     id: string;

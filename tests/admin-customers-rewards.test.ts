@@ -406,6 +406,7 @@ test("admin can attach matching past online order and backfill rewards once", as
     orderId: order.id,
     reason: "Email ownership confirmed",
     confirmEmailMismatch: false,
+    confirmRewardApplication: true,
     applyRewards: true
   }, getAdminCustomerRewardDetail);
   assert.equal(duplicate.duplicate, true);
@@ -617,11 +618,24 @@ test("admin can apply rewards once to an already-linked eligible POS sale", asyn
     }
   });
 
+  await assert.rejects(
+    attachAdminCustomerOrder(adminUser(user.id), customer.id, {
+      type: "pos_sale",
+      saleReference,
+      reason: "Apply rewards after earlier customer link",
+      confirmEmailMismatch: false,
+      applyRewards: true
+    }, getAdminCustomerRewardDetail),
+    /Confirm the sale reward application/i
+  );
+  assert.equal(await prisma.rewardLedgerEntry.count({ where: { idempotencyKey: `rewards:backfill:pos:${saleReference}` } }), 0);
+
   const result = await attachAdminCustomerOrder(adminUser(user.id), customer.id, {
     type: "pos_sale",
     saleReference,
     reason: "Apply rewards after earlier customer link",
     confirmEmailMismatch: false,
+    confirmRewardApplication: true,
     applyRewards: true
   }, getAdminCustomerRewardDetail);
 
@@ -639,6 +653,7 @@ test("admin can apply rewards once to an already-linked eligible POS sale", asyn
     saleReference,
     reason: "Repeat reward apply",
     confirmEmailMismatch: false,
+    confirmRewardApplication: true,
     applyRewards: true
   }, getAdminCustomerRewardDetail);
 
@@ -826,7 +841,9 @@ test("admin can review a no-email legacy sale and award rewards exactly once", a
     type: "pos_sale",
     saleId: legacySale.id,
     reason: "Repeat legacy reward check",
-    confirmEmailMismatch: false,
+    note: "Repeat confirmation used to verify idempotency.",
+    confirmEmailMismatch: true,
+    confirmRewardApplication: true,
     applyRewards: true
   }, getAdminCustomerRewardDetail);
   assert.equal(duplicate.duplicate, true);
@@ -867,6 +884,7 @@ test("already-linked no-email sale requires ownership review before Apply Reward
       saleId: legacySale.id,
       reason: "Apply legacy rewards",
       confirmEmailMismatch: false,
+      confirmRewardApplication: true,
       applyRewards: true
     }, getAdminCustomerRewardDetail),
     /ownership review/i
@@ -878,6 +896,7 @@ test("already-linked no-email sale requires ownership review before Apply Reward
     reason: "Apply legacy rewards",
     note: "Owner reviewed receipt and sale details.",
     confirmEmailMismatch: true,
+    confirmRewardApplication: true,
     applyRewards: true
   }, getAdminCustomerRewardDetail);
   assert.equal(applied.duplicate, true);
@@ -890,6 +909,75 @@ test("already-linked no-email sale requires ownership review before Apply Reward
   assert.equal(reviewed.customerLinkNote, "Owner reviewed receipt and sale details.");
   const reviewAudit = await prisma.auditLog.findFirst({ where: { action: "customer.pos_sale.ownership_reviewed", entityId: legacySale.id } });
   assert.ok(reviewAudit);
+});
+
+test("already-reviewed no-email sale requires a fresh confirmation and private note before reward backfill", async () => {
+  const { user, customer } = await createCustomerWithRewards();
+  const item = await createAttachInventoryItem();
+  const legacySale = await prisma.inventorySale.create({
+    data: {
+      inventoryItemId: item.id,
+      customerAccountId: customer.id,
+      quantitySold: 1,
+      soldPricePerItem: 31,
+      grossSale: 31,
+      platform: "local",
+      netSale: 31,
+      costBasis: 14,
+      profitLoss: 17,
+      customerEmail: null,
+      customerMatchMethod: "admin_manual",
+      customerLinkSource: "admin_manual",
+      customerLinkReason: "Prior ownership review",
+      customerLinkNote: "Prior private review evidence.",
+      customerLinkedAt: new Date(),
+      soldAt: new Date()
+    }
+  });
+
+  const before = await searchAdminCustomerAttachCandidates(customer.id, legacySale.id);
+  const candidate = before.candidates.find((item) => item.saleId === legacySale.id);
+  assert.ok(candidate);
+  assert.equal(candidate.matchStatus, "no_email_recorded");
+  assert.equal(candidate.ownershipReviewCompleted, true);
+  assert.equal(candidate.eligibleSubtotal, 31);
+
+  await assert.rejects(
+    attachAdminCustomerOrder(adminUser(user.id), customer.id, {
+      type: "pos_sale",
+      saleId: legacySale.id,
+      reason: "Fresh reward review",
+      confirmEmailMismatch: false,
+      confirmRewardApplication: true,
+      applyRewards: true
+    }, getAdminCustomerRewardDetail),
+    /Confirm the ownership review before applying rewards/i
+  );
+  await assert.rejects(
+    attachAdminCustomerOrder(adminUser(user.id), customer.id, {
+      type: "pos_sale",
+      saleId: legacySale.id,
+      reason: "Fresh reward review",
+      confirmEmailMismatch: true,
+      confirmRewardApplication: true,
+      applyRewards: true
+    }, getAdminCustomerRewardDetail),
+    /private internal note/i
+  );
+  assert.equal(await prisma.rewardLedgerEntry.count({ where: { idempotencyKey: `rewards:backfill:pos:${legacySale.id}` } }), 0);
+
+  const result = await attachAdminCustomerOrder(adminUser(user.id), customer.id, {
+    type: "pos_sale",
+    saleId: legacySale.id,
+    reason: "Fresh reward review",
+    note: "Fresh receipt and purchase-date review completed.",
+    confirmEmailMismatch: true,
+    confirmRewardApplication: true,
+    applyRewards: true
+  }, getAdminCustomerRewardDetail);
+  assert.equal(result.rewardsApplied, true);
+  assert.equal(result.rewardPointsAwarded, 31);
+  assert.equal(await prisma.rewardLedgerEntry.count({ where: { idempotencyKey: `rewards:backfill:pos:${legacySale.id}` } }), 1);
 });
 
 test("refunded no-email sale can link after review but cannot receive rewards", async () => {
@@ -1048,6 +1136,15 @@ test("admin customer attach order validation requires scoped identifiers and str
     confirmEmailMismatch: false,
     applyRewards: false
   }));
+  const confirmedRewardApplication = adminCustomerAttachOrderSchema.parse({
+    type: "pos_sale",
+    saleId: "sale-1",
+    reason: "POS sale follow-up",
+    confirmEmailMismatch: false,
+    confirmRewardApplication: true,
+    applyRewards: true
+  });
+  assert.equal(confirmedRewardApplication.confirmRewardApplication, true);
   assert.throws(
     () => adminCustomerAttachOrderSchema.parse({
       type: "storefront_order",
@@ -1170,7 +1267,7 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(attachModal, /selectedCandidate\.type === "pos_sale" \? selectedCandidate\.saleId \?\? undefined : undefined/);
   assert.match(attachModal, /disabled=\{!selectedCandidate\.rewardsEligible\}/);
   assert.match(attachModal, /selectedCandidate\?\.requiresManualConfirmation/);
-  assert.match(attachModal, /selectedCandidate\.requiresInternalNote/);
+  assert.match(attachModal, /selectedCandidate\?\.requiresInternalNote/);
   assert.match(attachModal, /selectedCandidate\.matchStatus === "no_email_recorded"/);
   const salesAttachModal = app.slice(
     app.indexOf("function SalesAttachCustomerModal"),
@@ -1190,8 +1287,23 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(salesAttachModal, /ownershipConfirmationCopy\(selectedCandidate\)/);
   assert.match(salesAttachModal, /Backfill rewards for this linked purchase when eligible/);
   assert.match(salesAttachModal, /disabled=\{!selectedCandidate\?\.rewardsEligible\}/);
+  assert.match(salesAttachModal, /confirmRewardApplication: Boolean\(selectedCandidate\.currentLinkedCustomer && applyRewards\)/);
   assert.match(app, /customer\.maskedEmail/);
   assert.doesNotMatch(salesAttachModal, /customerEmail|passwordHash|sessionToken|resetToken|authSecret/i);
+  const rewardConfirmationModal = app.slice(
+    app.indexOf("function ApplyLinkedRewardsModal"),
+    app.indexOf("function SaleDetailsModal")
+  );
+  assert.match(rewardConfirmationModal, /aria-label="Apply Rewards to Linked Purchase"/);
+  assert.match(rewardConfirmationModal, /Apply Rewards to Linked Purchase\?/);
+  assert.match(rewardConfirmationModal, /Eligible subtotal/);
+  assert.match(rewardConfirmationModal, /Calculated award/);
+  assert.match(rewardConfirmationModal, /Legacy sale - no email recorded/);
+  assert.match(rewardConfirmationModal, /I reviewed available records and confirmed this purchase belongs to the selected customer/);
+  assert.match(rewardConfirmationModal, /Internal note\{legacyReviewRequired \? " \(required\)" : " \(optional\)"\}/);
+  assert.match(rewardConfirmationModal, /Confirm and Apply \$\{points\.toLocaleString\(\)\} Point/);
+  assert.match(rewardConfirmationModal, /customer\.maskedEmail/);
+  assert.doesNotMatch(rewardConfirmationModal, /customer\.email\b|customerEmail|passwordHash|sessionToken|resetToken|authSecret|adminNote/i);
   const saleDetailsModal = app.slice(
     app.indexOf("function SaleDetailsModal"),
     app.indexOf("function EditSaleModal")
@@ -1204,10 +1316,25 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(saleDetailsModal, /saleApplyRewardsDisabledReason\(displaySale\)/);
   assert.match(saleDetailsModal, /rewardPointsEarned: result\.rewardsApplied \? result\.rewardPointsAwarded : displaySale\.rewardPointsEarned/);
   assert.match(saleDetailsModal, /result\.rewardStatus === "already_awarded"/);
-  assert.match(saleDetailsModal, /candidate\.requiresManualConfirmation \|\| candidate\.requiresInternalNote/);
-  assert.match(saleDetailsModal, /Ownership review required before rewards can be applied/);
+  assert.match(saleDetailsModal, /openRewardsConfirmation/);
+  assert.match(saleDetailsModal, /confirmApplyRewards/);
+  assert.match(saleDetailsModal, /confirmRewardApplication: true/);
+  const openRewardsConfirmation = saleDetailsModal.slice(
+    saleDetailsModal.indexOf("async function openRewardsConfirmation"),
+    saleDetailsModal.indexOf("async function confirmApplyRewards")
+  );
+  assert.match(openRewardsConfirmation, /requestJson<AdminCustomerAttachOrderSearchResponseDTO>/);
+  assert.doesNotMatch(openRewardsConfirmation, /method: "POST"|applyRewards: true/);
+  const confirmApplyRewards = saleDetailsModal.slice(
+    saleDetailsModal.indexOf("async function confirmApplyRewards"),
+    saleDetailsModal.indexOf("function applyAttachResultToOpenSale")
+  );
+  assert.match(confirmApplyRewards, /method: "POST"/);
+  assert.match(confirmApplyRewards, /confirmRewardApplication: true/);
+  assert.match(confirmApplyRewards, /applyRewards: true/);
   assert.match(saleDetailsModal, /await onRefresh\(\)/);
   assert.match(saleDetailsModal, /Already Awarded/);
+  assert.match(saleDetailsModal, /<ApplyLinkedRewardsModal/);
   assert.match(saleDetailsModal, /isAdmin && attachTarget && !displaySale\.customerAccountId/);
   assert.match(saleDetailsModal, /Customer link/);
   assert.match(saleDetailsModal, /Linked customer saved/);
@@ -1276,4 +1403,15 @@ test("attach past order modal has compact desktop and mobile layout", () => {
   assert.match(css, /body \.sales-attach-customer\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;/);
   assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?body \.customer-attach-search-row,[\s\S]*?body \.customer-attach-candidate,[\s\S]*?body \.sales-attach-target-card,[\s\S]*?body \.sales-attach-customer\s*\{[\s\S]*?grid-template-columns: 1fr;/);
   assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?body \.customer-attach-order-modal \.customer-attach-actions\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+});
+
+test("reward confirmation modal stays compact and mobile safe", () => {
+  const css = readFileSync(path.join(projectRoot, "src/app/globals.css"), "utf8");
+
+  assert.match(css, /body \.customers-admin-modal\.reward-confirmation-modal\s*\{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\);[\s\S]*?overflow: hidden;/);
+  assert.match(css, /body \.reward-confirmation-form\s*\{[\s\S]*?grid-template-rows: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /body \.reward-confirmation-grid\s*\{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(css, /body \.reward-confirmation-actions\s*\{[\s\S]*?position: static;[\s\S]*?box-shadow: none;/);
+  assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?body \.reward-confirmation-grid,[\s\S]*?body \.reward-confirmation-customer\s*\{[\s\S]*?grid-template-columns: 1fr;/);
+  assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?body \.reward-confirmation-modal \.reward-confirmation-actions\s*\{[\s\S]*?grid-template-columns: 1fr;/);
 });
