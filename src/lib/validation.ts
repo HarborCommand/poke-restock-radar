@@ -1044,6 +1044,7 @@ export const adminCustomerAttachOrderSchema = z.object({
     z.string().trim().max(1000).optional()
   ),
   confirmEmailMismatch: z.boolean().default(false),
+  confirmRewardApplication: z.boolean().default(false),
   applyRewards: z.boolean().default(false)
 }).strict().superRefine((input, context) => {
   if (input.type === "storefront_order" && !input.orderId) {

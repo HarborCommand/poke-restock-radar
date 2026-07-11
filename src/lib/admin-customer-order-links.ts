@@ -23,6 +23,7 @@ type AttachInput = {
   reason: string;
   note?: string;
   confirmEmailMismatch: boolean;
+  confirmRewardApplication?: boolean;
   applyRewards: boolean;
 };
 
@@ -256,14 +257,18 @@ function rewardCandidate(status: AdminCustomerAttachRewardStatus, points = 0, al
   };
 }
 
+function orderEligibleSubtotalCents(order: CandidateOrder) {
+  return rewardEligibleSubtotalCents({
+    subtotal: order.subtotal,
+    items: order.items.map((item) => ({ lineTotal: item.lineTotal }))
+  });
+}
+
 function orderRewardCandidate(order: CandidateOrder, match: OwnershipMatch): RewardCandidate {
   if (!rewardsFeatureEnabledForBackfill()) return rewardCandidate("rewards_disabled");
   const alreadyAwarded = hasPositiveRewardLedger(order);
   const refunded = order.refundedAmount > 0 || order.status === "refunded" || order.paymentStatus === "refunded" || order.paymentStatus === "partially_refunded";
-  const eligibleSubtotalCents = rewardEligibleSubtotalCents({
-    subtotal: order.subtotal,
-    items: order.items.map((item) => ({ lineTotal: item.lineTotal }))
-  });
+  const eligibleSubtotalCents = orderEligibleSubtotalCents(order);
   const points = rewardPointsForEligibleSubtotalCents(eligibleSubtotalCents);
   if (order.isTestOrder) return rewardCandidate("test_or_smoke");
   if (order.status === "canceled" || refunded) return rewardCandidate("canceled_or_refunded");
@@ -292,6 +297,7 @@ function mapOrderCandidate(
     maskedCustomerEmail: maskEmail(order.customerEmail),
     maskedCustomerPhone: maskPhone(order.customerPhone),
     total: order.total,
+    eligibleSubtotal: orderEligibleSubtotalCents(order) / 100,
     status: orderStatusLabel(order),
     currentLinkedCustomer: customerSummary(order.customerAccount),
     itemSummary: order.items.map((item) => item.publicTitle).filter(Boolean).join(", ") || "Order items",
@@ -326,10 +332,14 @@ function saleAlreadyAwarded(saleKey: string, ledger: Array<{ idempotencyKey: str
   });
 }
 
+function saleEligibleSubtotalCents(sales: CandidateSale[]) {
+  return sales.reduce((sum, sale) => sum + Math.max(0, Math.round(sale.grossSale * 100)), 0);
+}
+
 function saleRewardCandidate(sales: CandidateSale[], alreadyAwarded: boolean, match: OwnershipMatch): RewardCandidate {
   if (!rewardsFeatureEnabledForBackfill()) return rewardCandidate("rewards_disabled");
   const refunded = sales.some((sale) => sale.refundStatus || sale.refundedAmount > 0);
-  const eligibleSubtotalCents = sales.reduce((sum, sale) => sum + Math.max(0, Math.round(sale.grossSale * 100)), 0);
+  const eligibleSubtotalCents = saleEligibleSubtotalCents(sales);
   const points = rewardPointsForEligibleSubtotalCents(eligibleSubtotalCents);
   if (refunded) return rewardCandidate("canceled_or_refunded");
   if (alreadyAwarded) return rewardCandidate("already_awarded", 0, true);
@@ -380,6 +390,7 @@ async function mapSaleCandidates(
       maskedCustomerEmail: maskEmail(first.customerEmail),
       maskedCustomerPhone: maskPhone(first.customerPhone),
       total,
+      eligibleSubtotal: saleEligibleSubtotalCents(sales) / 100,
       status: saleStatusLabel(sales),
       currentLinkedCustomer: customerSummary(first.customerAccount),
       itemSummary: sales.map((sale) => sale.inventoryItem.itemName).filter(Boolean).join(", "),
@@ -521,6 +532,20 @@ function assertOwnershipReview(input: AttachInput, match: OwnershipMatch, label:
   }
   if (!input.note?.trim()) {
     throw new Error(match.status === "no_email_recorded" ? "Legacy ownership reviews require an internal note." : "Manual mismatch overrides require an internal note.");
+  }
+}
+
+function assertRewardApplicationConfirmed(input: AttachInput, match: OwnershipMatch, duplicate: boolean, label: string) {
+  if (!input.applyRewards || !duplicate) return;
+  if (!input.confirmRewardApplication) {
+    throw new Error(`Confirm the ${label.toLowerCase()} reward application before adding points.`);
+  }
+  if (match.status !== "no_email_recorded") return;
+  if (!input.confirmEmailMismatch) {
+    throw new Error(`${label} has no historical customer email. Confirm the ownership review before applying rewards.`);
+  }
+  if (!input.note?.trim()) {
+    throw new Error("Legacy reward applications require a private internal note.");
   }
 }
 
@@ -695,7 +720,9 @@ async function attachStorefrontOrder(
   const duplicate = order.customerAccountId === customer.id;
   const initialMatch = ownershipMatch(order.customerEmail, customer, hasRecordedOwnershipReview(order));
   assertOwnershipReview(input, initialMatch, "Order");
-  const reviewRecordedNow = !initialMatch.ownershipReviewCompleted && initialMatch.requiresManualConfirmation && Boolean(input.confirmEmailMismatch && input.note?.trim());
+  assertRewardApplicationConfirmed(input, initialMatch, duplicate, "Order");
+  const rewardReviewRecordedNow = input.applyRewards && duplicate && initialMatch.status === "no_email_recorded" && input.confirmRewardApplication && Boolean(input.confirmEmailMismatch && input.note?.trim());
+  const reviewRecordedNow = (!initialMatch.ownershipReviewCompleted && initialMatch.requiresManualConfirmation && Boolean(input.confirmEmailMismatch && input.note?.trim())) || rewardReviewRecordedNow;
   const match: OwnershipMatch = reviewRecordedNow
     ? { ...initialMatch, requiresManualConfirmation: false, requiresInternalNote: false, ownershipReviewCompleted: true }
     : initialMatch;
@@ -795,7 +822,9 @@ async function attachPosSale(
   const saleKey = saleAttachKey(firstSale);
   const initialMatch = ownershipMatch(firstSale.customerEmail, customer, sales.every((sale) => hasRecordedOwnershipReview(sale)));
   assertOwnershipReview(input, initialMatch, "Sale");
-  const reviewRecordedNow = !initialMatch.ownershipReviewCompleted && initialMatch.requiresManualConfirmation && Boolean(input.confirmEmailMismatch && input.note?.trim());
+  assertRewardApplicationConfirmed(input, initialMatch, duplicate, "Sale");
+  const rewardReviewRecordedNow = input.applyRewards && duplicate && initialMatch.status === "no_email_recorded" && input.confirmRewardApplication && Boolean(input.confirmEmailMismatch && input.note?.trim());
+  const reviewRecordedNow = (!initialMatch.ownershipReviewCompleted && initialMatch.requiresManualConfirmation && Boolean(input.confirmEmailMismatch && input.note?.trim())) || rewardReviewRecordedNow;
   const match: OwnershipMatch = reviewRecordedNow
     ? { ...initialMatch, requiresManualConfirmation: false, requiresInternalNote: false, ownershipReviewCompleted: true }
     : initialMatch;
