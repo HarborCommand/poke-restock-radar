@@ -23192,6 +23192,49 @@ body .customer-reward-outcome.watch {
   color: #92400e;
 }
 
+body .customer-attach-legacy-review {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #7c2d12;
+  padding: 12px;
+}
+
+body .customer-attach-legacy-review p {
+  margin: 0;
+  color: #9a3412;
+}
+
+body .customer-attach-legacy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body .customer-attach-legacy-grid span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 8px 10px;
+}
+
+body .customer-attach-legacy-grid small {
+  color: #9a3412;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+body .customer-attach-legacy-grid b {
+  color: #431407;
+  overflow-wrap: anywhere;
+}
+
 body .customer-reward-outcome {
   display: grid;
   gap: 4px;
@@ -29675,6 +29718,10 @@ body .customers-rewards-tabs {
   body .customer-search-profile-main,
   body .customer-search-profile-stats,
   body .customer-attach-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body .customer-attach-legacy-grid {
     grid-template-columns: 1fr;
   }
 

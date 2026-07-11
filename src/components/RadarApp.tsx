@@ -4335,12 +4335,20 @@ function CustomerAttachVerificationPanel({
   customer: AdminCustomerRewardsCustomerDTO;
   candidate: AdminCustomerAttachOrderCandidateDTO | null;
 }) {
+  const statusTone = candidate?.matchStatus === "email_match" ? "good" : "watch";
+  const statusLabel = candidate?.matchStatus === "email_match"
+    ? "Verified email match"
+    : candidate?.matchStatus === "no_email_recorded"
+      ? "Legacy sale - no email recorded"
+      : candidate?.matchStatus === "customer_unverified"
+        ? "Customer account not verified"
+        : "Email mismatch";
   return (
     <section className="customer-attach-verification-card" aria-label="Customer and purchase verification">
       <div className="customer-attach-comparison-grid">
         <span>
-          <small>Order email</small>
-          <strong>{candidate?.maskedCustomerEmail ?? "No order email saved"}</strong>
+          <small>Purchase email</small>
+          <strong>{candidate?.maskedCustomerEmail ?? "No historical email recorded"}</strong>
         </span>
         <span>
           <small>Customer email</small>
@@ -4348,15 +4356,44 @@ function CustomerAttachVerificationPanel({
         </span>
       </div>
       {candidate ? (
-        <div className={`customer-attach-match-banner ${candidate.emailMatchesCustomer ? "good" : "watch"}`}>
-          {candidate.emailMatchesCustomer ? <Check size={16} /> : <AlertTriangle size={16} />}
-          <span>{candidate.emailMatchesCustomer ? "Email matches" : "Email mismatch - explicit confirmation and an internal note are required"}</span>
-        </div>
+        <>
+          <div className={`customer-attach-match-banner ${statusTone}`}>
+            {candidate.matchStatus === "email_match" ? <Check size={16} /> : <AlertTriangle size={16} />}
+            <span>{statusLabel}: {candidate.matchMessage}</span>
+          </div>
+          {candidate.matchStatus === "no_email_recorded" ? (
+            <div className="customer-attach-legacy-review">
+              <strong>No customer email was saved on this sale. Confirm ownership before linking.</strong>
+              <p>Verify ownership using the receipt, customer name, phone, sale date, product, or other records before attaching.</p>
+              <div className="customer-attach-legacy-grid">
+                <span><small>Date</small><b>{shortDate(candidate.date)}</b></span>
+                <span><small>Product</small><b>{candidate.itemSummary}</b></span>
+                <span><small>Total</small><b>{money(candidate.total)}</b></span>
+                <span><small>Source</small><b>{formatStatus(candidate.source)}</b></span>
+                <span><small>Reference</small><b>{candidate.reference}</b></span>
+                <span><small>Items</small><b>{candidate.itemCount.toLocaleString()}</b></span>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : (
         <p className="customers-muted-note">Select a matching order or sale to verify the purchase email against this customer.</p>
       )}
     </section>
   );
+}
+
+function customerAttachMatchLabel(candidate: AdminCustomerAttachOrderCandidateDTO) {
+  if (candidate.matchStatus === "email_match") return "Email match";
+  if (candidate.matchStatus === "no_email_recorded") return "Legacy review";
+  if (candidate.matchStatus === "customer_unverified") return "Customer unverified";
+  return "Email mismatch";
+}
+
+function ownershipConfirmationCopy(candidate: AdminCustomerAttachOrderCandidateDTO) {
+  return candidate.matchStatus === "no_email_recorded"
+    ? "I reviewed available records and confirmed this purchase belongs to the selected customer."
+    : "I confirmed ownership despite the recorded email mismatch.";
 }
 
 function RewardOutcomeText({ candidate }: { candidate: AdminCustomerAttachOrderCandidateDTO | null }) {
@@ -4373,7 +4410,7 @@ function RewardOutcomeText({ candidate }: { candidate: AdminCustomerAttachOrderC
 function attachResultMessage(result: AdminCustomerAttachOrderResultDTO, label = "Purchase") {
   const linkedMessage = result.duplicate ? `${label} was already linked.` : `${label} linked successfully.`;
   const rewardMessage = result.rewardsApplied
-    ? `Rewards: Applied - ${result.rewardPointsAwarded.toLocaleString()} point${result.rewardPointsAwarded === 1 ? "" : "s"} awarded.`
+    ? `Rewards: Applied - ${result.rewardMessage}`
     : `Rewards: Skipped - ${result.rewardMessage}`;
   return `${linkedMessage} ${rewardMessage}`;
 }
@@ -4458,7 +4495,7 @@ function CustomerAttachOrderModal({
     }
   };
 
-  const selectedNeedsManualConfirmation = Boolean(selectedCandidate && !selectedCandidate.emailMatchesCustomer);
+  const selectedNeedsManualConfirmation = Boolean(selectedCandidate?.requiresManualConfirmation);
   const rewardsDisabledReason = selectedCandidate?.rewards.disabledReason;
 
   return (
@@ -4511,7 +4548,7 @@ function CustomerAttachOrderModal({
                     </span>
                     <span>
                       <b>{money(candidate.total)}</b>
-                      <small>{candidate.currentLinkedCustomer ? `Linked to ${candidate.currentLinkedCustomer.displayName}` : candidate.emailMatchesCustomer ? "Email match" : "Manual review"}</small>
+                      <small>{candidate.currentLinkedCustomer ? `Linked to ${candidate.currentLinkedCustomer.displayName}` : customerAttachMatchLabel(candidate)}</small>
                     </span>
                   </button>
                 ))
@@ -4523,8 +4560,8 @@ function CustomerAttachOrderModal({
               <div className="customer-attach-review">
                 <CustomerAttachVerificationPanel customer={customer} candidate={selectedCandidate} />
                 <div>
-                  <span className={`status-pill ${selectedCandidate.emailMatchesCustomer ? "good" : "watch"}`}>
-                    {selectedCandidate.emailMatchesCustomer ? "Email matches" : "Email mismatch"}
+                  <span className={`status-pill ${selectedCandidate.matchStatus === "email_match" ? "good" : "watch"}`}>
+                    {customerAttachMatchLabel(selectedCandidate)}
                   </span>
                   {selectedCandidate.currentLinkedCustomer ? (
                     <span className="status-pill watch">Already linked: {selectedCandidate.currentLinkedCustomer.displayName}</span>
@@ -4542,24 +4579,26 @@ function CustomerAttachOrderModal({
                 {selectedNeedsManualConfirmation ? (
                   <label className="checkbox-label">
                     <input checked={confirmEmailMismatch} onChange={(event) => setConfirmEmailMismatch(event.target.checked)} type="checkbox" />
-                    <span>Confirm ownership was reviewed outside the automatic email match.</span>
+                    <span>{selectedCandidate ? ownershipConfirmationCopy(selectedCandidate) : "Confirm purchase ownership."}</span>
                   </label>
                 ) : null}
                 <label>
-                  <span>Internal link note{selectedNeedsManualConfirmation ? " (required)" : ""}</span>
+                  <span>Internal link note{selectedCandidate.requiresInternalNote ? " (required)" : ""}</span>
                   <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Private admin note. Do not paste sensitive documents here." />
                 </label>
                 <label className="checkbox-label">
                   <input
                     checked={applyRewards}
-                    disabled={!selectedCandidate.rewards.eligible}
+                    disabled={!selectedCandidate.rewardsEligible}
                     onChange={(event) => setApplyRewards(event.target.checked)}
                     type="checkbox"
                   />
-                  <span>Backfill rewards for this linked purchase when eligible.</span>
+                  <span>{selectedCandidate.matchStatus === "no_email_recorded" ? "Apply eligible rewards after linking." : "Backfill rewards for this linked purchase when eligible."}</span>
                 </label>
                 <p className="customers-muted-note">
-                  {rewardsDisabledReason ?? "Rewards are server-calculated from eligible product subtotal. Shipping, tax, discounts, refunded/canceled items, and already-awarded purchases are excluded."}
+                  {rewardsDisabledReason ?? (selectedCandidate.matchStatus === "no_email_recorded"
+                    ? "Rewards will be awarded through an admin-reviewed legacy purchase backfill. Points remain server-calculated and idempotent."
+                    : "Rewards are server-calculated from eligible product subtotal. Shipping, tax, discounts, refunded/canceled items, and already-awarded purchases are excluded.")}
                 </p>
               </div>
             ) : null}
@@ -16791,7 +16830,7 @@ function saleRewardLabel(sale: InventorySaleDTO) {
     return "Rewards unavailable: canceled/refunded";
   }
   if (sale.customerMatchMethod === "admin_manual" || !sale.customerEmail) {
-    return "Rewards not applied: verified email match required";
+    return "Rewards not applied: ownership review may be required";
   }
   if (sale.rewardsEligible) return "Rewards eligible";
   if (sale.storefrontOrderNumber) return "Rewards status tracked on storefront order";
@@ -16814,9 +16853,6 @@ function saleApplyRewardsDisabledReason(sale: InventorySaleDTO) {
     return "Canceled or refunded sales are not eligible for rewards.";
   }
   if (sale.saleStatus === "test") return "Test or smoke sales do not earn rewards.";
-  if (sale.customerMatchMethod === "admin_manual" || !sale.customerEmail) {
-    return "A verified matching customer email is required before rewards can be applied.";
-  }
   return null;
 }
 
@@ -17205,7 +17241,7 @@ function SalesAttachCustomerModal({
   };
 
   const customers = customersData?.customers ?? [];
-  const selectedNeedsManualConfirmation = Boolean(selectedCandidate && !selectedCandidate.emailMatchesCustomer);
+  const selectedNeedsManualConfirmation = Boolean(selectedCandidate?.requiresManualConfirmation);
   const selectedCustomerEligible = Boolean(selectedCustomer && selectedCustomer.status === "active" && selectedCustomer.emailVerified);
   const rewardsDisabledReason = selectedCandidate?.rewards.disabledReason;
   const submitDisabled = busy || candidateLoading || !selectedCustomer || !selectedCandidate || !selectedCustomerEligible;
@@ -17292,8 +17328,8 @@ function SalesAttachCustomerModal({
                     {selectedCustomerEligible ? "Verified active customer" : "Customer must be active and verified"}
                   </span>
                   {selectedCandidate ? (
-                    <span className={`status-pill ${selectedCandidate.emailMatchesCustomer ? "good" : "watch"}`}>
-                      {selectedCandidate.emailMatchesCustomer ? "Email matches" : "Email mismatch"}
+                    <span className={`status-pill ${selectedCandidate.matchStatus === "email_match" ? "good" : "watch"}`}>
+                      {customerAttachMatchLabel(selectedCandidate)}
                     </span>
                   ) : null}
                   {selectedCandidate?.currentLinkedCustomer ? (
@@ -17312,24 +17348,26 @@ function SalesAttachCustomerModal({
                 {selectedNeedsManualConfirmation ? (
                   <label className="checkbox-label">
                     <input checked={confirmEmailMismatch} onChange={(event) => setConfirmEmailMismatch(event.target.checked)} type="checkbox" />
-                    <span>Confirm ownership was reviewed outside the automatic email match.</span>
+                    <span>{selectedCandidate ? ownershipConfirmationCopy(selectedCandidate) : "Confirm purchase ownership."}</span>
                   </label>
                 ) : null}
                 <label>
-                  <span>Internal link note{selectedNeedsManualConfirmation ? " (required)" : ""}</span>
+                  <span>Internal link note{selectedCandidate?.requiresInternalNote ? " (required)" : ""}</span>
                   <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Private admin note. Do not paste sensitive customer documents here." />
                 </label>
                 <label className="checkbox-label">
                   <input
                     checked={applyRewards}
-                    disabled={!selectedCandidate?.rewards.eligible}
+                    disabled={!selectedCandidate?.rewardsEligible}
                     onChange={(event) => setApplyRewards(event.target.checked)}
                     type="checkbox"
                   />
-                  <span>Backfill rewards for this linked purchase when eligible.</span>
+                  <span>{selectedCandidate?.matchStatus === "no_email_recorded" ? "Apply eligible rewards after linking." : "Backfill rewards for this linked purchase when eligible."}</span>
                 </label>
                 <p className="customers-muted-note">
-                  {rewardsDisabledReason ?? "Rewards are server-calculated from eligible product subtotal. Shipping, tax, discounts, refunded/canceled items, and already-awarded purchases are excluded."}
+                  {rewardsDisabledReason ?? (selectedCandidate?.matchStatus === "no_email_recorded"
+                    ? "Rewards will be awarded through an admin-reviewed legacy purchase backfill. Points remain server-calculated and idempotent."
+                    : "Rewards are server-calculated from eligible product subtotal. Shipping, tax, discounts, refunded/canceled items, and already-awarded purchases are excluded.")}
                 </p>
               </div>
             ) : null}
@@ -17435,6 +17473,19 @@ function SaleDetailsModal({
       );
       const candidate = search.candidates.find((candidate) => saleAttachCandidateMatches(candidate, attachTarget));
       if (!candidate) throw new Error(`${attachTarget.label} was not found in linked reward candidates.`);
+      if (candidate.matchStatus === "email_mismatch" || candidate.matchStatus === "customer_unverified") {
+        setSaleMessage(candidate.rewardsBlockedReason ?? candidate.matchMessage);
+        return;
+      }
+      if (candidate.requiresManualConfirmation || candidate.requiresInternalNote) {
+        setSaleMessage("Ownership review required before rewards can be applied. Complete the review in Attach to Customer.");
+        setAttachCustomerOpen(true);
+        return;
+      }
+      if (!candidate.rewardsEligible) {
+        setSaleMessage(candidate.rewardsBlockedReason ?? candidate.rewards.message);
+        return;
+      }
       const result = await requestJson<AdminCustomerAttachOrderResultDTO>(`/api/radar/customers/${displaySale.customerAccountId}/attach-order`, {
         method: "POST",
         body: JSON.stringify({
@@ -17477,7 +17528,7 @@ function SaleDetailsModal({
       setRewardOverride({
         id: sale.id,
         customerAccountId: result.customer.id,
-        customerMatchMethod: result.candidate.emailMatchesCustomer ? "email" : "admin_manual",
+        customerMatchMethod: result.candidate.matchStatus === "email_match" ? "email" : "admin_manual",
         rewardsEligible: result.rewardsApplied ? true : displaySale.rewardsEligible,
         rewardStatus: result.rewardsApplied || result.rewardStatus === "already_awarded" ? "available" : displaySale.rewardStatus,
         rewardPointsEarned: result.rewardsApplied ? result.rewardPointsAwarded : displaySale.rewardPointsEarned,
