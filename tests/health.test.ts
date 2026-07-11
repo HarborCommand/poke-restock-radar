@@ -593,7 +593,8 @@ test("public and admin health routes split minimal and detailed diagnostics", ()
 
   assert.match(publicRoute, /publicHealthFromAppHealth/);
   assert.match(publicRoute, /getAppHealth\(\)/);
-  assert.match(publicRoute, /ok\(publicHealthFromAppHealth\(health\), health\.status === "ERROR" \? 503 : 200\)/);
+  assert.match(publicRoute, /const status = health\.status === "ERROR" \? 503 : 200/);
+  assert.match(publicRoute, /withRequestId\(ok\(publicHealthFromAppHealth\(health\), status\), requestId\)/);
   assert.doesNotMatch(publicRoute, /ok\(health,/);
   assert.doesNotMatch(publicRoute, /requireUser|requireAdmin/);
 

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/types/radar";
+import { logServerEvent, requestCorrelationId, safeEntityRef } from "@/lib/observability";
 
 type AuditInput = {
   user?: SessionUser | null;
@@ -26,6 +27,14 @@ export async function logAudit(input: AuditInput) {
       }
     });
   } catch (error) {
-    console.error("Audit log write failed", error);
+    logServerEvent({
+      requestId: requestCorrelationId(),
+      route: "internal:audit",
+      operation: "audit.write",
+      status: 500,
+      entityType: input.entityType,
+      entityRef: safeEntityRef(input.entityId),
+      error
+    });
   }
 }

@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
-import { badRequest, privateOk, readJson } from "@/lib/http";
+import { privateOk, readJson, safeMutationError, withRequestId } from "@/lib/http";
+import { logServerEvent, requestCorrelationId, safeEntityRef } from "@/lib/observability";
 import { createAdminRewardAdjustment } from "@/lib/rewards-admin";
 import { rewardAdminAdjustmentSchema } from "@/lib/validation";
 
@@ -9,13 +10,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const requestId = requestCorrelationId(request);
+  const startedAt = Date.now();
   const { user, response } = await requireUser();
-  if (response) return response;
+  if (response) return withRequestId(response, requestId);
   const adminResponse = authorizeAdminMutation(request, user);
-  if (adminResponse) return adminResponse;
+  if (adminResponse) return withRequestId(adminResponse, requestId);
 
+  let customerAccountId: string | null = null;
   try {
     const input = rewardAdminAdjustmentSchema.parse(await readJson(request));
+    customerAccountId = input.customerAccountId;
     const result = await createAdminRewardAdjustment(user, input);
     await logAudit({
       user,
@@ -31,8 +36,18 @@ export async function POST(request: Request) {
         hasAdminNote: Boolean(input.note)
       }
     });
-    return privateOk(result, result.duplicate ? 200 : 201);
+    return withRequestId(privateOk(result, result.duplicate ? 200 : 201), requestId);
   } catch (error) {
-    return badRequest(error);
+    logServerEvent({
+      requestId,
+      route: "/api/radar/rewards/adjustments",
+      operation: "reward.adjustment",
+      status: 400,
+      durationMs: Date.now() - startedAt,
+      entityType: "CUSTOMER_ACCOUNT",
+      entityRef: safeEntityRef(customerAccountId),
+      error
+    });
+    return safeMutationError(error, requestId, "The reward adjustment could not be completed.");
   }
 }

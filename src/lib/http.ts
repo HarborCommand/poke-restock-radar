@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { sanitizeLogText } from "@/lib/observability";
 
 export function ok<T>(data: T, status = 200) {
   return NextResponse.json(data, { status });
@@ -24,6 +25,33 @@ export function withPrivateNoStore<T extends NextResponse>(response: T) {
     response.headers.set(name, value);
   }
   return response;
+}
+
+export function withRequestId<T extends Response>(response: T, requestId: string) {
+  response.headers.set("x-request-id", requestId);
+  return response;
+}
+
+export function internalServerError(requestId: string, message = "The request could not be completed.") {
+  return NextResponse.json(
+    { error: message, requestId },
+    { status: 500, headers: { ...privateNoStoreHeaders, "x-request-id": requestId } }
+  );
+}
+
+export function safeMutationError(error: unknown, requestId: string, fallback = "The update could not be completed.") {
+  if (error instanceof ZodError) return withRequestId(badRequest(error), requestId);
+  const message = error instanceof Error ? error.message : "";
+  const safeBusinessError =
+    /(?:not found|already|disabled|cannot|must|required|invalid|refunded|canceled|insufficient|unavailable)/i.test(message) &&
+    !/(?:postgres|prisma|sql|database|connection|string|stack|environment|secret|token|hash|https?:\/\/)/i.test(message);
+  if (safeBusinessError) {
+    return NextResponse.json(
+      { error: sanitizeLogText(message).slice(0, 240), requestId },
+      { status: 400, headers: { ...privateNoStoreHeaders, "x-request-id": requestId } }
+    );
+  }
+  return internalServerError(requestId, fallback);
 }
 
 export function badRequest(error: unknown) {

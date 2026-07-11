@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
-import { badRequest, ok, readJson } from "@/lib/http";
+import { ok, readJson, safeMutationError, withRequestId } from "@/lib/http";
+import { logServerEvent, requestCorrelationId, safeEntityRef } from "@/lib/observability";
 import { POS_REFUND_REASON_LABELS } from "@/lib/pos";
 import { refundPosSale } from "@/lib/radar-service";
 import { posSaleRefundSchema } from "@/lib/validation";
@@ -10,13 +11,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request, { params }: { params: Promise<{ saleReference: string }> }) {
+  const requestId = requestCorrelationId(request);
+  const startedAt = Date.now();
   const { user, response } = await requireUser();
-  if (response) return response;
+  if (response) return withRequestId(response, requestId);
   const adminResponse = authorizeAdminMutation(request, user);
-  if (adminResponse) return adminResponse;
+  if (adminResponse) return withRequestId(adminResponse, requestId);
 
+  let saleReference: string | null = null;
   try {
-    const { saleReference } = await params;
+    ({ saleReference } = await params);
     const input = posSaleRefundSchema.parse(await readJson(request));
     const sale = await refundPosSale(user, decodeURIComponent(saleReference), input);
     await logAudit({
@@ -32,8 +36,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
         total: sale.total
       }
     });
-    return ok({ sale });
+    return withRequestId(ok({ sale }), requestId);
   } catch (error) {
-    return badRequest(error);
+    logServerEvent({
+      requestId,
+      route: "/api/radar/pos/sales/[saleReference]/refund",
+      operation: "pos.refund",
+      status: 400,
+      durationMs: Date.now() - startedAt,
+      entityType: "POS_SALE",
+      entityRef: safeEntityRef(saleReference),
+      error
+    });
+    return safeMutationError(error, requestId, "The POS refund could not be completed.");
   }
 }
