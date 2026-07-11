@@ -1,0 +1,32 @@
+{
+  "name": "20260711_current_postgres_baseline",
+  "sqlFile": "prisma/baseline/20260711_initial_postgres.sql",
+  "sha256": "59cfbc5a4e41c64b6a99932dac8d4468ea04af51a159e0280a868f18362072a7",
+  "absorbedMigrations": [
+    "20260613110511_checkout_customer_records",
+    "20260613143000_storefront_cancel_refund_flow",
+    "20260614120000_smart_shipping_model",
+    "20260614171500_checkout_reservation_timer",
+    "20260615103000_storefront_purchase_limits",
+    "20260618124500_shipping_profiles",
+    "20260618183000_calculated_usps_shipping",
+    "20260619023000_test_smoke_orders",
+    "20260623024500_shipping_label_shell",
+    "20260623033000_customer_accounts_rewards_foundation",
+    "20260623043000_reward_ledger_idempotency",
+    "20260623064500_customer_password_accounts",
+    "20260626013000_customer_account_normalized_email",
+    "20260626023000_customer_session_timeouts",
+    "20260626033000_customer_auth_hardening",
+    "20260628043000_product_shipping_metadata_source",
+    "20260701093000_admin_pos_sale_metadata",
+    "20260704053000_public_storefront_rate_limits",
+    "20260705093000_inventory_authenticity_proof_status",
+    "20260706103000_rewards_pending_ledger_phase1",
+    "20260707163000_pos_price_adjustments",
+    "20260707181500_pos_sale_refund_tracking",
+    "20260707193000_pos_customer_contact_capture",
+    "20260708204500_customer_account_admin_note",
+    "20260710024500_admin_customer_order_links"
+  ]
+}

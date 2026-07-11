@@ -90,14 +90,16 @@ Set `CRON_SECRET` equal to `MONITOR_JOB_SECRET`.
 
 Production must use Postgres. Local SQLite is development-only.
 
-Before the first live deployment, convert and review the Prisma production migration for Postgres, then run:
+For an existing Production database, use the reviewed migration deploy path:
 
 ```bash
-npm run db:push:prod
+npm run db:migrate:prod
 npm run db:seed:prod
 ```
 
 Production scripts run `npm run prisma:postgres` first. That generates `.prisma-postgres/schema.prisma` from the local SQLite development schema and switches only the datasource provider to Postgres for Vercel/Neon use.
+
+Do not run `npm run db:push:prod` against an existing database. A brand-new persistent Postgres environment requires the separately reviewed process in [Prisma Postgres Migration Baseline Repair](prisma-migration-baseline-repair.md) until an active initial migration is approved.
 
 Keep production seed data limited to the private admin account and any intentional starter records.
 
