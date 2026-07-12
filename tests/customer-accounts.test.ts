@@ -1303,11 +1303,12 @@ test("refund cancellation and test markers reverse rewards without redemption", 
 test("customer rewards page shows balance activity and redemption coming soon", () => {
   const rewardsPage = readProjectFile("src/app/account/rewards/page.tsx");
   const components = readProjectFile("src/components/CustomerAccountPages.tsx");
+  const tiers = readProjectFile("src/lib/reward-tiers.ts");
   const css = readProjectFile("src/app/globals.css");
   const accountRewards = sourceSlice(components, "export function AccountRewards", "export function AccountAddresses");
 
   assert.match(rewardsPage, /listCustomerRewardActivity\(account\)/);
-  assert.match(accountRewards, /Keep earning with Grabby!/);
+  assert.match(accountRewards, /Your collection\. Your level\./);
   assert.match(accountRewards, /GrabbyMascot variant="rewards" size="large"/);
   assert.match(accountRewards, /gdg-rewards-spotlight/);
   assert.match(accountRewards, /gdg-rewards-summary-grid/);
@@ -1326,13 +1327,16 @@ test("customer rewards page shows balance activity and redemption coming soon", 
   assert.match(accountRewards, /visibleReversedPoints/);
   assert.match(accountRewards, /Redemption coming soon/);
   assert.match(accountRewards, /Points are display-only and do not affect checkout totals yet/);
-  assert.match(components, /Rookie Collector/);
-  assert.match(components, /Card Hunter/);
-  assert.match(components, /Pack Pro/);
-  assert.match(components, /Elite Trainer/);
-  assert.match(components, /Master Collector/);
+  assert.match(tiers, /Rookie Collector/);
+  assert.match(tiers, /Card Hunter/);
+  assert.match(tiers, /Pack Pro/);
+  assert.match(tiers, /Master Collector/);
+  assert.match(tiers, /Legend Collector/);
   assert.match(accountRewards, /gdg-rewards-progress-track/);
-  assert.match(components, /Math\.max\(3, Math\.min\(100, rawTrackPercent\)\)/);
+  assert.match(tiers, /Math\.max\(0, Math\.min\(100, \(intervalPoints \/ interval\) \* 100\)\)/);
+  assert.match(accountRewards, /gdg-rewards-tier-grid/);
+  assert.match(accountRewards, /rewardTierState\(index, progress\.currentIndex\)/);
+  assert.match(accountRewards, /RewardTierBadge tier=\{progress\.currentTier\}/);
   assert.match(accountRewards, /\{pointsLabel\(progress\.points\)\} \/ \{pointsLabel\(progressMax\)\} points/);
   assert.match(accountRewards, /Earn 1 point per \$1 spent on eligible product purchases/);
   assert.match(accountRewards, /Earn 1 point per \$1 on eligible product purchases/);

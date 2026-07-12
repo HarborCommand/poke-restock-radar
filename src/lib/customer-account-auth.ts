@@ -68,6 +68,7 @@ export type CurrentCustomerAccount = {
   sessionRevokedBefore: Date | null;
   emailVerifiedAt: Date | null;
   lastLoginAt: Date | null;
+  highestAcknowledgedRewardTier: number;
   createdAt: Date;
   rewardBalance: {
     availablePoints: number;
@@ -883,6 +884,7 @@ async function findCurrentCustomerAccountFromPayload(payload: CustomerSessionPay
       sessionRevokedBefore: true,
       emailVerifiedAt: true,
       lastLoginAt: true,
+      highestAcknowledgedRewardTier: true,
       createdAt: true,
       rewardBalance: {
         select: {
