@@ -4,6 +4,7 @@ import { getEnvironmentReport } from "@/lib/env";
 import { authRuntimeConfig } from "@/lib/auth";
 import { getBuildInfo } from "@/lib/build-info";
 import type { AppHealthDTO, PublicAppHealthDTO, SessionUser } from "@/types/radar";
+import { sanitizeLogText } from "@/lib/observability";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
@@ -87,7 +88,7 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
     await prisma.$queryRaw`SELECT 1`;
     database.ok = true;
   } catch (error) {
-    database.error = errorMessage(error).slice(0, 240);
+    database.error = sanitizeLogText(errorMessage(error)).slice(0, 240);
   }
 
   let monitor: AppHealthDTO["monitor"] = {
@@ -152,8 +153,8 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
         ...monitor,
         lastRunAt: lastMonitorRun?.startedAt.toISOString() ?? null,
         lastStatus: lastMonitorRun?.status ?? null,
-        lastSummary: lastMonitorRun?.changeSummary ?? null,
-        lastError: lastMonitorRun?.error ?? null,
+        lastSummary: lastMonitorRun?.changeSummary ? sanitizeLogText(lastMonitorRun.changeSummary) : null,
+        lastError: lastMonitorRun?.error ? sanitizeLogText(lastMonitorRun.error) : null,
         dueProductCount
       };
       alerts = {
@@ -171,7 +172,7 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
     } catch (error) {
       monitor = {
         ...monitor,
-        lastError: errorMessage(error).slice(0, 240)
+        lastError: sanitizeLogText(errorMessage(error)).slice(0, 240)
       };
     }
   }

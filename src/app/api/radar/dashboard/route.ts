@@ -1,24 +1,27 @@
 import { requireUser } from "@/lib/auth";
-import { ok } from "@/lib/http";
+import { internalServerError, ok, withRequestId } from "@/lib/http";
+import { logServerEvent, requestCorrelationId } from "@/lib/observability";
 import { listDashboard } from "@/lib/radar-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const requestId = requestCorrelationId(request);
+  const startedAt = Date.now();
   const { user, response } = await requireUser();
-  if (response) return response;
+  if (response) return withRequestId(response, requestId);
   try {
-    return ok(await listDashboard(user));
+    return withRequestId(ok(await listDashboard(user)), requestId);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown dashboard error";
-    console.error("[radar-dashboard] failed to load private dashboard", error);
-    return Response.json(
-      {
-        error: "Private dashboard failed to load after sign-in.",
-        detail: message.slice(0, 500)
-      },
-      { status: 500 }
-    );
+    logServerEvent({
+      requestId,
+      route: "/api/radar/dashboard",
+      operation: "dashboard.load",
+      status: 500,
+      durationMs: Date.now() - startedAt,
+      error
+    });
+    return internalServerError(requestId, "Private dashboard failed to load after sign-in.");
   }
 }

@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { currentRequestId, logMutationBreadcrumb, logServerEvent } from "@/lib/observability";
 
 const defaultMaxAttempts = 3;
 
@@ -28,12 +29,47 @@ export async function runRewardSerializableTransaction<T>(
   const attempts = Math.max(1, Math.min(5, Math.floor(maxAttempts)));
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      return await prisma.$transaction(operation, {
+      const result = await prisma.$transaction(operation, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable
       });
+      const requestId = currentRequestId();
+      if (requestId) {
+        logMutationBreadcrumb({
+          requestId,
+          route: "internal:rewards",
+          operation: "reward.transaction",
+          result: "committed",
+          metadata: { retryCount: attempt }
+        });
+      }
+      return result;
     } catch (error) {
       if (!isRetryableRewardTransactionError(error)) throw error;
-      if (attempt === attempts - 1) throw new RewardTransactionConflictError();
+      const requestId = currentRequestId();
+      if (attempt === attempts - 1) {
+        if (requestId) {
+          logServerEvent({
+            requestId,
+            route: "internal:rewards",
+            operation: "reward.transaction",
+            status: 409,
+            error,
+            metadata: { retryCount: attempt }
+          });
+        }
+        throw new RewardTransactionConflictError();
+      }
+      if (requestId) {
+        logServerEvent({
+          level: "warn",
+          requestId,
+          route: "internal:rewards",
+          operation: "reward.transaction.retry",
+          status: 409,
+          error,
+          metadata: { retryCount: attempt + 1 }
+        });
+      }
       await retryDelay(attempt);
     }
   }
