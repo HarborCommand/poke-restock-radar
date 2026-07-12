@@ -1,0 +1,48 @@
+name: Prisma baseline bootstrap
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/prisma-baseline-bootstrap.yml"
+      - "package-lock.json"
+      - "package.json"
+      - "prisma/**"
+      - "scripts/generate-prisma-postgres-baseline.ts"
+      - "scripts/prepare-postgres-schema.ts"
+      - "scripts/verify-prisma-postgres-baseline.ts"
+
+permissions:
+  contents: read
+
+jobs:
+  empty-postgres-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: poke_radar_baseline_ci
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d poke_radar_baseline_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: "true"
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/poke_radar_baseline_ci?schema=public
+      PRISMA_BASELINE_BOOTSTRAP_CONFIRM: ci-disposable-empty-database
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:baseline:verify

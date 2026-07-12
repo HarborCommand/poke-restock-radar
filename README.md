@@ -314,12 +314,11 @@ Use managed Postgres for production. Do not deploy a `file:` SQLite database on 
 Production Prisma workflow:
 
 ```bash
-npm run db:push:prod
 npm run db:migrate:prod
 npm run db:seed:prod
 ```
 
-The tracked development schema is SQLite for local use. Production scripts run `npm run prisma:postgres`, which generates a temporary Postgres Prisma schema in `.prisma-postgres/schema.prisma` before generating the Prisma client or pushing the database schema. For the first production cutover, `npm run db:push:prod` is the expected setup path; create and review formal Prisma migrations before relying on `db:migrate:prod` for later production changes. Keep seed data limited to the first private admin account and trusted demo records.
+The tracked development schema is SQLite for local use. Production scripts run `npm run prisma:postgres`, which generates a temporary Postgres Prisma schema in `.prisma-postgres/schema.prisma`. The original Postgres cutover used `npm run db:push:prod`, but that command must not be run against an existing Production database. The current tracked migration history also lacks the original schema-creation migration, so a new persistent environment requires the reviewed baseline process in [Prisma Postgres Migration Baseline Repair](docs/prisma-migration-baseline-repair.md). Keep seed data limited to the first private admin account and trusted demo records.
 
 ### Deploy Steps
 
@@ -329,7 +328,7 @@ The tracked development schema is SQLite for local use. Production scripts run `
 4. Generate VAPID keys with `npx web-push generate-vapid-keys`.
 5. Set `CRON_SECRET` and `MONITOR_JOB_SECRET` to the same random value.
 6. Deploy production.
-7. Run `npm run db:push:prod` and `npm run db:seed:prod` against production.
+7. Run the reviewed migration deploy and intentional seed procedure against Production. Do not use `db:push:prod` on an existing database.
 8. Sign in with the first admin login.
 9. Open Admin Health and confirm database, cron secret, push, email, and SMS readiness.
 
