@@ -1986,10 +1986,13 @@ export function RadarApp() {
 
   if (loading) {
     return (
-      <main className="screen center-screen">
-        <div className="loader-panel">
-          <Radar className="spin-slow" size={30} />
-          <span>Loading private radar</span>
+      <main className="screen center-screen" aria-busy="true">
+        <div className="loader-panel admin-workspace-loader" role="status" aria-live="polite">
+          <Radar className="spin-slow" size={30} aria-hidden="true" />
+          <div>
+            <strong>Loading private workspace</strong>
+            <span>Preparing the latest inventory, sales, and customer data.</span>
+          </div>
         </div>
       </main>
     );
@@ -7089,9 +7092,10 @@ function EmptyState({
   detail: string;
   action?: ReactNode;
 }) {
+  const loading = /^(Loading|Searching|Checking|Opening)\b/i.test(title);
   return (
-    <div className="empty-state">
-      <Icon size={20} />
+    <div className={`empty-state${loading ? " is-loading" : ""}`} role={loading ? "status" : undefined} aria-live={loading ? "polite" : undefined} aria-busy={loading || undefined}>
+      <Icon className={loading ? "spin-slow" : undefined} size={20} aria-hidden="true" />
       <div>
         <strong>{title}</strong>
         <span>{detail}</span>
@@ -7111,21 +7115,22 @@ function SectionIntro({
   stats?: Array<{ label: string; value: string | number; tone?: string }>;
 }) {
   return (
-    <section className="section-intro">
-      <div>
+    <header className="section-intro admin-workspace-heading">
+      <div className="admin-workspace-heading-copy">
         <h2>{title}</h2>
         <p>{detail}</p>
       </div>
       {stats?.length ? (
-        <div className="section-intro-stats">
+        <dl className="section-intro-stats" aria-label={`${title} summary`}>
           {stats.map((stat) => (
-            <span className={`chip ${stat.tone || "muted"}`} key={stat.label}>
-              {stat.value} {stat.label}
-            </span>
+            <div className={`chip ${stat.tone || "muted"}`} key={stat.label}>
+              <dd>{stat.value}</dd>
+              <dt>{stat.label}</dt>
+            </div>
           ))}
-        </div>
+        </dl>
       ) : null}
-    </section>
+    </header>
   );
 }
 
