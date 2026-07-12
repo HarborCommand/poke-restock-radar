@@ -14,12 +14,20 @@ test("canonical reward tiers and boundary calculations remain unchanged", () => 
       ["Rookie Collector", 0],
       ["Card Hunter", 500],
       ["Pack Pro", 1_500],
-      ["Elite Trainer", 3_000],
-      ["Master Collector", 5_000]
+      ["Master Collector", 3_000],
+      ["Legend Collector", 5_000]
     ]
   );
 
-  for (const [points, tier] of [[0, 0], [499, 0], [500, 1], [1_499, 1], [1_500, 2], [2_999, 2], [3_000, 3], [4_999, 3], [5_000, 4]] as const) {
+  assert.deepEqual(REWARD_TIERS.map((tier) => tier.key), [
+    "rookie_collector",
+    "card_hunter",
+    "pack_pro",
+    "master_collector",
+    "legend_collector"
+  ]);
+
+  for (const [points, tier] of [[0, 0], [499, 0], [500, 1], [1_499, 1], [1_500, 2], [2_999, 2], [3_000, 3], [4_999, 3], [5_000, 4], [Number.MAX_SAFE_INTEGER, 4]] as const) {
     assert.equal(rewardTierIndex(points), tier, `${points} points`);
   }
 });
@@ -44,6 +52,8 @@ test("tier progress is interval-based, bounded, and never mutates balances", () 
   });
   assert.equal(Math.round(rewardTierProgress(1_000).progressPercent), 50);
   assert.equal(rewardTierProgress(5_000).progressPercent, 100);
+  assert.equal(rewardTierProgress(Number.MAX_SAFE_INTEGER).nextTier, null);
+  assert.equal(rewardTierProgress(Number.MAX_SAFE_INTEGER).pointsToNext, 0);
   assert.equal(rewardTierProgress(-100).points, 0);
 });
 

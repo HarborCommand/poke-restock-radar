@@ -1330,8 +1330,8 @@ test("customer rewards page shows balance activity and redemption coming soon", 
   assert.match(tiers, /Rookie Collector/);
   assert.match(tiers, /Card Hunter/);
   assert.match(tiers, /Pack Pro/);
-  assert.match(tiers, /Elite Trainer/);
   assert.match(tiers, /Master Collector/);
+  assert.match(tiers, /Legend Collector/);
   assert.match(accountRewards, /gdg-rewards-progress-track/);
   assert.match(tiers, /Math\.max\(0, Math\.min\(100, \(intervalPoints \/ interval\) \* 100\)\)/);
   assert.match(accountRewards, /gdg-rewards-tier-grid/);

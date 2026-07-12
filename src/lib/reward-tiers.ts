@@ -1,37 +1,37 @@
 export const REWARD_TIERS = [
   {
-    key: "rookie-collector",
+    key: "rookie_collector",
     name: "Rookie Collector",
     threshold: 0,
     asset: "/rewards/tiers/rookie-collector.webp",
     message: "The collecting journey begins."
   },
   {
-    key: "card-hunter",
+    key: "card_hunter",
     name: "Card Hunter",
     threshold: 500,
     asset: "/rewards/tiers/card-hunter.webp",
     message: "Hunting for the next great pull."
   },
   {
-    key: "pack-pro",
+    key: "pack_pro",
     name: "Pack Pro",
     threshold: 1_500,
     asset: "/rewards/tiers/pack-pro.webp",
     message: "Opening. Upgrading. Winning."
   },
   {
-    key: "elite-trainer",
-    name: "Elite Trainer",
+    key: "master_collector",
+    name: "Master Collector",
     threshold: 3_000,
-    asset: "/rewards/tiers/elite-trainer.webp",
+    asset: "/rewards/tiers/master-collector.webp",
     message: "Elite collector status unlocked."
   },
   {
-    key: "master-collector",
-    name: "Master Collector",
+    key: "legend_collector",
+    name: "Legend Collector",
     threshold: 5_000,
-    asset: "/rewards/tiers/master-collector.webp",
+    asset: "/rewards/tiers/legend-collector.webp",
     message: "Legends never stop collecting."
   }
 ] as const;
