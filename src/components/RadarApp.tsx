@@ -3857,7 +3857,7 @@ function CustomersRewardsPanel() {
                     <div className="customers-table-row header" role="row">
                       <span>Customer</span>
                       <span>Status</span>
-                      <span>Orders</span>
+                      <span>Purchases</span>
                       <span>Rewards</span>
                       <span>Last activity</span>
                       <span>Actions</span>
@@ -3966,30 +3966,30 @@ function CustomersRewardsPanel() {
           ) : null}
         </div>
 
-        <aside className="customers-detail-panel" aria-live="polite">
-          {detailLoading ? (
-            <EmptyState icon={RefreshCw} title="Loading customer" detail="Opening customer detail." />
-          ) : selectedCustomer ? (
-            <CustomerRewardDetailPanel
-              customer={selectedCustomer}
-              adjustmentsEnabled={Boolean(summary?.adjustmentsEnabled)}
-              onAdjust={() => {
-                if (summary?.adjustmentsEnabled) {
-                  setAdjustingCustomer(selectedCustomer);
-                } else {
-                  setActionMessage(rewardAdjustmentDisabledText);
-                  setActiveView("adjustments");
-                }
-              }}
-              onEdit={() => setEditingCustomer(selectedCustomer)}
-              onAttachOrder={() => setAttachingCustomer(selectedCustomer)}
-              onClose={() => setSelectedCustomer(null)}
-            />
-          ) : (
-            <EmptyState icon={Users} title="No customer selected" detail="Open a customer to see safe account, order, POS, and reward summaries." />
-          )}
-        </aside>
       </div>
+      {detailLoading ? (
+        <div className="inventory-modal-backdrop customers-profile-workspace-backdrop" role="presentation">
+          <div className="inventory-modal customers-profile-workspace" role="dialog" aria-modal="true" aria-label="Loading customer profile">
+            <EmptyState icon={RefreshCw} title="Loading customer" detail="Opening customer profile." />
+          </div>
+        </div>
+      ) : selectedCustomer ? (
+        <CustomerProfileWorkspace
+          customer={selectedCustomer}
+          adjustmentsEnabled={Boolean(summary?.adjustmentsEnabled)}
+          onAdjust={() => {
+            if (summary?.adjustmentsEnabled) {
+              setAdjustingCustomer(selectedCustomer);
+            } else {
+              setActionMessage(rewardAdjustmentDisabledText);
+              setActiveView("adjustments");
+            }
+          }}
+          onEdit={() => setEditingCustomer(selectedCustomer)}
+          onAttachOrder={() => setAttachingCustomer(selectedCustomer)}
+          onClose={() => setSelectedCustomer(null)}
+        />
+      ) : null}
       {editingCustomer ? (
         <CustomerProfileEditModal
           customer={editingCustomer}
@@ -4113,8 +4113,8 @@ function CustomerRewardsRow({
         <small>{customer.emailVerified ? "Verified" : "Unverified"}</small>
       </span>
       <span>
-        <strong>{customer.totalOrders}</strong>
-        <small>{money(customer.totalSpent)} online - {customer.posSales} POS</small>
+        <strong>{customer.totalPurchaseCount.toLocaleString()} total</strong>
+        <small>{money(customer.totalSpend)} total - {customer.totalOrders} online / {customer.posSales} in-store</small>
       </span>
       <span>
         <strong>{customer.availablePoints.toLocaleString()} available</strong>
@@ -4126,7 +4126,7 @@ function CustomerRewardsRow({
       </span>
       <span className="customers-row-actions">
         <button className="secondary-action small" type="button" onClick={onOpen}>
-          Open
+          Open Profile
         </button>
         <button className="secondary-action small" type="button" disabled={!adjustmentsEnabled} title={!adjustmentsEnabled ? rewardAdjustmentDisabledText : "Add or deduct reward points"} onClick={onAdjust}>
           Adjust
@@ -4234,7 +4234,7 @@ function CustomerRewardDetailPanel({
         <DetailStat label="Available" value={customer.availablePoints.toLocaleString()} tone="good" />
         <DetailStat label="Pending" value={customer.pendingPoints.toLocaleString()} />
         <DetailStat label="Lifetime" value={customer.lifetimeEarnedPoints.toLocaleString()} tone="good" />
-        <DetailStat label="Spent" value={money(customer.totalSpent + customer.posSpent)} />
+        <DetailStat label="Spent" value={money(customer.totalSpend)} />
       </div>
       <div className="customers-detail-actions">
         <button className="secondary-action full-width" type="button" onClick={onEdit}>
@@ -4290,6 +4290,203 @@ function CustomerRewardDetailPanel({
   );
 }
 
+function CustomerProfileWorkspace({
+  customer,
+  adjustmentsEnabled,
+  onAdjust,
+  onEdit,
+  onAttachOrder,
+  onClose
+}: {
+  customer: AdminCustomerRewardsDetailDTO;
+  adjustmentsEnabled: boolean;
+  onAdjust: () => void;
+  onEdit: () => void;
+  onAttachOrder: () => void;
+  onClose: () => void;
+}) {
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [purchaseFilter, setPurchaseFilter] = useState<"all" | "online" | "pos">("all");
+  useAdminSheetFocusTrap(workspaceRef, onClose, true, closeButtonRef);
+
+  const purchases = [
+    ...customer.recentOrders.map((order) => ({
+      id: `online-${order.id}`,
+      type: "online" as const,
+      source: "Online",
+      reference: `Order ${order.orderNumber}`,
+      status: `${formatStatus(order.paymentStatus)} / ${formatStatus(order.fulfillmentStatus)}`,
+      date: order.createdAt,
+      amount: Math.max(0, order.total - order.refundedAmount)
+    })),
+    ...customer.recentPosSales.map((sale) => ({
+      id: `pos-${sale.id}`,
+      type: "pos" as const,
+      source: "In-store",
+      reference: sale.saleReference ?? "Local sale",
+      status: sale.refundStatus ? formatStatus(sale.refundStatus) : "Completed",
+      date: sale.soldAt,
+      amount: sale.total
+    }))
+  ]
+    .filter((purchase) => purchaseFilter === "all" || purchase.type === purchaseFilter)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return (
+    <div className="inventory-modal-backdrop customers-profile-workspace-backdrop" role="presentation">
+      <div ref={workspaceRef} className="inventory-modal customers-profile-workspace" role="dialog" aria-modal="true" aria-label={`${customer.displayName} customer profile`}>
+        <header className="customers-profile-workspace-header">
+          <button ref={closeButtonRef} className="icon-button customers-profile-back" type="button" aria-label="Back to customers list" onClick={onClose}>
+            <ArrowLeft size={20} />
+          </button>
+          <div className="customers-profile-identity">
+            <span className="customer-profile-avatar" aria-hidden="true">{customerInitials(customer.displayName)}</span>
+            <div>
+              <span className="eyebrow">Customer profile</span>
+              <h2>{customer.displayName}</h2>
+              <p>{customer.maskedEmail}{customer.maskedPhone ? ` - ${customer.maskedPhone}` : ""}</p>
+            </div>
+          </div>
+          <div className="customers-profile-header-summary" aria-label="Customer profile summary">
+            <span className={`status-pill ${customer.status === "active" ? "good" : "watch"}`}>{formatStatus(customer.status)}</span>
+            <span className={`status-pill ${customer.emailVerified ? "good" : "watch"}`}>{customer.emailVerified ? "Verified" : "Unverified"}</span>
+            <span>{money(customer.totalSpend)} total spend</span>
+            <span>{customer.availablePoints.toLocaleString()} available pts</span>
+          </div>
+          <button className="icon-button customers-profile-close" type="button" aria-label="Close customer profile" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </header>
+
+        <main className="customers-profile-workspace-main">
+          <section className="customers-profile-section customers-profile-overview" aria-labelledby="customer-profile-overview-heading">
+            <div className="customers-profile-section-heading">
+              <div>
+                <h3 id="customer-profile-overview-heading">Overview</h3>
+                <p>Server-calculated commerce summary across online orders and explicitly linked in-store purchases.</p>
+              </div>
+            </div>
+            <div className="detail-stat-grid customers-profile-stat-grid">
+              <DetailStat label="Total spend" value={money(customer.totalSpend)} />
+              <DetailStat label="Purchases" value={customer.totalPurchaseCount.toLocaleString()} />
+              <DetailStat label="Online" value={`${customer.totalOrders} / ${money(customer.totalSpent)}`} />
+              <DetailStat label="In-store" value={`${customer.posSales} / ${money(customer.posSpent)}`} />
+              <DetailStat label="Last activity" value={shortDate(customer.lastActivityAt)} />
+              <DetailStat label="Customer since" value={shortDate(customer.joinedAt)} />
+            </div>
+          </section>
+
+          <section className="customers-profile-section" aria-labelledby="customer-profile-purchases-heading">
+            <div className="customers-profile-section-heading">
+              <div>
+                <h3 id="customer-profile-purchases-heading">Purchases</h3>
+                <p>Online orders and linked POS/local sales. Nothing is inferred from name, email, or phone alone.</p>
+              </div>
+              <div className="customers-profile-filter-tabs" role="tablist" aria-label="Purchase source filter">
+                {[
+                  ["all", "All"],
+                  ["online", "Online"],
+                  ["pos", "In-store"]
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    className={purchaseFilter === value ? "active" : ""}
+                    type="button"
+                    role="tab"
+                    aria-selected={purchaseFilter === value}
+                    onClick={() => setPurchaseFilter(value as "all" | "online" | "pos")}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {purchases.length ? (
+              <div className="customers-profile-purchase-list">
+                {purchases.map((purchase) => (
+                  <article key={purchase.id} className="customers-profile-purchase-card">
+                    <span className={`status-pill ${purchase.type === "online" ? "good" : "watch"}`}>{purchase.source}</span>
+                    <div>
+                      <strong>{purchase.reference}</strong>
+                      <small>{purchase.status} - {shortDate(purchase.date)}</small>
+                    </div>
+                    <b>{money(purchase.amount)}</b>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={Receipt} title="No purchases in this filter" detail="Linked online orders and in-store purchases will appear here." />
+            )}
+          </section>
+
+          <section className="customers-profile-section customers-profile-split">
+            <div>
+              <div className="customers-profile-section-heading">
+                <div>
+                  <h3>Rewards</h3>
+                  <p>Customer-safe reward totals and recent ledger labels.</p>
+                </div>
+              </div>
+              <div className="detail-stat-grid customers-profile-rewards-grid">
+                <DetailStat label="Available" value={customer.availablePoints.toLocaleString()} tone="good" />
+                <DetailStat label="Pending" value={customer.pendingPoints.toLocaleString()} />
+                <DetailStat label="Lifetime" value={customer.lifetimeEarnedPoints.toLocaleString()} tone="good" />
+              </div>
+              <CustomerDetailList
+                title="Recent Reward Activity"
+                empty="No reward activity yet."
+                rows={customer.recentLedgerEntries.map((entry) => ({
+                  id: entry.id,
+                  primary: `${entry.points >= 0 ? "+" : ""}${entry.points} pts - ${formatStatus(entry.status)}`,
+                  secondary: `${formatStatus(entry.source)} - ${shortDate(entry.createdAt)}${entry.hasAdminNote ? " - admin note saved" : ""}`,
+                  value: entry.reference ?? "Account"
+                }))}
+              />
+            </div>
+            <div>
+              <div className="customers-profile-section-heading">
+                <div>
+                  <h3>Addresses</h3>
+                  <p>Safe address summary for fulfillment support.</p>
+                </div>
+              </div>
+              <div className="customers-detail-section">
+                <p>{customer.savedAddressCount} saved address{customer.savedAddressCount === 1 ? "" : "es"}.</p>
+                <p>{customer.defaultAddressSummary ? `Default area ${customer.defaultAddressSummary}` : "No default address summary saved."}</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="customers-profile-section" aria-labelledby="customer-profile-actions-heading">
+            <div className="customers-profile-section-heading">
+              <div>
+                <h3 id="customer-profile-actions-heading">Actions</h3>
+                <p>Admin-only workflows. Redemption remains disabled.</p>
+              </div>
+            </div>
+            <div className="customers-profile-actions">
+              <button className="secondary-action" type="button" onClick={onEdit}>
+                <Settings size={16} />
+                Edit Customer
+              </button>
+              <button className="secondary-action" type="button" onClick={onAttachOrder}>
+                <Receipt size={16} />
+                Attach Past Order
+              </button>
+              <button className="primary-action" type="button" disabled={!adjustmentsEnabled} title={!adjustmentsEnabled ? rewardAdjustmentDisabledText : "Add or deduct reward points"} onClick={onAdjust}>
+                <Plus size={16} />
+                Add or Deduct Points
+              </button>
+            </div>
+            {!adjustmentsEnabled ? <p className="customers-muted-note">{rewardAdjustmentDisabledText}</p> : null}
+          </section>
+        </main>
+      </div>
+    </div>
+  );
+}
+
 function CustomerDetailList({
   title,
   empty,
@@ -4321,8 +4518,8 @@ function CustomerDetailList({
   );
 }
 
-function customerTotalSpend(customer: Pick<AdminCustomerRewardsCustomerDTO, "totalSpent" | "posSpent">) {
-  return customer.totalSpent + customer.posSpent;
+function customerTotalSpend(customer: Pick<AdminCustomerRewardsCustomerDTO, "totalSpend">) {
+  return customer.totalSpend;
 }
 
 function customerInitials(name: string) {
@@ -4354,7 +4551,7 @@ function CustomerProfileSummaryCard({
       </div>
       <div className="customer-profile-summary-grid">
         <DetailStat label="Customer since" value={shortDate(customer.joinedAt)} />
-        <DetailStat label="Orders" value={customer.totalOrders.toLocaleString()} />
+        <DetailStat label="Purchases" value={customer.totalPurchaseCount.toLocaleString()} />
         <DetailStat label="Lifetime spend" value={money(customerTotalSpend(customer))} />
         <DetailStat label="Available points" value={customer.availablePoints.toLocaleString()} tone="good" />
         <DetailStat label="Pending points" value={customer.pendingPoints.toLocaleString()} />
@@ -4390,11 +4587,10 @@ function CustomerSearchProfileCard({
         </span>
       </div>
       <div className="customer-search-profile-stats">
-        <span><b>{shortDate(customer.joinedAt)}</b><small>Customer since</small></span>
-        <span><b>{(customer.totalOrders + customer.posSales).toLocaleString()}</b><small>Purchases</small></span>
+        <span><b>{customer.totalPurchaseCount.toLocaleString()}</b><small>Purchases</small></span>
         <span><b>{money(customerTotalSpend(customer))}</b><small>Total spent</small></span>
         <span><b>{customer.availablePoints.toLocaleString()}</b><small>Available points</small></span>
-        <span><b>{customer.pendingPoints.toLocaleString()}</b><small>Pending points</small></span>
+        <span><b>{shortDate(customer.lastActivityAt)}</b><small>Last activity</small></span>
       </div>
       <div className="customer-search-profile-actions">
         <button className="secondary-action small" type="button" onClick={onView} aria-label={`View profile for ${customer.displayName}`}>
@@ -16849,6 +17045,7 @@ function SalesLog({
           busyLabel={busyLabel}
           submit={submit}
           isAdmin={isAdmin}
+          editSaleOpen={Boolean(editSaleRow)}
           onEdit={() => setEditSaleId(selectedSaleRow.sale.id)}
           onRefresh={onRefresh}
           onClose={() => setSelectedSaleId("")}
@@ -16860,12 +17057,9 @@ function SalesLog({
           sale={editSaleRow.sale}
           busy={busy}
           busyLabel={busyLabel}
-          submit={async (event, label, run, options) => {
-            await submit(event, label, run, options);
-            setEditSaleId("");
-            setSelectedSaleId("");
-          }}
+          submit={submit}
           onClose={() => setEditSaleId("")}
+          onSaved={() => setEditSaleId("")}
         />
       ) : null}
     </section>
@@ -17285,6 +17479,8 @@ function SalesAttachCustomerModal({
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 300);
+  const [customerPage, setCustomerPage] = useState(1);
   const [customersData, setCustomersData] = useState<AdminCustomerRewardsResponseDTO | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<AdminCustomerRewardsCustomerDTO | null>(null);
   const [previewCustomer, setPreviewCustomer] = useState<AdminCustomerRewardsCustomerDTO | null>(null);
@@ -17298,19 +17494,28 @@ function SalesAttachCustomerModal({
   const [error, setError] = useState<string | null>(null);
   useAdminSheetFocusTrap(workspaceRef, onClose, true, searchInputRef);
 
-  const loadCustomers = useCallback(async (searchText: string) => {
+  const loadCustomers = useCallback(async (searchText: string, nextPage = 1, append = false) => {
     setSearching(true);
     setError(null);
     try {
       const params = new URLSearchParams({
-        page: "1",
-        pageSize: "8",
+        page: String(nextPage),
+        pageSize: "10",
         status: "active",
-        sort: "recent"
+        sort: searchText.trim() ? "name" : "activity"
       });
       if (searchText.trim()) params.set("search", searchText.trim());
       const result = await requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`);
-      setCustomersData(result);
+      setCustomerPage(result.pagination.page);
+      setCustomersData((current) => append && current
+        ? {
+            ...result,
+            customers: [
+              ...current.customers,
+              ...result.customers.filter((customer) => !current.customers.some((existing) => existing.id === customer.id))
+            ]
+          }
+        : result);
       setPreviewCustomer((current) => current && result.customers.some((customer) => customer.id === current.id) ? current : null);
     } catch (searchError) {
       setError(searchError instanceof Error ? searchError.message : "Could not search customers.");
@@ -17320,8 +17525,16 @@ function SalesAttachCustomerModal({
   }, []);
 
   useEffect(() => {
-    void loadCustomers("");
-  }, [loadCustomers]);
+    void loadCustomers(debouncedQuery, 1, false);
+  }, [debouncedQuery, loadCustomers]);
+
+  const submitCustomerSearch = useCallback((searchText = query) => {
+    void loadCustomers(searchText, 1, false);
+  }, [loadCustomers, query]);
+
+  const showMoreCustomers = useCallback(() => {
+    void loadCustomers(query, customerPage + 1, true);
+  }, [customerPage, loadCustomers, query]);
 
   const chooseCustomer = async (customer: AdminCustomerRewardsCustomerDTO) => {
     setSelectedCustomer(customer);
@@ -17443,23 +17656,31 @@ function SalesAttachCustomerModal({
                     <input
                       ref={searchInputRef}
                       value={query}
-                      onChange={(event) => setQuery(event.target.value)}
+                      onChange={(event) => {
+                        setQuery(event.target.value);
+                        setCustomerPage(1);
+                      }}
                       onKeyDown={(event) => {
                         if (event.key !== "Enter") return;
                         event.preventDefault();
-                        void loadCustomers(query);
+                        submitCustomerSearch(event.currentTarget.value);
                       }}
                       placeholder="Search customer name, email, or phone..."
                       type="search"
                       aria-label="Search customers by name, email, or phone"
                     />
                   </label>
-                  <button className="secondary-action" type="button" onClick={() => void loadCustomers(query)} disabled={searching}>
+                  <button className="secondary-action" type="button" onClick={() => submitCustomerSearch()} disabled={searching}>
                     <Search size={16} />
                     {searching ? "Searching" : "Search"}
                   </button>
                 </div>
                 <p className="customers-muted-note">Search is discovery only. It never links a sale, selects a customer, or awards points until Select Customer and Attach are pressed.</p>
+                {customersData ? (
+                  <p className="customers-muted-note">
+                    Showing {customers.length.toLocaleString()} of {customersData.pagination.total.toLocaleString()} customer match{customersData.pagination.total === 1 ? "" : "es"}.
+                  </p>
+                ) : null}
                 <div className="sales-attach-customer-list" aria-label="Customer matches">
                   {searching ? (
                     <EmptyState icon={RefreshCw} title="Searching customers" detail="Loading active customer accounts." />
@@ -17478,6 +17699,12 @@ function SalesAttachCustomerModal({
                     <EmptyState icon={Users} title="No customers found" detail="Search by customer name, email, or phone." />
                   )}
                 </div>
+                {customersData && customersData.pagination.page < customersData.pagination.totalPages ? (
+                  <button className="secondary-action sales-attach-show-more" type="button" onClick={showMoreCustomers} disabled={searching}>
+                    <Plus size={16} />
+                    Show more customers
+                  </button>
+                ) : null}
                 {previewCustomer ? (
                   <CustomerProfileSummaryCard customer={previewCustomer} title="Customer Profile Preview" />
                 ) : null}
@@ -17720,6 +17947,7 @@ function SaleDetailsModal({
   busyLabel,
   submit,
   isAdmin,
+  editSaleOpen,
   onEdit,
   onRefresh,
   onClose
@@ -17731,6 +17959,7 @@ function SaleDetailsModal({
   busyLabel: string | null;
   submit: SubmitHandler;
   isAdmin: boolean;
+  editSaleOpen: boolean;
   onEdit: () => void;
   onRefresh: () => Promise<void>;
   onClose: () => void;
@@ -17747,7 +17976,7 @@ function SaleDetailsModal({
   const [rewardCustomer, setRewardCustomer] = useState<AdminCustomerAttachOrderSearchResponseDTO["customer"] | null>(null);
   const [applyingRewards, setApplyingRewards] = useState(false);
   const [rewardOverride, setRewardOverride] = useState<Partial<InventorySaleDTO> & { id: string } | null>(null);
-  useAdminSheetFocusTrap(workspaceRef, onClose, !attachCustomerOpen && !rewardConfirmationOpen);
+  useAdminSheetFocusTrap(workspaceRef, onClose, !attachCustomerOpen && !rewardConfirmationOpen && !editSaleOpen);
   useEffect(() => {
     setRewardOverride(null);
     setRewardConfirmationOpen(false);
@@ -18185,7 +18414,8 @@ function EditSaleModal({
   busy,
   busyLabel,
   submit,
-  onClose
+  onClose,
+  onSaved
 }: {
   item: InventoryItemDTO | null;
   sale: InventorySaleDTO;
@@ -18193,11 +18423,15 @@ function EditSaleModal({
   busyLabel: string | null;
   submit: SubmitHandler;
   onClose: () => void;
+  onSaved: () => void;
 }) {
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [quantity, setQuantity] = useState(sale.quantitySold);
   const [price, setPrice] = useState(sale.actualSalePrice);
   const [fees, setFees] = useState(sale.fees ?? 0);
   const [shipping, setShipping] = useState(sale.shippingCost ?? 0);
+  useAdminSheetFocusTrap(modalRef, onClose, true, closeButtonRef);
   const maxQuantity = (item?.quantityOwned ?? 0) + sale.quantitySold;
   const costBasis = quantity === sale.quantitySold ? sale.costBasis : item ? item.averageCost * quantity : sale.costBasis;
   const gross = quantity * price;
@@ -18205,14 +18439,14 @@ function EditSaleModal({
   const profit = net - costBasis;
   const roi = costBasis > 0 ? (profit / costBasis) * 100 : null;
   return (
-    <div className="inventory-modal-backdrop" role="presentation">
-      <div className="inventory-modal record-sale-modal" role="dialog" aria-modal="true" aria-label={`Edit sale for ${sale.itemName}`}>
+    <div className="inventory-modal-backdrop sale-edit-workspace-backdrop" role="presentation">
+      <div ref={modalRef} className="inventory-modal record-sale-modal sale-edit-workspace-modal" role="dialog" aria-modal="true" aria-label={`Edit sale for ${sale.itemName}`}>
         <div className="edit-card-heading">
           <div>
             <h2>Edit Sale</h2>
             <span>Realized profit is recalculated from actual sale price and FIFO stock lot cost basis.</span>
           </div>
-          <button className="icon-button" type="button" aria-label="Close edit sale" onClick={onClose}>
+          <button ref={closeButtonRef} className="icon-button" type="button" aria-label="Close edit sale" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -18227,7 +18461,7 @@ function EditSaleModal({
                   method: "PATCH",
                   body: JSON.stringify(formJson(form))
                 }),
-              { reset: false, success: "Sale updated" }
+              { reset: false, success: "Sale updated", onSuccess: onSaved }
             )
           }
         >
@@ -18280,10 +18514,15 @@ function EditSaleModal({
             <span>Cost basis {money(costBasis)}</span>
             <strong>P/L {money(profit)} ({percent(roi)})</strong>
           </div>
-          <button className="mini-action solid" disabled={busy} type="submit">
-            <Save size={14} />
-            {busyLabel === `Updating sale ${sale.id}` ? "Saving" : "Save Sale"}
-          </button>
+          <div className="inventory-edit-actions sale-edit-actions">
+            <button className="secondary-action" type="button" onClick={onClose} disabled={busyLabel === `Updating sale ${sale.id}`}>
+              Cancel
+            </button>
+            <button className="mini-action solid" disabled={busy} type="submit">
+              <Save size={14} />
+              {busyLabel === `Updating sale ${sale.id}` ? "Saving" : "Save Sale"}
+            </button>
+          </div>
         </form>
       </div>
     </div>

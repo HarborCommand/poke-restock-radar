@@ -181,6 +181,70 @@ test("admin customers rewards list returns masked customer fields and summary", 
   assert.equal(result.summary.adjustmentsEnabled, false);
 });
 
+test("admin customer list reports combined online and linked in-store purchases without double counting", async () => {
+  const { customer } = await createCustomerWithRewards();
+  const item = await createAttachInventoryItem();
+  await prisma.inventorySale.create({
+    data: {
+      inventoryItemId: item.id,
+      customerAccountId: customer.id,
+      quantitySold: 1,
+      soldPricePerItem: 35,
+      grossSale: 35,
+      platform: "manual_pos",
+      netSale: 35,
+      costBasis: 20,
+      profitLoss: 15,
+      refundedAmount: 5,
+      refundStatus: "partially_refunded",
+      paymentMethod: "cash",
+      soldAt: new Date()
+    }
+  });
+  await prisma.inventorySale.create({
+    data: {
+      inventoryItemId: item.id,
+      customerAccountId: customer.id,
+      quantitySold: 1,
+      soldPricePerItem: 999,
+      grossSale: 999,
+      platform: "website",
+      netSale: 999,
+      costBasis: 20,
+      profitLoss: 979,
+      paymentMethod: "card",
+      notes: "Storefront order GDG-DOUBLECOUNT",
+      soldAt: new Date()
+    }
+  });
+  await prisma.inventorySale.create({
+    data: {
+      inventoryItemId: item.id,
+      customerAccountId: customer.id,
+      quantitySold: 1,
+      soldPricePerItem: 77,
+      grossSale: 77,
+      platform: "test",
+      netSale: 77,
+      costBasis: 20,
+      profitLoss: 57,
+      paymentMethod: "cash",
+      soldAt: new Date()
+    }
+  });
+
+  const result = await listAdminCustomerRewards({ search: customer.email, status: "active", sort: "spent" });
+  const row = result.customers.find((candidate) => candidate.id === customer.id);
+
+  assert.ok(row);
+  assert.equal(row.totalOrders, 1);
+  assert.equal(row.totalSpent, 55);
+  assert.equal(row.posSales, 1);
+  assert.equal(row.posSpent, 30);
+  assert.equal(row.totalPurchaseCount, 2);
+  assert.equal(row.totalSpend, 85);
+});
+
 test("admin customer search matches first name last name partial name email and phone", async () => {
   const adrianRivera = await prisma.customerAccount.create({
     data: {
@@ -1215,6 +1279,12 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(app, /CustomerProfileEditModal/);
   assert.match(app, /RewardAdjustmentModal/);
   assert.match(app, /CustomerAttachOrderModal/);
+  assert.match(app, /CustomerProfileWorkspace/);
+  assert.match(app, /customers-profile-workspace/);
+  assert.match(app, /online orders and explicitly linked in-store purchases/i);
+  assert.match(app, /totalPurchaseCount/);
+  assert.match(app, /totalSpend/);
+  assert.match(app, /Open Profile/);
   assert.match(app, /SalesAttachCustomerModal/);
   assert.match(app, /Attach to Customer/);
   assert.match(app, /Attach Past Order/);
@@ -1245,6 +1315,12 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   assert.match(app, /Internal admin note/);
   assert.match(app, /Save Adjustment/);
   assert.match(app, /CustomerRewardDetailPanel/);
+  const customersPanel = app.slice(
+    app.indexOf("function CustomersRewardsPanel"),
+    app.indexOf("function CustomerRewardsRow")
+  );
+  assert.doesNotMatch(customersPanel, /<aside className="customers-detail-panel"/);
+  assert.match(customersPanel, /<CustomerProfileWorkspace/);
   const customerEditModal = app.slice(
     app.indexOf("function CustomerProfileEditModal"),
     app.indexOf("function RewardAdjustmentModal")
@@ -1274,6 +1350,11 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
     app.indexOf("function SaleDetailsModal")
   );
   assert.match(salesAttachModal, /aria-label=\{`Attach \$\{target\.label\} to a customer`\}/);
+  assert.match(salesAttachModal, /useDebouncedValue\(query, 300\)/);
+  assert.match(salesAttachModal, /pageSize: "10"/);
+  assert.match(salesAttachModal, /sort: searchText\.trim\(\) \? "name" : "activity"/);
+  assert.match(salesAttachModal, /Show more customers/);
+  assert.match(salesAttachModal, /Showing \{customers\.length\.toLocaleString\(\)\} of/);
   assert.ok(salesAttachModal.includes("requestJson<AdminCustomerRewardsResponseDTO>(`/api/radar/customers?${params.toString()}`)"));
   assert.match(salesAttachModal, /requestJson<AdminCustomerAttachOrderSearchResponseDTO>/);
   assert.ok(salesAttachModal.includes("`/api/radar/customers/${customer.id}/attach-order?${params.toString()}`"));
@@ -1354,6 +1435,10 @@ test("sales detail and customer linking use full-screen accessible workspaces", 
     app.indexOf("function SaleDetailsModal"),
     app.indexOf("function EditSaleModal")
   );
+  const editSaleModal = app.slice(
+    app.indexOf("function EditSaleModal"),
+    app.indexOf("type AppView")
+  );
   const focusTrap = app.slice(
     app.indexOf("function useAdminSheetFocusTrap"),
     app.indexOf("function SalesAttachCustomerModal")
@@ -1370,6 +1455,13 @@ test("sales detail and customer linking use full-screen accessible workspaces", 
   assert.match(saleDetailsModal, /Customer &amp; Rewards/);
   assert.match(saleDetailsModal, /Inventory &amp; Profitability/);
   assert.match(saleDetailsModal, /sale-workspace-actions/);
+  assert.match(editSaleModal, /sale-edit-workspace-backdrop/);
+  assert.match(editSaleModal, /sale-edit-workspace-modal/);
+  assert.match(editSaleModal, /useAdminSheetFocusTrap\(modalRef, onClose, true, closeButtonRef\)/);
+  assert.match(editSaleModal, /onSuccess: onSaved/);
+  assert.match(app, /editSaleOpen=\{Boolean\(editSaleRow\)\}/);
+  assert.match(app, /onSaved=\{\(\) => setEditSaleId\(""\)\}/);
+  assert.doesNotMatch(app, /setSelectedSaleId\(""\);[\s\S]{0,80}setEditSaleId\(""\)/);
 
   assert.match(salesAttachModal, /sales-customer-linking-workspace/);
   assert.match(salesAttachModal, /Attach Sale to Customer/);
@@ -1389,14 +1481,18 @@ test("sales detail and customer linking use full-screen accessible workspaces", 
   assert.match(focusTrap, /event\.key === "Escape"/);
   assert.match(focusTrap, /event\.key !== "Tab"/);
   assert.match(focusTrap, /previousFocus\?\.focus\(\)/);
-  assert.match(saleDetailsModal, /useAdminSheetFocusTrap\(workspaceRef, onClose, !attachCustomerOpen && !rewardConfirmationOpen\)/);
+  assert.match(saleDetailsModal, /useAdminSheetFocusTrap\(workspaceRef, onClose, !attachCustomerOpen && !rewardConfirmationOpen && !editSaleOpen\)/);
   assert.match(salesAttachModal, /useAdminSheetFocusTrap\(workspaceRef, onClose, true, searchInputRef\)/);
 
   assert.match(css, /body \.inventory-modal\.sale-details-modal\.sale-detail-workspace,[\s\S]*?width: 100vw;[\s\S]*?height: 100dvh;[\s\S]*?border-radius: 0;/);
   assert.match(css, /body \.inventory-modal\.customers-admin-modal\.customer-attach-order-modal\.sales-customer-linking-workspace[\s\S]*?width: 100vw;[\s\S]*?height: 100dvh;/);
+  assert.match(css, /body \.inventory-modal-backdrop\.sale-edit-workspace-backdrop[\s\S]*?z-index: 12020;/);
+  assert.match(css, /body \.inventory-modal\.record-sale-modal\.sale-edit-workspace-modal[\s\S]*?max-height: min\(760px, calc\(100dvh - 32px\)\);/);
   assert.match(css, /body \.sale-workspace-main[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/);
   assert.match(css, /body \.sales-linking-workspace-main[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/);
   assert.match(css, /body \.sale-detail-workspace button:focus-visible,[\s\S]*?body \.sales-customer-linking-workspace button:focus-visible[\s\S]*?outline: 3px solid/);
+  assert.match(css, /body \.customers-profile-workspace[\s\S]*?width: 100vw;[\s\S]*?height: 100dvh;/);
+  assert.match(css, /body \.customers-profile-workspace-main[\s\S]*?overflow-y: auto;/);
   assert.match(css, /@media \(max-width: 860px\)[\s\S]*?body \.sale-workspace-layout[\s\S]*?grid-template-columns: 1fr;/);
   assert.match(css, /@media \(max-width: 560px\)[\s\S]*?sales-linking-workspace-actions \.primary-action[\s\S]*?white-space: normal;/);
   assert.ok(

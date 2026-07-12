@@ -69,9 +69,11 @@ const customerListInclude = {
     select: {
       id: true,
       saleReference: true,
+      platform: true,
       grossSale: true,
       refundedAmount: true,
       refundStatus: true,
+      notes: true,
       soldAt: true
     }
   }
@@ -131,7 +133,14 @@ function paidOrderNet(order: { total: number; refundedAmount: number; paymentSta
   return Math.max(0, order.total - order.refundedAmount);
 }
 
-function posSaleNet(sale: { grossSale: number; refundedAmount: number; refundStatus: string | null }) {
+function storefrontOrderNumberFromSaleNotes(notes: string | null | undefined) {
+  return notes?.match(/(?:^|\n)Storefront order\s+([A-Z0-9-]+)/i)?.[1] ?? null;
+}
+
+function posSaleNet(sale: { grossSale: number; refundedAmount: number; refundStatus: string | null; platform?: string | null; notes?: string | null }) {
+  const platform = sale.platform?.trim().toLowerCase();
+  if (platform === "website" || platform === "test" || platform === "smoke") return 0;
+  if (storefrontOrderNumberFromSaleNotes(sale.notes)) return 0;
   if (sale.refundStatus === "canceled") return 0;
   return Math.max(0, sale.grossSale - sale.refundedAmount);
 }
@@ -147,6 +156,8 @@ function mapCustomerListItem(customer: CustomerWithActivity): AdminCustomerRewar
   const balance = customer.rewardBalance;
   const paidOrders = customer.orders.filter((order) => paidOrderNet(order) > 0);
   const posSales = customer.posSales.filter((sale) => posSaleNet(sale) > 0);
+  const onlineSpend = paidOrders.reduce((sum, order) => sum + paidOrderNet(order), 0);
+  const posSpend = posSales.reduce((sum, sale) => sum + posSaleNet(sale), 0);
   const lastOrderAt = latestDate(...customer.orders.map((order) => order.createdAt));
   const lastPosAt = latestDate(...customer.posSales.map((sale) => sale.soldAt));
   const lastActivityAt = latestDate(lastOrderAt, lastPosAt, customer.lastLoginAt, customer.updatedAt);
@@ -162,9 +173,11 @@ function mapCustomerListItem(customer: CustomerWithActivity): AdminCustomerRewar
     lastLoginAt: safeDate(customer.lastLoginAt),
     lastActivityAt: safeDate(lastActivityAt),
     totalOrders: paidOrders.length,
-    totalSpent: paidOrders.reduce((sum, order) => sum + paidOrderNet(order), 0),
+    totalSpent: onlineSpend,
     posSales: posSales.length,
-    posSpent: posSales.reduce((sum, sale) => sum + posSaleNet(sale), 0),
+    posSpent: posSpend,
+    totalPurchaseCount: paidOrders.length + posSales.length,
+    totalSpend: onlineSpend + posSpend,
     availablePoints: balance?.availablePoints ?? 0,
     pendingPoints: balance?.pendingPoints ?? 0,
     lifetimeEarnedPoints: balance?.lifetimeEarnedPoints ?? 0
@@ -247,7 +260,7 @@ function customerMatchesSearch(customer: CustomerWithActivity, rawSearch: string
 function sortCustomers(customers: AdminCustomerRewardsCustomerDTO[], sort: string | null | undefined) {
   const next = [...customers];
   if (sort === "points") return next.sort((a, b) => b.lifetimeEarnedPoints - a.lifetimeEarnedPoints);
-  if (sort === "spent") return next.sort((a, b) => b.totalSpent + b.posSpent - (a.totalSpent + a.posSpent));
+  if (sort === "spent") return next.sort((a, b) => b.totalSpend - a.totalSpend);
   if (sort === "name") return next.sort((a, b) => a.displayName.localeCompare(b.displayName));
   if (sort === "activity") {
     return next.sort((a, b) => new Date(b.lastActivityAt ?? b.joinedAt).getTime() - new Date(a.lastActivityAt ?? a.joinedAt).getTime());
