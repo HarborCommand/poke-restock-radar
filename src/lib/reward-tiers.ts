@@ -24,7 +24,7 @@ export const REWARD_TIERS = [
     key: "master_collector",
     name: "Master Collector",
     threshold: 3_000,
-    asset: "/rewards/tiers/master-collector.webp",
+    asset: "/rewards/tiers/master-collector-trophy.webp",
     message: "Elite collector status unlocked."
   },
   {

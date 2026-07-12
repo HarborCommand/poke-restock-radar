@@ -1115,7 +1115,13 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
 function RewardTierBadge({ tier, className = "" }: { tier: RewardTier; className?: string }) {
   return (
     <span className={`gdg-tier-badge ${className}`.trim()}>
-      <Image src={tier.asset} alt={`${tier.name} tier badge`} width={300} height={300} />
+      <Image
+        src={tier.asset}
+        alt={`${tier.name} tier badge`}
+        width={300}
+        height={300}
+        loading={className === "current" ? "eager" : "lazy"}
+      />
     </span>
   );
 }
