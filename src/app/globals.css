@@ -22293,7 +22293,7 @@ body .segmented-control button.active {
 
 body .customers-rewards-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(310px, 360px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-items: start;
   min-width: 0;
@@ -31025,6 +31025,241 @@ body .sales-customer-linking-workspace textarea:focus-visible {
   outline-offset: 3px;
 }
 
+body .inventory-modal-backdrop.sale-edit-workspace-backdrop {
+  z-index: 12020;
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 3vw, 36px);
+}
+
+body .inventory-modal.record-sale-modal.sale-edit-workspace-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(760px, calc(100dvh - 32px));
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+body .sale-edit-workspace-modal .record-sale-form {
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 0;
+}
+
+body .sale-edit-actions {
+  position: sticky;
+  bottom: 0;
+  margin: 14px -2px 0;
+  background: #ffffff;
+  padding: 12px 0 0;
+}
+
+body .sales-attach-show-more {
+  justify-self: center;
+  margin-top: 10px;
+}
+
+body .sales-customer-linking-workspace .sales-attach-customer-list {
+  align-content: start;
+}
+
+body .sales-customer-linking-workspace .customer-search-profile-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+body .sales-customer-linking-workspace .customer-search-profile-stats {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+body .customers-profile-workspace-backdrop {
+  z-index: 9100;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  padding: 0;
+  overflow: hidden;
+}
+
+body .customers-profile-workspace {
+  inset: 0;
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  border-radius: 0;
+  overflow: hidden;
+  padding: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+body .customers-profile-workspace-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 18px clamp(22px, 4vw, 64px);
+}
+
+body .customers-profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+body .customers-profile-identity h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.3rem, 2vw, 2rem);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+body .customers-profile-identity p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+body .customers-profile-header-summary,
+body .customers-profile-actions,
+body .customers-profile-filter-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body .customers-profile-header-summary {
+  justify-content: flex-end;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+body .customers-profile-workspace-main {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 16px;
+  background: #f8fafc;
+  padding: clamp(16px, 3vw, 34px) clamp(20px, 5vw, 72px) calc(24px + env(safe-area-inset-bottom));
+}
+
+body .customers-profile-section {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+  padding: 18px;
+}
+
+body .customers-profile-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+body .customers-profile-section-heading h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+body .customers-profile-section-heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+body .customers-profile-stat-grid,
+body .customers-profile-rewards-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+body .customers-profile-filter-tabs {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 4px;
+}
+
+body .customers-profile-filter-tabs button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 11px;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+body .customers-profile-filter-tabs button.active {
+  background: var(--text);
+  color: #ffffff;
+}
+
+body .customers-profile-purchase-list {
+  display: grid;
+  gap: 10px;
+}
+
+body .customers-profile-purchase-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+body .customers-profile-purchase-card strong {
+  display: block;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+body .customers-profile-purchase-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 3px;
+}
+
+body .customers-profile-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 16px;
+}
+
+body .customers-profile-close,
+body .customers-profile-back {
+  flex: 0 0 auto;
+}
+
+body .customers-profile-workspace button:focus-visible,
+body .customers-profile-workspace input:focus-visible,
+body .customers-profile-workspace textarea:focus-visible,
+body .customers-profile-workspace select:focus-visible,
+body .sale-edit-workspace-modal button:focus-visible,
+body .sale-edit-workspace-modal input:focus-visible,
+body .sale-edit-workspace-modal textarea:focus-visible,
+body .sale-edit-workspace-modal select:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.48);
+  outline-offset: 3px;
+}
+
 @media (max-width: 860px) {
   body .customer-attach-order-modal.sales-customer-linking-workspace .sales-linking-workspace-header {
     grid-template-columns: auto minmax(0, 1fr);
@@ -31032,6 +31267,21 @@ body .sales-customer-linking-workspace textarea:focus-visible {
 
   body .customer-attach-order-modal.sales-customer-linking-workspace .sales-attach-target-card {
     grid-column: 1 / -1;
+  }
+
+  body .customers-profile-workspace-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  body .customers-profile-header-summary {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  body .customers-profile-split,
+  body .customers-profile-stat-grid,
+  body .customers-profile-rewards-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -31069,5 +31319,59 @@ body .sales-customer-linking-workspace textarea:focus-visible {
     white-space: normal;
     line-height: 1.2;
     text-align: center;
+  }
+
+  body .inventory-modal-backdrop.sale-edit-workspace-backdrop {
+    padding: 0;
+  }
+
+  body .inventory-modal.record-sale-modal.sale-edit-workspace-modal {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  body .customers-profile-workspace-header {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  body .customers-profile-workspace-main {
+    padding: 14px 14px calc(18px + env(safe-area-inset-bottom));
+  }
+
+  body .customers-profile-section {
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  body .customers-profile-section-heading,
+  body .customers-profile-purchase-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body .customers-profile-section-heading {
+    display: grid;
+  }
+
+  body .customers-profile-actions .primary-action,
+  body .customers-profile-actions .secondary-action,
+  body .customers-profile-filter-tabs {
+    width: 100%;
+  }
+
+  body .customers-profile-filter-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body .sales-customer-linking-workspace .customer-search-profile-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body .sales-customer-linking-workspace .customer-search-profile-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

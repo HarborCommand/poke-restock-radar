@@ -436,6 +436,8 @@ export type AdminCustomerRewardsCustomerDTO = {
   totalSpent: number;
   posSales: number;
   posSpent: number;
+  totalPurchaseCount: number;
+  totalSpend: number;
   availablePoints: number;
   pendingPoints: number;
   lifetimeEarnedPoints: number;
