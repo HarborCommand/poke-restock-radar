@@ -830,7 +830,7 @@ test("admin cancel refund flow is idempotent and returns inventory once", () => 
 
   assert.match(cancelOrRefund, /const requestEventId = `admin\.cancel_refund:\$\{input\.idempotencyKey\}`/);
   assert.match(cancelOrRefund, /prisma\.paymentEvent\.findUnique\(\{ where: \{ eventId: requestEventId \} \}\)/);
-  assert.match(cancelOrRefund, /prisma\.\$transaction/);
+  assert.match(cancelOrRefund, /runRewardSerializableTransaction/);
   assert.match(cancelOrRefund, /const duplicate = await tx\.paymentEvent\.findUnique/);
   assert.match(cancelOrRefund, /currentIsShippedRefundWorkflow \? current\.fulfillmentStatus : "canceled"/);
   assert.match(cancelOrRefund, /currentIsShippedRefundWorkflow \? current\.canceledAt : current\.canceledAt \?\? new Date\(\)/);

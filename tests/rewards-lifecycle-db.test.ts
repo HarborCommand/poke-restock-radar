@@ -150,8 +150,12 @@ test("release on shipped and picked_up moves pending to available once", async (
 });
 
 test("full reversal before release removes pending points and is idempotent", async () => {
-  const order = await createRewardTestOrder({ itemLineTotal: 80, status: "canceled" });
+  const order = await createRewardTestOrder({ itemLineTotal: 80 });
   await awardRewardsForPaidOrder(order);
+  await prisma.storefrontOrder.update({
+    where: { id: order.id },
+    data: { status: "canceled" }
+  });
 
   assert.deepEqual(await reverseRewardsForOrder({ ...order, status: "canceled" }, { reason: "cancel", idempotencyKey: "cancel-before-release" }), {
     status: "reversed",
@@ -174,9 +178,13 @@ test("full reversal before release removes pending points and is idempotent", as
 });
 
 test("full reversal after release removes available points and duplicate reversal is safe", async () => {
-  const order = await createRewardTestOrder({ itemLineTotal: 90, paymentStatus: "refunded", status: "refunded", refundedAmount: 105 });
-  await awardRewardsForPaidOrder({ ...order, paymentStatus: "paid", status: "paid", refundedAmount: 0 });
+  const order = await createRewardTestOrder({ itemLineTotal: 90 });
+  await awardRewardsForPaidOrder(order);
   await releasePendingRewardsForOrder(order.id, "shipped");
+  await prisma.storefrontOrder.update({
+    where: { id: order.id },
+    data: { paymentStatus: "refunded", status: "refunded", refundedAmount: 105 }
+  });
 
   assert.deepEqual(
     await reverseRewardsForOrder({ ...order, paymentStatus: "refunded", status: "refunded", refundedAmount: 105 }, { reason: "refund", idempotencyKey: "refund-after-release" }),
@@ -198,9 +206,13 @@ test("full reversal after release removes available points and duplicate reversa
 });
 
 test("partial refund prorates against eligible product subtotal", async () => {
-  const order = await createRewardTestOrder({ itemLineTotal: 100, paymentStatus: "partially_refunded", status: "partially_refunded", refundedAmount: 25 });
-  await awardRewardsForPaidOrder({ ...order, paymentStatus: "paid", status: "paid", refundedAmount: 0 });
+  const order = await createRewardTestOrder({ itemLineTotal: 100 });
+  await awardRewardsForPaidOrder(order);
   await releasePendingRewardsForOrder(order.id, "shipped");
+  await prisma.storefrontOrder.update({
+    where: { id: order.id },
+    data: { paymentStatus: "partially_refunded", status: "partially_refunded", refundedAmount: 25 }
+  });
 
   assert.deepEqual(
     await reverseRewardsForOrder(
@@ -224,6 +236,42 @@ test("partial refund prorates against eligible product subtotal", async () => {
   const ledger = await ledgerForOrder(order.id);
   assert.equal(ledger.length, 2);
   assert.equal(ledger[1].points, -25);
+});
+
+test("paid award reloads authoritative order state and rejects a stale paid caller", async () => {
+  const order = await createRewardTestOrder({ itemLineTotal: 55 });
+  await prisma.storefrontOrder.update({
+    where: { id: order.id },
+    data: { paymentStatus: "refunded", status: "refunded", refundedAmount: 55 }
+  });
+
+  assert.deepEqual(await awardRewardsForPaidOrder(order), { status: "not_paid", points: 0 });
+  assert.equal((await ledgerForOrder(order.id)).length, 0);
+});
+
+test("refund reversal cannot make an available balance negative", async () => {
+  const order = await createRewardTestOrder({ itemLineTotal: 40 });
+  await awardRewardsForPaidOrder(order);
+  await releasePendingRewardsForOrder(order.id, "shipped");
+  const ledger = await ledgerForOrder(order.id);
+  const customerAccountId = ledger[0].customerAccountId;
+  await prisma.rewardBalance.update({
+    where: { customerAccountId },
+    data: { availablePoints: 15 }
+  });
+  await prisma.storefrontOrder.update({
+    where: { id: order.id },
+    data: { paymentStatus: "refunded", status: "refunded", refundedAmount: 40 }
+  });
+
+  assert.deepEqual(
+    await reverseRewardsForOrder(order, { reason: "refund", idempotencyKey: "bounded-refund" }),
+    { status: "partially_reversed", points: 15 }
+  );
+  const balance = await prisma.rewardBalance.findUniqueOrThrow({ where: { customerAccountId } });
+  assert.equal(balance.availablePoints, 0);
+  assert.equal(balance.pendingPoints, 0);
+  assert.equal(balance.lifetimeEarnedPoints, 40);
 });
 
 test("legacy null-status ledger entries summarize safely", () => {

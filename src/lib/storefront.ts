@@ -28,6 +28,7 @@ import {
 import { applyMerchantShippingPolicyToCarrierQuote } from "@/lib/shipping-policy";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { awardRewardsForPaidOrder, releasePendingRewardsForOrder, reverseRewardsForOrder, rewardSummaryForOrder } from "@/lib/customer-rewards";
+import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
@@ -3426,7 +3427,7 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
   const reasonLabel = cancellationReasonLabels[input.reason];
   const requestedEmailStatus = "skipped";
 
-  const updatedOrder = await prisma.$transaction(async (tx) => {
+  const updatedOrder = await runRewardSerializableTransaction(async (tx) => {
     const duplicate = await tx.paymentEvent.findUnique({ where: { eventId: requestEventId } });
     if (duplicate) {
       const current = await tx.storefrontOrder.findUnique({ where: { id: order.id }, include: storefrontOrderInclude });
@@ -3526,16 +3527,22 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
         }
       });
     }
+    if (refundCents > 0 || updated.status === "canceled" || updated.paymentStatus === "refunded" || updated.paymentStatus === "partially_refunded") {
+      await reverseRewardsForOrder(
+        updated,
+        {
+          reason: refundCents > 0 ? "refund" : "cancel",
+          idempotencyKey: input.idempotencyKey,
+          refundedAmount: moneyFromCents(newRefundedCents)
+        },
+        tx
+      );
+    }
     return updated;
   });
 
   let finalOrder = updatedOrder;
   if (refundCents > 0 || updatedOrder.status === "canceled" || updatedOrder.paymentStatus === "refunded" || updatedOrder.paymentStatus === "partially_refunded") {
-    await reverseRewardsForOrder(updatedOrder, {
-      reason: refundCents > 0 ? "refund" : "cancel",
-      idempotencyKey: input.idempotencyKey,
-      refundedAmount: moneyFromCents(newRefundedCents)
-    });
     finalOrder = await prisma.storefrontOrder.findUnique({
       where: { id: updatedOrder.id },
       include: storefrontOrderInclude

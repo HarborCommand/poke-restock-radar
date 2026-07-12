@@ -437,7 +437,7 @@ test("POS duplicate submit and same-item oversell are guarded server-side", () =
   assert.match(service, /function posSaleReferenceFromIdempotencyKey/);
   assert.match(createPosSale, /const existingReceipt = await receiptForExistingPosSale\(prisma, currentUser, saleReference\)/);
   assert.match(createPosSale, /const duplicateReceipt = await receiptForExistingPosSale\(tx, currentUser, saleReference\)/);
-  assert.match(createPosSale, /const receipt = await prisma\.\$transaction\(async \(tx\) =>/);
+  assert.match(createPosSale, /const receipt = await runRewardSerializableTransaction\(async \(tx\) =>/);
   assert.match(createPosSale, /const sortedCartItems = \[\.\.\.cartItems\]\.sort/);
   assert.match(createPosSale, /await tx\.inventoryItem\.updateMany/);
   assert.match(service, /remainingQuantity: \{ gte: quantityFromLot \}/);
@@ -728,7 +728,7 @@ test("POS rewards are server-side, separately flagged, and excluded from browser
   assert.match(posCustomer, /selectedCustomerAccountId/);
   assert.match(posCustomer, /accountById\(client, selectedCustomerAccountId\)/);
   assert.match(createPosSale, /await awardRewardsForCompletedPosSale/);
-  assert.match(createPosSale, /eligibleSubtotalCents: Math\.round\(totals\.subtotal \* 100\)/);
+  assert.match(createPosSale, /eligibleSubtotalCents: rewardMoneyToCents\(totals\.subtotal\)/);
   assert.match(customerConfig, /CUSTOMER_POS_REWARDS_ENABLED/);
   assert.match(rewards, /customerPosRewardsEnabled/);
   assert.match(rewards, /idempotencyKey: `rewards:pos:earn:\$\{input\.saleReference\}`/);
