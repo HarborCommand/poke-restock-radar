@@ -31102,11 +31102,10 @@ body .sales-customer-linking-workspace textarea:focus-visible {
 }
 
 .gdg-rewards-level-numbers strong {
-  overflow: hidden;
   color: #102a4c;
   font-size: 1.12rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.15;
+  overflow-wrap: normal;
 }
 
 .gdg-rewards-level-header > .gdg-tier-badge {
