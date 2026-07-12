@@ -863,6 +863,7 @@ const statements = [
     "sessionRevokedBefore" DATETIME,
     "emailVerifiedAt" DATETIME,
     "lastLoginAt" DATETIME,
+    "highestAcknowledgedRewardTier" INTEGER NOT NULL DEFAULT 0,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "CustomerAccount_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
@@ -1485,6 +1486,7 @@ const statements = [
   `ALTER TABLE "CustomerAccount" ADD COLUMN "normalizedEmail" TEXT`,
   `ALTER TABLE "CustomerAccount" ADD COLUMN "sessionRevokedBefore" DATETIME`,
   `ALTER TABLE "CustomerAccount" ADD COLUMN "adminNote" TEXT`,
+  `ALTER TABLE "CustomerAccount" ADD COLUMN "highestAcknowledgedRewardTier" INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE "RewardLedgerEntry" ADD COLUMN "status" TEXT`,
   `ALTER TABLE "RewardLedgerEntry" ADD COLUMN "availableAt" DATETIME`,
   `ALTER TABLE "RewardLedgerEntry" ADD COLUMN "settledAt" DATETIME`,

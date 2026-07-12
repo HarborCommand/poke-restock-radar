@@ -58,6 +58,7 @@ function currentAccount(account: { id: string; email: string; normalizedEmail: s
     sessionRevokedBefore: null,
     emailVerifiedAt: account.emailVerifiedAt,
     lastLoginAt: null,
+    highestAcknowledgedRewardTier: 0,
     createdAt: account.createdAt,
     rewardBalance: null,
     savedAddresses: []

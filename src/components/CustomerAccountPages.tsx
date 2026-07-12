@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { ReactNode } from "react";
 import {
   ArrowRight,
@@ -37,6 +38,8 @@ import {
 import { GrabbyMascot } from "@/components/brand/GrabbyMascot";
 import type { CustomerRewardActivityItem } from "@/lib/customer-rewards";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
+import { RewardsLevelUp } from "@/components/RewardsLevelUp";
+import { REWARD_TIERS, rewardTierProgress, rewardTierState, type RewardTier } from "@/lib/reward-tiers";
 
 function money(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -1109,25 +1112,12 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
   );
 }
 
-const rewardLevels = [
-  { label: "Rookie Collector", points: 0 },
-  { label: "Card Hunter", points: 500 },
-  { label: "Pack Pro", points: 1500 },
-  { label: "Elite Trainer", points: 3000 },
-  { label: "Master Collector", points: 5000 }
-] as const;
-
-function rewardLevelProgress(lifetimeEarnedPoints: number) {
-  const points = Math.max(0, lifetimeEarnedPoints);
-  const currentIndex = rewardLevels.reduce((selectedIndex, level, index) => (points >= level.points ? index : selectedIndex), 0);
-  const currentLevel = rewardLevels[currentIndex] ?? rewardLevels[0];
-  const nextLevel = rewardLevels[currentIndex + 1] ?? null;
-  const nextThreshold = nextLevel?.points ?? currentLevel.points;
-  const pointsToNext = nextLevel ? Math.max(0, nextLevel.points - points) : 0;
-  const fullTrackMax = rewardLevels[rewardLevels.length - 1]?.points ?? 5000;
-  const rawTrackPercent = fullTrackMax > 0 ? (Math.min(points, fullTrackMax) / fullTrackMax) * 100 : 100;
-  const visualTrackPercent = points > 0 ? Math.max(3, Math.min(100, rawTrackPercent)) : 0;
-  return { currentLevel, nextLevel, nextThreshold, points, pointsToNext, visualTrackPercent };
+function RewardTierBadge({ tier, className = "" }: { tier: RewardTier; className?: string }) {
+  return (
+    <span className={`gdg-tier-badge ${className}`.trim()}>
+      <Image src={tier.asset} alt={`${tier.name} tier badge`} width={300} height={300} />
+    </span>
+  );
 }
 
 function rewardActivityView(entry: CustomerRewardActivityItem) {
@@ -1160,10 +1150,10 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
   const lifetimeEarnedPoints = balance?.lifetimeEarnedPoints ?? 0;
   const pendingPoints = balance?.pendingPoints ?? 0;
   const visibleReversedPoints = Math.abs(activity.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
-  const progress = rewardLevelProgress(lifetimeEarnedPoints);
-  const progressMax = progress.nextLevel ? progress.nextThreshold : progress.points || progress.nextThreshold || 1;
+  const progress = rewardTierProgress(lifetimeEarnedPoints);
+  const progressMax = progress.nextTier?.threshold ?? Math.max(progress.points, progress.currentTier.threshold, 1);
   const progressNow = Math.min(progress.points, progressMax);
-  const milestoneMax = rewardLevels[rewardLevels.length - 1]?.points ?? 5000;
+  const milestoneMax = REWARD_TIERS[REWARD_TIERS.length - 1]?.threshold ?? 5000;
   const pointsLabel = (value: number) => value.toLocaleString();
   const summaryCards = [
     {
@@ -1198,14 +1188,22 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
 
   return (
     <>
+      <RewardsLevelUp
+        currentTierIndex={progress.currentIndex}
+        highestAcknowledgedTier={account.highestAcknowledgedRewardTier}
+        points={progress.points}
+        pointsToNext={progress.pointsToNext}
+        progressPercent={progress.progressPercent}
+      />
       <AccountNavigation active="rewards" />
       <section className="gdg-account-card gdg-rewards-spotlight" aria-labelledby="gdg-rewards-title">
         <div className="gdg-rewards-spotlight-mascot">
           <GrabbyMascot variant="rewards" size="large" />
         </div>
         <div className="gdg-rewards-spotlight-copy">
-          <h1 id="gdg-rewards-title">Keep earning with Grabby!</h1>
-          <p>Earn 1 point per $1 spent on eligible product purchases.</p>
+          <p className="gdg-overline">Collector rewards</p>
+          <h1 id="gdg-rewards-title">Your collection. Your level.</h1>
+          <p>Earn 1 point per $1 spent on eligible product purchases. Keep earning, keep opening, keep leveling up.</p>
           <p>Rewards redemption is coming soon. Points are display-only and do not affect checkout totals yet.</p>
           <div className="gdg-rewards-spotlight-actions">
             <Link href="/policies" className="gdg-primary-button">
@@ -1258,37 +1256,42 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
 
       <div className="gdg-rewards-main-grid">
         <section className="gdg-account-card gdg-rewards-level-card" aria-labelledby="gdg-rewards-level-title">
-          <div className="gdg-account-panel-heading">
-            <div>
+          <div className="gdg-rewards-level-header">
+            <div className="gdg-rewards-level-copy">
               <p className="gdg-overline">Your level</p>
-              <h2 id="gdg-rewards-level-title">{progress.currentLevel.label}</h2>
-              <p className="gdg-account-panel-copy">Keep going. You are on your way to the next level.</p>
+              <h2 id="gdg-rewards-level-title">{progress.currentTier.name}</h2>
+              <p className="gdg-account-panel-copy">{progress.currentTier.message}</p>
+              <div className="gdg-rewards-level-numbers">
+                <span><small>Current points</small><strong>{pointsLabel(progress.points)}</strong></span>
+                <span><small>Next milestone</small><strong>{progress.nextTier?.name ?? "Top tier"}</strong></span>
+                <span><small>Points remaining</small><strong>{progress.nextTier ? pointsLabel(progress.pointsToNext) : "Complete"}</strong></span>
+              </div>
             </div>
-            <AccountIconBadge tone="gold" icon={Trophy} />
+            <RewardTierBadge tier={progress.currentTier} className="current" />
           </div>
           <div
             className="gdg-rewards-progress-track"
             role="progressbar"
-            aria-label={`${pointsLabel(progress.points)} of ${pointsLabel(progressMax)} points toward ${progress.nextLevel?.label ?? progress.currentLevel.label}`}
-            aria-valuemin={progress.currentLevel.points}
+            aria-label={`${pointsLabel(progress.points)} of ${pointsLabel(progressMax)} points toward ${progress.nextTier?.name ?? progress.currentTier.name}`}
+            aria-valuemin={progress.currentTier.threshold}
             aria-valuemax={progressMax}
             aria-valuenow={progressNow}
           >
-            <span style={{ width: `${progress.visualTrackPercent}%` }} />
+            <span style={{ width: `${progress.progressPercent}%` }} />
           </div>
           <div className="gdg-rewards-progress-label">
             <strong>{pointsLabel(progress.points)} / {pointsLabel(progressMax)} points</strong>
-            <span>{progress.nextLevel ? `Next level: ${progress.nextLevel.label}` : "Top level reached"}</span>
+            <span>{progress.nextTier ? `Next level: ${progress.nextTier.name}` : "Top level reached"}</span>
           </div>
           <div className="gdg-rewards-milestones" aria-hidden="true">
-            {rewardLevels.map((level) => (
+            {REWARD_TIERS.map((level) => (
               <span
-                key={level.points}
-                className={progress.points >= level.points ? "reached" : ""}
-                style={{ left: `${milestoneMax > 0 ? (level.points / milestoneMax) * 100 : 0}%` }}
+                key={level.threshold}
+                className={progress.points >= level.threshold ? "reached" : ""}
+                style={{ left: `${milestoneMax > 0 ? (level.threshold / milestoneMax) * 100 : 0}%` }}
               >
                 <i />
-                <b>{level.points.toLocaleString()}</b>
+                <b>{level.threshold.toLocaleString()}</b>
               </span>
             ))}
           </div>
@@ -1296,8 +1299,8 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
             <Rocket size={22} aria-hidden="true" />
             <p>
               <strong>
-                {progress.nextLevel
-                  ? `Earn ${pointsLabel(progress.pointsToNext)} more points to reach ${progress.nextLevel.label}`
+                {progress.nextTier
+                  ? `Earn ${pointsLabel(progress.pointsToNext)} more points to reach ${progress.nextTier.name}`
                   : "You have reached the current top rewards level"}
               </strong>
               <span>More points unlock more rewards when redemption launches.</span>
@@ -1305,6 +1308,33 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
           </div>
         </section>
       </div>
+
+      <section id="rewards-tier-journey" className="gdg-account-card gdg-rewards-tier-journey" aria-labelledby="gdg-tier-journey-title">
+        <div className="gdg-rewards-tier-heading">
+          <div>
+            <p className="gdg-overline">Collector journey</p>
+            <h2 id="gdg-tier-journey-title">Five ranks. One legendary collection.</h2>
+          </div>
+          <p>Rise through every tier as your lifetime points grow.</p>
+        </div>
+        <ol className="gdg-rewards-tier-grid">
+          {REWARD_TIERS.map((tier, index) => {
+            const state = rewardTierState(index, progress.currentIndex);
+            return (
+              <li key={tier.key} className={`gdg-rewards-tier-card ${state}`} aria-label={`${tier.name}, ${tier.threshold.toLocaleString()} points, ${state} tier`}>
+                <span className="gdg-rewards-tier-number">{index + 1}</span>
+                <RewardTierBadge tier={tier} />
+                <div>
+                  <strong>{tier.name}</strong>
+                  <span>{tier.threshold.toLocaleString()}{index === REWARD_TIERS.length - 1 ? "+" : ""} points</span>
+                  <small>{tier.message}</small>
+                </div>
+                <em>{state === "completed" ? <><CheckCircle2 size={14} aria-hidden="true" /> Completed</> : state === "current" ? "Current tier" : state === "next" ? "Up next" : <><LockKeyhole size={13} aria-hidden="true" /> Locked</>}</em>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
 
       <section className="gdg-account-card compact gdg-rewards-secondary" aria-labelledby="gdg-rewards-secondary-title">
         <div className="gdg-rewards-secondary-header">
