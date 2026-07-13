@@ -1,4 +1,5 @@
 import type { InventoryItemDTO } from "@/types/radar";
+import { calculateConfiguredPosTax, centsToMoney, moneyToCents } from "@/lib/tax";
 
 export const POS_PAYMENT_METHOD_VALUES = ["cash", "zelle", "external_card", "other"] as const;
 export type PosPaymentMethod = (typeof POS_PAYMENT_METHOD_VALUES)[number];
@@ -152,11 +153,24 @@ export function getConfiguredPosTaxRate(env: Record<string, string | undefined> 
 }
 
 export function calculatePosTotals(lines: Array<{ quantity: number; unitPrice: number }>, taxRate = POS_DEFAULT_TAX_RATE) {
-  const subtotal = roundPosMoney(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0));
-  const tax = roundPosMoney(subtotal * normalizePosTaxRate(taxRate));
+  const subtotalCents = lines.reduce((sum, line) => sum + Math.max(0, Math.trunc(line.quantity)) * moneyToCents(line.unitPrice), 0);
+  const rateBasisPoints = Math.round(normalizePosTaxRate(taxRate) * 10_000);
+  const calculated = calculateConfiguredPosTax({
+    subtotalCents,
+    profile: {
+      country: "US",
+      state: "FL",
+      county: null,
+      stateRateBasisPoints: rateBasisPoints,
+      countyRateBasisPoints: 0,
+      effectiveAt: null,
+      sourceNote: null,
+      enabled: rateBasisPoints > 0
+    }
+  });
   return {
-    subtotal,
-    tax,
-    total: roundPosMoney(subtotal + tax)
+    subtotal: centsToMoney(calculated.subtotalCents),
+    tax: centsToMoney(calculated.taxCents),
+    total: centsToMoney(calculated.totalCents)
   };
 }

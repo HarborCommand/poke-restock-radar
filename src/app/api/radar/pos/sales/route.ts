@@ -32,6 +32,16 @@ export async function POST(request: Request) {
         itemCount: sale.itemCount
       }
     });
+    if (sale.taxExempt) {
+      await logAudit({
+        user,
+        action: "pos.sale.tax_exemption_applied",
+        entityType: "POS_SALE",
+        entityId: sale.saleReference,
+        summary: `${user.email} applied an approved tax exemption to POS sale ${sale.saleReference}.`,
+        metadata: { saleReference: sale.saleReference, taxStatus: sale.taxStatus }
+      });
+    }
     return ok({ sale }, 201);
   } catch (error) {
     return badRequest(error);

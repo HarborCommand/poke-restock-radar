@@ -736,6 +736,9 @@ model InventoryItem {
   exactProductUrl               String?
   upc                           String?
   sku                           String?
+  taxCategory                   String?
+  stripeTaxCode                 String?
+  taxableOverride               Boolean?
   dpci                          String?
   asin                          String?
   imageUrl                      String?
@@ -944,6 +947,25 @@ model InventorySale {
   discountAmount          Float?
   discountReason          String?
   discountNote            String?
+  subtotalCents           Int?
+  discountCents           Int?
+  taxableSubtotalCents    Int?
+  taxCents                Int?
+  totalCents              Int?
+  taxProvider             String?
+  stateTaxCents           Int?
+  countySurtaxCents       Int?
+  combinedRateBasisPoints Int?
+  taxJurisdictionCountry  String?
+  taxJurisdictionState    String?
+  taxJurisdictionCounty   String?
+  taxStatus               String?
+  taxExempt               Boolean?
+  taxExemptReason         String?
+  taxExemptionReference   String?
+  taxCalculatedAt         DateTime?
+  taxRateSnapshot         String?
+  refundedTaxCents        Int?
   customerEmail           String?
   customerPhone           String?
   customerMatchMethod     String?
@@ -966,6 +988,7 @@ model InventorySale {
   inventoryItem           InventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
   user                    User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   customerAccount         CustomerAccount? @relation(fields: [customerAccountId], references: [id], onDelete: SetNull)
+  taxAdjustments          TaxAdjustment[]
 
   @@index([inventoryItemId])
   @@index([userId])
@@ -981,6 +1004,8 @@ model InventorySale {
   @@index([rewardsEligible])
   @@index([refundStatus])
   @@index([refundIdempotencyKey])
+  @@index([taxStatus])
+  @@index([taxJurisdictionState, taxJurisdictionCounty])
   @@index([soldAt])
 }
 
@@ -1048,6 +1073,17 @@ model StorefrontSettings {
   defaultShippingPrice    Float    @default(5)
   freeShippingThreshold   Float?
   socialLinks             String?
+  storeCountry            String   @default("US")
+  storeState              String   @default("FL")
+  storeCounty             String?
+  stateTaxRateBasisPoints Int      @default(600)
+  countyTaxRateBasisPoints Int     @default(0)
+  taxProfileEffectiveAt   DateTime?
+  taxProfileSourceNote    String?
+  posTaxEnabled           Boolean  @default(false)
+  taxExemptSalesEnabled   Boolean  @default(false)
+  defaultTaxCategory      String   @default("general_tangible_goods")
+  defaultStripeTaxCode    String   @default("txcd_99999999")
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1292,6 +1328,24 @@ model StorefrontOrder {
   fulfillmentStatus                String                @default("unfulfilled")
   stripeCheckoutSessionId          String?               @unique
   stripePaymentIntentId            String?
+  subtotalCents                    Int?
+  discountCents                    Int?
+  shippingCents                    Int?
+  taxableSubtotalCents             Int?
+  taxCents                         Int?
+  totalCents                       Int?
+  taxProvider                      String?
+  taxCalculationId                 String?
+  taxJurisdictionCountry           String?
+  taxJurisdictionState             String?
+  taxJurisdictionCounty            String?
+  taxRateBasisPoints               Int?
+  taxInclusive                     Boolean?
+  taxStatus                        String?
+  taxExemptReason                  String?
+  taxCalculatedAt                  DateTime?
+  taxBreakdownJson                 String?
+  refundedTaxCents                 Int?
   subtotal                         Float                 @default(0)
   shippingCharged                  Float                 @default(0)
   shippingMethodLabel              String?
@@ -1362,6 +1416,7 @@ model StorefrontOrder {
   fulfillment                      Fulfillment?
   shippingQuotes                   ShippingQuote[]
   rewardLedgerEntries              RewardLedgerEntry[]
+  taxAdjustments                   TaxAdjustment[]
 
   @@index([userId])
   @@index([customerId])
@@ -1372,8 +1427,34 @@ model StorefrontOrder {
   @@index([paymentStatus])
   @@index([fulfillmentStatus])
   @@index([refundStatus])
+  @@index([taxStatus])
+  @@index([taxJurisdictionState, taxJurisdictionCounty])
   @@index([isTestOrder])
   @@index([createdAt])
+}
+
+model TaxAdjustment {
+  id                      String   @id @default(cuid())
+  idempotencyKey          String   @unique
+  channel                 String
+  adjustmentType          String
+  storefrontOrderId       String?
+  inventorySaleId         String?
+  saleReference           String?
+  providerReference       String?
+  refundedAmountCents     Int      @default(0)
+  refundedTaxCents        Int      @default(0)
+  reason                  String?
+  createdByUserId         String?
+  metadataJson            String?
+  createdAt               DateTime @default(now())
+  storefrontOrder         StorefrontOrder? @relation(fields: [storefrontOrderId], references: [id], onDelete: Cascade)
+  inventorySale           InventorySale?   @relation(fields: [inventorySaleId], references: [id], onDelete: Cascade)
+
+  @@index([storefrontOrderId])
+  @@index([inventorySaleId])
+  @@index([saleReference])
+  @@index([channel, createdAt])
 }
 
 model ShippingQuote {

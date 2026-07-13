@@ -776,6 +776,15 @@ export const inventoryCreateSchema = z.object({
   itemType: z.enum(["product", "card", "sealed", "other"]).default("product"),
   itemName: z.string().trim().min(2).max(160),
   category: inventoryCategorySchema.default("sealed_packs"),
+  taxCategory: optionalTrimmed,
+  stripeTaxCode: z.preprocess(
+    (value) => value === "" || value === null ? undefined : value,
+    z.string().trim().regex(/^txcd_\d{8}$/, "Enter a valid Stripe tax code.").optional()
+  ),
+  taxableOverride: z.preprocess(
+    (value) => value === "" || value === null || value === undefined ? undefined : value === true || value === "true" || value === "1",
+    z.boolean().optional()
+  ),
   setName: optionalTrimmed,
   productId: optionalTrimmed,
   cardId: optionalTrimmed,
@@ -1019,8 +1028,19 @@ export const posSaleCreateSchema = z.object({
   paymentReference: optionalTrimmed,
   selectedCustomerAccountId: z.string().trim().min(2).optional(),
   customerEmail: z.string().trim().email().optional(),
-  customerPhone: optionalTrimmed
-}).strict();
+  customerPhone: optionalTrimmed,
+  taxExempt: checkboxBoolean.optional(),
+  taxExemptReason: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().min(4).max(160).optional()),
+  taxExemptionReference: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().min(4).max(120).optional()),
+  taxExemptionNote: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().max(1000).optional())
+}).strict().superRefine((input, context) => {
+  if (input.taxExempt && !input.taxExemptReason) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["taxExemptReason"], message: "Tax-exempt sales require a reason." });
+  }
+  if (input.taxExempt && !input.taxExemptionReference) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["taxExemptionReference"], message: "Tax-exempt sales require a certificate or authorization reference." });
+  }
+});
 
 export const posCustomerMatchSchema = z.object({
   selectedCustomerAccountId: z.string().trim().min(2).max(128).optional(),
@@ -1085,11 +1105,19 @@ export const adminCustomerAttachOrderSchema = z.object({
 
 export const posSaleRefundSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
-  refundType: z.enum(["full"]).default("full"),
+  refundType: z.enum(["full", "partial"]).default("full"),
+  partialRefundAmount: z.preprocess((value) => value === "" || value === null ? undefined : value, z.coerce.number().positive().max(100000).optional()),
   reason: z.enum(POS_REFUND_REASON_VALUES),
   note: optionalTrimmed,
   restoreInventory: checkboxBoolean.default(true)
-}).strict();
+}).strict().superRefine((input, context) => {
+  if (input.refundType === "partial" && !input.partialRefundAmount) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["partialRefundAmount"], message: "Enter a partial refund amount." });
+  }
+  if (input.refundType === "partial" && input.restoreInventory) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["restoreInventory"], message: "Partial POS refunds cannot automatically restore inventory without item-level quantities." });
+  }
+});
 
 export const storefrontCartItemSchema = z.object({
   id: z.string().trim().min(2),
@@ -1187,7 +1215,25 @@ export const storefrontSettingsSchema = z.object({
   announcementBanner: z.string().trim().max(240).optional(),
   defaultShippingPrice: optionalMoney.default(5),
   freeShippingThreshold: optionalMoney,
-  socialLinks: z.union([z.array(z.string().trim().min(1).max(500)), z.string().trim().max(2000)]).optional()
+  socialLinks: z.union([z.array(z.string().trim().min(1).max(500)), z.string().trim().max(2000)]).optional(),
+  storeCountry: z.string().trim().length(2).transform((value) => value.toUpperCase()).default("US"),
+  storeState: z.string().trim().length(2).transform((value) => value.toUpperCase()).default("FL"),
+  storeCounty: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().min(2).max(80).optional()),
+  stateTaxRateBasisPoints: z.coerce.number().int().min(0).max(2000).default(600),
+  countyTaxRateBasisPoints: z.coerce.number().int().min(0).max(2000).default(0),
+  taxProfileEffectiveAt: z.preprocess((value) => value === "" || value === null ? undefined : value, z.coerce.date().optional()),
+  taxProfileSourceNote: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().max(500).optional()),
+  posTaxEnabled: checkboxBoolean.default(false),
+  taxExemptSalesEnabled: checkboxBoolean.default(false),
+  defaultTaxCategory: z.enum(["general_tangible_goods"]).default("general_tangible_goods"),
+  defaultStripeTaxCode: z.string().trim().regex(/^txcd_\d{8}$/).default("txcd_99999999")
+}).superRefine((input, context) => {
+  if (input.stateTaxRateBasisPoints + input.countyTaxRateBasisPoints > 2000) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["countyTaxRateBasisPoints"], message: "Combined tax rate cannot exceed 20%." });
+  }
+  if (input.posTaxEnabled && (!input.storeCounty || !input.taxProfileEffectiveAt || !input.taxProfileSourceNote)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["posTaxEnabled"], message: "Store county, effective date, and source note are required before POS tax can be enabled." });
+  }
 });
 
 export const orderFulfillmentUpdateSchema = z.object({

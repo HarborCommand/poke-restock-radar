@@ -39,6 +39,9 @@ function posItem(overrides: Partial<InventoryItemDTO> = {}): InventoryItemDTO {
     itemType: "product",
     itemName: "Pokemon 151 Booster Box",
     category: "booster_boxes",
+    taxCategory: null,
+    stripeTaxCode: null,
+    taxableOverride: null,
     setName: "151",
     productId: "prod-1",
     linkedProductName: null,
@@ -379,7 +382,7 @@ test("POS server revalidates inventory, price, and availability before recording
   assert.match(createPosSale, /requestedAdjustedUnitPrice !== null && requestedAdjustedUnitPrice >= originalUnitPrice/);
   assert.match(createPosSale, /Adjusted POS price for \$\{dto\.itemName\} cannot exceed or equal the current POS price in Phase 1/);
   assert.match(createPosSale, /Select a discount reason for \$\{dto\.itemName\}/);
-  assert.match(createPosSale, /calculatePosTotals\(lines, taxRate\)/);
+  assert.match(createPosSale, /calculateConfiguredPosTax/);
   assert.match(createPosSale, /saleReference/);
   assert.match(createPosSale, /paymentMethod/);
   assert.match(createPosSale, /customerMatch\.customerAccountId/);
@@ -393,7 +396,7 @@ test("POS server revalidates inventory, price, and availability before recording
 test("POS inventory deduction happens only through completed sale creation path", () => {
   const service = readSource("../src/lib/radar-service.ts");
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
-  const beforeCreateSale = sourceSlice(createPosSale, "const lines = cartItems.map", "for (const line of lines)");
+  const beforeCreateSale = sourceSlice(createPosSale, "const lines = cartItems.map", "for (const line of linesWithTax)");
   assert.doesNotMatch(beforeCreateSale, /inventoryStockLot\.update|remainingQuantity|recalculateInventorySalesAndLots/);
   assert.match(createPosSale, /await createPosInventorySaleLine\(tx, currentUser, line/);
   assert.match(service, /await tx\.inventoryStockLot\.updateMany/);
@@ -635,8 +638,9 @@ test("POS confirmation modal shows item lines, totals, payment, reference, and w
   assert.match(posPanel, /pos-confirm-lines/);
   assert.match(posPanel, /Original \{money\(line\.originalUnitPrice\)\} - POS \{money\(line\.adjustedUnitPrice\)\}/);
   assert.match(posPanel, /line\.discountReasonLabel/);
-  assert.match(posPanel, /Subtotal <strong>\{money\(cartTotals\.subtotal\)\}/);
-  assert.match(posPanel, /Tax <strong>\{money\(cartTotals\.tax\)\}/);
+  assert.match(posPanel, /Merchandise subtotal <strong>\{money\(cartMerchandiseSubtotal\)\}/);
+  assert.match(posPanel, /Taxable subtotal <strong>\{money\(cartTotals\.subtotal\)\}/);
+  assert.match(posPanel, /Sales tax <strong>\{money\(cartTotals\.tax\)\}/);
   assert.match(posPanel, /Payment <strong>\{paymentMethod \? posPaymentMethodLabel\(paymentMethod\) : "Not selected"\}/);
   assert.match(posPanel, /Reference <strong>\{paymentReference\.trim\(\)\}/);
   assert.match(posPanel, /This will record the sale and deduct inventory/);
@@ -728,7 +732,7 @@ test("POS rewards are server-side, separately flagged, and excluded from browser
   assert.match(posCustomer, /selectedCustomerAccountId/);
   assert.match(posCustomer, /accountById\(client, selectedCustomerAccountId\)/);
   assert.match(createPosSale, /await awardRewardsForCompletedPosSale/);
-  assert.match(createPosSale, /eligibleSubtotalCents: rewardMoneyToCents\(totals\.subtotal\)/);
+  assert.match(createPosSale, /eligibleSubtotalCents: totals\.taxableSubtotalCents/);
   assert.match(customerConfig, /CUSTOMER_POS_REWARDS_ENABLED/);
   assert.match(rewards, /customerPosRewardsEnabled/);
   assert.match(rewards, /idempotencyKey: `rewards:pos:earn:\$\{input\.saleReference\}`/);
@@ -805,7 +809,8 @@ test("POS refund route is admin-only, records manual refunds, and does not call 
   assert.match(refundPosSale, /POS refund return/);
   assert.match(refundPosSale, /await reverseRewardsForPosSale/);
   assert.match(refundPosSale, /saleReference: normalizedReference/);
-  assert.match(rewards, /idempotencyKey: `rewards:pos:refund:\$\{input\.saleReference\}`/);
+  assert.match(rewards, /rewardRefundIdempotencyKey/);
+  assert.match(rewards, /`rewards:pos:refund:\$\{input\.saleReference\}`/);
   assert.match(service, /Manual refund record only/);
   assert.doesNotMatch(route + refundPosSale, /stripeClient|stripe\.refunds|refunds\.create|Stripe Terminal|tapToPay/i);
 });

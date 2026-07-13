@@ -78,6 +78,26 @@ function settings(overrides: Partial<StorefrontSettingsDTO> = {}): StorefrontSet
       shippoConfigured: false,
       fallbackEnabled: true
     },
+    tax: {
+      storeCountry: "US",
+      storeState: "FL",
+      storeCounty: null,
+      stateRateBasisPoints: 600,
+      countyRateBasisPoints: 0,
+      combinedRateBasisPoints: 600,
+      effectiveAt: null,
+      sourceNote: null,
+      posTaxEnabled: false,
+      taxExemptSalesEnabled: false,
+      defaultTaxCategory: "general_tangible_goods",
+      defaultStripeTaxCode: "txcd_99999999",
+      features: {
+        onlineStripeTaxEnabled: false,
+        posSalesTaxEnabled: false,
+        taxExemptSalesEnabled: false,
+        taxReportingEnabled: false
+      }
+    },
     ...overrides
   };
 }

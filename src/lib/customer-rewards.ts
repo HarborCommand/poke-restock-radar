@@ -306,9 +306,10 @@ export async function rewardSummaryForPosSaleReference(
   const ledger = await client.rewardLedgerEntry.findMany({
     where: {
       source: rewardSources.pos,
-      idempotencyKey: {
-        in: [`rewards:pos:earn:${saleReference}`, `rewards:pos:refund:${saleReference}`]
-      }
+      OR: [
+        { idempotencyKey: `rewards:pos:earn:${saleReference}` },
+        { idempotencyKey: { startsWith: `rewards:pos:refund:${saleReference}` } }
+      ]
     },
     select: {
       points: true
@@ -381,6 +382,9 @@ export async function reverseRewardsForPosSale(
   input: {
     saleReference: string;
     reason: "refund";
+    idempotencyKey?: string;
+    cumulativeEligibleRefundCents?: number;
+    fullyRefunded?: boolean;
   },
   tx?: RewardLedgerTx
 ) {
@@ -400,7 +404,7 @@ export async function reverseRewardsForPosSale(
       where: {
         source: rewardSources.pos,
         OR: [
-          { idempotencyKey: `rewards:pos:refund:${input.saleReference}` },
+          { idempotencyKey: { startsWith: `rewards:pos:refund:${input.saleReference}` } },
           { reversalOfEntryId: earnEntry.id }
         ]
       },
@@ -409,7 +413,17 @@ export async function reverseRewardsForPosSale(
       }
     });
     const reversedPoints = Math.abs(existingReversed.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
-    const pointsToReverse = Math.max(0, earnEntry.points - reversedPoints);
+    const eligibleSubtotalCents = Math.max(0, earnEntry.eligibleSubtotalCents ?? 0);
+    const cumulativeEligibleRefundCents = Math.min(
+      eligibleSubtotalCents,
+      Math.max(0, Math.round(input.cumulativeEligibleRefundCents ?? eligibleSubtotalCents))
+    );
+    const targetReversal = input.fullyRefunded
+      ? earnEntry.points
+      : eligibleSubtotalCents > 0
+        ? Math.min(earnEntry.points, Math.floor((earnEntry.points * cumulativeEligibleRefundCents) / eligibleSubtotalCents))
+        : earnEntry.points;
+    const pointsToReverse = Math.max(0, targetReversal - reversedPoints);
     if (pointsToReverse <= 0) return { status: "already_reversed" as const, points: 0 };
 
     const balance = await client.rewardBalance.findUnique({
@@ -420,11 +434,14 @@ export async function reverseRewardsForPosSale(
     if (actualPointsToReverse <= 0) return { status: "insufficient_balance" as const, points: 0 };
 
     const now = new Date();
+    const rewardRefundIdempotencyKey = input.fullyRefunded
+      ? `rewards:pos:refund:${input.saleReference}`
+      : `rewards:pos:refund:${input.saleReference}:${input.idempotencyKey ?? "partial"}`;
     const result = await createRewardLedgerEntry({
       tx: client,
       customerAccountId: earnEntry.customerAccountId,
       orderId: null,
-      idempotencyKey: `rewards:pos:refund:${input.saleReference}`,
+      idempotencyKey: rewardRefundIdempotencyKey,
       points: -actualPointsToReverse,
       type: "reverse",
       reason: "Manual POS refund reward reversal",
@@ -432,7 +449,7 @@ export async function reverseRewardsForPosSale(
       source: rewardSources.pos,
       availableAt: null,
       settledAt: now,
-      eligibleSubtotalCents: earnEntry.eligibleSubtotalCents,
+      eligibleSubtotalCents,
       reversalOfEntryId: earnEntry.id,
       balanceDelta: {
         availableDelta: -actualPointsToReverse
@@ -440,7 +457,10 @@ export async function reverseRewardsForPosSale(
       metadata: {
         saleReference: input.saleReference,
         reason: input.reason,
-        pointsPreviouslyEarned: earnEntry.points
+        pointsPreviouslyEarned: earnEntry.points,
+        cumulativeEligibleRefundCents,
+        targetReversalPoints: targetReversal,
+        previousReversedPoints: reversedPoints
       }
     });
     return {

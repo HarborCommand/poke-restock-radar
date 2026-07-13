@@ -12,8 +12,6 @@ import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMin
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { getSavedProductImageUrls, syncedProductImageFields, uniqueProductImageUrls } from "@/lib/product-images";
 import {
-  calculatePosTotals,
-  getConfiguredPosTaxRate,
   getPosExcludedReason,
   isPosSellableInventoryItem,
   normalizePosDiscountReason,
@@ -41,8 +39,15 @@ import {
 import { productSearchConfig, searchProductsByUpc, type ProductSearchCandidate } from "@/lib/product-search";
 import { resolvePosCustomerMatch } from "@/lib/pos-customer";
 import {
+  allocateCentsByWeight,
+  calculateConfiguredPosTax,
+  centsToMoney,
+  cumulativeRefundedTaxCents,
+  moneyToCents,
+  taxFeatureConfig
+} from "@/lib/tax";
+import {
   awardRewardsForCompletedPosSale,
-  rewardMoneyToCents,
   reverseRewardsForPosSale,
   rewardSummaryForPosSaleReference
 } from "@/lib/customer-rewards";
@@ -1855,15 +1860,18 @@ function inventorySaleToDTO(
   stockLotSource = "FIFO stock lots"
 ): InventorySaleDTO {
   const storefrontOrderNumber = storefrontOrderNumberFromSaleNotes(sale.notes);
-  const refundedAmount = roundPosMoney(Math.min(Math.max(0, sale.refundedAmount ?? 0), Math.max(0, sale.grossSale)));
+  const originalCharged = sale.totalCents === null ? sale.grossSale : centsToMoney(sale.totalCents);
+  const refundedAmount = roundPosMoney(Math.min(Math.max(0, sale.refundedAmount ?? 0), Math.max(0, originalCharged)));
+  const refundedTax = sale.refundedTaxCents === null ? 0 : centsToMoney(sale.refundedTaxCents);
+  const refundedMerchandise = roundPosMoney(Math.max(0, refundedAmount - refundedTax));
   const saleStatus: InventorySaleDTO["saleStatus"] =
-    refundedAmount >= sale.grossSale && refundedAmount > 0
+    refundedAmount >= originalCharged && refundedAmount > 0
       ? "refunded"
       : refundedAmount > 0
         ? "partially_refunded"
         : "active";
-  const activeGrossSale = saleStatus === "refunded" ? 0 : roundPosMoney(Math.max(0, sale.grossSale - refundedAmount));
-  const activeNetSale = saleStatus === "refunded" ? 0 : roundPosMoney(Math.max(0, sale.netSale - refundedAmount));
+  const activeGrossSale = saleStatus === "refunded" ? 0 : roundPosMoney(Math.max(0, sale.grossSale - refundedMerchandise));
+  const activeNetSale = saleStatus === "refunded" ? 0 : roundPosMoney(Math.max(0, sale.netSale - refundedMerchandise));
   const activeProfitLoss = saleStatus === "refunded" ? 0 : roundPosMoney(activeNetSale - sale.costBasis);
   const rewardStatus: InventorySaleDTO["rewardStatus"] = !sale.rewardsEligible
     ? "not_eligible"
@@ -1898,6 +1906,24 @@ function inventorySaleToDTO(
     discountAmount: sale.discountAmount,
     discountReason: sale.discountReason,
     discountNote: sale.discountNote,
+    subtotalCents: sale.subtotalCents,
+    discountCents: sale.discountCents,
+    taxableSubtotalCents: sale.taxableSubtotalCents,
+    taxCents: sale.taxCents,
+    totalCents: sale.totalCents,
+    taxProvider: sale.taxProvider,
+    stateTaxCents: sale.stateTaxCents,
+    countySurtaxCents: sale.countySurtaxCents,
+    combinedRateBasisPoints: sale.combinedRateBasisPoints,
+    taxJurisdictionCountry: sale.taxJurisdictionCountry,
+    taxJurisdictionState: sale.taxJurisdictionState,
+    taxJurisdictionCounty: sale.taxJurisdictionCounty,
+    taxStatus: sale.taxStatus,
+    taxExempt: sale.taxExempt,
+    taxExemptReason: sale.taxExemptReason,
+    taxExemptionReference: sale.taxExemptionReference,
+    taxCalculatedAt: sale.taxCalculatedAt?.toISOString() ?? null,
+    refundedTaxCents: sale.refundedTaxCents,
     customerAccountId: sale.customerAccountId,
     customerEmail: sale.customerEmail,
     customerPhone: sale.customerPhone,
@@ -2211,6 +2237,9 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     exactProductUrl: item.exactProductUrl,
     upc: item.upc,
     sku: item.sku,
+    taxCategory: item.taxCategory,
+    stripeTaxCode: item.stripeTaxCode,
+    taxableOverride: item.taxableOverride,
     dpci: item.dpci,
     asin: item.asin,
     imageUrl: primaryImageUrl,
@@ -5939,6 +5968,9 @@ export async function createInventoryItem(
     itemType: string;
     itemName: string;
     category?: string;
+    taxCategory?: string;
+    stripeTaxCode?: string;
+    taxableOverride?: boolean;
     setName?: string;
     productId?: string;
     cardId?: string;
@@ -6021,6 +6053,9 @@ export async function createInventoryItem(
       itemType: linkedInput.itemType,
       itemName: linkedInput.itemName,
       category: linkedInput.category || "sealed_packs",
+      taxCategory: linkedInput.taxCategory,
+      stripeTaxCode: linkedInput.stripeTaxCode,
+      taxableOverride: linkedInput.taxableOverride,
       setName: linkedInput.setName,
       productId: linkedInput.productId,
       cardId: linkedInput.cardId,
@@ -6385,6 +6420,9 @@ export async function updateInventoryItem(
       itemType: input.itemType,
       itemName: input.itemName,
       category: input.category,
+      taxCategory: input.taxCategory,
+      stripeTaxCode: input.stripeTaxCode,
+      taxableOverride: input.taxableOverride,
       setName: input.setName,
       productId: input.productId,
       cardId: input.cardId,
@@ -6800,11 +6838,25 @@ async function receiptForExistingPosSale(
 
   const firstSale = sales[0];
   const paymentMethod = normalizePosPaymentMethod(firstSale.paymentMethod) ?? "other";
-  const subtotal = roundPosMoney(sales.reduce((sum, sale) => sum + sale.grossSale, 0));
+  const persistedTaxSnapshot = sales.some((sale) => sale.taxCents !== null);
+  const subtotalCents = persistedTaxSnapshot
+    ? sales.reduce((sum, sale) => sum + (sale.subtotalCents ?? moneyToCents(sale.grossSale)), 0)
+    : moneyToCents(sales.reduce((sum, sale) => sum + sale.grossSale, 0));
+  const discountCents = persistedTaxSnapshot ? sales.reduce((sum, sale) => sum + (sale.discountCents ?? 0), 0) : 0;
+  const taxableSubtotalCents = persistedTaxSnapshot
+    ? sales.reduce((sum, sale) => sum + (sale.taxableSubtotalCents ?? moneyToCents(sale.grossSale)), 0)
+    : subtotalCents;
+  const subtotal = centsToMoney(taxableSubtotalCents);
   const noteTax = posMoneyFromNote(firstSale.notes, "tax");
   const noteTotal = posMoneyFromNote(firstSale.notes, "total");
-  const tax = noteTax ?? 0;
-  const total = noteTotal ?? roundPosMoney(subtotal + tax);
+  const taxCents = persistedTaxSnapshot ? sales.reduce((sum, sale) => sum + (sale.taxCents ?? 0), 0) : moneyToCents(noteTax ?? 0);
+  const tax = centsToMoney(taxCents);
+  const total = persistedTaxSnapshot
+    ? centsToMoney(sales.reduce((sum, sale) => sum + (sale.totalCents ?? 0), 0))
+    : noteTotal ?? roundPosMoney(centsToMoney(taxableSubtotalCents) + tax);
+  const stateTaxCents = persistedTaxSnapshot ? sales.reduce((sum, sale) => sum + (sale.stateTaxCents ?? 0), 0) : taxCents;
+  const countySurtaxCents = persistedTaxSnapshot ? sales.reduce((sum, sale) => sum + (sale.countySurtaxCents ?? 0), 0) : 0;
+  const combinedRateBasisPoints = firstSale.combinedRateBasisPoints ?? (taxableSubtotalCents > 0 ? Math.round((taxCents * 10_000) / taxableSubtotalCents) : 0);
   const rewardSummary = await rewardSummaryForPosSaleReference(saleReference, client);
   return {
     saleReference,
@@ -6820,9 +6872,22 @@ async function receiptForExistingPosSale(
     rewardPointsEarned: rewardSummary.pointsEarned,
     rewardPointsReversed: rewardSummary.pointsReversed,
     subtotal,
+    discount: centsToMoney(discountCents),
+    taxableSubtotal: centsToMoney(taxableSubtotalCents),
     tax,
     total,
-    taxRate: subtotal > 0 ? roundPosMoney(tax / subtotal) : getConfiguredPosTaxRate(),
+    taxRate: combinedRateBasisPoints / 10_000,
+    stateTax: centsToMoney(stateTaxCents),
+    countySurtax: centsToMoney(countySurtaxCents),
+    taxProvider: firstSale.taxProvider ?? "historical_unknown",
+    taxStatus: firstSale.taxStatus ?? "not_recorded",
+    taxExempt: firstSale.taxExempt ?? false,
+    taxExemptReason: firstSale.taxExemptReason,
+    taxJurisdiction: {
+      country: firstSale.taxJurisdictionCountry ?? "US",
+      state: firstSale.taxJurisdictionState ?? "FL",
+      county: firstSale.taxJurisdictionCounty
+    },
     itemCount: sales.reduce((sum, sale) => sum + sale.quantitySold, 0),
     completedAt: firstSale.soldAt.toISOString(),
     lines: (sales as PosSaleRecordWithItem[]).map((sale) => {
@@ -6847,7 +6912,24 @@ async function receiptForExistingPosSale(
         discountAmount,
         discountReason,
         discountReasonLabel: discountReason ? posDiscountReasonLabel(discountReason) : null,
-        discountNote: sale.discountNote,
+    discountNote: sale.discountNote,
+    subtotalCents: sale.subtotalCents,
+    discountCents: sale.discountCents,
+    taxableSubtotalCents: sale.taxableSubtotalCents,
+    taxCents: sale.taxCents,
+    totalCents: sale.totalCents,
+    taxProvider: sale.taxProvider,
+    stateTaxCents: sale.stateTaxCents,
+    countySurtaxCents: sale.countySurtaxCents,
+    combinedRateBasisPoints: sale.combinedRateBasisPoints,
+    taxJurisdictionCountry: sale.taxJurisdictionCountry,
+    taxJurisdictionState: sale.taxJurisdictionState,
+    taxJurisdictionCounty: sale.taxJurisdictionCounty,
+    taxStatus: sale.taxStatus,
+    taxExempt: sale.taxExempt,
+    taxExemptReason: sale.taxExemptReason,
+    taxCalculatedAt: sale.taxCalculatedAt?.toISOString() ?? null,
+    refundedTaxCents: sale.refundedTaxCents,
         lineTotal: roundPosMoney(sale.soldPricePerItem * sale.quantitySold)
       };
     })
@@ -6873,6 +6955,13 @@ async function createPosInventorySaleLine(
     discountAmount: number;
     discountReason: PosDiscountReason | null;
     discountNote: string | null;
+    subtotalCents: number;
+    discountCents: number;
+    taxableSubtotalCents: number;
+    taxCents: number;
+    totalCents: number;
+    stateTaxCents: number;
+    countySurtaxCents: number;
   },
   sale: {
     saleReference: string;
@@ -6885,6 +6974,17 @@ async function createPosInventorySaleLine(
     rewardsEligible: boolean;
     soldAt: Date;
     notes: string;
+    taxProvider: string;
+    combinedRateBasisPoints: number;
+    taxJurisdictionCountry: string;
+    taxJurisdictionState: string;
+    taxJurisdictionCounty: string | null;
+    taxStatus: string;
+    taxExempt: boolean;
+    taxExemptReason: string | null;
+    taxExemptionReference: string | null;
+    taxCalculatedAt: Date;
+    taxRateSnapshot: string;
   }
 ) {
   const item = line.record;
@@ -6923,7 +7023,7 @@ async function createPosInventorySaleLine(
   const roundedCostBasis = roundPosMoney(costBasis);
   const profitLoss = roundPosMoney(netSale - roundedCostBasis);
   const roiPercent = roundedCostBasis > 0 ? (profitLoss / roundedCostBasis) * 100 : null;
-  await tx.inventorySale.create({
+  const createdSale = await tx.inventorySale.create({
     data: {
       inventoryItemId: item.id,
       userId: currentUser.id,
@@ -6950,6 +7050,24 @@ async function createPosInventorySaleLine(
       discountAmount: line.discountAmount,
       discountReason: line.discountReason,
       discountNote: line.discountNote,
+      subtotalCents: line.subtotalCents,
+      discountCents: line.discountCents,
+      taxableSubtotalCents: line.taxableSubtotalCents,
+      taxCents: line.taxCents,
+      totalCents: line.totalCents,
+      taxProvider: sale.taxProvider,
+      stateTaxCents: line.stateTaxCents,
+      countySurtaxCents: line.countySurtaxCents,
+      combinedRateBasisPoints: sale.combinedRateBasisPoints,
+      taxJurisdictionCountry: sale.taxJurisdictionCountry,
+      taxJurisdictionState: sale.taxJurisdictionState,
+      taxJurisdictionCounty: sale.taxJurisdictionCounty,
+      taxStatus: sale.taxStatus,
+      taxExempt: sale.taxExempt,
+      taxExemptReason: sale.taxExemptReason,
+      taxExemptionReference: sale.taxExemptionReference,
+      taxCalculatedAt: sale.taxCalculatedAt,
+      taxRateSnapshot: sale.taxRateSnapshot,
       soldAt: sale.soldAt,
       notes: sale.notes
     }
@@ -6976,6 +7094,7 @@ async function createPosInventorySaleLine(
       netProfitAfterFees: totalProfitLoss
     }
   });
+  return createdSale.id;
 }
 
 export async function createPosSale(
@@ -6988,6 +7107,10 @@ export async function createPosSale(
     selectedCustomerAccountId?: string | null;
     customerEmail?: string | null;
     customerPhone?: string | null;
+    taxExempt?: boolean;
+    taxExemptReason?: string | null;
+    taxExemptionReference?: string | null;
+    taxExemptionNote?: string | null;
   }
 ): Promise<PosSaleReceiptDTO> {
   const paymentMethod = normalizePosPaymentMethod(input.paymentMethod);
@@ -7000,6 +7123,32 @@ export async function createPosSale(
   const saleReference = posSaleReferenceFromIdempotencyKey(currentUser.id, input.idempotencyKey);
   const paymentReference = input.paymentReference?.trim() || null;
   const paymentMethodLabel = posPaymentMethodLabel(paymentMethod);
+  const settings = await getStorefrontSettings();
+  const taxFeatures = taxFeatureConfig();
+  if (taxFeatures.posSalesTaxEnabled && !settings.tax.posTaxEnabled) {
+    throw new Error("POS sales tax is enabled for the environment, but the approved store tax profile is not enabled.");
+  }
+  if (taxFeatures.posSalesTaxEnabled && (!settings.tax.storeCounty || !settings.tax.effectiveAt || !settings.tax.sourceNote)) {
+    throw new Error("Complete the store county, effective date, and tax source note before collecting POS tax.");
+  }
+  const taxExempt = Boolean(input.taxExempt);
+  if (taxExempt && (!taxFeatures.taxExemptSalesEnabled || !settings.tax.taxExemptSalesEnabled)) {
+    throw new Error("Tax-exempt sales are disabled.");
+  }
+  if (taxExempt && (!input.taxExemptReason?.trim() || !input.taxExemptionReference?.trim())) {
+    throw new Error("Tax-exempt sales require a reason and certificate or authorization reference.");
+  }
+  const posTaxEnabled = taxFeatures.posSalesTaxEnabled && settings.tax.posTaxEnabled;
+  const taxProfile = {
+    country: settings.tax.storeCountry,
+    state: settings.tax.storeState,
+    county: settings.tax.storeCounty,
+    stateRateBasisPoints: settings.tax.stateRateBasisPoints,
+    countyRateBasisPoints: settings.tax.countyRateBasisPoints,
+    effectiveAt: settings.tax.effectiveAt ? new Date(settings.tax.effectiveAt) : null,
+    sourceNote: settings.tax.sourceNote,
+    enabled: posTaxEnabled
+  };
 
   const existingReceipt = await receiptForExistingPosSale(prisma, currentUser, saleReference);
   if (existingReceipt) return existingReceipt;
@@ -7071,8 +7220,38 @@ export async function createPosSale(
       };
     });
 
-    const taxRate = getConfiguredPosTaxRate();
-    const totals = calculatePosTotals(lines, taxRate);
+    const lineSubtotalCents = lines.map((line) => moneyToCents(line.originalUnitPrice) * line.quantity);
+    const lineDiscountCents = lines.map((line) => moneyToCents(line.discountAmount) * line.quantity);
+    const lineTaxableSubtotalCents = lineSubtotalCents.map((subtotalCents, index) => Math.max(0, subtotalCents - (lineDiscountCents[index] ?? 0)));
+    const totals = calculateConfiguredPosTax({
+      subtotalCents: lineSubtotalCents.reduce((sum, value) => sum + value, 0),
+      discountCents: lineDiscountCents.reduce((sum, value) => sum + value, 0),
+      profile: {
+        ...taxProfile,
+        stateRateBasisPoints: posTaxEnabled ? taxProfile.stateRateBasisPoints : 0,
+        countyRateBasisPoints: posTaxEnabled ? taxProfile.countyRateBasisPoints : 0
+      },
+      exempt: taxExempt
+    });
+    const allocatedStateTax = allocateCentsByWeight(totals.stateTaxCents, lineTaxableSubtotalCents);
+    const allocatedCountyTax = allocateCentsByWeight(totals.countySurtaxCents, lineTaxableSubtotalCents);
+    const linesWithTax = lines.map((line, index) => {
+      const taxableSubtotalCents = lineTaxableSubtotalCents[index] ?? 0;
+      const stateTaxCents = allocatedStateTax[index] ?? 0;
+      const countySurtaxCents = allocatedCountyTax[index] ?? 0;
+      const taxCents = stateTaxCents + countySurtaxCents;
+      return {
+        ...line,
+        subtotalCents: lineSubtotalCents[index] ?? taxableSubtotalCents,
+        discountCents: lineDiscountCents[index] ?? 0,
+        taxableSubtotalCents,
+        stateTaxCents,
+        countySurtaxCents,
+        taxCents,
+        totalCents: taxableSubtotalCents + taxCents
+      };
+    });
+    const taxRate = totals.combinedRateBasisPoints / 10_000;
     const customerMatch = await resolvePosCustomerMatch({
       selectedCustomerAccountId: input.selectedCustomerAccountId,
       customerEmail: input.customerEmail,
@@ -7087,13 +7266,27 @@ export async function createPosSale(
       customerMatchMethod: customerMatch.customerMatchMethod,
       customerLinked: Boolean(customerMatch.customerAccountId),
       rewardsEligible: customerMatch.rewardsEligible,
-      subtotal: totals.subtotal,
-      tax: totals.tax,
-      total: totals.total
+      subtotal: centsToMoney(totals.taxableSubtotalCents),
+      tax: centsToMoney(totals.taxCents),
+      total: centsToMoney(totals.totalCents)
     });
 
-    for (const line of lines) {
-      await createPosInventorySaleLine(tx, currentUser, line, {
+    const createdSaleIds: string[] = [];
+    const taxCalculatedAt = new Date();
+    const taxProvider = taxExempt ? "exempt" : posTaxEnabled ? "configured_pos_rate" : "historical_unknown";
+    const taxStatus = taxExempt ? "exempt" : posTaxEnabled ? "collected" : "not_recorded";
+    const taxRateSnapshot = JSON.stringify({
+      country: taxProfile.country,
+      state: taxProfile.state,
+      county: taxProfile.county,
+      stateRateBasisPoints: posTaxEnabled ? taxProfile.stateRateBasisPoints : 0,
+      countyRateBasisPoints: posTaxEnabled ? taxProfile.countyRateBasisPoints : 0,
+      combinedRateBasisPoints: totals.combinedRateBasisPoints,
+      effectiveAt: taxProfile.effectiveAt?.toISOString() ?? null,
+      sourceVersion: taxProfile.sourceNote
+    });
+    for (const line of linesWithTax) {
+      createdSaleIds.push(await createPosInventorySaleLine(tx, currentUser, line, {
         saleReference,
         paymentMethod,
         paymentReference,
@@ -7103,7 +7296,37 @@ export async function createPosSale(
         customerMatchMethod: customerMatch.customerMatchMethod,
         rewardsEligible: customerMatch.rewardsEligible,
         soldAt,
-        notes
+        notes,
+        taxProvider,
+        combinedRateBasisPoints: totals.combinedRateBasisPoints,
+        taxJurisdictionCountry: taxProfile.country,
+        taxJurisdictionState: taxProfile.state,
+        taxJurisdictionCounty: taxProfile.county,
+        taxStatus,
+        taxExempt,
+        taxExemptReason: taxExempt ? input.taxExemptReason?.trim() ?? null : null,
+        taxExemptionReference: taxExempt ? input.taxExemptionReference?.trim() ?? null : null,
+        taxCalculatedAt,
+        taxRateSnapshot
+      }));
+    }
+    if (taxExempt) {
+      await tx.taxAdjustment.create({
+        data: {
+          idempotencyKey: `tax:pos-exemption:${saleReference}`,
+          channel: "pos",
+          adjustmentType: "exemption",
+          inventorySaleId: createdSaleIds[0] ?? null,
+          saleReference,
+          reason: input.taxExemptReason?.trim() ?? null,
+          createdByUserId: currentUser.id,
+          metadataJson: JSON.stringify({
+            reference: input.taxExemptionReference?.trim() ?? null,
+            note: input.taxExemptionNote?.trim() ?? null,
+            customerAssociated: Boolean(customerMatch.customerAccountId),
+            taxableSubtotalCents: totals.taxableSubtotalCents
+          })
+        }
       });
     }
 
@@ -7111,8 +7334,8 @@ export async function createPosSale(
       {
         customerAccountId: customerMatch.customerAccountId,
         saleReference,
-        eligibleSubtotalCents: rewardMoneyToCents(totals.subtotal),
-        taxCentsExcluded: rewardMoneyToCents(totals.tax),
+        eligibleSubtotalCents: totals.taxableSubtotalCents,
+        taxCentsExcluded: totals.taxCents,
         itemCount: lines.reduce((sum, line) => sum + line.quantity, 0)
       },
       tx
@@ -7134,13 +7357,22 @@ export async function createPosSale(
       rewardStatus,
       rewardPointsEarned,
       rewardPointsReversed: 0,
-      subtotal: totals.subtotal,
-      tax: totals.tax,
-      total: totals.total,
+      subtotal: centsToMoney(totals.taxableSubtotalCents),
+      discount: centsToMoney(totals.discountCents),
+      taxableSubtotal: centsToMoney(totals.taxableSubtotalCents),
+      tax: centsToMoney(totals.taxCents),
+      total: centsToMoney(totals.totalCents),
       taxRate,
+      stateTax: centsToMoney(totals.stateTaxCents),
+      countySurtax: centsToMoney(totals.countySurtaxCents),
+      taxProvider,
+      taxStatus,
+      taxExempt,
+      taxExemptReason: taxExempt ? input.taxExemptReason?.trim() ?? null : null,
+      taxJurisdiction: { country: taxProfile.country, state: taxProfile.state, county: taxProfile.county },
       itemCount: lines.reduce((sum, line) => sum + line.quantity, 0),
       completedAt: soldAt.toISOString(),
-      lines: lines.map((line) => ({
+      lines: linesWithTax.map((line) => ({
         inventoryItemId: line.dto.id,
         itemName: line.dto.itemName,
         imageUrl: line.dto.imageUrl,
@@ -7193,7 +7425,8 @@ export async function refundPosSale(
   saleReference: string,
   input: {
     idempotencyKey: string;
-    refundType: "full";
+    refundType: "full" | "partial";
+    partialRefundAmount?: number;
     reason: string;
     note?: string | null;
     restoreInventory: boolean;
@@ -7223,16 +7456,25 @@ export async function refundPosSale(
   });
   if (!sales.length) throw new Error("POS sale not found.");
 
-  const alreadyCompletedWithSameKey = sales.every((sale) => sale.refundStatus === "refunded" && sale.refundIdempotencyKey === idempotencyKey);
-  if (alreadyCompletedWithSameKey) return existingReceipt;
-  if (sales.some((sale) => sale.refundStatus === "refunded" || (sale.refundedAmount ?? 0) >= sale.grossSale)) {
+  const existingAdjustment = await prisma.taxAdjustment.findFirst({
+    where: { channel: "pos", saleReference: normalizedReference, idempotencyKey: { startsWith: `tax:pos-refund:${idempotencyKey}:` } },
+    select: { id: true }
+  });
+  if (existingAdjustment) return existingReceipt;
+  if (sales.every((sale) => sale.refundStatus === "refunded")) {
     throw new Error("This POS sale has already been fully refunded.");
   }
 
-  const remainingRefundable = roundPosMoney(
-    sales.reduce((sum, sale) => sum + Math.max(0, sale.grossSale - (sale.refundedAmount ?? 0)), 0)
-  );
-  if (remainingRefundable <= 0) throw new Error("This POS sale has no remaining refundable amount.");
+  const remainingRefundableCents = sales.reduce((sum, sale) => {
+    const originalTotalCents = sale.totalCents ?? moneyToCents(sale.grossSale);
+    return sum + Math.max(0, originalTotalCents - moneyToCents(sale.refundedAmount ?? 0));
+  }, 0);
+  if (remainingRefundableCents <= 0) throw new Error("This POS sale has no remaining refundable amount.");
+  const requestedRefundCents = input.refundType === "full"
+    ? remainingRefundableCents
+    : moneyToCents(input.partialRefundAmount ?? 0);
+  if (requestedRefundCents <= 0) throw new Error("Enter a partial refund amount.");
+  if (requestedRefundCents > remainingRefundableCents) throw new Error("The refund exceeds the remaining refundable amount.");
 
   const itemIds = Array.from(new Set(sales.map((sale) => sale.inventoryItemId)));
   await runRewardSerializableTransaction(async (tx) => {
@@ -7247,19 +7489,44 @@ export async function refundPosSale(
     });
     if (!lockedSales.length) throw new Error("POS sale not found.");
 
-    if (lockedSales.every((sale) => sale.refundStatus === "refunded" && sale.refundIdempotencyKey === idempotencyKey)) return;
-    if (lockedSales.some((sale) => sale.refundStatus === "refunded" || (sale.refundedAmount ?? 0) >= sale.grossSale)) {
+    const lockedExistingAdjustment = await tx.taxAdjustment.findFirst({
+      where: { channel: "pos", saleReference: normalizedReference, idempotencyKey: { startsWith: `tax:pos-refund:${idempotencyKey}:` } },
+      select: { id: true }
+    });
+    if (lockedExistingAdjustment) return;
+    if (lockedSales.every((sale) => sale.refundStatus === "refunded")) {
       throw new Error("This POS sale has already been fully refunded.");
     }
 
-    for (const sale of lockedSales) {
-      const remainingLineRefund = roundPosMoney(Math.max(0, sale.grossSale - (sale.refundedAmount ?? 0)));
-      if (remainingLineRefund <= 0) continue;
-      const restoredQuantity = input.restoreInventory ? Math.max(0, sale.quantitySold - (sale.refundRestockedQuantity ?? 0)) : 0;
+    const remainingLineCents = lockedSales.map((sale) => Math.max(
+      0,
+      (sale.totalCents ?? moneyToCents(sale.grossSale)) - moneyToCents(sale.refundedAmount ?? 0)
+    ));
+    const lineRefundCents = allocateCentsByWeight(requestedRefundCents, remainingLineCents);
+    let cumulativeEligibleRefundCents = 0;
+    for (const [index, sale] of lockedSales.entries()) {
+      const refundAmountCents = lineRefundCents[index] ?? 0;
+      if (refundAmountCents <= 0) continue;
+      const originalTotalCents = sale.totalCents ?? moneyToCents(sale.grossSale);
+      const originalTaxCents = sale.taxCents;
+      const previousRefundCents = moneyToCents(sale.refundedAmount ?? 0);
+      const nextRefundCents = Math.min(originalTotalCents, previousRefundCents + refundAmountCents);
+      const previousRefundedTaxCents = sale.refundedTaxCents ?? (originalTaxCents === null ? null : 0);
+      const nextRefundedTaxCents = originalTaxCents === null
+        ? null
+        : cumulativeRefundedTaxCents({ originalTotalCents, originalTaxCents, cumulativeRefundedAmountCents: nextRefundCents });
+      const refundedTaxDeltaCents = nextRefundedTaxCents === null
+        ? 0
+        : Math.max(0, nextRefundedTaxCents - (previousRefundedTaxCents ?? 0));
+      cumulativeEligibleRefundCents += Math.max(0, refundAmountCents - refundedTaxDeltaCents);
+      const lineFullyRefunded = nextRefundCents >= originalTotalCents;
+      const restoredQuantity = input.restoreInventory && lineFullyRefunded
+        ? Math.max(0, sale.quantitySold - (sale.refundRestockedQuantity ?? 0))
+        : 0;
       const refundAuditNote = posRefundLineNote({
         saleReference: normalizedReference,
         reasonLabel,
-        refundedAmount: remainingLineRefund,
+        refundedAmount: centsToMoney(refundAmountCents),
         restoreInventory: input.restoreInventory,
         restoredQuantity,
         note
@@ -7268,14 +7535,31 @@ export async function refundPosSale(
       await tx.inventorySale.update({
         where: { id: sale.id },
         data: {
-          refundStatus: "refunded",
-          refundedAmount: roundPosMoney((sale.refundedAmount ?? 0) + remainingLineRefund),
+          refundStatus: lineFullyRefunded ? "refunded" : "partially_refunded",
+          refundedAmount: centsToMoney(nextRefundCents),
+          refundedTaxCents: nextRefundedTaxCents,
+          taxStatus: originalTaxCents === null ? sale.taxStatus : nextRefundedTaxCents === originalTaxCents ? "refunded" : "partially_refunded",
           refundedAt,
           refundReason,
           refundNote: note,
           refundIdempotencyKey: idempotencyKey,
           refundRestockedQuantity: (sale.refundRestockedQuantity ?? 0) + restoredQuantity,
           notes: [sale.notes, refundAuditNote].filter(Boolean).join("\n\n")
+        }
+      });
+
+      await tx.taxAdjustment.create({
+        data: {
+          idempotencyKey: `tax:pos-refund:${idempotencyKey}:${sale.id}`,
+          channel: "pos",
+          adjustmentType: lineFullyRefunded ? "full_refund" : "partial_refund",
+          inventorySaleId: sale.id,
+          saleReference: normalizedReference,
+          refundedAmountCents: refundAmountCents,
+          refundedTaxCents: refundedTaxDeltaCents,
+          reason: refundReason,
+          createdByUserId: currentUser.id,
+          metadataJson: JSON.stringify({ taxKnown: originalTaxCents !== null, note: note ?? undefined })
         }
       });
 
@@ -7305,7 +7589,14 @@ export async function refundPosSale(
     await reverseRewardsForPosSale(
       {
         saleReference: normalizedReference,
-        reason: "refund"
+        reason: "refund",
+        idempotencyKey,
+        cumulativeEligibleRefundCents: lockedSales.reduce((sum, sale) => {
+          const refunded = moneyToCents(sale.refundedAmount ?? 0);
+          const refundedTax = sale.refundedTaxCents ?? 0;
+          return sum + Math.max(0, refunded - refundedTax);
+        }, 0) + cumulativeEligibleRefundCents,
+        fullyRefunded: requestedRefundCents === remainingLineCents.reduce((sum, amount) => sum + amount, 0)
       },
       tx
     );
