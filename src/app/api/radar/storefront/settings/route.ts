@@ -49,17 +49,6 @@ export async function PATCH(request: Request) {
       defaultShippingPrice: input.defaultShippingPrice,
       freeShippingThreshold: input.freeShippingThreshold,
       socialLinks: stringifyList(input.socialLinks),
-      storeCountry: input.storeCountry,
-      storeState: input.storeState,
-      storeCounty: input.storeCounty ?? null,
-      stateTaxRateBasisPoints: input.stateTaxRateBasisPoints,
-      countyTaxRateBasisPoints: input.countyTaxRateBasisPoints,
-      taxProfileEffectiveAt: input.taxProfileEffectiveAt ?? null,
-      taxProfileSourceNote: input.taxProfileSourceNote ?? null,
-      posTaxEnabled: input.posTaxEnabled,
-      taxExemptSalesEnabled: input.taxExemptSalesEnabled,
-      defaultTaxCategory: input.defaultTaxCategory,
-      defaultStripeTaxCode: input.defaultStripeTaxCode
     };
     const settings = existing
       ? await prisma.storefrontSettings.update({ where: { id: existing.id }, data })

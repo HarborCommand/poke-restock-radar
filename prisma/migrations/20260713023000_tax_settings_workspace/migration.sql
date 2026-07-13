@@ -1,0 +1,14 @@
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxExemptionReferenceRequired" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxExemptionReasonRequired" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxDefaultReportingPeriod" TEXT NOT NULL DEFAULT 'monthly';
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxRegistrationConfirmed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxStoreAddressConfirmed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxCountyConfirmed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxDefaultCodeConfirmed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxPreviewOnlinePassed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxPreviewPickupPassed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxPreviewPosPassed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxReceiptVerified" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxRefundVerified" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxReportReconciled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxOwnerApprovedAt" TIMESTAMP(3);

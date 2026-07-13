@@ -1215,24 +1215,50 @@ export const storefrontSettingsSchema = z.object({
   announcementBanner: z.string().trim().max(240).optional(),
   defaultShippingPrice: optionalMoney.default(5),
   freeShippingThreshold: optionalMoney,
-  socialLinks: z.union([z.array(z.string().trim().min(1).max(500)), z.string().trim().max(2000)]).optional(),
-  storeCountry: z.string().trim().length(2).transform((value) => value.toUpperCase()).default("US"),
-  storeState: z.string().trim().length(2).transform((value) => value.toUpperCase()).default("FL"),
-  storeCounty: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().min(2).max(80).optional()),
-  stateTaxRateBasisPoints: z.coerce.number().int().min(0).max(2000).default(600),
-  countyTaxRateBasisPoints: z.coerce.number().int().min(0).max(2000).default(0),
-  taxProfileEffectiveAt: z.preprocess((value) => value === "" || value === null ? undefined : value, z.coerce.date().optional()),
-  taxProfileSourceNote: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().max(500).optional()),
-  posTaxEnabled: checkboxBoolean.default(false),
-  taxExemptSalesEnabled: checkboxBoolean.default(false),
-  defaultTaxCategory: z.enum(["general_tangible_goods"]).default("general_tangible_goods"),
-  defaultStripeTaxCode: z.string().trim().regex(/^txcd_\d{8}$/).default("txcd_99999999")
-}).superRefine((input, context) => {
-  if (input.stateTaxRateBasisPoints + input.countyTaxRateBasisPoints > 2000) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["countyTaxRateBasisPoints"], message: "Combined tax rate cannot exceed 20%." });
+  socialLinks: z.union([z.array(z.string().trim().min(1).max(500)), z.string().trim().max(2000)]).optional()
+}).strict();
+
+export const taxAdminSettingsSchema = z.object({
+  storeCountry: z.string().trim().length(2).transform((value) => value.toUpperCase()),
+  storeState: z.string().trim().length(2).transform((value) => value.toUpperCase()),
+  storeCounty: z.string().trim().min(2).max(80),
+  stateRateBasisPoints: z.coerce.number().int().min(0).max(2000),
+  countyRateBasisPoints: z.coerce.number().int().min(0).max(2000),
+  effectiveDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a YYYY-MM-DD effective date."),
+  sourceNote: z.string().trim().min(3).max(500),
+  posTaxEnabled: z.boolean(),
+  taxExemptSalesEnabled: z.boolean(),
+  exemptionReferenceRequired: z.literal(true),
+  exemptionReasonRequired: z.literal(true),
+  defaultTaxCategory: z.literal("general_tangible_goods"),
+  defaultStripeTaxCode: z.literal("txcd_99999999"),
+  defaultReportingPeriod: z.enum(["monthly", "quarterly", "annual"]),
+  registrationConfirmed: z.boolean(),
+  storeAddressConfirmed: z.boolean(),
+  countyConfirmed: z.boolean(),
+  defaultCodeConfirmed: z.boolean(),
+  previewOnlinePassed: z.boolean(),
+  previewPickupPassed: z.boolean(),
+  previewPosPassed: z.boolean(),
+  receiptVerified: z.boolean(),
+  refundVerified: z.boolean(),
+  reportReconciled: z.boolean(),
+  ownerApproved: z.boolean(),
+  enableTaxCollectionConfirmed: z.boolean().optional()
+}).strict().superRefine((input, context) => {
+  if (input.stateRateBasisPoints + input.countyRateBasisPoints > 2000) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["countyRateBasisPoints"],
+      message: "Combined tax rate cannot exceed 20%."
+    });
   }
-  if (input.posTaxEnabled && (!input.storeCounty || !input.taxProfileEffectiveAt || !input.taxProfileSourceNote)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["posTaxEnabled"], message: "Store county, effective date, and source note are required before POS tax can be enabled." });
+  if (input.posTaxEnabled && (!input.storeCounty || !input.effectiveDate || !input.sourceNote)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["posTaxEnabled"],
+      message: "County, effective date, and source are required before enabling the POS profile."
+    });
   }
 });
 
