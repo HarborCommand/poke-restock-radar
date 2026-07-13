@@ -82,6 +82,33 @@ test("level-up modal includes focus, Escape, live-region, and reduced-motion saf
   assert.match(css, /max-height: min\(92dvh, 760px\)/);
 });
 
+test("level-up backdrop portals to the viewport and restores scroll locking", () => {
+  const component = read("src/components/RewardsLevelUp.tsx");
+  const css = read("src/app/globals.css");
+  assert.match(component, /createPortal\(/);
+  assert.match(component, /getClientPortalTarget = \(\): HTMLElement \| null => document\.body/);
+  assert.match(component, /useSyncExternalStore\(subscribeToDocument, getClientPortalTarget, getServerPortalTarget\)/);
+  assert.match(component, /document\.body\.style\.position = "fixed"/);
+  assert.match(component, /scrollbarWidth = Math\.max\(0, window\.innerWidth - document\.documentElement\.clientWidth\)/);
+  assert.match(component, /Object\.assign\(document\.body\.style, previousBodyStyles\)/);
+  assert.match(component, /window\.scrollTo\(scrollX, scrollY\)/);
+  assert.match(css, /\.gdg-level-up-backdrop \{[\s\S]*position: fixed;[\s\S]*width: 100vw;[\s\S]*height: 100dvh;/);
+  assert.match(css, /\.gdg-level-up-dialog \{[\s\S]*z-index: 2;/);
+});
+
+test("viewport confetti is bounded, noninteractive, timed, and reduced-motion safe", () => {
+  const component = read("src/components/RewardsLevelUp.tsx");
+  const css = read("src/app/globals.css");
+  assert.match(component, /Array\.from\(\{ length: 36 \}/);
+  assert.match(component, /"--gdg-confetti-delay": `\$\{\(index % 8\) \* 0\.1\}s`/);
+  assert.match(component, /"--gdg-confetti-duration": `\$\{3\.55 \+ \(index % 5\) \* 0\.15\}s`/);
+  assert.match(component, /className="gdg-level-up-confetti" aria-hidden="true"/);
+  assert.match(css, /\.gdg-level-up-confetti \{[\s\S]*position: fixed;[\s\S]*width: 100vw;[\s\S]*height: 100dvh;[\s\S]*pointer-events: none;/);
+  assert.match(css, /animation: gdg-confetti-fall[\s\S]*forwards;/);
+  assert.match(css, /@keyframes gdg-confetti-fall/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.gdg-level-up-confetti-piece[\s\S]*animation: none !important;/);
+});
+
 test("redemption remains visibly and structurally disabled", () => {
   const account = read("src/components/CustomerAccountPages.tsx");
   const modal = read("src/components/RewardsLevelUp.tsx");
