@@ -21813,6 +21813,148 @@ body:has(.shop-shell) {
   margin: 12px 0 0;
 }
 
+.tax-report-workspace {
+  background: linear-gradient(180deg, #f7faf8 0%, #ffffff 42%);
+  color: #17202b;
+  min-height: 100vh;
+  padding: 40px clamp(20px, 4vw, 64px) 64px;
+}
+
+.tax-report-header {
+  align-items: flex-end;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  margin: 0 auto 24px;
+  max-width: 1540px;
+}
+
+.tax-report-header a { color: #52606d; font-weight: 800; }
+.tax-report-header h1 { font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0.04em; margin: 4px 0 10px; }
+.tax-report-header > div > p:last-child { color: #52606d; font-size: 1rem; margin: 0; max-width: 760px; }
+.tax-report-eyebrow { color: #b45309 !important; font-size: 0.75rem !important; font-weight: 900; letter-spacing: 0.11em; margin-top: 22px !important; text-transform: uppercase; }
+
+.tax-report-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.tax-report-actions button,
+.tax-report-actions a,
+.tax-report-filters button,
+.tax-report-pagination button {
+  align-items: center;
+  background: #0b2a45;
+  border: 1px solid #0b2a45;
+  border-radius: 12px;
+  color: #fff;
+  display: inline-flex;
+  font-weight: 900;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  text-decoration: none;
+}
+.tax-report-actions .tax-report-secondary { background: #fff; color: #0b2a45; }
+.tax-report-actions button:disabled,
+.tax-report-filters button:disabled,
+.tax-report-pagination button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.tax-report-filters {
+  align-items: end;
+  background: #fff;
+  border: 1px solid #dce4df;
+  border-radius: 20px;
+  box-shadow: 0 14px 44px rgba(24, 54, 44, 0.07);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  margin: 0 auto 22px;
+  max-width: 1540px;
+  padding: 20px;
+}
+.tax-report-filters button { align-self: end; }
+.tax-report-filter-note { align-self: center; color: #66736b; font-size: 0.78rem; grid-column: span 3; margin: 0; }
+.tax-report-filters label { color: #52606d; display: grid; font-size: 0.75rem; font-weight: 900; gap: 7px; text-transform: uppercase; }
+.tax-report-filters input,
+.tax-report-filters select { background: #fff; border: 1px solid #cbd5cf; border-radius: 10px; color: #17202b; font: inherit; min-height: 44px; padding: 9px 11px; text-transform: none; }
+
+.tax-report-error,
+.tax-report-state { border-radius: 14px; margin: 0 auto 20px; max-width: 1540px; padding: 16px 18px; }
+.tax-report-error { background: #fff3f0; border: 1px solid #f1b5a9; color: #9f2d1f; font-weight: 800; }
+.tax-report-state { background: #eef7f0; color: #28543a; }
+
+.tax-report-kpis { display: grid; gap: 12px; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 0 auto 20px; max-width: 1540px; }
+.tax-report-kpis article { background: #fff; border: 1px solid #dce4df; border-radius: 16px; min-height: 104px; padding: 17px; }
+.tax-report-kpis article.primary { background: #0b2a45; border-color: #0b2a45; color: #fff; }
+.tax-report-kpis article.primary span { color: #dbeafe; }
+.tax-report-kpis span { color: #66736b; display: block; font-size: 0.72rem; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; }
+.tax-report-kpis strong { display: block; font-size: 1.35rem; margin-top: 12px; }
+
+.tax-report-counts { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 auto 20px; max-width: 1540px; }
+.tax-report-counts article { background: #f7faf8; border: 1px solid #dce4df; border-radius: 14px; display: flex; justify-content: space-between; padding: 14px 16px; }
+.tax-report-counts span { color: #66736b; font-size: 0.78rem; font-weight: 900; text-transform: uppercase; }
+.tax-report-counts strong { font-size: 1.1rem; }
+
+.tax-report-unknown { align-items: center; background: #fff8e8; border: 1px solid #ecd19a; border-radius: 16px; display: flex; gap: 14px; justify-content: space-between; margin: 0 auto 20px; max-width: 1540px; padding: 16px 18px; }
+.tax-report-unknown span { color: #6b5630; }
+
+.tax-reconciliation {
+  align-items: center;
+  border-radius: 20px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(280px, 1fr) 1.2fr 1fr;
+  margin: 0 auto 20px;
+  max-width: 1540px;
+  padding: 20px;
+}
+.tax-reconciliation.clean { background: #edf8f0; border: 1px solid #b9dfc1; }
+.tax-reconciliation.warning { background: #fff8e8; border: 1px solid #ecd19a; }
+.tax-reconciliation p { color: #52606d; margin: 0; }
+.tax-reconciliation div p { font-size: 0.72rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.tax-reconciliation h2 { font-size: 1.15rem; margin: 5px 0 0; }
+
+.tax-report-table-card { background: #fff; border: 1px solid #dce4df; border-radius: 20px; margin: 0 auto; max-width: 1540px; overflow: hidden; }
+.tax-report-table-heading { align-items: center; display: flex; justify-content: space-between; padding: 20px; }
+.tax-report-table-heading p { color: #b45309; font-size: 0.72rem; font-weight: 900; letter-spacing: 0.08em; margin: 0; text-transform: uppercase; }
+.tax-report-table-heading h2 { font-size: 1.3rem; margin: 4px 0 0; }
+.tax-report-table-heading > span { color: #66736b; font-size: 0.82rem; }
+.tax-report-table-scroll { overflow-x: auto; }
+.tax-report-table-card table { border-collapse: collapse; min-width: 1640px; width: 100%; }
+.tax-report-table-card th { background: #f4f7f5; color: #59655e; font-size: 0.7rem; letter-spacing: 0.05em; padding: 12px 14px; text-align: left; text-transform: uppercase; }
+.tax-report-table-card td { border-top: 1px solid #e7ece9; padding: 14px; vertical-align: top; }
+.tax-report-table-card td small { color: #66736b; display: block; margin-top: 4px; }
+.tax-report-reference { max-width: 240px; overflow-wrap: anywhere; }
+.tax-row-status { background: #eef3ef; border-radius: 999px; display: inline-block; font-size: 0.72rem; font-weight: 900; padding: 5px 9px; }
+.tax-row-status.warning { background: #fff0cd; color: #8a4b00; }
+.tax-report-empty { color: #66736b; padding: 36px !important; text-align: center; }
+.tax-report-pagination { align-items: center; border-top: 1px solid #e7ece9; display: flex; justify-content: space-between; padding: 16px 20px; }
+.tax-report-pagination div { display: flex; gap: 8px; }
+.tax-report-pagination button { min-height: 38px; padding: 7px 13px; }
+.tax-report-disclaimer { color: #66736b; font-size: 0.78rem; margin: 14px auto 0; max-width: 1540px; }
+
+.tax-report-disabled { align-items: center; display: flex; justify-content: center; }
+.tax-report-disabled-card { background: #fff; border: 1px solid #dce4df; border-radius: 24px; box-shadow: 0 20px 60px rgba(24, 54, 44, 0.08); max-width: 680px; padding: clamp(28px, 6vw, 56px); }
+.tax-report-disabled-card h1 { font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -0.04em; margin: 8px 0 16px; }
+.tax-report-disabled-card p { color: #52606d; line-height: 1.65; }
+.tax-report-disabled-card a { color: #0b2a45; display: inline-block; font-weight: 900; margin-top: 14px; }
+
+@media (max-width: 1180px) {
+  .tax-report-filters { grid-template-columns: repeat(4, minmax(140px, 1fr)); }
+  .tax-report-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tax-reconciliation { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .tax-report-workspace { padding: 24px 14px 48px; }
+  .tax-report-header { align-items: stretch; flex-direction: column; }
+  .tax-report-actions > * { flex: 1; }
+  .tax-report-filters { grid-template-columns: 1fr 1fr; padding: 14px; }
+  .tax-report-filters button { grid-column: 1 / -1; }
+  .tax-report-filter-note { grid-column: 1 / -1; }
+  .tax-report-kpis { grid-template-columns: 1fr 1fr; }
+  .tax-report-counts { grid-template-columns: 1fr 1fr; }
+  .tax-report-unknown { align-items: flex-start; flex-direction: column; }
+  .tax-report-table-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
+
 .order-status-items {
   margin-top: 20px;
 }
