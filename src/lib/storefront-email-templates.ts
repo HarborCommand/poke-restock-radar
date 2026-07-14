@@ -37,6 +37,7 @@ export type OrderConfirmationEmailInput = StorefrontEmailBase & {
   items: StorefrontEmailItem[];
   subtotal: number;
   shippingCharged: number;
+  tax?: number | null;
   totalPaid: number;
   shippingMethod: string | null;
   isLocalPickup?: boolean;
@@ -205,6 +206,7 @@ function orderSummaryCard(input: {
   items: StorefrontEmailItem[];
   subtotal: number;
   shippingCharged: number;
+  tax?: number | null;
   totalPaid: number;
   shippingMethod: string | null;
   isLocalPickup?: boolean;
@@ -217,6 +219,7 @@ function orderSummaryCard(input: {
       `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid ${emailColors.border};padding-top:10px;">`,
       summaryRow("Subtotal", formatMoney(input.subtotal)),
       summaryRow(shippingLabel, formatMoney(input.shippingCharged)),
+      summaryRow("Sales tax", input.tax === null || input.tax === undefined ? "Not recorded" : formatMoney(input.tax)),
       summaryRow("Total paid", formatMoney(input.totalPaid), true),
       "</table>"
     ].join("")
@@ -416,6 +419,7 @@ export function buildOrderConfirmationEmail(input: OrderConfirmationEmailInput):
     ...(input.items.length ? input.items.map((item) => `${item.quantity} x ${item.name} - ${formatMoney(item.lineTotal)}`) : ["No line items were stored for this order."]),
     `Subtotal: ${formatMoney(input.subtotal)}`,
     isLocalPickup ? `Shipping charged: ${formatMoney(input.shippingCharged)}` : `Shipping (${shippingMethod}): ${formatMoney(input.shippingCharged)}`,
+    `Sales tax: ${input.tax === null || input.tax === undefined ? "Not recorded" : formatMoney(input.tax)}`,
     `Total paid: ${formatMoney(input.totalPaid)}`,
     "",
     `${methodLabel}: ${shippingMethod}`,

@@ -2,6 +2,7 @@ import { emailProviderConfig, type EmailProviderKind } from "@/lib/email-provide
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { shippingLabelWorkflowConfig } from "@/lib/shipping-labels";
 import { shippingRateProviderConfig } from "@/lib/shipping-rate-provider";
+import { taxFeatureConfig } from "@/lib/tax";
 
 export type ProviderHealthStatus = "configured" | "optional_not_configured" | "misconfigured" | "disabled";
 
@@ -187,6 +188,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const shippingRateProvider = shippingRateProviderConfig();
   const shippingLabelWorkflow = shippingLabelWorkflowConfig();
   const customerAccountFeatures = customerAccountFeatureConfig();
+  const taxFeatures = taxFeatureConfig();
   const blobEnvVars = ["BLOB_READ_WRITE_TOKEN"];
   const marketEnvVars = [
     "TCGCSV_ENABLED",
@@ -342,6 +344,12 @@ export function getEnvironmentReport(): EnvironmentReport {
   }
   if (stripeHealthStatus === "misconfigured") {
     warnings.push(`Storefront Stripe Checkout is disabled until ${stripeMissing.join(", ")} ${stripeMissing.length === 1 ? "is" : "are"} set.`);
+  }
+  if (taxFeatures.onlineStripeTaxEnabled && stripeMissing.length > 0) {
+    warnings.push("ONLINE_STRIPE_TAX_ENABLED requires a fully configured Stripe Checkout and signed webhook path.");
+  }
+  if (taxFeatures.taxExemptSalesEnabled && !taxFeatures.posSalesTaxEnabled) {
+    warnings.push("TAX_EXEMPT_SALES_ENABLED is on while POS_SALES_TAX_ENABLED is off. Exempt POS sale entry remains unavailable.");
   }
   if (shippingRateHealthStatus === "misconfigured") {
     warnings.push("Calculated USPS shipping is enabled but Shippo or ship-from env vars are incomplete. Disable CALCULATED_USPS_SHIPPING_ENABLED or finish Shippo setup.");

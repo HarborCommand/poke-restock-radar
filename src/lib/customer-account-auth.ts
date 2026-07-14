@@ -1299,6 +1299,9 @@ const customerVisiblePosSaleSelect = {
   soldPricePerItem: true,
   grossSale: true,
   discountAmount: true,
+  taxCents: true,
+  taxStatus: true,
+  totalCents: true,
   refundStatus: true,
   refundedAmount: true,
   refundedAt: true,
@@ -1392,9 +1395,19 @@ function customerPosSaleTotals(sales: CustomerVisiblePosSale[]) {
   const noteTax = first ? posMoneyFromNote(first.notes, "tax") : null;
   const noteTotal = first ? posMoneyFromNote(first.notes, "total") : null;
   const subtotal = roundAccountMoney(noteSubtotal ?? sales.reduce((sum, sale) => sum + Math.max(0, sale.grossSale), 0));
-  const tax = noteTax === null ? null : roundAccountMoney(noteTax);
+  const taxSnapshotKnown = sales.some((sale) => sale.taxCents !== null);
+  const tax = taxSnapshotKnown
+    ? roundAccountMoney(sales.reduce((sum, sale) => sum + (sale.taxCents ?? 0), 0) / 100)
+    : sales.some((sale) => sale.taxStatus === "not_recorded")
+      ? null
+      : noteTax === null
+        ? null
+        : roundAccountMoney(noteTax);
   const refundedAmount = roundAccountMoney(sales.reduce((sum, sale) => sum + Math.max(0, Math.min(sale.refundedAmount ?? 0, sale.grossSale)), 0));
-  const totalBeforeRefund = roundAccountMoney(noteTotal ?? subtotal + (tax ?? 0));
+  const persistedTotal = taxSnapshotKnown
+    ? sales.reduce((sum, sale) => sum + (sale.totalCents ?? Math.round(sale.grossSale * 100)), 0) / 100
+    : null;
+  const totalBeforeRefund = roundAccountMoney(persistedTotal ?? noteTotal ?? subtotal + (tax ?? 0));
   const totalPaid = roundAccountMoney(Math.max(0, totalBeforeRefund - refundedAmount));
   const discountTotal = roundAccountMoney(sales.reduce((sum, sale) => sum + Math.max(0, sale.discountAmount ?? 0), 0));
   return { subtotal, tax, refundedAmount, totalPaid, discountTotal };
@@ -1645,6 +1658,7 @@ export async function getCustomerAccountOrderDetail(
       fulfillmentStatus: true,
       subtotal: true,
       tax: true,
+      taxCents: true,
       shippingCharged: true,
       shippingMethodLabel: true,
       shippingPackageProfile: true,
@@ -1697,7 +1711,7 @@ export async function getCustomerAccountOrderDetail(
     fulfillmentMethod: localPickup ? "local_pickup" : "shipping",
     itemCount,
     subtotal: order.subtotal,
-    tax: order.tax,
+    tax: order.taxCents === null ? null : order.tax,
     discountTotal: 0,
     paymentMethodLabel: null,
     totalPaid: order.total,
