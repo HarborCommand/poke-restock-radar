@@ -5204,7 +5204,11 @@ function posReceiptSummary(receipt: PosSaleReceiptDTO) {
     `Merchandise subtotal: ${money(receipt.subtotal)}`,
     `Discount: ${receipt.discount > 0 ? `-${money(receipt.discount)}` : money(0)}`,
     `Taxable subtotal: ${money(receipt.taxableSubtotal)}`,
-    receipt.taxExempt ? `Sales tax: Tax exempt (${receipt.taxExemptReason ?? "approved exemption"})` : `Sales tax: ${money(receipt.tax)}`,
+    receipt.taxExempt
+      ? `Sales tax: Tax exempt (${receipt.taxExemptReason ?? "approved exemption"})`
+      : receipt.taxStatus === "not_recorded"
+        ? "Sales tax: Not recorded"
+        : `Sales tax: ${money(receipt.tax)}`,
     `Total: ${money(receipt.total)}`,
     `Support: ${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`
   ].filter(Boolean).join("\n");
@@ -6181,6 +6185,8 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
         <span>Taxable subtotal <strong>{money(receipt.taxableSubtotal)}</strong></span>
         {receipt.taxExempt ? (
           <span>Sales tax <strong>Tax exempt</strong></span>
+        ) : receipt.taxStatus === "not_recorded" ? (
+          <span>Sales tax <strong>Not recorded</strong></span>
         ) : (
           <>
             <span>Florida state tax <strong>{money(receipt.stateTax)}</strong></span>
@@ -11633,30 +11639,6 @@ function StorefrontSettingsCard({
         </label>
         <TextInput name="defaultShippingPrice" label="Flat-rate shipping" type="number" min="0" step="0.01" defaultValue={settings.defaultShippingPrice} />
         <TextInput name="freeShippingThreshold" label="Free shipping threshold" type="number" min="0" step="0.01" defaultValue={settings.freeShippingThreshold ?? ""} />
-        <div className="wide-field form-helper publish-ready-note">
-          <strong>Sales tax foundation</strong><br />
-          Runtime flags: online {settings.tax.features.onlineStripeTaxEnabled ? "on" : "off"}, POS {settings.tax.features.posSalesTaxEnabled ? "on" : "off"}, exemptions {settings.tax.features.taxExemptSalesEnabled ? "on" : "off"}, reporting {settings.tax.features.taxReportingEnabled ? "on" : "off"}.
-        </div>
-        <TextInput name="storeCountry" label="Tax country" defaultValue={settings.tax.storeCountry} required />
-        <TextInput name="storeState" label="Tax state" defaultValue={settings.tax.storeState} required />
-        <TextInput name="storeCounty" label="Store county" defaultValue={settings.tax.storeCounty ?? ""} />
-        <TextInput name="stateTaxRateBasisPoints" label="State rate (basis points)" type="number" min="0" max="2000" step="1" defaultValue={settings.tax.stateRateBasisPoints} required />
-        <TextInput name="countyTaxRateBasisPoints" label="County rate (basis points)" type="number" min="0" max="2000" step="1" defaultValue={settings.tax.countyRateBasisPoints} required />
-        <TextInput name="taxRateEffectiveAt" label="Rate effective date" type="date" defaultValue={settings.tax.effectiveAt?.slice(0, 10) ?? ""} />
-        <TextareaInput name="taxRateSourceNote" label="Rate source / version note" defaultValue={settings.tax.sourceNote ?? ""} />
-        <TextInput name="defaultTaxCategory" label="Default tax category" defaultValue={settings.tax.defaultTaxCategory} required />
-        <TextInput name="defaultStripeTaxCode" label="Default Stripe tax code" defaultValue={settings.tax.defaultStripeTaxCode} required />
-        <input type="hidden" name="posTaxEnabled" value="false" />
-        <label className="checkbox-label">
-          <input name="posTaxEnabled" type="checkbox" value="true" defaultChecked={settings.tax.posTaxEnabled} />
-          Approve the saved POS tax profile (runtime flag must also be enabled)
-        </label>
-        <input type="hidden" name="taxExemptSalesEnabled" value="false" />
-        <label className="checkbox-label">
-          <input name="taxExemptSalesEnabled" type="checkbox" value="true" defaultChecked={settings.tax.taxExemptSalesEnabled} />
-          Approve admin-recorded tax exemptions (runtime flag must also be enabled)
-        </label>
-        {settings.tax.features.taxReportingEnabled ? <a href="/api/radar/tax-report?format=csv">Download tax report CSV</a> : null}
         <TextareaInput name="announcementBanner" label="Announcement banner" defaultValue={settings.announcementBanner ?? ""} />
         <TextareaInput name="shippingPolicyText" label="Shipping policy" defaultValue={settings.shippingPolicyText ?? ""} />
         <TextareaInput name="returnPolicyText" label="Return policy" defaultValue={settings.returnPolicyText ?? ""} />

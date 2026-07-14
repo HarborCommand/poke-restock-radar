@@ -2962,13 +2962,17 @@ function checkoutTaxSnapshot(session: Stripe.Checkout.Session, order: Storefront
   const shippingCents = typeof withTotals.total_details?.amount_shipping === "number"
     ? withTotals.total_details.amount_shipping
     : centsFromMoney(order.shippingCharged);
-  const taxCents = typeof withTotals.total_details?.amount_tax === "number" ? withTotals.total_details.amount_tax : 0;
-  const totalCents = typeof session.amount_total === "number" ? session.amount_total : subtotalCents - discountCents + shippingCents + taxCents;
-  const taxableSubtotalCents = Math.max(0, subtotalCents - discountCents);
+  const taxCents = automaticTaxEnabled && typeof withTotals.total_details?.amount_tax === "number"
+    ? withTotals.total_details.amount_tax
+    : null;
+  const totalCents = typeof session.amount_total === "number" ? session.amount_total : subtotalCents - discountCents + shippingCents + (taxCents ?? 0);
+  const taxableSubtotalCents = automaticTaxEnabled ? Math.max(0, subtotalCents - discountCents) : null;
   const jurisdictionAddress = customer.shippingAddress ?? customer.billingAddress;
   const country = jurisdictionAddress?.country?.toUpperCase() ?? null;
   const state = jurisdictionAddress?.state?.toUpperCase() ?? null;
-  const rateBasisPoints = taxableSubtotalCents > 0 ? Math.round((taxCents * 10_000) / taxableSubtotalCents) : 0;
+  const rateBasisPoints = taxableSubtotalCents !== null && taxableSubtotalCents > 0 && taxCents !== null
+    ? Math.round((taxCents * 10_000) / taxableSubtotalCents)
+    : null;
   return {
     subtotalCents,
     discountCents,
@@ -2981,7 +2985,7 @@ function checkoutTaxSnapshot(session: Stripe.Checkout.Session, order: Storefront
     taxJurisdictionCountry: country,
     taxJurisdictionState: state,
     taxJurisdictionCounty: null,
-    taxRateBasisPoints: automaticTaxEnabled ? rateBasisPoints : null,
+    taxRateBasisPoints: rateBasisPoints,
     taxInclusive: automaticTaxEnabled ? false : null,
     taxStatus: automaticTaxEnabled ? "collected" : "not_recorded",
     taxCalculatedAt: automaticTaxEnabled ? new Date() : null,
@@ -3016,7 +3020,7 @@ async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, sessi
   const taxSnapshot = checkoutTaxSnapshot(session, order, snapshot);
   const shippingCharged = shippingSnapshot.shippingCharged ?? order.shippingCharged;
   const subtotal = moneyFromCents(taxSnapshot.subtotalCents);
-  const tax = moneyFromCents(taxSnapshot.taxCents);
+  const tax = taxSnapshot.taxCents === null ? order.tax : moneyFromCents(taxSnapshot.taxCents);
   const total = moneyFromCents(taxSnapshot.totalCents);
   const collectedZip = String(snapshot.shippingAddress?.postal_code || "").replace(/\D/g, "").slice(0, 5);
   const quotedZip = String(shippingSnapshot.shippingQuotedZip || order.shippingQuotedZip || "").replace(/\D/g, "").slice(0, 5);

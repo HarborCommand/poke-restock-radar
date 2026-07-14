@@ -100,6 +100,8 @@ test("Stripe Checkout tax path is guarded and persists authoritative provider ce
   assert.match(source, /automatic_tax: \{ enabled: true \}/);
   assert.match(source, /onlineTaxEnabled \? \{ billing_address_collection: "required" as const \} : \{\}/);
   assert.match(source, /total_details\?\.amount_tax/);
+  assert.match(source, /const taxCents = automaticTaxEnabled/);
+  assert.match(source, /taxSnapshot\.taxCents === null \? order\.tax/);
   assert.match(source, /stripe\.checkout\.sessions\.retrieve/);
   assert.match(source, /tax_code: requiredStripeTaxCode/);
   assert.match(source, /Tax-enabled Local Pickup requires an approved store-location tax policy/);
@@ -113,6 +115,7 @@ test("POS tax, exemptions, partial refunds, and adjustment audit are server auth
   assert.match(source, /allocateCentsByWeight\(requestedRefundCents/);
   assert.match(source, /tax:pos-refund:/);
   assert.match(source, /cumulativeEligibleRefundCents/);
+  assert.match(source, /sale\.taxStatus === "not_recorded" \? null : line\.taxCents/);
 });
 
 test("tax reporting is feature-gated, read-only, authenticated, no-store, and user-scoped", () => {
@@ -144,4 +147,11 @@ test("production-facing env template keeps every tax feature off", () => {
   for (const name of ["ONLINE_STRIPE_TAX_ENABLED", "POS_SALES_TAX_ENABLED", "TAX_EXEMPT_SALES_ENABLED", "TAX_REPORTING_ENABLED"]) {
     assert.match(env, new RegExp(`${name}="false"`));
   }
+});
+
+test("foundation UI keeps tax configuration dormant until the settings workspace phase", () => {
+  const dashboard = fs.readFileSync("src/components/RadarApp.tsx", "utf8");
+  assert.doesNotMatch(dashboard, /<strong>Sales tax foundation<\/strong>/);
+  assert.doesNotMatch(dashboard, /name="posTaxEnabled"/);
+  assert.doesNotMatch(dashboard, /href="\/api\/radar\/tax-report\?format=csv"/);
 });

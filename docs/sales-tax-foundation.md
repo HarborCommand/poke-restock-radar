@@ -37,3 +37,7 @@ The saved POS profile has separate owner-approval toggles. Both the runtime flag
 - POS rates are owner-managed snapshots; there is no live third-party POS tax provider in this change.
 - Online local pickup is blocked while Stripe Tax is enabled until a supported owner-approved store-location policy is implemented.
 - Older orders and POS sales may not have a reliable tax snapshot and are intentionally shown as **Not recorded**.
+
+## Rollback and recovery
+
+Keep all four runtime flags disabled during rollout. If the application release must be rolled back, redeploy the previous build and leave the additive columns and `TaxAdjustment` table in place; the prior build does not read them. Prefer a forward fix over a down migration. Dropping the new structures is safe only before any tax-enabled write has occurred, after a verified backup, and through a separately reviewed maintenance migration. Never restore or infer historical tax values during rollback.
