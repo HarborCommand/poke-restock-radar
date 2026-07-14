@@ -11639,6 +11639,11 @@ function StorefrontSettingsCard({
         </label>
         <TextInput name="defaultShippingPrice" label="Flat-rate shipping" type="number" min="0" step="0.01" defaultValue={settings.defaultShippingPrice} />
         <TextInput name="freeShippingThreshold" label="Free shipping threshold" type="number" min="0" step="0.01" defaultValue={settings.freeShippingThreshold ?? ""} />
+        <div className="wide-field form-helper publish-ready-note">
+          <strong>Sales tax</strong><br />
+          Tax configuration and go-live checks now live in a dedicated admin workspace.
+          {" "}<a href="/admin/tax-settings">Open Tax Settings</a>
+        </div>
         <TextareaInput name="announcementBanner" label="Announcement banner" defaultValue={settings.announcementBanner ?? ""} />
         <TextareaInput name="shippingPolicyText" label="Shipping policy" defaultValue={settings.shippingPolicyText ?? ""} />
         <TextareaInput name="returnPolicyText" label="Return policy" defaultValue={settings.returnPolicyText ?? ""} />
