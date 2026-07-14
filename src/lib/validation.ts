@@ -1012,6 +1012,35 @@ export const inventorySaleUpdateSchema = z.object({
   };
 });
 
+export const posTaxQuoteSchema = z.object({
+  items: z.array(z.object({
+    inventoryItemId: z.string().trim().min(2),
+    quantity: z.coerce.number().int().min(1).max(1000),
+    adjustedUnitPrice: z.preprocess(
+      (value) => (value === "" || value === null || value === undefined ? undefined : value),
+      z.coerce.number().positive("Adjusted POS price must be greater than $0.").max(100000).optional()
+    ),
+    discountReason: z.enum(POS_DISCOUNT_REASON_VALUES).optional(),
+    discountNote: optionalTrimmed
+  }).strict()).min(1).max(100),
+  taxExempt: checkboxBoolean.optional(),
+  taxExemptReason: z.preprocess(
+    (value) => value === "" || value === null ? undefined : value,
+    z.string().trim().min(4).max(160).optional()
+  ),
+  taxExemptionReference: z.preprocess(
+    (value) => value === "" || value === null ? undefined : value,
+    z.string().trim().min(4).max(120).optional()
+  )
+}).strict().superRefine((input, context) => {
+  if (input.taxExempt && !input.taxExemptReason) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["taxExemptReason"], message: "Tax-exempt sales require a reason." });
+  }
+  if (input.taxExempt && !input.taxExemptionReference) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["taxExemptionReference"], message: "Tax-exempt sales require a certificate or authorization reference." });
+  }
+});
+
 export const posSaleCreateSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
   items: z.array(z.object({

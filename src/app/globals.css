@@ -32262,3 +32262,247 @@ body .sale-edit-workspace-modal select:focus-visible {
     border-radius: 16px;
   }
 }
+
+/* Phase 2 POS tax quote and receipt fidelity */
+.pos-tax-profile-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px 14px;
+  border: 1px solid #dbe5f0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8fbff 0%, #fffdf6 100%);
+  padding: 12px;
+}
+
+.pos-tax-profile-card > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pos-tax-profile-card > div:nth-child(2) {
+  text-align: right;
+}
+
+.pos-tax-profile-card span,
+.pos-tax-profile-card small {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.pos-tax-profile-card a {
+  border: 1px solid #d5deea;
+  border-radius: 10px;
+  background: #fff;
+  color: #243b64;
+  padding: 8px 10px;
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.pos-tax-profile-card > small {
+  grid-column: 1 / -1;
+}
+
+.pos-tax-profile-card.needs-attention {
+  border-color: #f0b762;
+  background: #fff8e8;
+}
+
+.pos-total-box[aria-busy="true"] {
+  opacity: 0.72;
+}
+
+.pos-receipt {
+  display: grid;
+  width: min(720px, 100%);
+  margin: 0 auto;
+  border-color: #d9e2ec;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  padding: 26px;
+}
+
+.pos-receipt-header {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: 20px;
+  text-align: center;
+}
+
+.pos-receipt-logo {
+  width: min(190px, 70%);
+  height: auto;
+  object-fit: contain;
+}
+
+.pos-receipt-header h3,
+.pos-receipt-header p,
+.pos-receipt-footer p {
+  margin: 0;
+}
+
+.pos-receipt-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  margin-top: 10px;
+  gap: 6px 18px;
+  text-align: left;
+}
+
+.pos-receipt-meta span,
+.pos-receipt-total span,
+.pos-receipt-refund span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pos-receipt-lines {
+  padding: 18px 0;
+  border-bottom: 1px dashed #cbd5e1;
+}
+
+.pos-receipt-lines > span {
+  align-items: flex-start;
+  padding: 8px 0;
+}
+
+.pos-receipt-lines small {
+  display: block;
+  margin-top: 3px;
+}
+
+.pos-receipt-total {
+  display: grid;
+  min-width: 0;
+  padding: 18px 0;
+}
+
+.pos-receipt-total .total {
+  margin-top: 5px;
+  border-top: 1px solid #dbe3ec;
+  padding-top: 12px;
+  color: #0f172a;
+  font-size: 1.12rem;
+}
+
+.pos-receipt-customer,
+.pos-receipt-refund,
+.pos-receipt-footer {
+  display: grid;
+  gap: 6px;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px 14px;
+}
+
+.pos-receipt-customer span,
+.pos-receipt-footer span,
+.pos-receipt-footer small {
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+
+.pos-receipt-rewards {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  border-radius: 12px;
+  background: #fff8de;
+  color: #805400;
+  padding: 11px 14px;
+  font-weight: 850;
+}
+
+.pos-receipt-refund {
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+}
+
+.pos-receipt-footer {
+  justify-items: center;
+  margin-top: 2px;
+  text-align: center;
+}
+
+.pos-receipt-actions {
+  justify-content: center;
+  padding-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .pos-tax-profile-card,
+  .pos-receipt-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pos-tax-profile-card > div:nth-child(2) {
+    text-align: left;
+  }
+
+  .pos-tax-profile-card a {
+    justify-self: start;
+  }
+
+  .pos-receipt {
+    border-radius: 14px;
+    padding: 18px 14px;
+  }
+
+  .pos-receipt-meta span,
+  .pos-receipt-total span,
+  .pos-receipt-refund span {
+    align-items: flex-start;
+  }
+}
+
+@media print {
+  @page {
+    margin: 3mm;
+  }
+
+  body:has(.pos-receipt-print) * {
+    visibility: hidden !important;
+  }
+
+  body:has(.pos-receipt-print) .pos-receipt-print,
+  body:has(.pos-receipt-print) .pos-receipt-print * {
+    visibility: visible !important;
+  }
+
+  body:has(.pos-receipt-print) .pos-receipt-print {
+    position: absolute;
+    inset: 0 auto auto 0;
+    display: grid !important;
+    width: 80mm;
+    max-width: 80mm;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 4mm;
+    color: #000;
+  }
+
+  body:has(.pos-receipt-print) .no-print {
+    display: none !important;
+  }
+
+  body:has(.pos-receipt-print) .pos-receipt-header,
+  body:has(.pos-receipt-print) .pos-receipt-lines,
+  body:has(.pos-receipt-print) .pos-receipt-total,
+  body:has(.pos-receipt-print) .pos-receipt-refund {
+    break-inside: avoid;
+  }
+}

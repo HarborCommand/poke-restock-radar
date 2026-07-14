@@ -400,7 +400,9 @@ test("POS rewards use adjusted subtotal and do not award for phone-only contact"
     customerEmail: account.email
   });
 
-  assert.equal(adjustedReceipt.subtotal, 39.98);
+  assert.equal(adjustedReceipt.subtotal, 50);
+  assert.equal(adjustedReceipt.discount, 10.02);
+  assert.equal(adjustedReceipt.taxableSubtotal, 39.98);
   assert.equal(adjustedReceipt.rewardPointsEarned, 39);
   const adjustedLedger = await prisma.rewardLedgerEntry.findUniqueOrThrow({
     where: { idempotencyKey: `rewards:pos:earn:${adjustedReceipt.saleReference}` }
