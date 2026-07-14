@@ -36,6 +36,7 @@ const STOREFRONT_ACCOUNT_LOGIN_URL = "https://www.gamedaygrabs.com/account/login
 export type OrderConfirmationEmailInput = StorefrontEmailBase & {
   items: StorefrontEmailItem[];
   subtotal: number;
+  discount?: number;
   shippingCharged: number;
   tax?: number | null;
   totalPaid: number;
@@ -56,6 +57,8 @@ export type ShippingConfirmationEmailInput = StorefrontEmailBase & {
 export type RefundCancellationEmailInput = StorefrontEmailBase & {
   statusLabel: string;
   refundAmount: number;
+  refundedTax: number | null;
+  remainingTotal: number;
   reasonLabel?: string | null;
 };
 
@@ -205,6 +208,7 @@ function productRows(items: StorefrontEmailItem[]) {
 function orderSummaryCard(input: {
   items: StorefrontEmailItem[];
   subtotal: number;
+  discount?: number;
   shippingCharged: number;
   tax?: number | null;
   totalPaid: number;
@@ -218,6 +222,7 @@ function orderSummaryCard(input: {
       productRows(input.items),
       `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid ${emailColors.border};padding-top:10px;">`,
       summaryRow("Subtotal", formatMoney(input.subtotal)),
+      summaryRow("Discount", input.discount && input.discount > 0 ? `-${formatMoney(input.discount)}` : formatMoney(0)),
       summaryRow(shippingLabel, formatMoney(input.shippingCharged)),
       summaryRow("Sales tax", input.tax === null || input.tax === undefined ? "Not recorded" : formatMoney(input.tax)),
       summaryRow("Total paid", formatMoney(input.totalPaid), true),
@@ -418,6 +423,7 @@ export function buildOrderConfirmationEmail(input: OrderConfirmationEmailInput):
     "Order summary:",
     ...(input.items.length ? input.items.map((item) => `${item.quantity} x ${item.name} - ${formatMoney(item.lineTotal)}`) : ["No line items were stored for this order."]),
     `Subtotal: ${formatMoney(input.subtotal)}`,
+    `Discount: ${input.discount && input.discount > 0 ? `-${formatMoney(input.discount)}` : formatMoney(0)}`,
     isLocalPickup ? `Shipping charged: ${formatMoney(input.shippingCharged)}` : `Shipping (${shippingMethod}): ${formatMoney(input.shippingCharged)}`,
     `Sales tax: ${input.tax === null || input.tax === undefined ? "Not recorded" : formatMoney(input.tax)}`,
     `Total paid: ${formatMoney(input.totalPaid)}`,
@@ -496,6 +502,7 @@ export function buildShippingConfirmationEmail(input: ShippingConfirmationEmailI
 
 export function buildRefundCancellationEmail(input: RefundCancellationEmailInput): StorefrontRenderedEmail {
   const refundLabel = input.refundAmount > 0 ? formatMoney(input.refundAmount) : "No refund required";
+  const refundedTaxLabel = input.refundedTax === null ? "Not recorded" : formatMoney(input.refundedTax);
   const subject = `GameDayGrabs order update: ${input.orderNumber}`;
   const text = [
     "Order update",
@@ -504,6 +511,8 @@ export function buildRefundCancellationEmail(input: RefundCancellationEmailInput
     `Order number: ${input.orderNumber}`,
     `Status: ${input.statusLabel}`,
     `Refund amount: ${refundLabel}`,
+    `Sales tax refunded: ${refundedTaxLabel}`,
+    `Remaining paid total: ${formatMoney(input.remainingTotal)}`,
     input.reasonLabel ? `Reason: ${input.reasonLabel}` : null,
     "",
     "Refunds typically appear in your account within 3-10 business days depending on your bank or card issuer.",
@@ -519,7 +528,7 @@ export function buildRefundCancellationEmail(input: RefundCancellationEmailInput
     subtitle: "We've updated your order.",
     bodyHtml: [
       orderNumberBlock(input.orderNumber),
-      card(detailRows([{ label: "Status", value: input.statusLabel }, { label: "Refund amount", value: refundLabel }, { label: "Reason", value: input.reasonLabel }])),
+      card(detailRows([{ label: "Status", value: input.statusLabel }, { label: "Refund amount", value: refundLabel }, { label: "Sales tax refunded", value: refundedTaxLabel }, { label: "Remaining paid total", value: formatMoney(input.remainingTotal) }, { label: "Reason", value: input.reasonLabel }])),
       noteCard("Refund timing", "Refunds typically appear in your account within 3-10 business days depending on your bank or card issuer.")
     ].join("")
   });

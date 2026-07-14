@@ -108,10 +108,20 @@ export function OrderStatusLookupClient() {
               <strong>{order.fulfillmentMethod === "local_pickup" ? order.pickupStatus || "Pickup pending" : order.shippingMethodLabel || "Not captured"}</strong>
             </article>
             <article>
-              <small>Shipping charged</small>
-              <strong>{money(order.shippingCharged)}</strong>
+              <small>Order date</small>
+              <strong>{dateLabel(order.orderDate)}</strong>
             </article>
           </div>
+          <section className="order-status-totals" aria-label="Order total summary">
+            <h3>Order summary</h3>
+            <dl>
+              <div><dt>Merchandise subtotal</dt><dd>{money(order.merchandiseSubtotal)}</dd></div>
+              <div><dt>Discount</dt><dd>{order.discount > 0 ? `-${money(order.discount)}` : money(0)}</dd></div>
+              <div><dt>Shipping</dt><dd>{money(order.shippingCharged)}</dd></div>
+              <div><dt>Sales tax</dt><dd>{order.tax === null ? "Not recorded" : money(order.tax)}</dd></div>
+              <div className="total"><dt>Total paid</dt><dd>{money(order.totalPaid)}</dd></div>
+            </dl>
+          </section>
           <section className="order-status-items">
             <h3>Items</h3>
             {order.items.map((item) => (
@@ -143,6 +153,7 @@ export function OrderStatusLookupClient() {
                 <strong>Refund / cancellation status</strong>
                 <p>{order.refundStatus ? formatStatus(order.refundStatus) : order.canceledAt ? "Canceled" : "Refund recorded"}</p>
                 {order.refundedAmount > 0 ? <p>Refunded amount: {money(order.refundedAmount)}</p> : null}
+                {order.refundedAmount > 0 ? <p>Sales tax refunded: {order.refundedTax === null ? "Not recorded" : money(order.refundedTax)}</p> : null}
               </div>
             </section>
           ) : null}

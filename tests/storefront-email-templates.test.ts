@@ -73,6 +73,31 @@ test("order confirmation email uses the light GameDayGrabs template", () => {
   assert.match(orderEmail.text, /Payment method: Securely processed by Stripe/);
 });
 
+test("order confirmation preserves taxed, authoritative zero-tax, and historical unknown snapshots", () => {
+  const base = {
+    orderNumber: "PR-TAX-SNAPSHOT",
+    supportEmail,
+    items: [{ name: "Test product", quantity: 1, lineTotal: 25, imageUrl: null }],
+    subtotal: 25,
+    discount: 2,
+    shippingCharged: 5,
+    totalPaid: 29.61,
+    shippingMethod: "USPS Ground Advantage"
+  };
+  const taxed = buildOrderConfirmationEmail({ ...base, tax: 1.61 });
+  const zero = buildOrderConfirmationEmail({ ...base, tax: 0, totalPaid: 28 });
+  const unknown = buildOrderConfirmationEmail({ ...base, tax: null, totalPaid: 28 });
+
+  assert.match(taxed.html + taxed.text, /Discount/);
+  assert.match(taxed.html + taxed.text, /-\$2\.00/);
+  assert.match(taxed.html + taxed.text, /Sales tax[^]*\$1\.61/);
+  assert.match(zero.html + zero.text, /Sales tax[^]*\$0\.00/);
+  assert.match(unknown.html + unknown.text, /Sales tax[^]*Not recorded/);
+  for (const email of [taxed, zero, unknown]) {
+    assert.doesNotMatch(email.html + email.text, /taxCalculationId|stripeCheckoutSessionId|stripePaymentIntentId|providerReference|postal_code|customer_address/i);
+  }
+});
+
 test("local pickup order confirmation uses pickup wording instead of shipping tracking copy", () => {
   const email = buildOrderConfirmationEmail({
     orderNumber: "PR-20260618-9C3KQ3",
@@ -132,7 +157,7 @@ test("order confirmation can include a safe optional account and rewards CTA", (
   assert.match(email.html + email.text, /Create your GameDayGrabs account to track orders and rewards/);
   assert.match(email.html + email.text, /Rewards redemption coming soon/);
   assert.match(email.html, /https:\/\/www\.gamedaygrabs\.com\/account\/login/);
-  assert.doesNotMatch(email.html + email.text, /redeem points|apply points|discount|coupon/i);
+  assert.doesNotMatch(email.html + email.text, /redeem points|apply points|coupon/i);
   assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
 });
 
@@ -172,6 +197,8 @@ test("refund and cancellation email includes refund status, amount, reason, and 
     logoUrl,
     statusLabel: "Order refunded",
     refundAmount: 49.98,
+    refundedTax: 2.98,
+    remainingTotal: 0,
     reasonLabel: "Customer requested cancellation"
   });
 
@@ -192,7 +219,28 @@ test("refund and cancellation email includes refund status, amount, reason, and 
   assert.doesNotMatch(email.html, whiteTextPattern);
   assert.doesNotMatch(email.html, paleTextPattern);
   assert.match(email.text, /Refund amount: \$49\.98/);
+  assert.match(email.html + email.text, /Sales tax refunded/);
+  assert.match(email.text, /Sales tax refunded: \$2\.98/);
+  assert.match(email.text, /Remaining paid total: \$0\.00/);
   assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
+});
+
+test("partial refund email shows refunded tax and the updated remaining paid total", () => {
+  const email = buildRefundCancellationEmail({
+    orderNumber: "PR-PARTIAL-REFUND",
+    supportEmail,
+    statusLabel: "Partially refunded",
+    refundAmount: 12,
+    refundedTax: 0.72,
+    remainingTotal: 37.98,
+    reasonLabel: "Customer requested partial return"
+  });
+  assert.match(email.html + email.text, /Partially refunded/);
+  assert.match(email.html + email.text, /Sales tax refunded/);
+  assert.match(email.html + email.text, /\$0\.72/);
+  assert.match(email.html + email.text, /Remaining paid total/);
+  assert.match(email.html + email.text, /\$37\.98/);
+  assert.doesNotMatch(email.html + email.text, /taxCalculationId|stripeCheckoutSessionId|stripePaymentIntentId|providerReference|admin note/i);
 });
 
 test("local pickup email includes pickup instructions with no sensitive payment data", () => {
@@ -219,7 +267,7 @@ test("all customer email templates include clean footer and support copy", () =>
   const emails = [
     orderEmail,
     buildShippingConfirmationEmail({ orderNumber: "PR-TEST", supportEmail, carrier: null, trackingNumber: null, shippingAddress: null }),
-    buildRefundCancellationEmail({ orderNumber: "PR-TEST", supportEmail, statusLabel: "Order canceled", refundAmount: 0 }),
+    buildRefundCancellationEmail({ orderNumber: "PR-TEST", supportEmail, statusLabel: "Order canceled", refundAmount: 0, refundedTax: null, remainingTotal: 0 }),
     buildLocalPickupEmail({ orderNumber: "PR-TEST", supportEmail, pickupLocationLines: [], pickupNotes: [] }),
     buildCheckoutExpiredEmail({ orderNumber: "PR-TEST", supportEmail, items: [], reason: "Checkout expired before payment." })
   ];

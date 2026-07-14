@@ -1859,6 +1859,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
           : "Final shipping shown before payment";
   const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
   const isStripeCheckout = settings.checkoutConfigured;
+  const onlineTaxEnabled = settings.tax.features.onlineStripeTaxEnabled;
   const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
   const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.publicMaxQuantity <= 0);
   const overQuantityProducts = products.filter((product) => product.requestedQuantity > storefrontEffectiveMaxQuantity(product) && product.publicMaxQuantity > 0);
@@ -1979,8 +1980,11 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(requestPayload)
       });
-      const responsePayload = await response.json();
-      if (!response.ok) throw new Error(responsePayload.error || "Request could not start.");
+      const responsePayload = (await response.json()) as { error?: string; requestId?: string; checkoutUrl?: string };
+      if (!response.ok) {
+        const reference = responsePayload.requestId ? ` Reference: ${responsePayload.requestId}.` : "";
+        throw new Error(`${responsePayload.error || "Request could not start."}${reference}`);
+      }
       if (isStripeCheckout) {
         if (!responsePayload.checkoutUrl) throw new Error("Checkout could not start.");
         window.location.href = responsePayload.checkoutUrl;
@@ -2169,8 +2173,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 <em>{shippingSummary}</em>
               </span>
               <span>
-                <b>Tax</b>
-                <em>Calculated after confirmation</em>
+                <b>{onlineTaxEnabled ? "Tax calculated at checkout" : "Tax"}</b>
+                <em>{onlineTaxEnabled ? "Shown before payment" : "Calculated after confirmation"}</em>
               </span>
               <strong>
                 <b>Estimated total</b>
@@ -2235,6 +2239,9 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     </div>
                   </div>
                 ) : null}
+                {onlineTaxEnabled && fulfillmentMethod === "pickup" ? (
+                  <p className="gdg-checkout-tax-note">Local Pickup tax is never estimated in this cart. Stripe uses the configured pickup location after its tax policy is approved.</p>
+                ) : null}
               </div>
             ) : null}
             {hasBlockingStockIssue ? <p className="gdg-summary-warning compact">Please remove sold-out items or update changed quantities before checkout.</p> : null}
@@ -2265,6 +2272,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <p className="gdg-checkout-trust-line">
                 <Lock size={15} aria-hidden="true" />
                 Secure checkout by Stripe. Guest checkout available.
+                {onlineTaxEnabled ? " Final tax uses your delivery or approved pickup location and appears before payment. Shipping and tax stay separate." : ""}
               </p>
             ) : null}
             <details className="gdg-checkout-notes">
@@ -2330,6 +2338,7 @@ export function CheckoutSuccessClient({
       <h1>Payment received</h1>
       {orderReference ? <p className="gdg-order-reference">Order {orderReference}</p> : null}
       <p>Your order is being confirmed by Stripe. Inventory updates after the secure webhook confirms payment.</p>
+      <p>Your confirmation email and order detail show merchandise, shipping, sales tax, and total separately.</p>
       {accountCtaEnabled ? (
         <div className="gdg-success-account-cta">
           <strong>Create an account to track this order{rewardsCtaEnabled ? " and earn rewards" : ""}.</strong>

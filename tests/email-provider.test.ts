@@ -211,6 +211,8 @@ test("storefront customer emails pass the light template HTML through to Resend"
       logoUrl,
       statusLabel: "Order refunded",
       refundAmount: 50.98,
+      refundedTax: 2.98,
+      remainingTotal: 0,
       reasonLabel: "Customer requested cancellation"
     }),
     buildLocalPickupEmail({

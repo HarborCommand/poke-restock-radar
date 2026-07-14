@@ -21768,6 +21768,51 @@ body:has(.shop-shell) {
   color: #101828;
 }
 
+.order-status-totals {
+  background: #fff;
+  border: 1px solid #d9dee8;
+  border-radius: 16px;
+  margin-top: 16px;
+  padding: 16px;
+}
+
+.order-status-totals h3 {
+  color: #101828;
+  margin: 0 0 10px;
+}
+
+.order-status-totals dl {
+  margin: 0;
+}
+
+.order-status-totals dl > div {
+  align-items: center;
+  color: #475467;
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.order-status-totals dd {
+  color: #101828;
+  font-weight: 900;
+  margin: 0;
+}
+
+.order-status-totals .total {
+  border-top: 1px solid #eaecf0;
+  font-size: 1.05rem;
+  margin-top: 6px;
+  padding-top: 12px;
+}
+
+.gdg-checkout-tax-note {
+  color: #475467;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  margin: 12px 0 0;
+}
+
 .order-status-items {
   margin-top: 20px;
 }

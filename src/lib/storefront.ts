@@ -1008,6 +1008,7 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     logoUrl: storefrontEmailLogoUrl(),
     items: orderEmailItems(order),
     subtotal: order.subtotal,
+    discount: moneyFromCents(order.discountCents ?? 0),
     shippingCharged: order.shippingCharged,
     tax: order.taxCents === null ? null : order.tax,
     totalPaid: order.total,
@@ -1384,7 +1385,6 @@ function stripeShippingOptionsForCheckout(
         shippingQuoteProvider: calculatedQuote.provider,
         shippingCarrier: calculatedQuote.carrier,
         shippingService: calculatedQuote.service,
-        shippingQuotedZip: calculatedQuote.destinationZip,
         shippingQuotedAmountCents: String(calculatedQuote.amountCents),
         shippingQuoteFallbackUsed: String(calculatedQuote.fallbackUsed)
       }
@@ -1471,6 +1471,7 @@ function refundEventPayload(input: {
   adminNote?: string;
   refundType: StorefrontRefundType;
   refundAmount: number;
+  refundedTax: number | null;
   stripeRefundId?: string | null;
   stripeRefundStatus?: string | null;
   returnItemsToStock: boolean;
@@ -1486,6 +1487,7 @@ function refundEventPayload(input: {
     adminNote: input.adminNote || null,
     refundType: input.refundType,
     refundAmount: input.refundAmount,
+    refundedTax: input.refundedTax,
     currency: "usd",
     stripeRefundId: input.stripeRefundId || null,
     stripeRefundStatus: input.stripeRefundStatus || null,
@@ -1500,6 +1502,7 @@ async function sendStorefrontCancellationEmail(input: {
   reason: StorefrontCancellationReason;
   adminNote?: string;
   refundAmount: number;
+  refundedTax: number | null;
   contactEmail: string;
   idempotencyKey: string;
 }) {
@@ -1517,6 +1520,8 @@ async function sendStorefrontCancellationEmail(input: {
     logoUrl: storefrontEmailLogoUrl(),
     statusLabel,
     refundAmount: input.refundAmount,
+    refundedTax: input.refundedTax,
+    remainingTotal: Math.max(0, input.order.total - input.order.refundedAmount),
     reasonLabel
   });
   return sendCustomerEmailNotificationOnce({
@@ -1988,6 +1993,21 @@ export async function createCheckoutSession(input: {
   const subtotalCents = centsFromMoney(subtotal);
   const shippingCents = centsFromMoney(shippingCharged);
   const totalCents = subtotalCents + shippingCents;
+  const stripeTaxCodeByInventoryId = onlineTaxEnabled
+    ? new Map(
+        cart.map(({ item, product }) => [
+          item.id,
+          requiredStripeTaxCode(
+            {
+              explicitCode: item.stripeTaxCode,
+              defaultCode: settings.tax.defaultStripeTaxCode,
+              taxableOverride: item.taxableOverride
+            },
+            product.title
+          )
+        ])
+      )
+    : null;
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.storefrontOrder.create({
       data: {
@@ -2049,7 +2069,6 @@ export async function createCheckoutSession(input: {
     quantities: order.items.map((item) => item.quantity).join(","),
     shippingQuoteId: calculatedQuote?.quoteToken ?? "",
     shippingQuoteProvider: calculatedQuote?.provider ?? "",
-    shippingQuotedZip: calculatedQuote?.destinationZip ?? "",
     internalReservationExpiresAt: reservationExpiresAt.toISOString(),
     internalReservationMinutes: String(reservationMinutes)
   };
@@ -2081,13 +2100,7 @@ export async function createCheckoutSession(input: {
               images: stripeImage(item.imageUrl),
               ...(onlineTaxEnabled
                 ? {
-                    tax_code: requiredStripeTaxCode({
-                      explicitCode: cart.find((entry) => entry.item.id === item.inventoryItemId)?.item.stripeTaxCode,
-                      defaultCode: settings.tax.defaultStripeTaxCode,
-                      taxableOverride: cart.find((entry) => entry.item.id === item.inventoryItemId)?.item.taxableOverride
-                    },
-                      item.publicTitle
-                    )
+                    tax_code: stripeTaxCodeByInventoryId?.get(item.inventoryItemId)
                   }
                 : {})
             }
@@ -2129,15 +2142,19 @@ export async function createCheckoutSession(input: {
       }
     }
     await releaseReservationsForSession(createdSession?.id ?? null, order.id);
-    await prisma.storefrontOrder.update({
-      where: { id: order.id },
-      data: {
-        status: "canceled",
-        paymentStatus: "failed",
-        canceledAt: new Date(),
-        notes: `Stripe Checkout session creation failed: ${error instanceof Error ? error.message.slice(0, 240) : "unknown error"}`
-      }
-    });
+    try {
+      await prisma.storefrontOrder.delete({ where: { id: order.id } });
+    } catch {
+      await prisma.storefrontOrder.updateMany({
+        where: { id: order.id, stripeCheckoutSessionId: null },
+        data: {
+          status: "canceled",
+          paymentStatus: "failed",
+          canceledAt: new Date(),
+          notes: "Secure Checkout could not start. No payment was created."
+        }
+      });
+    }
     throw error;
   }
 }
@@ -2955,12 +2972,22 @@ async function checkoutShippingSnapshot(session: Stripe.Checkout.Session, order:
   return snapshot;
 }
 
-function checkoutTaxSnapshot(session: Stripe.Checkout.Session, order: StorefrontOrderWithItems, customer: CheckoutCustomerSnapshot) {
+export function checkoutTaxSnapshot(session: Stripe.Checkout.Session, order: StorefrontOrderWithItems, customer: CheckoutCustomerSnapshot) {
   const withTotals = session as StripeCheckoutSessionWithShipping;
   const automaticTaxEnabled = Boolean(session.automatic_tax?.enabled || order.taxProvider === "stripe_tax");
   const automaticTaxStatus = session.automatic_tax?.status ?? null;
   if (order.taxProvider === "stripe_tax" && (!session.automatic_tax?.enabled || automaticTaxStatus !== "complete")) {
     throw new Error("Stripe Tax did not return a complete authoritative calculation for this checkout.");
+  }
+  if (
+    automaticTaxEnabled &&
+    (typeof session.amount_subtotal !== "number" ||
+      typeof withTotals.total_details?.amount_discount !== "number" ||
+      typeof withTotals.total_details?.amount_shipping !== "number" ||
+      typeof withTotals.total_details?.amount_tax !== "number" ||
+      typeof session.amount_total !== "number")
+  ) {
+    throw new Error("Stripe Tax did not return complete authoritative checkout totals.");
   }
   const subtotalCents = typeof session.amount_subtotal === "number" ? session.amount_subtotal : centsFromMoney(order.subtotal);
   const discountCents = typeof withTotals.total_details?.amount_discount === "number" ? withTotals.total_details.amount_discount : 0;
@@ -3385,14 +3412,19 @@ export async function lookupPublicOrderStatus(input: { orderNumber: string; emai
       paymentStatus: order.paymentStatus,
       fulfillmentStatus: order.fulfillmentStatus,
       fulfillmentMethod: isLocalPickup ? "local_pickup" : "shipping",
+      merchandiseSubtotal: order.subtotalCents === null ? order.subtotal : moneyFromCents(order.subtotalCents),
+      discount: order.discountCents === null ? 0 : moneyFromCents(order.discountCents),
       shippingMethodLabel: order.shippingMethodLabel,
-      shippingCharged: order.shippingCharged,
+      shippingCharged: order.shippingCents === null ? order.shippingCharged : moneyFromCents(order.shippingCents),
+      tax: order.taxCents === null ? null : moneyFromCents(order.taxCents),
+      totalPaid: order.totalCents === null ? order.total : moneyFromCents(order.totalCents),
       carrier: isLocalPickup ? null : order.carrier,
       trackingNumber: isLocalPickup ? null : order.trackingNumber,
       trackingUrl: isLocalPickup ? null : trackingUrlFor(order.carrier, order.trackingNumber),
       pickupStatus: publicPickupStatus(order),
       refundStatus: order.refundStatus ?? (order.paymentStatus === "refunded" || order.paymentStatus === "partially_refunded" ? order.paymentStatus : null),
       refundedAmount: order.refundedAmount,
+      refundedTax: order.taxCents === null ? null : moneyFromCents(order.refundedTaxCents ?? 0),
       canceledAt: order.canceledAt?.toISOString() ?? null,
       refundedAt: order.refundedAt?.toISOString() ?? null,
       supportEmail: settings.contactEmail || defaultStorefrontContactEmail,
@@ -3665,6 +3697,7 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
       adminNote: input.adminNote,
       refundType: input.refundType,
       refundAmount: moneyFromCents(refundCents),
+      refundedTax: hasTaxSnapshot ? moneyFromCents(refundedTaxDeltaCents) : null,
       stripeRefundId: stripeRefund?.id ?? null,
       stripeRefundStatus,
       returnItemsToStock: input.returnItemsToStock,
@@ -3749,6 +3782,7 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
       reason: input.reason,
       adminNote: input.adminNote,
       refundAmount: moneyFromCents(refundCents),
+      refundedTax: hasTaxSnapshot ? moneyFromCents(refundedTaxDeltaCents) : null,
       contactEmail: settings.contactEmail || defaultStorefrontContactEmail,
       idempotencyKey: input.idempotencyKey
     });
