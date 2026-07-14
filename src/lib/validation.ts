@@ -1218,16 +1218,26 @@ export const storefrontSettingsSchema = z.object({
   socialLinks: z.union([z.array(z.string().trim().min(1).max(500)), z.string().trim().max(2000)]).optional()
 }).strict();
 
+const taxProfileEffectiveDate = z.string().trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a YYYY-MM-DD effective date.")
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, "Use a valid calendar date.");
+
 export const taxAdminSettingsSchema = z.object({
-  storeCountry: z.string().trim().length(2).transform((value) => value.toUpperCase()),
-  storeState: z.string().trim().length(2).transform((value) => value.toUpperCase()),
-  storeCounty: z.string().trim().min(2).max(80),
+  storeCountry: z.string().trim().transform((value) => value.toUpperCase()).pipe(z.literal("US")),
+  storeState: z.string().trim().transform((value) => value.toUpperCase()).pipe(z.literal("FL")),
+  storeCounty: z.string().trim().min(2).max(80).regex(/^[A-Za-z][A-Za-z .'-]*$/, "Use a valid county name."),
   stateRateBasisPoints: z.coerce.number().int().min(0).max(2000),
   countyRateBasisPoints: z.coerce.number().int().min(0).max(2000),
-  effectiveDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a YYYY-MM-DD effective date."),
+  effectiveDate: taxProfileEffectiveDate,
   sourceNote: z.string().trim().min(3).max(500),
+  onlineTaxProfileEnabled: z.boolean(),
   posTaxEnabled: z.boolean(),
   taxExemptSalesEnabled: z.boolean(),
+  taxReportingProfileEnabled: z.boolean(),
+  localPickupTaxTreatment: z.enum(["pending_review", "taxable_at_store_location", "provider_authoritative"]),
   exemptionReferenceRequired: z.literal(true),
   exemptionReasonRequired: z.literal(true),
   defaultTaxCategory: z.literal("general_tangible_goods"),
@@ -1244,7 +1254,8 @@ export const taxAdminSettingsSchema = z.object({
   refundVerified: z.boolean(),
   reportReconciled: z.boolean(),
   ownerApproved: z.boolean(),
-  enableTaxCollectionConfirmed: z.boolean().optional()
+  enableTaxCollectionConfirmed: z.boolean().optional(),
+  enablementReason: z.enum(["owner_approved_go_live", "approved_preview_validation", "configuration_rehearsal"]).optional()
 }).strict().superRefine((input, context) => {
   if (input.stateRateBasisPoints + input.countyRateBasisPoints > 2000) {
     context.addIssue({

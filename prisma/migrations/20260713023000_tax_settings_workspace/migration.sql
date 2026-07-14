@@ -12,3 +12,7 @@ ALTER TABLE "StorefrontSettings" ADD COLUMN "taxReceiptVerified" BOOLEAN NOT NUL
 ALTER TABLE "StorefrontSettings" ADD COLUMN "taxRefundVerified" BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE "StorefrontSettings" ADD COLUMN "taxReportReconciled" BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE "StorefrontSettings" ADD COLUMN "taxOwnerApprovedAt" TIMESTAMP(3);
+ALTER TABLE "StorefrontSettings" ADD COLUMN "onlineTaxProfileEnabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxReportingProfileEnabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "StorefrontSettings" ADD COLUMN "localPickupTaxTreatment" TEXT NOT NULL DEFAULT 'pending_review';
+ALTER TABLE "StorefrontSettings" ADD COLUMN "taxSettingsUpdatedByUserId" TEXT;

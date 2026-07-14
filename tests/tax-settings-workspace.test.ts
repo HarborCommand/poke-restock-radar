@@ -11,8 +11,11 @@ const valid = {
   countyRateBasisPoints: 100,
   effectiveDate: "2026-07-01",
   sourceNote: "Preview fixture only",
+  onlineTaxProfileEnabled: false,
   posTaxEnabled: false,
   taxExemptSalesEnabled: false,
+  taxReportingProfileEnabled: false,
+  localPickupTaxTreatment: "pending_review",
   exemptionReferenceRequired: true,
   exemptionReasonRequired: true,
   defaultTaxCategory: "general_tangible_goods",
@@ -46,6 +49,13 @@ test("unknown fields and unapproved tax codes are rejected", () => {
   assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, defaultStripeTaxCode: "txcd_12345678" }).success, false);
 });
 
+test("jurisdiction and calendar validation reject spoofed or invalid values", () => {
+  assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, storeCountry: "CA" }).success, false);
+  assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, storeState: "GA" }).success, false);
+  assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, storeCounty: "<script>" }).success, false);
+  assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, effectiveDate: "2026-02-30" }).success, false);
+});
+
 test("exemption reason and reference invariants cannot be disabled", () => {
   assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, exemptionReasonRequired: false }).success, false);
   assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, exemptionReferenceRequired: false }).success, false);
@@ -68,9 +78,14 @@ test("saved tax settings are account-scoped, audited, and explicitly confirmed b
   assert.match(source, /findUnique\(\{ where: \{ userId \} \}\)/);
   assert.match(source, /where: \{ userId: user\.id \}/);
   assert.match(source, /enableTaxCollectionConfirmed !== true/);
+  assert.match(source, /assertProfileEnablementReady/);
+  assert.match(source, /input\.enablementReason/);
   assert.match(source, /prisma\.\$transaction/);
   assert.match(source, /tax\.settings\.updated/);
   assert.match(source, /actorEmail: user\.email/);
+  assert.match(source, /requestId/);
+  assert.match(source, /changedFields/);
+  assert.match(source, /changedFields\.length === 0/);
 });
 
 test("tax settings response exposes status only and never returns provider secrets", () => {
@@ -98,6 +113,8 @@ test("workspace supplies explicit save, warnings, responsive checklist, and unsa
   assert.match(component, /Live-mode Stripe credentials are present in Preview/);
   assert.match(component, /Go-Live Readiness/);
   assert.match(component, /enableTaxCollectionConfirmed/);
+  assert.match(component, /Code deployed, collection disabled/);
+  assert.match(component, /enablementReason/);
   assert.match(css, /\.tax-workspace/);
   assert.match(css, /@media \(max-width: 560px\)/);
 });
@@ -106,7 +123,20 @@ test("migration is additive and readiness defaults are safe", () => {
   const migration = fs.readFileSync("prisma/migrations/20260713023000_tax_settings_workspace/migration.sql", "utf8");
   assert.match(migration, /taxRegistrationConfirmed.*DEFAULT false/);
   assert.match(migration, /taxOwnerApprovedAt.*TIMESTAMP/);
-  assert.doesNotMatch(migration, /DROP|DELETE|UPDATE/i);
+  assert.match(migration, /onlineTaxProfileEnabled.*DEFAULT false/);
+  assert.match(migration, /taxReportingProfileEnabled.*DEFAULT false/);
+  assert.match(migration, /localPickupTaxTreatment.*pending_review/);
+  assert.doesNotMatch(migration, /\b(?:DROP|DELETE|UPDATE)\b/i);
+});
+
+test("database settings cannot override independent runtime flags or browser-supplied live state", () => {
+  const source = fs.readFileSync("src/lib/tax-admin.ts", "utf8");
+  const schema = fs.readFileSync("src/lib/validation.ts", "utf8");
+  assert.match(source, /taxFeatureConfig\(\)/);
+  assert.match(source, /features\.onlineStripeTaxEnabled/);
+  assert.match(source, /features\.posSalesTaxEnabled && Boolean\(settings\?\.posTaxEnabled\)/);
+  assert.doesNotMatch(schema, /VERCEL_ENV|ONLINE_STRIPE_TAX_ENABLED|POS_SALES_TAX_ENABLED/);
+  assert.doesNotMatch(source, /process\.env\[[^\]]+\]\s*=/);
 });
 
 test("tax workspace does not alter rewards redemption", () => {

@@ -25,7 +25,7 @@ export async function PATCH(request: Request) {
   if (authorizationResponse) return authorizationResponse;
   try {
     const input = taxAdminSettingsSchema.parse(await readJson(request));
-    return withRequestId(privateOk(await saveTaxAdminSettings(user, input)), requestId);
+    return withRequestId(privateOk(await saveTaxAdminSettings(user, input, requestId)), requestId);
   } catch (error) {
     return safeMutationError(error, requestId, "Tax settings could not be saved.");
   }

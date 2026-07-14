@@ -31929,6 +31929,17 @@ body .sale-edit-workspace-modal select:focus-visible {
   line-height: 1.5;
 }
 
+.tax-deployment-notice {
+  width: min(1120px, 100%);
+  margin: 0 auto 24px;
+  border: 1px solid #b8ddc1;
+  border-radius: 16px;
+  background: #eef9f1;
+  color: #245b34;
+  padding: 16px 18px;
+  line-height: 1.5;
+}
+
 .tax-section {
   margin-bottom: 22px;
   border: 1px solid #e1e5eb;
@@ -32056,6 +32067,10 @@ body .sale-edit-workspace-modal select:focus-visible {
   font-weight: 550;
 }
 
+.tax-top-field {
+  margin-top: 18px;
+}
+
 .tax-form-grid input:focus-visible,
 .tax-form-grid textarea:focus-visible,
 .tax-select-field select:focus-visible,
@@ -32088,6 +32103,10 @@ body .sale-edit-workspace-modal select:focus-visible {
   border-radius: 14px;
   background: #fbfcfd;
   padding: 14px;
+  cursor: default;
+}
+
+.tax-check-row label {
   cursor: pointer;
 }
 
@@ -32135,6 +32154,8 @@ body .sale-edit-workspace-modal select:focus-visible {
   border-radius: 18px;
   background: #fff8e7;
   padding: 8px;
+  display: grid;
+  gap: 12px;
 }
 
 .tax-save-bar {

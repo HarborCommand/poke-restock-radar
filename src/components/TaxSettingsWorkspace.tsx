@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 type TaxSettings = {
   environment: string;
+  collectionDisabled: boolean;
   online: {
+    configurationEnabled: boolean;
     enabled: boolean;
     stripeCheckoutEnabled: boolean;
     stripeMode: "test" | "live" | "missing" | "unknown" | "mixed";
@@ -12,6 +14,7 @@ type TaxSettings = {
     defaultProductTaxCode: string;
     checkoutAddressRequirement: string;
     localPickupStatus: string;
+    localPickupTreatment: "pending_review" | "taxable_at_store_location" | "provider_authoritative";
     warnings: string[];
   };
   pos: {
@@ -25,17 +28,21 @@ type TaxSettings = {
     sourceNote: string;
     profileEnabled: boolean;
     runtimeEnabled: boolean;
+    active: boolean;
     lastUpdated: string | null;
+    lastUpdatedByAdmin: string | null;
   };
   exemption: {
     enabled: boolean;
     runtimeEnabled: boolean;
+    active: boolean;
     referenceRequired: boolean;
     reasonRequired: boolean;
     adminOnly: boolean;
     documentStorageAvailable: boolean;
   };
   reporting: {
+    configurationEnabled: boolean;
     enabled: boolean;
     defaultPeriod: "monthly" | "quarterly" | "annual";
     exportAvailable: boolean;
@@ -67,8 +74,11 @@ type FormState = {
   countyRateBasisPoints: number;
   effectiveDate: string;
   sourceNote: string;
+  onlineTaxProfileEnabled: boolean;
   posTaxEnabled: boolean;
   taxExemptSalesEnabled: boolean;
+  taxReportingProfileEnabled: boolean;
+  localPickupTaxTreatment: "pending_review" | "taxable_at_store_location" | "provider_authoritative";
   exemptionReferenceRequired: true;
   exemptionReasonRequired: true;
   defaultTaxCategory: "general_tangible_goods";
@@ -86,6 +96,7 @@ type FormState = {
   reportReconciled: boolean;
   ownerApproved: boolean;
   enableTaxCollectionConfirmed?: boolean;
+  enablementReason?: "owner_approved_go_live" | "approved_preview_validation" | "configuration_rehearsal";
 };
 
 function formFromSettings(settings: TaxSettings): FormState {
@@ -97,8 +108,11 @@ function formFromSettings(settings: TaxSettings): FormState {
     countyRateBasisPoints: settings.pos.countyRateBasisPoints,
     effectiveDate: settings.pos.effectiveDate,
     sourceNote: settings.pos.sourceNote,
+    onlineTaxProfileEnabled: settings.online.configurationEnabled,
     posTaxEnabled: settings.pos.profileEnabled,
     taxExemptSalesEnabled: settings.exemption.enabled,
+    taxReportingProfileEnabled: settings.reporting.configurationEnabled,
+    localPickupTaxTreatment: settings.online.localPickupTreatment,
     exemptionReferenceRequired: true,
     exemptionReasonRequired: true,
     defaultTaxCategory: settings.product.defaultTaxCategory,
@@ -133,14 +147,15 @@ function CheckField({
   detail?: string;
   onChange: (checked: boolean) => void;
 }) {
+  const id = useId();
   return (
-    <label className="tax-check-row">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    <div className="tax-check-row">
+      <input id={id} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>
-        <strong>{label}</strong>
+        <label htmlFor={id}><strong>{label}</strong></label>
         {detail ? <small>{detail}</small> : null}
       </span>
-    </label>
+    </div>
   );
 }
 
@@ -178,7 +193,12 @@ export function TaxSettingsWorkspace() {
   }, []);
 
   const dirty = useMemo(() => Boolean(form && initial && JSON.stringify(form) !== JSON.stringify(initial)), [form, initial]);
-  const enabling = Boolean(form && initial && ((!initial.posTaxEnabled && form.posTaxEnabled) || (!initial.taxExemptSalesEnabled && form.taxExemptSalesEnabled)));
+  const enabling = Boolean(form && initial && (
+    (!initial.onlineTaxProfileEnabled && form.onlineTaxProfileEnabled) ||
+    (!initial.posTaxEnabled && form.posTaxEnabled) ||
+    (!initial.taxExemptSalesEnabled && form.taxExemptSalesEnabled) ||
+    (!initial.taxReportingProfileEnabled && form.taxReportingProfileEnabled)
+  ));
   const combined = (form?.stateRateBasisPoints ?? 0) + (form?.countyRateBasisPoints ?? 0);
 
   useEffect(() => {
@@ -201,6 +221,10 @@ export function TaxSettingsWorkspace() {
     if (!form || !settings) return;
     if (enabling && !form.enableTaxCollectionConfirmed) {
       setMessage("Confirm the tax collection enablement before saving.");
+      return;
+    }
+    if (enabling && !form.enablementReason) {
+      setMessage("Select an approved enablement reason before saving.");
       return;
     }
     setState("saving");
@@ -230,7 +254,7 @@ export function TaxSettingsWorkspace() {
     }
   }
 
-  if (state === "loading") return <main className="tax-workspace tax-workspace-state">Loading tax settings?</main>;
+  if (state === "loading") return <main className="tax-workspace tax-workspace-state">Loading tax settings…</main>;
   if (!settings || !form) return <main className="tax-workspace tax-workspace-state"><a href="/admin">Back to admin</a><p>{message}</p></main>;
 
   const readinessFields: Array<[keyof FormState, string, string?]> = [
@@ -251,16 +275,20 @@ export function TaxSettingsWorkspace() {
     <main className="tax-workspace">
       <header className="tax-workspace-header">
         <div>
-          <a href="/admin" className="tax-back-link">? Admin</a>
+          <a href="/admin" className="tax-back-link">← Admin</a>
           <p className="tax-eyebrow">Commerce controls</p>
           <h1>Tax Settings</h1>
           <p>Configure saved tax policy and verify launch readiness. Environment gates remain separately controlled.</p>
         </div>
         <div className="tax-header-status">
           <Status active={settings.environment !== "production"}>{settings.environment}</Status>
-          <Status active={!settings.online.enabled}>Production-safe gates</Status>
+          <Status active={settings.collectionDisabled}>{settings.collectionDisabled ? "Collection disabled" : "Collection active"}</Status>
         </div>
       </header>
+
+      {settings.collectionDisabled ? (
+        <div className="tax-deployment-notice" role="status"><strong>Code deployed, collection disabled.</strong> Saved configuration cannot override the independent server environment gates.</div>
+      ) : null}
 
       {settings.online.stripeMode === "live" && settings.environment === "preview" ? (
         <div className="tax-critical-warning" role="alert">Live-mode Stripe credentials are present in Preview. Online Checkout must remain disabled until branch-scoped test credentials replace them.</div>
@@ -280,6 +308,8 @@ export function TaxSettingsWorkspace() {
             <div><dt>Local Pickup</dt><dd>{settings.online.localPickupStatus}</dd></div>
           </dl>
           {settings.online.warnings.length ? <ul className="tax-warning-list">{settings.online.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+          <CheckField checked={form.onlineTaxProfileEnabled} label="Mark the online tax profile as configured" detail={settings.online.enabled ? "The independent online runtime gate is enabled." : "Configuration intent only. This cannot alter the runtime environment gate."} onChange={(value) => update("onlineTaxProfileEnabled", value)} />
+          <label className="tax-select-field tax-top-field">Local Pickup tax treatment<select value={form.localPickupTaxTreatment} onChange={(event) => update("localPickupTaxTreatment", event.target.value as FormState["localPickupTaxTreatment"])}><option value="pending_review">Pending owner/accountant review</option><option value="taxable_at_store_location">Approved store-location treatment</option><option value="provider_authoritative">Provider-authoritative calculation</option></select></label>
         </section>
 
         <section className="tax-section">
@@ -296,7 +326,7 @@ export function TaxSettingsWorkspace() {
             <label className="tax-span-2">Source / reference note<textarea value={form.sourceNote} onChange={(event) => update("sourceNote", event.target.value)} maxLength={500} required /></label>
           </div>
           <CheckField checked={form.posTaxEnabled} label="Enable the saved POS tax profile" detail={settings.pos.runtimeEnabled ? "The Preview runtime gate is on." : "The runtime gate is off, so saving this alone cannot collect tax."} onChange={(value) => update("posTaxEnabled", value)} />
-          <p className="tax-timestamp">Last updated: {settings.pos.lastUpdated ? new Date(settings.pos.lastUpdated).toLocaleString() : "Never saved"}</p>
+          <p className="tax-timestamp">Last updated: {settings.pos.lastUpdated ? new Date(settings.pos.lastUpdated).toLocaleString() : "Never saved"}{settings.pos.lastUpdatedByAdmin ? " by an authenticated admin" : ""}</p>
         </section>
 
         <section className="tax-section">
@@ -314,6 +344,7 @@ export function TaxSettingsWorkspace() {
         <section className="tax-section">
           <div className="tax-section-heading"><div><p>Reporting</p><h2>Filing-support exports</h2></div><Status active={settings.reporting.enabled}>{settings.reporting.enabled ? "Available" : "Disabled"}</Status></div>
           <label className="tax-select-field">Default reporting period<select value={form.defaultReportingPeriod} onChange={(event) => update("defaultReportingPeriod", event.target.value as FormState["defaultReportingPeriod"])}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select></label>
+          <CheckField checked={form.taxReportingProfileEnabled} label="Mark the reporting profile as configured" detail={settings.reporting.enabled ? "The independent reporting runtime gate is enabled." : "Configuration intent only. Export remains unavailable while the runtime gate is off."} onChange={(value) => update("taxReportingProfileEnabled", value)} />
           <p className="tax-section-copy">{settings.reporting.disclaimer}</p>
           {settings.reporting.exportAvailable ? <a href="/api/radar/tax-report?format=csv" className="tax-inline-action">Download current CSV export</a> : <span className="tax-muted">Export is unavailable while reporting is disabled.</span>}
         </section>
@@ -329,13 +360,14 @@ export function TaxSettingsWorkspace() {
         {enabling ? (
           <section className="tax-enable-confirmation">
             <CheckField checked={Boolean(form.enableTaxCollectionConfirmed)} label="I confirm this saved tax collection profile is intended to be enabled" detail="This records configuration intent only. It does not bypass the independent environment gate." onChange={(value) => update("enableTaxCollectionConfirmed", value)} />
+            <label className="tax-select-field">Approved reason<select value={form.enablementReason ?? ""} onChange={(event) => update("enablementReason", event.target.value as FormState["enablementReason"])} required><option value="" disabled>Select a reason</option><option value="configuration_rehearsal">Configuration rehearsal</option><option value="approved_preview_validation">Approved Preview validation</option><option value="owner_approved_go_live">Owner-approved go-live</option></select></label>
           </section>
         ) : null}
 
         <footer className="tax-save-bar">
-          <div><strong>{dirty ? "Unsaved changes" : "All changes saved"}</strong><span>{message || "GET is read-only; Save writes the profile and an audit event."}</span></div>
+          <div aria-live="polite"><strong>{dirty ? "Unsaved changes" : "All changes saved"}</strong><span>{message || "GET is read-only; Save writes changed fields and one audit event."}</span></div>
           <button type="button" disabled={!dirty || state === "saving"} onClick={() => setForm(initial)}>Discard</button>
-          <button type="submit" disabled={!dirty || state === "saving"}>{state === "saving" ? "Saving?" : "Save tax settings"}</button>
+          <button type="submit" disabled={!dirty || state === "saving"}>{state === "saving" ? "Saving…" : "Save tax settings"}</button>
         </footer>
       </form>
     </main>

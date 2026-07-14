@@ -1096,6 +1096,10 @@ model StorefrontSettings {
   taxRefundVerified       Boolean  @default(false)
   taxReportReconciled     Boolean  @default(false)
   taxOwnerApprovedAt      DateTime?
+  onlineTaxProfileEnabled Boolean  @default(false)
+  taxReportingProfileEnabled Boolean @default(false)
+  localPickupTaxTreatment String   @default("pending_review")
+  taxSettingsUpdatedByUserId String?
   defaultTaxCategory      String   @default("general_tangible_goods")
   defaultStripeTaxCode    String   @default("txcd_99999999")
   createdAt               DateTime @default(now())
