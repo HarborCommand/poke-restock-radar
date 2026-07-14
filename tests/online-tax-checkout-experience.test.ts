@@ -185,7 +185,8 @@ test("webhooks remain idempotent and rewards remain merchandise-only", () => {
     read("src/app/api/storefront/webhook/stripe/route.ts"),
     read("src/app/api/storefront/stripe/webhook/route.ts")
   ];
-  assert.match(storefront, /upsertSafePaymentEvent/);
+  assert.match(storefront, /claimProviderEvent/);
+  assert.match(storefront, /completeProviderEvent/);
   assert.match(storefront, /checkout\.session\.completed/);
   assert.match(rewards, /eligibleSubtotalCents/);
   assert.match(rewards, /taxCentsExcluded/);

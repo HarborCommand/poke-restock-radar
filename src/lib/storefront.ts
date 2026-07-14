@@ -28,7 +28,6 @@ import {
 import { applyMerchantShippingPolicyToCarrierQuote } from "@/lib/shipping-policy";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { awardRewardsForPaidOrder, releasePendingRewardsForOrder, reverseRewardsForOrder, rewardSummaryForOrder } from "@/lib/customer-rewards";
-import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
@@ -51,6 +50,15 @@ import {
   safeTaxBreakdownJson,
   taxFeatureConfig
 } from "@/lib/tax";
+import {
+  abandonProviderEvent,
+  claimProviderEvent,
+  completeProviderEvent,
+  lockStorefrontOrderForRefund,
+  runTaxRefundTransaction,
+  TaxRefundAmountError,
+  TaxRefundConflictError
+} from "@/lib/tax-refund-concurrency";
 import type {
   PublicOrderStatusLookupDTO,
   PublicStoreProductDTO,
@@ -2720,6 +2728,12 @@ async function orderForStripeEvent(event: Stripe.Event) {
   if (event.type === "payment_intent.payment_failed" && "id" in object && typeof object.id === "string") {
     return prisma.storefrontOrder.findFirst({ where: { stripePaymentIntentId: object.id }, include: storefrontOrderInclude });
   }
+  if (event.type.startsWith("refund.") && "payment_intent" in object) {
+    const paymentIntentId = stripeIdFromUnknown(object.payment_intent);
+    if (paymentIntentId) {
+      return prisma.storefrontOrder.findFirst({ where: { stripePaymentIntentId: paymentIntentId }, include: storefrontOrderInclude });
+    }
+  }
   return null;
 }
 
@@ -2845,23 +2859,6 @@ function safeStripeEventPayload(event: Stripe.Event, orderId: string | null) {
     currency: stringValue(object.currency)?.toLowerCase() ?? null
   };
   return JSON.stringify(safePayload);
-}
-
-async function upsertSafePaymentEvent(event: Stripe.Event, orderId: string | null) {
-  return prisma.paymentEvent.upsert({
-    where: { eventId: event.id },
-    create: {
-      orderId,
-      eventId: event.id,
-      eventType: event.type,
-      payload: safeStripeEventPayload(event, orderId)
-    },
-    update: {
-      ...(orderId ? { orderId } : {}),
-      eventType: event.type,
-      payload: safeStripeEventPayload(event, orderId)
-    }
-  });
 }
 
 function checkoutCustomerSnapshot(session: Stripe.Checkout.Session, order: StorefrontOrderWithItems): CheckoutCustomerSnapshot {
@@ -3076,8 +3073,12 @@ async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, sessi
         }
       })
     : null;
-  const updated = await prisma.storefrontOrder.update({
-    where: { id: order.id },
+  const claimed = await prisma.storefrontOrder.updateMany({
+    where: {
+      id: order.id,
+      paymentStatus: { notIn: ["paid", "partially_refunded", "refunded", "refund_pending"] },
+      status: { notIn: ["canceled", "refunded", "partially_refunded", "refund_pending"] }
+    },
     data: {
       customerId: customer?.id ?? order.customerId,
       customerEmail: snapshot.customerEmail,
@@ -3121,36 +3122,177 @@ async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, sessi
       shippingZipMismatchReview,
       total,
       stripeFeeEstimate: estimateStripeFee(total)
-    },
-    include: storefrontOrderInclude
+    }
   });
-  return { customer, order: updated, customerEmail: snapshot.customerEmail };
+  const updated = await loadFreshStorefrontOrder(order.id);
+  return { customer, order: updated, customerEmail: snapshot.customerEmail, persisted: claimed.count === 1 };
 }
 
-export async function handleStripeWebhook(rawBody: string, signature: string | null) {
-  const secret = envValue("STRIPE_WEBHOOK_SECRET");
-  if (!secret) throw new Error("Stripe webhook secret is not configured.");
-  if (!signature) throw new Error("Missing Stripe webhook signature.");
-  const event = stripeClient().webhooks.constructEvent(rawBody, signature, secret);
-  let order = await orderForStripeEvent(event);
-  await upsertSafePaymentEvent(event, order?.id ?? null);
+async function completePaidCheckoutSideEffects(order: StorefrontOrderWithItems) {
+  if (order.paymentStatus !== "paid") return;
+  await awardRewardsForPaidOrder(order);
+  await sendStorefrontOrderConfirmationEmail(order);
+  const customerEmail = order.customerEmail ?? order.customer?.email ?? null;
+  if (order.customer && customerEmail) await syncStorefrontCustomerTotals(order.customer.id, customerEmail);
+}
+
+export async function applyStripeRefundSnapshot(input: {
+  orderId: string;
+  providerRefundId: string;
+  amountCents: number;
+  status: string | null;
+}) {
+  if (input.status !== "succeeded") return { applied: false, reason: "provider_refund_not_succeeded" as const };
+  if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
+    throw new TaxRefundAmountError("Stripe returned an invalid refund amount.");
+  }
+
+  return runTaxRefundTransaction(async (tx) => {
+    await lockStorefrontOrderForRefund(tx, input.orderId);
+    const duplicate = await tx.taxAdjustment.findFirst({
+      where: {
+        storefrontOrderId: input.orderId,
+        channel: "online",
+        providerReference: input.providerRefundId
+      },
+      select: { id: true }
+    });
+    if (duplicate) return { applied: false, reason: "duplicate_provider_refund" as const };
+
+    const current = await tx.storefrontOrder.findUnique({
+      where: { id: input.orderId },
+      include: storefrontOrderInclude
+    });
+    if (!current) throw new Error("Order not found");
+    if (!["paid", "partially_refunded", "refund_pending", "refunded"].includes(current.paymentStatus)) {
+      throw new TaxRefundConflictError("The payment snapshot is not finalized yet. Retry the provider refund event.");
+    }
+
+    const totalCents = orderTotalCents(current);
+    const previousRefundedCents = orderRefundedCents(current);
+    const remainingRefundableCents = Math.max(0, totalCents - previousRefundedCents);
+    if (remainingRefundableCents <= 0) return { applied: false, reason: "order_already_fully_refunded" as const };
+    const refundCents = Math.min(input.amountCents, remainingRefundableCents);
+    const nextRefundedCents = previousRefundedCents + refundCents;
+    const hasTaxSnapshot = current.taxCents !== null;
+    const nextRefundedTaxCents = hasTaxSnapshot
+      ? cumulativeRefundedTaxCents({
+          originalTaxCents: current.taxCents,
+          originalTotalCents: current.totalCents ?? totalCents,
+          cumulativeRefundedAmountCents: nextRefundedCents
+        })
+      : null;
+    const refundedTaxDeltaCents = Math.max(0, (nextRefundedTaxCents ?? 0) - (current.refundedTaxCents ?? 0));
+    const fullyRefunded = nextRefundedCents >= totalCents;
+    const paymentStatus = fullyRefunded ? "refunded" : "partially_refunded";
+    const updated = await tx.storefrontOrder.update({
+      where: { id: current.id },
+      data: {
+        status: paymentStatus,
+        paymentStatus,
+        refundStatus: paymentStatus,
+        refundedAmount: moneyFromCents(nextRefundedCents),
+        refundedTaxCents: nextRefundedTaxCents,
+        refundedAt: new Date(),
+        taxStatus: nextRefundedTaxCents === null
+          ? current.taxStatus
+          : fullyRefunded && nextRefundedTaxCents >= (current.taxCents ?? 0)
+            ? "refunded"
+            : refundedTaxDeltaCents > 0
+              ? "partially_refunded"
+              : current.taxStatus,
+        stripeRefundId: input.providerRefundId,
+        refundCurrency: "usd"
+      },
+      include: storefrontOrderInclude
+    });
+
+    await tx.taxAdjustment.create({
+      data: {
+        idempotencyKey: `tax:stripe-refund:${input.providerRefundId}`,
+        channel: "online",
+        adjustmentType: fullyRefunded ? "full_refund" : "partial_refund",
+        storefrontOrderId: current.id,
+        providerReference: input.providerRefundId,
+        refundedAmountCents: refundCents,
+        refundedTaxCents: refundedTaxDeltaCents,
+        reason: "stripe_provider_refund",
+        metadataJson: JSON.stringify({
+          originalTaxCents: current.taxCents,
+          previousRefundedTaxCents: current.refundedTaxCents,
+          cumulativeRefundedTaxCents: nextRefundedTaxCents,
+          providerAmountCents: input.amountCents,
+          appliedAmountCents: refundCents,
+          allocation: current.taxCents === null ? "historical_unknown" : "proportional_original_snapshot"
+        })
+      }
+    });
+
+    await reverseRewardsForOrder(
+      updated,
+      {
+        reason: "refund",
+        idempotencyKey: `stripe:${input.providerRefundId}`,
+        refundedAmount: moneyFromCents(Math.max(0, nextRefundedCents - (nextRefundedTaxCents ?? 0)))
+      },
+      tx
+    );
+    return {
+      applied: true,
+      reason: "provider_refund_applied" as const,
+      refundedAmountCents: refundCents,
+      refundedTaxCents: refundedTaxDeltaCents,
+      paymentStatus
+    };
+  });
+}
+
+async function processStripeWebhookEvent(event: Stripe.Event, initialOrder: StorefrontOrderWithItems | null) {
+  let order = initialOrder;
   if (event.type === "checkout.session.completed") {
     const receivedSession = event.data.object as Stripe.Checkout.Session;
     if (!order) return { ok: true, skipped: "order_not_found" };
     if (receivedSession.payment_status !== "paid") return { ok: true, skipped: "checkout_session_not_paid" };
+    if (order.paymentStatus === "paid") {
+      await completePaidCheckoutSideEffects(order);
+      return { ok: true, skipped: "checkout_session_already_finalized" };
+    }
+    if (["partially_refunded", "refunded"].includes(order.paymentStatus)) {
+      return { ok: true, skipped: "checkout_session_already_finalized" };
+    }
     const session = await stripeClient().checkout.sessions.retrieve(receivedSession.id);
     if (session.payment_status !== "paid") return { ok: true, skipped: "checkout_session_not_paid" };
-    const wasPaid = order.paymentStatus === "paid";
+    order = await loadFreshStorefrontOrder(order.id);
+    if (order.paymentStatus === "paid") {
+      await completePaidCheckoutSideEffects(order);
+      return { ok: true, skipped: "checkout_session_already_finalized" };
+    }
+    if (
+      ["partially_refunded", "refunded"].includes(order.paymentStatus) ||
+      ["canceled", "refunded", "partially_refunded", "refund_pending"].includes(order.status)
+    ) {
+      return { ok: true, skipped: "checkout_session_already_finalized" };
+    }
     const persisted = await persistPaidCheckoutSession(order, session);
     order = persisted.order;
-    if (!wasPaid && order.paymentStatus !== "paid") {
+    if (!persisted.persisted) return { ok: true, skipped: "checkout_session_state_changed" };
+    if (order.paymentStatus !== "paid") {
       await createStorefrontSale(order);
       order = await loadFreshStorefrontOrder(order.id);
     }
-    if (!wasPaid && order.paymentStatus === "paid") await awardRewardsForPaidOrder(order);
-    if (!wasPaid) await sendStorefrontOrderConfirmationEmail(order);
-    if (persisted.customer && persisted.customerEmail) await syncStorefrontCustomerTotals(persisted.customer.id, persisted.customerEmail);
+    await completePaidCheckoutSideEffects(order);
     return { ok: true };
+  }
+  if (event.type === "refund.created" || event.type === "refund.updated") {
+    const refund = event.data.object as Stripe.Refund;
+    if (!order) return { ok: true, skipped: "order_not_found" };
+    const result = await applyStripeRefundSnapshot({
+      orderId: order.id,
+      providerRefundId: refund.id,
+      amountCents: refund.amount,
+      status: refund.status
+    });
+    return { ok: true, ...result };
   }
   if (event.type === "checkout.session.expired" && order) {
     await markStorefrontOrderPaymentFailed(order, "expired", "Stripe Checkout session expired before payment completed.");
@@ -3163,6 +3305,32 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
     await markStorefrontOrderPaymentFailed(order, "failed", failureMessage);
   }
   return { ok: true };
+}
+
+export async function handleStripeWebhook(rawBody: string, signature: string | null) {
+  const secret = envValue("STRIPE_WEBHOOK_SECRET");
+  if (!secret) throw new Error("Stripe webhook secret is not configured.");
+  if (!signature) throw new Error("Missing Stripe webhook signature.");
+  const event = stripeClient().webhooks.constructEvent(rawBody, signature, secret);
+  const order = await orderForStripeEvent(event);
+  const orderId = order?.id ?? null;
+  const payload = safeStripeEventPayload(event, orderId);
+  const claim = await claimProviderEvent({
+    eventId: event.id,
+    eventType: event.type,
+    orderId,
+    provider: "stripe",
+    payload
+  });
+  if (claim !== "claimed") return { ok: true, skipped: claim === "duplicate" ? "duplicate_event" : "event_processing" };
+  try {
+    const result = await processStripeWebhookEvent(event, order);
+    await completeProviderEvent({ eventId: event.id, eventType: event.type, orderId, payload });
+    return result;
+  } catch (error) {
+    await abandonProviderEvent({ eventId: event.id, eventType: event.type }).catch(() => null);
+    throw error;
+  }
 }
 
 export async function updateInventoryStoreListing(
@@ -3546,12 +3714,33 @@ async function returnOrderInventory(tx: Prisma.TransactionClient, order: Storefr
   return returnedQuantity;
 }
 
-export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, orderId: string, input: StorefrontCancelRefundInput) {
-  const requestEventId = `admin.cancel_refund:${input.idempotencyKey}`;
-  const existingRequest = await prisma.paymentEvent.findUnique({ where: { eventId: requestEventId } });
+type StorefrontRefundProviderResult = { id: string; status: string | null };
+
+export type StorefrontRefundDependencies = {
+  createRefund?: (input: {
+    paymentIntentId: string;
+    amountCents: number;
+    orderId: string;
+    orderNumber: string;
+    reason: string;
+    idempotencyKey: string;
+  }) => Promise<StorefrontRefundProviderResult>;
+};
+
+export async function cancelOrRefundStorefrontOrder(
+  currentUser: SessionUser,
+  orderId: string,
+  input: StorefrontCancelRefundInput,
+  dependencies: StorefrontRefundDependencies = {}
+) {
+  const requestEventId = `admin.cancel_refund:${orderId}:${input.idempotencyKey}`;
+  const legacyRequestEventId = `admin.cancel_refund:${input.idempotencyKey}`;
+  const existingRequest = await prisma.paymentEvent.findFirst({
+    where: { orderId, eventId: { in: [requestEventId, legacyRequestEventId] } }
+  });
   if (existingRequest) {
     const existingOrder = await prisma.storefrontOrder.findFirst({
-      where: { id: orderId, ...(currentUser.role === "ADMIN" ? {} : { userId: currentUser.id }) },
+      where: { id: orderId, userId: currentUser.id },
       include: storefrontOrderInclude
     });
     if (!existingOrder) throw new Error("Order not found");
@@ -3559,7 +3748,7 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
   }
 
   const order = await prisma.storefrontOrder.findFirst({
-    where: { id: orderId, ...(currentUser.role === "ADMIN" ? {} : { userId: currentUser.id }) },
+    where: { id: orderId, userId: currentUser.id },
     include: storefrontOrderInclude
   });
   if (!order) throw new Error("Order not found");
@@ -3581,64 +3770,104 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
   }
 
   const remainingRefundableCents = orderRemainingRefundableCents(order);
-  const refundCents =
+  const preflightRefundCents =
     input.refundType === "full"
       ? remainingRefundableCents
       : input.refundType === "partial"
         ? centsFromMoney(input.partialRefundAmount ?? 0)
         : 0;
-  if (input.refundType !== "none" && refundCents <= 0) throw new Error("No refundable balance remains for this order.");
-  if (refundCents > remainingRefundableCents) throw new Error("Refund amount exceeds the remaining refundable order total.");
+  if (input.refundType !== "none" && preflightRefundCents <= 0) throw new Error("No refundable balance remains for this order.");
+  if (preflightRefundCents > remainingRefundableCents) {
+    throw new TaxRefundAmountError("Refund amount exceeds the remaining refundable order total.");
+  }
 
-  const stripeRefund =
-    refundCents > 0
-      ? await stripeClient().refunds.create(
-          {
-            payment_intent: order.stripePaymentIntentId ?? undefined,
-            amount: refundCents,
-            metadata: {
-              orderId: order.id,
-              orderNumber: order.orderNumber,
-              reason: input.reason
-            }
-          },
-          { idempotencyKey: `storefront-cancel-refund:${input.idempotencyKey}` }
-        )
-      : null;
-  const stripeRefundStatus = stripeRefund?.status ?? null;
-  const totalCents = orderTotalCents(order);
-  const newRefundedCents = orderRefundedCents(order) + refundCents;
-  const hasTaxSnapshot = order.taxCents !== null;
-  const newRefundedTaxCents = hasTaxSnapshot
-    ? cumulativeRefundedTaxCents({
-        originalTaxCents: order.taxCents,
-        originalTotalCents: order.totalCents ?? totalCents,
-        cumulativeRefundedAmountCents: newRefundedCents
-      })
-    : null;
-  const refundedTaxDeltaCents = Math.max(0, (newRefundedTaxCents ?? 0) - (order.refundedTaxCents ?? 0));
-  const paymentStatus =
-    refundCents > 0 ? refundPaymentStatus(stripeRefundStatus, newRefundedCents, totalCents) : "not_applicable";
-  const refundStatus = refundCents > 0 ? paymentStatus : "not_applicable";
-  const refundedAt = refundCents > 0 && paymentStatus !== "refund_pending" && paymentStatus !== "refund_failed" ? new Date() : null;
-  const reasonLabel = cancellationReasonLabels[input.reason];
-  const requestedEmailStatus = "skipped";
-
-  const updatedOrder = await runRewardSerializableTransaction(async (tx) => {
-    const duplicate = await tx.paymentEvent.findUnique({ where: { eventId: requestEventId } });
+  const transactionResult = await runTaxRefundTransaction(async (tx) => {
+    await lockStorefrontOrderForRefund(tx, order.id);
+    const duplicate = await tx.paymentEvent.findFirst({
+      where: { orderId: order.id, eventId: { in: [requestEventId, legacyRequestEventId] } }
+    });
     if (duplicate) {
       const current = await tx.storefrontOrder.findUnique({ where: { id: order.id }, include: storefrontOrderInclude });
       if (!current) throw new Error("Order not found");
-      return current;
+      return {
+        order: current,
+        duplicate: true,
+        refundCents: 0,
+        hasTaxSnapshot: current.taxCents !== null,
+        refundedTaxDeltaCents: 0
+      };
     }
 
     const current = await tx.storefrontOrder.findUnique({ where: { id: order.id }, include: storefrontOrderInclude });
     if (!current) throw new Error("Order not found");
     if (!orderCanCancelOrRefund(current)) throw new Error("This order is already canceled, refunded, or refunding.");
     const currentIsShippedRefundWorkflow = current.fulfillmentStatus === "shipped";
-    if (refundCents > orderRemainingRefundableCents(current)) {
-      throw new Error("Refund amount exceeds the remaining refundable order total.");
+    const currentIsRefundableStripeOrder = ["paid", "partially_refunded"].includes(current.paymentStatus) && Boolean(current.stripePaymentIntentId);
+    if (currentIsShippedRefundWorkflow && input.refundType === "none") {
+      throw new Error("Shipped orders cannot be canceled without a refund. Use Refund / Return for shipped orders.");
     }
+    if (currentIsShippedRefundWorkflow && !input.adminNote?.trim()) {
+      throw new Error("Add an admin note for shipped refund/return handling.");
+    }
+    if (input.refundType === "none" && currentIsRefundableStripeOrder) {
+      throw new Error("Paid Stripe orders must use a full or partial refund.");
+    }
+    if (input.refundType !== "none" && !currentIsRefundableStripeOrder) {
+      throw new Error("Stripe refund is only available for paid Stripe orders with a stored PaymentIntent.");
+    }
+    const currentRemainingRefundableCents = orderRemainingRefundableCents(current);
+    const refundCents = input.refundType === "full"
+      ? currentRemainingRefundableCents
+      : input.refundType === "partial"
+        ? centsFromMoney(input.partialRefundAmount ?? 0)
+        : 0;
+    if (input.refundType !== "none" && refundCents <= 0) throw new Error("No refundable balance remains for this order.");
+    if (refundCents > currentRemainingRefundableCents) {
+      throw new TaxRefundConflictError("The refundable order balance changed. Refresh the order and try again.");
+    }
+    const stripeRefund = refundCents > 0
+      ? await (dependencies.createRefund ?? (async (providerInput) => {
+          const refund = await stripeClient().refunds.create(
+            {
+              payment_intent: providerInput.paymentIntentId,
+              amount: providerInput.amountCents,
+              metadata: {
+                orderId: providerInput.orderId,
+                orderNumber: providerInput.orderNumber,
+                reason: providerInput.reason
+              }
+            },
+            { idempotencyKey: providerInput.idempotencyKey }
+          );
+          return { id: refund.id, status: refund.status };
+        }))({
+          paymentIntentId: current.stripePaymentIntentId!,
+          amountCents: refundCents,
+          orderId: current.id,
+          orderNumber: current.orderNumber,
+          reason: input.reason,
+          idempotencyKey: `storefront-cancel-refund:${current.id}:${input.idempotencyKey}`
+        })
+      : null;
+    const stripeRefundStatus = stripeRefund?.status ?? null;
+    const totalCents = orderTotalCents(current);
+    const newRefundedCents = orderRefundedCents(current) + refundCents;
+    const hasTaxSnapshot = current.taxCents !== null;
+    const newRefundedTaxCents = hasTaxSnapshot
+      ? cumulativeRefundedTaxCents({
+          originalTaxCents: current.taxCents,
+          originalTotalCents: current.totalCents ?? totalCents,
+          cumulativeRefundedAmountCents: newRefundedCents
+        })
+      : null;
+    const refundedTaxDeltaCents = Math.max(0, (newRefundedTaxCents ?? 0) - (current.refundedTaxCents ?? 0));
+    const paymentStatus = refundCents > 0
+      ? refundPaymentStatus(stripeRefundStatus, newRefundedCents, totalCents)
+      : "not_applicable";
+    const refundStatus = refundCents > 0 ? paymentStatus : "not_applicable";
+    const refundedAt = refundCents > 0 && paymentStatus !== "refund_pending" && paymentStatus !== "refund_failed" ? new Date() : null;
+    const reasonLabel = cancellationReasonLabels[input.reason];
+    const requestedEmailStatus = "skipped";
 
     const shouldReturnStock = input.returnItemsToStock && orderInventoryWasFinalized(current) && !current.stockReturnedAt;
     const returnedQuantity = shouldReturnStock ? await returnOrderInventory(tx, current) : 0;
@@ -3718,14 +3947,14 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
         data: {
           orderId: current.id,
           provider: "stripe",
-          eventId: `admin.refund:${input.idempotencyKey}`,
+          eventId: `admin.refund:${current.id}:${input.idempotencyKey}`,
           eventType: "admin.refund.created",
           payload
         }
       });
       await tx.taxAdjustment.create({
         data: {
-          idempotencyKey: `tax:storefront-refund:${input.idempotencyKey}`,
+          idempotencyKey: `tax:storefront-refund:${current.id}:${input.idempotencyKey}`,
           channel: "online",
           adjustmentType: "refund",
           storefrontOrderId: current.id,
@@ -3765,8 +3994,17 @@ export async function cancelOrRefundStorefrontOrder(currentUser: SessionUser, or
         tx
       );
     }
-    return updated;
+    return {
+      order: updated,
+      duplicate: false,
+      refundCents,
+      hasTaxSnapshot,
+      refundedTaxDeltaCents
+    };
   });
+
+  const { order: updatedOrder, duplicate, refundCents, hasTaxSnapshot, refundedTaxDeltaCents } = transactionResult;
+  if (duplicate) return storefrontOrderToDTO(updatedOrder);
 
   let finalOrder = updatedOrder;
   if (refundCents > 0 || updatedOrder.status === "canceled" || updatedOrder.paymentStatus === "refunded" || updatedOrder.paymentStatus === "partially_refunded") {

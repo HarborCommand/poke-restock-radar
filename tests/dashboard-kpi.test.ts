@@ -1272,7 +1272,8 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(storefront, /paymentEvents: \{ orderBy: \{ receivedAt: "desc" \} \}/);
   assert.match(storefront, /reservations: order\.reservations\.map/);
   assert.match(storefront, /safeStripeEventPayload/);
-  assert.match(storefront, /upsertSafePaymentEvent/);
+  assert.match(storefront, /claimProviderEvent/);
+  assert.match(storefront, /completeProviderEvent/);
   assert.doesNotMatch(storefront, /payload: rawBody/);
   assert.match(client, /\/api\/storefront\/checkout\/session/);
   assert.match(client, /\/api\/storefront\/invoice-request/);
@@ -1499,8 +1500,8 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.match(storefront, /billingLine1/);
   assert.match(storefront, /session\.payment_status !== "paid"/);
   assert.match(storefront, /skipped: "checkout_session_not_paid"/);
-  assert.match(storefront, /const wasPaid = order\.paymentStatus === "paid"/);
-  assert.match(storefront, /!wasPaid && order\.paymentStatus !== "paid"/);
+  assert.match(storefront, /if \(!persisted\.persisted\) return \{ ok: true, skipped: "checkout_session_state_changed" \}/);
+  assert.match(storefront, /order\.paymentStatus !== "paid"/);
   assert.match(storefront, /syncStorefrontCustomerTotals/);
   assert.match(storefront, /totalOrders: paidOrders\.filter\(\(order\) => storefrontOrderNetRevenue\(order\) > 0\)\.length/);
   assert.match(storefront, /totalSpent: paidOrders\.reduce\(\(sum, order\) => sum \+ storefrontOrderNetRevenue\(order\), 0\)/);

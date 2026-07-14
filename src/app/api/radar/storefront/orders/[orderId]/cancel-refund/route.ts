@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
-import { ok, readJson, safeMutationError, withRequestId } from "@/lib/http";
+import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import { logServerEvent, requestCorrelationId, runWithRequestContext, safeEntityRef } from "@/lib/observability";
 import { cancelOrRefundStorefrontOrder } from "@/lib/storefront";
 import { storefrontOrderCancelRefundSchema } from "@/lib/validation";
@@ -13,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
   const requestId = requestCorrelationId(request);
   const startedAt = Date.now();
   const { user, response } = await requireUser();
-  if (response) return withRequestId(response, requestId);
+  if (response) return withPrivateNoStore(withRequestId(response, requestId));
   const authorizationResponse = authorizeAdminMutation(request, user);
   if (authorizationResponse) return withRequestId(authorizationResponse, requestId);
   return runWithRequestContext(requestId, async () => {
@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
         entityId: order.id,
         summary: `${user.email} processed refund workflow for storefront order ${order.orderNumber}.`
       });
-      return withRequestId(ok({ order }), requestId);
+      return withRequestId(privateOk({ order }), requestId);
     } catch (error) {
       logServerEvent({
         requestId,

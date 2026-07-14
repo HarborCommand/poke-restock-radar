@@ -152,10 +152,9 @@ test("customer account and rewards schema foundation exists without touching che
   );
   const webhook = sourceSlice(
     storefront,
-    "export async function handleStripeWebhook",
+    "async function processStripeWebhookEvent",
     "export async function updateInventoryStoreListing"
   );
-
   for (const model of [
     "CustomerAccount",
     "CustomerSavedAddress",
@@ -1219,8 +1218,13 @@ test("paid webhook awards reward points once without changing checkout totals", 
   );
   const webhook = sourceSlice(
     storefront,
-    "export async function handleStripeWebhook",
+    "async function processStripeWebhookEvent",
     "export async function updateInventoryStoreListing"
+  );
+  const paidSideEffects = sourceSlice(
+    storefront,
+    "async function completePaidCheckoutSideEffects",
+    "export async function applyStripeRefundSnapshot"
   );
   const onlineAward = sourceSlice(
     rewards,
@@ -1233,10 +1237,13 @@ test("paid webhook awards reward points once without changing checkout totals", 
     "webhook must reload the order after sale finalization so rewards do not see stale pending state"
   );
   assert.ok(
-    webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") < webhook.indexOf("await awardRewardsForPaidOrder(order)"),
+    webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") < webhook.indexOf("await completePaidCheckoutSideEffects(order)", webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)")),
     "reward awarding must run after the fresh paid order reload"
   );
-  assert.match(webhook, /if \(!wasPaid && order\.paymentStatus === "paid"\) await awardRewardsForPaidOrder\(order\)/);
+  assert.match(paidSideEffects, /if \(order\.paymentStatus !== "paid"\) return/);
+  assert.match(paidSideEffects, /await awardRewardsForPaidOrder\(order\)/);
+  assert.match(webhook, /checkout_session_already_finalized/);
+  assert.match(webhook, /claimProviderEvent/);
   assert.match(rewards, /export async function awardRewardsForPaidOrder/);
   assert.match(rewards, /config\.customerAccountsEnabled && config\.customerRewardsEnabled/);
   assert.match(onlineAward, /const persistedOrder = await loadRewardOrder\(tx, order\.id\)/);
@@ -1279,7 +1286,8 @@ test("refund cancellation and test markers reverse rewards without redemption", 
   const cancelOrRefund = sourceSlice(storefront, "export async function cancelOrRefundStorefrontOrder", "export async function updateStorefrontOrder");
   const updateOrder = sourceSlice(storefront, "export async function updateStorefrontOrder", "return storefrontOrderToDTO(finalOrder);");
 
-  assert.match(cancelOrRefund, /const updatedOrder = await runRewardSerializableTransaction\(async \(tx\) =>/);
+  assert.match(cancelOrRefund, /const transactionResult = await runTaxRefundTransaction\(async \(tx\) =>/);
+  assert.match(cancelOrRefund, /await lockStorefrontOrderForRefund\(tx, order\.id\)/);
   assert.match(cancelOrRefund, /await reverseRewardsForOrder\(\s*updated,/);
   assert.match(cancelOrRefund, /refundedAmount: moneyFromCents\(newRefundedCents\)[\s\S]*?tx\s*\)/);
   assert.match(cancelOrRefund, /reason: refundCents > 0 \? "refund" : "cancel"/);
