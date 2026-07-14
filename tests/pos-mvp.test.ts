@@ -20,6 +20,8 @@ import {
 import { posSaleCreateSchema, posSaleRefundSchema } from "../src/lib/validation";
 import type { InventoryItemDTO } from "../src/types/radar";
 
+const validPosQuoteId = "q".repeat(80);
+
 function readSource(path: string) {
   return fs.readFileSync(new URL(path, import.meta.url), "utf8");
 }
@@ -244,6 +246,7 @@ test("POS discount reasons normalize to stable labels", () => {
 test("POS sale request requires payment method and rejects browser prices or totals", () => {
   const parsed = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-test-sale",
+    quoteId: validPosQuoteId,
     items: [{ inventoryItemId: "item-1", quantity: 2 }],
     paymentMethod: "cash",
     total: 0,
@@ -277,6 +280,7 @@ test("POS sale request accepts only explicit adjusted price metadata, not fake b
 
   const parsed = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-test-sale",
+    quoteId: validPosQuoteId,
     items: [{
       inventoryItemId: "item-1",
       quantity: 1,
@@ -292,6 +296,7 @@ test("POS sale request accepts only explicit adjusted price metadata, not fake b
 
   const zeroPrice = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-test-sale",
+    quoteId: validPosQuoteId,
     items: [{ inventoryItemId: "item-1", quantity: 1, adjustedUnitPrice: 0, discountReason: "price_match" }],
     paymentMethod: "cash"
   });
@@ -299,6 +304,7 @@ test("POS sale request accepts only explicit adjusted price metadata, not fake b
 
   const invalidReason = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-test-sale",
+    quoteId: validPosQuoteId,
     items: [{ inventoryItemId: "item-1", quantity: 1, adjustedUnitPrice: 55, discountReason: "fake_reason" }],
     paymentMethod: "cash"
   });
@@ -321,6 +327,7 @@ test("POS sale request accepts optional customer contact without trusting reward
 
   const parsed = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-contact-sale",
+    quoteId: validPosQuoteId,
     items: [{ inventoryItemId: "item-1", quantity: 1 }],
     paymentMethod: "zelle",
     selectedCustomerAccountId: "selected-customer",
@@ -328,10 +335,11 @@ test("POS sale request accepts optional customer contact without trusting reward
     customerPhone: "(555) 123-4567"
   });
   assert.equal(parsed.success, true);
-  assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["customerEmail", "customerPhone", "idempotencyKey", "items", "paymentMethod", "selectedCustomerAccountId"]);
+  assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["customerEmail", "customerPhone", "idempotencyKey", "items", "paymentMethod", "quoteId", "selectedCustomerAccountId"]);
 
   const invalidEmail = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-contact-sale",
+    quoteId: validPosQuoteId,
     items: [{ inventoryItemId: "item-1", quantity: 1 }],
     paymentMethod: "cash",
     customerEmail: "not-an-email"
@@ -347,13 +355,12 @@ test("POS API is private admin-only and delegates to server-side sale creation",
   assert.match(route, /posSaleCreateSchema\.parse\(await readJson\(request\)\)/);
   assert.match(route, /createPosSale\(user, input\)/);
   assert.match(matchRoute, /requireUser/);
-  assert.match(matchRoute, /requireAdmin/);
-  assert.match(matchRoute, /if \(response\) return response/);
-  assert.match(matchRoute, /const adminResponse = requireAdmin\(user\)/);
-  assert.match(matchRoute, /if \(adminResponse\) return adminResponse/);
+  assert.match(matchRoute, /authorizeAdminMutation\(request, user\)/);
+  assert.match(matchRoute, /withPrivateNoStore/);
+  assert.match(matchRoute, /withRequestId/);
   assert.match(matchRoute, /posCustomerMatchSchema\.parse\(await readJson\(request\)\)/);
-  assert.match(matchRoute, /resolvePosCustomerMatch\(input\)/);
-  assert.match(matchRoute, /return ok\(\{ match \}\)/);
+  assert.match(matchRoute, /resolvePosCustomerMatch\(input, user\.id\)/);
+  assert.match(matchRoute, /privateOk\(\{ match \}\)/);
   assert.doesNotMatch(matchRoute, /passwordHash|tokenHash|sessionToken|rewardBalance|rewardLedger|savedAddresses|address|authenticityNotes|stripePaymentIntent|stripeCheckout/i);
   assert.doesNotMatch(route, /stripe|checkout|terminal|tapToPay/i);
 });
@@ -364,7 +371,8 @@ test("POS server revalidates inventory, price, and availability before recording
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
   assert.match(service, /getPosExcludedReason/);
   assert.match(service, /resolvePosCustomerMatch/);
-  assert.match(posCustomer, /findCustomerAccountByNormalizedEmail/);
+  assert.match(posCustomer, /workspaceCustomerWhere/);
+  assert.match(posCustomer, /findEmailMatches/);
   assert.match(posCustomer, /normalizePosCustomerPhone/);
   assert.match(posCustomer, /phone_possible/);
   assert.match(posCustomer, /phone_multiple/);
@@ -638,11 +646,11 @@ test("POS confirmation modal shows server tax quote, payment, reference, and war
   assert.match(posPanel, /line\.discountReasonLabel/);
   assert.match(posPanel, /taxQuote\?\.merchandiseSubtotal/);
   assert.match(posPanel, /taxQuote\?\.taxableSubtotal/);
-  assert.match(posPanel, /taxQuote\?\.stateTax/);
-  assert.match(posPanel, /taxQuote\?\.countySurtax/);
+  assert.match(posPanel, /taxQuote\.stateTax/);
+  assert.match(posPanel, /taxQuote\.countySurtax/);
   assert.match(posPanel, /money\(quotedTotal\)/);
   assert.match(posPanel, /Payment <strong>\{paymentMethod \? posPaymentMethodLabel\(paymentMethod\) : "Not selected"\}/);
-  assert.match(posPanel, /Reference <strong>\{paymentReference\.trim\(\)\}/);
+  assert.match(posPanel, /Reference <strong>\{maskPosPaymentReference\(paymentReference\)\}/);
   assert.match(posPanel, /This will record the sale and deduct inventory/);
   assert.match(posPanel, /Close or cancel does not save anything/);
   assert.match(posPanel, /Confirming/);
@@ -731,9 +739,9 @@ test("POS rewards are server-side, separately flagged, and excluded from browser
 
   assert.match(posCustomer, /customerPosRewardsEnabled/);
   assert.match(posCustomer, /selectedCustomerAccountId/);
-  assert.match(posCustomer, /accountById\(client, selectedCustomerAccountId\)/);
+  assert.match(posCustomer, /accountById\(client, selectedCustomerAccountId, ownerUserId\)/);
   assert.match(createPosSale, /await awardRewardsForCompletedPosSale/);
-  assert.match(createPosSale, /eligibleSubtotalCents: totals\.taxableSubtotalCents/);
+  assert.match(createPosSale, /eligibleSubtotalCents: totals\.subtotalCents - totals\.discountCents/);
   assert.match(customerConfig, /CUSTOMER_POS_REWARDS_ENABLED/);
   assert.match(rewards, /customerPosRewardsEnabled/);
   assert.match(rewards, /idempotencyKey: `rewards:pos:earn:\$\{input\.saleReference\}`/);

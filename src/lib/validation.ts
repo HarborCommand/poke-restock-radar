@@ -1013,6 +1013,7 @@ export const inventorySaleUpdateSchema = z.object({
 });
 
 export const posTaxQuoteSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
   items: z.array(z.object({
     inventoryItemId: z.string().trim().min(2),
     quantity: z.coerce.number().int().min(1).max(1000),
@@ -1023,6 +1024,7 @@ export const posTaxQuoteSchema = z.object({
     discountReason: z.enum(POS_DISCOUNT_REASON_VALUES).optional(),
     discountNote: optionalTrimmed
   }).strict()).min(1).max(100),
+  selectedCustomerAccountId: z.string().trim().min(2).max(128).optional(),
   taxExempt: checkboxBoolean.optional(),
   taxExemptReason: z.preprocess(
     (value) => value === "" || value === null ? undefined : value,
@@ -1043,6 +1045,7 @@ export const posTaxQuoteSchema = z.object({
 
 export const posSaleCreateSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
+  quoteId: z.string().trim().min(80).max(1000),
   items: z.array(z.object({
     inventoryItemId: z.string().trim().min(2),
     quantity: z.coerce.number().int().min(1).max(1000),
@@ -1052,7 +1055,7 @@ export const posSaleCreateSchema = z.object({
     ),
     discountReason: z.enum(POS_DISCOUNT_REASON_VALUES).optional(),
     discountNote: optionalTrimmed
-  })).min(1).max(100),
+  }).strict()).min(1).max(100),
   paymentMethod: z.enum(POS_PAYMENT_METHOD_VALUES),
   paymentReference: optionalTrimmed,
   selectedCustomerAccountId: z.string().trim().min(2).optional(),

@@ -71,12 +71,16 @@ export type PosTaxProfile = {
 export function calculateConfiguredPosTax(input: {
   subtotalCents: number;
   discountCents?: number;
+  taxableSubtotalCents?: number;
   profile: PosTaxProfile;
   exempt?: boolean;
 }) {
   const subtotalCents = nonnegativeCents(input.subtotalCents);
   const discountCents = Math.min(subtotalCents, nonnegativeCents(input.discountCents));
-  const taxableSubtotalCents = subtotalCents - discountCents;
+  const merchandiseNetCents = subtotalCents - discountCents;
+  const taxableSubtotalCents = input.taxableSubtotalCents === undefined
+    ? merchandiseNetCents
+    : Math.min(merchandiseNetCents, nonnegativeCents(input.taxableSubtotalCents));
   const stateRateBasisPoints = input.profile.stateRateBasisPoints;
   const countyRateBasisPoints = input.profile.countyRateBasisPoints;
   if (!validBasisPoints(stateRateBasisPoints, 2_000) || !validBasisPoints(countyRateBasisPoints, 2_000)) {
@@ -96,7 +100,7 @@ export function calculateConfiguredPosTax(input: {
     stateTaxCents,
     countySurtaxCents,
     taxCents: totalTaxCents,
-    totalCents: taxableSubtotalCents + totalTaxCents,
+    totalCents: merchandiseNetCents + totalTaxCents,
     combinedRateBasisPoints
   };
 }

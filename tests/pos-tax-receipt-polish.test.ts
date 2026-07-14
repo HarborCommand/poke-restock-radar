@@ -3,6 +3,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  assertPosTaxQuoteMatches,
+  createPosTaxQuoteToken,
+  posTaxCartFingerprint,
+  verifyPosTaxQuoteToken
+} from "../src/lib/pos-tax-quote";
+import { calculateConfiguredPosTax } from "../src/lib/tax";
 import { posTaxQuoteSchema } from "../src/lib/validation";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -19,18 +26,97 @@ function sourceSlice(source: string, start: string, end: string) {
 test("POS tax quote input is strict and exemption evidence is explicit", () => {
   assert.doesNotThrow(() =>
     posTaxQuoteSchema.parse({
+      idempotencyKey: "pos-quote-test-1",
       items: [{ inventoryItemId: "item-1", quantity: 2, adjustedUnitPrice: 9.5, discountReason: "owner_override" }],
       taxExempt: false
     })
   );
   assert.throws(
-    () => posTaxQuoteSchema.parse({ items: [{ inventoryItemId: "item-1", quantity: 1 }], clientTax: 99 }),
+    () => posTaxQuoteSchema.parse({ idempotencyKey: "pos-quote-test-2", items: [{ inventoryItemId: "item-1", quantity: 1 }], clientTax: 99 }),
     /Unrecognized key/
   );
   assert.throws(
-    () => posTaxQuoteSchema.parse({ items: [{ inventoryItemId: "item-1", quantity: 1 }], taxExempt: true }),
+    () => posTaxQuoteSchema.parse({ idempotencyKey: "pos-quote-test-3", items: [{ inventoryItemId: "item-1", quantity: 1 }], taxExempt: true }),
     /reason|reference/i
   );
+});
+
+test("signed POS quote binds workspace, cart, profile, idempotency key, and expiration", () => {
+  const fingerprintInput = {
+    userId: "workspace-owner-1",
+    idempotencyKey: "pos-finalize-1",
+    selectedCustomerAccountId: "customer-1",
+    fulfillmentMode: "in_person" as const,
+    taxExempt: false,
+    taxExemptReason: null,
+    taxExemptionReference: null,
+    items: [{
+      inventoryItemId: "item-1",
+      quantity: 2,
+      originalUnitPriceCents: 2500,
+      adjustedUnitPriceCents: 2000,
+      discountReason: "owner_override",
+      taxable: true,
+      taxCategory: "txcd_99999999"
+    }],
+    profile: {
+      runtimeEnabled: true,
+      profileEnabled: true,
+      country: "US",
+      state: "FL",
+      county: "Orange",
+      stateRateBasisPoints: 600,
+      countyRateBasisPoints: 50,
+      effectiveAt: "2026-07-01T00:00:00.000Z",
+      sourceNote: "Preview-only approved rate source"
+    }
+  };
+  const now = Date.UTC(2026, 6, 14, 12);
+  const fingerprint = posTaxCartFingerprint(fingerprintInput);
+  const quote = createPosTaxQuoteToken(fingerprintInput.userId, fingerprint, now);
+  const encodedPayload = quote.quoteId.split(".")[0] ?? "";
+  const publicPayload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as Record<string, unknown>;
+  assert.equal(Object.prototype.hasOwnProperty.call(publicPayload, "userId"), false);
+  assert.equal(typeof publicPayload.userBinding, "string");
+  const verified = verifyPosTaxQuoteToken(quote.quoteId, fingerprintInput.userId, now + 1);
+  assert.doesNotThrow(() => assertPosTaxQuoteMatches(verified, fingerprint));
+  assert.throws(() => verifyPosTaxQuoteToken(`${quote.quoteId.slice(0, -1)}x`, fingerprintInput.userId, now + 1), /invalid/i);
+  assert.throws(() => verifyPosTaxQuoteToken(quote.quoteId, "other-workspace", now + 1), /invalid/i);
+  assert.throws(() => verifyPosTaxQuoteToken(quote.quoteId, fingerprintInput.userId, now + (5 * 60 * 1000)), /expired/i);
+
+  const replayFingerprint = posTaxCartFingerprint({ ...fingerprintInput, idempotencyKey: "pos-finalize-2" });
+  assert.throws(() => assertPosTaxQuoteMatches(verified, replayFingerprint), /stale/i);
+  const changedRateFingerprint = posTaxCartFingerprint({
+    ...fingerprintInput,
+    profile: { ...fingerprintInput.profile, countyRateBasisPoints: 100 }
+  });
+  assert.throws(() => assertPosTaxQuoteMatches(verified, changedRateFingerprint), /stale/i);
+});
+
+test("Florida configured POS tax uses integer cents and reconciles rounding boundaries", () => {
+  const profile = {
+    country: "US",
+    state: "FL",
+    county: "Orange",
+    stateRateBasisPoints: 600,
+    countyRateBasisPoints: 100,
+    effectiveAt: new Date("2026-07-01T00:00:00.000Z"),
+    sourceNote: "Preview-only approved rate source",
+    enabled: true
+  };
+  const calculate = (subtotalCents: number, discountCents = 0, taxableSubtotalCents?: number) =>
+    calculateConfiguredPosTax({ subtotalCents, discountCents, taxableSubtotalCents, profile });
+
+  for (const [subtotalCents, expectedTaxCents] of [[0, 0], [1, 0], [99, 7], [100, 7], [2500, 175]] as const) {
+    const result = calculate(subtotalCents);
+    assert.equal(result.taxCents, expectedTaxCents);
+    assert.equal(result.stateTaxCents + result.countySurtaxCents, result.taxCents);
+    assert.equal(result.totalCents, subtotalCents + expectedTaxCents);
+  }
+  assert.deepEqual(calculate(1000, 1000), { subtotalCents: 1000, discountCents: 1000, taxableSubtotalCents: 0, stateTaxCents: 0, countySurtaxCents: 0, taxCents: 0, totalCents: 0, combinedRateBasisPoints: 700 });
+  assert.equal(calculate(1000, 1500).totalCents, 0);
+  assert.deepEqual(calculate(2500, 0, 0), { subtotalCents: 2500, discountCents: 0, taxableSubtotalCents: 0, stateTaxCents: 0, countySurtaxCents: 0, taxCents: 0, totalCents: 2500, combinedRateBasisPoints: 700 });
+  assert.equal(calculate(10_000_000).taxCents, 700_000);
 });
 
 test("POS tax quote route is authenticated, same-origin admin-only, and private", () => {
@@ -53,6 +139,7 @@ test("server quote owns pricing, inventory scope, jurisdiction, and tax arithmet
   assert.match(quote, /stateTax:/);
   assert.match(quote, /countySurtax:/);
   assert.match(quote, /combinedRateBasisPoints/);
+  assert.match(quote, /createPosTaxQuoteToken/);
   assert.match(quote, /canComplete: !misconfigured/);
   assert.doesNotMatch(quote, /\.create\(|\.update\(|\.delete\(/);
 });
@@ -67,10 +154,11 @@ test("POS client waits for the newest server quote and never submits browser tax
   assert.match(posPanel, /\/api\/radar\/pos\/tax-quote/);
   assert.match(posPanel, /taxQuoteStatus === "loading"/);
   assert.match(posPanel, /Server tax calculation is required before confirming the sale/);
-  assert.match(posPanel, /taxQuote\?\.stateTax/);
-  assert.match(posPanel, /taxQuote\?\.countySurtax/);
+  assert.match(posPanel, /taxQuote\.stateTax/);
+  assert.match(posPanel, /taxQuote\.countySurtax/);
   assert.match(posPanel, /money\(quotedTotal\)/);
   const completionBody = sourceSlice(posPanel, "async function completeSale", "const adjustmentLine");
+  assert.match(completionBody, /quoteId: taxQuote\.quoteId/);
   assert.doesNotMatch(completionBody, /cartTotals\.(tax|total)|taxQuote\.(tax|total)|clientTax/);
 });
 
@@ -97,9 +185,12 @@ test("receipt is itemized, customer contact is masked, and tax/refund details st
 test("receipt reconstruction exposes partial/full refund and tax reversal metadata", () => {
   const service = readSource("src/lib/radar-service.ts");
   const receipt = sourceSlice(service, "async function receiptForExistingPosSale", "function inventorySaleAvailability");
-  assert.match(receipt, /refundStatus: firstSale\.refundStatus/);
-  assert.match(receipt, /refundedAmount:/);
-  assert.match(receipt, /refundedTax:/);
+  assert.match(receipt, /const refundStatus =/);
+  assert.match(receipt, /refundStatus,/);
+  assert.match(receipt, /refundedAmount,/);
+  assert.match(receipt, /refundedTax,/);
+  assert.match(receipt, /refundedMerchandise,/);
+  assert.match(receipt, /netTotal,/);
   assert.match(receipt, /refundedAt:/);
   assert.match(receipt, /cashierName:/);
   assert.match(receipt, /registerLabel:/);

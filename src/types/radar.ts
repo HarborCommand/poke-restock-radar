@@ -931,6 +931,10 @@ export type PosSaleLineDTO = {
 };
 
 export type PosTaxQuoteDTO = {
+  quoteId: string;
+  quoteVersion: number;
+  cartFingerprint: string;
+  expiresAt: string;
   merchandiseSubtotal: number;
   discount: number;
   taxableSubtotal: number;
@@ -956,7 +960,7 @@ export type PosSaleReceiptDTO = {
   paymentMethod: PosPaymentMethodDTO;
   paymentMethodLabel: string;
   paymentReference: string | null;
-  customerAccountId: string | null;
+  customerLinked: boolean;
   customerEmail: string | null;
   customerPhone: string | null;
   customerMatchMethod: PosCustomerMatchMethodDTO;
@@ -978,10 +982,12 @@ export type PosSaleReceiptDTO = {
   taxExemptReason: string | null;
   taxJurisdiction: { country: string; state: string; county: string | null };
   cashierName: string;
-  registerLabel: string;
+  registerLabel: string | null;
   refundStatus: string | null;
   refundedAmount: number;
+  refundedMerchandise: number | null;
   refundedTax: number | null;
+  netTotal: number;
   refundedAt: string | null;
   itemCount: number;
   completedAt: string;
