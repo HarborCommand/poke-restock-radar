@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
+import { workspaceCustomerWhere } from "@/lib/customer-workspace";
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import type { SessionUser } from "@/types/radar";
 import type {
@@ -50,34 +51,38 @@ type LedgerListFilters = {
 const defaultPageSize = 25;
 const maxPageSize = 100;
 
-const customerListInclude = {
-  rewardBalance: true,
-  orders: {
-    select: {
-      id: true,
-      orderNumber: true,
-      total: true,
-      refundedAmount: true,
-      paymentStatus: true,
-      status: true,
-      fulfillmentStatus: true,
-      isTestOrder: true,
-      createdAt: true
+function customerListInclude(ownerUserId: string) {
+  return {
+    rewardBalance: true,
+    orders: {
+      where: { userId: ownerUserId },
+      select: {
+        id: true,
+        orderNumber: true,
+        total: true,
+        refundedAmount: true,
+        paymentStatus: true,
+        status: true,
+        fulfillmentStatus: true,
+        isTestOrder: true,
+        createdAt: true
+      }
+    },
+    posSales: {
+      where: { userId: ownerUserId },
+      select: {
+        id: true,
+        saleReference: true,
+        platform: true,
+        grossSale: true,
+        refundedAmount: true,
+        refundStatus: true,
+        notes: true,
+        soldAt: true
+      }
     }
-  },
-  posSales: {
-    select: {
-      id: true,
-      saleReference: true,
-      platform: true,
-      grossSale: true,
-      refundedAmount: true,
-      refundStatus: true,
-      notes: true,
-      soldAt: true
-    }
-  }
-} satisfies Prisma.CustomerAccountInclude;
+  } satisfies Prisma.CustomerAccountInclude;
+}
 
 const ledgerInclude = {
   customerAccount: {
@@ -150,7 +155,7 @@ function latestDate(...values: Array<Date | null | undefined>) {
   return latest ?? null;
 }
 
-type CustomerWithActivity = Prisma.CustomerAccountGetPayload<{ include: typeof customerListInclude }>;
+type CustomerWithActivity = Prisma.CustomerAccountGetPayload<{ include: ReturnType<typeof customerListInclude> }>;
 
 function mapCustomerListItem(customer: CustomerWithActivity): AdminCustomerRewardsCustomerDTO {
   const balance = customer.rewardBalance;
@@ -226,10 +231,10 @@ function mapLedgerEntry(entry: LedgerWithCustomer): AdminCustomerRewardsLedgerEn
   };
 }
 
-function buildCustomerWhere(filters: CustomerListFilters): Prisma.CustomerAccountWhereInput {
+function buildCustomerWhere(ownerUserId: string, filters: CustomerListFilters): Prisma.CustomerAccountWhereInput {
   const where: Prisma.CustomerAccountWhereInput = {};
   if (filters.status && filters.status !== "all") where.status = filters.status;
-  return where;
+  return { AND: [workspaceCustomerWhere(ownerUserId), where] };
 }
 
 function normalizedSearch(value: string | null | undefined) {
@@ -238,6 +243,10 @@ function normalizedSearch(value: string | null | undefined) {
 
 function phoneDigits(value: string | null | undefined) {
   return value?.replace(/\D/g, "") ?? "";
+}
+
+function isPhoneSearch(value: string) {
+  return /^[+\d\s().-]+$/.test(value);
 }
 
 function customerMatchesSearch(customer: CustomerWithActivity, rawSearch: string | null | undefined) {
@@ -254,7 +263,7 @@ function customerMatchesSearch(customer: CustomerWithActivity, rawSearch: string
   const tokens = search.split(/\s+/).filter(Boolean);
   const displayName = normalizedSearch(customer.displayName);
   if (tokens.length > 1 && tokens.every((token) => displayName.includes(token))) return true;
-  return Boolean(searchDigits && phoneDigits(customer.phone).includes(searchDigits));
+  return Boolean(isPhoneSearch(search) && searchDigits && phoneDigits(customer.phone).includes(searchDigits));
 }
 
 function sortCustomers(customers: AdminCustomerRewardsCustomerDTO[], sort: string | null | undefined) {
@@ -268,16 +277,17 @@ function sortCustomers(customers: AdminCustomerRewardsCustomerDTO[], sort: strin
   return next.sort((a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime());
 }
 
-export async function customerRewardsAdminSummary(): Promise<AdminCustomerRewardsSummaryDTO> {
+export async function customerRewardsAdminSummary(ownerUserId: string): Promise<AdminCustomerRewardsSummaryDTO> {
   const startOfMonth = new Date();
   startOfMonth.setUTCDate(1);
   startOfMonth.setUTCHours(0, 0, 0, 0);
 
   const [totalCustomers, activeCustomers, newCustomersThisMonth, balances, reversals, topBalance] = await Promise.all([
-    prisma.customerAccount.count(),
-    prisma.customerAccount.count({ where: { status: "active" } }),
-    prisma.customerAccount.count({ where: { createdAt: { gte: startOfMonth } } }),
+    prisma.customerAccount.count({ where: workspaceCustomerWhere(ownerUserId) }),
+    prisma.customerAccount.count({ where: { AND: [workspaceCustomerWhere(ownerUserId), { status: "active" }] } }),
+    prisma.customerAccount.count({ where: { AND: [workspaceCustomerWhere(ownerUserId), { createdAt: { gte: startOfMonth } }] } }),
     prisma.rewardBalance.findMany({
+      where: { customerAccount: workspaceCustomerWhere(ownerUserId) },
       select: {
         availablePoints: true,
         pendingPoints: true,
@@ -285,10 +295,11 @@ export async function customerRewardsAdminSummary(): Promise<AdminCustomerReward
       }
     }),
     prisma.rewardLedgerEntry.findMany({
-      where: { points: { lt: 0 } },
+      where: { points: { lt: 0 }, customerAccount: workspaceCustomerWhere(ownerUserId) },
       select: { points: true }
     }),
     prisma.rewardBalance.findFirst({
+      where: { customerAccount: workspaceCustomerWhere(ownerUserId) },
       orderBy: { lifetimeEarnedPoints: "desc" },
       include: {
         customerAccount: {
@@ -327,15 +338,15 @@ export async function customerRewardsAdminSummary(): Promise<AdminCustomerReward
   };
 }
 
-export async function listAdminCustomerRewards(filters: CustomerListFilters = {}): Promise<AdminCustomerRewardsResponseDTO> {
+export async function listAdminCustomerRewards(ownerUserId: string, filters: CustomerListFilters = {}): Promise<AdminCustomerRewardsResponseDTO> {
   const page = clampPage(filters.page);
   const pageSize = clampPageSize(filters.pageSize);
-  const where = buildCustomerWhere(filters);
+  const where = buildCustomerWhere(ownerUserId, filters);
   const [summary, rows] = await Promise.all([
-    customerRewardsAdminSummary(),
+    customerRewardsAdminSummary(ownerUserId),
     prisma.customerAccount.findMany({
       where,
-      include: customerListInclude
+      include: customerListInclude(ownerUserId)
     })
   ]);
 
@@ -356,7 +367,7 @@ export async function listAdminCustomerRewards(filters: CustomerListFilters = {}
   };
 }
 
-function buildLedgerWhere(filters: LedgerListFilters): Prisma.RewardLedgerEntryWhereInput {
+function buildLedgerWhere(ownerUserId: string, filters: LedgerListFilters): Prisma.RewardLedgerEntryWhereInput {
   const where: Prisma.RewardLedgerEntryWhereInput = {};
   if (filters.status && filters.status !== "all") where.status = filters.status;
   if (filters.source && filters.source !== "all") where.source = filters.source;
@@ -370,13 +381,19 @@ function buildLedgerWhere(filters: LedgerListFilters): Prisma.RewardLedgerEntryW
       { order: { orderNumber: { contains: search } } }
     ];
   }
-  return where;
+  return {
+    AND: [
+      { customerAccount: workspaceCustomerWhere(ownerUserId) },
+      { OR: [{ orderId: null }, { order: { userId: ownerUserId } }] },
+      where
+    ]
+  };
 }
 
-export async function listAdminRewardLedger(filters: LedgerListFilters = {}): Promise<AdminCustomerRewardsLedgerResponseDTO> {
+export async function listAdminRewardLedger(ownerUserId: string, filters: LedgerListFilters = {}): Promise<AdminCustomerRewardsLedgerResponseDTO> {
   const page = clampPage(filters.page);
   const pageSize = clampPageSize(filters.pageSize);
-  const where = buildLedgerWhere(filters);
+  const where = buildLedgerWhere(ownerUserId, filters);
   const [total, ledger] = await Promise.all([
     prisma.rewardLedgerEntry.count({ where }),
     prisma.rewardLedgerEntry.findMany({
@@ -399,11 +416,11 @@ export async function listAdminRewardLedger(filters: LedgerListFilters = {}): Pr
   };
 }
 
-export async function getAdminCustomerRewardDetail(customerAccountId: string): Promise<AdminCustomerRewardsDetailDTO | null> {
-  const customer = await prisma.customerAccount.findUnique({
-    where: { id: customerAccountId },
+export async function getAdminCustomerRewardDetail(ownerUserId: string, customerAccountId: string): Promise<AdminCustomerRewardsDetailDTO | null> {
+  const customer = await prisma.customerAccount.findFirst({
+    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
     include: {
-      ...customerListInclude,
+      ...customerListInclude(ownerUserId),
       savedAddresses: {
         select: {
           city: true,
@@ -414,6 +431,9 @@ export async function getAdminCustomerRewardDetail(customerAccountId: string): P
         orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }]
       },
       rewardLedgerEntries: {
+        where: {
+          OR: [{ orderId: null }, { order: { userId: ownerUserId } }]
+        },
         include: ledgerInclude,
         orderBy: { createdAt: "desc" },
         take: 8
@@ -466,17 +486,18 @@ export async function getAdminCustomerRewardDetail(customerAccountId: string): P
 }
 
 export async function updateAdminCustomerProfile(
+  ownerUserId: string,
   customerAccountId: string,
   input: AdminCustomerProfileUpdateInput
 ): Promise<AdminCustomerProfileUpdateResultDTO> {
-  const existing = await prisma.customerAccount.findUnique({
-    where: { id: customerAccountId },
+  const existing = await prisma.customerAccount.findFirst({
+    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
     select: { id: true }
   });
   if (!existing) throw new Error("Customer account was not found.");
 
-  await prisma.customerAccount.update({
-    where: { id: customerAccountId },
+  const updated = await prisma.customerAccount.updateMany({
+    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
     data: {
       displayName: input.displayName,
       phone: input.phone,
@@ -484,8 +505,9 @@ export async function updateAdminCustomerProfile(
       adminNote: input.adminNote
     }
   });
+  if (updated.count !== 1) throw new Error("Customer account was not found.");
 
-  const customer = await getAdminCustomerRewardDetail(customerAccountId);
+  const customer = await getAdminCustomerRewardDetail(ownerUserId, customerAccountId);
   if (!customer) throw new Error("Customer account was not found after update.");
   return { customer };
 }
@@ -510,14 +532,15 @@ export async function createAdminRewardAdjustment(
     const existing = await tx.rewardLedgerEntry.findFirst({
       where: {
         customerAccountId: input.customerAccountId,
+        customerAccount: workspaceCustomerWhere(adminUser.id),
         idempotencyKey: { in: [idempotencyKey, legacyIdempotencyKey] }
       },
       include: ledgerInclude
     });
     if (existing) return { entry: existing, duplicate: true };
 
-    const customer = await tx.customerAccount.findUnique({
-      where: { id: input.customerAccountId },
+    const customer = await tx.customerAccount.findFirst({
+      where: { id: input.customerAccountId, ...workspaceCustomerWhere(adminUser.id) },
       select: { id: true }
     });
     if (!customer) throw new Error("Customer account was not found.");
@@ -580,7 +603,7 @@ export async function createAdminRewardAdjustment(
     return { entry, duplicate: false };
   });
 
-  const detail = await getAdminCustomerRewardDetail(input.customerAccountId);
+  const detail = await getAdminCustomerRewardDetail(adminUser.id, input.customerAccountId);
   if (!detail) throw new Error("Customer account was not found after adjustment.");
   return {
     adjustment: mapLedgerEntry(ledger.entry),

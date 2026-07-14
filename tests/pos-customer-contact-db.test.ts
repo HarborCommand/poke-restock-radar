@@ -40,7 +40,7 @@ test.after(async () => {
 });
 
 let uniqueCounter = 0;
-let currentWorkspaceOwnerId = "";
+let activeOwner: SessionUser;
 
 function unique(prefix: string) {
   uniqueCounter += 1;
@@ -54,8 +54,7 @@ function setPosRewardsEnabled(enabled: boolean) {
 
 test.beforeEach(async () => {
   setPosRewardsEnabled(false);
-  const owner = await createAdminUser();
-  currentWorkspaceOwnerId = owner.id;
+  activeOwner = await createAdminUser();
 });
 
 async function createAdminUser(): Promise<SessionUser> {
@@ -67,8 +66,7 @@ async function createAdminUser(): Promise<SessionUser> {
       passwordHash: "test-hash"
     }
   });
-  currentWorkspaceOwnerId = user.id;
-  return {
+  const sessionUser: SessionUser = {
     id: user.id,
     email: user.email,
     name: user.name,
@@ -78,6 +76,8 @@ async function createAdminUser(): Promise<SessionUser> {
     canRunChecks: true,
     canReceivePushAlerts: true
   };
+  activeOwner = sessionUser;
+  return sessionUser;
 }
 
 async function createInventoryItem(userId: string) {
@@ -124,7 +124,7 @@ async function createCustomer(input: {
 }) {
   return prisma.customerAccount.create({
     data: {
-      userId: currentWorkspaceOwnerId,
+      userId: activeOwner.id,
       email: input.email,
       normalizedEmail: input.email.toLowerCase(),
       phone: input.phone ?? null,
@@ -138,29 +138,25 @@ async function createVerifiedCustomer(input: { email: string; phone?: string | n
   return createCustomer(input);
 }
 
-function resolveWorkspacePosCustomerMatch(input: Parameters<typeof resolvePosCustomerMatch>[0]) {
-  return resolvePosCustomerMatch(input, currentWorkspaceOwnerId);
-}
-
 test("POS customer contact matching links verified email but not phone-only contact", async () => {
   const phone = "+15551234567";
   const account = await createVerifiedCustomer({ email: `${unique("collector")}@example.test`, phone });
 
-  const emailMatch = await resolveWorkspacePosCustomerMatch({ customerEmail: account.email.toUpperCase(), customerPhone: "(555) 123-4567" });
+  const emailMatch = await resolvePosCustomerMatch({ customerEmail: account.email.toUpperCase(), customerPhone: "(555) 123-4567" }, activeOwner.id);
   assert.equal(emailMatch.customerAccountId, account.id);
   assert.equal(emailMatch.customerEmail, account.email);
   assert.equal(emailMatch.customerPhone, phone);
   assert.equal(emailMatch.customerMatchMethod, "email");
   assert.equal(emailMatch.rewardsEligible, false);
 
-  const phoneMatch = await resolveWorkspacePosCustomerMatch({ customerPhone: "555-123-4567" });
+  const phoneMatch = await resolvePosCustomerMatch({ customerPhone: "555-123-4567" }, activeOwner.id);
   assert.equal(phoneMatch.customerAccountId, null);
   assert.equal(phoneMatch.customerMatchMethod, "phone_possible");
   assert.equal(phoneMatch.rewardsEligible, false);
   assert.match(phoneMatch.message, /Enter email/);
 
   await createVerifiedCustomer({ email: `${unique("collector")}@example.test`, phone });
-  const multiplePhoneMatch = await resolveWorkspacePosCustomerMatch({ customerPhone: "555-123-4567" });
+  const multiplePhoneMatch = await resolvePosCustomerMatch({ customerPhone: "555-123-4567" }, activeOwner.id);
   assert.equal(multiplePhoneMatch.customerAccountId, null);
   assert.equal(multiplePhoneMatch.customerMatchMethod, "phone_multiple");
   assert.equal(multiplePhoneMatch.rewardsEligible, false);
@@ -178,21 +174,40 @@ test("POS customer matching rejects unverified and inactive accounts", async () 
     status: "disabled"
   });
 
-  const unverifiedMatch = await resolveWorkspacePosCustomerMatch({ customerEmail: unverified.email });
+  const unverifiedMatch = await resolvePosCustomerMatch({ customerEmail: unverified.email }, activeOwner.id);
   assert.equal(unverifiedMatch.customerAccountId, null);
   assert.equal(unverifiedMatch.customerMatchMethod, "email_unverified");
   assert.equal(unverifiedMatch.rewardsEligible, false);
 
-  const inactiveMatch = await resolveWorkspacePosCustomerMatch({ customerEmail: inactive.email });
+  const inactiveMatch = await resolvePosCustomerMatch({ customerEmail: inactive.email }, activeOwner.id);
   assert.equal(inactiveMatch.customerAccountId, null);
   assert.equal(inactiveMatch.customerMatchMethod, "email_unverified");
   assert.equal(inactiveMatch.rewardsEligible, false);
 
-  const unverifiedSelection = await resolveWorkspacePosCustomerMatch({ selectedCustomerAccountId: unverified.id });
+  const unverifiedSelection = await resolvePosCustomerMatch({ selectedCustomerAccountId: unverified.id }, activeOwner.id);
   assert.equal(unverifiedSelection.customerAccountId, null);
   assert.equal(unverifiedSelection.customerMatchMethod, "email_unverified");
   assert.equal(unverifiedSelection.rewardsEligible, false);
   assert.match(unverifiedSelection.message, /verified active account/);
+});
+
+test("POS customer matching rejects cross-owner customer id email and phone tampering", async () => {
+  const firstOwnerId = activeOwner.id;
+  await createAdminUser();
+  const otherAccount = await createVerifiedCustomer({
+    email: `${unique("other-owner-customer")}@example.test`,
+    phone: "+15558675309"
+  });
+
+  const selected = await resolvePosCustomerMatch({ selectedCustomerAccountId: otherAccount.id }, firstOwnerId);
+  const email = await resolvePosCustomerMatch({ customerEmail: otherAccount.email }, firstOwnerId);
+  const phone = await resolvePosCustomerMatch({ customerPhone: otherAccount.phone }, firstOwnerId);
+
+  assert.equal(selected.customerAccountId, null);
+  assert.equal(email.customerAccountId, null);
+  assert.equal(email.customerMatchMethod, "email_not_found");
+  assert.equal(phone.customerAccountId, null);
+  assert.equal(phone.customerMatchMethod, "phone_not_found");
 });
 
 test("POS customer matching keeps email primary and returns minimal admin-safe fields", async () => {
@@ -205,15 +220,15 @@ test("POS customer matching keeps email primary and returns minimal admin-safe f
     phone: "+15552223333"
   });
 
-  const phoneNoMatch = await resolveWorkspacePosCustomerMatch({ customerPhone: "555-999-0000" });
+  const phoneNoMatch = await resolvePosCustomerMatch({ customerPhone: "555-999-0000" }, activeOwner.id);
   assert.equal(phoneNoMatch.customerAccountId, null);
   assert.equal(phoneNoMatch.customerMatchMethod, "phone_not_found");
   assert.equal(phoneNoMatch.rewardsEligible, false);
 
-  const emailPriority = await resolveWorkspacePosCustomerMatch({
+  const emailPriority = await resolvePosCustomerMatch({
     customerEmail: emailAccount.email.toUpperCase(),
     customerPhone: "555-222-3333"
-  });
+  }, activeOwner.id);
   assert.equal(emailPriority.customerAccountId, emailAccount.id);
   assert.equal(emailPriority.customerMatchMethod, "email");
   assert.equal(emailPriority.customerEmail, emailAccount.email);
@@ -250,6 +265,14 @@ test("POS customer matching never resolves an account from another workspace", a
   const ownerB = await createAdminUser();
   const accountB = await createVerifiedCustomer({ email: `${unique("workspace-b")}@example.test`, phone: "+15550001002" });
 
+  const before = {
+    customers: await prisma.customerAccount.count(),
+    orders: await prisma.storefrontOrder.count(),
+    sales: await prisma.inventorySale.count(),
+    rewards: await prisma.rewardLedgerEntry.count(),
+    audits: await prisma.auditLog.count()
+  };
+
   const byId = await resolvePosCustomerMatch({ selectedCustomerAccountId: accountA.id }, ownerB.id);
   const byEmail = await resolvePosCustomerMatch({ customerEmail: accountA.email }, ownerB.id);
   const byPhone = await resolvePosCustomerMatch({ customerPhone: accountA.phone }, ownerB.id);
@@ -260,6 +283,13 @@ test("POS customer matching never resolves an account from another workspace", a
   const ownMatch = await resolvePosCustomerMatch({ selectedCustomerAccountId: accountB.id }, ownerB.id);
   assert.equal(ownMatch.customerAccountId, accountB.id);
   assert.notEqual(ownerA.id, ownerB.id);
+  assert.deepEqual({
+    customers: await prisma.customerAccount.count(),
+    orders: await prisma.storefrontOrder.count(),
+    sales: await prisma.inventorySale.count(),
+    rewards: await prisma.rewardLedgerEntry.count(),
+    audits: await prisma.auditLog.count()
+  }, before, "customer search must not link, award, audit, or create business records");
 });
 
 test("POS sale stores optional customer contact and creates no reward ledger while disabled", async () => {
@@ -342,7 +372,7 @@ test("POS rewards award available points once for verified email match when expl
   const account = await createVerifiedCustomer({ email: `${unique("pos-reward-buyer")}@example.test`, phone: "+15550004444" });
   const idempotencyKey = unique("pos-reward-sale");
 
-  const match = await resolveWorkspacePosCustomerMatch({ customerEmail: account.email.toUpperCase() });
+  const match = await resolvePosCustomerMatch({ customerEmail: account.email.toUpperCase() }, activeOwner.id);
   assert.equal(match.customerAccountId, account.id);
   assert.equal(match.rewardsEligible, true);
 
@@ -398,7 +428,7 @@ test("POS selected verified customer account earns rewards without trusting brow
   const account = await createVerifiedCustomer({ email: `${unique("selected-pos-buyer")}@example.test`, phone: "+15550007777" });
   const otherAccount = await createVerifiedCustomer({ email: `${unique("spoofed-selected-pos-buyer")}@example.test`, phone: "+15550008888" });
 
-  const match = await resolveWorkspacePosCustomerMatch({ selectedCustomerAccountId: account.id });
+  const match = await resolvePosCustomerMatch({ selectedCustomerAccountId: account.id }, activeOwner.id);
   assert.equal(match.customerAccountId, account.id);
   assert.equal(match.customerMatchMethod, "email");
   assert.equal(match.rewardsEligible, true);

@@ -1,0 +1,80 @@
+# Sales Tax Security and Privacy Review
+
+Reviewed: 2026-07-15
+
+Scope: sales-tax settings, calculations, persistence, receipts, refunds, reporting, customer matching, and provider integration through Phase 6.
+
+Boundary: every private record is scoped by the authenticated owner `userId`; an `ADMIN` role never grants cross-owner access. Production tax flags and rewards redemption remain disabled.
+
+## Complete route and trust-boundary matrix
+
+| Route / surface | Method | Caller | Authentication | Role | Same-origin requirement | Webhook / secret requirement | Accepted fields | Authoritative server fields | Audit | Idempotency | Cache policy | PII exposure |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Checkout Session creation: `/api/storefront/checkout`, `/api/storefront/checkout/session` | POST | Public storefront browser | Public rate limit; optional customer session is not trusted for pricing | Public customer | Required by centralized mutation boundary for browser calls | None; Stripe secret remains server-only | Strict items, fulfillment, optional contact, signed shipping quote | Inventory ownership/price/availability, discounts, shipping, tax mode, tax amount, currency, final total, Stripe references | Correlated sanitized failure; order/provider lifecycle records | Inventory reservation plus unique order/session/provider keys | Private, no-store | Contact is accepted for fulfillment but never logged or returned beyond the private checkout response |
+| Stripe webhook: `/api/storefront/webhook/stripe`, `/api/storefront/stripe/webhook` | POST | Stripe | Provider signature over raw body | Provider | Exempt from browser origin check | Mandatory `stripe-signature`; Stripe endpoint secret; timestamp verification handled by Stripe SDK | Signed raw event only | Provider event type/object, reloaded order/payment/tax snapshot | Generic event category and request ID only | Unique event claim, stale-claim recovery, once-only completion | Private, no-store | Raw body, address, contact, signature, secrets, and provider errors are not logged or echoed |
+| POS tax quote: `/api/radar/pos/tax-quote` | POST | Admin POS browser | Server session | Owner `ADMIN` | Required | None | Strict idempotency key, item IDs/quantities/approved price adjustments, selected customer ID, gated exemption inputs | Owner-scoped inventory, stored price, active POS tax profile/rate/jurisdiction, feature flags, signed quote | Request ID; no financial write | Quote key and signed quote bind inputs/settings | Private, no-store | Returns masked customer-safe information only; exemption reference stays private |
+| POS finalize: `/api/radar/pos/sales` | POST | Admin POS browser | Server session | Owner `ADMIN` | Required | None | Strict quote ID, matching items, payment method/reference, optional contact/selection, gated exemption evidence | Signed quote, owner-scoped inventory/customer, stored tax profile, computed subtotal/tax/total | Sale and inventory audit after commit | Required stable key; duplicate submission returns one receipt | Private, no-store | Receipt DTO masks contact; no cross-owner customer record or private note is exposed |
+| Tax Settings GET: `/api/radar/tax-settings` | GET | Admin settings UI | Server session | Owner `ADMIN` | Read-only; no origin trust used | None | None | Owner-scoped stored profile plus runtime gates/readiness | No write | Not applicable | Private, no-store | Private configuration only; no registration number, credential, address, or certificate file |
+| Tax Settings update and tax readiness: `/api/radar/tax-settings` | PATCH | Admin settings UI | Server session | Owner `ADMIN` | Required | None | Strict approved profile, rate-source, readiness confirmations, and explicit enablement reason | Runtime gates, persisted owner profile, required prerequisite checks | Safe owner-scoped settings audit | Transactional update; explicit enable confirmation | Private, no-store | Bounded source note/reference only; secrets and registration identifiers are not accepted |
+| Tax exemption during POS quote/finalize | POST through POS routes | Admin POS browser | Server session | Owner `ADMIN` | Required | None | Exempt boolean plus required bounded reason/reference; finalize must match signed quote | `TAX_EXEMPT_SALES_ENABLED`, owner tax profile, signed quote, stored evidence | Private sale/settings audit | Sale key and immutable exemption snapshot | Private, no-store | Reason/reference remain admin-private; no document upload or public certificate path exists |
+| Admin receipts and online order/sale detail: `/api/radar/storefront/orders`, `/api/radar/storefront/orders/:id`, POS receipt returned by finalize/refund | GET/PATCH/POST result | Admin UI | Server session | Owner `ADMIN` | Required for mutations; reads remain server-authenticated | None | Bounded order updates or refund input; receipt fields are server DTOs | Owner-scoped stored order/sale/tax/refund snapshots | Existing order, sale, refund, and inventory events | Mutations have stable request/provider keys | Private, no-store; admin UI is noindex | May contain private fulfillment/contact detail only in authenticated owner scope; never public or cached |
+| Customer receipt and account order detail: `/account/orders/:orderNumber`, `/api/storefront/order-status` | GET-rendered page / POST lookup | Verified customer or rate-limited customer lookup | Server customer session, or order number plus matching email for bounded status lookup | Customer within owning store context | Lookup POST follows browser mutation boundary | None | Order number/email lookup only; page accepts no tax authority fields | Customer-account relation, owner-scoped stored receipt/tax/refund snapshot | No write except rate-limit accounting | Not applicable | Dynamic, private/no-store, noindex; service worker bypasses account/API responses | Customer-safe DTO only; no admin note, exemption reference, payment reference, or other customer record |
+| Full online refund: `/api/radar/storefront/orders/:id/cancel-refund` | POST | Admin order UI | Server session | Owner `ADMIN` | Required | Stripe server secret only when a provider refund is needed | Reason, bounded note, full/none type, stock/email choices, stable key | Owner-scoped order/payment/original tax snapshot and provider refund result | Refund/order/reward/inventory audit after commit | Request key, provider key, row lock, provider-event claim | Private, no-store | No provider error/secret, address, contact, or internal stack is returned |
+| Partial online refund: `/api/radar/storefront/orders/:id/cancel-refund` | POST | Admin order UI | Server session | Owner `ADMIN` | Required | Stripe server secret only when provider refund is needed | Same as full plus merchandise refund amount in integer-safe money input; never refunded tax | Original immutable order/tax snapshot, cumulative provider refund, bounded tax allocation | Same as full refund | Same as full refund; serializable retry is bounded | Private, no-store | Same as full refund |
+| Full/partial POS refund: `/api/radar/pos/sales/:reference/refund` | POST | Admin POS browser | Server session | Owner `ADMIN` | Required | None | Strict type, merchandise amount, reason/note, inventory choice, stable key; never tax/rate/customer owner | Owner-scoped sale and immutable tax snapshot; cumulative merchandise/tax refund | Refund, tax-adjustment, inventory, reward audit after commit | Row lock and stable key; bounded serializable retry | Private, no-store | Masked receipt only; no unrelated customer or private exemption evidence |
+| Tax report and reconciliation: `/api/radar/tax-report`, `/admin/tax-reports` | GET | Admin reporting UI | Server session | Owner `ADMIN` | Read-only | None | Bounded date/channel/location/status filters | Owner-scoped immutable transaction/refund snapshots; runtime `TAX_REPORTING_ENABLED` gate | No write; request ID and redacted failure category | Not applicable | Private, no-store; UI noindex | Report excludes name, email, phone, address, payment/provider IDs, notes, and exemption evidence |
+| CSV export: `/api/radar/tax-report?format=csv` | GET | Admin reporting UI | Server session | Owner `ADMIN` | Read-only | None | Same bounded filters; maximum 5,000 rows and 366 days | Same report ledger; safe CSV serializer | No write | Not applicable | Private, no-store, attachment, nosniff | PII/provider IDs excluded; formula-leading cells escaped against spreadsheet injection |
+| Customer lookup/match, admin list/detail, purchase link, rewards ledger/reconciliation: `/api/radar/pos/customer-match`, `/api/radar/customers`, `/api/radar/customers/:id`, `/api/radar/customers/:id/attach-order`, `/api/radar/rewards/ledger`, `/api/radar/rewards/reconciliation` | GET / PATCH / POST | Admin POS/customer browser/server | Server session | Owner `ADMIN` | Required for mutations | None | Strict selected account ID, email, phone, bounded profile/link/reward inputs | Explicit customer owner ID, owner-scoped purchases and ledger, verified-active state, masked DTO | Lookup/list/detail/reconciliation are read-only except rate-limit accounting; mutations write owner-scoped audit | Stable link/adjustment keys where applicable | Private, no-store | Cross-owner records are indistinguishable from not found; malformed cross-owner purchase relationships do not transfer identity or expose linked customer details |
+| Local Pickup behavior during checkout/POS | POST through checkout or POS | Public checkout or owner admin | Route-specific auth | Public or owner `ADMIN` | Browser mutation boundary applies | Stripe secret for online session only | Fulfillment choice only; browser supplies no jurisdiction/rate/tax total | Online provider configuration or approved owner store profile; `pending_review` blocks unsafe enablement | Order/sale snapshot records chosen fulfillment | Parent order/sale idempotency | Private checkout/POS response | Pickup instructions may be public; private store address/tax configuration is not returned |
+| Manual/provider jobs: signed reservation expiry, monitor/release/market sync cron routes | POST | Vercel cron/internal operator | Dedicated shared-secret comparison; no browser session | Signed internal job | Explicitly separate from browser same-origin checks | Mandatory job secret; Stripe webhook uses its own separate signature path | Route-specific bounded job input only | Server configuration and owner-scoped records | Sanitized job summary only | Job-specific locks/keys; never reuses browser trust | Private/no-store where data is returned | No tax/customer body, credential, database URL, provider response, or internal note in output/logs |
+
+## Cross-owner customer isolation
+
+- Customer ID, normalized email, and normalized phone queries all require the explicit `CustomerAccount.userId` to equal the authenticated owner before a match can be returned.
+- Matching contact information and order/sale relationships are not proof of ownership. They never transfer a customer identity into another workspace, and malformed cross-owner relationships are excluded from summaries and masked from purchase candidates.
+- Phone-only input never auto-links an account. Explicit verified selection or a unique verified email within the owner scope is required.
+- Lookup returns a bounded DTO containing only the selected ID, masked contact display, match state, rewards eligibility, and a generic message.
+- Lookup performs no customer/link/reward write; only abuse-prevention rate-limit accounting may change.
+- Lookup creates no customer link, order, sale, tax record, reward entry, or audit mutation. The route may write only abuse-prevention rate-limit accounting.
+- POS finalize reloads the selected account inside the sale transaction with the authenticated owner ID; browser customer/workspace IDs and reward fields are not trusted.
+
+## Payload, provider, and exemption controls
+
+- Checkout, POS quote, POS finalize, refund, customer-match, and settings schemas are strict. Unknown fields and browser-supplied tax amount/rate/jurisdiction/taxable subtotal/final total/refunded tax/provider reference/provider readiness/live status are rejected.
+- A POS administrator may request exemption only when the dormant environment gate and owner profile are enabled and both reason and reference are present. Public checkout cannot self-exempt.
+- Online tax authority is Stripe Tax. POS tax authority is the server-side owner profile. Refund tax is allocated from the immutable original snapshot behind a row lock; current settings never re-rate history.
+- Webhook signature verification happens before provider-event claim or business processing. Duplicate events are idempotent; failed/stale claims can be safely recovered.
+- Browser same-origin controls do not apply to Stripe or signed jobs. Those routes use distinct signature/secret trust and cannot substitute for one another.
+
+## Reporting, logging, and cache privacy
+
+- Report and CSV reads are admin-only, runtime-gated, owner-scoped, bounded, read-only, private/no-store, and PII-free.
+- Tax paths never log a full address, email/phone, exemption/certificate reference, Stripe secret/signature, database URL, raw request/provider body, raw provider response, or internal note.
+- Provider failures return stable generic codes/messages with request IDs; stacks and provider details stay server-side and are not logged with private payloads.
+- Account order pages are dynamic, no-store, and noindex. Admin tax reporting is noindex. API/private responses explicitly carry private/no-store headers.
+- The service worker never caches `/api/` or account responses, never stores navigated HTML, and refuses to cache responses marked `private` or `no-store`.
+- Public storefront payloads contain no owner tax configuration, exemption evidence, customer private markers, or provider credentials.
+
+## Tax and accounting invariants
+
+- Original collected tax is immutable; refunds/corrections are separate immutable adjustments.
+- Historical `not_recorded` and authoritative zero remain distinct. No migration, report, or refund invents missing tax.
+- Cumulative refunded tax is bounded by original tax and cannot make net tax negative.
+- Rewards and merchandise revenue/profit exclude tax. Refunded tax never directly changes reward calculations.
+
+## Findings remediated in Phase 6
+
+1. Preserved private/no-store and request-ID handling across tax quotes, settings, POS sales/customer matching, reports, refunds, order detail, and both webhook aliases.
+2. Consolidated both Stripe webhook endpoints behind one signature-first handler with generic client errors and redacted logging.
+3. Enforced strict tax-sensitive payload boundaries and server-authoritative reloads.
+4. Scoped POS customer selection and ID/email/phone matching to the authenticated owner, closing the known cross-owner lookup path.
+5. Preview verification exposed a second discovery path in the broader customer list/detail, purchase-link, reward-ledger, and reconciliation surfaces. Those paths now require explicit customer ownership, filter purchase activity by owner, and hide malformed cross-owner linked identities.
+6. Added regression coverage for cross-owner invisibility and mutation blocking, malformed legacy relationships, no business write from lookup, authorization/origin gates, cache isolation, webhook signature ordering, reporting privacy, and required matrix coverage.
+
+## Deferred owner decisions and live blockers
+
+- Live Stripe Tax registration/configuration and the test credential set still require owner confirmation.
+- Legal store address, Florida registration, county/rate source, filing frequency, exemption/evidence policy, Local Pickup treatment, and accountant review are not code defaults.
+- Certificate document storage remains unavailable; no sensitive document is accepted or publicly addressable.
+
+No Production configuration or data was changed during this review.

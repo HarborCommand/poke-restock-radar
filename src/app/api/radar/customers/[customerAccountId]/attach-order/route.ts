@@ -24,7 +24,7 @@ export async function GET(request: Request, context: { params: Promise<{ custome
     const input = adminCustomerAttachOrderSearchSchema.parse({
       query: url.searchParams.get("query") ?? undefined
     });
-    const result = await searchAdminCustomerAttachCandidates(customerAccountId, input.query);
+    const result = await searchAdminCustomerAttachCandidates(user.id, customerAccountId, input.query);
     return withRequestId(privateOk(result), requestId);
   } catch (error) {
     logServerEvent({

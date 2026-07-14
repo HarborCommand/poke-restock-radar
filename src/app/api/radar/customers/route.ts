@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   if (adminResponse) return adminResponse;
 
   const url = new URL(request.url);
-  const result = await listAdminCustomerRewards({
+  const result = await listAdminCustomerRewards(user.id, {
     search: url.searchParams.get("search"),
     status: url.searchParams.get("status"),
     sort: url.searchParams.get("sort"),

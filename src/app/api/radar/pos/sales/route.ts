@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
-import { privateOk, readJson, safeMutationError, withRequestId } from "@/lib/http";
+import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import { requestCorrelationId } from "@/lib/observability";
 import { createPosSale } from "@/lib/radar-service";
 import { posSaleCreateSchema } from "@/lib/validation";
@@ -12,9 +12,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const requestId = requestCorrelationId(request);
   const { user, response } = await requireUser();
-  if (response) return withRequestId(response, requestId);
+  if (response) return withPrivateNoStore(withRequestId(response, requestId));
   const adminResponse = authorizeAdminMutation(request, user);
-  if (adminResponse) return withRequestId(adminResponse, requestId);
+  if (adminResponse) return withPrivateNoStore(withRequestId(adminResponse, requestId));
 
   try {
     const input = posSaleCreateSchema.parse(await readJson(request));

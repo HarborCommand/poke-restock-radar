@@ -1154,7 +1154,7 @@ export const posSaleRefundSchema = z.object({
 export const storefrontCartItemSchema = z.object({
   id: z.string().trim().min(2),
   quantity: z.coerce.number().int().min(1).max(25)
-});
+}).strict();
 
 export const storefrontCheckoutSchema = z.object({
   items: z.array(storefrontCartItemSchema).min(1).max(25),
@@ -1162,7 +1162,7 @@ export const storefrontCheckoutSchema = z.object({
   customerEmail: z.string().trim().email().optional(),
   customerName: optionalTrimmed,
   shippingQuoteToken: optionalTrimmed
-});
+}).strict();
 
 export const storefrontShippingQuoteSchema = z.object({
   items: z.array(storefrontCartItemSchema).min(1).max(25),

@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const query = reconciliationQuerySchema.parse({
       customerAccountId: url.searchParams.get("customerAccountId")
     });
-    return privateOk(await calculateRewardBalanceAudit(query.customerAccountId));
+    return privateOk(await calculateRewardBalanceAudit(user.id, query.customerAccountId));
   } catch (error) {
     return badRequest(error);
   }

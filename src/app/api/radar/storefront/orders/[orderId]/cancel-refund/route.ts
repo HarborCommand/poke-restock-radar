@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
   const { user, response } = await requireUser();
   if (response) return withPrivateNoStore(withRequestId(response, requestId));
   const authorizationResponse = authorizeAdminMutation(request, user);
-  if (authorizationResponse) return withRequestId(authorizationResponse, requestId);
+  if (authorizationResponse) return withPrivateNoStore(withRequestId(authorizationResponse, requestId));
   return runWithRequestContext(requestId, async () => {
     let orderId: string | null = null;
     try {
