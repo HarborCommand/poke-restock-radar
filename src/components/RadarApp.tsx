@@ -113,6 +113,7 @@ import {
   posUnitPrice,
   roundPosMoney
 } from "@/lib/pos";
+import { legacyPosReceiptTax } from "@/lib/pos-receipt";
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
@@ -17632,7 +17633,9 @@ function posReceiptTotals(rows: SaleDetailRow[]) {
   const refundedAmount = roundPosMoney(rows.reduce((sum, row) => sum + row.sale.refundedAmount, 0));
   const refundedTax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.refundedTaxCents ?? 0), 0) / 100) : 0;
   const firstSale = rows[0]?.sale ?? null;
-  const tax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.taxCents ?? 0), 0) / 100) : posReceiptMoneyFromNote(firstSale?.notes, "tax");
+  const tax = snapshotKnown
+    ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.taxCents ?? 0), 0) / 100)
+    : legacyPosReceiptTax({ notes: firstSale?.notes, taxStatus: firstSale?.taxStatus });
   const stateTax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.stateTaxCents ?? 0), 0) / 100) : tax;
   const countySurtax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.countySurtaxCents ?? 0), 0) / 100) : null;
   const total = snapshotKnown
