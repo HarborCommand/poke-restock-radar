@@ -103,7 +103,8 @@ test("Stripe Checkout tax path is guarded and persists authoritative provider ce
   assert.match(source, /const taxCents = automaticTaxEnabled/);
   assert.match(source, /taxSnapshot\.taxCents === null \? order\.tax/);
   assert.match(source, /stripe\.checkout\.sessions\.retrieve/);
-  assert.match(source, /tax_code: requiredStripeTaxCode/);
+  assert.match(source, /const stripeTaxCodeByInventoryId = onlineTaxEnabled/);
+  assert.match(source, /tax_code: stripeTaxCodeByInventoryId\?\.get/);
   assert.match(source, /Tax-enabled Local Pickup requires an approved store-location tax policy/);
 });
 

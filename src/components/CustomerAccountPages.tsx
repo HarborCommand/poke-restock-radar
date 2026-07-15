@@ -1059,23 +1059,26 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
               <span>Subtotal</span>
               <strong>{money(order.subtotal)}</strong>
             </div>
-            {isInStorePurchase ? (
-              <>
-                <div>
-                  <span>Discount</span>
-                  <strong>{order.discountTotal > 0 ? `-${money(order.discountTotal)}` : money(0)}</strong>
-                </div>
-              </>
-            ) : (
+            <div>
+              <span>Discount</span>
+              <strong>{order.discountTotal > 0 ? `-${money(order.discountTotal)}` : money(0)}</strong>
+            </div>
+            {!isInStorePurchase ? (
               <div>
                 <span>Shipping charged</span>
                 <strong>{money(order.shippingCharged)}</strong>
               </div>
-            )}
+            ) : null}
             <div>
               <span>Sales tax</span>
               <strong>{order.tax === null ? "Not recorded" : money(order.tax)}</strong>
             </div>
+            {order.refundStatus || order.refundedAmount > 0 ? (
+              <div>
+                <span>Sales tax refunded</span>
+                <strong>{order.refundedTax === null ? "Not recorded" : money(order.refundedTax)}</strong>
+              </div>
+            ) : null}
             <div>
               <span>Total paid</span>
               <strong>{money(order.totalPaid)}</strong>

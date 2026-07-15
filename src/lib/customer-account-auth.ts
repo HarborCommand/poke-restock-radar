@@ -136,6 +136,7 @@ export type CustomerAccountOrderHistoryItem = {
 export type CustomerAccountOrderDetail = Omit<CustomerAccountOrderHistoryItem, "items"> & {
   subtotal: number;
   tax: number | null;
+  refundedTax: number | null;
   discountTotal: number;
   paymentMethodLabel: string | null;
   items: Array<{
@@ -1304,6 +1305,7 @@ const customerVisiblePosSaleSelect = {
   totalCents: true,
   refundStatus: true,
   refundedAmount: true,
+  refundedTaxCents: true,
   refundedAt: true,
   soldAt: true,
   paymentMethod: true,
@@ -1403,6 +1405,9 @@ function customerPosSaleTotals(sales: CustomerVisiblePosSale[]) {
       : noteTax === null
         ? null
         : roundAccountMoney(noteTax);
+  const refundedTax = tax === null
+    ? null
+    : roundAccountMoney(sales.reduce((sum, sale) => sum + Math.max(0, sale.refundedTaxCents ?? 0), 0) / 100);
   const refundedAmount = roundAccountMoney(sales.reduce((sum, sale) => sum + Math.max(0, Math.min(sale.refundedAmount ?? 0, sale.grossSale)), 0));
   const persistedTotal = taxSnapshotKnown
     ? sales.reduce((sum, sale) => sum + (sale.totalCents ?? Math.round(sale.grossSale * 100)), 0) / 100
@@ -1410,7 +1415,7 @@ function customerPosSaleTotals(sales: CustomerVisiblePosSale[]) {
   const totalBeforeRefund = roundAccountMoney(persistedTotal ?? noteTotal ?? subtotal + (tax ?? 0));
   const totalPaid = roundAccountMoney(Math.max(0, totalBeforeRefund - refundedAmount));
   const discountTotal = roundAccountMoney(sales.reduce((sum, sale) => sum + Math.max(0, sale.discountAmount ?? 0), 0));
-  return { subtotal, tax, refundedAmount, totalPaid, discountTotal };
+  return { subtotal, tax, refundedTax, refundedAmount, totalPaid, discountTotal };
 }
 
 function customerPosSaleHistoryItem(key: string, sales: CustomerVisiblePosSale[], rewardPoints: number): CustomerAccountOrderHistoryItem {
@@ -1465,6 +1470,7 @@ function customerPosSaleDetail(key: string, sales: CustomerVisiblePosSale[], rew
     ...history,
     subtotal: totals.subtotal,
     tax: totals.tax,
+    refundedTax: totals.refundedTax,
     discountTotal: totals.discountTotal,
     paymentMethodLabel: safePosPaymentMethodLabel(first.paymentMethod),
     shippingCarrier: null,
@@ -1657,8 +1663,12 @@ export async function getCustomerAccountOrderDetail(
       paymentStatus: true,
       fulfillmentStatus: true,
       subtotal: true,
+      subtotalCents: true,
       tax: true,
       taxCents: true,
+      discountCents: true,
+      totalCents: true,
+      refundedTaxCents: true,
       shippingCharged: true,
       shippingMethodLabel: true,
       shippingPackageProfile: true,
@@ -1710,11 +1720,12 @@ export async function getCustomerAccountOrderDetail(
     fulfillmentStatus: order.fulfillmentStatus,
     fulfillmentMethod: localPickup ? "local_pickup" : "shipping",
     itemCount,
-    subtotal: order.subtotal,
-    tax: order.taxCents === null ? null : order.tax,
-    discountTotal: 0,
+    subtotal: order.subtotalCents === null ? order.subtotal : roundAccountMoney(order.subtotalCents / 100),
+    tax: order.taxCents === null ? null : roundAccountMoney(order.taxCents / 100),
+    refundedTax: order.taxCents === null ? null : roundAccountMoney((order.refundedTaxCents ?? 0) / 100),
+    discountTotal: roundAccountMoney((order.discountCents ?? 0) / 100),
     paymentMethodLabel: null,
-    totalPaid: order.total,
+    totalPaid: order.totalCents === null ? order.total : roundAccountMoney(order.totalCents / 100),
     shippingCharged: order.shippingCharged,
     shippingMethodLabel: order.shippingMethodLabel,
     pickupStatus: localPickup ? pickupStatus(order) : null,
