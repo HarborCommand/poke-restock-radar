@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
+import { workspaceCustomerWhere } from "@/lib/customer-workspace";
 import type { PosCustomerMatchResultDTO } from "@/types/radar";
 
 type PosCustomerMatchClient = Prisma.TransactionClient | typeof prisma;
@@ -53,17 +54,6 @@ function inactiveMatch(input: {
 
 function isVerifiedActiveCustomer(account: Pick<PosCustomerAccount, "status" | "emailVerifiedAt">) {
   return account.status === "active" && Boolean(account.emailVerifiedAt);
-}
-
-function workspaceCustomerWhere(ownerUserId: string) {
-  return {
-    OR: [
-      { userId: ownerUserId },
-      { orders: { some: { userId: ownerUserId } } },
-      { storefrontCustomers: { some: { userId: ownerUserId } } },
-      { posSales: { some: { userId: ownerUserId } } }
-    ]
-  } satisfies Prisma.CustomerAccountWhereInput;
 }
 
 async function accountById(client: PosCustomerMatchClient, id: string, ownerUserId: string) {

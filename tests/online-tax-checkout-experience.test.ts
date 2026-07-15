@@ -185,16 +185,19 @@ test("webhooks remain idempotent and rewards remain merchandise-only", () => {
     read("src/app/api/storefront/webhook/stripe/route.ts"),
     read("src/app/api/storefront/stripe/webhook/route.ts")
   ];
+  const webhookHandler = read("src/lib/stripe-webhook-route.ts");
   assert.match(storefront, /claimProviderEvent/);
   assert.match(storefront, /completeProviderEvent/);
   assert.match(storefront, /checkout\.session\.completed/);
   assert.match(rewards, /eligibleSubtotalCents/);
   assert.match(rewards, /taxCentsExcluded/);
   for (const route of webhookRoutes) {
-    assert.match(route, /WEBHOOK_REJECTED/);
-    assert.match(route, /crypto\.randomUUID\(\)/);
+    assert.match(route, /handleStripeWebhookRequest\(request\)/);
     assert.doesNotMatch(route, /error instanceof Error \? error\.message/);
   }
+  assert.match(webhookHandler, /STRIPE_WEBHOOK_REJECTED/);
+  assert.match(webhookHandler, /requestCorrelationId\(request\)/);
+  assert.doesNotMatch(webhookHandler, /error instanceof Error \? error\.message/);
 });
 
 test("account order queries keep customer isolation in the server where clause", () => {

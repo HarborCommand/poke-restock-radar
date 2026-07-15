@@ -373,6 +373,7 @@ test("POS server revalidates inventory, price, and availability before recording
   assert.match(service, /resolvePosCustomerMatch/);
   assert.match(posCustomer, /workspaceCustomerWhere/);
   assert.match(posCustomer, /findEmailMatches/);
+  assert.match(posCustomer, /workspaceCustomerWhere\(ownerUserId\)/);
   assert.match(posCustomer, /normalizePosCustomerPhone/);
   assert.match(posCustomer, /phone_possible/);
   assert.match(posCustomer, /phone_multiple/);

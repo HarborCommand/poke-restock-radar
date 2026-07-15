@@ -15,7 +15,7 @@ export async function GET(_request: Request, context: { params: Promise<{ custom
   if (adminResponse) return adminResponse;
 
   const { customerAccountId } = await context.params;
-  const customer = await getAdminCustomerRewardDetail(customerAccountId);
+  const customer = await getAdminCustomerRewardDetail(user.id, customerAccountId);
   if (!customer) return privateJson({ error: "Customer account was not found." }, 404);
   return privateOk({ customer });
 }
@@ -29,7 +29,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ custo
   try {
     const { customerAccountId } = await context.params;
     const input = adminCustomerProfileUpdateSchema.parse(await readJson(request));
-    const result = await updateAdminCustomerProfile(customerAccountId, input);
+    const result = await updateAdminCustomerProfile(user.id, customerAccountId, input);
     await logAudit({
       user,
       action: "customer.profile.updated",

@@ -1248,6 +1248,7 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   const sessionRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/session/route.ts", import.meta.url), "utf8");
   const oldCheckoutRoute = fs.readFileSync(new URL("../src/app/api/storefront/checkout/route.ts", import.meta.url), "utf8");
   const webhookRoute = fs.readFileSync(new URL("../src/app/api/storefront/stripe/webhook/route.ts", import.meta.url), "utf8");
+  const webhookRouteHelper = fs.readFileSync(new URL("../src/lib/stripe-webhook-route.ts", import.meta.url), "utf8");
   const successPage = fs.readFileSync(new URL("../src/app/checkout/success/page.tsx", import.meta.url), "utf8");
 
   assert.match(env, /STRIPE_CHECKOUT_ENABLED/);
@@ -1286,9 +1287,10 @@ test("Stripe Checkout preparation uses session route, webhook verification, and 
   assert.match(app, /checkout\.session\.completed is stored in Admin Orders/);
   assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
   assert.match(oldCheckoutRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
-  assert.match(webhookRoute, /const rawBody = await request\.text\(\)/);
-  assert.match(webhookRoute, /request\.headers\.get\("stripe-signature"\)/);
-  assert.match(webhookRoute, /handleStripeWebhook/);
+  assert.match(webhookRoute, /handleStripeWebhookRequest\(request\)/);
+  assert.match(webhookRouteHelper, /const rawBody = await request\.text\(\)/);
+  assert.match(webhookRouteHelper, /request\.headers\.get\("stripe-signature"\)/);
+  assert.match(webhookRouteHelper, /handleStripeWebhook/);
 });
 
 test("storefront availability and purchase limits stay buyer-facing", () => {

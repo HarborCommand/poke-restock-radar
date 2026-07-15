@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
+import { workspaceCustomerWhere } from "@/lib/customer-workspace";
 
 type RewardAuditLedgerEntry = {
   id: string;
@@ -111,7 +112,12 @@ function maskedAccountRef(customerAccountId: string) {
   return `customer_${createHash("sha256").update(customerAccountId).digest("hex").slice(0, 12)}`;
 }
 
-export async function calculateRewardBalanceAudit(customerAccountId: string): Promise<RewardBalanceAudit> {
+export async function calculateRewardBalanceAudit(ownerUserId: string, customerAccountId: string): Promise<RewardBalanceAudit> {
+  const customer = await prisma.customerAccount.findFirst({
+    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
+    select: { id: true }
+  });
+  if (!customer) throw new Error("Customer account was not found.");
   const [balance, entries, totalEntries] = await Promise.all([
     prisma.rewardBalance.findUnique({
       where: { customerAccountId },

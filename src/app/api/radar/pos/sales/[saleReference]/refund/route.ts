@@ -16,7 +16,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
   const { user, response } = await requireUser();
   if (response) return withPrivateNoStore(withRequestId(response, requestId));
   const adminResponse = authorizeAdminMutation(request, user);
-  if (adminResponse) return withRequestId(adminResponse, requestId);
+  if (adminResponse) return withPrivateNoStore(withRequestId(adminResponse, requestId));
 
   return runWithRequestContext(requestId, async () => {
     let saleReference: string | null = null;

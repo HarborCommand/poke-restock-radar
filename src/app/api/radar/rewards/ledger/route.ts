@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   if (adminResponse) return adminResponse;
 
   const url = new URL(request.url);
-  const result = await listAdminRewardLedger({
+  const result = await listAdminRewardLedger(user.id, {
     search: url.searchParams.get("search"),
     status: url.searchParams.get("status"),
     source: url.searchParams.get("source"),

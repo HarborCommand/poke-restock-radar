@@ -110,6 +110,7 @@ test("Stripe webhook handlers verify raw request bodies before trusting events",
   const storefront = readProjectFile("src/lib/storefront.ts");
   const currentWebhookRoute = readProjectFile("src/app/api/storefront/webhook/stripe/route.ts");
   const legacyWebhookRoute = readProjectFile("src/app/api/storefront/stripe/webhook/route.ts");
+  const webhookRouteHelper = readProjectFile("src/lib/stripe-webhook-route.ts");
   const handleStripeWebhook = sourceSlice(
     storefront,
     "export async function handleStripeWebhook",
@@ -122,11 +123,12 @@ test("Stripe webhook handlers verify raw request bodies before trusting events",
   );
   for (const route of [currentWebhookRoute, legacyWebhookRoute]) {
     assert.match(route, /export const runtime = "nodejs"/);
-    assert.match(route, /const rawBody = await request\.text\(\)/);
-    assert.match(route, /request\.headers\.get\("stripe-signature"\)/);
-    assert.match(route, /handleStripeWebhook\(rawBody, signature\)/);
+    assert.match(route, /handleStripeWebhookRequest\(request\)/);
     assert.doesNotMatch(route, /await request\.json\(\)/);
   }
+  assert.match(webhookRouteHelper, /const rawBody = await request\.text\(\)/);
+  assert.match(webhookRouteHelper, /request\.headers\.get\("stripe-signature"\)/);
+  assert.match(webhookRouteHelper, /handleStripeWebhook\(rawBody, signature\)/);
 
   const verifyIndex = handleStripeWebhook.indexOf("webhooks.constructEvent(rawBody, signature, secret)");
   const eventStoreIndex = handleStripeWebhook.indexOf("await claimProviderEvent");

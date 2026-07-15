@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { SessionUser } from "../src/types/radar";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -83,6 +83,7 @@ async function createCustomerWithRewards() {
   });
   const customer = await prisma.customerAccount.create({
     data: {
+      userId: user.id,
       email: `${unique("collector")}@example.test`,
       normalizedEmail: `${unique("collector-normalized")}@example.test`,
       displayName: "Collector Customer",
@@ -101,6 +102,7 @@ async function createCustomerWithRewards() {
   });
   await prisma.storefrontOrder.create({
     data: {
+      userId: user.id,
       orderNumber: unique("ORD"),
       customerAccountId: customer.id,
       customerEmail: customer.email,
@@ -133,10 +135,11 @@ async function createAttachInventoryItem() {
   });
 }
 
-async function createAttachableOrder(customerEmail: string, overrides: Partial<Parameters<typeof prisma.storefrontOrder.create>[0]["data"]> = {}) {
+async function createAttachableOrder(ownerUserId: string, customerEmail: string, overrides: Partial<Prisma.StorefrontOrderUncheckedCreateInput> = {}) {
   const item = await createAttachInventoryItem();
   return prisma.storefrontOrder.create({
     data: {
+      userId: ownerUserId,
       orderNumber: unique("ATTACH-ORD"),
       customerEmail,
       customerName: "Attach Customer",
@@ -167,8 +170,8 @@ async function createAttachableOrder(customerEmail: string, overrides: Partial<P
 }
 
 test("admin customers rewards list returns masked customer fields and summary", async () => {
-  const { customer } = await createCustomerWithRewards();
-  const result = await listAdminCustomerRewards({ search: "Collector", status: "active", sort: "points" });
+  const { user, customer } = await createCustomerWithRewards();
+  const result = await listAdminCustomerRewards(user.id, { search: "Collector", status: "active", sort: "points" });
   const row = result.customers.find((candidate) => candidate.id === customer.id);
 
   assert.ok(row);
@@ -182,11 +185,12 @@ test("admin customers rewards list returns masked customer fields and summary", 
 });
 
 test("admin customer list reports combined online and linked in-store purchases without double counting", async () => {
-  const { customer } = await createCustomerWithRewards();
+  const { user, customer } = await createCustomerWithRewards();
   const item = await createAttachInventoryItem();
   await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       customerAccountId: customer.id,
       quantitySold: 1,
       soldPricePerItem: 35,
@@ -204,6 +208,7 @@ test("admin customer list reports combined online and linked in-store purchases 
   await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       customerAccountId: customer.id,
       quantitySold: 1,
       soldPricePerItem: 999,
@@ -220,6 +225,7 @@ test("admin customer list reports combined online and linked in-store purchases 
   await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       customerAccountId: customer.id,
       quantitySold: 1,
       soldPricePerItem: 77,
@@ -233,7 +239,7 @@ test("admin customer list reports combined online and linked in-store purchases 
     }
   });
 
-  const result = await listAdminCustomerRewards({ search: customer.email, status: "active", sort: "spent" });
+  const result = await listAdminCustomerRewards(user.id, { search: customer.email, status: "active", sort: "spent" });
   const row = result.customers.find((candidate) => candidate.id === customer.id);
 
   assert.ok(row);
@@ -246,8 +252,12 @@ test("admin customer list reports combined online and linked in-store purchases 
 });
 
 test("admin customer search matches first name last name partial name email and phone", async () => {
+  const owner = await prisma.user.create({
+    data: { email: `${unique("search-admin")}@example.test`, name: "Search Admin", role: "ADMIN", passwordHash: "test-hash" }
+  });
   const adrianRivera = await prisma.customerAccount.create({
     data: {
+      userId: owner.id,
       email: `${unique("adrian.rivera")}@gmail.com`,
       normalizedEmail: `${unique("adrian-rivera-normalized")}@gmail.com`,
       displayName: "Adrian Rivera",
@@ -258,6 +268,7 @@ test("admin customer search matches first name last name partial name email and 
   });
   const adrianRodriguez = await prisma.customerAccount.create({
     data: {
+      userId: owner.id,
       email: `${unique("adrian.rodriguez")}@hotmail.com`,
       normalizedEmail: `${unique("adrian-rodriguez-normalized")}@hotmail.com`,
       displayName: "Adrian Rodriguez",
@@ -268,6 +279,7 @@ test("admin customer search matches first name last name partial name email and 
   });
   const mayaRivera = await prisma.customerAccount.create({
     data: {
+      userId: owner.id,
       email: `${unique("maya.rivera")}@example.test`,
       normalizedEmail: `${unique("maya-rivera-normalized")}@example.test`,
       displayName: "Maya Rivera",
@@ -284,27 +296,114 @@ test("admin customer search matches first name last name partial name email and 
     ]
   });
 
-  const firstName = await listAdminCustomerRewards({ search: "Adrian", status: "active", sort: "name" });
+  const firstName = await listAdminCustomerRewards(owner.id, { search: "Adrian", status: "active", sort: "name" });
   assert.deepEqual(firstName.customers.map((customer) => customer.displayName).filter((name) => name.startsWith("Adrian")), [
     "Adrian Rivera",
     "Adrian Rodriguez"
   ]);
 
-  const lastName = await listAdminCustomerRewards({ search: "Rivera", status: "active", sort: "name" });
+  const lastName = await listAdminCustomerRewards(owner.id, { search: "Rivera", status: "active", sort: "name" });
   assert.ok(lastName.customers.some((customer) => customer.id === adrianRivera.id));
   assert.ok(lastName.customers.some((customer) => customer.id === mayaRivera.id));
 
-  const partialName = await listAdminCustomerRewards({ search: "drian Riv", status: "active", sort: "name" });
+  const partialName = await listAdminCustomerRewards(owner.id, { search: "drian Riv", status: "active", sort: "name" });
   assert.equal(partialName.customers.some((customer) => customer.id === adrianRivera.id), true);
   assert.equal(partialName.customers.some((customer) => customer.id === adrianRodriguez.id), false);
 
-  const email = await listAdminCustomerRewards({ search: "hotmail", status: "active" });
+  const email = await listAdminCustomerRewards(owner.id, { search: "hotmail", status: "active" });
   assert.equal(email.customers.some((customer) => customer.id === adrianRodriguez.id), true);
 
-  const phone = await listAdminCustomerRewards({ search: "9834", status: "active" });
+  const phone = await listAdminCustomerRewards(owner.id, { search: "9834", status: "active" });
   assert.equal(phone.customers.length, 1);
   assert.equal(phone.customers[0]?.id, adrianRodriguez.id);
   assert.equal(phone.customers[0]?.availablePoints, 102);
+});
+
+test("customer admin workspace blocks cross-owner discovery detail mutation rewards and purchase linking", async () => {
+  const { user: ownerA, customer: customerA } = await createCustomerWithRewards();
+  const ownerB = await prisma.user.create({
+    data: { email: `${unique("owner-b")}@example.test`, name: "Owner B", role: "ADMIN", passwordHash: "test-hash" }
+  });
+  const customerB = await prisma.customerAccount.create({
+    data: {
+      userId: ownerB.id,
+      email: `${unique("owner-b-customer")}@example.test`,
+      normalizedEmail: `${unique("owner-b-normalized")}@example.test`,
+      displayName: "Other Workspace Customer",
+      phone: customerA.phone,
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  await prisma.rewardBalance.create({
+    data: { customerAccountId: customerB.id, availablePoints: 777, pendingPoints: 0, lifetimeEarnedPoints: 777 }
+  });
+  const ownerBOrder = await createAttachableOrder(ownerB.id, customerB.email);
+  const malformedOwnerAOrder = await createAttachableOrder(ownerA.id, customerB.email, {
+    customerAccountId: customerB.id
+  });
+  const malformedOwnerBOrder = await createAttachableOrder(ownerB.id, customerA.email, {
+    customerAccountId: customerA.id
+  });
+
+  const list = await listAdminCustomerRewards(ownerA.id, { search: "", status: "active" });
+  assert.equal(list.customers.some((customer) => customer.id === customerA.id), true);
+  assert.equal(list.customers.some((customer) => customer.id === customerB.id), false);
+  assert.equal(list.summary.totalCustomers >= 1, true);
+  assert.equal(list.summary.topCustomer?.customerAccountId === customerB.id, false);
+  const customerAListItem = list.customers.find((customer) => customer.id === customerA.id);
+  assert.ok(customerAListItem);
+  assert.equal(customerAListItem.totalOrders, 1);
+  assert.equal(customerAListItem.totalSpend, 55);
+  assert.equal(await getAdminCustomerRewardDetail(ownerA.id, customerB.id), null);
+  const customerADetail = await getAdminCustomerRewardDetail(ownerA.id, customerA.id);
+  assert.ok(customerADetail);
+  assert.equal(customerADetail.recentOrders.some((order) => order.id === malformedOwnerBOrder.id), false);
+  const crossOwnerEmailSearch = await listAdminCustomerRewards(ownerA.id, { search: customerB.email, status: "active" });
+  assert.equal(crossOwnerEmailSearch.customers.length, 0);
+  const sharedPhoneSearch = await listAdminCustomerRewards(ownerA.id, { search: customerB.phone, status: "active" });
+  assert.deepEqual(sharedPhoneSearch.customers.map((customer) => customer.id), [customerA.id]);
+
+  await assert.rejects(
+    updateAdminCustomerProfile(ownerA.id, customerB.id, {
+      displayName: "Cross-owner overwrite",
+      phone: "+15550009999",
+      status: "disabled",
+      adminNote: "must not persist"
+    }),
+    /not found/i
+  );
+  process.env.CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED = "true";
+  await assert.rejects(
+    createAdminRewardAdjustment(adminUser(ownerA.id), {
+      customerAccountId: customerB.id,
+      action: "add",
+      points: 99,
+      reason: "Cross-owner attempt",
+      idempotencyKey: unique("cross-owner-adjustment")
+    }),
+    /not found/i
+  );
+  await assert.rejects(
+    searchAdminCustomerAttachCandidates(ownerA.id, customerB.id, ownerBOrder.orderNumber),
+    /not found/i
+  );
+  const ownerASearch = await searchAdminCustomerAttachCandidates(ownerA.id, customerA.id, ownerBOrder.orderNumber);
+  assert.equal(ownerASearch.candidates.some((candidate) => candidate.id === ownerBOrder.id), false);
+  const malformedOwnerASearch = await searchAdminCustomerAttachCandidates(ownerA.id, customerA.id, malformedOwnerAOrder.orderNumber);
+  const malformedOwnerACandidate = malformedOwnerASearch.candidates.find((candidate) => candidate.id === malformedOwnerAOrder.id);
+  assert.ok(malformedOwnerACandidate);
+  assert.equal(malformedOwnerACandidate.currentLinkedCustomer, null);
+  const ledger = await listAdminRewardLedger(ownerA.id, {});
+  assert.equal(ledger.ledger.some((entry) => entry.customerAccountId === customerB.id), false);
+
+  const unchanged = await prisma.customerAccount.findUniqueOrThrow({ where: { id: customerB.id } });
+  const unchangedBalance = await prisma.rewardBalance.findUniqueOrThrow({ where: { customerAccountId: customerB.id } });
+  assert.equal(unchanged.displayName, "Other Workspace Customer");
+  assert.equal(unchanged.status, "active");
+  assert.equal(unchanged.adminNote, null);
+  assert.equal(unchangedBalance.availablePoints, 777);
+  process.env.CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED = "false";
 });
 
 test("admin reward adjustments are feature-flagged, idempotent, and never deduct below zero", async () => {
@@ -371,7 +470,7 @@ test("admin reward adjustments are feature-flagged, idempotent, and never deduct
     /Cannot deduct more than the customer's available points/
   );
 
-  const ledger = await listAdminRewardLedger({ source: "admin_adjustment" });
+  const ledger = await listAdminRewardLedger(user.id, { source: "admin_adjustment" });
   assert.equal(ledger.ledger.filter((entry) => entry.customerAccountId === customer.id).length, 2);
 });
 
@@ -387,7 +486,7 @@ test("admin customer detail includes safe summaries without private note content
     idempotencyKey: "admin-private-note"
   });
 
-  const detail = await getAdminCustomerRewardDetail(customer.id);
+  const detail = await getAdminCustomerRewardDetail(user.id, customer.id);
   assert.ok(detail);
   assert.equal(detail.maskedPhone, "***-***-1234");
   assert.equal(detail.profile.displayName, "Collector Customer");
@@ -397,9 +496,9 @@ test("admin customer detail includes safe summaries without private note content
 });
 
 test("admin can update allowed customer profile fields without touching identity or rewards", async () => {
-  const { customer } = await createCustomerWithRewards();
+  const { user, customer } = await createCustomerWithRewards();
   const beforeBalance = await prisma.rewardBalance.findUniqueOrThrow({ where: { customerAccountId: customer.id } });
-  const result = await updateAdminCustomerProfile(customer.id, {
+  const result = await updateAdminCustomerProfile(user.id, customer.id, {
     displayName: "Updated Collector",
     phone: "+13055550000",
     status: "disabled",
@@ -425,9 +524,9 @@ test("admin can update allowed customer profile fields without touching identity
 
 test("admin can attach matching past online order and backfill rewards once", async () => {
   const { user, customer } = await createCustomerWithRewards();
-  const order = await createAttachableOrder(customer.email);
+  const order = await createAttachableOrder(user.id, customer.email);
 
-  const search = await searchAdminCustomerAttachCandidates(customer.id, order.orderNumber);
+  const search = await searchAdminCustomerAttachCandidates(user.id, customer.id, order.orderNumber);
   const candidate = search.candidates.find((item) => item.id === order.id);
   assert.ok(candidate);
   assert.equal(candidate.type, "storefront_order");
@@ -486,7 +585,7 @@ test("admin can attach matching past online order and backfill rewards once", as
 
 test("admin attach links matching order and reports when rewards checkbox is not selected", async () => {
   const { user, customer } = await createCustomerWithRewards();
-  const order = await createAttachableOrder(customer.email);
+  const order = await createAttachableOrder(user.id, customer.email);
 
   const result = await attachAdminCustomerOrder(adminUser(user.id), customer.id, {
     type: "storefront_order",
@@ -513,12 +612,12 @@ test("admin attach links matching order and reports when rewards checkbox is not
 
 test("admin attach excludes partially refunded online orders from rewards backfill", async () => {
   const { user, customer } = await createCustomerWithRewards();
-  const order = await createAttachableOrder(customer.email, {
+  const order = await createAttachableOrder(user.id, customer.email, {
     paymentStatus: "partially_refunded",
     refundedAmount: 10
   });
 
-  const search = await searchAdminCustomerAttachCandidates(customer.id, order.orderNumber);
+  const search = await searchAdminCustomerAttachCandidates(user.id, customer.id, order.orderNumber);
   const candidate = search.candidates.find((item) => item.id === order.id);
   assert.ok(candidate);
   assert.equal(candidate.rewards.eligible, false);
@@ -547,7 +646,7 @@ test("admin attach excludes partially refunded online orders from rewards backfi
 
 test("admin attach requires explicit mismatch confirmation and does not reward email mismatches", async () => {
   const { user, customer } = await createCustomerWithRewards();
-  const order = await createAttachableOrder(`${unique("other")}@example.test`);
+  const order = await createAttachableOrder(user.id, `${unique("other")}@example.test`);
 
   await assert.rejects(
     attachAdminCustomerOrder(adminUser(user.id), customer.id, {
@@ -597,7 +696,7 @@ test("admin attach refuses orders already linked to another customer", async () 
       emailVerifiedAt: new Date()
     }
   });
-  const order = await createAttachableOrder(otherCustomer.email, { customerAccountId: otherCustomer.id });
+  const order = await createAttachableOrder(user.id, otherCustomer.email, { customerAccountId: otherCustomer.id });
 
   await assert.rejects(
     attachAdminCustomerOrder(adminUser(user.id), customer.id, {
@@ -619,6 +718,7 @@ test("admin can attach matching POS sale without trusting browser reward identit
   await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       quantitySold: 1,
       soldPricePerItem: 45,
       grossSale: 45,
@@ -665,6 +765,7 @@ test("admin can apply rewards once to an already-linked eligible POS sale", asyn
   await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       quantitySold: 1,
       soldPricePerItem: 42,
       grossSale: 42,
@@ -736,6 +837,7 @@ test("admin can attach legacy local sale by inventory sale ID when no sale refer
   const legacySale = await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       quantitySold: 1,
       soldPricePerItem: 38,
       grossSale: 38,
@@ -751,7 +853,7 @@ test("admin can attach legacy local sale by inventory sale ID when no sale refer
     }
   });
 
-  const search = await searchAdminCustomerAttachCandidates(customer.id, legacySale.id);
+  const search = await searchAdminCustomerAttachCandidates(user.id, customer.id, legacySale.id);
   const candidate = search.candidates.find((item) => item.saleId === legacySale.id);
   assert.ok(candidate);
   assert.equal(candidate.type, "pos_sale");
@@ -785,11 +887,11 @@ test("admin can attach legacy local sale by inventory sale ID when no sale refer
 });
 
 test("admin ownership comparison keeps matching mismatched and missing emails distinct", async () => {
-  const { customer } = await createCustomerWithRewards();
-  const matching = await createAttachableOrder(customer.email);
-  const mismatched = await createAttachableOrder(`${unique("different-owner")}@example.test`);
-  const missing = await createAttachableOrder("placeholder@example.test", { customerEmail: null });
-  const blank = await createAttachableOrder("placeholder@example.test", { customerEmail: "   " });
+  const { user, customer } = await createCustomerWithRewards();
+  const matching = await createAttachableOrder(user.id, customer.email);
+  const mismatched = await createAttachableOrder(user.id, `${unique("different-owner")}@example.test`);
+  const missing = await createAttachableOrder(user.id, "placeholder@example.test", { customerEmail: null });
+  const blank = await createAttachableOrder(user.id, "placeholder@example.test", { customerEmail: "   " });
 
   for (const [order, expected] of [
     [matching, "email_match"],
@@ -797,7 +899,7 @@ test("admin ownership comparison keeps matching mismatched and missing emails di
     [missing, "no_email_recorded"],
     [blank, "no_email_recorded"]
   ] as const) {
-    const search = await searchAdminCustomerAttachCandidates(customer.id, order.orderNumber);
+    const search = await searchAdminCustomerAttachCandidates(user.id, customer.id, order.orderNumber);
     const candidate = search.candidates.find((item) => item.id === order.id);
     assert.ok(candidate);
     assert.equal(candidate.matchStatus, expected);
@@ -820,6 +922,7 @@ test("admin can review a no-email legacy sale and award rewards exactly once", a
   const legacySale = await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       quantitySold: 1,
       soldPricePerItem: 49,
       grossSale: 49,
@@ -833,7 +936,7 @@ test("admin can review a no-email legacy sale and award rewards exactly once", a
     }
   });
 
-  const search = await searchAdminCustomerAttachCandidates(customer.id, legacySale.id);
+  const search = await searchAdminCustomerAttachCandidates(user.id, customer.id, legacySale.id);
   const candidate = search.candidates.find((item) => item.saleId === legacySale.id);
   assert.ok(candidate);
   assert.equal(candidate.matchStatus, "no_email_recorded");
@@ -921,6 +1024,7 @@ test("already-linked no-email sale requires ownership review before Apply Reward
   const legacySale = await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       customerAccountId: customer.id,
       quantitySold: 1,
       soldPricePerItem: 37,
@@ -935,7 +1039,7 @@ test("already-linked no-email sale requires ownership review before Apply Reward
     }
   });
 
-  const before = await searchAdminCustomerAttachCandidates(customer.id, legacySale.id);
+  const before = await searchAdminCustomerAttachCandidates(user.id, customer.id, legacySale.id);
   const beforeCandidate = before.candidates.find((item) => item.saleId === legacySale.id);
   assert.ok(beforeCandidate);
   assert.equal(beforeCandidate.matchStatus, "no_email_recorded");
@@ -981,6 +1085,7 @@ test("already-reviewed no-email sale requires a fresh confirmation and private n
   const legacySale = await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       customerAccountId: customer.id,
       quantitySold: 1,
       soldPricePerItem: 31,
@@ -999,7 +1104,7 @@ test("already-reviewed no-email sale requires a fresh confirmation and private n
     }
   });
 
-  const before = await searchAdminCustomerAttachCandidates(customer.id, legacySale.id);
+  const before = await searchAdminCustomerAttachCandidates(user.id, customer.id, legacySale.id);
   const candidate = before.candidates.find((item) => item.saleId === legacySale.id);
   assert.ok(candidate);
   assert.equal(candidate.matchStatus, "no_email_recorded");
@@ -1050,6 +1155,7 @@ test("refunded no-email sale can link after review but cannot receive rewards", 
   const sale = await prisma.inventorySale.create({
     data: {
       inventoryItemId: item.id,
+      userId: user.id,
       quantitySold: 1,
       soldPricePerItem: 35,
       grossSale: 35,
@@ -1064,7 +1170,7 @@ test("refunded no-email sale can link after review but cannot receive rewards", 
     }
   });
 
-  const search = await searchAdminCustomerAttachCandidates(customer.id, sale.id);
+  const search = await searchAdminCustomerAttachCandidates(user.id, customer.id, sale.id);
   const candidate = search.candidates.find((item) => item.saleId === sale.id);
   assert.ok(candidate);
   assert.equal(candidate.matchStatus, "no_email_recorded");

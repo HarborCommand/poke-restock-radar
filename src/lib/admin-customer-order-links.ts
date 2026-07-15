@@ -10,6 +10,7 @@ import {
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
+import { workspaceCustomerWhere } from "@/lib/customer-workspace";
 import type {
   AdminCustomerAttachOrderCandidateDTO,
   AdminCustomerAttachRewardStatus,
@@ -67,6 +68,7 @@ const candidateOrderInclude = {
   customerAccount: {
     select: {
       id: true,
+      userId: true,
       email: true,
       displayName: true
     }
@@ -95,6 +97,7 @@ const candidateSaleInclude = {
   customerAccount: {
     select: {
       id: true,
+      userId: true,
       email: true,
       displayName: true
     }
@@ -127,8 +130,11 @@ function displayNameForCustomer(customer: { displayName: string | null; email: s
   return customer.displayName?.trim() || customer.email.split("@")[0] || "Customer";
 }
 
-function customerSummary(customer: { id: string; email: string; displayName: string | null } | null) {
-  return customer
+function customerSummary(
+  customer: { id: string; userId: string | null; email: string; displayName: string | null } | null,
+  ownerUserId: string
+) {
+  return customer?.userId === ownerUserId
     ? {
         id: customer.id,
         displayName: displayNameForCustomer(customer),
@@ -289,7 +295,8 @@ function orderRewardCandidate(order: CandidateOrder, match: OwnershipMatch): Rew
 
 function mapOrderCandidate(
   order: CandidateOrder,
-  customer: { id: string; email: string; status: string; emailVerifiedAt: Date | null }
+  customer: { id: string; email: string; status: string; emailVerifiedAt: Date | null },
+  ownerUserId: string
 ): AdminCustomerAttachOrderCandidateDTO {
   const match = ownershipMatch(order.customerEmail, customer, hasRecordedOwnershipReview(order));
   const rewards = orderRewardCandidate(order, match);
@@ -306,7 +313,7 @@ function mapOrderCandidate(
     total: order.total,
     eligibleSubtotal: orderEligibleSubtotalCents(order) / 100,
     status: orderStatusLabel(order),
-    currentLinkedCustomer: customerSummary(order.customerAccount),
+    currentLinkedCustomer: customerSummary(order.customerAccount, ownerUserId),
     itemSummary: order.items.map((item) => item.publicTitle).filter(Boolean).join(", ") || "Order items",
     itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
     matchStatus: match.status,
@@ -363,12 +370,14 @@ function saleAttachKey(sale: Pick<CandidateSale, "id" | "saleReference">) {
 async function mapSaleCandidates(
   groupedSales: CandidateSale[][],
   customer: { id: string; email: string; status: string; emailVerifiedAt: Date | null },
+  ownerUserId: string,
   client: Prisma.TransactionClient | typeof prisma = prisma
 ): Promise<AdminCustomerAttachOrderCandidateDTO[]> {
   const keys = groupedSales.map((sales) => sales[0] ? saleAttachKey(sales[0]) : null).filter((value): value is string => Boolean(value));
   const ledger = keys.length
     ? await client.rewardLedgerEntry.findMany({
         where: {
+          customerAccount: workspaceCustomerWhere(ownerUserId),
           OR: [
             { idempotencyKey: { in: keys.flatMap((ref) => [`rewards:pos:earn:${ref}`, `rewards:backfill:pos:${ref}`]) } },
             { source: { in: ["pos", "admin_pos_link_backfill", "admin_legacy_sale_backfill"] } }
@@ -399,7 +408,7 @@ async function mapSaleCandidates(
       total,
       eligibleSubtotal: saleEligibleSubtotalCents(sales) / 100,
       status: saleStatusLabel(sales),
-      currentLinkedCustomer: customerSummary(first.customerAccount),
+      currentLinkedCustomer: customerSummary(first.customerAccount, ownerUserId),
       itemSummary: sales.map((sale) => sale.inventoryItem.itemName).filter(Boolean).join(", "),
       itemCount: sales.reduce((sum, sale) => sum + sale.quantitySold, 0),
       matchStatus: match.status,
@@ -424,9 +433,9 @@ function groupSalesByReference(sales: CandidateSale[]) {
   return [...groups.values()].sort((left, right) => right[0]!.soldAt.getTime() - left[0]!.soldAt.getTime());
 }
 
-async function loadAttachCustomer(customerAccountId: string, client: Prisma.TransactionClient | typeof prisma = prisma) {
-  const customer = await client.customerAccount.findUnique({
-    where: { id: customerAccountId },
+async function loadAttachCustomer(ownerUserId: string, customerAccountId: string, client: Prisma.TransactionClient | typeof prisma = prisma) {
+  const customer = await client.customerAccount.findFirst({
+    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
     select: {
       id: true,
       email: true,
@@ -441,13 +450,15 @@ async function loadAttachCustomer(customerAccountId: string, client: Prisma.Tran
 }
 
 export async function searchAdminCustomerAttachCandidates(
+  ownerUserId: string,
   customerAccountId: string,
   query?: string | null
 ): Promise<AdminCustomerAttachOrderSearchResponseDTO> {
-  const customer = await loadAttachCustomer(customerAccountId);
+  const customer = await loadAttachCustomer(ownerUserId, customerAccountId);
   const search = query?.trim();
   const orderWhere: Prisma.StorefrontOrderWhereInput = search
     ? {
+        userId: ownerUserId,
         OR: [
           { orderNumber: { contains: search } },
           { customerEmail: { contains: search } },
@@ -456,9 +467,10 @@ export async function searchAdminCustomerAttachCandidates(
           { items: { some: { publicTitle: { contains: search } } } }
         ]
       }
-    : {};
+    : { userId: ownerUserId };
   const saleWhere: Prisma.InventorySaleWhereInput = search
     ? {
+        userId: ownerUserId,
         OR: [
           { id: { contains: search } },
           { saleReference: { contains: search } },
@@ -467,7 +479,7 @@ export async function searchAdminCustomerAttachCandidates(
           { inventoryItem: { is: { itemName: { contains: search } } } }
         ]
       }
-    : {};
+    : { userId: ownerUserId };
 
   const [orders, saleRefs] = await Promise.all([
     prisma.storefrontOrder.findMany({
@@ -490,6 +502,7 @@ export async function searchAdminCustomerAttachCandidates(
   const sales = keys.length
     ? await prisma.inventorySale.findMany({
         where: {
+          userId: ownerUserId,
           OR: [
             ...(saleReferences.length ? [{ saleReference: { in: saleReferences } }] : []),
             ...(saleIds.length ? [{ id: { in: saleIds } }] : [])
@@ -499,7 +512,7 @@ export async function searchAdminCustomerAttachCandidates(
         orderBy: { soldAt: "desc" }
       })
     : [];
-  const saleCandidates = await mapSaleCandidates(groupSalesByReference(sales), customer);
+  const saleCandidates = await mapSaleCandidates(groupSalesByReference(sales), customer, ownerUserId);
   return {
     customer: {
       id: customer.id,
@@ -509,7 +522,7 @@ export async function searchAdminCustomerAttachCandidates(
       emailVerified: Boolean(customer.emailVerifiedAt)
     },
     candidates: [
-      ...orders.map((order) => mapOrderCandidate(order, customer)),
+      ...orders.map((order) => mapOrderCandidate(order, customer, ownerUserId)),
       ...saleCandidates
     ]
       .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
@@ -726,8 +739,8 @@ async function attachStorefrontOrder(
   adminUser: SessionUser,
   input: AttachInput
 ) {
-  const order = await tx.storefrontOrder.findUnique({
-    where: { id: input.orderId },
+  const order = await tx.storefrontOrder.findFirst({
+    where: { id: input.orderId, userId: adminUser.id },
     include: candidateOrderInclude
   });
   if (!order) throw new Error("Order was not found.");
@@ -761,6 +774,7 @@ async function attachStorefrontOrder(
       await tx.storefrontCustomer.updateMany({
         where: {
           id: order.customerId,
+          userId: adminUser.id,
           OR: [{ customerAccountId: null }, { customerAccountId: customer.id }]
         },
         data: { customerAccountId: customer.id }
@@ -808,12 +822,12 @@ async function attachStorefrontOrder(
       }
     });
   }
-  const refreshed = await tx.storefrontOrder.findUnique({
-    where: { id: order.id },
+  const refreshed = await tx.storefrontOrder.findFirst({
+    where: { id: order.id, userId: adminUser.id },
     include: candidateOrderInclude
   });
   if (!refreshed) throw new Error("Order was not found after attach.");
-  return { duplicate, reward, candidate: mapOrderCandidate(refreshed, customer) };
+  return { duplicate, reward, candidate: mapOrderCandidate(refreshed, customer, adminUser.id) };
 }
 
 async function attachPosSale(
@@ -825,7 +839,9 @@ async function attachPosSale(
   const saleReference = input.saleReference?.trim();
   const saleId = input.saleId?.trim();
   if (!saleReference && !saleId) throw new Error("Sale reference or sale ID is required.");
-  const saleWhere: Prisma.InventorySaleWhereInput = saleReference ? { saleReference } : { id: saleId };
+  const saleWhere: Prisma.InventorySaleWhereInput = saleReference
+    ? { saleReference, userId: adminUser.id }
+    : { id: saleId, userId: adminUser.id };
   const sales = await tx.inventorySale.findMany({
     where: saleWhere,
     include: candidateSaleInclude,
@@ -920,7 +936,7 @@ async function attachPosSale(
     include: candidateSaleInclude,
     orderBy: { soldAt: "desc" }
   });
-  const [candidate] = await mapSaleCandidates(groupSalesByReference(refreshed), customer, tx);
+  const [candidate] = await mapSaleCandidates(groupSalesByReference(refreshed), customer, adminUser.id, tx);
   return { duplicate, reward, candidate };
 }
 
@@ -928,10 +944,10 @@ export async function attachAdminCustomerOrder(
   adminUser: SessionUser,
   customerAccountId: string,
   input: AttachInput,
-  getDetail: (customerAccountId: string) => Promise<AdminCustomerRewardsDetailDTO | null>
+  getDetail: (ownerUserId: string, customerAccountId: string) => Promise<AdminCustomerRewardsDetailDTO | null>
 ): Promise<AdminCustomerAttachOrderResultDTO> {
   const result = await runRewardSerializableTransaction(async (tx) => {
-    const customer = await loadAttachCustomer(customerAccountId, tx);
+    const customer = await loadAttachCustomer(adminUser.id, customerAccountId, tx);
     assertAttachCustomerIsEligible(customer);
     if (input.type === "storefront_order") {
       return attachStorefrontOrder(tx, customer, adminUser, input);
@@ -939,7 +955,7 @@ export async function attachAdminCustomerOrder(
     return attachPosSale(tx, customer, adminUser, input);
   });
 
-  const customer = await getDetail(customerAccountId);
+  const customer = await getDetail(adminUser.id, customerAccountId);
   if (!customer) throw new Error("Customer account was not found after attach.");
   const linked = result.candidate.currentLinkedCustomer?.id === customerAccountId;
   return {
