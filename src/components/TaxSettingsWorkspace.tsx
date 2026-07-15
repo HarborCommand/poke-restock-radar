@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 
-type TaxSettings = {
+export type TaxSettings = {
   environment: string;
   collectionDisabled: boolean;
   online: {
@@ -159,7 +159,13 @@ function CheckField({
   );
 }
 
-export function TaxSettingsWorkspace() {
+export function TaxSettingsWorkspace({
+  embedded = false,
+  onSettingsChange
+}: {
+  embedded?: boolean;
+  onSettingsChange?: (settings: TaxSettings) => void;
+}) {
   const [settings, setSettings] = useState<TaxSettings | null>(null);
   const [initial, setInitial] = useState<FormState | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -171,13 +177,17 @@ export function TaxSettingsWorkspace() {
     fetch("/api/radar/tax-settings", { credentials: "same-origin", cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Tax settings are unavailable.");
+        if (!response.ok) {
+          const requestId = payload.requestId || response.headers.get("X-Request-Id");
+          throw new Error(`${payload.error || "Tax settings are unavailable."}${requestId ? ` Reference: ${requestId}.` : ""}`);
+        }
         return payload as TaxSettings;
       })
       .then((payload) => {
         if (!active) return;
         const next = formFromSettings(payload);
         setSettings(payload);
+        onSettingsChange?.(payload);
         setInitial(next);
         setForm(next);
         setState("ready");
@@ -190,7 +200,7 @@ export function TaxSettingsWorkspace() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [onSettingsChange]);
 
   const dirty = useMemo(() => Boolean(form && initial && JSON.stringify(form) !== JSON.stringify(initial)), [form, initial]);
   const enabling = Boolean(form && initial && (
@@ -239,11 +249,13 @@ export function TaxSettingsWorkspace() {
       const payload = await response.json();
       if (!response.ok) {
         const detail = Array.isArray(payload.issues) ? payload.issues.map((issue: { message: string }) => issue.message).join(" ") : "";
-        throw new Error(detail || payload.error || "Tax settings could not be saved.");
+        const requestId = payload.requestId || response.headers.get("X-Request-Id");
+        throw new Error(`${detail || payload.error || "Tax settings could not be saved."}${requestId ? ` Reference: ${requestId}.` : ""}`);
       }
       const nextSettings = payload as TaxSettings;
       const nextForm = formFromSettings(nextSettings);
       setSettings(nextSettings);
+      onSettingsChange?.(nextSettings);
       setInitial(nextForm);
       setForm(nextForm);
       setMessage("Tax settings saved and an audit event was recorded.");
@@ -254,8 +266,8 @@ export function TaxSettingsWorkspace() {
     }
   }
 
-  if (state === "loading") return <main className="tax-workspace tax-workspace-state">Loading tax settings…</main>;
-  if (!settings || !form) return <main className="tax-workspace tax-workspace-state"><a href="/admin">Back to admin</a><p>{message}</p></main>;
+  if (state === "loading") return <section className="tax-workspace tax-workspace-state">Loading tax settings…</section>;
+  if (!settings || !form) return <section className="tax-workspace tax-workspace-state">{!embedded ? <a href="/admin">Back to admin</a> : null}<p>{message}</p></section>;
 
   const readinessFields: Array<[keyof FormState, string, string?]> = [
     ["registrationConfirmed", "Florida registration confirmed"],
@@ -272,10 +284,10 @@ export function TaxSettingsWorkspace() {
   ];
 
   return (
-    <main className="tax-workspace">
+    <section className={embedded ? "tax-workspace tax-workspace-embedded" : "tax-workspace"}>
       <header className="tax-workspace-header">
         <div>
-          <a href="/admin" className="tax-back-link">← Admin</a>
+          {!embedded ? <a href="/admin" className="tax-back-link">← Admin</a> : null}
           <p className="tax-eyebrow">Commerce controls</p>
           <h1>Tax Settings</h1>
           <p>Configure saved tax policy and verify launch readiness. Environment gates remain separately controlled.</p>
@@ -346,7 +358,7 @@ export function TaxSettingsWorkspace() {
           <label className="tax-select-field">Default reporting period<select value={form.defaultReportingPeriod} onChange={(event) => update("defaultReportingPeriod", event.target.value as FormState["defaultReportingPeriod"])}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select></label>
           <CheckField checked={form.taxReportingProfileEnabled} label="Mark the reporting profile as configured" detail={settings.reporting.enabled ? "The independent reporting runtime gate is enabled." : "Configuration intent only. Export remains unavailable while the runtime gate is off."} onChange={(value) => update("taxReportingProfileEnabled", value)} />
           <p className="tax-section-copy">{settings.reporting.disclaimer}</p>
-          {settings.reporting.exportAvailable ? <a href="/admin/tax-reports" className="tax-inline-action">Open Sales Tax Reports</a> : <span className="tax-muted">Reporting is unavailable while the feature is disabled.</span>}
+          {settings.reporting.exportAvailable ? <a href="/app?tab=tax&section=reports" className="tax-inline-action">Open Sales Tax Reports</a> : <span className="tax-muted">Reporting is unavailable while the feature is disabled.</span>}
         </section>
 
         <section className="tax-section">
@@ -370,6 +382,6 @@ export function TaxSettingsWorkspace() {
           <button type="submit" disabled={!dirty || state === "saving"}>{state === "saving" ? "Saving…" : "Save tax settings"}</button>
         </footer>
       </form>
-    </main>
+    </section>
   );
 }

@@ -8,6 +8,7 @@ import {
   Bell,
   BarChart3,
   Boxes,
+  Calculator,
   CalendarDays,
   Check,
   ChevronRight,
@@ -115,6 +116,7 @@ import {
 } from "@/lib/pos";
 import { legacyPosReceiptTax } from "@/lib/pos-receipt";
 import { normalizeUPC } from "@/lib/upc";
+import { TaxAdminWorkspace } from "@/components/TaxAdminWorkspace";
 import type {
   AppHealthDTO,
   AdminCustomerRewardsCustomerDTO,
@@ -190,6 +192,7 @@ type Tab =
   | "trends"
   | "myStore"
   | "analytics"
+  | "tax"
   | "settings"
   | "admin";
 type Toast = { type: "error" | "success"; message: string };
@@ -274,6 +277,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSect
   { id: "market", label: "Market", icon: Sparkles, section: "analytics" },
   { id: "analytics", label: "Analytics", icon: BarChart3, section: "analytics" },
   { id: "releases", label: "Releases", icon: CalendarDays, section: "manage" },
+  { id: "tax", label: "Tax", icon: Calculator, section: "manage" },
   { id: "settings", label: "Settings", icon: Settings, section: "manage" },
   { id: "admin", label: "Admin", icon: ShieldCheck, section: "manage" }
 ];
@@ -282,7 +286,7 @@ const deprecatedUiTabs = new Set<Tab>(["field", "products", "stores", "cards", "
 const deprecatedTrackerTabs = new Set<Tab>(["onlineDrops", "checkStock", "watchlist", "keywords"]);
 const deprecatedAnalyticsTabs = new Set<Tab>(["profitLoss", "trends"]);
 const visibleTabIds = new Set<Tab>(tabs.map((tab) => tab.id));
-const adminOnlyTabs = new Set<Tab>(["admin", "pos", "customers"]);
+const adminOnlyTabs = new Set<Tab>(["admin", "pos", "customers", "tax"]);
 const INVENTORY_PREFILL_STORAGE_KEY = "poke-radar-inventory-prefill";
 
 const productStatuses: ProductStatus[] = [
@@ -1794,6 +1798,12 @@ export function RadarApp() {
   const isAdmin = user?.role === "ADMIN";
   const setActiveTab = useCallback((tab: Tab) => setActiveTabState(normalizeVisibleTab(tab)), []);
 
+  useEffect(() => {
+    const syncTabFromHistory = () => setActiveTabState(normalizeVisibleTab(new URLSearchParams(window.location.search).get("tab")));
+    window.addEventListener("popstate", syncTabFromHistory);
+    return () => window.removeEventListener("popstate", syncTabFromHistory);
+  }, []);
+
   function showToast(nextToast: Toast) {
     setToast(nextToast);
   }
@@ -1877,8 +1887,9 @@ export function RadarApp() {
   }, [user]);
 
   useEffect(() => {
-    if (activeTab === "pos" && dashboard && dashboard.currentUser.role !== "ADMIN") {
-      setActiveTab("dashboard");
+    if (adminOnlyTabs.has(activeTab) && dashboard && dashboard.currentUser.role !== "ADMIN") {
+      const timer = window.setTimeout(() => setActiveTab("dashboard"), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [activeTab, dashboard, setActiveTab]);
 
@@ -1894,6 +1905,7 @@ export function RadarApp() {
     if (url.searchParams.get("tab") === activeTab) return;
     url.searchParams.set("tab", activeTab);
     url.searchParams.delete("focus");
+    if (activeTab !== "tax") url.searchParams.delete("section");
     window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
   }, [activeTab, user]);
 
@@ -2117,7 +2129,7 @@ export function RadarApp() {
         </div>
       </aside>
       {sidebarOpen ? <button className="sidebar-scrim" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} /> : null}
-      <section className={activeTab === "inventory" ? "app-main app-main-inventory" : "app-main"}>
+      <section className={activeTab === "inventory" ? "app-main app-main-inventory" : activeTab === "tax" ? "app-main app-main-tax" : "app-main"}>
       <header className="topbar">
         <div className="mobile-section-title">
           <button className="icon-button mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" type="button">
@@ -2227,6 +2239,7 @@ export function RadarApp() {
         {activeTab === "profitLoss" ? <ProfitLossPanel dashboard={dashboard} /> : null}
         {activeTab === "trends" ? <TrendsPanel dashboard={dashboard} /> : null}
         {activeTab === "analytics" ? <InventoryAnalyticsPanel dashboard={dashboard} /> : null}
+        {activeTab === "tax" && isAdmin ? <TaxAdminWorkspace /> : null}
         {activeTab === "settings" ? (
           <SettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
@@ -6023,7 +6036,7 @@ function PosPanel({
               <strong>{taxQuote ? `${(taxQuote.combinedRateBasisPoints / 100).toFixed(2)}%` : "?"}</strong>
               <span>Combined saved rate</span>
             </div>
-            <a href="/admin/tax-settings">Edit Tax Settings</a>
+            <a href="/app?tab=tax&section=settings">Edit Tax Settings</a>
             {taxQuote?.effectiveAt || taxQuote?.sourceNote ? (
               <small>
                 {taxQuote.effectiveAt ? `Effective ${shortDate(taxQuote.effectiveAt)}` : "No effective date"}
@@ -11880,7 +11893,7 @@ function StorefrontSettingsCard({
         <div className="wide-field form-helper publish-ready-note">
           <strong>Sales tax</strong><br />
           Tax configuration and go-live checks now live in a dedicated admin workspace.
-          {" "}<a href="/admin/tax-settings">Open Tax Settings</a>
+          {" "}<a href="/app?tab=tax&section=settings">Open Tax Settings</a>
         </div>
         <TextareaInput name="announcementBanner" label="Announcement banner" defaultValue={settings.announcementBanner ?? ""} />
         <TextareaInput name="shippingPolicyText" label="Shipping policy" defaultValue={settings.shippingPolicyText ?? ""} />

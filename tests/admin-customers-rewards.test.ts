@@ -1379,7 +1379,7 @@ test("customers UI stays admin-only and public rewards surfaces do not expose ad
   );
 
   assert.match(app, /id: "customers"/);
-  assert.match(app, /adminOnlyTabs = new Set<Tab>\(\["admin", "pos", "customers"\]\)/);
+  assert.match(app, /adminOnlyTabs = new Set<Tab>\(\["admin", "pos", "customers", "tax"\]\)/);
   assert.match(app, /Admin adjustments disabled/);
   assert.match(app, /Point adjustments are disabled until admin adjustments are enabled/);
   assert.match(app, /CustomerProfileEditModal/);

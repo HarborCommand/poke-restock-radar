@@ -55,7 +55,7 @@ function queryFor(filters: Filters, page: number) {
   return query;
 }
 
-export function TaxReportsWorkspace() {
+export function TaxReportsWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [filters, setFilters] = useState<Filters>(() => ({
     ...defaultDates(),
     channel: "",
@@ -133,10 +133,10 @@ export function TaxReportsWorkspace() {
   ] as const : [];
 
   return (
-    <main className="tax-report-workspace" aria-busy={loading}>
+    <section className={embedded ? "tax-report-workspace tax-report-workspace-embedded" : "tax-report-workspace"} aria-busy={loading}>
       <header className="tax-report-header">
         <div>
-          <a href="/admin">Admin</a><span aria-hidden="true"> / </span><a href="/admin/tax-settings">Tax Settings</a>
+          {!embedded ? <><a href="/admin">Admin</a><span aria-hidden="true"> / </span><a href="/app?tab=tax&section=settings">Tax Settings</a></> : null}
           <p className="tax-report-eyebrow">Accounting-support workspace</p>
           <h1>Sales Tax Reports</h1>
           <p>Review finalized online and POS snapshots in America/New_York time. Historical tax is never recalculated or repaired here.</p>
@@ -209,6 +209,6 @@ export function TaxReportsWorkspace() {
           <p className="tax-report-disclaimer">{report.disclaimer}</p>
         </>
       ) : null}
-    </main>
+    </section>
   );
 }

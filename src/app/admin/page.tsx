@@ -5,7 +5,8 @@ export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Poke Radar Admin",
-  description: "Private Poke Radar admin area."
+  description: "Private Poke Radar admin area.",
+  robots: { index: false, follow: false }
 };
 
 export default function PrivateAdminPage() {
