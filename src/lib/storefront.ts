@@ -388,8 +388,13 @@ export async function releaseExpiredReservations() {
   return cleanupExpiredReservationsForCheckoutOnly();
 }
 
-export async function getStorefrontSettings(): Promise<StorefrontSettingsDTO> {
-  const settings = await prisma.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
+export async function getStorefrontSettings(
+  userId?: string,
+  client: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<StorefrontSettingsDTO> {
+  const settings = userId
+    ? await client.storefrontSettings.findUnique({ where: { userId } })
+    : await client.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
   const shippingRates = shippingRateProviderConfig();
   const accountFeatures = customerAccountFeatureConfig();
   const taxFeatures = taxFeatureConfig();

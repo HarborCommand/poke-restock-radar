@@ -65,6 +65,9 @@ function knownErrorResponse(error: unknown, requestId: string) {
   if (code === "P2002") {
     return safeApiError("CONFLICT", "That update conflicts with an existing record.", 409, requestId);
   }
+  if (code === "POS_TAX_QUOTE_CONFLICT") {
+    return safeApiError("POS_TAX_QUOTE_CONFLICT", "The POS tax quote changed or expired. Refresh the calculation and try again.", 409, requestId);
+  }
   if (code === "P2034" || category === "serialization") {
     return safeApiError("CONFLICT", "The record changed during this update. Please retry.", 409, requestId, true);
   }

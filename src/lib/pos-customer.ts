@@ -1,17 +1,14 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
-import {
-  CustomerAccountIdentityConflictError,
-  findCustomerAccountByNormalizedEmail,
-  normalizeCustomerAccountEmail
-} from "@/lib/customer-account-auth";
+import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
 import type { PosCustomerMatchResultDTO } from "@/types/radar";
 
 type PosCustomerMatchClient = Prisma.TransactionClient | typeof prisma;
 
 const customerAccountSelect = {
   id: true,
+  userId: true,
   email: true,
   normalizedEmail: true,
   phone: true,
@@ -58,18 +55,41 @@ function isVerifiedActiveCustomer(account: Pick<PosCustomerAccount, "status" | "
   return account.status === "active" && Boolean(account.emailVerifiedAt);
 }
 
-async function accountById(client: PosCustomerMatchClient, id: string) {
-  return client.customerAccount.findUnique({
-    where: { id },
+function workspaceCustomerWhere(ownerUserId: string) {
+  return {
+    OR: [
+      { userId: ownerUserId },
+      { orders: { some: { userId: ownerUserId } } },
+      { storefrontCustomers: { some: { userId: ownerUserId } } },
+      { posSales: { some: { userId: ownerUserId } } }
+    ]
+  } satisfies Prisma.CustomerAccountWhereInput;
+}
+
+async function accountById(client: PosCustomerMatchClient, id: string, ownerUserId: string) {
+  return client.customerAccount.findFirst({
+    where: { id, ...workspaceCustomerWhere(ownerUserId) },
     select: customerAccountSelect
   });
 }
 
-async function findPhoneMatches(client: PosCustomerMatchClient, normalizedPhone: string) {
+async function findEmailMatches(client: PosCustomerMatchClient, normalizedEmail: string, ownerUserId: string) {
+  return client.customerAccount.findMany({
+    where: {
+      normalizedEmail,
+      ...workspaceCustomerWhere(ownerUserId)
+    },
+    select: customerAccountSelect,
+    take: 3
+  });
+}
+
+async function findPhoneMatches(client: PosCustomerMatchClient, normalizedPhone: string, ownerUserId: string) {
   const candidates = await client.customerAccount.findMany({
     where: {
       phone: { not: null },
-      status: "active"
+      status: "active",
+      ...workspaceCustomerWhere(ownerUserId)
     },
     select: customerAccountSelect,
     take: 1000
@@ -79,6 +99,7 @@ async function findPhoneMatches(client: PosCustomerMatchClient, normalizedPhone:
 
 export async function resolvePosCustomerMatch(
   input: { selectedCustomerAccountId?: string | null; customerEmail?: string | null; customerPhone?: string | null },
+  ownerUserId: string,
   client: PosCustomerMatchClient = prisma
 ): Promise<PosCustomerMatchResultDTO> {
   const selectedCustomerAccountId = input.selectedCustomerAccountId?.trim();
@@ -86,7 +107,7 @@ export async function resolvePosCustomerMatch(
   const normalizedPhone = normalizePosCustomerPhone(input.customerPhone);
 
   if (selectedCustomerAccountId) {
-    const account = await accountById(client, selectedCustomerAccountId);
+    const account = await accountById(client, selectedCustomerAccountId, ownerUserId);
     if (!account) {
       return inactiveMatch({
         customerEmail: normalizedEmail,
@@ -133,54 +154,44 @@ export async function resolvePosCustomerMatch(
   }
 
   if (normalizedEmail) {
-    try {
-      const accountLookup = await findCustomerAccountByNormalizedEmail(normalizedEmail, client);
-      if (!accountLookup) {
-        return inactiveMatch({
-          customerEmail: normalizedEmail,
-          customerPhone: normalizedPhone,
-          customerMatchMethod: "email_not_found",
-          message: "No verified account matched that email. Contact can be saved on the POS receipt only."
-        });
-      }
-      const account = await accountById(client, accountLookup.id);
-      if (!account || !isVerifiedActiveCustomer(account)) {
+    const accountMatches = await findEmailMatches(client, normalizedEmail, ownerUserId);
+    if (accountMatches.length !== 1) {
+      return inactiveMatch({
+        customerEmail: normalizedEmail,
+        customerPhone: normalizedPhone,
+        customerMatchMethod: accountMatches.length > 1 ? "email_conflict" : "email_not_found",
+        message: accountMatches.length > 1
+          ? "Multiple customer accounts matched that email. Resolve the account before linking rewards."
+          : "No verified account matched that email. Contact can be saved on the POS receipt only."
+      });
+    }
+    const account = accountMatches[0];
+    if (!account || !isVerifiedActiveCustomer(account)) {
         return inactiveMatch({
           customerEmail: normalizedEmail,
           customerPhone: normalizedPhone,
           customerMatchMethod: "email_unverified",
           message: "Email found, but the customer account is not verified and active. No rewards will be attached."
         });
-      }
-
-      const rewardsConfig = customerAccountFeatureConfig();
-      const posRewardsEnabled =
-        rewardsConfig.customerAccountsEnabled && rewardsConfig.customerRewardsEnabled && rewardsConfig.customerPosRewardsEnabled;
-      return {
-        customerAccountId: account.id,
-        customerEmail: normalizedEmail,
-        customerPhone: normalizedPhone,
-        customerMatchMethod: "email",
-        rewardsEligible: posRewardsEnabled,
-        displayEmail: account.email,
-        displayPhone: normalizedPhone,
-        message: posRewardsEnabled
-          ? "Customer linked. Eligible POS subtotal will earn rewards after completed sale."
-          : rewardsConfig.customerRewardsEnabled
-            ? "Customer linked. POS rewards are disabled until the owner enables POS rewards."
-          : "Customer linked. Rewards are not active for POS yet."
-      };
-    } catch (error) {
-      if (error instanceof CustomerAccountIdentityConflictError) {
-        return inactiveMatch({
-          customerEmail: normalizedEmail,
-          customerPhone: normalizedPhone,
-          customerMatchMethod: "email_conflict",
-          message: "Multiple customer accounts matched that email. Resolve the account before linking rewards."
-        });
-      }
-      throw error;
     }
+
+    const rewardsConfig = customerAccountFeatureConfig();
+    const posRewardsEnabled =
+      rewardsConfig.customerAccountsEnabled && rewardsConfig.customerRewardsEnabled && rewardsConfig.customerPosRewardsEnabled;
+    return {
+      customerAccountId: account.id,
+      customerEmail: normalizedEmail,
+      customerPhone: normalizedPhone,
+      customerMatchMethod: "email",
+      rewardsEligible: posRewardsEnabled,
+      displayEmail: account.email,
+      displayPhone: normalizedPhone,
+      message: posRewardsEnabled
+        ? "Customer linked. Eligible POS subtotal will earn rewards after completed sale."
+        : rewardsConfig.customerRewardsEnabled
+          ? "Customer linked. POS rewards are disabled until the owner enables POS rewards."
+          : "Customer linked. Rewards are not active for POS yet."
+    };
   }
 
   if (!normalizedPhone) {
@@ -191,7 +202,7 @@ export async function resolvePosCustomerMatch(
     });
   }
 
-  const phoneMatches = await findPhoneMatches(client, normalizedPhone);
+  const phoneMatches = await findPhoneMatches(client, normalizedPhone, ownerUserId);
   const verifiedMatches = phoneMatches.filter(isVerifiedActiveCustomer);
   if (!verifiedMatches.length) {
     return inactiveMatch({

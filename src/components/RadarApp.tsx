@@ -113,6 +113,7 @@ import {
   posUnitPrice,
   roundPosMoney
 } from "@/lib/pos";
+import { legacyPosReceiptTax } from "@/lib/pos-receipt";
 import { normalizeUPC } from "@/lib/upc";
 import type {
   AppHealthDTO,
@@ -148,6 +149,7 @@ import type {
   PosCustomerMatchResultDTO,
   PosDiscountReasonDTO,
   PosPaymentMethodDTO,
+  PosTaxQuoteDTO,
   PosSaleReceiptDTO,
   ProviderHealthStatus,
   Rating,
@@ -1637,7 +1639,8 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
           ? data.message
           : "";
     const detail = typeof data.detail === "string" && data.detail !== serverError ? ` ${data.detail}` : "";
-    throw new Error(issue || `${serverError || `Request failed (${response.status})`}${detail}`.trim());
+    const reference = typeof data.requestId === "string" && data.requestId ? ` Reference: ${data.requestId}.` : "";
+    throw new Error(issue ? `${issue}${reference}` : `${serverError || `Request failed (${response.status})`}${detail}${reference}`.trim());
   }
   return data as T;
 }
@@ -5180,20 +5183,44 @@ function posPaymentReferenceHelp(method: PosPaymentMethodDTO | null) {
   return "Optional for cash.";
 }
 
+function maskPosReceiptEmail(email: string) {
+  if (email.includes("***")) return email;
+  const [localPart, domain] = email.trim().split("@");
+  if (!localPart || !domain) return "***";
+  return `${localPart.slice(0, 1)}***@${domain}`;
+}
+
+function maskPosReceiptPhone(phone: string) {
+  if (phone.includes("***")) return phone;
+  const digits = phone.replace(/\D/g, "");
+  return digits.length >= 4 ? `***-***-${digits.slice(-4)}` : "***";
+}
+
+function maskPosPaymentReference(reference: string) {
+  const trimmed = reference.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("••••")) return trimmed;
+  return trimmed.length > 4 ? `••••${trimmed.slice(-4)}` : "••••";
+}
+
 function posReceiptSummary(receipt: PosSaleReceiptDTO) {
   const rewardLine =
     receipt.rewardPointsEarned > 0
       ? `Rewards: ${receipt.rewardPointsEarned} point${receipt.rewardPointsEarned === 1 ? "" : "s"} earned`
-      : receipt.customerAccountId
+      : receipt.customerLinked
         ? "Customer linked. Rewards are not active for POS yet."
         : null;
+  const refundLine = receipt.refundedAmount > 0
+    ? `Refund: ${money(receipt.refundedAmount)}${receipt.refundedTax === null ? " (tax reversal unavailable for historical record)" : ` including ${money(receipt.refundedTax)} tax`}`
+    : null;
   return [
     "GameDayGrabs",
-    `Sale ${receipt.saleReference}`,
+    `Receipt ${receipt.saleReference}`,
     `Date: ${dateTime(receipt.completedAt)}`,
+    `Cashier: ${receipt.cashierName}${receipt.registerLabel ? ` · Register: ${receipt.registerLabel}` : ""}`,
     `Payment: ${receipt.paymentMethodLabel}${receipt.paymentReference ? ` (${receipt.paymentReference})` : ""}`,
-    receipt.customerEmail ? `Customer email: ${receipt.customerEmail}` : null,
-    receipt.customerPhone ? `Customer phone: ${receipt.customerPhone}` : null,
+    receipt.customerEmail ? `Customer email: ${maskPosReceiptEmail(receipt.customerEmail)}` : null,
+    receipt.customerPhone ? `Customer phone: ${maskPosReceiptPhone(receipt.customerPhone)}` : null,
     rewardLine,
     ...receipt.lines.map((line) => {
       const adjustment = line.discountAmount > 0
@@ -5208,8 +5235,19 @@ function posReceiptSummary(receipt: PosSaleReceiptDTO) {
       ? `Sales tax: Tax exempt (${receipt.taxExemptReason ?? "approved exemption"})`
       : receipt.taxStatus === "not_recorded"
         ? "Sales tax: Not recorded"
-        : `Sales tax: ${money(receipt.tax)}`,
+        : `${receipt.taxJurisdiction.state} tax: ${money(receipt.stateTax)}`,
+    receipt.taxExempt || receipt.taxStatus === "not_recorded"
+      ? null
+      : `${receipt.taxJurisdiction.county ?? "County"} surtax: ${money(receipt.countySurtax)}`,
+    receipt.taxExempt || receipt.taxStatus === "not_recorded"
+      ? null
+      : `Total sales tax: ${money(receipt.tax)}`,
     `Total: ${money(receipt.total)}`,
+    refundLine,
+    receipt.refundedMerchandise !== null && receipt.refundedMerchandise > 0 ? `Refunded merchandise: ${money(receipt.refundedMerchandise)}` : null,
+    receipt.refundedAmount > 0 ? `Net total: ${money(receipt.netTotal)}` : null,
+    receipt.refundedAt ? `Refunded: ${dateTime(receipt.refundedAt)}` : null,
+    "Thank you for collecting with us.",
     `Support: ${GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}`
   ].filter(Boolean).join("\n");
 }
@@ -5246,6 +5284,11 @@ function PosPanel({
   const [submitting, setSubmitting] = useState(false);
   const [posMessage, setPosMessage] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<PosSaleReceiptDTO | null>(null);
+  const [taxQuote, setTaxQuote] = useState<PosTaxQuoteDTO | null>(null);
+  const [taxQuoteStatus, setTaxQuoteStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [taxQuoteError, setTaxQuoteError] = useState<string | null>(null);
+  const [taxQuoteRefreshKey, setTaxQuoteRefreshKey] = useState(0);
+  const taxQuoteSequenceRef = useRef(0);
   const [recentlyAddedItemId, setRecentlyAddedItemId] = useState<string | null>(null);
   const [maxReachedItemId, setMaxReachedItemId] = useState<string | null>(null);
   const [inventoryView, setInventoryView] = useState<PosInventoryView>("sellable");
@@ -5323,18 +5366,101 @@ function PosPanel({
   const cartDiscount = roundPosMoney(cartLines.reduce((sum, line) => sum + line.discountAmount * line.quantity, 0));
   const cartInvalid = cartLines.some((line) => !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned);
   const cartEmpty = cartLines.length === 0;
-  const actionDisabled = busy || submitting || cartEmpty || !paymentMethod || cartInvalid;
+  const exemptionQuoteReady = !taxExempt || (taxExemptReason.trim().length >= 4 && taxExemptionReference.trim().length >= 4);
+  const taxQuoteRequestBody = useMemo(
+    () =>
+      JSON.stringify({
+        idempotencyKey: saleIdempotencyKey,
+        items: cart.map((line) => ({
+          inventoryItemId: line.itemId,
+          quantity: line.quantity,
+          adjustedUnitPrice: line.adjustedUnitPrice,
+          discountReason: line.discountReason,
+          discountNote: line.discountNote
+        })),
+        selectedCustomerAccountId: selectedCustomer?.id,
+        taxExempt,
+        taxExemptReason: taxExempt ? taxExemptReason : undefined,
+        taxExemptionReference: taxExempt ? taxExemptionReference : undefined
+      }),
+    [cart, saleIdempotencyKey, selectedCustomer?.id, taxExempt, taxExemptReason, taxExemptionReference]
+  );
+  const taxQuoteReady = taxQuoteStatus === "ready" && Boolean(taxQuote?.canComplete);
+  const quotedTotal = taxQuote?.total ?? cartTotals.total;
+  const actionDisabled = busy || submitting || cartEmpty || !paymentMethod || cartInvalid || !taxQuoteReady;
   const completeSaleLabel = cartEmpty
     ? "Add item to complete sale"
     : !paymentMethod
       ? "Select payment method"
-      : submitting || busyLabel === "Completing POS sale"
-        ? "Completing"
-        : `Complete Sale ${money(cartTotals.total)}`;
+      : taxQuoteStatus === "loading"
+        ? "Calculating tax…"
+        : !taxQuoteReady
+          ? "Review tax setup"
+          : submitting || busyLabel === "Completing POS sale"
+            ? "Completing"
+            : `Complete Sale ${money(quotedTotal)}`;
 
   useEffect(() => {
     setVisibleLimit(POS_RESULT_BATCH_SIZE);
   }, [filter, query, inventoryView]);
+
+  useEffect(() => {
+    const sequence = taxQuoteSequenceRef.current + 1;
+    taxQuoteSequenceRef.current = sequence;
+    const publishCurrent = (publish: () => void) => {
+      queueMicrotask(() => {
+        if (taxQuoteSequenceRef.current === sequence) publish();
+      });
+    };
+
+    if (cartEmpty) {
+      publishCurrent(() => {
+        setTaxQuote(null);
+        setTaxQuoteStatus("idle");
+        setTaxQuoteError(null);
+      });
+      return;
+    }
+    if (!exemptionQuoteReady) {
+      publishCurrent(() => {
+        setTaxQuote(null);
+        setTaxQuoteStatus("idle");
+        setTaxQuoteError("Enter the exemption reason and certificate or authorization reference to calculate tax.");
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    publishCurrent(() => {
+      setTaxQuoteStatus("loading");
+      setTaxQuoteError(null);
+    });
+    void requestJson<{ quote: PosTaxQuoteDTO }>("/api/radar/pos/tax-quote", {
+      method: "POST",
+      body: taxQuoteRequestBody,
+      signal: controller.signal
+    })
+      .then((result) => {
+        if (taxQuoteSequenceRef.current !== sequence) return;
+        setTaxQuote(result.quote);
+        setTaxQuoteStatus("ready");
+        setTaxQuoteError(result.quote.canComplete ? null : result.quote.reason);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || taxQuoteSequenceRef.current !== sequence) return;
+        setTaxQuote(null);
+        setTaxQuoteStatus("error");
+        setTaxQuoteError(error instanceof Error ? error.message : "POS tax could not be calculated.");
+      });
+    return () => controller.abort();
+  }, [cartEmpty, exemptionQuoteReady, taxQuoteRefreshKey, taxQuoteRequestBody]);
+
+  useEffect(() => {
+    if (!taxQuote?.expiresAt || taxQuoteStatus !== "ready") return;
+    const remainingMs = Date.parse(taxQuote.expiresAt) - Date.now();
+    const timer = window.setTimeout(() => setTaxQuoteRefreshKey((current) => current + 1), Math.max(0, remainingMs));
+    return () => window.clearTimeout(timer);
+  }, [taxQuote?.expiresAt, taxQuoteStatus]);
 
   useEffect(() => {
     if (!confirmOpen) return;
@@ -5471,6 +5597,13 @@ function PosPanel({
     setRecentlyAddedItemId(null);
     setMaxReachedItemId(null);
     setPriceAdjustmentDraft(null);
+    setTaxExempt(false);
+    setTaxExemptReason("");
+    setTaxExemptionReference("");
+    setTaxExemptionNote("");
+    setTaxQuote(null);
+    setTaxQuoteStatus("idle");
+    setTaxQuoteError(null);
     searchInputRef.current?.focus();
   }
 
@@ -5579,6 +5712,14 @@ function PosPanel({
       setPosMessage("Tax-exempt sales require the enabled admin workflow, a reason, and a certificate or authorization reference.");
       return false;
     }
+    if (taxQuoteStatus === "loading") {
+      setPosMessage("Wait for the server tax calculation to finish.");
+      return false;
+    }
+    if (!taxQuoteReady || !taxQuote) {
+      setPosMessage(taxQuoteError ?? "Server tax calculation is required before confirming the sale.");
+      return false;
+    }
     setPosMessage(null);
     return true;
   }
@@ -5586,7 +5727,7 @@ function PosPanel({
   async function completeSale() {
     if (submitting) return;
     if (!validateBeforeConfirm()) return;
-    if (!paymentMethod) return;
+    if (!paymentMethod || !taxQuote?.canComplete) return;
     setSubmitting(true);
     setPosMessage(null);
     try {
@@ -5594,6 +5735,7 @@ function PosPanel({
         method: "POST",
         body: JSON.stringify({
           idempotencyKey: saleIdempotencyKey,
+          quoteId: taxQuote.quoteId,
           items: cartLines.map((line) => ({
             inventoryItemId: line.item.id,
             quantity: line.quantity,
@@ -5612,6 +5754,9 @@ function PosPanel({
       });
       setReceipt(result.sale);
       setCart([]);
+      setTaxQuote(null);
+      setTaxQuoteStatus("idle");
+      setTaxQuoteError(null);
       setPaymentMethod(null);
       setPaymentReference("");
       setTaxExempt(false);
@@ -5629,7 +5774,15 @@ function PosPanel({
       setConfirmOpen(false);
       await onCompleted();
     } catch (error) {
-      setPosMessage(error instanceof Error ? error.message : "POS sale failed.");
+      const message = error instanceof Error ? error.message : "POS sale failed.";
+      setPosMessage(message);
+      if (/tax quote|refresh the tax calculation/i.test(message)) {
+        setConfirmOpen(false);
+        setTaxQuote(null);
+        setTaxQuoteStatus("error");
+        setTaxQuoteError("The cart or tax profile changed. Refreshing the server calculation is required before completion.");
+        setTaxQuoteRefreshKey((current) => current + 1);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -5857,13 +6010,49 @@ function PosPanel({
               <EmptyState icon={ShoppingCart} title="Cart is empty" detail="Search or scan a product to start an in-person sale." />
             )}
           </div>
-          <div className="pos-total-box">
-            <span>Merchandise subtotal <strong>{money(cartMerchandiseSubtotal)}</strong></span>
-            <span>Discount <strong>{cartDiscount > 0 ? `-${money(cartDiscount)}` : money(0)}</strong></span>
-            <span>Taxable subtotal <strong>{money(cartTotals.subtotal)}</strong></span>
-            <span>Sales tax <strong>{money(cartTotals.tax)}</strong></span>
-            <small>{configuredPosTaxRate > 0 ? `${dashboard.storefrontSettings.tax.storeState} configured rate ${(configuredPosTaxRate * 100).toFixed(3)}%. Server recalculates before finalizing.` : "Sales tax collection is disabled. Server will store tax as not recorded."}</small>
-            <span className="total">Total <strong>{money(cartTotals.total)}</strong></span>
+          <div className={`pos-tax-profile-card ${taxQuote?.taxStatus === "misconfigured" ? "needs-attention" : ""}`}>
+            <div>
+              <strong>Active tax jurisdiction</strong>
+              <span>
+                {taxQuote
+                  ? [taxQuote.jurisdiction.county, taxQuote.jurisdiction.state, taxQuote.jurisdiction.country].filter(Boolean).join(", ")
+                  : "Waiting for server calculation"}
+              </span>
+            </div>
+            <div>
+              <strong>{taxQuote ? `${(taxQuote.combinedRateBasisPoints / 100).toFixed(2)}%` : "?"}</strong>
+              <span>Combined saved rate</span>
+            </div>
+            <a href="/admin/tax-settings">Edit Tax Settings</a>
+            {taxQuote?.effectiveAt || taxQuote?.sourceNote ? (
+              <small>
+                {taxQuote.effectiveAt ? `Effective ${shortDate(taxQuote.effectiveAt)}` : "No effective date"}
+                {taxQuote.sourceNote ? ` · ${taxQuote.sourceNote}` : ""}
+              </small>
+            ) : null}
+          </div>
+          <div className="pos-total-box" aria-busy={taxQuoteStatus === "loading"}>
+            <span>Merchandise subtotal <strong>{money(taxQuote?.merchandiseSubtotal ?? cartMerchandiseSubtotal)}</strong></span>
+            <span>Discount <strong>{(taxQuote?.discount ?? cartDiscount) > 0 ? `-${money(taxQuote?.discount ?? cartDiscount)}` : money(0)}</strong></span>
+            <span>Taxable subtotal <strong>{money(taxQuote?.taxableSubtotal ?? cartTotals.subtotal)}</strong></span>
+            {taxQuote?.taxStatus === "collected" ? (
+              <>
+                <span>{taxQuote.jurisdiction.state} tax <strong>{money(taxQuote.stateTax)}</strong></span>
+                <span>{taxQuote.jurisdiction.county ? `${taxQuote.jurisdiction.county} surtax` : "County surtax"} <strong>{money(taxQuote.countySurtax)}</strong></span>
+                <span>Total sales tax <strong>{money(taxQuote.tax)}</strong></span>
+              </>
+            ) : taxQuote?.taxStatus === "exempt" ? (
+              <span>Sales tax <strong>Tax exempt</strong></span>
+            ) : taxQuote?.taxStatus === "not_recorded" ? (
+              <span>Sales tax <strong>Not recorded — collection disabled</strong></span>
+            ) : (
+              <span>Sales tax <strong>{taxQuoteStatus === "loading" ? "Calculating" : "Unavailable"}</strong></span>
+            )}
+            <small className={taxQuoteError ? "form-error" : undefined}>
+              {taxQuoteStatus === "loading" ? "Calculating tax on the server..." : taxQuote?.reason ?? taxQuoteError ?? "Add an item to calculate tax."}
+            </small>
+            {taxQuote?.expiresAt ? <small>Quote v{taxQuote.quoteVersion} · refreshes {relativeTime(taxQuote.expiresAt)}</small> : null}
+            <span className="total">Total <strong>{money(quotedTotal)}</strong></span>
           </div>
           {taxExemptAvailable ? (
             <div className="pos-customer-panel" aria-label="Tax exemption controls">
@@ -6110,18 +6299,24 @@ function PosPanel({
             </div>
             <div className="pos-confirm-summary">
               <span>Items <strong>{cartQuantity}</strong></span>
-              <span>Merchandise subtotal <strong>{money(cartMerchandiseSubtotal)}</strong></span>
-              <span>Discount <strong>{cartDiscount > 0 ? `-${money(cartDiscount)}` : money(0)}</strong></span>
-              <span>Taxable subtotal <strong>{money(cartTotals.subtotal)}</strong></span>
-              <span>Sales tax <strong>{money(cartTotals.tax)}</strong></span>
-              {taxExempt ? <span>Tax status <strong>Exempt — admin approved</strong></span> : null}
+              <span>Merchandise subtotal <strong>{money(taxQuote?.merchandiseSubtotal ?? cartMerchandiseSubtotal)}</strong></span>
+              <span>Discount <strong>{(taxQuote?.discount ?? cartDiscount) > 0 ? `-${money(taxQuote?.discount ?? cartDiscount)}` : money(0)}</strong></span>
+              <span>Taxable subtotal <strong>{money(taxQuote?.taxableSubtotal ?? cartTotals.subtotal)}</strong></span>
+              {taxQuote?.taxStatus === "collected" ? (
+                <>
+                  <span>{taxQuote.jurisdiction.state} tax <strong>{money(taxQuote.stateTax)}</strong></span>
+                  <span>{taxQuote.jurisdiction.county ? `${taxQuote.jurisdiction.county} surtax` : "County surtax"} <strong>{money(taxQuote.countySurtax)}</strong></span>
+                  <span>Total sales tax <strong>{money(taxQuote.tax)}</strong></span>
+                </>
+              ) : <span>Sales tax <strong>{taxQuote?.taxStatus === "exempt" ? "Tax exempt" : "Not recorded"}</strong></span>}
+              <span>Tax status <strong>{taxQuote?.taxStatus === "exempt" ? "Exempt - admin approved" : taxQuote?.taxStatus === "collected" ? "Collected" : "Not recorded"}</strong></span>
               <span>Payment <strong>{paymentMethod ? posPaymentMethodLabel(paymentMethod) : "Not selected"}</strong></span>
-              {paymentReference.trim() ? <span>Reference <strong>{paymentReference.trim()}</strong></span> : null}
-              {selectedCustomer ? <span>Customer <strong>{selectedCustomer.displayName}</strong></span> : null}
+              {paymentReference.trim() ? <span>Reference <strong>{maskPosPaymentReference(paymentReference)}</strong></span> : null}
+              {selectedCustomer ? <span>Customer <strong>Selected account</strong></span> : null}
               {selectedCustomer ? (
                 <span>Rewards <strong>{customerMatch?.rewardsEligible ? "Eligible after sale" : customerLinked ? "Selected account" : "Not eligible"}</strong></span>
               ) : null}
-              <span>Total <strong>{money(cartTotals.total)}</strong></span>
+              <span>Total <strong>{money(quotedTotal)}</strong></span>
             </div>
             <p className="manual-safety-note">This will record the sale and deduct inventory. Close or cancel does not save anything.</p>
             <div className="modal-action-row">
@@ -6142,6 +6337,11 @@ function PosPanel({
 
 function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewSale: () => void }) {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const refundLabel = receipt.refundedAmount > 0
+    ? receipt.refundStatus === "refunded"
+      ? "Fully refunded"
+      : "Partially refunded"
+    : null;
 
   async function copyReceipt() {
     try {
@@ -6153,23 +6353,36 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
   }
 
   return (
-    <section className="pos-receipt" aria-live="polite">
-      <div>
-        <span className="sale-status-badge good">Sale Complete</span>
-        <strong className="pos-receipt-store">GameDayGrabs</strong>
-        <h3>{receipt.saleReference}</h3>
+    <section className="pos-receipt pos-receipt-print" aria-live="polite" aria-label={`Receipt ${receipt.saleReference}`}>
+      <header className="pos-receipt-header">
+        <Image
+          className="pos-receipt-logo"
+          src="/brand/gamedaygrabs-logo-horizontal.png"
+          alt="GameDayGrabs"
+          width={190}
+          height={54}
+          priority
+        />
+        <span className="sale-status-badge good">{refundLabel ?? "Sale Complete"}</span>
+        <h3>Receipt {receipt.saleReference}</h3>
         <p>{dateTime(receipt.completedAt)}</p>
-        <p>{receipt.itemCount} item{receipt.itemCount === 1 ? "" : "s"} sold. Inventory updated.</p>
-      </div>
-      <div className="pos-receipt-lines">
+        <div className="pos-receipt-meta">
+          <span>Cashier <strong>{receipt.cashierName}</strong></span>
+          {receipt.registerLabel ? <span>Register <strong>{receipt.registerLabel}</strong></span> : null}
+          <span>Payment <strong>{receipt.paymentMethodLabel}</strong></span>
+          {receipt.paymentReference ? <span>Reference <strong>{receipt.paymentReference}</strong></span> : null}
+        </div>
+      </header>
+
+      <div className="pos-receipt-lines" aria-label="Purchased items">
         {receipt.lines.map((line) => (
           <span key={line.inventoryItemId}>
             <span>
               {line.quantity} x {line.itemName}
               {line.discountAmount > 0 ? (
                 <small>
-                  POS {money(line.adjustedUnitPrice)} each - discount {money(line.discountAmount)}
-                  {line.discountReasonLabel ? ` - ${line.discountReasonLabel}` : ""}
+                  {money(line.originalUnitPrice)} list · {money(line.adjustedUnitPrice)} paid · {money(line.discountAmount)} discount
+                  {line.discountReasonLabel ? ` · ${line.discountReasonLabel}` : ""}
                 </small>
               ) : (
                 <small>{money(line.unitPrice)} each</small>
@@ -6179,52 +6392,77 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
           </span>
         ))}
       </div>
+
       <div className="pos-receipt-total">
         <span>Merchandise subtotal <strong>{money(receipt.subtotal)}</strong></span>
         <span>Discount <strong>{receipt.discount > 0 ? `-${money(receipt.discount)}` : money(0)}</strong></span>
         <span>Taxable subtotal <strong>{money(receipt.taxableSubtotal)}</strong></span>
         {receipt.taxExempt ? (
-          <span>Sales tax <strong>Tax exempt</strong></span>
+          <span>Sales tax <strong>Tax exempt{receipt.taxExemptReason ? ` · ${receipt.taxExemptReason}` : ""}</strong></span>
         ) : receipt.taxStatus === "not_recorded" ? (
           <span>Sales tax <strong>Not recorded</strong></span>
         ) : (
           <>
-            <span>Florida state tax <strong>{money(receipt.stateTax)}</strong></span>
-            <span>County surtax <strong>{money(receipt.countySurtax)}</strong></span>
-            <span>Sales tax <strong>{money(receipt.tax)}</strong></span>
+            <span>{receipt.taxJurisdiction.state} tax <strong>{money(receipt.stateTax)}</strong></span>
+            <span>{receipt.taxJurisdiction.county ?? "County"} surtax <strong>{money(receipt.countySurtax)}</strong></span>
+            <span>Total sales tax <strong>{money(receipt.tax)}</strong></span>
           </>
         )}
-        <span>Payment <strong>{receipt.paymentMethodLabel}</strong></span>
-        {receipt.paymentReference ? <span>Reference <strong>{receipt.paymentReference}</strong></span> : null}
-        {receipt.customerEmail ? <span>Customer email <strong>{receipt.customerEmail}</strong></span> : null}
-        {receipt.customerPhone ? <span>Customer phone <strong>{receipt.customerPhone}</strong></span> : null}
-        {receipt.rewardPointsEarned > 0 ? (
-          <span>Rewards <strong>{receipt.rewardPointsEarned} point{receipt.rewardPointsEarned === 1 ? "" : "s"} earned</strong></span>
-        ) : receipt.customerEmail || receipt.customerPhone ? (
-          <span>Rewards <strong>{receipt.customerAccountId ? "Rewards are not active for POS yet" : "Contact only"}</strong></span>
-        ) : null}
-        <strong>{money(receipt.total)}</strong>
-        <small>Support: {GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}</small>
-        <div className="pos-receipt-actions">
-          <button className="primary-action" type="button" onClick={onNewSale}>
-            <Plus size={14} />
-            New Sale
-          </button>
-          <button className="mini-action" type="button" onClick={() => void copyReceipt()}>
-            <ClipboardList size={14} />
-            Copy Receipt
-          </button>
-          <button className="mini-action" type="button" onClick={() => window.print()}>
-            <Printer size={14} />
-            Print Receipt
-          </button>
-        </div>
-        {copyStatus ? <small>{copyStatus}</small> : null}
+        <span className="total">Total <strong>{money(receipt.total)}</strong></span>
       </div>
+
+      {receipt.customerEmail || receipt.customerPhone ? (
+        <div className="pos-receipt-customer">
+          <strong>Customer contact</strong>
+          {receipt.customerEmail ? <span>{maskPosReceiptEmail(receipt.customerEmail)}</span> : null}
+          {receipt.customerPhone ? <span>{maskPosReceiptPhone(receipt.customerPhone)}</span> : null}
+        </div>
+      ) : null}
+
+      {receipt.rewardPointsEarned > 0 ? (
+        <p className="pos-receipt-rewards">
+          <Star size={14} />
+          {receipt.rewardPointsEarned} reward point{receipt.rewardPointsEarned === 1 ? "" : "s"} earned
+        </p>
+      ) : receipt.customerLinked ? (
+        <p className="pos-receipt-rewards muted">Customer linked · POS rewards are not active yet.</p>
+      ) : null}
+
+      {refundLabel ? (
+        <div className="pos-receipt-refund">
+          <strong>{refundLabel}</strong>
+          <span>Refunded total <strong>{money(receipt.refundedAmount)}</strong></span>
+          <span>Refunded merchandise <strong>{receipt.refundedMerchandise === null ? "Historical detail unavailable" : money(receipt.refundedMerchandise)}</strong></span>
+          <span>Tax reversed <strong>{receipt.refundedTax === null ? "Historical detail unavailable" : money(receipt.refundedTax)}</strong></span>
+          <span>Net total <strong>{money(receipt.netTotal)}</strong></span>
+          {receipt.refundedAt ? <small>{dateTime(receipt.refundedAt)}</small> : null}
+        </div>
+      ) : null}
+
+      <footer className="pos-receipt-footer">
+        <strong>Thank you for collecting with us.</strong>
+        <span>Questions? {GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL}</span>
+        <small>{receipt.itemCount} item{receipt.itemCount === 1 ? "" : "s"} · Tax status: {receipt.taxStatus.replaceAll("_", " ")}</small>
+      </footer>
+
+      <div className="pos-receipt-actions no-print">
+        <button className="primary-action" type="button" onClick={onNewSale}>
+          <Plus size={14} />
+          New Sale
+        </button>
+        <button className="mini-action" type="button" onClick={() => void copyReceipt()}>
+          <ClipboardList size={14} />
+          Copy Receipt
+        </button>
+        <button className="mini-action" type="button" onClick={() => window.print()}>
+          <Printer size={14} />
+          Print Receipt
+        </button>
+      </div>
+      {copyStatus ? <small className="no-print">{copyStatus}</small> : null}
     </section>
   );
 }
-
 function ProfitLossPanel({ dashboard }: { dashboard: DashboardDTO }) {
   const summary = dashboard.inventorySummary;
   return (
@@ -17395,7 +17633,9 @@ function posReceiptTotals(rows: SaleDetailRow[]) {
   const refundedAmount = roundPosMoney(rows.reduce((sum, row) => sum + row.sale.refundedAmount, 0));
   const refundedTax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.refundedTaxCents ?? 0), 0) / 100) : 0;
   const firstSale = rows[0]?.sale ?? null;
-  const tax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.taxCents ?? 0), 0) / 100) : posReceiptMoneyFromNote(firstSale?.notes, "tax");
+  const tax = snapshotKnown
+    ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.taxCents ?? 0), 0) / 100)
+    : legacyPosReceiptTax({ notes: firstSale?.notes, taxStatus: firstSale?.taxStatus });
   const stateTax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.stateTaxCents ?? 0), 0) / 100) : tax;
   const countySurtax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.countySurtaxCents ?? 0), 0) / 100) : null;
   const total = snapshotKnown

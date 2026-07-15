@@ -18,6 +18,7 @@ import {
   posCustomerMatchSchema,
   posSaleCreateSchema,
   posSaleRefundSchema,
+  posTaxQuoteSchema,
   productCreateSchema,
   releaseCreateSchema,
   rewardAdminAdjustmentSchema,
@@ -125,6 +126,7 @@ test("dangerous request schemas reject unknown fields", () => {
     () => inventorySaleCreateSchema.parse({ quantitySold: 1, actualSalePrice: 10, unexpectedRole: "ADMIN" }),
     () => posSaleCreateSchema.parse({ idempotencyKey: "pos-test-123", items: [{ inventoryItemId: "item-1", quantity: 1 }], paymentMethod: "cash", rewardPoints: 999 }),
     () => posSaleRefundSchema.parse({ idempotencyKey: "refund-test-123", reason: "customer_return", customerAccountId: "other" }),
+    () => posTaxQuoteSchema.parse({ items: [{ inventoryItemId: "item-1", quantity: 1 }], clientTax: 999 }),
     () => rewardAdminAdjustmentSchema.parse({ customerAccountId: "customer-1", action: "add", points: 10, reason: "Test adjustment", idempotencyKey: "adjust-test-123", availablePoints: 999 }),
     () => storefrontOrderCancelRefundSchema.parse({ reason: "customer_requested", refundType: "none", returnItemsToStock: false, sendCustomerEmail: false, idempotencyKey: "cancel-test-123", amount: 999 }),
     () => orderFulfillmentUpdateSchema.parse({ status: "paid", customerAccountId: "other" })
@@ -171,6 +173,7 @@ test("dangerous routes enforce the centralized mutation guard", () => {
     "src/app/api/radar/inventory/store-listing/bulk/route.ts",
     "src/app/api/radar/inventory/tcgcsv/matches/[itemId]/route.ts",
     "src/app/api/radar/inventory/tcgcsv/sync/route.ts",
+    "src/app/api/radar/pos/tax-quote/route.ts",
     "src/app/api/radar/pos/sales/route.ts",
     "src/app/api/radar/pos/sales/[saleReference]/refund/route.ts",
     "src/app/api/radar/rewards/adjustments/route.ts",
@@ -209,7 +212,7 @@ test("every radar mutation is authenticated and covered by the centralized origi
     const source = readFileSync(file, "utf8");
     return /export async function (POST|PUT|PATCH|DELETE)/.test(source);
   });
-  assert.equal(mutationRoutes.length, 87);
+  assert.equal(mutationRoutes.length, 88);
   for (const file of mutationRoutes) {
     const source = readFileSync(file, "utf8");
     assert.match(source, /requireUser\(|currentUser\(|cronAuthorized\(|authorizeAdminMutation\(/, path.relative(root, file));
