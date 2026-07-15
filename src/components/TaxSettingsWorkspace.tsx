@@ -346,7 +346,7 @@ export function TaxSettingsWorkspace() {
           <label className="tax-select-field">Default reporting period<select value={form.defaultReportingPeriod} onChange={(event) => update("defaultReportingPeriod", event.target.value as FormState["defaultReportingPeriod"])}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select></label>
           <CheckField checked={form.taxReportingProfileEnabled} label="Mark the reporting profile as configured" detail={settings.reporting.enabled ? "The independent reporting runtime gate is enabled." : "Configuration intent only. Export remains unavailable while the runtime gate is off."} onChange={(value) => update("taxReportingProfileEnabled", value)} />
           <p className="tax-section-copy">{settings.reporting.disclaimer}</p>
-          {settings.reporting.exportAvailable ? <a href="/api/radar/tax-report?format=csv" className="tax-inline-action">Download current CSV export</a> : <span className="tax-muted">Export is unavailable while reporting is disabled.</span>}
+          {settings.reporting.exportAvailable ? <a href="/admin/tax-reports" className="tax-inline-action">Open Sales Tax Reports</a> : <span className="tax-muted">Reporting is unavailable while the feature is disabled.</span>}
         </section>
 
         <section className="tax-section">
