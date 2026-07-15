@@ -11,6 +11,15 @@ type PosTaxQuoteTokenPayload = {
   expiresAt: number;
 };
 
+export class PosTaxQuoteConflictError extends Error {
+  readonly code = "POS_TAX_QUOTE_CONFLICT";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PosTaxQuoteConflictError";
+  }
+}
+
 export type PosTaxFingerprintInput = {
   userId: string;
   idempotencyKey: string;
@@ -96,14 +105,14 @@ export function createPosTaxQuoteToken(userId: string, fingerprint: string, now 
 export function verifyPosTaxQuoteToken(token: string, userId: string, now = Date.now()) {
   const [body, signature, extra] = token.split(".");
   if (!body || !signature || extra || !safeEqual(signature, sign(body))) {
-    throw new Error("POS tax quote is invalid. Refresh the tax calculation before completing the sale.");
+    throw new PosTaxQuoteConflictError("POS tax quote is invalid. Refresh the tax calculation before completing the sale.");
   }
 
   let payload: PosTaxQuoteTokenPayload;
   try {
     payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as PosTaxQuoteTokenPayload;
   } catch {
-    throw new Error("POS tax quote is invalid. Refresh the tax calculation before completing the sale.");
+    throw new PosTaxQuoteConflictError("POS tax quote is invalid. Refresh the tax calculation before completing the sale.");
   }
 
   const maximumExpiration = now + POS_TAX_QUOTE_TTL_MS + 60_000;
@@ -115,16 +124,16 @@ export function verifyPosTaxQuoteToken(token: string, userId: string, now = Date
     !Number.isFinite(payload.expiresAt) ||
     payload.expiresAt > maximumExpiration
   ) {
-    throw new Error("POS tax quote is invalid. Refresh the tax calculation before completing the sale.");
+    throw new PosTaxQuoteConflictError("POS tax quote is invalid. Refresh the tax calculation before completing the sale.");
   }
   if (payload.expiresAt <= now) {
-    throw new Error("POS tax quote expired. Refresh the tax calculation before completing the sale.");
+    throw new PosTaxQuoteConflictError("POS tax quote expired. Refresh the tax calculation before completing the sale.");
   }
   return payload;
 }
 
 export function assertPosTaxQuoteMatches(payload: PosTaxQuoteTokenPayload, fingerprint: string) {
   if (!safeEqual(payload.fingerprint, fingerprint)) {
-    throw new Error("POS tax quote is stale. Refresh the tax calculation before completing the sale.");
+    throw new PosTaxQuoteConflictError("POS tax quote is stale. Refresh the tax calculation before completing the sale.");
   }
 }
