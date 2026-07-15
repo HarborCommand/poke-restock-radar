@@ -123,7 +123,7 @@ test("canonical ledger writes use atomic upsert and serializable transactions", 
   assert.match(backfill, /runRewardSerializableTransaction/);
   assert.match(radar, /const receipt = await runRewardSerializableTransaction/);
   assert.match(radar, /await runRewardSerializableTransaction\(async \(tx\) =>/);
-  assert.match(storefront, /const updatedOrder = await runRewardSerializableTransaction\(async \(tx\) =>/);
+  assert.match(storefront, /const transactionResult = await runTaxRefundTransaction\(async \(tx\) =>/);
   assert.match(storefront, /await reverseRewardsForOrder\([\s\S]*?updated,[\s\S]*?tx\s*\)/);
 });
 

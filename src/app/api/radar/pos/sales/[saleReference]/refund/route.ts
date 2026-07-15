@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
-import { ok, readJson, safeMutationError, withRequestId } from "@/lib/http";
+import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import { logServerEvent, requestCorrelationId, runWithRequestContext, safeEntityRef } from "@/lib/observability";
 import { POS_REFUND_REASON_LABELS } from "@/lib/pos";
 import { refundPosSale } from "@/lib/radar-service";
@@ -14,7 +14,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
   const requestId = requestCorrelationId(request);
   const startedAt = Date.now();
   const { user, response } = await requireUser();
-  if (response) return withRequestId(response, requestId);
+  if (response) return withPrivateNoStore(withRequestId(response, requestId));
   const adminResponse = authorizeAdminMutation(request, user);
   if (adminResponse) return withRequestId(adminResponse, requestId);
 
@@ -38,7 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
           total: sale.total
         }
       });
-      return withRequestId(ok({ sale }), requestId);
+      return withRequestId(privateOk({ sale }), requestId);
     } catch (error) {
       logServerEvent({
         requestId,

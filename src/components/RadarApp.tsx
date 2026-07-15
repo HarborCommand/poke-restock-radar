@@ -17631,7 +17631,7 @@ function posReceiptTotals(rows: SaleDetailRow[]) {
   const discount = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.discountCents ?? 0), 0) / 100) : 0;
   const taxableSubtotal = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.taxableSubtotalCents ?? 0), 0) / 100) : subtotal;
   const refundedAmount = roundPosMoney(rows.reduce((sum, row) => sum + row.sale.refundedAmount, 0));
-  const refundedTax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.refundedTaxCents ?? 0), 0) / 100) : 0;
+  const refundedTax = snapshotKnown ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.refundedTaxCents ?? 0), 0) / 100) : null;
   const firstSale = rows[0]?.sale ?? null;
   const tax = snapshotKnown
     ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.taxCents ?? 0), 0) / 100)
@@ -17641,7 +17641,7 @@ function posReceiptTotals(rows: SaleDetailRow[]) {
   const total = snapshotKnown
     ? roundPosMoney(rows.reduce((sum, row) => sum + (row.sale.totalCents ?? 0), 0) / 100)
     : posReceiptMoneyFromNote(firstSale?.notes, "total") ?? roundPosMoney(subtotal + (tax ?? 0));
-  const refundedMerchandise = Math.max(0, refundedAmount - refundedTax);
+  const refundedMerchandise = Math.max(0, refundedAmount - (refundedTax ?? 0));
   return {
     subtotal,
     discount,
@@ -17651,6 +17651,7 @@ function posReceiptTotals(rows: SaleDetailRow[]) {
     countySurtax,
     total,
     refundedAmount,
+    refundedTax,
     netPaid: roundPosMoney(Math.max(0, total - refundedAmount)),
     netRevenue: roundPosMoney(Math.max(0, taxableSubtotal - refundedMerchandise)),
     refundableTotal: roundPosMoney(Math.max(0, total - refundedAmount)),
@@ -17685,6 +17686,7 @@ function posReceiptText(rows: SaleDetailRow[]) {
     `Sales tax: ${totals.tax === null ? "Not recorded" : money(totals.tax)}`,
     `Total: ${money(totals.total)}`,
     totals.refundedAmount > 0 ? `Refunded: ${money(totals.refundedAmount)}` : null,
+    totals.refundedAmount > 0 ? `Refunded tax: ${totals.refundedTax === null ? "Not recorded" : money(totals.refundedTax)}` : null,
     `Net paid: ${money(totals.netPaid)}`,
     saleRewardLabel(firstSale) ? `Rewards: ${saleRewardLabel(firstSale)}` : null
   ].filter(Boolean).join("\n");
@@ -18574,6 +18576,7 @@ function SaleDetailsModal({
               )}
               <span>Total <strong>{money(receiptTotals.total)}</strong></span>
               <span>Refunded <strong>{money(receiptTotals.refundedAmount)}</strong></span>
+              {receiptTotals.refundedAmount > 0 ? <span>Refunded tax <strong>{receiptTotals.refundedTax === null ? "Not recorded" : money(receiptTotals.refundedTax)}</strong></span> : null}
               <span>Net paid <strong>{money(receiptTotals.netPaid)}</strong></span>
             </div>
             {receiptMessage ? <p className="form-success">{receiptMessage}</p> : null}

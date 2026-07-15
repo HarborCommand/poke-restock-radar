@@ -60,6 +60,12 @@ import {
 } from "@/lib/customer-rewards";
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import {
+  lockPosSaleForRefund,
+  runTaxRefundTransaction,
+  TaxRefundAmountError,
+  TaxRefundConflictError
+} from "@/lib/tax-refund-concurrency";
+import {
   detectRetailerAvailability,
   detectRetailerPrice,
   detectTargetAvailability,
@@ -7742,12 +7748,27 @@ export async function refundPosSale(
     orderBy: { createdAt: "asc" }
   });
   if (!sales.length) throw new Error("POS sale not found.");
+  const itemIds = Array.from(new Set(sales.map((sale) => sale.inventoryItemId)));
+  const syncAffectedInventory = async () => {
+    for (const itemId of itemIds) {
+      await syncInventoryItemTotalsFromLots(itemId);
+      await recalculateInventorySalesAndLots(itemId);
+      await syncInventoryStoreStatusAfterStockChange(itemId);
+    }
+  };
 
   const existingAdjustment = await prisma.taxAdjustment.findFirst({
-    where: { channel: "pos", saleReference: normalizedReference, idempotencyKey: { startsWith: `tax:pos-refund:${idempotencyKey}:` } },
+    where: {
+      channel: "pos",
+      inventorySaleId: { in: sales.map((sale) => sale.id) },
+      idempotencyKey: { startsWith: `tax:pos-refund:${idempotencyKey}:` }
+    },
     select: { id: true }
   });
-  if (existingAdjustment) return existingReceipt;
+  if (existingAdjustment) {
+    await syncAffectedInventory();
+    return (await receiptForExistingPosSale(prisma, currentUser, normalizedReference)) ?? existingReceipt;
+  }
   if (sales.every((sale) => sale.refundStatus === "refunded")) {
     throw new Error("This POS sale has already been fully refunded.");
   }
@@ -7757,14 +7778,16 @@ export async function refundPosSale(
     return sum + Math.max(0, originalTotalCents - moneyToCents(sale.refundedAmount ?? 0));
   }, 0);
   if (remainingRefundableCents <= 0) throw new Error("This POS sale has no remaining refundable amount.");
-  const requestedRefundCents = input.refundType === "full"
+  const preflightRequestedRefundCents = input.refundType === "full"
     ? remainingRefundableCents
     : moneyToCents(input.partialRefundAmount ?? 0);
-  if (requestedRefundCents <= 0) throw new Error("Enter a partial refund amount.");
-  if (requestedRefundCents > remainingRefundableCents) throw new Error("The refund exceeds the remaining refundable amount.");
+  if (preflightRequestedRefundCents <= 0) throw new Error("Enter a partial refund amount.");
+  if (preflightRequestedRefundCents > remainingRefundableCents) {
+    throw new TaxRefundAmountError("The refund exceeds the remaining refundable amount.");
+  }
 
-  const itemIds = Array.from(new Set(sales.map((sale) => sale.inventoryItemId)));
-  await runRewardSerializableTransaction(async (tx) => {
+  await runTaxRefundTransaction(async (tx) => {
+    await lockPosSaleForRefund(tx, currentUser.id, normalizedReference);
     const lockedSales = await tx.inventorySale.findMany({
       where: {
         userId: currentUser.id,
@@ -7777,7 +7800,11 @@ export async function refundPosSale(
     if (!lockedSales.length) throw new Error("POS sale not found.");
 
     const lockedExistingAdjustment = await tx.taxAdjustment.findFirst({
-      where: { channel: "pos", saleReference: normalizedReference, idempotencyKey: { startsWith: `tax:pos-refund:${idempotencyKey}:` } },
+      where: {
+        channel: "pos",
+        inventorySaleId: { in: lockedSales.map((sale) => sale.id) },
+        idempotencyKey: { startsWith: `tax:pos-refund:${idempotencyKey}:` }
+      },
       select: { id: true }
     });
     if (lockedExistingAdjustment) return;
@@ -7789,6 +7816,15 @@ export async function refundPosSale(
       0,
       (sale.totalCents ?? moneyToCents(sale.grossSale)) - moneyToCents(sale.refundedAmount ?? 0)
     ));
+    const lockedRemainingRefundableCents = remainingLineCents.reduce((sum, amount) => sum + amount, 0);
+    if (lockedRemainingRefundableCents <= 0) throw new Error("This POS sale has no remaining refundable amount.");
+    const requestedRefundCents = input.refundType === "full"
+      ? lockedRemainingRefundableCents
+      : moneyToCents(input.partialRefundAmount ?? 0);
+    if (requestedRefundCents <= 0) throw new Error("Enter a partial refund amount.");
+    if (requestedRefundCents > lockedRemainingRefundableCents) {
+      throw new TaxRefundConflictError("The refundable POS balance changed. Refresh the sale and try again.");
+    }
     const lineRefundCents = allocateCentsByWeight(requestedRefundCents, remainingLineCents);
     let cumulativeEligibleRefundCents = 0;
     for (const [index, sale] of lockedSales.entries()) {
@@ -7889,11 +7925,7 @@ export async function refundPosSale(
     );
   });
 
-  for (const itemId of itemIds) {
-    await syncInventoryItemTotalsFromLots(itemId);
-    await recalculateInventorySalesAndLots(itemId);
-    await syncInventoryStoreStatusAfterStockChange(itemId);
-  }
+  await syncAffectedInventory();
 
   return (await receiptForExistingPosSale(prisma, currentUser, normalizedReference)) ?? existingReceipt;
 }

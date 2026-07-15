@@ -115,7 +115,11 @@ test("Stripe webhook handlers verify raw request bodies before trusting events",
     "export async function handleStripeWebhook",
     "export async function updateInventoryStoreListing"
   );
-
+  const processStripeWebhookEvent = sourceSlice(
+    storefront,
+    "async function processStripeWebhookEvent",
+    "export async function handleStripeWebhook"
+  );
   for (const route of [currentWebhookRoute, legacyWebhookRoute]) {
     assert.match(route, /export const runtime = "nodejs"/);
     assert.match(route, /const rawBody = await request\.text\(\)/);
@@ -125,22 +129,22 @@ test("Stripe webhook handlers verify raw request bodies before trusting events",
   }
 
   const verifyIndex = handleStripeWebhook.indexOf("webhooks.constructEvent(rawBody, signature, secret)");
-  const eventStoreIndex = handleStripeWebhook.indexOf("await upsertSafePaymentEvent");
-  const completedIndex = handleStripeWebhook.indexOf('event.type === "checkout.session.completed"');
+  const eventStoreIndex = handleStripeWebhook.indexOf("await claimProviderEvent");
+  const processIndex = handleStripeWebhook.indexOf("await processStripeWebhookEvent(event, order)");
 
   assert.ok(verifyIndex >= 0, "webhook signature verification is missing");
   assert.ok(eventStoreIndex > verifyIndex, "payment event storage must happen after signature verification");
-  assert.ok(completedIndex > verifyIndex, "checkout.session.completed handling must happen after signature verification");
+  assert.ok(processIndex > verifyIndex, "verified event processing must happen after signature verification");
+  assert.match(processStripeWebhookEvent, /event\.type === "checkout\.session\.completed"/);
 });
 
 test("checkout.session.completed only persists paid orders", () => {
   const storefront = readProjectFile("src/lib/storefront.ts");
   const handleStripeWebhook = sourceSlice(
     storefront,
-    "export async function handleStripeWebhook",
-    "export async function updateInventoryStoreListing"
+    "async function processStripeWebhookEvent",
+    "export async function handleStripeWebhook"
   );
-
   const completedIndex = handleStripeWebhook.indexOf('event.type === "checkout.session.completed"');
   const paidGuardIndex = handleStripeWebhook.indexOf('session.payment_status !== "paid"');
   const persistIndex = handleStripeWebhook.indexOf("await persistPaidCheckoutSession");
@@ -158,14 +162,14 @@ test("paid checkout completion is the permanent inventory decrement path", () =>
   const createStorefrontSale = sourceSlice(storefront, "async function createStorefrontSale", "async function releaseOrderReservations");
   const handleStripeWebhook = sourceSlice(
     storefront,
-    "export async function handleStripeWebhook",
-    "export async function updateInventoryStoreListing"
+    "async function processStripeWebhookEvent",
+    "export async function handleStripeWebhook"
   );
 
-  assert.match(handleStripeWebhook, /const event = stripeClient\(\)\.webhooks\.constructEvent\(rawBody, signature, secret\)/);
-  assert.match(handleStripeWebhook, /if \(session\.payment_status !== "paid"\) return \{ ok: true, skipped: "checkout_session_not_paid" \}/);
-  assert.match(handleStripeWebhook, /const wasPaid = order\.paymentStatus === "paid"/);
-  assert.match(handleStripeWebhook, /if \(!wasPaid && order\.paymentStatus !== "paid"\) \{\s*await createStorefrontSale\(order\);\s*order = await loadFreshStorefrontOrder\(order\.id\);\s*\}/);
+  assert.match(storefront, /const event = stripeClient\(\)\.webhooks\.constructEvent\(rawBody, signature, secret\)/);
+  assert.match(handleStripeWebhook, /if \(receivedSession\.payment_status !== "paid"\) return \{ ok: true, skipped: "checkout_session_not_paid" \}/);
+  assert.match(handleStripeWebhook, /if \(!persisted\.persisted\) return \{ ok: true, skipped: "checkout_session_state_changed" \}/);
+  assert.match(handleStripeWebhook, /if \(order\.paymentStatus !== "paid"\) \{\s*await createStorefrontSale\(order\);\s*order = await loadFreshStorefrontOrder\(order\.id\);\s*\}/);
   assert.match(storefront, /async function loadFreshStorefrontOrder\(orderId: string\) \{\s*return prisma\.storefrontOrder\.findUniqueOrThrow\(\{ where: \{ id: orderId \}, include: storefrontOrderInclude \}\);\s*\}/);
   assert.match(createStorefrontSale, /prisma\.\$transaction/);
   assert.match(createStorefrontSale, /tx\.storefrontOrder\.updateMany/);
@@ -187,21 +191,26 @@ test("checkout.session.completed reloads fresh paid order state before post-paym
   const storefront = readProjectFile("src/lib/storefront.ts");
   const handleStripeWebhook = sourceSlice(
     storefront,
-    "export async function handleStripeWebhook",
-    "export async function updateInventoryStoreListing"
+    "async function processStripeWebhookEvent",
+    "export async function handleStripeWebhook"
+  );
+  const paidSideEffects = sourceSlice(
+    storefront,
+    "async function completePaidCheckoutSideEffects",
+    "export async function applyStripeRefundSnapshot"
   );
 
   const persistIndex = handleStripeWebhook.indexOf("order = persisted.order");
   const createSaleIndex = handleStripeWebhook.indexOf("await createStorefrontSale(order)");
-  const reloadIndex = handleStripeWebhook.indexOf("order = await loadFreshStorefrontOrder(order.id)");
-  const rewardIndex = handleStripeWebhook.indexOf("await awardRewardsForPaidOrder(order)");
-  const emailIndex = handleStripeWebhook.indexOf("await sendStorefrontOrderConfirmationEmail(order)");
+  const reloadIndex = handleStripeWebhook.indexOf("order = await loadFreshStorefrontOrder(order.id)", createSaleIndex);
+  const sideEffectIndex = handleStripeWebhook.indexOf("await completePaidCheckoutSideEffects(order)", reloadIndex);
 
   assert.ok(persistIndex >= 0, "webhook must use the persisted Stripe session snapshot");
   assert.ok(createSaleIndex > persistIndex, "sale finalization must run after the Stripe session snapshot is persisted");
   assert.ok(reloadIndex > createSaleIndex, "order must be reloaded after sale finalization changes paid state in the database");
-  assert.ok(rewardIndex > reloadIndex, "rewards must use the fresh paid order state, not the stale pre-sale object");
-  assert.ok(emailIndex > reloadIndex, "confirmation email must use the fresh paid order state");
+  assert.ok(sideEffectIndex > reloadIndex, "paid side effects must use the fresh paid order state, not the stale pre-sale object");
+  assert.match(paidSideEffects, /await awardRewardsForPaidOrder\(order\)/);
+  assert.match(paidSideEffects, /await sendStorefrontOrderConfirmationEmail\(order\)/);
   assert.doesNotMatch(handleStripeWebhook, /createStorefrontSale\(order\);\s*if \(!wasPaid && order\.paymentStatus === "paid"\)/);
 });
 
@@ -217,8 +226,8 @@ test("unpaid, expired, or canceled checkouts release reservations without record
   const releaseUnpaidCheckoutOrder = sourceSlice(storefront, "export async function releaseUnpaidCheckoutOrder", "async function orderForStripeEvent");
   const handleStripeWebhook = sourceSlice(
     storefront,
-    "export async function handleStripeWebhook",
-    "export async function updateInventoryStoreListing"
+    "async function processStripeWebhookEvent",
+    "export async function handleStripeWebhook"
   );
 
   assert.match(releaseOrderReservations, /return releaseReservationsForSession\(null, orderId\)/);
@@ -265,28 +274,29 @@ test("duplicate Stripe sessions and events do not duplicate orders or customer t
   const schema = readProjectFile("prisma/schema.prisma");
   const orderForStripeEvent = sourceSlice(storefront, "async function orderForStripeEvent", "type StripeAddressLike");
   const createStorefrontSale = sourceSlice(storefront, "async function createStorefrontSale", "async function releaseOrderReservations");
-  const persistPaidCheckoutSession = sourceSlice(storefront, "async function persistPaidCheckoutSession", "export async function handleStripeWebhook");
+  const persistPaidCheckoutSession = sourceSlice(storefront, "async function persistPaidCheckoutSession", "async function processStripeWebhookEvent");
   const syncStorefrontCustomerTotals = sourceSlice(storefront, "async function syncStorefrontCustomerTotals", "async function persistPaidCheckoutSession");
-  const upsertSafePaymentEvent = sourceSlice(storefront, "async function upsertSafePaymentEvent", "function checkoutCustomerSnapshot");
+  const concurrency = readProjectFile("src/lib/tax-refund-concurrency.ts");
   const sendCustomerEmailNotificationOnce = sourceSlice(storefront, "async function sendCustomerEmailNotificationOnce", "async function sendStorefrontOrderConfirmationEmail");
   const handleStripeWebhook = sourceSlice(
     storefront,
-    "export async function handleStripeWebhook",
-    "export async function updateInventoryStoreListing"
+    "async function processStripeWebhookEvent",
+    "export async function handleStripeWebhook"
   );
 
   assert.match(schema, /stripeCheckoutSessionId\s+String\?\s+@unique/);
   assert.match(schema, /eventId\s+String\s+@unique/);
   assert.match(orderForStripeEvent, /stripeCheckoutSessionId: object\.id/);
-  assert.match(persistPaidCheckoutSession, /prisma\.storefrontOrder\.update\(\{\s*where: \{ id: order\.id \}/);
+  assert.match(persistPaidCheckoutSession, /prisma\.storefrontOrder\.updateMany\(\{/);
   assert.doesNotMatch(persistPaidCheckoutSession, /prisma\.storefrontOrder\.create/);
-  assert.match(upsertSafePaymentEvent, /prisma\.paymentEvent\.upsert/);
-  assert.match(upsertSafePaymentEvent, /where: \{ eventId: event\.id \}/);
+  assert.match(concurrency, /client\.paymentEvent\.create/);
+  assert.match(concurrency, /where: \{ eventId: input\.eventId \}/);
+  assert.match(concurrency, /eventType: `processing:\$\{input\.eventType\}`/);
   assert.match(sendCustomerEmailNotificationOnce, /prisma\.paymentEvent\.findUnique\(\{ where: \{ eventId: input\.eventId \} \}\)/);
   assert.match(sendCustomerEmailNotificationOnce, /createCustomerEmailEventClaim\(\{ eventId: input\.eventId, order: input\.order, kind: input\.kind, recipient \}\)/);
   assert.match(storefront, /eventId: customerEmailEventId\("order_confirmation", order\.id\)/);
-  assert.match(handleStripeWebhook, /const wasPaid = order\.paymentStatus === "paid"/);
-  assert.match(handleStripeWebhook, /if \(!wasPaid && order\.paymentStatus !== "paid"\) \{\s*await createStorefrontSale\(order\);\s*order = await loadFreshStorefrontOrder\(order\.id\);\s*\}/);
+  assert.match(handleStripeWebhook, /if \(!persisted\.persisted\) return \{ ok: true, skipped: "checkout_session_state_changed" \}/);
+  assert.match(handleStripeWebhook, /if \(order\.paymentStatus !== "paid"\) \{\s*await createStorefrontSale\(order\);\s*order = await loadFreshStorefrontOrder\(order\.id\);\s*\}/);
   assert.match(createStorefrontSale, /tx\.storefrontOrder\.updateMany/);
   assert.match(createStorefrontSale, /where: \{ id: order\.id, paymentStatus: \{ not: "paid" \} \}/);
   assert.match(createStorefrontSale, /if \(claimed\.count === 0\) return \{ created: false/);
@@ -671,7 +681,7 @@ test("checkout customer records never persist raw card or payment method details
   const storefront = readProjectFile("src/lib/storefront.ts");
   const schema = readProjectFile("prisma/schema.prisma");
   const types = readProjectFile("src/types/radar.ts");
-  const safeStripeEventPayload = sourceSlice(storefront, "function safeStripeEventPayload", "async function upsertSafePaymentEvent");
+  const safeStripeEventPayload = sourceSlice(storefront, "function safeStripeEventPayload", "function checkoutCustomerSnapshot");
   const storefrontModels = sourceSlice(schema, "model StorefrontCustomer", "model Fulfillment");
   const storefrontOrderTypes = sourceSlice(types, "export type StorefrontAddressDTO", "export type StorefrontSummaryDTO");
 
@@ -689,7 +699,7 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   const css = readProjectFile("src/app/globals.css");
   const types = readProjectFile("src/types/radar.ts");
   const emailTemplates = readProjectFile("src/lib/storefront-email-templates.ts");
-  const webhook = sourceSlice(storefront, "export async function handleStripeWebhook", "export async function updateInventoryStoreListing");
+  const webhook = sourceSlice(storefront, "async function processStripeWebhookEvent", "export async function handleStripeWebhook");
   const cancelOrRefund = sourceSlice(storefront, "export async function cancelOrRefundStorefrontOrder", "export async function updateStorefrontOrder");
   const updateOrder = sourceSlice(storefront, "export async function updateStorefrontOrder");
   const emailHelpers = sourceSlice(storefront, "type CustomerEmailStatus", "function stripeImage");
@@ -750,10 +760,10 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(storefront, /pickupInstructionLines\(settings\.localPickupInstructions\)/);
   assert.ok(webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") >= 0, "webhook must reload the paid order before confirmation email");
   assert.ok(
-    webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") < webhook.indexOf("await sendStorefrontOrderConfirmationEmail(order)"),
+    webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") < webhook.indexOf("await completePaidCheckoutSideEffects(order)", webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)")),
     "order confirmation email must run after the post-sale fresh order reload"
   );
-  assert.match(webhook, /if \(!wasPaid\) await sendStorefrontOrderConfirmationEmail\(order\)/);
+  assert.match(storefront, /async function completePaidCheckoutSideEffects[\s\S]*?await sendStorefrontOrderConfirmationEmail\(order\)/);
   assert.match(cancelOrRefund, /customerEmailEventId\("refund_cancellation", updatedOrder\.id, input\.idempotencyKey\)/);
   assert.match(cancelOrRefund, /skippedDetail: "Admin chose not to send a cancellation email\."/);
   assert.match(storefront, /await sendStorefrontCheckoutExpiredEmail\(order, "Stripe Checkout expired before payment completed\."\)/);
@@ -810,10 +820,11 @@ test("admin cancel refund flow stores safe refund metadata and uses Stripe Refun
   assert.match(route, /cancelOrRefundStorefrontOrder\(user, orderId, input\)/);
   assert.match(route, /processed refund workflow for storefront order/);
   assert.match(cancelOrRefund, /stripeClient\(\)\.refunds\.create/);
-  assert.match(cancelOrRefund, /payment_intent: order\.stripePaymentIntentId/);
-  assert.match(cancelOrRefund, /amount: refundCents/);
-  assert.match(cancelOrRefund, /idempotencyKey: `storefront-cancel-refund:\$\{input\.idempotencyKey\}`/);
-  assert.match(cancelOrRefund, /if \(refundCents > remainingRefundableCents\) throw new Error\("Refund amount exceeds the remaining refundable order total\."\)/);
+  assert.match(cancelOrRefund, /payment_intent: providerInput\.paymentIntentId/);
+  assert.match(cancelOrRefund, /amount: providerInput\.amountCents/);
+  assert.match(cancelOrRefund, /idempotencyKey: `storefront-cancel-refund:\$\{current\.id\}:\$\{input\.idempotencyKey\}`/);
+  assert.match(cancelOrRefund, /if \(preflightRefundCents > remainingRefundableCents\) \{[\s\S]*?TaxRefundAmountError/);
+  assert.match(cancelOrRefund, /if \(refundCents > currentRemainingRefundableCents\)/);
   assert.match(cancelOrRefund, /const isShippedRefundWorkflow = order\.fulfillmentStatus === "shipped"/);
   assert.match(cancelOrRefund, /Shipped orders cannot be canceled without a refund\. Use Refund \/ Return for shipped orders\./);
   assert.match(cancelOrRefund, /Add an admin note for shipped refund\/return handling\./);
@@ -828,10 +839,10 @@ test("admin cancel refund flow is idempotent and returns inventory once", () => 
   const returnOrderInventory = sourceSlice(storefront, "async function returnOrderInventory", "export async function cancelOrRefundStorefrontOrder");
   const alertLifecycle = sourceSlice(storefront, "function canceledOrRefundedOrderAlertInput", "async function createStorefrontSale");
 
-  assert.match(cancelOrRefund, /const requestEventId = `admin\.cancel_refund:\$\{input\.idempotencyKey\}`/);
-  assert.match(cancelOrRefund, /prisma\.paymentEvent\.findUnique\(\{ where: \{ eventId: requestEventId \} \}\)/);
-  assert.match(cancelOrRefund, /runRewardSerializableTransaction/);
-  assert.match(cancelOrRefund, /const duplicate = await tx\.paymentEvent\.findUnique/);
+  assert.match(cancelOrRefund, /const requestEventId = `admin\.cancel_refund:\$\{orderId\}:\$\{input\.idempotencyKey\}`/);
+  assert.match(cancelOrRefund, /prisma\.paymentEvent\.findFirst/);
+  assert.match(cancelOrRefund, /runTaxRefundTransaction/);
+  assert.match(cancelOrRefund, /const duplicate = await tx\.paymentEvent\.findFirst/);
   assert.match(cancelOrRefund, /currentIsShippedRefundWorkflow \? current\.fulfillmentStatus : "canceled"/);
   assert.match(cancelOrRefund, /currentIsShippedRefundWorkflow \? current\.canceledAt : current\.canceledAt \?\? new Date\(\)/);
   assert.match(cancelOrRefund, /Refund\/return reason/);
