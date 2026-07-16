@@ -1012,8 +1012,24 @@ export const inventorySaleUpdateSchema = z.object({
   };
 });
 
+const posDeliveryAddressSchema = z.object({
+  line1: z.string().trim().min(3).max(160),
+  line2: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().max(160).optional()),
+  city: z.string().trim().min(2).max(120),
+  state: z.string().trim().regex(/^[A-Za-z]{2}$/, "Use a two-letter state code.").transform((value) => value.toUpperCase()),
+  postalCode: z.string().trim().regex(/^\d{5}(?:-\d{4})?$/, "Use a valid ZIP code."),
+  country: z.string().trim().regex(/^[A-Za-z]{2}$/, "Use a two-letter country code.").transform((value) => value.toUpperCase()).default("US")
+}).strict();
+
+const posFulfillmentFields = {
+  fulfillmentMode: z.enum(["in_person", "delivery"]).default("in_person"),
+  shippingCents: z.coerce.number().int().min(0).max(10_000_000).default(0),
+  deliveryAddress: posDeliveryAddressSchema.optional()
+};
+
 export const posTaxQuoteSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
+  ...posFulfillmentFields,
   items: z.array(z.object({
     inventoryItemId: z.string().trim().min(2),
     quantity: z.coerce.number().int().min(1).max(1000),
@@ -1035,6 +1051,12 @@ export const posTaxQuoteSchema = z.object({
     z.string().trim().min(4).max(120).optional()
   )
 }).strict().superRefine((input, context) => {
+  if (input.fulfillmentMode === "delivery" && !input.deliveryAddress) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["deliveryAddress"], message: "A verified delivery address is required to calculate delivery tax." });
+  }
+  if (input.fulfillmentMode === "in_person" && input.shippingCents !== 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["shippingCents"], message: "In-person POS sales cannot include shipping." });
+  }
   if (input.taxExempt && !input.taxExemptReason) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["taxExemptReason"], message: "Tax-exempt sales require a reason." });
   }
@@ -1046,6 +1068,7 @@ export const posTaxQuoteSchema = z.object({
 export const posSaleCreateSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/),
   quoteId: z.string().trim().min(80).max(1000),
+  ...posFulfillmentFields,
   items: z.array(z.object({
     inventoryItemId: z.string().trim().min(2),
     quantity: z.coerce.number().int().min(1).max(1000),
@@ -1066,6 +1089,12 @@ export const posSaleCreateSchema = z.object({
   taxExemptionReference: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().min(4).max(120).optional()),
   taxExemptionNote: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().max(1000).optional())
 }).strict().superRefine((input, context) => {
+  if (input.fulfillmentMode === "delivery" && !input.deliveryAddress) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["deliveryAddress"], message: "A verified delivery address is required to finalize delivery tax." });
+  }
+  if (input.fulfillmentMode === "in_person" && input.shippingCents !== 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["shippingCents"], message: "In-person POS sales cannot include shipping." });
+  }
   if (input.taxExempt && !input.taxExemptReason) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["taxExemptReason"], message: "Tax-exempt sales require a reason." });
   }
@@ -1261,10 +1290,14 @@ export const taxAdminSettingsSchema = z.object({
   storeCountry: z.string().trim().transform((value) => value.toUpperCase()).pipe(z.literal("US")),
   storeState: z.string().trim().transform((value) => value.toUpperCase()).pipe(z.literal("FL")),
   storeCounty: z.string().trim().min(2).max(80).regex(/^[A-Za-z][A-Za-z .'-]*$/, "Use a valid county name."),
+  storeAddressLine1: z.string().trim().max(160).default(""),
+  storeAddressLine2: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().max(160).optional()),
+  storeCity: z.string().trim().max(120).default(""),
+  storePostalCode: z.string().trim().regex(/^(?:\d{5}(?:-\d{4})?)?$/, "Use a valid ZIP code.").default(""),
   stateRateBasisPoints: z.coerce.number().int().min(0).max(2000),
   countyRateBasisPoints: z.coerce.number().int().min(0).max(2000),
-  effectiveDate: taxProfileEffectiveDate,
-  sourceNote: z.string().trim().min(3).max(500),
+  effectiveDate: z.preprocess((value) => value === "" || value === null ? undefined : value, taxProfileEffectiveDate.optional()),
+  sourceNote: z.string().trim().max(500).default(""),
   onlineTaxProfileEnabled: z.boolean(),
   posTaxEnabled: z.boolean(),
   taxExemptSalesEnabled: z.boolean(),
@@ -1273,7 +1306,10 @@ export const taxAdminSettingsSchema = z.object({
   exemptionReferenceRequired: z.literal(true),
   exemptionReasonRequired: z.literal(true),
   defaultTaxCategory: z.literal("general_tangible_goods"),
-  defaultStripeTaxCode: z.literal("txcd_99999999"),
+  defaultStripeTaxCode: z.string().trim().regex(/^txcd_\d{8}$/, "Use a valid Stripe product tax code."),
+  shippingStripeTaxCode: z.string().trim().regex(/^txcd_\d{8}$/, "Use a valid Stripe shipping tax code.").default("txcd_92010001"),
+  legacyManualTaxFallbackEnabled: z.boolean().default(false),
+  legacyManualTaxFallbackConfirmed: z.boolean().optional(),
   defaultReportingPeriod: z.enum(["monthly", "quarterly", "annual"]),
   registrationConfirmed: z.boolean(),
   storeAddressConfirmed: z.boolean(),
@@ -1296,11 +1332,32 @@ export const taxAdminSettingsSchema = z.object({
       message: "Combined tax rate cannot exceed 20%."
     });
   }
-  if (input.posTaxEnabled && (!input.storeCounty || !input.effectiveDate || !input.sourceNote)) {
+  if (input.legacyManualTaxFallbackEnabled && (!input.storeCounty || !input.effectiveDate || input.sourceNote.length < 3)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["posTaxEnabled"],
-      message: "County, effective date, and source are required before enabling the POS profile."
+      message: "County, effective date, and source are required for the legacy emergency fallback."
+    });
+  }
+  if (input.legacyManualTaxFallbackEnabled && !input.legacyManualTaxFallbackConfirmed) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["legacyManualTaxFallbackConfirmed"],
+      message: "Explicitly confirm the emergency-only legacy fallback before saving it."
+    });
+  }
+  if (input.posTaxEnabled && input.legacyManualTaxFallbackEnabled) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["legacyManualTaxFallbackEnabled"],
+      message: "Legacy manual fallback cannot be active while the Stripe Tax profile is enabled."
+    });
+  }
+  if (input.posTaxEnabled && (!input.storeAddressLine1 || !input.storeCity || !input.storePostalCode)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["storeAddressLine1"],
+      message: "A complete verified store and pickup address is required for POS Stripe Tax."
     });
   }
 });

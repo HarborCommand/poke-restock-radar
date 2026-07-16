@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { taxFeatureConfig } from "@/lib/tax";
 import { storefrontStripeReadiness } from "@/lib/storefront";
+import { getStripeTaxRegistrationStatus } from "@/lib/stripe-tax";
 import type { SessionUser } from "@/types/radar";
 import type { z } from "zod";
 import type { taxAdminSettingsSchema } from "@/lib/validation";
@@ -46,7 +47,7 @@ function serverReadiness() {
   };
 }
 
-function assertProfileEnablementReady(input: TaxAdminInput) {
+function assertProfileEnablementReady(input: TaxAdminInput, providerRegistrationStatus: "active" | "inactive" | "unknown") {
   const readiness = serverReadiness();
   const commonReady =
     input.registrationConfirmed &&
@@ -56,6 +57,10 @@ function assertProfileEnablementReady(input: TaxAdminInput) {
     input.ownerApproved;
   if (!commonReady) {
     throw new Error("Registration, store address, county, product code, and owner approval must be confirmed before enabling a tax profile.");
+  }
+  const features = taxFeatureConfig();
+  if (((input.onlineTaxProfileEnabled && features.onlineStripeTaxEnabled) || (input.posTaxEnabled && features.posSalesTaxEnabled)) && providerRegistrationStatus !== "active") {
+    throw new Error("An active Florida registration reported by Stripe Tax is required before enabling collection.");
   }
   if (input.onlineTaxProfileEnabled && (
     !readiness.stripeProviderConfigured ||
@@ -83,6 +88,9 @@ export async function getTaxAdminSettings(userId: string) {
   const settings = await prisma.storefrontSettings.findUnique({ where: { userId } });
   const features = taxFeatureConfig();
   const readiness = serverReadiness();
+  const providerRegistration = readiness.stripeProviderConfigured
+    ? await getStripeTaxRegistrationStatus(settings?.storeCountry ?? "US", settings?.storeState ?? "FL")
+    : { status: "unknown" as const };
   const onlineConfigured = settings?.onlineTaxProfileEnabled ?? false;
   const onlineActive = features.onlineStripeTaxEnabled;
   const posActive = features.posSalesTaxEnabled && Boolean(settings?.posTaxEnabled);
@@ -98,8 +106,8 @@ export async function getTaxAdminSettings(userId: string) {
     !features.onlineStripeTaxEnabled ? "Online tax collection is disabled by the environment gate." : null,
     features.onlineStripeTaxEnabled && !readiness.stripeProviderConfigured ? "Stripe automatic tax is not ready. Complete Checkout and signed webhook configuration." : null,
     readiness.stripeMode === "live" && process.env.VERCEL_ENV === "preview" ? "Live-mode Stripe credentials are present in Preview. Keep Checkout disabled and replace them with branch-scoped test credentials." : null,
-    !settings?.storeCounty ? "Confirm the physical store county before enabling POS tax." : null,
-    !settings?.taxProfileSourceNote ? "Record the authoritative source used for the saved POS rate." : null,
+    providerRegistration.status !== "active" ? "Stripe Tax does not report an active Florida registration." : null,
+    !settings?.storeAddressLine1 || !settings?.storeCity || !settings?.storePostalCode ? "Complete the physical store and Local Pickup address." : null,
     localPickupTreatment === "pending_review" ? "Local Pickup tax treatment is still pending review." : null
   ].filter((value): value is string => Boolean(value));
 
@@ -113,6 +121,9 @@ export async function getTaxAdminSettings(userId: string) {
       stripeMode: readiness.stripeMode,
       automaticTaxReady: readiness.stripeProviderConfigured,
       defaultProductTaxCode: settings?.defaultStripeTaxCode ?? "txcd_99999999",
+      shippingTaxCode: settings?.shippingStripeTaxCode ?? "txcd_92010001",
+      providerRegistrationStatus: providerRegistration.status,
+      webhookReady: Boolean(process.env.STRIPE_WEBHOOK_SECRET?.trim()),
       checkoutAddressRequirement: features.onlineStripeTaxEnabled ? "Complete billing and shipping address required" : "Inactive until online tax is enabled",
       localPickupStatus,
       localPickupTreatment,
@@ -122,6 +133,10 @@ export async function getTaxAdminSettings(userId: string) {
       storeCountry: settings?.storeCountry ?? "US",
       storeState: settings?.storeState ?? "FL",
       storeCounty: settings?.storeCounty ?? "",
+      storeAddressLine1: settings?.storeAddressLine1 ?? "",
+      storeAddressLine2: settings?.storeAddressLine2 ?? "",
+      storeCity: settings?.storeCity ?? "",
+      storePostalCode: settings?.storePostalCode ?? "",
       stateRateBasisPoints: settings?.stateTaxRateBasisPoints ?? 600,
       countyRateBasisPoints: settings?.countyTaxRateBasisPoints ?? 0,
       combinedRateBasisPoints: (settings?.stateTaxRateBasisPoints ?? 600) + (settings?.countyTaxRateBasisPoints ?? 0),
@@ -130,6 +145,14 @@ export async function getTaxAdminSettings(userId: string) {
       profileEnabled: settings?.posTaxEnabled ?? false,
       runtimeEnabled: features.posSalesTaxEnabled,
       active: posActive,
+      providerReady: readiness.stripeProviderConfigured,
+      providerRegistrationStatus: providerRegistration.status,
+      inPersonCalculationReady: readiness.stripeProviderConfigured && Boolean(settings?.storeAddressLine1 && settings?.storeCity && settings?.storePostalCode),
+      deliveryCalculationReady: readiness.stripeProviderConfigured && Boolean(settings?.shippingStripeTaxCode),
+      transactionRecordingReady: readiness.stripeProviderConfigured,
+      reversalReady: readiness.stripeProviderConfigured,
+      shippingTaxCode: settings?.shippingStripeTaxCode ?? "txcd_92010001",
+      legacyFallbackEnabled: settings?.legacyManualTaxFallbackEnabled ?? false,
       lastUpdated: settings?.updatedAt?.toISOString() ?? null,
       lastUpdatedByAdmin: settings?.taxSettingsUpdatedByUserId ?? null
     },
@@ -151,11 +174,13 @@ export async function getTaxAdminSettings(userId: string) {
     },
     product: {
       defaultTaxCategory: settings?.defaultTaxCategory ?? "general_tangible_goods",
-      defaultStripeTaxCode: settings?.defaultStripeTaxCode ?? "txcd_99999999"
+      defaultStripeTaxCode: settings?.defaultStripeTaxCode ?? "txcd_99999999",
+      shippingStripeTaxCode: settings?.shippingStripeTaxCode ?? "txcd_92010001"
     },
     readiness: {
       registrationConfirmed: settings?.taxRegistrationConfirmed ?? false,
       stripeConfigured: readiness.stripeProviderConfigured,
+      providerRegistrationStatus: providerRegistration.status,
       storeAddressConfirmed: settings?.taxStoreAddressConfirmed ?? false,
       countyConfirmed: settings?.taxCountyConfirmed ?? false,
       defaultCodeConfirmed: settings?.taxDefaultCodeConfirmed ?? false,
@@ -172,6 +197,10 @@ export async function getTaxAdminSettings(userId: string) {
 }
 
 export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInput, requestId: string) {
+  const readiness = serverReadiness();
+  const providerRegistration = readiness.stripeProviderConfigured
+    ? await getStripeTaxRegistrationStatus(input.storeCountry, input.storeState)
+    : { status: "unknown" as const };
   await prisma.$transaction(async (tx) => {
     const existing = await tx.storefrontSettings.findUnique({ where: { userId: user.id } });
     const enablingFields = [
@@ -187,7 +216,7 @@ export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInp
       if (!input.enablementReason) {
         throw new Error("An approved enablement reason is required.");
       }
-      assertProfileEnablementReady(input);
+      assertProfileEnablementReady(input, providerRegistration.status);
     }
 
     const ownerApprovedAt = input.ownerApproved ? existing?.taxOwnerApprovedAt ?? new Date() : null;
@@ -195,10 +224,14 @@ export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInp
       storeCountry: input.storeCountry,
       storeState: input.storeState,
       storeCounty: input.storeCounty,
+      storeAddressLine1: input.storeAddressLine1,
+      storeAddressLine2: input.storeAddressLine2 ?? null,
+      storeCity: input.storeCity,
+      storePostalCode: input.storePostalCode,
       stateTaxRateBasisPoints: input.stateRateBasisPoints,
       countyTaxRateBasisPoints: input.countyRateBasisPoints,
-      taxProfileEffectiveAt: new Date(`${input.effectiveDate}T00:00:00.000Z`),
-      taxProfileSourceNote: input.sourceNote,
+      taxProfileEffectiveAt: input.effectiveDate ? new Date(`${input.effectiveDate}T00:00:00.000Z`) : null,
+      taxProfileSourceNote: input.sourceNote || null,
       onlineTaxProfileEnabled: input.onlineTaxProfileEnabled,
       posTaxEnabled: input.posTaxEnabled,
       taxExemptSalesEnabled: input.taxExemptSalesEnabled,
@@ -219,7 +252,9 @@ export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInp
       taxReportReconciled: input.reportReconciled,
       taxOwnerApprovedAt: ownerApprovedAt,
       defaultTaxCategory: input.defaultTaxCategory,
-      defaultStripeTaxCode: input.defaultStripeTaxCode
+      defaultStripeTaxCode: input.defaultStripeTaxCode,
+      shippingStripeTaxCode: input.shippingStripeTaxCode,
+      legacyManualTaxFallbackEnabled: input.legacyManualTaxFallbackEnabled
     };
     const changedFields = Object.entries(data)
       .filter(([key, value]) => !existing || !sameValue(existing[key as keyof typeof existing], value))

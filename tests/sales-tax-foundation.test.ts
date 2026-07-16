@@ -110,7 +110,8 @@ test("Stripe Checkout tax path is guarded and persists authoritative provider ce
 
 test("POS tax, exemptions, partial refunds, and adjustment audit are server authoritative", () => {
   const source = fs.readFileSync("src/lib/radar-service.ts", "utf8");
-  assert.match(source, /calculateConfiguredPosTax/);
+  assert.match(source, /createStripeTaxCalculation/);
+  assert.doesNotMatch(source, /calculateConfiguredPosTax/);
   assert.match(source, /taxExemptSalesEnabled/);
   assert.match(source, /partialRefundAmount/);
   assert.match(source, /allocateCentsByWeight\(requestedRefundCents/);

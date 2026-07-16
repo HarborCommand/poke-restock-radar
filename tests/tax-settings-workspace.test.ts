@@ -7,6 +7,10 @@ const valid = {
   storeCountry: "US",
   storeState: "FL",
   storeCounty: "Test County",
+  storeAddressLine1: "100 Test Way",
+  storeAddressLine2: "",
+  storeCity: "Orlando",
+  storePostalCode: "32801",
   stateRateBasisPoints: 600,
   countyRateBasisPoints: 100,
   effectiveDate: "2026-07-01",
@@ -20,6 +24,8 @@ const valid = {
   exemptionReasonRequired: true,
   defaultTaxCategory: "general_tangible_goods",
   defaultStripeTaxCode: "txcd_99999999",
+  shippingStripeTaxCode: "txcd_92010001",
+  legacyManualTaxFallbackEnabled: false,
   defaultReportingPeriod: "monthly",
   registrationConfirmed: false,
   storeAddressConfirmed: false,
@@ -44,9 +50,9 @@ test("negative, excessive, and combined excessive rates are rejected", () => {
   assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, stateRateBasisPoints: 1100, countyRateBasisPoints: 1000 }).success, false);
 });
 
-test("unknown fields and unapproved tax codes are rejected", () => {
+test("unknown fields and malformed tax codes are rejected", () => {
   assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, secretKey: "do-not-return" }).success, false);
-  assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, defaultStripeTaxCode: "txcd_12345678" }).success, false);
+  assert.equal(taxAdminSettingsSchema.safeParse({ ...valid, defaultStripeTaxCode: "txcd_bad" }).success, false);
 });
 
 test("jurisdiction and calendar validation reject spoofed or invalid values", () => {

@@ -46,6 +46,7 @@ export type TaxReportOnlineSnapshot = {
   totalCents: number | null;
   refundedTaxCents: number | null;
   taxCalculationId: string | null;
+  taxProvider?: string | null;
   shippingMethodLabel: string | null;
   shippingPackageProfile: string | null;
 };
@@ -67,6 +68,11 @@ export type TaxReportPosLineSnapshot = {
   countySurtaxCents: number | null;
   totalCents: number | null;
   refundedTaxCents: number | null;
+  taxProvider?: string | null;
+  taxTransactionId?: string | null;
+  taxTransactionStatus?: string | null;
+  posShippingCents?: number | null;
+  fulfillmentMode?: string | null;
 };
 
 export type TaxReportAdjustmentSnapshot = {
@@ -87,6 +93,7 @@ export type TaxReportRow = {
   jurisdictionCounty: string | null;
   jurisdiction: string;
   status: string;
+  provider: string;
   exempt: boolean;
   fulfillment: "shipping" | "local_pickup" | "in_store";
   subtotalCents: number | null;
@@ -235,6 +242,8 @@ type InternalReportRow = TaxReportRow & {
   canonicalKey: string;
   adjustmentKey: string | null;
   providerCalculationId: string | null;
+  providerTransactionId: string | null;
+  providerTransactionStatus: string | null;
 };
 
 function addCoreAnomalies(row: InternalReportRow, anomalies: Set<string>) {
@@ -281,6 +290,7 @@ function posTransactionRows(lines: TaxReportPosLineSnapshot[]) {
     const countySurtaxCents = nullableSum(group.map((line) => line.countySurtaxCents));
     const totalCents = nullableSum(group.map((line) => line.totalCents));
     const refundedTaxCents = nullableSum(group.map((line) => line.refundedTaxCents));
+    const shippingCents = nullableSum(group.map((line) => line.posShippingCents ?? 0));
     for (const field of ["subtotalCents", "discountCents", "taxableSubtotalCents", "taxCents", "stateTaxCents", "countySurtaxCents", "totalCents", "refundedTaxCents"] as const) {
       const values = group.map((line) => line[field]);
       if (values.some((value) => value === null) && values.some((value) => value !== null)) anomalies.add("inconsistent_snapshot_values");
@@ -306,13 +316,14 @@ function posTransactionRows(lines: TaxReportPosLineSnapshot[]) {
       jurisdictionCounty: county,
       jurisdiction: [country, state, county].filter(Boolean).join(" / ") || "Not recorded",
       status,
+      provider: oneSnapshotValue(group.map((line) => line.taxProvider ?? "historical_unknown"), anomalies) ?? "historical_unknown",
       exempt: exemptValues[0] ?? false,
-      fulfillment: "in_store",
+      fulfillment: first.fulfillmentMode === "delivery" ? "shipping" : "in_store",
       subtotalCents,
       discountCents,
       netMerchandiseSalesCents: subtotalCents === null || discountCents === null ? null : Math.max(0, subtotalCents - discountCents),
       taxableSubtotalCents,
-      shippingCents: 0,
+      shippingCents,
       taxCents,
       stateTaxCents,
       countySurtaxCents,
@@ -322,7 +333,9 @@ function posTransactionRows(lines: TaxReportPosLineSnapshot[]) {
       anomalies: [],
       canonicalKey,
       adjustmentKey: first.saleReference ? `pos:${canonicalReference(first.saleReference)}` : `pos-id:${first.id}`,
-      providerCalculationId: null
+      providerCalculationId: null,
+      providerTransactionId: oneSnapshotValue(group.map((line) => line.taxTransactionId ?? null), anomalies),
+      providerTransactionStatus: oneSnapshotValue(group.map((line) => line.taxTransactionStatus ?? null), anomalies)
     };
     addCoreAnomalies(row, anomalies);
     row.anomalies = [...anomalies].sort();
@@ -346,6 +359,7 @@ function onlineTransactionRows(orders: TaxReportOnlineSnapshot[]) {
       jurisdictionCounty: county,
       jurisdiction: [country, state, county].filter(Boolean).join(" / ") || "Not recorded",
       status,
+      provider: order.taxProvider ?? (order.taxCalculationId ? "stripe_tax" : "historical_unknown"),
       exempt: status === "exempt",
       fulfillment: order.shippingMethodLabel === "Local Pickup" || order.shippingPackageProfile === "local_pickup" ? "local_pickup" : "shipping",
       subtotalCents: order.subtotalCents,
@@ -362,7 +376,9 @@ function onlineTransactionRows(orders: TaxReportOnlineSnapshot[]) {
       anomalies: [],
       canonicalKey: `online:${canonicalReference(order.orderNumber)}`,
       adjustmentKey: `online:${canonicalReference(order.orderNumber)}`,
-      providerCalculationId: order.taxCalculationId
+      providerCalculationId: order.taxCalculationId,
+      providerTransactionId: null,
+      providerTransactionStatus: null
     };
     addCoreAnomalies(row, anomalies);
     row.anomalies = [...anomalies].sort();
@@ -393,6 +409,7 @@ function publicReportRow(row: InternalReportRow): TaxReportRow {
     jurisdictionCounty: row.jurisdictionCounty,
     jurisdiction: row.jurisdiction,
     status: row.status,
+    provider: row.provider,
     exempt: row.exempt,
     fulfillment: row.fulfillment,
     subtotalCents: row.subtotalCents,
@@ -432,8 +449,10 @@ export function buildTaxReportFromSnapshots(
   }
 
   const calculationCounts = new Map<string, number>();
+  const transactionCounts = new Map<string, number>();
   for (const row of rows) {
     if (row.providerCalculationId) calculationCounts.set(row.providerCalculationId, (calculationCounts.get(row.providerCalculationId) ?? 0) + 1);
+    if (row.providerTransactionId) transactionCounts.set(row.providerTransactionId, (transactionCounts.get(row.providerTransactionId) ?? 0) + 1);
   }
   const providerAdjustmentCounts = new Map<string, number>();
   const adjustmentsByTransaction = new Map<string, TaxReportAdjustmentSnapshot[]>();
@@ -447,12 +466,22 @@ export function buildTaxReportFromSnapshots(
   for (const row of rows) {
     const anomalies = new Set(row.anomalies);
     if (row.providerCalculationId && (calculationCounts.get(row.providerCalculationId) ?? 0) > 1) anomalies.add("duplicate_provider_calculation_id");
+    if (row.providerTransactionId && (transactionCounts.get(row.providerTransactionId) ?? 0) > 1) anomalies.add("duplicate_stripe_tax_transaction");
+    if (row.channel === "pos" && row.provider === "stripe_tax" && !row.providerTransactionId) anomalies.add("missing_stripe_tax_transaction");
+    if (row.channel === "pos" && row.provider === "stripe_tax" && row.providerTransactionStatus !== "recorded") anomalies.add("stripe_tax_transaction_not_recorded");
+    if (row.channel === "pos" && row.providerTransactionStatus === "mismatch") anomalies.add("stripe_tax_transaction_total_mismatch");
     const adjustments = row.adjustmentKey ? adjustmentsByTransaction.get(row.adjustmentKey) ?? [] : [];
     const adjustedTax = adjustments.reduce((sum, adjustment) => sum + Math.max(0, adjustment.refundedTaxCents), 0);
     if (adjustments.length && row.refundedTaxCents !== null && adjustedTax !== row.refundedTaxCents) anomalies.add("refund_adjustment_mismatch");
     if (!adjustments.length && (row.refundedTaxCents ?? 0) > 0) anomalies.add("missing_refund_adjustment");
+    if (row.channel === "pos" && row.provider === "stripe_tax" && (row.refundedTaxCents ?? 0) > 0 && !adjustments.some((adjustment) => adjustment.providerReference)) {
+      anomalies.add("internal_refund_missing_stripe_reversal");
+    }
     if (adjustments.some((adjustment) => adjustment.providerReference && (providerAdjustmentCounts.get(adjustment.providerReference) ?? 0) > 1)) {
       anomalies.add("duplicate_refund_provider_reference");
+    }
+    if (adjustments.some((adjustment) => adjustment.providerReference) && (row.refundedTaxCents ?? 0) === 0) {
+      anomalies.add("stripe_reversal_without_internal_refund");
     }
     row.anomalies = [...anomalies].sort();
   }
@@ -609,7 +638,7 @@ export async function buildTaxReport(currentUser: SessionUser, filters: TaxRepor
       select: {
         orderNumber: true, createdAt: true, paidAt: true, taxJurisdictionCountry: true, taxJurisdictionState: true, taxJurisdictionCounty: true,
         taxStatus: true, subtotalCents: true, discountCents: true, shippingCents: true, taxableSubtotalCents: true,
-        taxCents: true, totalCents: true, refundedTaxCents: true, taxCalculationId: true, shippingMethodLabel: true, shippingPackageProfile: true
+        taxCents: true, totalCents: true, refundedTaxCents: true, taxCalculationId: true, taxProvider: true, shippingMethodLabel: true, shippingPackageProfile: true
       }
     }) : Promise.resolve([]),
     includePos ? prisma.inventorySale.findMany({
@@ -619,7 +648,8 @@ export async function buildTaxReport(currentUser: SessionUser, filters: TaxRepor
       select: {
         id: true, saleReference: true, soldAt: true, taxJurisdictionCountry: true, taxJurisdictionState: true, taxJurisdictionCounty: true,
         taxStatus: true, taxExempt: true, subtotalCents: true, discountCents: true, taxableSubtotalCents: true,
-        taxCents: true, stateTaxCents: true, countySurtaxCents: true, totalCents: true, refundedTaxCents: true
+        taxCents: true, stateTaxCents: true, countySurtaxCents: true, totalCents: true, refundedTaxCents: true,
+        taxProvider: true, taxTransactionId: true, taxTransactionStatus: true, posShippingCents: true, fulfillmentMode: true
       }
     }) : Promise.resolve([]),
     adjustmentOr.length ? prisma.taxAdjustment.findMany({
@@ -658,12 +688,12 @@ export function csvCell(value: unknown) {
 export function taxReportCsv(report: TaxReport) {
   const money = (value: number | null) => value === null ? "" : (value / 100).toFixed(2);
   const headers = [
-    "transaction_date", "transaction_reference", "channel", "fulfillment", "tax_status", "jurisdiction_country", "jurisdiction_state",
+    "transaction_date", "transaction_reference", "channel", "fulfillment", "tax_provider", "tax_status", "jurisdiction_country", "jurisdiction_state",
     "jurisdiction_county", "merchandise_subtotal", "discount", "net_merchandise_sales", "taxable_subtotal", "shipping", "state_tax",
     "county_surtax", "total_tax", "refunded_tax", "net_tax", "total_charged", "exemption_status", "reconciliation_findings"
   ];
   const lines = report.rows.map((row) => [
-    row.occurredAt, row.reference, row.channel, row.fulfillment, row.status, row.jurisdictionCountry, row.jurisdictionState, row.jurisdictionCounty,
+    row.occurredAt, row.reference, row.channel, row.fulfillment, row.provider, row.status, row.jurisdictionCountry, row.jurisdictionState, row.jurisdictionCounty,
     money(row.subtotalCents), money(row.discountCents), money(row.netMerchandiseSalesCents), money(row.taxableSubtotalCents), money(row.shippingCents),
     money(row.stateTaxCents), money(row.countySurtaxCents), money(row.taxCents), money(row.refundedTaxCents), money(row.netTaxCents), money(row.totalCents),
     row.exempt ? "exempt" : "not_exempt", row.anomalies.join("; ")

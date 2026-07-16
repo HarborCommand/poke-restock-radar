@@ -254,7 +254,7 @@ test("CSV is UTF-8, invariant, complete, quoted, and spreadsheet-injection safe"
   assert.match(csv, /"'=CMD\(\)"/);
   assert.match(csv, /"10\.00"/);
   assert.match(csv, /Accounting support report\. Confirm filing treatment/);
-  assert.doesNotMatch(csv, /customer|email|phone|address|stripe|providerReference|internal-sale-id/i);
+  assert.doesNotMatch(csv, /customer|email|phone|address|providerReference|internal-sale-id/i);
 });
 
 test("service selects persisted snapshots only and contains no reporting writes or customer PII", () => {

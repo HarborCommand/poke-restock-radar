@@ -130,17 +130,18 @@ test("POS tax quote route is authenticated, same-origin admin-only, and private"
 
 test("server quote owns pricing, inventory scope, jurisdiction, and tax arithmetic", () => {
   const service = readSource("src/lib/radar-service.ts");
-  const quote = sourceSlice(service, "export async function quotePosSaleTax", "export async function createPosSale");
+  const quote = sourceSlice(service, "export async function quotePosSaleTax", "async function ensurePosStripeTaxTransaction");
   assert.match(quote, /getStorefrontSettings\(currentUser\.id\)/);
   assert.match(quote, /userId: currentUser\.id/);
   assert.match(quote, /inventoryItemToDTO/);
   assert.match(quote, /posUnitPrice/);
-  assert.match(quote, /calculateConfiguredPosTax/);
-  assert.match(quote, /stateTax:/);
-  assert.match(quote, /countySurtax:/);
-  assert.match(quote, /combinedRateBasisPoints/);
+  assert.match(quote, /createStripeTaxCalculation/);
+  assert.match(quote, /verifiedStoreTaxAddress/);
+  assert.match(quote, /shippingCents/);
+  assert.match(quote, /stripeTaxCode/);
   assert.match(quote, /createPosTaxQuoteToken/);
-  assert.match(quote, /canComplete: !misconfigured/);
+  assert.match(quote, /canComplete: !misconfigured && !blockedZero/);
+  assert.doesNotMatch(quote, /calculateConfiguredPosTax/);
   assert.doesNotMatch(quote, /\.create\(|\.update\(|\.delete\(/);
 });
 
@@ -154,8 +155,8 @@ test("POS client waits for the newest server quote and never submits browser tax
   assert.match(posPanel, /\/api\/radar\/pos\/tax-quote/);
   assert.match(posPanel, /taxQuoteStatus === "loading"/);
   assert.match(posPanel, /Server tax calculation is required before confirming the sale/);
-  assert.match(posPanel, /taxQuote\.stateTax/);
-  assert.match(posPanel, /taxQuote\.countySurtax/);
+  assert.match(posPanel, /taxQuote\.tax/);
+  assert.match(posPanel, /Calculating tax with Stripe/);
   assert.match(posPanel, /money\(quotedTotal\)/);
   const completionBody = sourceSlice(posPanel, "async function completeSale", "const adjustmentLine");
   assert.match(completionBody, /quoteId: taxQuote\.quoteId/);
@@ -168,14 +169,14 @@ test("receipt is itemized, customer contact is masked, and tax/refund details st
   const receipt = sourceSlice(app, "function PosReceipt", "function ProfitLossPanel");
   assert.match(summary, /maskPosReceiptEmail/);
   assert.match(summary, /maskPosReceiptPhone/);
-  assert.match(summary, /stateTax/);
-  assert.match(summary, /countySurtax/);
+  assert.match(summary, /receipt\.tax/);
+  assert.match(summary, /receipt\.shipping/);
   assert.match(summary, /refundedTax/);
   assert.match(receipt, /gamedaygrabs-logo-horizontal\.png/);
   assert.match(receipt, /receipt\.cashierName/);
   assert.match(receipt, /receipt\.registerLabel/);
-  assert.match(receipt, /receipt\.stateTax/);
-  assert.match(receipt, /receipt\.countySurtax/);
+  assert.match(receipt, /receipt\.tax/);
+  assert.match(receipt, /receipt\.shipping/);
   assert.match(receipt, /receipt\.refundedAmount/);
   assert.match(receipt, /receipt\.refundedTax/);
   assert.match(receipt, /Thank you for collecting with us/);

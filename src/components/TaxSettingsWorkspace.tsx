@@ -12,6 +12,9 @@ export type TaxSettings = {
     stripeMode: "test" | "live" | "missing" | "unknown" | "mixed";
     automaticTaxReady: boolean;
     defaultProductTaxCode: string;
+    shippingTaxCode: string;
+    providerRegistrationStatus: "active" | "inactive" | "unknown";
+    webhookReady: boolean;
     checkoutAddressRequirement: string;
     localPickupStatus: string;
     localPickupTreatment: "pending_review" | "taxable_at_store_location" | "provider_authoritative";
@@ -21,6 +24,10 @@ export type TaxSettings = {
     storeCountry: string;
     storeState: string;
     storeCounty: string;
+    storeAddressLine1: string;
+    storeAddressLine2: string;
+    storeCity: string;
+    storePostalCode: string;
     stateRateBasisPoints: number;
     countyRateBasisPoints: number;
     combinedRateBasisPoints: number;
@@ -29,6 +36,14 @@ export type TaxSettings = {
     profileEnabled: boolean;
     runtimeEnabled: boolean;
     active: boolean;
+    providerReady: boolean;
+    providerRegistrationStatus: "active" | "inactive" | "unknown";
+    inPersonCalculationReady: boolean;
+    deliveryCalculationReady: boolean;
+    transactionRecordingReady: boolean;
+    reversalReady: boolean;
+    shippingTaxCode: string;
+    legacyFallbackEnabled: boolean;
     lastUpdated: string | null;
     lastUpdatedByAdmin: string | null;
   };
@@ -48,10 +63,11 @@ export type TaxSettings = {
     exportAvailable: boolean;
     disclaimer: string;
   };
-  product: { defaultTaxCategory: "general_tangible_goods"; defaultStripeTaxCode: "txcd_99999999" };
+  product: { defaultTaxCategory: "general_tangible_goods"; defaultStripeTaxCode: string; shippingStripeTaxCode: string };
   readiness: {
     registrationConfirmed: boolean;
     stripeConfigured: boolean;
+    providerRegistrationStatus: "active" | "inactive" | "unknown";
     storeAddressConfirmed: boolean;
     countyConfirmed: boolean;
     defaultCodeConfirmed: boolean;
@@ -70,6 +86,10 @@ type FormState = {
   storeCountry: string;
   storeState: string;
   storeCounty: string;
+  storeAddressLine1: string;
+  storeAddressLine2: string;
+  storeCity: string;
+  storePostalCode: string;
   stateRateBasisPoints: number;
   countyRateBasisPoints: number;
   effectiveDate: string;
@@ -82,7 +102,10 @@ type FormState = {
   exemptionReferenceRequired: true;
   exemptionReasonRequired: true;
   defaultTaxCategory: "general_tangible_goods";
-  defaultStripeTaxCode: "txcd_99999999";
+  defaultStripeTaxCode: string;
+  shippingStripeTaxCode: string;
+  legacyManualTaxFallbackEnabled: boolean;
+  legacyManualTaxFallbackConfirmed?: boolean;
   defaultReportingPeriod: "monthly" | "quarterly" | "annual";
   registrationConfirmed: boolean;
   storeAddressConfirmed: boolean;
@@ -104,6 +127,10 @@ function formFromSettings(settings: TaxSettings): FormState {
     storeCountry: settings.pos.storeCountry,
     storeState: settings.pos.storeState,
     storeCounty: settings.pos.storeCounty,
+    storeAddressLine1: settings.pos.storeAddressLine1,
+    storeAddressLine2: settings.pos.storeAddressLine2,
+    storeCity: settings.pos.storeCity,
+    storePostalCode: settings.pos.storePostalCode,
     stateRateBasisPoints: settings.pos.stateRateBasisPoints,
     countyRateBasisPoints: settings.pos.countyRateBasisPoints,
     effectiveDate: settings.pos.effectiveDate,
@@ -117,6 +144,8 @@ function formFromSettings(settings: TaxSettings): FormState {
     exemptionReasonRequired: true,
     defaultTaxCategory: settings.product.defaultTaxCategory,
     defaultStripeTaxCode: settings.product.defaultStripeTaxCode,
+    shippingStripeTaxCode: settings.product.shippingStripeTaxCode,
+    legacyManualTaxFallbackEnabled: settings.pos.legacyFallbackEnabled,
     defaultReportingPeriod: settings.reporting.defaultPeriod,
     registrationConfirmed: settings.readiness.registrationConfirmed,
     storeAddressConfirmed: settings.readiness.storeAddressConfirmed,
@@ -312,8 +341,11 @@ export function TaxSettingsWorkspace({
           <div className="tax-summary-grid">
             <div><span>Collection gate</span><strong>{settings.online.enabled ? "Enabled" : "Disabled"}</strong></div>
             <div><span>Stripe mode</span><strong>{settings.online.stripeMode}</strong></div>
+            <div><span>Registration</span><strong>{settings.online.providerRegistrationStatus}</strong></div>
+            <div><span>Webhook</span><strong>{settings.online.webhookReady ? "Ready" : "Not ready"}</strong></div>
             <div><span>Checkout readiness</span><strong>{settings.online.stripeCheckoutEnabled ? "Configured" : "Disabled"}</strong></div>
             <div><span>Default product code</span><strong>{settings.online.defaultProductTaxCode}</strong></div>
+            <div><span>Shipping tax code</span><strong>{settings.online.shippingTaxCode}</strong></div>
           </div>
           <dl className="tax-definition-list">
             <div><dt>Address requirement</dt><dd>{settings.online.checkoutAddressRequirement}</dd></div>
@@ -325,19 +357,42 @@ export function TaxSettingsWorkspace({
         </section>
 
         <section className="tax-section">
-          <div className="tax-section-heading"><div><p>POS Tax Profile</p>{embedded ? <h4>Store jurisdiction and rate</h4> : <h2>Store jurisdiction and rate</h2>}</div><Status active={settings.pos.runtimeEnabled && form.posTaxEnabled}>{settings.pos.runtimeEnabled && form.posTaxEnabled ? "Active" : "Inactive"}</Status></div>
-          <p className="tax-section-copy">The server calculates tax from this saved snapshot. Cashiers cannot enter or override a tax amount.</p>
+          <div className="tax-section-heading"><div><p>POS Stripe Tax</p>{embedded ? <h4>Locations and transaction readiness</h4> : <h2>Locations and transaction readiness</h2>}</div><Status active={settings.pos.runtimeEnabled && form.posTaxEnabled}>{settings.pos.runtimeEnabled && form.posTaxEnabled ? "Active" : "Inactive"}</Status></div>
+          <p className="tax-section-copy">Stripe Tax calculates every new POS sale. GameDayGrabs supplies authoritative prices, discounts, shipping, and the verified location.</p>
+          <div className="tax-summary-grid">
+            <div><span>Provider</span><strong>{settings.pos.providerReady ? "Ready" : "Not ready"}</strong></div>
+            <div><span>Florida registration</span><strong>{settings.pos.providerRegistrationStatus}</strong></div>
+            <div><span>In-person calculations</span><strong>{settings.pos.inPersonCalculationReady ? "Ready" : "Needs location"}</strong></div>
+            <div><span>Delivery calculations</span><strong>{settings.pos.deliveryCalculationReady ? "Ready" : "Not ready"}</strong></div>
+            <div><span>Transaction recording</span><strong>{settings.pos.transactionRecordingReady ? "Ready" : "Not ready"}</strong></div>
+            <div><span>Refund reversals</span><strong>{settings.pos.reversalReady ? "Ready" : "Not ready"}</strong></div>
+          </div>
           <div className="tax-form-grid">
             <label>Country<input value={form.storeCountry} maxLength={2} onChange={(event) => update("storeCountry", event.target.value.toUpperCase())} required /></label>
             <label>State<input value={form.storeState} maxLength={2} onChange={(event) => update("storeState", event.target.value.toUpperCase())} required /></label>
             <label>County<input value={form.storeCounty} onChange={(event) => update("storeCounty", event.target.value)} required /></label>
-            <label>State rate (%)<input type="number" min="0" max="20" step="0.01" value={form.stateRateBasisPoints / 100} onChange={(event) => update("stateRateBasisPoints", Math.round(Number(event.target.value) * 100))} required /></label>
-            <label>County surtax (%)<input type="number" min="0" max="20" step="0.01" value={form.countyRateBasisPoints / 100} onChange={(event) => update("countyRateBasisPoints", Math.round(Number(event.target.value) * 100))} required /></label>
-            <label>Combined rate<input value={`${(combined / 100).toFixed(2)}%`} readOnly aria-readonly="true" /></label>
-            <label>Effective date<input type="date" value={form.effectiveDate} onChange={(event) => update("effectiveDate", event.target.value)} required /></label>
-            <label className="tax-span-2">Source / reference note<textarea value={form.sourceNote} onChange={(event) => update("sourceNote", event.target.value)} maxLength={500} required /></label>
+            <label>Store / pickup address<input value={form.storeAddressLine1} onChange={(event) => update("storeAddressLine1", event.target.value)} required /></label>
+            <label>Unit (optional)<input value={form.storeAddressLine2} onChange={(event) => update("storeAddressLine2", event.target.value)} /></label>
+            <label>City<input value={form.storeCity} onChange={(event) => update("storeCity", event.target.value)} required /></label>
+            <label>ZIP code<input value={form.storePostalCode} onChange={(event) => update("storePostalCode", event.target.value)} required /></label>
+            <label>Default product tax code<input value={form.defaultStripeTaxCode} onChange={(event) => update("defaultStripeTaxCode", event.target.value)} required /></label>
+            <label>Shipping tax code<input value={form.shippingStripeTaxCode} onChange={(event) => update("shippingStripeTaxCode", event.target.value)} required /></label>
           </div>
-          <CheckField checked={form.posTaxEnabled} label="Enable the saved POS tax profile" detail={settings.pos.runtimeEnabled ? "The Preview runtime gate is on." : "The runtime gate is off, so saving this alone cannot collect tax."} onChange={(value) => update("posTaxEnabled", value)} />
+          <CheckField checked={form.posTaxEnabled} label="Mark POS Stripe Tax as configured" detail={settings.pos.runtimeEnabled ? "The independent runtime gate is on." : "Configuration only. The runtime gate remains off."} onChange={(value) => update("posTaxEnabled", value)} />
+          <p className="tax-section-copy"><strong>Shipping:</strong> GameDayGrabs calculates the price. Stripe decides whether and how it is taxed. Local Pickup remains $0.00 and uses the store address.</p>
+          <details className="tax-legacy-fallback">
+            <summary>Legacy manual tax fallback</summary>
+            <p><strong>Emergency fallback only — not used for normal tax calculations.</strong> Disabled by default, unavailable to cashiers, and cannot be active with POS Stripe Tax.</p>
+            <CheckField checked={form.legacyManualTaxFallbackEnabled} label="Enable legacy emergency fallback" onChange={(value) => { update("legacyManualTaxFallbackEnabled", value); update("legacyManualTaxFallbackConfirmed", false); }} />
+            {form.legacyManualTaxFallbackEnabled ? <CheckField checked={Boolean(form.legacyManualTaxFallbackConfirmed)} label="I explicitly confirm this emergency-only fallback" onChange={(value) => update("legacyManualTaxFallbackConfirmed", value)} /> : null}
+            <fieldset disabled={!form.legacyManualTaxFallbackEnabled} className="tax-form-grid">
+              <label>State rate (%)<input type="number" min="0" max="20" step="0.01" value={form.stateRateBasisPoints / 100} onChange={(event) => update("stateRateBasisPoints", Math.round(Number(event.target.value) * 100))} required /></label>
+              <label>County surtax (%)<input type="number" min="0" max="20" step="0.01" value={form.countyRateBasisPoints / 100} onChange={(event) => update("countyRateBasisPoints", Math.round(Number(event.target.value) * 100))} required /></label>
+              <label>Combined legacy rate<input value={`${(combined / 100).toFixed(2)}%`} readOnly /></label>
+              <label>Effective date<input type="date" value={form.effectiveDate} onChange={(event) => update("effectiveDate", event.target.value)} required /></label>
+              <label className="tax-span-2">Source / reference note<textarea value={form.sourceNote} onChange={(event) => update("sourceNote", event.target.value)} maxLength={500} required /></label>
+            </fieldset>
+          </details>
           <p className="tax-timestamp">Last updated: {settings.pos.lastUpdated ? new Date(settings.pos.lastUpdated).toLocaleString() : "Never saved"}{settings.pos.lastUpdatedByAdmin ? " by an authenticated admin" : ""}</p>
         </section>
 

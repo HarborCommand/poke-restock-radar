@@ -32,12 +32,12 @@ test("Stripe Checkout session creation collects customer contact and address det
 
   assert.match(storefront, /const stripeShippingAllowedCountries = \["US"\]/);
   assert.match(sessionCreateParams, /mode: "payment"/);
-  assert.match(sessionCreateParams, /customer_email: input\.customerEmail/);
-  assert.match(sessionCreateParams, /customer_creation: "always"/);
-  assert.doesNotMatch(sessionCreateParams, /(^|[\s,{])customer:\s/);
+  assert.match(sessionCreateParams, /localPickupTaxCustomer \? \{ customer: localPickupTaxCustomer\.id \} : \{ customer_email: input\.customerEmail, customer_creation: "always"/);
+  assert.match(createCheckoutSession, /stripe\.customers\.create/);
+  assert.match(createCheckoutSession, /onlineTaxEnabled && selectedShipping\.id === "local_pickup"/);
   assert.match(sessionCreateParams, /phone_number_collection: \{ enabled: true \}/);
   assert.match(sessionCreateParams, /billing_address_collection: "auto"/);
-  assert.match(sessionCreateParams, /shipping_address_collection: \{\s*allowed_countries: stripeShippingAllowedCountries\s*\}/);
+  assert.match(sessionCreateParams, /localPickupTaxCustomer \? \{\} : \{ shipping_address_collection: \{ allowed_countries: stripeShippingAllowedCountries \} \}/);
   assert.match(sessionCreateParams, /shipping_options: checkoutShippingOptions/);
   assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
   assert.match(legacyCheckoutRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
