@@ -8,27 +8,27 @@ datasource db {
 }
 
 model User {
-  id                       String                    @id @default(cuid())
-  email                    String                    @unique
+  id                       String                     @id @default(cuid())
+  email                    String                     @unique
   name                     String
-  role                     String                    @default("FRIEND")
+  role                     String                     @default("FRIEND")
   passwordHash             String
-  canAddSightings          Boolean                   @default(true)
-  canAddComps              Boolean                   @default(false)
-  canRunChecks             Boolean                   @default(false)
-  canReceivePushAlerts     Boolean                   @default(true)
-  preferredZone            String                    @default("MIAMI")
+  canAddSightings          Boolean                    @default(true)
+  canAddComps              Boolean                    @default(false)
+  canRunChecks             Boolean                    @default(false)
+  canReceivePushAlerts     Boolean                    @default(true)
+  preferredZone            String                     @default("MIAMI")
   customZoneName           String?
-  hideDistantStores        Boolean                   @default(false)
+  hideDistantStores        Boolean                    @default(false)
   currentLatitude          Float?
   currentLongitude         Float?
   locationUpdatedAt        DateTime?
   disabledAt               DateTime?
-  sessionVersion           Int                       @default(0)
+  sessionVersion           Int                        @default(0)
   lastLoginAt              DateTime?
   passwordChangedAt        DateTime?
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
   sightings                StoreSighting[]
   alerts                   Alert[]
   notificationSettings     NotificationSettings?
@@ -36,8 +36,8 @@ model User {
   browserPushSubscriptions BrowserPushSubscription[]
   investmentReports        InvestmentReport[]
   passwordResetTokens      PasswordResetToken[]
-  createdInvites           FriendInvite[]            @relation("InviteCreatedBy")
-  acceptedInvites          FriendInvite[]            @relation("InviteAcceptedBy")
+  createdInvites           FriendInvite[]             @relation("InviteCreatedBy")
+  acceptedInvites          FriendInvite[]             @relation("InviteAcceptedBy")
   auditLogs                AuditLog[]
   inventoryItems           InventoryItem[]
   inventorySales           InventorySale[]
@@ -52,6 +52,7 @@ model User {
   shippingProfiles         ShippingProfile[]
   shippingQuotes           ShippingQuote[]
   taxLocations             TaxLocation[]
+  taxCertificationEvidence TaxCertificationEvidence[]
 }
 
 model PasswordResetToken {
@@ -1157,6 +1158,30 @@ model TaxLocation {
   @@index([userId, defaultForPos])
   @@index([userId, defaultForLocalPickup])
   @@index([userId, defaultShipFrom])
+}
+
+model TaxCertificationEvidence {
+  id                    String    @id @default(cuid())
+  userId                String
+  scenario              String
+  status                String
+  contractStatus        String
+  providerMode          String
+  safeProviderReference String?
+  expectedAmountCents   Int?
+  actualAmountCents     Int?
+  requestId             String?
+  buildCommit           String
+  detailCode            String?
+  runAt                 DateTime  @default(now())
+  expiresAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scenario, buildCommit, providerMode], map: "TaxCertificationEvidence_userId_scenario_buildCommit_providerMo")
+  @@index([userId, status])
+  @@index([userId, runAt])
 }
 
 model ShippingProfile {
