@@ -292,6 +292,61 @@ test("POS customer matching never resolves an account from another workspace", a
   }, before, "customer search must not link, award, audit, or create business records");
 });
 
+test("POS customer matching resolves legacy unowned accounts only with owner evidence", async () => {
+  const ownerA = activeOwner;
+  const ownerB = await createAdminUser();
+  const item = await createInventoryItem(ownerA.id);
+  const legacyEmail = `${unique("legacy-pos")}@example.test`;
+  const orphanEmail = `${unique("legacy-pos-orphan")}@example.test`;
+  const legacyAccount = await prisma.customerAccount.create({
+    data: {
+      email: legacyEmail,
+      normalizedEmail: legacyEmail.toLowerCase(),
+      phone: "+15550001234",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  const orphanAccount = await prisma.customerAccount.create({
+    data: {
+      email: orphanEmail,
+      normalizedEmail: orphanEmail.toLowerCase(),
+      phone: "+15550005678",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  await prisma.inventorySale.create({
+    data: {
+      inventoryItemId: item.id,
+      userId: ownerA.id,
+      customerAccountId: legacyAccount.id,
+      customerEmail: legacyAccount.email,
+      customerPhone: legacyAccount.phone,
+      quantitySold: 1,
+      soldPricePerItem: 25,
+      grossSale: 25,
+      platform: "manual_pos",
+      netSale: 25,
+      costBasis: 10,
+      profitLoss: 15,
+      soldAt: new Date()
+    }
+  });
+
+  const selected = await resolvePosCustomerMatch({ selectedCustomerAccountId: legacyAccount.id }, ownerA.id);
+  assert.equal(selected.customerAccountId, legacyAccount.id);
+
+  const byEmail = await resolvePosCustomerMatch({ customerEmail: legacyAccount.email.toUpperCase() }, ownerA.id);
+  assert.equal(byEmail.customerAccountId, legacyAccount.id);
+
+  const crossOwner = await resolvePosCustomerMatch({ selectedCustomerAccountId: legacyAccount.id }, ownerB.id);
+  assert.equal(crossOwner.customerAccountId, null);
+
+  const orphan = await resolvePosCustomerMatch({ selectedCustomerAccountId: orphanAccount.id }, ownerA.id);
+  assert.equal(orphan.customerAccountId, null);
+});
+
 test("POS sale stores optional customer contact and creates no reward ledger while disabled", async () => {
   const user = await createAdminUser();
   const item = await createInventoryItem(user.id);

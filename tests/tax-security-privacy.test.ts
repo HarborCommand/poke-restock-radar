@@ -181,12 +181,16 @@ test("POS customer matching is owner-scoped and route cannot trust a customer id
   const customerListRoute = read("src/app/api/radar/customers/route.ts");
   const rewardsAdmin = read("src/lib/rewards-admin.ts");
   const sale = read("src/lib/radar-service.ts");
-  assert.match(helper, /workspaceCustomerWhere\(ownerUserId\)/);
+  assert.match(helper, /workspaceCustomerWhereWithLegacy\(client, ownerUserId\)/);
   assert.match(workspace, /return \{ userId: ownerUserId \}/);
-  assert.doesNotMatch(workspace, /orders:\s*\{\s*some|normalizedEmail|phone/);
+  assert.match(workspace, /legacyWorkspaceCustomerIds/);
+  assert.match(workspace, /c\."userId" IS NULL/);
+  assert.match(workspace, /o\."userId" = \$\{ownerUserId\}/);
+  assert.match(workspace, /s\."userId" = \$\{ownerUserId\}/);
+  assert.doesNotMatch(workspace, /phone/);
   assert.match(route, /resolvePosCustomerMatch\(input, user\.id\)/);
   assert.match(customerListRoute, /listAdminCustomerRewards\(user\.id,/);
-  assert.match(rewardsAdmin, /workspaceCustomerWhere\(ownerUserId\)/);
+  assert.match(rewardsAdmin, /workspaceCustomerWhereWithLegacy\(prisma, ownerUserId\)/);
   assert.match(sale, /\}, currentUser\.id, tx\)/);
 });
 

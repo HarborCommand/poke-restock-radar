@@ -406,6 +406,133 @@ test("customer admin workspace blocks cross-owner discovery detail mutation rewa
   process.env.CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED = "false";
 });
 
+test("customer admin workspace restores legacy unowned rewards only with owner evidence", async () => {
+  const ownerA = await prisma.user.create({
+    data: { email: `${unique("legacy-owner-a")}@example.test`, name: "Legacy Owner A", role: "ADMIN", passwordHash: "test-hash" }
+  });
+  const ownerB = await prisma.user.create({
+    data: { email: `${unique("legacy-owner-b")}@example.test`, name: "Legacy Owner B", role: "ADMIN", passwordHash: "test-hash" }
+  });
+  const linkedLegacyEmail = `${unique("legacy-linked")}@example.test`;
+  const emailLegacyEmail = `${unique("legacy-email")}@example.test`;
+  const otherOwnerLegacyEmail = `${unique("legacy-other")}@example.test`;
+  const orphanLegacyEmail = `${unique("legacy-orphan")}@example.test`;
+  const linkedLegacy = await prisma.customerAccount.create({
+    data: {
+      email: linkedLegacyEmail,
+      normalizedEmail: linkedLegacyEmail.toLowerCase(),
+      displayName: "Legacy Scoped Linked",
+      phone: "+13055551001",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  const emailLegacy = await prisma.customerAccount.create({
+    data: {
+      email: emailLegacyEmail,
+      normalizedEmail: emailLegacyEmail.toLowerCase(),
+      displayName: "Legacy Scoped Email",
+      phone: "+13055551002",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  const otherOwnerLegacy = await prisma.customerAccount.create({
+    data: {
+      email: otherOwnerLegacyEmail,
+      normalizedEmail: otherOwnerLegacyEmail.toLowerCase(),
+      displayName: "Legacy Scoped Other",
+      phone: "+13055551003",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  const orphanLegacy = await prisma.customerAccount.create({
+    data: {
+      email: orphanLegacyEmail,
+      normalizedEmail: orphanLegacyEmail.toLowerCase(),
+      displayName: "Legacy Scoped Orphan",
+      phone: "+13055551004",
+      status: "active",
+      emailVerifiedAt: new Date()
+    }
+  });
+  await prisma.rewardBalance.createMany({
+    data: [
+      { customerAccountId: linkedLegacy.id, availablePoints: 300, pendingPoints: 0, lifetimeEarnedPoints: 300 },
+      { customerAccountId: emailLegacy.id, availablePoints: 80, pendingPoints: 0, lifetimeEarnedPoints: 80 },
+      { customerAccountId: otherOwnerLegacy.id, availablePoints: 900, pendingPoints: 0, lifetimeEarnedPoints: 900 },
+      { customerAccountId: orphanLegacy.id, availablePoints: 1, pendingPoints: 0, lifetimeEarnedPoints: 1 }
+    ]
+  });
+  const item = await createAttachInventoryItem();
+  await prisma.inventorySale.create({
+    data: {
+      inventoryItemId: item.id,
+      userId: ownerA.id,
+      customerAccountId: linkedLegacy.id,
+      customerEmail: linkedLegacy.email,
+      quantitySold: 1,
+      soldPricePerItem: 120,
+      grossSale: 120,
+      platform: "manual_pos",
+      netSale: 120,
+      costBasis: 50,
+      profitLoss: 70,
+      soldAt: new Date()
+    }
+  });
+  await prisma.storefrontOrder.create({
+    data: {
+      userId: ownerA.id,
+      orderNumber: unique("LEGACY-EMAIL"),
+      customerEmail: emailLegacy.email,
+      customerName: emailLegacy.displayName,
+      status: "paid",
+      paymentStatus: "paid",
+      fulfillmentStatus: "shipped",
+      subtotal: 80,
+      total: 80,
+      refundedAmount: 0
+    }
+  });
+  await prisma.storefrontOrder.create({
+    data: {
+      userId: ownerB.id,
+      orderNumber: unique("LEGACY-OTHER"),
+      customerEmail: otherOwnerLegacy.email,
+      customerName: otherOwnerLegacy.displayName,
+      status: "paid",
+      paymentStatus: "paid",
+      fulfillmentStatus: "shipped",
+      subtotal: 90,
+      total: 90,
+      refundedAmount: 0
+    }
+  });
+  await prisma.rewardLedgerEntry.createMany({
+    data: [
+      { customerAccountId: linkedLegacy.id, points: 300, type: "earn", reason: "legacy-scope owner A linked sale", status: "available", source: "pos" },
+      { customerAccountId: emailLegacy.id, points: 80, type: "earn", reason: "legacy-scope owner A email order", status: "available", source: "admin_order_link_backfill" },
+      { customerAccountId: otherOwnerLegacy.id, points: 900, type: "earn", reason: "legacy-scope owner B order", status: "available", source: "admin_order_link_backfill" }
+    ]
+  });
+
+  const ownerAList = await listAdminCustomerRewards(ownerA.id, { search: "Legacy Scoped", status: "active", sort: "name" });
+  assert.deepEqual(ownerAList.customers.map((customer) => customer.id).sort(), [emailLegacy.id, linkedLegacy.id].sort());
+  assert.equal(ownerAList.customers.reduce((sum, customer) => sum + customer.availablePoints, 0), 380);
+
+  const ownerBList = await listAdminCustomerRewards(ownerB.id, { search: "Legacy Scoped", status: "active", sort: "name" });
+  assert.deepEqual(ownerBList.customers.map((customer) => customer.id), [otherOwnerLegacy.id]);
+
+  assert.ok(await getAdminCustomerRewardDetail(ownerA.id, linkedLegacy.id));
+  assert.equal(await getAdminCustomerRewardDetail(ownerA.id, otherOwnerLegacy.id), null);
+  assert.equal(await getAdminCustomerRewardDetail(ownerA.id, orphanLegacy.id), null);
+
+  const ledger = await listAdminRewardLedger(ownerA.id, { search: "legacy-scope" });
+  assert.deepEqual(ledger.ledger.map((entry) => entry.customerAccountId).sort(), [emailLegacy.id, linkedLegacy.id].sort());
+});
+
 test("admin reward adjustments are feature-flagged, idempotent, and never deduct below zero", async () => {
   const { user, customer } = await createCustomerWithRewards();
   await assert.rejects(

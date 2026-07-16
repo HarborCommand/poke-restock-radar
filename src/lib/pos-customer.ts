@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
-import { workspaceCustomerWhere } from "@/lib/customer-workspace";
+import { workspaceCustomerWhereWithLegacy } from "@/lib/customer-workspace";
 import type { PosCustomerMatchResultDTO } from "@/types/radar";
 
 type PosCustomerMatchClient = Prisma.TransactionClient | typeof prisma;
@@ -57,17 +57,19 @@ function isVerifiedActiveCustomer(account: Pick<PosCustomerAccount, "status" | "
 }
 
 async function accountById(client: PosCustomerMatchClient, id: string, ownerUserId: string) {
+  const customerScope = await workspaceCustomerWhereWithLegacy(client, ownerUserId);
   return client.customerAccount.findFirst({
-    where: { id, ...workspaceCustomerWhere(ownerUserId) },
+    where: { AND: [{ id }, customerScope] },
     select: customerAccountSelect
   });
 }
 
 async function findEmailMatches(client: PosCustomerMatchClient, normalizedEmail: string, ownerUserId: string) {
+  const customerScope = await workspaceCustomerWhereWithLegacy(client, ownerUserId);
   return client.customerAccount.findMany({
     where: {
       normalizedEmail,
-      ...workspaceCustomerWhere(ownerUserId)
+      AND: [customerScope]
     },
     select: customerAccountSelect,
     take: 3
@@ -75,11 +77,12 @@ async function findEmailMatches(client: PosCustomerMatchClient, normalizedEmail:
 }
 
 async function findPhoneMatches(client: PosCustomerMatchClient, normalizedPhone: string, ownerUserId: string) {
+  const customerScope = await workspaceCustomerWhereWithLegacy(client, ownerUserId);
   const candidates = await client.customerAccount.findMany({
     where: {
       phone: { not: null },
       status: "active",
-      ...workspaceCustomerWhere(ownerUserId)
+      AND: [customerScope]
     },
     select: customerAccountSelect,
     take: 1000
