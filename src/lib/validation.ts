@@ -1310,6 +1310,9 @@ export const taxAdminSettingsSchema = z.object({
   shippingStripeTaxCode: z.string().trim().regex(/^txcd_\d{8}$/, "Use a valid Stripe shipping tax code.").default("txcd_92010001"),
   legacyManualTaxFallbackEnabled: z.boolean().default(false),
   legacyManualTaxFallbackConfirmed: z.boolean().optional(),
+  legacyManualTaxFallbackIncidentReason: z.string().trim().max(300).default(""),
+  legacyManualTaxFallbackStripeUnavailableAcknowledged: z.boolean().optional(),
+  legacyManualTaxFallbackExpiresAt: z.string().datetime().nullable().optional(),
   defaultReportingPeriod: z.enum(["monthly", "quarterly", "annual"]),
   registrationConfirmed: z.boolean(),
   storeAddressConfirmed: z.boolean(),
@@ -1344,6 +1347,27 @@ export const taxAdminSettingsSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["legacyManualTaxFallbackConfirmed"],
       message: "Explicitly confirm the emergency-only legacy fallback before saving it."
+    });
+  }
+  if (input.legacyManualTaxFallbackEnabled && input.legacyManualTaxFallbackIncidentReason.length < 10) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["legacyManualTaxFallbackIncidentReason"],
+      message: "Document the Stripe Tax incident before enabling the emergency fallback."
+    });
+  }
+  if (input.legacyManualTaxFallbackEnabled && !input.legacyManualTaxFallbackStripeUnavailableAcknowledged) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["legacyManualTaxFallbackStripeUnavailableAcknowledged"],
+      message: "Acknowledge that Stripe Tax is unavailable before enabling the emergency fallback."
+    });
+  }
+  if (input.legacyManualTaxFallbackEnabled && !input.legacyManualTaxFallbackExpiresAt) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["legacyManualTaxFallbackExpiresAt"],
+      message: "Choose an expiration time for the emergency fallback."
     });
   }
   if (input.posTaxEnabled && input.legacyManualTaxFallbackEnabled) {

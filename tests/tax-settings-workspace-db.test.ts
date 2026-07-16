@@ -151,3 +151,27 @@ test("GET is write-free, duplicate saves are idempotent, and runtime gates stay 
   assert.equal(await prisma.storefrontOrder.count(), 0);
   assert.equal(await prisma.inventorySale.count(), 0);
 });
+
+test("manual fallback activation is runtime-gated, time-limited, and audited", async () => {
+  const user = await prisma.user.findUniqueOrThrow({ where: { email: "tax-admin@example.test" } });
+  const actor = sessionUser(user.id);
+  const activation = taxAdminSettingsSchema.parse({
+    ...disabledProfile,
+    legacyManualTaxFallbackEnabled: true,
+    legacyManualTaxFallbackConfirmed: true,
+    legacyManualTaxFallbackIncidentReason: "Stripe Tax provider incident in disposable Preview",
+    legacyManualTaxFallbackStripeUnavailableAcknowledged: true,
+    legacyManualTaxFallbackExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+  });
+  await assert.rejects(saveTaxAdminSettings(actor, activation, "req-fallback-blocked"), /runtime gate/i);
+  process.env.MANUAL_TAX_FALLBACK_ENABLED = "true";
+  const active = await saveTaxAdminSettings(actor, activation, "req-fallback-active");
+  assert.equal(active.pos.legacyFallbackActive, true);
+  assert.match(active.pos.legacyFallbackIncidentReason, /Stripe Tax provider incident/);
+  assert.ok(await prisma.auditLog.findFirst({ where: { action: "tax.manual_fallback.activated" } }));
+  const disabled = taxAdminSettingsSchema.parse({ ...disabledProfile, legacyManualTaxFallbackIncidentReason: activation.legacyManualTaxFallbackIncidentReason });
+  const inactive = await saveTaxAdminSettings(actor, disabled, "req-fallback-disabled");
+  assert.equal(inactive.pos.legacyFallbackActive, false);
+  assert.ok(await prisma.auditLog.findFirst({ where: { action: "tax.manual_fallback.deactivated" } }));
+  process.env.MANUAL_TAX_FALLBACK_ENABLED = "false";
+});

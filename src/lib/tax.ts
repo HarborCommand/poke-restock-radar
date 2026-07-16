@@ -12,15 +12,20 @@ export const DEFAULT_STRIPE_TAX_CODE = "txcd_99999999";
 export const ONLINE_STRIPE_TAX_FLAG = "ONLINE_STRIPE_TAX_ENABLED";
 export const POS_SALES_TAX_FLAG = "POS_SALES_TAX_ENABLED";
 export const POS_STRIPE_TAX_FLAG = "POS_STRIPE_TAX_ENABLED";
+export const MANUAL_TAX_FALLBACK_FLAG = "MANUAL_TAX_FALLBACK_ENABLED";
 export const TAX_EXEMPT_SALES_FLAG = "TAX_EXEMPT_SALES_ENABLED";
 export const TAX_REPORTING_FLAG = "TAX_REPORTING_ENABLED";
 
 export function taxFeatureConfig(env: Record<string, string | undefined> = process.env) {
   const posStripeAlias = env[POS_STRIPE_TAX_FLAG]?.trim().toLowerCase();
   const posLegacyFlag = env[POS_SALES_TAX_FLAG]?.trim().toLowerCase();
+  const posSalesTaxEnabled = posStripeAlias === "true" || (posStripeAlias === undefined && posLegacyFlag === "true");
+  const manualTaxFallbackEnabled = env[MANUAL_TAX_FALLBACK_FLAG]?.trim().toLowerCase() === "true";
   return {
     onlineStripeTaxEnabled: env[ONLINE_STRIPE_TAX_FLAG]?.trim().toLowerCase() === "true",
-    posSalesTaxEnabled: posStripeAlias === "true" || (posStripeAlias === undefined && posLegacyFlag === "true"),
+    posSalesTaxEnabled,
+    manualTaxFallbackEnabled,
+    posTaxModeConflict: posSalesTaxEnabled && manualTaxFallbackEnabled,
     taxExemptSalesEnabled: env[TAX_EXEMPT_SALES_FLAG]?.trim().toLowerCase() === "true",
     taxReportingEnabled: env[TAX_REPORTING_FLAG]?.trim().toLowerCase() === "true"
   };

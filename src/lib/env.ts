@@ -351,6 +351,9 @@ export function getEnvironmentReport(): EnvironmentReport {
   if (taxFeatures.taxExemptSalesEnabled && !taxFeatures.posSalesTaxEnabled) {
     warnings.push("TAX_EXEMPT_SALES_ENABLED is on while POS_SALES_TAX_ENABLED is off. Exempt POS sale entry remains unavailable.");
   }
+  if (taxFeatures.posTaxModeConflict) {
+    warnings.push("POS_STRIPE_TAX_ENABLED and MANUAL_TAX_FALLBACK_ENABLED cannot be enabled together. New POS sales are blocked until one mode is disabled.");
+  }
   if (shippingRateHealthStatus === "misconfigured") {
     warnings.push("Calculated USPS shipping is enabled but Shippo or ship-from env vars are incomplete. Disable CALCULATED_USPS_SHIPPING_ENABLED or finish Shippo setup.");
   }

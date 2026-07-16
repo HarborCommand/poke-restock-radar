@@ -455,6 +455,9 @@ export async function getStorefrontSettings(
       defaultStripeTaxCode: settings?.defaultStripeTaxCode ?? "txcd_99999999",
       shippingStripeTaxCode: settings?.shippingStripeTaxCode ?? "txcd_92010001",
       legacyManualTaxFallbackEnabled: settings?.legacyManualTaxFallbackEnabled ?? false,
+      legacyManualTaxFallbackIncidentReason: settings?.legacyManualTaxFallbackIncidentReason ?? null,
+      legacyManualTaxFallbackAcknowledgedAt: settings?.legacyManualTaxFallbackAcknowledgedAt?.toISOString() ?? null,
+      legacyManualTaxFallbackExpiresAt: settings?.legacyManualTaxFallbackExpiresAt?.toISOString() ?? null,
       features: taxFeatures
     }
   };

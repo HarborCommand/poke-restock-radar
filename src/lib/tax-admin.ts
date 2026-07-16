@@ -94,6 +94,12 @@ export async function getTaxAdminSettings(userId: string) {
   const onlineConfigured = settings?.onlineTaxProfileEnabled ?? false;
   const onlineActive = features.onlineStripeTaxEnabled;
   const posActive = features.posSalesTaxEnabled && Boolean(settings?.posTaxEnabled);
+  const fallbackExpiresAt = settings?.legacyManualTaxFallbackExpiresAt ?? null;
+  const legacyFallbackActive = features.manualTaxFallbackEnabled && !features.posSalesTaxEnabled && Boolean(
+    settings?.legacyManualTaxFallbackEnabled &&
+    settings.legacyManualTaxFallbackAcknowledgedAt &&
+    fallbackExpiresAt && fallbackExpiresAt.getTime() > Date.now()
+  );
   const exemptionActive = features.taxExemptSalesEnabled && Boolean(settings?.taxExemptSalesEnabled);
   const reportingActive = features.taxReportingEnabled;
   const localPickupTreatment = settings?.localPickupTaxTreatment ?? "pending_review";
@@ -113,7 +119,7 @@ export async function getTaxAdminSettings(userId: string) {
 
   return {
     environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "development",
-    collectionDisabled: !onlineActive && !posActive && !exemptionActive,
+    collectionDisabled: !onlineActive && !posActive && !legacyFallbackActive && !exemptionActive,
     online: {
       configurationEnabled: onlineConfigured,
       enabled: onlineActive,
@@ -144,7 +150,7 @@ export async function getTaxAdminSettings(userId: string) {
       sourceNote: settings?.taxProfileSourceNote ?? "",
       profileEnabled: settings?.posTaxEnabled ?? false,
       runtimeEnabled: features.posSalesTaxEnabled,
-      active: posActive,
+      active: posActive || legacyFallbackActive,
       providerReady: readiness.stripeProviderConfigured,
       providerRegistrationStatus: providerRegistration.status,
       inPersonCalculationReady: readiness.stripeProviderConfigured && Boolean(settings?.storeAddressLine1 && settings?.storeCity && settings?.storePostalCode),
@@ -153,6 +159,12 @@ export async function getTaxAdminSettings(userId: string) {
       reversalReady: readiness.stripeProviderConfigured,
       shippingTaxCode: settings?.shippingStripeTaxCode ?? "txcd_92010001",
       legacyFallbackEnabled: settings?.legacyManualTaxFallbackEnabled ?? false,
+      legacyFallbackRuntimeEnabled: features.manualTaxFallbackEnabled,
+      legacyFallbackActive,
+      legacyFallbackIncidentReason: settings?.legacyManualTaxFallbackIncidentReason ?? "",
+      legacyFallbackAcknowledgedAt: settings?.legacyManualTaxFallbackAcknowledgedAt?.toISOString() ?? null,
+      legacyFallbackExpiresAt: fallbackExpiresAt?.toISOString() ?? null,
+      taxModeConflict: features.posTaxModeConflict,
       lastUpdated: settings?.updatedAt?.toISOString() ?? null,
       lastUpdatedByAdmin: settings?.taxSettingsUpdatedByUserId ?? null
     },
@@ -198,6 +210,20 @@ export async function getTaxAdminSettings(userId: string) {
 
 export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInput, requestId: string) {
   const readiness = serverReadiness();
+  const features = taxFeatureConfig();
+  if (input.legacyManualTaxFallbackEnabled && !features.manualTaxFallbackEnabled) {
+    throw new Error("The legacy emergency fallback is disabled by the independent runtime gate.");
+  }
+  if (input.legacyManualTaxFallbackEnabled && features.posSalesTaxEnabled) {
+    throw new Error("Legacy manual fallback cannot be active while POS Stripe Tax is enabled.");
+  }
+  const fallbackExpiresAt = input.legacyManualTaxFallbackExpiresAt ? new Date(input.legacyManualTaxFallbackExpiresAt) : null;
+  if (input.legacyManualTaxFallbackEnabled) {
+    const now = Date.now();
+    if (!fallbackExpiresAt || fallbackExpiresAt.getTime() <= now || fallbackExpiresAt.getTime() > now + 24 * 60 * 60 * 1000) {
+      throw new Error("Emergency fallback expiration must be in the future and no more than 24 hours away.");
+    }
+  }
   const providerRegistration = readiness.stripeProviderConfigured
     ? await getStripeTaxRegistrationStatus(input.storeCountry, input.storeState)
     : { status: "unknown" as const };
@@ -254,7 +280,10 @@ export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInp
       defaultTaxCategory: input.defaultTaxCategory,
       defaultStripeTaxCode: input.defaultStripeTaxCode,
       shippingStripeTaxCode: input.shippingStripeTaxCode,
-      legacyManualTaxFallbackEnabled: input.legacyManualTaxFallbackEnabled
+      legacyManualTaxFallbackEnabled: input.legacyManualTaxFallbackEnabled,
+      legacyManualTaxFallbackIncidentReason: input.legacyManualTaxFallbackIncidentReason || existing?.legacyManualTaxFallbackIncidentReason || null,
+      legacyManualTaxFallbackAcknowledgedAt: input.legacyManualTaxFallbackEnabled ? new Date() : existing?.legacyManualTaxFallbackAcknowledgedAt ?? null,
+      legacyManualTaxFallbackExpiresAt: input.legacyManualTaxFallbackEnabled ? fallbackExpiresAt : existing?.legacyManualTaxFallbackExpiresAt ?? null
     };
     const changedFields = Object.entries(data)
       .filter(([key, value]) => !existing || !sameValue(existing[key as keyof typeof existing], value))
@@ -281,6 +310,19 @@ export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInp
         })
       }
     });
+    if ((!existing?.legacyManualTaxFallbackEnabled && input.legacyManualTaxFallbackEnabled) || (existing?.legacyManualTaxFallbackEnabled && !input.legacyManualTaxFallbackEnabled)) {
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          actorEmail: user.email,
+          action: input.legacyManualTaxFallbackEnabled ? "tax.manual_fallback.activated" : "tax.manual_fallback.deactivated",
+          entityType: "TAX_SETTINGS",
+          entityId: settings.id,
+          summary: input.legacyManualTaxFallbackEnabled ? "Legacy emergency tax fallback activated." : "Legacy emergency tax fallback deactivated.",
+          metadata: JSON.stringify({ requestId, expiresAt: input.legacyManualTaxFallbackEnabled ? fallbackExpiresAt?.toISOString() : undefined, incidentReasonRecorded: Boolean(input.legacyManualTaxFallbackIncidentReason) })
+        }
+      });
+    }
   });
 
   return getTaxAdminSettings(user.id);
