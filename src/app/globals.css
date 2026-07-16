@@ -32670,6 +32670,17 @@ body .sale-edit-workspace-modal select:focus-visible {
 .tax-repair-plan li > div { display: flex; gap: 12px; justify-content: space-between; }
 .tax-repair-plan li p { margin: 0; }
 .tax-repair-plan li small { color: #8a6110; font-weight: 800; }
+.tax-go-live-switchboard { display: grid; gap: 1rem; }
+.tax-go-live-verdict { align-items: center; background: #fff9ee; border: 1px solid #f1d19d; border-radius: 16px; display: flex; gap: 0.75rem; padding: 1rem 1.1rem; }
+.tax-go-live-verdict.ready_flags_off, .tax-go-live-verdict.live { background: #f0fbf4; border-color: #a9dfbe; }
+.tax-go-live-verdict div { display: grid; gap: 0.2rem; }
+.tax-go-live-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tax-go-live-checks { display: grid; gap: 0.65rem; list-style: none; padding: 0; }
+.tax-go-live-checks li { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
+.tax-go-live-approvals { display: grid; gap: 0.8rem; }
+.tax-go-live-approvals > label { display: grid; gap: 0.35rem; }
+.tax-go-live-approvals > label:has(input[type="checkbox"]) { align-items: center; display: flex; gap: 0.55rem; }
+@media (max-width: 760px) { .tax-go-live-grid { grid-template-columns: 1fr; } .tax-go-live-checks li { align-items: flex-start; flex-direction: column; gap: 0.2rem; } }
 
 @media (max-width: 620px) {
   .tax-location-list > article { align-items: start; grid-template-columns: auto minmax(0, 1fr); }

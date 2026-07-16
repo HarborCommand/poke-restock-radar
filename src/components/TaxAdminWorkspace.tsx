@@ -6,6 +6,7 @@ import { TaxReportsWorkspace } from "@/components/TaxReportsWorkspace";
 import { TaxSettingsWorkspace, type TaxSettings } from "@/components/TaxSettingsWorkspace";
 import { StripeTaxReadinessWorkspace } from "@/components/StripeTaxReadinessWorkspace";
 import { TaxLocationsWorkspace } from "@/components/TaxLocationsWorkspace";
+import { TaxGoLiveSwitchboard } from "@/components/TaxGoLiveSwitchboard";
 
 type TaxSection = "overview" | "stripe-readiness" | "locations" | "settings" | "reports" | "readiness";
 
@@ -15,7 +16,7 @@ const sections: Array<{ id: TaxSection; label: string }> = [
   { id: "locations", label: "Locations" },
   { id: "settings", label: "Settings" },
   { id: "reports", label: "Reports" },
-  { id: "readiness", label: "Go-Live Readiness" }
+  { id: "readiness", label: "Go-Live Switchboard" }
 ];
 
 function normalizeSection(value: string | null): TaxSection {
@@ -253,12 +254,7 @@ export function TaxAdminWorkspace() {
       ) : null}
 
       {state === "ready" && settings && section === "readiness" ? (
-        <section className="tax-admin-card tax-admin-readiness-full">
-          <div className="tax-admin-card-heading"><FileCheck2 size={20} /><div><p>Go-live readiness</p><h3>{readinessCount} of {readiness.length} checks complete</h3></div></div>
-          <p className="tax-admin-card-copy">Pending items keep live collection blocked. Sensitive registration numbers and provider credentials are never displayed here.</p>
-          <ul>{readiness.map((item) => <ReadinessItem key={item.label} {...item} />)}</ul>
-          <button className="tax-admin-secondary-action" type="button" onClick={() => selectSection("settings")}>Update saved readiness settings</button>
-        </section>
+        <TaxGoLiveSwitchboard />
       ) : null}
       </div>
     </section>

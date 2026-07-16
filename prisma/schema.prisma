@@ -1118,6 +1118,9 @@ model StorefrontSettings {
   taxRefundVerified              Boolean   @default(false)
   taxReportReconciled            Boolean   @default(false)
   taxOwnerApprovedAt             DateTime?
+  taxAccountantReviewedAt        DateTime?
+  taxAccountantReviewedByUserId  String?
+  taxAccountantReviewNote        String?
   onlineTaxProfileEnabled        Boolean   @default(false)
   taxReportingProfileEnabled     Boolean   @default(false)
   localPickupTaxTreatment        String    @default("pending_review")
