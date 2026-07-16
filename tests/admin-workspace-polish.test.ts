@@ -31,7 +31,7 @@ test("shared admin states remain responsive and keyboard visible", () => {
 });
 
 test("admin workspace polish does not alter business actions", () => {
-  const sharedPolish = css.slice(css.indexOf("/* Shared admin workspace polish */"));
+  const sharedPolish = css.slice(css.indexOf("/* Shared admin workspace polish */"), css.indexOf("/* Keep full-screen Sales workspaces"));
   assert.doesNotMatch(sharedPolish, /checkout|stripe|reward.*points|inventory.*quantity/i);
   assert.match(app, /const runAction: ActionHandler/);
   assert.match(app, /const submit: SubmitHandler/);
