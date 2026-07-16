@@ -98,10 +98,10 @@ export function TaxAdminWorkspace() {
     !settings.reporting.enabled);
 
   const readiness = useMemo(() => settings ? [
-    { label: "Florida registration confirmed", complete: settings.readiness.registrationConfirmed },
+    { label: "Florida registration active in Stripe", complete: settings.readiness.providerRegistrationStatus === "active", detail: `Provider status: ${settings.readiness.providerRegistrationStatus}.` },
     { label: "Legal store address confirmed", complete: settings.readiness.storeAddressConfirmed },
     { label: "County confirmed", complete: settings.readiness.countyConfirmed },
-    { label: "Rate source confirmed", complete: Boolean(settings.pos.sourceNote), detail: settings.pos.sourceNote ? "An approved source note is saved." : "No approved source is recorded." },
+    { label: "Stripe product and shipping tax codes configured", complete: Boolean(settings.product.defaultStripeTaxCode && settings.product.shippingStripeTaxCode) },
     { label: "Filing frequency confirmed", complete: false, detail: `${settings.reporting.defaultPeriod} is selected, but accountant confirmation is not recorded.` },
     { label: "Accountant reviewed", complete: false, detail: "Accountant approval is not stored in the application." },
     { label: "Stripe test credentials available", complete: settings.online.stripeMode === "test", detail: `Current detected mode: ${settings.online.stripeMode}.` },
@@ -208,12 +208,13 @@ export function TaxAdminWorkspace() {
             <dl className="tax-admin-summary">
               <div><dt>Store state</dt><dd>{settings.pos.storeState || "Not set"}</dd></div>
               <div><dt>Store county</dt><dd>{settings.pos.storeCounty || "Not confirmed"}</dd></div>
-              <div><dt>Configured rate</dt><dd>{(settings.pos.combinedRateBasisPoints / 100).toFixed(2)}% combined</dd></div>
+              <div><dt>Tax provider</dt><dd>Stripe Tax</dd></div>
               <div><dt>Product tax code</dt><dd>{settings.readiness.defaultCodeConfirmed ? "Confirmed" : "Needs confirmation"}</dd></div>
               <div><dt>Stripe Tax readiness</dt><dd>{settings.online.automaticTaxReady ? "Provider configured" : "Not ready"}</dd></div>
+              <div><dt>Florida registration</dt><dd>{settings.readiness.providerRegistrationStatus}</dd></div>
               <div><dt>Local Pickup</dt><dd>{settings.online.localPickupStatus}</dd></div>
               <div><dt>Filing frequency</dt><dd>{settings.reporting.defaultPeriod}; confirmation pending</dd></div>
-              <div><dt>Rate source</dt><dd>{settings.pos.sourceNote ? "Recorded" : "Missing"}</dd></div>
+              <div><dt>Shipping treatment</dt><dd>GameDayGrabs prices; Stripe taxes</dd></div>
             </dl>
           </section>
 

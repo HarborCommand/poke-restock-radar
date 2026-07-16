@@ -438,6 +438,10 @@ export async function getStorefrontSettings(
       storeCountry: settings?.storeCountry ?? "US",
       storeState: settings?.storeState ?? "FL",
       storeCounty: settings?.storeCounty ?? null,
+      storeAddressLine1: settings?.storeAddressLine1 ?? null,
+      storeAddressLine2: settings?.storeAddressLine2 ?? null,
+      storeCity: settings?.storeCity ?? null,
+      storePostalCode: settings?.storePostalCode ?? null,
       stateRateBasisPoints: settings?.stateTaxRateBasisPoints ?? 600,
       countyRateBasisPoints: settings?.countyTaxRateBasisPoints ?? 0,
       combinedRateBasisPoints: (settings?.stateTaxRateBasisPoints ?? 600) + (settings?.countyTaxRateBasisPoints ?? 0),
@@ -447,6 +451,8 @@ export async function getStorefrontSettings(
       taxExemptSalesEnabled: settings?.taxExemptSalesEnabled ?? false,
       defaultTaxCategory: settings?.defaultTaxCategory ?? "general_tangible_goods",
       defaultStripeTaxCode: settings?.defaultStripeTaxCode ?? "txcd_99999999",
+      shippingStripeTaxCode: settings?.shippingStripeTaxCode ?? "txcd_92010001",
+      legacyManualTaxFallbackEnabled: settings?.legacyManualTaxFallbackEnabled ?? false,
       features: taxFeatures
     }
   };
@@ -1992,7 +1998,10 @@ export async function createCheckoutSession(input: {
   const checkoutShippingOptions = stripeShippingOptionsForCheckout(shippingCalculation, calculatedQuote);
   if (onlineTaxEnabled) {
     for (const option of checkoutShippingOptions) {
-      if (option.shipping_rate_data) option.shipping_rate_data.tax_behavior = "exclusive";
+      if (option.shipping_rate_data) {
+        option.shipping_rate_data.tax_behavior = "exclusive";
+        option.shipping_rate_data.tax_code = settings.tax.shippingStripeTaxCode ?? "txcd_92010001";
+      }
     }
   }
   if (!checkoutShippingOptions.length) throw new Error("No safe shipping option is available for this cart. Use Request Invoice for manual review.");
@@ -2082,18 +2091,39 @@ export async function createCheckoutSession(input: {
   };
   const stripe = stripeClient();
   let createdSession: Stripe.Checkout.Session | null = null;
+  let createdPickupCustomerId: string | null = null;
   try {
+    const localPickupUsesStripeTax = onlineTaxEnabled && selectedShipping.id === "local_pickup";
+    if (localPickupUsesStripeTax && (!settings.tax.storeAddressLine1 || !settings.tax.storeCity || !settings.tax.storePostalCode)) {
+      throw new Error("Local Pickup tax requires a complete verified store address.");
+    }
+    const localPickupTaxCustomer = localPickupUsesStripeTax
+      ? await stripe.customers.create({
+          email: input.customerEmail,
+          name: input.customerName,
+          shipping: {
+            name: input.customerName || input.customerEmail || "Customer",
+            address: {
+              line1: settings.tax.storeAddressLine1 ?? "",
+              line2: settings.tax.storeAddressLine2 ?? undefined,
+              city: settings.tax.storeCity ?? "",
+              state: settings.tax.storeState,
+              postal_code: settings.tax.storePostalCode ?? "",
+              country: settings.tax.storeCountry
+            }
+          },
+          metadata: { channel: "online_local_pickup", order_id: order.id }
+        }, { idempotencyKey: `tax-pickup-customer:${order.id}` })
+      : null;
+    createdPickupCustomerId = localPickupTaxCustomer?.id ?? null;
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       ...(onlineTaxEnabled ? { automatic_tax: { enabled: true } } : {}),
-      customer_email: input.customerEmail,
-      customer_creation: "always",
+      ...(localPickupTaxCustomer ? { customer: localPickupTaxCustomer.id } : { customer_email: input.customerEmail, customer_creation: "always" as const }),
       phone_number_collection: { enabled: true },
       billing_address_collection: "auto",
       ...(onlineTaxEnabled ? { billing_address_collection: "required" as const } : {}),
-      shipping_address_collection: {
-        allowed_countries: stripeShippingAllowedCountries
-      },
+      ...(localPickupTaxCustomer ? {} : { shipping_address_collection: { allowed_countries: stripeShippingAllowedCountries } }),
       shipping_options: checkoutShippingOptions,
       expires_at: stripeCheckoutSessionExpiresAt(checkoutStartedAt),
       line_items: [
@@ -2148,6 +2178,9 @@ export async function createCheckoutSession(input: {
       } catch {
         // The session may already be complete or expired; local holds are still released below.
       }
+    }
+    if (createdPickupCustomerId) {
+      await stripe.customers.del(createdPickupCustomerId).catch(() => null);
     }
     await releaseReservationsForSession(createdSession?.id ?? null, order.id);
     try {

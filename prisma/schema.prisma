@@ -951,70 +951,79 @@ model InventoryAdjustment {
 }
 
 model InventorySale {
-  id                      String           @id @default(cuid())
-  inventoryItemId         String
-  userId                  String?
-  customerAccountId       String?
-  quantitySold            Int
-  soldPricePerItem        Float
-  grossSale               Float
-  platform                String
-  fees                    Float            @default(0)
-  shippingCost            Float            @default(0)
-  netSale                 Float
-  costBasis               Float
-  profitLoss              Float
-  roiPercent              Float?
-  saleReference           String?
-  paymentMethod           String?
-  paymentReference        String?
-  originalUnitPrice       Float?
-  adjustedUnitPrice       Float?
-  discountAmount          Float?
-  discountReason          String?
-  discountNote            String?
-  subtotalCents           Int?
-  discountCents           Int?
-  taxableSubtotalCents    Int?
-  taxCents                Int?
-  totalCents              Int?
-  taxProvider             String?
-  stateTaxCents           Int?
-  countySurtaxCents       Int?
-  combinedRateBasisPoints Int?
-  taxJurisdictionCountry  String?
-  taxJurisdictionState    String?
-  taxJurisdictionCounty   String?
-  taxStatus               String?
-  taxExempt               Boolean?
-  taxExemptReason         String?
-  taxExemptionReference   String?
-  taxCalculatedAt         DateTime?
-  taxRateSnapshot         String?
-  refundedTaxCents        Int?
-  customerEmail           String?
-  customerPhone           String?
-  customerMatchMethod     String?
-  customerLinkSource      String?
-  customerLinkedAt        DateTime?
-  customerLinkedByUserId  String?
-  customerLinkReason      String?
-  customerLinkNote        String?
-  rewardsEligible         Boolean          @default(false)
-  refundStatus            String?
-  refundedAmount          Float            @default(0)
-  refundedAt              DateTime?
-  refundReason            String?
-  refundNote              String?
-  refundIdempotencyKey    String?
-  refundRestockedQuantity Int              @default(0)
-  soldAt                  DateTime
-  notes                   String?
-  createdAt               DateTime         @default(now())
-  inventoryItem           InventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
-  user                    User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
-  customerAccount         CustomerAccount? @relation(fields: [customerAccountId], references: [id], onDelete: SetNull)
-  taxAdjustments          TaxAdjustment[]
+  id                       String           @id @default(cuid())
+  inventoryItemId          String
+  userId                   String?
+  customerAccountId        String?
+  quantitySold             Int
+  soldPricePerItem         Float
+  grossSale                Float
+  platform                 String
+  fees                     Float            @default(0)
+  shippingCost             Float            @default(0)
+  netSale                  Float
+  costBasis                Float
+  profitLoss               Float
+  roiPercent               Float?
+  saleReference            String?
+  paymentMethod            String?
+  paymentReference         String?
+  originalUnitPrice        Float?
+  adjustedUnitPrice        Float?
+  discountAmount           Float?
+  discountReason           String?
+  discountNote             String?
+  subtotalCents            Int?
+  discountCents            Int?
+  taxableSubtotalCents     Int?
+  taxCents                 Int?
+  totalCents               Int?
+  fulfillmentMode          String?
+  posShippingCents         Int?
+  posShippingTaxCents      Int?
+  taxProvider              String?
+  stateTaxCents            Int?
+  countySurtaxCents        Int?
+  combinedRateBasisPoints  Int?
+  taxJurisdictionCountry   String?
+  taxJurisdictionState     String?
+  taxJurisdictionCounty    String?
+  taxStatus                String?
+  taxExempt                Boolean?
+  taxExemptReason          String?
+  taxExemptionReference    String?
+  taxCalculatedAt          DateTime?
+  taxRateSnapshot          String?
+  taxCalculationId         String?
+  taxTransactionId         String?
+  taxTransactionStatus     String?
+  taxTransactionLineItemId String?
+  taxabilityReason         String?
+  taxBreakdownJson         String?
+  refundedTaxCents         Int?
+  customerEmail            String?
+  customerPhone            String?
+  customerMatchMethod      String?
+  customerLinkSource       String?
+  customerLinkedAt         DateTime?
+  customerLinkedByUserId   String?
+  customerLinkReason       String?
+  customerLinkNote         String?
+  rewardsEligible          Boolean          @default(false)
+  refundStatus             String?
+  refundedAmount           Float            @default(0)
+  refundedAt               DateTime?
+  refundReason             String?
+  refundNote               String?
+  refundIdempotencyKey     String?
+  refundRestockedQuantity  Int              @default(0)
+  soldAt                   DateTime
+  notes                    String?
+  createdAt                DateTime         @default(now())
+  inventoryItem            InventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  user                     User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customerAccount          CustomerAccount? @relation(fields: [customerAccountId], references: [id], onDelete: SetNull)
+  taxAdjustments           TaxAdjustment[]
 
   @@index([inventoryItemId])
   @@index([userId])
@@ -1031,6 +1040,9 @@ model InventorySale {
   @@index([refundStatus])
   @@index([refundIdempotencyKey])
   @@index([taxStatus])
+  @@index([taxCalculationId])
+  @@index([taxTransactionId])
+  @@index([taxTransactionStatus])
   @@index([taxJurisdictionState, taxJurisdictionCounty])
   @@index([soldAt])
 }
@@ -1082,55 +1094,61 @@ model BarcodeScan {
 }
 
 model StorefrontSettings {
-  id                      String   @id @default(cuid())
-  userId                  String   @unique
-  storeName               String   @default("GameDayGrabs LLC")
-  storeLogoUrl            String?
-  sportsCardsExternalUrl  String?
-  contactEmail            String?
-  featuredHeroProductId   String?
-  homepageHeroMode        String   @default("automatic_latest")
-  newArrivalDays          Int      @default(14)
-  showSoldOutInHero       Boolean  @default(true)
-  returnPolicyText        String?
-  shippingPolicyText      String?
-  localPickupInstructions String?
-  announcementBanner      String?
-  defaultShippingPrice    Float    @default(5)
-  freeShippingThreshold   Float?
-  socialLinks             String?
-  storeCountry            String   @default("US")
-  storeState              String   @default("FL")
-  storeCounty             String?
-  stateTaxRateBasisPoints Int      @default(600)
-  countyTaxRateBasisPoints Int     @default(0)
-  taxProfileEffectiveAt   DateTime?
-  taxProfileSourceNote    String?
-  posTaxEnabled           Boolean  @default(false)
-  taxExemptSalesEnabled   Boolean  @default(false)
-  taxExemptionReferenceRequired Boolean @default(true)
-  taxExemptionReasonRequired Boolean @default(true)
-  taxDefaultReportingPeriod String @default("monthly")
-  taxRegistrationConfirmed Boolean @default(false)
-  taxStoreAddressConfirmed Boolean @default(false)
-  taxCountyConfirmed      Boolean  @default(false)
-  taxDefaultCodeConfirmed Boolean  @default(false)
-  taxPreviewOnlinePassed  Boolean  @default(false)
-  taxPreviewPickupPassed  Boolean  @default(false)
-  taxPreviewPosPassed     Boolean  @default(false)
-  taxReceiptVerified      Boolean  @default(false)
-  taxRefundVerified       Boolean  @default(false)
-  taxReportReconciled     Boolean  @default(false)
-  taxOwnerApprovedAt      DateTime?
-  onlineTaxProfileEnabled Boolean  @default(false)
-  taxReportingProfileEnabled Boolean @default(false)
-  localPickupTaxTreatment String   @default("pending_review")
-  taxSettingsUpdatedByUserId String?
-  defaultTaxCategory      String   @default("general_tangible_goods")
-  defaultStripeTaxCode    String   @default("txcd_99999999")
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                             String    @id @default(cuid())
+  userId                         String    @unique
+  storeName                      String    @default("GameDayGrabs LLC")
+  storeLogoUrl                   String?
+  sportsCardsExternalUrl         String?
+  contactEmail                   String?
+  featuredHeroProductId          String?
+  homepageHeroMode               String    @default("automatic_latest")
+  newArrivalDays                 Int       @default(14)
+  showSoldOutInHero              Boolean   @default(true)
+  returnPolicyText               String?
+  shippingPolicyText             String?
+  localPickupInstructions        String?
+  announcementBanner             String?
+  defaultShippingPrice           Float     @default(5)
+  freeShippingThreshold          Float?
+  socialLinks                    String?
+  storeCountry                   String    @default("US")
+  storeState                     String    @default("FL")
+  storeCounty                    String?
+  storeAddressLine1              String?
+  storeAddressLine2              String?
+  storeCity                      String?
+  storePostalCode                String?
+  stateTaxRateBasisPoints        Int       @default(600)
+  countyTaxRateBasisPoints       Int       @default(0)
+  taxProfileEffectiveAt          DateTime?
+  taxProfileSourceNote           String?
+  posTaxEnabled                  Boolean   @default(false)
+  taxExemptSalesEnabled          Boolean   @default(false)
+  taxExemptionReferenceRequired  Boolean   @default(true)
+  taxExemptionReasonRequired     Boolean   @default(true)
+  taxDefaultReportingPeriod      String    @default("monthly")
+  taxRegistrationConfirmed       Boolean   @default(false)
+  taxStoreAddressConfirmed       Boolean   @default(false)
+  taxCountyConfirmed             Boolean   @default(false)
+  taxDefaultCodeConfirmed        Boolean   @default(false)
+  taxPreviewOnlinePassed         Boolean   @default(false)
+  taxPreviewPickupPassed         Boolean   @default(false)
+  taxPreviewPosPassed            Boolean   @default(false)
+  taxReceiptVerified             Boolean   @default(false)
+  taxRefundVerified              Boolean   @default(false)
+  taxReportReconciled            Boolean   @default(false)
+  taxOwnerApprovedAt             DateTime?
+  onlineTaxProfileEnabled        Boolean   @default(false)
+  taxReportingProfileEnabled     Boolean   @default(false)
+  localPickupTaxTreatment        String    @default("pending_review")
+  taxSettingsUpdatedByUserId     String?
+  defaultTaxCategory             String    @default("general_tangible_goods")
+  defaultStripeTaxCode           String    @default("txcd_99999999")
+  shippingStripeTaxCode          String    @default("txcd_92010001")
+  legacyManualTaxFallbackEnabled Boolean   @default(false)
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
+  user                           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ShippingProfile {
@@ -1191,32 +1209,32 @@ model StorefrontCustomer {
 }
 
 model CustomerAccount {
-  id                  String                   @id @default(cuid())
-  userId              String?
-  email               String                   @unique
-  normalizedEmail     String?
-  displayName         String?
-  phone               String?
-  adminNote           String?
-  status              String                   @default("active")
-  passwordHash        String?
-  passwordSetAt       DateTime?
-  sessionRevokedBefore DateTime?
-  emailVerifiedAt     DateTime?
-  lastLoginAt         DateTime?
-  highestAcknowledgedRewardTier Int              @default(0)
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  user                User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  storefrontCustomers StorefrontCustomer[]
-  orders              StorefrontOrder[]
-  posSales            InventorySale[]
-  savedAddresses      CustomerSavedAddress[]
-  sessions            CustomerSession[]
-  magicLinkTokens     CustomerMagicLinkToken[]
-  passwordResetTokens CustomerPasswordResetToken[]
-  rewardLedgerEntries RewardLedgerEntry[]
-  rewardBalance       RewardBalance?
+  id                            String                       @id @default(cuid())
+  userId                        String?
+  email                         String                       @unique
+  normalizedEmail               String?
+  displayName                   String?
+  phone                         String?
+  adminNote                     String?
+  status                        String                       @default("active")
+  passwordHash                  String?
+  passwordSetAt                 DateTime?
+  sessionRevokedBefore          DateTime?
+  emailVerifiedAt               DateTime?
+  lastLoginAt                   DateTime?
+  highestAcknowledgedRewardTier Int                          @default(0)
+  createdAt                     DateTime                     @default(now())
+  updatedAt                     DateTime                     @updatedAt
+  user                          User?                        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  storefrontCustomers           StorefrontCustomer[]
+  orders                        StorefrontOrder[]
+  posSales                      InventorySale[]
+  savedAddresses                CustomerSavedAddress[]
+  sessions                      CustomerSession[]
+  magicLinkTokens               CustomerMagicLinkToken[]
+  passwordResetTokens           CustomerPasswordResetToken[]
+  rewardLedgerEntries           RewardLedgerEntry[]
+  rewardBalance                 RewardBalance?
 
   @@index([userId])
   @@index([email])
@@ -1227,18 +1245,18 @@ model CustomerAccount {
 }
 
 model CustomerAuthRateLimit {
-  id            String   @id @default(cuid())
-  action        String
-  emailKeyHash  String
-  clientKeyHash String
-  windowStart   DateTime
-  windowSeconds Int
-  attemptCount  Int      @default(0)
-  firstAttemptAt DateTime @default(now())
-  lastAttemptAt DateTime
-  blockedUntil  DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String    @id @default(cuid())
+  action         String
+  emailKeyHash   String
+  clientKeyHash  String
+  windowStart    DateTime
+  windowSeconds  Int
+  attemptCount   Int       @default(0)
+  firstAttemptAt DateTime  @default(now())
+  lastAttemptAt  DateTime
+  blockedUntil   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([action, emailKeyHash, clientKeyHash, windowStart])
   @@index([action])
@@ -1249,19 +1267,19 @@ model CustomerAuthRateLimit {
 }
 
 model PublicRateLimit {
-  id            String   @id @default(cuid())
-  action        String
-  rule          String
-  scope         String
-  keyHash       String
-  windowStart   DateTime
-  windowSeconds Int
-  attemptCount  Int      @default(0)
-  firstAttemptAt DateTime @default(now())
-  lastAttemptAt DateTime
-  blockedUntil  DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String    @id @default(cuid())
+  action         String
+  rule           String
+  scope          String
+  keyHash        String
+  windowStart    DateTime
+  windowSeconds  Int
+  attemptCount   Int       @default(0)
+  firstAttemptAt DateTime  @default(now())
+  lastAttemptAt  DateTime
+  blockedUntil   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([action, rule, keyHash, windowStart])
   @@index([action])
@@ -1478,22 +1496,22 @@ model StorefrontOrder {
 }
 
 model TaxAdjustment {
-  id                      String   @id @default(cuid())
-  idempotencyKey          String   @unique
-  channel                 String
-  adjustmentType          String
-  storefrontOrderId       String?
-  inventorySaleId         String?
-  saleReference           String?
-  providerReference       String?
-  refundedAmountCents     Int      @default(0)
-  refundedTaxCents        Int      @default(0)
-  reason                  String?
-  createdByUserId         String?
-  metadataJson            String?
-  createdAt               DateTime @default(now())
-  storefrontOrder         StorefrontOrder? @relation(fields: [storefrontOrderId], references: [id], onDelete: Cascade)
-  inventorySale           InventorySale?   @relation(fields: [inventorySaleId], references: [id], onDelete: Cascade)
+  id                  String           @id @default(cuid())
+  idempotencyKey      String           @unique
+  channel             String
+  adjustmentType      String
+  storefrontOrderId   String?
+  inventorySaleId     String?
+  saleReference       String?
+  providerReference   String?
+  refundedAmountCents Int              @default(0)
+  refundedTaxCents    Int              @default(0)
+  reason              String?
+  createdByUserId     String?
+  metadataJson        String?
+  createdAt           DateTime         @default(now())
+  storefrontOrder     StorefrontOrder? @relation(fields: [storefrontOrderId], references: [id], onDelete: Cascade)
+  inventorySale       InventorySale?   @relation(fields: [inventorySaleId], references: [id], onDelete: Cascade)
 
   @@index([storefrontOrderId])
   @@index([inventorySaleId])
@@ -1592,23 +1610,23 @@ model PaymentEvent {
 }
 
 model RewardLedgerEntry {
-  id                String            @id @default(cuid())
-  customerAccountId String
-  orderId           String?
-  points            Int
-  type              String
-  reason            String
-  idempotencyKey    String?           @unique
-  status            String?
-  availableAt       DateTime?
-  settledAt         DateTime?
+  id                    String           @id @default(cuid())
+  customerAccountId     String
+  orderId               String?
+  points                Int
+  type                  String
+  reason                String
+  idempotencyKey        String?          @unique
+  status                String?
+  availableAt           DateTime?
+  settledAt             DateTime?
   eligibleSubtotalCents Int?
-  source            String?
-  reversalOfEntryId String?
-  metadataJson      String?
-  createdAt         DateTime          @default(now())
-  customerAccount   CustomerAccount   @relation(fields: [customerAccountId], references: [id], onDelete: Cascade)
-  order             StorefrontOrder?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  source                String?
+  reversalOfEntryId     String?
+  metadataJson          String?
+  createdAt             DateTime         @default(now())
+  customerAccount       CustomerAccount  @relation(fields: [customerAccountId], references: [id], onDelete: Cascade)
+  order                 StorefrontOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([customerAccountId])
   @@index([orderId])

@@ -5250,18 +5250,13 @@ function posReceiptSummary(receipt: PosSaleReceiptDTO) {
     }),
     `Merchandise subtotal: ${money(receipt.subtotal)}`,
     `Discount: ${receipt.discount > 0 ? `-${money(receipt.discount)}` : money(0)}`,
+    (receipt.shipping ?? 0) > 0 ? `Shipping: ${money(receipt.shipping ?? 0)}` : null,
     `Taxable subtotal: ${money(receipt.taxableSubtotal)}`,
     receipt.taxExempt
       ? `Sales tax: Tax exempt (${receipt.taxExemptReason ?? "approved exemption"})`
       : receipt.taxStatus === "not_recorded"
         ? "Sales tax: Not recorded"
-        : `${receipt.taxJurisdiction.state} tax: ${money(receipt.stateTax)}`,
-    receipt.taxExempt || receipt.taxStatus === "not_recorded"
-      ? null
-      : `${receipt.taxJurisdiction.county ?? "County"} surtax: ${money(receipt.countySurtax)}`,
-    receipt.taxExempt || receipt.taxStatus === "not_recorded"
-      ? null
-      : `Total sales tax: ${money(receipt.tax)}`,
+        : `Sales tax: ${money(receipt.tax)}`,
     `Total: ${money(receipt.total)}`,
     refundLine,
     receipt.refundedMerchandise !== null && receipt.refundedMerchandise > 0 ? `Refunded merchandise: ${money(receipt.refundedMerchandise)}` : null,
@@ -5288,6 +5283,9 @@ function PosPanel({
   const [cart, setCart] = useState<PosCartLine[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethodDTO | null>(null);
   const [paymentReference, setPaymentReference] = useState("");
+  const [fulfillmentMode, setFulfillmentMode] = useState<"in_person" | "delivery">("in_person");
+  const [posShipping, setPosShipping] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState({ line1: "", line2: "", city: "", state: "FL", postalCode: "", country: "US" });
   const [taxExempt, setTaxExempt] = useState(false);
   const [taxExemptReason, setTaxExemptReason] = useState("");
   const [taxExemptionReference, setTaxExemptionReference] = useState("");
@@ -5378,19 +5376,21 @@ function PosPanel({
     } => Boolean(line));
   const cartQuantity = cartLines.reduce((sum, line) => sum + line.quantity, 0);
   const taxExemptAvailable = dashboard.storefrontSettings.tax.features.taxExemptSalesEnabled && dashboard.storefrontSettings.tax.taxExemptSalesEnabled;
-  const configuredPosTaxRate = !taxExempt && dashboard.storefrontSettings.tax.features.posSalesTaxEnabled && dashboard.storefrontSettings.tax.posTaxEnabled
-    ? dashboard.storefrontSettings.tax.combinedRateBasisPoints / 10_000
-    : 0;
-  const cartTotals = calculatePosTotals(cartLines, configuredPosTaxRate);
+  const cartTotals = calculatePosTotals(cartLines, 0);
   const cartMerchandiseSubtotal = roundPosMoney(cartLines.reduce((sum, line) => sum + line.originalUnitPrice * line.quantity, 0));
   const cartDiscount = roundPosMoney(cartLines.reduce((sum, line) => sum + line.discountAmount * line.quantity, 0));
   const cartInvalid = cartLines.some((line) => !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned);
   const cartEmpty = cartLines.length === 0;
-  const exemptionQuoteReady = !taxExempt || (taxExemptReason.trim().length >= 4 && taxExemptionReference.trim().length >= 4);
+  const locationReady = fulfillmentMode === "in_person" || Boolean(deliveryAddress.line1.trim() && deliveryAddress.city.trim() && deliveryAddress.state.trim() && deliveryAddress.postalCode.trim());
+  const shippingCents = fulfillmentMode === "delivery" ? Math.max(0, Math.round((Number(posShipping) || 0) * 100)) : 0;
+  const exemptionQuoteReady = locationReady && (!taxExempt || (taxExemptReason.trim().length >= 4 && taxExemptionReference.trim().length >= 4));
   const taxQuoteRequestBody = useMemo(
     () =>
       JSON.stringify({
         idempotencyKey: saleIdempotencyKey,
+        fulfillmentMode,
+        shippingCents,
+        deliveryAddress: fulfillmentMode === "delivery" ? deliveryAddress : undefined,
         items: cart.map((line) => ({
           inventoryItemId: line.itemId,
           quantity: line.quantity,
@@ -5403,7 +5403,7 @@ function PosPanel({
         taxExemptReason: taxExempt ? taxExemptReason : undefined,
         taxExemptionReference: taxExempt ? taxExemptionReference : undefined
       }),
-    [cart, saleIdempotencyKey, selectedCustomer?.id, taxExempt, taxExemptReason, taxExemptionReference]
+    [cart, deliveryAddress, fulfillmentMode, saleIdempotencyKey, selectedCustomer?.id, shippingCents, taxExempt, taxExemptReason, taxExemptionReference]
   );
   const taxQuoteReady = taxQuoteStatus === "ready" && Boolean(taxQuote?.canComplete);
   const quotedTotal = taxQuote?.total ?? cartTotals.total;
@@ -5446,7 +5446,7 @@ function PosPanel({
       publishCurrent(() => {
         setTaxQuote(null);
         setTaxQuoteStatus("idle");
-        setTaxQuoteError("Enter the exemption reason and certificate or authorization reference to calculate tax.");
+        setTaxQuoteError(locationReady ? "Enter the exemption reason and certificate or authorization reference to calculate tax." : "Add location to calculate tax.");
       });
       return;
     }
@@ -5474,7 +5474,7 @@ function PosPanel({
         setTaxQuoteError(error instanceof Error ? error.message : "POS tax could not be calculated.");
       });
     return () => controller.abort();
-  }, [cartEmpty, exemptionQuoteReady, taxQuoteRefreshKey, taxQuoteRequestBody]);
+  }, [cartEmpty, exemptionQuoteReady, locationReady, taxQuoteRefreshKey, taxQuoteRequestBody]);
 
   useEffect(() => {
     if (!taxQuote?.expiresAt || taxQuoteStatus !== "ready") return;
@@ -5733,6 +5733,10 @@ function PosPanel({
       setPosMessage("Tax-exempt sales require the enabled admin workflow, a reason, and a certificate or authorization reference.");
       return false;
     }
+    if (!locationReady) {
+      setPosMessage("Add a complete verified delivery location before calculating tax.");
+      return false;
+    }
     if (taxQuoteStatus === "loading") {
       setPosMessage("Wait for the server tax calculation to finish.");
       return false;
@@ -5757,6 +5761,9 @@ function PosPanel({
         body: JSON.stringify({
           idempotencyKey: saleIdempotencyKey,
           quoteId: taxQuote.quoteId,
+          fulfillmentMode,
+          shippingCents,
+          deliveryAddress: fulfillmentMode === "delivery" ? deliveryAddress : undefined,
           items: cartLines.map((line) => ({
             inventoryItemId: line.item.id,
             quantity: line.quantity,
@@ -5780,6 +5787,9 @@ function PosPanel({
       setTaxQuoteError(null);
       setPaymentMethod(null);
       setPaymentReference("");
+      setFulfillmentMode("in_person");
+      setPosShipping("");
+      setDeliveryAddress({ line1: "", line2: "", city: "", state: "FL", postalCode: "", country: "US" });
       setTaxExempt(false);
       setTaxExemptReason("");
       setTaxExemptionReference("");
@@ -6031,37 +6041,50 @@ function PosPanel({
               <EmptyState icon={ShoppingCart} title="Cart is empty" detail="Search or scan a product to start an in-person sale." />
             )}
           </div>
+          <div className="pos-customer-panel" aria-label="POS fulfillment and tax location">
+            <div className="pos-customer-heading">
+              <div><h3>Fulfillment</h3><p>Stripe uses the store location for pickup and the verified destination for delivery.</p></div>
+            </div>
+            <label className="pos-reference-input">Sale type
+              <select value={fulfillmentMode} onChange={(event) => setFulfillmentMode(event.currentTarget.value as "in_person" | "delivery")}>
+                <option value="in_person">In person / Local Pickup</option>
+                <option value="delivery">Local delivery</option>
+              </select>
+            </label>
+            {fulfillmentMode === "delivery" ? (
+              <div className="tax-form-grid">
+                <label>Address<input value={deliveryAddress.line1} onChange={(event) => setDeliveryAddress((current) => ({ ...current, line1: event.currentTarget.value }))} /></label>
+                <label>Unit (optional)<input value={deliveryAddress.line2} onChange={(event) => setDeliveryAddress((current) => ({ ...current, line2: event.currentTarget.value }))} /></label>
+                <label>City<input value={deliveryAddress.city} onChange={(event) => setDeliveryAddress((current) => ({ ...current, city: event.currentTarget.value }))} /></label>
+                <label>State<input maxLength={2} value={deliveryAddress.state} onChange={(event) => setDeliveryAddress((current) => ({ ...current, state: event.currentTarget.value.toUpperCase() }))} /></label>
+                <label>ZIP code<input value={deliveryAddress.postalCode} onChange={(event) => setDeliveryAddress((current) => ({ ...current, postalCode: event.currentTarget.value }))} /></label>
+                <label>Shipping charge<input type="number" min="0" step="0.01" value={posShipping} onChange={(event) => setPosShipping(event.currentTarget.value)} /></label>
+              </div>
+            ) : <small>Local Pickup shipping is $0.00. Stripe calculates tax using the approved store location.</small>}
+          </div>
           <div className={`pos-tax-profile-card ${taxQuote?.taxStatus === "misconfigured" ? "needs-attention" : ""}`}>
             <div>
-              <strong>Active tax jurisdiction</strong>
+              <strong>Stripe Tax</strong>
               <span>
                 {taxQuote
                   ? [taxQuote.jurisdiction.county, taxQuote.jurisdiction.state, taxQuote.jurisdiction.country].filter(Boolean).join(", ")
-                  : "Waiting for server calculation"}
+                  : locationReady ? "Waiting for server calculation" : "Add location to calculate tax"}
               </span>
             </div>
             <div>
-              <strong>{taxQuote ? `${(taxQuote.combinedRateBasisPoints / 100).toFixed(2)}%` : "?"}</strong>
-              <span>Combined saved rate</span>
+              <strong>{taxQuote?.providerStatus ? formatStatus(taxQuote.providerStatus) : "Pending"}</strong>
+              <span>Provider status</span>
             </div>
             <a href="/app?tab=tax&section=settings">Edit Tax Settings</a>
-            {taxQuote?.effectiveAt || taxQuote?.sourceNote ? (
-              <small>
-                {taxQuote.effectiveAt ? `Effective ${shortDate(taxQuote.effectiveAt)}` : "No effective date"}
-                {taxQuote.sourceNote ? ` · ${taxQuote.sourceNote}` : ""}
-              </small>
-            ) : null}
+            {taxQuote?.sourceNote ? <small>{taxQuote.sourceNote}</small> : null}
           </div>
           <div className="pos-total-box" aria-busy={taxQuoteStatus === "loading"}>
             <span>Merchandise subtotal <strong>{money(taxQuote?.merchandiseSubtotal ?? cartMerchandiseSubtotal)}</strong></span>
             <span>Discount <strong>{(taxQuote?.discount ?? cartDiscount) > 0 ? `-${money(taxQuote?.discount ?? cartDiscount)}` : money(0)}</strong></span>
+            {fulfillmentMode === "delivery" ? <span>Shipping <strong>{money(taxQuote?.shipping ?? shippingCents / 100)}</strong></span> : null}
             <span>Taxable subtotal <strong>{money(taxQuote?.taxableSubtotal ?? cartTotals.subtotal)}</strong></span>
             {taxQuote?.taxStatus === "collected" ? (
-              <>
-                <span>{taxQuote.jurisdiction.state} tax <strong>{money(taxQuote.stateTax)}</strong></span>
-                <span>{taxQuote.jurisdiction.county ? `${taxQuote.jurisdiction.county} surtax` : "County surtax"} <strong>{money(taxQuote.countySurtax)}</strong></span>
-                <span>Total sales tax <strong>{money(taxQuote.tax)}</strong></span>
-              </>
+              <span>Sales tax <strong>{money(taxQuote.tax)}</strong></span>
             ) : taxQuote?.taxStatus === "exempt" ? (
               <span>Sales tax <strong>Tax exempt</strong></span>
             ) : taxQuote?.taxStatus === "not_recorded" ? (
@@ -6070,8 +6093,9 @@ function PosPanel({
               <span>Sales tax <strong>{taxQuoteStatus === "loading" ? "Calculating" : "Unavailable"}</strong></span>
             )}
             <small className={taxQuoteError ? "form-error" : undefined}>
-              {taxQuoteStatus === "loading" ? "Calculating tax on the server..." : taxQuote?.reason ?? taxQuoteError ?? "Add an item to calculate tax."}
+              {taxQuoteStatus === "loading" ? "Calculating tax with Stripe…" : taxQuote?.reason ?? taxQuoteError ?? "Add an item to calculate tax."}
             </small>
+            {taxQuoteStatus === "error" ? <button type="button" className="mini-action" onClick={() => setTaxQuoteRefreshKey((current) => current + 1)}>Retry tax</button> : null}
             {taxQuote?.expiresAt ? <small>Quote v{taxQuote.quoteVersion} · refreshes {relativeTime(taxQuote.expiresAt)}</small> : null}
             <span className="total">Total <strong>{money(quotedTotal)}</strong></span>
           </div>
@@ -6322,13 +6346,10 @@ function PosPanel({
               <span>Items <strong>{cartQuantity}</strong></span>
               <span>Merchandise subtotal <strong>{money(taxQuote?.merchandiseSubtotal ?? cartMerchandiseSubtotal)}</strong></span>
               <span>Discount <strong>{(taxQuote?.discount ?? cartDiscount) > 0 ? `-${money(taxQuote?.discount ?? cartDiscount)}` : money(0)}</strong></span>
+              {fulfillmentMode === "delivery" ? <span>Shipping <strong>{money(taxQuote?.shipping ?? shippingCents / 100)}</strong></span> : null}
               <span>Taxable subtotal <strong>{money(taxQuote?.taxableSubtotal ?? cartTotals.subtotal)}</strong></span>
               {taxQuote?.taxStatus === "collected" ? (
-                <>
-                  <span>{taxQuote.jurisdiction.state} tax <strong>{money(taxQuote.stateTax)}</strong></span>
-                  <span>{taxQuote.jurisdiction.county ? `${taxQuote.jurisdiction.county} surtax` : "County surtax"} <strong>{money(taxQuote.countySurtax)}</strong></span>
-                  <span>Total sales tax <strong>{money(taxQuote.tax)}</strong></span>
-                </>
+                <span>Sales tax <strong>{money(taxQuote.tax)}</strong></span>
               ) : <span>Sales tax <strong>{taxQuote?.taxStatus === "exempt" ? "Tax exempt" : "Not recorded"}</strong></span>}
               <span>Tax status <strong>{taxQuote?.taxStatus === "exempt" ? "Exempt - admin approved" : taxQuote?.taxStatus === "collected" ? "Collected" : "Not recorded"}</strong></span>
               <span>Payment <strong>{paymentMethod ? posPaymentMethodLabel(paymentMethod) : "Not selected"}</strong></span>
@@ -6417,17 +6438,14 @@ function PosReceipt({ receipt, onNewSale }: { receipt: PosSaleReceiptDTO; onNewS
       <div className="pos-receipt-total">
         <span>Merchandise subtotal <strong>{money(receipt.subtotal)}</strong></span>
         <span>Discount <strong>{receipt.discount > 0 ? `-${money(receipt.discount)}` : money(0)}</strong></span>
+        {(receipt.shipping ?? 0) > 0 ? <span>Shipping <strong>{money(receipt.shipping ?? 0)}</strong></span> : null}
         <span>Taxable subtotal <strong>{money(receipt.taxableSubtotal)}</strong></span>
         {receipt.taxExempt ? (
           <span>Sales tax <strong>Tax exempt{receipt.taxExemptReason ? ` · ${receipt.taxExemptReason}` : ""}</strong></span>
         ) : receipt.taxStatus === "not_recorded" ? (
           <span>Sales tax <strong>Not recorded</strong></span>
         ) : (
-          <>
-            <span>{receipt.taxJurisdiction.state} tax <strong>{money(receipt.stateTax)}</strong></span>
-            <span>{receipt.taxJurisdiction.county ?? "County"} surtax <strong>{money(receipt.countySurtax)}</strong></span>
-            <span>Total sales tax <strong>{money(receipt.tax)}</strong></span>
-          </>
+          <span>Sales tax <strong>{money(receipt.tax)}</strong></span>
         )}
         <span className="total">Total <strong>{money(receipt.total)}</strong></span>
       </div>

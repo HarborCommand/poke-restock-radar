@@ -31,10 +31,46 @@ execFileSync(process.execPath, [path.join(projectRoot, "node_modules/tsx/dist/cl
 
 const dbModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/db.ts")).href);
 const radarServiceModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/radar-service.ts")).href);
+const stripeTaxModule = await import(pathToFileURL(path.join(projectRoot, "src/lib/stripe-tax.ts")).href);
 const { prisma } = dbModule as { prisma: PrismaClient };
 const { createPosSale, quotePosSaleTax, refundPosSale } = radarServiceModule as typeof import("../src/lib/radar-service");
+const { setStripeTaxClientForTests } = stripeTaxModule as typeof import("../src/lib/stripe-tax");
+let calculationCounter = 0;
+const calculations = new Map<string, Array<{ id: string; reference: string; amount: number; amount_tax: number }>>();
+const calculationShipping = new Map<string, { amount: number; amount_tax: number } | null>();
+setStripeTaxClientForTests({ tax: {
+  calculations: { create: async (payload: { line_items: Array<{ amount: number; quantity: number; reference: string }>; shipping_cost?: { amount: number } }) => {
+    const id = `taxcalc_test_${++calculationCounter}`;
+    const lines = payload.line_items.map((line, index) => ({ id: `tax_li_calc_${calculationCounter}_${index}`, reference: line.reference, amount: line.amount, amount_tax: Math.round(line.amount * 0.07), quantity: line.quantity }));
+    calculations.set(id, lines);
+    const shippingAmount = payload.shipping_cost?.amount ?? 0;
+    const shippingTax = Math.round(shippingAmount * 0.07);
+    const tax = lines.reduce((sum, line) => sum + line.amount_tax, 0) + shippingTax;
+    calculationShipping.set(id, shippingAmount ? { amount: shippingAmount, amount_tax: shippingTax } : null);
+    return { id, livemode: false, expires_at: Math.floor(Date.now() / 1000) + 300, tax_amount_exclusive: tax, tax_amount_inclusive: 0,
+      shipping_cost: shippingAmount ? { amount: shippingAmount, amount_tax: shippingTax } : null, line_items: { data: lines },
+      tax_breakdown: [{ amount: tax, taxable_amount: lines.reduce((sum, line) => sum + line.amount, 0) + shippingAmount, taxability_reason: "standard_rated", tax_rate_details: { country: "US", state: "FL", percentage_decimal: "7.0", tax_type: "sales_tax" } }] };
+  } },
+  transactions: {
+    createFromCalculation: async (payload: { calculation: string; reference: string }) => ({
+      id: `tax_transaction_${payload.calculation}`,
+      livemode: false,
+      reference: payload.reference,
+      shipping_cost: calculationShipping.get(payload.calculation) ?? null,
+      line_items: { data: (calculations.get(payload.calculation) ?? []).map((line, index) => ({ ...line, id: `tax_li_transaction_${calculationCounter}_${index}` })) }
+    }),
+    createReversal: async (payload: { reference: string; original_transaction: string }) => ({
+      id: `tax_reversal_${++calculationCounter}`,
+      livemode: false,
+      reference: payload.reference,
+      reversal: { original_transaction: payload.original_transaction }
+    })
+  },
+  registrations: { list: async () => ({ data: [{ country: "US", status: "active", country_options: { us: { state: "FL" } } }] }) }
+} } as never);
 
 test.after(async () => {
+  setStripeTaxClientForTests(null);
   await prisma.$disconnect();
   rmSync(testDbDir, { recursive: true, force: true });
 });
@@ -65,6 +101,9 @@ test("stale signed POS quotes roll back cleanly and duplicate finalize is once-o
       storeCountry: "US",
       storeState: "FL",
       storeCounty: "Preview County",
+      storeAddressLine1: "100 Test Way",
+      storeCity: "Orlando",
+      storePostalCode: "32801",
       stateTaxRateBasisPoints: 600,
       countyTaxRateBasisPoints: 100,
       taxProfileEffectiveAt: new Date("2026-07-01T00:00:00.000Z"),
@@ -150,12 +189,12 @@ test("stale signed POS quotes roll back cleanly and duplicate finalize is once-o
   );
   await assertNoSaleMutation();
 
-  const rateKey = unique("rate-change");
+  const rateKey = unique("tax-code-change");
   const rateQuote = await quote(rateKey);
-  await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { countyTaxRateBasisPoints: 50 } });
+  await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { defaultStripeTaxCode: "txcd_92010001" } });
   await assert.rejects(finalize(rateKey, rateQuote.quoteId), /stale/i);
   await assertNoSaleMutation();
-  await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { countyTaxRateBasisPoints: 100 } });
+  await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { defaultStripeTaxCode: "txcd_99999999" } });
 
   const jurisdictionKey = unique("jurisdiction-change");
   const jurisdictionQuote = await quote(jurisdictionKey);
@@ -174,7 +213,7 @@ test("stale signed POS quotes roll back cleanly and duplicate finalize is once-o
   const profileKey = unique("profile-change");
   const profileQuote = await quote(profileKey);
   await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { posTaxEnabled: false } });
-  await assert.rejects(finalize(profileKey, profileQuote.quoteId), /approved store tax profile|enabled/i);
+  await assert.rejects(finalize(profileKey, profileQuote.quoteId), /provider profile|enabled/i);
   await assertNoSaleMutation();
   await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { posTaxEnabled: true } });
 
@@ -187,8 +226,8 @@ test("stale signed POS quotes roll back cleanly and duplicate finalize is once-o
   const validQuote = await quote(validKey);
   assert.equal(validQuote.merchandiseSubtotal, 25);
   assert.equal(validQuote.taxableSubtotal, 25);
-  assert.equal(validQuote.stateTax, 1.5);
-  assert.equal(validQuote.countySurtax, 0.25);
+  assert.equal(validQuote.stateTax, 1.75);
+  assert.equal(validQuote.countySurtax, 0);
   assert.equal(validQuote.tax, 1.75);
   assert.equal(validQuote.total, 26.75);
   const receipt = await finalize(validKey, validQuote.quoteId);

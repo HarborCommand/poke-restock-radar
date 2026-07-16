@@ -15,6 +15,7 @@ process.env.DATABASE_URL = `file:${testDbPath}`;
 process.env.VERCEL_ENV = "preview";
 process.env.ONLINE_STRIPE_TAX_ENABLED = "false";
 process.env.POS_SALES_TAX_ENABLED = "false";
+process.env.MANUAL_TAX_FALLBACK_ENABLED = "false";
 process.env.TAX_EXEMPT_SALES_ENABLED = "false";
 process.env.TAX_REPORTING_ENABLED = "false";
 process.env.STRIPE_CHECKOUT_ENABLED = "false";
@@ -57,6 +58,10 @@ const disabledProfile = {
   storeCountry: "US",
   storeState: "FL",
   storeCounty: "Test County",
+  storeAddressLine1: "100 Test Way",
+  storeAddressLine2: "",
+  storeCity: "Orlando",
+  storePostalCode: "32801",
   stateRateBasisPoints: 600,
   countyRateBasisPoints: 100,
   effectiveDate: "2026-07-01",
@@ -70,6 +75,8 @@ const disabledProfile = {
   exemptionReasonRequired: true,
   defaultTaxCategory: "general_tangible_goods",
   defaultStripeTaxCode: "txcd_99999999",
+  shippingStripeTaxCode: "txcd_92010001",
+  legacyManualTaxFallbackEnabled: false,
   defaultReportingPeriod: "monthly",
   registrationConfirmed: false,
   storeAddressConfirmed: false,
@@ -103,6 +110,21 @@ test("GET is write-free, duplicate saves are idempotent, and runtime gates stay 
   await saveTaxAdminSettings(actor, parsed, "req-tax-duplicate");
   assert.equal(await prisma.storefrontSettings.count(), 1);
   assert.equal(await prisma.auditLog.count(), 1);
+
+  const blockedFallback = taxAdminSettingsSchema.parse({
+    ...disabledProfile,
+    legacyManualTaxFallbackEnabled: true,
+    legacyManualTaxFallbackConfirmed: true
+  });
+  await assert.rejects(saveTaxAdminSettings(actor, blockedFallback, "req-tax-fallback-disabled"), /runtime gate is disabled/i);
+  assert.equal(await prisma.auditLog.count(), 1);
+
+  await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { legacyManualTaxFallbackEnabled: true } });
+  const gatedFallback = await getTaxAdminSettings(user.id);
+  assert.equal(gatedFallback.pos.legacyFallbackConfigured, true);
+  assert.equal(gatedFallback.pos.legacyFallbackRuntimeEnabled, false);
+  assert.equal(gatedFallback.pos.legacyFallbackEnabled, false);
+  await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { legacyManualTaxFallbackEnabled: false } });
 
   const incompleteEnable = taxAdminSettingsSchema.parse({
     ...disabledProfile,

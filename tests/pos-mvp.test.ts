@@ -335,7 +335,7 @@ test("POS sale request accepts optional customer contact without trusting reward
     customerPhone: "(555) 123-4567"
   });
   assert.equal(parsed.success, true);
-  assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["customerEmail", "customerPhone", "idempotencyKey", "items", "paymentMethod", "quoteId", "selectedCustomerAccountId"]);
+  assert.deepEqual(parsed.success ? Object.keys(parsed.data).sort() : [], ["customerEmail", "customerPhone", "fulfillmentMode", "idempotencyKey", "items", "paymentMethod", "quoteId", "selectedCustomerAccountId", "shippingCents"]);
 
   const invalidEmail = posSaleCreateSchema.safeParse({
     idempotencyKey: "20260702T120000-contact-sale",
@@ -391,7 +391,9 @@ test("POS server revalidates inventory, price, and availability before recording
   assert.match(createPosSale, /requestedAdjustedUnitPrice !== null && requestedAdjustedUnitPrice >= originalUnitPrice/);
   assert.match(createPosSale, /Adjusted POS price for \$\{dto\.itemName\} cannot exceed or equal the current POS price in Phase 1/);
   assert.match(createPosSale, /Select a discount reason for \$\{dto\.itemName\}/);
-  assert.match(createPosSale, /calculateConfiguredPosTax/);
+  assert.match(createPosSale, /createStripeTaxCalculation/);
+  assert.match(createPosSale, /ensurePosStripeTaxTransaction/);
+  assert.doesNotMatch(createPosSale, /calculateConfiguredPosTax/);
   assert.match(createPosSale, /saleReference/);
   assert.match(createPosSale, /paymentMethod/);
   assert.match(createPosSale, /customerMatch\.customerAccountId/);
@@ -405,7 +407,7 @@ test("POS server revalidates inventory, price, and availability before recording
 test("POS inventory deduction happens only through completed sale creation path", () => {
   const service = readSource("../src/lib/radar-service.ts");
   const createPosSale = sourceSlice(service, "export async function createPosSale", "export async function updateInventorySale");
-  const beforeCreateSale = sourceSlice(createPosSale, "const lines = cartItems.map", "for (const line of linesWithTax)");
+  const beforeCreateSale = sourceSlice(createPosSale, "const lines = cartItems.map", "for (const [lineIndex, line] of linesWithTax.entries())");
   assert.doesNotMatch(beforeCreateSale, /inventoryStockLot\.update|remainingQuantity|recalculateInventorySalesAndLots/);
   assert.match(createPosSale, /await createPosInventorySaleLine\(tx, currentUser, line/);
   assert.match(service, /await tx\.inventoryStockLot\.updateMany/);
@@ -647,8 +649,8 @@ test("POS confirmation modal shows server tax quote, payment, reference, and war
   assert.match(posPanel, /line\.discountReasonLabel/);
   assert.match(posPanel, /taxQuote\?\.merchandiseSubtotal/);
   assert.match(posPanel, /taxQuote\?\.taxableSubtotal/);
-  assert.match(posPanel, /taxQuote\.stateTax/);
-  assert.match(posPanel, /taxQuote\.countySurtax/);
+  assert.match(posPanel, /taxQuote\.tax/);
+  assert.match(posPanel, /Calculating tax with Stripe/);
   assert.match(posPanel, /money\(quotedTotal\)/);
   assert.match(posPanel, /Payment <strong>\{paymentMethod \? posPaymentMethodLabel\(paymentMethod\) : "Not selected"\}/);
   assert.match(posPanel, /Reference <strong>\{maskPosPaymentReference\(paymentReference\)\}/);
@@ -674,8 +676,8 @@ test("POS receipt success state includes operational, tax, refund, and copy meta
   assert.match(receipt, /receipt\.paymentMethodLabel/);
   assert.match(receipt, /receipt\.paymentReference/);
   assert.match(receipt, /receipt\.subtotal/);
-  assert.match(receipt, /receipt\.stateTax/);
-  assert.match(receipt, /receipt\.countySurtax/);
+  assert.match(receipt, /receipt\.tax/);
+  assert.match(receipt, /receipt\.shipping/);
   assert.match(receipt, /receipt\.refundedAmount/);
   assert.match(receipt, /receipt\.refundedTax/);
   assert.match(receipt, /line\.discountAmount > 0/);

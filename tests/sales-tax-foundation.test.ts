@@ -19,10 +19,12 @@ const floridaProfile: PosTaxProfile = {
 
 test("all tax flags are disabled by default and require explicit true", () => {
   assert.deepEqual(taxFeatureConfig({}), {
-    onlineStripeTaxEnabled: false, posSalesTaxEnabled: false, taxExemptSalesEnabled: false, taxReportingEnabled: false
+    onlineStripeTaxEnabled: false, posSalesTaxEnabled: false, manualTaxFallbackEnabled: false, posTaxModeConflict: false,
+    taxExemptSalesEnabled: false, taxReportingEnabled: false
   });
   assert.deepEqual(taxFeatureConfig({ ONLINE_STRIPE_TAX_ENABLED: "TRUE", POS_SALES_TAX_ENABLED: "true", TAX_EXEMPT_SALES_ENABLED: "1", TAX_REPORTING_ENABLED: "false" }), {
-    onlineStripeTaxEnabled: true, posSalesTaxEnabled: true, taxExemptSalesEnabled: false, taxReportingEnabled: false
+    onlineStripeTaxEnabled: true, posSalesTaxEnabled: true, manualTaxFallbackEnabled: false, posTaxModeConflict: false,
+    taxExemptSalesEnabled: false, taxReportingEnabled: false
   });
 });
 
@@ -110,7 +112,8 @@ test("Stripe Checkout tax path is guarded and persists authoritative provider ce
 
 test("POS tax, exemptions, partial refunds, and adjustment audit are server authoritative", () => {
   const source = fs.readFileSync("src/lib/radar-service.ts", "utf8");
-  assert.match(source, /calculateConfiguredPosTax/);
+  assert.match(source, /createStripeTaxCalculation/);
+  assert.doesNotMatch(source, /calculateConfiguredPosTax/);
   assert.match(source, /taxExemptSalesEnabled/);
   assert.match(source, /partialRefundAmount/);
   assert.match(source, /allocateCentsByWeight\(requestedRefundCents/);
@@ -145,7 +148,7 @@ test("receipts and accounting separate tax while rewards remain merchandise-only
 
 test("production-facing env template keeps every tax feature off", () => {
   const env = fs.readFileSync(".env.example", "utf8");
-  for (const name of ["ONLINE_STRIPE_TAX_ENABLED", "POS_SALES_TAX_ENABLED", "TAX_EXEMPT_SALES_ENABLED", "TAX_REPORTING_ENABLED"]) {
+  for (const name of ["ONLINE_STRIPE_TAX_ENABLED", "POS_SALES_TAX_ENABLED", "POS_STRIPE_TAX_ENABLED", "MANUAL_TAX_FALLBACK_ENABLED", "TAX_EXEMPT_SALES_ENABLED", "TAX_REPORTING_ENABLED"]) {
     assert.match(env, new RegExp(`${name}="false"`));
   }
 });
