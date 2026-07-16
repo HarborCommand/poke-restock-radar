@@ -13,9 +13,10 @@ test("sales tax go-live runbook preserves safe defaults and complete release ord
   for (const pr of ["#80", "#81", "#82", "#83", "#84", "#85", "#86"]) assert.match(runbook, new RegExp(pr));
   for (const flag of [
     "ONLINE_STRIPE_TAX_ENABLED",
-    "POS_SALES_TAX_ENABLED",
+    "POS_STRIPE_TAX_ENABLED",
     "TAX_EXEMPT_SALES_ENABLED",
-    "TAX_REPORTING_ENABLED"
+    "TAX_REPORTING_ENABLED",
+    "MANUAL_TAX_FALLBACK_ENABLED"
   ]) {
     assert.match(runbook, new RegExp(`${flag}=false`));
     assert.match(env, new RegExp(`${flag}="false"`));
@@ -45,7 +46,7 @@ test("runbook covers owner inputs launch rollback monitoring and filing without 
   assert.match(runbook, /not legal, accounting, or filing advice/i);
   assert.match(runbook, /do not put registration or certificate numbers in source code/i);
   assert.match(runbook, /does not file a return/i);
-  assert.match(runbook, /does not create a competing UI or a second source of truth/i);
+  assert.match(runbook, /Go-Live Switchboard/i);
 });
 
 test("runbook records the deployed state and keeps unresolved go-live work blocking", () => {

@@ -5,6 +5,16 @@ Prepared: 2026-07-15
 Scope: Florida online delivery, Local Pickup, and owner-operated POS sales.  
 This is an operational readiness plan, not legal, accounting, or filing advice. Do not put registration or certificate numbers in source code, tickets, logs, or pull requests.
 
+## Unified Stripe Tax operating model (authoritative)
+
+The current candidate architecture uses Stripe Tax for online calculation, POS calculation, tax on shipping, tax transaction recording, and tax reversals. GameDayGrabs owns prices, discounts, shipping price, inventory, customers, rewards, receipts/UI, immutable snapshots, reporting, and reconciliation. This section and [Unified Stripe Tax Operations](./unified-stripe-tax-operations.md) supersede older configured-POS-rate language retained below as historical rollout context.
+
+The follow-up draft stack is PR #89 → #90 → #91 → #92 → #93 → #94 → #95 → #96. None of these drafts authorizes a Production deployment, live flag change, or real transaction. Merge only after review and revalidation in order.
+
+Current runtime gates are `ONLINE_STRIPE_TAX_ENABLED`, `POS_STRIPE_TAX_ENABLED`, `TAX_EXEMPT_SALES_ENABLED`, `TAX_REPORTING_ENABLED`, and the emergency-only `MANUAL_TAX_FALLBACK_ENABLED`. All default false. The deprecated `POS_SALES_TAX_ENABLED` alias must not be used for new rollout instructions.
+
+Before live collection, the owner/accountant must privately confirm the legal store address, Florida registration, filing frequency, accountant review, product tax code, shipping tax code, Local Pickup treatment, exemption policy, and evidence retention. Do not store official registration or certificate numbers in application notes or documentation.
+
 ## Deployed release chain
 
 PRs #80 through #86 were reviewed, merged in order, and deployed to Production. Their runtime tax flags remain disabled. This final documentation phase changes no schema, runtime behavior, environment setting, or business data.
@@ -25,7 +35,7 @@ The stacked implementation is now complete. The final code gate verified that ow
 ### Current deployed state
 
 - Production contains PRs #80 through #86. PR #87 is documentation and an automated readiness check only.
-- Live tax collection is not approved. `ONLINE_STRIPE_TAX_ENABLED`, `POS_SALES_TAX_ENABLED`, `TAX_EXEMPT_SALES_ENABLED`, and `TAX_REPORTING_ENABLED` are unset and therefore disabled.
+- Live tax collection is not approved. `ONLINE_STRIPE_TAX_ENABLED`, `POS_STRIPE_TAX_ENABLED`, `TAX_EXEMPT_SALES_ENABLED`, `TAX_REPORTING_ENABLED`, and `MANUAL_TAX_FALLBACK_ENABLED` must remain disabled until the unified stack is reviewed and approved.
 - Customer rewards redemption remains disabled and is outside this rollout.
 - Merchant Center and Stripe Terminal work in PR #22 remains parked and untouched.
 - Code readiness is not business readiness: deployed safeguards do not authorize live collection.
@@ -120,9 +130,10 @@ Current safe defaults in `.env.example` are false:
 
 ```text
 ONLINE_STRIPE_TAX_ENABLED=false
-POS_SALES_TAX_ENABLED=false
+POS_STRIPE_TAX_ENABLED=false
 TAX_EXEMPT_SALES_ENABLED=false
 TAX_REPORTING_ENABLED=false
+MANUAL_TAX_FALLBACK_ENABLED=false
 ```
 
 `STRIPE_CHECKOUT_ENABLED` controls Checkout availability and is separate from tax collection. Do not change an existing Checkout decision as part of the tax release unless the owner explicitly schedules it.
@@ -134,7 +145,7 @@ Only an authorized owner may execute the following after the PR chain, migration
 3. Enable `TAX_REPORTING_ENABLED=true` first; verify an empty/read-only report does not mutate data.
 4. In a scheduled window, enable **one channel at a time**:
    - Online: `ONLINE_STRIPE_TAX_ENABLED=true` only after live Stripe Tax and signed webhook readiness.
-   - POS: `POS_SALES_TAX_ENABLED=true` only after the approved profile and cashier training.
+   - POS: `POS_STRIPE_TAX_ENABLED=true` only after Stripe Tax certification, verified locations, approved codes, and cashier training.
 5. Leave `TAX_EXEMPT_SALES_ENABLED=false` until the exemption policy/evidence workflow is approved; enable it separately.
 6. Redeploy, verify health/configuration status, inspect one owner-authorized transaction per enabled channel, reconcile its receipt/snapshot/report, and record approval privately.
 7. Never enable rewards redemption as part of this procedure.
@@ -144,7 +155,7 @@ Only an authorized owner may execute the following after the PR chain, migration
 If tax is incorrect, provider readiness degrades, reconciliation fails, or ownership is uncertain:
 
 1. Stop affected checkout/POS activity operationally.
-2. Set the affected collection flag false (`ONLINE_STRIPE_TAX_ENABLED`, `POS_SALES_TAX_ENABLED`, or `TAX_EXEMPT_SALES_ENABLED`) and redeploy.
+2. Set the affected collection flag false (`ONLINE_STRIPE_TAX_ENABLED`, `POS_STRIPE_TAX_ENABLED`, or `TAX_EXEMPT_SALES_ENABLED`) and redeploy. Keep `MANUAL_TAX_FALLBACK_ENABLED=false` unless the documented emergency process is separately approved.
 3. Keep `TAX_REPORTING_ENABLED` on only if read-only investigation is safe; otherwise disable it too.
 4. Do not delete or rewrite orders, sales, tax snapshots, refund adjustments, provider events, or audit logs.
 5. Preserve request IDs and affected references; do not copy customer addresses, provider payloads, secrets, or certificate numbers into incident channels.
@@ -182,4 +193,4 @@ Escalate immediately if tax exceeds the original snapshot, tax changes without a
 
 Go-live remains blocked until every owner/accountant input and Preview item above is complete, migrations are current, the admin readiness checklist is complete, Production tax flags are independently verified false before the scheduled change, and the owner records explicit approval.
 
-The existing Tax Settings admin workspace already contains the safe launch checklist (registration, store/county, Stripe/default code, Preview online/pickup/POS, receipt, refund, report, and owner approval), so this phase deliberately does not create a competing UI or a second source of truth.
+Use Admin → Tax → Go-Live Switchboard as the single launch preflight. It reads the existing settings, locations, certification, reconciliation, build, health, and approval records; it cannot modify Vercel environment variables or independently enable collection.
