@@ -141,7 +141,8 @@ test("server quote owns pricing, inventory scope, jurisdiction, and tax arithmet
   assert.match(quote, /stripeTaxCode/);
   assert.match(quote, /createPosTaxQuoteToken/);
   assert.match(quote, /canComplete: !misconfigured && !blockedZero/);
-  assert.doesNotMatch(quote, /calculateConfiguredPosTax/);
+  assert.match(quote, /manualFallbackActive \? calculateConfiguredPosTax/);
+  assert.match(quote, /Cashiers cannot select or change this mode/);
   assert.doesNotMatch(quote, /\.create\(|\.update\(|\.delete\(/);
 });
 

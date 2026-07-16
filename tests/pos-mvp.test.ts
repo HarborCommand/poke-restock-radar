@@ -393,7 +393,8 @@ test("POS server revalidates inventory, price, and availability before recording
   assert.match(createPosSale, /Select a discount reason for \$\{dto\.itemName\}/);
   assert.match(createPosSale, /createStripeTaxCalculation/);
   assert.match(createPosSale, /ensurePosStripeTaxTransaction/);
-  assert.doesNotMatch(createPosSale, /calculateConfiguredPosTax/);
+  assert.match(createPosSale, /manualFallbackActive \? calculateConfiguredPosTax/);
+  assert.match(createPosSale, /taxProvider = taxExempt \? "exempt" : posTaxEnabled \? "stripe_tax" : manualFallbackActive \? "configured_pos_rate"/);
   assert.match(createPosSale, /saleReference/);
   assert.match(createPosSale, /paymentMethod/);
   assert.match(createPosSale, /customerMatch\.customerAccountId/);

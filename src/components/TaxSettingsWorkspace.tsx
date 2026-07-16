@@ -44,6 +44,12 @@ export type TaxSettings = {
     reversalReady: boolean;
     shippingTaxCode: string;
     legacyFallbackEnabled: boolean;
+    legacyFallbackRuntimeEnabled: boolean;
+    legacyFallbackActive: boolean;
+    legacyFallbackIncidentReason: string;
+    legacyFallbackAcknowledgedAt: string | null;
+    legacyFallbackExpiresAt: string | null;
+    taxModeConflict: boolean;
     lastUpdated: string | null;
     lastUpdatedByAdmin: string | null;
   };
@@ -106,6 +112,9 @@ type FormState = {
   shippingStripeTaxCode: string;
   legacyManualTaxFallbackEnabled: boolean;
   legacyManualTaxFallbackConfirmed?: boolean;
+  legacyManualTaxFallbackIncidentReason: string;
+  legacyManualTaxFallbackStripeUnavailableAcknowledged?: boolean;
+  legacyManualTaxFallbackExpiresAt: string | null;
   defaultReportingPeriod: "monthly" | "quarterly" | "annual";
   registrationConfirmed: boolean;
   storeAddressConfirmed: boolean;
@@ -146,6 +155,10 @@ function formFromSettings(settings: TaxSettings): FormState {
     defaultStripeTaxCode: settings.product.defaultStripeTaxCode,
     shippingStripeTaxCode: settings.product.shippingStripeTaxCode,
     legacyManualTaxFallbackEnabled: settings.pos.legacyFallbackEnabled,
+    legacyManualTaxFallbackConfirmed: settings.pos.legacyFallbackEnabled,
+    legacyManualTaxFallbackIncidentReason: settings.pos.legacyFallbackIncidentReason,
+    legacyManualTaxFallbackStripeUnavailableAcknowledged: Boolean(settings.pos.legacyFallbackAcknowledgedAt),
+    legacyManualTaxFallbackExpiresAt: settings.pos.legacyFallbackExpiresAt,
     defaultReportingPeriod: settings.reporting.defaultPeriod,
     registrationConfirmed: settings.readiness.registrationConfirmed,
     storeAddressConfirmed: settings.readiness.storeAddressConfirmed,
@@ -335,6 +348,11 @@ export function TaxSettingsWorkspace({
         <div className="tax-critical-warning" role="alert">Live-mode Stripe credentials are present in Preview. Online Checkout must remain disabled until branch-scoped test credentials replace them.</div>
       ) : null}
 
+      {settings.pos.legacyFallbackActive ? (
+        <div className="tax-critical-warning" role="alert"><strong>Legacy emergency fallback active.</strong> Stripe Tax must remain disabled. This incident window expires {settings.pos.legacyFallbackExpiresAt ? new Date(settings.pos.legacyFallbackExpiresAt).toLocaleString() : "soon"}.</div>
+      ) : null}
+      {settings.pos.taxModeConflict ? <div className="tax-critical-warning" role="alert">POS Stripe Tax and the manual fallback runtime gates conflict. New POS sales are blocked until one gate is disabled.</div> : null}
+
       <form onSubmit={save}>
         <section className="tax-section">
           <div className="tax-section-heading"><div><p>Online Tax</p>{embedded ? <h4>Stripe automatic tax</h4> : <h2>Stripe automatic tax</h2>}</div><Status active={settings.online.automaticTaxReady}>{settings.online.automaticTaxReady ? "Ready" : "Not ready"}</Status></div>
@@ -382,9 +400,15 @@ export function TaxSettingsWorkspace({
           <p className="tax-section-copy"><strong>Shipping:</strong> GameDayGrabs calculates the price. Stripe decides whether and how it is taxed. Local Pickup remains $0.00 and uses the store address.</p>
           <details className="tax-legacy-fallback">
             <summary>Legacy manual tax fallback</summary>
-            <p><strong>Emergency fallback only — not used for normal tax calculations.</strong> Disabled by default, unavailable to cashiers, and cannot be active with POS Stripe Tax.</p>
-            <CheckField checked={form.legacyManualTaxFallbackEnabled} label="Enable legacy emergency fallback" onChange={(value) => { update("legacyManualTaxFallbackEnabled", value); update("legacyManualTaxFallbackConfirmed", false); }} />
-            {form.legacyManualTaxFallbackEnabled ? <CheckField checked={Boolean(form.legacyManualTaxFallbackConfirmed)} label="I explicitly confirm this emergency-only fallback" onChange={(value) => update("legacyManualTaxFallbackConfirmed", value)} /> : null}
+            <p><strong>Legacy emergency fallback — not used for normal sales</strong></p>
+            <p>Historical manual provider labels and stored rate snapshots remain available for reports and refunds. Cashiers cannot choose this mode, and browser requests cannot turn it on.</p>
+            <dl className="tax-summary-grid"><div><dt>Runtime gate</dt><dd>{settings.pos.legacyFallbackRuntimeEnabled ? "Enabled" : "Disabled"}</dd></div><div><dt>Last incident</dt><dd>{settings.pos.legacyFallbackIncidentReason || "None recorded"}</dd></div></dl>
+            {settings.pos.legacyFallbackRuntimeEnabled ? <CheckField checked={form.legacyManualTaxFallbackEnabled} label="Enable legacy emergency fallback" onChange={(value) => { update("legacyManualTaxFallbackEnabled", value); update("legacyManualTaxFallbackConfirmed", false); update("legacyManualTaxFallbackStripeUnavailableAcknowledged", false); }} /> : <p className="tax-section-copy">An authorized operator must first set MANUAL_TAX_FALLBACK_ENABLED. Saved manual rates alone cannot activate collection.</p>}
+            {form.legacyManualTaxFallbackEnabled ? <>
+              <CheckField checked={Boolean(form.legacyManualTaxFallbackConfirmed)} label="I explicitly confirm this emergency-only fallback" onChange={(value) => update("legacyManualTaxFallbackConfirmed", value)} />
+              <CheckField checked={Boolean(form.legacyManualTaxFallbackStripeUnavailableAcknowledged)} label="I acknowledge that Stripe Tax is unavailable" onChange={(value) => update("legacyManualTaxFallbackStripeUnavailableAcknowledged", value)} />
+              <div className="tax-form-grid"><label className="tax-span-2">Documented incident reason<textarea value={form.legacyManualTaxFallbackIncidentReason} onChange={(event) => update("legacyManualTaxFallbackIncidentReason", event.target.value)} maxLength={300} required /></label><label>Expires within 24 hours<input type="datetime-local" value={form.legacyManualTaxFallbackExpiresAt ? new Date(form.legacyManualTaxFallbackExpiresAt).toISOString().slice(0, 16) : ""} onChange={(event) => update("legacyManualTaxFallbackExpiresAt", event.target.value ? new Date(event.target.value).toISOString() : null)} required /></label></div>
+            </> : null}
             <fieldset disabled={!form.legacyManualTaxFallbackEnabled} className="tax-form-grid">
               <label>State rate (%)<input type="number" min="0" max="20" step="0.01" value={form.stateRateBasisPoints / 100} onChange={(event) => update("stateRateBasisPoints", Math.round(Number(event.target.value) * 100))} required /></label>
               <label>County surtax (%)<input type="number" min="0" max="20" step="0.01" value={form.countyRateBasisPoints / 100} onChange={(event) => update("countyRateBasisPoints", Math.round(Number(event.target.value) * 100))} required /></label>

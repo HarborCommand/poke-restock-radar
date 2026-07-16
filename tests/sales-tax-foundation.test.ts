@@ -19,10 +19,10 @@ const floridaProfile: PosTaxProfile = {
 
 test("all tax flags are disabled by default and require explicit true", () => {
   assert.deepEqual(taxFeatureConfig({}), {
-    onlineStripeTaxEnabled: false, posSalesTaxEnabled: false, taxExemptSalesEnabled: false, taxReportingEnabled: false
+    onlineStripeTaxEnabled: false, posSalesTaxEnabled: false, manualTaxFallbackEnabled: false, posTaxModeConflict: false, taxExemptSalesEnabled: false, taxReportingEnabled: false
   });
   assert.deepEqual(taxFeatureConfig({ ONLINE_STRIPE_TAX_ENABLED: "TRUE", POS_SALES_TAX_ENABLED: "true", TAX_EXEMPT_SALES_ENABLED: "1", TAX_REPORTING_ENABLED: "false" }), {
-    onlineStripeTaxEnabled: true, posSalesTaxEnabled: true, taxExemptSalesEnabled: false, taxReportingEnabled: false
+    onlineStripeTaxEnabled: true, posSalesTaxEnabled: true, manualTaxFallbackEnabled: false, posTaxModeConflict: false, taxExemptSalesEnabled: false, taxReportingEnabled: false
   });
 });
 
@@ -111,7 +111,8 @@ test("Stripe Checkout tax path is guarded and persists authoritative provider ce
 test("POS tax, exemptions, partial refunds, and adjustment audit are server authoritative", () => {
   const source = fs.readFileSync("src/lib/radar-service.ts", "utf8");
   assert.match(source, /createStripeTaxCalculation/);
-  assert.doesNotMatch(source, /calculateConfiguredPosTax/);
+  const refundSlice = source.slice(source.indexOf("export async function refundPosSale"));
+  assert.doesNotMatch(refundSlice, /calculateConfiguredPosTax/);
   assert.match(source, /taxExemptSalesEnabled/);
   assert.match(source, /partialRefundAmount/);
   assert.match(source, /allocateCentsByWeight\(requestedRefundCents/);

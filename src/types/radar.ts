@@ -307,9 +307,14 @@ export type StorefrontSettingsDTO = {
     defaultStripeTaxCode: string;
     shippingStripeTaxCode?: string;
     legacyManualTaxFallbackEnabled?: boolean;
+    legacyManualTaxFallbackIncidentReason?: string | null;
+    legacyManualTaxFallbackAcknowledgedAt?: string | null;
+    legacyManualTaxFallbackExpiresAt?: string | null;
     features: {
       onlineStripeTaxEnabled: boolean;
       posSalesTaxEnabled: boolean;
+      manualTaxFallbackEnabled?: boolean;
+      posTaxModeConflict?: boolean;
       taxExemptSalesEnabled: boolean;
       taxReportingEnabled: boolean;
     };

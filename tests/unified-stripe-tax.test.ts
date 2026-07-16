@@ -165,7 +165,7 @@ test("unified tax UI hides manual rates from the primary POS workflow and keeps 
     readFile(new URL("../src/lib/tax-reporting.ts", import.meta.url), "utf8")
   ]);
   assert.match(settingsUi, /<details className="tax-legacy-fallback">/);
-  assert.match(settingsUi, /Emergency fallback only — not used for normal tax calculations/);
+  assert.match(settingsUi, /Legacy emergency fallback — not used for normal sales/);
   assert.match(settingsUi, /Transaction recording/);
   assert.match(posUi, /Calculating tax with Stripe/);
   assert.match(posUi, /Add location to calculate tax/);
