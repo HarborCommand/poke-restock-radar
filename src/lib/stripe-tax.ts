@@ -381,3 +381,64 @@ export async function getStripeTaxRegistrationStatus(country: string, state: str
     return { status: "unknown" as const };
   }
 }
+
+export type StripeTaxProviderReadiness = {
+  reachable: boolean;
+  registrationStatus: "active" | "pending" | "missing" | "unknown";
+  registrationEffectiveDate: string | null;
+  requestId: string | null;
+  checkedAt: string;
+};
+
+function safeStripeRequestId(value: unknown) {
+  return typeof value === "string" && /^req_[A-Za-z0-9_]+$/.test(value) ? value.slice(0, 120) : null;
+}
+
+function safeRegistrationDate(value: unknown) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return null;
+  const date = new Date(value * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+export async function checkStripeTaxProviderReadiness(
+  country: string,
+  state: string,
+  client: StripeTaxClient = stripeTaxClient()
+): Promise<StripeTaxProviderReadiness> {
+  const checkedAt = new Date().toISOString();
+  try {
+    const response = await client.tax.registrations.list({ limit: 100 });
+    const normalizedCountry = country.trim().toUpperCase();
+    const normalizedState = state.trim().toUpperCase();
+    const registrations = response.data
+      .map((value) => value as unknown as Record<string, unknown>)
+      .filter((registration) => {
+        if (safeString(registration.country)?.toUpperCase() !== normalizedCountry) return false;
+        if (normalizedCountry !== "US") return true;
+        const options = registration.country_options && typeof registration.country_options === "object"
+          ? registration.country_options as Record<string, unknown>
+          : {};
+        const us = options.us && typeof options.us === "object" ? options.us as Record<string, unknown> : {};
+        return safeString(us.state)?.toUpperCase() === normalizedState;
+      });
+    const active = registrations.find((registration) => safeString(registration.status) === "active");
+    const pending = registrations.find((registration) => ["pending", "scheduled"].includes(safeString(registration.status) ?? ""));
+    const registration = active ?? pending;
+    const lastResponse = (response as unknown as { lastResponse?: { requestId?: unknown } }).lastResponse;
+    return {
+      reachable: true,
+      registrationStatus: active ? "active" : pending ? "pending" : "missing",
+      registrationEffectiveDate: safeRegistrationDate(registration?.active_from),
+      requestId: safeStripeRequestId(lastResponse?.requestId),
+      checkedAt
+    };
+  } catch {
+    return {
+      reachable: false,
+      registrationStatus: "unknown",
+      registrationEffectiveDate: null,
+      requestId: null,
+      checkedAt
+    };
+  }
+}

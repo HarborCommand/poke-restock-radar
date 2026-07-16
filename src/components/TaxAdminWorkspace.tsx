@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, Circle, FileCheck2, Gauge, Settings2 } from "lucide-react";
 import { TaxReportsWorkspace } from "@/components/TaxReportsWorkspace";
 import { TaxSettingsWorkspace, type TaxSettings } from "@/components/TaxSettingsWorkspace";
+import { StripeTaxReadinessWorkspace } from "@/components/StripeTaxReadinessWorkspace";
 
-type TaxSection = "overview" | "settings" | "reports" | "readiness";
+type TaxSection = "overview" | "stripe-readiness" | "settings" | "reports" | "readiness";
 
 const sections: Array<{ id: TaxSection; label: string }> = [
   { id: "overview", label: "Overview" },
+  { id: "stripe-readiness", label: "Stripe Readiness" },
   { id: "settings", label: "Settings" },
   { id: "reports", label: "Reports" },
   { id: "readiness", label: "Go-Live Readiness" }
@@ -227,6 +229,8 @@ export function TaxAdminWorkspace() {
       ) : null}
 
       {state === "ready" && settings && section === "settings" ? <TaxSettingsWorkspace embedded onSettingsChange={setSettings} /> : null}
+
+      {state === "ready" && settings && section === "stripe-readiness" ? <StripeTaxReadinessWorkspace /> : null}
 
       {state === "ready" && settings && section === "reports" ? (
         settings.reporting.enabled ? <TaxReportsWorkspace embedded /> : (

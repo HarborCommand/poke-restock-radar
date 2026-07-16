@@ -88,9 +88,9 @@ export async function getTaxAdminSettings(userId: string) {
   const settings = await prisma.storefrontSettings.findUnique({ where: { userId } });
   const features = taxFeatureConfig();
   const readiness = serverReadiness();
-  const providerRegistration = readiness.stripeProviderConfigured
-    ? await getStripeTaxRegistrationStatus(settings?.storeCountry ?? "US", settings?.storeState ?? "FL")
-    : { status: "unknown" as const };
+  // Provider connectivity is intentionally never performed by this GET path.
+  // The Stripe Readiness workspace exposes a separate, explicit admin action.
+  const providerRegistration: { status: "active" | "inactive" | "unknown" } = { status: "unknown" };
   const onlineConfigured = settings?.onlineTaxProfileEnabled ?? false;
   const onlineActive = features.onlineStripeTaxEnabled;
   const posActive = features.posSalesTaxEnabled && Boolean(settings?.posTaxEnabled);

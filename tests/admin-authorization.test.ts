@@ -212,7 +212,7 @@ test("every radar mutation is authenticated and covered by the centralized origi
     const source = readFileSync(file, "utf8");
     return /export async function (POST|PUT|PATCH|DELETE)/.test(source);
   });
-  assert.equal(mutationRoutes.length, 88);
+  assert.equal(mutationRoutes.length, 89);
   for (const file of mutationRoutes) {
     const source = readFileSync(file, "utf8");
     assert.match(source, /requireUser\(|currentUser\(|cronAuthorized\(|authorizeAdminMutation\(/, path.relative(root, file));
