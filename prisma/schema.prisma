@@ -40,6 +40,7 @@ model User {
   acceptedInvites          FriendInvite[]            @relation("InviteAcceptedBy")
   auditLogs                AuditLog[]
   inventoryItems           InventoryItem[]
+  inventoryAdjustments     InventoryAdjustment[]
   inventorySales           InventorySale[]
   barcodeScans             BarcodeScan[]
   dailyRecaps              DailyRecap[]
@@ -810,6 +811,7 @@ model InventoryItem {
   card                          Card?                   @relation(fields: [cardId], references: [id], onDelete: SetNull)
   marketComps                   InventoryMarketComp[]
   stockLots                     InventoryStockLot[]
+  stockAdjustments              InventoryAdjustment[]
   sales                         InventorySale[]
   barcodeScans                  BarcodeScan[]
   storefrontOrderItems          StorefrontOrderItem[]
@@ -922,6 +924,30 @@ model InventoryStockLot {
   @@index([inventoryItemId])
   @@index([purchasedAt])
   @@index([remainingQuantity])
+}
+
+model InventoryAdjustment {
+  id              String        @id @default(cuid())
+  inventoryItemId String
+  userId          String?
+  idempotencyKey  String        @unique
+  action          String
+  quantityDelta   Int
+  quantityBefore  Int
+  quantityAfter   Int
+  reason          String
+  note            String?
+  unitCost        Float?
+  requestId       String?
+  createdAt       DateTime      @default(now())
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([inventoryItemId])
+  @@index([userId])
+  @@index([action])
+  @@index([reason])
+  @@index([createdAt])
 }
 
 model InventorySale {

@@ -214,6 +214,7 @@ export type InventoryItemDTO = {
   lastThreeComps: InventoryMarketCompDTO[];
   productImages: InventoryProductImageDTO[];
   stockLots: InventoryStockLotDTO[];
+  stockAdjustments?: InventoryAdjustmentDTO[];
   sales: InventorySaleDTO[];
   expectedPlan: string | null;
   notes: string | null;
@@ -808,6 +809,28 @@ export type InventoryStockLotDTO = {
   sourceStore: string | null;
   paymentMethod: string | null;
   createdAt: string;
+};
+
+export type InventoryAdjustmentDTO = {
+  id: string;
+  inventoryItemId: string;
+  action: "add" | "remove";
+  quantityDelta: number;
+  quantityBefore: number;
+  quantityAfter: number;
+  reason: string;
+  hasPrivateNote: boolean;
+  unitCost: number | null;
+  actorLabel: string;
+  requestId: string | null;
+  referenceId: string;
+  createdAt: string;
+};
+
+export type InventoryAdjustmentResultDTO = {
+  item: InventoryItemDTO;
+  adjustment: InventoryAdjustmentDTO;
+  duplicate: boolean;
 };
 
 export type InventoryProductImageDTO = {
