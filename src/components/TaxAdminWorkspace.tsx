@@ -132,8 +132,10 @@ export function TaxAdminWorkspace() {
       <nav className="tax-admin-tabs" aria-label="Tax administration sections" role="tablist">
         {sections.map((item) => (
           <button
+            aria-controls="tax-admin-panel"
             aria-selected={section === item.id}
             className={section === item.id ? "active" : ""}
+            id={`tax-admin-tab-${item.id}`}
             key={item.id}
             onClick={() => selectSection(item.id)}
             role="tab"
@@ -166,17 +168,39 @@ export function TaxAdminWorkspace() {
       {state === "loading" ? <div className="tax-admin-state" role="status">Loading private tax configuration…</div> : null}
       {state === "error" ? <div className="tax-admin-state error" role="alert"><strong>Tax administration could not be loaded.</strong><span>{error}</span><button type="button" onClick={() => void load()}>Try again</button></div> : null}
 
+      <div
+        aria-labelledby={`tax-admin-tab-${section}`}
+        className="tax-admin-panel"
+        id="tax-admin-panel"
+        role="tabpanel"
+      >
       {state === "ready" && settings && section === "overview" ? (
         <div className="tax-admin-overview">
           <section className="tax-admin-card tax-admin-current-status">
-            <div className="tax-admin-card-heading"><Gauge size={20} /><div><p>Current status</p><h3>Foundation ready, launch blocked</h3></div></div>
-            <ul>
-              <ReadinessItem label="Code foundation deployed" complete />
-              <ReadinessItem label="Collection disabled" complete={allRuntimeDisabled} />
-              <ReadinessItem label="No live tax collection" complete={allRuntimeDisabled} />
-              <ReadinessItem label="No tax exemption processing" complete={!settings.exemption.runtimeEnabled} />
-              <ReadinessItem label="No official filing activity" complete={!settings.reporting.enabled} />
-            </ul>
+            <div className="tax-admin-card-heading"><Gauge size={20} /><div><p>Current status</p><h3>Deployed foundation, live collection blocked</h3></div></div>
+            <div className="tax-admin-status-group">
+              <h4>Code readiness</h4>
+              <ul>
+                <ReadinessItem label="Code foundation deployed" complete />
+                <ReadinessItem label="Tax Settings deployed" complete />
+                <ReadinessItem label="POS tax flow deployed" complete />
+                <ReadinessItem label="Online Checkout tax flow deployed" complete />
+                <ReadinessItem label="Tax reporting code deployed" complete />
+                <ReadinessItem label="Refund and concurrency hardening deployed" complete />
+                <ReadinessItem label="Tax security review deployed" complete />
+              </ul>
+            </div>
+            <div className="tax-admin-status-group">
+              <h4>Live state</h4>
+              <ul>
+                <ReadinessItem label="No online tax collection" complete={!settings.online.enabled} />
+                <ReadinessItem label="No POS tax collection" complete={!settings.pos.runtimeEnabled} />
+                <ReadinessItem label="No tax exemption processing" complete={!settings.exemption.runtimeEnabled} />
+                <ReadinessItem label="No active tax reporting" complete={!settings.reporting.enabled} />
+                <ReadinessItem label="No official filing activity" complete={!settings.reporting.enabled} />
+                <ReadinessItem label="No filed-return claim" complete />
+              </ul>
+            </div>
           </section>
 
           <section className="tax-admin-card">
@@ -228,6 +252,7 @@ export function TaxAdminWorkspace() {
           <button className="tax-admin-secondary-action" type="button" onClick={() => selectSection("settings")}>Update saved readiness settings</button>
         </section>
       ) : null}
+      </div>
     </section>
   );
 }

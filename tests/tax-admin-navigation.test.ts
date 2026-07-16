@@ -51,7 +51,14 @@ test("overview and readiness expose only safe configuration status", () => {
   const workspace = read("src/components/TaxAdminWorkspace.tsx");
   for (const copy of [
     "Code foundation deployed",
-    "No live tax collection",
+    "Tax Settings deployed",
+    "POS tax flow deployed",
+    "Online Checkout tax flow deployed",
+    "Tax reporting code deployed",
+    "Refund and concurrency hardening deployed",
+    "Tax security review deployed",
+    "No online tax collection",
+    "No POS tax collection",
     "No tax exemption processing",
     "No official filing activity",
     "Store state",
@@ -133,4 +140,11 @@ test("Tax administration layout is full-screen responsive and keyboard visible",
   assert.match(css, /@media \(max-width: 900px\)/);
   assert.match(css, /@media \(max-width: 620px\)/);
   assert.match(css, /\.tax-admin-tabs[\s\S]*overflow-x: auto/);
+  const workspace = read("src/components/TaxAdminWorkspace.tsx");
+  const settings = read("src/components/TaxSettingsWorkspace.tsx");
+  const reports = read("src/components/TaxReportsWorkspace.tsx");
+  assert.match(workspace, /aria-controls="tax-admin-panel"/);
+  assert.match(workspace, /role="tabpanel"/);
+  assert.match(settings, /embedded \? <h3>Tax Settings<\/h3> : <h1>Tax Settings<\/h1>/);
+  assert.match(reports, /embedded \? <h3>Sales Tax Reports<\/h3> : <h1>Sales Tax Reports<\/h1>/);
 });
