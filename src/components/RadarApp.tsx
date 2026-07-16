@@ -6067,7 +6067,8 @@ function PosPanel({
               <strong>{taxQuote?.providerStatus ? formatStatus(taxQuote.providerStatus) : "Pending"}</strong>
               <span>Provider status</span>
             </div>
-            <a href="/app?tab=tax&section=settings">Edit Tax Settings</a>
+            <a href="/app?tab=tax&section=locations">Manage locations</a>
+            {taxQuote?.locationName ? <small>Location: {taxQuote.locationName}</small> : null}
             {taxQuote?.sourceNote ? <small>{taxQuote.sourceNote}</small> : null}
           </div>
           <div className="pos-total-box" aria-busy={taxQuoteStatus === "loading"}>

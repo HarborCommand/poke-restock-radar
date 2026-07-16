@@ -32614,6 +32614,60 @@ body .sale-edit-workspace-modal select:focus-visible {
 }
 
 /* Tax administration inside the private Radar application */
+.tax-locations-workspace,
+.tax-location-list {
+  display: grid;
+  gap: 16px;
+}
+
+.tax-location-list > article {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e2e7ed;
+  border-radius: 16px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 17px 18px;
+}
+
+.tax-location-icon {
+  background: #eef5ff;
+  border-radius: 12px;
+  color: #174f9c;
+  display: grid;
+  height: 42px;
+  place-items: center;
+  width: 42px;
+}
+
+.tax-location-title,
+.tax-location-actions,
+.tax-location-tags,
+.tax-location-defaults,
+.tax-location-form-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.tax-location-title h4,
+.tax-location-list p { margin: 0; }
+.tax-location-list p { color: #677386; margin-top: 4px; }
+.tax-location-tags { margin-top: 8px; }
+.tax-location-tags span { background: #f0f3f7; border-radius: 999px; color: #536176; font-size: .72rem; font-weight: 800; padding: 4px 8px; }
+.tax-location-actions button { background: #fff; border: 1px solid #d9e0e7; border-radius: 9px; color: #304157; min-height: 36px; padding: 7px 11px; }
+.tax-location-form { background: #fbfcfd; border: 1px solid #dde3e9; border-radius: 18px; display: grid; gap: 18px; padding: 20px; }
+.tax-location-defaults label { align-items: center; display: flex; font-weight: 750; gap: 7px; }
+.tax-location-form-actions { justify-content: flex-end; }
+
+@media (max-width: 620px) {
+  .tax-location-list > article { align-items: start; grid-template-columns: auto minmax(0, 1fr); }
+  .tax-location-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .tax-location-form-actions > button { flex: 1; }
+}
+
 .app-main.app-main-tax {
   width: 100%;
   max-width: 1540px;

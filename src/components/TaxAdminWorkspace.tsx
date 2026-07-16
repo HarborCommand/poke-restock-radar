@@ -5,12 +5,14 @@ import { AlertTriangle, Check, Circle, FileCheck2, Gauge, Settings2 } from "luci
 import { TaxReportsWorkspace } from "@/components/TaxReportsWorkspace";
 import { TaxSettingsWorkspace, type TaxSettings } from "@/components/TaxSettingsWorkspace";
 import { StripeTaxReadinessWorkspace } from "@/components/StripeTaxReadinessWorkspace";
+import { TaxLocationsWorkspace } from "@/components/TaxLocationsWorkspace";
 
-type TaxSection = "overview" | "stripe-readiness" | "settings" | "reports" | "readiness";
+type TaxSection = "overview" | "stripe-readiness" | "locations" | "settings" | "reports" | "readiness";
 
 const sections: Array<{ id: TaxSection; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "stripe-readiness", label: "Stripe Readiness" },
+  { id: "locations", label: "Locations" },
   { id: "settings", label: "Settings" },
   { id: "reports", label: "Reports" },
   { id: "readiness", label: "Go-Live Readiness" }
@@ -231,6 +233,7 @@ export function TaxAdminWorkspace() {
       {state === "ready" && settings && section === "settings" ? <TaxSettingsWorkspace embedded onSettingsChange={setSettings} /> : null}
 
       {state === "ready" && settings && section === "stripe-readiness" ? <StripeTaxReadinessWorkspace /> : null}
+      {state === "ready" && settings && section === "locations" ? <TaxLocationsWorkspace /> : null}
 
       {state === "ready" && settings && section === "reports" ? (
         settings.reporting.enabled ? <TaxReportsWorkspace embedded /> : (

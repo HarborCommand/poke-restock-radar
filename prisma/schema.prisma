@@ -51,6 +51,7 @@ model User {
   customerAccounts         CustomerAccount[]
   shippingProfiles         ShippingProfile[]
   shippingQuotes           ShippingQuote[]
+  taxLocations             TaxLocation[]
 }
 
 model PasswordResetToken {
@@ -974,6 +975,9 @@ model InventorySale {
   taxTransactionLineItemId String?
   taxabilityReason         String?
   taxBreakdownJson         String?
+  taxLocationId            String?
+  taxLocationNameSnapshot  String?
+  taxLocationSnapshotJson  String?
   refundedTaxCents         Int?
   customerEmail            String?
   customerPhone            String?
@@ -1017,6 +1021,7 @@ model InventorySale {
   @@index([taxCalculationId])
   @@index([taxTransactionId])
   @@index([taxTransactionStatus])
+  @@index([taxLocationId])
   @@index([taxJurisdictionState, taxJurisdictionCounty])
   @@index([soldAt])
 }
@@ -1123,6 +1128,35 @@ model StorefrontSettings {
   createdAt                      DateTime  @default(now())
   updatedAt                      DateTime  @updatedAt
   user                           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TaxLocation {
+  id                    String    @id @default(cuid())
+  userId                String
+  name                  String
+  locationType          String
+  country               String    @default("US")
+  addressLine1          String
+  addressLine2          String?
+  city                  String
+  state                 String
+  postalCode            String
+  county                String?
+  active                Boolean   @default(true)
+  defaultForPos         Boolean   @default(false)
+  defaultForLocalPickup Boolean   @default(false)
+  defaultShipFrom       Boolean   @default(false)
+  effectiveAt           DateTime
+  verificationStatus    String    @default("unverified")
+  verifiedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+  @@index([userId, defaultForPos])
+  @@index([userId, defaultForLocalPickup])
+  @@index([userId, defaultShipFrom])
 }
 
 model ShippingProfile {
@@ -1381,6 +1415,9 @@ model StorefrontOrder {
   taxExemptReason                  String?
   taxCalculatedAt                  DateTime?
   taxBreakdownJson                 String?
+  taxLocationId                    String?
+  taxLocationNameSnapshot          String?
+  taxLocationSnapshotJson          String?
   refundedTaxCents                 Int?
   subtotal                         Float                 @default(0)
   shippingCharged                  Float                 @default(0)
@@ -1464,6 +1501,7 @@ model StorefrontOrder {
   @@index([fulfillmentStatus])
   @@index([refundStatus])
   @@index([taxStatus])
+  @@index([taxLocationId])
   @@index([taxJurisdictionState, taxJurisdictionCounty])
   @@index([isTestOrder])
   @@index([createdAt])
