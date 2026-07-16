@@ -187,6 +187,12 @@ export function TaxReportsWorkspace({ embedded = false }: { embedded?: boolean }
             {summary && summary.deduplicatedTransactionCount > 0 ? <p>Excluded {summary.deduplicatedTransactionCount.toLocaleString()} mirrored cross-channel transaction{summary.deduplicatedTransactionCount === 1 ? "" : "s"} from totals.</p> : null}
           </section>
 
+          {report.repairPlan.length ? <details className="tax-repair-plan">
+            <summary>Prepare repair plan</summary>
+            <p>This plan is read-only. It cannot call Stripe, update a transaction, or execute a correction.</p>
+            <ul>{report.repairPlan.map((item, index) => <li key={`${item.category}-${item.affectedReference}-${index}`}><div><strong>{label(item.category)}</strong><span>{item.affectedReference}</span></div><p>{item.recommendedOperation}</p><small>Owner approval required</small></li>)}</ul>
+          </details> : null}
+
           <section className="tax-report-table-card">
             <div className="tax-report-table-heading"><div><p>Transaction detail</p>{embedded ? <h4>{report.pagination.total.toLocaleString()} canonical transaction{report.pagination.total === 1 ? "" : "s"}</h4> : <h2>{report.pagination.total.toLocaleString()} canonical transaction{report.pagination.total === 1 ? "" : "s"}</h2>}</div><span>Generated {dateTime(report.generatedAt)}</span></div>
             <div className="tax-report-table-scroll" tabIndex={0} aria-label="Scrollable tax transaction table">

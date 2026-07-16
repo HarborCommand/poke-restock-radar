@@ -32662,6 +32662,15 @@ body .sale-edit-workspace-modal select:focus-visible {
 .tax-location-defaults label { align-items: center; display: flex; font-weight: 750; gap: 7px; }
 .tax-location-form-actions { justify-content: flex-end; }
 
+.tax-repair-plan { background: #fffaf0; border: 1px solid #ecd8a9; border-radius: 16px; padding: 16px 18px; }
+.tax-repair-plan summary { color: #694b08; cursor: pointer; font-weight: 850; }
+.tax-repair-plan > p { color: #6d6554; }
+.tax-repair-plan ul { display: grid; gap: 10px; list-style: none; margin: 14px 0 0; padding: 0; }
+.tax-repair-plan li { background: #fff; border: 1px solid #eadfca; border-radius: 12px; display: grid; gap: 7px; padding: 12px; }
+.tax-repair-plan li > div { display: flex; gap: 12px; justify-content: space-between; }
+.tax-repair-plan li p { margin: 0; }
+.tax-repair-plan li small { color: #8a6110; font-weight: 800; }
+
 @media (max-width: 620px) {
   .tax-location-list > article { align-items: start; grid-template-columns: auto minmax(0, 1fr); }
   .tax-location-actions { grid-column: 1 / -1; justify-content: flex-end; }

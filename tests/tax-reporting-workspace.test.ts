@@ -152,7 +152,7 @@ test("mixed online and POS summaries use persisted snapshots and distinguish zer
   assert.equal(report.summary.notRecordedTransactionCount, 1);
   assert.equal(report.rows.find((row) => row.reference === "ZERO-TAX")?.taxCents, 0);
   assert.equal(report.rows.find((row) => row.reference === "UNKNOWN")?.taxCents, null);
-  assert.deepEqual(report.rows.find((row) => row.reference === "UNKNOWN")?.anomalies, ["unknown_historical_tax"]);
+  assert.deepEqual(report.rows.find((row) => row.reference === "UNKNOWN")?.anomalies, ["historical_unknown", "unknown_historical_tax"]);
 });
 
 test("partial and full refunds use cumulative persisted tax snapshots without going negative", () => {
@@ -224,6 +224,32 @@ test("reconciliation detects persisted mismatches and leaves valid snapshots cle
   assert.ok(report.rows.find((row) => row.reference === "BAD-COMPONENTS")?.anomalies.includes("tax_component_mismatch"));
 });
 
+test("Stripe reconciliation uses canonical categories and only prepares owner-approved repairs", () => {
+  const report = buildTaxReportFromSnapshots({
+    online: [
+      online({ orderNumber: "LEGACY", taxProvider: "configured_rate", taxCalculationId: null }),
+      online({ orderNumber: "UNKNOWN-HISTORY", taxProvider: "historical_unknown", taxStatus: "not_recorded", taxableSubtotalCents: null, taxCents: null, refundedTaxCents: null, taxCalculationId: null }),
+      online({ orderNumber: "OVER-REFUND", taxProvider: "stripe_tax", taxCents: 100, refundedTaxCents: 200, taxStatus: "refunded", taxCalculationId: "taxcalc_over" })
+    ],
+    pos: [
+      pos({ id: "missing-provider-data", saleReference: "POS-MISSING", taxProvider: "stripe_tax", taxCalculationId: null, taxTransactionId: null, taxTransactionStatus: "failed", taxLocationId: null, taxabilityReason: "not_collecting", refundedTaxCents: 10 }),
+      pos({ id: "duplicate-a", saleReference: "POS-DUP-A", taxProvider: "stripe_tax", taxCalculationId: "taxcalc_dup_a", taxTransactionId: "tax_dup", taxTransactionStatus: "recorded", taxLocationId: "loc_1" }),
+      pos({ id: "duplicate-b", saleReference: "POS-DUP-B", taxProvider: "stripe_tax", taxCalculationId: "taxcalc_dup_b", taxTransactionId: "tax_dup", taxTransactionStatus: "recorded", taxLocationId: "loc_1" })
+    ],
+    adjustments: [
+      adjustment({ storefrontOrderReference: "ORPHAN", providerReference: "tax_reversal_orphan", refundedTaxCents: 25 })
+    ]
+  }, filters());
+  const categories = new Set(report.repairPlan.map((item) => item.category));
+  for (const category of ["missing_calculation", "missing_transaction", "duplicate_transaction", "missing_reversal", "orphan_reversal", "reversal_exceeds_original", "location_missing", "registration_missing", "provider_unavailable", "historical_legacy_manual", "historical_unknown"]) {
+    assert.ok(categories.has(category), `missing canonical category ${category}`);
+  }
+  assert.ok(report.repairPlan.length > 0);
+  assert.ok(report.repairPlan.every((item) => item.requiresOwnerApproval === true));
+  assert.ok(report.repairPlan.every((item) => item.expectedDeltaCents === null));
+  assert.equal(report.reconciliation.clean, false);
+});
+
 test("pagination is deterministic and excessive canonical transaction counts fail safely", () => {
   const rows = [
     online({ orderNumber: "EARLY", paidAt: new Date("2026-01-01T10:00:00.000Z") }),
@@ -280,6 +306,8 @@ test("workspace exposes accounting definitions, filters, safe errors, responsive
   assert.match(css, /\.tax-report-workspace/);
   assert.match(css, /@media \(max-width: 720px\)/);
   assert.match(css, /overflow-x: auto/);
+  assert.match(workspace, /Prepare repair plan/);
+  assert.match(workspace, /cannot call Stripe/);
   assert.match(documentation, /Gross merchandise sales excluding tax/);
   assert.match(documentation, /not including, local midnight/);
   assert.doesNotMatch(workspace, /customerEmail|customerPhone|shippingAddress|taxCalculationId|providerReference/);

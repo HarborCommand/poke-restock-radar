@@ -49,6 +49,7 @@ export type TaxReportOnlineSnapshot = {
   taxProvider?: string | null;
   shippingMethodLabel: string | null;
   shippingPackageProfile: string | null;
+  taxLocationId?: string | null;
 };
 
 export type TaxReportPosLineSnapshot = {
@@ -73,6 +74,9 @@ export type TaxReportPosLineSnapshot = {
   taxTransactionStatus?: string | null;
   posShippingCents?: number | null;
   fulfillmentMode?: string | null;
+  taxCalculationId?: string | null;
+  taxLocationId?: string | null;
+  taxabilityReason?: string | null;
 };
 
 export type TaxReportAdjustmentSnapshot = {
@@ -146,6 +150,7 @@ export type TaxReport = {
   summary: TaxReportSummary;
   pagination: { page: number; pageSize: number; total: number; pageCount: number };
   reconciliation: { clean: boolean; findingCount: number; scannedTransactions: number; truncated: false };
+  repairPlan: Array<{ category: string; affectedReference: string; recommendedOperation: string; expectedDeltaCents: number | null; requiresOwnerApproval: true }>;
   rows: TaxReportRow[];
 };
 
@@ -244,6 +249,8 @@ type InternalReportRow = TaxReportRow & {
   providerCalculationId: string | null;
   providerTransactionId: string | null;
   providerTransactionStatus: string | null;
+  locationId: string | null;
+  taxabilityReason: string | null;
 };
 
 function addCoreAnomalies(row: InternalReportRow, anomalies: Set<string>) {
@@ -333,7 +340,9 @@ function posTransactionRows(lines: TaxReportPosLineSnapshot[]) {
       anomalies: [],
       canonicalKey,
       adjustmentKey: first.saleReference ? `pos:${canonicalReference(first.saleReference)}` : `pos-id:${first.id}`,
-      providerCalculationId: null,
+      locationId: oneSnapshotValue(group.map((line) => line.taxLocationId ?? null), anomalies),
+      taxabilityReason: oneSnapshotValue(group.map((line) => line.taxabilityReason ?? null), anomalies),
+      providerCalculationId: oneSnapshotValue(group.map((line) => line.taxCalculationId ?? null), anomalies),
       providerTransactionId: oneSnapshotValue(group.map((line) => line.taxTransactionId ?? null), anomalies),
       providerTransactionStatus: oneSnapshotValue(group.map((line) => line.taxTransactionStatus ?? null), anomalies)
     };
@@ -378,7 +387,9 @@ function onlineTransactionRows(orders: TaxReportOnlineSnapshot[]) {
       adjustmentKey: `online:${canonicalReference(order.orderNumber)}`,
       providerCalculationId: order.taxCalculationId,
       providerTransactionId: null,
-      providerTransactionStatus: null
+      providerTransactionStatus: null,
+      locationId: order.taxLocationId ?? null,
+      taxabilityReason: null
     };
     addCoreAnomalies(row, anomalies);
     row.anomalies = [...anomalies].sort();
@@ -483,7 +494,50 @@ export function buildTaxReportFromSnapshots(
     if (adjustments.some((adjustment) => adjustment.providerReference) && (row.refundedTaxCents ?? 0) === 0) {
       anomalies.add("stripe_reversal_without_internal_refund");
     }
+    if (row.provider === "stripe_tax" && !row.providerCalculationId) anomalies.add("missing_calculation");
+    if (row.channel === "pos" && row.provider === "stripe_tax" && !row.providerTransactionId) anomalies.add("missing_transaction");
+    if (row.providerTransactionId && (transactionCounts.get(row.providerTransactionId) ?? 0) > 1) anomalies.add("duplicate_transaction");
+    if (anomalies.has("internal_refund_missing_stripe_reversal")) anomalies.add("missing_reversal");
+    if (anomalies.has("stripe_reversal_without_internal_refund")) anomalies.add("orphan_reversal");
+    if (anomalies.has("refund_tax_exceeds_original_tax")) anomalies.add("reversal_exceeds_original");
+    if (row.provider === "stripe_tax" && row.channel === "pos" && !row.locationId) anomalies.add("location_missing");
+    if (row.provider === "stripe_tax" && row.channel === "online" && row.fulfillment === "local_pickup" && !row.locationId) anomalies.add("location_missing");
+    if (row.taxabilityReason === "not_collecting") anomalies.add("registration_missing");
+    if (row.providerTransactionStatus === "failed") anomalies.add("provider_unavailable");
+    if (/manual|configured_rate/.test(row.provider)) anomalies.add("historical_legacy_manual");
+    if (row.provider === "historical_unknown" || anomalies.has("unknown_historical_tax")) anomalies.add("historical_unknown");
     row.anomalies = [...anomalies].sort();
+  }
+
+  const rowAdjustmentKeys = new Set(rows.map((row) => row.adjustmentKey).filter((value): value is string => Boolean(value)));
+  const orphanAdjustments = sources.adjustments.filter((adjustment) => {
+    const key = adjustmentKey(adjustment);
+    return Boolean(adjustment.providerReference && key && !rowAdjustmentKeys.has(key));
+  });
+  const repairCategories = new Set([
+    "missing_calculation", "missing_transaction", "duplicate_transaction", "total_mismatch", "missing_reversal",
+    "orphan_reversal", "reversal_exceeds_original", "location_missing", "registration_missing", "provider_unavailable",
+    "historical_legacy_manual", "historical_unknown"
+  ]);
+  const operationFor = (category: string) => ({
+    missing_calculation: "Review the authoritative Checkout or POS snapshot; do not recreate automatically.",
+    missing_transaction: "Prepare an idempotent Stripe Tax transaction recording request for owner approval.",
+    duplicate_transaction: "Compare provider references and quarantine the duplicate before any correction.",
+    total_mismatch: "Compare persisted cents with the provider-authoritative total.",
+    missing_reversal: "Prepare a bounded Stripe Tax reversal request for owner approval.",
+    orphan_reversal: "Locate the matching internal refund or escalate the provider-only reversal.",
+    reversal_exceeds_original: "Stop further reversals and reconcile cumulative refunded tax.",
+    location_missing: "Confirm the original store, pickup, or delivery snapshot from source evidence.",
+    registration_missing: "Confirm Stripe registration status with the owner and accountant.",
+    provider_unavailable: "Retry only after provider health is restored and owner approval is recorded.",
+    historical_legacy_manual: "Retain as historical manual tax; no provider mutation is recommended.",
+    historical_unknown: "Retain as unknown history unless original source evidence is available."
+  } as Record<string, string>)[category] ?? "Review source evidence before any correction.";
+  const repairPlan = rows.flatMap((row) => row.anomalies
+    .filter((category) => repairCategories.has(category))
+    .map((category) => ({ category, affectedReference: row.reference.slice(0, 160), recommendedOperation: operationFor(category), expectedDeltaCents: null, requiresOwnerApproval: true as const })));
+  for (const adjustment of orphanAdjustments) {
+    repairPlan.push({ category: "orphan_reversal", affectedReference: (adjustment.saleReference ?? adjustment.storefrontOrderReference ?? "Provider reversal").slice(0, 160), recommendedOperation: operationFor("orphan_reversal"), expectedDeltaCents: null, requiresOwnerApproval: true });
   }
 
   rows.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || left.channel.localeCompare(right.channel) || left.reference.localeCompare(right.reference));
@@ -558,11 +612,12 @@ export function buildTaxReportFromSnapshots(
     },
     pagination: { page, pageSize, total: rows.length, pageCount: Math.ceil(rows.length / pageSize) },
     reconciliation: {
-      clean: rows.every((row) => row.anomalies.length === 0),
-      findingCount: rows.reduce((count, row) => count + row.anomalies.length, 0),
+      clean: rows.every((row) => row.anomalies.length === 0) && orphanAdjustments.length === 0,
+      findingCount: rows.reduce((count, row) => count + row.anomalies.length, 0) + orphanAdjustments.length,
       scannedTransactions: rows.length,
       truncated: false
     },
+    repairPlan,
     rows: publicRows
   };
 }
@@ -638,7 +693,8 @@ export async function buildTaxReport(currentUser: SessionUser, filters: TaxRepor
       select: {
         orderNumber: true, createdAt: true, paidAt: true, taxJurisdictionCountry: true, taxJurisdictionState: true, taxJurisdictionCounty: true,
         taxStatus: true, subtotalCents: true, discountCents: true, shippingCents: true, taxableSubtotalCents: true,
-        taxCents: true, totalCents: true, refundedTaxCents: true, taxCalculationId: true, taxProvider: true, shippingMethodLabel: true, shippingPackageProfile: true
+        taxCents: true, totalCents: true, refundedTaxCents: true, taxCalculationId: true, taxProvider: true, shippingMethodLabel: true, shippingPackageProfile: true,
+        taxLocationId: true
       }
     }) : Promise.resolve([]),
     includePos ? prisma.inventorySale.findMany({
@@ -649,7 +705,8 @@ export async function buildTaxReport(currentUser: SessionUser, filters: TaxRepor
         id: true, saleReference: true, soldAt: true, taxJurisdictionCountry: true, taxJurisdictionState: true, taxJurisdictionCounty: true,
         taxStatus: true, taxExempt: true, subtotalCents: true, discountCents: true, taxableSubtotalCents: true,
         taxCents: true, stateTaxCents: true, countySurtaxCents: true, totalCents: true, refundedTaxCents: true,
-        taxProvider: true, taxTransactionId: true, taxTransactionStatus: true, posShippingCents: true, fulfillmentMode: true
+        taxProvider: true, taxCalculationId: true, taxTransactionId: true, taxTransactionStatus: true, posShippingCents: true, fulfillmentMode: true,
+        taxLocationId: true, taxabilityReason: true
       }
     }) : Promise.resolve([]),
     adjustmentOr.length ? prisma.taxAdjustment.findMany({
