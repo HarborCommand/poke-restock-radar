@@ -101,12 +101,11 @@ test("report route is admin-only, runtime-gated, private, bounded, correlated, a
   assert.doesNotMatch(route, /export async function (POST|PUT|PATCH|DELETE)/);
 });
 
-test("admin page is server-gated, noindex, and shows a no-data disabled state", () => {
+test("legacy admin page is server-gated, noindex, and redirects into the Radar tax workspace", () => {
   const page = read("src/app/admin/tax-reports/page.tsx");
   assert.match(page, /currentUser/);
   assert.match(page, /user\.role !== "ADMIN"/);
-  assert.match(page, /taxReportingEnabled/);
-  assert.match(page, /No transaction data was loaded and no export was generated/);
+  assert.match(page, /redirect\("\/app\?tab=tax&section=reports"\)/);
   assert.match(page, /robots: \{ index: false, follow: false \}/);
 });
 

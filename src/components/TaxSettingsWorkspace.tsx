@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 
-type TaxSettings = {
+export type TaxSettings = {
   environment: string;
   collectionDisabled: boolean;
   online: {
@@ -159,7 +159,13 @@ function CheckField({
   );
 }
 
-export function TaxSettingsWorkspace() {
+export function TaxSettingsWorkspace({
+  embedded = false,
+  onSettingsChange
+}: {
+  embedded?: boolean;
+  onSettingsChange?: (settings: TaxSettings) => void;
+}) {
   const [settings, setSettings] = useState<TaxSettings | null>(null);
   const [initial, setInitial] = useState<FormState | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -171,13 +177,17 @@ export function TaxSettingsWorkspace() {
     fetch("/api/radar/tax-settings", { credentials: "same-origin", cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Tax settings are unavailable.");
+        if (!response.ok) {
+          const requestId = payload.requestId || response.headers.get("X-Request-Id");
+          throw new Error(`${payload.error || "Tax settings are unavailable."}${requestId ? ` Reference: ${requestId}.` : ""}`);
+        }
         return payload as TaxSettings;
       })
       .then((payload) => {
         if (!active) return;
         const next = formFromSettings(payload);
         setSettings(payload);
+        onSettingsChange?.(payload);
         setInitial(next);
         setForm(next);
         setState("ready");
@@ -190,7 +200,7 @@ export function TaxSettingsWorkspace() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [onSettingsChange]);
 
   const dirty = useMemo(() => Boolean(form && initial && JSON.stringify(form) !== JSON.stringify(initial)), [form, initial]);
   const enabling = Boolean(form && initial && (
@@ -239,11 +249,13 @@ export function TaxSettingsWorkspace() {
       const payload = await response.json();
       if (!response.ok) {
         const detail = Array.isArray(payload.issues) ? payload.issues.map((issue: { message: string }) => issue.message).join(" ") : "";
-        throw new Error(detail || payload.error || "Tax settings could not be saved.");
+        const requestId = payload.requestId || response.headers.get("X-Request-Id");
+        throw new Error(`${detail || payload.error || "Tax settings could not be saved."}${requestId ? ` Reference: ${requestId}.` : ""}`);
       }
       const nextSettings = payload as TaxSettings;
       const nextForm = formFromSettings(nextSettings);
       setSettings(nextSettings);
+      onSettingsChange?.(nextSettings);
       setInitial(nextForm);
       setForm(nextForm);
       setMessage("Tax settings saved and an audit event was recorded.");
@@ -254,8 +266,8 @@ export function TaxSettingsWorkspace() {
     }
   }
 
-  if (state === "loading") return <main className="tax-workspace tax-workspace-state">Loading tax settings…</main>;
-  if (!settings || !form) return <main className="tax-workspace tax-workspace-state"><a href="/admin">Back to admin</a><p>{message}</p></main>;
+  if (state === "loading") return <section className="tax-workspace tax-workspace-state">Loading tax settings…</section>;
+  if (!settings || !form) return <section className="tax-workspace tax-workspace-state">{!embedded ? <a href="/admin">Back to admin</a> : null}<p>{message}</p></section>;
 
   const readinessFields: Array<[keyof FormState, string, string?]> = [
     ["registrationConfirmed", "Florida registration confirmed"],
@@ -272,12 +284,12 @@ export function TaxSettingsWorkspace() {
   ];
 
   return (
-    <main className="tax-workspace">
+    <section className={embedded ? "tax-workspace tax-workspace-embedded" : "tax-workspace"}>
       <header className="tax-workspace-header">
         <div>
-          <a href="/admin" className="tax-back-link">← Admin</a>
+          {!embedded ? <a href="/admin" className="tax-back-link">← Admin</a> : null}
           <p className="tax-eyebrow">Commerce controls</p>
-          <h1>Tax Settings</h1>
+          {embedded ? <h3>Tax Settings</h3> : <h1>Tax Settings</h1>}
           <p>Configure saved tax policy and verify launch readiness. Environment gates remain separately controlled.</p>
         </div>
         <div className="tax-header-status">
@@ -296,7 +308,7 @@ export function TaxSettingsWorkspace() {
 
       <form onSubmit={save}>
         <section className="tax-section">
-          <div className="tax-section-heading"><div><p>Online Tax</p><h2>Stripe automatic tax</h2></div><Status active={settings.online.automaticTaxReady}>{settings.online.automaticTaxReady ? "Ready" : "Not ready"}</Status></div>
+          <div className="tax-section-heading"><div><p>Online Tax</p>{embedded ? <h4>Stripe automatic tax</h4> : <h2>Stripe automatic tax</h2>}</div><Status active={settings.online.automaticTaxReady}>{settings.online.automaticTaxReady ? "Ready" : "Not ready"}</Status></div>
           <div className="tax-summary-grid">
             <div><span>Collection gate</span><strong>{settings.online.enabled ? "Enabled" : "Disabled"}</strong></div>
             <div><span>Stripe mode</span><strong>{settings.online.stripeMode}</strong></div>
@@ -313,7 +325,7 @@ export function TaxSettingsWorkspace() {
         </section>
 
         <section className="tax-section">
-          <div className="tax-section-heading"><div><p>POS Tax Profile</p><h2>Store jurisdiction and rate</h2></div><Status active={settings.pos.runtimeEnabled && form.posTaxEnabled}>{settings.pos.runtimeEnabled && form.posTaxEnabled ? "Active" : "Inactive"}</Status></div>
+          <div className="tax-section-heading"><div><p>POS Tax Profile</p>{embedded ? <h4>Store jurisdiction and rate</h4> : <h2>Store jurisdiction and rate</h2>}</div><Status active={settings.pos.runtimeEnabled && form.posTaxEnabled}>{settings.pos.runtimeEnabled && form.posTaxEnabled ? "Active" : "Inactive"}</Status></div>
           <p className="tax-section-copy">The server calculates tax from this saved snapshot. Cashiers cannot enter or override a tax amount.</p>
           <div className="tax-form-grid">
             <label>Country<input value={form.storeCountry} maxLength={2} onChange={(event) => update("storeCountry", event.target.value.toUpperCase())} required /></label>
@@ -330,7 +342,7 @@ export function TaxSettingsWorkspace() {
         </section>
 
         <section className="tax-section">
-          <div className="tax-section-heading"><div><p>Tax Exemption</p><h2>Controlled exception workflow</h2></div><Status active={settings.exemption.runtimeEnabled && form.taxExemptSalesEnabled}>{settings.exemption.runtimeEnabled && form.taxExemptSalesEnabled ? "Available" : "Unavailable"}</Status></div>
+          <div className="tax-section-heading"><div><p>Tax Exemption</p>{embedded ? <h4>Controlled exception workflow</h4> : <h2>Controlled exception workflow</h2>}</div><Status active={settings.exemption.runtimeEnabled && form.taxExemptSalesEnabled}>{settings.exemption.runtimeEnabled && form.taxExemptSalesEnabled ? "Available" : "Unavailable"}</Status></div>
           <CheckField checked={form.taxExemptSalesEnabled} label="Enable exempt-sale workflow" detail="Admin-only. Every exempt sale requires both a reason and a reference." onChange={(value) => update("taxExemptSalesEnabled", value)} />
           <div className="tax-summary-grid">
             <div><span>Certificate / reference</span><strong>Required</strong></div>
@@ -342,15 +354,15 @@ export function TaxSettingsWorkspace() {
         </section>
 
         <section className="tax-section">
-          <div className="tax-section-heading"><div><p>Reporting</p><h2>Filing-support exports</h2></div><Status active={settings.reporting.enabled}>{settings.reporting.enabled ? "Available" : "Disabled"}</Status></div>
+          <div className="tax-section-heading"><div><p>Reporting</p>{embedded ? <h4>Filing-support exports</h4> : <h2>Filing-support exports</h2>}</div><Status active={settings.reporting.enabled}>{settings.reporting.enabled ? "Available" : "Disabled"}</Status></div>
           <label className="tax-select-field">Default reporting period<select value={form.defaultReportingPeriod} onChange={(event) => update("defaultReportingPeriod", event.target.value as FormState["defaultReportingPeriod"])}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select></label>
           <CheckField checked={form.taxReportingProfileEnabled} label="Mark the reporting profile as configured" detail={settings.reporting.enabled ? "The independent reporting runtime gate is enabled." : "Configuration intent only. Export remains unavailable while the runtime gate is off."} onChange={(value) => update("taxReportingProfileEnabled", value)} />
           <p className="tax-section-copy">{settings.reporting.disclaimer}</p>
-          {settings.reporting.exportAvailable ? <a href="/admin/tax-reports" className="tax-inline-action">Open Sales Tax Reports</a> : <span className="tax-muted">Reporting is unavailable while the feature is disabled.</span>}
+          {settings.reporting.exportAvailable ? <a href="/app?tab=tax&section=reports" className="tax-inline-action">Open Sales Tax Reports</a> : <span className="tax-muted">Reporting is unavailable while the feature is disabled.</span>}
         </section>
 
         <section className="tax-section">
-          <div className="tax-section-heading"><div><p>Go-Live Readiness</p><h2>Owner verification checklist</h2></div><span className="tax-progress">{readinessFields.filter(([key]) => Boolean(form[key])).length} / {readinessFields.length}</span></div>
+          <div className="tax-section-heading"><div><p>Go-Live Readiness</p>{embedded ? <h4>Owner verification checklist</h4> : <h2>Owner verification checklist</h2>}</div><span className="tax-progress">{readinessFields.filter(([key]) => Boolean(form[key])).length} / {readinessFields.length}</span></div>
           <div className="tax-checklist">
             <div className="tax-check-row tax-check-static"><input type="checkbox" checked={settings.readiness.stripeConfigured} readOnly /><span><strong>Stripe Tax configured</strong><small>Read-only provider readiness status</small></span></div>
             {readinessFields.map(([key, label, detail]) => <CheckField key={key} checked={Boolean(form[key])} label={label} detail={detail} onChange={(value) => update(key, value as never)} />)}
@@ -370,6 +382,6 @@ export function TaxSettingsWorkspace() {
           <button type="submit" disabled={!dirty || state === "saving"}>{state === "saving" ? "Saving…" : "Save tax settings"}</button>
         </footer>
       </form>
-    </main>
+    </section>
   );
 }

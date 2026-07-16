@@ -55,7 +55,7 @@ function queryFor(filters: Filters, page: number) {
   return query;
 }
 
-export function TaxReportsWorkspace() {
+export function TaxReportsWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [filters, setFilters] = useState<Filters>(() => ({
     ...defaultDates(),
     channel: "",
@@ -133,12 +133,12 @@ export function TaxReportsWorkspace() {
   ] as const : [];
 
   return (
-    <main className="tax-report-workspace" aria-busy={loading}>
+    <section className={embedded ? "tax-report-workspace tax-report-workspace-embedded" : "tax-report-workspace"} aria-busy={loading}>
       <header className="tax-report-header">
         <div>
-          <a href="/admin">Admin</a><span aria-hidden="true"> / </span><a href="/admin/tax-settings">Tax Settings</a>
+          {!embedded ? <><a href="/admin">Admin</a><span aria-hidden="true"> / </span><a href="/app?tab=tax&section=settings">Tax Settings</a></> : null}
           <p className="tax-report-eyebrow">Accounting-support workspace</p>
-          <h1>Sales Tax Reports</h1>
+          {embedded ? <h3>Sales Tax Reports</h3> : <h1>Sales Tax Reports</h1>}
           <p>Review finalized online and POS snapshots in America/New_York time. Historical tax is never recalculated or repaired here.</p>
         </div>
         <div className="tax-report-actions">
@@ -181,14 +181,14 @@ export function TaxReportsWorkspace() {
           ) : null}
 
           <section className={report.reconciliation.clean ? "tax-reconciliation clean" : "tax-reconciliation warning"} aria-label="Read-only reconciliation findings">
-            <div><p>Read-only reconciliation</p><h2>{report.reconciliation.clean ? "No findings" : `${report.reconciliation.findingCount} finding${report.reconciliation.findingCount === 1 ? "" : "s"} need review`}</h2></div>
+            <div><p>Read-only reconciliation</p>{embedded ? <h4>{report.reconciliation.clean ? "No findings" : `${report.reconciliation.findingCount} finding${report.reconciliation.findingCount === 1 ? "" : "s"} need review`}</h4> : <h2>{report.reconciliation.clean ? "No findings" : `${report.reconciliation.findingCount} finding${report.reconciliation.findingCount === 1 ? "" : "s"} need review`}</h2>}</div>
             <p>Scanned all {report.reconciliation.scannedTransactions.toLocaleString()} bounded transactions. Findings never update or auto-correct source records.</p>
             {summary && summary.unallocatedTaxCents > 0 ? <p>Authoritative tax without a stored state/county split: {money(summary.unallocatedTaxCents)}.</p> : null}
             {summary && summary.deduplicatedTransactionCount > 0 ? <p>Excluded {summary.deduplicatedTransactionCount.toLocaleString()} mirrored cross-channel transaction{summary.deduplicatedTransactionCount === 1 ? "" : "s"} from totals.</p> : null}
           </section>
 
           <section className="tax-report-table-card">
-            <div className="tax-report-table-heading"><div><p>Transaction detail</p><h2>{report.pagination.total.toLocaleString()} canonical transaction{report.pagination.total === 1 ? "" : "s"}</h2></div><span>Generated {dateTime(report.generatedAt)}</span></div>
+            <div className="tax-report-table-heading"><div><p>Transaction detail</p>{embedded ? <h4>{report.pagination.total.toLocaleString()} canonical transaction{report.pagination.total === 1 ? "" : "s"}</h4> : <h2>{report.pagination.total.toLocaleString()} canonical transaction{report.pagination.total === 1 ? "" : "s"}</h2>}</div><span>Generated {dateTime(report.generatedAt)}</span></div>
             <div className="tax-report-table-scroll" tabIndex={0} aria-label="Scrollable tax transaction table">
               <table>
                 <thead><tr><th>Date</th><th>Reference</th><th>Channel</th><th>Jurisdiction</th><th>Net merchandise</th><th>Taxable sales</th><th>Shipping</th><th>State tax</th><th>County tax</th><th>Total tax</th><th>Refunded tax</th><th>Net tax</th><th>Total charged</th><th>Status and findings</th></tr></thead>
@@ -209,6 +209,6 @@ export function TaxReportsWorkspace() {
           <p className="tax-report-disclaimer">{report.disclaimer}</p>
         </>
       ) : null}
-    </main>
+    </section>
   );
 }
