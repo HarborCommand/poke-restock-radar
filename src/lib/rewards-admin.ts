@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
-import { workspaceCustomerWhere } from "@/lib/customer-workspace";
+import { workspaceCustomerWhereWithLegacy } from "@/lib/customer-workspace";
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import type { SessionUser } from "@/types/radar";
 import type {
@@ -231,10 +231,10 @@ function mapLedgerEntry(entry: LedgerWithCustomer): AdminCustomerRewardsLedgerEn
   };
 }
 
-function buildCustomerWhere(ownerUserId: string, filters: CustomerListFilters): Prisma.CustomerAccountWhereInput {
+async function buildCustomerWhere(ownerUserId: string, filters: CustomerListFilters, client: Prisma.TransactionClient | typeof prisma = prisma): Promise<Prisma.CustomerAccountWhereInput> {
   const where: Prisma.CustomerAccountWhereInput = {};
   if (filters.status && filters.status !== "all") where.status = filters.status;
-  return { AND: [workspaceCustomerWhere(ownerUserId), where] };
+  return { AND: [await workspaceCustomerWhereWithLegacy(client, ownerUserId), where] };
 }
 
 function normalizedSearch(value: string | null | undefined) {
@@ -281,13 +281,14 @@ export async function customerRewardsAdminSummary(ownerUserId: string): Promise<
   const startOfMonth = new Date();
   startOfMonth.setUTCDate(1);
   startOfMonth.setUTCHours(0, 0, 0, 0);
+  const customerScope = await workspaceCustomerWhereWithLegacy(prisma, ownerUserId);
 
   const [totalCustomers, activeCustomers, newCustomersThisMonth, balances, reversals, topBalance] = await Promise.all([
-    prisma.customerAccount.count({ where: workspaceCustomerWhere(ownerUserId) }),
-    prisma.customerAccount.count({ where: { AND: [workspaceCustomerWhere(ownerUserId), { status: "active" }] } }),
-    prisma.customerAccount.count({ where: { AND: [workspaceCustomerWhere(ownerUserId), { createdAt: { gte: startOfMonth } }] } }),
+    prisma.customerAccount.count({ where: customerScope }),
+    prisma.customerAccount.count({ where: { AND: [customerScope, { status: "active" }] } }),
+    prisma.customerAccount.count({ where: { AND: [customerScope, { createdAt: { gte: startOfMonth } }] } }),
     prisma.rewardBalance.findMany({
-      where: { customerAccount: workspaceCustomerWhere(ownerUserId) },
+      where: { customerAccount: customerScope },
       select: {
         availablePoints: true,
         pendingPoints: true,
@@ -295,11 +296,11 @@ export async function customerRewardsAdminSummary(ownerUserId: string): Promise<
       }
     }),
     prisma.rewardLedgerEntry.findMany({
-      where: { points: { lt: 0 }, customerAccount: workspaceCustomerWhere(ownerUserId) },
+      where: { points: { lt: 0 }, customerAccount: customerScope },
       select: { points: true }
     }),
     prisma.rewardBalance.findFirst({
-      where: { customerAccount: workspaceCustomerWhere(ownerUserId) },
+      where: { customerAccount: customerScope },
       orderBy: { lifetimeEarnedPoints: "desc" },
       include: {
         customerAccount: {
@@ -341,7 +342,7 @@ export async function customerRewardsAdminSummary(ownerUserId: string): Promise<
 export async function listAdminCustomerRewards(ownerUserId: string, filters: CustomerListFilters = {}): Promise<AdminCustomerRewardsResponseDTO> {
   const page = clampPage(filters.page);
   const pageSize = clampPageSize(filters.pageSize);
-  const where = buildCustomerWhere(ownerUserId, filters);
+  const where = await buildCustomerWhere(ownerUserId, filters);
   const [summary, rows] = await Promise.all([
     customerRewardsAdminSummary(ownerUserId),
     prisma.customerAccount.findMany({
@@ -367,7 +368,7 @@ export async function listAdminCustomerRewards(ownerUserId: string, filters: Cus
   };
 }
 
-function buildLedgerWhere(ownerUserId: string, filters: LedgerListFilters): Prisma.RewardLedgerEntryWhereInput {
+async function buildLedgerWhere(ownerUserId: string, filters: LedgerListFilters, client: Prisma.TransactionClient | typeof prisma = prisma): Promise<Prisma.RewardLedgerEntryWhereInput> {
   const where: Prisma.RewardLedgerEntryWhereInput = {};
   if (filters.status && filters.status !== "all") where.status = filters.status;
   if (filters.source && filters.source !== "all") where.source = filters.source;
@@ -383,7 +384,7 @@ function buildLedgerWhere(ownerUserId: string, filters: LedgerListFilters): Pris
   }
   return {
     AND: [
-      { customerAccount: workspaceCustomerWhere(ownerUserId) },
+      { customerAccount: await workspaceCustomerWhereWithLegacy(client, ownerUserId) },
       { OR: [{ orderId: null }, { order: { userId: ownerUserId } }] },
       where
     ]
@@ -393,7 +394,7 @@ function buildLedgerWhere(ownerUserId: string, filters: LedgerListFilters): Pris
 export async function listAdminRewardLedger(ownerUserId: string, filters: LedgerListFilters = {}): Promise<AdminCustomerRewardsLedgerResponseDTO> {
   const page = clampPage(filters.page);
   const pageSize = clampPageSize(filters.pageSize);
-  const where = buildLedgerWhere(ownerUserId, filters);
+  const where = await buildLedgerWhere(ownerUserId, filters);
   const [total, ledger] = await Promise.all([
     prisma.rewardLedgerEntry.count({ where }),
     prisma.rewardLedgerEntry.findMany({
@@ -417,8 +418,9 @@ export async function listAdminRewardLedger(ownerUserId: string, filters: Ledger
 }
 
 export async function getAdminCustomerRewardDetail(ownerUserId: string, customerAccountId: string): Promise<AdminCustomerRewardsDetailDTO | null> {
+  const customerScope = await workspaceCustomerWhereWithLegacy(prisma, ownerUserId);
   const customer = await prisma.customerAccount.findFirst({
-    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
+    where: { AND: [{ id: customerAccountId }, customerScope] },
     include: {
       ...customerListInclude(ownerUserId),
       savedAddresses: {
@@ -490,14 +492,15 @@ export async function updateAdminCustomerProfile(
   customerAccountId: string,
   input: AdminCustomerProfileUpdateInput
 ): Promise<AdminCustomerProfileUpdateResultDTO> {
+  const customerScope = await workspaceCustomerWhereWithLegacy(prisma, ownerUserId);
   const existing = await prisma.customerAccount.findFirst({
-    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
+    where: { AND: [{ id: customerAccountId }, customerScope] },
     select: { id: true }
   });
   if (!existing) throw new Error("Customer account was not found.");
 
   const updated = await prisma.customerAccount.updateMany({
-    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
+    where: { AND: [{ id: customerAccountId }, customerScope] },
     data: {
       displayName: input.displayName,
       phone: input.phone,
@@ -529,10 +532,11 @@ export async function createAdminRewardAdjustment(
   const idempotencyKey = `rewards:admin:${input.customerAccountId}:${input.action}:${input.idempotencyKey}`;
   const now = new Date();
   const ledger = await runRewardSerializableTransaction(async (tx) => {
+    const customerScope = await workspaceCustomerWhereWithLegacy(tx, adminUser.id);
     const existing = await tx.rewardLedgerEntry.findFirst({
       where: {
         customerAccountId: input.customerAccountId,
-        customerAccount: workspaceCustomerWhere(adminUser.id),
+        customerAccount: customerScope,
         idempotencyKey: { in: [idempotencyKey, legacyIdempotencyKey] }
       },
       include: ledgerInclude
@@ -540,7 +544,7 @@ export async function createAdminRewardAdjustment(
     if (existing) return { entry: existing, duplicate: true };
 
     const customer = await tx.customerAccount.findFirst({
-      where: { id: input.customerAccountId, ...workspaceCustomerWhere(adminUser.id) },
+      where: { AND: [{ id: input.customerAccountId }, customerScope] },
       select: { id: true }
     });
     if (!customer) throw new Error("Customer account was not found.");

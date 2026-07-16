@@ -10,7 +10,7 @@ import {
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
-import { workspaceCustomerWhere } from "@/lib/customer-workspace";
+import { workspaceCustomerWhereWithLegacy } from "@/lib/customer-workspace";
 import type {
   AdminCustomerAttachOrderCandidateDTO,
   AdminCustomerAttachRewardStatus,
@@ -374,10 +374,11 @@ async function mapSaleCandidates(
   client: Prisma.TransactionClient | typeof prisma = prisma
 ): Promise<AdminCustomerAttachOrderCandidateDTO[]> {
   const keys = groupedSales.map((sales) => sales[0] ? saleAttachKey(sales[0]) : null).filter((value): value is string => Boolean(value));
+  const customerScope = await workspaceCustomerWhereWithLegacy(client, ownerUserId);
   const ledger = keys.length
     ? await client.rewardLedgerEntry.findMany({
         where: {
-          customerAccount: workspaceCustomerWhere(ownerUserId),
+          customerAccount: customerScope,
           OR: [
             { idempotencyKey: { in: keys.flatMap((ref) => [`rewards:pos:earn:${ref}`, `rewards:backfill:pos:${ref}`]) } },
             { source: { in: ["pos", "admin_pos_link_backfill", "admin_legacy_sale_backfill"] } }
@@ -434,8 +435,9 @@ function groupSalesByReference(sales: CandidateSale[]) {
 }
 
 async function loadAttachCustomer(ownerUserId: string, customerAccountId: string, client: Prisma.TransactionClient | typeof prisma = prisma) {
+  const customerScope = await workspaceCustomerWhereWithLegacy(client, ownerUserId);
   const customer = await client.customerAccount.findFirst({
-    where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
+    where: { AND: [{ id: customerAccountId }, customerScope] },
     select: {
       id: true,
       email: true,
