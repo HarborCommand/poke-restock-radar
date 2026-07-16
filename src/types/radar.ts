@@ -967,6 +967,7 @@ export type PosTaxQuoteDTO = {
   };
   effectiveAt: string | null;
   sourceNote: string | null;
+  locationName: string | null;
 };
 
 export type PosSaleReceiptDTO = {

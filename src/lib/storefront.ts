@@ -29,6 +29,7 @@ import { applyMerchantShippingPolicyToCarrierQuote } from "@/lib/shipping-policy
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { awardRewardsForPaidOrder, releasePendingRewardsForOrder, reverseRewardsForOrder, rewardSummaryForOrder } from "@/lib/customer-rewards";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
+import { resolveTaxLocation, taxLocationAddress, taxLocationSnapshot } from "@/lib/tax-location";
 import {
   buildCheckoutExpiredEmail,
   buildLocalPickupEmail,
@@ -403,6 +404,7 @@ export async function getStorefrontSettings(
   const settings = userId
     ? await client.storefrontSettings.findUnique({ where: { userId } })
     : await client.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
+  const defaultPosLocation = settings ? await resolveTaxLocation(settings.userId, "pos", client) : null;
   const shippingRates = shippingRateProviderConfig();
   const accountFeatures = customerAccountFeatureConfig();
   const taxFeatures = taxFeatureConfig();
@@ -435,13 +437,13 @@ export async function getStorefrontSettings(
       fallbackEnabled: shippingRates.fallbackEnabled
     },
     tax: {
-      storeCountry: settings?.storeCountry ?? "US",
-      storeState: settings?.storeState ?? "FL",
-      storeCounty: settings?.storeCounty ?? null,
-      storeAddressLine1: settings?.storeAddressLine1 ?? null,
-      storeAddressLine2: settings?.storeAddressLine2 ?? null,
-      storeCity: settings?.storeCity ?? null,
-      storePostalCode: settings?.storePostalCode ?? null,
+      storeCountry: defaultPosLocation?.country ?? settings?.storeCountry ?? "US",
+      storeState: defaultPosLocation?.state ?? settings?.storeState ?? "FL",
+      storeCounty: defaultPosLocation?.county ?? settings?.storeCounty ?? null,
+      storeAddressLine1: defaultPosLocation?.addressLine1 ?? settings?.storeAddressLine1 ?? null,
+      storeAddressLine2: defaultPosLocation?.addressLine2 ?? settings?.storeAddressLine2 ?? null,
+      storeCity: defaultPosLocation?.city ?? settings?.storeCity ?? null,
+      storePostalCode: defaultPosLocation?.postalCode ?? settings?.storePostalCode ?? null,
       stateRateBasisPoints: settings?.stateTaxRateBasisPoints ?? 600,
       countyRateBasisPoints: settings?.countyTaxRateBasisPoints ?? 0,
       combinedRateBasisPoints: (settings?.stateTaxRateBasisPoints ?? 600) + (settings?.countyTaxRateBasisPoints ?? 0),
@@ -2094,7 +2096,19 @@ export async function createCheckoutSession(input: {
   let createdPickupCustomerId: string | null = null;
   try {
     const localPickupUsesStripeTax = onlineTaxEnabled && selectedShipping.id === "local_pickup";
-    if (localPickupUsesStripeTax && (!settings.tax.storeAddressLine1 || !settings.tax.storeCity || !settings.tax.storePostalCode)) {
+    const pickupLocation = localPickupUsesStripeTax && order.userId
+      ? await resolveTaxLocation(order.userId, "local_pickup")
+      : null;
+    const pickupAddress = pickupLocation ? taxLocationAddress(pickupLocation) : {
+      line1: settings.tax.storeAddressLine1 ?? "",
+      line2: settings.tax.storeAddressLine2,
+      city: settings.tax.storeCity ?? "",
+      state: settings.tax.storeState,
+      postalCode: settings.tax.storePostalCode ?? "",
+      country: settings.tax.storeCountry
+    };
+    const pickupSnapshot = taxLocationSnapshot(pickupLocation);
+    if (localPickupUsesStripeTax && (!pickupAddress.line1 || !pickupAddress.city || !pickupAddress.postalCode)) {
       throw new Error("Local Pickup tax requires a complete verified store address.");
     }
     const localPickupTaxCustomer = localPickupUsesStripeTax
@@ -2104,12 +2118,12 @@ export async function createCheckoutSession(input: {
           shipping: {
             name: input.customerName || input.customerEmail || "Customer",
             address: {
-              line1: settings.tax.storeAddressLine1 ?? "",
-              line2: settings.tax.storeAddressLine2 ?? undefined,
-              city: settings.tax.storeCity ?? "",
-              state: settings.tax.storeState,
-              postal_code: settings.tax.storePostalCode ?? "",
-              country: settings.tax.storeCountry
+              line1: pickupAddress.line1,
+              line2: pickupAddress.line2 ?? undefined,
+              city: pickupAddress.city,
+              state: pickupAddress.state,
+              postal_code: pickupAddress.postalCode,
+              country: pickupAddress.country
             }
           },
           metadata: { channel: "online_local_pickup", order_id: order.id }
@@ -2166,7 +2180,12 @@ export async function createCheckoutSession(input: {
       }
       return tx.storefrontOrder.update({
         where: { id: order.id },
-        data: { stripeCheckoutSessionId: session.id },
+        data: {
+          stripeCheckoutSessionId: session.id,
+          taxLocationId: pickupSnapshot.id,
+          taxLocationNameSnapshot: pickupSnapshot.name,
+          taxLocationSnapshotJson: pickupSnapshot.json
+        },
         include: storefrontOrderInclude
       });
     });

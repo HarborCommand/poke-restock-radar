@@ -91,6 +91,7 @@ import { evaluateTargetRetailPolicy, isPokemonTcgTargetText } from "@/lib/target
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
 import { productCreateSchema, releaseCreateSchema, sanitizePublicImageUrl, storeCreateSchema } from "@/lib/validation";
 import { createTrackerOnlineDropAlert } from "@/lib/monitor";
+import { resolveTaxLocation, taxLocationAddress, taxLocationSnapshot } from "@/lib/tax-location";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, testEbayConnection } from "@/lib/ebay";
 import {
   applyTcgcsvEstimateToInventoryItem,
@@ -7107,6 +7108,9 @@ async function createPosInventorySaleLine(
     taxTransactionLineItemId: string | null;
     taxabilityReason: string | null;
     taxBreakdownJson: string | null;
+    taxLocationId: string | null;
+    taxLocationNameSnapshot: string | null;
+    taxLocationSnapshotJson: string | null;
   }
 ) {
   const item = line.record;
@@ -7198,6 +7202,9 @@ async function createPosInventorySaleLine(
       taxTransactionLineItemId: sale.taxTransactionLineItemId,
       taxabilityReason: sale.taxabilityReason,
       taxBreakdownJson: sale.taxBreakdownJson,
+      taxLocationId: sale.taxLocationId,
+      taxLocationNameSnapshot: sale.taxLocationNameSnapshot,
+      taxLocationSnapshotJson: sale.taxLocationSnapshotJson,
       soldAt: sale.soldAt,
       notes: sale.notes
     }
@@ -7315,13 +7322,16 @@ export async function quotePosSaleTax(
   const shippingCents = input.shippingCents ?? 0;
   const taxEnabled = taxFeatures.posSalesTaxEnabled;
   const misconfigured = taxEnabled && !settings.tax.posTaxEnabled;
-  const storeAddress = taxEnabled ? verifiedStoreTaxAddress(settings) : null;
+  const posLocation = taxEnabled ? await resolveTaxLocation(currentUser.id, "pos") : null;
+  const shipFromLocation = taxEnabled ? await resolveTaxLocation(currentUser.id, "ship_from") : null;
+  const storeAddress = taxEnabled ? (posLocation ? taxLocationAddress(posLocation) : verifiedStoreTaxAddress(settings)) : null;
+  const shipFromAddress = shipFromLocation ? taxLocationAddress(shipFromLocation) : storeAddress;
   if (fulfillmentMode === "delivery" && !input.deliveryAddress) throw new Error("Add a verified delivery address to calculate tax.");
   const calculation = taxEnabled && !misconfigured && storeAddress
     ? await createStripeTaxCalculation({
         lines: lineAmounts.map((line) => ({ reference: line.inventoryItemId, amountCents: line.netCents, quantity: line.quantity, taxCode: line.stripeTaxCode })),
         destination: fulfillmentMode === "delivery" ? input.deliveryAddress! : storeAddress,
-        shipFrom: storeAddress,
+        shipFrom: shipFromAddress!,
         shippingCents,
         shippingTaxCode: settings.tax.shippingStripeTaxCode ?? "txcd_92010001",
         customerExempt: taxExempt
@@ -7375,7 +7385,8 @@ export async function quotePosSaleTax(
     reason,
     jurisdiction: calculation?.jurisdiction ?? { country: settings.tax.storeCountry, state: settings.tax.storeState, county: settings.tax.storeCounty },
     effectiveAt: null,
-    sourceNote: calculation ? "Stripe Tax Calculations API" : null
+    sourceNote: calculation ? "Stripe Tax Calculations API" : null,
+    locationName: posLocation?.name ?? (taxEnabled ? "Legacy store profile" : null)
   };
 }
 
@@ -7514,7 +7525,11 @@ export async function createPosSale(
     if (activeTaxFeatures.posSalesTaxEnabled && !activeSettings.tax.posTaxEnabled) {
       throw new Error("POS Stripe Tax is enabled for the environment, but the provider profile is not enabled.");
     }
-    const storeAddress = activeTaxFeatures.posSalesTaxEnabled ? verifiedStoreTaxAddress(activeSettings) : null;
+    const posLocation = activeTaxFeatures.posSalesTaxEnabled ? await resolveTaxLocation(currentUser.id, "pos", tx) : null;
+    const shipFromLocation = activeTaxFeatures.posSalesTaxEnabled ? await resolveTaxLocation(currentUser.id, "ship_from", tx) : null;
+    const storeAddress = activeTaxFeatures.posSalesTaxEnabled ? (posLocation ? taxLocationAddress(posLocation) : verifiedStoreTaxAddress(activeSettings)) : null;
+    const shipFromAddress = shipFromLocation ? taxLocationAddress(shipFromLocation) : storeAddress;
+    const locationSnapshot = taxLocationSnapshot(posLocation);
     if (taxExempt && (!activeTaxFeatures.taxExemptSalesEnabled || !activeSettings.tax.taxExemptSalesEnabled)) {
       throw new Error("Tax-exempt sales are disabled.");
     }
@@ -7621,7 +7636,7 @@ export async function createPosSale(
             taxCode: line.stripeTaxCode
           })),
           destination: fulfillmentMode === "delivery" ? input.deliveryAddress! : storeAddress,
-          shipFrom: storeAddress,
+          shipFrom: shipFromAddress!,
           shippingCents,
           shippingTaxCode: activeSettings.tax.shippingStripeTaxCode ?? "txcd_92010001",
           customerExempt: taxExempt
@@ -7730,7 +7745,10 @@ export async function createPosSale(
         taxTransactionStatus: calculation ? "pending" : null,
         taxTransactionLineItemId: null,
         taxabilityReason: calculation?.taxabilityReason ?? null,
-        taxBreakdownJson: lineIndex === 0 && calculation ? JSON.stringify(calculation.breakdown) : null
+        taxBreakdownJson: lineIndex === 0 && calculation ? JSON.stringify(calculation.breakdown) : null,
+        taxLocationId: locationSnapshot.id,
+        taxLocationNameSnapshot: locationSnapshot.name,
+        taxLocationSnapshotJson: locationSnapshot.json
       }));
     }
     if (taxExempt) {

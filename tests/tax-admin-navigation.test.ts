@@ -20,7 +20,7 @@ test("direct Tax URLs and every internal section are preserved in browser histor
   const workspace = read("src/components/TaxAdminWorkspace.tsx");
   assert.match(app, /new URLSearchParams\(window\.location\.search\)\.get\("tab"\)/);
   assert.match(app, /activeTab === "tax" && isAdmin \? <TaxAdminWorkspace/);
-  for (const section of ["overview", "stripe-readiness", "settings", "reports", "readiness"]) {
+  for (const section of ["overview", "stripe-readiness", "locations", "settings", "reports", "readiness"]) {
     assert.match(workspace, new RegExp(`id: "${section}"`));
     assert.match(workspace, new RegExp(`section === "${section}"`));
   }
