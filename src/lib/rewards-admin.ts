@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { workspaceCustomerWhereWithLegacy } from "@/lib/customer-workspace";
+import { auditRewardMutation } from "@/lib/reward-auditor";
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import type { SessionUser } from "@/types/radar";
 import type {
@@ -550,6 +551,24 @@ export async function createAdminRewardAdjustment(
     if (!customer) throw new Error("Customer account was not found.");
 
     const points = input.action === "add" ? input.points : -input.points;
+    const audit = await auditRewardMutation(tx, {
+      operation: "admin.reward.adjustment",
+      sourceType: "admin_adjustment",
+      sourceReference: idempotencyKey,
+      customerAccountId: input.customerAccountId,
+      idempotencyKey,
+      points,
+      featureEnabled: adjustmentsEnabled,
+      allowNegativePoints: input.action === "deduct",
+      checkAvailableBalance: input.action === "deduct"
+    });
+    if (audit.decision !== "approved") {
+      if (audit.reasonCode === "NEGATIVE_AVAILABLE_BALANCE") {
+        throw new Error("Cannot deduct more than the customer's available points.");
+      }
+      throw new Error(`Reward adjustment blocked by audit: ${audit.reasonCode}`);
+    }
+
     const creationNonce = randomUUID();
     const metadataJson = JSON.stringify({
       createdBy: "admin",

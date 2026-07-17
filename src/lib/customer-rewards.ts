@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
+import { auditRewardMutation } from "@/lib/reward-auditor";
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import {
   CustomerAccountIdentityConflictError,
@@ -25,6 +26,7 @@ type RewardOrderItem = {
 type RewardOrder = {
   id: string;
   orderNumber: string;
+  userId?: string | null;
   customerAccountId: string | null;
   customerId: string | null;
   customerEmail: string | null;
@@ -169,6 +171,7 @@ async function loadRewardOrder(tx: RewardLedgerTx, orderId: string): Promise<Rew
     select: {
       id: true,
       orderNumber: true,
+      userId: true,
       customerAccountId: true,
       customerId: true,
       customerEmail: true,
@@ -346,6 +349,19 @@ export async function awardRewardsForCompletedPosSale(
 
   const run = async (client: RewardLedgerTx) => {
     const now = new Date();
+    const audit = await auditRewardMutation(client, {
+      operation: "pos.reward.earn",
+      sourceType: "pos_sale",
+      sourceReference: input.saleReference,
+      customerAccountId: input.customerAccountId,
+      idempotencyKey: `rewards:pos:earn:${input.saleReference}`,
+      points,
+      featureEnabled: posRewardFeatureEnabled(),
+      requireLinkedCustomer: true
+    });
+    if (audit.decision !== "approved") {
+      return { status: audit.duplicate ? ("already_awarded" as const) : ("blocked" as const), points: audit.duplicate ? points : 0 };
+    }
     const result = await createRewardLedgerEntry({
       tx: client,
       customerAccountId: input.customerAccountId!,
@@ -437,6 +453,21 @@ export async function reverseRewardsForPosSale(
     const rewardRefundIdempotencyKey = input.fullyRefunded
       ? `rewards:pos:refund:${input.saleReference}`
       : `rewards:pos:refund:${input.saleReference}:${input.idempotencyKey ?? "partial"}`;
+    const audit = await auditRewardMutation(client, {
+      operation: "pos.reward.refund",
+      sourceType: "refund_reversal",
+      sourceReference: input.saleReference,
+      customerAccountId: earnEntry.customerAccountId,
+      idempotencyKey: rewardRefundIdempotencyKey,
+      points: -actualPointsToReverse,
+      featureEnabled: posRewardFeatureEnabled(),
+      allowNegativePoints: true,
+      checkAvailableBalance: true,
+      reversalOfEntryId: earnEntry.id
+    });
+    if (audit.decision !== "approved") {
+      return { status: audit.duplicate ? ("already_reversed" as const) : ("blocked" as const), points: 0 };
+    }
     const result = await createRewardLedgerEntry({
       tx: client,
       customerAccountId: earnEntry.customerAccountId,
@@ -506,6 +537,20 @@ export async function awardRewardsForPaidOrder(order: RewardOrder) {
       throw error;
     }
     if (!account) return { status: "missing_customer_email" as const, points: 0 };
+    const audit = await auditRewardMutation(tx, {
+      operation: "online.reward.earn",
+      sourceType: "online_order",
+      sourceReference: persistedOrder.orderNumber,
+      customerAccountId: account.id,
+      orderId: persistedOrder.id,
+      ownerUserId: persistedOrder.userId,
+      idempotencyKey: `rewards:earn:${persistedOrder.id}`,
+      points,
+      featureEnabled: rewardFeatureEnabled()
+    });
+    if (audit.decision !== "approved") {
+      return { status: audit.duplicate ? ("already_awarded" as const) : ("blocked" as const), points: audit.duplicate ? points : 0 };
+    }
     const result = await createRewardLedgerEntry({
       tx,
       customerAccountId: account.id,
@@ -563,6 +608,19 @@ export async function releasePendingRewardsForOrder(orderId: string, reason: Rew
     const reversedPoints = Math.abs(ledger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
     const customerAccountId = pendingEntries[0]?.customerAccountId;
     if (!customerAccountId) return { status: "no_pending_rewards" as const, points: 0 };
+    const releaseCandidatePoints = Math.max(0, pendingEarnPoints - reversedPoints);
+    if (releaseCandidatePoints <= 0) return { status: "already_reversed" as const, points: 0 };
+    const audit = await auditRewardMutation(tx, {
+      operation: "online.reward.release",
+      sourceType: "fulfillment_release",
+      sourceReference: orderId,
+      customerAccountId,
+      orderId,
+      idempotencyKey: `rewards:release:${orderId}:${reason}`,
+      points: releaseCandidatePoints,
+      featureEnabled: rewardFeatureEnabled()
+    });
+    if (audit.decision !== "approved") return { status: audit.duplicate ? ("no_pending_rewards" as const) : ("blocked" as const), points: 0 };
 
     let remainingReversedPoints = reversedPoints;
     let claimedReleasePoints = 0;
@@ -645,12 +703,30 @@ export async function reverseRewardsForOrder(
     const actualPointsToReverse = pendingToReverse + availableToReverse;
     if (actualPointsToReverse <= 0) return { status: "insufficient_balance" as const, points: 0 };
     const earningEntry = currentLedger.find((entry) => entry.points > 0 && entry.type === "earn") ?? null;
+    const rewardRefundIdempotencyKey = `rewards:reverse:${order.id}:${input.idempotencyKey}`;
+    const audit = await auditRewardMutation(tx, {
+      operation: "online.reward.reverse",
+      sourceType: "refund_reversal",
+      sourceReference: persistedOrder.orderNumber,
+      customerAccountId,
+      orderId: order.id,
+      ownerUserId: persistedOrder.userId,
+      idempotencyKey: rewardRefundIdempotencyKey,
+      points: -actualPointsToReverse,
+      featureEnabled: rewardFeatureEnabled(),
+      allowNegativePoints: true,
+      checkAvailableBalance: availableToReverse > 0,
+      reversalOfEntryId: earningEntry?.id ?? null
+    });
+    if (audit.decision !== "approved") {
+      return { status: audit.duplicate ? ("already_reversed" as const) : ("blocked" as const), points: 0 };
+    }
 
     const result = await createRewardLedgerEntry({
       tx,
       customerAccountId,
       orderId: order.id,
-      idempotencyKey: `rewards:reverse:${order.id}:${input.idempotencyKey}`,
+      idempotencyKey: rewardRefundIdempotencyKey,
       points: -actualPointsToReverse,
       type: "reverse",
       reason:
