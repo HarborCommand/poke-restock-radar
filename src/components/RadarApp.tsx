@@ -21,6 +21,8 @@ import {
   ExternalLink,
   FileText,
   Home,
+  Info,
+  Layers,
   LineChart,
   HelpCircle,
   History,
@@ -9986,7 +9988,7 @@ function InventoryPanel({
   function setWorkspaceMode(mode: ProductWorkspaceMode, adjustmentAction?: InventoryQuickAdjustmentAction) {
     if (!workspaceItem) return;
     if (mode === "adjust-stock") {
-      setProductWorkspace({ itemId: workspaceItem.id, mode, adjustmentAction: adjustmentAction ?? (workspaceItem.quantityOwned > 0 ? "remove" : "add") });
+      setProductWorkspace({ itemId: workspaceItem.id, mode, adjustmentAction: adjustmentAction ?? "add" });
       return;
     }
     setProductWorkspace((current) => (current ? { itemId: workspaceItem.id, mode, prefill: mode === "add-stock" ? current.prefill : null, adjustmentAction: mode === "add-stock" ? "add" : undefined } : current));
@@ -10463,7 +10465,7 @@ function InventoryPanel({
           {productWorkspace.mode === "adjust-stock" && !productWorkspace.lotId ? (
             <InventoryQuickStockAdjustmentPanel
               item={workspaceItem}
-              initialAction={productWorkspace.adjustmentAction ?? (workspaceItem.quantityOwned > 0 ? "remove" : "add")}
+              initialAction={productWorkspace.adjustmentAction ?? "add"}
               busy={busy}
               busyLabel={busyLabel}
               submit={async (event, label, run, options) => {
@@ -15293,7 +15295,7 @@ function ProductWorkspaceShell({
   ];
   const headerBadges = rawHeaderBadges.filter((badge, index, badges) => badges.findIndex((candidate) => candidate.label === badge.label) === index);
   const workspaceActions: Array<{ mode: ProductWorkspaceMode; label: string; icon: typeof Plus; adjustmentAction?: InventoryQuickAdjustmentAction; disabled?: boolean; title?: string }> = [
-    { mode: "adjust-stock", label: "Adjust Stock", icon: Plus, adjustmentAction: adjustmentAction ?? (item.quantityOwned > 0 ? "remove" : "add") },
+    { mode: "adjust-stock", label: "Adjust Stock", icon: Plus, adjustmentAction: adjustmentAction ?? "add" },
     { mode: "add-stock", label: "Add Purchase", icon: PlusCircle },
     { mode: "record-sale", label: "Record Sale", icon: CircleDollarSign, disabled: item.quantityOwned <= 0, title: item.quantityOwned > 0 ? "Record a sale" : "Add stock before recording a sale" },
     { mode: "edit-product", label: "Edit Product", icon: Settings },
@@ -15425,6 +15427,9 @@ function ProductWorkspaceShell({
         aria-label={`${productWorkspaceTitle(mode, adjustmentAction)} for ${item.itemName}`}
       >
         <header className="product-workspace-header">
+          <button className="icon-button product-workspace-mobile-back" type="button" aria-label="Back to inventory" onClick={onClose}>
+            <ArrowLeft size={18} />
+          </button>
           <InventoryImage item={item} />
           <div className="product-workspace-title">
             <span className="eyeline">{productWorkspaceTitle(mode, adjustmentAction)}</span>
@@ -15736,18 +15741,35 @@ function InventoryAdjustmentHistoryList({ item, limit, compact = false }: { item
   const hiddenCount = Math.max(0, adjustments.length - displayedAdjustments.length);
   return (
     <div className={`compact-ledger-list inventory-adjustment-history${compact ? " compact" : ""}`} aria-label={compact ? "Recent inventory adjustment history" : "Inventory adjustment history"}>
-      {displayedAdjustments.map((adjustment) => (
-        <article className="inventory-adjustment-history-card" key={adjustment.id}>
-          <strong>{shortDate(adjustment.createdAt)}</strong>
-          <span>{adjustment.quantityDelta >= 0 ? "+" : "-"}{Math.abs(adjustment.quantityDelta)}</span>
-          <span>Before {adjustment.quantityBefore} → After {adjustment.quantityAfter}</span>
-          <b className={adjustment.quantityDelta >= 0 ? "profit-good" : "profit-bad"}>{inventoryAdjustmentReasonLabel(adjustment.reason)}</b>
-          <small title={`Actor ${adjustment.actorLabel}. Reference ${adjustment.referenceId}`}>
-            {adjustment.actorLabel} · {adjustment.hasPrivateNote ? "Private note saved" : "No private note"} · Ref {adjustment.referenceId.length > 12 ? `${adjustment.referenceId.slice(0, 4)}…${adjustment.referenceId.slice(-4)}` : adjustment.referenceId}
-          </small>
-        </article>
-      ))}
-      {hiddenCount > 0 ? <span className="inventory-adjustment-history-more">View full history: {hiddenCount} older adjustment{hiddenCount === 1 ? "" : "s"} hidden in this compact view.</span> : null}
+      {displayedAdjustments.map((adjustment) => {
+        const positive = adjustment.quantityDelta >= 0;
+        const referenceLabel = adjustment.referenceId.length > 12 ? `${adjustment.referenceId.slice(0, 4)}\u2026${adjustment.referenceId.slice(-4)}` : adjustment.referenceId;
+        const dateParts = shortDate(adjustment.createdAt).split(" ");
+        return (
+          <article className={`inventory-adjustment-history-card ${positive ? "is-add" : "is-remove"}`} key={adjustment.id}>
+            <strong className="inventory-adjustment-history-date">
+              <span>{dateParts[0]}</span>
+              <span>{dateParts.slice(1).join(" ") || dateParts[0]}</span>
+            </strong>
+            <div className="inventory-adjustment-history-body">
+              <div className="inventory-adjustment-history-topline">
+                <span className="inventory-adjustment-delta-badge" aria-label={`${positive ? "Added" : "Removed"} ${Math.abs(adjustment.quantityDelta)} units`}>
+                  {positive ? "+" : "-"}{Math.abs(adjustment.quantityDelta)}
+                </span>
+                <b className={positive ? "profit-good" : "profit-bad"}>{inventoryAdjustmentReasonLabel(adjustment.reason)}</b>
+              </div>
+              <span className="inventory-adjustment-before-after">Before {adjustment.quantityBefore} {"\u2192"} After {adjustment.quantityAfter}</span>
+              <small className="inventory-adjustment-history-meta" title={`Actor ${adjustment.actorLabel}. Reference ${adjustment.referenceId}`} aria-label={`Actor ${adjustment.actorLabel}. ${adjustment.hasPrivateNote ? "Private note saved" : "No private note"}. Reference ${adjustment.referenceId}`}>
+                <span>{adjustment.actorLabel}</span>
+                <span>{adjustment.hasPrivateNote ? "Private note saved" : "No private note"}</span>
+                <span>Ref {referenceLabel}</span>
+              </small>
+            </div>
+            {adjustment.hasPrivateNote ? <span className="inventory-adjustment-note-indicator" aria-label="Private note saved"><FileText size={13} aria-hidden="true" /></span> : null}
+          </article>
+        );
+      })}
+      {hiddenCount > 0 ? <span className="inventory-adjustment-history-more">View all: {hiddenCount} older adjustment{hiddenCount === 1 ? "" : "s"} hidden in this compact view.</span> : null}
     </div>
   );
 }
@@ -15770,6 +15792,7 @@ function InventoryQuickStockAdjustmentPanel({
   const [action, setAction] = useState<InventoryQuickAdjustmentAction>(initialAction);
   const [quantity, setQuantity] = useState(1);
   const [unitCost, setUnitCost] = useState(item.averageCost > 0 ? Number(item.averageCost.toFixed(2)) : item.cost);
+  const [noteLength, setNoteLength] = useState(0);
   const [idempotencyNonce, setIdempotencyNonce] = useState(0);
   const idempotencyKey = useMemo(
     () => `${action}:${item.id}:${idempotencyNonce}:${inventoryQuickAdjustmentKey()}`,
@@ -15784,10 +15807,14 @@ function InventoryQuickStockAdjustmentPanel({
   const actionTitle = action === "add" ? "Add Stock" : "Remove Stock";
   const actionCopy = action === "add"
     ? "Increase on-hand quantity and create an audited stock lot with a per-unit cost."
-    : "Reduce non-sale on-hand quantity with an audit reason. FIFO lots are consumed by the server.";
+    : "Reduce on-hand quantity using FIFO stock lots. This does not create a sale or revenue record.";
   const summaryCopy = action === "add"
-    ? "Saving creates an immutable Add Stock adjustment and a new FIFO lot. It does not create a sale, order, reward, tax, payment, or refund."
-    : "Saving consumes available stock through the existing FIFO path. Use the sales workflow separately when revenue or receipts are needed.";
+    ? "This action creates a new immutable Add Stock adjustment and a new FIFO lot with the unit cost above."
+    : "This action creates a new immutable Remove Stock adjustment and consumes eligible stock lots using FIFO.";
+  const formCallout = action === "add"
+    ? "This will create a new FIFO lot. It does not create a sale, order, reward, tax, payment, or refund."
+    : "This will consume existing stock using FIFO. It does not create a sale, order, reward, tax, payment, or refund.";
+  const stockBasisLabel = action === "add" ? "New FIFO lot" : "FIFO lot consumption";
 
   return (
     <section className={`inventory-quick-adjustment-sheet ${action === "add" ? "is-add" : "is-remove"}`}>
@@ -15843,11 +15870,12 @@ function InventoryQuickStockAdjustmentPanel({
                 onChange={(event) => setQuantity(Math.max(1, Math.min(1000, Number(event.currentTarget.value) || 1)))}
                 required
               />
-              <SelectInput name="reason" label="Reason" required defaultValue="" options={[{ value: "", label: "Choose a reason" }, ...reasons]} />
+              <span className="inventory-adjustment-field-helper quantity-helper">Whole units only</span>
+              <SelectInput name="reason" label="Reason *" required defaultValue="" options={[{ value: "", label: "Choose a reason" }, ...reasons]} />
               {action === "add" ? (
                 <TextInput
                   name="unitCost"
-                  label="Unit cost per unit ($)"
+                  label="Unit cost per unit (USD) *"
                   type="number"
                   min="0"
                   step="0.01"
@@ -15855,49 +15883,57 @@ function InventoryQuickStockAdjustmentPanel({
                   onChange={(event) => setUnitCost(Math.max(0, Number(event.currentTarget.value) || 0))}
                 />
               ) : null}
+              {action === "add" ? <span className="inventory-adjustment-field-helper unit-cost-helper">Stored as integer cents</span> : null}
               <TextareaInput
                 className="inventory-adjustment-note"
                 name="note"
                 label="Private note (optional, admin-only)"
                 placeholder="Short internal context. Not shown publicly."
                 rows={2}
+                maxLength={300}
+                onChange={(event) => setNoteLength(event.currentTarget.value.length)}
                 wide
               />
+              <span className="inventory-adjustment-note-count">{noteLength} / 300</span>
             </div>
 
             {exceedsOnHand ? <p className="form-error" role="alert">Removal cannot exceed current on-hand quantity.</p> : null}
             {nearZeroAfterRemoval ? <p className="form-helper inventory-adjustment-low-stock" role="status">This removal leaves {resultingQuantity} unit{resultingQuantity === 1 ? "" : "s"} on hand. Confirm the physical count before saving.</p> : null}
-            {action === "remove" ? (
-              <p className="form-helper">Sold outside POS records stock movement only. Use the sales workflow separately when revenue, receipt, rewards, or tax should be recorded.</p>
-            ) : (
-              <p className="form-helper">Unit cost is stored as integer cents by the server; enter the per-unit purchase basis for this added stock.</p>
-            )}
+            <p className="inventory-adjustment-info-callout" role="status"><Info size={16} />{formCallout}</p>
           </section>
 
           <aside className="inventory-adjustment-summary-card" aria-label="Stock adjustment summary">
-            <div className={`stock-cost-preview inventory-adjustment-summary-flow${exceedsOnHand ? " invalid" : nearZeroAfterRemoval ? " near-zero" : ""}`} aria-label="Current, adjustment, and resulting quantity preview">
-              <span>
-                <small>Current</small>
-                <strong>{item.quantityOwned}</strong>
-              </span>
-              <span>
-                <small>Adjustment</small>
-                <strong>{action === "add" ? "+" : "-"}{quantity || 0}</strong>
-              </span>
-              <span>
-                <small>Result</small>
-                <strong>{resultingQuantity}</strong>
-              </span>
-              <span>
-                <small>Stock basis</small>
-                <strong>{action === "add" ? "New FIFO lot" : item.stockLots.length ? "FIFO lots" : "Legacy average"}</strong>
-              </span>
+            <div className="inventory-adjustment-summary-top">
+              <h4>Adjustment Summary</h4>
+              <div className={`stock-cost-preview inventory-adjustment-summary-flow${exceedsOnHand ? " invalid" : nearZeroAfterRemoval ? " near-zero" : ""}`} aria-label="Current, adjustment, and resulting quantity preview">
+                <span>
+                  <strong>{item.quantityOwned}</strong>
+                  <small>Current</small>
+                </span>
+                <em aria-hidden="true">&rarr;</em>
+                <span>
+                  <strong>{action === "add" ? "+" : "-"}{quantity || 0}</strong>
+                  <small>Adjustment</small>
+                </span>
+                <em aria-hidden="true">&rarr;</em>
+                <span>
+                  <strong>{resultingQuantity}</strong>
+                  <small>Resulting</small>
+                </span>
+              </div>
+              <div className="inventory-adjustment-stock-basis-card">
+                <span>
+                  <small>Stock basis</small>
+                  <strong>{stockBasisLabel}</strong>
+                </span>
+                <Layers size={18} aria-hidden="true" />
+              </div>
+              <p className="inventory-adjustment-summary-copy">{summaryCopy}</p>
             </div>
-            <p className="inventory-adjustment-summary-copy">{summaryCopy}</p>
             <section className="inventory-adjustment-recent" aria-label="Recent adjustment history">
               <div className="inventory-adjustment-recent-heading">
                 <h4>Recent adjustments</h4>
-                {(item.stockAdjustments?.length ?? 0) > 5 ? <span>Latest 5</span> : null}
+                <span>View all</span>
               </div>
               <InventoryAdjustmentHistoryList item={item} limit={5} compact />
             </section>
