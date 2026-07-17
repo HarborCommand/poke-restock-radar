@@ -15246,9 +15246,9 @@ function inventoryPrimaryIdentifier(item: InventoryItemDTO) {
   return item.upc || item.sku || item.dpci || item.asin || "No UPC/SKU saved";
 }
 
-function productWorkspaceTitle(mode: ProductWorkspaceMode) {
+function productWorkspaceTitle(mode: ProductWorkspaceMode, adjustmentAction?: InventoryQuickAdjustmentAction) {
   if (mode === "add-stock") return "Add Stock";
-  if (mode === "adjust-stock") return "Adjust Stock";
+  if (mode === "adjust-stock") return adjustmentAction === "remove" ? "Remove Stock" : "Add Stock";
   if (mode === "record-sale") return "Record Sale";
   if (mode === "edit-product") return "Edit Product";
   if (mode === "edit-listing") return "Edit Listing";
@@ -15293,15 +15293,7 @@ function ProductWorkspaceShell({
   ];
   const headerBadges = rawHeaderBadges.filter((badge, index, badges) => badges.findIndex((candidate) => candidate.label === badge.label) === index);
   const workspaceActions: Array<{ mode: ProductWorkspaceMode; label: string; icon: typeof Plus; adjustmentAction?: InventoryQuickAdjustmentAction; disabled?: boolean; title?: string }> = [
-    { mode: "adjust-stock", label: "Add Stock", icon: Plus, adjustmentAction: "add" },
-    {
-      mode: "adjust-stock",
-      label: "Remove Stock",
-      icon: Minus,
-      adjustmentAction: "remove",
-      disabled: item.quantityOwned <= 0,
-      title: item.quantityOwned > 0 ? "Remove non-sale inventory with an audit reason" : "Add stock before removing units"
-    },
+    { mode: "adjust-stock", label: "Adjust Stock", icon: Plus, adjustmentAction: adjustmentAction ?? (item.quantityOwned > 0 ? "remove" : "add") },
     { mode: "add-stock", label: "Add Purchase", icon: PlusCircle },
     { mode: "record-sale", label: "Record Sale", icon: CircleDollarSign, disabled: item.quantityOwned <= 0, title: item.quantityOwned > 0 ? "Record a sale" : "Add stock before recording a sale" },
     { mode: "edit-product", label: "Edit Product", icon: Settings },
@@ -15430,12 +15422,12 @@ function ProductWorkspaceShell({
         ref={workspaceRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`${productWorkspaceTitle(mode)} for ${item.itemName}`}
+        aria-label={`${productWorkspaceTitle(mode, adjustmentAction)} for ${item.itemName}`}
       >
         <header className="product-workspace-header">
           <InventoryImage item={item} />
           <div className="product-workspace-title">
-            <span className="eyeline">{productWorkspaceTitle(mode)}</span>
+            <span className="eyeline">{productWorkspaceTitle(mode, adjustmentAction)}</span>
             <h2 title={item.itemName}>{item.itemName}</h2>
             <p>{formatStatus(item.category)} - {inventoryPrimaryIdentifier(item)}</p>
             <div className="inventory-detail-badges product-workspace-status-strip" aria-label="Product workspace status">
@@ -15729,14 +15721,22 @@ function ProductWorkspaceOverview({
   );
 }
 
-function InventoryAdjustmentHistoryList({ item }: { item: InventoryItemDTO }) {
+function InventoryAdjustmentHistoryList({ item, limit, compact = false }: { item: InventoryItemDTO; limit?: number; compact?: boolean }) {
   const adjustments = item.stockAdjustments ?? [];
   if (!adjustments.length) {
-    return <EmptyState icon={History} title="No adjustments yet" detail="Add Stock and Remove Stock entries will appear here with before/after counts." />;
+    return (
+      <EmptyState
+        icon={History}
+        title="No adjustments yet"
+        detail={compact ? "Adjustment history will appear here after the first saved stock change." : "Add Stock and Remove Stock entries will appear here with before/after counts."}
+      />
+    );
   }
+  const displayedAdjustments = typeof limit === "number" ? adjustments.slice(0, limit) : adjustments;
+  const hiddenCount = Math.max(0, adjustments.length - displayedAdjustments.length);
   return (
-    <div className="compact-ledger-list inventory-adjustment-history" aria-label="Inventory adjustment history">
-      {adjustments.map((adjustment) => (
+    <div className={`compact-ledger-list inventory-adjustment-history${compact ? " compact" : ""}`} aria-label={compact ? "Recent inventory adjustment history" : "Inventory adjustment history"}>
+      {displayedAdjustments.map((adjustment) => (
         <article key={adjustment.id}>
           <strong>{shortDate(adjustment.createdAt)}</strong>
           <span>{adjustment.action === "add" ? "Added" : "Removed"} {Math.abs(adjustment.quantityDelta)}</span>
@@ -15747,6 +15747,7 @@ function InventoryAdjustmentHistoryList({ item }: { item: InventoryItemDTO }) {
           </small>
         </article>
       ))}
+      {hiddenCount > 0 ? <span className="inventory-adjustment-history-more">View full history: {hiddenCount} older adjustment{hiddenCount === 1 ? "" : "s"} hidden in this compact view.</span> : null}
     </div>
   );
 }
@@ -15775,26 +15776,23 @@ function InventoryQuickStockAdjustmentPanel({
     [action, item.id, idempotencyNonce]
   );
   const reasons = action === "add" ? inventoryQuickAddReasons : inventoryQuickRemoveReasons;
-  const resultingQuantity = action === "add" ? item.quantityOwned + quantity : Math.max(0, item.quantityOwned - quantity);
+  const rawResultingQuantity = action === "add" ? item.quantityOwned + quantity : item.quantityOwned - quantity;
+  const resultingQuantity = Math.max(0, rawResultingQuantity);
   const exceedsOnHand = action === "remove" && quantity > item.quantityOwned;
+  const nearZeroAfterRemoval = action === "remove" && !exceedsOnHand && resultingQuantity <= 2;
   const saveLabel = `Adjusting stock ${item.id}`;
+  const actionTitle = action === "add" ? "Add Stock" : "Remove Stock";
+  const actionCopy = action === "add"
+    ? "Increase on-hand quantity and create an audited stock lot with a per-unit cost."
+    : "Reduce non-sale on-hand quantity with an audit reason. FIFO lots are consumed by the server.";
+  const summaryCopy = action === "add"
+    ? "Saving creates an immutable Add Stock adjustment and a new FIFO lot. It does not create a sale, order, reward, tax, payment, or refund."
+    : "Saving consumes available stock through the existing FIFO path. Use the sales workflow separately when revenue or receipts are needed.";
 
   return (
-    <section className="inventory-quick-adjustment-sheet">
-      <section className="product-workspace-panel-intro">
-        <div>
-          <h3>{action === "add" ? "Add Stock" : "Remove Stock"}</h3>
-          <p>Use this for quick inventory corrections. It updates stock only; it does not create revenue, rewards, tax, payments, refunds, or sales records.</p>
-        </div>
-        <div className="product-workspace-summary-row">
-          <DetailStat label="Current quantity" value={String(item.quantityOwned)} />
-          <DetailStat label="Adjustment" value={`${action === "add" ? "+" : "-"}${quantity || 0}`} tone={action === "add" ? "good" : "bad"} />
-          <DetailStat label="Resulting quantity" value={String(resultingQuantity)} tone={exceedsOnHand ? "bad" : "good"} />
-        </div>
-      </section>
-
+    <section className={`inventory-quick-adjustment-sheet ${action === "add" ? "is-add" : "is-remove"}`}>
       <form
-        className="inventory-edit-form"
+        className="inventory-edit-form inventory-quick-adjustment-form"
         onSubmit={(event) =>
           submit(
             event,
@@ -15814,76 +15812,105 @@ function InventoryQuickStockAdjustmentPanel({
       >
         <input name="action" type="hidden" value={action} />
         <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
-        <section className="flow-step">
-          <span>Action</span>
-          <h3>Choose the stock movement</h3>
-          <div className="segmented-control inventory-adjustment-toggle" role="group" aria-label="Stock adjustment action">
-            <button className={action === "add" ? "active" : ""} type="button" onClick={() => setAction("add")}>
-              <Plus size={14} />
-              Add Stock
-            </button>
-            <button className={action === "remove" ? "active" : ""} type="button" disabled={item.quantityOwned <= 0} onClick={() => setAction("remove")}>
-              <Minus size={14} />
-              Remove Stock
-            </button>
-          </div>
-          <div className="stock-cost-preview" aria-label="Resulting quantity preview">
-            <span>
-              <small>Current quantity</small>
-              <strong>{item.quantityOwned}</strong>
-            </span>
-            <span>
-              <small>Adjustment quantity</small>
-              <strong>{action === "add" ? "+" : "-"}{quantity || 0}</strong>
-            </span>
-            <span>
-              <small>Resulting quantity</small>
-              <strong>{resultingQuantity}</strong>
-            </span>
-            <span>
-              <small>Stock basis</small>
-              <strong>{item.stockLots.length ? "FIFO lots" : "Legacy average"}</strong>
-            </span>
-          </div>
-          {exceedsOnHand ? <p className="form-error">Removal cannot exceed current on-hand quantity.</p> : null}
-          <div className="form-grid compact">
-            <TextInput
-              name="quantity"
-              label="Adjustment quantity"
-              type="number"
-              min="1"
-              max={action === "remove" ? String(Math.max(1, item.quantityOwned)) : "1000"}
-              value={String(quantity)}
-              onChange={(event) => setQuantity(Math.max(1, Math.min(1000, Number(event.currentTarget.value) || 1)))}
-              required
-            />
-            <SelectInput name="reason" label="Reason" required defaultValue="" options={[{ value: "", label: "Choose a reason" }, ...reasons]} />
-            {action === "add" ? (
+        <div className="inventory-adjustment-layout">
+          <section className="inventory-adjustment-main-card" aria-labelledby="inventory-adjustment-title">
+            <div className="inventory-adjustment-heading-row">
+              <div>
+                <span className="eyeline">Stock adjustment</span>
+                <h3 id="inventory-adjustment-title">{actionTitle}</h3>
+                <p>{actionCopy}</p>
+              </div>
+              <div className="segmented-control inventory-adjustment-toggle" role="group" aria-label="Stock adjustment action">
+                <button className={action === "add" ? "active" : ""} type="button" onClick={() => setAction("add")}>
+                  <Plus size={14} />
+                  Add Stock
+                </button>
+                <button className={action === "remove" ? "active" : ""} type="button" disabled={item.quantityOwned <= 0} onClick={() => setAction("remove")}>
+                  <Minus size={14} />
+                  Remove Stock
+                </button>
+              </div>
+            </div>
+
+            <div className={`form-grid compact inventory-adjustment-main-inputs${action === "remove" ? " remove-mode" : ""}`}>
               <TextInput
-                name="unitCost"
-                label="Unit cost"
+                name="quantity"
+                label="Adjustment quantity"
                 type="number"
-                min="0"
-                step="0.01"
-                value={String(unitCost)}
-                onChange={(event) => setUnitCost(Math.max(0, Number(event.currentTarget.value) || 0))}
+                min="1"
+                max={action === "remove" ? String(Math.max(1, item.quantityOwned)) : "1000"}
+                value={String(quantity)}
+                onChange={(event) => setQuantity(Math.max(1, Math.min(1000, Number(event.currentTarget.value) || 1)))}
+                required
               />
-            ) : null}
-            <TextareaInput name="note" label="Private note" placeholder="Optional internal context. Not shown publicly." wide />
-          </div>
-          {action === "remove" && (
-            <p className="form-helper">“Sold outside POS” records stock movement only. Use the sales workflow separately when revenue, receipt, rewards, or tax should be recorded.</p>
-          )}
-        </section>
-        <InventoryAdjustmentHistoryList item={item} />
-        <div className="inventory-edit-actions">
-          <button className="mini-action" disabled={busy} type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="primary-action" disabled={busy || exceedsOnHand || (action === "remove" && item.quantityOwned <= 0)} type="submit">
-            <Save size={16} />
-            {busyLabel === saveLabel ? "Saving" : action === "add" ? "Add Stock" : "Remove Stock"}
-          </button>
+              <SelectInput name="reason" label="Reason" required defaultValue="" options={[{ value: "", label: "Choose a reason" }, ...reasons]} />
+              {action === "add" ? (
+                <TextInput
+                  name="unitCost"
+                  label="Unit cost per unit ($)"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={String(unitCost)}
+                  onChange={(event) => setUnitCost(Math.max(0, Number(event.currentTarget.value) || 0))}
+                />
+              ) : null}
+              <TextareaInput
+                className="inventory-adjustment-note"
+                name="note"
+                label="Private note (optional, admin-only)"
+                placeholder="Short internal context. Not shown publicly."
+                rows={2}
+                wide
+              />
+            </div>
+
+            {exceedsOnHand ? <p className="form-error" role="alert">Removal cannot exceed current on-hand quantity.</p> : null}
+            {nearZeroAfterRemoval ? <p className="form-helper inventory-adjustment-low-stock" role="status">This removal leaves {resultingQuantity} unit{resultingQuantity === 1 ? "" : "s"} on hand. Confirm the physical count before saving.</p> : null}
+            {action === "remove" ? (
+              <p className="form-helper">Sold outside POS records stock movement only. Use the sales workflow separately when revenue, receipt, rewards, or tax should be recorded.</p>
+            ) : (
+              <p className="form-helper">Unit cost is stored as integer cents by the server; enter the per-unit purchase basis for this added stock.</p>
+            )}
+          </section>
+
+          <aside className="inventory-adjustment-summary-card" aria-label="Stock adjustment summary">
+            <div className={`stock-cost-preview inventory-adjustment-summary-flow${exceedsOnHand ? " invalid" : nearZeroAfterRemoval ? " near-zero" : ""}`} aria-label="Current, adjustment, and resulting quantity preview">
+              <span>
+                <small>Current</small>
+                <strong>{item.quantityOwned}</strong>
+              </span>
+              <span>
+                <small>Adjustment</small>
+                <strong>{action === "add" ? "+" : "-"}{quantity || 0}</strong>
+              </span>
+              <span>
+                <small>Result</small>
+                <strong>{resultingQuantity}</strong>
+              </span>
+              <span>
+                <small>Stock basis</small>
+                <strong>{action === "add" ? "New FIFO lot" : item.stockLots.length ? "FIFO lots" : "Legacy average"}</strong>
+              </span>
+            </div>
+            <p className="inventory-adjustment-summary-copy">{summaryCopy}</p>
+            <section className="inventory-adjustment-recent" aria-label="Recent adjustment history">
+              <div className="inventory-adjustment-recent-heading">
+                <h4>Recent adjustments</h4>
+                {(item.stockAdjustments?.length ?? 0) > 5 ? <span>Latest 5</span> : null}
+              </div>
+              <InventoryAdjustmentHistoryList item={item} limit={5} compact />
+            </section>
+            <div className="inventory-edit-actions inventory-adjustment-actions">
+              <button className="mini-action" disabled={busy} type="button" onClick={onClose}>
+                Cancel
+              </button>
+              <button className="primary-action" disabled={busy || exceedsOnHand || (action === "remove" && item.quantityOwned <= 0)} type="submit">
+                <Save size={16} />
+                {busyLabel === saveLabel ? "Saving" : actionTitle}
+              </button>
+            </div>
+          </aside>
         </div>
       </form>
     </section>

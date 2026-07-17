@@ -38,6 +38,14 @@ function unique(prefix: string) {
   return `${prefix}-${Date.now()}-${uniqueCounter}`;
 }
 
+function sourceSlice(source: string, startNeedle: string, endNeedle?: string) {
+  const start = source.indexOf(startNeedle);
+  assert.notEqual(start, -1, `Missing source start: ${startNeedle}`);
+  const end = endNeedle ? source.indexOf(endNeedle, start + startNeedle.length) : source.length;
+  assert.notEqual(end, -1, `Missing source end: ${endNeedle}`);
+  return source.slice(start, end);
+}
+
 async function createAdmin(): Promise<SessionUser> {
   const user = await prisma.user.create({
     data: {
@@ -236,7 +244,11 @@ test("inventory adjustment schema enforces approved reasons", () => {
 test("route and UI keep stock adjustments admin-only, same-origin, idempotent, and mobile-safe", () => {
   const route = readFileSync(path.join(projectRoot, "src/app/api/radar/inventory/[itemId]/adjustments/route.ts"), "utf8");
   const app = readFileSync(path.join(projectRoot, "src/components/RadarApp.tsx"), "utf8");
+  const css = readFileSync(path.join(projectRoot, "src/app/globals.css"), "utf8");
   const service = readFileSync(path.join(projectRoot, "src/lib/radar-service.ts"), "utf8");
+  const panel = sourceSlice(app, "function InventoryQuickStockAdjustmentPanel", "function InventoryEditStockLotModal");
+  const workspaceShell = sourceSlice(app, "function ProductWorkspaceShell", "function ProductWorkspaceAuthenticityProofCard");
+  const history = sourceSlice(app, "function InventoryAdjustmentHistoryList", "function InventoryQuickStockAdjustmentPanel");
   assert.match(route, /authorizeAdminMutation\(request, user\)/);
   assert.match(route, /withRequestId\(privateOk\(result/);
   assert.match(route, /safeMutationError/);
@@ -246,8 +258,31 @@ test("route and UI keep stock adjustments admin-only, same-origin, idempotent, a
   assert.match(app, /Add Stock/);
   assert.match(app, /Remove Stock/);
   assert.match(app, /Adjustment History/);
-  assert.match(app, /Current quantity/);
-  assert.match(app, /Resulting quantity/);
+  assert.match(panel, /<small>Current<\/small>/);
+  assert.match(panel, /<small>Adjustment<\/small>/);
+  assert.match(panel, /<small>Result<\/small>/);
+  assert.equal((panel.match(/inventory-adjustment-summary-flow/g) ?? []).length, 1);
+  assert.equal((panel.match(/aria-label="Stock adjustment action"/g) ?? []).length, 1);
+  assert.match(workspaceShell, /label: "Adjust Stock"/);
+  assert.doesNotMatch(workspaceShell, /label: "Remove Stock"/);
+  assert.match(panel, /action === "add" \? \(/);
+  assert.match(panel, /name="unitCost"/);
+  assert.match(panel, /Unit cost per unit \(\$\)/);
+  assert.match(panel, /remove-mode/);
+  assert.match(panel, /Private note \(optional, admin-only\)/);
+  assert.match(panel, /rows=\{2\}/);
+  assert.match(panel, /resultingQuantity/);
+  assert.match(panel, /inventory-adjustment-low-stock/);
+  assert.match(panel, /limit=\{5\} compact/);
+  assert.match(history, /hasPrivateNote \? "Private note saved" : "No private note"/);
+  assert.doesNotMatch(history, /adjustment\.note/);
+  assert.match(css, /body \.inventory-adjustment-layout \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(300px, 0\.42fr\);/);
+  assert.match(css, /body \.product-workspace-content \{[\s\S]*overflow-x: hidden;[\s\S]*overflow-y: auto;/);
+  assert.match(css, /body \.inventory-adjustment-summary-card \{[\s\S]*position: sticky;/);
+  assert.match(css, /body \.inventory-adjustment-main-inputs \{[\s\S]*grid-template-columns:/);
+  assert.match(css, /body \.inventory-adjustment-note \{[\s\S]*min-height: 58px;[\s\S]*resize: vertical;/);
+  assert.match(css, /@media \(max-width: 980px\)\s*\{[\s\S]*body \.inventory-adjustment-layout \{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*body \.inventory-adjustment-actions \{[\s\S]*position: sticky;[\s\S]*safe-area-inset-bottom/);
   assert.match(app, /Sold outside POS/);
   assert.match(app, /390|430|inventory-quick-adjustment-sheet|product-workspace/);
 });
