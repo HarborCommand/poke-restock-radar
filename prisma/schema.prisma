@@ -1620,6 +1620,32 @@ model RewardLedgerEntry {
   @@index([createdAt])
 }
 
+model RewardAuditFinding {
+  id                    String   @id @default(cuid())
+  findingFingerprint    String   @unique
+  findingCode           String
+  severity              String
+  customerAccountId     String?
+  sourceType            String?
+  sourceReferenceHash   String?
+  rewardLedgerEntryId   String?
+  status                String   @default("open")
+  metadataJson          String?
+  firstDetectedAt       DateTime @default(now())
+  lastDetectedAt        DateTime @updatedAt
+  occurrenceCount       Int      @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([findingCode])
+  @@index([severity])
+  @@index([customerAccountId])
+  @@index([sourceType])
+  @@index([status])
+  @@index([firstDetectedAt])
+  @@index([lastDetectedAt])
+}
+
 model RewardBalance {
   customerAccountId    String          @id
   availablePoints      Int             @default(0)

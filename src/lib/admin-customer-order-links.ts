@@ -7,6 +7,7 @@ import {
   rewardMoneyToCents,
   rewardPointsForEligibleSubtotalCents
 } from "@/lib/customer-rewards";
+import { auditRewardMutation } from "@/lib/reward-auditor";
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
 import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
@@ -601,6 +602,25 @@ async function awardOrderBackfillIfRequested(
   if (points <= 0) return { status: "no_eligible_subtotal", points: 0, message: rewardMessage("no_eligible_subtotal") };
 
   const idempotencyKey = `rewards:backfill:order:${input.order.id}`;
+  const audit = await auditRewardMutation(tx, {
+    operation: "admin.reward.order_backfill",
+    sourceType: "admin_backfill",
+    sourceReference: input.order.orderNumber,
+    customerAccountId: input.customerAccountId,
+    orderId: input.order.id,
+    idempotencyKey,
+    points,
+    featureEnabled: true,
+    legacyOwnershipEvidence: "verified",
+    metadataComplete: true
+  });
+  if (audit.decision !== "approved") {
+    return {
+      status: audit.duplicate ? "already_awarded" : "ineligible",
+      points: 0,
+      message: audit.duplicate ? rewardMessage("already_awarded") : "Rewards not applied because the reward audit did not approve this historical transaction."
+    };
+  }
   const now = new Date();
   const available = input.order.fulfillmentStatus === "shipped" || input.order.fulfillmentStatus === "picked_up";
   const ledgerCreationNonce = randomUUID();
@@ -687,6 +707,25 @@ async function awardPosBackfillIfRequested(
   const now = new Date();
   const firstSale = input.sales[0]!;
   const idempotencyKey = `rewards:backfill:pos:${input.saleKey}`;
+  const audit = await auditRewardMutation(tx, {
+    operation: "admin.reward.pos_backfill",
+    sourceType: "admin_backfill",
+    sourceReference: input.saleKey,
+    customerAccountId: input.customerAccountId,
+    idempotencyKey,
+    points,
+    featureEnabled: true,
+    requireLinkedCustomer: true,
+    legacyOwnershipEvidence: "verified",
+    metadataComplete: true
+  });
+  if (audit.decision !== "approved") {
+    return {
+      status: audit.duplicate ? "already_awarded" : "ineligible",
+      points: 0,
+      message: audit.duplicate ? rewardMessage("already_awarded") : "Rewards not applied because the reward audit did not approve this historical transaction."
+    };
+  }
   const ledgerCreationNonce = randomUUID();
   const metadataJson = JSON.stringify({
     createdBy: "admin",

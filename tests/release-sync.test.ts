@@ -267,7 +267,8 @@ test("release candidate merge prefers official sources and flags date conflicts"
   assert.match(merged.candidates[0].reviewReason ?? "", /Conflicting release dates/);
 });
 
-test("API and ICv2 duplicate merge upgrades confidence and keeps fallback source link", () => {
+test("API and ICv2 duplicate merge upgrades confidence and keeps fallback source link", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-06-01T12:00:00.000Z") });
   const [api] = parsePokemonTcgApiPayload(
     {
       data: [
