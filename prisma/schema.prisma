@@ -937,7 +937,7 @@ model InventoryAdjustment {
   quantityAfter   Int
   reason          String
   note            String?
-  unitCost        Float?
+  unitCostCents   Int?
   requestId       String?
   createdAt       DateTime      @default(now())
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)

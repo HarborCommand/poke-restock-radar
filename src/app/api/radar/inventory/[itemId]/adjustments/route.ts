@@ -36,7 +36,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ item
         quantityAfter: true,
         reason: true,
         note: true,
-        unitCost: true,
+        unitCostCents: true,
         requestId: true,
         createdAt: true,
         user: { select: { name: true, email: true } }
@@ -53,7 +53,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ item
           quantityAfter: adjustment.quantityAfter,
           reason: adjustment.reason,
           hasPrivateNote: Boolean(adjustment.note?.trim()),
-          unitCost: adjustment.unitCost,
+          unitCostCents: adjustment.unitCostCents,
           actorLabel: adjustment.user?.name ? `${adjustment.user.name.split(/\s+/)[0]} admin` : "Admin",
           requestId: adjustment.requestId,
           referenceId: adjustment.requestId ?? adjustment.id,

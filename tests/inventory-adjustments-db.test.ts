@@ -109,6 +109,7 @@ test("quick add stock creates an immutable adjustment, stock lot, and one audit 
   assert.equal(result.adjustment.quantityDelta, 3);
   assert.equal(result.adjustment.quantityBefore, 2);
   assert.equal(result.adjustment.quantityAfter, 5);
+  assert.equal(result.adjustment.unitCostCents, 1200);
   assert.equal(result.adjustment.hasPrivateNote, true);
   assert.equal(result.item.stockAdjustments?.length, 1);
 

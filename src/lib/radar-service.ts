@@ -1901,7 +1901,7 @@ function inventoryAdjustmentToDTO(adjustment: InventoryAdjustmentWithActor): Inv
     quantityAfter: adjustment.quantityAfter,
     reason: adjustment.reason,
     hasPrivateNote: Boolean(adjustment.note?.trim()),
-    unitCost: adjustment.unitCost,
+    unitCostCents: adjustment.unitCostCents,
     actorLabel: maskedInventoryActor(adjustment),
     requestId: adjustment.requestId,
     referenceId: adjustment.requestId ?? adjustment.id,
@@ -6388,6 +6388,7 @@ export async function adjustInventoryStock(
     }
 
     let fifoLots = item.stockLots;
+    let adjustmentUnitCostCents: number | null = null;
     if (!fifoLots.length && quantityBefore > 0) {
       const carryoverUnitCost = inventoryEffectiveAverageCost(item);
       const carryover = await tx.inventoryStockLot.create({
@@ -6414,7 +6415,10 @@ export async function adjustInventoryStock(
 
     if (input.action === "add") {
       const existingOwnedCost = fifoLots.reduce((sum, lot) => sum + inventoryLotUnitCost(item, lot) * lot.remainingQuantity, 0);
-      const unitCost = input.unitCost ?? (quantityBefore > 0 && existingOwnedCost > 0 ? existingOwnedCost / quantityBefore : inventoryEffectiveAverageCost(item));
+      const resolvedUnitCost = input.unitCost ?? (quantityBefore > 0 && existingOwnedCost > 0 ? existingOwnedCost / quantityBefore : inventoryEffectiveAverageCost(item));
+      const resolvedUnitCostCents = moneyToCents(resolvedUnitCost);
+      const unitCost = centsToMoney(resolvedUnitCostCents);
+      adjustmentUnitCostCents = resolvedUnitCostCents;
       await tx.inventoryStockLot.create({
         data: {
           inventoryItemId: item.id,
@@ -6457,7 +6461,7 @@ export async function adjustInventoryStock(
         quantityAfter,
         reason: input.reason,
         note: input.note,
-        unitCost: input.action === "add" ? input.unitCost ?? null : null,
+        unitCostCents: adjustmentUnitCostCents,
         requestId: requestId ?? null
       },
       include: { user: { select: { name: true, email: true } } }

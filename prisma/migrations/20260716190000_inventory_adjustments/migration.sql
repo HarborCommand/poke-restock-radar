@@ -9,7 +9,7 @@ CREATE TABLE "InventoryAdjustment" (
   "quantityAfter" INTEGER NOT NULL,
   "reason" TEXT NOT NULL,
   "note" TEXT,
-  "unitCost" DOUBLE PRECISION,
+  "unitCostCents" INTEGER,
   "requestId" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

@@ -820,7 +820,7 @@ export type InventoryAdjustmentDTO = {
   quantityAfter: number;
   reason: string;
   hasPrivateNote: boolean;
-  unitCost: number | null;
+  unitCostCents: number | null;
   actorLabel: string;
   requestId: string | null;
   referenceId: string;

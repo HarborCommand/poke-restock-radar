@@ -663,7 +663,7 @@ const statements = [
     "quantityAfter" INTEGER NOT NULL,
     "reason" TEXT NOT NULL,
     "note" TEXT,
-    "unitCost" REAL,
+    "unitCostCents" INTEGER,
     "requestId" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "InventoryAdjustment_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem" ("id") ON DELETE CASCADE ON UPDATE CASCADE,

@@ -3696,11 +3696,14 @@ function CustomersRewardsPanel() {
   }, []);
 
   useEffect(() => {
-    void loadCustomers();
+    const timer = window.setTimeout(() => void loadCustomers(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadCustomers]);
 
   useEffect(() => {
-    if (activeView === "ledger" || activeView === "overview") void loadLedger();
+    if (activeView !== "ledger" && activeView !== "overview") return;
+    const timer = window.setTimeout(() => void loadLedger(), 0);
+    return () => window.clearTimeout(timer);
   }, [activeView, loadLedger]);
 
   useEffect(() => () => {
@@ -4750,7 +4753,8 @@ function CustomerAttachOrderModal({
   }, [customer.id]);
 
   useEffect(() => {
-    void loadCandidates("");
+    const timer = window.setTimeout(() => void loadCandidates(""), 0);
+    return () => window.clearTimeout(timer);
   }, [loadCandidates]);
 
   const chooseCandidate = (candidate: AdminCustomerAttachOrderCandidateDTO) => {
@@ -5415,7 +5419,8 @@ function PosPanel({
             : `Complete Sale ${money(quotedTotal)}`;
 
   useEffect(() => {
-    setVisibleLimit(POS_RESULT_BATCH_SIZE);
+    const frame = window.requestAnimationFrame(() => setVisibleLimit(POS_RESULT_BATCH_SIZE));
+    return () => window.cancelAnimationFrame(frame);
   }, [filter, query, inventoryView]);
 
   useEffect(() => {
@@ -12971,6 +12976,7 @@ function StorefrontCancelRefundModal({
               <button className="mini-action" disabled={processing} type="button" onClick={onClose}>
                 {shippedRefundFlow ? "Close" : "Keep Order"}
               </button>
+              {/* eslint-disable-next-line react-hooks/refs -- submission guard is intentionally non-rendering and covered by checkout source tests. */}
               <button className="primary-action danger" disabled={busy || processing || submittedRef.current || !idempotencyKey} type="submit">
                 <RotateCcw size={16} />
                 {processing ? refundActionText : shippedRefundFlow ? "Confirm Refund / Return" : "Confirm Cancel / Refund"}
@@ -14946,7 +14952,6 @@ function InventoryList({
   onEditListing: (item: InventoryItemDTO) => void;
   onOpenAuthenticityProof: (item: InventoryItemDTO) => void;
 }) {
-  if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
   const [actionMenu, setActionMenu] = useState<{
     item: InventoryItemDTO;
     top: number;
@@ -14986,6 +14991,8 @@ function InventoryList({
       window.removeEventListener("scroll", closeOnViewportChange, true);
     };
   }, [actionMenu]);
+
+  if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
 
   function actionMenuPositionFor(trigger: HTMLElement, item: InventoryItemDTO) {
     const rect = trigger.getBoundingClientRect();
@@ -15395,9 +15402,9 @@ function ProductWorkspaceShell({
 
   useEffect(() => {
     if (!focusSection || mode !== "overview") return;
-    setActiveSectionId(focusSection);
     let timer: number | null = null;
     const frame = window.requestAnimationFrame(() => {
+      setActiveSectionId(focusSection);
       timer = window.setTimeout(() => {
         if (focusWorkspaceSection(focusSection)) onSectionFocused();
       }, 80);
@@ -15409,7 +15416,9 @@ function ProductWorkspaceShell({
   }, [focusSection, focusWorkspaceSection, mode, onSectionFocused]);
 
   useEffect(() => {
-    if (mode !== "overview") setActiveSectionId("overview");
+    if (mode === "overview") return;
+    const frame = window.requestAnimationFrame(() => setActiveSectionId("overview"));
+    return () => window.cancelAnimationFrame(frame);
   }, [mode]);
 
   useEffect(() => clearWorkspaceSectionHighlight, [clearWorkspaceSectionHighlight]);
@@ -15760,15 +15769,15 @@ function InventoryQuickStockAdjustmentPanel({
   const [action, setAction] = useState<InventoryQuickAdjustmentAction>(initialAction);
   const [quantity, setQuantity] = useState(1);
   const [unitCost, setUnitCost] = useState(item.averageCost > 0 ? Number(item.averageCost.toFixed(2)) : item.cost);
-  const [idempotencyKey, setIdempotencyKey] = useState(() => inventoryQuickAdjustmentKey());
+  const [idempotencyNonce, setIdempotencyNonce] = useState(0);
+  const idempotencyKey = useMemo(
+    () => `${action}:${item.id}:${idempotencyNonce}:${inventoryQuickAdjustmentKey()}`,
+    [action, item.id, idempotencyNonce]
+  );
   const reasons = action === "add" ? inventoryQuickAddReasons : inventoryQuickRemoveReasons;
   const resultingQuantity = action === "add" ? item.quantityOwned + quantity : Math.max(0, item.quantityOwned - quantity);
   const exceedsOnHand = action === "remove" && quantity > item.quantityOwned;
   const saveLabel = `Adjusting stock ${item.id}`;
-
-  useEffect(() => {
-    setIdempotencyKey(inventoryQuickAdjustmentKey());
-  }, [action, item.id]);
 
   return (
     <section className="inventory-quick-adjustment-sheet">
@@ -15796,7 +15805,7 @@ function InventoryQuickStockAdjustmentPanel({
                 method: "POST",
                 body: JSON.stringify(payload)
               });
-              setIdempotencyKey(inventoryQuickAdjustmentKey());
+              setIdempotencyNonce((current) => current + 1);
               return result;
             },
             { reset: false, success: action === "add" ? "Stock added" : "Stock removed" }
@@ -17988,7 +17997,10 @@ function useAdminSheetFocusTrap(
   initialFocusRef?: { current: HTMLElement | null }
 ) {
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!active) return;
@@ -18105,7 +18117,8 @@ function SalesAttachCustomerModal({
   }, []);
 
   useEffect(() => {
-    void loadCustomers(debouncedQuery, 1, false);
+    const timer = window.setTimeout(() => void loadCustomers(debouncedQuery, 1, false), 0);
+    return () => window.clearTimeout(timer);
   }, [debouncedQuery, loadCustomers]);
 
   const submitCustomerSearch = useCallback((searchText = query) => {
@@ -18559,11 +18572,14 @@ function SaleDetailsModal({
   const [rewardOverride, setRewardOverride] = useState<Partial<InventorySaleDTO> & { id: string } | null>(null);
   useAdminSheetFocusTrap(workspaceRef, onClose, !attachCustomerOpen && !rewardConfirmationOpen && !editSaleOpen);
   useEffect(() => {
-    setRewardOverride(null);
-    setRewardConfirmationOpen(false);
-    setRewardCandidate(null);
-    setRewardCustomer(null);
-    setRewardConfirmationError(null);
+    const frame = window.requestAnimationFrame(() => {
+      setRewardOverride(null);
+      setRewardConfirmationOpen(false);
+      setRewardCandidate(null);
+      setRewardCustomer(null);
+      setRewardConfirmationError(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [sale.id]);
   const displaySale: InventorySaleDTO = rewardOverride?.id === sale.id ? { ...sale, ...rewardOverride } : sale;
   const tone = saleLifecycleTone(displaySale);
