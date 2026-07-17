@@ -111,6 +111,8 @@ import type {
   InvestmentSettingsDTO,
   InvestmentReportDTO,
   InvestmentReportItemDTO,
+  InventoryAdjustmentDTO,
+  InventoryAdjustmentResultDTO,
   InventoryItemDTO,
   InventoryMarketCompDTO,
   InventoryProductImageDTO,
@@ -396,6 +398,11 @@ const inventoryItemInclude = {
   },
   stockLots: {
     orderBy: { purchasedAt: "desc" as const }
+  },
+  stockAdjustments: {
+    orderBy: { createdAt: "desc" as const },
+    take: 20,
+    include: { user: { select: { name: true, email: true } } }
   },
   sales: {
     orderBy: { soldAt: "desc" as const }
@@ -1869,6 +1876,39 @@ function inventoryStockLotToDTO(lot: Prisma.InventoryStockLotGetPayload<Record<s
   };
 }
 
+type InventoryAdjustmentWithActor = Prisma.InventoryAdjustmentGetPayload<{
+  include: { user: { select: { name: true; email: true } } };
+}>;
+
+function maskedInventoryActor(adjustment: InventoryAdjustmentWithActor) {
+  const name = adjustment.user?.name?.trim();
+  if (name) return `${name.split(/\s+/)[0]} admin`;
+  const email = adjustment.user?.email?.trim();
+  if (!email) return "Admin";
+  const [local = "admin", domain = ""] = email.split("@");
+  const maskedLocal = local.length <= 2 ? `${local[0] ?? "a"}***` : `${local.slice(0, 2)}***`;
+  const domainLabel = domain ? `@${domain.split(".")[0]}.***` : "";
+  return `${maskedLocal}${domainLabel}`;
+}
+
+function inventoryAdjustmentToDTO(adjustment: InventoryAdjustmentWithActor): InventoryAdjustmentDTO {
+  return {
+    id: adjustment.id,
+    inventoryItemId: adjustment.inventoryItemId,
+    action: adjustment.action === "add" ? "add" : "remove",
+    quantityDelta: adjustment.quantityDelta,
+    quantityBefore: adjustment.quantityBefore,
+    quantityAfter: adjustment.quantityAfter,
+    reason: adjustment.reason,
+    hasPrivateNote: Boolean(adjustment.note?.trim()),
+    unitCostCents: adjustment.unitCostCents,
+    actorLabel: maskedInventoryActor(adjustment),
+    requestId: adjustment.requestId,
+    referenceId: adjustment.requestId ?? adjustment.id,
+    createdAt: adjustment.createdAt.toISOString()
+  };
+}
+
 function inventorySaleToDTO(
   sale: Prisma.InventorySaleGetPayload<Record<string, never>>,
   itemName = "",
@@ -2335,6 +2375,7 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     lastThreeComps: marketPriceRecords.map(inventoryMarketCompToDTO),
     productImages: orderedProductImages.map(inventoryProductImageToDTO),
     stockLots: item.stockLots.map(inventoryStockLotToDTO),
+    stockAdjustments: item.stockAdjustments.map(inventoryAdjustmentToDTO),
     sales,
     expectedPlan: item.expectedPlan,
     notes: item.notes,
@@ -5792,6 +5833,37 @@ function onHandFromStockSource(item: { quantity: number; stockLots: Array<{ rema
   return Math.max(0, item.quantity - quantitySold);
 }
 
+const inventoryAdjustmentTransactionOptions = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  maxWait: 5_000,
+  timeout: 20_000
+} as const;
+
+async function runInventoryAdjustmentTransaction<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, maxAttempts = 5) {
+  const attempts = Math.max(1, Math.min(8, Math.floor(maxAttempts)));
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, inventoryAdjustmentTransactionOptions);
+    } catch (error) {
+      const record = error && typeof error === "object" ? error as { code?: unknown; meta?: { code?: unknown }; message?: unknown } : null;
+      const retryable = record?.code === "P2034" || record?.meta?.code === "40001" || String(record?.message ?? "").includes("40001");
+      if (!retryable || attempt === attempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(120, 15 * 2 ** attempt)));
+    }
+  }
+  throw new Error("Inventory adjustment could not be completed.");
+}
+
+async function lockInventoryItemForAdjustment(tx: Prisma.TransactionClient, itemId: string) {
+  if (process.env.DATABASE_URL?.trim().toLowerCase().startsWith("file:")) return;
+  await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "InventoryItem"
+    WHERE "id" = ${itemId}
+    FOR UPDATE
+  `;
+}
+
 async function syncInventoryStoreStatusAfterStockChange(itemId: string) {
   const item = await prisma.inventoryItem.findUnique({
     where: { id: itemId },
@@ -6248,6 +6320,180 @@ export async function addInventoryStockLot(
   if (item.sales.length) await recalculateInventorySalesAndLots(item.id);
   await syncInventoryStoreStatusAfterStockChange(item.id);
   return autoMatchInventoryItemMarket(currentUser, item.id);
+}
+
+type InventoryAdjustmentActionInput = {
+  action: "add" | "remove";
+  quantity: number;
+  reason: string;
+  note?: string;
+  unitCost?: number;
+  idempotencyKey: string;
+};
+
+function stockAdjustmentReasonLabel(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+async function recomputeInventoryItemTotalsFromLotsTx(tx: Prisma.TransactionClient, itemId: string, msrp: number | null, fallbackCost: number) {
+  const lots = await tx.inventoryStockLot.findMany({ where: { inventoryItemId: itemId } });
+  const quantity = lots.reduce((sum, lot) => sum + lot.quantity, 0);
+  const unitCostTotal = lots.reduce((sum, lot) => sum + inventoryLotUnitCost({ msrp }, lot) * lot.quantity, 0);
+  const purchaseExtraCost = lots.reduce((sum, lot) => sum + (lot.purchaseExtraCost ?? 0), 0);
+  await tx.inventoryItem.update({
+    where: { id: itemId },
+    data: {
+      quantity,
+      totalCost: unitCostTotal,
+      cost: quantity > 0 ? unitCostTotal / quantity : fallbackCost,
+      purchaseExtraCost
+    }
+  });
+}
+
+export async function adjustInventoryStock(
+  currentUser: SessionUser,
+  itemId: string,
+  input: InventoryAdjustmentActionInput,
+  requestId?: string
+): Promise<InventoryAdjustmentResultDTO> {
+  const scopedIdempotencyKey = `inventory-adjustment:${currentUser.id}:${itemId}:${input.idempotencyKey.trim()}`;
+  const result = await runInventoryAdjustmentTransaction(async (tx) => {
+    const duplicate = await tx.inventoryAdjustment.findUnique({
+      where: { idempotencyKey: scopedIdempotencyKey },
+      include: { user: { select: { name: true, email: true } } }
+    });
+    if (duplicate) {
+      const duplicateItem = await tx.inventoryItem.findFirst({
+        where: { id: duplicate.inventoryItemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+        include: inventoryItemInclude
+      });
+      if (!duplicateItem) throw new Error("Inventory item not found");
+      return { item: inventoryItemToDTO(duplicateItem), adjustment: inventoryAdjustmentToDTO(duplicate), duplicate: true };
+    }
+
+    await lockInventoryItemForAdjustment(tx, itemId);
+    const item = await tx.inventoryItem.findFirst({
+      where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
+      include: {
+        stockLots: { orderBy: [{ purchasedAt: "asc" }, { createdAt: "asc" }] },
+        sales: true
+      }
+    });
+    if (!item) throw new Error("Inventory item not found");
+
+    const quantityBefore = onHandFromStockSource(item);
+    if (input.action === "remove" && input.quantity > quantityBefore) {
+      throw new Error(`Cannot remove ${input.quantity}. Only ${quantityBefore} on hand.`);
+    }
+
+    let fifoLots = item.stockLots;
+    let adjustmentUnitCostCents: number | null = null;
+    if (!fifoLots.length && quantityBefore > 0) {
+      const carryoverUnitCost = inventoryEffectiveAverageCost(item);
+      const carryover = await tx.inventoryStockLot.create({
+        data: {
+          inventoryItemId: item.id,
+          purchasedAt: item.purchasedAt,
+          source: item.source || "Legacy inventory",
+          quantity: quantityBefore,
+          costPerUnit: carryoverUnitCost,
+          purchaseExtraCost: 0,
+          totalCost: carryoverUnitCost * quantityBefore,
+          remainingQuantity: quantityBefore,
+          notes: "Legacy on-hand quantity converted for audited stock adjustments.",
+          receiptNumber: item.receiptNumber,
+          receiptImageUrl: item.receiptImageUrl,
+          orderNumber: item.orderNumber,
+          transactionId: item.transactionId,
+          sourceStore: item.sourceStore,
+          paymentMethod: item.paymentMethod
+        }
+      });
+      fifoLots = [carryover];
+    }
+
+    if (input.action === "add") {
+      const existingOwnedCost = fifoLots.reduce((sum, lot) => sum + inventoryLotUnitCost(item, lot) * lot.remainingQuantity, 0);
+      const resolvedUnitCost = input.unitCost ?? (quantityBefore > 0 && existingOwnedCost > 0 ? existingOwnedCost / quantityBefore : inventoryEffectiveAverageCost(item));
+      const resolvedUnitCostCents = moneyToCents(resolvedUnitCost);
+      const unitCost = centsToMoney(resolvedUnitCostCents);
+      adjustmentUnitCostCents = resolvedUnitCostCents;
+      await tx.inventoryStockLot.create({
+        data: {
+          inventoryItemId: item.id,
+          purchasedAt: new Date(),
+          source: "Inventory adjustment",
+          quantity: input.quantity,
+          costPerUnit: unitCost,
+          purchaseExtraCost: 0,
+          totalCost: unitCost * input.quantity,
+          remainingQuantity: input.quantity,
+          notes: `Adjustment reason: ${stockAdjustmentReasonLabel(input.reason)}.`,
+          sourceStore: item.sourceStore,
+          paymentMethod: item.paymentMethod
+        }
+      });
+    } else {
+      let remainingToRemove = input.quantity;
+      for (const lot of fifoLots.filter((stockLot) => stockLot.remainingQuantity > 0)) {
+        if (remainingToRemove <= 0) break;
+        const quantityFromLot = Math.min(remainingToRemove, lot.remainingQuantity);
+        await tx.inventoryStockLot.updateMany({
+          where: { id: lot.id, remainingQuantity: { gte: quantityFromLot } },
+          data: { remainingQuantity: { decrement: quantityFromLot } }
+        });
+        remainingToRemove -= quantityFromLot;
+      }
+      if (remainingToRemove > 0) throw new Error("Inventory changed during this adjustment. Please retry.");
+    }
+
+    await recomputeInventoryItemTotalsFromLotsTx(tx, item.id, item.msrp, item.cost);
+    const quantityAfter = input.action === "add" ? quantityBefore + input.quantity : quantityBefore - input.quantity;
+    const adjustment = await tx.inventoryAdjustment.create({
+      data: {
+        inventoryItemId: item.id,
+        userId: currentUser.id,
+        idempotencyKey: scopedIdempotencyKey,
+        action: input.action,
+        quantityDelta: input.action === "add" ? input.quantity : -input.quantity,
+        quantityBefore,
+        quantityAfter,
+        reason: input.reason,
+        note: input.note,
+        unitCostCents: adjustmentUnitCostCents,
+        requestId: requestId ?? null
+      },
+      include: { user: { select: { name: true, email: true } } }
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: currentUser.id,
+        actorEmail: currentUser.email,
+        action: "inventory.stock_adjusted",
+        entityType: "INVENTORY",
+        entityId: item.id,
+        summary: `${currentUser.email} ${input.action === "add" ? "added" : "removed"} ${input.quantity} inventory unit${input.quantity === 1 ? "" : "s"} for ${item.itemName}. On hand ${quantityBefore} -> ${quantityAfter}.`,
+        metadata: JSON.stringify({
+          actionType: input.action === "add" ? "add_stock" : "remove_stock",
+          reason: input.reason,
+          quantity: input.quantity,
+          quantityBefore,
+          quantityAfter,
+          requestId: requestId ?? null,
+          idempotencyKey: scopedIdempotencyKey
+        })
+      }
+    });
+
+    const updated = await tx.inventoryItem.findUnique({ where: { id: item.id }, include: inventoryItemInclude });
+    if (!updated) throw new Error("Inventory item not found");
+    return { item: inventoryItemToDTO(updated), adjustment: inventoryAdjustmentToDTO(adjustment), duplicate: false };
+  });
+
+  await syncInventoryStoreStatusAfterStockChange(result.item.id);
+  return result;
 }
 
 export async function updateInventoryStockLot(

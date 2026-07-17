@@ -21,6 +21,8 @@ import {
   ExternalLink,
   FileText,
   Home,
+  Info,
+  Layers,
   LineChart,
   HelpCircle,
   History,
@@ -138,6 +140,7 @@ import type {
   InvestmentReportDTO,
   InvestmentReportItemDTO,
   Priority,
+  InventoryAdjustmentResultDTO,
   InventoryItemDTO,
   InventoryProductImageDTO,
   MarketMatchCandidateDTO,
@@ -3695,11 +3698,14 @@ function CustomersRewardsPanel() {
   }, []);
 
   useEffect(() => {
-    void loadCustomers();
+    const timer = window.setTimeout(() => void loadCustomers(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadCustomers]);
 
   useEffect(() => {
-    if (activeView === "ledger" || activeView === "overview") void loadLedger();
+    if (activeView !== "ledger" && activeView !== "overview") return;
+    const timer = window.setTimeout(() => void loadLedger(), 0);
+    return () => window.clearTimeout(timer);
   }, [activeView, loadLedger]);
 
   useEffect(() => () => {
@@ -4749,7 +4755,8 @@ function CustomerAttachOrderModal({
   }, [customer.id]);
 
   useEffect(() => {
-    void loadCandidates("");
+    const timer = window.setTimeout(() => void loadCandidates(""), 0);
+    return () => window.clearTimeout(timer);
   }, [loadCandidates]);
 
   const chooseCandidate = (candidate: AdminCustomerAttachOrderCandidateDTO) => {
@@ -5414,7 +5421,8 @@ function PosPanel({
             : `Complete Sale ${money(quotedTotal)}`;
 
   useEffect(() => {
-    setVisibleLimit(POS_RESULT_BATCH_SIZE);
+    const frame = window.requestAnimationFrame(() => setVisibleLimit(POS_RESULT_BATCH_SIZE));
+    return () => window.cancelAnimationFrame(frame);
   }, [filter, query, inventoryView]);
 
   useEffect(() => {
@@ -9721,11 +9729,43 @@ type InventoryFiltersState = {
 type InventoryMutationReason =
   | "purchase_added"
   | "stock_added"
+  | "stock_adjusted"
   | "sale_recorded"
   | "product_updated"
   | "listing_updated"
   | "stock_lot_updated"
   | "stock_lot_removed";
+
+type InventoryQuickAdjustmentAction = "add" | "remove";
+
+const inventoryQuickAddReasons = [
+  { value: "new_purchase_restock", label: "New purchase/restock" },
+  { value: "customer_return", label: "Customer return" },
+  { value: "inventory_correction", label: "Inventory correction" },
+  { value: "transfer_in", label: "Transfer in" },
+  { value: "other", label: "Other" }
+];
+
+const inventoryQuickRemoveReasons = [
+  { value: "sold_outside_pos", label: "Sold outside POS" },
+  { value: "damaged", label: "Damaged" },
+  { value: "lost", label: "Lost" },
+  { value: "personal_use", label: "Personal use" },
+  { value: "sample_promotional", label: "Sample/promotional" },
+  { value: "inventory_correction", label: "Inventory correction" },
+  { value: "return_to_supplier", label: "Return to supplier" },
+  { value: "other", label: "Other" }
+];
+
+function inventoryQuickAdjustmentKey() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `stock-adjust:${crypto.randomUUID()}`;
+  return `stock-adjust:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+function inventoryAdjustmentReasonLabel(reason: string) {
+  const option = [...inventoryQuickAddReasons, ...inventoryQuickRemoveReasons].find((entry) => entry.value === reason);
+  return option?.label ?? formatStatus(reason);
+}
 
 type ProductWorkspaceMode = "overview" | "add-stock" | "adjust-stock" | "record-sale" | "edit-product" | "edit-listing";
 type ProductWorkspaceSectionId = "overview" | "stock" | "listing" | "images" | "shipping" | "sales" | "authenticity" | "receipts";
@@ -9735,6 +9775,7 @@ type ProductWorkspaceState = {
   mode: ProductWorkspaceMode;
   lotId?: string;
   prefill?: InventoryPurchasePrefill | null;
+  adjustmentAction?: InventoryQuickAdjustmentAction;
   focusSection?: ProductWorkspaceSectionId | null;
 };
 
@@ -9939,27 +9980,18 @@ function InventoryPanel({
     setProductWorkspace((current) => (current ? { ...current, focusSection: null } : current));
   }, []);
 
-  function openAdjustStockWorkspace(item: InventoryItemDTO) {
-    const lot = item.stockLots[0];
-    if (lot) {
-      openProductWorkspace(item, "adjust-stock", lot.id);
-    } else {
-      openPurchaseFlow(item.id);
-    }
+  function openAdjustStockWorkspace(item: InventoryItemDTO, action: InventoryQuickAdjustmentAction = "remove") {
+    setSelectedItemId(item.id);
+    setProductWorkspace({ itemId: item.id, mode: "adjust-stock", adjustmentAction: action });
   }
 
-  function setWorkspaceMode(mode: ProductWorkspaceMode) {
+  function setWorkspaceMode(mode: ProductWorkspaceMode, adjustmentAction?: InventoryQuickAdjustmentAction) {
     if (!workspaceItem) return;
     if (mode === "adjust-stock") {
-      const lot = workspaceLot ?? workspaceItem.stockLots[0];
-      if (lot) {
-        setProductWorkspace({ itemId: workspaceItem.id, mode, lotId: lot.id });
-      } else {
-        setProductWorkspace({ itemId: workspaceItem.id, mode: "add-stock" });
-      }
+      setProductWorkspace({ itemId: workspaceItem.id, mode, adjustmentAction: adjustmentAction ?? "add" });
       return;
     }
-    setProductWorkspace((current) => (current ? { itemId: workspaceItem.id, mode, prefill: mode === "add-stock" ? current.prefill : null } : current));
+    setProductWorkspace((current) => (current ? { itemId: workspaceItem.id, mode, prefill: mode === "add-stock" ? current.prefill : null, adjustmentAction: mode === "add-stock" ? "add" : undefined } : current));
   }
 
   const scheduleInventoryRowReveal = useCallback((itemId: string) => {
@@ -10229,7 +10261,7 @@ function InventoryPanel({
             dashboard={dashboard}
             onAddProduct={() => openPurchaseFlow("")}
             onAddStock={() => {
-              openPurchaseFlow(selectedItem?.id ?? "");
+              if (selectedItem) openAdjustStockWorkspace(selectedItem, "add");
             }}
             onScan={() => setBarcodeScannerOpen(true)}
             onRecordSale={() => selectedItem && openProductWorkspace(selectedItem, "record-sale")}
@@ -10264,7 +10296,7 @@ function InventoryPanel({
                 onSelect={(item) => setSelectedItemId(item.id)}
                 onTogglePublishSelect={togglePublishSelection}
                 onAddStock={(item) => {
-                  openPurchaseFlow(item.id);
+                  openAdjustStockWorkspace(item, "add");
                 }}
                 onAdjustStock={openAdjustStockWorkspace}
                 onRecordSale={(item) => {
@@ -10359,6 +10391,7 @@ function InventoryPanel({
         <ProductWorkspaceShell
           item={workspaceItem}
           mode={productWorkspace.mode}
+          adjustmentAction={productWorkspace.adjustmentAction}
           focusSection={productWorkspace.focusSection ?? null}
           shippingProfiles={dashboard.shippingProfiles}
           onClose={closeProductWorkspace}
@@ -10413,7 +10446,7 @@ function InventoryPanel({
               }}
             />
           ) : null}
-          {productWorkspace.mode === "adjust-stock" && workspaceLot ? (
+          {productWorkspace.mode === "adjust-stock" && productWorkspace.lotId && workspaceLot ? (
             <InventoryEditStockLotModal
               item={workspaceItem}
               lot={workspaceLot}
@@ -10426,6 +10459,21 @@ function InventoryPanel({
                 setProductWorkspace(null);
               }}
               onAddStock={(item) => setProductWorkspace({ itemId: item.id, mode: "add-stock" })}
+              onClose={() => setProductWorkspace(null)}
+            />
+          ) : null}
+          {productWorkspace.mode === "adjust-stock" && !productWorkspace.lotId ? (
+            <InventoryQuickStockAdjustmentPanel
+              item={workspaceItem}
+              initialAction={productWorkspace.adjustmentAction ?? "add"}
+              busy={busy}
+              busyLabel={busyLabel}
+              submit={async (event, label, run, options) => {
+                const mutation = inventoryMutationForItem("stock_adjusted", "Stock adjusted. On-hand and adjustment history refreshed.", workspaceItem);
+                await submit(event, label, run, options);
+                setPendingInventoryMutation(mutation);
+                setProductWorkspace(null);
+              }}
               onClose={() => setProductWorkspace(null)}
             />
           ) : null}
@@ -12930,6 +12978,7 @@ function StorefrontCancelRefundModal({
               <button className="mini-action" disabled={processing} type="button" onClick={onClose}>
                 {shippedRefundFlow ? "Close" : "Keep Order"}
               </button>
+              {/* eslint-disable-next-line react-hooks/refs -- submission guard is intentionally non-rendering and covered by checkout source tests. */}
               <button className="primary-action danger" disabled={busy || processing || submittedRef.current || !idempotencyKey} type="submit">
                 <RotateCcw size={16} />
                 {processing ? refundActionText : shippedRefundFlow ? "Confirm Refund / Return" : "Confirm Cancel / Refund"}
@@ -14905,7 +14954,6 @@ function InventoryList({
   onEditListing: (item: InventoryItemDTO) => void;
   onOpenAuthenticityProof: (item: InventoryItemDTO) => void;
 }) {
-  if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
   const [actionMenu, setActionMenu] = useState<{
     item: InventoryItemDTO;
     top: number;
@@ -14945,6 +14993,8 @@ function InventoryList({
       window.removeEventListener("scroll", closeOnViewportChange, true);
     };
   }, [actionMenu]);
+
+  if (!items.length) return <EmptyState icon={Trophy} title="No inventory items" detail="Add sealed products or cards as you buy them." />;
 
   function actionMenuPositionFor(trigger: HTMLElement, item: InventoryItemDTO) {
     const rect = trigger.getBoundingClientRect();
@@ -15198,9 +15248,9 @@ function inventoryPrimaryIdentifier(item: InventoryItemDTO) {
   return item.upc || item.sku || item.dpci || item.asin || "No UPC/SKU saved";
 }
 
-function productWorkspaceTitle(mode: ProductWorkspaceMode) {
+function productWorkspaceTitle(mode: ProductWorkspaceMode, adjustmentAction?: InventoryQuickAdjustmentAction) {
   if (mode === "add-stock") return "Add Stock";
-  if (mode === "adjust-stock") return "Adjust Stock";
+  if (mode === "adjust-stock") return adjustmentAction === "remove" ? "Remove Stock" : "Add Stock";
   if (mode === "record-sale") return "Record Sale";
   if (mode === "edit-product") return "Edit Product";
   if (mode === "edit-listing") return "Edit Listing";
@@ -15210,6 +15260,7 @@ function productWorkspaceTitle(mode: ProductWorkspaceMode) {
 function ProductWorkspaceShell({
   item,
   mode,
+  adjustmentAction,
   focusSection,
   shippingProfiles,
   onModeChange,
@@ -15219,9 +15270,10 @@ function ProductWorkspaceShell({
 }: {
   item: InventoryItemDTO;
   mode: ProductWorkspaceMode;
+  adjustmentAction?: InventoryQuickAdjustmentAction;
   focusSection: ProductWorkspaceSectionId | null;
   shippingProfiles: ShippingProfileDTO[];
-  onModeChange: (mode: ProductWorkspaceMode) => void;
+  onModeChange: (mode: ProductWorkspaceMode, adjustmentAction?: InventoryQuickAdjustmentAction) => void;
   onClose: () => void;
   onSectionFocused: () => void;
   children: (activeSectionId: ProductWorkspaceSectionId) => ReactNode;
@@ -15242,15 +15294,9 @@ function ProductWorkspaceShell({
     { label: shippingReady ? "Shipping Ready" : "Needs Shipping", tone: shippingReady ? "good" : "watch" }
   ];
   const headerBadges = rawHeaderBadges.filter((badge, index, badges) => badges.findIndex((candidate) => candidate.label === badge.label) === index);
-  const workspaceActions: Array<{ mode: ProductWorkspaceMode; label: string; icon: typeof Plus; disabled?: boolean; title?: string }> = [
-    { mode: "add-stock", label: "Add Stock", icon: Plus },
-    {
-      mode: "adjust-stock",
-      label: "Adjust Stock",
-      icon: History,
-      disabled: item.stockLots.length === 0,
-      title: item.stockLots.length ? "Adjust a stock lot" : "Add stock before adjusting a lot"
-    },
+  const workspaceActions: Array<{ mode: ProductWorkspaceMode; label: string; icon: typeof Plus; adjustmentAction?: InventoryQuickAdjustmentAction; disabled?: boolean; title?: string }> = [
+    { mode: "adjust-stock", label: "Adjust Stock", icon: Plus, adjustmentAction: adjustmentAction ?? "add" },
+    { mode: "add-stock", label: "Add Purchase", icon: PlusCircle },
     { mode: "record-sale", label: "Record Sale", icon: CircleDollarSign, disabled: item.quantityOwned <= 0, title: item.quantityOwned > 0 ? "Record a sale" : "Add stock before recording a sale" },
     { mode: "edit-product", label: "Edit Product", icon: Settings },
     { mode: "edit-listing", label: "Edit Listing", icon: Store }
@@ -15350,9 +15396,9 @@ function ProductWorkspaceShell({
 
   useEffect(() => {
     if (!focusSection || mode !== "overview") return;
-    setActiveSectionId(focusSection);
     let timer: number | null = null;
     const frame = window.requestAnimationFrame(() => {
+      setActiveSectionId(focusSection);
       timer = window.setTimeout(() => {
         if (focusWorkspaceSection(focusSection)) onSectionFocused();
       }, 80);
@@ -15364,7 +15410,9 @@ function ProductWorkspaceShell({
   }, [focusSection, focusWorkspaceSection, mode, onSectionFocused]);
 
   useEffect(() => {
-    if (mode !== "overview") setActiveSectionId("overview");
+    if (mode === "overview") return;
+    const frame = window.requestAnimationFrame(() => setActiveSectionId("overview"));
+    return () => window.cancelAnimationFrame(frame);
   }, [mode]);
 
   useEffect(() => clearWorkspaceSectionHighlight, [clearWorkspaceSectionHighlight]);
@@ -15376,12 +15424,15 @@ function ProductWorkspaceShell({
         ref={workspaceRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`${productWorkspaceTitle(mode)} for ${item.itemName}`}
+        aria-label={`${productWorkspaceTitle(mode, adjustmentAction)} for ${item.itemName}`}
       >
         <header className="product-workspace-header">
+          <button className="icon-button product-workspace-mobile-back" type="button" aria-label="Back to inventory" onClick={onClose}>
+            <ArrowLeft size={18} />
+          </button>
           <InventoryImage item={item} />
           <div className="product-workspace-title">
-            <span className="eyeline">{productWorkspaceTitle(mode)}</span>
+            <span className="eyeline">{productWorkspaceTitle(mode, adjustmentAction)}</span>
             <h2 title={item.itemName}>{item.itemName}</h2>
             <p>{formatStatus(item.category)} - {inventoryPrimaryIdentifier(item)}</p>
             <div className="inventory-detail-badges product-workspace-status-strip" aria-label="Product workspace status">
@@ -15417,12 +15468,12 @@ function ProductWorkspaceShell({
             const Icon = action.icon;
             return (
               <button
-                className={mode === action.mode ? "mini-action solid" : "mini-action"}
+                className={mode === action.mode && (!action.adjustmentAction || action.adjustmentAction === adjustmentAction) ? "mini-action solid" : "mini-action"}
                 disabled={action.disabled}
-                key={action.mode}
+                key={`${action.mode}-${action.label}`}
                 title={action.title}
                 type="button"
-                onClick={() => onModeChange(action.mode)}
+                onClick={() => onModeChange(action.mode, action.adjustmentAction)}
               >
                 <Icon size={14} />
                 {action.label}
@@ -15583,6 +15634,12 @@ function ProductWorkspaceOverview({
       <CompactLotsList item={item} onEditLot={onEditStockLot} onDeleteLot={onDeleteStockLot} />
     </section>
   );
+  const adjustmentHistorySection = (
+    <section className="inventory-detail-section" key="adjustment-history">
+      <h3>Adjustment History</h3>
+      <InventoryAdjustmentHistoryList item={item} />
+    </section>
+  );
   const salesSection = (
     <section className="inventory-detail-section" data-workspace-section="sales" key="sales">
       <h3>Sales History</h3>
@@ -15644,10 +15701,10 @@ function ProductWorkspaceOverview({
       </div>
     </section>
   );
-  const overviewPanels = [overviewSection, listingSection, imagesSection, stockSection, salesSection, receiptsSection, proofSection, shippingSection, notesSection];
+  const overviewPanels = [overviewSection, listingSection, imagesSection, stockSection, adjustmentHistorySection, salesSection, receiptsSection, proofSection, shippingSection, notesSection];
   const focusedPanels: Record<ProductWorkspaceSectionId, ReactNode[]> = {
     overview: overviewPanels,
-    stock: [stockSection],
+    stock: [stockSection, adjustmentHistorySection],
     listing: [listingSection],
     images: [imagesSection],
     shipping: [shippingSection],
@@ -15666,6 +15723,233 @@ function ProductWorkspaceOverview({
     >
       {panels}
     </div>
+  );
+}
+
+function InventoryAdjustmentHistoryList({ item, limit, compact = false }: { item: InventoryItemDTO; limit?: number; compact?: boolean }) {
+  const adjustments = item.stockAdjustments ?? [];
+  if (!adjustments.length) {
+    return (
+      <EmptyState
+        icon={History}
+        title="No adjustments yet"
+        detail={compact ? "Adjustment history will appear here after the first saved stock change." : "Add Stock and Remove Stock entries will appear here with before/after counts."}
+      />
+    );
+  }
+  const displayedAdjustments = typeof limit === "number" ? adjustments.slice(0, limit) : adjustments;
+  const hiddenCount = Math.max(0, adjustments.length - displayedAdjustments.length);
+  return (
+    <div className={`compact-ledger-list inventory-adjustment-history${compact ? " compact" : ""}`} aria-label={compact ? "Recent inventory adjustment history" : "Inventory adjustment history"}>
+      {displayedAdjustments.map((adjustment) => {
+        const positive = adjustment.quantityDelta >= 0;
+        const referenceLabel = adjustment.referenceId.length > 12 ? `${adjustment.referenceId.slice(0, 4)}\u2026${adjustment.referenceId.slice(-4)}` : adjustment.referenceId;
+        const dateParts = shortDate(adjustment.createdAt).split(" ");
+        return (
+          <article className={`inventory-adjustment-history-card ${positive ? "is-add" : "is-remove"}`} key={adjustment.id}>
+            <strong className="inventory-adjustment-history-date">
+              <span>{dateParts[0]}</span>
+              <span>{dateParts.slice(1).join(" ") || dateParts[0]}</span>
+            </strong>
+            <div className="inventory-adjustment-history-body">
+              <div className="inventory-adjustment-history-topline">
+                <span className="inventory-adjustment-delta-badge" aria-label={`${positive ? "Added" : "Removed"} ${Math.abs(adjustment.quantityDelta)} units`}>
+                  {positive ? "+" : "-"}{Math.abs(adjustment.quantityDelta)}
+                </span>
+                <b className={positive ? "profit-good" : "profit-bad"}>{inventoryAdjustmentReasonLabel(adjustment.reason)}</b>
+              </div>
+              <span className="inventory-adjustment-before-after">Before {adjustment.quantityBefore} {"\u2192"} After {adjustment.quantityAfter}</span>
+              <small className="inventory-adjustment-history-meta" title={`Actor ${adjustment.actorLabel}. Reference ${adjustment.referenceId}`} aria-label={`Actor ${adjustment.actorLabel}. ${adjustment.hasPrivateNote ? "Private note saved" : "No private note"}. Reference ${adjustment.referenceId}`}>
+                <span>{adjustment.actorLabel}</span>
+                <span>{adjustment.hasPrivateNote ? "Private note saved" : "No private note"}</span>
+                <span>Ref {referenceLabel}</span>
+              </small>
+            </div>
+            {adjustment.hasPrivateNote ? <span className="inventory-adjustment-note-indicator" aria-label="Private note saved"><FileText size={13} aria-hidden="true" /></span> : null}
+          </article>
+        );
+      })}
+      {hiddenCount > 0 ? <span className="inventory-adjustment-history-more">View all: {hiddenCount} older adjustment{hiddenCount === 1 ? "" : "s"} hidden in this compact view.</span> : null}
+    </div>
+  );
+}
+
+function InventoryQuickStockAdjustmentPanel({
+  item,
+  initialAction,
+  busy,
+  busyLabel,
+  submit,
+  onClose
+}: {
+  item: InventoryItemDTO;
+  initialAction: InventoryQuickAdjustmentAction;
+  busy: boolean;
+  busyLabel: string | null;
+  submit: SubmitHandler;
+  onClose: () => void;
+}) {
+  const [action, setAction] = useState<InventoryQuickAdjustmentAction>(initialAction);
+  const [quantity, setQuantity] = useState(1);
+  const [unitCost, setUnitCost] = useState(item.averageCost > 0 ? Number(item.averageCost.toFixed(2)) : item.cost);
+  const [noteLength, setNoteLength] = useState(0);
+  const [idempotencyNonce, setIdempotencyNonce] = useState(0);
+  const idempotencyKey = useMemo(
+    () => `${action}:${item.id}:${idempotencyNonce}:${inventoryQuickAdjustmentKey()}`,
+    [action, item.id, idempotencyNonce]
+  );
+  const reasons = action === "add" ? inventoryQuickAddReasons : inventoryQuickRemoveReasons;
+  const rawResultingQuantity = action === "add" ? item.quantityOwned + quantity : item.quantityOwned - quantity;
+  const resultingQuantity = Math.max(0, rawResultingQuantity);
+  const exceedsOnHand = action === "remove" && quantity > item.quantityOwned;
+  const nearZeroAfterRemoval = action === "remove" && !exceedsOnHand && resultingQuantity <= 2;
+  const saveLabel = `Adjusting stock ${item.id}`;
+  const actionTitle = action === "add" ? "Add Stock" : "Remove Stock";
+  const actionCopy = action === "add"
+    ? "Increase on-hand quantity and create an audited stock lot with a per-unit cost."
+    : "Reduce on-hand quantity using FIFO stock lots. This does not create a sale or revenue record.";
+  const summaryCopy = action === "add"
+    ? "This action creates a new immutable Add Stock adjustment and a new FIFO lot with the unit cost above."
+    : "This action creates a new immutable Remove Stock adjustment and consumes eligible stock lots using FIFO.";
+  const formCallout = action === "add"
+    ? "This will create a new FIFO lot. It does not create a sale, order, reward, tax, payment, or refund."
+    : "This will consume existing stock using FIFO. It does not create a sale, order, reward, tax, payment, or refund.";
+  const stockBasisLabel = action === "add" ? "New FIFO lot" : "FIFO lot consumption";
+
+  return (
+    <section className={`inventory-quick-adjustment-sheet ${action === "add" ? "is-add" : "is-remove"}`}>
+      <form
+        className="inventory-edit-form inventory-quick-adjustment-form"
+        onSubmit={(event) =>
+          submit(
+            event,
+            saveLabel,
+            async (form) => {
+              const payload = formJson(form) as Record<string, unknown>;
+              const result = await requestJson<InventoryAdjustmentResultDTO>(`/api/radar/inventory/${item.id}/adjustments`, {
+                method: "POST",
+                body: JSON.stringify(payload)
+              });
+              setIdempotencyNonce((current) => current + 1);
+              return result;
+            },
+            { reset: false, success: action === "add" ? "Stock added" : "Stock removed" }
+          )
+        }
+      >
+        <input name="action" type="hidden" value={action} />
+        <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+        <div className="inventory-adjustment-layout">
+          <section className="inventory-adjustment-main-card" aria-labelledby="inventory-adjustment-title">
+            <div className="inventory-adjustment-heading-row">
+              <div>
+                <span className="eyeline">Stock adjustment</span>
+                <h3 id="inventory-adjustment-title">{actionTitle}</h3>
+                <p>{actionCopy}</p>
+              </div>
+              <div className="segmented-control inventory-adjustment-toggle" role="group" aria-label="Stock adjustment action">
+                <button className={action === "add" ? "active" : ""} type="button" onClick={() => setAction("add")}>
+                  <Plus size={14} />
+                  Add Stock
+                </button>
+                <button className={action === "remove" ? "active" : ""} type="button" disabled={item.quantityOwned <= 0} onClick={() => setAction("remove")}>
+                  <Minus size={14} />
+                  Remove Stock
+                </button>
+              </div>
+            </div>
+
+            <div className={`form-grid compact inventory-adjustment-main-inputs${action === "remove" ? " remove-mode" : ""}`}>
+              <TextInput
+                name="quantity"
+                label="Adjustment quantity"
+                type="number"
+                min="1"
+                max={action === "remove" ? String(Math.max(1, item.quantityOwned)) : "1000"}
+                value={String(quantity)}
+                onChange={(event) => setQuantity(Math.max(1, Math.min(1000, Number(event.currentTarget.value) || 1)))}
+                required
+              />
+              <span className="inventory-adjustment-field-helper quantity-helper">Whole units only</span>
+              <SelectInput name="reason" label="Reason *" required defaultValue="" options={[{ value: "", label: "Choose a reason" }, ...reasons]} />
+              {action === "add" ? (
+                <TextInput
+                  name="unitCost"
+                  label="Unit cost per unit (USD) *"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={String(unitCost)}
+                  onChange={(event) => setUnitCost(Math.max(0, Number(event.currentTarget.value) || 0))}
+                />
+              ) : null}
+              {action === "add" ? <span className="inventory-adjustment-field-helper unit-cost-helper">Stored as integer cents</span> : null}
+              <TextareaInput
+                className="inventory-adjustment-note"
+                name="note"
+                label="Private note (optional, admin-only)"
+                placeholder="Short internal context. Not shown publicly."
+                rows={2}
+                maxLength={300}
+                onChange={(event) => setNoteLength(event.currentTarget.value.length)}
+                wide
+              />
+              <span className="inventory-adjustment-note-count">{noteLength} / 300</span>
+            </div>
+
+            {exceedsOnHand ? <p className="form-error" role="alert">Removal cannot exceed current on-hand quantity.</p> : null}
+            {nearZeroAfterRemoval ? <p className="form-helper inventory-adjustment-low-stock" role="status">This removal leaves {resultingQuantity} unit{resultingQuantity === 1 ? "" : "s"} on hand. Confirm the physical count before saving.</p> : null}
+            <p className="inventory-adjustment-info-callout" role="status"><Info size={16} />{formCallout}</p>
+          </section>
+
+          <aside className="inventory-adjustment-summary-card" aria-label="Stock adjustment summary">
+            <div className="inventory-adjustment-summary-top">
+              <h4>Adjustment Summary</h4>
+              <div className={`stock-cost-preview inventory-adjustment-summary-flow${exceedsOnHand ? " invalid" : nearZeroAfterRemoval ? " near-zero" : ""}`} aria-label="Current, adjustment, and resulting quantity preview">
+                <span>
+                  <strong>{item.quantityOwned}</strong>
+                  <small>Current</small>
+                </span>
+                <em aria-hidden="true">&rarr;</em>
+                <span>
+                  <strong>{action === "add" ? "+" : "-"}{quantity || 0}</strong>
+                  <small>Adjustment</small>
+                </span>
+                <em aria-hidden="true">&rarr;</em>
+                <span>
+                  <strong>{resultingQuantity}</strong>
+                  <small>Resulting</small>
+                </span>
+              </div>
+              <div className="inventory-adjustment-stock-basis-card">
+                <span>
+                  <small>Stock basis</small>
+                  <strong>{stockBasisLabel}</strong>
+                </span>
+                <Layers size={18} aria-hidden="true" />
+              </div>
+              <p className="inventory-adjustment-summary-copy">{summaryCopy}</p>
+            </div>
+            <section className="inventory-adjustment-recent" aria-label="Recent adjustment history">
+              <div className="inventory-adjustment-recent-heading">
+                <h4>Recent adjustments</h4>
+                <span>View all</span>
+              </div>
+              <InventoryAdjustmentHistoryList item={item} limit={5} compact />
+            </section>
+            <div className="inventory-edit-actions inventory-adjustment-actions">
+              <button className="mini-action" disabled={busy} type="button" onClick={onClose}>
+                Cancel
+              </button>
+              <button className="primary-action" disabled={busy || exceedsOnHand || (action === "remove" && item.quantityOwned <= 0)} type="submit">
+                <Save size={16} />
+                {busyLabel === saveLabel ? "Saving" : actionTitle}
+              </button>
+            </div>
+          </aside>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -17776,7 +18060,10 @@ function useAdminSheetFocusTrap(
   initialFocusRef?: { current: HTMLElement | null }
 ) {
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!active) return;
@@ -17893,7 +18180,8 @@ function SalesAttachCustomerModal({
   }, []);
 
   useEffect(() => {
-    void loadCustomers(debouncedQuery, 1, false);
+    const timer = window.setTimeout(() => void loadCustomers(debouncedQuery, 1, false), 0);
+    return () => window.clearTimeout(timer);
   }, [debouncedQuery, loadCustomers]);
 
   const submitCustomerSearch = useCallback((searchText = query) => {
@@ -18347,11 +18635,14 @@ function SaleDetailsModal({
   const [rewardOverride, setRewardOverride] = useState<Partial<InventorySaleDTO> & { id: string } | null>(null);
   useAdminSheetFocusTrap(workspaceRef, onClose, !attachCustomerOpen && !rewardConfirmationOpen && !editSaleOpen);
   useEffect(() => {
-    setRewardOverride(null);
-    setRewardConfirmationOpen(false);
-    setRewardCandidate(null);
-    setRewardCustomer(null);
-    setRewardConfirmationError(null);
+    const frame = window.requestAnimationFrame(() => {
+      setRewardOverride(null);
+      setRewardConfirmationOpen(false);
+      setRewardCandidate(null);
+      setRewardCustomer(null);
+      setRewardConfirmationError(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [sale.id]);
   const displaySale: InventorySaleDTO = rewardOverride?.id === sale.id ? { ...sale, ...rewardOverride } : sale;
   const tone = saleLifecycleTone(displaySale);

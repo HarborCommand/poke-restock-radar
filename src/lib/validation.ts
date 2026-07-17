@@ -941,6 +941,43 @@ const inventoryStockAdjustmentReasonSchema = z.enum([
   "other"
 ]);
 
+const inventoryQuickAddReasonSchema = z.enum([
+  "new_purchase_restock",
+  "customer_return",
+  "inventory_correction",
+  "transfer_in",
+  "other"
+]);
+
+const inventoryQuickRemoveReasonSchema = z.enum([
+  "sold_outside_pos",
+  "damaged",
+  "lost",
+  "personal_use",
+  "sample_promotional",
+  "inventory_correction",
+  "return_to_supplier",
+  "other"
+]);
+
+export const inventoryAdjustmentSchema = z.object({
+  action: z.enum(["add", "remove"]),
+  quantity: z.coerce.number().int().min(1).max(1000),
+  reason: z.string().trim().min(2).max(80),
+  note: optionalTrimmed,
+  unitCost: optionalMoney,
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/)
+}).strict().superRefine((input, context) => {
+  const addReasons = inventoryQuickAddReasonSchema.options as string[];
+  const removeReasons = inventoryQuickRemoveReasonSchema.options as string[];
+  if (input.action === "add" && !addReasons.includes(input.reason)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["reason"], message: "Choose a valid add-stock reason." });
+  }
+  if (input.action === "remove" && !removeReasons.includes(input.reason)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["reason"], message: "Choose a valid remove-stock reason." });
+  }
+});
+
 export const inventoryStockLotUpdateSchema = z.object({
   quantity: z.coerce.number().int().min(1).max(1000),
   costPerUnit: requiredMoney,
