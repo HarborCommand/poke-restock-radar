@@ -24950,7 +24950,7 @@ body .product-workspace-repeated-preview[hidden] {
 }
 
 body .inventory-quick-adjustment-sheet {
-  width: min(1180px, 100%);
+  width: min(1240px, 100%);
   margin: 0 auto;
   min-width: 0;
 }
@@ -24961,7 +24961,7 @@ body .inventory-quick-adjustment-form {
 
 body .inventory-adjustment-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 1fr);
   align-items: start;
   gap: clamp(12px, 1.6vw, 18px);
   min-width: 0;
@@ -25132,13 +25132,66 @@ body .inventory-adjustment-history.compact {
   gap: 7px;
 }
 
-body .inventory-adjustment-history.compact article {
-  gap: 3px;
-  padding: 8px 10px;
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card {
+  grid-template-columns: minmax(72px, auto) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 12px;
+  min-width: 0;
 }
 
-body .inventory-adjustment-history.compact article small {
-  overflow-wrap: anywhere;
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card > * {
+  min-width: 0;
+}
+
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card strong,
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card span,
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card b,
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card small {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card strong {
+  grid-column: 1;
+  font-size: 0.76rem;
+}
+
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card span:nth-of-type(1) {
+  grid-column: 2;
+}
+
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card b {
+  grid-column: 3;
+}
+
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card b,
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card span:nth-of-type(1) {
+  justify-self: start;
+  max-width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card span:nth-of-type(2) {
+  grid-column: 1 / -1;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+body .inventory-adjustment-history.compact article.inventory-adjustment-history-card small {
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-size: 0.68rem;
 }
 
 body .inventory-adjustment-actions {

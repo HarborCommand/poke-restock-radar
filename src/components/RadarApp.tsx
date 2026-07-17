@@ -15737,13 +15737,13 @@ function InventoryAdjustmentHistoryList({ item, limit, compact = false }: { item
   return (
     <div className={`compact-ledger-list inventory-adjustment-history${compact ? " compact" : ""}`} aria-label={compact ? "Recent inventory adjustment history" : "Inventory adjustment history"}>
       {displayedAdjustments.map((adjustment) => (
-        <article key={adjustment.id}>
+        <article className="inventory-adjustment-history-card" key={adjustment.id}>
           <strong>{shortDate(adjustment.createdAt)}</strong>
-          <span>{adjustment.action === "add" ? "Added" : "Removed"} {Math.abs(adjustment.quantityDelta)}</span>
-          <span>{adjustment.quantityBefore} → {adjustment.quantityAfter}</span>
+          <span>{adjustment.quantityDelta >= 0 ? "+" : "-"}{Math.abs(adjustment.quantityDelta)}</span>
+          <span>Before {adjustment.quantityBefore} → After {adjustment.quantityAfter}</span>
           <b className={adjustment.quantityDelta >= 0 ? "profit-good" : "profit-bad"}>{inventoryAdjustmentReasonLabel(adjustment.reason)}</b>
-          <small>
-            {adjustment.actorLabel} · {adjustment.hasPrivateNote ? "Private note saved" : "No private note"} · Ref {adjustment.referenceId.slice(0, 16)}
+          <small title={`Actor ${adjustment.actorLabel}. Reference ${adjustment.referenceId}`}>
+            {adjustment.actorLabel} · {adjustment.hasPrivateNote ? "Private note saved" : "No private note"} · Ref {adjustment.referenceId.length > 12 ? `${adjustment.referenceId.slice(0, 4)}…${adjustment.referenceId.slice(-4)}` : adjustment.referenceId}
           </small>
         </article>
       ))}
