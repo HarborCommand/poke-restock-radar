@@ -21995,6 +21995,71 @@ body:has(.shop-shell) {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.order-status-timeline,
+.gdg-account-order-timeline {
+  border: 1px solid #d9dee8;
+  border-radius: 16px;
+  margin-top: 16px;
+  padding: 16px;
+}
+
+.order-status-timeline h3,
+.gdg-account-order-timeline h3 {
+  color: #101828;
+  margin: 0 0 12px;
+}
+
+.order-status-timeline ol,
+.gdg-account-order-timeline ol {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.order-status-timeline li,
+.gdg-account-order-timeline li {
+  border-left: 4px solid #d0d5dd;
+  border-radius: 12px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: #f9fafb;
+}
+
+.order-status-timeline li.complete,
+.gdg-account-order-timeline li.complete {
+  border-left-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.order-status-timeline li.current,
+.gdg-account-order-timeline li.current {
+  border-left-color: #f59e0b;
+  background: #fff7e8;
+}
+
+.order-status-timeline li.attention,
+.gdg-account-order-timeline li.attention {
+  border-left-color: #dc2626;
+  background: #fff1f2;
+}
+
+.order-status-timeline span,
+.gdg-account-order-timeline span {
+  color: #101828;
+  font-weight: 900;
+}
+
+.order-status-timeline p,
+.gdg-account-order-timeline p {
+  color: #475467;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .order-status-summary-grid article,
 .order-status-info-card {
   background: #f9fafb;
@@ -29310,6 +29375,35 @@ body .catalog-action-menu-floating {
 .gdg-account-order-grid a {
   color: #0b2f24;
   font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.gdg-account-status-callout {
+  border: 1px solid rgba(15, 61, 46, 0.12);
+  border-radius: 14px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.gdg-account-status-callout.complete {
+  background: #f0fdf4;
+  border-color: rgba(22, 163, 74, 0.28);
+}
+
+.gdg-account-status-callout.current {
+  background: #fff9ec;
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.gdg-account-status-callout.attention {
+  background: #fff1f2;
+  border-color: rgba(220, 38, 38, 0.24);
+}
+
+.gdg-account-status-callout span {
+  color: rgba(11, 47, 36, 0.72);
   overflow-wrap: anywhere;
 }
 

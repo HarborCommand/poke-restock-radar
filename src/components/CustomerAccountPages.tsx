@@ -15,7 +15,6 @@ import {
   PackageCheck,
   RefreshCcw,
   Rocket,
-  Search,
   Send,
   ShieldCheck,
   ShoppingBag,
@@ -29,6 +28,7 @@ import {
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { getStorefrontSettings } from "@/lib/storefront";
+import { customerSafeOrderMilestones, customerSafeSupportCue } from "@/lib/order-status-presentation";
 import {
   customerAccountsEnabled,
   type CurrentCustomerAccount,
@@ -145,6 +145,11 @@ function refundedCanceledNote(order: CustomerAccountOrderHistoryItem) {
   if (status.includes("canceled")) return "This order was canceled.";
   if (status.includes("expired") || order.paymentStatus === "expired") return "This checkout expired.";
   return null;
+}
+
+function primaryOrderMilestone(order: CustomerAccountOrderHistoryItem) {
+  return customerSafeOrderMilestones(order).find((milestone) => milestone.state === "current" || milestone.state === "attention")
+    ?? customerSafeOrderMilestones(order).at(-1);
 }
 
 type AccountSection = "overview" | "orders" | "rewards" | "addresses" | "support";
@@ -883,6 +888,7 @@ export function AccountOrders({
         <div className="gdg-account-orders">
           {visibleOrders.map((order) => {
             const historyNote = refundedCanceledNote(order);
+            const primaryMilestone = primaryOrderMilestone(order);
             return (
             <article key={order.detailKey} className="gdg-account-order-card">
               <header>
@@ -925,6 +931,12 @@ export function AccountOrders({
                   )}
                 </div>
               </div>
+              {primaryMilestone ? (
+                <div className={`gdg-account-status-callout ${primaryMilestone.state}`}>
+                  <strong>{primaryMilestone.label}</strong>
+                  <span>{primaryMilestone.detail}</span>
+                </div>
+              ) : null}
               {historyNote ? <p className="gdg-account-notice">{historyNote}</p> : null}
               <section>
                 <h3>Items</h3>
@@ -983,6 +995,8 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
       ? "Local Pickup"
       : order.shippingMethodLabel || "Standard Shipping";
   const carrierService = [order.shippingCarrier, order.shippingService].filter(Boolean).join(" / ") || "Not provided yet";
+  const milestones = customerSafeOrderMilestones(order);
+  const supportCue = customerSafeSupportCue(order);
 
   return (
     <>
@@ -1042,6 +1056,17 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
               )}
             </div>
           </div>
+          <section className="gdg-account-order-timeline" aria-label="Customer-safe order timeline">
+            <h3>Status timeline</h3>
+            <ol>
+              {milestones.map((milestone) => (
+                <li key={milestone.label} className={milestone.state}>
+                  <span>{milestone.label}</span>
+                  <p>{milestone.detail}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
           <section>
             <h3>Items</h3>
             {order.items.map((item) => (
@@ -1101,7 +1126,7 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
             </p>
           ) : null}
           <p>
-            Need help with this {isInStorePurchase ? "purchase" : "order"}? Contact support and include your{" "}
+            {supportCue} Need help with this {isInStorePurchase ? "purchase" : "order"}? Contact support and include your{" "}
             {isInStorePurchase ? "receipt reference" : "order number"}. Customer account pages do not provide
             cancellation or refund actions.
           </p>

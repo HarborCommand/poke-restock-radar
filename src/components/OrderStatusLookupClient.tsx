@@ -4,6 +4,7 @@ import Image from "next/image";
 import { type FormEvent, useState } from "react";
 import { Mail, PackageCheck, Search, Truck } from "lucide-react";
 import { GrabbyCard } from "@/components/brand/GrabbyCard";
+import { customerSafeOrderMilestones, customerSafeSupportCue, formatCustomerStatus } from "@/lib/order-status-presentation";
 import type { PublicOrderStatusLookupDTO } from "@/types/radar";
 
 function money(value: number) {
@@ -12,15 +13,6 @@ function money(value: number) {
 
 function dateLabel(value: string) {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(value));
-}
-
-function formatStatus(value: string | null | undefined) {
-  if (!value) return "Not provided";
-  return value
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 export function OrderStatusLookupClient() {
@@ -54,6 +46,8 @@ export function OrderStatusLookupClient() {
   }
 
   const order = result?.order;
+  const milestones = order ? customerSafeOrderMilestones(order) : [];
+  const supportCue = order ? customerSafeSupportCue(order) : "";
 
   return (
     <section className="order-status-shell">
@@ -97,7 +91,7 @@ export function OrderStatusLookupClient() {
           <div className="order-status-summary-grid">
             <article>
               <small>Payment</small>
-              <strong>{formatStatus(order.paymentStatus)}</strong>
+              <strong>{formatCustomerStatus(order.paymentStatus)}</strong>
             </article>
             <article>
               <small>Fulfillment</small>
@@ -112,6 +106,17 @@ export function OrderStatusLookupClient() {
               <strong>{dateLabel(order.orderDate)}</strong>
             </article>
           </div>
+          <section className="order-status-timeline" aria-label="Customer-safe order timeline">
+            <h3>Status timeline</h3>
+            <ol>
+              {milestones.map((milestone) => (
+                <li key={milestone.label} className={milestone.state}>
+                  <span>{milestone.label}</span>
+                  <p>{milestone.detail}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
           <section className="order-status-totals" aria-label="Order total summary">
             <h3>Order summary</h3>
             <dl>
@@ -151,7 +156,7 @@ export function OrderStatusLookupClient() {
               <PackageCheck size={18} />
               <div>
                 <strong>Refund / cancellation status</strong>
-                <p>{order.refundStatus ? formatStatus(order.refundStatus) : order.canceledAt ? "Canceled" : "Refund recorded"}</p>
+                <p>{order.refundStatus ? formatCustomerStatus(order.refundStatus) : order.canceledAt ? "Canceled" : "Refund recorded"}</p>
                 {order.refundedAmount > 0 ? <p>Refunded amount: {money(order.refundedAmount)}</p> : null}
                 {order.refundedAmount > 0 ? <p>Sales tax refunded: {order.refundedTax === null ? "Not recorded" : money(order.refundedTax)}</p> : null}
               </div>
@@ -161,7 +166,7 @@ export function OrderStatusLookupClient() {
             <Mail size={18} />
             <div>
               <strong>Need help?</strong>
-              <p>Contact GameDayGrabs support for order questions.</p>
+              <p>{supportCue}</p>
               <a href={`mailto:${order.supportEmail}`}>{order.supportEmail}</a>
             </div>
           </section>

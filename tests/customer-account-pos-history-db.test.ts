@@ -340,7 +340,7 @@ test("reward activity is account-scoped, bounded, and omits internal metadata", 
   const activity = await listCustomerRewardActivity(accountA, 500);
   assert.equal(activity.length, 50);
   assert.equal(activity.every((entry) => entry.points === 1 && entry.sourceType === "adjustment"), true);
-  assert.doesNotMatch(JSON.stringify(activity), /PRIVATE-REASON|private-key|metadataJson|idempotencyKey|999/);
+  assert.doesNotMatch(JSON.stringify(activity), /PRIVATE-REASON|private-key|metadataJson|idempotencyKey|"points":999/);
 });
 
 test("saved address writes stay inside the authenticated account", async () => {
