@@ -210,20 +210,14 @@ function publicCategoryLabel(category: string) {
   return cleanStorefrontTitle(category);
 }
 
-function productHasSealedSignal(product: PublicStoreProductDTO, displayCategory: string, conditionLabel: string) {
-  return /\b(sealed|new|booster|box|bundle|tin|collection|blister|pack)\b/i.test(
-    `${product.title} ${displayCategory} ${conditionLabel}`
-  );
-}
-
 function productIncludedBullets(product: PublicStoreProductDTO, displayCategory: string, conditionLabel: string) {
-  const bullets = [
-    `${displayCategory} product listed by GameDayGrabs.`,
-    productHasSealedSignal(product, displayCategory, conditionLabel)
-      ? "Sealed product details are based on the listing information."
-      : `${conditionLabel}.`,
-    "Public listing photos and title identify the collectible card product offered."
-  ];
+  const bullets = [`Product type: ${displayCategory}.`];
+  if (product.setName && !product.title.toLowerCase().includes(product.setName.toLowerCase())) {
+    bullets.push(`Set/series: ${cleanStorefrontTitle(product.setName)}.`);
+  }
+  if (conditionLabel) {
+    bullets.push(`Condition shown by listing: ${conditionLabel}.`);
+  }
   return Array.from(new Set(bullets));
 }
 
@@ -1895,7 +1889,7 @@ export function ProductDetail({
   const productTitle = cleanStorefrontTitle(product.title);
   const conditionLabel = cleanStorefrontTitle(product.condition) || "Collector-ready condition";
   const includedBullets = productIncludedBullets(product, displayCategory, conditionLabel);
-  const sealedSignal = productHasSealedSignal(product, displayCategory, conditionLabel);
+  const sealedSignal = /\b(sealed|new)\b/i.test(conditionLabel);
   const soldOutNote = storefrontSoldOutNote();
   const visibleGalleryImages = images.filter((image) => !failedImages.includes(image));
   const preferredSelectedImage = selectedImage && images.includes(selectedImage) ? selectedImage : (images[0] ?? null);

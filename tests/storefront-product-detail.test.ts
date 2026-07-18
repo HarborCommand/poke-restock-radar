@@ -24,7 +24,8 @@ test("product detail renders retailer-style buyer clarity sections", () => {
   assert.match(productDetail, /Product Description/);
   assert.match(productDetail, /What&apos;s included/);
   assert.match(productDetail, /productIncludedBullets\(product, displayCategory, conditionLabel\)/);
-  assert.match(client, /collectible card product offered/);
+  assert.match(client, /Product type: \$\{displayCategory\}\./);
+  assert.match(client, /Condition shown by listing: \$\{conditionLabel\}\./);
   assert.match(productDetail, /Product condition/);
   assert.match(productDetail, /Condition details are based on the listing information\./);
   assert.match(productDetail, /Shipping summary/);

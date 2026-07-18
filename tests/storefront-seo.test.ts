@@ -61,6 +61,12 @@ function product(overrides: Partial<PublicStoreProductDTO> = {}): PublicStorePro
   };
 }
 
+function jsonObject(value: unknown): Record<string, unknown> {
+  assert.equal(typeof value, "object");
+  assert.notEqual(value, null);
+  return value as Record<string, unknown>;
+}
+
 test("product SEO metadata uses real product data and canonical URLs", () => {
   const metadata = storefrontProductMetadata(product());
   assert.equal(metadata.title, "Pokémon SEO Product | GameDayGrabs");
@@ -80,6 +86,19 @@ test("product SEO metadata uses real product data and canonical URLs", () => {
   assert.deepEqual(twitter.images, ["https://cdn.example.com/product.jpg"]);
 });
 
+test("product SEO descriptions use cleaned public copy without admin labels or raw HTML", () => {
+  const dirty = product({
+    description: "Product Details Card Text: <script>alert('x')</script><p>Factory sealed display item with clean customer-facing product details.</p>"
+  });
+  const metadata = storefrontProductMetadata(dirty);
+  const jsonLd = jsonObject(storefrontProductJsonLd(dirty));
+
+  assert.match(String(metadata.description), /Factory sealed display item/);
+  assert.match(String(jsonLd.description), /Factory sealed display item/);
+  assert.doesNotMatch(String(metadata.description), /Product Details Card Text|script|alert|<p>|admin/i);
+  assert.doesNotMatch(String(jsonLd.description), /Product Details Card Text|script|alert|<p>|admin/i);
+});
+
 test("sold-out product metadata remains public but noindexed", () => {
   const metadata = storefrontProductMetadata(product({ publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" }));
 
@@ -88,46 +107,58 @@ test("sold-out product metadata remains public but noindexed", () => {
 });
 
 test("product structured data renders safe Product and Offer fields only", () => {
-  const jsonLd = storefrontProductJsonLd(product()) as Record<string, any>;
+  const jsonLd = jsonObject(storefrontProductJsonLd(product()));
+  const brand = jsonObject(jsonLd.brand);
+  const manufacturer = jsonObject(jsonLd.manufacturer);
+  const offers = jsonObject(jsonLd.offers);
+  const shippingDetails = jsonObject(offers.shippingDetails);
+  const shippingDestination = jsonObject(shippingDetails.shippingDestination);
+  const shippingRate = jsonObject(shippingDetails.shippingRate);
+  const deliveryTime = jsonObject(shippingDetails.deliveryTime);
+  const businessDays = jsonObject(deliveryTime.businessDays);
+  const handlingTime = jsonObject(deliveryTime.handlingTime);
+  const transitTime = jsonObject(deliveryTime.transitTime);
+  const returnPolicy = jsonObject(offers.hasMerchantReturnPolicy);
+  const seller = jsonObject(offers.seller);
   assert.equal(jsonLd["@context"], "https://schema.org");
   assert.equal(jsonLd["@type"], "Product");
   assert.equal(jsonLd.name, "Pokémon SEO Product");
   assert.equal(jsonLd.category, "Premium Collections");
   assert.equal(jsonLd.url, productCanonicalUrl("pokemon-seo-product"));
-  assert.equal(jsonLd.brand.name, "Pokemon");
-  assert.equal(jsonLd.manufacturer.name, "The Pokemon Company");
+  assert.equal(brand.name, "Pokemon");
+  assert.equal(manufacturer.name, "The Pokemon Company");
   assert.equal(jsonLd.sku, "PKM-SEO-1");
   assert.equal(jsonLd.gtin12, "123456789012");
-  assert.equal(jsonLd.offers["@type"], "Offer");
-  assert.equal(jsonLd.offers.price, "49.99");
-  assert.equal(jsonLd.offers.priceCurrency, "USD");
-  assert.equal(jsonLd.offers.availability, "https://schema.org/InStock");
-  assert.equal(jsonLd.offers.shippingDetails["@type"], "OfferShippingDetails");
-  assert.equal(jsonLd.offers.shippingDetails.shippingDestination.addressCountry, "US");
-  assert.equal(jsonLd.offers.shippingDetails.shippingRate.currency, "USD");
-  assert.equal(jsonLd.offers.shippingDetails.shippingRate.value, "7.99");
-  assert.notEqual(jsonLd.offers.shippingDetails.shippingRate.value, "4.99");
-  assert.notEqual(jsonLd.offers.shippingDetails.shippingRate.value, "0.00");
-  assert.deepEqual(jsonLd.offers.shippingDetails.deliveryTime.businessDays.dayOfWeek, [
+  assert.equal(offers["@type"], "Offer");
+  assert.equal(offers.price, "49.99");
+  assert.equal(offers.priceCurrency, "USD");
+  assert.equal(offers.availability, "https://schema.org/InStock");
+  assert.equal(shippingDetails["@type"], "OfferShippingDetails");
+  assert.equal(shippingDestination.addressCountry, "US");
+  assert.equal(shippingRate.currency, "USD");
+  assert.equal(shippingRate.value, "7.99");
+  assert.notEqual(shippingRate.value, "4.99");
+  assert.notEqual(shippingRate.value, "0.00");
+  assert.deepEqual(businessDays.dayOfWeek, [
     "https://schema.org/Monday",
     "https://schema.org/Tuesday",
     "https://schema.org/Wednesday",
     "https://schema.org/Thursday",
     "https://schema.org/Friday"
   ]);
-  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.handlingTime.minValue, 1);
-  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.handlingTime.maxValue, 2);
-  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.handlingTime.unitCode, "d");
-  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.transitTime.minValue, 2);
-  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.transitTime.maxValue, 5);
-  assert.equal(jsonLd.offers.shippingDetails.deliveryTime.transitTime.unitCode, "d");
-  assert.equal(jsonLd.offers.hasMerchantReturnPolicy["@type"], "MerchantReturnPolicy");
-  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.applicableCountry, "US");
-  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
-  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.merchantReturnLink, GAMEDAYGRABS_RETURNS_POLICY_URL);
-  assert.equal(jsonLd.offers.seller.name, "GameDayGrabs");
-  assert.equal(jsonLd.offers.seller.legalName, "GameDayGrabs LLC");
-  assert.equal(jsonLd.offers.seller.url, "https://www.gamedaygrabs.com");
+  assert.equal(handlingTime.minValue, 1);
+  assert.equal(handlingTime.maxValue, 2);
+  assert.equal(handlingTime.unitCode, "d");
+  assert.equal(transitTime.minValue, 2);
+  assert.equal(transitTime.maxValue, 5);
+  assert.equal(transitTime.unitCode, "d");
+  assert.equal(returnPolicy["@type"], "MerchantReturnPolicy");
+  assert.equal(returnPolicy.applicableCountry, "US");
+  assert.equal(returnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
+  assert.equal(returnPolicy.merchantReturnLink, GAMEDAYGRABS_RETURNS_POLICY_URL);
+  assert.equal(seller.name, "GameDayGrabs");
+  assert.equal(seller.legalName, "GameDayGrabs LLC");
+  assert.equal(seller.url, "https://www.gamedaygrabs.com");
 
   const serialized = JSON.stringify(jsonLd);
   // Real first-party product reviews are not visible on product pages yet, so review and aggregateRating markup stay intentionally absent.
@@ -137,7 +168,7 @@ test("product structured data renders safe Product and Offer fields only", () =>
 });
 
 test("product structured data never advertises shipping below the public small-cart floor", () => {
-  const jsonLd = storefrontProductJsonLd(
+  const jsonLd = jsonObject(storefrontProductJsonLd(
     product({
       shippingProfile: "sealed_pack_small",
       packageWeightOz: 4,
@@ -146,30 +177,36 @@ test("product structured data never advertises shipping below the public small-c
       packageHeightIn: 1,
       requiresBox: false
     })
-  ) as Record<string, any>;
+  ));
+  const offers = jsonObject(jsonLd.offers);
+  const shippingDetails = jsonObject(offers.shippingDetails);
+  const shippingRate = jsonObject(shippingDetails.shippingRate);
 
-  assert.equal(jsonLd.offers.shippingDetails.shippingRate.currency, "USD");
-  assert.equal(jsonLd.offers.shippingDetails.shippingRate.value, "7.99");
-  assert.notEqual(jsonLd.offers.shippingDetails.shippingRate.value, "4.99");
+  assert.equal(shippingRate.currency, "USD");
+  assert.equal(shippingRate.value, "7.99");
+  assert.notEqual(shippingRate.value, "4.99");
 });
 
 test("product structured data omits shipping details when carrier shipping is unavailable", () => {
   const pickupOnly = product({ shippingAvailable: false, localPickupAvailable: true, localPickupEligible: true, shippingProfile: "local_pickup", packageWeightOz: 0 });
   assert.equal(storefrontOfferShippingDetails(pickupOnly), null);
 
-  const jsonLd = storefrontProductJsonLd(pickupOnly) as Record<string, any>;
-  assert.equal(jsonLd.offers.shippingDetails, undefined);
-  assert.equal(jsonLd.offers.hasMerchantReturnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
+  const jsonLd = jsonObject(storefrontProductJsonLd(pickupOnly));
+  const offers = jsonObject(jsonLd.offers);
+  const returnPolicy = jsonObject(offers.hasMerchantReturnPolicy);
+  assert.equal(offers.shippingDetails, undefined);
+  assert.equal(returnPolicy.returnPolicyCategory, "https://schema.org/MerchantReturnNotPermitted");
 });
 
 test("sold-out structured data does not claim in-stock availability", () => {
   const soldOut = product({ publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" });
   assert.equal(storefrontProductSchemaAvailability(soldOut), "https://schema.org/OutOfStock");
-  const jsonLd = storefrontProductJsonLd(soldOut) as Record<string, any>;
-  assert.equal(jsonLd.offers.availability, "https://schema.org/OutOfStock");
-  assert.notEqual(jsonLd.offers.availability, "https://schema.org/InStock");
-  assert.equal(jsonLd.offers.price, "49.99");
-  assert.equal(jsonLd.offers.url, productCanonicalUrl("pokemon-seo-product"));
+  const jsonLd = jsonObject(storefrontProductJsonLd(soldOut));
+  const offers = jsonObject(jsonLd.offers);
+  assert.equal(offers.availability, "https://schema.org/OutOfStock");
+  assert.notEqual(offers.availability, "https://schema.org/InStock");
+  assert.equal(offers.price, "49.99");
+  assert.equal(offers.url, productCanonicalUrl("pokemon-seo-product"));
 });
 
 test("product pages, sitemap, and robots are wired for Google-ready discovery", () => {
@@ -297,14 +334,16 @@ test("collection pages use resolved storefront category instead of stale product
 
 test("collection structured data renders BreadcrumbList and ItemList without private or payment data", () => {
   const collection = getStorefrontCollection("premium-collections")!;
-  const breadcrumb = storefrontCollectionBreadcrumbJsonLd(collection) as Record<string, any>;
-  const itemList = storefrontCollectionItemListJsonLd(collection, [product({ slug: "premium-product", title: "Premium Product" })]) as Record<string, any>;
+  const breadcrumb = jsonObject(storefrontCollectionBreadcrumbJsonLd(collection));
+  const itemList = jsonObject(storefrontCollectionItemListJsonLd(collection, [product({ slug: "premium-product", title: "Premium Product" })]));
+  const breadcrumbItems = breadcrumb.itemListElement as Array<Record<string, unknown>>;
 
   assert.equal(breadcrumb["@type"], "BreadcrumbList");
-  assert.equal(breadcrumb.itemListElement[2].name, "Premium Collections");
-  assert.equal(breadcrumb.itemListElement[2].item, storefrontCollectionUrl("premium-collections"));
+  assert.equal(breadcrumbItems[2].name, "Premium Collections");
+  assert.equal(breadcrumbItems[2].item, storefrontCollectionUrl("premium-collections"));
   assert.equal(itemList["@type"], "ItemList");
-  assert.equal(itemList.itemListElement[0].url, productCanonicalUrl("premium-product"));
+  const itemListEntries = itemList.itemListElement as Array<Record<string, unknown>>;
+  assert.equal(itemListEntries[0].url, productCanonicalUrl("premium-product"));
 
   const serialized = JSON.stringify([breadcrumb, itemList]);
   assert.doesNotMatch(serialized, /aggregateRating|review|availableQuantity|costBasis|supplier|admin/i);
