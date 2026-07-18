@@ -28,7 +28,7 @@ test("messy public description gets a customer-facing fallback", () => {
     publicDescription: "undefined source cost admin tracker receipt"
   });
 
-  assert.match(description, /sealed Pokémon TCG product/);
+  assert.match(description, /Pok.*mon Elite Trainer Box is a elite trainer boxes listed by GameDayGrabs/);
   assert.doesNotMatch(description, /undefined|source|cost|admin|tracker|receipt/i);
 });
 
@@ -52,12 +52,54 @@ test("fixable punctuation glitches are cleaned without replacing useful descript
 
   assert.match(description, /city's residents/);
   assert.match(description, /Pokémon TCG: Mega Evolution: Perfect Order expansion/);
-  assert.doesNotMatch(description, /Available from GameDayGrabs LLC, this sealed Pokémon TCG product/);
+  assert.doesNotMatch(description, /Available from GameDayGrabs LLC/);
 });
 
 test("sold-out copy is customer-facing and separate from private product data", () => {
   assert.equal(storefrontSoldOutNote(), "This item is currently sold out and is not available for checkout. It may return if restocked.");
   assert.doesNotMatch(generatedStorefrontDescription({ title: "Pokemon Tin", category: "Tins" }), /cost|source|admin|tracker|receipt/i);
+});
+
+test("fallback descriptions are factual and based only on known merchandising fields", () => {
+  const description = generatedStorefrontDescription({
+    title: "Pokemon Mega Evolution Booster Bundle",
+    category: "Booster Bundles",
+    setName: "Mega Evolution",
+    condition: "New sealed",
+    shippingAvailable: true,
+    localPickupEligible: true,
+    status: "active",
+    availableQuantity: 3
+  });
+
+  assert.match(description, /listed by GameDayGrabs/);
+  assert.match(description, /Condition: New sealed/);
+  assert.match(description, /shipping or Local Pickup/);
+  assert.doesNotMatch(description, /guaranteed|pulls|investment|appreciation|official|authorized/i);
+});
+
+test("admin labels, raw HTML, and scripts are stripped from public descriptions", () => {
+  const description = cleanStorefrontDescription({
+    title: "Pokemon Booster Bundle",
+    category: "Booster Bundles",
+    publicDescription: "Product Details Card Text: <script>alert('x')</script><p>Public description: Factory sealed booster bundle with clean customer-facing product details.</p>"
+  });
+
+  assert.equal(description, "Factory sealed booster bundle with clean customer-facing product details.");
+  assert.doesNotMatch(description, /Product Details Card Text|Public description|script|alert|<p>/i);
+});
+
+test("sold-out fallback is explicit without creating urgency or checkout claims", () => {
+  const description = cleanStorefrontDescription({
+    title: "Pokemon Sold Out Tin",
+    category: "Tins",
+    status: "sold_out",
+    availableQuantity: 0,
+    publicDescription: ""
+  });
+
+  assert.match(description, /Currently sold out and not available for checkout/);
+  assert.doesNotMatch(description, /while supplies last|hurry|limited time|scarcity/i);
 });
 
 test("sold-out risky counterfeit wording is replaced with neutral catalog history copy", () => {
