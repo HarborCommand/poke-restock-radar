@@ -1228,6 +1228,10 @@ export function ProductGrid({
   const shopRequestSeq = useRef(0);
   const applyingPopState = useRef(false);
   const lastShopUrl = useRef("");
+  const filterSheetTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const filterSheetCloseRef = useRef<HTMLButtonElement | null>(null);
+  const filterSheetPreviouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const filterSheetWasOpenRef = useRef(false);
   const sportsCards = sportsCardsLink(settings);
   const { session: accountSession } = useCustomerAccountSession(settings.customerAccounts.enabled);
   const accountSignedIn = Boolean(accountSession?.session.authenticated);
@@ -1397,10 +1401,76 @@ export function ProductGrid({
     return () => activeShopRequest.current?.abort();
   }, []);
 
+  useEffect(() => {
+    if (!isShopMode || typeof document === "undefined") return undefined;
+    if (!filterSheetOpen) {
+      if (filterSheetWasOpenRef.current) {
+        filterSheetWasOpenRef.current = false;
+        const restoreTarget = filterSheetPreviouslyFocusedRef.current || filterSheetTriggerRef.current;
+        filterSheetPreviouslyFocusedRef.current = null;
+        window.requestAnimationFrame(() => restoreTarget?.focus());
+      }
+      return undefined;
+    }
+
+    filterSheetWasOpenRef.current = true;
+    if (!filterSheetPreviouslyFocusedRef.current && document.activeElement instanceof HTMLElement) {
+      filterSheetPreviouslyFocusedRef.current = document.activeElement;
+    }
+    const filterSheet = document.getElementById("gdg-shop-filters");
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])"
+    ].join(",");
+    window.requestAnimationFrame(() => filterSheetCloseRef.current?.focus());
+
+    function handleFilterSheetKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setFilterSheetOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !filterSheet) return;
+
+      const focusable = Array.from(filterSheet.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => {
+        const box = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+      });
+      if (!focusable.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleFilterSheetKeyDown);
+    return () => document.removeEventListener("keydown", handleFilterSheetKeyDown);
+  }, [filterSheetOpen, isShopMode]);
+
   function submitShopFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFilterSheetOpen(false);
     void runShopSearch(1, { history: "push" });
+  }
+
+  function openShopFilters() {
+    filterSheetPreviouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : filterSheetTriggerRef.current;
+    setFilterSheetOpen(true);
+  }
+
+  function closeShopFilters() {
+    setFilterSheetOpen(false);
   }
 
   function resetShopFilters() {
@@ -1534,7 +1604,7 @@ export function ProductGrid({
         </>
       ) : (
         <section className="gdg-shop-area" id="shop">
-          <button className="gdg-mobile-filter-button" type="button" onClick={() => setFilterSheetOpen(true)} aria-expanded={filterSheetOpen} aria-controls="gdg-shop-filters">
+          <button ref={filterSheetTriggerRef} className="gdg-mobile-filter-button" type="button" onClick={openShopFilters} aria-expanded={filterSheetOpen} aria-controls="gdg-shop-filters">
             <Search size={16} aria-hidden="true" />
             Filters
             {activeFilterCount ? <span>{activeFilterCount}</span> : null}
@@ -1543,7 +1613,7 @@ export function ProductGrid({
             <div>
               <div className="gdg-shop-filter-heading">
                 <h1>Shop Pokemon TCG products</h1>
-                <button className="gdg-icon-button gdg-filter-close" type="button" onClick={() => setFilterSheetOpen(false)} aria-label="Close filters">
+                <button ref={filterSheetCloseRef} className="gdg-icon-button gdg-filter-close" type="button" onClick={closeShopFilters} aria-label="Close filters">
                   <X size={16} />
                 </button>
               </div>
@@ -1616,7 +1686,7 @@ export function ProductGrid({
               </button>
             </div>
           </form>
-          {filterSheetOpen ? <button type="button" className="gdg-filter-backdrop" aria-label="Close filters" onClick={() => setFilterSheetOpen(false)} /> : null}
+          {filterSheetOpen ? <button type="button" className="gdg-filter-backdrop" aria-label="Close filters" onClick={closeShopFilters} /> : null}
           <div className="gdg-shop-list">
             <GrabbyCard
               variant="shop-guide"

@@ -124,7 +124,14 @@ test("client search avoids stale requests and keeps browser history navigable", 
 
 test("responsive filters use a mobile drawer without horizontal overflow pressure", () => {
   assert.match(productGrid, /className="gdg-mobile-filter-button"/);
+  assert.match(productGrid, /ref=\{filterSheetTriggerRef\}/);
   assert.match(productGrid, /aria-expanded=\{filterSheetOpen\}/);
+  assert.match(productGrid, /ref=\{filterSheetCloseRef\}/);
+  assert.match(productGrid, /event\.key === "Escape"/);
+  assert.match(productGrid, /setFilterSheetOpen\(false\)/);
+  assert.match(productGrid, /restoreTarget\?\.focus\(\)/);
+  assert.match(productGrid, /document\.activeElement === first/);
+  assert.match(productGrid, /document\.activeElement === last/);
   assert.match(productGrid, /className=\{`gdg-shop-filters \$\{filterSheetOpen \? "open" : ""\}`\}/);
   assert.match(productGrid, /className="gdg-filter-backdrop"/);
   assert.match(css, /\.gdg-mobile-filter-button\s*\{[\s\S]*?display: none;/);
