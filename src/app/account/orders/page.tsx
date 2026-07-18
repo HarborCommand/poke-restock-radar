@@ -35,6 +35,10 @@ export const metadata = {
     description: ordersDescription,
     images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
   },
+  robots: {
+    index: false,
+    follow: false
+  },
   other: {
     "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
   }

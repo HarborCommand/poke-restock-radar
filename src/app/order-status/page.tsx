@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { OrderStatusLookupClient } from "@/components/OrderStatusLookupClient";
 import { StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontSettings } from "@/lib/storefront";
@@ -31,12 +32,17 @@ export const metadata = {
     description: orderStatusDescription,
     images: [GAMEDAYGRABS_OG_FALLBACK_IMAGE]
   },
+  robots: {
+    index: false,
+    follow: false
+  },
   other: {
     "contact:email": GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
   }
 };
 
 export default async function OrderStatusPage() {
+  noStore();
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   return (
     <main className="shop-shell">
