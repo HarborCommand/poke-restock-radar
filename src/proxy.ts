@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { AuthOriginError, assertSameOriginRequest, authOriginErrorResponse } from "@/lib/auth-origin";
 import { logServerEvent, requestCorrelationId } from "@/lib/observability";
+import {
+  isPublicStorefrontPath,
+  isRawProductionVercelHost,
+  isRoutingBypassPath,
+  safeStorefrontRedirectUrl
+} from "@/lib/storefront-routing";
 
 const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const adminSessionCookieNames = ["__Host-poke_radar_session", "poke_radar_session"];
@@ -20,6 +26,18 @@ export function proxy(request: NextRequest) {
     response.headers.set("x-request-id", requestId);
     return response;
   };
+
+  if (
+    request.method.toUpperCase() === "GET" &&
+    isRawProductionVercelHost(request.headers.get("host")) &&
+    !isRoutingBypassPath(request.nextUrl.pathname) &&
+    isPublicStorefrontPath(request.nextUrl.pathname)
+  ) {
+    const response = NextResponse.redirect(safeStorefrontRedirectUrl(request.nextUrl.pathname, request.nextUrl.searchParams), 308);
+    response.headers.set("x-request-id", requestId);
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    return response;
+  }
 
   if (
     !request.nextUrl.pathname.startsWith("/api/radar/") ||
@@ -52,5 +70,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/api/:path*"
+  matcher: ["/((?!_next/static|_next/image).*)"]
 };

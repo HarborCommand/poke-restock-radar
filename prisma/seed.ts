@@ -653,7 +653,7 @@ async function main() {
       data: {
         title: product ? `${product.name} is actionable` : "Radar is ready",
         reason: product
-          ? `${product.stockStatus.replaceAll("_", " ").toLowerCase()} was entered manually. Checkout must be completed on the official retailer page.`
+          ? `${product.stockStatus.replaceAll("_", " ").toLowerCase()} was entered manually. Checkout must be completed on the trusted retailer source page.`
           : "Seed data loaded for Phase 1.",
         priority: product?.priority || "MEDIUM",
         entityType: product ? "PRODUCT" : "SYSTEM",

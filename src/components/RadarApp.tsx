@@ -2262,7 +2262,7 @@ export function RadarApp() {
       <footer className="app-footer">
         <ShieldCheck size={16} />
         <span>
-          Manual checkout only. Alerts and Go buttons open official retailer pages; you complete every cart, payment,
+          Manual checkout only. Alerts and Go buttons open trusted retailer source pages; you complete every cart, payment,
           queue, login, captcha, and purchase-limit step yourself.
         </span>
       </footer>
@@ -2939,7 +2939,7 @@ function LoginShell({
         ) : null}
         <div className="safety-strip">
           <ShieldCheck size={16} />
-          <span>Official retailer pages only. Checkout stays manual.</span>
+          <span>Trusted retailer source pages only. Checkout stays manual.</span>
         </div>
       </section>
     </main>
@@ -7764,7 +7764,7 @@ function ProductStack({
       <EmptyState
         icon={PackageSearch}
         title="No tracked products"
-        detail="Add official retailer product URLs to start the watchlist."
+        detail="Add trusted retailer product URLs to start the watchlist."
       />
     );
   }
@@ -19814,7 +19814,7 @@ function SettingsPanel({
       <NotificationSettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
       <section className="safety-strip manual-safety">
         <ShieldCheck size={16} />
-        <span>Manual checkout only. Go / Buy Now opens official retailer product pages only.</span>
+        <span>Manual checkout only. Go / Buy Now opens trusted retailer source pages only.</span>
       </section>
     </>
   );
@@ -26469,7 +26469,7 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
     },
     {
       label: "Manual checkout safety",
-      detail: "Go / Buy Now opens official retailer pages only",
+      detail: "Go / Buy Now opens trusted retailer source pages only",
       status: "Ready",
       tone: "OK"
     }
@@ -27415,7 +27415,7 @@ function AdminTools({
         <ShieldCheck size={16} />
         <span>
           This private radar tracks public pages and manual sightings only. Every checkout action stays manual on the
-          official retailer site.
+          retailer site.
         </span>
       </div>
       <div className="admin-actions">
