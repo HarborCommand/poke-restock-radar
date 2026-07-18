@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ProductDetail, ProductGrid, StorefrontCollectionLanding, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
-import { getPublicStoreProduct, getStorefrontSettings, listPublicStoreProducts } from "@/lib/storefront";
+import { getPublicStoreProduct, getStorefrontSettings, listPublicStoreProducts, searchPublicStoreProducts } from "@/lib/storefront";
 import { storefrontJsonLdScript, storefrontProductJsonLd } from "@/lib/storefront-seo";
 import {
   getStorefrontCollection,
@@ -11,9 +11,12 @@ import {
 } from "@/lib/storefront-collections";
 
 type StorefrontShopViewParams = {
+  q?: string | null;
   category?: string | null;
+  set?: string | null;
   sort?: string | null;
   availability?: string | null;
+  page?: string | null;
 };
 
 export async function StorefrontHomeView() {
@@ -28,13 +31,27 @@ export async function StorefrontHomeView() {
   );
 }
 
-export async function StorefrontShopView({ category, sort, availability }: StorefrontShopViewParams = {}) {
-  const [settings, products, homeHref] = await Promise.all([getStorefrontSettings(), listPublicStoreProducts(), getStorefrontHomeHref()]);
+export async function StorefrontShopView({ q, category, set, sort, availability, page }: StorefrontShopViewParams = {}) {
+  const [settings, shopResult, homeHref] = await Promise.all([
+    getStorefrontSettings(),
+    searchPublicStoreProducts({ q, category, set, sort, availability, page }),
+    getStorefrontHomeHref()
+  ]);
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />
       {settings.announcementBanner ? <section className="shop-announcement">{settings.announcementBanner}</section> : null}
-      <ProductGrid products={products} settings={settings} mode="shop" initialCategory={category} initialSort={sort} initialAvailability={availability} />
+      <ProductGrid
+        products={shopResult.products}
+        settings={settings}
+        mode="shop"
+        initialQuery={shopResult.applied.q}
+        initialCategory={shopResult.applied.category}
+        initialSet={shopResult.applied.set}
+        initialSort={shopResult.applied.sort}
+        initialAvailability={shopResult.applied.availability}
+        initialShopResult={shopResult}
+      />
       <StorefrontFooter settings={settings} homeHref={homeHref} />
     </main>
   );

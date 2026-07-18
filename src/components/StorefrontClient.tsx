@@ -68,6 +68,14 @@ import {
   storefrontEffectiveMaxQuantity,
   storefrontPurchaseLimitLabel
 } from "@/lib/storefront-purchase-limits";
+import {
+  normalizeStorefrontShopAvailability,
+  normalizeStorefrontShopPage,
+  normalizeStorefrontShopQuery,
+  normalizeStorefrontShopSort,
+  type StorefrontShopAvailability,
+  type StorefrontShopSort
+} from "@/lib/storefront-shop-query";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
@@ -171,15 +179,12 @@ function categoryFromParam(value: string | null | undefined) {
   return match ?? "all";
 }
 
-function sortFromParam(value: string | null | undefined) {
-  return ["newest", "price-low", "price-high", "stock"].includes(value ?? "") ? String(value) : "newest";
+function sortFromParam(value: string | null | undefined): StorefrontShopSort {
+  return normalizeStorefrontShopSort(value);
 }
 
 function availabilityFromParam(value: string | null | undefined): StorefrontAvailabilityFilter {
-  if (value === "all" || value === "sold-out" || value === "in-stock") {
-    return value;
-  }
-  return "in-stock";
+  return normalizeStorefrontShopAvailability(value);
 }
 
 function categoryHref(category: string) {
@@ -1155,36 +1160,89 @@ function collectionGrabbyMessage(collection: StorefrontCollectionDefinition) {
   return messages[collection.slug] ?? "Browse active listings here, then jump to related collections when you want to compare product types.";
 }
 
+type StorefrontShopSearchResult = {
+  products: PublicStoreProductDTO[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  categories: string[];
+  sets: string[];
+  applied: {
+    q: string;
+    category: string;
+    set: string;
+    availability: StorefrontShopAvailability;
+    sort: StorefrontShopSort;
+    page: number;
+    pageSize: number;
+  };
+};
+
+type StorefrontShopFilterState = {
+  q: string;
+  category: string;
+  set: string;
+  availability: StorefrontShopAvailability;
+  sort: StorefrontShopSort;
+};
+
 export function ProductGrid({
   products,
   settings,
   mode = "shop",
+  initialQuery,
   initialCategory,
+  initialSet,
   initialSort,
-  initialAvailability
+  initialAvailability,
+  initialShopResult
 }: {
   products: PublicStoreProductDTO[];
   settings: StorefrontSettingsDTO;
   mode?: "home" | "shop";
+  initialQuery?: string | null;
   initialCategory?: string | null;
+  initialSet?: string | null;
   initialSort?: string | null;
   initialAvailability?: string | null;
+  initialShopResult?: StorefrontShopSearchResult;
 }) {
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState(() => (mode === "shop" ? categoryFromParam(initialCategory) : "all"));
+  const isShopMode = mode === "shop";
+  const [query, setQuery] = useState(() => (isShopMode ? normalizeStorefrontShopQuery(initialQuery) : ""));
+  const [category, setCategory] = useState(() => (isShopMode ? initialCategory || categoryFromParam(initialCategory) : "all"));
+  const [setFilter, setSetFilter] = useState(() => (isShopMode ? normalizeStorefrontShopQuery(initialSet) : ""));
   const [availability, setAvailability] = useState(() => (mode === "shop" ? availabilityFromParam(initialAvailability) : "in-stock"));
   const [sort, setSort] = useState(() => (mode === "shop" ? sortFromParam(initialSort) : "newest"));
+  const [shopProducts, setShopProducts] = useState(products);
+  const [shopTotal, setShopTotal] = useState(initialShopResult?.total ?? products.length);
+  const [shopPage, setShopPage] = useState(initialShopResult?.page ?? 1);
+  const [shopHasMore, setShopHasMore] = useState(initialShopResult?.hasMore ?? false);
+  const [shopCategories, setShopCategories] = useState(initialShopResult?.categories ?? []);
+  const [shopSets, setShopSets] = useState(initialShopResult?.sets ?? []);
+  const [shopLoading, setShopLoading] = useState(false);
+  const [shopError, setShopError] = useState("");
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const activeShopRequest = useRef<AbortController | null>(null);
+  const shopRequestSeq = useRef(0);
+  const applyingPopState = useRef(false);
+  const lastShopUrl = useRef("");
+  const filterSheetTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const filterSheetCloseRef = useRef<HTMLButtonElement | null>(null);
+  const filterSheetPreviouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const filterSheetWasOpenRef = useRef(false);
   const sportsCards = sportsCardsLink(settings);
   const { session: accountSession } = useCustomerAccountSession(settings.customerAccounts.enabled);
   const accountSignedIn = Boolean(accountSession?.session.authenticated);
 
   const categories = useMemo(() => {
-    const fromProducts = Array.from(new Set(products.map((product) => displayStorefrontCategory(product)).filter(Boolean)));
+    const source = isShopMode ? shopCategories : products.map((product) => displayStorefrontCategory(product)).filter(Boolean);
+    const fromProducts = Array.from(new Set(source));
     return ["all", ...preferredCategories, ...fromProducts.filter((entry) => !preferredCategories.includes(entry))];
-  }, [products]);
+  }, [isShopMode, products, shopCategories]);
 
-  const visibleProducts = useMemo(() => {
+  const homeVisibleProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return products
       .filter((product) => {
@@ -1201,10 +1259,13 @@ export function ProductGrid({
       .sort((left, right) => {
         if (sort === "price-low") return left.price - right.price;
         if (sort === "price-high") return right.price - left.price;
-        if (sort === "stock") return availabilitySortScore(right) - availabilitySortScore(left);
+        if (sort === "name") return left.title.localeCompare(right.title);
+        if (sort === "availability") return availabilitySortScore(right) - availabilitySortScore(left);
         return 0;
       });
   }, [availability, category, products, query, sort]);
+  const visibleProducts = isShopMode ? shopProducts : homeVisibleProducts;
+  const activeFilterCount = [query, category !== "all" ? category : "", setFilter, availability !== "in-stock" ? availability : "", sort !== "featured" ? sort : ""].filter(Boolean).length;
 
   const featuredSection = useMemo(() => homepageFeaturedDropsSection(products, settings.newArrivalDays), [products, settings.newArrivalDays]);
   const heroProduct = selectHomepageHeroProduct(products, settings);
@@ -1223,6 +1284,203 @@ export function ProductGrid({
   }
 
   const isSportsCardsCategory = mode === "shop" && category === "Sports Cards" && sportsCards.external;
+
+  const currentShopFilterState = useCallback(
+    (overrides?: Partial<StorefrontShopFilterState>): StorefrontShopFilterState => ({
+      q: normalizeStorefrontShopQuery(overrides?.q ?? query),
+      category: overrides?.category ?? category,
+      set: normalizeStorefrontShopQuery(overrides?.set ?? setFilter),
+      availability: overrides?.availability ?? availability,
+      sort: overrides?.sort ?? sort
+    }),
+    [availability, category, query, setFilter, sort]
+  );
+
+  const updateShopUrl = useCallback((nextPage: number, mode: "push" | "replace", state?: StorefrontShopFilterState) => {
+    if (!isShopMode || typeof window === "undefined") return;
+    const params = new URLSearchParams();
+    const filters = state ?? currentShopFilterState();
+    if (filters.q) params.set("q", filters.q);
+    if (filters.category && filters.category !== "all") params.set("category", filters.category);
+    if (filters.set) params.set("set", filters.set);
+    if (filters.availability !== "in-stock") params.set("availability", filters.availability);
+    if (filters.sort !== "featured") params.set("sort", filters.sort);
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const nextUrl = params.toString() ? `/shop?${params.toString()}` : "/shop";
+    if (lastShopUrl.current === nextUrl) return;
+    lastShopUrl.current = nextUrl;
+    if (mode === "push") {
+      window.history.pushState(null, "", nextUrl);
+    } else {
+      window.history.replaceState(null, "", nextUrl);
+    }
+  }, [currentShopFilterState, isShopMode]);
+
+  const runShopSearch = useCallback(async (nextPage = 1, options: { append?: boolean; history?: "push" | "replace"; state?: Partial<StorefrontShopFilterState> } = {}) => {
+    if (!isShopMode) return;
+    const sequence = shopRequestSeq.current + 1;
+    shopRequestSeq.current = sequence;
+    activeShopRequest.current?.abort();
+    const controller = new AbortController();
+    activeShopRequest.current = controller;
+    setShopLoading(true);
+    setShopError("");
+    const params = new URLSearchParams();
+    const filters = currentShopFilterState(options.state);
+    if (filters.q) params.set("q", filters.q);
+    if (filters.category && filters.category !== "all") params.set("category", filters.category);
+    if (filters.set) params.set("set", filters.set);
+    params.set("availability", filters.availability);
+    params.set("sort", filters.sort);
+    params.set("page", String(nextPage));
+    updateShopUrl(nextPage, options.history ?? "replace", filters);
+    try {
+      const response = await fetch(`/api/storefront/shop/search?${params.toString()}`, {
+        signal: controller.signal,
+        headers: { accept: "application/json" }
+      });
+      const payload = (await response.json()) as StorefrontShopSearchResult & { error?: string; requestId?: string };
+      if (!response.ok) {
+        const reference = payload.requestId ? ` Reference: ${payload.requestId}.` : "";
+        throw new Error(`${payload.error || "Shop results could not be loaded."}${reference}`);
+      }
+      if (sequence !== shopRequestSeq.current) return;
+      setShopProducts((current) => (options.append ? [...current, ...payload.products] : payload.products));
+      setShopTotal(payload.total);
+      setShopPage(payload.page);
+      setShopHasMore(payload.hasMore);
+      setShopCategories(payload.categories);
+      setShopSets(payload.sets);
+      if (!payload.applied.category && filters.category !== "all") setCategory("all");
+      if (!payload.applied.set && filters.set) setSetFilter("");
+    } catch (error) {
+      if (controller.signal.aborted || sequence !== shopRequestSeq.current) return;
+      setShopError(error instanceof Error ? error.message : "Shop results could not be loaded.");
+    } finally {
+      if (sequence === shopRequestSeq.current) setShopLoading(false);
+    }
+  }, [currentShopFilterState, isShopMode, updateShopUrl]);
+
+  useEffect(() => {
+    if (!isShopMode || applyingPopState.current) return undefined;
+    const timer = window.setTimeout(() => {
+      void runShopSearch(1, { history: "replace" });
+    }, 320);
+    return () => window.clearTimeout(timer);
+  }, [availability, category, isShopMode, query, runShopSearch, setFilter, sort]);
+
+  useEffect(() => {
+    if (!isShopMode || typeof window === "undefined") return undefined;
+    lastShopUrl.current = `${window.location.pathname}${window.location.search}`;
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextState: StorefrontShopFilterState = {
+        q: normalizeStorefrontShopQuery(params.get("q")),
+        category: params.get("category") || "all",
+        set: normalizeStorefrontShopQuery(params.get("set")),
+        availability: availabilityFromParam(params.get("availability")),
+        sort: sortFromParam(params.get("sort"))
+      };
+      const nextPage = normalizeStorefrontShopPage(params.get("page"));
+      applyingPopState.current = true;
+      setQuery(nextState.q);
+      setCategory(nextState.category);
+      setSetFilter(nextState.set);
+      setAvailability(nextState.availability);
+      setSort(nextState.sort);
+      window.setTimeout(() => {
+        applyingPopState.current = false;
+        void runShopSearch(nextPage, { history: "replace", state: nextState });
+      }, 0);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [isShopMode, runShopSearch]);
+
+  useEffect(() => {
+    return () => activeShopRequest.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!isShopMode || typeof document === "undefined") return undefined;
+    if (!filterSheetOpen) {
+      if (filterSheetWasOpenRef.current) {
+        filterSheetWasOpenRef.current = false;
+        const restoreTarget = filterSheetPreviouslyFocusedRef.current || filterSheetTriggerRef.current;
+        filterSheetPreviouslyFocusedRef.current = null;
+        window.requestAnimationFrame(() => restoreTarget?.focus());
+      }
+      return undefined;
+    }
+
+    filterSheetWasOpenRef.current = true;
+    if (!filterSheetPreviouslyFocusedRef.current && document.activeElement instanceof HTMLElement) {
+      filterSheetPreviouslyFocusedRef.current = document.activeElement;
+    }
+    const filterSheet = document.getElementById("gdg-shop-filters");
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])"
+    ].join(",");
+    window.requestAnimationFrame(() => filterSheetCloseRef.current?.focus());
+
+    function handleFilterSheetKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setFilterSheetOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !filterSheet) return;
+
+      const focusable = Array.from(filterSheet.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => {
+        const box = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+      });
+      if (!focusable.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleFilterSheetKeyDown);
+    return () => document.removeEventListener("keydown", handleFilterSheetKeyDown);
+  }, [filterSheetOpen, isShopMode]);
+
+  function submitShopFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFilterSheetOpen(false);
+    void runShopSearch(1, { history: "push" });
+  }
+
+  function openShopFilters() {
+    filterSheetPreviouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : filterSheetTriggerRef.current;
+    setFilterSheetOpen(true);
+  }
+
+  function closeShopFilters() {
+    setFilterSheetOpen(false);
+  }
+
+  function resetShopFilters() {
+    setQuery("");
+    setCategory("all");
+    setSetFilter("");
+    setAvailability("in-stock");
+    setSort("featured");
+    setFilterSheetOpen(false);
+  }
 
   return (
     <>
@@ -1346,21 +1604,36 @@ export function ProductGrid({
         </>
       ) : (
         <section className="gdg-shop-area" id="shop">
-          <aside className="gdg-shop-filters">
+          <button ref={filterSheetTriggerRef} className="gdg-mobile-filter-button" type="button" onClick={openShopFilters} aria-expanded={filterSheetOpen} aria-controls="gdg-shop-filters">
+            <Search size={16} aria-hidden="true" />
+            Filters
+            {activeFilterCount ? <span>{activeFilterCount}</span> : null}
+          </button>
+          <form className={`gdg-shop-filters ${filterSheetOpen ? "open" : ""}`} id="gdg-shop-filters" onSubmit={submitShopFilters}>
             <div>
-              <h1>Shop Pokemon TCG products</h1>
+              <div className="gdg-shop-filter-heading">
+                <h1>Shop Pokemon TCG products</h1>
+                <button ref={filterSheetCloseRef} className="gdg-icon-button gdg-filter-close" type="button" onClick={closeShopFilters} aria-label="Close filters">
+                  <X size={16} />
+                </button>
+              </div>
               <p>Browse sealed Pokemon products, booster bundles, tins, blisters, premium collections, and collectible card products.</p>
-              <p>Showing {visibleProducts.length} of {products.length} public listings.</p>
+              <p>{shopLoading ? "Loading results..." : `Showing ${visibleProducts.length} of ${shopTotal} matching public listing${shopTotal === 1 ? "" : "s"}.`}</p>
             </div>
             <label>
               Search
               <span>
                 <Search size={15} />
-                <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Product, category, tag..." />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(normalizeStorefrontShopQuery(event.currentTarget.value))}
+                  placeholder="Name, set, category, SKU, or UPC..."
+                  enterKeyHint="search"
+                />
               </span>
             </label>
             <label>
-              Categories
+              Category / product type
               <select value={category} onChange={(event) => setCategory(event.currentTarget.value)}>
                 {categories.map((entry) => (
                   <option key={entry} value={entry}>
@@ -1369,6 +1642,19 @@ export function ProductGrid({
                 ))}
               </select>
             </label>
+            {shopSets.length ? (
+              <label>
+                Set / series
+                <select value={setFilter} onChange={(event) => setSetFilter(event.currentTarget.value)}>
+                  <option value="">All Sets</option>
+                  {shopSets.map((entry) => (
+                    <option key={entry} value={entry}>
+                      {entry}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label>
               Availability
               <select
@@ -1380,19 +1666,27 @@ export function ProductGrid({
                 <option value="all">All</option>
               </select>
             </label>
-            <button
-              type="button"
-              className="gdg-filter-clear"
-              onClick={() => {
-                setQuery("");
-                setCategory("all");
-                setAvailability("in-stock");
-                setSort("newest");
-              }}
-            >
-              Clear Filters
-            </button>
-          </aside>
+            <label>
+              Sort
+              <select value={sort} onChange={(event) => setSort(event.currentTarget.value as StorefrontShopSort)}>
+                <option value="featured">Featured</option>
+                <option value="newest">Newest</option>
+                <option value="price-low">Price: Low to High</option>
+                <option value="price-high">Price: High to Low</option>
+                <option value="name">Name</option>
+                <option value="availability">Availability</option>
+              </select>
+            </label>
+            <div className="gdg-shop-filter-actions">
+              <button type="submit" className="gdg-primary-button compact">
+                Apply Filters
+              </button>
+              <button type="button" className="gdg-filter-clear" onClick={resetShopFilters}>
+                Reset
+              </button>
+            </div>
+          </form>
+          {filterSheetOpen ? <button type="button" className="gdg-filter-backdrop" aria-label="Close filters" onClick={closeShopFilters} /> : null}
           <div className="gdg-shop-list">
             <GrabbyCard
               variant="shop-guide"
@@ -1404,17 +1698,11 @@ export function ProductGrid({
               <div>
                 <p>Shop</p>
                 <h2>{category === "all" ? "All Products" : category}</h2>
+                <span>{shopLoading ? "Refreshing results" : `${shopTotal} result${shopTotal === 1 ? "" : "s"}`}</span>
               </div>
-              <label>
-                Sort By
-                <select value={sort} onChange={(event) => setSort(event.currentTarget.value)}>
-                  <option value="newest">Newest</option>
-                  <option value="price-low">Price: Low to High</option>
-                  <option value="price-high">Price: High to Low</option>
-                  <option value="stock">Most Available</option>
-                </select>
-              </label>
+              {activeFilterCount ? <button type="button" className="gdg-filter-clear compact" onClick={resetShopFilters}>Clear {activeFilterCount}</button> : null}
             </div>
+            {shopError ? <p className="gdg-error">{shopError}</p> : null}
             <div className="gdg-product-grid">
               {isSportsCardsCategory ? (
                 <div className="gdg-empty gdg-ebay-empty">
@@ -1432,11 +1720,18 @@ export function ProductGrid({
                 visibleProducts.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
               ) : (
                 <div className="gdg-empty">
-                  <h3>No matching products</h3>
-                  <p>Try another category or check back for new public listings.</p>
+                  <h3>{shopLoading ? "Loading products..." : "No matching products"}</h3>
+                  <p>{shopLoading ? "Searching current public listings." : "Try another search, reset filters, or check back for new public listings."}</p>
                 </div>
               )}
             </div>
+            {!isSportsCardsCategory && shopHasMore ? (
+              <div className="gdg-load-more-row">
+                <button className="gdg-secondary-button" type="button" disabled={shopLoading} onClick={() => void runShopSearch(shopPage + 1, { append: true, history: "replace" })}>
+                  {shopLoading ? "Loading..." : "Load More"}
+                </button>
+              </div>
+            ) : null}
           </div>
         </section>
       )}
