@@ -19543,6 +19543,68 @@ body:has(.shop-shell) {
   color: #94a3b8;
 }
 
+.gdg-detail-meta-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gdg-detail-meta-row span {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 850;
+  line-height: 1.2;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.gdg-detail-purchase-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 10px;
+}
+
+.gdg-detail-purchase-facts span {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 1px 9px;
+  min-width: 0;
+  border: 1px solid #e8edf3;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  padding: 12px;
+}
+
+.gdg-detail-purchase-facts svg {
+  margin-top: 2px;
+  color: #0f8f45;
+}
+
+.gdg-detail-purchase-facts b,
+.gdg-detail-purchase-facts small {
+  min-width: 0;
+}
+
+.gdg-detail-purchase-facts small {
+  grid-column: 2;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.gdg-detail-mobile-quick-action {
+  display: none;
+}
+
 .gdg-quantity-control {
   display: inline-flex;
   width: max-content;
@@ -30931,9 +30993,43 @@ body .app-main-inventory .inventory-filter-row > * {
   }
 
   .gdg-product-status-list,
+  .gdg-detail-purchase-facts,
   .gdg-product-trust,
   .gdg-description-section {
     gap: 10px;
+  }
+
+  .gdg-detail-purchase-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .gdg-detail-mobile-quick-action {
+    position: sticky;
+    bottom: 8px;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 14px 38px rgba(15, 23, 42, 0.16);
+    padding: 10px;
+    backdrop-filter: blur(14px);
+  }
+
+  .gdg-detail-mobile-quick-action span {
+    display: grid;
+    min-width: 0;
+  }
+
+  .gdg-detail-mobile-quick-action b,
+  .gdg-detail-mobile-quick-action small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .gdg-quantity-control {
