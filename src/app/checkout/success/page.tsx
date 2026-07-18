@@ -7,7 +7,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Order Confirmed | GameDayGrabs LLC",
-  description: "Your GameDayGrabs order was received."
+  description: "Your GameDayGrabs order was received.",
+  robots: {
+    index: false,
+    follow: false
+  }
 };
 
 export default async function CheckoutSuccessPage({ searchParams }: { searchParams: Promise<{ order?: string; number?: string }> }) {

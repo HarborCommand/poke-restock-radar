@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cleanStorefrontTitle } from "@/lib/storefront-copy";
-import { GAMEDAYGRABS_WWW_DOMAIN } from "@/lib/storefront-routing";
+import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_WWW_DOMAIN } from "@/lib/storefront-routing";
 import { isSoldOutProduct } from "@/lib/storefront-badges";
 import { calculateCartShipping } from "@/lib/shipping";
 import type { PublicStoreProductDTO } from "@/types/radar";
@@ -226,4 +226,16 @@ export function storefrontProductJsonLd(product: SeoProduct) {
 
 export function storefrontJsonLdScript(data: unknown) {
   return JSON.stringify(data).replace(/</g, "\\u003c");
+}
+
+export function storefrontOrganizationJsonLd() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: GAMEDAYGRABS_SEO_STORE_NAME,
+    legalName: GAMEDAYGRABS_LEGAL_NAME,
+    url: GAMEDAYGRABS_CANONICAL_ORIGIN,
+    logo: absoluteStorefrontUrl(GAMEDAYGRABS_OG_FALLBACK_IMAGE),
+    email: GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL
+  };
 }
