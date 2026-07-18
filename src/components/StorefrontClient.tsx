@@ -2211,6 +2211,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   }
 
   const subtotal = products.reduce((sum, product) => sum + product.price * product.requestedQuantity, 0);
+  const estimatedRewardPoints = settings.customerAccounts.enabled && settings.customerAccounts.rewardsEnabled ? Math.floor(Math.max(0, subtotal)) : 0;
   const shippingEstimate = calculateCartShipping(products, { subtotal, freeShippingThreshold: settings.freeShippingThreshold });
   const localPickupAvailable = shippingEstimate.localPickupEligible;
   const calculatedShippingEnabled = Boolean(settings.calculatedUspsShipping?.enabled);
@@ -2464,6 +2465,10 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     <div className="gdg-cart-line-copy">
                       <h2>{title}</h2>
                       <small>{publicCategoryLabel(displayStorefrontCategory(product))}</small>
+                      <div className="gdg-cart-line-badges" aria-label={`Fulfillment options for ${title}`}>
+                        {product.shippingAvailable ? <span>Ships</span> : null}
+                        {product.localPickupEligible ? <span>Local Pickup</span> : null}
+                      </div>
                       <span className={`gdg-cart-stock ${stock.tone}`}>
                         <Check size={13} />
                         {stock.label}
@@ -2537,19 +2542,25 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
             </div>
             <div className="gdg-summary-rows">
               <span>
-                <b>Subtotal</b>
+                <b>Merchandise subtotal</b>
                 {money(subtotal)}
               </span>
+              {estimatedRewardPoints > 0 ? (
+                <span>
+                  <b>Estimated rewards</b>
+                  <em>{estimatedRewardPoints.toLocaleString()} point{estimatedRewardPoints === 1 ? "" : "s"} on merchandise only</em>
+                </span>
+              ) : null}
               <span>
-                <b>Shipping calculated at checkout</b>
+                <b>Shipping calculated at checkout / pickup</b>
                 <em>{shippingSummary}</em>
               </span>
               <span>
-                <b>{onlineTaxEnabled ? "Tax calculated at checkout" : "Tax"}</b>
-                <em>{onlineTaxEnabled ? "Shown before payment" : "Calculated after confirmation"}</em>
+                <b>Tax calculated at checkout</b>
+                <em>{onlineTaxEnabled ? "Shown before payment" : "Not estimated in cart"}</em>
               </span>
               <strong>
-                <b>Estimated total</b>
+                <b>Cart estimate</b>
                 {money(total)}
               </strong>
             </div>
@@ -2644,7 +2655,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <p className="gdg-checkout-trust-line">
                 <Lock size={15} aria-hidden="true" />
                 Secure checkout by Stripe. Guest checkout available.
-                {onlineTaxEnabled ? " Final tax uses your delivery or approved pickup location and appears before payment. Shipping and tax stay separate." : ""}
+                {onlineTaxEnabled ? " Final tax uses your delivery or approved pickup location and appears before payment. Shipping and tax stay separate. Rewards stay display-only in cart." : " Tax is not estimated from the browser cart."}
               </p>
             ) : null}
             <details className="gdg-checkout-notes">

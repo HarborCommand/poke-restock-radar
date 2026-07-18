@@ -19992,6 +19992,27 @@ body:has(.shop-shell) {
   font-weight: 900;
 }
 
+.gdg-cart-line-badges {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gdg-cart-line-badges span {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
 .gdg-cart-stock.in {
   background: #dcfce7;
   color: #059669;
@@ -31109,6 +31130,16 @@ body .customers-rewards-tabs {
 
   .gdg-detail-price {
     gap: 8px;
+  }
+
+  .gdg-checkout-panel {
+    position: static;
+  }
+
+  .gdg-checkout-panel .gdg-checkout-button {
+    position: sticky;
+    bottom: 8px;
+    z-index: 5;
   }
 
   .gdg-gallery-main {
