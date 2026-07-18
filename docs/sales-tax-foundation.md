@@ -12,17 +12,20 @@ All five primary runtime flags default to `false`:
 - `TAX_EXEMPT_SALES_ENABLED`
 - `TAX_REPORTING_ENABLED`
 
-`POS_SALES_TAX_ENABLED` remains a compatibility alias only when `POS_STRIPE_TAX_ENABLED` is absent. The saved POS profile has separate owner-approval toggles. Both the runtime flag and saved approval must be enabled before POS Stripe Tax or exemption entry is available. A saved manual-fallback setting is active only when its independent runtime gate is explicitly true and POS Stripe Tax is false. Historical records remain nullable; the UI reports unknown historical tax as **Not recorded** and never changes it to zero.
+`POS_SALES_TAX_ENABLED` remains a compatibility alias only when `POS_STRIPE_TAX_ENABLED` is absent. The saved POS profile has a separate owner-approval toggle. Both the runtime flag and saved approval must be enabled before POS Stripe Tax is available. `MANUAL_TAX_FALLBACK_ENABLED` remains disabled and has no application configuration surface in the normal workflow. Historical records remain nullable; the UI reports unknown historical tax as **Not recorded** and never changes it to zero.
 
 ## Owner approval checklist
 
-1. Confirm registrations, nexus states, filing frequencies, and effective dates with a qualified adviser.
-2. Confirm the Florida store county and discretionary surtax rate from the current Florida Department of Revenue source. Save the effective date and a source/version note.
-3. Review the default Stripe product tax code and every product override. Add only approved codes to `STRIPE_ALLOWED_PRODUCT_TAX_CODES`.
-4. Configure Stripe Tax registrations in Stripe test mode, then validate taxable, non-taxable, discount, shipping, address, refund, and webhook cases in an isolated Preview.
-5. Choose and document a local-pickup tax policy. Stripe Checkout cannot use a performance/store location, so tax-enabled local pickup intentionally fails closed until the owner approves a separate supported calculation path.
-6. Reconcile Preview receipts and the tax report to Stripe and adviser expectations.
-7. Enable one flag at a time only after approval. Production flags remain false in this change.
+1. Open Stripe Dashboard in test mode.
+2. Enable Stripe Tax.
+3. Configure the business/head-office address.
+4. Confirm or add the Florida tax registration.
+5. Confirm the default product tax code and any allowed product overrides.
+6. Confirm the shipping tax code.
+7. Create or confirm the signed webhook endpoint.
+8. Add the test credentials to Vercel Preview.
+9. Run the required online and POS Stripe Tax certification cases in an isolated Preview.
+10. Enable Production flags only after explicit owner approval. Production flags remain false in this change.
 
 ## Calculation and audit behavior
 
@@ -44,7 +47,7 @@ If recording fails, the committed rows are marked `failed` (or `mismatch`) and t
 ## Known limitations
 
 - This foundation does not file or remit tax, create registrations, decide nexus, or certify exemptions.
-- Real Stripe test-mode credentials are not currently available, so provider-contract tests are complete but end-to-end Stripe certification is still blocking live enablement.
+- Real Stripe test-mode credentials are not currently available in the local/Preview configuration, so provider-contract tests are complete but end-to-end Stripe certification is still blocking live enablement.
 - No tax flag may be enabled until the owner-approved registrations, product/shipping tax codes, store location, Local Pickup treatment, receipts, refunds, and reporting have been certified against Stripe test mode.
 - Older orders and POS sales may not have a reliable tax snapshot and are intentionally shown as **Not recorded**.
 

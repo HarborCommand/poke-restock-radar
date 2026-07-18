@@ -1145,7 +1145,6 @@ model StorefrontSettings {
   defaultTaxCategory             String    @default("general_tangible_goods")
   defaultStripeTaxCode           String    @default("txcd_99999999")
   shippingStripeTaxCode          String    @default("txcd_92010001")
-  legacyManualTaxFallbackEnabled Boolean   @default(false)
   createdAt                      DateTime  @default(now())
   updatedAt                      DateTime  @updatedAt
   user                           User      @relation(fields: [userId], references: [id], onDelete: Cascade)

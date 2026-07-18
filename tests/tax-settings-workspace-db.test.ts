@@ -76,7 +76,6 @@ const disabledProfile = {
   defaultTaxCategory: "general_tangible_goods",
   defaultStripeTaxCode: "txcd_99999999",
   shippingStripeTaxCode: "txcd_92010001",
-  legacyManualTaxFallbackEnabled: false,
   defaultReportingPeriod: "monthly",
   registrationConfirmed: false,
   storeAddressConfirmed: false,
@@ -111,20 +110,8 @@ test("GET is write-free, duplicate saves are idempotent, and runtime gates stay 
   assert.equal(await prisma.storefrontSettings.count(), 1);
   assert.equal(await prisma.auditLog.count(), 1);
 
-  const blockedFallback = taxAdminSettingsSchema.parse({
-    ...disabledProfile,
-    legacyManualTaxFallbackEnabled: true,
-    legacyManualTaxFallbackConfirmed: true
-  });
-  await assert.rejects(saveTaxAdminSettings(actor, blockedFallback, "req-tax-fallback-disabled"), /runtime gate is disabled/i);
+  assert.equal(taxAdminSettingsSchema.safeParse({ ...disabledProfile, legacyManualTaxFallbackEnabled: true }).success, false);
   assert.equal(await prisma.auditLog.count(), 1);
-
-  await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { legacyManualTaxFallbackEnabled: true } });
-  const gatedFallback = await getTaxAdminSettings(user.id);
-  assert.equal(gatedFallback.pos.legacyFallbackConfigured, true);
-  assert.equal(gatedFallback.pos.legacyFallbackRuntimeEnabled, false);
-  assert.equal(gatedFallback.pos.legacyFallbackEnabled, false);
-  await prisma.storefrontSettings.update({ where: { userId: user.id }, data: { legacyManualTaxFallbackEnabled: false } });
 
   const incompleteEnable = taxAdminSettingsSchema.parse({
     ...disabledProfile,

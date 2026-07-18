@@ -307,7 +307,6 @@ export type StorefrontSettingsDTO = {
     defaultTaxCategory: string;
     defaultStripeTaxCode: string;
     shippingStripeTaxCode?: string;
-    legacyManualTaxFallbackEnabled?: boolean;
     features: {
       onlineStripeTaxEnabled: boolean;
       posSalesTaxEnabled: boolean;

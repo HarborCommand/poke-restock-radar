@@ -3,7 +3,6 @@ ALTER TABLE "StorefrontSettings" ADD COLUMN "storeAddressLine2" TEXT;
 ALTER TABLE "StorefrontSettings" ADD COLUMN "storeCity" TEXT;
 ALTER TABLE "StorefrontSettings" ADD COLUMN "storePostalCode" TEXT;
 ALTER TABLE "StorefrontSettings" ADD COLUMN "shippingStripeTaxCode" TEXT NOT NULL DEFAULT 'txcd_92010001';
-ALTER TABLE "StorefrontSettings" ADD COLUMN "legacyManualTaxFallbackEnabled" BOOLEAN NOT NULL DEFAULT false;
 
 ALTER TABLE "InventorySale" ADD COLUMN "taxCalculationId" TEXT;
 ALTER TABLE "InventorySale" ADD COLUMN "fulfillmentMode" TEXT;

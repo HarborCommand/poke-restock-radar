@@ -33064,28 +33064,6 @@ body .sale-edit-workspace-modal select:focus-visible {
   }
 }
 
-.tax-legacy-fallback {
-  margin-top: 24px;
-  border: 1px solid #e2e6eb;
-  border-radius: 16px;
-  background: #f8f9fb;
-  padding: 16px 18px;
-}
-
-.tax-legacy-fallback summary {
-  cursor: pointer;
-  color: #536176;
-  font-weight: 760;
-}
-
-.tax-legacy-fallback[open] summary {
-  margin-bottom: 8px;
-}
-
-.tax-legacy-fallback fieldset:disabled {
-  opacity: 0.58;
-}
-
 /* Tax administration inside the private Radar application */
 .app-main.app-main-tax {
   width: 100%;

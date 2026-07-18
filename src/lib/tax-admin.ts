@@ -96,8 +96,6 @@ export async function getTaxAdminSettings(userId: string) {
   const posActive = features.posSalesTaxEnabled && Boolean(settings?.posTaxEnabled);
   const exemptionActive = features.taxExemptSalesEnabled && Boolean(settings?.taxExemptSalesEnabled);
   const reportingActive = features.taxReportingEnabled;
-  const legacyFallbackConfigured = settings?.legacyManualTaxFallbackEnabled ?? false;
-  const legacyFallbackActive = features.manualTaxFallbackEnabled && !features.posSalesTaxEnabled && legacyFallbackConfigured;
   const localPickupTreatment = settings?.localPickupTaxTreatment ?? "pending_review";
   const localPickupStatus = localPickupTreatment === "provider_authoritative"
     ? "Provider-authoritative calculation configured"
@@ -154,9 +152,6 @@ export async function getTaxAdminSettings(userId: string) {
       transactionRecordingReady: readiness.stripeProviderConfigured,
       reversalReady: readiness.stripeProviderConfigured,
       shippingTaxCode: settings?.shippingStripeTaxCode ?? "txcd_92010001",
-      legacyFallbackConfigured,
-      legacyFallbackRuntimeEnabled: features.manualTaxFallbackEnabled,
-      legacyFallbackEnabled: legacyFallbackActive,
       lastUpdated: settings?.updatedAt?.toISOString() ?? null,
       lastUpdatedByAdmin: settings?.taxSettingsUpdatedByUserId ?? null
     },
@@ -201,13 +196,6 @@ export async function getTaxAdminSettings(userId: string) {
 }
 
 export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInput, requestId: string) {
-  const features = taxFeatureConfig();
-  if (input.legacyManualTaxFallbackEnabled && !features.manualTaxFallbackEnabled) {
-    throw new Error("The legacy manual tax fallback runtime gate is disabled.");
-  }
-  if (input.legacyManualTaxFallbackEnabled && features.posSalesTaxEnabled) {
-    throw new Error("Legacy manual fallback cannot be active while POS Stripe Tax is enabled.");
-  }
   const readiness = serverReadiness();
   const providerRegistration = readiness.stripeProviderConfigured
     ? await getStripeTaxRegistrationStatus(input.storeCountry, input.storeState)
@@ -264,8 +252,7 @@ export async function saveTaxAdminSettings(user: SessionUser, input: TaxAdminInp
       taxOwnerApprovedAt: ownerApprovedAt,
       defaultTaxCategory: input.defaultTaxCategory,
       defaultStripeTaxCode: input.defaultStripeTaxCode,
-      shippingStripeTaxCode: input.shippingStripeTaxCode,
-      legacyManualTaxFallbackEnabled: input.legacyManualTaxFallbackEnabled
+      shippingStripeTaxCode: input.shippingStripeTaxCode
     };
     const changedFields = Object.entries(data)
       .filter(([key, value]) => !existing || !sameValue(existing[key as keyof typeof existing], value))

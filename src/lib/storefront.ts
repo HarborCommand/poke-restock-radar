@@ -452,7 +452,6 @@ export async function getStorefrontSettings(
       defaultTaxCategory: settings?.defaultTaxCategory ?? "general_tangible_goods",
       defaultStripeTaxCode: settings?.defaultStripeTaxCode ?? "txcd_99999999",
       shippingStripeTaxCode: settings?.shippingStripeTaxCode ?? "txcd_92010001",
-      legacyManualTaxFallbackEnabled: settings?.legacyManualTaxFallbackEnabled ?? false,
       features: taxFeatures
     }
   };

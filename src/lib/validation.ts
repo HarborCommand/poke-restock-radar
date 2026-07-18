@@ -1345,8 +1345,6 @@ export const taxAdminSettingsSchema = z.object({
   defaultTaxCategory: z.literal("general_tangible_goods"),
   defaultStripeTaxCode: z.string().trim().regex(/^txcd_\d{8}$/, "Use a valid Stripe product tax code."),
   shippingStripeTaxCode: z.string().trim().regex(/^txcd_\d{8}$/, "Use a valid Stripe shipping tax code.").default("txcd_92010001"),
-  legacyManualTaxFallbackEnabled: z.boolean().default(false),
-  legacyManualTaxFallbackConfirmed: z.boolean().optional(),
   defaultReportingPeriod: z.enum(["monthly", "quarterly", "annual"]),
   registrationConfirmed: z.boolean(),
   storeAddressConfirmed: z.boolean(),
@@ -1367,27 +1365,6 @@ export const taxAdminSettingsSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["countyRateBasisPoints"],
       message: "Combined tax rate cannot exceed 20%."
-    });
-  }
-  if (input.legacyManualTaxFallbackEnabled && (!input.storeCounty || !input.effectiveDate || input.sourceNote.length < 3)) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["posTaxEnabled"],
-      message: "County, effective date, and source are required for the legacy emergency fallback."
-    });
-  }
-  if (input.legacyManualTaxFallbackEnabled && !input.legacyManualTaxFallbackConfirmed) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["legacyManualTaxFallbackConfirmed"],
-      message: "Explicitly confirm the emergency-only legacy fallback before saving it."
-    });
-  }
-  if (input.posTaxEnabled && input.legacyManualTaxFallbackEnabled) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["legacyManualTaxFallbackEnabled"],
-      message: "Legacy manual fallback cannot be active while the Stripe Tax profile is enabled."
     });
   }
   if (input.posTaxEnabled && (!input.storeAddressLine1 || !input.storeCity || !input.storePostalCode)) {

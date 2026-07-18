@@ -43,9 +43,6 @@ export type TaxSettings = {
     transactionRecordingReady: boolean;
     reversalReady: boolean;
     shippingTaxCode: string;
-    legacyFallbackConfigured: boolean;
-    legacyFallbackRuntimeEnabled: boolean;
-    legacyFallbackEnabled: boolean;
     lastUpdated: string | null;
     lastUpdatedByAdmin: string | null;
   };
@@ -106,8 +103,6 @@ type FormState = {
   defaultTaxCategory: "general_tangible_goods";
   defaultStripeTaxCode: string;
   shippingStripeTaxCode: string;
-  legacyManualTaxFallbackEnabled: boolean;
-  legacyManualTaxFallbackConfirmed?: boolean;
   defaultReportingPeriod: "monthly" | "quarterly" | "annual";
   registrationConfirmed: boolean;
   storeAddressConfirmed: boolean;
@@ -147,7 +142,6 @@ function formFromSettings(settings: TaxSettings): FormState {
     defaultTaxCategory: settings.product.defaultTaxCategory,
     defaultStripeTaxCode: settings.product.defaultStripeTaxCode,
     shippingStripeTaxCode: settings.product.shippingStripeTaxCode,
-    legacyManualTaxFallbackEnabled: settings.pos.legacyFallbackConfigured,
     defaultReportingPeriod: settings.reporting.defaultPeriod,
     registrationConfirmed: settings.readiness.registrationConfirmed,
     storeAddressConfirmed: settings.readiness.storeAddressConfirmed,
@@ -242,8 +236,6 @@ export function TaxSettingsWorkspace({
     (!initial.taxExemptSalesEnabled && form.taxExemptSalesEnabled) ||
     (!initial.taxReportingProfileEnabled && form.taxReportingProfileEnabled)
   ));
-  const combined = (form?.stateRateBasisPoints ?? 0) + (form?.countyRateBasisPoints ?? 0);
-
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (!dirty) return;
@@ -384,25 +376,6 @@ export function TaxSettingsWorkspace({
           </div>
           <CheckField checked={form.posTaxEnabled} label="Mark POS Stripe Tax as configured" detail={settings.pos.runtimeEnabled ? "The independent runtime gate is on." : "Configuration only. The runtime gate remains off."} onChange={(value) => update("posTaxEnabled", value)} />
           <p className="tax-section-copy"><strong>Shipping:</strong> GameDayGrabs calculates the price. Stripe decides whether and how it is taxed. Local Pickup remains $0.00 and uses the store address.</p>
-          <details className="tax-legacy-fallback">
-            <summary>Legacy manual tax fallback</summary>
-            <p><strong>Emergency fallback only — not used for normal tax calculations.</strong> Disabled by default, unavailable to cashiers, and cannot be active with POS Stripe Tax.</p>
-            <CheckField
-              checked={form.legacyManualTaxFallbackEnabled}
-              disabled={!settings.pos.legacyFallbackRuntimeEnabled || settings.pos.runtimeEnabled}
-              label="Enable legacy emergency fallback"
-              detail={settings.pos.legacyFallbackRuntimeEnabled ? "Available only while POS Stripe Tax remains disabled." : "The independent emergency runtime gate is off."}
-              onChange={(value) => { update("legacyManualTaxFallbackEnabled", value); update("legacyManualTaxFallbackConfirmed", false); }}
-            />
-            {form.legacyManualTaxFallbackEnabled ? <CheckField checked={Boolean(form.legacyManualTaxFallbackConfirmed)} label="I explicitly confirm this emergency-only fallback" onChange={(value) => update("legacyManualTaxFallbackConfirmed", value)} /> : null}
-            <fieldset disabled={!form.legacyManualTaxFallbackEnabled} className="tax-form-grid">
-              <label>State rate (%)<input type="number" min="0" max="20" step="0.01" value={form.stateRateBasisPoints / 100} onChange={(event) => update("stateRateBasisPoints", Math.round(Number(event.target.value) * 100))} required /></label>
-              <label>County surtax (%)<input type="number" min="0" max="20" step="0.01" value={form.countyRateBasisPoints / 100} onChange={(event) => update("countyRateBasisPoints", Math.round(Number(event.target.value) * 100))} required /></label>
-              <label>Combined legacy rate<input value={`${(combined / 100).toFixed(2)}%`} readOnly /></label>
-              <label>Effective date<input type="date" value={form.effectiveDate} onChange={(event) => update("effectiveDate", event.target.value)} required /></label>
-              <label className="tax-span-2">Source / incident reason<textarea value={form.sourceNote} onChange={(event) => update("sourceNote", event.target.value)} maxLength={500} required /></label>
-            </fieldset>
-          </details>
           <p className="tax-timestamp">Last updated: {settings.pos.lastUpdated ? new Date(settings.pos.lastUpdated).toLocaleString() : "Never saved"}{settings.pos.lastUpdatedByAdmin ? " by an authenticated admin" : ""}</p>
         </section>
 

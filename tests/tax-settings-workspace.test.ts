@@ -25,7 +25,6 @@ const valid = {
   defaultTaxCategory: "general_tangible_goods",
   defaultStripeTaxCode: "txcd_99999999",
   shippingStripeTaxCode: "txcd_92010001",
-  legacyManualTaxFallbackEnabled: false,
   defaultReportingPeriod: "monthly",
   registrationConfirmed: false,
   storeAddressConfirmed: false,
@@ -141,8 +140,9 @@ test("database settings cannot override independent runtime flags or browser-sup
   assert.match(source, /taxFeatureConfig\(\)/);
   assert.match(source, /features\.onlineStripeTaxEnabled/);
   assert.match(source, /features\.posSalesTaxEnabled && Boolean\(settings\?\.posTaxEnabled\)/);
-  assert.match(source, /features\.manualTaxFallbackEnabled && !features\.posSalesTaxEnabled && legacyFallbackConfigured/);
   assert.doesNotMatch(schema, /VERCEL_ENV|ONLINE_STRIPE_TAX_ENABLED|POS_SALES_TAX_ENABLED/);
+  assert.doesNotMatch(schema, /legacyManualTaxFallback/);
+  assert.doesNotMatch(source, /legacyManualTaxFallback|legacyFallbackConfigured/);
   assert.doesNotMatch(source, /process\.env\[[^\]]+\]\s*=/);
 });
 

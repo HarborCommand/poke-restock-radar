@@ -1774,7 +1774,6 @@ const statements = [
   `ALTER TABLE "StorefrontSettings" ADD COLUMN "storeCity" TEXT`,
   `ALTER TABLE "StorefrontSettings" ADD COLUMN "storePostalCode" TEXT`,
   `ALTER TABLE "StorefrontSettings" ADD COLUMN "shippingStripeTaxCode" TEXT NOT NULL DEFAULT 'txcd_92010001'`,
-  `ALTER TABLE "StorefrontSettings" ADD COLUMN "legacyManualTaxFallbackEnabled" BOOLEAN NOT NULL DEFAULT false`,
   `ALTER TABLE "StorefrontOrder" ADD COLUMN "subtotalCents" INTEGER`,
   `ALTER TABLE "StorefrontOrder" ADD COLUMN "discountCents" INTEGER`,
   `ALTER TABLE "StorefrontOrder" ADD COLUMN "shippingCents" INTEGER`,

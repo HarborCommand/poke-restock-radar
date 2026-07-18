@@ -157,7 +157,7 @@ test("POS Stripe Tax alias has explicit precedence over the legacy flag", () => 
   assert.equal(taxFeatureConfig({ POS_SALES_TAX_ENABLED: "false", POS_STRIPE_TAX_ENABLED: "true" }).posSalesTaxEnabled, true);
 });
 
-test("every tax provider runtime gate defaults off and Stripe/manual POS modes conflict safely", async () => {
+test("every tax provider runtime gate defaults off and manual fallback has no app configuration surface", async () => {
   assert.deepEqual(taxFeatureConfig({}), {
     onlineStripeTaxEnabled: false,
     posSalesTaxEnabled: false,
@@ -175,27 +175,26 @@ test("every tax provider runtime gate defaults off and Stripe/manual POS modes c
     taxReportingEnabled: false
   });
 
-  const [adminService, settingsUi] = await Promise.all([
+  const [adminService, settingsUi, schema, migration] = await Promise.all([
     readFile(new URL("../src/lib/tax-admin.ts", import.meta.url), "utf8"),
-    readFile(new URL("../src/components/TaxSettingsWorkspace.tsx", import.meta.url), "utf8")
+    readFile(new URL("../src/components/TaxSettingsWorkspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/lib/validation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../prisma/migrations/20260716010000_unified_stripe_tax/migration.sql", import.meta.url), "utf8")
   ]);
-  assert.match(adminService, /input\.legacyManualTaxFallbackEnabled && !features\.manualTaxFallbackEnabled/);
-  assert.match(adminService, /input\.legacyManualTaxFallbackEnabled && features\.posSalesTaxEnabled/);
-  assert.match(adminService, /features\.manualTaxFallbackEnabled && !features\.posSalesTaxEnabled && legacyFallbackConfigured/);
-  assert.match(settingsUi, /disabled=\{!settings\.pos\.legacyFallbackRuntimeEnabled \|\| settings\.pos\.runtimeEnabled\}/);
-  assert.match(settingsUi, /Source \/ incident reason/);
+  for (const source of [adminService, settingsUi, schema, migration]) {
+    assert.doesNotMatch(source, /legacyManualTaxFallback|legacyFallback|tax-legacy-fallback/);
+  }
 });
 
-test("unified tax UI hides manual rates from the primary POS workflow and keeps a collapsed emergency fallback", async () => {
+test("unified tax UI hides manual rates and fallback controls from the POS workflow", async () => {
   const [settingsUi, posUi, service, reporting] = await Promise.all([
     readFile(new URL("../src/components/TaxSettingsWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/radar-service.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/tax-reporting.ts", import.meta.url), "utf8")
   ]);
-  assert.match(settingsUi, /<details className="tax-legacy-fallback">/);
-  assert.match(settingsUi, /Emergency fallback only — not used for normal tax calculations/);
   assert.match(settingsUi, /Transaction recording/);
+  assert.doesNotMatch(settingsUi, /State rate|County surtax|Manual fallback|Emergency fallback/i);
   assert.match(posUi, /Calculating tax with Stripe/);
   assert.match(posUi, /Add location to calculate tax/);
   assert.doesNotMatch(posUi.slice(posUi.indexOf("function PosPanel"), posUi.indexOf("function PosReceipt")), /Combined saved rate/);

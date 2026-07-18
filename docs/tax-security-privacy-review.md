@@ -74,7 +74,7 @@ Boundary: every private record is scoped by the authenticated owner `userId`; an
 ## Deferred owner decisions and live blockers
 
 - Live Stripe Tax registration/configuration and the test credential set still require owner confirmation.
-- Legal store address, Florida registration, county/rate source, filing frequency, exemption/evidence policy, Local Pickup treatment, and accountant review are not code defaults.
+- Legal store address, Florida registration, product/shipping tax codes, filing frequency, exemption/evidence policy, Local Pickup treatment, and accountant review are not code defaults.
 - Certificate document storage remains unavailable; no sensitive document is accepted or publicly addressable.
 
 No Production configuration or data was changed during this review.
