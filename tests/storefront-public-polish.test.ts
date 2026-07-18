@@ -52,11 +52,30 @@ test("storefront product actions have product-specific accessible labels", () =>
   assert.match(productDetail, /aria-label=\{`\$\{soldOutSecondaryLabel\} \$\{productTitle\}`\}/);
 });
 
+test("storefront product cards expose clear purchase metadata without fake urgency", () => {
+  assert.match(client, /function storefrontRewardEstimateLabel\(product: PublicStoreProductDTO, settings: StorefrontSettingsDTO\)/);
+  assert.match(client, /!settings\.customerAccounts\.enabled \|\| !settings\.customerAccounts\.rewardsEnabled/);
+  assert.match(client, /const points = Math\.floor\(Math\.max\(0, product\.price\)\)/);
+  assert.match(client, /Earn \$\{points\.toLocaleString\(\)\} point/);
+  assert.match(client, /function storefrontFulfillmentBadges\(product: PublicStoreProductDTO\)/);
+  assert.match(client, /product\.shippingAvailable\) badges\.push\("Ships"\)/);
+  assert.match(client, /product\.localPickupEligible\) badges\.push\("Local Pickup"\)/);
+  assert.match(productCard, /className="gdg-product-card-meta" aria-label=\{`Purchase details for \$\{productTitle\}`\}/);
+  assert.match(productCard, /className="gdg-product-reward-estimate"/);
+  assert.match(productCard, /className="gdg-product-card-status-row"/);
+  assert.match(productCard, /Ship or pick up/);
+  assert.doesNotMatch(productCard, /only \d+ left|hurry|selling fast|best.?seller|popular|reviewCount|ratingValue/i);
+});
+
 test("public storefront polish keeps product, cart, footer, and login layouts contained", () => {
   assert.match(css, /Public storefront polish: customer-facing layout containment only/);
   assert.match(css, /\.shop-shell\s*\{\s*\r?\n\s*overflow-x: clip;/);
   assert.match(css, /\.gdg-nav\s*\{[\s\S]*?flex-wrap: wrap;/);
   assert.match(css, /\.gdg-product-card\s*\{[\s\S]*?grid-template-rows: auto minmax\(96px, 1fr\) auto;/);
+  assert.match(css, /\.gdg-product-card-meta,\s*\r?\n\.gdg-product-card-status-row\s*\{[\s\S]*?flex-wrap: wrap;/);
+  assert.match(css, /\.gdg-product-card-meta span\s*\{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/);
+  assert.match(css, /\.gdg-product-card-meta \.gdg-product-reward-estimate\s*\{[\s\S]*?background: #fffbeb;/);
+  assert.match(css, /\.gdg-product-card-status-row\s*\{[\s\S]*?justify-content: space-between;/);
   assert.match(css, /\.gdg-product-card \.gdg-card-actions > \*\s*\{[\s\S]*?min-width: 0;/);
   assert.match(css, /\.gdg-gallery-main\s*\{[\s\S]*?min-height: clamp\(320px, 44vw, 540px\);/);
   assert.match(css, /\.gdg-cart-line-price\s*\{[\s\S]*?min-width: 88px;/);
@@ -100,6 +119,8 @@ test("mobile storefront polish prevents common narrow-viewport overflow", () => 
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card \.gdg-card-actions\s*\{[\s\S]*?grid-template-columns: minmax\(0, 0\.82fr\) minmax\(0, 1\.18fr\);/);
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card \.gdg-card-actions > \*\s*\{[\s\S]*?min-height: 44px;/);
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card \.gdg-primary-button\.compact\.gdg-product-card-action,\s*\r?\n\s*\.gdg-product-card \.gdg-secondary-button\.gdg-product-card-action\s*\{[\s\S]*?min-height: 44px;/);
+  assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card-meta\s*\{[\s\S]*?gap: 5px;/);
+  assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-card-meta span\s*\{[\s\S]*?font-size: 0\.64rem;/);
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-action-label-full\s*\{[\s\S]*?display: none;/);
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-product-action-label-short\s*\{[\s\S]*?display: inline;/);
   assert.doesNotMatch(css, /\.gdg-product-card \.gdg-card-actions\s*\{[\s\S]{0,120}?flex-direction: column;/);

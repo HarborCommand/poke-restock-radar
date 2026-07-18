@@ -231,6 +231,20 @@ function checkoutModeLabel(settings: StorefrontSettingsDTO) {
   return settings.checkoutConfigured ? "Add to Cart" : "Request Invoice";
 }
 
+function storefrontRewardEstimateLabel(product: PublicStoreProductDTO, settings: StorefrontSettingsDTO) {
+  if (!settings.customerAccounts.enabled || !settings.customerAccounts.rewardsEnabled) return null;
+  const points = Math.floor(Math.max(0, product.price));
+  if (points <= 0) return null;
+  return `Earn ${points.toLocaleString()} point${points === 1 ? "" : "s"}`;
+}
+
+function storefrontFulfillmentBadges(product: PublicStoreProductDTO) {
+  const badges: string[] = [];
+  if (product.shippingAvailable) badges.push("Ships");
+  if (product.localPickupEligible) badges.push("Local Pickup");
+  return badges.length ? badges : ["Fulfillment pending"];
+}
+
 function sportsCardsLink(settings: StorefrontSettingsDTO) {
   const externalUrl = settings.sportsCardsExternalUrl?.trim() || GAMEDAYGRABS_SPORTS_CARDS_URL;
   return {
@@ -318,6 +332,7 @@ function useCustomerAccountSession(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Clears stale customer account state when the public account feature is disabled.
       setSession(null);
       return;
     }
@@ -403,6 +418,7 @@ function CustomerSessionExpiryController({
 
   useEffect(() => {
     if (!authenticated || !timeout?.enabled || !timeout.idleExpiresAt || timeout.expiredReason) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Closes the warning immediately when the authenticated session/timeout is no longer active.
       setWarningOpen(false);
       setRemainingSeconds(null);
       return;
@@ -411,8 +427,6 @@ function CustomerSessionExpiryController({
     const serverOffsetMs = Date.parse(timeout.serverNow) - Date.now();
     const idleExpiresAtMs = Date.parse(timeout.idleExpiresAt);
     const warningSeconds = Math.max(10, Number(timeout.warningSeconds || 60));
-    let warningTimer: number | undefined;
-    let expiryTimer: number | undefined;
     let countdownTimer: number | undefined;
 
     function msUntilIdleExpiration() {
@@ -425,12 +439,12 @@ function CustomerSessionExpiryController({
 
     const warningDelayMs = Math.max(0, msUntilIdleExpiration() - warningSeconds * 1000);
     const expiryDelayMs = Math.max(0, msUntilIdleExpiration());
-    warningTimer = window.setTimeout(() => {
+    const warningTimer = window.setTimeout(() => {
       setWarningOpen(true);
       updateCountdown();
       countdownTimer = window.setInterval(updateCountdown, 1000);
     }, warningDelayMs);
-    expiryTimer = window.setTimeout(expireLocally, expiryDelayMs);
+    const expiryTimer = window.setTimeout(expireLocally, expiryDelayMs);
 
     return () => {
       if (warningTimer !== undefined) window.clearTimeout(warningTimer);
@@ -857,7 +871,7 @@ export function MarketplaceFeedbackSection({ variant = "home" }: { variant?: "ho
         {snippets.map((snippet) => (
           <article key={snippet} className="gdg-feedback-card">
             <span className="gdg-feedback-quote" aria-hidden="true">
-              "
+              &ldquo;
             </span>
             <p>{snippet}</p>
             <small>{storefrontFeedback.sourceLabel}</small>
@@ -961,6 +975,8 @@ function ProductCard({
   const compactActionText = actionDisabled ? actionText : settings.checkoutConfigured ? "Add" : "Request";
   const displayCategory = publicCategoryLabel(displayStorefrontCategory(product));
   const productTitle = cleanStorefrontTitle(product.title);
+  const rewardEstimate = storefrontRewardEstimateLabel(product, settings);
+  const fulfillmentBadges = storefrontFulfillmentBadges(product);
 
   return (
     <article className="gdg-product-card">
@@ -973,9 +989,18 @@ function ProductCard({
           <Link href={`/product/${product.slug}`}>{productTitle}</Link>
         </h3>
         <strong>{money(product.price)}</strong>
+        <div className="gdg-product-card-meta" aria-label={`Purchase details for ${productTitle}`}>
+          {rewardEstimate ? <span className="gdg-product-reward-estimate">{rewardEstimate}</span> : null}
+          {fulfillmentBadges.map((badge) => (
+            <span key={badge}>{badge}</span>
+          ))}
+        </div>
       </div>
       <footer>
-        <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
+        <div className="gdg-product-card-status-row">
+          <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
+          {product.shippingAvailable && product.localPickupEligible ? <small>Ship or pick up</small> : null}
+        </div>
         <div className="gdg-card-actions">
           <Link href={`/product/${product.slug}`} className="gdg-secondary-button gdg-product-card-action" aria-label={`View ${productTitle}`}>
             <span className="gdg-product-action-label-full">View Product</span>
@@ -1887,6 +1912,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
 
   useEffect(() => {
     if (!localPickupAvailable && fulfillmentMethod === "pickup") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Keeps checkout fulfillment server-safe if the cart no longer supports pickup.
       setFulfillmentMethod("shipping");
     }
   }, [localPickupAvailable, fulfillmentMethod]);
