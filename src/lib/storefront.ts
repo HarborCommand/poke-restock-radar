@@ -43,6 +43,12 @@ import {
   storefrontConfiguredPurchaseLimit,
   storefrontEffectiveMaxQuantity
 } from "@/lib/storefront-purchase-limits";
+import {
+  STOREFRONT_SHOP_MAX_CANDIDATES,
+  storefrontShopSearchParams,
+  type StorefrontShopAvailability,
+  type StorefrontShopSort
+} from "@/lib/storefront-shop-query";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import {
   cumulativeRefundedTaxCents,
@@ -358,6 +364,7 @@ export function publicProductToDTO(
     category: publicCategory,
     tags: parseList(item.storefrontTags),
     condition: cleanStorefrontTitle(item.condition),
+    setName: cleanStorefrontTitle(item.setName) || null,
     brand: cleanStorefrontTitle(item.brand) || null,
     manufacturer: cleanStorefrontTitle(item.manufacturer) || null,
     sku: item.sku,
@@ -479,6 +486,116 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
       const rightTime = Date.parse(right.publishedAt ?? right.createdAt);
       return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
     });
+}
+
+type PublicStoreProductSearchInput = {
+  q?: string | null;
+  category?: string | null;
+  set?: string | null;
+  availability?: string | null;
+  sort?: string | null;
+  page?: string | number | null;
+  pageSize?: string | number | null;
+};
+
+function publicProductSearchText(product: PublicStoreProductDTO) {
+  return [
+    product.title,
+    product.description,
+    product.category,
+    product.setName,
+    product.condition,
+    product.brand,
+    product.manufacturer,
+    product.sku,
+    product.upc,
+    ...product.tags
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function publicProductAvailabilityScore(product: PublicStoreProductDTO) {
+  if (product.status === "sold_out" || product.availabilityLevel === "sold_out") return 0;
+  if (product.availabilityLevel === "almost_gone") return 1;
+  if (product.availabilityLevel === "low_stock") return 2;
+  return 3;
+}
+
+function publicProductTime(product: Pick<PublicStoreProductDTO, "publishedAt" | "createdAt" | "updatedAt">) {
+  const timestamp = Date.parse(product.publishedAt ?? product.createdAt ?? product.updatedAt);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function sortPublicProductsForShop(products: PublicStoreProductDTO[], sort: StorefrontShopSort) {
+  return [...products].sort((left, right) => {
+    const availabilityDelta = publicProductAvailabilityScore(right) - publicProductAvailabilityScore(left);
+    const newestDelta = publicProductTime(right) - publicProductTime(left);
+    const titleDelta = left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
+
+    if (sort === "price-low") return left.price - right.price || titleDelta;
+    if (sort === "price-high") return right.price - left.price || titleDelta;
+    if (sort === "name") return titleDelta || newestDelta;
+    if (sort === "availability") return availabilityDelta || newestDelta || titleDelta;
+    if (sort === "newest") return newestDelta || titleDelta;
+    return availabilityDelta || newestDelta || titleDelta;
+  });
+}
+
+function storefrontMatchesShopAvailability(product: PublicStoreProductDTO, availability: StorefrontShopAvailability) {
+  if (availability === "all") return true;
+  const soldOut = product.status === "sold_out" || product.availabilityLevel === "sold_out";
+  return availability === "sold-out" ? soldOut : !soldOut;
+}
+
+export async function searchPublicStoreProducts(input: PublicStoreProductSearchInput = {}) {
+  const applied = storefrontShopSearchParams(input);
+  const [items, profileDefinitions] = await Promise.all([
+    prisma.inventoryItem.findMany({
+      where: {
+        publishToStore: true,
+        storeStatus: { in: ["active", "sold_out"] },
+        publicPrice: { not: null },
+        publicSlug: { not: null }
+      },
+      include: storefrontInventoryInclude,
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { itemName: "asc" }],
+      take: STOREFRONT_SHOP_MAX_CANDIDATES
+    }),
+    shippingProfileDefinitionsForCheckout()
+  ]);
+  const products = items
+    .map((item) => publicProductToDTO(item, { profileDefinitions }))
+    .filter((product): product is PublicStoreProductDTO => Boolean(product));
+  const categories = Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort((left, right) => left.localeCompare(right));
+  const sets = Array.from(new Set(products.map((product) => product.setName).filter((setName): setName is string => Boolean(setName)))).sort((left, right) => left.localeCompare(right));
+  const category = categories.includes(applied.category) ? applied.category : "";
+  const set = sets.includes(applied.set) ? applied.set : "";
+  const q = applied.q.toLowerCase();
+  const filtered = products
+    .filter((product) => !q || publicProductSearchText(product).includes(q))
+    .filter((product) => !category || product.category === category)
+    .filter((product) => !set || product.setName === set)
+    .filter((product) => storefrontMatchesShopAvailability(product, applied.availability));
+  const sorted = sortPublicProductsForShop(filtered, applied.sort);
+  const start = (applied.page - 1) * applied.pageSize;
+  const pageProducts = sorted.slice(start, start + applied.pageSize);
+
+  return {
+    products: pageProducts,
+    total: sorted.length,
+    page: applied.page,
+    pageSize: applied.pageSize,
+    hasMore: start + pageProducts.length < sorted.length,
+    categories,
+    sets,
+    applied: {
+      ...applied,
+      category,
+      set
+    }
+  };
 }
 
 export async function getPublicStoreProduct(slug: string) {

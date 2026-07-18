@@ -44,5 +44,14 @@ function firstParam(value: string | string[] | undefined) {
 
 export default async function ShopPage({ searchParams }: ShopPageProps) {
   const params = searchParams ? await searchParams : {};
-  return <StorefrontShopView category={firstParam(params.category)} sort={firstParam(params.sort)} availability={firstParam(params.availability)} />;
+  return (
+    <StorefrontShopView
+      q={firstParam(params.q)}
+      category={firstParam(params.category)}
+      set={firstParam(params.set)}
+      sort={firstParam(params.sort)}
+      availability={firstParam(params.availability)}
+      page={firstParam(params.page)}
+    />
+  );
 }

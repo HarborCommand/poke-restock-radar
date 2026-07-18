@@ -235,6 +235,7 @@ export type PublicStoreProductDTO = {
   category: string;
   tags: string[];
   condition: string | null;
+  setName?: string | null;
   brand?: string | null;
   manufacturer?: string | null;
   sku?: string | null;
