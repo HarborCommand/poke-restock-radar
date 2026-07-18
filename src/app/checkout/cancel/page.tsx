@@ -7,7 +7,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Checkout Canceled | GameDayGrabs LLC",
-  description: "Your GameDayGrabs cart was not charged."
+  description: "Your GameDayGrabs cart was not charged.",
+  robots: {
+    index: false,
+    follow: false
+  }
 };
 
 export default async function CheckoutCancelPage({ searchParams }: { searchParams: Promise<{ order?: string }> }) {

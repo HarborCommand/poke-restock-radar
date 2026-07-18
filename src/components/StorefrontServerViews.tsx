@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { ProductDetail, ProductGrid, StorefrontCollectionLanding, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { getPublicStoreProduct, getRelatedPublicStoreProducts, getStorefrontSettings, listPublicStoreProducts, searchPublicStoreProducts } from "@/lib/storefront";
-import { storefrontJsonLdScript, storefrontProductJsonLd } from "@/lib/storefront-seo";
+import { storefrontJsonLdScript, storefrontOrganizationJsonLd, storefrontProductJsonLd } from "@/lib/storefront-seo";
 import {
   getStorefrontCollection,
   relatedStorefrontCollections,
@@ -24,6 +24,10 @@ export async function StorefrontHomeView() {
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: storefrontJsonLdScript(storefrontOrganizationJsonLd()) }}
+      />
       {settings.announcementBanner ? <section className="shop-announcement">{settings.announcementBanner}</section> : null}
       <ProductGrid products={products} settings={settings} mode="home" />
       <StorefrontFooter settings={settings} homeHref={homeHref} />

@@ -6,7 +6,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Cart | GameDayGrabs LLC",
-  description: "Review your GameDayGrabs cart and request an invoice or checkout."
+  description: "Review your GameDayGrabs cart and request an invoice or checkout.",
+  robots: {
+    index: false,
+    follow: false
+  }
 };
 
 export default async function CartPage() {

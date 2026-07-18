@@ -695,7 +695,7 @@ test("storefront exposes optional account entry points without requiring login f
   assert.match(client, /gdg-mobile-account-nav/);
   assert.match(client, /<button\s*\r?\n\s*className="gdg-account-entry"/);
   assert.match(client, /customerAccountMenuLinks\.map\(\(item\) => \(/);
-  assert.match(client, /<Link href="\/account\/login" className="gdg-cart-account-link">\s*\r?\n\s*Create an account\s*\r?\n\s*<\/Link>/);
+  assert.match(client, /<Link[\s\S]{0,180}href="\/account\/login"[\s\S]{0,180}className="gdg-cart-account-link"[\s\S]{0,180}>\s*\r?\n\s*Create an account\s*\r?\n\s*<\/Link>/);
   assert.match(client, /to track orders\{settings\.customerAccounts\.rewardsEnabled \? " and rewards" : ""\}/);
   assert.match(client, /Proceed to Secure Checkout/);
   assert.match(client, /No account required/);

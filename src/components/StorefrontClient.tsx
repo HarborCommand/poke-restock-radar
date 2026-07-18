@@ -76,6 +76,7 @@ import {
   type StorefrontShopAvailability,
   type StorefrontShopSort
 } from "@/lib/storefront-shop-query";
+import { trackStorefrontEvent } from "@/lib/storefront-analytics";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
@@ -536,6 +537,12 @@ function addToCart(product: PublicStoreProductDTO, quantity = 1) {
     ? cart.map((item) => (item.id === product.id ? { ...item, quantity: nextQuantity } : item))
     : [...cart, { id: product.id, quantity: nextQuantity }];
   writeCart(next);
+  trackStorefrontEvent("product_added_to_cart", {
+    productSlug: product.slug,
+    productCategory: displayStorefrontCategory(product),
+    productStatus: product.status,
+    quantity
+  });
 }
 
 function categoryPreviewCards(products: PublicStoreProductDTO[], categories: string[]) {
@@ -727,7 +734,15 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
               <ExternalLink size={12} aria-hidden="true" />
             </a>
           ) : (
-            <Link key={`${item.label}-${item.href}`} href={item.href} className={item.className} onClick={() => setMenuOpen(false)}>
+            <Link
+              key={`${item.label}-${item.href}`}
+              href={item.href}
+              className={item.className}
+              onClick={() => {
+                if (item.href === "/account/login") trackStorefrontEvent("account_login_requested", { source: "mobile_nav" });
+                setMenuOpen(false);
+              }}
+            >
               {item.label}
             </Link>
           )
@@ -776,7 +791,12 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
             </div>
           </div>
         ) : settings.customerAccounts.enabled ? (
-          <Link href="/account/login" className="gdg-account-entry" aria-label="Sign In / Create Account">
+          <Link
+            href="/account/login"
+            className="gdg-account-entry"
+            aria-label="Sign In / Create Account"
+            onClick={() => trackStorefrontEvent("account_login_requested", { source: "header" })}
+          >
             <User size={16} aria-hidden="true" />
             <span>Sign In / Create Account</span>
           </Link>
@@ -1123,7 +1143,13 @@ function HomepageAccountCta({ settings, signedIn }: { settings: StorefrontSettin
         </div>
       </div>
       <div className="gdg-home-account-actions">
-        <Link href={primaryHref} className="gdg-primary-button">
+        <Link
+          href={primaryHref}
+          className="gdg-primary-button"
+          onClick={() => {
+            if (primaryHref === "/account/login") trackStorefrontEvent("account_login_requested", { source: "homepage" });
+          }}
+        >
           {primaryLabel}
         </Link>
         <Link href={secondaryHref} className="gdg-secondary-button">
@@ -1351,6 +1377,16 @@ export function ProductGrid({
       setShopHasMore(payload.hasMore);
       setShopCategories(payload.categories);
       setShopSets(payload.sets);
+      trackStorefrontEvent(filters.q ? "shop_searched" : "shop_filter_used", {
+        hasQuery: Boolean(filters.q),
+        filterCount: [
+          filters.category && filters.category !== "all" ? filters.category : "",
+          filters.set,
+          filters.availability !== "in-stock" ? filters.availability : "",
+          filters.sort !== "featured" ? filters.sort : ""
+        ].filter(Boolean).length,
+        resultCount: payload.total
+      });
       if (!payload.applied.category && filters.category !== "all") setCategory("all");
       if (!payload.applied.set && filters.set) setSetFilter("");
     } catch (error) {
@@ -1872,6 +1908,14 @@ export function ProductDetail({
       ? "Shipping is calculated from package details before payment."
       : "Contact support if fulfillment options are not shown.";
 
+  useEffect(() => {
+    trackStorefrontEvent("product_viewed", {
+      productSlug: product.slug,
+      productCategory: displayStorefrontCategory(product),
+      productStatus: product.status
+    });
+  }, [product]);
+
   function addProductToCart(redirect = false) {
     if (isSoldOut || effectiveMaxQuantity <= 0) return;
     addToCart(product, quantity);
@@ -2205,9 +2249,18 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   }
 
   function removeItem(productId: string) {
+    const product = products.find((entry) => entry.id === productId);
     const next = items.filter((item) => item.id !== productId);
     if (!next.length) setProducts([]);
     writeCart(next);
+    if (product) {
+      trackStorefrontEvent("product_removed_from_cart", {
+        productSlug: product.slug,
+        productCategory: displayStorefrontCategory(product),
+        productStatus: product.status,
+        quantity: product.requestedQuantity
+      });
+    }
   }
 
   const subtotal = products.reduce((sum, product) => sum + product.price * product.requestedQuantity, 0);
@@ -2321,6 +2374,11 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   }
 
   async function checkout() {
+    trackStorefrontEvent("checkout_started", {
+      itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+      fulfillmentMethod,
+      checkoutMode: isStripeCheckout ? "stripe" : "invoice"
+    });
     setBusy(true);
     setMessage("");
     try {
@@ -2578,7 +2636,13 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     <button
                       className={fulfillmentMethod === "pickup" ? "active" : ""}
                       type="button"
-                      onClick={() => setFulfillmentMethod("pickup")}
+                      onClick={() => {
+                        setFulfillmentMethod("pickup");
+                        trackStorefrontEvent("local_pickup_selected", {
+                          itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+                          fulfillmentMethod: "pickup"
+                        });
+                      }}
                     >
                       Local Pickup - Free
                     </button>
@@ -2666,7 +2730,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 <li>Guest checkout is available.</li>
                 {settings.customerAccounts.enabled ? (
                   <li>
-                    <Link href="/account/login" className="gdg-cart-account-link">
+                    <Link href="/account/login" className="gdg-cart-account-link" onClick={() => trackStorefrontEvent("account_login_requested", { source: "cart" })}>
                       Create an account
                     </Link>{" "}
                     to track orders{settings.customerAccounts.rewardsEnabled ? " and rewards" : ""}.
@@ -2711,7 +2775,12 @@ export function CheckoutSuccessClient({
 }) {
   useEffect(() => {
     writeCart([]);
-  }, []);
+    trackStorefrontEvent("purchase_completed", {
+      source: "checkout_success",
+      checkoutMode: "stripe",
+      hasQuery: Boolean(orderReference)
+    });
+  }, [orderReference]);
 
   return (
     <section className="gdg-result-card">
@@ -2726,7 +2795,7 @@ export function CheckoutSuccessClient({
         <div className="gdg-success-account-cta">
           <strong>Create an account to track this order{rewardsCtaEnabled ? " and earn rewards" : ""}.</strong>
           <span>{rewardsCtaEnabled ? "Track points in your account. Rewards redemption coming soon." : "Account creation is optional and guest checkout remains available."}</span>
-          <Link href="/account/login" className="gdg-secondary-button compact">
+          <Link href="/account/login" className="gdg-secondary-button compact" onClick={() => trackStorefrontEvent("account_login_requested", { source: "checkout_success" })}>
             Create or Sign In
           </Link>
         </div>
