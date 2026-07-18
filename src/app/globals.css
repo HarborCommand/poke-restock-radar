@@ -18576,15 +18576,28 @@ body:has(.shop-shell) {
 
 .gdg-product-body h3 {
   display: -webkit-box;
-  min-height: 2.56em;
+  min-height: 3.84em;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   margin: 0;
   color: #0f172a;
   font-size: 1rem;
   font-weight: 850;
   line-height: 1.28;
+}
+
+.gdg-product-card-subtitle {
+  display: block;
+  min-width: 0;
+  margin: -1px 0 0;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gdg-product-body strong,
@@ -30885,10 +30898,11 @@ body .app-main-inventory .inventory-filter-row > * {
 }
 
 .gdg-product-card {
-  grid-template-rows: auto minmax(96px, 1fr) auto;
+  grid-template-rows: auto minmax(128px, 1fr) auto;
 }
 
 .gdg-product-body h3 a,
+.gdg-product-card-subtitle,
 .gdg-detail-info h1,
 .gdg-cart-line h2,
 .gdg-login-card-heading h2,
@@ -31059,7 +31073,7 @@ body .app-main-inventory .inventory-filter-row > * {
   .gdg-product-card {
     border-radius: 18px;
     gap: 10px;
-    grid-template-rows: auto minmax(82px, 1fr) auto;
+    grid-template-rows: auto minmax(112px, 1fr) auto;
     padding: 10px;
   }
 
@@ -31088,6 +31102,11 @@ body .app-main-inventory .inventory-filter-row > * {
 
   .gdg-product-body h3 {
     min-height: 0;
+    -webkit-line-clamp: 4;
+  }
+
+  .gdg-product-card-subtitle {
+    font-size: 0.68rem;
   }
 
   .gdg-product-action-label-full {
