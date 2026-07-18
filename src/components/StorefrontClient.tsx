@@ -41,6 +41,7 @@ import {
   type StorefrontAvailabilityFilter
 } from "@/lib/storefront-badges";
 import { displayStorefrontCategory, storefrontCategoryMatches } from "@/lib/storefront-categories";
+import { storefrontProductCardSubtitle } from "@/lib/storefront-card-copy";
 import { cleanStorefrontDescription, cleanStorefrontTitle, storefrontSoldOutNote } from "@/lib/storefront-copy";
 import {
   GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE,
@@ -1000,6 +1001,7 @@ function ProductCard({
   const compactActionText = actionDisabled ? actionText : settings.checkoutConfigured ? "Add" : "Request";
   const displayCategory = publicCategoryLabel(displayStorefrontCategory(product));
   const productTitle = cleanStorefrontTitle(product.title);
+  const productSubtitle = storefrontProductCardSubtitle({ title: product.title, category: displayCategory, setName: product.setName });
   const rewardEstimate = storefrontRewardEstimateLabel(product, settings);
   const fulfillmentBadges = storefrontFulfillmentBadges(product);
 
@@ -1011,8 +1013,11 @@ function ProductCard({
       <div className="gdg-product-body">
         <span className="gdg-product-category">{displayCategory}</span>
         <h3>
-          <Link href={`/product/${product.slug}`}>{productTitle}</Link>
+          <Link href={`/product/${product.slug}`} aria-label={productTitle}>
+            {productTitle}
+          </Link>
         </h3>
+        {productSubtitle ? <p className="gdg-product-card-subtitle">{productSubtitle}</p> : null}
         <strong>{money(product.price)}</strong>
         <div className="gdg-product-card-meta" aria-label={`Purchase details for ${productTitle}`}>
           {rewardEstimate ? <span className="gdg-product-reward-estimate">{rewardEstimate}</span> : null}
