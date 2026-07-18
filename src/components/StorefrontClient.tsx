@@ -1864,6 +1864,13 @@ export function ProductDetail({
   const purchaseLimitLabel = storefrontPurchaseLimitLabel(product);
   const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
   const quantityLimitReached = !isSoldOut && effectiveMaxQuantity > 0 && quantity >= effectiveMaxQuantity;
+  const rewardEstimateLabel = storefrontRewardEstimateLabel(product, settings);
+  const fulfillmentLabel = product.shippingAvailable && product.localPickupEligible ? "Ships or Local Pickup" : product.localPickupEligible ? "Local Pickup available" : product.shippingAvailable ? "Shipping available" : "Fulfillment reviewed before checkout";
+  const fulfillmentDetail = product.localPickupEligible
+    ? "Pickup appears as an option in cart when this item is eligible."
+    : product.shippingAvailable
+      ? "Shipping is calculated from package details before payment."
+      : "Contact support if fulfillment options are not shown.";
 
   function addProductToCart(redirect = false) {
     if (isSoldOut || effectiveMaxQuantity <= 0) return;
@@ -1898,6 +1905,7 @@ export function ProductDetail({
                   alt={productTitle}
                   width={900}
                   height={900}
+                  sizes="(max-width: 768px) 92vw, 48vw"
                   unoptimized
                   onError={() => setFailedImages((current) => (current.includes(visibleSelectedImage) ? current : [...current, visibleSelectedImage]))}
                 />
@@ -1909,14 +1917,22 @@ export function ProductDetail({
               )}
             </div>
             {visibleGalleryImages.length > 1 ? (
-              <div className="gdg-gallery-thumbs">
-                {visibleGalleryImages.slice(0, 5).map((image) => (
-                  <button type="button" key={image} className={image === visibleSelectedImage ? "active" : ""} onClick={() => setSelectedImage(image)}>
+              <div className="gdg-gallery-thumbs" aria-label="Product images">
+                {visibleGalleryImages.slice(0, 5).map((image, index) => (
+                  <button
+                    type="button"
+                    key={image}
+                    className={image === visibleSelectedImage ? "active" : ""}
+                    onClick={() => setSelectedImage(image)}
+                    aria-label={`View ${productTitle} image ${index + 1}`}
+                    aria-pressed={image === visibleSelectedImage}
+                  >
                     <Image
                       src={image}
                       alt=""
                       width={82}
                       height={82}
+                      sizes="82px"
                       unoptimized
                       onError={() => setFailedImages((current) => (current.includes(image) ? current : [...current, image]))}
                     />
@@ -1933,7 +1949,31 @@ export function ProductDetail({
               {product.compareAtPrice ? <s>{money(product.compareAtPrice)}</s> : null}
               <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{availabilityLabel}</span>
             </div>
+            <div className="gdg-detail-meta-row" aria-label="Product classification">
+              {product.setName ? <span>Set: {product.setName}</span> : null}
+              <span>{displayCategory}</span>
+              <span>{conditionLabel}</span>
+            </div>
             <p>{publicDescription}</p>
+            <div className="gdg-detail-purchase-facts" aria-label="Buying details">
+              <span>
+                <Truck size={16} aria-hidden="true" />
+                <b>{fulfillmentLabel}</b>
+                <small>{fulfillmentDetail}</small>
+              </span>
+              <span>
+                <CreditCard size={16} aria-hidden="true" />
+                <b>Tax calculated at checkout</b>
+                <small>Stripe shows final tax before payment when tax collection is enabled.</small>
+              </span>
+              {rewardEstimateLabel ? (
+                <span>
+                  <Trophy size={16} aria-hidden="true" />
+                  <b>{rewardEstimateLabel}</b>
+                  <small>Estimated from merchandise subtotal only; excludes shipping and tax.</small>
+                </span>
+              ) : null}
+            </div>
             <div className="gdg-product-status-list" aria-label="Product availability and purchase limits">
               <span>{availabilityDetail}</span>
               {purchaseLimitLabel ? <span>{purchaseLimitLabel}.</span> : null}
@@ -1980,6 +2020,17 @@ export function ProductDetail({
               <p className="gdg-toast inline">
                 <Check size={16} /> {notice}
               </p>
+            ) : null}
+            {!isSoldOut ? (
+              <div className="gdg-detail-mobile-quick-action" aria-label="Mobile purchase shortcut">
+                <span>
+                  <b>{money(product.price)}</b>
+                  <small>{availabilityLabel}</small>
+                </span>
+                <button className="gdg-primary-button compact" type="button" onClick={() => addProductToCart(false)} aria-label={`${actionLabel} ${productTitle}`}>
+                  {actionLabel}
+                </button>
+              </div>
             ) : null}
             <div className="gdg-product-trust">
               {[

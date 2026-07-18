@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ProductDetail, ProductGrid, StorefrontCollectionLanding, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
-import { getPublicStoreProduct, getStorefrontSettings, listPublicStoreProducts, searchPublicStoreProducts } from "@/lib/storefront";
+import { getPublicStoreProduct, getRelatedPublicStoreProducts, getStorefrontSettings, listPublicStoreProducts, searchPublicStoreProducts } from "@/lib/storefront";
 import { storefrontJsonLdScript, storefrontProductJsonLd } from "@/lib/storefront-seo";
 import {
   getStorefrontCollection,
@@ -85,15 +85,7 @@ export async function StorefrontCollectionView({ slug }: { slug: string }) {
 export async function StorefrontProductView({ slug }: { slug: string }) {
   const [settings, product, homeHref] = await Promise.all([getStorefrontSettings(), getPublicStoreProduct(slug), getStorefrontHomeHref()]);
   if (!product) notFound();
-  const products = await listPublicStoreProducts();
-  const relatedProducts = products
-    .filter((entry) => entry.id !== product.id)
-    .sort((left, right) => {
-      const leftScore = left.category === product.category ? 0 : 1;
-      const rightScore = right.category === product.category ? 0 : 1;
-      return leftScore - rightScore;
-    })
-    .slice(0, 4);
+  const relatedProducts = await getRelatedPublicStoreProducts(product, 4);
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />

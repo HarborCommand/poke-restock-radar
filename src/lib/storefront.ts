@@ -610,6 +610,42 @@ export async function getPublicStoreProduct(slug: string) {
   return publicProductToDTO(item, { profileDefinitions });
 }
 
+export async function getRelatedPublicStoreProducts(product: PublicStoreProductDTO, limit = 4) {
+  const take = Math.min(24, Math.max(limit * 6, limit));
+  const [items, profileDefinitions] = await Promise.all([
+    prisma.inventoryItem.findMany({
+      where: {
+        id: { not: product.id },
+        publishToStore: true,
+        storeStatus: { in: ["active", "sold_out"] },
+        publicPrice: { not: null },
+        publicSlug: { not: null },
+        OR: [
+          { setName: product.setName || undefined },
+          { storefrontCategory: product.category },
+          { category: product.category },
+          { itemName: { contains: product.category } }
+        ].filter((entry) => Object.values(entry).every((value) => value !== undefined))
+      },
+      include: storefrontInventoryInclude,
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { itemName: "asc" }],
+      take
+    }),
+    shippingProfileDefinitionsForCheckout()
+  ]);
+  return items
+    .map((item) => publicProductToDTO(item, { profileDefinitions }))
+    .filter((entry): entry is PublicStoreProductDTO => Boolean(entry))
+    .sort((left, right) => {
+      const leftSetScore = product.setName && left.setName === product.setName ? 0 : 1;
+      const rightSetScore = product.setName && right.setName === product.setName ? 0 : 1;
+      const leftCategoryScore = left.category === product.category ? 0 : 1;
+      const rightCategoryScore = right.category === product.category ? 0 : 1;
+      return leftSetScore - rightSetScore || leftCategoryScore - rightCategoryScore || publicProductTime(right) - publicProductTime(left) || left.title.localeCompare(right.title);
+    })
+    .slice(0, limit);
+}
+
 export async function getCartProducts(
   items: Array<{ id: string; quantity: number }>,
   options: { strict?: boolean; profileDefinitions?: Record<string, ShippingProfileDefinition> } = {}
