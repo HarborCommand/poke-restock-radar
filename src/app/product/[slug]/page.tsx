@@ -23,6 +23,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     metadataBase: new URL(GAMEDAYGRABS_CANONICAL_ORIGIN),
     title,
     description,
+    robots: {
+      index: false,
+      follow: false
+    },
     alternates: {
       canonical: canonicalUrl
     },

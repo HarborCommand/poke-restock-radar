@@ -266,6 +266,8 @@ type PublicStorefrontListingVisibilityInput = StorefrontQuantityInput & {
   storeStatus: string;
 };
 
+export const PUBLIC_STOREFRONT_VISIBLE_STATUSES = ["active", "sold_out"] as const;
+
 function quantityOwned(item: StorefrontQuantityInput) {
   const lotRemaining = item.stockLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
   return item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - quantitySold(item));
@@ -283,8 +285,12 @@ export function isPublicStorefrontListingVisible(item: PublicStorefrontListingVi
       item.publicSlug &&
       item.publicPrice !== null &&
       item.publicPrice !== undefined &&
-      ["active", "sold_out"].includes(item.storeStatus)
+      PUBLIC_STOREFRONT_VISIBLE_STATUSES.includes(item.storeStatus as (typeof PUBLIC_STOREFRONT_VISIBLE_STATUSES)[number])
   );
+}
+
+export function isPublicStorefrontListingIndexable(item: PublicStorefrontListingVisibilityInput) {
+  return isPublicStorefrontListingVisible(item);
 }
 
 export function isPublicStorefrontListingSellable(item: PublicStorefrontListingVisibilityInput) {
@@ -467,7 +473,7 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
     prisma.inventoryItem.findMany({
       where: {
         publishToStore: true,
-        storeStatus: input?.onlySellable ? "active" : { in: ["active", "sold_out"] },
+        storeStatus: input?.onlySellable ? "active" : { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] },
         publicPrice: { not: null },
         publicSlug: { not: null }
       },
@@ -558,7 +564,7 @@ export async function searchPublicStoreProducts(input: PublicStoreProductSearchI
     prisma.inventoryItem.findMany({
       where: {
         publishToStore: true,
-        storeStatus: { in: ["active", "sold_out"] },
+        storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] },
         publicPrice: { not: null },
         publicSlug: { not: null }
       },
@@ -604,7 +610,7 @@ export async function searchPublicStoreProducts(input: PublicStoreProductSearchI
 export async function getPublicStoreProduct(slug: string) {
   const [item, profileDefinitions] = await Promise.all([
     prisma.inventoryItem.findFirst({
-      where: { publicSlug: slug, publishToStore: true, storeStatus: { in: ["active", "sold_out"] } },
+      where: { publicSlug: slug, publishToStore: true, storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] } },
       include: storefrontInventoryInclude
     }),
     shippingProfileDefinitionsForCheckout()
@@ -620,7 +626,7 @@ export async function getRelatedPublicStoreProducts(product: PublicStoreProductD
       where: {
         id: { not: product.id },
         publishToStore: true,
-        storeStatus: { in: ["active", "sold_out"] },
+        storeStatus: "active",
         publicPrice: { not: null },
         publicSlug: { not: null },
         OR: [
@@ -637,6 +643,7 @@ export async function getRelatedPublicStoreProducts(product: PublicStoreProductD
     shippingProfileDefinitionsForCheckout()
   ]);
   return items
+    .filter((item) => isPublicStorefrontListingSellable(item))
     .map((item) => publicProductToDTO(item, { profileDefinitions }))
     .filter((entry): entry is PublicStoreProductDTO => Boolean(entry))
     .sort((left, right) => {

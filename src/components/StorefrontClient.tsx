@@ -234,6 +234,7 @@ function checkoutModeLabel(settings: StorefrontSettingsDTO) {
 
 function storefrontRewardEstimateLabel(product: PublicStoreProductDTO, settings: StorefrontSettingsDTO) {
   if (!settings.customerAccounts.enabled || !settings.customerAccounts.rewardsEnabled) return null;
+  if (isSoldOutProduct(product)) return null;
   const points = Math.floor(Math.max(0, product.price));
   if (points <= 0) return null;
   return `Earn ${points.toLocaleString()} point${points === 1 ? "" : "s"}`;

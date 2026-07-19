@@ -43,7 +43,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.4
   })) satisfies MetadataRoute.Sitemap;
 
-  const products = await listPublicStoreProducts({ onlySellable: true });
+  const products = await listPublicStoreProducts();
   const productPages = products.map((product) => ({
     url: productCanonicalUrl(product.slug),
     lastModified: new Date(product.updatedAt),

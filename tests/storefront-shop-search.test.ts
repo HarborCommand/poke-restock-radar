@@ -72,7 +72,7 @@ test("shop search API is read-only, public-safe, cacheable, and returns safe err
 
 test("server-side shop search only returns public listings from a bounded candidate set", () => {
   assert.match(shopSearch, /prisma\.inventoryItem\.findMany\(\{[\s\S]*?publishToStore: true/);
-  assert.match(shopSearch, /storeStatus: \{ in: \["active", "sold_out"\] \}/);
+  assert.match(shopSearch, /storeStatus: \{ in: \[\.\.\.PUBLIC_STOREFRONT_VISIBLE_STATUSES\] \}/);
   assert.match(shopSearch, /publicPrice: \{ not: null \}/);
   assert.match(shopSearch, /publicSlug: \{ not: null \}/);
   assert.match(shopSearch, /take: STOREFRONT_SHOP_MAX_CANDIDATES/);
