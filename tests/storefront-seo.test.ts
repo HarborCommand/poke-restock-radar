@@ -10,6 +10,12 @@ import {
   storefrontProductSchemaAvailability
 } from "../src/lib/storefront-seo";
 import {
+  isPublicStorefrontListingIndexable,
+  isPublicStorefrontListingSellable,
+  isPublicStorefrontListingVisible,
+  PUBLIC_STOREFRONT_VISIBLE_STATUSES
+} from "../src/lib/storefront";
+import {
   getStorefrontCollection,
   storefrontCollectionBreadcrumbJsonLd,
   storefrontCollectionItemListJsonLd,
@@ -99,11 +105,12 @@ test("product SEO descriptions use cleaned public copy without admin labels or r
   assert.doesNotMatch(String(jsonLd.description), /Product Details Card Text|script|alert|<p>|admin/i);
 });
 
-test("sold-out product metadata remains public but noindexed", () => {
+test("active sold-out product metadata remains public and indexable", () => {
   const metadata = storefrontProductMetadata(product({ publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" }));
 
   assert.equal(metadata.alternates?.canonical, productCanonicalUrl("pokemon-seo-product"));
-  assert.deepEqual(metadata.robots, { index: false, follow: true });
+  assert.equal(metadata.robots, undefined);
+  assert.match(String(metadata.description), /Out of stock/);
 });
 
 test("product structured data renders safe Product and Offer fields only", () => {
@@ -229,8 +236,10 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
 
   assert.match(productRoute, /storefrontProductMetadata\(product\)/);
   assert.match(productRoute, /productCanonicalUrl\(slug\)/);
+  assert.match(productRoute, /robots:\s*\{\s*\r?\n\s*index:\s*false,\s*\r?\n\s*follow:\s*false/);
   assert.match(shopProductRoute, /storefrontProductMetadata\(product\)/);
   assert.match(shopProductRoute, /productCanonicalUrl\(slug\)/);
+  assert.match(shopProductRoute, /robots:\s*\{\s*\r?\n\s*index:\s*false,\s*\r?\n\s*follow:\s*false/);
   assert.match(productView, /type="application\/ld\+json"/);
   assert.match(productView, /storefrontProductJsonLd\(product\)/);
   assert.match(collectionRoute, /storefrontCollectionMetadata\(collection\)/);
@@ -248,7 +257,7 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(storefrontClient, /href=\{`\/product\/\$\{product\.slug\}`\}/);
   assert.doesNotMatch(storefrontClient, /href=\{`\/shop\/product\/\$\{product\.slug\}`\}/);
 
-  assert.match(sitemap, /listPublicStoreProducts\(\{ onlySellable: true \}\)/);
+  assert.match(sitemap, /listPublicStoreProducts\(\)/);
   assert.match(sitemap, /productCanonicalUrl\(product\.slug\)/);
   assert.match(sitemap, /storefrontCollections/);
   assert.match(sitemap, /storefrontCollectionUrl\(collection\.slug\)/);
@@ -268,6 +277,45 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   }
   for (const privatePath of ['"/admin"', '"/app"', '"/account"', '"/auth"', '"/dashboard"', '"/login"', '"/api/"']) {
     assert.match(robots, new RegExp(privatePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
+test("storefront listing lifecycle keeps active sold-out URLs indexable while hidden states stay non-public", () => {
+  const base = {
+    publishToStore: true,
+    publicSlug: "visible-product",
+    publicPrice: 49.99,
+    storeStatus: "active",
+    quantity: 5,
+    availableForSale: null,
+    stockLots: [],
+    sales: [],
+    stockReservations: []
+  };
+  const activeInStock = { ...base };
+  const activeSoldOut = { ...base, quantity: 0 };
+  const explicitSoldOut = { ...base, storeStatus: "sold_out", quantity: 5 };
+  const hidden = { ...base, storeStatus: "draft" };
+  const unpublished = { ...base, publishToStore: false };
+  const unpriced = { ...base, publicPrice: null };
+
+  assert.deepEqual([...PUBLIC_STOREFRONT_VISIBLE_STATUSES], ["active", "sold_out"]);
+  assert.equal(isPublicStorefrontListingVisible(activeInStock), true);
+  assert.equal(isPublicStorefrontListingSellable(activeInStock), true);
+  assert.equal(isPublicStorefrontListingIndexable(activeInStock), true);
+
+  assert.equal(isPublicStorefrontListingVisible(activeSoldOut), true);
+  assert.equal(isPublicStorefrontListingSellable(activeSoldOut), false);
+  assert.equal(isPublicStorefrontListingIndexable(activeSoldOut), true);
+
+  assert.equal(isPublicStorefrontListingVisible(explicitSoldOut), true);
+  assert.equal(isPublicStorefrontListingSellable(explicitSoldOut), false);
+  assert.equal(isPublicStorefrontListingIndexable(explicitSoldOut), true);
+
+  for (const entry of [hidden, unpublished, unpriced]) {
+    assert.equal(isPublicStorefrontListingVisible(entry), false);
+    assert.equal(isPublicStorefrontListingSellable(entry), false);
+    assert.equal(isPublicStorefrontListingIndexable(entry), false);
   }
 });
 

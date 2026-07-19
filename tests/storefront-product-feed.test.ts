@@ -331,7 +331,7 @@ test("Google Merchant feed endpoint and robots are wired for crawler access", ()
   assert.match(robots, /sitemap/);
   assert.doesNotMatch(robots, /disallow:[\s\S]*"\/product-feed\.xml"/i);
 
-  assert.match(sitemap, /listPublicStoreProducts\(\{ onlySellable: true \}\)/);
+  assert.match(sitemap, /listPublicStoreProducts\(\)/);
   assert.match(sitemap, /productCanonicalUrl\(product\.slug\)/);
   assert.doesNotMatch(sitemap, /\/admin|\/app|\/dashboard|\/api\//);
 
@@ -342,7 +342,7 @@ test("Google Merchant feed endpoint and robots are wired for crawler access", ()
     storefront.indexOf("export async function getCartProducts")
   );
   assert.match(route, /listPublicStoreProducts\(\{ onlySellable: true \}\)/);
-  assert.match(publicProductLoaders, /storeStatus: input\?\.onlySellable \? "active" : \{ in: \["active", "sold_out"\] \}/);
+  assert.match(publicProductLoaders, /storeStatus: input\?\.onlySellable \? "active" : \{ in: \[\.\.\.PUBLIC_STOREFRONT_VISIBLE_STATUSES\] \}/);
   assert.match(publicProductLoaders, /isPublicStorefrontListingSellable\(item\)/);
-  assert.match(publicProductLoaders, /where: \{ publicSlug: slug, publishToStore: true, storeStatus: \{ in: \["active", "sold_out"\] \} \}/);
+  assert.match(publicProductLoaders, /where: \{ publicSlug: slug, publishToStore: true, storeStatus: \{ in: \[\.\.\.PUBLIC_STOREFRONT_VISIBLE_STATUSES\] \} \}/);
 });

@@ -46,6 +46,7 @@ test("product detail renders retailer-style buyer clarity sections", () => {
 test("product detail keeps purchase controls clear and safe", () => {
   assert.match(productDetail, /const purchaseLimitLabel = storefrontPurchaseLimitLabel\(product\)/);
   assert.match(productDetail, /const rewardEstimateLabel = storefrontRewardEstimateLabel\(product, settings\)/);
+  assert.match(client, /if \(isSoldOutProduct\(product\)\) return null;/);
   assert.match(productDetail, /\{purchaseLimitLabel \? <span>\{purchaseLimitLabel\}\.<\/span> : null\}/);
   assert.match(productDetail, /className="gdg-detail-purchase-facts" aria-label="Buying details"/);
   assert.match(productDetail, /<b>Tax calculated at checkout<\/b>/);
@@ -83,7 +84,8 @@ test("related products are selected with a bounded public-only query", () => {
   assert.match(serverViews, /getRelatedPublicStoreProducts\(product, 4\)/);
   assert.match(relatedProducts, /id: \{ not: product\.id \}/);
   assert.match(relatedProducts, /publishToStore: true/);
-  assert.match(relatedProducts, /storeStatus: \{ in: \["active", "sold_out"\] \}/);
+  assert.match(relatedProducts, /storeStatus: "active"/);
+  assert.match(relatedProducts, /isPublicStorefrontListingSellable\(item\)/);
   assert.match(relatedProducts, /publicPrice: \{ not: null \}/);
   assert.match(relatedProducts, /publicSlug: \{ not: null \}/);
   assert.match(relatedProducts, /take/);
