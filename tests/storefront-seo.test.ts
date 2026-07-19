@@ -242,6 +242,7 @@ test("product pages, sitemap, and robots are wired for Google-ready discovery", 
   assert.match(shopProductRoute, /robots:\s*\{\s*\r?\n\s*index:\s*false,\s*\r?\n\s*follow:\s*false/);
   assert.match(productView, /type="application\/ld\+json"/);
   assert.match(productView, /storefrontProductJsonLd\(product\)/);
+  assert.match(productView, /permanentRedirect\(productCanonicalPath\(product\.slug\)\)/);
   assert.match(collectionRoute, /storefrontCollectionMetadata\(collection\)/);
   assert.match(productView, /StorefrontCollectionLanding/);
   assert.match(productView, /storefrontCollectionJsonLdScripts/);

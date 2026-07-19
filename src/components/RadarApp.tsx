@@ -99,6 +99,7 @@ import { STOREFRONT_CATEGORY_OPTIONS } from "@/lib/storefront-categories";
 import { isProductImageUrlRenderable, isStorefrontDisplayImageUrl, productImageQualityWarnings } from "@/lib/product-image-quality";
 import { DEFAULT_STOREFRONT_PURCHASE_LIMIT } from "@/lib/storefront-purchase-limits";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_SPORTS_CARDS_URL } from "@/lib/storefront-routing";
+import { normalizeStorefrontSlug } from "@/lib/storefront-slugs";
 import {
   POS_DISCOUNT_REASON_LABELS,
   POS_DISCOUNT_REASON_VALUES,
@@ -642,6 +643,10 @@ function formatStatus(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function storefrontPreviewHref(publicSlug: string) {
+  return `/shop/product/${normalizeStorefrontSlug(publicSlug)}`;
 }
 
 function formatStorefrontAddressLines(address: StorefrontOrderDTO["shippingAddress"] | StorefrontOrderDTO["billingAddress"]) {
@@ -11121,7 +11126,7 @@ function ShippingHubPanel({
                       Edit Product Shipping
                     </button>
                     {item.publicSlug ? (
-                      <a className="mini-action" href={`/shop/product/${item.publicSlug}`} target="_blank" rel="noreferrer">
+                      <a className="mini-action" href={storefrontPreviewHref(item.publicSlug)} target="_blank" rel="noreferrer">
                         Open Product
                       </a>
                     ) : null}
@@ -15072,7 +15077,7 @@ function InventoryList({
                 Edit Listing
               </button>
               {actionMenu.item.publishToStore && actionMenu.item.publicSlug ? (
-                <a role="menuitem" href={`/shop/product/${actionMenu.item.publicSlug}`} target="_blank" rel="noreferrer" onClick={() => setActionMenu(null)}>
+                <a role="menuitem" href={storefrontPreviewHref(actionMenu.item.publicSlug)} target="_blank" rel="noreferrer" onClick={() => setActionMenu(null)}>
                   <ExternalLink size={14} />
                   View Public Page
                 </a>
@@ -15487,7 +15492,7 @@ function ProductWorkspaceShell({
             );
           })}
           {item.publishToStore && item.publicSlug ? (
-            <a className="mini-action" href={`/shop/product/${item.publicSlug}`} target="_blank" rel="noreferrer">
+            <a className="mini-action" href={storefrontPreviewHref(item.publicSlug)} target="_blank" rel="noreferrer">
               <ExternalLink size={14} />
               View Storefront Page
             </a>
@@ -16737,7 +16742,7 @@ function StoreListingModal({
           </section>
           <div className="inventory-edit-actions">
             {item.publicSlug ? (
-              <a className="mini-action" href={`/shop/product/${item.publicSlug}`} target="_blank" rel="noreferrer">
+              <a className="mini-action" href={storefrontPreviewHref(item.publicSlug)} target="_blank" rel="noreferrer">
                 <ExternalLink size={14} />
                 View Public Page
               </a>

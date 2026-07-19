@@ -10,6 +10,7 @@ import {
 import { isSoldOutProduct } from "@/lib/storefront-badges";
 import { resolvedStorefrontCategory } from "@/lib/storefront-categories";
 import { effectiveShippingPackageData, type ShippingProfileDefinition } from "@/lib/shipping";
+import { normalizeStorefrontSlug } from "@/lib/storefront-slugs";
 import type { PublicStoreProductDTO } from "@/types/radar";
 
 type ProductFeedOptions = {
@@ -64,13 +65,7 @@ function absoluteHttpUrl(value: string | null | undefined) {
 }
 
 function merchantIdSlug(value: string | null | undefined) {
-  return compactText(value)
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+  return compactText(value) ? normalizeStorefrontSlug(value, "") : "";
 }
 
 function trimMerchantIdSlug(value: string, maxLength: number) {

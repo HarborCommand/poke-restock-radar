@@ -1,8 +1,8 @@
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { ProductDetail, ProductGrid, StorefrontCollectionLanding, StorefrontFooter, StorefrontHeader } from "@/components/StorefrontClient";
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { getPublicStoreProduct, getRelatedPublicStoreProducts, getStorefrontSettings, listPublicStoreProducts, searchPublicStoreProducts } from "@/lib/storefront";
-import { storefrontJsonLdScript, storefrontOrganizationJsonLd, storefrontProductJsonLd } from "@/lib/storefront-seo";
+import { productCanonicalPath, storefrontJsonLdScript, storefrontOrganizationJsonLd, storefrontProductJsonLd } from "@/lib/storefront-seo";
 import {
   getStorefrontCollection,
   relatedStorefrontCollections,
@@ -89,6 +89,7 @@ export async function StorefrontCollectionView({ slug }: { slug: string }) {
 export async function StorefrontProductView({ slug }: { slug: string }) {
   const [settings, product, homeHref] = await Promise.all([getStorefrontSettings(), getPublicStoreProduct(slug), getStorefrontHomeHref()]);
   if (!product) notFound();
+  if (slug !== product.slug) permanentRedirect(productCanonicalPath(product.slug));
   const relatedProducts = await getRelatedPublicStoreProducts(product, 4);
   return (
     <main className="shop-shell">

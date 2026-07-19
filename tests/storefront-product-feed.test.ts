@@ -137,6 +137,21 @@ test("Google Merchant product feed preserves short safe slug IDs", () => {
   ]);
 });
 
+test("Google Merchant product feed uses canonical links for legacy malformed product slugs", () => {
+  const legacyProduct = product({
+    id: "legacy-slug-product",
+    slug: "pok233mon-trading-card-game-mega-evolution-chaos-rising-booster-bundle",
+    title: "Pokémon Trading Card Game: Mega Evolution Chaos Rising Booster Bundle"
+  });
+  const xml = storefrontProductFeedXml([legacyProduct]);
+  const [item] = storefrontProductFeedItems([legacyProduct]);
+
+  assert.ok(item);
+  assert.doesNotMatch(item.id, /pok233mon/i);
+  assert.match(xml, new RegExp(`<link>${productCanonicalUrl("pokemon-trading-card-game-mega-evolution-chaos-rising-booster-bundle").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</link>`));
+  assert.doesNotMatch(xml, /pok233mon/i);
+});
+
 test("Google Merchant product feed IDs are short stable unique and safe", () => {
   const longSlug = "pokemon-trading-card-game-mega-evolution-perfect-order-3-booster-blister-with-very-long-name";
   const similarLongSlug = "pokemon-trading-card-game-mega-evolution-perfect-order-3-booster-blister-with-very-long-name-alt";
@@ -344,5 +359,7 @@ test("Google Merchant feed endpoint and robots are wired for crawler access", ()
   assert.match(route, /listPublicStoreProducts\(\{ onlySellable: true \}\)/);
   assert.match(publicProductLoaders, /storeStatus: input\?\.onlySellable \? "active" : \{ in: \[\.\.\.PUBLIC_STOREFRONT_VISIBLE_STATUSES\] \}/);
   assert.match(publicProductLoaders, /isPublicStorefrontListingSellable\(item\)/);
-  assert.match(publicProductLoaders, /where: \{ publicSlug: slug, publishToStore: true, storeStatus: \{ in: \[\.\.\.PUBLIC_STOREFRONT_VISIBLE_STATUSES\] \} \}/);
+  assert.match(publicProductLoaders, /const normalizedSlug = normalizeStorefrontSlug\(slug\)/);
+  assert.match(publicProductLoaders, /publicSlug: \{ in: exactSlugCandidates \}/);
+  assert.match(publicProductLoaders, /normalizedMatches\.length === 1/);
 });
