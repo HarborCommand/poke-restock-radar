@@ -71,7 +71,7 @@ test("public storefront polish keeps product, cart, footer, and login layouts co
   assert.match(css, /Public storefront polish: customer-facing layout containment only/);
   assert.match(css, /\.shop-shell\s*\{\s*\r?\n\s*overflow-x: clip;/);
   assert.match(css, /\.gdg-nav\s*\{[\s\S]*?flex-wrap: wrap;/);
-  assert.match(css, /\.gdg-product-card\s*\{[\s\S]*?grid-template-rows: auto minmax\(96px, 1fr\) auto;/);
+  assert.match(css, /\.gdg-product-card\s*\{[\s\S]*?grid-template-rows: auto minmax\(128px, 1fr\) auto;/);
   assert.match(css, /\.gdg-product-card-meta,\s*\r?\n\.gdg-product-card-status-row\s*\{[\s\S]*?flex-wrap: wrap;/);
   assert.match(css, /\.gdg-product-card-meta span\s*\{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/);
   assert.match(css, /\.gdg-product-card-meta \.gdg-product-reward-estimate\s*\{[\s\S]*?background: #fffbeb;/);
