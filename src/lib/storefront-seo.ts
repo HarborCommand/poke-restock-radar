@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cleanStorefrontTitle } from "@/lib/storefront-copy";
+import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_WWW_DOMAIN } from "@/lib/storefront-routing";
 import { isSoldOutProduct } from "@/lib/storefront-badges";
 import { calculateCartShipping } from "@/lib/shipping";
@@ -38,7 +38,8 @@ function trimForMeta(value: string, maxLength = 158) {
   if (compact.length <= maxLength) return compact;
   const sliced = compact.slice(0, maxLength - 1);
   const lastSpace = sliced.lastIndexOf(" ");
-  return `${sliced.slice(0, lastSpace > 90 ? lastSpace : maxLength - 1).trim()}.`;
+  const trimmed = sliced.slice(0, lastSpace > 90 ? lastSpace : maxLength - 1).trim().replace(/[.!?]+$/g, "");
+  return `${trimmed}.`;
 }
 
 function moneyForMeta(value: number) {
@@ -67,7 +68,7 @@ export function storefrontProductSchemaAvailability(product: Pick<SeoProduct, "a
 
 export function storefrontProductMetaDescription(product: Pick<SeoProduct, "title" | "description" | "category" | "price" | "availabilityLevel" | "status">) {
   const title = cleanStorefrontTitle(product.title);
-  const description = compactText(product.description);
+  const description = compactText(cleanStorefrontDescription(product));
   const prefix = `Shop ${title} from ${GAMEDAYGRABS_SEO_STORE_NAME}. ${product.category}. ${moneyForMeta(product.price)}. ${storefrontProductAvailabilityText(product)}.`;
   return trimForMeta(description ? `${prefix} ${description}` : prefix);
 }

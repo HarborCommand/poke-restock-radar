@@ -156,7 +156,7 @@ function productFeedItem(product: PublicStoreProductDTO, options: ProductFeedOpt
   const imageLink = productFeedImage(product);
   if (!imageLink) return null;
   const title = cleanStorefrontTitle(product.title);
-  const description = compactText(product.description) || storefrontProductMetaDescription(product);
+  const description = storefrontProductMetaDescription(product);
   const packageData = effectiveShippingPackageData(product, options.profileDefinitions);
   return {
     id: googleMerchantProductId(product),

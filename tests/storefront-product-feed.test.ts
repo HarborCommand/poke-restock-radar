@@ -62,7 +62,8 @@ test("Google Merchant product feed renders public active storefront products", (
   assert.match(xml, /<rss version="2\.0" xmlns:g="http:\/\/base\.google\.com\/ns\/1\.0">/);
   assert.match(xml, /<g:id>pokemon-feed-product<\/g:id>/);
   assert.match(xml, /<title>Pok.mon Feed Product<\/title>/);
-  assert.match(xml, /<description>Factory sealed Pokemon product for collectors\.<\/description>/);
+  assert.match(xml, /<description>Shop Pok.mon Feed Product from GameDayGrabs\./);
+  assert.match(xml, /Factory sealed Pok.mon product for collectors\./);
   assert.match(xml, new RegExp(`<link>${productCanonicalUrl("pokemon-feed-product").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</link>`));
   assert.match(xml, /<g:image_link>https:\/\/cdn\.example\.com\/feed-product\.jpg<\/g:image_link>/);
   assert.match(xml, /<g:availability>in stock<\/g:availability>/);
@@ -73,6 +74,18 @@ test("Google Merchant product feed renders public active storefront products", (
   assert.match(xml, /<g:gtin>123456789012<\/g:gtin>/);
   assert.match(xml, /<g:shipping_weight>12 oz<\/g:shipping_weight>/);
   assert.doesNotMatch(xml, /<g:shipping(?:\s|>)/);
+});
+
+test("Google Merchant product feed cleans placeholder and admin description text", () => {
+  const xml = storefrontProductFeedXml([
+    product({
+      description: "Product Details Card Text: <script>alert('x')</script><p>Factory sealed booster bundle with clean customer-facing product details.</p>"
+    })
+  ]);
+
+  assert.match(xml, /Factory sealed booster bundle/);
+  assert.doesNotMatch(xml, /Product Details Card Text/i);
+  assert.doesNotMatch(xml, /<script|&lt;script|alert|&lt;p&gt;/i);
 });
 
 test("Google Merchant product feed is unaffected by disabled product search fallback config", () => {

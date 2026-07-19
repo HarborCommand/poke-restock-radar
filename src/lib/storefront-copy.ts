@@ -4,6 +4,9 @@ type StorefrontCopyProduct = {
   brand?: string | null;
   category?: string | null;
   setName?: string | null;
+  condition?: string | null;
+  shippingAvailable?: boolean | null;
+  localPickupEligible?: boolean | null;
   publicDescription?: string | null;
   description?: string | null;
   status?: string | null;
@@ -12,8 +15,8 @@ type StorefrontCopyProduct = {
 
 const warningDescriptionPatterns = [
   /Pok\?mon/i,
-  /Pok�mon/i,
-  /PokÃ©mon/i,
+  /Pokï¿½mon/i,
+  /PokÃƒÂ©mon/i,
   /\bundefined\b/i,
   /\bnull\b/i,
   /\bsource\b/i,
@@ -25,6 +28,9 @@ const warningDescriptionPatterns = [
   /customer-facing pricing/i,
   /available quantity before it appears/i,
   /invoice checkout confirmation/i,
+  /Product\s+Details\s+Card\s+Text/i,
+  /Public\s+listing\s+photos\s+and\s+title/i,
+  /Available\s+from\s+GameDayGrabs\s+LLC,\s+this\s+sealed\s+Pok/i,
   /home\?and/i,
   /\w\?\s*s\b/i,
   /Mega Evolution\?\s*/i
@@ -53,22 +59,28 @@ export function soldOutCatalogHistoryDescription() {
 
 function decodeCommonMojibake(value: string) {
   return value
-    .replace(/Pok(?:\?|�|Ã©)mon/gi, "Pokémon")
-    .replace(/Pok(?:\?|�|Ã©)\s*Ball/gi, "Poké Ball")
+    .replace(/Pok(?:\?|ï¿½|ÃƒÂ©)mon/gi, "Pokémon")
+    .replace(/Pok(?:\?|ï¿½|ÃƒÂ©)\s*Ball/gi, "Poké Ball")
     .replace(/Poke\s*Ball/gi, "Poké Ball")
     .replace(/Pokeball/gi, "Poké Ball")
     .replace(/Pokemon/gi, "Pokémon")
     .replace(/TCG/gi, "TCG")
-    .replace(/â€™/g, "'")
-    .replace(/â€œ|â€�/g, '"')
-    .replace(/â€“|â€”/g, "-")
-    .replace(/Â·/g, "·")
-    .replace(/Â/g, "");
+    .replace(/Ã¢â‚¬â„¢/g, "'")
+    .replace(/Ã¢â‚¬Å“|Ã¢â‚¬ï¿½/g, '"')
+    .replace(/Ã¢â‚¬â€œ|Ã¢â‚¬â€/g, "-")
+    .replace(/Ã‚Â·/g, "·")
+    .replace(/Ã‚/g, "");
 }
 
 export function normalizeStorefrontCopy(value: string | null | undefined) {
   if (!value) return "";
   const normalized = decodeCommonMojibake(value)
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\bProduct\s+Details\s+Card\s+Text\s*:\s*/gi, "")
+    .replace(/\bProduct\s+Details\s*:\s*$/gi, "")
+    .replace(/\bPublic\s+description\s*:\s*/gi, "")
     .replace(/home\?and/gi, "home and")
     .replace(/checkout\?confirmation/gi, "checkout confirmation")
     .replace(/(\w)\?\s*s\b/g, "$1's")
@@ -110,20 +122,39 @@ export function storefrontCopyWarnings(value: string | null | undefined) {
 export function hasLowQualityStorefrontDescription(value: string | null | undefined) {
   const normalized = normalizeStorefrontCopy(value);
   if (!normalized || normalized.length < 40 || normalized.length > 1200) return true;
-  return fallbackDescriptionPatterns.some((pattern) => pattern.test(value ?? "") || pattern.test(normalized));
+  return fallbackDescriptionPatterns.some((pattern) => pattern.test(normalized));
 }
 
 export function generatedStorefrontDescription(product: StorefrontCopyProduct) {
   const title = cleanStorefrontTitle(product.title || product.itemName);
   const category = cleanStorefrontTitle(product.category) || "collectible product";
-  const text = `${title} ${category} ${product.setName || ""}`;
-  const isPokemonSealed = /\bPokémon\b|\bPokemon\b|TCG|booster|elite trainer box|ETB|tin|blister|collection/i.test(text);
+  const setName = cleanStorefrontTitle(product.setName);
+  const condition = cleanStorefrontTitle(product.condition);
+  const isSoldOut = product.status === "sold_out" || product.availableQuantity === 0;
+  const knownFacts: string[] = [];
 
-  if (isPokemonSealed) {
-    return "Available from GameDayGrabs LLC, this sealed Pokémon TCG product is part of our curated collector inventory. Each item is listed with clear product images, current availability, and secure request-invoice checkout. Availability may change before invoice confirmation.";
+  if (setName && !title.toLowerCase().includes(setName.toLowerCase())) {
+    knownFacts.push(`From ${setName}.`);
   }
 
-  return `Available from GameDayGrabs LLC, this ${category.toLowerCase()} is part of our curated Pokémon and sports card inventory. Each listing includes clear product images, current availability, and request-invoice checkout. Availability may change before invoice confirmation.`;
+  if (condition) {
+    knownFacts.push(`Condition: ${condition}.`);
+  }
+
+  if (isSoldOut) {
+    knownFacts.push("Currently sold out and not available for checkout.");
+  } else if (product.shippingAvailable && product.localPickupEligible) {
+    knownFacts.push("Available for shipping or Local Pickup when checkout options are shown.");
+  } else if (product.shippingAvailable) {
+    knownFacts.push("Available for shipping when checkout options are shown.");
+  } else if (product.localPickupEligible) {
+    knownFacts.push("Available for Local Pickup when checkout options are shown.");
+  } else {
+    knownFacts.push("Fulfillment options are shown before checkout.");
+  }
+
+  const subject = title ? `${title} is a ${category.toLowerCase()} listed by GameDayGrabs.` : `This ${category.toLowerCase()} is listed by GameDayGrabs.`;
+  return [subject, ...knownFacts].join(" ");
 }
 
 export function cleanStorefrontDescription(product: StorefrontCopyProduct) {

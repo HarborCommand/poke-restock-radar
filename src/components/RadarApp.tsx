@@ -9226,7 +9226,10 @@ function storefrontSuggestedDescription(item: InventoryItemDTO) {
     itemName: item.itemName,
     brand: item.brand,
     category,
-    setName: item.setName
+    setName: item.setName,
+    condition: item.condition,
+    shippingAvailable: item.shippingAvailable,
+    localPickupEligible: item.localPickupAvailable
   });
 }
 
@@ -9279,6 +9282,9 @@ function storefrontListingQuality(item: InventoryItemDTO) {
     brand: item.brand,
     category,
     setName: item.setName,
+    condition: item.condition,
+    shippingAvailable: item.shippingAvailable,
+    localPickupEligible: item.localPickupAvailable,
     publicDescription: item.publicDescription,
     description: item.description,
     status: item.storeStatus,
@@ -16393,6 +16399,9 @@ function StoreListingModal({
     brand: item.brand,
     category: effectiveStorefrontCategory,
     setName: item.setName,
+    condition: item.condition,
+    shippingAvailable: item.shippingAvailable,
+    localPickupEligible: item.localPickupAvailable,
     publicDescription: item.publicDescription,
     description: item.description,
     status: storeStatus,
@@ -16405,6 +16414,9 @@ function StoreListingModal({
     brand: item.brand,
     category: effectiveStorefrontCategory,
     setName: item.setName,
+    condition: item.condition,
+    shippingAvailable: item.shippingAvailable,
+    localPickupEligible: item.localPickupAvailable,
     publicDescription,
     description: null,
     status: storeStatus,
