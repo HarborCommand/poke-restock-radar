@@ -41,7 +41,11 @@ export async function generateMetadata() {
   }
   return {
     title: "Poke Restock Radar",
-    description: "Private Pokemon TCG restock, release, inventory, and alert radar."
+    description: "Private Pokemon TCG restock, release, inventory, and alert radar.",
+    robots: {
+      index: false,
+      follow: false
+    }
   };
 }
 

@@ -170,5 +170,6 @@ test("health and high-risk routes propagate request ids and safe errors", () => 
   assert.match(link, /customer_link\.apply/);
   assert.match(cancelRefund, /storefront_order\.cancel_refund/);
   assert.match(proxy, /requestHeaders\.set\("x-request-id"/);
-  assert.match(proxy, /matcher:\s*"\/api\/:path\*"/);
+  assert.match(proxy, /matcher:/);
+  assert.match(proxy, /request\.nextUrl\.pathname\.startsWith\("\/api\/radar\/"\)/);
 });

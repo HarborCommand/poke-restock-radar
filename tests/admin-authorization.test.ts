@@ -204,7 +204,9 @@ function routeFiles(directory: string): string[] {
 
 test("every radar mutation is authenticated and covered by the centralized origin proxy", () => {
   const proxySource = readFileSync(path.join(root, "src/proxy.ts"), "utf8");
-  assert.match(proxySource, /matcher:\s*["']\/api\/(?:radar\/)?\:path\*["']/);
+  assert.match(proxySource, /matcher:/);
+  assert.match(proxySource, /_next\/static/);
+  assert.match(proxySource, /request\.nextUrl\.pathname\.startsWith\("\/api\/radar\/"\)/);
   assert.match(proxySource, /mutationMethods/);
   assert.match(proxySource, /signedJobPaths/);
 

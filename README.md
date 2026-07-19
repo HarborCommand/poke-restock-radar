@@ -2,7 +2,7 @@
 
 Private web app for tracking Pokemon TCG online restocks, local store patterns, releases, alerts, and manual card investment data.
 
-This build intentionally does not automate carts, checkout, captcha, queues, account actions, proxy rotation, or private retailer access. Product actions open the official retailer URL for manual checkout only.
+This build intentionally does not automate carts, checkout, captcha, queues, account actions, proxy rotation, or private retailer access. Product actions open trusted retailer source URLs for manual checkout only.
 
 ## Standalone App Boundary
 
@@ -32,7 +32,7 @@ Set `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD_HASH` before any shared or
 - Product watchlist
 - Manual product status updates
 - Alerts table
-- Official-page Go / Buy Now actions
+- Trusted-source Go / Buy Now actions
 - Store tracker
 - Manual sighting logs
 - Release calendar
@@ -255,7 +255,7 @@ Then set:
 
 Each user can enable or disable browser push from Notification Settings. The Test Browser Push button sends through Web Push when VAPID and a subscription exist; otherwise it creates an in-app fallback and asks the browser to show a local test notification when permission is granted.
 
-Browser push is alerts-only. It does not automate carts, checkout, payment, queues, captchas, accounts, or retailer limits. Go / Buy Now still opens official retailer pages for manual checkout only.
+Browser push is alerts-only. It does not automate carts, checkout, payment, queues, captchas, accounts, or retailer limits. Go / Buy Now still opens trusted retailer source pages for manual checkout only.
 
 ## Phase 7 Production Deployment
 
@@ -404,7 +404,7 @@ Retailer URL validation is enforced when products are created or edited. Example
 - Walmart: `https://www.walmart.com/ip/Pokemon-TCG-Example-Collection-Box/99900003`
 - GameStop: `https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-example/999005`
 
-Use exact product pages, not search or category links. The add wizard requires retailer, product URL, and product name, with expected title keywords, UPC, SKU, DPCI, TCIN/ASIN/item ID, retailer product ID, and product image URL available as matching fields. `Go / Buy Now` opens only a verified exact product URL, and checkout stays manual on the official retailer site.
+Use exact product pages, not search or category links. The add wizard requires retailer, product URL, and product name, with expected title keywords, UPC, SKU, DPCI, TCIN/ASIN/item ID, retailer product ID, and product image URL available as matching fields. `Go / Buy Now` opens only a verified exact product URL, and checkout stays manual on the retailer site.
 
 ### Product Link Verification
 
@@ -645,7 +645,7 @@ Daily owner workflow:
 
 1. Sign in with the private Admin account.
 2. Review `Today's Plan` for online products, local stores, newest releases, latest alerts, and card opportunities.
-3. Use `Go / Buy Now` only to open the official retailer page and complete checkout manually.
+3. Use `Go / Buy Now` only to open the trusted retailer source page and complete checkout manually.
 4. Use `Field Mode` while store hunting, then log `Seen Stock`, `Empty Shelf`, `Vendor Spotted`, `Bought Product`, or notes.
 5. Enter card comps manually, then generate the weekly investment report when the comp set looks current.
 6. Check `App Health` and the `System Status Checklist` after deploys, cron changes, or notification changes.
@@ -697,7 +697,7 @@ The launch dashboard is meant for the first real week of use. Admins should use 
 - Friend access has been tested.
 - Daily recaps, inventory logging, and backup routines are part of the launch rhythm.
 
-Use `Alert Calibration Queue` every morning during launch. It surfaces stale checks, low-confidence monitor results, blocked/captcha pages, pending confirmation alerts, suppressed duplicate alerts, and repeated false positives. For each item, tune the product with stricter required words, ignore misleading words, lower check frequency, pause monitoring, or manually verify the official retailer page.
+Use `Alert Calibration Queue` every morning during launch. It surfaces stale checks, low-confidence monitor results, blocked/captcha pages, pending confirmation alerts, suppressed duplicate alerts, and repeated false positives. For each item, tune the product with stricter required words, ignore misleading words, lower check frequency, pause monitoring, or manually verify the trusted retailer source page.
 
 Weekly owner rhythm:
 

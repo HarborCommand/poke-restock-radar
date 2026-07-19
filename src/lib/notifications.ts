@@ -617,7 +617,7 @@ export async function sendTestAllAlerts(user: SessionUser) {
   if (product) {
     routePayloads.push({
       title: "Route test: product restock",
-      reason: "Product restock alerts should open Products and Go should open only the official retailer page.",
+      reason: "Product restock alerts should open Products and Go should open only the trusted retailer source page.",
       priority: "LOW",
       entityType: "PRODUCT",
       entityId: product.id,
