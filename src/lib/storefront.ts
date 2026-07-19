@@ -49,6 +49,7 @@ import {
   type StorefrontShopAvailability,
   type StorefrontShopSort
 } from "@/lib/storefront-shop-query";
+import { normalizeStorefrontSlug } from "@/lib/storefront-slugs";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import {
   cumulativeRefundedTaxCents,
@@ -223,19 +224,8 @@ function stringifyList(value: unknown) {
   return null;
 }
 
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^\w\s-]/g, "")
-    .trim()
-    .replace(/[\s_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-}
-
 async function uniqueSlug(base: string, itemId: string) {
-  const normalized = slugify(base) || `product-${itemId.slice(-6)}`;
+  const normalized = normalizeStorefrontSlug(base, `product-${itemId.slice(-6)}`);
   let candidate = normalized;
   for (let index = 2; index < 50; index += 1) {
     const existing = await prisma.inventoryItem.findFirst({
@@ -331,9 +321,10 @@ export function publicProductToDTO(
 ): PublicStoreProductDTO | null {
   const price = item.publicPrice;
   const rawAvailableQuantity = sellableQuantity(item);
-  const slug = item.publicSlug;
+  const storedSlug = item.publicSlug;
   if (!isPublicStorefrontListingVisible(item)) return null;
-  if (!slug || price === null || price === undefined) return null;
+  if (!storedSlug || price === null || price === undefined) return null;
+  const slug = normalizeStorefrontSlug(storedSlug, `product-${item.id.slice(-6)}`);
   const images = publicImages(item);
   const publicCategory = displayStorefrontCategory({
     category: item.storefrontCategory || item.category,
@@ -608,13 +599,25 @@ export async function searchPublicStoreProducts(input: PublicStoreProductSearchI
 }
 
 export async function getPublicStoreProduct(slug: string) {
-  const [item, profileDefinitions] = await Promise.all([
+  const normalizedSlug = normalizeStorefrontSlug(slug);
+  const exactSlugCandidates = Array.from(new Set([slug, normalizedSlug].filter(Boolean)));
+  const [exactItem, profileDefinitions] = await Promise.all([
     prisma.inventoryItem.findFirst({
-      where: { publicSlug: slug, publishToStore: true, storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] } },
+      where: { publicSlug: { in: exactSlugCandidates }, publishToStore: true, storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] } },
       include: storefrontInventoryInclude
     }),
     shippingProfileDefinitionsForCheckout()
   ]);
+  let item = exactItem;
+  if (!item) {
+    const candidates = await prisma.inventoryItem.findMany({
+      where: { publishToStore: true, storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] }, publicSlug: { not: null } },
+      include: storefrontInventoryInclude,
+      take: 500
+    });
+    const normalizedMatches = candidates.filter((candidate) => normalizeStorefrontSlug(candidate.publicSlug, `product-${candidate.id.slice(-6)}`) === normalizedSlug);
+    item = normalizedMatches.length === 1 ? normalizedMatches[0] : null;
+  }
   if (!item) return null;
   return publicProductToDTO(item, { profileDefinitions });
 }

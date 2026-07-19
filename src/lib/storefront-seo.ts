@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, GAMEDAYGRABS_WWW_DOMAIN } from "@/lib/storefront-routing";
+import { normalizeStorefrontSlug } from "@/lib/storefront-slugs";
 import { isSoldOutProduct } from "@/lib/storefront-badges";
 import { calculateCartShipping } from "@/lib/shipping";
 import type { PublicStoreProductDTO } from "@/types/radar";
@@ -47,7 +48,7 @@ function moneyForMeta(value: number) {
 }
 
 export function productCanonicalPath(slug: string) {
-  return `/product/${encodeURIComponent(slug)}`;
+  return `/product/${encodeURIComponent(normalizeStorefrontSlug(slug))}`;
 }
 
 export function productCanonicalUrl(slug: string) {

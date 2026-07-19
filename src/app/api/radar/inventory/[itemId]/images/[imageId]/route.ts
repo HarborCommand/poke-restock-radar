@@ -4,6 +4,7 @@ import { requireAdmin, requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { deleteInventoryProductImage, updateInventoryProductImage } from "@/lib/radar-service";
+import { normalizeStorefrontSlug } from "@/lib/storefront-slugs";
 import { inventoryProductImageUpdateSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -15,8 +16,11 @@ function revalidateStorefrontImagePaths(item: { publicSlug?: string | null }) {
   revalidatePath("/product-feed.xml");
   revalidatePath("/sitemap.xml");
   if (item.publicSlug) {
+    const canonicalSlug = normalizeStorefrontSlug(item.publicSlug);
     revalidatePath(`/product/${item.publicSlug}`);
     revalidatePath(`/shop/product/${item.publicSlug}`);
+    revalidatePath(`/product/${canonicalSlug}`);
+    revalidatePath(`/shop/product/${canonicalSlug}`);
   }
 }
 
