@@ -79,7 +79,7 @@ test("public trust pages include independent retailer, source, and trademark dis
   assert.match(contactPage, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
   assert.match(policiesPage, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
   assert.match(termsContent, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
-  assert.match(storefrontClient, /Seller and authenticity/);
+  assert.match(storefrontClient, /Authenticity &amp; seller information/);
   assert.match(storefrontClient, /Product names, brands, characters, and trademarks belong to their respective owners/);
   assert.match(disclosures, /retail, wholesale, and distributor channels/);
 

@@ -126,13 +126,15 @@ test("admin listing editor exposes preview, regenerate, and risky-copy warnings"
 test("public detail copy sections are present and private terms are not rendered as guidance", () => {
   const client = fs.readFileSync("src/components/StorefrontClient.tsx", "utf8");
 
-  for (const heading of ["Product Description", "What&apos;s included", "Product condition", "Product Details", "Seller and authenticity", "Shipping summary", "Checkout hold", "Product issue support"]) {
+  for (const heading of ["Product Description", "Product Details"]) {
     assert.match(client, new RegExp(`<h2>${heading}</h2>`));
   }
+  for (const summary of ["Shipping &amp; Local Pickup", "Authenticity &amp; seller information", "Returns &amp; product support"]) {
+    assert.match(client, new RegExp(`<summary>${summary}</summary>`));
+  }
   assert.match(client, /Shipping is calculated from product weight and package size/);
-  assert.match(client, /Final shipping is shown before payment/);
-  assert.match(client, /Items are held for 15 minutes once checkout starts/);
-  assert.match(client, /Listings show only customer-facing availability, condition, and checkout details/);
+  assert.match(client, /Items are reserved for 15 minutes after checkout begins/);
   assert.match(client, /Product names, brands, characters, and trademarks belong to their respective owners/);
+  assert.doesNotMatch(client, /<h2>What&apos;s included<\/h2>|<h2>Product condition<\/h2>|<h2>Shipping summary<\/h2>|<h2>Checkout hold<\/h2>|<h2>Product issue support<\/h2>/);
   assert.doesNotMatch(client, /internal purchase notes|private inventory details/i);
 });

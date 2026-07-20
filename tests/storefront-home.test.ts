@@ -279,8 +279,10 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.doesNotMatch(client, /<section className="gdg-trust-bar"/);
   assert.match(home, /Shop Pokémon Cards/);
   assert.doesNotMatch(home, /Shop Pokemon Cards/);
+  assert.doesNotMatch(home, /Shop PokÃ©mon Cards/);
   assert.match(home, /Products Under \$25/);
-  assert.match(client, /Shop Pokemon/);
+  assert.match(client, /Shop Pokémon/);
+  assert.doesNotMatch(client, /Shop Pokemon/);
   assert.match(client, /View New Arrivals/);
   assert.match(client, /Why buy from GameDayGrabs\?/);
   assert.match(client, /Create an account to track orders and rewards/);
@@ -300,7 +302,7 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.match(client, /<span className="gdg-home-account-badge-mark">G<\/span>/);
   assert.doesNotMatch(client, /gdg-home-account-icon/);
   assert.doesNotMatch(client, /gdg-home-account-[\s\S]{0,160}<User/);
-  assert.match(client, /sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections/);
+  assert.match(client, /sealed Pokémon TCG products, booster bundles, tins, blisters, premium collections/);
   assert.match(client, /GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE/);
   assert.match(client, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
   for (const category of ["Booster Bundles", "Tins", "Premium Collections", "Blisters", "New Arrivals"]) {

@@ -40,7 +40,8 @@ test("desktop product cards allow multi-line names without narrow clipping or st
   assert.match(css, /\.gdg-product-body h3\s*\{[\s\S]*?min-height: 3\.84em;[\s\S]*?-webkit-line-clamp: 3;/);
   assert.match(css, /\.gdg-product-card-subtitle\s*\{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/);
   assert.match(css, /\.gdg-product-card\s*\{[\s\S]*?grid-template-rows: auto minmax\(128px, 1fr\) auto;/);
-  assert.match(css, /\.gdg-product-image-card\s*\{[\s\S]*?min-height: 0;/);
+  assert.match(css, /\.gdg-product-image-stage\s*\{[\s\S]*?min-height: 188px;[\s\S]*?place-items: center;/);
+  assert.match(css, /\.gdg-product-image\s*\{[\s\S]*?border: 0;[\s\S]*?background: transparent;/);
   assert.doesNotMatch(css, /\.gdg-product-media img\s*\{[\s\S]*?height:\s*auto[\s\S]*?width:\s*100%[\s\S]*?height:\s*100%/);
 });
 
@@ -53,9 +54,10 @@ test("mobile product cards use single-column safe clamps and keep actions reacha
 
 test("card metadata, sold-out state, rewards, fulfillment, and focus behavior remain intact", () => {
   assert.match(productCard, /const actionText = actionDisabled \? "Sold Out" : actionLabel/);
-  assert.match(productCard, /className=\{isSoldOut \? "gdg-stock out" : "gdg-stock in"\}/);
+  assert.match(productCard, /const availabilityLabel = storefrontCalmAvailabilityLabel\(product\)/);
+  assert.match(productCard, /availabilityLabel === "Low Stock" \? "gdg-stock limited" : "gdg-stock in"/);
   assert.match(productCard, /storefrontRewardEstimateLabel\(product, settings\)/);
-  assert.match(productCard, /storefrontFulfillmentBadges\(product\)/);
+  assert.match(productCard, /storefrontCalmFulfillmentLine\(product\)/);
   assert.match(productCard, /className="gdg-product-card-meta" aria-label=\{`Purchase details for \$\{productTitle\}`\}/);
   assert.match(css, /\.gdg-product-card:focus-within/);
   assert.match(css, /\.gdg-product-card,\s*\r?\n\.gdg-product-card footer,\s*\r?\n\.gdg-product-card h3,/);

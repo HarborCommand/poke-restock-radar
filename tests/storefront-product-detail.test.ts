@@ -22,25 +22,24 @@ const relatedProducts = storefront.slice(relatedProductsStart, relatedProductsEn
 test("product detail renders retailer-style buyer clarity sections", () => {
   assert.match(productDetail, /className="gdg-detail-info gdg-purchase-panel"/);
   assert.match(productDetail, /Product Description/);
-  assert.match(productDetail, /What&apos;s included/);
-  assert.match(productDetail, /productIncludedBullets\(product, displayCategory, conditionLabel\)/);
-  assert.match(client, /Product type: \$\{displayCategory\}\./);
-  assert.match(client, /Condition shown by listing: \$\{conditionLabel\}\./);
-  assert.match(productDetail, /Product condition/);
-  assert.match(productDetail, /Condition details are based on the listing information\./);
-  assert.match(productDetail, /Shipping summary/);
-  assert.match(productDetail, /Shipping is calculated from product weight and package size\./);
-  assert.match(productDetail, /Final shipping is shown before payment\./);
-  assert.match(productDetail, /Seller and authenticity/);
+  assert.match(productDetail, /className="gdg-product-description-panel"/);
+  assert.match(productDetail, /className="gdg-product-details-panel"/);
+  assert.match(productDetail, /className="gdg-product-detail-list"/);
+  assert.match(productDetail, /Set or series/);
+  assert.match(productDetail, /Product type/);
+  assert.match(productDetail, /Purchase limit/);
+  assert.match(productDetail, /Shipping &amp; Local Pickup/);
+  assert.match(productDetail, /Shipping is calculated from package details before payment\./);
+  assert.match(productDetail, /Authenticity &amp; seller information/);
   assert.match(productDetail, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
   assert.match(productDetail, /GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE/);
   assert.match(productDetail, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
-  assert.match(productDetail, /product\.localPickupEligible \? <li>Local pickup may be available for this item\.<\/li>/);
-  assert.match(productDetail, /Local pickup appears at checkout when available for this item\./);
+  assert.match(productDetail, /product\.localPickupEligible \? <p>Local Pickup appears at checkout when available for this item\.<\/p>/);
   assert.match(productDetail, /variant="product-helper"/);
   assert.match(productDetail, /className="grabby-helper-strip gdg-product-grabby-card"/);
-  assert.match(productDetail, /Checkout hold/);
-  assert.match(productDetail, /Items are held for 15 minutes once checkout starts\./);
+  assert.match(productDetail, /Returns &amp; product support/);
+  assert.match(productDetail, /Items are reserved for 15 minutes after checkout begins\./);
+  assert.doesNotMatch(productDetail, /What&apos;s included|Product condition|Shipping summary|Checkout hold|Product issue support/);
 });
 
 test("product detail keeps purchase controls clear and safe", () => {
@@ -48,7 +47,7 @@ test("product detail keeps purchase controls clear and safe", () => {
   assert.match(productDetail, /const rewardEstimateLabel = storefrontRewardEstimateLabel\(product, settings\)/);
   assert.match(client, /if \(isSoldOutProduct\(product\)\) return null;/);
   assert.match(productDetail, /\{purchaseLimitLabel \? <span>\{purchaseLimitLabel\}\.<\/span> : null\}/);
-  assert.match(productDetail, /className="gdg-detail-purchase-facts" aria-label="Buying details"/);
+  assert.match(productDetail, /className="gdg-detail-benefits" aria-label="Buying details"/);
   assert.match(productDetail, /STOREFRONT_TAX_PAYMENT_COPY/);
   assert.match(productDetail, /Shipping and any required taxes appear before payment\./);
   assert.match(productDetail, /Estimated from merchandise subtotal only; excludes shipping and tax\./);
@@ -56,7 +55,9 @@ test("product detail keeps purchase controls clear and safe", () => {
   assert.match(client, /settings\.checkoutConfigured \? "Add to Cart" : "Request Invoice"/);
   assert.match(productDetail, /Buy Now/);
   assert.match(productDetail, /disabled=\{isSoldOut\}/);
-  assert.match(productDetail, /disabled=\{isSoldOut \|\| quantity >= effectiveMaxQuantity\}/);
+  assert.match(productDetail, /disabled=\{isSoldOut \|\| effectiveMaxQuantity <= 1\}/);
+  assert.match(productDetail, /aria-describedby=\{purchaseLimitLabel \? quantityLimitHelpId : undefined\}/);
+  assert.doesNotMatch(productDetail, /Limit reached for this item\./);
   assert.doesNotMatch(productDetail, /Stock visible now|per customer/i);
   assert.doesNotMatch(productDetail, /\{product\.availableQuantity\}\s*(?:available|left|in stock)/i);
 });
@@ -75,10 +76,21 @@ test("product detail media and mobile purchase UI stay accessible and contained"
   assert.match(productDetail, /aria-label=\{`View \$\{productTitle\} image \$\{index \+ 1\}`\}/);
   assert.match(productDetail, /aria-pressed=\{image === visibleSelectedImage\}/);
   assert.match(productDetail, /className="gdg-detail-mobile-quick-action" aria-label="Mobile purchase shortcut"/);
-  assert.match(css, /\.gdg-detail-purchase-facts\s*\{[\s\S]*?grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 180px\), 1fr\)\);/);
-  assert.match(css, /\.gdg-detail-purchase-facts span\s*\{[\s\S]*?grid-template-columns: 24px minmax\(0, 1fr\);[\s\S]*?min-width: 0;/);
+  assert.match(css, /\.gdg-detail-benefits\s*\{[\s\S]*?border-block: 1px solid #e8edf3;/);
+  assert.match(css, /\.gdg-detail-benefits span\s*\{[\s\S]*?grid-template-columns: 24px minmax\(0, 1fr\);[\s\S]*?min-width: 0;/);
+  assert.match(css, /\.gdg-product-detail-list\s*\{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-product-detail-list\s*\{[\s\S]*?grid-template-columns: 1fr;/);
   assert.match(css, /\.gdg-detail-mobile-quick-action\s*\{[\s\S]*?display: none;/);
   assert.match(css, /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gdg-detail-mobile-quick-action\s*\{[\s\S]*?position: sticky;[\s\S]*?bottom: 8px;[\s\S]*?grid-template-columns: minmax\(0, 0\.72fr\) minmax\(0, 1fr\);/);
+});
+
+test("product detail disclosures use native accessible accordion semantics", () => {
+  assert.match(productDetail, /<details open>/);
+  assert.match(productDetail, /<summary>Shipping &amp; Local Pickup<\/summary>/);
+  assert.match(productDetail, /<details>\s*\r?\n\s*<summary>Authenticity &amp; seller information<\/summary>/);
+  assert.match(productDetail, /<details>\s*\r?\n\s*<summary>Returns &amp; product support<\/summary>/);
+  assert.match(css, /\.gdg-product-disclosures summary:focus-visible/);
+  assert.doesNotMatch(productDetail, /role="dialog"|aria-modal|focusTrap|tabIndex=\{-1\}/);
 });
 
 test("related products are selected with a bounded public-only query", () => {
