@@ -3,9 +3,9 @@ import { StorefrontShopView } from "@/components/StorefrontServerViews";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
 
 const shopUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/shop`;
-const shopTitle = "Shop Pokemon TCG Products | GameDayGrabs LLC";
+const shopTitle = "Shop Pokémon TCG Products | GameDayGrabs LLC";
 const shopDescription =
-  "Browse sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections, and collectible card products from GameDayGrabs.";
+  "Browse sealed Pokémon TCG products, booster bundles, tins, blisters, premium collections, and collectible card products from GameDayGrabs.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

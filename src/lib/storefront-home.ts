@@ -169,9 +169,9 @@ export function homepageMerchandisingSections(products: PublicStoreProductDTO[],
     usedProductIds,
     {
       title: "Shop Pokémon Cards",
-      detail: "Sealed Pokemon TCG products ready to ship or pick up.",
+      detail: "Sealed Pokémon TCG products ready to ship or pick up.",
       href: storefrontCollectionPath("pokemon-sealed-products"),
-      linkLabel: "Shop Pokemon"
+      linkLabel: "Shop Pokémon"
     },
     sectionProducts(products, usedProductIds, isPokemonCardProduct)
   );

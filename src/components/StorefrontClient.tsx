@@ -64,8 +64,6 @@ import {
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
 import { calculateCartShipping } from "@/lib/shipping";
 import {
-  storefrontAvailabilityDetail,
-  storefrontAvailabilityLabel,
   storefrontEffectiveMaxQuantity,
   storefrontPurchaseLimitLabel
 } from "@/lib/storefront-purchase-limits";
@@ -210,17 +208,6 @@ function publicCategoryLabel(category: string) {
   return cleanStorefrontTitle(category);
 }
 
-function productIncludedBullets(product: PublicStoreProductDTO, displayCategory: string, conditionLabel: string) {
-  const bullets = [`Product type: ${displayCategory}.`];
-  if (product.setName && !product.title.toLowerCase().includes(product.setName.toLowerCase())) {
-    bullets.push(`Set/series: ${cleanStorefrontTitle(product.setName)}.`);
-  }
-  if (conditionLabel) {
-    bullets.push(`Condition shown by listing: ${conditionLabel}.`);
-  }
-  return Array.from(new Set(bullets));
-}
-
 function displayStoreName(settings: StorefrontSettingsDTO) {
   if (settings.storeName && !/poke radar/i.test(settings.storeName)) {
     return settings.storeName.replace(/\s+LLC\b/i, "").trim();
@@ -249,11 +236,17 @@ function storefrontRewardEstimateLabel(product: PublicStoreProductDTO, settings:
   return `Earn ${points.toLocaleString()} point${points === 1 ? "" : "s"}`;
 }
 
-function storefrontFulfillmentBadges(product: PublicStoreProductDTO) {
-  const badges: string[] = [];
-  if (product.shippingAvailable) badges.push("Ships");
-  if (product.localPickupEligible) badges.push("Local Pickup");
-  return badges.length ? badges : ["Fulfillment pending"];
+function storefrontCalmAvailabilityLabel(product: Pick<PublicStoreProductDTO, "availabilityLevel" | "status">) {
+  if (isSoldOutProduct(product)) return "Sold Out";
+  if (product.availabilityLevel === "low_stock" || product.availabilityLevel === "almost_gone") return "Low Stock";
+  return "In Stock";
+}
+
+function storefrontCalmFulfillmentLine(product: Pick<PublicStoreProductDTO, "shippingAvailable" | "localPickupEligible">) {
+  if (product.shippingAvailable && product.localPickupEligible) return "Shipping & Local Pickup";
+  if (product.localPickupEligible) return "Local Pickup";
+  if (product.shippingAvailable) return "Shipping";
+  return "Fulfillment reviewed before checkout";
 }
 
 function sportsCardsLink(settings: StorefrontSettingsDTO) {
@@ -630,7 +623,7 @@ function ProductImage({
   const imageUrl = imageCandidates.find((candidate) => !failedImageUrls.includes(candidate)) ?? null;
 
   return (
-    <div className={`gdg-product-image gdg-product-image-${size} gdg-product-media ${size === "detail" ? "gdg-product-image-detail-media" : ""}`}>
+    <div className={`gdg-product-image gdg-product-image-${size} ${size === "detail" ? "gdg-product-image-detail-media" : ""}`}>
       <div className="gdg-image-badges" aria-hidden="true">
         {badges.map((badge, index) => (
           <span key={`${badge.variant}-${badge.label}-${index}`} className={`gdg-product-badge gdg-product-badge-${badge.variant}`}>
@@ -1008,11 +1001,12 @@ function ProductCard({
   const productSubtitle = storefrontProductCardSubtitle({ title: product.title, category: displayCategory, setName: product.setName });
   const rewardEstimate = storefrontRewardEstimateLabel(product, settings);
   const rewardProgramCopy = storefrontRewardsProgramCopy(settings);
-  const fulfillmentBadges = storefrontFulfillmentBadges(product);
+  const fulfillmentLine = storefrontCalmFulfillmentLine(product);
+  const availabilityLabel = storefrontCalmAvailabilityLabel(product);
 
   return (
     <article className="gdg-product-card">
-      <Link href={`/product/${product.slug}`} className="gdg-product-media">
+      <Link href={`/product/${product.slug}`} className="gdg-product-media gdg-product-image-stage" aria-label={`View ${productTitle}`}>
         <ProductImage product={product} showBadges newArrivalDays={settings.newArrivalDays} />
       </Link>
       <div className="gdg-product-body">
@@ -1025,17 +1019,12 @@ function ProductCard({
         {productSubtitle ? <p className="gdg-product-card-subtitle">{productSubtitle}</p> : null}
         <strong>{money(product.price)}</strong>
         <div className="gdg-product-card-meta" aria-label={`Purchase details for ${productTitle}`}>
+          <span className={isSoldOut ? "gdg-stock out" : availabilityLabel === "Low Stock" ? "gdg-stock limited" : "gdg-stock in"}>{availabilityLabel}</span>
           {rewardEstimate ? <span className="gdg-product-reward-estimate" title={rewardProgramCopy ?? undefined}>{rewardEstimate}</span> : null}
-          {fulfillmentBadges.map((badge) => (
-            <span key={badge}>{badge}</span>
-          ))}
+          <span className="gdg-product-fulfillment-line">{fulfillmentLine}</span>
         </div>
       </div>
       <footer>
-        <div className="gdg-product-card-status-row">
-          <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{isSoldOut ? "Sold Out" : "In Stock"}</span>
-          {product.shippingAvailable && product.localPickupEligible ? <small>Ship or pick up</small> : null}
-        </div>
         <div className="gdg-card-actions">
           <Link href={`/product/${product.slug}`} className="gdg-secondary-button gdg-product-card-action" aria-label={`View ${productTitle}`}>
             <span className="gdg-product-action-label-full">View Product</span>
@@ -1539,10 +1528,10 @@ export function ProductGrid({
             <div className="gdg-hero-copy">
               <p className="gdg-overline">Pokémon & Sports Cards</p>
               <h1>Collect. Play. Invest.</h1>
-              <p>Shop sealed Pokemon TCG products, booster bundles, tins, blisters, premium collections, and collectible card products packed carefully for collectors.</p>
+              <p>Shop sealed Pokémon TCG products, booster bundles, tins, blisters, premium collections, and collectible card products packed carefully for collectors.</p>
               <div className="gdg-hero-actions">
                 <Link href="/shop" className="gdg-primary-button">
-                  Shop Pokemon
+                  Shop Pokémon
                 </Link>
                 <Link href={storefrontCollectionPath("new-arrivals")} className="gdg-secondary-button">
                   View New Arrivals
@@ -1662,12 +1651,12 @@ export function ProductGrid({
           <form className={`gdg-shop-filters ${filterSheetOpen ? "open" : ""}`} id="gdg-shop-filters" onSubmit={submitShopFilters} role={filterSheetOpen ? "dialog" : undefined} aria-modal={filterSheetOpen ? "true" : undefined} aria-labelledby="gdg-shop-filters-title" aria-describedby="gdg-shop-filter-summary">
             <div>
               <div className="gdg-shop-filter-heading">
-                <h1 id="gdg-shop-filters-title">Shop Pokemon TCG products</h1>
+                <h1 id="gdg-shop-filters-title">Shop Pokémon TCG products</h1>
                 <button ref={filterSheetCloseRef} className="gdg-icon-button gdg-filter-close" type="button" onClick={closeShopFilters} aria-label="Close filters">
                   <X size={16} />
                 </button>
               </div>
-              <p>Browse sealed Pokemon products, booster bundles, tins, blisters, premium collections, and collectible card products.</p>
+              <p>Browse sealed Pokémon products, booster bundles, tins, blisters, premium collections, and collectible card products.</p>
               <p id="gdg-shop-filter-summary" role="status" aria-live="polite">{shopLoading ? "Loading results..." : `Showing ${visibleProducts.length} of ${shopTotal} matching public listing${shopTotal === 1 ? "" : "s"}. ${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"}.`}</p>
             </div>
             <label htmlFor="gdg-shop-search-input">
@@ -1907,25 +1896,31 @@ export function ProductDetail({
   const displayCategory = publicCategoryLabel(displayStorefrontCategory(product));
   const productTitle = cleanStorefrontTitle(product.title);
   const conditionLabel = cleanStorefrontTitle(product.condition) || "Collector-ready condition";
-  const includedBullets = productIncludedBullets(product, displayCategory, conditionLabel);
-  const sealedSignal = /\b(sealed|new)\b/i.test(conditionLabel);
   const soldOutNote = storefrontSoldOutNote();
   const visibleGalleryImages = images.filter((image) => !failedImages.includes(image));
   const preferredSelectedImage = selectedImage && images.includes(selectedImage) ? selectedImage : (images[0] ?? null);
   const visibleSelectedImage = preferredSelectedImage && visibleGalleryImages.includes(preferredSelectedImage) ? preferredSelectedImage : (visibleGalleryImages[0] ?? null);
-  const availabilityLabel = storefrontAvailabilityLabel(product);
-  const availabilityDetail = storefrontAvailabilityDetail(product);
+  const availabilityLabel = storefrontCalmAvailabilityLabel(product);
   const purchaseLimitLabel = storefrontPurchaseLimitLabel(product);
   const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
-  const quantityLimitReached = !isSoldOut && effectiveMaxQuantity > 0 && quantity >= effectiveMaxQuantity;
+  const [limitFeedback, setLimitFeedback] = useState("");
   const rewardEstimateLabel = storefrontRewardEstimateLabel(product, settings);
   const rewardProgramCopy = storefrontRewardsProgramCopy(settings);
-  const fulfillmentLabel = product.shippingAvailable && product.localPickupEligible ? "Ships or Local Pickup" : product.localPickupEligible ? "Local Pickup available" : product.shippingAvailable ? "Shipping available" : "Fulfillment reviewed before checkout";
+  const fulfillmentLabel = storefrontCalmFulfillmentLine(product);
   const fulfillmentDetail = product.localPickupEligible
     ? "Pickup appears as an option in cart when this item is eligible."
     : product.shippingAvailable
       ? "Shipping is calculated from package details before payment."
       : "Contact support if fulfillment options are not shown.";
+  const productDetailRows = [
+    product.setName ? ["Set or series", cleanStorefrontTitle(product.setName)] : null,
+    ["Category", displayCategory],
+    product.productType ? ["Product type", cleanStorefrontTitle(product.productType)] : null,
+    conditionLabel ? ["Condition", conditionLabel] : null,
+    ["Availability", availabilityLabel],
+    purchaseLimitLabel ? ["Purchase limit", `${purchaseLimitLabel}.`] : null
+  ].filter((row): row is [string, string] => Boolean(row && row[1]));
+  const quantityLimitHelpId = `quantity-limit-help-${product.id}`;
 
   useEffect(() => {
     trackStorefrontEvent("product_viewed", {
@@ -2010,15 +2005,15 @@ export function ProductDetail({
             <div className="gdg-detail-price">
               <strong>{money(product.price)}</strong>
               {product.compareAtPrice ? <s>{money(product.compareAtPrice)}</s> : null}
-              <span className={isSoldOut ? "gdg-stock out" : "gdg-stock in"}>{availabilityLabel}</span>
+              <span className={isSoldOut ? "gdg-stock out" : availabilityLabel === "Low Stock" ? "gdg-stock limited" : "gdg-stock in"}>{availabilityLabel}</span>
             </div>
             <div className="gdg-detail-meta-row" aria-label="Product classification">
               {product.setName ? <span>Set: {product.setName}</span> : null}
               <span>{displayCategory}</span>
-              <span>{conditionLabel}</span>
+              {product.productType ? <span>{cleanStorefrontTitle(product.productType)}</span> : null}
             </div>
             <p>{publicDescription}</p>
-            <div className="gdg-detail-purchase-facts" aria-label="Buying details">
+            <div className="gdg-detail-benefits" aria-label="Buying details">
               <span>
                 <Truck size={16} aria-hidden="true" />
                 <b>{fulfillmentLabel}</b>
@@ -2037,10 +2032,9 @@ export function ProductDetail({
                 </span>
               ) : null}
             </div>
-            <div className="gdg-product-status-list" aria-label="Product availability and purchase limits">
-              <span>{availabilityDetail}</span>
+            <div className="gdg-product-status-list" aria-label="Purchase limits">
               {purchaseLimitLabel ? <span>{purchaseLimitLabel}.</span> : null}
-              <span>Condition: {conditionLabel}.</span>
+              <span>Items are reserved for 15 minutes after checkout begins.</span>
             </div>
             {isSoldOut ? <p className="gdg-soldout-notice">{soldOutNote}</p> : null}
             <div className="gdg-quantity-control">
@@ -2051,14 +2045,23 @@ export function ProductDetail({
               <b>{quantity}</b>
               <button
                 type="button"
-                disabled={isSoldOut || quantity >= effectiveMaxQuantity}
+                disabled={isSoldOut || effectiveMaxQuantity <= 1}
+                aria-describedby={purchaseLimitLabel ? quantityLimitHelpId : undefined}
                 aria-label={`Increase ${productTitle} quantity`}
-                onClick={() => setQuantity((current) => Math.min(effectiveMaxQuantity, current + 1))}
+                onClick={() => {
+                  if (quantity >= effectiveMaxQuantity) {
+                    setLimitFeedback(purchaseLimitLabel ? `${purchaseLimitLabel}.` : "Maximum quantity reached for this item.");
+                    return;
+                  }
+                  setLimitFeedback("");
+                  setQuantity((current) => Math.min(effectiveMaxQuantity, current + 1));
+                }}
               >
                 <Plus size={15} />
               </button>
             </div>
-            {quantityLimitReached ? <small className="gdg-limit-helper">Limit reached for this item.</small> : null}
+            {purchaseLimitLabel ? <small id={quantityLimitHelpId} className="gdg-limit-helper">{purchaseLimitLabel}.</small> : null}
+            {limitFeedback ? <small className="gdg-limit-helper" role="status">{limitFeedback}</small> : null}
             <div className="gdg-detail-actions">
               <button
                 className="gdg-primary-button wide"
@@ -2095,7 +2098,7 @@ export function ProductDetail({
                 </button>
               </div>
             ) : null}
-            <div className="gdg-product-trust">
+            <div className="gdg-product-trust" aria-label="Store confidence">
               {[
                 ["Genuine products", "Sold by GameDayGrabs"],
                 ["Carefully packaged", "Packed with protection"],
@@ -2113,75 +2116,47 @@ export function ProductDetail({
           </section>
         </div>
       </section>
-      <section className="gdg-description-section gdg-product-detail-sections">
-        <article className="gdg-detail-card-wide">
+      <section className="gdg-description-section gdg-product-detail-sections" aria-label="Product information">
+        <article className="gdg-product-description-panel">
           <h2>Product Description</h2>
           <p>{publicDescription}</p>
           {isSoldOut ? <p>{soldOutNote}</p> : null}
         </article>
-        <article>
-          <h2>What&apos;s included</h2>
-          <ul>
-            {includedBullets.map((bullet) => (
-              <li key={bullet}>{bullet}</li>
-            ))}
-          </ul>
-        </article>
-        <article>
-          <h2>Product condition</h2>
-          <p>Condition details are based on the listing information.</p>
-          <ul>
-            <li>Condition: {conditionLabel}.</li>
-            {sealedSignal ? <li>Sealed/new status is shown when available in the listing.</li> : null}
-          </ul>
-        </article>
-        <article>
+        <article className="gdg-product-details-panel">
           <h2>Product Details</h2>
-          <ul>
-            <li>Category: {displayCategory}.</li>
-            <li>Condition: {conditionLabel}.</li>
-            <li>Availability: {availabilityLabel}.</li>
-            {purchaseLimitLabel ? <li>{purchaseLimitLabel}.</li> : null}
-            <li>{GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE}</li>
-            <li>{settings.checkoutConfigured ? "Secure Stripe Checkout is available." : "Request Invoice mode is active until online checkout is configured."}</li>
-            <li>Local pickup appears at checkout when available for this item.</li>
-          </ul>
+          <dl className="gdg-product-detail-list">
+            {productDetailRows.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
         </article>
-        <article>
-          <h2>Seller and authenticity</h2>
-          <p>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</p>
-          <ul>
-            <li>{GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE}</li>
-            <li>{GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE}</li>
-            <li>Product names, brands, characters, and trademarks belong to their respective owners.</li>
-          </ul>
-        </article>
-        <article>
-          <h2>Shipping summary</h2>
-          <p>Shipping is calculated from product weight and package size.</p>
-          <ul>
-            <li>Shipping is calculated in cart or checkout before payment.</li>
-            <li>Displayed shipping may include the current packing and handling minimum.</li>
-            <li>Final shipping is shown before payment.</li>
-            {product.localPickupEligible ? <li>Local pickup may be available for this item.</li> : null}
-            {settings.freeShippingThreshold ? <li>Free shipping threshold: {money(settings.freeShippingThreshold)}.</li> : null}
-          </ul>
-        </article>
-        <article>
-          <h2>Checkout hold</h2>
-          <p>Items are held for 15 minutes once checkout starts.</p>
-          <ul>
-            <li>Availability is confirmed before payment.</li>
-            <li>If checkout expires, the hold releases automatically.</li>
-          </ul>
-        </article>
-        <article>
-          <h2>Product issue support</h2>
-          <p>{settings.returnPolicyText || "Sealed and collectible products are reviewed carefully before fulfillment. Returns are handled case by case, especially for sealed collectible items."}</p>
-          <ul>
-            <li>Listings show only customer-facing availability, condition, and checkout details.</li>
-            <li>Contact GameDayGrabs before returning any collectible product.</li>
-          </ul>
+        <article className="gdg-product-disclosures" aria-label="Product policies and support">
+          <details open>
+            <summary>Shipping &amp; Local Pickup</summary>
+            <div>
+              <p>Shipping is calculated from product weight and package size before payment. Items are reserved for 15 minutes after checkout begins.</p>
+              {product.localPickupEligible ? <p>Local Pickup appears at checkout when available for this item.</p> : null}
+              {settings.freeShippingThreshold ? <p>Free shipping threshold: {money(settings.freeShippingThreshold)}.</p> : null}
+            </div>
+          </details>
+          <details>
+            <summary>Authenticity &amp; seller information</summary>
+            <div>
+              <p>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</p>
+              <p>{GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE}</p>
+              <p>{GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE} Product names, brands, characters, and trademarks belong to their respective owners.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Returns &amp; product support</summary>
+            <div>
+              <p>{settings.returnPolicyText || "Sealed and collectible products are reviewed carefully before fulfillment. Returns are handled case by case, especially for sealed collectible items."}</p>
+              <p>Contact GameDayGrabs before returning any collectible product.</p>
+            </div>
+          </details>
         </article>
       </section>
       {relatedProducts.length ? (

@@ -1090,9 +1090,9 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /Packed carefully/);
   assert.match(client, /Sleeved Boosters/);
   assert.match(client, /Product Details/);
-  assert.match(client, /What&apos;s included/);
-  assert.match(client, /Shipping summary/);
-  assert.match(client, /Checkout hold/);
+  assert.match(client, /Shipping &amp; Local Pickup/);
+  assert.match(client, /Authenticity &amp; seller information/);
+  assert.match(client, /Returns &amp; product support/);
   assert.doesNotMatch(client, /href="\/app"|href=\{`\/app/);
   assert.match(client, /href: "\/about"/);
   assert.match(client, /href: "\/policies"/);
@@ -1315,11 +1315,12 @@ test("storefront availability and purchase limits stay buyer-facing", () => {
   assert.equal(storefrontEffectiveMaxQuantity({ publicMaxQuantity: 1, maxQuantityPerOrder: 4 }), 1);
 
   assert.doesNotMatch(client, /Stock visible now|visible stock|stock visible|\$\{product\.(?:availableQuantity|publicMaxQuantity)\} available|Only \$\{product\.(?:availableQuantity|publicMaxQuantity)\}/i);
-  assert.match(client, /storefrontAvailabilityLabel\(product\)/);
-  assert.match(client, /storefrontAvailabilityDetail\(product\)/);
+  assert.match(client, /storefrontCalmAvailabilityLabel\(product\)/);
   assert.match(client, /storefrontPurchaseLimitLabel\(product\)/);
-  assert.match(client, /Limit reached for this item\./);
-  assert.match(client, /disabled=\{isSoldOut \|\| quantity >= effectiveMaxQuantity\}/);
+  assert.doesNotMatch(client, /Limit reached for this item\./);
+  assert.match(client, /disabled=\{isSoldOut \|\| effectiveMaxQuantity <= 1\}/);
+  assert.match(client, /aria-describedby=\{purchaseLimitLabel \? quantityLimitHelpId : undefined\}/);
+  assert.match(client, /role="status"/);
   assert.match(client, /storefrontEffectiveMaxQuantity\(product\)/);
   assert.match(storefront, /maxQuantityPerOrder: storefrontConfiguredPurchaseLimit\(item\)/);
   assert.match(storefront, /const effectiveMaxQuantity = storefrontEffectiveMaxQuantity\(\{ \.\.\.product, publicMaxQuantity: rawAvailableQuantity \}\)/);

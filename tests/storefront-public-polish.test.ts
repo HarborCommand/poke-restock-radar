@@ -57,13 +57,14 @@ test("storefront product cards expose clear purchase metadata without fake urgen
   assert.match(client, /!settings\.customerAccounts\.enabled \|\| !settings\.customerAccounts\.rewardsEnabled/);
   assert.match(client, /const points = Math\.floor\(Math\.max\(0, product\.price\)\)/);
   assert.match(client, /Earn \$\{points\.toLocaleString\(\)\} point/);
-  assert.match(client, /function storefrontFulfillmentBadges\(product: PublicStoreProductDTO\)/);
-  assert.match(client, /product\.shippingAvailable\) badges\.push\("Ships"\)/);
-  assert.match(client, /product\.localPickupEligible\) badges\.push\("Local Pickup"\)/);
+  assert.match(client, /function storefrontCalmAvailabilityLabel/);
+  assert.match(client, /return "Low Stock"/);
+  assert.match(client, /function storefrontCalmFulfillmentLine/);
+  assert.match(client, /return "Shipping & Local Pickup"/);
   assert.match(productCard, /className="gdg-product-card-meta" aria-label=\{`Purchase details for \$\{productTitle\}`\}/);
   assert.match(productCard, /className="gdg-product-reward-estimate"/);
-  assert.match(productCard, /className="gdg-product-card-status-row"/);
-  assert.match(productCard, /Ship or pick up/);
+  assert.match(productCard, /className="gdg-product-fulfillment-line"/);
+  assert.doesNotMatch(productCard, /className="gdg-product-card-status-row"|Ship or pick up|badges\.push/);
   assert.doesNotMatch(productCard, /only \d+ left|hurry|selling fast|best.?seller|popular|reviewCount|ratingValue/i);
 });
 
@@ -74,8 +75,8 @@ test("public storefront polish keeps product, cart, footer, and login layouts co
   assert.match(css, /\.gdg-product-card\s*\{[\s\S]*?grid-template-rows: auto minmax\(128px, 1fr\) auto;/);
   assert.match(css, /\.gdg-product-card-meta,\s*\r?\n\.gdg-product-card-status-row\s*\{[\s\S]*?flex-wrap: wrap;/);
   assert.match(css, /\.gdg-product-card-meta span\s*\{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/);
-  assert.match(css, /\.gdg-product-card-meta \.gdg-product-reward-estimate\s*\{[\s\S]*?background: #fffbeb;/);
-  assert.match(css, /\.gdg-product-card-status-row\s*\{[\s\S]*?justify-content: space-between;/);
+  assert.match(css, /\.gdg-product-card-meta \.gdg-product-reward-estimate\s*\{[\s\S]*?color: #9a5b00;/);
+  assert.match(css, /\.gdg-product-image-stage\s*\{[\s\S]*?linear-gradient\(180deg, #f8fafc, #f3f6fa\);/);
   assert.match(css, /\.gdg-product-card \.gdg-card-actions > \*\s*\{[\s\S]*?min-width: 0;/);
   assert.match(css, /\.gdg-gallery-main\s*\{[\s\S]*?min-height: clamp\(320px, 44vw, 540px\);/);
   assert.match(css, /\.gdg-cart-line-price\s*\{[\s\S]*?min-width: 88px;/);
