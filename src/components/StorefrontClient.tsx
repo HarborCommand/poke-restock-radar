@@ -52,7 +52,7 @@ import {
 } from "@/lib/storefront-disclosures";
 import { GAMEDAYGRABS_EBAY_FEEDBACK_URL, storefrontFeedback } from "@/lib/storefront-feedback";
 import {
-  homepageFeaturedDropsSection,
+  homepageMerchandisingSections,
   selectHomepageHeroProduct,
   type HomepageMerchandisingSection
 } from "@/lib/storefront-home";
@@ -1175,7 +1175,7 @@ function HomepageGrabbyTip() {
     <GrabbyCard
       variant="shop-guide"
       title="Grabby's tip"
-      message="Start with Featured Drops, or jump into Shop to see every active product."
+      message="Start with New Arrivals, or jump into Shop to see every active product."
       ctaHref="/shop"
       ctaLabel="Shop all products"
       compact
@@ -1306,7 +1306,7 @@ export function ProductGrid({
     ? "Loading shop results."
     : `${shopTotal} result${shopTotal === 1 ? "" : "s"} with ${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"}.`;
 
-  const featuredSection = useMemo(() => homepageFeaturedDropsSection(products, settings.newArrivalDays), [products, settings.newArrivalDays]);
+  const homepageSections = useMemo(() => homepageMerchandisingSections(products, settings.newArrivalDays), [products, settings.newArrivalDays]);
   const heroProduct = selectHomepageHeroProduct(products, settings);
   const heroCategory = heroProduct ? publicCategoryLabel(displayStorefrontCategory(heroProduct)) : null;
   const heroProductTitle = heroProduct ? cleanStorefrontTitle(heroProduct.title) : "";
@@ -1595,13 +1595,14 @@ export function ProductGrid({
 
       {mode === "home" ? (
         <>
-          <HomepageProductSection
-            section={featuredSection}
-            settings={settings}
-            onAdded={onAdded}
-            emptyTitle="No public listings yet"
-            emptyDetail="Published inventory will appear here automatically."
-          />
+          {homepageSections.map((section) => (
+            <HomepageProductSection
+              key={section.title}
+              section={section}
+              settings={settings}
+              onAdded={onAdded}
+            />
+          ))}
 
           <HomepageGrabbyTip />
 

@@ -20,7 +20,7 @@ type StorefrontShopViewParams = {
 };
 
 export async function StorefrontHomeView() {
-  const [settings, products, homeHref] = await Promise.all([getStorefrontSettings(), listPublicStoreProducts(), getStorefrontHomeHref()]);
+  const [settings, products, homeHref] = await Promise.all([getStorefrontSettings(), listPublicStoreProducts({ limit: 96 }), getStorefrontHomeHref()]);
   return (
     <main className="shop-shell">
       <StorefrontHeader settings={settings} homeHref={homeHref} />

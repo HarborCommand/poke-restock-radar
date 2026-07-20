@@ -49,6 +49,14 @@ import {
   type StorefrontShopAvailability,
   type StorefrontShopSort
 } from "@/lib/storefront-shop-query";
+import {
+  compareRelatedStorefrontProducts,
+  compareStorefrontFeaturedProducts,
+  compareStorefrontNewestProducts,
+  compareStorefrontStableProductTie,
+  isSellableStorefrontProduct,
+  uniqueStorefrontProducts
+} from "@/lib/storefront-merchandising";
 import { normalizeStorefrontSlug } from "@/lib/storefront-slugs";
 import { storefrontContactEmail, storefrontSportsCardsUrl } from "@/lib/storefront-routing";
 import {
@@ -362,6 +370,7 @@ export function publicProductToDTO(
     primaryImageUrl,
     images,
     category: publicCategory,
+    productType: cleanStorefrontTitle(item.itemType) || null,
     tags: parseList(item.storefrontTags),
     condition: cleanStorefrontTitle(item.condition),
     setName: cleanStorefrontTitle(item.setName) || null,
@@ -459,7 +468,8 @@ export async function getStorefrontSettings(
   };
 }
 
-export async function listPublicStoreProducts(input?: { q?: string; category?: string; onlySellable?: boolean }) {
+export async function listPublicStoreProducts(input?: { q?: string; category?: string; onlySellable?: boolean; limit?: number }) {
+  const take = input?.limit ? Math.min(STOREFRONT_SHOP_MAX_CANDIDATES, Math.max(1, Math.floor(input.limit))) : undefined;
   const [products, profileDefinitions] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: {
@@ -469,7 +479,8 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
         publicSlug: { not: null }
       },
       include: storefrontInventoryInclude,
-      orderBy: { updatedAt: "desc" }
+      orderBy: { updatedAt: "desc" },
+      ...(take ? { take } : {})
     }),
     shippingProfileDefinitionsForCheckout()
   ]);
@@ -481,11 +492,7 @@ export async function listPublicStoreProducts(input?: { q?: string; category?: s
     .filter((product): product is PublicStoreProductDTO => Boolean(product))
     .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))
     .filter((product) => !category || category === "all" || product.category.toLowerCase() === category)
-    .sort((left, right) => {
-      const leftTime = Date.parse(left.publishedAt ?? left.createdAt);
-      const rightTime = Date.parse(right.publishedAt ?? right.createdAt);
-      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
-    });
+    .sort(compareStorefrontNewestProducts);
 }
 
 type PublicStoreProductSearchInput = {
@@ -503,6 +510,7 @@ function publicProductSearchText(product: PublicStoreProductDTO) {
     product.title,
     product.description,
     product.category,
+    product.productType,
     product.setName,
     product.condition,
     product.brand,
@@ -532,14 +540,15 @@ function sortPublicProductsForShop(products: PublicStoreProductDTO[], sort: Stor
   return [...products].sort((left, right) => {
     const availabilityDelta = publicProductAvailabilityScore(right) - publicProductAvailabilityScore(left);
     const newestDelta = publicProductTime(right) - publicProductTime(left);
-    const titleDelta = left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
+    const stableDelta = compareStorefrontStableProductTie(left, right);
+    const titleDelta = left.title.localeCompare(right.title, undefined, { sensitivity: "base" }) || stableDelta;
 
     if (sort === "price-low") return left.price - right.price || titleDelta;
     if (sort === "price-high") return right.price - left.price || titleDelta;
     if (sort === "name") return titleDelta || newestDelta;
     if (sort === "availability") return availabilityDelta || newestDelta || titleDelta;
     if (sort === "newest") return newestDelta || titleDelta;
-    return availabilityDelta || newestDelta || titleDelta;
+    return compareStorefrontFeaturedProducts(left, right);
   });
 }
 
@@ -623,7 +632,7 @@ export async function getPublicStoreProduct(slug: string) {
 }
 
 export async function getRelatedPublicStoreProducts(product: PublicStoreProductDTO, limit = 4) {
-  const take = Math.min(24, Math.max(limit * 6, limit));
+  const take = Math.min(80, Math.max(limit * 16, 24));
   const [items, profileDefinitions] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: {
@@ -631,31 +640,22 @@ export async function getRelatedPublicStoreProducts(product: PublicStoreProductD
         publishToStore: true,
         storeStatus: "active",
         publicPrice: { not: null },
-        publicSlug: { not: null },
-        OR: [
-          { setName: product.setName || undefined },
-          { storefrontCategory: product.category },
-          { category: product.category },
-          { itemName: { contains: product.category } }
-        ].filter((entry) => Object.values(entry).every((value) => value !== undefined))
+        publicSlug: { not: null }
       },
       include: storefrontInventoryInclude,
-      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { itemName: "asc" }],
+      orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }, { id: "asc" }],
       take
     }),
     shippingProfileDefinitionsForCheckout()
   ]);
-  return items
+  const sellableProducts = items
     .filter((item) => isPublicStorefrontListingSellable(item))
     .map((item) => publicProductToDTO(item, { profileDefinitions }))
     .filter((entry): entry is PublicStoreProductDTO => Boolean(entry))
-    .sort((left, right) => {
-      const leftSetScore = product.setName && left.setName === product.setName ? 0 : 1;
-      const rightSetScore = product.setName && right.setName === product.setName ? 0 : 1;
-      const leftCategoryScore = left.category === product.category ? 0 : 1;
-      const rightCategoryScore = right.category === product.category ? 0 : 1;
-      return leftSetScore - rightSetScore || leftCategoryScore - rightCategoryScore || publicProductTime(right) - publicProductTime(left) || left.title.localeCompare(right.title);
-    })
+    .filter(isSellableStorefrontProduct);
+
+  return uniqueStorefrontProducts(sellableProducts)
+    .sort(compareRelatedStorefrontProducts(product))
     .slice(0, limit);
 }
 

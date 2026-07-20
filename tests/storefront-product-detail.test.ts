@@ -90,6 +90,8 @@ test("related products are selected with a bounded public-only query", () => {
   assert.match(relatedProducts, /publicPrice: \{ not: null \}/);
   assert.match(relatedProducts, /publicSlug: \{ not: null \}/);
   assert.match(relatedProducts, /take/);
+  assert.match(relatedProducts, /compareRelatedStorefrontProducts\(product\)/);
+  assert.match(relatedProducts, /uniqueStorefrontProducts\(sellableProducts\)/);
   assert.match(relatedProducts, /\.slice\(0, limit\)/);
   assert.doesNotMatch(relatedProducts, /customer|reward|payment|refund|metadata|idempotencyKey/i);
 });
