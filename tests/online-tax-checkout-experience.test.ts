@@ -8,12 +8,12 @@ function read(path: string) {
   return fs.readFileSync(path, "utf8");
 }
 
-test("cart and pickup copy defer final tax to Stripe Checkout", () => {
+test("cart and pickup copy use plain customer-facing tax language", () => {
   const client = read("src/components/StorefrontClient.tsx");
-  assert.match(client, /Tax calculated at checkout/);
-  assert.match(client, /Final tax uses your delivery or approved pickup location and appears before payment\. Shipping and tax stay separate\./);
-  assert.match(client, /Local Pickup tax is never estimated in this cart\. Stripe uses the configured pickup location after its tax policy is approved\./);
-  assert.doesNotMatch(client, /estimated tax|calculateConfiguredPosTax|countyRateBasisPoints/i);
+  assert.match(client, /STOREFRONT_TAX_PAYMENT_COPY = "Any required taxes are shown before payment\."/);
+  assert.match(client, /Any required Local Pickup taxes are shown before payment\./);
+  assert.doesNotMatch(client, /Tax is not estimated from the browser cart|Local Pickup tax is never estimated in this cart|Stripe uses the configured pickup location|Stripe shows final tax/i);
+  assert.doesNotMatch(client, /estimated tax|calculateConfiguredPosTax|countyRateBasisPoints|always zero|no tax will be charged/i);
 });
 
 test("mocked Stripe automatic-tax totals produce an authoritative snapshot, including explicit zero tax", () => {

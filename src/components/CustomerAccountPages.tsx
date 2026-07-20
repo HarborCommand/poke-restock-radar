@@ -450,7 +450,7 @@ export function AccountDashboard({
               <AccountIconBadge icon={Trophy} tone="gold" />
             </div>
             <strong className="gdg-account-points-display">{availablePoints} points</strong>
-            <p>Earn 1 point per $1 on eligible product purchases. Rewards redemption coming soon.</p>
+            <p>Earn 1 point per $1 on eligible product purchases. Earn points now. Redemption coming soon.</p>
             <div className="gdg-account-progress" aria-label={`${progressPercent}% toward collector milestone`}>
               <span style={{ width: `${progressPercent}%` }} />
             </div>
@@ -617,7 +617,7 @@ export function CustomerLoginPageContent({
         <div className="gdg-login-pill-row" aria-label="Account reminders">
           <span>Guest checkout is always available.</span>
           <span>Use your checkout email for rewards.</span>
-          <span>Rewards redemption coming soon.</span>
+          <span>Earn points now. Redemption coming soon.</span>
         </div>
         <div className="gdg-login-notices">
           {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
@@ -1193,7 +1193,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
     {
       label: "Available points",
       value: availablePoints,
-      detail: "Ready when redemption launches",
+      detail: "Display-only until redemption launches",
       tone: "gold",
       icon: Star
     },
@@ -1238,7 +1238,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
           <p className="gdg-overline">Collector rewards</p>
           <h1 id="gdg-rewards-title">Your collection. Your level.</h1>
           <p>Earn 1 point per $1 spent on eligible product purchases. Keep earning, keep opening, keep leveling up.</p>
-          <p>Rewards redemption is coming soon. Points are display-only and do not affect checkout totals yet.</p>
+          <p>Earn points now. Redemption coming soon. Points are display-only and do not affect checkout totals yet.</p>
           <div className="gdg-rewards-spotlight-actions">
             <Link href="/policies" className="gdg-primary-button">
               Rewards rules

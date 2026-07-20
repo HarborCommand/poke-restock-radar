@@ -49,7 +49,8 @@ test("product detail keeps purchase controls clear and safe", () => {
   assert.match(client, /if \(isSoldOutProduct\(product\)\) return null;/);
   assert.match(productDetail, /\{purchaseLimitLabel \? <span>\{purchaseLimitLabel\}\.<\/span> : null\}/);
   assert.match(productDetail, /className="gdg-detail-purchase-facts" aria-label="Buying details"/);
-  assert.match(productDetail, /<b>Tax calculated at checkout<\/b>/);
+  assert.match(productDetail, /STOREFRONT_TAX_PAYMENT_COPY/);
+  assert.match(productDetail, /Shipping and any required taxes appear before payment\./);
   assert.match(productDetail, /Estimated from merchandise subtotal only; excludes shipping and tax\./);
   assert.match(productDetail, /Pickup appears as an option in cart when this item is eligible\./);
   assert.match(client, /settings\.checkoutConfigured \? "Add to Cart" : "Request Invoice"/);

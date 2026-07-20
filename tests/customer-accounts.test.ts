@@ -542,7 +542,7 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountLogin, /Guest checkout is always available\./);
   assert.match(accountLogin, /Use your checkout email for rewards\./);
   assert.doesNotMatch(accountLogin, /Create an account to track orders and rewards\. Guest checkout is still available/);
-  assert.match(accountLogin, /Rewards redemption coming soon\./);
+  assert.match(accountLogin, /Earn points now\. Redemption coming soon\./);
   assert.match(accountLogin, /Your session expired\. Sign in again to continue\./);
   assert.match(accountLogin, /action="\/api\/account\/login"/);
   assert.match(accountLogin, /action="\/api\/account\/register"/);
@@ -586,7 +586,7 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   }
   assert.match(accountDashboard, /Earn 1 point per \$1 on eligible product purchases/);
   assert.match(accountDashboard, /Redemption coming soon/);
-  assert.match(accountDashboard, /Rewards redemption coming soon/);
+  assert.match(accountDashboard, /Earn points now\. Redemption coming soon/);
   assert.match(accountDashboard, /Display only/);
   assert.match(accountComponents, /const availablePoints = balance\?\.availablePoints \?\? 0/);
   assert.match(accountComponents, /const lifetimeEarnedPoints = balance\?\.lifetimeEarnedPoints \?\? 0/);
@@ -1394,7 +1394,7 @@ test("success page and order confirmation include safe optional account rewards 
   assert.match(successPage, /customerAccountFeatureConfig/);
   assert.match(successPage, /accountCtaEnabled=\{customerAccountFeatures\.customerAccountsEnabled\}/);
   assert.match(client, /Create an account to track this order/);
-  assert.match(client, /Rewards redemption coming soon/);
+  assert.match(client, /Earn points now\. Redemption coming soon/);
   assert.match(client, /No account required/);
   assert.match(emailTemplates, /Create your GameDayGrabs account to track orders and rewards/);
   assert.match(emailTemplates, /STOREFRONT_ACCOUNT_LOGIN_URL/);

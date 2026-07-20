@@ -232,6 +232,15 @@ function checkoutModeLabel(settings: StorefrontSettingsDTO) {
   return settings.checkoutConfigured ? "Add to Cart" : "Request Invoice";
 }
 
+const STOREFRONT_TAX_PAYMENT_COPY = "Any required taxes are shown before payment.";
+
+function storefrontRewardsProgramCopy(settings: StorefrontSettingsDTO) {
+  if (!settings.customerAccounts.enabled || !settings.customerAccounts.rewardsEnabled) return null;
+  return settings.customerAccounts.redemptionEnabled
+    ? "Earn points on eligible purchases."
+    : "Earn points now. Redemption coming soon.";
+}
+
 function storefrontRewardEstimateLabel(product: PublicStoreProductDTO, settings: StorefrontSettingsDTO) {
   if (!settings.customerAccounts.enabled || !settings.customerAccounts.rewardsEnabled) return null;
   if (isSoldOutProduct(product)) return null;
@@ -639,8 +648,8 @@ function ProductImage({
           onError={() => setFailedImageUrls((current) => (current.includes(imageUrl) ? current : [...current, imageUrl]))}
         />
       ) : (
-        <div className="gdg-image-placeholder">
-          <Package size={size === "thumb" ? 18 : 30} />
+        <div className="gdg-image-placeholder" role="img" aria-label={`${cleanStorefrontTitle(product.title)} image unavailable`}>
+          <Package size={size === "thumb" ? 18 : 30} aria-hidden="true" />
           {size !== "thumb" ? <span>Image coming soon</span> : null}
         </div>
       )}
@@ -998,6 +1007,7 @@ function ProductCard({
   const productTitle = cleanStorefrontTitle(product.title);
   const productSubtitle = storefrontProductCardSubtitle({ title: product.title, category: displayCategory, setName: product.setName });
   const rewardEstimate = storefrontRewardEstimateLabel(product, settings);
+  const rewardProgramCopy = storefrontRewardsProgramCopy(settings);
   const fulfillmentBadges = storefrontFulfillmentBadges(product);
 
   return (
@@ -1015,7 +1025,7 @@ function ProductCard({
         {productSubtitle ? <p className="gdg-product-card-subtitle">{productSubtitle}</p> : null}
         <strong>{money(product.price)}</strong>
         <div className="gdg-product-card-meta" aria-label={`Purchase details for ${productTitle}`}>
-          {rewardEstimate ? <span className="gdg-product-reward-estimate">{rewardEstimate}</span> : null}
+          {rewardEstimate ? <span className="gdg-product-reward-estimate" title={rewardProgramCopy ?? undefined}>{rewardEstimate}</span> : null}
           {fulfillmentBadges.map((badge) => (
             <span key={badge}>{badge}</span>
           ))}
@@ -1139,7 +1149,7 @@ function HomepageAccountCta({ settings, signedIn }: { settings: StorefrontSettin
         <div>
           <h2>{headline}</h2>
           <p>{detail}</p>
-          <small>{signedIn ? "Rewards redemption coming soon." : "No account required to buy. Rewards redemption coming soon."}</small>
+          <small>{signedIn ? "Earn points now. Redemption coming soon." : "No account required to buy. Earn points now. Redemption coming soon."}</small>
         </div>
       </div>
       <div className="gdg-home-account-actions">
@@ -1292,6 +1302,9 @@ export function ProductGrid({
   }, [availability, category, products, query, sort]);
   const visibleProducts = isShopMode ? shopProducts : homeVisibleProducts;
   const activeFilterCount = [query, category !== "all" ? category : "", setFilter, availability !== "in-stock" ? availability : "", sort !== "featured" ? sort : ""].filter(Boolean).length;
+  const shopFilterSummary = shopLoading
+    ? "Loading shop results."
+    : `${shopTotal} result${shopTotal === 1 ? "" : "s"} with ${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"}.`;
 
   const featuredSection = useMemo(() => homepageFeaturedDropsSection(products, settings.newArrivalDays), [products, settings.newArrivalDays]);
   const heroProduct = selectHomepageHeroProduct(products, settings);
@@ -1640,37 +1653,40 @@ export function ProductGrid({
         </>
       ) : (
         <section className="gdg-shop-area" id="shop">
-          <button ref={filterSheetTriggerRef} className="gdg-mobile-filter-button" type="button" onClick={openShopFilters} aria-expanded={filterSheetOpen} aria-controls="gdg-shop-filters">
+          <button ref={filterSheetTriggerRef} className="gdg-mobile-filter-button" type="button" onClick={openShopFilters} aria-expanded={filterSheetOpen} aria-controls="gdg-shop-filters" aria-label={`Open shop filters${activeFilterCount ? `, ${activeFilterCount} active` : ""}`}>
             <Search size={16} aria-hidden="true" />
             Filters
-            {activeFilterCount ? <span>{activeFilterCount}</span> : null}
+            {activeFilterCount ? <span aria-label={`${activeFilterCount} active filters`}>{activeFilterCount}</span> : null}
           </button>
-          <form className={`gdg-shop-filters ${filterSheetOpen ? "open" : ""}`} id="gdg-shop-filters" onSubmit={submitShopFilters}>
+          <form className={`gdg-shop-filters ${filterSheetOpen ? "open" : ""}`} id="gdg-shop-filters" onSubmit={submitShopFilters} role={filterSheetOpen ? "dialog" : undefined} aria-modal={filterSheetOpen ? "true" : undefined} aria-labelledby="gdg-shop-filters-title" aria-describedby="gdg-shop-filter-summary">
             <div>
               <div className="gdg-shop-filter-heading">
-                <h1>Shop Pokemon TCG products</h1>
+                <h1 id="gdg-shop-filters-title">Shop Pokemon TCG products</h1>
                 <button ref={filterSheetCloseRef} className="gdg-icon-button gdg-filter-close" type="button" onClick={closeShopFilters} aria-label="Close filters">
                   <X size={16} />
                 </button>
               </div>
               <p>Browse sealed Pokemon products, booster bundles, tins, blisters, premium collections, and collectible card products.</p>
-              <p>{shopLoading ? "Loading results..." : `Showing ${visibleProducts.length} of ${shopTotal} matching public listing${shopTotal === 1 ? "" : "s"}.`}</p>
+              <p id="gdg-shop-filter-summary" role="status" aria-live="polite">{shopLoading ? "Loading results..." : `Showing ${visibleProducts.length} of ${shopTotal} matching public listing${shopTotal === 1 ? "" : "s"}. ${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"}.`}</p>
             </div>
-            <label>
+            <label htmlFor="gdg-shop-search-input">
               Search
               <span>
-                <Search size={15} />
+                <Search size={15} aria-hidden="true" />
                 <input
+                  id="gdg-shop-search-input"
+                  type="search"
                   value={query}
                   onChange={(event) => setQuery(normalizeStorefrontShopQuery(event.currentTarget.value))}
                   placeholder="Name, set, category, SKU, or UPC..."
                   enterKeyHint="search"
+                  aria-describedby="gdg-shop-filter-summary"
                 />
               </span>
             </label>
-            <label>
+            <label htmlFor="gdg-shop-category-filter">
               Category / product type
-              <select value={category} onChange={(event) => setCategory(event.currentTarget.value)}>
+              <select id="gdg-shop-category-filter" value={category} onChange={(event) => setCategory(event.currentTarget.value)}>
                 {categories.map((entry) => (
                   <option key={entry} value={entry}>
                     {entry === "all" ? "All Products" : publicCategoryLabel(entry)}
@@ -1679,9 +1695,9 @@ export function ProductGrid({
               </select>
             </label>
             {shopSets.length ? (
-              <label>
+              <label htmlFor="gdg-shop-set-filter">
                 Set / series
-                <select value={setFilter} onChange={(event) => setSetFilter(event.currentTarget.value)}>
+                <select id="gdg-shop-set-filter" value={setFilter} onChange={(event) => setSetFilter(event.currentTarget.value)}>
                   <option value="">All Sets</option>
                   {shopSets.map((entry) => (
                     <option key={entry} value={entry}>
@@ -1691,9 +1707,10 @@ export function ProductGrid({
                 </select>
               </label>
             ) : null}
-            <label>
+            <label htmlFor="gdg-shop-availability-filter">
               Availability
               <select
+                id="gdg-shop-availability-filter"
                 value={availability}
                 onChange={(event) => setAvailability(event.currentTarget.value as StorefrontAvailabilityFilter)}
               >
@@ -1702,9 +1719,9 @@ export function ProductGrid({
                 <option value="all">All</option>
               </select>
             </label>
-            <label>
+            <label htmlFor="gdg-shop-sort-filter">
               Sort
-              <select value={sort} onChange={(event) => setSort(event.currentTarget.value as StorefrontShopSort)}>
+              <select id="gdg-shop-sort-filter" value={sort} onChange={(event) => setSort(event.currentTarget.value as StorefrontShopSort)} aria-describedby="gdg-shop-filter-summary">
                 <option value="featured">Featured</option>
                 <option value="newest">Newest</option>
                 <option value="price-low">Price: Low to High</option>
@@ -1714,10 +1731,10 @@ export function ProductGrid({
               </select>
             </label>
             <div className="gdg-shop-filter-actions">
-              <button type="submit" className="gdg-primary-button compact">
+              <button type="submit" className="gdg-primary-button compact" aria-label="Apply shop filters">
                 Apply Filters
               </button>
-              <button type="button" className="gdg-filter-clear" onClick={resetShopFilters}>
+              <button type="button" className="gdg-filter-clear" onClick={resetShopFilters} aria-label="Reset shop filters">
                 Reset
               </button>
             </div>
@@ -1734,9 +1751,9 @@ export function ProductGrid({
               <div>
                 <p>Shop</p>
                 <h2>{category === "all" ? "All Products" : category}</h2>
-                <span>{shopLoading ? "Refreshing results" : `${shopTotal} result${shopTotal === 1 ? "" : "s"}`}</span>
+                <span role="status" aria-live="polite">{shopFilterSummary}</span>
               </div>
-              {activeFilterCount ? <button type="button" className="gdg-filter-clear compact" onClick={resetShopFilters}>Clear {activeFilterCount}</button> : null}
+              {activeFilterCount ? <button type="button" className="gdg-filter-clear compact" onClick={resetShopFilters} aria-label={`Clear ${activeFilterCount} active shop filters`}>Clear {activeFilterCount}</button> : null}
             </div>
             {shopError ? <p className="gdg-error">{shopError}</p> : null}
             <div className="gdg-product-grid">
@@ -1755,7 +1772,7 @@ export function ProductGrid({
               ) : visibleProducts.length ? (
                 visibleProducts.map((product) => <ProductCard key={product.id} product={product} settings={settings} onAdded={onAdded} />)
               ) : (
-                <div className="gdg-empty">
+                <div className="gdg-empty" role="status" aria-live="polite" aria-busy={shopLoading || undefined}>
                   <h3>{shopLoading ? "Loading products..." : "No matching products"}</h3>
                   <p>{shopLoading ? "Searching current public listings." : "Try another search, reset filters, or check back for new public listings."}</p>
                 </div>
@@ -1901,6 +1918,7 @@ export function ProductDetail({
   const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
   const quantityLimitReached = !isSoldOut && effectiveMaxQuantity > 0 && quantity >= effectiveMaxQuantity;
   const rewardEstimateLabel = storefrontRewardEstimateLabel(product, settings);
+  const rewardProgramCopy = storefrontRewardsProgramCopy(settings);
   const fulfillmentLabel = product.shippingAvailable && product.localPickupEligible ? "Ships or Local Pickup" : product.localPickupEligible ? "Local Pickup available" : product.shippingAvailable ? "Shipping available" : "Fulfillment reviewed before checkout";
   const fulfillmentDetail = product.localPickupEligible
     ? "Pickup appears as an option in cart when this item is eligible."
@@ -1954,8 +1972,8 @@ export function ProductDetail({
                   onError={() => setFailedImages((current) => (current.includes(visibleSelectedImage) ? current : [...current, visibleSelectedImage]))}
                 />
               ) : (
-                <div className="gdg-image-placeholder">
-                  <Package size={42} />
+                <div className="gdg-image-placeholder" role="img" aria-label={`${productTitle} image unavailable`}>
+                  <Package size={42} aria-hidden="true" />
                   <span>Image coming soon</span>
                 </div>
               )}
@@ -2007,14 +2025,14 @@ export function ProductDetail({
               </span>
               <span>
                 <CreditCard size={16} aria-hidden="true" />
-                <b>Tax calculated at checkout</b>
-                <small>Stripe shows final tax before payment when tax collection is enabled.</small>
+                <b>{STOREFRONT_TAX_PAYMENT_COPY}</b>
+                <small>Shipping and any required taxes appear before payment.</small>
               </span>
               {rewardEstimateLabel ? (
                 <span>
                   <Trophy size={16} aria-hidden="true" />
                   <b>{rewardEstimateLabel}</b>
-                  <small>Estimated from merchandise subtotal only; excludes shipping and tax.</small>
+                  <small>{rewardProgramCopy} Estimated from merchandise subtotal only; excludes shipping and tax.</small>
                 </span>
               ) : null}
             </div>
@@ -2285,6 +2303,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
   const isStripeCheckout = settings.checkoutConfigured;
   const onlineTaxEnabled = settings.tax.features.onlineStripeTaxEnabled;
+  const rewardProgramCopy = storefrontRewardsProgramCopy(settings);
   const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
   const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.publicMaxQuantity <= 0);
   const overQuantityProducts = products.filter((product) => product.requestedQuantity > storefrontEffectiveMaxQuantity(product) && product.publicMaxQuantity > 0);
@@ -2606,7 +2625,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               {estimatedRewardPoints > 0 ? (
                 <span>
                   <b>Estimated rewards</b>
-                  <em>{estimatedRewardPoints.toLocaleString()} point{estimatedRewardPoints === 1 ? "" : "s"} on merchandise only</em>
+                  <em>{estimatedRewardPoints.toLocaleString()} point{estimatedRewardPoints === 1 ? "" : "s"} on merchandise only. {rewardProgramCopy}</em>
                 </span>
               ) : null}
               <span>
@@ -2614,8 +2633,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                 <em>{shippingSummary}</em>
               </span>
               <span>
-                <b>Tax calculated at checkout</b>
-                <em>{onlineTaxEnabled ? "Shown before payment" : "Not estimated in cart"}</em>
+                <b>{STOREFRONT_TAX_PAYMENT_COPY}</b>
+                <em>Shipping stays separate from any required taxes.</em>
               </span>
               <strong>
                 <b>Cart estimate</b>
@@ -2687,7 +2706,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                   </div>
                 ) : null}
                 {onlineTaxEnabled && fulfillmentMethod === "pickup" ? (
-                  <p className="gdg-checkout-tax-note">Local Pickup tax is never estimated in this cart. Stripe uses the configured pickup location after its tax policy is approved.</p>
+                  <p className="gdg-checkout-tax-note">Any required Local Pickup taxes are shown before payment.</p>
                 ) : null}
               </div>
             ) : null}
@@ -2719,7 +2738,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <p className="gdg-checkout-trust-line">
                 <Lock size={15} aria-hidden="true" />
                 Secure checkout by Stripe. Guest checkout available.
-                {onlineTaxEnabled ? " Final tax uses your delivery or approved pickup location and appears before payment. Shipping and tax stay separate. Rewards stay display-only in cart." : " Tax is not estimated from the browser cart."}
+                {" "}{STOREFRONT_TAX_PAYMENT_COPY} Shipping and rewards stay separate.
               </p>
             ) : null}
             <details className="gdg-checkout-notes">
@@ -2794,7 +2813,7 @@ export function CheckoutSuccessClient({
       {accountCtaEnabled ? (
         <div className="gdg-success-account-cta">
           <strong>Create an account to track this order{rewardsCtaEnabled ? " and earn rewards" : ""}.</strong>
-          <span>{rewardsCtaEnabled ? "Track points in your account. Rewards redemption coming soon." : "Account creation is optional and guest checkout remains available."}</span>
+          <span>{rewardsCtaEnabled ? "Track points in your account. Earn points now. Redemption coming soon." : "Account creation is optional and guest checkout remains available."}</span>
           <Link href="/account/login" className="gdg-secondary-button compact" onClick={() => trackStorefrontEvent("account_login_requested", { source: "checkout_success" })}>
             Create or Sign In
           </Link>
