@@ -26,11 +26,13 @@ test("cart summary separates merchandise rewards shipping pickup and tax without
   assert.match(cartClient, /Merchandise subtotal/);
   assert.match(cartClient, /Estimated rewards/);
   assert.match(cartClient, /on merchandise only/);
+  assert.match(cartClient, /const rewardProgramCopy = storefrontRewardsProgramCopy\(settings\)/);
+  assert.match(cartClient, /on merchandise only\. \{rewardProgramCopy\}/);
   assert.match(cartClient, /Shipping calculated at checkout \/ pickup/);
-  assert.match(cartClient, /Tax calculated at checkout/);
-  assert.match(cartClient, /Not estimated in cart/);
+  assert.match(cartClient, /STOREFRONT_TAX_PAYMENT_COPY/);
+  assert.match(cartClient, /Shipping stays separate from any required taxes\./);
   assert.match(cartClient, /Cart estimate/);
-  assert.doesNotMatch(cartClient, /taxEstimate|estimatedTax|browserTax|clientTax/i);
+  assert.doesNotMatch(cartClient, /taxEstimate|estimatedTax|browserTax|clientTax|Tax is not estimated from the browser cart/i);
 });
 
 test("cart rows expose compact fulfillment badges and preserve quantity controls", () => {

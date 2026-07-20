@@ -94,6 +94,14 @@ test("shop search supports the required customer-facing filters and stable sort 
     assert.match(productGrid, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 
+  assert.match(productGrid, /htmlFor="gdg-shop-search-input"/);
+  assert.match(productGrid, /id="gdg-shop-search-input"[\s\S]*?type="search"/);
+  assert.match(productGrid, /htmlFor="gdg-shop-sort-filter"/);
+  assert.match(productGrid, /id="gdg-shop-sort-filter"[\s\S]*?aria-describedby="gdg-shop-filter-summary"/);
+  assert.match(productGrid, /id="gdg-shop-filter-summary" role="status" aria-live="polite"/);
+  assert.match(productGrid, /aria-label="Apply shop filters"/);
+  assert.match(productGrid, /aria-label="Reset shop filters"/);
+  assert.match(productGrid, /aria-label=\{`Clear \$\{activeFilterCount\} active shop filters`\}/);
   assert.match(productGrid, /Load More/);
   assert.match(productGrid, /Showing \$\{visibleProducts\.length\} of \$\{shopTotal\}/);
   assert.match(productGrid, /\$\{shopTotal\} result/);
@@ -126,7 +134,12 @@ test("responsive filters use a mobile drawer without horizontal overflow pressur
   assert.match(productGrid, /className="gdg-mobile-filter-button"/);
   assert.match(productGrid, /ref=\{filterSheetTriggerRef\}/);
   assert.match(productGrid, /aria-expanded=\{filterSheetOpen\}/);
+  assert.match(productGrid, /aria-label=\{`Open shop filters/);
   assert.match(productGrid, /ref=\{filterSheetCloseRef\}/);
+  assert.match(productGrid, /role=\{filterSheetOpen \? "dialog" : undefined\}/);
+  assert.match(productGrid, /aria-modal=\{filterSheetOpen \? "true" : undefined\}/);
+  assert.match(productGrid, /aria-labelledby="gdg-shop-filters-title"/);
+  assert.match(productGrid, /aria-describedby="gdg-shop-filter-summary"/);
   assert.match(productGrid, /event\.key === "Escape"/);
   assert.match(productGrid, /setFilterSheetOpen\(false\)/);
   assert.match(productGrid, /restoreTarget\?\.focus\(\)/);
@@ -140,4 +153,12 @@ test("responsive filters use a mobile drawer without horizontal overflow pressur
   assert.match(css, /@media \(max-width: 820px\)\s*\{[\s\S]*?\.gdg-shop-filters\s*\{[\s\S]*?position: fixed;[\s\S]*?max-height: min\(86vh, 720px\);[\s\S]*?overflow-y: auto;/);
   assert.match(css, /@media \(max-width: 820px\)\s*\{[\s\S]*?\.gdg-shop-filters\.open\s*\{[\s\S]*?transform: translateY\(0\);/);
   assert.match(css, /@media \(max-width: 1120px\)\s*\{[\s\S]*?\.gdg-shop-filters\s*\{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+});
+
+test("shop loading and no-result states are announced without adding mutation behavior", () => {
+  assert.match(productGrid, /const shopFilterSummary = shopLoading[\s\S]*?activeFilterCount/);
+  assert.match(productGrid, /<span role="status" aria-live="polite">\{shopFilterSummary\}<\/span>/);
+  assert.match(productGrid, /className="gdg-empty" role="status" aria-live="polite" aria-busy=\{shopLoading \|\| undefined\}/);
+  assert.match(productGrid, /No matching products/);
+  assert.match(productGrid, /Searching current public listings\./);
 });

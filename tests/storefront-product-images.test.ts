@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
 import { syncedProductImageFields } from "../src/lib/product-images";
 import { isPublicStorefrontListingSellable, isPublicStorefrontListingVisible, publicProductToDTO } from "../src/lib/storefront";
 import { storefrontProductFeedXml } from "../src/lib/storefront-product-feed";
+
+const storefrontClient = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
 
 function storefrontItem(overrides: Record<string, unknown> = {}) {
   return {
@@ -55,6 +58,18 @@ test("storefront DTO does not invent UPC cover image fallbacks", () => {
   assert.ok(dto);
   assert.equal(dto.primaryImageUrl, null);
   assert.deepEqual(dto.images, []);
+});
+
+test("storefront product images have meaningful alt text and accessible missing-image fallbacks", () => {
+  assert.match(storefrontClient, /alt=\{product\.title\}/);
+  assert.match(storefrontClient, /alt=\{productTitle\}/);
+  assert.match(storefrontClient, /alt=""/);
+  assert.match(storefrontClient, /role="img" aria-label=\{`\$\{cleanStorefrontTitle\(product\.title\)\} image unavailable`\}/);
+  assert.match(storefrontClient, /role="img" aria-label=\{`\$\{productTitle\} image unavailable`\}/);
+  assert.match(storefrontClient, /Package size=\{size === "thumb" \? 18 : 30\} aria-hidden="true"/);
+  assert.match(storefrontClient, /Package size=\{42\} aria-hidden="true"/);
+  assert.match(storefrontClient, /Link href=\{`\/product\/\$\{product\.slug\}`\} aria-label=\{productTitle\}/);
+  assert.doesNotMatch(storefrontClient, /alt="(?:image|picture|product image)"/i);
 });
 
 test("public storefront detail visibility keeps sold-out history pages but separates sellable products", () => {
