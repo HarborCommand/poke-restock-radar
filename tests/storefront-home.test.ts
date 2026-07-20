@@ -8,6 +8,7 @@ import {
   homepageArrivalSection,
   homepageCollectorPicksSection,
   homepageFeaturedDropsSection,
+  homepageMerchandisingSections,
   selectHomepageHeroProduct
 } from "../src/lib/storefront-home";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "../src/types/radar";
@@ -24,6 +25,7 @@ function product(overrides: Partial<PublicStoreProductDTO> & { id: string; title
     primaryImageUrl: overrides.primaryImageUrl ?? overrides.imageUrl ?? `https://example.com/${overrides.id}.png`,
     images: overrides.images ?? [],
     category: overrides.category ?? "Pokemon Sealed",
+    productType: overrides.productType ?? null,
     tags: overrides.tags ?? [],
     condition: overrides.condition ?? "Sealed",
     publicMaxQuantity: overrides.publicMaxQuantity ?? 4,
@@ -194,6 +196,47 @@ test("Featured Drops section limits homepage products and mixes categories", () 
   assert.doesNotMatch(`${section.title} ${section.detail}`, /best.?seller|top rated|exact stock|stock count/i);
 });
 
+test("homepage merchandising sections use real timestamps, categories, prices, and minimize duplicates", () => {
+  const now = new Date("2026-07-20T12:00:00.000Z");
+  const products = [
+    product({ id: "new-bundle", category: "Booster Bundles", productType: "Booster Bundle", publishedAt: "2026-07-19T12:00:00.000Z", price: 29.99 }),
+    product({ id: "new-tin", category: "Tins", productType: "Tin", publishedAt: "2026-07-18T12:00:00.000Z", price: 24.99 }),
+    product({ id: "older-premium", category: "Premium Collections", productType: "Premium Collection", publishedAt: "2026-06-01T12:00:00.000Z", price: 39.99 }),
+    product({ id: "sleeves", category: "Accessories", productType: "Accessory", publishedAt: "2026-06-02T12:00:00.000Z", price: 9.99 }),
+    product({ id: "cheap-blister", category: "Blisters", productType: "Blister", publishedAt: "2026-06-03T12:00:00.000Z", price: 14.99 }),
+    product({ id: "sold-cheap", category: "Blisters", price: 7.99, publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" })
+  ];
+
+  const sections = homepageMerchandisingSections(products, 14, now);
+  const byTitle = new Map(sections.map((section) => [section.title, section]));
+  const allIds = sections.flatMap((section) => section.products.map((entry) => entry.id));
+
+  assert.deepEqual(byTitle.get("New Arrivals")?.products.map((entry) => entry.id), ["new-bundle", "new-tin"]);
+  assert.deepEqual(byTitle.get("Shop Pokémon Cards")?.products.map((entry) => entry.id), ["cheap-blister", "older-premium"]);
+  assert.deepEqual(byTitle.get("Accessories")?.products.map((entry) => entry.id), ["sleeves"]);
+  assert.equal(byTitle.has("Products Under $25"), false);
+  assert.equal(new Set(allIds).size, allIds.length);
+  assert.equal(allIds.includes("sold-cheap"), false);
+  assert.doesNotMatch(sections.map((section) => `${section.title} ${section.detail}`).join(" "), /best.?seller|most popular|trending|almost gone|exact stock|stock count/i);
+});
+
+test("homepage under-$25 section uses authoritative current price and hides when empty", () => {
+  const sections = homepageMerchandisingSections(
+    [
+      product({ id: "premium-a", category: "Premium Collections", price: 39.99, publishedAt: "2026-06-04T12:00:00.000Z" }),
+      product({ id: "premium-b", category: "Premium Collections", price: 34.99, publishedAt: "2026-06-03T12:00:00.000Z" }),
+      product({ id: "bundle", category: "Booster Bundles", price: 29.99, publishedAt: "2026-06-02T12:00:00.000Z" }),
+      product({ id: "tin", category: "Tins", price: 27.99, publishedAt: "2026-06-01T12:00:00.000Z" }),
+      product({ id: "blister", category: "Blisters", price: 14.99, publishedAt: "2026-05-02T12:00:00.000Z" })
+    ],
+    1,
+    new Date("2026-07-20T12:00:00.000Z")
+  );
+
+  assert.deepEqual(sections.find((section) => section.title === "Products Under $25")?.products.map((entry) => entry.id), ["blister"]);
+  assert.equal(sections.some((section) => section.products.length === 0), false);
+});
+
 test("Almost Gone uses low stock active products without sold-out products or exact-count copy", () => {
   const products = [
     product({ id: "sold-out", publicMaxQuantity: 0, availabilityLevel: "sold_out", status: "sold_out" }),
@@ -228,18 +271,21 @@ test("homepage merchandising UI renders category links and safe product-card lin
   const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
   assert.match(client, /HomepageProductSection/);
-  assert.match(client, /homepageFeaturedDropsSection\(products, settings\.newArrivalDays\)/);
+  assert.match(client, /homepageMerchandisingSections\(products, settings\.newArrivalDays\)/);
+  assert.match(fs.readFileSync(new URL("../src/components/StorefrontServerViews.tsx", import.meta.url), "utf8"), /listPublicStoreProducts\(\{ limit: 96 \}\)/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{almostGoneSection\}/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{collectorPicksSection\}/);
   assert.doesNotMatch(client, /<HomepageProductSection section=\{premiumCollectionsSection\}/);
   assert.doesNotMatch(client, /<section className="gdg-trust-bar"/);
-  assert.match(home, /Featured Drops/);
+  assert.match(home, /Shop Pokémon Cards/);
+  assert.doesNotMatch(home, /Shop Pokemon Cards/);
+  assert.match(home, /Products Under \$25/);
   assert.match(client, /Shop Pokemon/);
   assert.match(client, /View New Arrivals/);
   assert.match(client, /Why buy from GameDayGrabs\?/);
   assert.match(client, /Create an account to track orders and rewards/);
   assert.match(client, /function HomepageGrabbyTip/);
-  assert.match(client, /Start with Featured Drops, or jump into Shop to see every active product/);
+  assert.match(client, /Start with New Arrivals, or jump into Shop to see every active product/);
   assert.match(client, /Shop all products/);
   assert.match(client, /Guest checkout stays available\. Sign in anytime to view orders, saved addresses, and points/);
   assert.match(client, /Sign In \/ Create Account/);
@@ -267,7 +313,7 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.match(client, /availabilitySortScore/);
   assert.doesNotMatch(client, /card_number|cardNumber|cvv|payment_method_details|payment_method_data|raw Stripe object/i);
   const heroRenderIndex = client.indexOf('<section className="gdg-hero">');
-  const featuredRenderIndex = client.indexOf("section={featuredSection}");
+  const featuredRenderIndex = client.indexOf("homepageSections.map");
   const accountCtaIndex = client.indexOf("<HomepageAccountCta settings={settings} signedIn={accountSignedIn} />");
   const grabbyTipIndex = client.indexOf("<HomepageGrabbyTip />");
   const categoryIndex = client.indexOf("<h2>Shop By Category</h2>");

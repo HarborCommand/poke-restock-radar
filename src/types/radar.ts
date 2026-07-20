@@ -233,6 +233,7 @@ export type PublicStoreProductDTO = {
   primaryImageUrl: string | null;
   images: string[];
   category: string;
+  productType?: string | null;
   tags: string[];
   condition: string | null;
   setName?: string | null;

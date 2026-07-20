@@ -2,6 +2,12 @@ import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar
 import { isNewArrival, isSoldOutProduct, storefrontArrivalDate } from "@/lib/storefront-badges";
 import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { storefrontCollectionPath } from "@/lib/storefront-collections";
+import {
+  compareStorefrontFeaturedProducts,
+  compareStorefrontNewestProducts,
+  compareStorefrontStableProductTie,
+  isSellableStorefrontProduct
+} from "@/lib/storefront-merchandising";
 
 type HeroSettings = Pick<StorefrontSettingsDTO, "featuredHeroProductId" | "homepageHeroMode" | "showSoldOutInHero">;
 
@@ -19,17 +25,17 @@ export function storefrontProductTime(product: Pick<PublicStoreProductDTO, "publ
 }
 
 export function sortStorefrontProductsNewest(products: PublicStoreProductDTO[]) {
-  return [...products].sort((left, right) => storefrontProductTime(right) - storefrontProductTime(left));
+  return [...products].sort(compareStorefrontNewestProducts);
 }
 
 function activeStorefrontProducts(products: PublicStoreProductDTO[]) {
-  return products.filter((product) => !isSoldOutProduct(product));
+  return products.filter(isSellableStorefrontProduct);
 }
 
 function byNewestThenTitle(left: PublicStoreProductDTO, right: PublicStoreProductDTO) {
   const timeDiff = storefrontProductTime(right) - storefrontProductTime(left);
   if (timeDiff !== 0) return timeDiff;
-  return left.title.localeCompare(right.title);
+  return left.title.localeCompare(right.title) || compareStorefrontStableProductTie(left, right);
 }
 
 export function selectHomepageHeroProduct(products: PublicStoreProductDTO[], settings: HeroSettings) {
@@ -110,6 +116,105 @@ export function homepageFeaturedDropsSection(products: PublicStoreProductDTO[], 
     linkLabel: "Shop All Products",
     products: selected
   } satisfies HomepageMerchandisingSection;
+}
+
+function sectionProducts(
+  products: PublicStoreProductDTO[],
+  usedProductIds: Set<string>,
+  predicate: (product: PublicStoreProductDTO) => boolean,
+  sort: (left: PublicStoreProductDTO, right: PublicStoreProductDTO) => number = compareStorefrontFeaturedProducts,
+  limit = 4
+) {
+  return activeStorefrontProducts(products)
+    .filter((product) => !usedProductIds.has(product.id))
+    .filter(predicate)
+    .sort(sort)
+    .slice(0, limit);
+}
+
+function addHomepageSection(
+  sections: HomepageMerchandisingSection[],
+  usedProductIds: Set<string>,
+  section: Omit<HomepageMerchandisingSection, "products">,
+  products: PublicStoreProductDTO[]
+) {
+  if (!products.length) return;
+  products.forEach((product) => usedProductIds.add(product.id));
+  sections.push({ ...section, products });
+}
+
+function isPokemonCardProduct(product: PublicStoreProductDTO) {
+  const category = displayStorefrontCategory(product);
+  return category !== "Accessories" && category !== "Sports Cards" && category !== "Graded Cards";
+}
+
+export function homepageMerchandisingSections(products: PublicStoreProductDTO[], newArrivalDays: number, now = new Date()) {
+  const sections: HomepageMerchandisingSection[] = [];
+  const usedProductIds = new Set<string>();
+
+  addHomepageSection(
+    sections,
+    usedProductIds,
+    {
+      title: "New Arrivals",
+      detail: "Freshly published products from GameDayGrabs.",
+      href: storefrontCollectionPath("new-arrivals"),
+      linkLabel: "View All New Arrivals"
+    },
+    sectionProducts(products, usedProductIds, (product) => isNewArrival(product, now, newArrivalDays), compareStorefrontNewestProducts)
+  );
+
+  addHomepageSection(
+    sections,
+    usedProductIds,
+    {
+      title: "Shop Pokémon Cards",
+      detail: "Sealed Pokemon TCG products ready to ship or pick up.",
+      href: storefrontCollectionPath("pokemon-sealed-products"),
+      linkLabel: "Shop Pokemon"
+    },
+    sectionProducts(products, usedProductIds, isPokemonCardProduct)
+  );
+
+  addHomepageSection(
+    sections,
+    usedProductIds,
+    {
+      title: "Accessories",
+      detail: "Storage and collector gear listed with current availability.",
+      href: "/shop?category=Accessories",
+      linkLabel: "Shop Accessories"
+    },
+    sectionProducts(products, usedProductIds, (product) => displayStorefrontCategory(product) === "Accessories")
+  );
+
+  addHomepageSection(
+    sections,
+    usedProductIds,
+    {
+      title: "Products Under $25",
+      detail: "Lower-priced public listings using the current storefront price.",
+      href: "/shop?sort=price-low",
+      linkLabel: "Shop Under $25"
+    },
+    sectionProducts(products, usedProductIds, (product) => product.price < 25, (left, right) => left.price - right.price || compareStorefrontNewestProducts(left, right))
+  );
+
+  if (!sections.length) {
+    addHomepageSection(
+      sections,
+      usedProductIds,
+      {
+        title: "Latest Products",
+        detail: "Current public listings from GameDayGrabs.",
+        href: "/shop",
+        linkLabel: "Shop All Products"
+      },
+      activeStorefrontProducts(products).sort(compareStorefrontFeaturedProducts).slice(0, 4)
+    );
+  }
+
+  return sections;
 }
 
 export function homepageAlmostGoneSection(products: PublicStoreProductDTO[]) {
