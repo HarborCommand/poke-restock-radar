@@ -68,6 +68,23 @@ test("shipping and returns policy copy matches Merchant Center-facing commitment
   assert.match(policyContent, /wrong item, damaged item, missing item/);
 });
 
+test("storefront trust copy links customers to policies without unsupported commitments", () => {
+  const policiesPage = readProjectFile("src/app/policies/page.tsx");
+  const storefrontClient = readProjectFile("src/components/StorefrontClient.tsx");
+  const combined = `${policiesPage}\n${storefrontClient}`;
+
+  assert.match(policiesPage, /Bank or card issuer processing times may vary\./);
+  assert.doesNotMatch(policiesPage, /3-10 business days|3 to 10 business days|refunds typically appear/i);
+  assert.match(storefrontClient, /<Link href="\/policies\/shipping">Shipping Policy<\/Link>/);
+  assert.match(storefrontClient, /<Link href="\/policies\/returns">Returns Policy<\/Link>/);
+  assert.match(storefrontClient, /<Link href="\/policies\/shipping">Review shipping policy<\/Link>/);
+  assert.match(storefrontClient, /<Link href="\/policies\/returns">Review returns policy<\/Link>/);
+  assert.match(storefrontClient, /Guest checkout is available\./);
+  assert.match(storefrontClient, /Any required taxes are shown before payment\./);
+  assert.match(storefrontClient, /Earn points now\. Redemption coming soon\./);
+  assert.doesNotMatch(combined, /official retailer|authorized retailer|certified authentic|guaranteed genuine|100% authentic/i);
+});
+
 test("public trust pages include independent retailer, source, and trademark disclosures", () => {
   const aboutPage = readProjectFile("src/app/about/page.tsx");
   const contactPage = readProjectFile("src/app/contact/page.tsx");

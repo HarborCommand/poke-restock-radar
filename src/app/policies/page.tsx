@@ -85,7 +85,7 @@ export default async function PoliciesPage() {
         <article>
           <h2>Cancellations / Refunds</h2>
           <p>Customers can contact GameDayGrabs for order issues. Paid orders may be canceled or refunded before shipment when eligible.</p>
-          <p>Approved refunds are processed back to the original payment method. Bank or card issuer processing times may vary, but refunds typically appear within 3-10 business days after approval.</p>
+          <p>Approved refunds are processed back to the original payment method. Bank or card issuer processing times may vary.</p>
         </article>
         <article>
           <h2>Trading Card Return Policy</h2>
