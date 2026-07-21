@@ -3,6 +3,7 @@ export const GAMEDAYGRABS_WWW_DOMAIN = "www.gamedaygrabs.com";
 export const GAMEDAYGRABS_PUBLIC_URL = `https://${GAMEDAYGRABS_DOMAIN}`;
 export const GAMEDAYGRABS_CANONICAL_PUBLIC_URL = `https://${GAMEDAYGRABS_WWW_DOMAIN}`;
 export const POKE_RESTOCK_RADAR_PRODUCTION_HOST = "poke-restock-radar.vercel.app";
+export const POKE_RESTOCK_RADAR_PRODUCTION_URL = `https://${POKE_RESTOCK_RADAR_PRODUCTION_HOST}`;
 export const GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL = "gamedaygrabs@outlook.com";
 export const GAMEDAYGRABS_SPORTS_CARDS_URL = "https://www.ebay.com/str/a1rbreaks";
 export const LEGACY_PUBLIC_CONTACT_EMAIL = "ariverah7@gmail.com";
@@ -27,7 +28,6 @@ export function isBranchPreviewVercelHost(host: string | null | undefined) {
 
 export function isPublicStorefrontPath(pathname: string) {
   return (
-    pathname === "/" ||
     pathname === "/shop" ||
     pathname === "/cart" ||
     pathname === "/about" ||

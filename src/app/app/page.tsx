@@ -1,4 +1,4 @@
-import { RadarApp } from "@/components/RadarApp";
+import { PrivateRadarAppEntry } from "@/components/PrivateRadarAppEntry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,5 +10,5 @@ export const metadata = {
 };
 
 export default function PrivateAppPage() {
-  return <RadarApp />;
+  return <PrivateRadarAppEntry />;
 }
