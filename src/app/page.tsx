@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { RadarApp } from "@/components/RadarApp";
+import { PrivateRadarAppEntry } from "@/components/PrivateRadarAppEntry";
 import { StorefrontHomeView } from "@/components/StorefrontServerViews";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL, isGameDayGrabsHost } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
@@ -54,5 +54,5 @@ export default async function Home() {
   if (isGameDayGrabsHost(host)) {
     return <StorefrontHomeView />;
   }
-  return <RadarApp />;
+  return <PrivateRadarAppEntry />;
 }

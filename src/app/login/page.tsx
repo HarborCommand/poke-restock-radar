@@ -4,11 +4,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Poke Radar Dashboard",
-  description: "Private Poke Radar dashboard.",
+  title: "Poke Radar Login",
+  description: "Private Poke Radar login.",
   robots: { index: false, follow: false }
 };
 
-export default function PrivateDashboardPage() {
+export default function PrivateLoginPage() {
   return <PrivateRadarAppEntry />;
 }
