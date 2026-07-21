@@ -2100,7 +2100,7 @@ export function ProductDetail({
             ) : null}
             <div className="gdg-product-trust" aria-label="Store confidence">
               {[
-                ["Genuine products", "Sold by GameDayGrabs"],
+                ["Sealed products", "Sold by GameDayGrabs"],
                 ["Carefully packaged", "Packed with protection"],
                 ["Secure checkout", "Stripe handles payment"],
                 ["Order support", "Questions answered by GameDayGrabs"]
@@ -2143,7 +2143,7 @@ export function ProductDetail({
             </div>
           </details>
           <details>
-            <summary>Authenticity &amp; seller information</summary>
+            <summary>Seller &amp; sourcing information</summary>
             <div>
               <p>{GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE}</p>
               <p>{GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE}</p>
@@ -2464,7 +2464,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
           <article>
             <BadgeCheck size={24} />
             <div>
-              <strong>Genuine products</strong>
+              <strong>Sealed products</strong>
               <small>Independent reseller</small>
             </div>
           </article>

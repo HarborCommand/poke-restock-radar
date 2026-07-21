@@ -129,7 +129,7 @@ test("public detail copy sections are present and private terms are not rendered
   for (const heading of ["Product Description", "Product Details"]) {
     assert.match(client, new RegExp(`<h2>${heading}</h2>`));
   }
-  for (const summary of ["Shipping &amp; Local Pickup", "Authenticity &amp; seller information", "Returns &amp; product support"]) {
+  for (const summary of ["Shipping &amp; Local Pickup", "Seller &amp; sourcing information", "Returns &amp; product support"]) {
     assert.match(client, new RegExp(`<summary>${summary}</summary>`));
   }
   assert.match(client, /Shipping is calculated from product weight and package size/);

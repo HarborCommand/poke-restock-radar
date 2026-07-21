@@ -1091,7 +1091,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /Sleeved Boosters/);
   assert.match(client, /Product Details/);
   assert.match(client, /Shipping &amp; Local Pickup/);
-  assert.match(client, /Authenticity &amp; seller information/);
+  assert.match(client, /Seller &amp; sourcing information/);
   assert.match(client, /Returns &amp; product support/);
   assert.doesNotMatch(client, /href="\/app"|href=\{`\/app/);
   assert.match(client, /href: "\/about"/);
@@ -1349,7 +1349,7 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /Secure Checkout/);
   assert.match(client, /Fast Shipping/);
   assert.match(client, /Carefully Packaged/);
-  assert.match(client, /Genuine products/);
+  assert.match(client, /Sealed products/);
   assert.match(client, /Independent reseller/);
   assert.doesNotMatch(client, /100% Authentic/);
   assert.match(client, /Proceed to Secure Checkout/);

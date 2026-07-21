@@ -145,7 +145,7 @@ test("mobile detail, cart, and rewards surfaces use compact safe layouts", () =>
 test("public trust copy remains careful and does not imply official authorization", () => {
   const publicCopy = [productCard, productDetail, cartClient, storefrontFooter].join("\n");
 
-  assert.match(publicCopy, /Genuine products/);
+  assert.match(publicCopy, /Sealed products/);
   assert.match(publicCopy, /Independent reseller/);
   assert.match(publicCopy, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
   assert.doesNotMatch(publicCopy, /100% Authentic|guaranteed authentic|official Pok.mon retailer|authorized Pok.mon seller|direct from Pok.mon|replica/i);
