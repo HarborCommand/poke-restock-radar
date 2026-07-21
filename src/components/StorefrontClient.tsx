@@ -2140,6 +2140,9 @@ export function ProductDetail({
               <p>Shipping is calculated from product weight and package size before payment. Items are reserved for 15 minutes after checkout begins.</p>
               {product.localPickupEligible ? <p>Local Pickup appears at checkout when available for this item.</p> : null}
               {settings.freeShippingThreshold ? <p>Free shipping threshold: {money(settings.freeShippingThreshold)}.</p> : null}
+              <p>
+                Review the <Link href="/policies/shipping">Shipping Policy</Link> before checkout.
+              </p>
             </div>
           </details>
           <details>
@@ -2154,7 +2157,10 @@ export function ProductDetail({
             <summary>Returns &amp; product support</summary>
             <div>
               <p>{settings.returnPolicyText || "Sealed and collectible products are reviewed carefully before fulfillment. Returns are handled case by case, especially for sealed collectible items."}</p>
-              <p>Contact GameDayGrabs before returning any collectible product.</p>
+              <p>
+                Contact GameDayGrabs before returning any collectible product and review the{" "}
+                <Link href="/policies/returns">Returns Policy</Link>.
+              </p>
             </div>
           </details>
         </article>
@@ -2720,7 +2726,9 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
             <details className="gdg-checkout-notes">
               <summary>Checkout notes</summary>
               <ul>
-                <li>Shipping is calculated by ZIP before payment.</li>
+                <li>
+                  Shipping is calculated by ZIP before payment. <Link href="/policies/shipping">Review shipping policy</Link>.
+                </li>
                 <li>Items are reserved when checkout starts.</li>
                 <li>Guest checkout is available.</li>
                 {settings.customerAccounts.enabled ? (
@@ -2731,6 +2739,9 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     to track orders{settings.customerAccounts.rewardsEnabled ? " and rewards" : ""}.
                   </li>
                 ) : null}
+                <li>
+                  Sealed collectible returns are limited by policy. <Link href="/policies/returns">Review returns policy</Link>.
+                </li>
                 <li>Questions? <a href={`mailto:${contactEmail}`}>{contactEmail}</a></li>
               </ul>
             </details>

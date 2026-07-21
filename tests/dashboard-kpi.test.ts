@@ -1126,7 +1126,8 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   assert.match(policiesPage, /Local pickup is only available when shown at checkout/);
   assert.match(policiesPage, /Cancellations \/ Refunds/);
   assert.match(policiesPage, /Approved refunds are processed back to the original payment method/);
-  assert.match(policiesPage, /3-10 business days after approval/);
+  assert.match(policiesPage, /Bank or card issuer processing times may vary/);
+  assert.doesNotMatch(policiesPage, /3-10 business days after approval/);
   assert.match(policiesPage, /Trading Card Return Policy/);
   assert.match(policiesPage, /All sealed trading card products/);
   assert.match(policiesPage, /are final sale and are not\s+eligible for return or exchange/);
