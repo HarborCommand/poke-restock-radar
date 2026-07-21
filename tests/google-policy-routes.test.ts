@@ -43,11 +43,14 @@ test("policy hub and footer expose dedicated policy and trust links", () => {
   assert.match(storefrontClient, /<strong>Store name:<\/strong> GameDayGrabs/);
   assert.match(storefrontClient, /<strong>Legal business:<\/strong> GameDayGrabs LLC/);
   assert.match(aboutPage, /About GameDayGrabs LLC/);
+  assert.match(aboutPage, /Source Records/);
+  assert.doesNotMatch(aboutPage, /Authenticity Records|Genuine products/i);
   assert.match(contactPage, /GameDayGrabs LLC/);
   assert.match(policiesPage, /GameDayGrabs LLC/);
   assert.match(policyLinks, /gamedaygrabs@outlook\.com|contactEmail/);
   assert.match(storefrontClient, /GAMEDAYGRABS_FOOTER_RETAILER_DISCLOSURE/);
-  assert.match(disclosures, /independent retail store and reseller of genuine sealed collectible products/);
+  assert.match(disclosures, /independent retail store and reseller of sealed collectible products/);
+  assert.doesNotMatch(disclosures, /\bgenuine\b|guaranteed genuine|certified authentic|100% authentic/i);
   assert.match(disclosures, /not affiliated with, endorsed by, or sponsored by The Pokemon Company, Nintendo, Creatures, Game Freak/);
 });
 
@@ -79,13 +82,15 @@ test("public trust pages include independent retailer, source, and trademark dis
   assert.match(contactPage, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
   assert.match(policiesPage, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
   assert.match(termsContent, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
-  assert.match(storefrontClient, /Authenticity &amp; seller information/);
+  assert.match(storefrontClient, /Seller &amp; sourcing information/);
   assert.match(storefrontClient, /Product names, brands, characters, and trademarks belong to their respective owners/);
   assert.match(disclosures, /retail, wholesale, and distributor channels/);
+  assert.doesNotMatch(combined, /\bgenuine sealed collectible products\b|\bGenuine products\b|guaranteed genuine|certified authentic|100% authentic/i);
 
   assert.doesNotMatch(
     combined,
     /official Pokemon partner|official Pok[eÃ©]mon retailer|authorized by The Pokemon Company|authorized Pok[eÃ©]mon retailer|direct from Pok[eÃ©]mon|Pokemon store|Pok[eÃ©]mon store|investment guaranteed|card-for-card|replica|fake|faux|knockoff|knock-off|clone|mirror image|unofficial|unauthorized/i
   );
+  assert.doesNotMatch(combined, /official retailer|authorized retailer|guaranteed genuine|100% authentic/i);
 });
 

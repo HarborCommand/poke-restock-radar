@@ -30,7 +30,7 @@ test("product detail renders retailer-style buyer clarity sections", () => {
   assert.match(productDetail, /Purchase limit/);
   assert.match(productDetail, /Shipping &amp; Local Pickup/);
   assert.match(productDetail, /Shipping is calculated from package details before payment\./);
-  assert.match(productDetail, /Authenticity &amp; seller information/);
+  assert.match(productDetail, /Seller &amp; sourcing information/);
   assert.match(productDetail, /GAMEDAYGRABS_INDEPENDENT_RETAILER_DISCLOSURE/);
   assert.match(productDetail, /GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE/);
   assert.match(productDetail, /GAMEDAYGRABS_PRODUCT_SELLER_DISCLOSURE/);
@@ -63,10 +63,11 @@ test("product detail keeps purchase controls clear and safe", () => {
 });
 
 test("product detail trust cards and privacy guardrails stay customer-facing", () => {
-  for (const label of ["Genuine products", "Carefully packaged", "Secure checkout", "Order support"]) {
+  for (const label of ["Sealed products", "Carefully packaged", "Secure checkout", "Order support"]) {
     assert.match(productDetail, new RegExp(label));
   }
 
+  assert.doesNotMatch(productDetail, /Genuine products|guaranteed genuine|certified authentic|100% authentic/i);
   assert.doesNotMatch(productDetail, /card number|cardNumber|CVC|cvv|payment_method_details|raw Stripe object|payment method details/i);
 });
 
@@ -87,7 +88,7 @@ test("product detail media and mobile purchase UI stay accessible and contained"
 test("product detail disclosures use native accessible accordion semantics", () => {
   assert.match(productDetail, /<details open>/);
   assert.match(productDetail, /<summary>Shipping &amp; Local Pickup<\/summary>/);
-  assert.match(productDetail, /<details>\s*\r?\n\s*<summary>Authenticity &amp; seller information<\/summary>/);
+  assert.match(productDetail, /<details>\s*\r?\n\s*<summary>Seller &amp; sourcing information<\/summary>/);
   assert.match(productDetail, /<details>\s*\r?\n\s*<summary>Returns &amp; product support<\/summary>/);
   assert.match(css, /\.gdg-product-disclosures summary:focus-visible/);
   assert.doesNotMatch(productDetail, /role="dialog"|aria-modal|focusTrap|tabIndex=\{-1\}/);

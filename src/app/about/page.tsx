@@ -69,7 +69,7 @@ export default async function AboutPage() {
             ["Accurate Listings", "Products are listed with current availability so customers can shop from real public inventory."],
             ["Secure Checkout", "Stripe securely handles checkout when card payment is available."],
             ["Careful Packaging", "Orders are packed carefully so sealed Pokemon TCG products and premium collections arrive protected."],
-            ["Authenticity Records", GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE],
+            ["Source Records", GAMEDAYGRABS_AUTHENTICITY_SOURCE_DISCLOSURE],
             ["Practical Fulfillment", "Orders move through shipping or local pickup workflows without overpromising delivery timing."],
             ["Order Help", "Customers can contact GameDayGrabs for order questions, pickup coordination, or product help."],
             ["Contact", `Email ${contactEmail} for help with an order or product question.`]
