@@ -1662,6 +1662,10 @@ test("general alerts remain accessible while retired tracker execution controls 
   assert.match(navSource, /label: "Alerts"/);
   assert.match(app, /deprecatedTrackerTabs = new Set<Tab>\(\["onlineDrops", "checkStock", "watchlist", "keywords"\]\)/);
   assert.match(renderSource, /<AlertsPanel/);
+  assert.match(app, /function isRetiredRetailerTrackerAlert/);
+  assert.match(app, /alert\.dedupeKey\?\.startsWith\("tracker_online_drop:"\)/);
+  assert.match(app, /isRetiredRetailerTrackerAlert\(alert\)/);
+  assert.match(alertsPanelSource, /reviewableAlertRecords = historyAlerts\.filter\(\(record\) => !isTestDashboardAlert\(record\.alert\) && !isRetiredRetailerTrackerAlert\(record\.alert\)\)/);
   assert.match(activeAlertsSource, /Alert history/);
   assert.match(activeAlertsSource, /release, inventory, order, storefront, system, and historical alert activity/i);
   assert.match(activeAlertsSource, /retired retailer monitor cannot trigger new automatic restock alerts/i);

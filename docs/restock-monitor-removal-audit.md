@@ -95,7 +95,7 @@ These remain safe because no scheduled path, exposed route, package script, or v
 
 ## Alert-scope decision
 
-The general Alerts navigation remains available because alert history, system notices, release alerts, inventory/order/storefront notices, browser-push routing, email/SMS settings, and notification delivery diagnostics are not exclusively part of the retired retailer restock monitor. The rendered Alerts workspace no longer exposes monitor-run, retailer-discovery, check-stock, watchlist, or simulated live-drop controls. Historical alert records and shared notification infrastructure are retained.
+The general Alerts navigation remains available because alert history, system notices, release alerts, inventory/order/storefront notices, browser-push routing, email/SMS settings, and notification delivery diagnostics are not exclusively part of the retired retailer restock monitor. The rendered Alerts workspace no longer exposes monitor-run, retailer-discovery, check-stock, watchlist, simulated live-drop controls, or retailer tracker alert links. Historical tracker records remain retained in the database for non-destructive audit history, but retired retailer-monitor rows are filtered out of the active general Alerts history UI.
 
 ## Obsolete Vercel variables eligible for later cleanup
 

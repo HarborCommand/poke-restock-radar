@@ -3009,8 +3009,8 @@ function DashboardPanel({
   dashboard: DashboardDTO;
   setActiveTab: (tab: Tab) => void;
 }) {
-  const liveAlert = dashboard.alerts.find((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !alert.read) ?? null;
-  const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert)).slice(0, 5);
+  const liveAlert = dashboard.alerts.find((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert) && !alert.read) ?? null;
+  const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert)).slice(0, 5);
   const businessStorefrontOrders = dashboard.storefrontOrders.filter((order) => !order.isTestOrder);
   const newPaidOrders = businessStorefrontOrders.filter((order) => order.isNewPaidOrder);
   const latestNewPaidOrder = newPaidOrders[0] ?? null;
@@ -3044,7 +3044,7 @@ function DashboardPanel({
       time: item.createdAt
     })),
     ...dashboard.alerts
-      .filter((alert) => !isDeprecatedLocalStoreAlert(alert) && !isTestDashboardAlert(alert))
+      .filter((alert) => !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert) && !isTestDashboardAlert(alert))
       .map((alert) => ({
         id: alert.id,
         icon: Bell,
@@ -3411,7 +3411,7 @@ function DashboardInventoryWatchRow({ item }: { item: InventoryItemDTO }) {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function OnlineDropsPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
   const onlineAlerts = dashboard.alerts
-    .filter((alert) => !isDeprecatedLocalStoreAlert(alert) && !isTestDashboardAlert(alert))
+    .filter((alert) => !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert) && !isTestDashboardAlert(alert))
     .slice(0, 10);
   return (
     <>
@@ -6658,6 +6658,29 @@ function isDeprecatedLocalStoreAlert(alert: DashboardDTO["alerts"][number]) {
     text.includes("local restock") ||
     text.includes("store restock") ||
     text.includes("vendor spotted")
+  );
+}
+
+function isRetiredRetailerTrackerAlert(alert: DashboardDTO["alerts"][number]) {
+  const text = `${alert.title} ${alert.reason} ${alert.explanation || ""}`.toLowerCase();
+  const actionUrl = alert.actionUrl?.toLowerCase() || "";
+  const hasRetailerUrl =
+    actionUrl.includes("target.com") ||
+    actionUrl.includes("bestbuy.com") ||
+    actionUrl.includes("gamestop.com") ||
+    actionUrl.includes("pokemoncenter.com");
+  const hasTrackerRetailerSignal =
+    text.includes("exact product monitor") ||
+    text.includes("exact product link") ||
+    text.includes("manual checkout only") ||
+    text.includes("public product api") ||
+    text.includes("add to cart available") ||
+    text.includes("tracker event");
+
+  return (
+    alert.dedupeKey?.startsWith("tracker_online_drop:") ||
+    text.includes("tracker_online_drop") ||
+    (alert.entityType === "PRODUCT" && hasRetailerUrl && hasTrackerRetailerSignal)
   );
 }
 
@@ -24147,7 +24170,8 @@ function AlertsPanel({
     );
   }
 
-  const visibleAlertRecords = visibleHistoryAlerts.filter((record) => !isTestDashboardAlert(record.alert));
+  const reviewableAlertRecords = historyAlerts.filter((record) => !isTestDashboardAlert(record.alert) && !isRetiredRetailerTrackerAlert(record.alert));
+  const visibleAlertRecords = reviewableAlertRecords.slice(0, historyVisibleLimit);
   const unreadAlertCount = visibleAlertRecords.filter((record) => !record.alert.read).length;
   const highPriorityAlertCount = visibleAlertRecords.filter((record) => record.alert.priority === "HIGH").length;
 
@@ -24223,7 +24247,7 @@ function AlertsPanel({
               <EmptyState icon={Bell} title="No alerts to review" detail="Release, order, inventory, storefront, system, and other non-restock alerts will appear here when created." />
             )}
 
-            {historyAlerts.length > visibleAlertRecords.length ? (
+            {reviewableAlertRecords.length > visibleAlertRecords.length ? (
               <button className="secondary-action" type="button" onClick={() => setHistoryVisibleLimit((current) => current + 40)}>
                 Show more alerts
               </button>
