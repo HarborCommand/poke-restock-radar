@@ -39,7 +39,7 @@ Remaining preserved crons:
 - `/api/radar/products/[productId]/checked`
 - `/api/radar/products/[productId]/monitor`
 - local `npm run monitor` script
-- private-app Alerts tracker navigation
+- private-app retailer tracker controls inside Alerts
 - invite/access form controls for legacy `canRunChecks`
 
 Deleted route files return 404 through normal Next.js routing and perform zero database queries, retailer requests, alert creation, or notification sends.
@@ -92,6 +92,10 @@ No migration drops, truncates, or rewrites these records.
 - shared notification infrastructure used outside automatic restock execution
 
 These remain safe because no scheduled path, exposed route, package script, or visible navigation invokes restock monitoring or automatic Target/Best Buy discovery.
+
+## Alert-scope decision
+
+The general Alerts navigation remains available because alert history, system notices, release alerts, inventory/order/storefront notices, browser-push routing, email/SMS settings, and notification delivery diagnostics are not exclusively part of the retired retailer restock monitor. The rendered Alerts workspace no longer exposes monitor-run, retailer-discovery, check-stock, watchlist, or simulated live-drop controls. Historical alert records and shared notification infrastructure are retained.
 
 ## Obsolete Vercel variables eligible for later cleanup
 

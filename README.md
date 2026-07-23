@@ -49,7 +49,7 @@ Set `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD_HASH` before any shared or
 
 ## Retired Restock Monitor
 
-The automated Restock Radar / product tracker subsystem has been retired. The Vercel schedule no longer calls `/api/radar/monitor/cron`, manual monitor/discovery endpoints are removed, and the private app no longer exposes tracker navigation or monitor controls.
+The automated Restock Radar / product tracker subsystem has been retired. The Vercel schedule no longer calls `/api/radar/monitor/cron`, manual monitor/discovery endpoints are removed, and the private app no longer exposes retailer tracker navigation or monitor controls. General alert history and notification access remain available for release, inventory, order, storefront, system, and other non-restock alerts.
 
 Dormant historical monitor, alert, and discovery tables remain in the database for non-destructive retention. Do not drop those tables without a separate migration and owner approval.
 

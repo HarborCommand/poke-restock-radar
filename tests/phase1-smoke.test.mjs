@@ -886,6 +886,7 @@ test("core restock scanner discovery schema remains dormant after route retireme
   const monitor = readFileSync(join(root, "src", "lib", "monitor.ts"), "utf8");
   const discovery = readFileSync(join(root, "src", "lib", "product-discovery.ts"), "utf8");
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  const readme = readFileSync(join(root, "README.md"), "utf8");
 
   assert.match(schema, /model ProductDiscoverySource/);
   assert.match(schema, /model ProductDiscoveryCandidate/);
@@ -896,7 +897,9 @@ test("core restock scanner discovery schema remains dormant after route retireme
   assert.match(discovery, /review-before-watch/);
   assert.match(discovery, /Search\/category pages never trigger buy alerts/);
   assert.match(app, /deprecatedTrackerTabs/);
-  assert.doesNotMatch(app.slice(app.indexOf("const tabs"), app.indexOf("type NavTab")), /label: "Alerts"/);
+  assert.match(app.slice(app.indexOf("const tabs"), app.indexOf("type NavTab")), /label: "Alerts"/);
+  assert.match(app, /release, inventory, order, storefront, system, and historical alert activity/);
+  assert.match(readme, /General alert history and notification access remain available/);
   assert.throws(() => statSync(join(root, "src", "app", "api", "radar", "product-discovery", "sources", "route.ts")));
   assert.throws(() =>
     statSync(join(root, "src", "app", "api", "radar", "product-discovery", "candidates", "[candidateId]", "review", "route.ts"))

@@ -1652,14 +1652,19 @@ test("GameDayGrabs custom domain routes public storefront without exposing priva
   assert.match(domainDocs, /Public Data Safety/);
 });
 
-test("retired restock tracker navigation and execution controls are absent", () => {
+test("general alerts remain accessible while retired tracker execution controls are absent", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const navSource = app.slice(app.indexOf("const tabs"), app.indexOf("type NavTab"));
-  const renderSource = app.slice(app.indexOf("<section className=\"content-grid\">"), app.indexOf("{activeTab === \"market\""));
+  const renderSource = app.slice(app.indexOf("<section className=\"content-grid\">"), app.indexOf("{activeTab === \"settings\""));
+  const alertsPanelSource = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function runTargetBatch"));
+  const activeAlertsSource = alertsPanelSource.slice(alertsPanelSource.indexOf("title=\"Alerts\""));
 
-  assert.doesNotMatch(navSource, /label: "Alerts"/);
-  assert.match(app, /deprecatedTrackerTabs = new Set<Tab>\(\["onlineDrops", "checkStock", "watchlist", "keywords", "alerts"\]\)/);
-  assert.doesNotMatch(renderSource, /<AlertsPanel/);
+  assert.match(navSource, /label: "Alerts"/);
+  assert.match(app, /deprecatedTrackerTabs = new Set<Tab>\(\["onlineDrops", "checkStock", "watchlist", "keywords"\]\)/);
+  assert.match(renderSource, /<AlertsPanel/);
+  assert.match(activeAlertsSource, /Alert history/);
+  assert.match(activeAlertsSource, /release, inventory, order, storefront, system, and historical alert activity/i);
+  assert.match(activeAlertsSource, /retired retailer monitor cannot trigger new automatic restock alerts/i);
   for (const endpoint of [
     "/api/radar/monitor/run",
     "/api/radar/product-discovery/target",
@@ -1667,7 +1672,7 @@ test("retired restock tracker navigation and execution controls are absent", () 
     "/api/radar/check-stock",
     "/api/radar/products/${product.id}/check"
   ]) {
-    assert.doesNotMatch(renderSource, new RegExp(endpoint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(activeAlertsSource, new RegExp(endpoint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(app, /Operational payload and scan health/);
   assert.match(app, /API payload caps keep dashboard, inventory, orders, customers, rewards, and reporting views responsive/);

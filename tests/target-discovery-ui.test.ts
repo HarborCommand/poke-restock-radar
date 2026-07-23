@@ -60,8 +60,10 @@ test("automatic Target and Best Buy discovery routes, cron, and env examples are
 
   assert.match(service, /runAutomaticTargetDiscoveryPipeline/);
   assert.match(service, /runAutomaticBestBuyDiscoveryPipeline/);
-  assert.doesNotMatch(app.slice(app.indexOf("const tabs"), app.indexOf("type NavTab")), /Alerts/);
-  assert.doesNotMatch(app.slice(app.indexOf("<section className=\"content-grid\">"), app.indexOf("{activeTab === \"market\"")), /AlertsPanel/);
+  assert.match(app.slice(app.indexOf("const tabs"), app.indexOf("type NavTab")), /label: "Alerts"/);
+  assert.match(app.slice(app.indexOf("<section className=\"content-grid\">"), app.indexOf("{activeTab === \"settings\"")), /AlertsPanel/);
+  const alertsPanelSource = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function runTargetBatch"));
+  assert.doesNotMatch(alertsPanelSource.slice(alertsPanelSource.indexOf("title=\"Alerts\"")), /product-discovery|monitor\/run|check-stock|Run Discovery|Run Check/);
   assert.doesNotMatch(env, /TARGET_DISCOVERY_AUTO_ENABLED|BESTBUY_DISCOVERY_ENABLED|BESTBUY_API_KEY/);
   assert.match(readme, /automated Restock Radar \/ product tracker subsystem has been retired/i);
   assert.doesNotMatch(readme, /Target discovery now runs as the primary tracker intake|Best Buy discovery is the next conservative automatic intake/);
