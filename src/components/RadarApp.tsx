@@ -277,7 +277,6 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSect
   { id: "orders", label: "Orders", icon: ShoppingBag, section: "inventory" },
   { id: "shipping", label: "Shipping", icon: Navigation, section: "inventory" },
   { id: "sales", label: "Sales", icon: Receipt, section: "inventory" },
-  { id: "alerts", label: "Alerts", icon: Bell, section: "inventory" },
   { id: "market", label: "Market", icon: Sparkles, section: "analytics" },
   { id: "analytics", label: "Analytics", icon: BarChart3, section: "analytics" },
   { id: "releases", label: "Releases", icon: CalendarDays, section: "manage" },
@@ -287,7 +286,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSect
 ];
 type NavTab = (typeof tabs)[number];
 const deprecatedUiTabs = new Set<Tab>(["field", "products", "stores", "cards", "myStore"]);
-const deprecatedTrackerTabs = new Set<Tab>(["onlineDrops", "checkStock", "watchlist", "keywords"]);
+const deprecatedTrackerTabs = new Set<Tab>(["onlineDrops", "checkStock", "watchlist", "keywords", "alerts"]);
 const deprecatedAnalyticsTabs = new Set<Tab>(["profitLoss", "trends"]);
 const visibleTabIds = new Set<Tab>(tabs.map((tab) => tab.id));
 const adminOnlyTabs = new Set<Tab>(["admin", "pos", "customers", "tax"]);
@@ -2226,17 +2225,6 @@ export function RadarApp() {
           <ShippingHubPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
         {activeTab === "sales" ? <SalesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} onRefresh={loadDashboard} /> : null}
-        {activeTab === "alerts" ? (
-          <AlertsPanel
-            dashboard={dashboard}
-            isAdmin={isAdmin}
-            busy={busy}
-            busyLabel={busyLabel}
-            submit={submit}
-            runAction={runAction}
-            setActiveTab={setActiveTab}
-          />
-        ) : null}
         {activeTab === "market" ? (
           <MarketPanel
             dashboard={dashboard}
@@ -4230,6 +4218,7 @@ function CustomersRewardsPagination({
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CustomerRewardDetailPanel({
   customer,
   adjustmentsEnabled,
@@ -10081,7 +10070,7 @@ function InventoryPanel({
       }
     }, 0);
     return () => window.clearTimeout(resolutionTimer);
-  }, [dashboard.inventory, filters, pendingInventoryMutation, scheduleInventoryRowReveal]);
+  }, [dashboard.inventory, dashboard.shippingProfiles, filters, pendingInventoryMutation, scheduleInventoryRowReveal]);
 
   useEffect(() => {
     return () => {
@@ -10674,12 +10663,6 @@ function shippingHubOrderItemRows(order: StorefrontOrderDTO) {
     : [{ label: "No item details captured", quantity: 0 }];
 }
 
-function shippingHubOrderItems(order: StorefrontOrderDTO) {
-  return shippingHubOrderItemRows(order)
-    .map((item) => (item.quantity > 0 ? `${item.quantity}x ${item.label}` : item.label))
-    .join(", ");
-}
-
 function shippingHubCarrierTrackingUrl(order: StorefrontOrderDTO) {
   const carrier = String(order.carrier || "").trim().toLowerCase();
   const tracking = String(order.trackingNumber || "").trim();
@@ -11246,7 +11229,6 @@ function ProductShippingEditorModal({
   onClose: () => void;
 }) {
   const saveLabel = `Saving shipping data for ${item.itemName}`;
-  const purchaseLimitActive = item.purchaseLimitEnabled || item.maxQuantityPerOrder !== DEFAULT_STOREFRONT_PURCHASE_LIMIT;
   const [shippingDraft, setShippingDraft] = useState(() => shippingMetadataDraftFromItem(item));
   const draftShippingItem = inventoryItemWithShippingDraft(item, shippingDraft);
   const selectedShippingProfile = inventoryShippingProfileRecord(draftShippingItem, shippingProfiles);
@@ -23844,6 +23826,7 @@ function WatchProductIdentifierForm({
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AlertsPanel({
   dashboard,
   isAdmin,
@@ -27239,11 +27222,6 @@ function AccessManagementPanel({
           Add comps
         </label>
         <label className="checkbox-label">
-          <input name="canRunChecks" type="hidden" value="false" />
-          <input name="canRunChecks" type="checkbox" value="true" />
-          Run checks
-        </label>
-        <label className="checkbox-label">
           <input name="canReceivePushAlerts" type="hidden" value="false" />
           <input name="canReceivePushAlerts" type="checkbox" value="true" defaultChecked />
           Push alerts
@@ -27307,11 +27285,6 @@ function AccessManagementPanel({
                   <input name="canAddComps" type="hidden" value="false" />
                   <input name="canAddComps" type="checkbox" value="true" defaultChecked={friend.canAddComps} />
                   Add comps
-                </label>
-                <label className="checkbox-label">
-                  <input name="canRunChecks" type="hidden" value="false" />
-                  <input name="canRunChecks" type="checkbox" value="true" defaultChecked={friend.canRunChecks} />
-                  Run checks
                 </label>
                 <label className="checkbox-label">
                   <input name="canReceivePushAlerts" type="hidden" value="false" />
@@ -27474,15 +27447,11 @@ function AdminTools({
         <div className="target-coverage-grid">
           <DetailStat label="Products loaded" value={String(dashboard.products.length)} />
           <DetailStat label="Inventory rows loaded" value={String(dashboard.inventory.length)} />
-          <DetailStat label="Alerts loaded" value={String(dashboard.alerts.length)} />
-          <DetailStat label="Discovery candidates loaded" value={String(dashboard.productDiscoveryCandidates.length)} />
-          <DetailStat label="Monitor logs loaded" value={String(dashboard.monitorLogs.length)} />
-          <DetailStat label="Last monitor duration" value={dashboard.monitorLogs[0]?.durationMs ? `${dashboard.monitorLogs[0].durationMs}ms` : "Unknown"} />
-          <DetailStat label="Target queue" value={String(dashboard.scannerStatus.targetQueueRemaining)} />
-          <DetailStat label="Best Buy watched" value={String(dashboard.scannerStatus.bestBuyProductsWatched)} />
+          <DetailStat label="Orders loaded" value={String(dashboard.storefrontOrders.length)} />
+          <DetailStat label="Releases loaded" value={String(dashboard.releases.length)} />
         </div>
         <p className="target-candidate-warning compact">
-          API payload caps: inventory 200, discovery candidates 80, alerts 50, monitor logs 50. Use Load More buttons in heavy views instead of rendering every record at once.
+          API payload caps keep dashboard, inventory, orders, customers, rewards, and reporting views responsive.
         </p>
       </section>
       <form

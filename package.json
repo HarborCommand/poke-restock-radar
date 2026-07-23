@@ -23,7 +23,6 @@
     "admin:reset": "tsx scripts/admin-reset.ts",
     "smoke:prod": "tsx scripts/final-production-smoke.ts",
     "qa:viewport": "tsx scripts/viewport-qa.ts",
-    "monitor": "tsx scripts/run-monitor.ts",
     "backup:json": "tsx scripts/backup-data.ts",
     "restore:json": "tsx scripts/restore-data.ts",
     "backup:postgres": "tsx scripts/backup-postgres.ts",

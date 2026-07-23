@@ -13,7 +13,6 @@ const adminSessionCookieNames = ["__Host-poke_radar_session", "poke_radar_sessio
 
 // These routes authenticate server-to-server callers with dedicated job secrets.
 const signedJobPaths = new Set([
-  "/api/radar/monitor/cron",
   "/api/radar/storefront/reservations/expire"
 ]);
 
