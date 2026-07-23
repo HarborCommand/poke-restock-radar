@@ -27,7 +27,6 @@ test("Phase 1 package scripts are present", () => {
     "lint",
     "test",
     "qa:viewport",
-    "monitor",
     "backup:json",
     "restore:json",
     "backup:postgres",
@@ -140,7 +139,6 @@ test("Phase 15 daily workflow inventory and recap features exist", () => {
     join(root, "src", "app", "api", "radar", "inventory", "route.ts"),
     join(root, "src", "app", "api", "radar", "daily-recaps", "route.ts"),
     join(root, "src", "app", "api", "radar", "filter-presets", "route.ts"),
-    join(root, "src", "app", "api", "radar", "products", "[productId]", "checked", "route.ts"),
     join(root, "src", "app", "api", "radar", "products", "[productId]", "bought", "route.ts")
   ];
   for (const file of files) {
@@ -154,7 +152,6 @@ test("Phase 15 daily workflow inventory and recap features exist", () => {
     "Review Orders",
     "Recent inventory",
     "Release Radar",
-    "Mark Checked Today",
     "I Bought This",
     "Inventory Log",
     "Saved Filter Presets",
@@ -225,7 +222,7 @@ test("Phase 17 production hardening and owner QA pieces exist", () => {
 
   const smoke = readFileSync(join(root, "scripts", "final-production-smoke.ts"), "utf8");
   for (const phrase of [
-    "cronProtection",
+    "restockMonitorRetired",
     "backupExport",
     "restoreDryRun",
     "inviteFlow",
@@ -279,7 +276,7 @@ test("Phase 18 owner launch and alert calibration pieces exist", () => {
 
   const readme = readFileSync(join(root, "README.md"), "utf8");
   assert.match(readme, /Phase 18 Owner Launch And Alert Calibration/);
-  assert.match(readme, /Alert Calibration Queue/);
+  assert.match(readme, /Historical alert calibration records remain visible/);
 });
 
 test("dashboard compact cards stay readable instead of narrow columns", () => {
@@ -494,19 +491,23 @@ test("Phase 1.5 safety and data integrity routes exist", () => {
   }
 });
 
-test("Phase 2 monitor and notification routes exist", () => {
-  const routes = [
+test("unused restock monitor routes are retired while notification diagnostics remain", () => {
+  const removedRoutes = [
     join(root, "src", "app", "api", "radar", "products", "[productId]", "check", "route.ts"),
     join(root, "src", "app", "api", "radar", "monitor", "run", "route.ts"),
     join(root, "src", "app", "api", "radar", "monitor", "cron", "route.ts"),
-    join(root, "src", "app", "api", "radar", "notifications", "route.ts"),
-    join(root, "src", "app", "api", "radar", "notifications", "test", "route.ts"),
-    join(root, "src", "app", "api", "radar", "notifications", "test-all", "route.ts"),
     join(root, "scripts", "run-monitor.ts")
   ];
+  for (const route of removedRoutes) {
+    assert.throws(() => statSync(route), `retired monitor entry point still exists: ${route}`);
+  }
 
-  for (const route of routes) {
-    assert.ok(statSync(route).isFile(), `missing ${route}`);
+  for (const route of [
+    join(root, "src", "app", "api", "radar", "notifications", "route.ts"),
+    join(root, "src", "app", "api", "radar", "notifications", "test", "route.ts"),
+    join(root, "src", "app", "api", "radar", "notifications", "test-all", "route.ts")
+  ]) {
+    assert.ok(statSync(route).isFile(), `missing preserved notification route ${route}`);
   }
 });
 
@@ -650,8 +651,16 @@ test("Phase 6 PWA and push notification pieces exist", () => {
 
 test("Phase 7 deployment readiness and health checks exist", () => {
   const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8"));
-  assert.equal(vercel.crons[0].path, "/api/radar/monitor/cron");
-  assert.equal(vercel.crons[0].schedule, "*/5 * * * *");
+  assert.equal(vercel.crons.some((cron) => cron.path === "/api/radar/monitor/cron"), false);
+  assert.deepEqual(
+    vercel.crons.map((cron) => `${cron.path} ${cron.schedule}`),
+    [
+      "/api/radar/storefront/reservations/expire */5 * * * *",
+      "/api/radar/releases/sync/cron 0 10 * * *",
+      "/api/radar/inventory/market-sync/cron 0 11 * * *",
+      "/api/radar/rewards/audit/cron 30 11 * * *"
+    ]
+  );
 
   const files = [
     join(root, "src", "app", "api", "health", "route.ts"),
@@ -662,15 +671,9 @@ test("Phase 7 deployment readiness and health checks exist", () => {
     assert.ok(statSync(file).isFile(), `missing ${file}`);
   }
 
-  const cronRoute = readFileSync(join(root, "src", "app", "api", "radar", "monitor", "cron", "route.ts"), "utf8");
-  assert.match(cronRoute, /export async function GET/);
-  assert.match(cronRoute, /MONITOR_JOB_SECRET/);
-  assert.match(cronRoute, /authorization/);
-
   const env = readFileSync(join(root, ".env.example"), "utf8");
   assert.match(env, /CRON_SECRET/);
-  assert.match(env, /TARGET_MONITOR_CRON_ENABLED/);
-  assert.match(env, /TARGET_MONITOR_BATCH_SIZE/);
+  assert.doesNotMatch(env, /TARGET_MONITOR_CRON_ENABLED/);
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   assert.match(app, /App Health/);
@@ -775,7 +778,7 @@ test("Phase 12 retailer detection accuracy controls exist", () => {
   }
 
   const actionRoute = join(root, "src", "app", "api", "radar", "products", "[productId]", "monitor", "route.ts");
-  assert.ok(statSync(actionRoute).isFile(), `missing ${actionRoute}`);
+  assert.throws(() => statSync(actionRoute), "manual monitor control route should be retired");
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   for (const phrase of [
@@ -791,8 +794,8 @@ test("Phase 12 retailer detection accuracy controls exist", () => {
   }
 
   const readme = readFileSync(join(root, "README.md"), "utf8");
-  assert.match(readme, /Tuning Retailer Detection/);
-  assert.match(readme, /Low-confidence high-priority changes/);
+  assert.match(readme, /Retired Restock Monitor/);
+  assert.match(readme, /manual monitor\/discovery endpoints are removed/);
 });
 
 test("UI real retail flow improvements exist", () => {
@@ -878,11 +881,12 @@ test("store discovery and coverage expansion exists", () => {
   assert.match(readme, /retailer,storeName,address,city,state,zip,latitude,longitude,phone,notes/);
 });
 
-test("core restock scanner discovery mode exists", () => {
+test("core restock scanner discovery schema remains dormant after route retirement", () => {
   const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
   const monitor = readFileSync(join(root, "src", "lib", "monitor.ts"), "utf8");
   const discovery = readFileSync(join(root, "src", "lib", "product-discovery.ts"), "utf8");
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
+  const readme = readFileSync(join(root, "README.md"), "utf8");
 
   assert.match(schema, /model ProductDiscoverySource/);
   assert.match(schema, /model ProductDiscoveryCandidate/);
@@ -892,18 +896,13 @@ test("core restock scanner discovery mode exists", () => {
   assert.match(monitor, /archivedAt: null/);
   assert.match(discovery, /review-before-watch/);
   assert.match(discovery, /Search\/category pages never trigger buy alerts/);
-  for (const phrase of ["Restock scanner", "Review New Finds", "Approve", "Add Discovery Source", "Product QA", "Real Product Data Cleanup"]) {
-    assert.match(app, new RegExp(phrase), `missing scanner UI phrase ${phrase}`);
-  }
-  assert.ok(
-    statSync(join(root, "src", "app", "api", "radar", "product-discovery", "sources", "route.ts")).isFile(),
-    "missing product discovery source route"
-  );
-  assert.ok(
-    statSync(
-      join(root, "src", "app", "api", "radar", "product-discovery", "candidates", "[candidateId]", "review", "route.ts")
-    ).isFile(),
-    "missing product discovery review route"
+  assert.match(app, /deprecatedTrackerTabs/);
+  assert.match(app.slice(app.indexOf("const tabs"), app.indexOf("type NavTab")), /label: "Alerts"/);
+  assert.match(app, /release, inventory, order, storefront, system, and historical alert activity/);
+  assert.match(readme, /General alert history and notification access remain available/);
+  assert.throws(() => statSync(join(root, "src", "app", "api", "radar", "product-discovery", "sources", "route.ts")));
+  assert.throws(() =>
+    statSync(join(root, "src", "app", "api", "radar", "product-discovery", "candidates", "[candidateId]", "review", "route.ts"))
   );
   assert.ok(
     statSync(join(root, "src", "app", "api", "radar", "products", "[productId]", "archive", "route.ts")).isFile(),

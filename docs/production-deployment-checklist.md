@@ -10,7 +10,7 @@ Do not deploy this app into the Harbor Command Vercel project. Do not point it a
 - Neon production database name: `poke_restock_radar_prod`
 - App folder: `C:\Users\arive\OneDrive\Documents\New project\poke-restock-radar`
 - Production app URL: the Vercel production URL or your private custom domain for this app
-- Production cron route: `/api/radar/monitor/cron`
+- Production cron routes: storefront reservation expiration, release sync, inventory market sync, and rewards audit
 
 ## 1. Prepare Local Secrets
 
@@ -49,7 +49,7 @@ Use an unpooled URL for `pg_dump`, `pg_restore`, and migration maintenance. Pool
 npm run vercel-build
 ```
 
-5. Keep the included `vercel.json`; it registers the monitor cron route.
+5. Keep the included `vercel.json`; it registers only preserved internal cron routes.
 
 ## 4. Set Vercel Env Vars
 
@@ -125,10 +125,7 @@ The Postgres scripts require local `pg_dump` and `pg_restore`. Use `DATABASE_URL
 
 The cron route runs due product checks:
 
-```bash
-curl "$APP_URL/api/radar/monitor/cron" \
-  -H "Authorization: Bearer $CRON_SECRET"
-```
+Confirm `/api/radar/monitor/cron` returns 404. The retired restock monitor must not be scheduled or manually callable.
 
 Health endpoint:
 
@@ -136,7 +133,7 @@ Health endpoint:
 curl "$APP_URL/api/health"
 ```
 
-Admin Health in the app should show database connectivity, monitor readiness, push configuration, and optional email/SMS provider status.
+Admin Health in the app should show database connectivity, preserved cron secret readiness, push configuration, and optional email/SMS provider status.
 
 ## 8. Final Launch Checks
 
@@ -148,5 +145,5 @@ Admin Health in the app should show database connectivity, monitor readiness, pu
 - Twilio and SMTP credentials are unique or intentionally scoped to this app.
 - `/api/health` returns OK or WARN, not ERROR.
 - Admin can sign in.
-- A manual product `Run Check Now` creates a monitor log.
+- No Restock Radar monitor controls or monitor logs are created by ordinary admin use.
 - Go / Buy Now opens the official retailer page only.

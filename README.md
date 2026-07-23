@@ -47,47 +47,22 @@ Set `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD_HASH` before any shared or
 - Admin-only JSON export/import backup
 - Empty states, stronger validation, loading states, and API error toasts
 
-## Phase 2 Monitoring
+## Retired Restock Monitor
 
-Phase 2 adds safe public-page product monitoring. Checks are sequential and rate-limited, store monitor logs, create restock history on detected changes, and can trigger in-app, SMTP email, Twilio SMS, or browser push alerts.
+The automated Restock Radar / product tracker subsystem has been retired. The Vercel schedule no longer calls `/api/radar/monitor/cron`, manual monitor/discovery endpoints are removed, and the private app no longer exposes retailer tracker navigation or monitor controls. General alert history and notification access remain available for release, inventory, order, storefront, system, and other non-restock alerts.
 
-The monitor only fetches public product pages. It does not perform cart, payment, account, queue, captcha, purchase-limit, or retailer-private actions.
+Dormant historical monitor, alert, and discovery tables remain in the database for non-destructive retention. Do not drop those tables without a separate migration and owner approval.
 
-Live product fields are collected only from the exact tracked retailer page:
+Preserved systems:
 
-- live product title
-- live price
-- live stock or preorder/add-to-cart cue
-- product image URL
-- final resolved URL
-- source label `Retailer page`
-- last verified timestamp
-- confidence score
-
-If price or stock cannot be verified, the UI shows `Price not verified` or `Not verified`. Seed/demo prices are labeled as demo data and are not treated as live retailer prices.
-
-Run due checks locally:
-
-```bash
-npm run monitor
-```
-
-Run checks from the app:
-
-- Admin product action: `Run Check Now`
-- Admin products action: `Run Due Checks`
-- Admin products action: `Run All Checks`
-
-Cron/serverless monitor endpoint:
-
-```bash
-curl -X POST "$APP_URL/api/radar/monitor/cron" \
-  -H "Content-Type: application/json" \
-  -H "x-monitor-secret: $MONITOR_JOB_SECRET" \
-  -d '{"mode":"due"}'
-```
-
-Use `{"mode":"all"}` only for deliberate admin-triggered sweeps.
+- storefront cart reservation expiration
+- checkout, Stripe checkout/webhooks, and order processing
+- product catalog, product inventory, POS, and Quick Stock
+- release synchronization
+- inventory market/comps synchronization
+- rewards auditing
+- product feed, sitemap, and public GameDayGrabs storefront
+- private Poke Restock Radar admin host
 
 ## Email And SMS Alerts
 
@@ -106,44 +81,7 @@ Twilio SMS alerts are sent only when these env vars are set:
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_FROM_NUMBER`
 
-Monitor tuning:
-
-- `MONITOR_JOB_SECRET` protects the cron endpoint.
-- `MONITOR_REQUEST_DELAY_MS` controls delay between product checks. The app enforces a minimum delay of 500 ms.
-- Retailer templates include public status words for in stock, sold out, preorder, unavailable, blocked pages, captcha/robot pages, price changes, and page changes.
-- Product-level `Required words` make the monitor prove it is looking at the right product before trusting a positive signal.
-- Product-level `Ignore words` suppress ambiguous matches such as sponsored results, marketplace modules, unrelated sets, or page furniture.
-- Low-confidence high-priority changes are held as pending and must appear in two matching checks before an alert is sent.
-- Blocked, captcha, robot, and rate-limit pages are logged as blocked monitor results and never send restock alerts.
-- Use `Pause Monitor` for noisy products, `Resume Monitor` after tuning, `Force Alert` only for an intentional manual admin notification, and `Mark False Positive` to improve accuracy stats.
-
 Each user can configure in-app, email, SMS, quiet hours, and minimum priority from the app settings panel.
-
-### Tuning Retailer Detection
-
-Start with exact product URLs. Search/category links are marked unverified and cannot send Buy alerts. After a noisy check, open the monitor result details and review HTTP status, final URL, response time, confidence, reason, and detected words.
-
-Recommended tuning loop:
-
-1. Add a product with an exact retailer product URL, UPC/SKU/DPCI/TCIN/item ID where available, and expected title keywords.
-2. If the result is blocked or captcha, wait and let the normal cron cadence retry. Do not bypass it.
-3. If the monitor matches the wrong product, add required words from the actual product title.
-4. If the monitor matches unrelated page text, add those words to ignore words.
-5. Mark confirmed bad alerts as false positives so the admin accuracy stats stay honest.
-
-Buy alerts are sent only when the monitor confirms exact product identity and detects an in-stock, preorder, or add-to-cart state. Blocked/captcha/queue pages and possible mismatches are logged but do not create Buy alerts.
-
-### Core Restock Scanner And Discovery Mode
-
-The scanner supports Amazon, Target, Best Buy, Walmart, GameStop, and Pokemon Center.
-
-Watched products must use exact product URLs such as Amazon `/dp/<ASIN>`, Target `/p/.../-/A-TCIN`, Walmart `/ip/...`, Best Buy `/site/...`, GameStop product pages, and Pokemon Center `/product/...` pages. A BUY alert requires exact URL verification, product ID/title/image verification, and a proven buyable status (`IN_STOCK`, `PREORDER_LIVE`, or `ADD_TO_CART_AVAILABLE`). If the parser cannot prove that the product is buyable, it defaults to unavailable and does not alert.
-
-Target discovery now runs as the primary tracker intake. The app scans safe public Target search/category URLs, extracts exact `/p/` product pages, filters non-TCG items, suppresses marketplace or over-MSRP listings, auto-approves strong retail/MSRP candidates, and enables batched monitoring. Search/category pages still never trigger BUY alerts directly; only approved exact products can create Live Drops after the monitor proves buyable stock. Manual Discord import, manual candidate approval, and parser test tools are kept under Admin/Advanced for overrides and diagnostics.
-
-Best Buy discovery is the next conservative automatic intake. When `BESTBUY_API_KEY` is configured, Poke Radar uses the Best Buy Products API server-side to discover Pokemon TCG candidates with SKU, URL, image, price, and category data. Without a key it falls back to safe public Best Buy search/product pages and clearly reports the fallback. Best Buy candidates can auto-approve only when an exact product URL, SKU/product ID, title, image, Pokemon TCG classification, and conservative retail-price guardrail pass. Discovery itself never creates Buy alerts; only exact product monitors can create Live Drops after buyable stock is proven.
-
-Scanner status in the Products tab shows active watched products, last scan time, next scan estimate, pending new finds, and live restocks detected today.
 
 ## Phase 3 Card Investment Engine
 
@@ -204,7 +142,7 @@ Alert rules added in this phase:
 
 ### Release Calendar Auto-Sync
 
-The Releases page is now a source-aware **Release Radar**. The built-in sync uses a source registry, source-specific parsers, duplicate merging, confidence labels, and per-source health logs. It checks the public Pokemon TCG API set list, official Pokemon expansion/news pages, Pokemon Center pages when exact dates are visible, a default ICv2 2026 Pokemon TCG product calendar as a secondary review-only source, and configured RSS/JSON product-drop feeds. Vercel Cron calls `/api/radar/releases/sync/cron` daily, protected by the same `MONITOR_JOB_SECRET` / `CRON_SECRET` bearer setup as monitor jobs.
+The Releases page is now a source-aware **Release Radar**. The built-in sync uses a source registry, source-specific parsers, duplicate merging, confidence labels, and per-source health logs. It checks the public Pokemon TCG API set list, official Pokemon expansion/news pages, Pokemon Center pages when exact dates are visible, a default ICv2 2026 Pokemon TCG product calendar as a secondary review-only source, and configured RSS/JSON product-drop feeds. Vercel Cron calls `/api/radar/releases/sync/cron` daily, protected by the shared `MONITOR_JOB_SECRET` / `CRON_SECRET` bearer setup used by preserved internal jobs.
 
 Optional release-sync env vars:
 
@@ -236,7 +174,6 @@ Field Mode is a mobile-first tab for store hunting. It ranks saved stores by lik
 
 Phase 6 makes the private radar installable on mobile with `public/manifest.webmanifest`, PNG app icons, an offline fallback page, and a service worker. The service worker caches the app shell, handles push events, and routes notification clicks back into the right app tab:
 
-- Product restock alerts open Products.
 - Store prediction alerts open Field Mode.
 - Release alerts open Release Calendar.
 - Card opportunity alerts open Card Tracker.
@@ -261,13 +198,9 @@ Browser push is alerts-only. It does not automate carts, checkout, payment, queu
 
 Phase 7 adds Vercel deployment readiness:
 
-- `vercel.json` registers `/api/radar/monitor/cron` on a `*/5 * * * *` UTC schedule.
-- `/api/radar/monitor/cron` supports Vercel's GET cron invocation and the existing POST/manual test flow.
-- Scheduled Target scans run by default through a safe batched `target_due` monitor path. Set `TARGET_MONITOR_BATCH_SIZE` (default `18`) and `TARGET_MONITOR_CADENCE_MINUTES` (default `15`, minimum `10`) to tune the Target queue without hammering Target.
-- Automatic Target discovery runs from the same cron route before the Target monitor batch when `TARGET_DISCOVERY_AUTO_ENABLED` is not `false`. Set `TARGET_DISCOVERY_CADENCE_MINUTES` (default `360`, minimum `120`), `TARGET_DISCOVERY_AUTO_SOURCE_LIMIT` (default `4`), and `TARGET_DISCOVERY_AUTO_APPROVE_LIMIT` (default `12`) to tune coverage. Keep `TARGET_DISCOVERY_RETAIL_ONLY_ENABLED=true` so marketplace and over-MSRP candidates are suppressed instead of watched.
-- Automatic Best Buy discovery also runs from `/api/radar/monitor/cron` when `BESTBUY_DISCOVERY_ENABLED` is not `false`. Set `BESTBUY_API_KEY` to use the official Products API path; leave it blank for public-page fallback only. Tune with `BESTBUY_DISCOVERY_CADENCE_MINUTES`, `BESTBUY_DISCOVERY_AUTO_SOURCE_LIMIT`, and `BESTBUY_DISCOVERY_AUTO_APPROVE_LIMIT`.
-- The legacy broad product/discovery scan stays opt-in while older Products, Stores, and Cards UI modules are hidden. Set `PRODUCT_MONITOR_CRON_ENABLED=true` only if you intentionally want `/api/radar/monitor/cron` to run the full due-product/discovery job instead of the Target batch. Set `TARGET_MONITOR_CRON_ENABLED=false` to pause Target batching.
-- Cron calls are protected by `MONITOR_JOB_SECRET`, with bearer-token compatibility for Vercel's `CRON_SECRET`.
+- `vercel.json` no longer registers `/api/radar/monitor/cron`.
+- The preserved cron jobs are storefront reservation expiration, release synchronization, inventory market synchronization, and rewards auditing.
+- Preserved cron calls are protected by `MONITOR_JOB_SECRET`, with bearer-token compatibility for Vercel's `CRON_SECRET`.
 - `/api/health` reports app, database, cron, alert, push, email, and SMS readiness without exposing secret values.
 - Admin users see App Health inside the dashboard. Missing production env vars show an admin warning instead of crashing the public UI.
 
@@ -277,7 +210,7 @@ Vercel Cron notes:
 - Vercel sends cron requests as HTTP GET requests to the configured path.
 - Vercel Cron schedules use UTC.
 - Vercel can send `Authorization: Bearer $CRON_SECRET`. Set `CRON_SECRET` equal to `MONITOR_JOB_SECRET`.
-- The included 5-minute schedule requires a plan that supports sub-daily cron intervals. Hobby projects must change the schedule to a daily expression or use another cron provider.
+- The only remaining 5-minute schedule is storefront reservation expiration.
 
 ### Required Production Env Vars
 
@@ -291,7 +224,6 @@ Core production env vars:
 - `ADMIN_INVITE_SECRET`
 - `MONITOR_JOB_SECRET`
 - `CRON_SECRET`
-- `MONITOR_REQUEST_DELAY_MS`
 
 Browser push env vars:
 
@@ -301,7 +233,6 @@ Browser push env vars:
 
 Optional provider env vars:
 
-- Target auto-discovery: `TARGET_DISCOVERY_AUTO_ENABLED`, `TARGET_DISCOVERY_AUTO_APPROVAL_ENABLED`, `TARGET_DISCOVERY_RETAIL_ONLY_ENABLED`, `TARGET_DISCOVERY_CADENCE_MINUTES`, `TARGET_DISCOVERY_AUTO_SOURCE_LIMIT`, `TARGET_DISCOVERY_AUTO_APPROVE_LIMIT`
 - SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 - Twilio: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
 - eBay API comp refresh: `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_ENVIRONMENT`, `EBAY_MARKETPLACE_ID`
@@ -386,7 +317,7 @@ Retailer templates included:
 - GameStop
 - Amazon
 
-Each template stores the expected public URL pattern, common public stock words, safe public selectors/cues, useful identifier fields, default alert priority, and monitor notes. Templates are guidance for public-page monitoring only; they do not bypass queues, captchas, accounts, purchase limits, or checkout.
+Each historical retailer template stores the expected public URL pattern, common public stock words, safe public selectors/cues, useful identifier fields, default alert priority, and notes. The automated public-page monitor is retired; templates remain dormant historical configuration.
 
 ### Product Wizard
 
@@ -395,7 +326,7 @@ The product wizard steps are:
 1. Retailer
 2. Official product URL
 3. Product details
-4. Monitor and alert settings
+4. Historical monitor and alert settings
 
 Retailer URL validation is enforced when products are created or edited. Examples:
 
@@ -604,22 +535,22 @@ Friend permissions are enforced server-side:
 
 - `canAddSightings`: add and edit store sightings
 - `canAddComps`: add manual card comps
-- `canRunChecks`: run manual product checks or due monitor batches
+- `canRunChecks`: legacy permission retained for historical records; monitor/check routes are retired
 - `canReceivePushAlerts`: create browser push subscriptions
 
-Audit logs are stored for invite creation/acceptance/revocation, login attempts, sightings, card comps, monitor checks, and access changes. Admins can disable a friend account without deleting historical sightings or comps.
+Audit logs are stored for invite creation/acceptance/revocation, login attempts, sightings, card comps, historical monitor checks, and access changes. Admins can disable a friend account without deleting historical sightings or comps.
 
 ## Phase 15 Daily Workflow
 
 The dashboard includes `Today's Plan` for the morning flow:
 
-- Top online products to monitor
+- Storefront and inventory items needing operational attention
 - Local stores to check today
 - Latest alerts
 - Newest releases
 - Best card opportunities
 
-Use `Mark Checked Today` on a product after a manual review, and `I Bought This` to log a purchase into inventory. The inventory log stores product/card purchased, cost, quantity, source, purchase date, and the expected resale or grading plan.
+Use Inventory and Orders for the daily operating workflow, and `I Bought This` where legacy product records still support manual purchase logging. The retired restock-monitor route no longer exposes product check actions. The inventory log stores product/card purchased, cost, quantity, source, purchase date, and the expected resale or grading plan.
 
 Saved filter presets are personal notes for recurring product/store/card views. `Generate Recap` archives a daily recap with product checks, store visits, purchases, and alerts created that day.
 
@@ -677,7 +608,7 @@ npm run smoke:prod
 ## Known Limitations
 
 - eBay sold comps require eBay developer credentials for live last-3-completed-sales refreshes; without credentials the app stays in manual comp mode. The app does not aggressively scrape eBay or other pricing sites.
-- Retailer monitor accuracy depends on public page content. Blocked, captcha, robot, queue, login, and private/internal pages are logged and do not trigger checkout automation.
+- The automated retailer monitor is retired. Checkout automation remains absent; no app path adds to cart, bypasses queues, or purchases from retailer sites.
 - Browser push requires a supported browser, permission approval, a saved subscription, and valid VAPID environment variables.
 - Email and SMS alerts are inactive until SMTP and Twilio environment variables are configured.
 - JSON restore is destructive by design. Production smoke validates backup shape only and does not import data.
@@ -691,13 +622,13 @@ The launch dashboard is meant for the first real week of use. Admins should use 
 - Real products are loaded.
 - Local store routes are ready for Field Mode.
 - Release and card context exists for priority scoring.
-- Vercel cron and monitor checks have run recently.
+- Preserved Vercel cron jobs have run recently.
 - Browser push is enabled on the phone.
 - SMTP or Twilio is configured if you want a backup channel.
 - Friend access has been tested.
 - Daily recaps, inventory logging, and backup routines are part of the launch rhythm.
 
-Use `Alert Calibration Queue` every morning during launch. It surfaces stale checks, low-confidence monitor results, blocked/captcha pages, pending confirmation alerts, suppressed duplicate alerts, and repeated false positives. For each item, tune the product with stricter required words, ignore misleading words, lower check frequency, pause monitoring, or manually verify the trusted retailer source page.
+Use the owner launch checklist every morning during launch. Historical alert calibration records remain visible for audit context, but the automated restock monitor no longer creates new calibration items.
 
 Weekly owner rhythm:
 
@@ -707,7 +638,7 @@ npm run backup:postgres
 npm run smoke:prod
 ```
 
-Keep the first week conservative: confirm restocks manually, mark false positives, and only turn on SMS/email after the push and in-app alert flow is behaving correctly.
+Keep the first week conservative: confirm operational workflows manually and only turn on optional SMS/email after owner approval.
 
 ## Inventory Tracker And Market Recommendation
 

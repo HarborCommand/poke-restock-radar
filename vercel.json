@@ -3,10 +3,6 @@
   "buildCommand": "npm run vercel-build",
   "crons": [
     {
-      "path": "/api/radar/monitor/cron",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/radar/storefront/reservations/expire",
       "schedule": "*/5 * * * *"
     },

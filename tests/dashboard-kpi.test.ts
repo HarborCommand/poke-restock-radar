@@ -1652,273 +1652,80 @@ test("GameDayGrabs custom domain routes public storefront without exposing priva
   assert.match(domainDocs, /Public Data Safety/);
 });
 
-test("alerts tab is rebuilt as a Discord-style tracker command center", () => {
+test("general alerts remain accessible while retired tracker execution controls are absent", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
+  const navSource = app.slice(app.indexOf("const tabs"), app.indexOf("type NavTab"));
+  const renderSource = app.slice(app.indexOf("<section className=\"content-grid\">"), app.indexOf("{activeTab === \"settings\""));
+  const alertsPanelSource = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function runTargetBatch"));
+  const activeAlertsSource = alertsPanelSource.slice(alertsPanelSource.indexOf("title=\"Alerts\""));
 
-  for (const section of ["Live Drops", "Check Stock", "My Watchlist", "Keywords", "Alert History", "Scanner Status", "System Alerts"]) {
-    assert.match(alertsPanel, new RegExp(section), `missing tracker section ${section}`);
-  }
-
-  assert.match(alertsPanel, /Discord-style feed/);
-  assert.match(alertsPanel, /Live action center/);
-  assert.match(alertsPanel, /Target Retail In Stock Now/);
-  assert.match(alertsPanel, /Target watch products whose latest check says retail\/MSRP stock is buyable now/);
-  assert.match(alertsPanel, /No new drop alerts, but these Target products are currently buyable/);
-  assert.match(alertsPanel, /Duplicate suppression can prevent repeat alert spam/);
-  assert.match(alertsPanel, /Target Sold Out \/ Watch Only/);
-  assert.match(alertsPanel, /targetBuyableFilterOptions/);
-  assert.match(alertsPanel, /targetBuyableSortOptions/);
-  assert.match(alertsPanel, /Go Buy/);
-  assert.match(alertsPanel, /Add to Inventory/);
-  assert.match(alertsPanel, /Mark bought/);
-  assert.match(alertsPanel, /Got It/);
-  assert.match(alertsPanel, /Missed/);
-  assert.match(alertsPanel, /Sold Out/);
-  assert.match(alertsPanel, /Bad Alert/);
-  assert.doesNotMatch(alertsPanel, /AlertCalibrationPanel/);
-  assert.match(app, /<AlertCalibrationPanel dashboard=\{dashboard\} setActiveTab=\{setActiveTab\}/);
-});
-
-test("tracker alert categories and archived local store cleanup are wired", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-
-  for (const category of [
-    "tracker_online_drop",
-    "tracker_local_stock",
-    "tracker_keyword_match",
-    "tracker_sku_match",
-    "tracker_price_change",
-    "tracker_preorder_live",
-    "tracker_add_to_cart",
-    "tracker_sold_out",
-    "inventory_low_stock",
-    "inventory_market_missing",
-    "order_paid",
-    "order_needs_fulfillment",
-    "system_warning",
-    "system_error",
-    "deprecated_local_store"
+  assert.match(navSource, /label: "Alerts"/);
+  assert.match(app, /deprecatedTrackerTabs = new Set<Tab>\(\["onlineDrops", "checkStock", "watchlist", "keywords"\]\)/);
+  assert.match(renderSource, /<AlertsPanel/);
+  assert.match(activeAlertsSource, /Alert history/);
+  assert.match(activeAlertsSource, /release, inventory, order, storefront, system, and historical alert activity/i);
+  assert.match(activeAlertsSource, /retired retailer monitor cannot trigger new automatic restock alerts/i);
+  for (const endpoint of [
+    "/api/radar/monitor/run",
+    "/api/radar/product-discovery/target",
+    "/api/radar/product-discovery/best-buy",
+    "/api/radar/check-stock",
+    "/api/radar/products/${product.id}/check"
   ]) {
-    assert.match(app, new RegExp(category), `missing category ${category}`);
+    assert.doesNotMatch(activeAlertsSource, new RegExp(endpoint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-
-  assert.match(app, /Show archived\/deprecated alerts/);
-  assert.match(app, /deprecated local store/i);
-  assert.match(app, /Muted \/ Archived/);
-  assert.match(app, /trackerIsLiveDrop/);
-  assert.match(app, /tracker_online_drop:/);
-  assert.match(app, /In Stock/);
-  assert.match(app, /Add To Cart/);
-  assert.match(app, /record\.isSystem/);
-  assert.match(app, /No live drops right now/);
-  assert.match(app, /Example Alert/);
-  assert.match(app, /Tracker setup/);
-  assert.match(app, /Watching \{watchProducts\.length\} products/);
-  assert.match(app, /tracker-side-rail/);
-  assert.match(app, /targetBuyableProductComparator/);
-  assert.match(app, /productIsCurrentlyBuyable/);
-  assert.match(app, /buyableNowProducts/);
-  assert.match(app, /targetRetailInStockProducts/);
-  assert.match(app, /visibleTargetRetailInStockProducts/);
-  assert.match(app, /targetExactProductUrl/);
-  assert.match(app, /Target Retail In Stock Now/);
-});
-
-test("alerts Buyable Now remains visible when duplicate suppression prevents new drop alerts", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
-  const buyableHelper = app.slice(app.indexOf("function productIsCurrentlyBuyable"), app.indexOf("function targetBuyableHighStock"));
-
-  assert.match(buyableHelper, /SOLD_OUT/);
-  assert.match(buyableHelper, /UNAVAILABLE/);
-  assert.match(buyableHelper, /IN_STOCK/);
-  assert.match(buyableHelper, /ADD_TO_CART_AVAILABLE/);
-  assert.match(buyableHelper, /PREORDER_LIVE/);
-  assert.match(buyableHelper, /hasHighOrLowStockSignal/);
-  assert.match(buyableHelper, /hasBuyableAction/);
-  assert.match(alertsPanel, /liveDrops\.length \? \(/);
-  assert.match(alertsPanel, /: targetBuyableProducts\.length \? \(/);
-  assert.match(alertsPanel, /No new drop alerts, but these Target products are currently buyable/);
-  assert.match(alertsPanel, /Target Retail In Stock Now/);
-  assert.match(alertsPanel, /renderExampleLiveDropCard\(\)/);
-  const liveDropRender = alertsPanel.slice(alertsPanel.indexOf("{liveDrops.length ? ("), alertsPanel.indexOf("<aside className=\"tracker-side-rail\""));
-  assert.ok(
-    liveDropRender.indexOf(": targetBuyableProducts.length ? (") < liveDropRender.indexOf("renderExampleLiveDropCard()"),
-    "example alert must be behind the current-buyable branch"
-  );
-});
-
-test("alerts Target retail coverage and Discord comparison tools are wired", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
-  const helper = fs.readFileSync(new URL("../src/lib/target-discord-alert.ts", import.meta.url), "utf8");
-
-  assert.match(alertsPanel, /Target coverage/);
-  assert.match(alertsPanel, /Automatic retail\/MSRP coverage/);
-  assert.match(alertsPanel, /Poke Radar discovers public Target Pokemon TCG pages/);
-  assert.match(alertsPanel, /Auto Discovery/);
-  assert.match(alertsPanel, /Auto Approval/);
-  assert.match(alertsPanel, /Retail Only/);
-  assert.match(alertsPanel, /Target Retail In Stock Now/);
-  assert.match(alertsPanel, /targetStaleProducts/);
-  assert.match(alertsPanel, /targetMissingExactUrlProducts/);
-  assert.match(alertsPanel, /targetMissingIdentifierProducts/);
-  assert.match(alertsPanel, /targetLogsInLatestScan/);
-  assert.match(alertsPanel, /Run Auto Discovery Now/);
-  assert.match(alertsPanel, /Run Monitor Now/);
-  assert.match(alertsPanel, /Run High Priority Target Now/);
-  assert.match(alertsPanel, /Run One Product Now/);
-  assert.match(alertsPanel, /targetQueueRemaining/);
-  assert.match(alertsPanel, /targetStaleProducts/);
-  assert.match(alertsPanel, /targetProductsCheckedLastRun/);
-  assert.match(alertsPanel, /Add from Discord Alert/);
-  assert.match(alertsPanel, /Compare Discord Alert/);
-  assert.match(alertsPanel, /compareTargetDiscordAlert/);
-  assert.match(helper, /not_watched/);
-  assert.match(helper, /suppressed_over_msrp/);
-  assert.match(helper, /deduped_currently_buyable/);
-  assert.match(helper, /sold_out_at_latest_check/);
-  assert.match(helper, /targetUrlFromTcin/);
-});
-
-test("Target monitor cron uses safe batched freshness mode", () => {
-  const monitor = fs.readFileSync(new URL("../src/lib/monitor.ts", import.meta.url), "utf8");
-  const cron = fs.readFileSync(new URL("../src/app/api/radar/monitor/cron/route.ts", import.meta.url), "utf8");
-  const validation = fs.readFileSync(new URL("../src/lib/validation.ts", import.meta.url), "utf8");
-  const env = fs.readFileSync(new URL("../.env.example", import.meta.url), "utf8");
-  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
-
-  assert.match(validation, /target_due/);
-  assert.match(validation, /target_priority/);
-  assert.match(monitor, /targetMonitorBatchSize/);
-  assert.match(monitor, /targetMonitorCadenceMinutes/);
-  assert.match(monitor, /runTargetProductMonitorBatch/);
-  assert.match(monitor, /staleBefore/);
-  assert.match(monitor, /staleAfter/);
-  assert.match(cron, /TARGET_MONITOR_CRON_ENABLED/);
-  assert.match(cron, /target_due/);
-  assert.match(env, /TARGET_MONITOR_BATCH_SIZE/);
-  assert.match(env, /TARGET_MONITOR_CADENCE_MINUTES/);
-  assert.match(types, /targetQueueRemaining/);
-  assert.match(types, /targetProductsCheckedLastRun/);
-});
-
-test("alerts long lists are paginated for performance", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
-
-  assert.match(alertsPanel, /targetCandidateVisibleLimit/);
-  assert.match(alertsPanel, /watchlistVisibleLimit/);
-  assert.match(alertsPanel, /historyVisibleLimit/);
-  assert.match(alertsPanel, /systemVisibleLimit/);
-  assert.match(alertsPanel, /visibleTargetCandidates = useMemo/);
-  assert.match(alertsPanel, /visibleWatchProducts = useMemo/);
-  assert.match(alertsPanel, /visibleHistoryAlerts = useMemo/);
-  assert.match(alertsPanel, /visibleSystemAlerts = useMemo/);
-  assert.match(alertsPanel, /Load more candidates/);
-  assert.match(alertsPanel, /Load more watch products/);
-  assert.match(alertsPanel, /Load more alert history/);
-  assert.match(alertsPanel, /Load more system alerts/);
   assert.match(app, /Operational payload and scan health/);
-  assert.match(app, /API payload caps: inventory 200, discovery candidates 80, alerts 50, monitor logs 50/);
-  assert.match(app, /Notification Delivery Log/);
-  assert.match(types, /NotificationDeliveryLogDTO/);
-  assert.match(types, /notificationDeliveryLogs/);
-  assert.match(types, /bestBuyProductsWatched/);
-  assert.match(types, /bestBuyDiscoveryApiConfigured/);
+  assert.match(app, /API payload caps keep dashboard, inventory, orders, customers, rewards, and reporting views responsive/);
 });
 
-test("tracker matching helpers cover keywords, identifiers, mute, duplicate cooldown, and feedback", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const trackerMutedHelper = app.slice(app.indexOf("function trackerMuted"), app.indexOf("function trackerDuplicateCooldownKey"));
+test("restock monitor schedule and exposed execution routes are removed", () => {
+  const vercel = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+  const proxy = fs.readFileSync(new URL("../src/proxy.ts", import.meta.url), "utf8");
+  const pkg = fs.readFileSync(new URL("../package.json", import.meta.url), "utf8");
+  const env = fs.readFileSync(new URL("../.env.example", import.meta.url), "utf8");
 
-  assert.match(app, /function trackerKeywordMatch/);
-  assert.match(app, /blockedBy/);
-  assert.match(app, /function trackerSkuMatch/);
-  assert.match(app, /product\.sku, product\.upc, product\.dpci, product\.retailerProductId/);
-  assert.match(app, /function trackerMuted/);
-  assert.match(trackerMutedHelper, /suppressedAt/);
-  assert.doesNotMatch(trackerMutedHelper, /cooldownUntil/);
-  assert.match(app, /function trackerDuplicateCooldownKey/);
-  assert.match(app, /markAlert\(alert, "false_positive"/);
-  assert.match(app, /Alert muted for now/);
-  assert.match(app, /Bad-alert feedback saved/);
+  assert.equal(vercel.crons.some((cron: { path: string }) => cron.path === "/api/radar/monitor/cron"), false);
+  assert.deepEqual(
+    vercel.crons.map((cron: { path: string; schedule: string }) => `${cron.path} ${cron.schedule}`),
+    [
+      "/api/radar/storefront/reservations/expire */5 * * * *",
+      "/api/radar/releases/sync/cron 0 10 * * *",
+      "/api/radar/inventory/market-sync/cron 0 11 * * *",
+      "/api/radar/rewards/audit/cron 30 11 * * *"
+    ]
+  );
+  assert.doesNotMatch(proxy, /\/api\/radar\/monitor\/cron/);
+  assert.doesNotMatch(pkg, /"monitor":\s*"tsx scripts\/run-monitor\.ts"/);
+  assert.doesNotMatch(env, /PRODUCT_MONITOR_CRON_ENABLED|TARGET_MONITOR_CRON_ENABLED|TARGET_DISCOVERY_AUTO_ENABLED|BESTBUY_DISCOVERY_ENABLED/);
 });
 
-test("alerts Check Stock avoids fake local stock and inventory handoff is wired", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
-
-  assert.match(alertsPanel, /Retailer stock check/);
-  assert.match(alertsPanel, /store stock source not available/);
-  assert.match(alertsPanel, /GameStop/);
-  assert.match(alertsPanel, /Pokemon Center/);
-  assert.match(alertsPanel, /\/api\/radar\/check-stock/);
-  assert.match(alertsPanel, /Best Buy \+ GameStop \+ Pokemon Center/);
-  assert.match(alertsPanel, /Pokemon Center is online-only; use Online Drops \/ Watchlist/);
-  assert.doesNotMatch(alertsPanel, /Stock: 10/);
-  assert.match(app, /INVENTORY_PREFILL_STORAGE_KEY/);
-  assert.match(app, /window\.sessionStorage\.setItem\(INVENTORY_PREFILL_STORAGE_KEY/);
-  assert.match(app, /window\.sessionStorage\.getItem\(INVENTORY_PREFILL_STORAGE_KEY\)/);
-  assert.match(app, /source: "Tracker Alert"/);
-});
-
-test("alerts watchlist can add exact watched products from the tracker UI", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const watchForm = app.slice(app.indexOf("function WatchProductQuickForm"), app.indexOf("function AlertsPanel"));
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
-
-  assert.match(watchForm, /Add Watch Product/);
-  for (const field of ["retailerId", "name", "url", "sku", "upc", "dpci", "retailerProductId", "imageUrl", "productType", "requiredWords", "monitorEnabled"]) {
-    assert.match(watchForm, new RegExp(`name="${field}"`), `missing watch field ${field}`);
+test("retired monitor routes cannot perform monitoring while shared routes remain", () => {
+  const removedRoutes = [
+    "../src/app/api/radar/monitor/cron/route.ts",
+    "../src/app/api/radar/monitor/run/route.ts",
+    "../src/app/api/radar/check-stock/route.ts",
+    "../src/app/api/radar/product-discovery/target/route.ts",
+    "../src/app/api/radar/product-discovery/best-buy/route.ts",
+    "../src/app/api/radar/product-discovery/sources/route.ts",
+    "../src/app/api/radar/product-discovery/candidates/[candidateId]/enrich/route.ts",
+    "../src/app/api/radar/product-discovery/candidates/[candidateId]/identifiers/route.ts",
+    "../src/app/api/radar/product-discovery/candidates/[candidateId]/review/route.ts",
+    "../src/app/api/radar/products/[productId]/check/route.ts",
+    "../src/app/api/radar/products/[productId]/checked/route.ts",
+    "../src/app/api/radar/products/[productId]/monitor/route.ts"
+  ];
+  for (const route of removedRoutes) {
+    assert.equal(fs.existsSync(new URL(route, import.meta.url)), false, `retired route still exists: ${route}`);
   }
-  assert.match(watchForm, /requestJson\("\/api\/radar\/products"/);
-  assert.match(watchForm, /Search\/category links stay unverified/);
-  assert.match(alertsPanel, /openWatchProductForm/);
-  assert.match(alertsPanel, /trackerWatchPrefillFromRecord/);
-});
-
-test("watchlist QA exposes real product readiness, warnings, and monitor actions", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
-  const editForm = app.slice(app.indexOf("function WatchProductIdentifierForm"), app.indexOf("function AlertsPanel"));
-  const watchForm = app.slice(app.indexOf("function WatchProductQuickForm"), app.indexOf("function WatchProductIdentifierForm"));
-
-  assert.match(app, /function watchProductWarnings/);
-  assert.match(app, /Search\/category URL is rejected for live alerts/);
-  assert.match(app, /Live stock status is not verified/);
-  assert.match(app, /watchlistRetailerFilters/);
-  assert.match(watchForm, /GameStop: use the exact GameStop product page/);
-  assert.match(watchForm, /Pokemon Center: use the exact pokemoncenter\.com\/product page/);
-  assert.match(watchForm, /Queue, captcha, or waiting-room pages become System Alerts only/);
-  assert.match(watchForm, /product ID from the URL/);
-  assert.match(alertsPanel, /Watchlist QA/);
-  assert.match(alertsPanel, /Ready for Live Alerts/);
-  assert.match(alertsPanel, /watchRetailerFilter/);
-  assert.match(alertsPanel, /No GameStop products watched yet/);
-  assert.match(alertsPanel, /Add GameStop Product/);
-  assert.match(alertsPanel, /Seed Real GameStop Product/);
-  assert.match(alertsPanel, /\/api\/radar\/products\/seed-gamestop/);
-  assert.match(alertsPanel, /openRetailerWatchProductForm\("GameStop"\)/);
-  assert.match(alertsPanel, /No Pokemon Center products watched yet/);
-  assert.match(alertsPanel, /Add Pokemon Center Product/);
-  assert.match(alertsPanel, /Seed Real Pokemon Center Product/);
-  assert.match(alertsPanel, /\/api\/radar\/products\/seed-pokemon-center/);
-  assert.match(alertsPanel, /openRetailerWatchProductForm\("Pokemon Center"\)/);
-  assert.match(alertsPanel, /Target \/ Best Buy \/ GameStop \/ Pokemon Center products/);
-  assert.match(alertsPanel, /Run Check Now/);
-  assert.match(alertsPanel, /Edit Identifiers/);
-  assert.match(alertsPanel, /Verify Exact Product/);
-  assert.match(alertsPanel, /Open Product Page/);
-  assert.match(alertsPanel, /Create Test Live Drop/);
-  assert.match(alertsPanel, /Pause Monitor/);
-  assert.match(alertsPanel, /Remove Watch Product/);
-  assert.match(alertsPanel, /\/api\/radar\/products\/\$\{product\.id\}\/verify/);
-  assert.match(alertsPanel, /\/api\/radar\/products\/\$\{product\.id\}\/archive/);
-  for (const field of ["sku", "upc", "dpci", "retailerProductId", "expectedTitleKeywords", "imageUrl"]) {
-    assert.match(editForm, new RegExp(`name="${field}"`), `missing edit field ${field}`);
+  for (const route of [
+    "../src/app/api/radar/storefront/reservations/expire/route.ts",
+    "../src/app/api/radar/releases/sync/cron/route.ts",
+    "../src/app/api/radar/inventory/market-sync/cron/route.ts",
+    "../src/app/api/radar/rewards/audit/cron/route.ts",
+    "../src/app/api/storefront/checkout/route.ts",
+    "../src/app/product-feed.xml/route.ts"
+  ]) {
+    assert.equal(fs.existsSync(new URL(route, import.meta.url)), true, `preserved route missing: ${route}`);
   }
 });
 
@@ -1942,39 +1749,6 @@ test("product create and edit save retailer product IDs parsed from exact URLs",
   assert.match(pokemonCenterRoute, /ensurePokemonCenterWatchProduct/);
 });
 
-test("live drops are restricted to real product monitor alerts", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const liveDropHelper = app.slice(app.indexOf("function trackerIsLiveDrop"), app.indexOf("function trackerChannelMatches"));
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
-
-  assert.match(liveDropHelper, /record\.category === "tracker_online_drop"/);
-  assert.match(liveDropHelper, /record\.alert\.entityType === "PRODUCT"/);
-  assert.match(liveDropHelper, /Boolean\(record\.product\)/);
-  assert.match(liveDropHelper, /explicitTrackerDrop/);
-  assert.match(liveDropHelper, /priceDropWithoutBuyableStock/);
-  assert.match(liveDropHelper, /manual checkout only/);
-  assert.match(alertsPanel, /\.filter\(\(record\) => trackerIsLiveDrop\(record\)\)/);
-  assert.doesNotMatch(liveDropHelper, /tracker_sold_out/);
-  assert.match(alertsPanel, /Repeat checks use the product\/event key before creating new Live Drops, but current buyable products stay visible here/);
-  assert.match(alertsPanel, /Live Drops are created only when stock is proven buyable and retail\/MSRP eligible/);
-});
-
-test("admin-only tracker simulation and alert actions are wired", () => {
-  const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
-  const notificationPanel = app.slice(app.indexOf("function NotificationSettingsPanel"), app.indexOf("function AccessManagementPanel"));
-  const alertsPanel = app.slice(app.indexOf("function AlertsPanel"), app.indexOf("function configuredText"));
-
-  assert.match(notificationPanel, /Simulate Tracker Alert/);
-  assert.match(notificationPanel, /Clear Test Alerts/);
-  assert.match(notificationPanel, /productReadyForAlert/);
-  assert.match(notificationPanel, /action: "simulate_tracker_drop"/);
-  assert.match(notificationPanel, /Admin simulated a tracker_online_drop/);
-  assert.match(notificationPanel, /requestJson\("\/api\/radar\/alerts", \{ method: "DELETE" \}/);
-  for (const action of ["Go Buy", "Add to Inventory", "Watch", "Mute", "Got It", "Missed", "Sold Out", "Bad Alert"]) {
-    assert.match(alertsPanel, new RegExp(action), `missing alert action ${action}`);
-  }
-});
-
 test("admin health exposes build version and cache refresh controls", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const health = fs.readFileSync(new URL("../src/lib/health.ts", import.meta.url), "utf8");
@@ -1995,30 +1769,24 @@ test("admin health exposes build version and cache refresh controls", () => {
   assert.match(packageJson, /"prevercel-build"/);
 });
 
-test("monitor creates explicit tracker online drop and system alert events", () => {
+test("dormant monitor alert code has no exposed execution route", () => {
   const monitor = fs.readFileSync(new URL("../src/lib/monitor.ts", import.meta.url), "utf8");
   const notifications = fs.readFileSync(new URL("../src/lib/notifications.ts", import.meta.url), "utf8");
   const route = fs.readFileSync(new URL("../src/app/api/radar/alerts/route.ts", import.meta.url), "utf8");
 
   assert.match(monitor, /createTrackerOnlineDropAlert/);
   assert.match(monitor, /trackerEventKindForDetection/);
-  assert.ok(
-    monitor.indexOf("if (!detectionReadyForBuyAlerts(input.detection)) return null;") <
-      monitor.indexOf("return \"price_drop\" satisfies TrackerDropEventKind;"),
-    "price-drop tracker events must stay behind the buyable exact-product gate"
-  );
-  assert.match(monitor, /fetchPokemonCenterLiveSignal/);
-  assert.match(monitor, /pokemonCenterSignal/);
-  assert.match(monitor, /tracker_online_drop:\$\{input\.product\.id\}/);
-  assert.match(monitor, /delivery\.inAppCreated === 0/);
-  assert.match(monitor, /existingVisible/);
-  assert.match(monitor, /createTrackerSystemAlert/);
-  assert.match(monitor, /kind: "blocked"/);
-  assert.match(monitor, /kind: "error"/);
   assert.match(notifications, /payload\.dedupeKey/);
   assert.match(notifications, /payload\.score/);
   assert.match(notifications, /recordAlertDelivery/);
   assert.match(notifications, /quiet_hours/);
+  for (const retiredRoute of [
+    "../src/app/api/radar/monitor/cron/route.ts",
+    "../src/app/api/radar/monitor/run/route.ts",
+    "../src/app/api/radar/products/[productId]/check/route.ts"
+  ]) {
+    assert.equal(fs.existsSync(new URL(retiredRoute, import.meta.url)), false, `retired monitor route still exists: ${retiredRoute}`);
+  }
   assert.match(route, /export async function DELETE/);
   assert.match(route, /clearSimulatedTrackerAlerts/);
 });

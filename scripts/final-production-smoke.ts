@@ -100,9 +100,9 @@ async function main() {
   await expectStatus("admin backup unauthenticated", backupUnauthed, 401);
   checks.adminRouteProtection = true;
 
-  const cronUnauthed = await fetch(`${baseUrl}/api/radar/monitor/cron`);
-  await expectStatus("cron unauthenticated", cronUnauthed, 401);
-  checks.cronProtection = true;
+  const retiredMonitorCron = await fetch(`${baseUrl}/api/radar/monitor/cron`);
+  await expectStatus("retired monitor cron", retiredMonitorCron, 404);
+  checks.restockMonitorRetired = true;
 
   const login = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
@@ -133,10 +133,6 @@ async function main() {
   checks.dashboard = {
     products: dashboardBody.products?.length ?? 0,
     stores: dashboardBody.stores?.length ?? 0,
-    alerts: dashboardBody.alerts?.length ?? 0,
-    scannerExactProducts: dashboardBody.scannerStatus?.activeProductsScanned,
-    scannerDiscoverySources: dashboardBody.scannerStatus?.activeDiscoverySourcesScanned,
-    scannerCronActive: dashboardBody.scannerStatus?.cronActive,
     systemStatus: dashboardBody.health?.status,
     launchChecklist: dashboardBody.ownerLaunchChecklist.length,
     alertCalibrationItems: dashboardBody.alertCalibrationItems.length
@@ -153,21 +149,15 @@ async function main() {
       method: "POST",
       headers: { cookie }
     });
-    await expectStatus("manual product monitor check", runProductCheck, 200);
-    checks.productQa = "verify and monitor check endpoints passed";
+    await expectStatus("retired manual product monitor check", runProductCheck, 404);
+    checks.productQa = "verify endpoint passed; monitor check endpoint is retired";
   } else {
     checks.productQa = "skipped; no active products";
   }
 
-  const discoveryQueue = await authedGet("/api/radar/product-discovery/sources");
-  const discoveryBody = await json(discoveryQueue);
-  if (!Array.isArray(discoveryBody.sources) || !Array.isArray(discoveryBody.candidates)) {
-    throw new Error("Discovery queue endpoint did not return sources and candidates.");
-  }
-  checks.discoveryQueue = {
-    sources: discoveryBody.sources.length,
-    candidates: discoveryBody.candidates.length
-  };
+  const discoveryQueue = await fetch(`${baseUrl}/api/radar/product-discovery/sources`, { headers: { cookie } });
+  await expectStatus("retired product discovery queue", discoveryQueue, 404);
+  checks.discoveryQueue = "retired";
 
   for (const path of ["/api/radar/products", "/api/radar/stores", "/api/radar/releases", "/api/radar/cards", "/api/radar/inventory", "/api/radar/alerts"]) {
     const response = await authedGet(path);

@@ -8,7 +8,6 @@ import ts from "typescript";
 import { authorizeAdminMutation } from "../src/lib/admin-authorization";
 import { validateDiscoverySourceUrl } from "../src/lib/product-discovery";
 import { proxy } from "../src/proxy";
-import { POST as monitorCronPost } from "../src/app/api/radar/monitor/cron/route";
 import { POST as expireReservationsPost } from "../src/app/api/radar/storefront/reservations/expire/route";
 import {
   backupImportSchema,
@@ -101,9 +100,7 @@ test("radar proxy rejects missing or cross-site origin evidence and allows same-
 });
 
 test("signed job routes bypass browser origin checks but reject unsigned calls", async () => {
-  const monitorProxy = proxy(new NextRequest("https://admin.example.test/api/radar/monitor/cron", { method: "POST" }));
   const reservationProxy = proxy(new NextRequest("https://admin.example.test/api/radar/storefront/reservations/expire", { method: "POST" }));
-  assert.equal(monitorProxy.headers.get("x-middleware-next"), "1");
   assert.equal(reservationProxy.headers.get("x-middleware-next"), "1");
 
   const previousMonitorSecret = process.env.MONITOR_JOB_SECRET;
@@ -111,7 +108,6 @@ test("signed job routes bypass browser origin checks but reject unsigned calls",
   delete process.env.MONITOR_JOB_SECRET;
   delete process.env.CRON_SECRET;
   try {
-    assert.equal((await monitorCronPost(new Request("https://admin.example.test/api/radar/monitor/cron", { method: "POST" }))).status, 401);
     assert.equal((await expireReservationsPost(new Request("https://admin.example.test/api/radar/storefront/reservations/expire", { method: "POST" }))).status, 401);
   } finally {
     if (previousMonitorSecret === undefined) delete process.env.MONITOR_JOB_SECRET;
@@ -214,7 +210,7 @@ test("every radar mutation is authenticated and covered by the centralized origi
     const source = readFileSync(file, "utf8");
     return /export async function (POST|PUT|PATCH|DELETE)/.test(source);
   });
-  assert.equal(mutationRoutes.length, 90);
+  assert.equal(mutationRoutes.length, 78);
   for (const file of mutationRoutes) {
     const source = readFileSync(file, "utf8");
     assert.match(source, /requireUser\(|currentUser\(|cronAuthorized\(|authorizeAdminMutation\(/, path.relative(root, file));
@@ -255,7 +251,6 @@ test("business GET handlers contain no persistent write calls", () => {
   const allowedWriteGetRoutes = new Set([
     "src/app/api/account/magic-link/verify/route.ts",
     "src/app/api/radar/inventory/market-sync/cron/route.ts",
-    "src/app/api/radar/monitor/cron/route.ts",
     "src/app/api/radar/releases/sync/cron/route.ts",
     "src/app/api/radar/storefront/reservations/expire/route.ts"
   ]);

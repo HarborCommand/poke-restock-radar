@@ -277,7 +277,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSect
   { id: "orders", label: "Orders", icon: ShoppingBag, section: "inventory" },
   { id: "shipping", label: "Shipping", icon: Navigation, section: "inventory" },
   { id: "sales", label: "Sales", icon: Receipt, section: "inventory" },
-  { id: "alerts", label: "Alerts", icon: Bell, section: "inventory" },
+  { id: "alerts", label: "Alerts", icon: Bell, section: "manage" },
   { id: "market", label: "Market", icon: Sparkles, section: "analytics" },
   { id: "analytics", label: "Analytics", icon: BarChart3, section: "analytics" },
   { id: "releases", label: "Releases", icon: CalendarDays, section: "manage" },
@@ -2226,17 +2226,6 @@ export function RadarApp() {
           <ShippingHubPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
         {activeTab === "sales" ? <SalesPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} onRefresh={loadDashboard} /> : null}
-        {activeTab === "alerts" ? (
-          <AlertsPanel
-            dashboard={dashboard}
-            isAdmin={isAdmin}
-            busy={busy}
-            busyLabel={busyLabel}
-            submit={submit}
-            runAction={runAction}
-            setActiveTab={setActiveTab}
-          />
-        ) : null}
         {activeTab === "market" ? (
           <MarketPanel
             dashboard={dashboard}
@@ -2248,6 +2237,9 @@ export function RadarApp() {
         {activeTab === "trends" ? <TrendsPanel dashboard={dashboard} /> : null}
         {activeTab === "analytics" ? <InventoryAnalyticsPanel dashboard={dashboard} /> : null}
         {activeTab === "tax" && isAdmin ? <TaxAdminWorkspace /> : null}
+        {activeTab === "alerts" ? (
+          <AlertsPanel dashboard={dashboard} isAdmin={isAdmin} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} setActiveTab={setActiveTab} />
+        ) : null}
         {activeTab === "settings" ? (
           <SettingsPanel dashboard={dashboard} busy={busy} busyLabel={busyLabel} submit={submit} runAction={runAction} />
         ) : null}
@@ -4230,6 +4222,7 @@ function CustomersRewardsPagination({
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CustomerRewardDetailPanel({
   customer,
   adjustmentsEnabled,
@@ -10081,7 +10074,7 @@ function InventoryPanel({
       }
     }, 0);
     return () => window.clearTimeout(resolutionTimer);
-  }, [dashboard.inventory, filters, pendingInventoryMutation, scheduleInventoryRowReveal]);
+  }, [dashboard.inventory, dashboard.shippingProfiles, filters, pendingInventoryMutation, scheduleInventoryRowReveal]);
 
   useEffect(() => {
     return () => {
@@ -10674,12 +10667,6 @@ function shippingHubOrderItemRows(order: StorefrontOrderDTO) {
     : [{ label: "No item details captured", quantity: 0 }];
 }
 
-function shippingHubOrderItems(order: StorefrontOrderDTO) {
-  return shippingHubOrderItemRows(order)
-    .map((item) => (item.quantity > 0 ? `${item.quantity}x ${item.label}` : item.label))
-    .join(", ");
-}
-
 function shippingHubCarrierTrackingUrl(order: StorefrontOrderDTO) {
   const carrier = String(order.carrier || "").trim().toLowerCase();
   const tracking = String(order.trackingNumber || "").trim();
@@ -11246,7 +11233,6 @@ function ProductShippingEditorModal({
   onClose: () => void;
 }) {
   const saveLabel = `Saving shipping data for ${item.itemName}`;
-  const purchaseLimitActive = item.purchaseLimitEnabled || item.maxQuantityPerOrder !== DEFAULT_STOREFRONT_PURCHASE_LIMIT;
   const [shippingDraft, setShippingDraft] = useState(() => shippingMetadataDraftFromItem(item));
   const draftShippingItem = inventoryItemWithShippingDraft(item, shippingDraft);
   const selectedShippingProfile = inventoryShippingProfileRecord(draftShippingItem, shippingProfiles);
@@ -24161,6 +24147,138 @@ function AlertsPanel({
     );
   }
 
+  const visibleAlertRecords = visibleHistoryAlerts.filter((record) => !isTestDashboardAlert(record.alert));
+  const unreadAlertCount = visibleAlertRecords.filter((record) => !record.alert.read).length;
+  const highPriorityAlertCount = visibleAlertRecords.filter((record) => record.alert.priority === "HIGH").length;
+
+  if (view) return (
+    <>
+      <SectionIntro
+        title="Alerts"
+        detail="Review release, inventory, order, storefront, system, and historical alert activity. Automated retailer restock monitoring is retired, so this page no longer exposes monitor runs, retailer discovery, or watchlist execution controls."
+        stats={[
+          { label: "Visible", value: visibleAlertRecords.length },
+          { label: "Unread", value: unreadAlertCount, tone: unreadAlertCount ? "watch" : "good" },
+          { label: "High priority", value: highPriorityAlertCount, tone: highPriorityAlertCount ? "bad" : "muted" },
+          { label: "System", value: systemAlerts.length }
+        ]}
+      />
+
+      <section className="tracker-grid">
+        <div className="tracker-main-column">
+          <section className="tracker-side-card">
+            <div className="panel-header compact">
+              <div>
+                <p className="eyeline">Alert history</p>
+                <h3>Recent activity</h3>
+              </div>
+              <label className="inline-checkbox">
+                <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.currentTarget.checked)} />
+                Include archived
+              </label>
+            </div>
+
+            {visibleAlertRecords.length ? (
+              <div className="compact-log-list">
+                {visibleAlertRecords.map((record) => {
+                  const alert = record.alert;
+                  const targetTab = alertTargetTab(alert);
+                  return (
+                    <article className="compact-log-row" key={alert.id}>
+                      <div>
+                        <strong>{alert.title}</strong>
+                        <span>{alert.reason}</span>
+                        <small>
+                          {formatStatus(alert.priority)} priority - {formatStatus(alert.entityType)} - {relativeTime(alert.timestamp)}
+                          {alert.explanation ? ` - ${alert.explanation}` : ""}
+                        </small>
+                      </div>
+                      <div className="inline-actions">
+                        <span className={`chip ${record.statusTone}`}>{record.statusLabel}</span>
+                        {alert.actionUrl ? (
+                          <a className="mini-action" href={alert.actionUrl} target="_blank" rel="noreferrer">
+                            Open Link <ExternalLink size={13} />
+                          </a>
+                        ) : (
+                          <button className="mini-action" type="button" onClick={() => setActiveTab(targetTab)}>
+                            Open {targetTab === "alerts" ? "Details" : formatStatus(targetTab)}
+                          </button>
+                        )}
+                        {!alert.read ? (
+                          <button className="mini-action" type="button" disabled={busy} onClick={() => markAlert(alert, "read", "Alert marked read")}>
+                            {busyLabel === `Reading alert ${alert.id}` ? "Saving" : "Mark Read"}
+                          </button>
+                        ) : null}
+                        {!alert.falsePositiveAt ? (
+                          <button className="mini-action" type="button" disabled={busy} onClick={() => markAlert(alert, "false_positive", "Alert feedback saved")}>
+                            {busyLabel === `Feedback alert ${alert.id}` ? "Saving" : "Not useful"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState icon={Bell} title="No alerts to review" detail="Release, order, inventory, storefront, system, and other non-restock alerts will appear here when created." />
+            )}
+
+            {historyAlerts.length > visibleAlertRecords.length ? (
+              <button className="secondary-action" type="button" onClick={() => setHistoryVisibleLimit((current) => current + 40)}>
+                Show more alerts
+              </button>
+            ) : null}
+          </section>
+        </div>
+
+        <aside className="tracker-side-column">
+          <section className="tracker-side-card">
+            <div className="panel-header compact">
+              <div>
+                <p className="eyeline">System alerts</p>
+                <h3>Operational notices</h3>
+              </div>
+              <span className="chip muted">{systemAlerts.length}</span>
+            </div>
+            {visibleSystemAlerts.length ? (
+              <div className="compact-log-list">
+                {visibleSystemAlerts.map((record) => (
+                  <article className="compact-log-row" key={record.alert.id}>
+                    <div>
+                      <strong>{record.alert.title}</strong>
+                      <span>{record.alert.reason}</span>
+                      <small>{relativeTime(record.alert.timestamp)}</small>
+                    </div>
+                    <span className={`chip ${record.statusTone}`}>{record.statusLabel}</span>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={ShieldCheck} title="No system alerts" detail="System, sync, provider, and security notices will remain visible here." />
+            )}
+          </section>
+
+          <section className="tracker-side-card">
+            <div className="panel-header compact">
+              <div>
+                <p className="eyeline">Notification routing</p>
+                <h3>Preserved channels</h3>
+              </div>
+              <span className="chip good">Active</span>
+            </div>
+            <p className="muted-copy">
+              Browser push, email, SMS, quiet hours, digest mode, delivery logs, and user push permissions remain configured from Settings and User Management.
+              The retired retailer monitor cannot trigger new automatic restock alerts.
+            </p>
+            <button className="mini-action" type="button" onClick={() => setActiveTab("settings")}>
+              Open Settings
+            </button>
+          </section>
+        </aside>
+      </section>
+    </>
+  );
+
   function runTargetBatch(mode: "target_due" | "target_priority", label: string, success: string) {
     return runAction(
       label,
@@ -27239,11 +27357,6 @@ function AccessManagementPanel({
           Add comps
         </label>
         <label className="checkbox-label">
-          <input name="canRunChecks" type="hidden" value="false" />
-          <input name="canRunChecks" type="checkbox" value="true" />
-          Run checks
-        </label>
-        <label className="checkbox-label">
           <input name="canReceivePushAlerts" type="hidden" value="false" />
           <input name="canReceivePushAlerts" type="checkbox" value="true" defaultChecked />
           Push alerts
@@ -27307,11 +27420,6 @@ function AccessManagementPanel({
                   <input name="canAddComps" type="hidden" value="false" />
                   <input name="canAddComps" type="checkbox" value="true" defaultChecked={friend.canAddComps} />
                   Add comps
-                </label>
-                <label className="checkbox-label">
-                  <input name="canRunChecks" type="hidden" value="false" />
-                  <input name="canRunChecks" type="checkbox" value="true" defaultChecked={friend.canRunChecks} />
-                  Run checks
                 </label>
                 <label className="checkbox-label">
                   <input name="canReceivePushAlerts" type="hidden" value="false" />
@@ -27474,15 +27582,11 @@ function AdminTools({
         <div className="target-coverage-grid">
           <DetailStat label="Products loaded" value={String(dashboard.products.length)} />
           <DetailStat label="Inventory rows loaded" value={String(dashboard.inventory.length)} />
-          <DetailStat label="Alerts loaded" value={String(dashboard.alerts.length)} />
-          <DetailStat label="Discovery candidates loaded" value={String(dashboard.productDiscoveryCandidates.length)} />
-          <DetailStat label="Monitor logs loaded" value={String(dashboard.monitorLogs.length)} />
-          <DetailStat label="Last monitor duration" value={dashboard.monitorLogs[0]?.durationMs ? `${dashboard.monitorLogs[0].durationMs}ms` : "Unknown"} />
-          <DetailStat label="Target queue" value={String(dashboard.scannerStatus.targetQueueRemaining)} />
-          <DetailStat label="Best Buy watched" value={String(dashboard.scannerStatus.bestBuyProductsWatched)} />
+          <DetailStat label="Orders loaded" value={String(dashboard.storefrontOrders.length)} />
+          <DetailStat label="Releases loaded" value={String(dashboard.releases.length)} />
         </div>
         <p className="target-candidate-warning compact">
-          API payload caps: inventory 200, discovery candidates 80, alerts 50, monitor logs 50. Use Load More buttons in heavy views instead of rendering every record at once.
+          API payload caps keep dashboard, inventory, orders, customers, rewards, and reporting views responsive.
         </p>
       </section>
       <form

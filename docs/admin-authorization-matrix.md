@@ -15,7 +15,6 @@ All cookie-authenticated `/api/radar` `POST`, `PUT`, `PATCH`, and `DELETE` reque
 | `/api/radar/cards` and `/api/radar/cards/[cardId]` | POST, PATCH, DELETE | Card create/update/delete | Admin | Proxy | Action-specific | Strict allowlisted schemas |
 | `/api/radar/cards/[cardId]/refresh-comps`, `/api/radar/cards/comps`, `/api/radar/cards/comps/[compId]/review` | POST | Comp refresh/create/review | Named permission or Admin | Proxy | Action-specific | Server target lookup |
 | `/api/radar/cards/refresh-comps`, `/api/radar/cards/reports` | POST | Bulk comp refresh/report | Admin | Proxy | Action-specific | Bounded server work |
-| `/api/radar/check-stock` | POST | Manual stock checks | `canRunChecks` or Admin | Proxy | Monitor log | Server product lookup |
 | `/api/radar/customers/[customerAccountId]` | PATCH | Customer profile | Admin | Proxy + route guard | Profile audit | Strict DTO fields |
 | `/api/radar/customers/[customerAccountId]/attach-order` | POST | Link purchase / reward preview or apply | Admin | Proxy + route guard | Link/reward audit | Transaction + stable reward keys |
 | `/api/radar/daily-recaps` | POST | Generate recap | Authenticated user | Proxy | User-scoped | Current session user only |
@@ -34,19 +33,14 @@ All cookie-authenticated `/api/radar` `POST`, `PUT`, `PATCH`, and `DELETE` reque
 | `/api/radar/inventory/tcgcsv/sync`, `/api/radar/inventory/tcgcsv/matches/[itemId]` | POST, PATCH | Catalog sync/match | Admin | Proxy + route guard | Sync summary | Server item/provider IDs |
 | `/api/radar/inventory/upc/lookup` | POST | UPC lookup bookkeeping | Authenticated user | Proxy | Scan audit | Bounded UPC/provider request |
 | `/api/radar/invites` and `/api/radar/invites/[inviteId]` | POST, DELETE | Invite/revoke user | Admin | Proxy + route guard | Invite audit | Hashed token; target reloaded |
-| `/api/radar/monitor/run` | POST | Manual monitor run | `canRunChecks` or Admin | Proxy | Monitor log | Validated mode; bounded batch |
 | `/api/radar/notifications` | PATCH | Current-user notification settings | Authenticated user | Proxy | User-scoped | Current session user only |
 | `/api/radar/notifications/test`, `/api/radar/notifications/test-all`, `/api/radar/push/test` | POST | Notification diagnostics | Route policy / Admin for bulk | Proxy | Delivery log | No secret response |
 | `/api/radar/push/subscription` | POST, DELETE | Browser subscription | Authenticated user | Proxy | User-scoped | Current session user only |
 | `/api/radar/pos/customer-match` | POST | Customer discovery only | Admin | Proxy | No link/reward mutation | Masked DTO; strict bounded input |
 | `/api/radar/pos/sales` | POST | POS sale | Admin | Proxy + route guard | Sale/reward audit | Server totals + idempotency key |
 | `/api/radar/pos/sales/[saleReference]/refund` | POST | POS refund | Admin | Proxy + route guard | Refund/reward audit | Stable refund idempotency key |
-| `/api/radar/product-discovery/best-buy`, `/api/radar/product-discovery/target` | POST | Manual discovery/review pipeline | Admin | Proxy | Discovery audit | Retailer HTTPS allowlist; bounded actions |
-| `/api/radar/product-discovery/sources` | POST | Discovery source create | Admin | Proxy | Source audit | Retailer URL validation |
-| `/api/radar/product-discovery/candidates/[candidateId]/{enrich,identifiers,review}` | POST | Candidate enrichment/review | Admin | Proxy | Candidate audit | Server candidate lookup |
 | `/api/radar/products` and `/api/radar/products/[productId]` | POST, PATCH, DELETE | Product create/update/delete | Admin | Proxy | Action-specific | Strict fields; server target lookup |
-| `/api/radar/products/[productId]/{archive,monitor,verify}` | POST | Product lifecycle | Admin | Proxy | Action-specific | Server target lookup |
-| `/api/radar/products/[productId]/{check,checked}` | POST | Product check state | `canRunChecks` or Admin | Proxy | Monitor log | Server target lookup |
+| `/api/radar/products/[productId]/{archive,verify}` | POST | Product lifecycle | Admin | Proxy | Action-specific | Server target lookup |
 | `/api/radar/products/[productId]/bought` | POST | Purchase/inventory creation | Admin | Proxy + route guard | Inventory audit | Server price/target handling |
 | `/api/radar/products/import`, `/api/radar/products/seed-*` | POST | Product bulk import/seed | Admin | Proxy | Import summary | Validated source data |
 | `/api/radar/releases` and `/api/radar/releases/[releaseId]` | POST, PATCH, DELETE | Release create/update/delete | Admin | Proxy | Action-specific | Strict fields; server target lookup |
@@ -66,7 +60,6 @@ All cookie-authenticated `/api/radar` `POST`, `PUT`, `PATCH`, and `DELETE` reque
 
 | Route | Methods | Caller proof | Failure behavior |
 | --- | --- | --- | --- |
-| `/api/radar/monitor/cron` | GET, POST | `MONITOR_JOB_SECRET` or `CRON_SECRET` bearer/header | Missing, empty, or invalid secret returns 401 |
 | `/api/radar/storefront/reservations/expire` | GET, POST | `MONITOR_JOB_SECRET` or `CRON_SECRET` bearer/header | Missing, empty, or invalid secret returns 401 |
 | `/api/radar/inventory/market-sync/cron` | GET | `MONITOR_JOB_SECRET` or `CRON_SECRET` bearer/header | Missing, empty, or invalid secret returns 401 |
 | `/api/radar/releases/sync/cron` | GET | `MONITOR_JOB_SECRET` or `CRON_SECRET` bearer/header | Missing, empty, or invalid secret returns 401 |
