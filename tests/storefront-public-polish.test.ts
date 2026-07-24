@@ -69,7 +69,6 @@ test("storefront product cards expose clear purchase metadata without fake urgen
 });
 
 test("public storefront polish keeps product, cart, footer, and login layouts contained", () => {
-  assert.match(css, /Public storefront polish: customer-facing layout containment only/);
   assert.match(css, /\.shop-shell\s*\{\s*\r?\n\s*overflow-x: clip;/);
   assert.match(css, /\.gdg-nav\s*\{[\s\S]*?flex-wrap: wrap;/);
   assert.match(css, /\.gdg-product-card\s*\{[\s\S]*?grid-template-rows: auto minmax\(128px, 1fr\) auto;/);
@@ -130,7 +129,7 @@ test("mobile storefront polish prevents common narrow-viewport overflow", () => 
 });
 
 test("mobile detail, cart, and rewards surfaces use compact safe layouts", () => {
-  assert.match(css, /Mobile detail\/cart\/account\/admin polish: layout-only refinements/);
+  assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-product-status-list,[\s\S]*?\.gdg-product-trust\s*\{[\s\S]*?grid-template-columns: 1fr;/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-gallery-thumbs\s*\{[\s\S]*?flex-wrap: nowrap;[\s\S]*?overflow-x: auto;/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-gallery-thumbs button\s*\{[\s\S]*?width: 58px;[\s\S]*?height: 58px;/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-detail-actions\s*\{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);

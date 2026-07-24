@@ -2136,7 +2136,7 @@ export function RadarApp() {
         </div>
       </aside>
       {sidebarOpen ? <button className="sidebar-scrim" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} /> : null}
-      <section className={activeTab === "inventory" ? "app-main app-main-inventory" : activeTab === "tax" ? "app-main app-main-tax" : "app-main"}>
+      <section className={activeTab === "dashboard" ? "app-main app-main-dashboard" : activeTab === "inventory" ? "app-main app-main-inventory" : activeTab === "tax" ? "app-main app-main-tax" : "app-main"}>
       <header className="topbar">
         <div className="mobile-section-title">
           <button className="icon-button mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" type="button">
@@ -2981,264 +2981,525 @@ function DashboardPanel({
   dashboard: DashboardDTO;
   setActiveTab: (tab: Tab) => void;
 }) {
-  const liveAlert = dashboard.alerts.find((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert) && !alert.read) ?? null;
-  const visibleAlerts = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert)).slice(0, 5);
+  const [rangePreset, setRangePreset] = useState<DashboardRangePreset>("month_to_date");
+  const dateRange = useMemo(() => dashboardDateRange(rangePreset), [rangePreset]);
   const businessStorefrontOrders = dashboard.storefrontOrders.filter((order) => !order.isTestOrder);
-  const newPaidOrders = businessStorefrontOrders.filter((order) => order.isNewPaidOrder);
-  const latestNewPaidOrder = newPaidOrders[0] ?? null;
-  const profitValue = (item: InventoryItemDTO) => item.marketProfitLoss ?? item.businessProfitLoss ?? 0;
-  const productsInStock = dashboard.inventory.filter((item) => item.quantityOwned > 0).length;
-  const needsAttention =
-    dashboard.inventorySummary.missingMarketDataCount +
-    dashboard.inventory.filter((item) => item.quantityOwned > 0 && item.quantityOwned <= 2).length +
-    dashboard.storefrontSummary.pendingOrderCount;
-  const watchlistItems = dashboard.inventory
-    .filter((item) => item.quantityOwned > 0 || item.publishToStore)
-    .sort((a, b) => (b.quantityOwned + storefrontListingAvailableForSale(b)) - (a.quantityOwned + storefrontListingAvailableForSale(a)))
-    .slice(0, 5);
-  const bestPerforming = dashboard.inventory
-    .filter((item) => item.businessProfitLoss !== 0 || item.marketProfitLoss !== null)
-    .sort((a, b) => profitValue(b) - profitValue(a))
-    .slice(0, 3);
-  const activityItems = [
-    ...businessStorefrontOrders.map((order) => ({
-      id: order.id,
-      icon: ShoppingBag,
-      title: `Order ${order.orderNumber}`,
-      detail: `${formatStatus(order.status)} - ${money(order.total)}`,
-      time: order.createdAt
-    })),
-    ...dashboard.inventory.map((item) => ({
-      id: item.id,
-      icon: Boxes,
-      title: `${item.itemName} added`,
-      detail: `Qty ${item.quantityOwned} - ${item.category}`,
-      time: item.createdAt
-    })),
-    ...dashboard.alerts
-      .filter((alert) => !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert) && !isTestDashboardAlert(alert))
-      .map((alert) => ({
-        id: alert.id,
-        icon: Bell,
-        title: alert.title,
-        detail: alert.priority,
-        time: alert.timestamp
-      }))
-  ]
-    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-    .slice(0, 4);
-  const marketValueLabel = dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue);
-  const dashboardUpcomingReleases = dashboard.releases
-    .filter((release) => release.daysUntilRelease === null || release.daysUntilRelease >= 0)
-    .sort((a, b) => (calendarDate(a.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (calendarDate(b.officialReleaseDate)?.getTime() ?? Number.MAX_SAFE_INTEGER));
-  const dashboardNextRelease = dashboardUpcomingReleases.find((release) => release.officialReleaseDate) ?? null;
-  const dashboardNextPreorder =
-    dashboard.releases
-      .filter((release) => release.daysUntilPreorder !== null && release.daysUntilPreorder >= 0)
-      .sort((a, b) => (a.daysUntilPreorder ?? 9999) - (b.daysUntilPreorder ?? 9999))[0] ?? null;
-  const releaseAlerts = visibleAlerts.filter((alert) => alert.entityType === "RELEASE").length;
-  const now = new Date();
-  const rangeStart = new Date(now);
-  rangeStart.setDate(now.getDate() - 7);
+  const activeOnlineOrders = businessStorefrontOrders.filter(dashboardOrderCountsAsRevenue);
+  const activeSales = dashboard.inventory.flatMap((item) => item.sales.map((sale) => ({ sale, item }))).filter(({ sale }) => dashboardSaleCountsAsRevenue(sale));
+  const selectedOnlineOrders = activeOnlineOrders.filter((order) => dashboardDateInRange(order.paidAt ?? order.createdAt, dateRange));
+  const selectedSales = activeSales.filter(({ sale }) => dashboardDateInRange(sale.soldAt, dateRange));
+  const todayRange = dashboardDateRange("today");
+  const todayOnlineOrders = activeOnlineOrders.filter((order) => dashboardDateInRange(order.paidAt ?? order.createdAt, todayRange));
+  const todaySales = activeSales.filter(({ sale }) => dashboardDateInRange(sale.soldAt, todayRange));
+  const selectedRevenue =
+    selectedOnlineOrders.reduce((sum, order) => sum + storefrontOrderNetRevenue(order), 0) +
+    selectedSales.reduce((sum, { sale }) => sum + sale.activeNetSale, 0);
+  const selectedProfit =
+    selectedOnlineOrders.reduce((sum, order) => sum + order.netProfit, 0) +
+    selectedSales.reduce((sum, { sale }) => sum + sale.activeProfitLoss, 0);
+  const todayRevenue =
+    todayOnlineOrders.reduce((sum, order) => sum + storefrontOrderNetRevenue(order), 0) +
+    todaySales.reduce((sum, { sale }) => sum + sale.activeNetSale, 0);
+  const inventoryValue = dashboard.inventorySummary.inventoryCostBasis || dashboard.inventorySummary.currentInventoryValue || dashboard.inventory.reduce((sum, item) => sum + item.totalCost, 0);
+  const totalUnits = dashboard.inventory.reduce((sum, item) => sum + item.quantityOwned, 0);
+  const refundActionOrders = businessStorefrontOrders.filter((order) => storefrontOrderCanOpenRefundFlow(order) || ["refund_pending", "refund_failed"].includes(order.paymentStatus) || ["refund_pending", "refund_failed"].includes(order.status));
+  const activeProducts = dashboard.inventory.filter((item) => item.publishToStore && item.storeStatus === "active");
+  const productsMissingPrice = activeProducts.filter((item) => typeof item.publicPrice !== "number" || item.publicPrice <= 0);
+  const productsMissingPrimaryImage = activeProducts.filter((item) => !dashboardInventoryPrimaryImage(item));
+  const productsOutOfStock = activeProducts.filter((item) => item.quantityOwned <= 0 || storefrontListingAvailableForSale(item) <= 0);
+  const lowStockProducts = dashboard.inventory.filter((item) => item.quantityOwned > 0 && item.quantityOwned <= 2);
+  const productsMissingShipping = activeProducts.filter((item) => item.needsShippingProfile || (!item.shippingAvailable && !item.localPickupAvailable));
+  const actionItems = dashboardActionItems({
+    ordersToShip: dashboard.storefrontSummary.ordersToShipCount,
+    pickupOrders: dashboard.storefrontSummary.pickupOrderCount,
+    pendingPayments: dashboard.storefrontSummary.pendingOrderCount,
+    refundReturns: refundActionOrders.length,
+    productsOutOfStock: productsOutOfStock.length,
+    lowStockProducts: lowStockProducts.length,
+    missingPrice: productsMissingPrice.length,
+    missingImage: productsMissingPrimaryImage.length,
+    missingShipping: productsMissingShipping.length
+  });
+  const actionCount = actionItems.reduce((sum, item) => sum + item.count, 0);
+  const recentRows = dashboardRecentSalesAndOrders(selectedOnlineOrders, selectedSales).slice(0, 5);
+  const inventoryRows = dashboardInventoryStatusRows(dashboard.inventory).slice(0, 5);
+  const topProducts = dashboardTopSellingProducts(activeOnlineOrders, activeSales, dashboard.inventory, dashboardDateRange("last_30_days")).slice(0, 3);
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local time";
+  const userLabel = dashboard.currentUser.name || dashboard.currentUser.email;
 
   return (
-    <>
-      <section className="dashboard-page-header overview-header">
+    <section className="commerce-dashboard" aria-labelledby="commerce-dashboard-title">
+      <header className="commerce-dashboard-header">
         <div>
-          <h1>Overview</h1>
-          <p>Your GameDayGrabs operations at a glance</p>
+          <h1 id="commerce-dashboard-title">Overview</h1>
+          <p>Sales, orders, inventory, and storefront operations</p>
         </div>
-        <button className="date-range-pill" type="button">
-          <CalendarDays size={15} />
-          {shortDate(rangeStart.toISOString())} - {shortDate(now.toISOString())}
-          <ChevronRight size={14} />
-        </button>
-      </section>
-      {latestNewPaidOrder ? (
-        <section className="dashboard-order-alert">
-          <div>
-            <span className="eyeline">New order received</span>
-            <h2>{latestNewPaidOrder.orderNumber}</h2>
-            <p>
-              {latestNewPaidOrder.customerName || latestNewPaidOrder.customerEmail || "Customer"} paid {money(latestNewPaidOrder.total)} for {latestNewPaidOrder.itemCount} item{latestNewPaidOrder.itemCount === 1 ? "" : "s"} {latestNewPaidOrder.paidAt ? relativeTime(latestNewPaidOrder.paidAt) : "recently"}.
-            </p>
-          </div>
-          <button className="primary-action" type="button" onClick={() => setActiveTab("orders")}>
-            View Order
-            <ChevronRight size={16} />
+        <div className="commerce-header-controls" aria-label="Dashboard controls">
+          <label className="commerce-date-select">
+            <CalendarDays size={16} />
+            <span className="sr-only">Dashboard date range</span>
+            <select value={rangePreset} onChange={(event) => setRangePreset(event.currentTarget.value as DashboardRangePreset)}>
+              <option value="today">Today</option>
+              <option value="last_7_days">Last 7 Days</option>
+              <option value="month_to_date">Month to Date</option>
+              <option value="last_30_days">Last 30 Days</option>
+            </select>
+          </label>
+          <button className="commerce-icon-button" type="button" aria-label={`${actionCount} current dashboard action${actionCount === 1 ? "" : "s"}`} onClick={() => setActiveTab("alerts")}>
+            <Bell size={18} />
+            {actionCount ? <span>{Math.min(actionCount, 9)}</span> : null}
           </button>
-        </section>
-      ) : null}
-      <DashboardAlertBanner alert={liveAlert} setActiveTab={setActiveTab} />
-      <section className="inventory-kpi-grid dashboard-order-kpis" aria-label="Storefront order summary">
-        <InventoryKpiCard label="New Paid Orders" value={String(dashboard.storefrontSummary.newPaidOrderCount)} detail="New carrier fulfillment" tone={dashboard.storefrontSummary.newPaidOrderCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Pending Payment" value={String(dashboard.storefrontSummary.pendingOrderCount)} detail="Checkout started" tone={dashboard.storefrontSummary.pendingOrderCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Invoice Requests" value={String(dashboard.storefrontSummary.inquiryCount)} detail="Needs follow-up" tone={dashboard.storefrontSummary.inquiryCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Orders To Ship" value={String(dashboard.storefrontSummary.ordersToShipCount)} detail="Paid carrier shipments" tone={dashboard.storefrontSummary.ordersToShipCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Pickup Orders" value={String(dashboard.storefrontSummary.pickupOrderCount)} detail="Paid local pickup" tone={dashboard.storefrontSummary.pickupOrderCount ? "watch" : "neutral"} />
-        <InventoryKpiCard label="Today's Net Sales" value={money(dashboard.storefrontSummary.todaySales)} detail={`${dashboard.storefrontSummary.todayPaidOrderCount} active paid today`} tone="good" />
-        <InventoryKpiCard label="Store Revenue" value={money(dashboard.storefrontSummary.totalRevenue)} detail="Net after refunds" tone="watch" />
-        <InventoryKpiCard label="Store Profit" value={money(dashboard.storefrontSummary.netProfit)} detail="Net after refunds and costs" tone={dashboard.storefrontSummary.netProfit >= 0 ? "good" : "bad"} />
+          <button className="commerce-user-menu" type="button" aria-label={`Signed in as ${userLabel}`}>
+            <span>{userLabel.slice(0, 1).toUpperCase()}</span>
+            <strong>{userLabel}</strong>
+            <small>{formatStatus(dashboard.currentUser.role)}</small>
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </header>
+
+      <section className="commerce-kpi-grid" aria-label="Financial summary">
+        <CommerceKpiCard icon={CircleDollarSign} tone="green" label="Today's Sales" value={money(todayRevenue)} detail={`${todayOnlineOrders.length} order${todayOnlineOrders.length === 1 ? "" : "s"} • ${todaySales.length} POS sale${todaySales.length === 1 ? "" : "s"}`} />
+        <CommerceKpiCard icon={LineChart} tone="blue" label="Month to Date Revenue" value={money(selectedRevenue)} detail={dateRange.label} />
+        <CommerceKpiCard icon={CreditCard} tone="purple" label="Month to Date Profit" value={money(selectedProfit)} detail={dateRange.label} />
+        <CommerceKpiCard icon={Boxes} tone="orange" label="Inventory Value" value={money(inventoryValue)} detail={`${dashboard.inventory.length} products • ${totalUnits} units`} />
       </section>
-      <section className="dashboard-metric-grid" aria-label="Dashboard summary">
-        <DashboardMetricCard
-          icon={Boxes}
-          label="Total Inventory Value"
-          value={marketValueLabel}
-          detail={dashboard.inventorySummary.marketValue === null ? "Needs market data" : "Verified comps only"}
-          tone="green"
-        />
-        <DashboardMetricCard
-          icon={ShoppingBag}
-          label="Products In Stock"
-          value={productsInStock}
-          detail={`${dashboard.inventorySummary.itemsOwned} total items`}
-          tone="blue"
-        />
-        <DashboardMetricCard
-          icon={CircleDollarSign}
-          label="Total Profit"
-          value={money(dashboard.inventorySummary.realizedProfitLoss)}
-          detail="Active sales after refunds"
-          tone={dashboard.inventorySummary.realizedProfitLoss >= 0 ? "green" : "amber"}
-        />
-        <DashboardMetricCard
-          icon={Bell}
-          label="Active Alerts"
-          value={dashboard.alertAnalytics.unreadAlerts}
-          detail={`${visibleAlerts.length} visible alerts`}
-          tone={dashboard.alertAnalytics.unreadAlerts ? "amber" : "green"}
-        />
-        <DashboardMetricCard
-          icon={AlertTriangle}
-          label="Needs Attention"
-          value={needsAttention}
-          detail={`${dashboard.inventorySummary.missingMarketDataCount} missing market`}
-          tone={needsAttention ? "amber" : "green"}
-        />
+
+      <section className="commerce-operations-strip" aria-label="Order operations">
+        <CommerceOperationStat icon={Navigation} tone="blue" label="Orders to Ship" count={dashboard.storefrontSummary.ordersToShipCount} detail="Ready to fulfill" action="View orders" onClick={() => setActiveTab("orders")} />
+        <CommerceOperationStat icon={ShoppingBag} tone="green" label="Pickup Orders" count={dashboard.storefrontSummary.pickupOrderCount} detail="Awaiting pickup" action="View pickups" onClick={() => setActiveTab("shipping")} />
+        <CommerceOperationStat icon={CreditCard} tone="orange" label="Pending Payments" count={dashboard.storefrontSummary.pendingOrderCount} detail="Awaiting payment" action="View payments" onClick={() => setActiveTab("orders")} />
+        <CommerceOperationStat icon={RotateCcw} tone="red" label="Refunds / Returns" count={refundActionOrders.length} detail="Needs action" action="View refunds" onClick={() => setActiveTab("orders")} />
       </section>
-      <section className="dashboard-quick-action-strip" aria-label="More Actions">
-        <QuickActionRow icon={ScanBarcode} title="Quick Stock" description="Scan UPC, add inventory, or adjust stock" onClick={() => setActiveTab("inventory")} />
-        <QuickActionRow icon={ShoppingBag} title="Orders" description="Review paid and pending orders" onClick={() => setActiveTab("orders")} />
-        <QuickActionRow icon={Receipt} title="Sales History" description="Record and review sold items" onClick={() => setActiveTab("sales")} />
-        <QuickActionRow icon={Bell} title="Alerts" description="Review active notifications" onClick={() => setActiveTab("alerts")} />
-        <QuickActionRow icon={CalendarDays} title="Releases" description="Plan upcoming product releases" onClick={() => setActiveTab("releases")} />
+
+      <section className="commerce-quick-actions dashboard-quick-action-strip" aria-label="Quick Actions">
+        <h2>Quick Actions</h2>
+        <div>
+          <CommerceQuickAction icon={Store} tone="green" label="New POS Sale" onClick={() => setActiveTab("pos")} />
+          <CommerceQuickAction icon={ScanBarcode} tone="blue" label="Quick Stock" onClick={() => setActiveTab("inventory")} />
+          <CommerceQuickAction icon={PlusCircle} tone="green" label="Add Product" onClick={() => setActiveTab("inventory")} />
+          <CommerceQuickAction icon={ClipboardList} tone="blue" label="Manage Orders" onClick={() => setActiveTab("orders")} />
+          <a className="commerce-quick-action purple" href="https://www.gamedaygrabs.com" target="_blank" rel="noopener noreferrer" aria-label="View public GameDayGrabs storefront in a new tab">
+            <ExternalLink size={18} />
+            <span>View Storefront</span>
+          </a>
+        </div>
       </section>
-      <section className="dashboard-main-grid">
-        <section className="dashboard-card recent-alerts-card">
-          <div className="dashboard-card-header">
-            <div>
-              <h2>Recent Alerts</h2>
-              <p>Latest order, inventory, storefront, release, and system alerts.</p>
-            </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("alerts")}>
-              View all alerts
-            </button>
+
+      <section className="commerce-middle-grid" aria-label="Operational dashboard">
+        <article className="commerce-card commerce-card-large">
+          <div className="commerce-card-header">
+            <h2>Recent Sales &amp; Orders</h2>
+            <button type="button" onClick={() => setActiveTab("sales")}>View all</button>
           </div>
-          <div className="recent-alert-list">
-            {visibleAlerts.length ? (
-              visibleAlerts.map((alert) => (
-                <RecentAlertRow key={alert.id} alert={alert} products={dashboard.products} setActiveTab={setActiveTab} />
-              ))
-            ) : (
-              <div className="dashboard-empty-card">
-                <EmptyState icon={Bell} title="No recent alerts yet" detail="Inventory, orders, and storefront alerts will appear here." />
-                <div className="dashboard-empty-actions">
-                  <button className="mini-action solid" type="button" onClick={() => setActiveTab("inventory")}>
-                    <PlusCircle size={14} />
-                    Add Inventory
-                  </button>
-                </div>
+          {recentRows.length ? (
+            <div className="commerce-sales-table" role="table" aria-label="Recent sales and orders">
+              <div role="row" className="commerce-table-head">
+                <span role="columnheader">Item / Order</span>
+                <span role="columnheader">Channel</span>
+                <span role="columnheader">Customer</span>
+                <span role="columnheader">Time</span>
+                <span role="columnheader">Amount</span>
+                <span role="columnheader">Status</span>
+                <span role="columnheader">Profit</span>
               </div>
-            )}
-          </div>
-        </section>
-        <section className="dashboard-card watchlist-card">
-          <div className="dashboard-card-header">
-            <div>
-              <h2>Inventory Watch</h2>
-              <p>Products you own or have listed publicly.</p>
+              {recentRows.map((row) => (
+                <button className="commerce-sales-row" role="row" type="button" key={row.id} onClick={() => setActiveTab(row.channel === "POS" ? "sales" : "orders")}>
+                  <span role="cell" className="commerce-sales-product">
+                    <ProductImagePreview imageUrl={row.imageUrl ?? ""} itemName={row.productName} />
+                    <span>
+                      <strong>{row.reference}</strong>
+                      <small>{row.productName}</small>
+                    </span>
+                  </span>
+                  <span role="cell"><b className={`commerce-badge ${row.channel === "POS" ? "good" : "blue"}`}>{row.channel}</b></span>
+                  <span role="cell">{row.customer}</span>
+                  <span role="cell">{relativeTime(row.time)}</span>
+                  <span role="cell">{money(row.amount)}</span>
+                  <span role="cell"><b className={`commerce-badge ${row.statusTone}`}>{row.status}</b></span>
+                  <span role="cell" className={row.profit >= 0 ? "good" : "bad"}>{money(row.profit)}</span>
+                </button>
+              ))}
             </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("inventory")}>View all</button>
+          ) : (
+            <EmptyState icon={Receipt} title="No recent sales or orders yet." detail="Paid online orders and POS sales will appear here." />
+          )}
+          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("sales")}>View all sales &amp; orders <ChevronRight size={14} /></button>
+        </article>
+
+        <article className="commerce-card">
+          <div className="commerce-card-header">
+            <h2>Action Center</h2>
           </div>
-          <div className="dashboard-compact-list">
-            {watchlistItems.length ? (
-              watchlistItems.map((item) => (
-                <DashboardInventoryWatchRow key={item.id} item={item} />
-              ))
-            ) : (
-              <EmptyState icon={Trophy} title="No inventory yet" detail="Add inventory or publish a listing to build this list." />
-            )}
+          <div className="commerce-action-list">
+            {actionItems.length ? actionItems.map((item) => (
+              <button className="commerce-action-row" type="button" key={item.label} onClick={() => setActiveTab(item.tab)}>
+                <span className={item.tone}><item.icon size={15} /></span>
+                <strong>{item.label}</strong>
+                <b>{item.count}</b>
+              </button>
+            )) : <EmptyState icon={Check} title="No urgent actions" detail="Orders, inventory, and storefront product checks are clear." />}
           </div>
-        </section>
+          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("orders")}>View all actions <ChevronRight size={14} /></button>
+        </article>
+
+        <article className="commerce-card">
+          <div className="commerce-card-header">
+            <h2>Inventory Status</h2>
+            <button type="button" onClick={() => setActiveTab("inventory")}>View all</button>
+          </div>
+          <div className="commerce-inventory-list">
+            {inventoryRows.length ? inventoryRows.map((item) => (
+              <button className="commerce-inventory-row" type="button" key={item.id} onClick={() => setActiveTab("inventory")}>
+                <ProductImagePreview imageUrl={dashboardInventoryPrimaryImage(item) ?? ""} itemName={item.itemName} />
+                <span>
+                  <strong>{item.itemName}</strong>
+                  <small>{dashboardInventoryIdentifier(item)}</small>
+                </span>
+                <b>{item.quantityOwned}</b>
+                <em className={`commerce-badge ${inventoryStockStatusTone(item)}`}>{inventoryStockStatusLabel(item) === "Sold Out" ? "Out of Stock" : inventoryStockStatusLabel(item)}</em>
+              </button>
+            )) : <EmptyState icon={Boxes} title="No inventory items yet" detail="Add a product to start managing stock." />}
+          </div>
+          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("inventory")}>View all inventory <ChevronRight size={14} /></button>
+        </article>
       </section>
-      <section className="dashboard-secondary-grid">
-        <section className="dashboard-card">
-          <div className="dashboard-card-header compact">
-            <div>
-              <h2>Activity Feed</h2>
-              <p>Recent orders, inventory, and alerts.</p>
+
+      <section className="commerce-lower-grid" aria-label="Sales and storefront health">
+        <article className="commerce-card commerce-card-large">
+          <div className="commerce-card-header">
+            <h2>Top Selling Products <span>(Last 30 Days)</span></h2>
+          </div>
+          {topProducts.length ? (
+            <div className="commerce-top-products" role="table" aria-label="Top selling products in the last 30 days">
+              <div role="row" className="commerce-top-head">
+                <span role="columnheader">Product</span>
+                <span role="columnheader">Units Sold</span>
+                <span role="columnheader">Revenue</span>
+                <span role="columnheader">Profit</span>
+                <span role="columnheader">Margin</span>
+              </div>
+              {topProducts.map((product, index) => (
+                <div className="commerce-top-row" role="row" key={product.key}>
+                  <span role="cell" className="commerce-top-product"><b>{index + 1}</b><ProductImagePreview imageUrl={product.imageUrl ?? ""} itemName={product.name} /><strong>{product.name}</strong></span>
+                  <span role="cell">{product.units}</span>
+                  <span role="cell">{money(product.revenue)}</span>
+                  <span role="cell" className={product.profit >= 0 ? "good" : "bad"}>{money(product.profit)}</span>
+                  <span role="cell">{percent(product.margin)}</span>
+                </div>
+              ))}
             </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>Open reports</button>
+          ) : (
+            <EmptyState icon={TrendingUp} title="No qualifying sales in the last 30 days" detail="Paid online orders and active POS sales will populate this ranking." />
+          )}
+        </article>
+        <article className="commerce-card">
+          <div className="commerce-card-header">
+            <h2>Storefront Health</h2>
           </div>
-          <div className="dashboard-compact-list">
-            {activityItems.length ? (
-              activityItems.map((item) => (
-                <DashboardSimpleRow
-                  key={item.id}
-                  icon={item.icon}
-                  title={item.title}
-                  detail={item.detail}
-                  value={relativeTime(item.time)}
-                />
-              ))
-            ) : (
-              <EmptyState icon={Activity} title="No activity yet" detail="Orders, inventory additions, and alerts will show here." />
-            )}
+          <div className="commerce-health-list">
+            <CommerceHealthRow label="Active products" count={activeProducts.length} tone="good" />
+            <CommerceHealthRow label="Products missing price" count={productsMissingPrice.length} tone={productsMissingPrice.length ? "bad" : "good"} />
+            <CommerceHealthRow label="Products missing primary image" count={productsMissingPrimaryImage.length} tone={productsMissingPrimaryImage.length ? "watch" : "good"} />
+            <CommerceHealthRow label="Products out of stock" count={productsOutOfStock.length} tone={productsOutOfStock.length ? "bad" : "good"} />
           </div>
-        </section>
-        <section className="dashboard-card">
-          <div className="dashboard-card-header compact">
-            <div>
-              <h2>Best Performing</h2>
-              <p>Only uses real sales or saved market estimates.</p>
-            </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>Open reports</button>
-          </div>
-          <div className="dashboard-compact-list">
-            {bestPerforming.length ? (
-              bestPerforming.map((item) => (
-              <DashboardSimpleRow
-                  key={item.id}
-                  icon={TrendingUp}
-                  title={item.itemName}
-                  detail={item.marketCompCount ? "Market comps saved" : "Sales history"}
-                  value={money(profitValue(item))}
-                  tone={profitValue(item) >= 0 ? "good" : "bad"}
-              />
-              ))
-            ) : (
-              <EmptyState icon={LineChart} title="No performance data yet" detail="Record sales or add comps to see winners here." />
-            )}
-          </div>
-        </section>
-        <section className="dashboard-card">
-          <div className="dashboard-card-header compact">
-            <div>
-              <h2>Release Planning</h2>
-              <p>Next verified drops and preorder windows.</p>
-            </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("releases")}>Open calendar</button>
-          </div>
-          <div className="quick-action-list">
-            <DashboardStatusRow label="Next release" value={dashboardNextRelease ? `${dashboardNextRelease.setName} - ${releaseDateLabel(dashboardNextRelease)}` : "TBD"} />
-            <DashboardStatusRow label="Next preorder" value={dashboardNextPreorder ? `${dashboardNextPreorder.setName} - ${shortDate(dashboardNextPreorder.preorderDate)}` : "TBD"} />
-            <DashboardStatusRow label="Release alerts" value={releaseAlerts} tone={releaseAlerts ? "good" : "muted"} />
-            <DashboardStatusRow label="Needs review" value={dashboard.releases.filter((release) => release.needsReview || !release.officialReleaseDate).length} />
-          </div>
-        </section>
+          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("inventory")}>View storefront products <ChevronRight size={14} /></button>
+        </article>
       </section>
-    </>
+      <footer className="commerce-dashboard-footer">All times shown in {timezone}</footer>
+    </section>
+  );
+}
+
+type DashboardRangePreset = "today" | "last_7_days" | "month_to_date" | "last_30_days";
+
+type DashboardDateRange = {
+  start: Date;
+  end: Date;
+  label: string;
+};
+
+type CommerceTone = "green" | "blue" | "purple" | "orange" | "red";
+
+type CommerceActionTone = "good" | "blue" | "watch" | "bad" | "neutral";
+
+function dashboardStartOfDay(value: Date) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function dashboardEndOfDay(value: Date) {
+  const date = new Date(value);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+function dashboardDateRange(preset: DashboardRangePreset): DashboardDateRange {
+  const now = new Date();
+  const end = dashboardEndOfDay(now);
+  if (preset === "today") {
+    return { start: dashboardStartOfDay(now), end, label: "Today" };
+  }
+  if (preset === "last_7_days") {
+    const start = dashboardStartOfDay(now);
+    start.setDate(start.getDate() - 6);
+    return { start, end, label: `${shortDate(start.toISOString())} – ${shortDate(end.toISOString())}` };
+  }
+  if (preset === "last_30_days") {
+    const start = dashboardStartOfDay(now);
+    start.setDate(start.getDate() - 29);
+    return { start, end, label: `${shortDate(start.toISOString())} – ${shortDate(end.toISOString())}` };
+  }
+  const start = dashboardStartOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
+  return { start, end, label: `${shortDate(start.toISOString())} – ${shortDate(end.toISOString())}` };
+}
+
+function dashboardDateInRange(value: string | null | undefined, range: DashboardDateRange) {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return !Number.isNaN(time) && time >= range.start.getTime() && time <= range.end.getTime();
+}
+
+function dashboardOrderCountsAsRevenue(order: StorefrontOrderDTO) {
+  return ["paid", "partially_refunded"].includes(order.paymentStatus) && !storefrontOrderIsCanceledOrRefunded(order);
+}
+
+function dashboardSaleCountsAsRevenue(sale: InventorySaleDTO) {
+  return !["canceled", "refunded", "test"].includes(sale.saleStatus) && sale.activeQuantitySold > 0;
+}
+
+function dashboardInventoryPrimaryImage(item: InventoryItemDTO) {
+  return item.publicImages[0] ?? item.imageUrl ?? null;
+}
+
+function dashboardInventoryIdentifier(item: InventoryItemDTO) {
+  return item.sku ? `SKU: ${item.sku}` : item.upc ? `UPC: ${item.upc}` : item.category;
+}
+
+function dashboardInventoryStatusRows(items: InventoryItemDTO[]) {
+  return [...items]
+    .filter((item) => item.quantityOwned <= 0 || item.quantityOwned <= 2 || item.publishToStore)
+    .sort((a, b) => {
+      const priority = (item: InventoryItemDTO) => {
+        if (item.quantityOwned <= 0) return 0;
+        if (item.quantityOwned <= 2) return 1;
+        if (item.publishToStore && (!dashboardInventoryPrimaryImage(item) || !item.publicPrice)) return 2;
+        return 3;
+      };
+      return priority(a) - priority(b) || a.quantityOwned - b.quantityOwned || a.itemName.localeCompare(b.itemName);
+    });
+}
+
+type DashboardRecentRow = {
+  id: string;
+  channel: "POS" | "Online";
+  reference: string;
+  productName: string;
+  imageUrl: string | null;
+  customer: string;
+  time: string;
+  amount: number;
+  profit: number;
+  status: string;
+  statusTone: CommerceActionTone;
+};
+
+function dashboardRecentSalesAndOrders(
+  onlineOrders: StorefrontOrderDTO[],
+  sales: Array<{ sale: InventorySaleDTO; item: InventoryItemDTO }>
+): DashboardRecentRow[] {
+  return [
+    ...onlineOrders.map((order): DashboardRecentRow => {
+      const firstItem = order.items[0];
+      return {
+        id: `order-${order.id}`,
+        channel: "Online",
+        reference: `#${order.orderNumber}`,
+        productName: firstItem?.publicTitle ?? `${order.itemCount} item${order.itemCount === 1 ? "" : "s"}`,
+        imageUrl: firstItem?.imageUrl ?? null,
+        customer: order.customerName || order.customerEmail || "Guest",
+        time: order.paidAt ?? order.createdAt,
+        amount: storefrontOrderNetRevenue(order),
+        profit: order.netProfit,
+        status: storefrontOrderFulfillmentLabel(order),
+        statusTone: order.needsFulfillment ? "watch" : "good"
+      };
+    }),
+    ...sales.map(({ sale, item }): DashboardRecentRow => ({
+      id: `sale-${sale.id}`,
+      channel: "POS",
+      reference: sale.saleReference ? `#${sale.saleReference}` : "POS sale",
+      productName: sale.itemName,
+      imageUrl: dashboardInventoryPrimaryImage(item),
+      customer: sale.customerEmail || sale.customerPhone || "Walk-in",
+      time: sale.soldAt,
+      amount: sale.activeNetSale,
+      profit: sale.activeProfitLoss,
+      status: sale.refundStatus ? formatStatus(sale.refundStatus) : "Completed",
+      statusTone: sale.activeProfitLoss >= 0 ? "good" : "bad"
+    }))
+  ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+}
+
+function dashboardTopSellingProducts(
+  onlineOrders: StorefrontOrderDTO[],
+  sales: Array<{ sale: InventorySaleDTO; item: InventoryItemDTO }>,
+  inventory: InventoryItemDTO[],
+  range: DashboardDateRange
+) {
+  const byProduct = new Map<string, { key: string; name: string; imageUrl: string | null; units: number; revenue: number; profit: number }>();
+  const upsert = (key: string, name: string, imageUrl: string | null, units: number, revenue: number, profit: number) => {
+    const existing = byProduct.get(key) ?? { key, name, imageUrl, units: 0, revenue: 0, profit: 0 };
+    existing.units += units;
+    existing.revenue += revenue;
+    existing.profit += profit;
+    existing.imageUrl = existing.imageUrl ?? imageUrl;
+    byProduct.set(key, existing);
+  };
+
+  for (const order of onlineOrders) {
+    if (!dashboardDateInRange(order.paidAt ?? order.createdAt, range)) continue;
+    for (const item of order.items) {
+      const revenueShare = order.items.length > 0 && order.total > 0 ? item.lineTotal / order.total : 0;
+      upsert(
+        item.inventoryItemId,
+        item.publicTitle,
+        item.imageUrl,
+        item.quantity,
+        Math.max(0, item.lineTotal - order.refundedAmount * revenueShare),
+        item.profitLoss
+      );
+    }
+  }
+
+  for (const { sale, item } of sales) {
+    if (!dashboardDateInRange(sale.soldAt, range)) continue;
+    upsert(sale.inventoryItemId, sale.itemName, dashboardInventoryPrimaryImage(item), sale.activeQuantitySold, sale.activeNetSale, sale.activeProfitLoss);
+  }
+
+  return [...byProduct.values()]
+    .map((product) => {
+      const inventoryMatch = inventory.find((item) => item.id === product.key);
+      return {
+        ...product,
+        imageUrl: product.imageUrl ?? (inventoryMatch ? dashboardInventoryPrimaryImage(inventoryMatch) : null),
+        margin: product.revenue > 0 ? (product.profit / product.revenue) * 100 : null
+      };
+    })
+    .filter((product) => product.units > 0)
+    .sort((a, b) => b.units - a.units || b.revenue - a.revenue || a.name.localeCompare(b.name));
+}
+
+function dashboardActionItems(counts: {
+  ordersToShip: number;
+  pickupOrders: number;
+  pendingPayments: number;
+  refundReturns: number;
+  productsOutOfStock: number;
+  lowStockProducts: number;
+  missingPrice: number;
+  missingImage: number;
+  missingShipping: number;
+}) {
+  return [
+    { icon: Navigation, label: "Paid orders awaiting shipment", count: counts.ordersToShip, tab: "shipping" as Tab, tone: "blue" as CommerceActionTone },
+    { icon: ShoppingBag, label: "Pickup orders awaiting customer", count: counts.pickupOrders, tab: "shipping" as Tab, tone: "good" as CommerceActionTone },
+    { icon: CreditCard, label: "Pending payments", count: counts.pendingPayments, tab: "orders" as Tab, tone: "watch" as CommerceActionTone },
+    { icon: RotateCcw, label: "Refunds / returns needing action", count: counts.refundReturns, tab: "orders" as Tab, tone: "bad" as CommerceActionTone },
+    { icon: AlertTriangle, label: "Products out of stock", count: counts.productsOutOfStock, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
+    { icon: AlertTriangle, label: "Low stock products", count: counts.lowStockProducts, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone },
+    { icon: CreditCard, label: "Products missing price", count: counts.missingPrice, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
+    { icon: ImageIconFallback, label: "Products missing primary image", count: counts.missingImage, tab: "inventory" as Tab, tone: "neutral" as CommerceActionTone },
+    { icon: PackageSearch, label: "Products missing shipping setup", count: counts.missingShipping, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone }
+  ].filter((item) => item.count > 0);
+}
+
+function ImageIconFallback({ size }: { size?: number }) {
+  return <FileText size={size} />;
+}
+
+function CommerceKpiCard({
+  icon: Icon,
+  tone,
+  label,
+  value,
+  detail
+}: {
+  icon: typeof Radar;
+  tone: CommerceTone;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <article className={`commerce-kpi-card ${tone}`}>
+      <span><Icon size={24} /></span>
+      <div>
+        <small>{label}</small>
+        <strong>{value}</strong>
+        <em>{detail}</em>
+      </div>
+    </article>
+  );
+}
+
+function CommerceOperationStat({
+  icon: Icon,
+  tone,
+  label,
+  count,
+  detail,
+  action,
+  onClick
+}: {
+  icon: typeof Radar;
+  tone: CommerceTone;
+  label: string;
+  count: number;
+  detail: string;
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <article className={`commerce-operation-stat ${tone}`}>
+      <span><Icon size={22} /></span>
+      <div>
+        <small>{label}</small>
+        <strong>{count}</strong>
+        <em>{detail}</em>
+        <button type="button" onClick={onClick}>{action} <ChevronRight size={12} /></button>
+      </div>
+    </article>
+  );
+}
+
+function CommerceQuickAction({
+  icon: Icon,
+  tone,
+  label,
+  onClick
+}: {
+  icon: typeof Radar;
+  tone: "green" | "blue";
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className={`commerce-quick-action ${tone}`} type="button" onClick={onClick}>
+      <Icon size={18} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function CommerceHealthRow({ label, count, tone }: { label: string; count: number; tone: "good" | "watch" | "bad" }) {
+  return (
+    <div className="commerce-health-row">
+      <span className={tone}>{tone === "good" ? <Check size={14} /> : <AlertTriangle size={14} />}</span>
+      <strong>{label}</strong>
+      <b>{count}</b>
+    </div>
   );
 }
 
