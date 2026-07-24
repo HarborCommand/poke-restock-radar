@@ -40,8 +40,8 @@ export async function generateMetadata() {
     };
   }
   return {
-    title: "Poke Restock Radar",
-    description: "Private Pokemon TCG restock, release, inventory, and alert radar.",
+    title: "GameDayGrabs Admin",
+    description: "Private GameDayGrabs Admin for products, inventory, orders, shipping, customers, rewards, and reports.",
     robots: {
       index: false,
       follow: false

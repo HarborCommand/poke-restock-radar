@@ -1668,7 +1668,7 @@ test("general alerts remain accessible while retired tracker execution controls 
   assert.match(alertsPanelSource, /reviewableAlertRecords = historyAlerts\.filter\(\(record\) => !isTestDashboardAlert\(record\.alert\) && !isRetiredRetailerTrackerAlert\(record\.alert\)\)/);
   assert.match(activeAlertsSource, /Alert history/);
   assert.match(activeAlertsSource, /release, inventory, order, storefront, system, and historical alert activity/i);
-  assert.match(activeAlertsSource, /retired retailer monitor cannot trigger new automatic restock alerts/i);
+  assert.doesNotMatch(activeAlertsSource, /retired retailer monitor|automatic restock|monitor runs|retailer discovery|watchlist execution/i);
   for (const endpoint of [
     "/api/radar/monitor/run",
     "/api/radar/product-discovery/target",
@@ -1819,7 +1819,7 @@ test("admin shipping hub is a top-level navigation tab with overview sections", 
   const shippingHub = app.slice(app.indexOf("function ShippingHubPanel"), app.indexOf("function ProductShippingEditorModal"));
 
   assert.match(app, /\| "shipping"/);
-  assert.match(app, /\{ id: "shipping", label: "Shipping", icon: Navigation, section: "inventory" \}/);
+  assert.match(app, /\{ id: "shipping", label: "Shipping", icon: Navigation, section: "operations" \}/);
   assert.match(app, /activeTab === "shipping"/);
   assert.match(app, /<ShippingHubPanel/);
   assert.match(shippingHub, /Shipping Hub/);

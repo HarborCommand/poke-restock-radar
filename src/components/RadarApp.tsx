@@ -258,32 +258,31 @@ type WatchProductPrefill = {
   requiredWords?: string | null;
 };
 
-type NavSection = "main" | "tracker" | "inventory" | "analytics" | "store" | "manage";
+type NavSection = "operations" | "catalog" | "customers" | "insights" | "admin";
 
 const navSectionLabels: Record<NavSection, string> = {
-  main: "Main",
-  tracker: "Tracker",
-  inventory: "Inventory",
-  analytics: "Analytics",
-  store: "Store",
-  manage: "Manage"
+  operations: "Operations",
+  catalog: "Catalog & Stock",
+  customers: "Customers",
+  insights: "Insights",
+  admin: "Admin"
 };
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Radar; section: NavSection }> = [
-  { id: "dashboard", label: "Dashboard", icon: Home, section: "main" },
-  { id: "inventory", label: "Inventory", icon: Trophy, section: "inventory" },
-  { id: "pos", label: "POS", icon: ShoppingCart, section: "inventory" },
-  { id: "customers", label: "Customers", icon: Users, section: "inventory" },
-  { id: "orders", label: "Orders", icon: ShoppingBag, section: "inventory" },
-  { id: "shipping", label: "Shipping", icon: Navigation, section: "inventory" },
-  { id: "sales", label: "Sales", icon: Receipt, section: "inventory" },
-  { id: "alerts", label: "Alerts", icon: Bell, section: "manage" },
-  { id: "market", label: "Market", icon: Sparkles, section: "analytics" },
-  { id: "analytics", label: "Analytics", icon: BarChart3, section: "analytics" },
-  { id: "releases", label: "Releases", icon: CalendarDays, section: "manage" },
-  { id: "tax", label: "Tax", icon: Calculator, section: "manage" },
-  { id: "settings", label: "Settings", icon: Settings, section: "manage" },
-  { id: "admin", label: "Admin", icon: ShieldCheck, section: "manage" }
+  { id: "dashboard", label: "Dashboard", icon: Home, section: "operations" },
+  { id: "orders", label: "Orders", icon: ShoppingBag, section: "operations" },
+  { id: "shipping", label: "Shipping", icon: Navigation, section: "operations" },
+  { id: "pos", label: "POS", icon: ShoppingCart, section: "operations" },
+  { id: "sales", label: "Sales History", icon: Receipt, section: "operations" },
+  { id: "inventory", label: "Products & Inventory", icon: Boxes, section: "catalog" },
+  { id: "customers", label: "Customers & Rewards", icon: Users, section: "customers" },
+  { id: "analytics", label: "Reports", icon: BarChart3, section: "insights" },
+  { id: "market", label: "Market", icon: Sparkles, section: "insights" },
+  { id: "releases", label: "Releases", icon: CalendarDays, section: "insights" },
+  { id: "alerts", label: "Alerts", icon: Bell, section: "admin" },
+  { id: "settings", label: "Settings", icon: Settings, section: "admin" },
+  { id: "tax", label: "Tax", icon: Calculator, section: "admin" },
+  { id: "admin", label: "System", icon: ShieldCheck, section: "admin" }
 ];
 type NavTab = (typeof tabs)[number];
 const deprecatedUiTabs = new Set<Tab>(["field", "products", "stores", "cards", "myStore"]);
@@ -2023,7 +2022,7 @@ export function RadarApp() {
     return (
       <main className="screen center-screen" aria-busy="true">
         <div className="loader-panel admin-workspace-loader" role="status" aria-live="polite">
-          <Radar className="spin-slow" size={30} aria-hidden="true" />
+          <Store size={30} aria-hidden="true" />
           <div>
             <strong>Loading private workspace</strong>
             <span>Preparing the latest inventory, sales, and customer data.</span>
@@ -2039,7 +2038,7 @@ export function RadarApp() {
         <main className="screen center-screen">
           <section className="login-card app-load-error-card" aria-live="polite">
             <div className="brand-mark">
-              <Radar size={28} />
+              <Store size={28} />
             </div>
             <span className="eyebrow">Signed In</span>
             <h1>Dashboard Load Failed</h1>
@@ -2109,10 +2108,10 @@ export function RadarApp() {
       <aside className={sidebarOpen ? "app-sidebar open" : "app-sidebar"} aria-label="Primary navigation">
         <div className="brand-lockup sidebar-brand">
           <div className="brand-mark">
-            <Radar size={19} />
+            <Store size={19} />
           </div>
           <div>
-            <h1>Poke Radar</h1>
+            <h1>GameDayGrabs Admin</h1>
           </div>
         </div>
         <nav className="sidebar-nav">
@@ -2130,10 +2129,10 @@ export function RadarApp() {
         </nav>
         <div className="sidebar-foot">
           <div>
-            <strong>Pro Plan</strong>
-            <small>Private Plan</small>
+            <strong>Private workspace</strong>
+            <small>Operations only</small>
           </div>
-          <button className="upgrade-button" type="button">Upgrade</button>
+          <button className="upgrade-button" type="button" onClick={() => setActiveTab("settings")}>Settings</button>
         </div>
       </aside>
       {sidebarOpen ? <button className="sidebar-scrim" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} /> : null}
@@ -2151,7 +2150,7 @@ export function RadarApp() {
         </div>
         <div className="topbar-actions">
           <button className="location-pill" type="button" onClick={() => setActiveTab("inventory")}>
-            Inventory <ChevronRight size={14} />
+            Products & Inventory <ChevronRight size={14} />
           </button>
           <button className="icon-button" aria-label="Notifications" type="button" onClick={() => setActiveTab("alerts")}>
             <Bell size={17} />
@@ -2259,8 +2258,8 @@ export function RadarApp() {
       <footer className="app-footer">
         <ShieldCheck size={16} />
         <span>
-          Manual checkout only. Alerts and Go buttons open trusted retailer source pages; you complete every cart, payment,
-          queue, login, captcha, and purchase-limit step yourself.
+          GameDayGrabs Admin manages products, inventory, orders, customers, rewards, and operations. Checkout,
+          payments, shipping, and customer data stay protected by server-side workflows.
         </span>
       </footer>
 
@@ -2292,8 +2291,8 @@ function AdminControlPanel({
     <>
       <section className="dashboard-page-header admin-page-header">
         <div>
-          <h2>Admin Controls</h2>
-          <p>Manage account, alerts, health checks, data quality, backups, and release tools.</p>
+          <h2>System Administration</h2>
+          <p>Manage account access, alerts, production health, data quality, backups, and release tools.</p>
         </div>
         <button className="primary-action" type="button" onClick={() => setActiveTab("settings")}>
           Open Settings <ChevronRight size={16} />
@@ -2307,13 +2306,6 @@ function AdminControlPanel({
           detail="Change login email and password safely."
           action="Manage Account"
           onAction={() => document.getElementById("admin-account")?.scrollIntoView({ block: "center" })}
-        />
-        <AdminActionCard
-          icon={ClipboardList}
-          title="Tracker Rebuild"
-          detail="Local store and area tracking are hidden for the future Discord-style rebuild."
-          action="View Note"
-          onAction={() => document.getElementById("admin-deprecated-local")?.scrollIntoView({ block: "center" })}
         />
         <AdminActionCard
           icon={Bell}
@@ -2337,8 +2329,6 @@ function AdminControlPanel({
           onAction={() => document.getElementById("admin-storefront-status")?.scrollIntoView({ block: "center" })}
         />
       </section>
-
-      <AdminDeprecatedModulesNotice />
 
       <div className="admin-section-grid">
         <AdminSectionCard id="admin-account" icon={Lock} title="Account" detail="Login email, password, and private access controls.">
@@ -2412,24 +2402,6 @@ function AdminActionCard({
   );
 }
 
-function AdminDeprecatedModulesNotice() {
-  return (
-    <section className="admin-deprecated-note" id="admin-deprecated-local">
-      <span className="admin-action-icon">
-        <ArchiveIcon />
-      </span>
-      <div>
-        <strong>Local store/area tracking is deprecated and hidden</strong>
-        <p>Stores, Field Mode, My Area, sightings, nearby store discovery, and local restock prediction UI are preserved in the database but hidden for a future Discord-style tracker rebuild. Inventory, Orders, Storefront, Alerts, Releases, Market, Analytics, Settings, and Admin remain active.</p>
-      </div>
-    </section>
-  );
-}
-
-function ArchiveIcon() {
-  return <FileText size={18} />;
-}
-
 function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: DashboardDTO; setActiveTab: (tab: Tab) => void }) {
   const published = dashboard.inventory.filter((item) => item.publishToStore && (item.storeStatus === "active" || item.storeStatus === "sold_out"));
   const withImages = published.filter((item) => storefrontImageCandidatesForItem(item).length > 0);
@@ -2464,7 +2436,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
     { label: "At least 5 published products", detail: `${published.length} published products available publicly.`, complete: published.length >= 5 },
     { label: "Published product images", detail: `${withImages.length}/${published.length || 0} published products have images.`, complete: published.length > 0 && withImages.length === published.length },
     { label: "Request Invoice / cart works", detail: settings.checkoutConfigured ? "Stripe Checkout configured; cart remains active." : "Request Invoice mode available until Stripe is configured.", complete: true },
-    { label: "No private data exposed", detail: "Public pages hide costs, profit, market values, receipts, scanner history, and tracker data.", complete: true }
+    { label: "No private data exposed", detail: "Public pages hide costs, profit, market values, receipts, and operational history.", complete: true }
   ];
   const liveModeChecks = [
     {
@@ -2517,7 +2489,7 @@ function DistributorReadinessPanel({ dashboard, setActiveTab }: { dashboard: Das
         <div>
           <span className="eyeline">Storefront Status</span>
           <h3>{distributorReady ? "Ready" : "Needs Work"} - {readyCount}/{checks.length}</h3>
-          <p>Use this to keep gamedaygrabs.com and GameDayGrabs distributor readiness on track without exposing private costs, scanner data, receipts, or tracker details.</p>
+          <p>Use this to keep gamedaygrabs.com and GameDayGrabs distributor readiness on track without exposing private costs, receipts, or operational details.</p>
         </div>
         <div className="inventory-header-actions">
           <a className="mini-action" href={publicUrl} target="_blank" rel="noreferrer">
@@ -2832,12 +2804,12 @@ function LoginShell({
     <main className="screen login-screen">
       <section className="login-panel">
         <div className="brand-mark large">
-          <Radar size={30} />
+          <Store size={30} />
         </div>
         <div className="login-copy">
           <p className="eyeline">Private access only</p>
-          <h1>Poke Restock Radar</h1>
-          <p>Manual restock, store, release, alert, and card grading radar for a small trusted group.</p>
+          <h1>GameDayGrabs Admin</h1>
+          <p>Private store management for products, inventory, orders, shipping, customers, rewards, and reports.</p>
         </div>
         {mode === "login" ? (
           <form className="form-stack" onSubmit={onSubmit}>
@@ -3074,7 +3046,7 @@ function DashboardPanel({
       <section className="dashboard-page-header overview-header">
         <div>
           <h1>Overview</h1>
-          <p>Your Pokemon business at a glance</p>
+          <p>Your GameDayGrabs operations at a glance</p>
         </div>
         <button className="date-range-pill" type="button">
           <CalendarDays size={15} />
@@ -3146,18 +3118,18 @@ function DashboardPanel({
         />
       </section>
       <section className="dashboard-quick-action-strip" aria-label="More Actions">
-        <QuickActionRow icon={ScanBarcode} title="Add Inventory" description="Scan UPC or add product" onClick={() => setActiveTab("inventory")} />
+        <QuickActionRow icon={ScanBarcode} title="Quick Stock" description="Scan UPC, add inventory, or adjust stock" onClick={() => setActiveTab("inventory")} />
         <QuickActionRow icon={ShoppingBag} title="Orders" description="Review paid and pending orders" onClick={() => setActiveTab("orders")} />
-        <QuickActionRow icon={Receipt} title="Sales" description="Record and review sold items" onClick={() => setActiveTab("sales")} />
+        <QuickActionRow icon={Receipt} title="Sales History" description="Record and review sold items" onClick={() => setActiveTab("sales")} />
         <QuickActionRow icon={Bell} title="Alerts" description="Review active notifications" onClick={() => setActiveTab("alerts")} />
-        <QuickActionRow icon={CalendarDays} title="Releases" description="Track upcoming product drops" onClick={() => setActiveTab("releases")} />
+        <QuickActionRow icon={CalendarDays} title="Releases" description="Plan upcoming product releases" onClick={() => setActiveTab("releases")} />
       </section>
       <section className="dashboard-main-grid">
         <section className="dashboard-card recent-alerts-card">
           <div className="dashboard-card-header">
             <div>
               <h2>Recent Alerts</h2>
-              <p>Latest restock, order, and inventory alerts.</p>
+              <p>Latest order, inventory, storefront, release, and system alerts.</p>
             </div>
             <button className="link-button" type="button" onClick={() => setActiveTab("alerts")}>
               View all alerts
@@ -3176,7 +3148,6 @@ function DashboardPanel({
                     <PlusCircle size={14} />
                     Add Inventory
                   </button>
-                  <button className="mini-action" type="button" onClick={() => setActiveTab("inventory")}>Add Inventory</button>
                 </div>
               </div>
             )}
@@ -3208,7 +3179,7 @@ function DashboardPanel({
               <h2>Activity Feed</h2>
               <p>Recent orders, inventory, and alerts.</p>
             </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>View all</button>
+            <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>Open reports</button>
           </div>
           <div className="dashboard-compact-list">
             {activityItems.length ? (
@@ -3232,7 +3203,7 @@ function DashboardPanel({
               <h2>Best Performing</h2>
               <p>Only uses real sales or saved market estimates.</p>
             </div>
-            <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>View report</button>
+            <button className="link-button" type="button" onClick={() => setActiveTab("analytics")}>Open reports</button>
           </div>
           <div className="dashboard-compact-list">
             {bestPerforming.length ? (
@@ -3254,7 +3225,7 @@ function DashboardPanel({
         <section className="dashboard-card">
           <div className="dashboard-card-header compact">
             <div>
-              <h2>Release Radar</h2>
+              <h2>Release Planning</h2>
               <p>Next verified drops and preorder windows.</p>
             </div>
             <button className="link-button" type="button" onClick={() => setActiveTab("releases")}>Open calendar</button>
@@ -3344,7 +3315,7 @@ function DashboardAlertBanner({
       <div className="live-alert-actions">
         {alert.actionUrl ? (
           <a className="primary-action" href={alert.actionUrl} target="_blank" rel="noreferrer">
-            Go / Buy Now <ExternalLink size={14} />
+            Open Source <ExternalLink size={14} />
           </a>
         ) : null}
         <button className="mini-action" type="button" onClick={() => setActiveTab("alerts")}>
@@ -13468,7 +13439,7 @@ function upcLookupFailureMessage(result: UpcLookupResultDTO) {
 function upcLookupSuccessMessage(result: UpcLookupResultDTO) {
   const product = result.lookupProduct;
   if (result.matchedInventoryItem) return "Product found in your inventory catalog. Add stock to the existing item.";
-  if (result.matchedProduct) return "Watched product found. Create an inventory product from the saved tracker details.";
+  if (result.matchedProduct) return "Saved source product found. Create an inventory product from the saved product details.";
   if (!product) return upcLookupFailureMessage(result);
   if (product.source === "external" && product.matchQuality && product.matchQuality !== "HIGH") {
     return `Possible match from ${product.retailer || "product search"} (${product.matchQuality.toLowerCase()} confidence). Review before saving.`;
@@ -13481,7 +13452,7 @@ function upcLookupSuccessMessage(result: UpcLookupResultDTO) {
 
 function upcLookupResultTitle(result: UpcLookupResultDTO) {
   if (result.matchedInventoryItem) return "Product found";
-  if (result.matchedProduct) return "Watched product found";
+  if (result.matchedProduct) return "Saved source product found";
   if (result.lookupProduct) return "Product details found";
   if (result.status === "NEW_UPC") return "New UPC detected";
   return "Manual product needed";
@@ -13646,7 +13617,7 @@ function BarcodeScannerModal({
       return "Camera scanning requires a secure HTTPS page. Open the live app at https://poke-restock-radar.vercel.app.";
     }
     if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-      return "Camera permission was blocked. Use the browser lock icon beside the address bar, allow Camera for Poke Radar, then try Start Camera again.";
+      return "Camera permission was blocked. Use the browser lock icon beside the address bar, allow Camera for this admin site, then try Start Camera again.";
     }
     if (name === "NotFoundError" || name === "DevicesNotFoundError") {
       return "No laptop camera was found. Connect or enable your webcam, then try Start Camera again.";
@@ -17038,26 +17009,26 @@ function AttachWatchedProductForm({
       onSubmit={(event) =>
         submit(
           event,
-          `Attaching watched product ${item.id}`,
+          `Attaching saved source product ${item.id}`,
           (form) => requestJson(`/api/radar/inventory/${item.id}`, { method: "PATCH", body: JSON.stringify(formJson(form)) }),
-          { success: "Watched product attached and image synced" }
+          { success: "Saved source product attached and image synced" }
         )
       }
     >
       <div>
-        <strong>Attach watched product</strong>
+        <strong>Attach saved source product</strong>
         <span>Matches by UPC, SKU, DPCI, ASIN, or exact product name. Verified retailer images copy into inventory.</span>
       </div>
       <SelectInput
         name="productId"
-        label="Watched product"
+        label="Saved source product"
         defaultValue={item.productId ?? ""}
-        options={[{ value: "", label: productOptions.length ? "Choose a watched product" : "No watched products available" }, ...productOptions]}
+        options={[{ value: "", label: productOptions.length ? "Choose a saved source product" : "No saved source products available" }, ...productOptions]}
         disabled={!productOptions.length || busy}
       />
       <button className="mini-action" disabled={!productOptions.length || busy} type="submit">
         <Save size={13} />
-        {busyLabel === `Attaching watched product ${item.id}` ? "Attaching" : "Attach"}
+        {busyLabel === `Attaching saved source product ${item.id}` ? "Attaching" : "Attach"}
       </button>
     </form>
   );
@@ -21753,7 +21724,7 @@ function ReleasesPanel({
     <section className="release-radar-page app-light-surface">
       <div className="release-radar-header">
         <div>
-          <p className="eyeline">Release Radar</p>
+          <p className="eyeline">Release Planning</p>
           <h1>Pokemon TCG Release Calendar</h1>
           <span>Official dates show as Confirmed. Trusted product calendars show as Scheduled; only unclear parser results need review.</span>
         </div>
@@ -24179,7 +24150,7 @@ function AlertsPanel({
     <>
       <SectionIntro
         title="Alerts"
-        detail="Review release, inventory, order, storefront, system, and historical alert activity. Automated retailer restock monitoring is retired, so this page no longer exposes monitor runs, retailer discovery, or watchlist execution controls."
+        detail="Review release, inventory, order, storefront, system, and historical alert activity from one private workspace."
         stats={[
           { label: "Visible", value: visibleAlertRecords.length },
           { label: "Unread", value: unreadAlertCount, tone: unreadAlertCount ? "watch" : "good" },
@@ -24244,7 +24215,7 @@ function AlertsPanel({
                 })}
               </div>
             ) : (
-              <EmptyState icon={Bell} title="No alerts to review" detail="Release, order, inventory, storefront, system, and other non-restock alerts will appear here when created." />
+              <EmptyState icon={Bell} title="No alerts to review" detail="Release, order, inventory, storefront, system, and priority alerts will appear here when created." />
             )}
 
             {reviewableAlertRecords.length > visibleAlertRecords.length ? (
@@ -24292,7 +24263,6 @@ function AlertsPanel({
             </div>
             <p className="muted-copy">
               Browser push, email, SMS, quiet hours, digest mode, delivery logs, and user push permissions remain configured from Settings and User Management.
-              The retired retailer monitor cannot trigger new automatic restock alerts.
             </p>
             <button className="mini-action" type="button" onClick={() => setActiveTab("settings")}>
               Open Settings
@@ -26597,7 +26567,7 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
       tone: health.auth.adminUserCount > 0 && health.auth.configuredAdminEmailExists ? "OK" : "ERROR"
     },
     {
-      label: "Monitor cron protection",
+      label: "Background job protection",
       detail: `Job secret ${configuredText(health.monitor.monitorJobSecretConfigured).toLowerCase()}; Vercel bearer ${configuredText(
         health.monitor.vercelCronSecretConfigured
       ).toLowerCase()}`,
@@ -26605,10 +26575,10 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
       tone: health.monitor.monitorJobSecretConfigured && health.monitor.vercelCronSecretConfigured ? "OK" : "ERROR"
     },
     {
-      label: "Monitor run history",
+      label: "Background job history",
       detail: health.monitor.lastRunAt
         ? `Last run ${relativeTime(health.monitor.lastRunAt)} with ${health.monitor.lastStatus || "unknown"} result`
-        : "No production monitor run logged yet",
+        : "No production background run logged yet",
       status: health.monitor.lastRunAt ? "Ready" : "Review",
       tone: health.monitor.lastRunAt ? "OK" : "WARN"
     },
@@ -26691,8 +26661,8 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
           }`}
         />
         <HealthCard
-          icon={Radar}
-          title="Monitor Cron"
+          icon={Activity}
+          title="Background Jobs"
           value={health.monitor.monitorJobSecretConfigured ? "Protected" : "Secret Missing"}
           tone={health.monitor.monitorJobSecretConfigured ? "OK" : "ERROR"}
           detail={`Last run ${relativeTime(health.monitor.lastRunAt)} - ${health.monitor.dueProductCount} due`}
@@ -26797,7 +26767,7 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
         <span>Deploy {health.build.deployId || "unavailable"}</span>
         <span>SW {health.build.serviceWorkerVersion}</span>
         <span>App URL {health.environment.appUrl || "missing"}</span>
-        <span>Vercel Cron bearer {configuredText(health.monitor.vercelCronSecretConfigured)}</span>
+        <span>Vercel job bearer {configuredText(health.monitor.vercelCronSecretConfigured)}</span>
         <span>Password reset email {configuredText(health.auth.passwordResetEmailConfigured)}</span>
         <span>Delay {health.monitor.requestDelayMs}ms</span>
       </div>
@@ -26846,7 +26816,7 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
               {!health.auth.configuredAdminEmailExists ? (
                 <li>ADMIN_EMAIL seed/default does not match a database Admin user. Login uses the database Admin email.</li>
               ) : null}
-              {health.monitor.lastError ? <li>Last monitor error: {health.monitor.lastError}</li> : null}
+              {health.monitor.lastError ? <li>Last background job error: {health.monitor.lastError}</li> : null}
               {health.database.error ? <li>Database error: {health.database.error}</li> : null}
             </ul>
           </div>
@@ -26879,11 +26849,6 @@ function NotificationSettingsPanel({
   const browserPushActive = Boolean(health?.providers.push.configured && settings.browserPush && pushReady);
   const emailActive = Boolean(health?.providers.email.configured && settings.email && settings.emailTo);
   const smsActive = Boolean(health?.providers.sms.configured && settings.sms && settings.phone);
-  const simulatableTrackerProduct =
-    dashboard.products.find((product) => !product.archivedAt && productReadyForAlert(product)) ??
-    dashboard.products.find((product) => !product.archivedAt && product.url) ??
-    dashboard.products.find((product) => !product.archivedAt);
-
   useEffect(() => {
     let mounted = true;
     if (!pushSupported()) return;
@@ -27155,43 +27120,6 @@ function NotificationSettingsPanel({
         >
           <Bell size={14} />
           {busyLabel === "Testing in-app alert" ? "Testing" : "Test In-App"}
-        </button>
-        <button
-          className="mini-action"
-          disabled={busy || !simulatableTrackerProduct}
-          type="button"
-          title={simulatableTrackerProduct ? "Create a simulated tracker_online_drop event for Live Drops QA" : "Add a watch product before simulating tracker alerts"}
-          onClick={() =>
-            simulatableTrackerProduct
-              ? runAction(
-                  `Simulating tracker alert ${simulatableTrackerProduct.id}`,
-                  () =>
-                    requestJson(`/api/radar/products/${simulatableTrackerProduct.id}/monitor`, {
-                      method: "POST",
-                      body: JSON.stringify({ action: "simulate_tracker_drop", reason: "Admin simulated a tracker_online_drop test event from the Alerts admin tools." })
-                    }),
-                  { success: "Tracker alert simulation sent" }
-                )
-              : undefined
-          }
-        >
-          <Radar size={14} />
-          {busyLabel === `Simulating tracker alert ${simulatableTrackerProduct?.id}` ? "Simulating" : "Simulate Tracker Alert"}
-        </button>
-        <button
-          className="mini-action"
-          disabled={busy}
-          type="button"
-          onClick={() =>
-            runAction(
-              "Clearing simulated tracker alerts",
-              () => requestJson("/api/radar/alerts", { method: "DELETE" }),
-              { success: "Simulated tracker alerts cleared" }
-            )
-          }
-        >
-          <Trash2 size={14} />
-          {busyLabel === "Clearing simulated tracker alerts" ? "Clearing" : "Clear Test Alerts"}
         </button>
         <button
           className="mini-action"
