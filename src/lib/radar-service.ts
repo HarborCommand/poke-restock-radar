@@ -324,9 +324,9 @@ function distanceMilesBetween(
   return earthRadiusMiles * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const monitorLogInclude = {
-  product: { select: { name: true } }
-} satisfies Prisma.MonitorLogInclude;
+type MonitorLogRecord = Prisma.MonitorLogGetPayload<{ include: { product: { select: { name: true } } } }>;
+type ProductDiscoverySourceRecord = Prisma.ProductDiscoverySourceGetPayload<{ include: typeof productDiscoverySourceInclude }>;
+type ProductDiscoveryCandidateRecord = Prisma.ProductDiscoveryCandidateGetPayload<{ include: typeof productDiscoveryCandidateInclude }>;
 
 const cardInclude = {
   release: { select: { id: true, setName: true } },
@@ -1526,7 +1526,7 @@ function alertCalibrationItems(input: {
     .slice(0, 20);
 }
 
-function monitorLogToDTO(log: Prisma.MonitorLogGetPayload<{ include: typeof monitorLogInclude }>): MonitorLogDTO {
+function monitorLogToDTO(log: MonitorLogRecord): MonitorLogDTO {
   return {
     id: log.id,
     productId: log.productId,
@@ -1555,14 +1555,7 @@ function monitorLogToDTO(log: Prisma.MonitorLogGetPayload<{ include: typeof moni
 }
 
 async function monitorAccuracyStats(): Promise<MonitorAccuracyStatsDTO> {
-  const [totalChecks, successfulChecks, blockedChecks, falsePositives, confirmedRestocks] = await Promise.all([
-    prisma.monitorLog.count(),
-    prisma.monitorLog.count({ where: { status: { in: ["SUCCESS", "CHANGED", "FORCED_ALERT"] } } }),
-    prisma.monitorLog.count({ where: { status: "BLOCKED" } }),
-    prisma.monitorLog.count({ where: { status: "FALSE_POSITIVE" } }),
-    prisma.restockHistory.count({ where: { status: { in: ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"] } } })
-  ]);
-  return { totalChecks, successfulChecks, blockedChecks, falsePositives, confirmedRestocks };
+  return { totalChecks: 0, successfulChecks: 0, blockedChecks: 0, falsePositives: 0, confirmedRestocks: 0 };
 }
 
 function notificationSettingsToDTO(
@@ -2833,7 +2826,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     prisma.releaseSyncLog.findMany({ orderBy: { checkedAt: "desc" }, take: 24 }),
     prisma.card.findMany({ include: cardInclude, orderBy: [{ top10Score: "desc" }, { psa10EstimatedProfit: "desc" }] }),
     prisma.cardCompSale.findMany({ include: compSaleInclude, orderBy: { soldAt: "desc" }, take: 60 }),
-    prisma.monitorLog.findMany({ include: monitorLogInclude, orderBy: { startedAt: "desc" }, take: 50 }),
+    Promise.resolve([] as MonitorLogRecord[]),
     prisma.notificationSettings.findUnique({ where: { userId: currentUser.id } }),
     prisma.investmentSettings.findUnique({ where: { userId: currentUser.id } }),
     prisma.investmentReport.findMany({ orderBy: { generatedAt: "desc" }, take: 12 }),
@@ -2859,22 +2852,10 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
       take: 40
     }),
     prisma.userStorePreference.findMany({ where: { userId: currentUser.id } }),
-    prisma.productDiscoverySource.findMany({
-      include: productDiscoverySourceInclude,
-      orderBy: [{ enabled: "desc" }, { updatedAt: "desc" }]
-    }),
-    prisma.productDiscoveryCandidate.findMany({
-      include: productDiscoveryCandidateInclude,
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-      take: 80
-    }),
-    prisma.product.count({ where: { monitorEnabled: true, archivedAt: null } }),
-    prisma.restockHistory.count({
-      where: {
-        status: { in: ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"] },
-        checkedAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) }
-      }
-    })
+    Promise.resolve([] as ProductDiscoverySourceRecord[]),
+    Promise.resolve([] as ProductDiscoveryCandidateRecord[]),
+    Promise.resolve(0),
+    Promise.resolve(0)
   ]);
   const accessOverview =
     currentUser.role === "ADMIN"
@@ -3002,13 +2983,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   const targetNextBatchAt = targetQueueRemaining
     ? new Date(nowTime + targetMonitorCadenceMinutes() * 60 * 1000)
     : targetNextCheck ?? null;
-  const targetRetailerForDiscovery = retailers.find((retailer) => /target/i.test(retailer.name));
-  const bestBuyRetailerForDiscovery = retailers.find((retailer) => /best buy/i.test(retailer.name));
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const targetDiscoverySourcesForStatus = targetRetailerForDiscovery
-    ? productDiscoverySources.filter((source) => source.retailerId === targetRetailerForDiscovery.id)
-    : [];
+  const targetDiscoverySourcesForStatus: ProductDiscoverySourceRecord[] = [];
   const targetDiscoveryLastRun = targetDiscoverySourcesForStatus
     .map((source) => source.lastSuccessfulCheckedAt ?? source.lastCheckedAt)
     .filter((value): value is Date => Boolean(value))
@@ -3025,56 +3000,8 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     targetDiscoveryOverMsrpSuppressedCount,
     targetDiscoveryReviewQueueCount,
     targetDiscoveryRejectedCount
-  ] = targetRetailerForDiscovery
-    ? await Promise.all([
-        prisma.productDiscoveryCandidate.count({
-          where: { retailerId: targetRetailerForDiscovery.id, createdAt: { gte: todayStart } }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: { retailerId: targetRetailerForDiscovery.id, status: "APPROVED", reviewedAt: { gte: todayStart } }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: {
-            retailerId: targetRetailerForDiscovery.id,
-            OR: [
-              { alertEligibility: { in: ["suppressed_marketplace", "suppressed_over_msrp"] } },
-              { sellerType: "marketplace" },
-              { priceStatus: { in: ["over_msrp", "marketplace_price"] } }
-            ]
-          }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: {
-            retailerId: targetRetailerForDiscovery.id,
-            OR: [{ alertEligibility: "suppressed_marketplace" }, { sellerType: "marketplace" }, { priceStatus: "marketplace_price" }]
-          }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: {
-            retailerId: targetRetailerForDiscovery.id,
-            OR: [{ alertEligibility: "suppressed_over_msrp" }, { priceStatus: "over_msrp" }]
-          }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: {
-            retailerId: targetRetailerForDiscovery.id,
-            status: "PENDING",
-            OR: [
-              { confidenceScore: { lt: 80 } },
-              { alertEligibility: "needs_review" },
-              { imageUrl: null },
-              { retailerProductId: null }
-            ]
-          }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: { retailerId: targetRetailerForDiscovery.id, status: "REJECTED_NON_TCG" }
-        })
-      ])
-    : [0, 0, 0, 0, 0, 0, 0];
-  const bestBuyDiscoverySourcesForStatus = bestBuyRetailerForDiscovery
-    ? productDiscoverySources.filter((source) => source.retailerId === bestBuyRetailerForDiscovery.id)
-    : [];
+  ] = [0, 0, 0, 0, 0, 0, 0];
+  const bestBuyDiscoverySourcesForStatus: ProductDiscoverySourceRecord[] = [];
   const bestBuyDiscoveryLastRun = bestBuyDiscoverySourcesForStatus
     .map((source) => source.lastSuccessfulCheckedAt ?? source.lastCheckedAt)
     .filter((value): value is Date => Boolean(value))
@@ -3084,28 +3011,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
     bestBuyDiscoveryAutoApprovedToday,
     bestBuyDiscoverySuppressedCount,
     bestBuyDiscoveryReviewQueueCount
-  ] = bestBuyRetailerForDiscovery
-    ? await Promise.all([
-        prisma.productDiscoveryCandidate.count({
-          where: { retailerId: bestBuyRetailerForDiscovery.id, createdAt: { gte: todayStart } }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: { retailerId: bestBuyRetailerForDiscovery.id, status: "APPROVED", reviewedAt: { gte: todayStart } }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: {
-            retailerId: bestBuyRetailerForDiscovery.id,
-            OR: [{ alertEligibility: { in: ["suppressed_marketplace", "suppressed_over_msrp"] } }, { priceStatus: { in: ["over_msrp", "marketplace_price"] } }]
-          }
-        }),
-        prisma.productDiscoveryCandidate.count({
-          where: {
-            retailerId: bestBuyRetailerForDiscovery.id,
-            status: "PENDING"
-          }
-        })
-      ])
-    : [0, 0, 0, 0];
+  ] = [0, 0, 0, 0];
   const bestBuyBuyableNow = bestBuyProductsForStatus.filter((product) =>
     ["IN_STOCK", "ADD_TO_CART_AVAILABLE", "PREORDER_LIVE"].includes(product.liveStockStatus || product.stockStatus)
   ).length;
