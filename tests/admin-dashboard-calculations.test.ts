@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   dashboardDateRange,
   dashboardInventoryCostBasis,
+  dashboardInventoryStatusRows,
   dashboardOrderNetRevenue,
   dashboardTopSellingProducts,
   summarizeDashboardAccounting,
@@ -21,7 +22,7 @@ function sale(overrides: Partial<InventorySaleDTO> = {}): InventorySaleDTO {
     itemName: overrides.itemName ?? "Test Product",
     activeQuantitySold: overrides.activeQuantitySold ?? 1,
     activeNetSale: overrides.activeNetSale ?? 10,
-    activeProfitLoss: overrides.activeProfitLoss ?? 2,
+    activeProfitLoss: "activeProfitLoss" in overrides ? overrides.activeProfitLoss! : 2,
     saleStatus: overrides.saleStatus ?? "active",
     saleReference: overrides.saleReference ?? null,
     customerEmail: overrides.customerEmail ?? null,
@@ -371,9 +372,41 @@ test("top selling products use all last-30-day transactions, not the recent five
   assert.equal(topProducts[0]?.verifiedProfit, 21);
 });
 
-test("partially refunded multi-item online order excludes a fully refunded line from product rankings", () => {
+test("top selling product profit is unknown when any included sale has unknown profit", () => {
+  const mixedProfitProduct = inventoryItem({
+    id: "mixed",
+    itemName: "Mixed Profit Product",
+    sales: [
+      sale({ id: "known-profit", inventoryItemId: "mixed", itemName: "Mixed Profit Product", activeQuantitySold: 1, activeNetSale: 20, activeProfitLoss: 5 }),
+      sale({ id: "unknown-profit", inventoryItemId: "mixed", itemName: "Mixed Profit Product", activeQuantitySold: 2, activeNetSale: 30, activeProfitLoss: null as unknown as number })
+    ]
+  });
+  const summary = summarizeDashboardAccounting(dashboard({ inventory: [mixedProfitProduct] }), dashboardDateRange("month_to_date", { now: fixedNow, timeZone: fixedTimeZone }), { now: fixedNow, timeZone: fixedTimeZone });
+  const topProducts = dashboardTopSellingProducts(summary.topSellingProductRecords, [mixedProfitProduct]);
+
+  assert.equal(topProducts[0]?.units, 3);
+  assert.equal(topProducts[0]?.revenue, 50);
+  assert.equal(topProducts[0]?.verifiedProfit, null);
+  assert.equal(topProducts[0]?.margin, null);
+});
+
+test("partially refunded multi-item online order uses linked active sale rows for product rankings", () => {
   const returned = inventoryItem({ id: "returned", itemName: "Returned Item" });
-  const kept = inventoryItem({ id: "kept", itemName: "Kept Item" });
+  const kept = inventoryItem({
+    id: "kept",
+    itemName: "Kept Item",
+    sales: [
+      sale({
+        id: "kept-active-sale",
+        inventoryItemId: "kept",
+        itemName: "Kept Item",
+        storefrontOrderNumber: "GDG-REFUND",
+        activeQuantitySold: 1,
+        activeNetSale: 30,
+        activeProfitLoss: 9
+      })
+    ]
+  });
   const summary = summarizeDashboardAccounting(
     dashboard({
       orders: [
@@ -398,10 +431,44 @@ test("partially refunded multi-item online order excludes a fully refunded line 
   const topProducts = dashboardTopSellingProducts(summary.topSellingProductRecords, [returned, kept]);
 
   assert.equal(summary.periodRevenue, 30);
+  assert.equal(summary.periodTransactions.length, 1);
   assert.equal(topProducts.length, 1);
   assert.equal(topProducts[0]?.key, "kept");
   assert.equal(topProducts[0]?.units, 1);
-  assert.equal(topProducts[0]?.verifiedProfit, null);
+  assert.equal(topProducts[0]?.revenue, 30);
+  assert.equal(topProducts[0]?.verifiedProfit, 9);
+});
+
+test("partially refunded multi-item online order without linked active rows stays in accounting but is excluded from product rankings", () => {
+  const returned = inventoryItem({ id: "returned", itemName: "Returned Item" });
+  const kept = inventoryItem({ id: "kept", itemName: "Kept Item" });
+  const summary = summarizeDashboardAccounting(
+    dashboard({
+      orders: [
+        order({
+          id: "partial-refund-no-linked-sales",
+          orderNumber: "GDG-NO-LINK",
+          subtotal: 50,
+          total: 50,
+          refundedAmount: 20,
+          netProfit: 8,
+          items: [
+            line({ id: "returned-line", inventoryItemId: "returned", publicTitle: "Returned Item", quantity: 1, lineTotal: 20, profitLoss: 6 }),
+            line({ id: "kept-line", inventoryItemId: "kept", publicTitle: "Kept Item", quantity: 1, lineTotal: 30, profitLoss: 9 })
+          ]
+        })
+      ],
+      inventory: [returned, kept]
+    }),
+    dashboardDateRange("month_to_date", { now: fixedNow, timeZone: fixedTimeZone }),
+    { now: fixedNow, timeZone: fixedTimeZone }
+  );
+  const topProducts = dashboardTopSellingProducts(summary.topSellingProductRecords, [returned, kept]);
+
+  assert.equal(summary.periodTransactions.length, 1);
+  assert.equal(summary.periodRevenue, 30);
+  assert.equal(summary.periodVerifiedProfit, 8);
+  assert.equal(topProducts.length, 0);
 });
 
 test("dashboard inventory value preserves a legitimate zero FIFO cost basis", () => {
@@ -414,6 +481,27 @@ test("dashboard inventory value preserves a legitimate zero FIFO cost basis", ()
   });
 
   assert.equal(value, 0);
+});
+
+test("inventory status uses storefront available quantity for listed products and on-hand quantity for private inventory", () => {
+  const listedSoldOut = inventoryItem({ id: "listed-sold-out", itemName: "Listed Sold Out", quantityOwned: 5, availableForSale: 0, publicImages: ["image.jpg"] });
+  const listedLowOne = inventoryItem({ id: "listed-low-one", itemName: "Listed Low One", quantityOwned: 5, availableForSale: 1, publicImages: ["image.jpg"] });
+  const listedLowTwo = inventoryItem({ id: "listed-low-two", itemName: "Listed Low Two", quantityOwned: 5, availableForSale: 2, publicImages: ["image.jpg"] });
+  const privateLowOnHand = inventoryItem({ id: "private-low-on-hand", itemName: "Private Low On Hand", publishToStore: false, quantityOwned: 1, availableForSale: 0 });
+  const rows = dashboardInventoryStatusRows([listedSoldOut, listedLowOne, listedLowTwo, privateLowOnHand]);
+  const byId = new Map(rows.map((row) => [row.item.id, row]));
+  const health = summarizeDashboardStorefrontHealth([listedSoldOut, listedLowOne, listedLowTwo, privateLowOnHand]);
+
+  assert.equal(byId.get("listed-sold-out")?.quantity, 0);
+  assert.equal(byId.get("listed-sold-out")?.status, "Out of Stock");
+  assert.equal(byId.get("listed-low-one")?.quantity, 1);
+  assert.equal(byId.get("listed-low-one")?.status, "Low Stock");
+  assert.equal(byId.get("listed-low-two")?.quantity, 2);
+  assert.equal(byId.get("listed-low-two")?.status, "Low Stock");
+  assert.equal(byId.get("private-low-on-hand")?.quantity, 1);
+  assert.equal(byId.get("private-low-on-hand")?.status, "Low Stock");
+  assert.equal(health.outOfStock, 1);
+  assert.equal(health.lowStock, 2);
 });
 
 test("dashboard month boundaries are deterministic in the configured business time zone", () => {

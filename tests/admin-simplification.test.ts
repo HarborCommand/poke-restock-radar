@@ -106,6 +106,9 @@ test("dashboard emphasizes ecommerce operations and keeps Quick Stock accessible
   assert.match(dashboardPanel, /dashboardActionItems\(\{[\s\S]*ordersToShip[\s\S]*pickupOrders[\s\S]*pendingPayments[\s\S]*refundReturns[\s\S]*productsOutOfStock[\s\S]*lowStockProducts[\s\S]*missingPrice[\s\S]*missingImage/s);
   assert.match(dashboardPanel, /dashboardInventoryStatusRows\(dashboard\.inventory\)/);
   assert.match(dashboardPanel, /dashboardTopSellingProducts\(accounting\.topSellingProductRecords, dashboard\.inventory\)/);
+  assert.match(dashboardPanel, /aria-label="Open alerts"/);
+  assert.doesNotMatch(dashboardPanel, /usefulAlertCount|unread alert|Math\.min\(usefulAlertCount/);
+  assert.match(dashboardPanel, /product\.margin === null \? "Unknown" : percent\(product\.margin\)/);
   assert.doesNotMatch(dashboardPanel, /Active Alerts|Recent Alerts|Latest restock|release-source|missing market|Market warnings|Release Planning|Release alerts|Release Radar|Live Drops|watched retailer|scanner status|monitor logs|restock history|radar accuracy/i);
   assert.doesNotMatch(navConfig, /Quick Stock/, "Quick Stock should not be a separate sidebar destination");
 });

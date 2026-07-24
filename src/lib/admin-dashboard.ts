@@ -91,6 +91,7 @@ export type DashboardStorefrontHealth = {
 
 export type DashboardStatusRow = {
   item: InventoryItemDTO;
+  quantity: number;
   status: "Out of Stock" | "Low Stock" | "Missing Price" | "Missing Image" | "In Stock";
   tone: "good" | "watch" | "bad" | "neutral";
 };
@@ -259,7 +260,9 @@ function orderAccountingRecord(order: StorefrontOrderDTO): DashboardAccountingRe
 }
 
 function orderProductSaleRecords(order: StorefrontOrderDTO): DashboardProductSaleRecord[] {
-  let remainingRefundCents = dashboardOrderRefundedMerchandiseCents(order);
+  const refundedMerchandiseCents = dashboardOrderRefundedMerchandiseCents(order);
+  if (refundedMerchandiseCents > 0 && order.items.length > 1) return [];
+  let remainingRefundCents = refundedMerchandiseCents;
   return order.items.map((item, index): DashboardProductSaleRecord | null => {
     const lineCents = centsFromMoney(item.lineTotal);
     const refundForLineCents = Math.min(remainingRefundCents, lineCents);
@@ -277,7 +280,7 @@ function orderProductSaleRecords(order: StorefrontOrderDTO): DashboardProductSal
       quantity: item.quantity,
       revenue: moneyFromCents(netLineCents),
       // Product rankings stay item-level. Order-level netProfit is not allocated across products.
-      verifiedProfit: remainingRefundCents > 0 || dashboardOrderRefundedMerchandiseCents(order) > 0 ? null : finiteNumber(item.profitLoss),
+      verifiedProfit: refundedMerchandiseCents > 0 ? null : finiteNumber(item.profitLoss),
       sourceOrderNumber: order.orderNumber,
       sourceCheckoutId: order.id
     };
@@ -319,12 +322,12 @@ function posAccountingRecord(key: string, sales: Array<{ sale: InventorySaleDTO;
   };
 }
 
-function posProductSaleRecord(sale: InventorySaleDTO, item: InventoryItemDTO): DashboardProductSaleRecord {
+function saleProductSaleRecord(sale: InventorySaleDTO, item: InventoryItemDTO, channel: DashboardTransactionChannel): DashboardProductSaleRecord {
   const key = posCheckoutKey(sale);
   return {
     id: `sale-${sale.id}`,
     canonicalId: `sale:${sale.id}`,
-    channel: "pos",
+    channel,
     inventoryItemId: sale.inventoryItemId,
     productName: sale.itemName,
     imageUrl: dashboardInventoryPrimaryImage(item),
@@ -335,6 +338,10 @@ function posProductSaleRecord(sale: InventorySaleDTO, item: InventoryItemDTO): D
     sourceOrderNumber: sale.storefrontOrderNumber,
     sourceCheckoutId: key
   };
+}
+
+function posProductSaleRecord(sale: InventorySaleDTO, item: InventoryItemDTO): DashboardProductSaleRecord {
+  return saleProductSaleRecord(sale, item, "pos");
 }
 
 function sortTransactionsNewestFirst(a: DashboardAccountingRecord | DashboardProductSaleRecord, b: DashboardAccountingRecord | DashboardProductSaleRecord) {
@@ -375,14 +382,29 @@ export function dashboardEligibleProductSaleRecords(dashboard: Pick<DashboardDTO
   const eligibleOrders = dashboard.storefrontOrders.filter(dashboardOrderCountsAsRevenue);
   const orderNumbers = new Set(eligibleOrders.map((order) => order.orderNumber).filter(Boolean));
   const records: DashboardProductSaleRecord[] = [];
+  const linkedSalesByOrderNumber = new Map<string, Array<{ sale: InventorySaleDTO; item: InventoryItemDTO }>>();
 
-  for (const order of eligibleOrders) records.push(...orderProductSaleRecords(order));
   for (const item of dashboard.inventory) {
     for (const sale of item.sales) {
       if (!dashboardSaleCountsAsRevenue(sale)) continue;
-      if (sale.storefrontOrderNumber && orderNumbers.has(sale.storefrontOrderNumber)) continue;
+      if (sale.storefrontOrderNumber && orderNumbers.has(sale.storefrontOrderNumber)) {
+        const linkedRows = linkedSalesByOrderNumber.get(sale.storefrontOrderNumber) ?? [];
+        linkedRows.push({ sale, item });
+        linkedSalesByOrderNumber.set(sale.storefrontOrderNumber, linkedRows);
+        continue;
+      }
       records.push(posProductSaleRecord(sale, item));
     }
+  }
+
+  for (const order of eligibleOrders) {
+    const linkedRows = order.orderNumber ? linkedSalesByOrderNumber.get(order.orderNumber) ?? [] : [];
+    const hasRefundedMerchandise = dashboardOrderRefundedMerchandiseCents(order) > 0;
+    if (hasRefundedMerchandise && order.items.length > 1) {
+      records.push(...linkedRows.map(({ sale, item }) => saleProductSaleRecord(sale, item, "online")));
+      continue;
+    }
+    records.push(...orderProductSaleRecords(order));
   }
 
   return records.sort(sortTransactionsNewestFirst);
@@ -444,7 +466,7 @@ export function dashboardTopSellingProducts(transactions: DashboardProductSaleRe
   return [...byProduct.values()]
     .map((product): DashboardTopProduct => {
       const inventoryMatch = inventory.find((item) => item.id === product.key);
-      const verifiedProfit = product.unknownProfitCount > 0 && product.profit === 0 ? null : product.profit;
+      const verifiedProfit = product.unknownProfitCount > 0 ? null : product.profit;
       return {
         ...product,
         imageUrl: product.imageUrl ?? (inventoryMatch ? dashboardInventoryPrimaryImage(inventoryMatch) : null),
@@ -496,6 +518,11 @@ export function dashboardStorefrontAvailableQuantity(item: Pick<InventoryItemDTO
   return Math.max(0, Math.min(item.quantityOwned, item.availableForSale ?? item.quantityOwned));
 }
 
+function dashboardInventoryStatusQuantity(item: Pick<InventoryItemDTO, "availableForSale" | "publishToStore" | "quantityOwned" | "storeStatus">) {
+  if (item.publishToStore && ["active", "sold_out"].includes(item.storeStatus)) return dashboardStorefrontAvailableQuantity(item);
+  return Math.max(0, item.quantityOwned);
+}
+
 export function summarizeDashboardStorefrontHealth(items: InventoryItemDTO[]): DashboardStorefrontHealth {
   const activeProducts = dashboardActiveStorefrontProducts(items);
   return {
@@ -513,22 +540,27 @@ export function summarizeDashboardStorefrontHealth(items: InventoryItemDTO[]): D
 
 export function dashboardInventoryStatusRows(items: InventoryItemDTO[]): DashboardStatusRow[] {
   return [...items]
-    .filter((item) => item.quantityOwned <= 0 || item.quantityOwned <= 2 || item.publishToStore)
+    .filter((item) => {
+      const statusQuantity = dashboardInventoryStatusQuantity(item);
+      return statusQuantity <= 0 || statusQuantity <= 2 || item.publishToStore;
+    })
     .sort((a, b) => {
       const priority = (item: InventoryItemDTO) => {
-        if (item.quantityOwned <= 0 || (item.publishToStore && item.storeStatus === "sold_out")) return 0;
-        if (item.quantityOwned <= 2) return 1;
+        const statusQuantity = dashboardInventoryStatusQuantity(item);
+        if (statusQuantity <= 0 || (item.publishToStore && item.storeStatus === "sold_out")) return 0;
+        if (statusQuantity <= 2) return 1;
         if (item.publishToStore && (typeof item.publicPrice !== "number" || item.publicPrice <= 0)) return 2;
         if (item.publishToStore && !dashboardInventoryPrimaryImage(item)) return 3;
         return 4;
       };
-      return priority(a) - priority(b) || a.quantityOwned - b.quantityOwned || a.itemName.localeCompare(b.itemName);
+      return priority(a) - priority(b) || dashboardInventoryStatusQuantity(a) - dashboardInventoryStatusQuantity(b) || a.itemName.localeCompare(b.itemName);
     })
     .map((item) => {
-      if (item.quantityOwned <= 0 || (item.publishToStore && item.storeStatus === "sold_out")) return { item, status: "Out of Stock", tone: "bad" };
-      if (item.quantityOwned <= 2) return { item, status: "Low Stock", tone: "watch" };
-      if (item.publishToStore && (typeof item.publicPrice !== "number" || item.publicPrice <= 0)) return { item, status: "Missing Price", tone: "bad" };
-      if (item.publishToStore && !dashboardInventoryPrimaryImage(item)) return { item, status: "Missing Image", tone: "neutral" };
-      return { item, status: "In Stock", tone: "good" };
+      const quantity = dashboardInventoryStatusQuantity(item);
+      if (quantity <= 0 || (item.publishToStore && item.storeStatus === "sold_out")) return { item, quantity, status: "Out of Stock", tone: "bad" };
+      if (quantity <= 2) return { item, quantity, status: "Low Stock", tone: "watch" };
+      if (item.publishToStore && (typeof item.publicPrice !== "number" || item.publicPrice <= 0)) return { item, quantity, status: "Missing Price", tone: "bad" };
+      if (item.publishToStore && !dashboardInventoryPrimaryImage(item)) return { item, quantity, status: "Missing Image", tone: "neutral" };
+      return { item, quantity, status: "In Stock", tone: "good" };
     });
 }

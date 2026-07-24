@@ -3020,7 +3020,6 @@ function DashboardPanel({
     missingImage: storefrontHealth.missingImage,
     missingShipping: storefrontHealth.missingShipping
   });
-  const usefulAlertCount = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert) && !alert.read).length;
   const recentRows = accounting.recentTransactions;
   const inventoryRows = dashboardInventoryStatusRows(dashboard.inventory).slice(0, 5);
   const topProducts = dashboardTopSellingProducts(accounting.topSellingProductRecords, dashboard.inventory).slice(0, 3);
@@ -3049,9 +3048,8 @@ function DashboardPanel({
               <option value="last_30_days">Last 30 Days</option>
             </select>
           </label>
-          <button className="commerce-icon-button" type="button" aria-label={`${usefulAlertCount} unread alert${usefulAlertCount === 1 ? "" : "s"}`} onClick={() => setActiveTab("alerts")}>
+          <button className="commerce-icon-button" type="button" aria-label="Open alerts" onClick={() => setActiveTab("alerts")}>
             <Bell size={18} />
-            {usefulAlertCount ? <span>{Math.min(usefulAlertCount, 9)}</span> : null}
           </button>
           <button className="commerce-user-menu" type="button" aria-label={`Signed in as ${userLabel}`}>
             <span>{userLabel.slice(0, 1).toUpperCase()}</span>
@@ -3163,7 +3161,7 @@ function DashboardPanel({
                   <strong>{row.item.itemName}</strong>
                   <small>{dashboardInventoryIdentifier(row.item)}</small>
                 </span>
-                <b>{row.item.quantityOwned}</b>
+                <b>{row.quantity}</b>
                 <em className={`commerce-badge ${row.tone}`}>{row.status}</em>
               </button>
             )) : <EmptyState icon={Boxes} title="No inventory items yet" detail="Add a product to start managing stock." />}
@@ -3192,7 +3190,7 @@ function DashboardPanel({
                   <span role="cell">{product.units}</span>
                   <span role="cell">{money(product.revenue)}</span>
                   <span role="cell" className={product.verifiedProfit === null ? "neutral" : product.verifiedProfit >= 0 ? "good" : "bad"}>{product.verifiedProfit === null ? "Unknown" : money(product.verifiedProfit)}</span>
-                  <span role="cell">{percent(product.margin)}</span>
+                  <span role="cell">{product.margin === null ? "Unknown" : percent(product.margin)}</span>
                 </div>
               ))}
             </div>
