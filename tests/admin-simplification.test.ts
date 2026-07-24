@@ -26,7 +26,7 @@ function sourceSlice(source: string, start: string, end: string) {
 }
 
 const navConfig = sourceSlice(app, "const navSectionLabels", "type NavTab");
-const dashboardPanel = sourceSlice(app, "function DashboardPanel", "function DashboardMetricCard");
+const dashboardPanel = sourceSlice(app, "function DashboardPanel", "type CommerceTone");
 const alertPanelVisible = sourceSlice(app, "  if (view) return (", "  function runTargetBatch");
 const adminPanel = sourceSlice(app, "function AdminControlPanel", "function AdminActionCard");
 const adminHealthPanel = sourceSlice(app, "function AdminHealthPanel", "function NotificationSettingsPanel");
@@ -97,13 +97,15 @@ test("dashboard emphasizes ecommerce operations and keeps Quick Stock accessible
   }
 
   assert.match(dashboardPanel, /setActiveTab\("pos"\)/, "New POS Sale opens POS");
-  assert.match(dashboardPanel, /setActiveTab\("inventory"\)/, "Quick Stock and Add Product open inventory workflow");
+  assert.match(dashboardPanel, /openInventoryIntent\("quick-stock"\)/, "Quick Stock opens the inventory quick-stock workflow");
+  assert.match(dashboardPanel, /openInventoryIntent\("add-product"\)/, "Add Product opens the add-product workflow");
   assert.match(dashboardPanel, /setActiveTab\("orders"\)/, "Manage Orders opens Orders");
-  assert.match(dashboardPanel, /href="https:\/\/www\.gamedaygrabs\.com"[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/, "View Storefront uses the public storefront URL safely");
-  assert.match(dashboardPanel, /dashboardRecentSalesAndOrders\(selectedOnlineOrders, selectedSales\)/, "Recent Sales & Orders combines eligible POS and online records");
+  assert.match(dashboardPanel, /href=\{GAMEDAYGRABS_CANONICAL_PUBLIC_URL\}[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/, "View Storefront uses the public storefront URL safely");
+  assert.match(dashboardPanel, /summarizeDashboardAccounting\(dashboard, dateRange\)/, "Dashboard accounting uses the centralized complete eligible transaction set");
+  assert.match(dashboardPanel, /const recentRows = accounting\.recentTransactions/, "Recent Sales & Orders uses the display-only recent slice");
   assert.match(dashboardPanel, /dashboardActionItems\(\{[\s\S]*ordersToShip[\s\S]*pickupOrders[\s\S]*pendingPayments[\s\S]*refundReturns[\s\S]*productsOutOfStock[\s\S]*lowStockProducts[\s\S]*missingPrice[\s\S]*missingImage/s);
   assert.match(dashboardPanel, /dashboardInventoryStatusRows\(dashboard\.inventory\)/);
-  assert.match(dashboardPanel, /dashboardTopSellingProducts\(activeOnlineOrders, activeSales, dashboard\.inventory, dashboardDateRange\("last_30_days"\)\)/);
+  assert.match(dashboardPanel, /dashboardTopSellingProducts\(accounting\.topSellingTransactions, dashboard\.inventory\)/);
   assert.doesNotMatch(dashboardPanel, /Active Alerts|Recent Alerts|Latest restock|release-source|missing market|Market warnings|Release Planning|Release alerts|Release Radar|Live Drops|watched retailer|scanner status|monitor logs|restock history|radar accuracy/i);
   assert.doesNotMatch(navConfig, /Quick Stock/, "Quick Stock should not be a separate sidebar destination");
 });
