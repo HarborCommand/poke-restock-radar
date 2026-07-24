@@ -127,13 +127,8 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
 
   if (database.ok) {
     try {
-      const now = new Date();
       const configuredAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-      const [lastMonitorRun, dueProductCount, lastAlert, unreadCount, adminUserCount, configuredAdminRows, lastAdminLogin] = await Promise.all([
-        prisma.monitorLog.findFirst({ orderBy: { startedAt: "desc" } }),
-        prisma.product.count({
-          where: { monitorEnabled: true, OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: now } }] }
-        }),
+      const [lastAlert, unreadCount, adminUserCount, configuredAdminRows, lastAdminLogin] = await Promise.all([
         prisma.alert.findFirst({ orderBy: { timestamp: "desc" } }),
         prisma.alert.count({ where: { read: false } }),
         prisma.user.count({ where: { role: "ADMIN" } }),
@@ -149,14 +144,6 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
         })
       ]);
 
-      monitor = {
-        ...monitor,
-        lastRunAt: lastMonitorRun?.startedAt.toISOString() ?? null,
-        lastStatus: lastMonitorRun?.status ?? null,
-        lastSummary: lastMonitorRun?.changeSummary ? sanitizeLogText(lastMonitorRun.changeSummary) : null,
-        lastError: lastMonitorRun?.error ? sanitizeLogText(lastMonitorRun.error) : null,
-        dueProductCount
-      };
       alerts = {
         lastAlertAt: lastAlert?.timestamp.toISOString() ?? null,
         lastAlertTitle: lastAlert?.title ?? null,

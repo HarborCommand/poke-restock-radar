@@ -1703,6 +1703,25 @@ test("restock monitor schedule and exposed execution routes are removed", () => 
   assert.doesNotMatch(env, /PRODUCT_MONITOR_CRON_ENABLED|TARGET_MONITOR_CRON_ENABLED|TARGET_DISCOVERY_AUTO_ENABLED|BESTBUY_DISCOVERY_ENABLED/);
 });
 
+test("normal health and dashboard loads do not query retired monitor or discovery tables", () => {
+  const health = fs.readFileSync(new URL("../src/lib/health.ts", import.meta.url), "utf8");
+  const service = fs.readFileSync(new URL("../src/lib/radar-service.ts", import.meta.url), "utf8");
+  const getAppHealth = sourceSlice(health, "export async function getAppHealth");
+  const listDashboard = sourceSlice(service, "export async function listDashboard", "export async function createProduct");
+  const monitorAccuracy = sourceSlice(service, "async function monitorAccuracyStats", "function notificationSettingsToDTO");
+
+  assert.doesNotMatch(getAppHealth, /prisma\.monitorLog\./);
+  assert.doesNotMatch(getAppHealth, /monitorEnabled:\s*true/);
+  assert.match(listDashboard, /Promise\.resolve\(\[\] as MonitorLogRecord\[\]\)/);
+  assert.match(listDashboard, /Promise\.resolve\(\[\] as ProductDiscoverySourceRecord\[\]\)/);
+  assert.match(listDashboard, /Promise\.resolve\(\[\] as ProductDiscoveryCandidateRecord\[\]\)/);
+  assert.doesNotMatch(listDashboard, /prisma\.monitorLog\.findMany/);
+  assert.doesNotMatch(listDashboard, /prisma\.productDiscoverySource\.findMany/);
+  assert.doesNotMatch(listDashboard, /prisma\.productDiscoveryCandidate\.findMany/);
+  assert.doesNotMatch(listDashboard, /prisma\.restockHistory\.count/);
+  assert.doesNotMatch(monitorAccuracy, /prisma\.monitorLog\.count|prisma\.restockHistory\.count/);
+});
+
 test("retired monitor routes cannot perform monitoring while shared routes remain", () => {
   const removedRoutes = [
     "../src/app/api/radar/monitor/cron/route.ts",
