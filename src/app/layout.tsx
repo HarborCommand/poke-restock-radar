@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  applicationName: "Poke Restock Radar",
-  title: "Poke Restock Radar",
-  description: "Private Pokémon TCG restock, release, store, and grading opportunity radar.",
+  applicationName: "GameDayGrabs",
+  title: "GameDayGrabs Admin",
+  description: "Private GameDayGrabs ecommerce operations workspace.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    title: "Poke Radar",
+    title: "GameDayGrabs",
     statusBarStyle: "black-translucent"
   }
 };

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(path.join(root, "src/components/RadarApp.tsx"), "utf8");
+const rootLayout = readFileSync(path.join(root, "src/app/layout.tsx"), "utf8");
 const homePage = readFileSync(path.join(root, "src/app/page.tsx"), "utf8");
 const loginPage = readFileSync(path.join(root, "src/app/login/page.tsx"), "utf8");
 const dashboardPage = readFileSync(path.join(root, "src/app/dashboard/page.tsx"), "utf8");
@@ -56,6 +57,10 @@ test("GameDayGrabs Admin branding and ecommerce icon appear on private applicati
   assert.match(app, /<h1>GameDayGrabs Admin<\/h1>/);
   assert.match(app, /className="brand-lockup sidebar-brand"[\s\S]*<Store size=\{19\}/);
   assert.match(app, /className="brand-mark large"[\s\S]*<Store size=\{30\}/);
+  assert.match(rootLayout, /applicationName: "GameDayGrabs"/);
+  assert.match(rootLayout, /title: "GameDayGrabs Admin"/);
+  assert.match(rootLayout, /appleWebApp:[\s\S]*title: "GameDayGrabs"/);
+  assert.doesNotMatch(rootLayout, /Poke Radar|Poke Restock Radar|Restock Radar|release, store, and grading opportunity radar/i);
   assert.match(loginPage + dashboardPage + privateAppPage + adminPage, /GameDayGrabs Admin/);
   assert.match(homePage, /title: "GameDayGrabs Admin"/);
   assert.match(homePage, /robots:\s*\{\s*index: false,\s*follow: false/s, "raw private host remains noindexed");
