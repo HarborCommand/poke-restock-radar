@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   dashboardDateRange,
+  dashboardInventoryCostBasis,
+  dashboardOrderNetRevenue,
   dashboardTopSellingProducts,
   summarizeDashboardAccounting,
   summarizeDashboardOperations,
@@ -70,6 +72,12 @@ function order(overrides: Partial<StorefrontOrderDTO> = {}): StorefrontOrderDTO 
     paidAt: overrides.paidAt ?? "2026-07-24T14:00:00.000Z",
     createdAt: overrides.createdAt ?? "2026-07-24T13:30:00.000Z",
     shippedAt: overrides.shippedAt ?? null,
+    subtotal: overrides.subtotal ?? 10,
+    shippingCharged: overrides.shippingCharged ?? 0,
+    tax: overrides.tax ?? 0,
+    totalCents: overrides.totalCents ?? null,
+    taxCents: overrides.taxCents ?? null,
+    refundedTaxCents: overrides.refundedTaxCents ?? null,
     total: overrides.total ?? 10,
     refundedAmount: overrides.refundedAmount ?? 0,
     netProfit: overrides.netProfit ?? 2,
@@ -100,6 +108,26 @@ function dashboard(input: { orders?: StorefrontOrderDTO[]; inventory?: Inventory
   };
 }
 
+function line(overrides: Partial<StorefrontOrderDTO["items"][number]> = {}): StorefrontOrderDTO["items"][number] {
+  return {
+    id: overrides.id ?? "line-1",
+    inventoryItemId: overrides.inventoryItemId ?? "item-1",
+    publicTitle: overrides.publicTitle ?? "Test Product",
+    publicSlug: overrides.publicSlug ?? null,
+    imageUrl: overrides.imageUrl ?? null,
+    upc: overrides.upc ?? null,
+    sku: overrides.sku ?? null,
+    dpci: overrides.dpci ?? null,
+    tcin: overrides.tcin ?? null,
+    quantity: overrides.quantity ?? 1,
+    unitPrice: overrides.unitPrice ?? 10,
+    lineTotal: overrides.lineTotal ?? 10,
+    costBasis: overrides.costBasis ?? 5,
+    profitLoss: overrides.profitLoss ?? 2,
+    ...overrides
+  } as StorefrontOrderDTO["items"][number];
+}
+
 test("dashboard accounting totals use all eligible transactions before applying recent display limit", () => {
   const sales = Array.from({ length: 7 }, (_, index) => sale({
     id: `sale-${index}`,
@@ -124,15 +152,14 @@ test("dashboard accounting includes revenue with unknown cost basis without inve
         id: "order-unknown-profit",
         netProfit: null as unknown as number,
         items: [
-        {
-          id: "line-unknown",
-          inventoryItemId: "item-1",
-          publicTitle: "Unknown Cost Product",
-          imageUrl: null,
-          quantity: 1,
-          lineTotal: 25,
-          profitLoss: null as unknown as number
-        } as StorefrontOrderDTO["items"][number]
+          line({
+            id: "line-unknown",
+            inventoryItemId: "item-1",
+            publicTitle: "Unknown Cost Product",
+            quantity: 1,
+            lineTotal: 25,
+            profitLoss: null as unknown as number
+          })
         ],
         total: 25
       })
@@ -153,15 +180,14 @@ test("dashboard accounting does not double count POS sale rows linked to an elig
       total: 30,
       netProfit: 9,
       items: [
-        {
-          id: "line-gdg-200",
-          inventoryItemId: "item-1",
-          publicTitle: "Test Product",
-          imageUrl: null,
-          quantity: 1,
-          lineTotal: 30,
-          profitLoss: 9
-        } as StorefrontOrderDTO["items"][number]
+          line({
+            id: "line-gdg-200",
+            inventoryItemId: "item-1",
+            publicTitle: "Test Product",
+            quantity: 1,
+            lineTotal: 30,
+            profitLoss: 9
+          })
       ]
     })],
     inventory: [
@@ -178,6 +204,97 @@ test("dashboard accounting does not double count POS sale rows linked to an elig
   assert.equal(summary.periodRevenue, 42);
   assert.equal(summary.periodVerifiedProfit, 13);
   assert.equal(summary.periodTransactions.length, 2);
+});
+
+test("multi-item online order counts and displays once using order-level net profit", () => {
+  const input = dashboard({
+    orders: [
+      order({
+        id: "order-three-items",
+        orderNumber: "GDG-300",
+        subtotal: 60,
+        shippingCharged: 5,
+        tax: 4,
+        total: 69,
+        netProfit: 21,
+        itemCount: 3,
+        items: [
+          line({ id: "line-a", inventoryItemId: "a", publicTitle: "Alpha Booster Box", quantity: 1, lineTotal: 20, profitLoss: 7 }),
+          line({ id: "line-b", inventoryItemId: "b", publicTitle: "Beta ETB", quantity: 1, lineTotal: 30, profitLoss: 9 }),
+          line({ id: "line-c", inventoryItemId: "c", publicTitle: "Gamma Bundle", quantity: 1, lineTotal: 10, profitLoss: 5 })
+        ]
+      })
+    ],
+    inventory: [inventoryItem()]
+  });
+  const summary = summarizeDashboardAccounting(input, dashboardDateRange("month_to_date", { now: fixedNow, timeZone: fixedTimeZone }), { now: fixedNow, timeZone: fixedTimeZone });
+
+  assert.equal(summary.todayOnlineCount, 1);
+  assert.equal(summary.periodTransactions.length, 1);
+  assert.equal(summary.recentTransactions.length, 1);
+  assert.equal(summary.recentTransactions[0]?.productName, "Alpha Booster Box +2 more");
+  assert.equal(summary.periodRevenue, 65);
+  assert.equal(summary.periodVerifiedProfit, 21);
+});
+
+test("multi-row POS checkout groups by saleReference for counts recent row revenue and profit", () => {
+  const input = dashboard({
+    inventory: [
+      inventoryItem({
+        id: "a",
+        itemName: "Alpha",
+        sales: [sale({ id: "pos-a", saleReference: "POS-777", inventoryItemId: "a", itemName: "Alpha", activeNetSale: 10, activeProfitLoss: 2 })]
+      }),
+      inventoryItem({
+        id: "b",
+        itemName: "Beta",
+        sales: [sale({ id: "pos-b", saleReference: "POS-777", inventoryItemId: "b", itemName: "Beta", activeNetSale: 15, activeProfitLoss: 3 })]
+      })
+    ]
+  });
+  const summary = summarizeDashboardAccounting(input, dashboardDateRange("month_to_date", { now: fixedNow, timeZone: fixedTimeZone }), { now: fixedNow, timeZone: fixedTimeZone });
+
+  assert.equal(summary.todayPosCount, 1);
+  assert.equal(summary.periodTransactions.length, 1);
+  assert.equal(summary.recentTransactions.length, 1);
+  assert.equal(summary.recentTransactions[0]?.reference, "#POS-777");
+  assert.equal(summary.recentTransactions[0]?.productName, "Alpha +1 more");
+  assert.equal(summary.periodRevenue, 25);
+  assert.equal(summary.periodVerifiedProfit, 5);
+});
+
+test("dashboard online net receipts mirror the storefront tax-excluded revenue convention", () => {
+  assert.equal(dashboardOrderNetRevenue(order({
+    subtotal: 105,
+    shippingCharged: 10,
+    tax: 8,
+    total: 118,
+    discountCents: 500,
+    refundedAmount: 0
+  })), 110);
+  assert.equal(dashboardOrderNetRevenue(order({
+    subtotal: 105,
+    shippingCharged: 10,
+    tax: 8,
+    total: 118,
+    refundedAmount: 54,
+    refundedTaxCents: 400
+  })), 60);
+  assert.equal(dashboardOrderNetRevenue(order({
+    subtotal: 105,
+    shippingCharged: 10,
+    tax: 8,
+    total: 118,
+    refundedAmount: 118,
+    refundedTaxCents: 800
+  })), 0);
+  assert.equal(dashboardOrderNetRevenue(order({
+    subtotal: 0,
+    shippingCharged: 0,
+    tax: 0,
+    total: 0,
+    refundedAmount: 0
+  })), 0);
 });
 
 test("dashboard operations count only genuinely actionable fulfillment and refund states", () => {
@@ -246,12 +363,57 @@ test("top selling products use all last-30-day transactions, not the recent five
     }))
   });
   const summary = summarizeDashboardAccounting(dashboard({ inventory: [productA, productB] }), dashboardDateRange("month_to_date", { now: fixedNow, timeZone: fixedTimeZone }), { now: fixedNow, timeZone: fixedTimeZone });
-  const topProducts = dashboardTopSellingProducts(summary.topSellingTransactions, [productA, productB]);
+  const topProducts = dashboardTopSellingProducts(summary.topSellingProductRecords, [productA, productB]);
 
   assert.equal(summary.recentTransactions.length, 5);
   assert.equal(topProducts[0]?.key, "a");
   assert.equal(topProducts[0]?.units, 7);
   assert.equal(topProducts[0]?.verifiedProfit, 21);
+});
+
+test("partially refunded multi-item online order excludes a fully refunded line from product rankings", () => {
+  const returned = inventoryItem({ id: "returned", itemName: "Returned Item" });
+  const kept = inventoryItem({ id: "kept", itemName: "Kept Item" });
+  const summary = summarizeDashboardAccounting(
+    dashboard({
+      orders: [
+        order({
+          id: "partial-refund",
+          orderNumber: "GDG-REFUND",
+          subtotal: 50,
+          total: 50,
+          refundedAmount: 20,
+          netProfit: 8,
+          items: [
+            line({ id: "returned-line", inventoryItemId: "returned", publicTitle: "Returned Item", quantity: 1, lineTotal: 20, profitLoss: 6 }),
+            line({ id: "kept-line", inventoryItemId: "kept", publicTitle: "Kept Item", quantity: 1, lineTotal: 30, profitLoss: 9 })
+          ]
+        })
+      ],
+      inventory: [returned, kept]
+    }),
+    dashboardDateRange("month_to_date", { now: fixedNow, timeZone: fixedTimeZone }),
+    { now: fixedNow, timeZone: fixedTimeZone }
+  );
+  const topProducts = dashboardTopSellingProducts(summary.topSellingProductRecords, [returned, kept]);
+
+  assert.equal(summary.periodRevenue, 30);
+  assert.equal(topProducts.length, 1);
+  assert.equal(topProducts[0]?.key, "kept");
+  assert.equal(topProducts[0]?.units, 1);
+  assert.equal(topProducts[0]?.verifiedProfit, null);
+});
+
+test("dashboard inventory value preserves a legitimate zero FIFO cost basis", () => {
+  const value = dashboardInventoryCostBasis({
+    inventorySummary: {
+      inventoryCostBasis: 0,
+      currentInventoryValue: 999
+    } as DashboardDTO["inventorySummary"],
+    inventory: [inventoryItem({ totalCost: 123 })]
+  });
+
+  assert.equal(value, 0);
 });
 
 test("dashboard month boundaries are deterministic in the configured business time zone", () => {

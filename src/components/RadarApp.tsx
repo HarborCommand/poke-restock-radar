@@ -103,6 +103,7 @@ import { normalizeStorefrontSlug } from "@/lib/storefront-slugs";
 import {
   ADMIN_DASHBOARD_BUSINESS_TIME_ZONE,
   dashboardDateRange,
+  dashboardInventoryCostBasis,
   dashboardInventoryIdentifier,
   dashboardInventoryPrimaryImage,
   dashboardInventoryStatusRows,
@@ -3006,7 +3007,7 @@ function DashboardPanel({
   const accounting = useMemo(() => summarizeDashboardAccounting(dashboard, dateRange), [dashboard, dateRange]);
   const operations = useMemo(() => summarizeDashboardOperations(dashboard.storefrontOrders), [dashboard.storefrontOrders]);
   const storefrontHealth = useMemo(() => summarizeDashboardStorefrontHealth(dashboard.inventory), [dashboard.inventory]);
-  const inventoryValue = dashboard.inventorySummary.inventoryCostBasis || dashboard.inventorySummary.currentInventoryValue || dashboard.inventory.reduce((sum, item) => sum + item.totalCost, 0);
+  const inventoryValue = dashboardInventoryCostBasis(dashboard);
   const totalUnits = dashboard.inventory.reduce((sum, item) => sum + item.quantityOwned, 0);
   const actionItems = dashboardActionItems({
     ordersToShip: operations.ordersToShip,
@@ -3022,9 +3023,9 @@ function DashboardPanel({
   const usefulAlertCount = dashboard.alerts.filter((alert) => !isTestDashboardAlert(alert) && !isDeprecatedLocalStoreAlert(alert) && !isRetiredRetailerTrackerAlert(alert) && !alert.read).length;
   const recentRows = accounting.recentTransactions;
   const inventoryRows = dashboardInventoryStatusRows(dashboard.inventory).slice(0, 5);
-  const topProducts = dashboardTopSellingProducts(accounting.topSellingTransactions, dashboard.inventory).slice(0, 3);
+  const topProducts = dashboardTopSellingProducts(accounting.topSellingProductRecords, dashboard.inventory).slice(0, 3);
   const userLabel = dashboard.currentUser.name || dashboard.currentUser.email;
-  const periodRevenueLabel = rangePreset === "month_to_date" ? "Month to Date Revenue" : "Period Revenue";
+  const periodRevenueLabel = rangePreset === "month_to_date" ? "Month to Date Net Receipts" : "Net Receipts";
   const periodProfitLabel = rangePreset === "month_to_date" ? "Verified Month to Date Profit" : "Verified Period Profit";
   const periodProfitDetail = accounting.periodUnknownProfitCount
     ? `${dateRange.label} • excludes ${accounting.periodUnknownProfitCount} item${accounting.periodUnknownProfitCount === 1 ? "" : "s"} without verified cost basis`
@@ -3062,8 +3063,8 @@ function DashboardPanel({
       </header>
 
       <section className="commerce-kpi-grid" aria-label="Financial summary">
-        <CommerceKpiCard icon={CircleDollarSign} tone="green" label="Today's Sales" value={money(accounting.todayRevenue)} detail={`${accounting.todayOnlineCount} order${accounting.todayOnlineCount === 1 ? "" : "s"} • ${accounting.todayPosCount} POS sale${accounting.todayPosCount === 1 ? "" : "s"}`} />
-        <CommerceKpiCard icon={LineChart} tone="blue" label={periodRevenueLabel} value={money(accounting.periodRevenue)} detail={dateRange.label} />
+        <CommerceKpiCard icon={CircleDollarSign} tone="green" label="Today's Net Receipts" value={money(accounting.todayRevenue)} detail={`${accounting.todayOnlineCount} order${accounting.todayOnlineCount === 1 ? "" : "s"} • ${accounting.todayPosCount} POS sale${accounting.todayPosCount === 1 ? "" : "s"} • tax excluded`} />
+        <CommerceKpiCard icon={LineChart} tone="blue" label={periodRevenueLabel} value={money(accounting.periodRevenue)} detail={`${dateRange.label} • tax excluded`} />
         <CommerceKpiCard icon={CreditCard} tone="purple" label={periodProfitLabel} value={money(accounting.periodVerifiedProfit)} detail={periodProfitDetail} />
         <CommerceKpiCard icon={Boxes} tone="orange" label="Inventory Value" value={money(inventoryValue)} detail={`${dashboard.inventory.length} products • ${totalUnits} units`} />
       </section>

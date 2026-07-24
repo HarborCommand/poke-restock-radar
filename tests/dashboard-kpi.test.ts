@@ -1520,7 +1520,7 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.doesNotMatch(storefront, /totalSpent: \{ increment: order\.total \}/);
   assert.doesNotMatch(storefront, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 
-  for (const label of ["Today's Sales", "Month to Date Revenue", "Month to Date Profit", "Inventory Value", "Orders to Ship", "Pickup Orders", "Pending Payments", "Refunds / Returns"]) {
+  for (const label of ["Today's Net Receipts", "Month to Date Net Receipts", "Verified Month to Date Profit", "Inventory Value", "Orders to Ship", "Pickup Orders", "Pending Payments", "Refunds / Returns"]) {
     assert.match(app, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing dashboard/order card ${label}`);
   }
   for (const tab of ["New", "Pickup Orders", "Pending Payment", "Paid", "Packing", "Shipped", "Invoice Requests", "Canceled / Expired"]) {

@@ -74,9 +74,9 @@ test("GameDayGrabs Admin branding and ecommerce icon appear on private applicati
 test("dashboard emphasizes ecommerce operations and keeps Quick Stock accessible", () => {
   for (const phrase of [
     "Sales, orders, inventory, and storefront operations",
-    "Today's Sales",
-    "Month to Date Revenue",
-    "Month to Date Profit",
+    "Today's Net Receipts",
+    "Month to Date Net Receipts",
+    "Verified Month to Date Profit",
     "Inventory Value",
     "Orders to Ship",
     "Pickup Orders",
@@ -105,7 +105,7 @@ test("dashboard emphasizes ecommerce operations and keeps Quick Stock accessible
   assert.match(dashboardPanel, /const recentRows = accounting\.recentTransactions/, "Recent Sales & Orders uses the display-only recent slice");
   assert.match(dashboardPanel, /dashboardActionItems\(\{[\s\S]*ordersToShip[\s\S]*pickupOrders[\s\S]*pendingPayments[\s\S]*refundReturns[\s\S]*productsOutOfStock[\s\S]*lowStockProducts[\s\S]*missingPrice[\s\S]*missingImage/s);
   assert.match(dashboardPanel, /dashboardInventoryStatusRows\(dashboard\.inventory\)/);
-  assert.match(dashboardPanel, /dashboardTopSellingProducts\(accounting\.topSellingTransactions, dashboard\.inventory\)/);
+  assert.match(dashboardPanel, /dashboardTopSellingProducts\(accounting\.topSellingProductRecords, dashboard\.inventory\)/);
   assert.doesNotMatch(dashboardPanel, /Active Alerts|Recent Alerts|Latest restock|release-source|missing market|Market warnings|Release Planning|Release alerts|Release Radar|Live Drops|watched retailer|scanner status|monitor logs|restock history|radar accuracy/i);
   assert.doesNotMatch(navConfig, /Quick Stock/, "Quick Stock should not be a separate sidebar destination");
 });

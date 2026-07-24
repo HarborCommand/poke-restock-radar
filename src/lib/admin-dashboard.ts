@@ -14,11 +14,10 @@ export type DashboardDateRange = {
 
 export type DashboardTransactionChannel = "online" | "pos";
 
-export type DashboardTransaction = {
+export type DashboardAccountingRecord = {
   id: string;
   canonicalId: string;
   channel: DashboardTransactionChannel;
-  inventoryItemId: string | null;
   productName: string;
   imageUrl: string | null;
   reference: string;
@@ -32,12 +31,29 @@ export type DashboardTransaction = {
   sourceOrderNumber: string | null;
 };
 
+export type DashboardTransaction = DashboardAccountingRecord;
+
+export type DashboardProductSaleRecord = {
+  id: string;
+  canonicalId: string;
+  channel: DashboardTransactionChannel;
+  inventoryItemId: string;
+  productName: string;
+  imageUrl: string | null;
+  occurredAt: string;
+  quantity: number;
+  revenue: number;
+  verifiedProfit: number | null;
+  sourceOrderNumber: string | null;
+  sourceCheckoutId: string;
+};
+
 export type DashboardAccountingSummary = {
-  allEligibleTransactions: DashboardTransaction[];
-  periodTransactions: DashboardTransaction[];
-  recentTransactions: DashboardTransaction[];
-  topSellingTransactions: DashboardTransaction[];
-  todayTransactions: DashboardTransaction[];
+  allEligibleTransactions: DashboardAccountingRecord[];
+  periodTransactions: DashboardAccountingRecord[];
+  recentTransactions: DashboardAccountingRecord[];
+  topSellingProductRecords: DashboardProductSaleRecord[];
+  todayTransactions: DashboardAccountingRecord[];
   periodRevenue: number;
   periodVerifiedProfit: number;
   periodUnknownProfitCount: number;
@@ -78,6 +94,12 @@ export type DashboardStatusRow = {
   status: "Out of Stock" | "Low Stock" | "Missing Price" | "Missing Image" | "In Stock";
   tone: "good" | "watch" | "bad" | "neutral";
 };
+
+export function dashboardInventoryCostBasis(dashboard: Pick<DashboardDTO, "inventorySummary" | "inventory">) {
+  const summaryCostBasis = finiteNumber(dashboard.inventorySummary.inventoryCostBasis);
+  if (summaryCostBasis !== null) return summaryCostBasis;
+  return dashboard.inventory.reduce((sum, item) => sum + item.totalCost, 0);
+}
 
 function zonedParts(value: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -150,8 +172,25 @@ function finiteNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export function dashboardOrderNetRevenue(order: Pick<StorefrontOrderDTO, "total" | "refundedAmount">) {
-  return Math.max(0, order.total - order.refundedAmount);
+function centsFromMoney(value: number | null | undefined) {
+  return Math.round((value ?? 0) * 100);
+}
+
+function moneyFromCents(value: number) {
+  return value / 100;
+}
+
+export function dashboardOrderNetRevenue(order: Pick<StorefrontOrderDTO, "total" | "totalCents" | "tax" | "taxCents" | "refundedAmount" | "refundedTaxCents">) {
+  const totalCents = order.totalCents ?? centsFromMoney(order.total);
+  const taxCents = order.taxCents ?? centsFromMoney(order.tax);
+  const refundedCents = centsFromMoney(order.refundedAmount);
+  const refundedTaxCents = order.refundedTaxCents ?? 0;
+  // Mirrors the storefront summary convention: net non-tax order receipts = total paid minus tax and non-tax refunds.
+  return moneyFromCents(Math.max(0, totalCents - taxCents - Math.max(0, refundedCents - refundedTaxCents)));
+}
+
+function dashboardOrderRefundedMerchandiseCents(order: Pick<StorefrontOrderDTO, "refundedAmount" | "refundedTaxCents">) {
+  return Math.max(0, centsFromMoney(order.refundedAmount) - (order.refundedTaxCents ?? 0));
 }
 
 export function dashboardOrderIsLocalPickup(order: Pick<StorefrontOrderDTO, "isLocalPickup" | "shippingPackageProfile" | "shippingMethodLabel">) {
@@ -191,34 +230,97 @@ export function dashboardInventoryIdentifier(item: Pick<InventoryItemDTO, "sku" 
   return item.sku ? `SKU: ${item.sku}` : item.upc ? `UPC: ${item.upc}` : item.category;
 }
 
-function orderTransactions(order: StorefrontOrderDTO): DashboardTransaction[] {
-  const revenue = dashboardOrderNetRevenue(order);
-  const orderProfit = finiteNumber(order.netProfit);
-  return order.items.map((item, index): DashboardTransaction => {
-    const revenueShare = order.total > 0 ? item.lineTotal / order.total : order.items.length > 0 ? 1 / order.items.length : 0;
-    const itemRevenue = Math.max(0, item.lineTotal - order.refundedAmount * revenueShare);
-    const itemProfit = finiteNumber(item.profitLoss);
+function orderItemSummary(order: StorefrontOrderDTO) {
+  const totalUnits = order.items.reduce((sum, item) => sum + item.quantity, 0) || order.itemCount;
+  const firstItem = order.items[0];
+  if (!firstItem) return `${totalUnits} item${totalUnits === 1 ? "" : "s"}`;
+  if (order.items.length === 1) return firstItem.publicTitle;
+  return `${firstItem.publicTitle} +${order.items.length - 1} more`;
+}
+
+function orderAccountingRecord(order: StorefrontOrderDTO): DashboardAccountingRecord {
+  const totalUnits = order.items.reduce((sum, item) => sum + item.quantity, 0) || order.itemCount;
+  return {
+    id: `order-${order.id}`,
+    canonicalId: `storefront-order:${order.id}`,
+    channel: "online",
+    productName: orderItemSummary(order),
+    imageUrl: order.items[0]?.imageUrl ?? null,
+    reference: `#${order.orderNumber}`,
+    customer: order.customerName || order.customerEmail || "Guest",
+    occurredAt: order.paidAt ?? order.createdAt,
+    quantity: totalUnits,
+    revenue: dashboardOrderNetRevenue(order),
+    verifiedProfit: finiteNumber(order.netProfit),
+    status: orderFulfillmentLabel(order),
+    statusTone: order.needsFulfillment ? "watch" : "good",
+    sourceOrderNumber: order.orderNumber
+  };
+}
+
+function orderProductSaleRecords(order: StorefrontOrderDTO): DashboardProductSaleRecord[] {
+  let remainingRefundCents = dashboardOrderRefundedMerchandiseCents(order);
+  return order.items.map((item, index): DashboardProductSaleRecord | null => {
+    const lineCents = centsFromMoney(item.lineTotal);
+    const refundForLineCents = Math.min(remainingRefundCents, lineCents);
+    remainingRefundCents -= refundForLineCents;
+    const netLineCents = Math.max(0, lineCents - refundForLineCents);
+    if (netLineCents <= 0) return null;
     return {
-      id: `order-${order.id}-${item.id || index}`,
+      id: `order-item-${order.id}-${item.id || index}`,
       canonicalId: `storefront-order:${order.id}:item:${item.id || index}`,
       channel: "online",
       inventoryItemId: item.inventoryItemId,
       productName: item.publicTitle,
       imageUrl: item.imageUrl,
-      reference: `#${order.orderNumber}`,
-      customer: order.customerName || order.customerEmail || "Guest",
       occurredAt: order.paidAt ?? order.createdAt,
       quantity: item.quantity,
-      revenue: itemRevenue,
-      verifiedProfit: itemProfit ?? (order.items.length === 1 ? orderProfit : null),
-      status: orderFulfillmentLabel(order),
-      statusTone: order.needsFulfillment ? "watch" : "good",
-      sourceOrderNumber: order.orderNumber
+      revenue: moneyFromCents(netLineCents),
+      // Product rankings stay item-level. Order-level netProfit is not allocated across products.
+      verifiedProfit: remainingRefundCents > 0 || dashboardOrderRefundedMerchandiseCents(order) > 0 ? null : finiteNumber(item.profitLoss),
+      sourceOrderNumber: order.orderNumber,
+      sourceCheckoutId: order.id
     };
-  }).filter((transaction) => transaction.revenue > 0 || revenue > 0);
+  }).filter((record): record is DashboardProductSaleRecord => Boolean(record));
 }
 
-function saleTransaction(sale: InventorySaleDTO, item: InventoryItemDTO): DashboardTransaction {
+function posCheckoutKey(sale: InventorySaleDTO) {
+  const saleReference = sale.saleReference?.trim();
+  return saleReference ? `ref:${saleReference}` : `id:${sale.id}`;
+}
+
+function posCheckoutReference(sales: InventorySaleDTO[]) {
+  const saleReference = sales.find((sale) => sale.saleReference?.trim())?.saleReference?.trim();
+  return saleReference ? `#${saleReference}` : "POS sale";
+}
+
+function posAccountingRecord(key: string, sales: Array<{ sale: InventorySaleDTO; item: InventoryItemDTO }>): DashboardAccountingRecord {
+  const first = sales[0];
+  const ordered = [...sales].sort((a, b) => new Date(b.sale.soldAt).getTime() - new Date(a.sale.soldAt).getTime() || a.sale.id.localeCompare(b.sale.id));
+  const firstSale = ordered[0].sale;
+  const profitValues = sales.map(({ sale }) => finiteNumber(sale.activeProfitLoss));
+  const verifiedProfit = profitValues.some((value) => value === null) ? null : profitValues.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  const productName = sales.length === 1 ? first.sale.itemName : `${first.sale.itemName} +${sales.length - 1} more`;
+  return {
+    id: `pos-${key}`,
+    canonicalId: `pos-checkout:${key}`,
+    channel: "pos",
+    productName,
+    imageUrl: dashboardInventoryPrimaryImage(first.item),
+    reference: posCheckoutReference(sales.map(({ sale }) => sale)),
+    customer: firstSale.customerEmail || firstSale.customerPhone || "Walk-in",
+    occurredAt: firstSale.soldAt,
+    quantity: sales.reduce((sum, { sale }) => sum + sale.activeQuantitySold, 0),
+    revenue: sales.reduce((sum, { sale }) => sum + sale.activeNetSale, 0),
+    verifiedProfit,
+    status: sales.some(({ sale }) => sale.refundStatus) ? "Partially Refunded" : "Completed",
+    statusTone: verifiedProfit !== null && verifiedProfit < 0 ? "bad" : "good",
+    sourceOrderNumber: firstSale.storefrontOrderNumber
+  };
+}
+
+function posProductSaleRecord(sale: InventorySaleDTO, item: InventoryItemDTO): DashboardProductSaleRecord {
+  const key = posCheckoutKey(sale);
   return {
     id: `sale-${sale.id}`,
     canonicalId: `sale:${sale.id}`,
@@ -226,44 +328,64 @@ function saleTransaction(sale: InventorySaleDTO, item: InventoryItemDTO): Dashbo
     inventoryItemId: sale.inventoryItemId,
     productName: sale.itemName,
     imageUrl: dashboardInventoryPrimaryImage(item),
-    reference: sale.saleReference ? `#${sale.saleReference}` : "POS sale",
-    customer: sale.customerEmail || sale.customerPhone || "Walk-in",
     occurredAt: sale.soldAt,
     quantity: sale.activeQuantitySold,
     revenue: sale.activeNetSale,
     verifiedProfit: finiteNumber(sale.activeProfitLoss),
-    status: sale.refundStatus ? sale.refundStatus.replaceAll("_", " ").replace(/\b\w/g, (match) => match.toUpperCase()) : "Completed",
-    statusTone: sale.activeProfitLoss >= 0 ? "good" : "bad",
-    sourceOrderNumber: sale.storefrontOrderNumber
+    sourceOrderNumber: sale.storefrontOrderNumber,
+    sourceCheckoutId: key
   };
 }
 
-function sortTransactionsNewestFirst(a: DashboardTransaction, b: DashboardTransaction) {
+function sortTransactionsNewestFirst(a: DashboardAccountingRecord | DashboardProductSaleRecord, b: DashboardAccountingRecord | DashboardProductSaleRecord) {
   return new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime() || a.canonicalId.localeCompare(b.canonicalId);
 }
 
 export function dashboardEligibleTransactions(dashboard: Pick<DashboardDTO, "storefrontOrders" | "inventory">) {
   const eligibleOrders = dashboard.storefrontOrders.filter(dashboardOrderCountsAsRevenue);
   const orderNumbers = new Set(eligibleOrders.map((order) => order.orderNumber).filter(Boolean));
-  const transactions: DashboardTransaction[] = [];
+  const transactions: DashboardAccountingRecord[] = [];
+  const posGroups = new Map<string, Array<{ sale: InventorySaleDTO; item: InventoryItemDTO }>>();
 
-  // Accounting uses the complete eligible online-order set. Storefront-generated Sale rows are excluded by order number
-  // so a paid checkout cannot be counted once as a StorefrontOrder and again as a sale.
-  for (const order of eligibleOrders) transactions.push(...orderTransactions(order));
+  // Accounting uses one record per eligible online order. Storefront-generated Sale rows are excluded by order number
+  // so a paid checkout cannot be counted once as a StorefrontOrder and again as a POS/manual checkout.
+  for (const order of eligibleOrders) transactions.push(orderAccountingRecord(order));
 
   for (const item of dashboard.inventory) {
     for (const sale of item.sales) {
       if (!dashboardSaleCountsAsRevenue(sale)) continue;
       if (sale.storefrontOrderNumber && orderNumbers.has(sale.storefrontOrderNumber)) continue;
-      transactions.push(saleTransaction(sale, item));
+      const key = posCheckoutKey(sale);
+      const group = posGroups.get(key) ?? [];
+      group.push({ sale, item });
+      posGroups.set(key, group);
     }
   }
+
+  for (const [key, sales] of posGroups) transactions.push(posAccountingRecord(key, sales));
 
   const byCanonicalId = new Map<string, DashboardTransaction>();
   for (const transaction of transactions) {
     if (!byCanonicalId.has(transaction.canonicalId)) byCanonicalId.set(transaction.canonicalId, transaction);
   }
   return [...byCanonicalId.values()].sort(sortTransactionsNewestFirst);
+}
+
+export function dashboardEligibleProductSaleRecords(dashboard: Pick<DashboardDTO, "storefrontOrders" | "inventory">) {
+  const eligibleOrders = dashboard.storefrontOrders.filter(dashboardOrderCountsAsRevenue);
+  const orderNumbers = new Set(eligibleOrders.map((order) => order.orderNumber).filter(Boolean));
+  const records: DashboardProductSaleRecord[] = [];
+
+  for (const order of eligibleOrders) records.push(...orderProductSaleRecords(order));
+  for (const item of dashboard.inventory) {
+    for (const sale of item.sales) {
+      if (!dashboardSaleCountsAsRevenue(sale)) continue;
+      if (sale.storefrontOrderNumber && orderNumbers.has(sale.storefrontOrderNumber)) continue;
+      records.push(posProductSaleRecord(sale, item));
+    }
+  }
+
+  return records.sort(sortTransactionsNewestFirst);
 }
 
 export function summarizeDashboardAccounting(
@@ -273,12 +395,13 @@ export function summarizeDashboardAccounting(
 ): DashboardAccountingSummary {
   const timeZone = options.timeZone ?? range.timeZone ?? ADMIN_DASHBOARD_BUSINESS_TIME_ZONE;
   const allEligibleTransactions = dashboardEligibleTransactions(dashboard);
+  const allProductSaleRecords = dashboardEligibleProductSaleRecords(dashboard);
   // periodTransactions is filtered from the complete eligible set before any display limit is applied.
   const periodTransactions = allEligibleTransactions.filter((transaction) => dashboardDateInRange(transaction.occurredAt, range));
   // recentTransactions is the only sliced dataset; it is display-only and must never feed accounting totals.
   const recentTransactions = allEligibleTransactions.slice(0, options.recentLimit ?? ADMIN_DASHBOARD_RECENT_LIMIT);
   const last30Range = dashboardDateRange("last_30_days", { now: options.now, timeZone });
-  const topSellingTransactions = allEligibleTransactions.filter((transaction) => dashboardDateInRange(transaction.occurredAt, last30Range));
+  const topSellingProductRecords = allProductSaleRecords.filter((record) => dashboardDateInRange(record.occurredAt, last30Range));
   const todayRange = dashboardDateRange("today", { now: options.now, timeZone });
   const todayTransactions = allEligibleTransactions.filter((transaction) => dashboardDateInRange(transaction.occurredAt, todayRange));
   const knownProfitTransactions = periodTransactions.filter((transaction) => transaction.verifiedProfit !== null);
@@ -286,7 +409,7 @@ export function summarizeDashboardAccounting(
     allEligibleTransactions,
     periodTransactions,
     recentTransactions,
-    topSellingTransactions,
+    topSellingProductRecords,
     todayTransactions,
     periodRevenue: periodTransactions.reduce((sum, transaction) => sum + transaction.revenue, 0),
     periodVerifiedProfit: knownProfitTransactions.reduce((sum, transaction) => sum + (transaction.verifiedProfit ?? 0), 0),
@@ -297,7 +420,7 @@ export function summarizeDashboardAccounting(
   };
 }
 
-export function dashboardTopSellingProducts(transactions: DashboardTransaction[], inventory: InventoryItemDTO[]) {
+export function dashboardTopSellingProducts(transactions: DashboardProductSaleRecord[], inventory: InventoryItemDTO[]) {
   const byProduct = new Map<string, { key: string; name: string; imageUrl: string | null; units: number; revenue: number; profit: number; unknownProfitCount: number }>();
   for (const transaction of transactions) {
     if (!transaction.inventoryItemId) continue;
