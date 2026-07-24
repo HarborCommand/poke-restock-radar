@@ -4,8 +4,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Poke Radar Admin",
-  description: "Private Poke Radar admin area.",
+  title: "GameDayGrabs Admin",
+  description: "Private GameDayGrabs Admin system area.",
   robots: { index: false, follow: false }
 };
 

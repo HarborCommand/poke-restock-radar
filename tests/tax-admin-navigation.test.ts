@@ -7,7 +7,7 @@ const read = (file: string) => fs.readFileSync(file, "utf8");
 test("Tax is an admin-only top-level Radar navigation tab on desktop and mobile", () => {
   const app = read("src/components/RadarApp.tsx");
   assert.match(app, /\| "tax"/);
-  assert.match(app, /\{ id: "tax", label: "Tax", icon: Calculator, section: "manage" \}/);
+  assert.match(app, /\{ id: "tax", label: "Tax", icon: Calculator, section: "admin" \}/);
   assert.match(app, /adminOnlyTabs = new Set<Tab>\(\[[^\]]*"tax"/);
   assert.match(app, /tabs\.filter\(\(tab\) => tab\.section === section && \(!adminOnlyTabs\.has\(tab\.id\) \|\| isAdmin\)\)/);
   assert.match(app, /adminOnlyTabs\.has\(activeTab\)[\s\S]*dashboard\.currentUser\.role !== "ADMIN"/);

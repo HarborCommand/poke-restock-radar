@@ -151,12 +151,12 @@ test("Phase 15 daily workflow inventory and recap features exist", () => {
     "Open Inventory",
     "Review Orders",
     "Recent inventory",
-    "Release Radar",
+    "Release Planning",
     "I Bought This",
     "Inventory Log",
     "Saved Filter Presets",
     "Daily Recap Archive",
-    "Local store/area tracking is deprecated and hidden"
+    "Quick Stock"
   ]) {
     assert.match(app, new RegExp(phrase), `missing Phase 15 UI phrase ${phrase}`);
   }
@@ -558,7 +558,7 @@ test("Phase 4 release priority engine fields exist", () => {
   assert.match(app, /High priority only/);
 });
 
-test("Release Radar source-aware calendar is wired", () => {
+test("release planning source-aware calendar is wired", () => {
   const schema = readFileSync(join(root, "prisma", "schema.prisma"), "utf8");
   for (const field of [
     "releaseName",
@@ -575,7 +575,7 @@ test("Release Radar source-aware calendar is wired", () => {
   }
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  assert.match(app, /Release Radar/);
+  assert.match(app, /Release Planning/);
   assert.match(app, /Sync Public Sources/);
   assert.match(app, /Needs review \/ TBD/);
   assert.match(app, /ReleaseDetailModal/);
@@ -612,7 +612,7 @@ test("Phase 5 store prediction and field mode fields exist", () => {
   assert.match(calculations, /timeWindowFor/);
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  assert.match(app, /Local store\/area tracking is deprecated and hidden/);
+  assert.doesNotMatch(app, /Legacy tracker screens are deprecated and hidden/);
   assert.doesNotMatch(app, /label:\s*"Field"/);
 });
 
@@ -819,7 +819,7 @@ test("UI real retail flow improvements exist", () => {
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   for (const phrase of [
-    "Admin Controls",
+    "System Administration",
     "More Actions",
     "Exact product links give better alerts",
     "Verified Exact Product",
@@ -856,7 +856,7 @@ test("UI real retail flow improvements exist", () => {
 
 test("store discovery and coverage expansion exists", () => {
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  assert.match(app, /Local store\/area tracking is deprecated and hidden/);
+  assert.doesNotMatch(app, /Legacy tracker screens are deprecated and hidden/);
   for (const hiddenPhrase of ["Store Coverage", "Find Nearby Stores", "Expand Store Coverage", "Add To My Stores", "Use Browser Location"]) {
     assert.doesNotMatch(app, new RegExp(hiddenPhrase), `deprecated store discovery UI should be hidden: ${hiddenPhrase}`);
   }
@@ -898,7 +898,7 @@ test("core restock scanner discovery schema remains dormant after route retireme
   assert.match(discovery, /Search\/category pages never trigger buy alerts/);
   assert.match(app, /deprecatedTrackerTabs/);
   assert.match(app.slice(app.indexOf("const tabs"), app.indexOf("type NavTab")), /label: "Alerts"/);
-  assert.match(app, /release, inventory, order, storefront, system, and historical alert activity/);
+  assert.match(app, /release, inventory, order, storefront, system, and historical alert activity/i);
   assert.match(readme, /General alert history and notification access remain available/);
   assert.throws(() => statSync(join(root, "src", "app", "api", "radar", "product-discovery", "sources", "route.ts")));
   assert.throws(() =>
