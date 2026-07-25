@@ -109,6 +109,8 @@ test("dashboard emphasizes ecommerce operations and keeps Quick Stock accessible
   assert.match(dashboardPanel, /aria-label="Open alerts"/);
   assert.doesNotMatch(dashboardPanel, /usefulAlertCount|unread alert|Math\.min\(usefulAlertCount/);
   assert.match(dashboardPanel, /product\.margin === null \? "Unknown" : percent\(product\.margin\)/);
+  assert.match(dashboardPanel, /transaction\$\{accounting\.periodUnknownProfitCount === 1 \? "" : "s"\} without verified profit/);
+  assert.doesNotMatch(dashboardPanel, /items? without verified cost basis/);
   assert.doesNotMatch(dashboardPanel, /Active Alerts|Recent Alerts|Latest restock|release-source|missing market|Market warnings|Release Planning|Release alerts|Release Radar|Live Drops|watched retailer|scanner status|monitor logs|restock history|radar accuracy/i);
   assert.doesNotMatch(navConfig, /Quick Stock/, "Quick Stock should not be a separate sidebar destination");
 });

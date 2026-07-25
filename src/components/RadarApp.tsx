@@ -3027,7 +3027,7 @@ function DashboardPanel({
   const periodRevenueLabel = rangePreset === "month_to_date" ? "Month to Date Net Receipts" : "Net Receipts";
   const periodProfitLabel = rangePreset === "month_to_date" ? "Verified Month to Date Profit" : "Verified Period Profit";
   const periodProfitDetail = accounting.periodUnknownProfitCount
-    ? `${dateRange.label} • excludes ${accounting.periodUnknownProfitCount} item${accounting.periodUnknownProfitCount === 1 ? "" : "s"} without verified cost basis`
+    ? `${dateRange.label} • excludes ${accounting.periodUnknownProfitCount} transaction${accounting.periodUnknownProfitCount === 1 ? "" : "s"} without verified profit`
     : dateRange.label;
 
   return (
