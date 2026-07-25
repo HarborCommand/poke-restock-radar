@@ -1528,8 +1528,9 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   }
   assert.match(app, /Recent Sales &amp; Orders/);
   assert.match(app, /Operations Health/);
-  assert.match(app, /Action Center/);
-  assert.match(app, /Storefront Health/);
+  assert.match(app, /<h3>Needs Attention<\/h3>/);
+  assert.match(app, /<h3>Storefront<\/h3>/);
+  assert.doesNotMatch(app, /Action Center|Storefront Health|Review operations/);
   assert.match(app, /sidebar-nav-badge/);
   assert.match(app, /Fulfillment Center/);
   assert.match(app, /needs-fulfillment/);

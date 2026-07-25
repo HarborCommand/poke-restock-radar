@@ -3020,6 +3020,7 @@ function DashboardPanel({
     missingImage: storefrontHealth.missingImage,
     missingShipping: storefrontHealth.missingShipping
   });
+  const visibleActionItems = actionItems.filter((item) => !STOREFRONT_HEALTH_ACTION_KEYS.has(item.key));
   const recentRows = accounting.recentTransactions;
   const inventoryRows = dashboardInventoryStatusRows(dashboard.inventory).slice(0, 5);
   const topProducts = dashboardTopSellingProducts(accounting.topSellingProductRecords, dashboard.inventory).slice(0, 3);
@@ -3140,19 +3141,25 @@ function DashboardPanel({
             <h2>Operations Health</h2>
           </div>
           <div className="commerce-health-section">
-            <h3>Needs Attention <span>Action Center</span></h3>
+            <h3>Needs Attention</h3>
             <div className="commerce-action-list">
-              {actionItems.length ? actionItems.map((item) => (
+              {visibleActionItems.length ? visibleActionItems.map((item) => (
                 <button className="commerce-action-row" type="button" key={item.label} onClick={() => setActiveTab(item.tab)}>
                   <span className={item.tone}><item.icon size={15} /></span>
                   <strong>{item.label}</strong>
                   <b>{item.count}</b>
                 </button>
-              )) : <EmptyState icon={Check} title="No urgent actions" detail="Orders, inventory, and storefront product checks are clear." />}
+              )) : (
+                <div className="commerce-action-row commerce-action-row-static" role="status">
+                  <span className="good"><Check size={15} /></span>
+                  <strong>No urgent actions</strong>
+                  <b>0</b>
+                </div>
+              )}
             </div>
           </div>
           <div className="commerce-health-section commerce-health-section-storefront">
-            <h3>Storefront <span>Storefront Health</span></h3>
+            <h3>Storefront</h3>
             <div className="commerce-health-list">
               <CommerceHealthRow label="Active products" count={storefrontHealth.activeProducts} tone="good" />
               <CommerceHealthRow label="Missing price" count={storefrontHealth.missingPrice} tone={storefrontHealth.missingPrice ? "bad" : "good"} />
@@ -3160,7 +3167,6 @@ function DashboardPanel({
               <CommerceHealthRow label="Out of stock" count={storefrontHealth.outOfStock} tone={storefrontHealth.outOfStock ? "bad" : "good"} />
             </div>
           </div>
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("inventory")}>Review operations <ChevronRight size={14} /></button>
         </article>
 
         <article className="commerce-card commerce-inventory-card">
@@ -3225,6 +3231,8 @@ type CommerceTone = "green" | "blue" | "purple" | "orange" | "red";
 
 type CommerceActionTone = "good" | "blue" | "watch" | "bad" | "neutral";
 
+const STOREFRONT_HEALTH_ACTION_KEYS = new Set<string>(["products_out_of_stock", "missing_price", "missing_image"]);
+
 function dashboardActionItems(counts: {
   ordersToShip: number;
   pickupOrders: number;
@@ -3237,15 +3245,15 @@ function dashboardActionItems(counts: {
   missingShipping: number;
 }) {
   return [
-    { icon: Navigation, label: "Paid orders awaiting shipment", count: counts.ordersToShip, tab: "shipping" as Tab, tone: "blue" as CommerceActionTone },
-    { icon: ShoppingBag, label: "Pickup orders awaiting customer", count: counts.pickupOrders, tab: "shipping" as Tab, tone: "good" as CommerceActionTone },
-    { icon: CreditCard, label: "Pending payments", count: counts.pendingPayments, tab: "orders" as Tab, tone: "watch" as CommerceActionTone },
-    { icon: RotateCcw, label: "Refunds / returns needing action", count: counts.refundReturns, tab: "orders" as Tab, tone: "bad" as CommerceActionTone },
-    { icon: AlertTriangle, label: "Products out of stock", count: counts.productsOutOfStock, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
-    { icon: AlertTriangle, label: "Low stock products", count: counts.lowStockProducts, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone },
-    { icon: CreditCard, label: "Products missing price", count: counts.missingPrice, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
-    { icon: ImageIconFallback, label: "Products missing primary image", count: counts.missingImage, tab: "inventory" as Tab, tone: "neutral" as CommerceActionTone },
-    { icon: PackageSearch, label: "Products missing shipping setup", count: counts.missingShipping, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone }
+    { key: "orders_to_ship", icon: Navigation, label: "Paid orders awaiting shipment", count: counts.ordersToShip, tab: "shipping" as Tab, tone: "blue" as CommerceActionTone },
+    { key: "pickup_orders", icon: ShoppingBag, label: "Pickup orders awaiting customer", count: counts.pickupOrders, tab: "shipping" as Tab, tone: "good" as CommerceActionTone },
+    { key: "pending_payments", icon: CreditCard, label: "Pending payments", count: counts.pendingPayments, tab: "orders" as Tab, tone: "watch" as CommerceActionTone },
+    { key: "refund_returns", icon: RotateCcw, label: "Refunds / returns needing action", count: counts.refundReturns, tab: "orders" as Tab, tone: "bad" as CommerceActionTone },
+    { key: "products_out_of_stock", icon: AlertTriangle, label: "Products out of stock", count: counts.productsOutOfStock, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
+    { key: "low_stock_products", icon: AlertTriangle, label: "Low stock products", count: counts.lowStockProducts, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone },
+    { key: "missing_price", icon: CreditCard, label: "Products missing price", count: counts.missingPrice, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
+    { key: "missing_image", icon: ImageIconFallback, label: "Products missing primary image", count: counts.missingImage, tab: "inventory" as Tab, tone: "neutral" as CommerceActionTone },
+    { key: "missing_shipping", icon: PackageSearch, label: "Products missing shipping setup", count: counts.missingShipping, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone }
   ].filter((item) => item.count > 0);
 }
 
