@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(path.join(root, "src/components/RadarApp.tsx"), "utf8");
+const css = readFileSync(path.join(root, "src/app/globals.css"), "utf8");
 const rootLayout = readFileSync(path.join(root, "src/app/layout.tsx"), "utf8");
 const homePage = readFileSync(path.join(root, "src/app/page.tsx"), "utf8");
 const loginPage = readFileSync(path.join(root, "src/app/login/page.tsx"), "utf8");
@@ -25,7 +26,7 @@ function sourceSlice(source: string, start: string, end: string) {
 }
 
 const navConfig = sourceSlice(app, "const navSectionLabels", "type NavTab");
-const dashboardPanel = sourceSlice(app, "function DashboardPanel", "function DashboardMetricCard");
+const dashboardPanel = sourceSlice(app, "function DashboardPanel", "type CommerceTone");
 const alertPanelVisible = sourceSlice(app, "  if (view) return (", "  function runTargetBatch");
 const adminPanel = sourceSlice(app, "function AdminControlPanel", "function AdminActionCard");
 const adminHealthPanel = sourceSlice(app, "function AdminHealthPanel", "function NotificationSettingsPanel");
@@ -72,22 +73,57 @@ test("GameDayGrabs Admin branding and ecommerce icon appear on private applicati
 
 test("dashboard emphasizes ecommerce operations and keeps Quick Stock accessible", () => {
   for (const phrase of [
-    "New Paid Orders",
-    "Orders To Ship",
-    "Today's Net Sales",
-    "Store Revenue",
-    "Store Profit",
-    "Products In Stock",
+    "Sales, orders, inventory, and storefront operations",
+    "Today's Net Receipts",
+    "Month to Date Net Receipts",
+    "Verified Month to Date Profit",
+    "Inventory Value",
+    "Orders to Ship",
+    "Pickup Orders",
+    "Pending Payments",
+    "Refunds / Returns",
+    "New POS Sale",
     "Quick Stock",
-    "Scan UPC, add inventory, or adjust stock",
-    "Sales History",
-    "Release Planning"
+    "Add Product",
+    "Manage Orders",
+    "View Storefront",
+    "Recent Sales &amp; Orders",
+    "Action Center",
+    "Inventory Status",
+    "Top Selling Products",
+    "Storefront Health"
   ]) {
     assert.match(dashboardPanel, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing dashboard phrase ${phrase}`);
   }
 
-  assert.doesNotMatch(dashboardPanel, /Latest restock, order, and inventory alerts|Release Radar|Live Drops|watched retailer/i);
+  assert.match(dashboardPanel, /setActiveTab\("pos"\)/, "New POS Sale opens POS");
+  assert.match(dashboardPanel, /openInventoryIntent\("quick-stock"\)/, "Quick Stock opens the inventory quick-stock workflow");
+  assert.match(dashboardPanel, /openInventoryIntent\("add-product"\)/, "Add Product opens the add-product workflow");
+  assert.match(dashboardPanel, /setActiveTab\("orders"\)/, "Manage Orders opens Orders");
+  assert.match(dashboardPanel, /href=\{GAMEDAYGRABS_CANONICAL_PUBLIC_URL\}[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/, "View Storefront uses the public storefront URL safely");
+  assert.match(dashboardPanel, /summarizeDashboardAccounting\(dashboard, dateRange\)/, "Dashboard accounting uses the centralized complete eligible transaction set");
+  assert.match(dashboardPanel, /const recentRows = accounting\.recentTransactions/, "Recent Sales & Orders uses the display-only recent slice");
+  assert.match(dashboardPanel, /dashboardActionItems\(\{[\s\S]*ordersToShip[\s\S]*pickupOrders[\s\S]*pendingPayments[\s\S]*refundReturns[\s\S]*productsOutOfStock[\s\S]*lowStockProducts[\s\S]*missingPrice[\s\S]*missingImage/s);
+  assert.match(dashboardPanel, /dashboardInventoryStatusRows\(dashboard\.inventory\)/);
+  assert.match(dashboardPanel, /dashboardTopSellingProducts\(accounting\.topSellingProductRecords, dashboard\.inventory\)/);
+  assert.match(dashboardPanel, /aria-label="Open alerts"/);
+  assert.doesNotMatch(dashboardPanel, /usefulAlertCount|unread alert|Math\.min\(usefulAlertCount/);
+  assert.match(dashboardPanel, /product\.margin === null \? "Unknown" : percent\(product\.margin\)/);
+  assert.match(dashboardPanel, /transaction\$\{accounting\.periodUnknownProfitCount === 1 \? "" : "s"\} without verified profit/);
+  assert.doesNotMatch(dashboardPanel, /items? without verified cost basis/);
+  assert.doesNotMatch(dashboardPanel, /Active Alerts|Recent Alerts|Latest restock|release-source|missing market|Market warnings|Release Planning|Release alerts|Release Radar|Live Drops|watched retailer|scanner status|monitor logs|restock history|radar accuracy/i);
   assert.doesNotMatch(navConfig, /Quick Stock/, "Quick Stock should not be a separate sidebar destination");
+});
+
+test("dashboard reference layout is responsive and scoped away from public storefront", () => {
+  assert.match(css, /\.app-main\.app-main-dashboard/);
+  assert.match(css, /\.commerce-kpi-grid[\s\S]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /\.commerce-operations-strip[\s\S]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /\.commerce-middle-grid[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.55fr\)\s*minmax\(250px,\s*0\.85fr\)\s*minmax\(250px,\s*0\.85fr\)/);
+  assert.match(css, /\.commerce-lower-grid[\s\S]*grid-template-columns:\s*minmax\(0,\s*2\.08fr\)\s*minmax\(260px,\s*0\.72fr\)/);
+  assert.match(css, /@media \(max-width:\s*1180px\)[\s\S]*\.commerce-kpi-grid,[\s\S]*\.commerce-operations-strip[\s\S]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*\.commerce-kpi-grid,[\s\S]*\.commerce-operations-strip,[\s\S]*\.commerce-quick-actions\s*>\s*div,[\s\S]*\.commerce-middle-grid,[\s\S]*\.commerce-lower-grid[\s\S]*grid-template-columns:\s*1fr/);
+  assert.doesNotMatch(css, /background-image:\s*url\([^)]*codex-clipboard|reference image|screenshot overlay/i);
 });
 
 test("core ecommerce panels remain wired and role protections are preserved", () => {

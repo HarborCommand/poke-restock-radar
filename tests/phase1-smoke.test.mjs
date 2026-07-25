@@ -552,7 +552,7 @@ test("Phase 4 release priority engine fields exist", () => {
   }
 
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
-  assert.match(app, /Dashboard summary/);
+  assert.match(app, /Financial summary/);
   assert.match(app, /Pokemon TCG Release Calendar/);
   assert.match(app, /release-year-timeline/);
   assert.match(app, /High priority only/);
@@ -820,7 +820,7 @@ test("UI real retail flow improvements exist", () => {
   const app = readFileSync(join(root, "src", "components", "RadarApp.tsx"), "utf8");
   for (const phrase of [
     "System Administration",
-    "More Actions",
+    "Quick Actions",
     "Exact product links give better alerts",
     "Verified Exact Product",
     "Search/Category Link",

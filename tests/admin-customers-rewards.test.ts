@@ -1729,7 +1729,7 @@ test("sales detail and customer linking use full-screen accessible workspaces", 
   assert.match(css, /@media \(max-width: 860px\)[\s\S]*?body \.sale-workspace-layout[\s\S]*?grid-template-columns: 1fr;/);
   assert.match(css, /@media \(max-width: 560px\)[\s\S]*?sales-linking-workspace-actions \.primary-action[\s\S]*?white-space: normal;/);
   assert.ok(
-    css.lastIndexOf("Keep full-screen Sales workspaces authoritative") > css.indexOf("body .customers-admin-modal.customer-attach-order-modal"),
+    css.lastIndexOf("body .inventory-modal.sale-details-modal.sale-detail-workspace") > css.indexOf("body .customers-admin-modal.customer-attach-order-modal"),
     "full-screen Sales overrides must follow shared modal sizing rules"
   );
 });

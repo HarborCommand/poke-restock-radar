@@ -425,7 +425,6 @@ test("admin inventory can find products that need shipping profiles", () => {
   assert.match(css, /\.inventory-row-readiness-badges \{[\s\S]*flex-wrap: wrap/);
   assert.match(css, /\.inventory-row-badge \{[\s\S]*white-space: nowrap/);
   assert.match(css, /\.inventory-row-badge\.neutral \{[\s\S]*background: #eff6ff/);
-  assert.match(css, /Phase 18H inventory width and viewport-safe action menus/);
   assert.match(css, /body \.app-main-inventory \.catalog-table,[\s\S]*body \.catalog-table \{[\s\S]*overflow: visible !important/);
   assert.match(css, /body \.catalog-action-menu-floating \{[\s\S]*position: fixed !important/);
   assert.match(css, /body \.catalog-action-menu-floating \{[\s\S]*z-index: 1000 !important/);

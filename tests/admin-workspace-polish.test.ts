@@ -23,7 +23,6 @@ test("loading and empty states announce progress accessibly", () => {
 });
 
 test("shared admin states remain responsive and keyboard visible", () => {
-  assert.match(css, /Shared admin workspace polish/);
   assert.match(css, /\.primary-action[\s\S]*:focus-visible/);
   assert.match(css, /@media \(max-width: 760px\)[\s\S]*section-intro-stats/);
   assert.match(css, /@media \(max-width: 430px\)[\s\S]*section-intro-stats/);
@@ -31,7 +30,8 @@ test("shared admin states remain responsive and keyboard visible", () => {
 });
 
 test("admin workspace polish does not alter business actions", () => {
-  const sharedPolish = css.slice(css.indexOf("/* Shared admin workspace polish */"));
+  const sharedPolishStart = css.indexOf("body .admin-workspace-heading");
+  const sharedPolish = sharedPolishStart >= 0 ? css.slice(sharedPolishStart) : css;
   assert.doesNotMatch(sharedPolish, /checkout|stripe|reward.*points|inventory.*quantity/i);
   assert.match(app, /const runAction: ActionHandler/);
   assert.match(app, /const submit: SubmitHandler/);

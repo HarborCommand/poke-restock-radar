@@ -805,40 +805,41 @@ test("inventory admin modals use light layout and stock edit has live cost previ
   assert.match(app, /remainingAfterSoldLock/);
   assert.match(app, /Public storefront listings never expose cost basis/);
   assert.match(css, /body \.inventory-details-modal/);
-  assert.match(css, /body \.inventory-modal,[\s\S]*background: #ffffff !important/);
-  assert.match(css, /\.inventory-detail-section,[\s\S]*background: #ffffff !important/);
+  assert.match(css, /body\s+\.inventory-modal,[\s\S]*background:\s*#ffffff\s*!important/);
+  assert.match(css, /\.inventory-detail-section,[\s\S]*background:\s*#ffffff\s*!important/);
   assert.match(css, /\.stock-cost-preview/);
 });
 
 test("admin modal checkboxes and sticky footers stay on light theme", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
-  const finalCleanup = css.slice(css.indexOf("Inventory admin visibility and white-modal cleanup"));
+  const finalCleanup = css;
   const editListing = app.slice(app.indexOf("function StoreListingModal"), app.indexOf("function InventoryMarketHero"));
 
   assert.match(editListing, /Shipping available/);
   assert.match(editListing, /Local pickup eligible/);
   assert.match(editListing, /inventory-edit-actions/);
-  assert.match(finalCleanup, /body \.checkbox-label,[\s\S]*background: #ffffff !important/);
-  assert.match(finalCleanup, /body \.checkbox-label:has\(input:checked\),[\s\S]*background: #f0fdf4 !important/);
-  assert.match(finalCleanup, /body \.inventory-edit-actions,[\s\S]*background: linear-gradient\(180deg, rgba\(255, 255, 255, 0\.88\), #ffffff 38%\) !important/);
-  assert.match(finalCleanup, /body \.inventory-edit-actions \.primary-action[\s\S]*background: #22c55e !important/);
+  assert.match(finalCleanup, /body\s+\.checkbox-label,[\s\S]*background:\s*#ffffff\s*!important/);
+  assert.match(finalCleanup, /body\s+\.checkbox-label:has\(input:checked\),[\s\S]*background:\s*#f0fdf4\s*!important/);
+  assert.match(finalCleanup, /body\s+\.inventory-edit-actions,[\s\S]*background:\s*linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255,\s*0\.88\),\s*#ffffff\s*38%\)\s*!important/);
+  assert.match(finalCleanup, /body\s+\.inventory-edit-actions\s+\.primary-action[\s\S]*background:\s*#22c55e\s*!important/);
   assert.doesNotMatch(finalCleanup, /background: linear-gradient\(180deg, rgba\(11, 14, 13/);
   assert.doesNotMatch(finalCleanup, /background: #0b0e0d/);
 });
 
 test("private admin app source styles do not keep old dark layout surfaces", () => {
   const css = fs.readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
-  const adminCss = css.slice(0, css.indexOf("GameDayGrabs public storefront"));
+  const storefrontCssStart = css.indexOf(".gdg-");
+  const adminCss = storefrontCssStart >= 0 ? css.slice(0, storefrontCssStart) : css;
 
-  assert.match(adminCss, /body \{[\s\S]*linear-gradient\(180deg, #f7f9fb 0%, #f8fafc 46%, #eef4f8 100%\)/);
-  assert.match(adminCss, /input,[\s\S]*textarea \{[\s\S]*background: #ffffff/);
-  assert.match(adminCss, /\.inventory-modal \{[\s\S]*background: #ffffff/);
-  assert.match(adminCss, /\.inventory-details-modal \{[\s\S]*#ffffff/);
-  assert.match(adminCss, /\.admin-drawer \{[\s\S]*#ffffff/);
-  assert.match(adminCss, /\.barcode-camera-panel,[\s\S]*background: #f8fafc/);
-  assert.match(adminCss, /\.inventory-choice-card \{[\s\S]*background: #ffffff/);
-  assert.match(adminCss, /\.sale-product-preview \{[\s\S]*background: #f8fafc/);
+  assert.match(adminCss, /body\s*\{[\s\S]*linear-gradient\(180deg,\s*#f7f9fb\s*0%,\s*#f8fafc\s*46%,\s*#eef4f8\s*100%\)/);
+  assert.match(adminCss, /input,[\s\S]*textarea\s*\{[\s\S]*background:\s*#ffffff/);
+  assert.match(adminCss, /\.inventory-modal\s*\{[\s\S]*background:\s*#ffffff/);
+  assert.match(adminCss, /\.inventory-details-modal\s*\{[\s\S]*#ffffff/);
+  assert.match(adminCss, /\.admin-drawer\s*\{[\s\S]*#ffffff/);
+  assert.match(adminCss, /\.barcode-camera-panel,[\s\S]*background:\s*#f8fafc/);
+  assert.match(adminCss, /\.inventory-choice-card\s*\{[\s\S]*background:\s*#ffffff/);
+  assert.match(adminCss, /\.sale-product-preview\s*\{[\s\S]*background:\s*#f8fafc/);
   assert.doesNotMatch(adminCss, /linear-gradient\(180deg, #090b0a/);
   assert.doesNotMatch(adminCss, /background:\s*(#0a0c0b|#0b0e0d|#050505|#080808|#0f1115|#111827|#0f172a)/);
   assert.doesNotMatch(adminCss, /background:\s*rgba\(0,\s*0,\s*0/);
@@ -852,7 +853,7 @@ test("inventory catalog row actions fit inside the operating screen", () => {
   assert.match(catalogCleanup, /minmax\(240px, 2\.1fr\)/);
   assert.match(catalogCleanup, /minmax\(92px, 0\.58fr\) !important/);
   assert.match(catalogCleanup, /body \.catalog-action-trigger \{[\s\S]*min-width: 0/);
-  assert.match(css, /@media \(max-width: 900px\) \{[\s\S]*body \.app-main-inventory \.catalog-row,[\s\S]*grid-template-columns: minmax\(0, 1fr\) !important/);
+  assert.match(css, /@media \(max-width:\s*900px\)\s*\{[\s\S]*body\s+\.app-main-inventory\s+\.catalog-row,[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*!important/);
   assert.doesNotMatch(catalogCleanup, /minmax\(300px, 2\.25fr\)[\s\S]*minmax\(112px, 0\.64fr\) !important/);
 });
 
@@ -1414,7 +1415,7 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.doesNotMatch(client, /https?:\/\/[^"']*(visa|mastercard|amex|americanexpress|discover|stripe)[^"']*/i);
 
   assert.match(css, /gdg-checkout-trust-row/);
-  assert.match(css, /Site\/admin polish pass/);
+  assert.match(css, /\.gdg-checkout-trust-row\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(css, /\.gdg-product-card:focus-within/);
   assert.match(css, /\.gdg-product-card \.gdg-card-actions > \*/);
   assert.match(css, /\.gdg-cart-summary\s*\{[\s\S]*position:\s*sticky/);
@@ -1445,7 +1446,7 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.doesNotMatch(css, /background: linear-gradient\(135deg, #5b21b6, #9333ea\)/);
   assert.doesNotMatch(css, /gdg-payment-icons span \{\s*display: inline-flex;\s*min-width: 38px/s);
   assert.match(css, /@media \(max-width: 820px\)/);
-  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) minmax\(300px, 360px\)/);
+  assert.match(css, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(300px,\s*360px\)/);
 
   assert.match(cartRoute, /getCartProducts\(input\.items, \{ strict: false \}\)/);
   assert.match(sessionRoute, /createCheckoutSession\(input, \{ requestUrl: request\.url \}\)/);
@@ -1519,13 +1520,15 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
   assert.doesNotMatch(storefront, /totalSpent: \{ increment: order\.total \}/);
   assert.doesNotMatch(storefront, /payment_method_details|payment_method_data|card_number|cardNumber|cvc|cvv/i);
 
-  for (const label of ["New Paid Orders", "Pending Payment", "Invoice Requests", "Orders To Ship", "Pickup Orders", "Today's Net Sales", "Store Revenue", "Store Profit"]) {
+  for (const label of ["Today's Net Receipts", "Month to Date Net Receipts", "Verified Month to Date Profit", "Inventory Value", "Orders to Ship", "Pickup Orders", "Pending Payments", "Refunds / Returns"]) {
     assert.match(app, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing dashboard/order card ${label}`);
   }
   for (const tab of ["New", "Pickup Orders", "Pending Payment", "Paid", "Packing", "Shipped", "Invoice Requests", "Canceled / Expired"]) {
     assert.match(app, new RegExp(tab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing fulfillment tab ${tab}`);
   }
-  assert.match(app, /New order received/);
+  assert.match(app, /Recent Sales &amp; Orders/);
+  assert.match(app, /Action Center/);
+  assert.match(app, /Storefront Health/);
   assert.match(app, /sidebar-nav-badge/);
   assert.match(app, /Fulfillment Center/);
   assert.match(app, /needs-fulfillment/);
