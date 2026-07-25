@@ -3077,11 +3077,11 @@ function DashboardPanel({
       <section className="commerce-quick-actions dashboard-quick-action-strip" aria-label="Quick Actions">
         <h2>Quick Actions</h2>
         <div>
-          <CommerceQuickAction icon={Store} tone="green" label="New POS Sale" onClick={() => setActiveTab("pos")} />
-          <CommerceQuickAction icon={ScanBarcode} tone="blue" label="Quick Stock" onClick={() => openInventoryIntent("quick-stock")} />
-          <CommerceQuickAction icon={PlusCircle} tone="green" label="Add Product" onClick={() => openInventoryIntent("add-product")} />
-          <CommerceQuickAction icon={ClipboardList} tone="blue" label="Manage Orders" onClick={() => setActiveTab("orders")} />
-          <a className="commerce-quick-action purple" href={GAMEDAYGRABS_CANONICAL_PUBLIC_URL} target="_blank" rel="noopener noreferrer" aria-label="View public GameDayGrabs storefront in a new tab">
+          <CommerceQuickAction icon={Store} tone="primary" label="New POS Sale" onClick={() => setActiveTab("pos")} />
+          <CommerceQuickAction icon={ScanBarcode} tone="soft" label="Quick Stock" onClick={() => openInventoryIntent("quick-stock")} />
+          <CommerceQuickAction icon={PlusCircle} tone="soft" label="Add Product" onClick={() => openInventoryIntent("add-product")} />
+          <CommerceQuickAction icon={ClipboardList} tone="neutral" label="Manage Orders" onClick={() => setActiveTab("orders")} />
+          <a className="commerce-quick-action neutral" href={GAMEDAYGRABS_CANONICAL_PUBLIC_URL} target="_blank" rel="noopener noreferrer" aria-label="View public GameDayGrabs storefront in a new tab">
             <ExternalLink size={18} />
             <span>View Storefront</span>
           </a>
@@ -3092,7 +3092,7 @@ function DashboardPanel({
         <article className="commerce-card commerce-card-large">
           <div className="commerce-card-header">
             <h2>Recent Sales &amp; Orders</h2>
-            <button type="button" onClick={() => setActiveTab("sales")}>View all</button>
+            <button type="button" onClick={() => setActiveTab("sales")}>View sales</button>
           </div>
           {recentRows.length ? (
             <div className="commerce-sales-table" role="table" aria-label="Recent sales and orders">
@@ -3133,29 +3133,40 @@ function DashboardPanel({
           ) : (
             <EmptyState icon={Receipt} title="No recent sales or orders yet." detail="Paid online orders and POS sales will appear here." />
           )}
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("sales")}>View all sales &amp; orders <ChevronRight size={14} /></button>
         </article>
 
-        <article className="commerce-card">
+        <article className="commerce-card commerce-operations-health-card">
           <div className="commerce-card-header">
-            <h2>Action Center</h2>
+            <h2>Operations Health</h2>
           </div>
-          <div className="commerce-action-list">
-            {actionItems.length ? actionItems.map((item) => (
-              <button className="commerce-action-row" type="button" key={item.label} onClick={() => setActiveTab(item.tab)}>
-                <span className={item.tone}><item.icon size={15} /></span>
-                <strong>{item.label}</strong>
-                <b>{item.count}</b>
-              </button>
-            )) : <EmptyState icon={Check} title="No urgent actions" detail="Orders, inventory, and storefront product checks are clear." />}
+          <div className="commerce-health-section">
+            <h3>Needs Attention <span>Action Center</span></h3>
+            <div className="commerce-action-list">
+              {actionItems.length ? actionItems.map((item) => (
+                <button className="commerce-action-row" type="button" key={item.label} onClick={() => setActiveTab(item.tab)}>
+                  <span className={item.tone}><item.icon size={15} /></span>
+                  <strong>{item.label}</strong>
+                  <b>{item.count}</b>
+                </button>
+              )) : <EmptyState icon={Check} title="No urgent actions" detail="Orders, inventory, and storefront product checks are clear." />}
+            </div>
           </div>
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("orders")}>View all actions <ChevronRight size={14} /></button>
+          <div className="commerce-health-section commerce-health-section-storefront">
+            <h3>Storefront <span>Storefront Health</span></h3>
+            <div className="commerce-health-list">
+              <CommerceHealthRow label="Active products" count={storefrontHealth.activeProducts} tone="good" />
+              <CommerceHealthRow label="Missing price" count={storefrontHealth.missingPrice} tone={storefrontHealth.missingPrice ? "bad" : "good"} />
+              <CommerceHealthRow label="Missing image" count={storefrontHealth.missingImage} tone={storefrontHealth.missingImage ? "watch" : "good"} />
+              <CommerceHealthRow label="Out of stock" count={storefrontHealth.outOfStock} tone={storefrontHealth.outOfStock ? "bad" : "good"} />
+            </div>
+          </div>
+          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("inventory")}>Review operations <ChevronRight size={14} /></button>
         </article>
 
-        <article className="commerce-card">
+        <article className="commerce-card commerce-inventory-card">
           <div className="commerce-card-header">
             <h2>Inventory Status</h2>
-            <button type="button" onClick={() => setActiveTab("inventory")}>View all</button>
+            <button type="button" onClick={() => setActiveTab("inventory")}>View inventory</button>
           </div>
           <div className="commerce-inventory-list">
             {inventoryRows.length ? inventoryRows.map((row) => (
@@ -3165,16 +3176,18 @@ function DashboardPanel({
                   <strong title={row.item.itemName}>{row.item.itemName}</strong>
                   <small title={dashboardInventoryIdentifier(row.item)}>{dashboardInventoryIdentifier(row.item)}</small>
                 </span>
-                <b className="commerce-inventory-quantity">{row.quantity}</b>
+                <span className="commerce-inventory-quantity-group" data-label="Quantity">
+                  <small>Qty</small>
+                  <b className="commerce-inventory-quantity">{row.quantity}</b>
+                </span>
                 <em className={`commerce-badge commerce-inventory-status ${row.tone}`}>{row.status}</em>
               </button>
             )) : <EmptyState icon={Boxes} title="No inventory items yet" detail="Add a product to start managing stock." />}
           </div>
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("inventory")}>View all inventory <ChevronRight size={14} /></button>
         </article>
       </section>
 
-      <section className="commerce-lower-grid" aria-label="Sales and storefront health">
+      <section className="commerce-lower-grid" aria-label="Sales performance">
         <article className="commerce-card commerce-card-large">
           <div className="commerce-card-header">
             <h2>Top Selling Products <span>(Last 30 Days)</span></h2>
@@ -3201,18 +3214,6 @@ function DashboardPanel({
           ) : (
             <EmptyState icon={TrendingUp} title="No qualifying sales in the last 30 days" detail="Paid online orders and active POS sales will populate this ranking." />
           )}
-        </article>
-        <article className="commerce-card">
-          <div className="commerce-card-header">
-            <h2>Storefront Health</h2>
-          </div>
-          <div className="commerce-health-list">
-            <CommerceHealthRow label="Active products" count={storefrontHealth.activeProducts} tone="good" />
-            <CommerceHealthRow label="Products missing price" count={storefrontHealth.missingPrice} tone={storefrontHealth.missingPrice ? "bad" : "good"} />
-            <CommerceHealthRow label="Products missing primary image" count={storefrontHealth.missingImage} tone={storefrontHealth.missingImage ? "watch" : "good"} />
-            <CommerceHealthRow label="Products out of stock" count={storefrontHealth.outOfStock} tone={storefrontHealth.outOfStock ? "bad" : "good"} />
-          </div>
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("inventory")}>View storefront products <ChevronRight size={14} /></button>
         </article>
       </section>
       <footer className="commerce-dashboard-footer">All times shown in {ADMIN_DASHBOARD_BUSINESS_TIME_ZONE}</footer>
@@ -3330,7 +3331,7 @@ function CommerceQuickAction({
   onClick
 }: {
   icon: typeof Radar;
-  tone: "green" | "blue";
+  tone: "primary" | "soft" | "neutral";
   label: string;
   onClick: () => void;
 }) {

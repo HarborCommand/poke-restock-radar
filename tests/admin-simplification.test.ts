@@ -90,6 +90,8 @@ test("dashboard emphasizes ecommerce operations and keeps Quick Stock accessible
     "Manage Orders",
     "View Storefront",
     "Recent Sales &amp; Orders",
+    "Operations Health",
+    "Needs Attention",
     "Action Center",
     "Inventory Status",
     "Top Selling Products",
@@ -121,12 +123,14 @@ test("dashboard reference layout is responsive and scoped away from public store
   assert.match(css, /\.app-main\.app-main-dashboard/);
   assert.match(css, /\.commerce-kpi-grid[\s\S]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(css, /\.commerce-operations-strip[\s\S]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
-  assert.match(css, /\.commerce-middle-grid\{grid-template-columns:minmax\(0,0\.78fr\) minmax\(0,1\.22fr\)/, "middle grid promotes Recent Sales to a full-width row above Action Center and Inventory Status");
+  assert.match(css, /\.commerce-middle-grid\{grid-template-columns:minmax\(0,0\.34fr\) minmax\(0,0\.66fr\)/, "middle grid balances Operations Health at roughly one-third and Inventory Status at roughly two-thirds");
   assert.match(css, /\.commerce-middle-grid>\.commerce-card-large\{grid-column:1 \/ -1\}/, "Recent Sales spans the middle layout");
+  assert.match(css, /\.commerce-operations-health-card\{gap:14px\}/, "Operations Health combines attention and storefront health into one major card");
   assert.match(css, /\.app-main-dashboard\{box-sizing:border-box;width:100%;overflow-x:hidden\}/, "dashboard shell prevents page-level horizontal overflow");
-  assert.match(css, /\.commerce-lower-grid[\s\S]*grid-template-columns:\s*minmax\(0,\s*2\.08fr\)\s*minmax\(260px,\s*0\.72fr\)/);
+  assert.match(css, /\.commerce-lower-grid\{grid-template-columns:1fr/, "Top Selling Products is a full-width lower section");
   assert.match(css, /@media \(max-width:\s*1180px\)[\s\S]*\.commerce-kpi-grid,[\s\S]*\.commerce-operations-strip[\s\S]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*\.commerce-kpi-grid,[\s\S]*\.commerce-operations-strip,[\s\S]*\.commerce-quick-actions\s*>\s*div,[\s\S]*\.commerce-middle-grid,[\s\S]*\.commerce-lower-grid[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(css, /@media \(max-width:768px\)[\s\S]*\.commerce-sales-row\{display:grid;grid-template-columns:1fr/, "mobile sales rows remain stacked cards");
   assert.doesNotMatch(css, /background-image:\s*url\([^)]*codex-clipboard|reference image|screenshot overlay/i);
 });
 
@@ -145,6 +149,10 @@ test("dashboard real-data layout keeps long sales, inventory, action, and rankin
   assert.match(dashboardRealDataLayoutFixture.recentTransactions[1].profit, /^-/);
   assert.ok(dashboardRealDataLayoutFixture.inventoryRows.length >= 5);
   assert.ok(dashboardRealDataLayoutFixture.topProducts.length >= 3);
+  assert.equal(dashboardRealDataLayoutFixture.environment, "non-production-visual-stress");
+  assert.ok(dashboardRealDataLayoutFixture.imageCases.some((imageCase) => imageCase.aspect === "wide"));
+  assert.ok(dashboardRealDataLayoutFixture.imageCases.some((imageCase) => imageCase.aspect === "narrow"));
+  assert.ok(dashboardRealDataLayoutFixture.imageCases.some((imageCase) => imageCase.aspect === "missing"));
 
   assert.match(app, /function dashboardCustomerParts\(customer: string\)/, "customer display is presentation-only");
   assert.match(dashboardPanel, /className="commerce-sales-item-copy"[\s\S]*<strong title=\{row\.reference\}>\{row\.reference\}<\/strong>[\s\S]*<small title=\{row\.productName\}>\{row\.productName\}<\/small>/, "reference and product summary render as separate elements");
@@ -153,23 +161,32 @@ test("dashboard real-data layout keeps long sales, inventory, action, and rankin
   assert.match(dashboardPanel, /commerce-profit-cell[\s\S]*data-label="Profit"/, "profit uses a protected money cell");
   assert.match(dashboardPanel, /className="commerce-sales-status-cell" data-label="Status"/, "status badge has its own stable cell");
   assert.match(dashboardPanel, /className="commerce-inventory-copy"[\s\S]*<strong title=\{row\.item\.itemName\}>[\s\S]*<small title=\{dashboardInventoryIdentifier\(row\.item\)\}>/, "inventory title and identifier render separately");
+  assert.match(dashboardPanel, /className="commerce-inventory-quantity-group" data-label="Quantity"/, "inventory quantity gets its own labeled visual group");
   assert.match(dashboardPanel, /className="commerce-inventory-quantity"/);
   assert.match(dashboardPanel, /commerce-inventory-status/);
   assert.match(dashboardPanel, /className="commerce-top-number" data-label="Units Sold"/);
   assert.match(dashboardPanel, /className="commerce-top-number" data-label="Revenue"/);
   assert.match(dashboardPanel, /className=\{`commerce-top-number \$\{product\.verifiedProfit/, "top product profit column keeps numeric class");
   assert.match(dashboardPanel, /dashboardActionItems\(\{[\s\S]*ordersToShip[\s\S]*productsOutOfStock[\s\S]*missingShipping/s, "Action Center counts still come from approved conditions");
+  assert.match(dashboardPanel, /<h2>Operations Health<\/h2>[\s\S]*Needs Attention[\s\S]*Action Center[\s\S]*Storefront[\s\S]*Storefront Health/, "Operations Health combines Action Center and Storefront Health in one major card");
+  assert.doesNotMatch(dashboardPanel, /View all sales &amp; orders|View all inventory|View storefront products|View all actions/, "dashboard cards do not duplicate footer View all links");
 
+  assert.match(css, /\.commerce-sales-product \.product-image-preview\{width:48px;height:48px/, "Recent Sales product images are prominent on desktop");
+  assert.match(css, /\.commerce-inventory-row \.product-image-preview\{width:44px;height:44px/, "Inventory Status product images are prominent on desktop");
+  assert.match(css, /\.commerce-top-product \.product-image-preview\{width:40px;height:40px/, "Top Selling product images are prominent on desktop");
+  assert.match(css, /\.product-image-preview img\{width:100%;height:100%;object-fit:contain\}/, "product imagery maintains aspect ratio");
   assert.match(css, /\.commerce-sales-item-copy small[\s\S]*-webkit-line-clamp:2/, "long product summaries clamp instead of overlapping");
   assert.match(css, /\.commerce-sales-customer small[\s\S]*text-overflow:ellipsis/, "long emails truncate safely");
   assert.match(css, /\.commerce-money-cell[\s\S]*font-variant-numeric:tabular-nums[\s\S]*white-space:nowrap/, "currency cells do not wrap");
   assert.match(css, /\.commerce-sales-status-cell \.commerce-badge[\s\S]*max-width:100%/, "status stays inside its cell");
-  assert.match(css, /\.commerce-inventory-row\{grid-template-columns:34px minmax\(0,1fr\) minmax\(36px,auto\) minmax\(98px,auto\)/, "inventory rows reserve product, quantity, and badge columns");
+  assert.match(css, /\.commerce-inventory-row\{grid-template-columns:44px minmax\(0,1fr\) minmax\(54px,auto\) minmax\(104px,auto\)/, "inventory rows reserve product, quantity, and badge columns");
   assert.match(css, /\.commerce-inventory-copy strong[\s\S]*-webkit-line-clamp:2/, "long inventory titles use two-line clamping");
+  assert.match(css, /\.commerce-quick-action\.primary[\s\S]*background:#0f9f5f[\s\S]*\.commerce-quick-action\.soft[\s\S]*\.commerce-quick-action\.neutral/, "Quick Actions use a reduced primary/soft/neutral hierarchy");
+  assert.doesNotMatch(dashboardPanel, /commerce-quick-action (?:purple|blue|green)"/, "Quick Actions no longer render competing accent treatments");
   assert.match(css, /@media \(max-width:768px\)[\s\S]*\.commerce-table-head,\s*\.commerce-top-head\{display:none\}/, "mobile hides desktop table headers at 768px and below");
   assert.match(css, /@media \(max-width:768px\)[\s\S]*\.commerce-sales-row\{display:grid;grid-template-columns:1fr/, "mobile sales rows become cards at 768px and below");
   assert.match(css, /@media \(max-width:768px\)[\s\S]*\.commerce-top-row\{display:grid;grid-template-columns:1fr/, "mobile top products become cards at 768px and below");
-  assert.match(css, /\.commerce-action-row\{grid-template-columns:24px minmax\(0,1fr\) minmax\(28px,auto\)/, "Action Center keeps counts right-aligned");
+  assert.match(css, /\.commerce-action-row,.commerce-health-row\{grid-template-columns:24px minmax\(0,1fr\) minmax\(28px,auto\)/, "Operations Health keeps counts right-aligned");
   assert.doesNotMatch([dashboardPanel, css].join("\n"), /Recent Alerts|release-source failures|missing-market warnings|retailer-monitoring status|scanner status|discovery status/i);
 });
 

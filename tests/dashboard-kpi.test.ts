@@ -1527,6 +1527,7 @@ test("admin orders dashboard and fulfillment center surface Stripe and invoice e
     assert.match(app, new RegExp(tab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing fulfillment tab ${tab}`);
   }
   assert.match(app, /Recent Sales &amp; Orders/);
+  assert.match(app, /Operations Health/);
   assert.match(app, /Action Center/);
   assert.match(app, /Storefront Health/);
   assert.match(app, /sidebar-nav-badge/);
