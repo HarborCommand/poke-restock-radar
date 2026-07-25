@@ -3107,21 +3107,25 @@ function DashboardPanel({
               </div>
               {recentRows.map((row) => {
                 const channelLabel = row.channel === "pos" ? "POS" : "Online";
+                const customerParts = dashboardCustomerParts(row.customer);
                 return (
                   <button className="commerce-sales-row" role="row" type="button" key={row.id} onClick={() => setActiveTab(row.channel === "pos" ? "sales" : "orders")}>
-                    <span role="cell" className="commerce-sales-product">
+                    <span role="cell" className="commerce-sales-product" data-label="Sale / Order">
                       <ProductImagePreview imageUrl={row.imageUrl ?? ""} itemName={row.productName} />
-                      <span>
-                        <strong>{row.reference}</strong>
-                        <small>{row.productName}</small>
+                      <span className="commerce-sales-item-copy">
+                        <strong title={row.reference}>{row.reference}</strong>
+                        <small title={row.productName}>{row.productName}</small>
                       </span>
                     </span>
-                    <span role="cell"><b className={`commerce-badge ${row.channel === "pos" ? "good" : "blue"}`}>{channelLabel}</b></span>
-                    <span role="cell">{row.customer}</span>
-                    <span role="cell">{relativeTime(row.occurredAt)}</span>
-                    <span role="cell">{money(row.revenue)}</span>
-                    <span role="cell"><b className={`commerce-badge ${row.statusTone}`}>{row.status}</b></span>
-                    <span role="cell" className={row.verifiedProfit === null ? "neutral" : row.verifiedProfit >= 0 ? "good" : "bad"}>{row.verifiedProfit === null ? "Unknown" : money(row.verifiedProfit)}</span>
+                    <span role="cell" className="commerce-sales-channel" data-label="Channel"><b className={`commerce-badge ${row.channel === "pos" ? "good" : "blue"}`}>{channelLabel}</b></span>
+                    <span role="cell" className="commerce-sales-customer" data-label="Customer">
+                      <strong title={row.customer}>{customerParts.primary}</strong>
+                      {customerParts.secondary ? <small title={customerParts.secondary}>{customerParts.secondary}</small> : null}
+                    </span>
+                    <span role="cell" className="commerce-sales-time" data-label="Time">{relativeTime(row.occurredAt)}</span>
+                    <span role="cell" className="commerce-money-cell" data-label="Amount">{money(row.revenue)}</span>
+                    <span role="cell" className="commerce-sales-status-cell" data-label="Status"><b className={`commerce-badge ${row.statusTone}`}>{row.status}</b></span>
+                    <span role="cell" className={`commerce-money-cell commerce-profit-cell ${row.verifiedProfit === null ? "neutral" : row.verifiedProfit >= 0 ? "good" : "bad"}`} data-label="Profit">{row.verifiedProfit === null ? "Unknown" : money(row.verifiedProfit)}</span>
                   </button>
                 );
               })}
@@ -3157,12 +3161,12 @@ function DashboardPanel({
             {inventoryRows.length ? inventoryRows.map((row) => (
               <button className="commerce-inventory-row" type="button" key={row.item.id} onClick={() => setActiveTab("inventory")}>
                 <ProductImagePreview imageUrl={dashboardInventoryPrimaryImage(row.item) ?? ""} itemName={row.item.itemName} />
-                <span>
-                  <strong>{row.item.itemName}</strong>
-                  <small>{dashboardInventoryIdentifier(row.item)}</small>
+                <span className="commerce-inventory-copy">
+                  <strong title={row.item.itemName}>{row.item.itemName}</strong>
+                  <small title={dashboardInventoryIdentifier(row.item)}>{dashboardInventoryIdentifier(row.item)}</small>
                 </span>
-                <b>{row.quantity}</b>
-                <em className={`commerce-badge ${row.tone}`}>{row.status}</em>
+                <b className="commerce-inventory-quantity">{row.quantity}</b>
+                <em className={`commerce-badge commerce-inventory-status ${row.tone}`}>{row.status}</em>
               </button>
             )) : <EmptyState icon={Boxes} title="No inventory items yet" detail="Add a product to start managing stock." />}
           </div>
@@ -3186,11 +3190,11 @@ function DashboardPanel({
               </div>
               {topProducts.map((product, index) => (
                 <div className="commerce-top-row" role="row" key={product.key}>
-                  <span role="cell" className="commerce-top-product"><b>{index + 1}</b><ProductImagePreview imageUrl={product.imageUrl ?? ""} itemName={product.name} /><strong>{product.name}</strong></span>
-                  <span role="cell">{product.units}</span>
-                  <span role="cell">{money(product.revenue)}</span>
-                  <span role="cell" className={product.verifiedProfit === null ? "neutral" : product.verifiedProfit >= 0 ? "good" : "bad"}>{product.verifiedProfit === null ? "Unknown" : money(product.verifiedProfit)}</span>
-                  <span role="cell">{product.margin === null ? "Unknown" : percent(product.margin)}</span>
+                  <span role="cell" className="commerce-top-product" data-label="Product"><b>{index + 1}</b><ProductImagePreview imageUrl={product.imageUrl ?? ""} itemName={product.name} /><strong title={product.name}>{product.name}</strong></span>
+                  <span role="cell" className="commerce-top-number" data-label="Units Sold">{product.units}</span>
+                  <span role="cell" className="commerce-top-number" data-label="Revenue">{money(product.revenue)}</span>
+                  <span role="cell" className={`commerce-top-number ${product.verifiedProfit === null ? "neutral" : product.verifiedProfit >= 0 ? "good" : "bad"}`} data-label="Profit">{product.verifiedProfit === null ? "Unknown" : money(product.verifiedProfit)}</span>
+                  <span role="cell" className="commerce-top-number" data-label="Margin">{product.margin === null ? "Unknown" : percent(product.margin)}</span>
                 </div>
               ))}
             </div>
@@ -3242,6 +3246,22 @@ function dashboardActionItems(counts: {
     { icon: ImageIconFallback, label: "Products missing primary image", count: counts.missingImage, tab: "inventory" as Tab, tone: "neutral" as CommerceActionTone },
     { icon: PackageSearch, label: "Products missing shipping setup", count: counts.missingShipping, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone }
   ].filter((item) => item.count > 0);
+}
+
+function dashboardCustomerParts(customer: string) {
+  const trimmed = customer.trim();
+  const bracketEmailMatch = trimmed.match(/^(.*?)\s*<([^<>\s]+@[^<>\s]+)>$/);
+  if (bracketEmailMatch) {
+    return {
+      primary: bracketEmailMatch[1]?.trim() || bracketEmailMatch[2],
+      secondary: bracketEmailMatch[2]
+    };
+  }
+
+  return {
+    primary: trimmed || "Guest",
+    secondary: null
+  };
 }
 
 function ImageIconFallback({ size }: { size?: number }) {
