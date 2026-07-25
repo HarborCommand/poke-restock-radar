@@ -73,7 +73,7 @@ export async function POST(request: Request) {
           where: { id: targetId },
           data: {
             email,
-            name: "Radar Admin",
+            name: "GameDayGrabs Admin",
             role: "ADMIN",
             passwordHash,
             passwordChangedAt: now,
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
       : await prisma.user.create({
           data: {
             email,
-            name: "Radar Admin",
+            name: "GameDayGrabs Admin",
             role: "ADMIN",
             passwordHash,
             passwordChangedAt: now,
