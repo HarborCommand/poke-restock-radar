@@ -3020,6 +3020,7 @@ function DashboardPanel({
     missingImage: storefrontHealth.missingImage,
     missingShipping: storefrontHealth.missingShipping
   });
+  const visibleActionItems = actionItems.filter((item) => !STOREFRONT_HEALTH_ACTION_KEYS.has(item.key));
   const recentRows = accounting.recentTransactions;
   const inventoryRows = dashboardInventoryStatusRows(dashboard.inventory).slice(0, 5);
   const topProducts = dashboardTopSellingProducts(accounting.topSellingProductRecords, dashboard.inventory).slice(0, 3);
@@ -3077,11 +3078,11 @@ function DashboardPanel({
       <section className="commerce-quick-actions dashboard-quick-action-strip" aria-label="Quick Actions">
         <h2>Quick Actions</h2>
         <div>
-          <CommerceQuickAction icon={Store} tone="green" label="New POS Sale" onClick={() => setActiveTab("pos")} />
-          <CommerceQuickAction icon={ScanBarcode} tone="blue" label="Quick Stock" onClick={() => openInventoryIntent("quick-stock")} />
-          <CommerceQuickAction icon={PlusCircle} tone="green" label="Add Product" onClick={() => openInventoryIntent("add-product")} />
-          <CommerceQuickAction icon={ClipboardList} tone="blue" label="Manage Orders" onClick={() => setActiveTab("orders")} />
-          <a className="commerce-quick-action purple" href={GAMEDAYGRABS_CANONICAL_PUBLIC_URL} target="_blank" rel="noopener noreferrer" aria-label="View public GameDayGrabs storefront in a new tab">
+          <CommerceQuickAction icon={Store} tone="primary" label="New POS Sale" onClick={() => setActiveTab("pos")} />
+          <CommerceQuickAction icon={ScanBarcode} tone="soft" label="Quick Stock" onClick={() => openInventoryIntent("quick-stock")} />
+          <CommerceQuickAction icon={PlusCircle} tone="soft" label="Add Product" onClick={() => openInventoryIntent("add-product")} />
+          <CommerceQuickAction icon={ClipboardList} tone="neutral" label="Manage Orders" onClick={() => setActiveTab("orders")} />
+          <a className="commerce-quick-action neutral" href={GAMEDAYGRABS_CANONICAL_PUBLIC_URL} target="_blank" rel="noopener noreferrer" aria-label="View public GameDayGrabs storefront in a new tab">
             <ExternalLink size={18} />
             <span>View Storefront</span>
           </a>
@@ -3092,7 +3093,7 @@ function DashboardPanel({
         <article className="commerce-card commerce-card-large">
           <div className="commerce-card-header">
             <h2>Recent Sales &amp; Orders</h2>
-            <button type="button" onClick={() => setActiveTab("sales")}>View all</button>
+            <button type="button" onClick={() => setActiveTab("sales")}>View sales</button>
           </div>
           {recentRows.length ? (
             <div className="commerce-sales-table" role="table" aria-label="Recent sales and orders">
@@ -3133,29 +3134,45 @@ function DashboardPanel({
           ) : (
             <EmptyState icon={Receipt} title="No recent sales or orders yet." detail="Paid online orders and POS sales will appear here." />
           )}
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("sales")}>View all sales &amp; orders <ChevronRight size={14} /></button>
         </article>
 
-        <article className="commerce-card">
+        <article className="commerce-card commerce-operations-health-card">
           <div className="commerce-card-header">
-            <h2>Action Center</h2>
+            <h2>Operations Health</h2>
           </div>
-          <div className="commerce-action-list">
-            {actionItems.length ? actionItems.map((item) => (
-              <button className="commerce-action-row" type="button" key={item.label} onClick={() => setActiveTab(item.tab)}>
-                <span className={item.tone}><item.icon size={15} /></span>
-                <strong>{item.label}</strong>
-                <b>{item.count}</b>
-              </button>
-            )) : <EmptyState icon={Check} title="No urgent actions" detail="Orders, inventory, and storefront product checks are clear." />}
+          <div className="commerce-health-section">
+            <h3>Needs Attention</h3>
+            <div className="commerce-action-list">
+              {visibleActionItems.length ? visibleActionItems.map((item) => (
+                <button className="commerce-action-row" type="button" key={item.label} onClick={() => setActiveTab(item.tab)}>
+                  <span className={item.tone}><item.icon size={15} /></span>
+                  <strong>{item.label}</strong>
+                  <b>{item.count}</b>
+                </button>
+              )) : (
+                <div className="commerce-action-row commerce-action-row-static" role="status">
+                  <span className="good"><Check size={15} /></span>
+                  <strong>No urgent actions</strong>
+                  <b>0</b>
+                </div>
+              )}
+            </div>
           </div>
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("orders")}>View all actions <ChevronRight size={14} /></button>
+          <div className="commerce-health-section commerce-health-section-storefront">
+            <h3>Storefront</h3>
+            <div className="commerce-health-list">
+              <CommerceHealthRow label="Active products" count={storefrontHealth.activeProducts} tone="good" />
+              <CommerceHealthRow label="Missing price" count={storefrontHealth.missingPrice} tone={storefrontHealth.missingPrice ? "bad" : "good"} />
+              <CommerceHealthRow label="Missing image" count={storefrontHealth.missingImage} tone={storefrontHealth.missingImage ? "watch" : "good"} />
+              <CommerceHealthRow label="Out of stock" count={storefrontHealth.outOfStock} tone={storefrontHealth.outOfStock ? "bad" : "good"} />
+            </div>
+          </div>
         </article>
 
-        <article className="commerce-card">
+        <article className="commerce-card commerce-inventory-card">
           <div className="commerce-card-header">
             <h2>Inventory Status</h2>
-            <button type="button" onClick={() => setActiveTab("inventory")}>View all</button>
+            <button type="button" onClick={() => setActiveTab("inventory")}>View inventory</button>
           </div>
           <div className="commerce-inventory-list">
             {inventoryRows.length ? inventoryRows.map((row) => (
@@ -3165,16 +3182,18 @@ function DashboardPanel({
                   <strong title={row.item.itemName}>{row.item.itemName}</strong>
                   <small title={dashboardInventoryIdentifier(row.item)}>{dashboardInventoryIdentifier(row.item)}</small>
                 </span>
-                <b className="commerce-inventory-quantity">{row.quantity}</b>
+                <span className="commerce-inventory-quantity-group" data-label="Quantity">
+                  <small>Qty</small>
+                  <b className="commerce-inventory-quantity">{row.quantity}</b>
+                </span>
                 <em className={`commerce-badge commerce-inventory-status ${row.tone}`}>{row.status}</em>
               </button>
             )) : <EmptyState icon={Boxes} title="No inventory items yet" detail="Add a product to start managing stock." />}
           </div>
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("inventory")}>View all inventory <ChevronRight size={14} /></button>
         </article>
       </section>
 
-      <section className="commerce-lower-grid" aria-label="Sales and storefront health">
+      <section className="commerce-lower-grid" aria-label="Sales performance">
         <article className="commerce-card commerce-card-large">
           <div className="commerce-card-header">
             <h2>Top Selling Products <span>(Last 30 Days)</span></h2>
@@ -3202,18 +3221,6 @@ function DashboardPanel({
             <EmptyState icon={TrendingUp} title="No qualifying sales in the last 30 days" detail="Paid online orders and active POS sales will populate this ranking." />
           )}
         </article>
-        <article className="commerce-card">
-          <div className="commerce-card-header">
-            <h2>Storefront Health</h2>
-          </div>
-          <div className="commerce-health-list">
-            <CommerceHealthRow label="Active products" count={storefrontHealth.activeProducts} tone="good" />
-            <CommerceHealthRow label="Products missing price" count={storefrontHealth.missingPrice} tone={storefrontHealth.missingPrice ? "bad" : "good"} />
-            <CommerceHealthRow label="Products missing primary image" count={storefrontHealth.missingImage} tone={storefrontHealth.missingImage ? "watch" : "good"} />
-            <CommerceHealthRow label="Products out of stock" count={storefrontHealth.outOfStock} tone={storefrontHealth.outOfStock ? "bad" : "good"} />
-          </div>
-          <button className="commerce-card-link" type="button" onClick={() => setActiveTab("inventory")}>View storefront products <ChevronRight size={14} /></button>
-        </article>
       </section>
       <footer className="commerce-dashboard-footer">All times shown in {ADMIN_DASHBOARD_BUSINESS_TIME_ZONE}</footer>
     </section>
@@ -3223,6 +3230,8 @@ function DashboardPanel({
 type CommerceTone = "green" | "blue" | "purple" | "orange" | "red";
 
 type CommerceActionTone = "good" | "blue" | "watch" | "bad" | "neutral";
+
+const STOREFRONT_HEALTH_ACTION_KEYS = new Set<string>(["products_out_of_stock", "missing_price", "missing_image"]);
 
 function dashboardActionItems(counts: {
   ordersToShip: number;
@@ -3236,15 +3245,15 @@ function dashboardActionItems(counts: {
   missingShipping: number;
 }) {
   return [
-    { icon: Navigation, label: "Paid orders awaiting shipment", count: counts.ordersToShip, tab: "shipping" as Tab, tone: "blue" as CommerceActionTone },
-    { icon: ShoppingBag, label: "Pickup orders awaiting customer", count: counts.pickupOrders, tab: "shipping" as Tab, tone: "good" as CommerceActionTone },
-    { icon: CreditCard, label: "Pending payments", count: counts.pendingPayments, tab: "orders" as Tab, tone: "watch" as CommerceActionTone },
-    { icon: RotateCcw, label: "Refunds / returns needing action", count: counts.refundReturns, tab: "orders" as Tab, tone: "bad" as CommerceActionTone },
-    { icon: AlertTriangle, label: "Products out of stock", count: counts.productsOutOfStock, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
-    { icon: AlertTriangle, label: "Low stock products", count: counts.lowStockProducts, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone },
-    { icon: CreditCard, label: "Products missing price", count: counts.missingPrice, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
-    { icon: ImageIconFallback, label: "Products missing primary image", count: counts.missingImage, tab: "inventory" as Tab, tone: "neutral" as CommerceActionTone },
-    { icon: PackageSearch, label: "Products missing shipping setup", count: counts.missingShipping, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone }
+    { key: "orders_to_ship", icon: Navigation, label: "Paid orders awaiting shipment", count: counts.ordersToShip, tab: "shipping" as Tab, tone: "blue" as CommerceActionTone },
+    { key: "pickup_orders", icon: ShoppingBag, label: "Pickup orders awaiting customer", count: counts.pickupOrders, tab: "shipping" as Tab, tone: "good" as CommerceActionTone },
+    { key: "pending_payments", icon: CreditCard, label: "Pending payments", count: counts.pendingPayments, tab: "orders" as Tab, tone: "watch" as CommerceActionTone },
+    { key: "refund_returns", icon: RotateCcw, label: "Refunds / returns needing action", count: counts.refundReturns, tab: "orders" as Tab, tone: "bad" as CommerceActionTone },
+    { key: "products_out_of_stock", icon: AlertTriangle, label: "Products out of stock", count: counts.productsOutOfStock, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
+    { key: "low_stock_products", icon: AlertTriangle, label: "Low stock products", count: counts.lowStockProducts, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone },
+    { key: "missing_price", icon: CreditCard, label: "Products missing price", count: counts.missingPrice, tab: "inventory" as Tab, tone: "bad" as CommerceActionTone },
+    { key: "missing_image", icon: ImageIconFallback, label: "Products missing primary image", count: counts.missingImage, tab: "inventory" as Tab, tone: "neutral" as CommerceActionTone },
+    { key: "missing_shipping", icon: PackageSearch, label: "Products missing shipping setup", count: counts.missingShipping, tab: "inventory" as Tab, tone: "watch" as CommerceActionTone }
   ].filter((item) => item.count > 0);
 }
 
@@ -3330,7 +3339,7 @@ function CommerceQuickAction({
   onClick
 }: {
   icon: typeof Radar;
-  tone: "green" | "blue";
+  tone: "primary" | "soft" | "neutral";
   label: string;
   onClick: () => void;
 }) {

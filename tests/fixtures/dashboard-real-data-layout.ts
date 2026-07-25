@@ -1,4 +1,10 @@
 export const dashboardRealDataLayoutFixture = {
+  environment: "non-production-visual-stress",
+  imageCases: [
+    { aspect: "wide", description: "sealed product banner image that must fit without stretching" },
+    { aspect: "narrow", description: "tall packaging image that must remain recognizable" },
+    { aspect: "missing", description: "missing image fallback remains calm and non-decorative" }
+  ],
   recentTransactions: [
     {
       reference: "#POS-REAL-DATA-STRESS-REFERENCE-123456",
