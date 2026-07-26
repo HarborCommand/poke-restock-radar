@@ -972,7 +972,8 @@ export async function updateTcgcsvMatch(
   currentUser: SessionUser,
   itemId: string,
   action: "accept" | "reject" | "lock" | "search_again" | "mark_unmatched",
-  providerProductId?: string | null
+  providerProductId?: string | null,
+  options: { manualConfirmation?: boolean } = {}
 ) {
   const item = await prisma.inventoryItem.findFirst({
     where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
@@ -1025,6 +1026,15 @@ export async function updateTcgcsvMatch(
     ? await prisma.tcgcsvProduct.findUnique({ where: { tcgcsvProductId: providerProductId } })
     : null;
   if (providerProductId && !selectedProduct) throw new Error("Selected TCGCSV product was not found.");
+  const selectedEvaluation = selectedProduct ? evaluateTcgcsvIdentityMatch(item, selectedProduct) : null;
+  if (action === "lock" && selectedEvaluation) {
+    if (selectedEvaluation.hardRejected || selectedEvaluation.statusLabel === "No Match") {
+      throw new Error("Hard-rejected TCGCSV candidates cannot be confirmed through the normal match flow.");
+    }
+    if (selectedEvaluation.statusLabel !== "Exact Match" && options.manualConfirmation !== true) {
+      throw new Error("Manual confirmation is required before locking a non-exact TCGCSV match.");
+    }
+  }
   if (selectedProduct) {
     await prisma.inventoryItem.update({
       where: { id: item.id },
@@ -1051,6 +1061,9 @@ export async function updateTcgcsvMatch(
           productId: selectedProduct.tcgcsvProductId,
           productName: selectedProduct.productName,
           groupName: selectedProduct.groupName,
+          manualConfirmation: action === "lock" && selectedEvaluation?.statusLabel !== "Exact Match",
+          computedStatus: selectedEvaluation?.statusLabel ?? null,
+          warnings: selectedEvaluation?.warnings ?? [],
           action
         })
       }

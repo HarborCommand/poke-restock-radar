@@ -1137,6 +1137,7 @@ export type InventorySummaryDTO = {
   estimatedMarketValue: number;
   marketValue: number | null;
   marketItemsWithDataCount: number;
+  staleMarketPriceCount?: number;
   totalSalesGross: number;
   totalSalesNet: number;
   estimatedProfit: number;

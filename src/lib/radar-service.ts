@@ -93,7 +93,7 @@ import {
   syncTcgcsvCatalog,
   updateTcgcsvMatch
 } from "@/lib/tcgcsv-market";
-import { isTrustedInventoryMarketPrice, unsafeMarketReason } from "@/lib/market-trust";
+import { canCalculatePotentialMarketFinancials, hasDisplayableExactMarketPrice, isCurrentExactMarketPrice } from "@/lib/market-trust";
 import {
   calculateCardProfit,
   calculateMaxRawBuyPrice,
@@ -2435,8 +2435,7 @@ async function enrichInventoryWithTcgcsvMarketMetadata(items: InventoryItemDTO[]
   });
 }
 
-export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
-  const now = new Date();
+export function summarizeInventory(items: InventoryItemDTO[], now: Date = new Date()): InventorySummaryDTO {
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - now.getDay());
   weekStart.setHours(0, 0, 0, 0);
@@ -2444,14 +2443,17 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
   const allSales = items.flatMap((item) => item.sales);
   const totalCost = items.reduce((sum, item) => sum + item.totalCost, 0);
   const inventoryCostBasis = items.reduce((sum, item) => sum + item.quantityOwned * item.averageCost, 0);
-  const marketItems = items.filter((item) => item.quantityOwned > 0 && item.marketCompCount > 0 && item.grossMarketValue !== null && isTrustedInventoryMarketPrice(item));
-  const marketValue = marketItems.length ? marketItems.reduce((sum, item) => sum + (item.grossMarketValue ?? 0), 0) : null;
+  const displayableMarketItems = items.filter((item) => item.quantityOwned > 0 && hasDisplayableExactMarketPrice(item));
+  const currentMarketItems = displayableMarketItems.filter((item) => item.grossMarketValue !== null && isCurrentExactMarketPrice(item, now));
+  const projectedMarketItems = currentMarketItems.filter((item) => canCalculatePotentialMarketFinancials(item, now));
+  const staleMarketItems = displayableMarketItems.filter((item) => !isCurrentExactMarketPrice(item, now));
+  const marketValue = currentMarketItems.length ? currentMarketItems.reduce((sum, item) => sum + (item.grossMarketValue ?? 0), 0) : null;
   const currentInventoryValue = marketValue ?? 0;
   const totalSalesGross = allSales.reduce((sum, sale) => sum + saleActiveGross(sale), 0);
   const totalSalesNet = allSales.reduce((sum, sale) => sum + saleActiveNet(sale), 0);
   const realizedProfitLoss = allSales.reduce((sum, sale) => sum + saleActiveProfit(sale), 0);
-  const unrealizedProfitLoss = marketItems.length
-    ? marketItems.reduce((sum, item) => sum + ((item.grossMarketValue ?? 0) - item.quantityOwned * item.averageCost), 0)
+  const unrealizedProfitLoss = projectedMarketItems.length
+    ? projectedMarketItems.reduce((sum, item) => sum + (item.marketProfitLoss ?? ((item.grossMarketValue ?? 0) - item.quantityOwned * item.averageCost)), 0)
     : null;
   const estimatedProfit = realizedProfitLoss + (unrealizedProfitLoss ?? 0);
   const netProfitLoss = realizedProfitLoss + (unrealizedProfitLoss ?? 0);
@@ -2465,7 +2467,7 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
     current.sales += saleActiveGross(sale);
     profitByPlatformMap.set(platform, current);
   }
-  const withProfit = items.filter((item) => item.businessProfitLoss !== null || (item.estimatedNetProfit !== null && isTrustedInventoryMarketPrice(item)));
+  const withProfit = items.filter((item) => item.businessProfitLoss !== null || (item.estimatedNetProfit !== null && canCalculatePotentialMarketFinancials(item, now)));
   const sortedByProfit = [...withProfit].sort(
     (a, b) => (b.businessProfitLoss ?? b.marketProfitLoss ?? b.estimatedNetProfit ?? 0) - (a.businessProfitLoss ?? a.marketProfitLoss ?? a.estimatedNetProfit ?? 0)
   );
@@ -2477,7 +2479,8 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
     currentInventoryValue,
     estimatedMarketValue: currentInventoryValue,
     marketValue,
-    marketItemsWithDataCount: marketItems.length,
+    marketItemsWithDataCount: displayableMarketItems.length,
+    staleMarketPriceCount: staleMarketItems.length,
     totalSalesGross,
     totalSalesNet,
     estimatedProfit,
@@ -2502,7 +2505,7 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
         item.quantityOwned > 0 &&
         (item.marketCompCount === 0 ||
           item.currentMarketEstimate === null ||
-          unsafeMarketReason(item) !== "trusted" ||
+          !hasDisplayableExactMarketPrice(item) ||
           ["UNMATCHED", "REVIEW", "REJECTED", "ERROR"].includes(item.marketProviderMatchStatus))
     ).length
   };
@@ -8338,8 +8341,14 @@ export async function syncTcgcsvMarketData(currentUser: SessionUser, options: { 
   };
 }
 
-export async function reviewTcgcsvMarketMatch(currentUser: SessionUser, itemId: string, action: "accept" | "reject" | "lock" | "search_again" | "mark_unmatched", providerProductId?: string | null) {
-  await updateTcgcsvMatch(currentUser, itemId, action, providerProductId);
+export async function reviewTcgcsvMarketMatch(
+  currentUser: SessionUser,
+  itemId: string,
+  action: "accept" | "reject" | "lock" | "search_again" | "mark_unmatched",
+  providerProductId?: string | null,
+  options: { manualConfirmation?: boolean } = {}
+) {
+  await updateTcgcsvMatch(currentUser, itemId, action, providerProductId, options);
   const updated = await prisma.inventoryItem.findFirst({
     where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
     include: inventoryItemInclude

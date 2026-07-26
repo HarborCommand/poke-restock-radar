@@ -6,7 +6,15 @@ import {
   selectTcgcsvPriceRow,
   tcgcsvMarketPriceFromCachedProduct
 } from "../src/lib/tcgcsv-market";
-import { effectiveMarketIdentityStatus, inventoryMarketFreshness, isTrustedInventoryMarketPrice, unsafeMarketReason } from "../src/lib/market-trust";
+import {
+  canCalculatePotentialMarketFinancials,
+  currentMarketPriceReason,
+  effectiveMarketIdentityStatus,
+  hasDisplayableExactMarketPrice,
+  inventoryMarketFreshness,
+  marketPriceDisplayReason,
+  potentialMarketProjectionReason
+} from "../src/lib/market-trust";
 import { summarizeInventory } from "../src/lib/radar-service";
 import type { InventoryItemDTO } from "../src/types/radar";
 
@@ -341,34 +349,144 @@ test("stored MATCHED display match computes unsafe and is excluded from trusted 
     marketProviderIdentityWarnings: invalidEvaluation.warnings
   });
 
-  assert.equal(isTrustedInventoryMarketPrice(validItem, new Date("2026-07-26T00:00:00.000Z")), true);
-  assert.equal(isTrustedInventoryMarketPrice(invalidItem, new Date("2026-07-26T00:00:00.000Z")), false);
-  assert.equal(unsafeMarketReason(invalidItem, new Date("2026-07-26T00:00:00.000Z")), "Product identity mismatch");
+  assert.equal(hasDisplayableExactMarketPrice(validItem), true);
+  assert.equal(canCalculatePotentialMarketFinancials(validItem, new Date("2026-07-26T00:00:00.000Z")), true);
+  assert.equal(hasDisplayableExactMarketPrice(invalidItem), false);
+  assert.equal(potentialMarketProjectionReason(invalidItem, new Date("2026-07-26T00:00:00.000Z")), "Product identity mismatch");
 
-  const summary = summarizeInventory([validItem, invalidItem]);
+  const summary = summarizeInventory([validItem, invalidItem], new Date("2026-07-26T00:00:00.000Z"));
   assert.equal(summary.marketItemsWithDataCount, 1);
   assert.equal(summary.marketValue, 29.55);
   assert.notEqual(summary.marketValue, 158.68);
-  assert.equal(summary.unrealizedProfitLoss, 14.56);
+  assert.equal(summary.unrealizedProfitLoss, 9.56);
   assert.equal(summary.inventoryCostBasis, 29.98, "FIFO inventory cost value remains separate and unchanged");
 });
 
-test("potential financials are unavailable when identity, freshness, market price, or cost basis is unsafe", () => {
+test("market eligibility levels separate displayable, current, and projection validity", () => {
   const now = new Date("2026-07-26T00:00:00.000Z");
-  assert.equal(unsafeMarketReason(marketItem({ marketProviderIdentityStatus: "Needs Review", marketProviderIdentityValid: false }), now), "Match needs review");
-  assert.equal(unsafeMarketReason(marketItem({ currentMarketEstimate: null, marketCompCount: 0, grossMarketValue: null }), now), "Unopened price unavailable");
-  assert.equal(unsafeMarketReason(marketItem({ marketProviderPriceSubtype: "Normal" }), now), "Unopened price unavailable");
-  assert.equal(unsafeMarketReason(marketItem({ currentMarketEstimate: 29.55, marketCompCount: 1, netMarketValue: 24.55, marketProviderPriceSyncedAt: "2026-07-20T00:00:00.000Z" }), now), "Market data stale");
-  assert.equal(unsafeMarketReason(marketItem({ currentMarketEstimate: 29.55, marketCompCount: 1, netMarketValue: 24.55, averageCost: 0 }), now), "Cost basis unavailable");
+  const missingCost = marketItem({
+    currentMarketEstimate: 29.55,
+    marketCompCount: 1,
+    grossMarketValue: 29.55,
+    netMarketValue: 24.55,
+    marketProfitLoss: null,
+    marketRoiPercent: null,
+    averageCost: 0
+  });
+  assert.equal(hasDisplayableExactMarketPrice(missingCost), true);
+  assert.equal(currentMarketPriceReason(missingCost, now), "current");
+  assert.equal(potentialMarketProjectionReason(missingCost, now), "Cost basis unavailable");
+  assert.equal(canCalculatePotentialMarketFinancials(missingCost, now), false);
+
+  const staleWithCost = marketItem({
+    currentMarketEstimate: 29.55,
+    marketCompCount: 1,
+    grossMarketValue: 29.55,
+    netMarketValue: 24.55,
+    marketProfitLoss: 9.56,
+    marketRoiPercent: 63.8,
+    marketProviderPriceSyncedAt: "2026-07-20T00:00:00.000Z"
+  });
+  assert.equal(hasDisplayableExactMarketPrice(staleWithCost), true);
+  assert.equal(currentMarketPriceReason(staleWithCost, now), "Market data stale");
+  assert.equal(potentialMarketProjectionReason(staleWithCost, now), "Market data stale");
+
+  const freshProjection = marketItem({
+    currentMarketEstimate: 29.55,
+    marketCompCount: 1,
+    grossMarketValue: 59.1,
+    netMarketValue: 49.1,
+    marketProfitLoss: 19.12,
+    marketRoiPercent: 63.8,
+    quantityOwned: 2
+  });
+  assert.equal(hasDisplayableExactMarketPrice(freshProjection), true);
+  assert.equal(currentMarketPriceReason(freshProjection, now), "current");
+  assert.equal(potentialMarketProjectionReason(freshProjection, now), "trusted");
+  assert.equal(canCalculatePotentialMarketFinancials(freshProjection, now), true);
+
+  assert.equal(potentialMarketProjectionReason(marketItem({ marketProviderIdentityStatus: "Needs Review", marketProviderIdentityValid: false }), now), "Match needs review");
+  assert.equal(marketPriceDisplayReason(marketItem({ currentMarketEstimate: null, marketCompCount: 0, grossMarketValue: null })), "Unopened price unavailable");
+  assert.equal(marketPriceDisplayReason(marketItem({ marketProviderPriceSubtype: "Normal" })), "Unopened price unavailable");
 });
 
 test("stored versus computed status mapping does not trust stored MATCHED alone", () => {
   assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderIdentityStatus: "No Match" })), "No Match");
   assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderIdentityStatus: "Needs Review" })), "Needs Review");
   assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderIdentityStatus: "Exact Match" })), "Exact Match");
+  assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderIdentityStatus: null, marketProviderIdentityValid: undefined })), "Needs Review");
+  assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderProductId: null, marketProviderIdentityStatus: null, marketProviderIdentityValid: undefined })), "No Match");
+  assert.equal(marketPriceDisplayReason(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderIdentityStatus: null, marketProviderIdentityValid: undefined })), "Match needs review");
+  assert.equal(marketPriceDisplayReason(marketItem({ marketProviderProductId: null, marketProviderProductName: null })), "Matched product unavailable");
   assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "LOCKED", marketProviderIdentityStatus: "Manually Confirmed" })), "Manually Confirmed");
   assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "REVIEW", marketProviderIdentityStatus: "Needs Review" })), "Needs Review");
   assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "UNMATCHED", marketProviderIdentityStatus: "No Match" })), "No Match");
+});
+
+test("market summary separates exact price display, current totals, and potential projections", () => {
+  const exactMissingCost = marketItem({
+    id: "exact-missing-cost",
+    currentMarketEstimate: 29.55,
+    marketCompCount: 1,
+    grossMarketValue: 29.55,
+    netMarketValue: 24.55,
+    marketProfitLoss: null,
+    marketRoiPercent: null,
+    averageCost: 0,
+    totalCost: 0
+  });
+  const staleExact = marketItem({
+    id: "stale-exact",
+    currentMarketEstimate: 40,
+    marketCompCount: 1,
+    grossMarketValue: 40,
+    netMarketValue: 34,
+    marketProfitLoss: 19.01,
+    marketRoiPercent: 126.8,
+    marketProviderPriceSyncedAt: "2026-07-20T00:00:00.000Z"
+  });
+  const exactFullProjection = marketItem({
+    id: "exact-full-projection",
+    currentMarketEstimate: 20,
+    marketCompCount: 1,
+    grossMarketValue: 20,
+    netMarketValue: 16,
+    marketProfitLoss: 1.01,
+    marketRoiPercent: 6.7
+  });
+
+  const summary = summarizeInventory([exactMissingCost, staleExact, exactFullProjection], new Date("2026-07-26T00:00:00.000Z"));
+  assert.equal(summary.marketItemsWithDataCount, 3, "all exact prices remain visible in priced inventory");
+  assert.equal(summary.staleMarketPriceCount, 1);
+  assert.equal(summary.marketValue, 49.55, "current market value excludes stale exact prices");
+  assert.equal(summary.unrealizedProfitLoss, 1.01, "profit projection excludes missing cost basis and stale prices");
+  assert.equal(summary.estimatedProfit, 1.01);
+  assert.equal(summary.inventoryCostBasis, 29.98, "inventory cost accounting remains unchanged");
+});
+
+test("Poke Ball product identity benchmark keeps display rejected and single tin exact", () => {
+  const display = product({
+    tcgcsvProductId: "654590",
+    productName: "Poke Ball Tin Display (Q4 2025)",
+    marketPrice: 129.13
+  });
+  const single = product({
+    tcgcsvProductId: "668964",
+    productName: "Pokemon - Poke Ball Tin - Poke Ball (Q4 2025)",
+    marketPrice: 29.55,
+    lowPrice: 25.99,
+    subTypeName: "Unopened"
+  });
+  const displayEvaluation = evaluateTcgcsvIdentityMatch(benchmarkItem, display);
+  const singleEvaluation = evaluateTcgcsvIdentityMatch(benchmarkItem, single);
+
+  assert.equal(displayEvaluation.statusLabel, "No Match");
+  assert.equal(displayEvaluation.hardRejected, true);
+  assert.match(displayEvaluation.warnings.join(" "), /Package form is display/);
+  assert.equal(singleEvaluation.statusLabel, "Exact Match");
+  assert.equal(singleEvaluation.hardRejected, false);
+  assert.equal(tcgcsvMarketPriceFromCachedProduct(single), 29.55);
+  assert.equal(single.lowPrice, 25.99);
 });
 
 test("market freshness boundaries are deterministic", () => {
@@ -401,6 +519,13 @@ test("market UI copy does not present numeric confidence or sell-now directives 
   assert.doesNotMatch(source, /Provider \/ Confidence/);
   assert.doesNotMatch(source, /TCGCSV Estimate/);
   assert.doesNotMatch(source, /Low Confidence Sell Now/);
+  assert.match(source, /Items With Exact Price/);
+  assert.match(source, /Current Market Value/);
+  assert.match(source, /Estimated Net Proceeds/);
+  assert.match(source, /Potential Profit/);
+  assert.match(source, /Stale Prices/);
   assert.match(source, /candidateAction\(match, "lock"[\s\S]{0,220}Confirm Exact Match/);
-  assert.match(source, /candidateAction\(match, "accept"[\s\S]{0,220}Accept Suggested Match/);
+  assert.match(source, /Manually Confirm Match/);
+  assert.match(source, /candidate\.matchStatus !== "No Match"[\s\S]{0,260}Accept Suggested Match/);
+  assert.match(source, /Hard-rejected TCGCSV candidates cannot be confirmed|manuallyConfirmCandidate/);
 });

@@ -18,11 +18,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
     const body = (await readJson(request)) as {
       action?: "accept" | "reject" | "lock" | "search_again" | "mark_unmatched";
       providerProductId?: string | null;
+      manualConfirmation?: boolean;
     };
     if (!body.action || !["accept", "reject", "lock", "search_again", "mark_unmatched"].includes(body.action)) {
       throw new Error("Valid match action required.");
     }
-    const item = await reviewTcgcsvMarketMatch(user, itemId, body.action, body.providerProductId);
+    const item = await reviewTcgcsvMarketMatch(user, itemId, body.action, body.providerProductId, { manualConfirmation: body.manualConfirmation === true });
     await logAudit({
       user,
       action: `inventory.market.tcgcsv_match.${body.action}`,
