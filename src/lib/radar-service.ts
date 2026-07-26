@@ -86,12 +86,14 @@ import { createTrackerOnlineDropAlert } from "@/lib/monitor";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, testEbayConnection } from "@/lib/ebay";
 import {
   applyTcgcsvEstimateToInventoryItem,
+  evaluateTcgcsvIdentityMatch,
   getTcgcsvProviderStats,
   listTcgcsvMatchReview,
   searchTcgcsvCandidatesForItem,
   syncTcgcsvCatalog,
   updateTcgcsvMatch
 } from "@/lib/tcgcsv-market";
+import { canCalculatePotentialMarketFinancials, hasDisplayableExactMarketPrice, isCurrentExactMarketPrice } from "@/lib/market-trust";
 import {
   calculateCardProfit,
   calculateMaxRawBuyPrice,
@@ -2313,10 +2315,21 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     marketProviderProductId: item.marketProviderProductId,
     marketProviderProductName: item.marketProviderProductName,
     marketProviderMatchStatus: item.marketProviderMatchStatus,
+    marketProviderStoredMatchStatus: item.marketProviderMatchStatus,
+    marketProviderIdentityStatus: null,
+    marketProviderIdentityValid: false,
+    marketProviderIdentityWarnings: [],
+    marketProviderComputedConfidence: null,
     marketProviderConfidenceScore: item.marketProviderConfidenceScore,
     marketProviderMatchReason: item.marketProviderMatchReason,
     marketProviderMatchedAt: item.marketProviderMatchedAt?.toISOString() ?? null,
     marketProviderLastPricedAt: item.marketProviderLastPricedAt?.toISOString() ?? null,
+    marketProviderLowPrice: null,
+    marketProviderMidPrice: null,
+    marketProviderHighPrice: null,
+    marketProviderPriceSubtype: null,
+    marketProviderProductUrl: null,
+    marketProviderPriceSyncedAt: null,
     grossMarketValue: roundedMoney(grossMarketValue),
     netMarketValue: roundedMoney(netMarketValue),
     marketProfitLoss: roundedMoney(marketProfitLoss),
@@ -2377,8 +2390,52 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
   };
 }
 
-export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
-  const now = new Date();
+async function enrichInventoryWithTcgcsvMarketMetadata(items: InventoryItemDTO[]): Promise<InventoryItemDTO[]> {
+  const productIds = [
+    ...new Set(
+      items
+        .filter((item) => item.marketProvider === "TCGCSV" && item.marketProviderProductId)
+        .map((item) => item.marketProviderProductId)
+        .filter((id): id is string => Boolean(id))
+    )
+  ];
+  if (!productIds.length) return items;
+  const products = await prisma.tcgcsvProduct.findMany({ where: { tcgcsvProductId: { in: productIds } } });
+  const productById = new Map(products.map((product) => [product.tcgcsvProductId, product]));
+  return items.map((item) => {
+    const product = item.marketProviderProductId ? productById.get(item.marketProviderProductId) : null;
+    if (!product) return item;
+    const evaluation = evaluateTcgcsvIdentityMatch(item, product, { manuallyConfirmed: item.marketProviderMatchStatus === "LOCKED" });
+    const computedStatus = item.marketProviderMatchStatus === "LOCKED"
+      ? "Manually Confirmed"
+      : item.marketProviderMatchStatus === "MATCHED"
+        ? evaluation.statusLabel === "Exact Match"
+          ? "Exact Match"
+          : evaluation.statusLabel === "No Match"
+            ? "No Match"
+            : "Needs Review"
+        : item.marketProviderMatchStatus === "REVIEW"
+          ? "Needs Review"
+          : "No Match";
+    const identityValid = (computedStatus === "Exact Match" || computedStatus === "Manually Confirmed") && !evaluation.hardRejected;
+    return {
+      ...item,
+      marketProviderStoredMatchStatus: item.marketProviderMatchStatus,
+      marketProviderIdentityStatus: computedStatus,
+      marketProviderIdentityValid: identityValid,
+      marketProviderIdentityWarnings: evaluation.warnings,
+      marketProviderComputedConfidence: evaluation.confidence,
+      marketProviderLowPrice: product.lowPrice,
+      marketProviderMidPrice: product.midPrice,
+      marketProviderHighPrice: product.highPrice,
+      marketProviderPriceSubtype: product.subTypeName,
+      marketProviderProductUrl: product.productUrl,
+      marketProviderPriceSyncedAt: product.lastSyncedAt.toISOString()
+    };
+  });
+}
+
+export function summarizeInventory(items: InventoryItemDTO[], now: Date = new Date()): InventorySummaryDTO {
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - now.getDay());
   weekStart.setHours(0, 0, 0, 0);
@@ -2386,14 +2443,17 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
   const allSales = items.flatMap((item) => item.sales);
   const totalCost = items.reduce((sum, item) => sum + item.totalCost, 0);
   const inventoryCostBasis = items.reduce((sum, item) => sum + item.quantityOwned * item.averageCost, 0);
-  const marketItems = items.filter((item) => item.quantityOwned > 0 && item.marketCompCount > 0 && item.grossMarketValue !== null);
-  const marketValue = marketItems.length ? marketItems.reduce((sum, item) => sum + (item.grossMarketValue ?? 0), 0) : null;
+  const displayableMarketItems = items.filter((item) => item.quantityOwned > 0 && hasDisplayableExactMarketPrice(item));
+  const currentMarketItems = displayableMarketItems.filter((item) => item.grossMarketValue !== null && isCurrentExactMarketPrice(item, now));
+  const projectedMarketItems = currentMarketItems.filter((item) => canCalculatePotentialMarketFinancials(item, now));
+  const staleMarketItems = displayableMarketItems.filter((item) => !isCurrentExactMarketPrice(item, now));
+  const marketValue = currentMarketItems.length ? currentMarketItems.reduce((sum, item) => sum + (item.grossMarketValue ?? 0), 0) : null;
   const currentInventoryValue = marketValue ?? 0;
   const totalSalesGross = allSales.reduce((sum, sale) => sum + saleActiveGross(sale), 0);
   const totalSalesNet = allSales.reduce((sum, sale) => sum + saleActiveNet(sale), 0);
   const realizedProfitLoss = allSales.reduce((sum, sale) => sum + saleActiveProfit(sale), 0);
-  const unrealizedProfitLoss = marketItems.length
-    ? marketItems.reduce((sum, item) => sum + ((item.grossMarketValue ?? 0) - item.quantityOwned * item.averageCost), 0)
+  const unrealizedProfitLoss = projectedMarketItems.length
+    ? projectedMarketItems.reduce((sum, item) => sum + (item.marketProfitLoss ?? ((item.grossMarketValue ?? 0) - item.quantityOwned * item.averageCost)), 0)
     : null;
   const estimatedProfit = realizedProfitLoss + (unrealizedProfitLoss ?? 0);
   const netProfitLoss = realizedProfitLoss + (unrealizedProfitLoss ?? 0);
@@ -2407,7 +2467,7 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
     current.sales += saleActiveGross(sale);
     profitByPlatformMap.set(platform, current);
   }
-  const withProfit = items.filter((item) => item.businessProfitLoss !== null || item.estimatedNetProfit !== null);
+  const withProfit = items.filter((item) => item.businessProfitLoss !== null || (item.estimatedNetProfit !== null && canCalculatePotentialMarketFinancials(item, now)));
   const sortedByProfit = [...withProfit].sort(
     (a, b) => (b.businessProfitLoss ?? b.marketProfitLoss ?? b.estimatedNetProfit ?? 0) - (a.businessProfitLoss ?? a.marketProfitLoss ?? a.estimatedNetProfit ?? 0)
   );
@@ -2419,7 +2479,8 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
     currentInventoryValue,
     estimatedMarketValue: currentInventoryValue,
     marketValue,
-    marketItemsWithDataCount: marketItems.length,
+    marketItemsWithDataCount: displayableMarketItems.length,
+    staleMarketPriceCount: staleMarketItems.length,
     totalSalesGross,
     totalSalesNet,
     estimatedProfit,
@@ -2444,6 +2505,7 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
         item.quantityOwned > 0 &&
         (item.marketCompCount === 0 ||
           item.currentMarketEstimate === null ||
+          !hasDisplayableExactMarketPrice(item) ||
           ["UNMATCHED", "REVIEW", "REJECTED", "ERROR"].includes(item.marketProviderMatchStatus))
     ).length
   };
@@ -2467,7 +2529,7 @@ function marketSyncLogsFromInventory(items: InventoryItemDTO[]): MarketSyncLogDT
         priceFound: item.marketAverageSalePrice,
         confidence: item.marketProviderConfidenceScore || (item.marketConfidence === "HIGH" ? 100 : item.marketConfidence === "MEDIUM" ? 75 : item.marketConfidence === "LOW" ? 50 : null),
         message: isTcgcsv
-          ? "Market value refreshed from cached TCGCSV Market Estimate. Not a sold comp."
+          ? "Market value refreshed from cached TCGplayer Market Price via TCGCSV. Not a sold comp."
           : item.marketCompCount >= 3
             ? "Market value refreshed from trusted provider data."
             : "Market value refreshed with fewer than 3 accepted price points.",
@@ -2532,7 +2594,7 @@ function gradeLabel(gradeType: GradeType) {
 function sourceQualityLabel(sourceQuality: CompSourceQuality) {
   if (sourceQuality === "PRICECHARTING") return "PriceCharting";
   if (sourceQuality === "TCGPLAYER") return "TCGPlayer";
-  if (sourceQuality === "TCGCSV_ESTIMATE") return "TCGCSV Market Estimate";
+  if (sourceQuality === "TCGCSV_ESTIMATE") return "TCGplayer Market Price";
   if (sourceQuality === "MANUAL_ESTIMATE") return "Manual estimate";
   return "eBay sold";
 }
@@ -3073,7 +3135,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   });
   const qualityWarnings = dataQualityWarnings({ products: productDTOs, cards: cardDTOs, notificationSettings: notificationSettingsDTO });
   const monitorLogDTOs = monitorLogs.map(monitorLogToDTO);
-  const inventoryDTOs = inventory.map(inventoryItemToDTO);
+  const inventoryDTOs = await enrichInventoryWithTcgcsvMarketMetadata(inventory.map(inventoryItemToDTO));
   const ebayStatus = ebayConnectionStatus();
   const tcgcsvStats = await getTcgcsvProviderStats();
   const marketProviders = marketProviderStatuses(ebayStatus, tcgcsvStats);
@@ -8279,8 +8341,14 @@ export async function syncTcgcsvMarketData(currentUser: SessionUser, options: { 
   };
 }
 
-export async function reviewTcgcsvMarketMatch(currentUser: SessionUser, itemId: string, action: "accept" | "reject" | "lock" | "search_again" | "mark_unmatched", providerProductId?: string | null) {
-  await updateTcgcsvMatch(currentUser, itemId, action, providerProductId);
+export async function reviewTcgcsvMarketMatch(
+  currentUser: SessionUser,
+  itemId: string,
+  action: "accept" | "reject" | "lock" | "search_again" | "mark_unmatched",
+  providerProductId?: string | null,
+  options: { manualConfirmation?: boolean } = {}
+) {
+  await updateTcgcsvMatch(currentUser, itemId, action, providerProductId, options);
   const updated = await prisma.inventoryItem.findFirst({
     where: { id: itemId, OR: [{ userId: null }, { userId: currentUser.id }] },
     include: inventoryItemInclude

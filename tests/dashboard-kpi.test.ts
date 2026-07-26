@@ -887,11 +887,11 @@ test("inventory market stats use trusted estimates and ignore active asking pric
   assert.equal(stats.highest, 28);
 });
 
-test("market UI explains TCGCSV estimates and hides manual comp as the main workflow", () => {
+test("market UI explains TCGplayer prices through TCGCSV and hides manual comp as the main workflow", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
 
-  assert.match(app, /TCGCSV Market Estimate/i);
-  assert.match(app, /not sold comps/i);
+  assert.match(app, /TCGplayer Market Price/i);
+  assert.match(app, /TCGplayer market prices are cached through TCGCSV/i);
   assert.match(app, /Sync TCGCSV Now/i);
   assert.match(app, /Manual comps stay hidden as an admin fallback/i);
   assert.doesNotMatch(app, /<h2>Manual Sold Comp Entry<\/h2>/);
@@ -931,9 +931,10 @@ test("TCGCSV auto-match backfill and review workflow are wired", () => {
   assert.match(service, /autoMatchInventoryItemMarket\(currentUser, itemId\)/);
   assert.match(service, /marketProviderMatchStatus: \{ in: \["UNMATCHED", "REVIEW", "REJECTED", "ERROR"\] \}/);
   assert.doesNotMatch(service, /take: options\.limit \?\? 50/);
-  assert.match(tcgcsv, /confidence >= 85/);
+  assert.match(tcgcsv, /evaluateTcgcsvIdentityMatch/);
+  assert.match(tcgcsv, /Exact Match/);
   assert.match(tcgcsv, /findTcgcsvCandidates/);
-  assert.match(tcgcsv, /exact UPC\/identifier match/);
+  assert.match(tcgcsv, /UPC\/identifier evidence/);
   assert.match(tcgcsv, /candidates: candidates\.map\(tcgcsvCandidateToDTO\)/);
   assert.match(app, /Auto-Match All Inventory/);
   assert.match(app, /Needs Review/);
