@@ -149,8 +149,7 @@ function isUnopenedSubtype(value: string | null | undefined) {
 
 export function selectTcgcsvPriceRow(rows: TcgcsvPricePayload[]) {
   const unopenedRows = rows.filter((row) => isUnopenedSubtype(toStringValue(row.subTypeName)));
-  const eligibleRows = unopenedRows.length ? unopenedRows : rows;
-  const marketRow = eligibleRows.find((row) => toNumber(row.marketPrice) !== null) ?? eligibleRows[0];
+  const marketRow = unopenedRows.find((row) => toNumber(row.marketPrice) !== null) ?? unopenedRows[0];
   if (!marketRow) {
     return {
       marketPrice: null,
@@ -158,7 +157,7 @@ export function selectTcgcsvPriceRow(rows: TcgcsvPricePayload[]) {
       midPrice: null,
       highPrice: null,
       directLowPrice: null,
-      subTypeName: null
+      subTypeName: toStringValue(rows[0]?.subTypeName) ? `diagnostic:${toStringValue(rows[0]?.subTypeName)}` : null
     };
   }
   return {
@@ -900,7 +899,10 @@ export async function listTcgcsvMatchReview(items: InventoryItemDTO[]): Promise<
     (item) =>
       item.quantityOwned > 0 &&
       item.marketProvider === "TCGCSV" &&
-      ["REVIEW", "UNMATCHED", "ERROR"].includes(item.marketProviderMatchStatus)
+      (["REVIEW", "UNMATCHED", "ERROR"].includes(item.marketProviderMatchStatus) ||
+        item.marketProviderIdentityValid === false ||
+        item.marketProviderIdentityStatus === "Needs Review" ||
+        item.marketProviderIdentityStatus === "No Match")
   );
   return Promise.all(
     reviewItems.map(async (item) => {
@@ -926,6 +928,9 @@ export async function listTcgcsvMatchReview(items: InventoryItemDTO[]): Promise<
             })()
           ]
         : await findTcgcsvCandidates(item, { limit: 4 });
+      const storedEvaluation = product
+        ? evaluateTcgcsvIdentityMatch(item, product, { manuallyConfirmed: item.marketProviderMatchStatus === "LOCKED" })
+        : null;
       return {
         inventoryItemId: item.id,
         itemName: item.itemName,
@@ -944,14 +949,15 @@ export async function listTcgcsvMatchReview(items: InventoryItemDTO[]): Promise<
         marketPrice: product ? tcgcsvMarketPriceFromCachedProduct(product) : item.currentMarketEstimate,
         lowPrice: product?.lowPrice ?? null,
         subTypeName: product?.subTypeName ?? null,
-        matchStatus:
-          item.marketProviderMatchStatus === "LOCKED"
+        matchStatus: item.marketProviderIdentityStatus ??
+          (item.marketProviderMatchStatus === "LOCKED"
             ? "Manually Confirmed"
             : product
-              ? evaluateTcgcsvIdentityMatch(item, product).statusLabel
+              ? storedEvaluation?.statusLabel ?? "Needs Review"
               : item.marketProviderMatchStatus === "REVIEW"
                 ? "Needs Review"
-                : "No Match",
+                : "No Match"),
+        matchWarnings: item.marketProviderIdentityWarnings ?? storedEvaluation?.warnings ?? [],
         confidence: item.marketProviderConfidenceScore,
         reason: item.marketProviderMatchReason,
         status: item.marketProviderMatchStatus,
@@ -1032,6 +1038,23 @@ export async function updateTcgcsvMatch(
         marketProviderMatchedAt: new Date()
       }
     });
+    await prisma.auditLog.create({
+      data: {
+        userId: currentUser.id,
+        actorEmail: currentUser.email,
+        action: action === "lock" ? "inventory.market_match_locked" : "inventory.market_match_accepted",
+        entityType: "INVENTORY",
+        entityId: item.id,
+        summary: `${currentUser.email} ${action === "lock" ? "locked" : "accepted"} TCGCSV product ${selectedProduct.tcgcsvProductId} for ${item.itemName}.`,
+        metadata: JSON.stringify({
+          provider: "TCGCSV",
+          productId: selectedProduct.tcgcsvProductId,
+          productName: selectedProduct.productName,
+          groupName: selectedProduct.groupName,
+          action
+        })
+      }
+    });
   }
   const dto = {
     id: item.id,
@@ -1044,7 +1067,7 @@ export async function updateTcgcsvMatch(
     asin: item.asin,
     marketProvider: "TCGCSV",
     marketProviderProductId: selectedProduct?.tcgcsvProductId ?? item.marketProviderProductId,
-    marketProviderMatchStatus: action === "lock" ? "LOCKED" : item.marketProviderMatchStatus,
+    marketProviderMatchStatus: action === "lock" ? "LOCKED" : action === "accept" ? "MATCHED" : item.marketProviderMatchStatus,
     marketProviderConfidenceScore: selectedProduct ? Math.max(item.marketProviderConfidenceScore, action === "lock" ? 100 : 90) : item.marketProviderConfidenceScore
   } as InventoryItemDTO;
   if (action === "search_again") {

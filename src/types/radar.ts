@@ -159,6 +159,11 @@ export type InventoryItemDTO = {
   marketProviderProductId: string | null;
   marketProviderProductName: string | null;
   marketProviderMatchStatus: string;
+  marketProviderStoredMatchStatus?: string | null;
+  marketProviderIdentityStatus?: "Exact Match" | "Manually Confirmed" | "Strong Suggested Match" | "Needs Review" | "No Match" | null;
+  marketProviderIdentityValid?: boolean;
+  marketProviderIdentityWarnings?: string[];
+  marketProviderComputedConfidence?: number | null;
   marketProviderConfidenceScore: number;
   marketProviderMatchReason: string | null;
   marketProviderMatchedAt: string | null;
@@ -2046,6 +2051,7 @@ export type MarketMatchReviewDTO = {
   lowPrice: number | null;
   subTypeName: string | null;
   matchStatus: "Exact Match" | "Manually Confirmed" | "Strong Suggested Match" | "Needs Review" | "No Match";
+  matchWarnings: string[];
   confidence: number;
   reason: string | null;
   status: string;

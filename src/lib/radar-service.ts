@@ -86,12 +86,14 @@ import { createTrackerOnlineDropAlert } from "@/lib/monitor";
 import { ebayConnectionStatus, ebayMode, fetchLastThreeEbayComps, testEbayConnection } from "@/lib/ebay";
 import {
   applyTcgcsvEstimateToInventoryItem,
+  evaluateTcgcsvIdentityMatch,
   getTcgcsvProviderStats,
   listTcgcsvMatchReview,
   searchTcgcsvCandidatesForItem,
   syncTcgcsvCatalog,
   updateTcgcsvMatch
 } from "@/lib/tcgcsv-market";
+import { isTrustedInventoryMarketPrice, unsafeMarketReason } from "@/lib/market-trust";
 import {
   calculateCardProfit,
   calculateMaxRawBuyPrice,
@@ -2313,6 +2315,11 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     marketProviderProductId: item.marketProviderProductId,
     marketProviderProductName: item.marketProviderProductName,
     marketProviderMatchStatus: item.marketProviderMatchStatus,
+    marketProviderStoredMatchStatus: item.marketProviderMatchStatus,
+    marketProviderIdentityStatus: null,
+    marketProviderIdentityValid: false,
+    marketProviderIdentityWarnings: [],
+    marketProviderComputedConfidence: null,
     marketProviderConfidenceScore: item.marketProviderConfidenceScore,
     marketProviderMatchReason: item.marketProviderMatchReason,
     marketProviderMatchedAt: item.marketProviderMatchedAt?.toISOString() ?? null,
@@ -2398,8 +2405,26 @@ async function enrichInventoryWithTcgcsvMarketMetadata(items: InventoryItemDTO[]
   return items.map((item) => {
     const product = item.marketProviderProductId ? productById.get(item.marketProviderProductId) : null;
     if (!product) return item;
+    const evaluation = evaluateTcgcsvIdentityMatch(item, product, { manuallyConfirmed: item.marketProviderMatchStatus === "LOCKED" });
+    const computedStatus = item.marketProviderMatchStatus === "LOCKED"
+      ? "Manually Confirmed"
+      : item.marketProviderMatchStatus === "MATCHED"
+        ? evaluation.statusLabel === "Exact Match"
+          ? "Exact Match"
+          : evaluation.statusLabel === "No Match"
+            ? "No Match"
+            : "Needs Review"
+        : item.marketProviderMatchStatus === "REVIEW"
+          ? "Needs Review"
+          : "No Match";
+    const identityValid = (computedStatus === "Exact Match" || computedStatus === "Manually Confirmed") && !evaluation.hardRejected;
     return {
       ...item,
+      marketProviderStoredMatchStatus: item.marketProviderMatchStatus,
+      marketProviderIdentityStatus: computedStatus,
+      marketProviderIdentityValid: identityValid,
+      marketProviderIdentityWarnings: evaluation.warnings,
+      marketProviderComputedConfidence: evaluation.confidence,
       marketProviderLowPrice: product.lowPrice,
       marketProviderMidPrice: product.midPrice,
       marketProviderHighPrice: product.highPrice,
@@ -2419,7 +2444,7 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
   const allSales = items.flatMap((item) => item.sales);
   const totalCost = items.reduce((sum, item) => sum + item.totalCost, 0);
   const inventoryCostBasis = items.reduce((sum, item) => sum + item.quantityOwned * item.averageCost, 0);
-  const marketItems = items.filter((item) => item.quantityOwned > 0 && item.marketCompCount > 0 && item.grossMarketValue !== null);
+  const marketItems = items.filter((item) => item.quantityOwned > 0 && item.marketCompCount > 0 && item.grossMarketValue !== null && isTrustedInventoryMarketPrice(item));
   const marketValue = marketItems.length ? marketItems.reduce((sum, item) => sum + (item.grossMarketValue ?? 0), 0) : null;
   const currentInventoryValue = marketValue ?? 0;
   const totalSalesGross = allSales.reduce((sum, sale) => sum + saleActiveGross(sale), 0);
@@ -2440,7 +2465,7 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
     current.sales += saleActiveGross(sale);
     profitByPlatformMap.set(platform, current);
   }
-  const withProfit = items.filter((item) => item.businessProfitLoss !== null || item.estimatedNetProfit !== null);
+  const withProfit = items.filter((item) => item.businessProfitLoss !== null || (item.estimatedNetProfit !== null && isTrustedInventoryMarketPrice(item)));
   const sortedByProfit = [...withProfit].sort(
     (a, b) => (b.businessProfitLoss ?? b.marketProfitLoss ?? b.estimatedNetProfit ?? 0) - (a.businessProfitLoss ?? a.marketProfitLoss ?? a.estimatedNetProfit ?? 0)
   );
@@ -2477,6 +2502,7 @@ export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryD
         item.quantityOwned > 0 &&
         (item.marketCompCount === 0 ||
           item.currentMarketEstimate === null ||
+          unsafeMarketReason(item) !== "trusted" ||
           ["UNMATCHED", "REVIEW", "REJECTED", "ERROR"].includes(item.marketProviderMatchStatus))
     ).length
   };

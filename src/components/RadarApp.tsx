@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { effectiveMarketIdentityStatus, inventoryMarketFreshness, isTrustedInventoryMarketPrice, unsafeMarketReason } from "@/lib/market-trust";
 import {
   AlertTriangle,
   Activity,
@@ -937,7 +938,7 @@ function inventoryMarketBadges(item: InventoryItemDTO, ebayStatus: DashboardDTO[
   const hasTcgcsvEstimate = item.lastThreeComps.some((comp) => comp.sourceQuality === "TCGCSV_ESTIMATE") || item.marketProvider === "TCGCSV";
   const hasManualComps = item.lastThreeComps.some((comp) => !["EBAY_SOLD", "TCGCSV_ESTIMATE"].includes(comp.sourceQuality));
   const badges: Array<{ label: string; tone: "good" | "watch" | "bad" | "muted" }> = [];
-  if (hasTcgcsvEstimate) badges.push({ label: "TCGplayer Market Price", tone: item.marketProviderMatchStatus === "REVIEW" ? "watch" : "good" });
+  if (hasTcgcsvEstimate) badges.push({ label: "TCGplayer Market Price", tone: isTrustedInventoryMarketPrice(item) ? "good" : "watch" });
   if (hasEbayComps) badges.push({ label: "Live eBay Data", tone: item.marketCompCount >= 3 ? "good" : "watch" });
   if (hasManualComps) badges.push({ label: "Manual Comp Data", tone: "watch" });
   if (!item.marketCompCount) badges.push({ label: "Market Not Collected", tone: "muted" });
@@ -959,11 +960,7 @@ function inventoryMarketSource(item: InventoryItemDTO) {
 }
 
 function marketMatchStatusLabel(item: InventoryItemDTO) {
-  if (item.marketProviderMatchStatus === "LOCKED") return "Manually Confirmed";
-  if (item.marketProviderMatchStatus === "MATCHED") return "Exact Match";
-  if (item.marketProviderMatchStatus === "REVIEW") return "Needs Review";
-  if (item.marketProviderMatchStatus === "REJECTED" || item.marketProviderMatchStatus === "UNMATCHED" || item.marketProviderMatchStatus === "ERROR") return "No Match";
-  return item.marketProvider ? "Needs Review" : "No Match";
+  return effectiveMarketIdentityStatus(item);
 }
 
 function marketMatchStatusTone(label: string): "good" | "watch" | "bad" | "muted" {
@@ -974,21 +971,20 @@ function marketMatchStatusTone(label: string): "good" | "watch" | "bad" | "muted
 }
 
 function marketFreshnessLabel(item: InventoryItemDTO) {
-  const value = item.marketProviderPriceSyncedAt || item.marketProviderLastPricedAt || item.marketLastRefreshedAt;
-  if (!value) return { label: "Unavailable", tone: "bad" as const };
-  const ageHours = (Date.now() - new Date(value).getTime()) / (1000 * 60 * 60);
-  if (!Number.isFinite(ageHours)) return { label: "Unavailable", tone: "bad" as const };
-  if (ageHours <= 36) return { label: "Fresh", tone: "good" as const };
-  if (ageHours <= 96) return { label: "Aging", tone: "watch" as const };
-  return { label: "Stale", tone: "bad" as const };
+  const freshness = inventoryMarketFreshness(item);
+  if (freshness.label === "Fresh") return { label: "Fresh", tone: "good" as const };
+  if (freshness.label === "Aging") return { label: "Aging", tone: "watch" as const };
+  return { label: freshness.label, tone: "bad" as const };
 }
 
 function marketDecisionLabel(item: InventoryItemDTO) {
-  const matchLabel = marketMatchStatusLabel(item);
-  const freshness = marketFreshnessLabel(item);
-  if (matchLabel === "Needs Review" || matchLabel === "No Match") return matchLabel;
-  if (item.currentMarketEstimate === null) return "Price Unavailable";
-  if (freshness.label === "Stale") return "Data Stale";
+  const reason = unsafeMarketReason(item);
+  if (reason === "Match needs review") return "Match Needs Review";
+  if (reason === "Product identity mismatch") return "Product Identity Mismatch";
+  if (reason === "Unopened price unavailable") return "Price Unavailable";
+  if (reason === "Market data stale") return "Data Stale";
+  if (reason === "Cost basis unavailable") return "Cost Basis Unavailable";
+  if (reason === "Estimated net unavailable") return "Estimated Net Unavailable";
   const profit = item.marketProfitLoss ?? 0;
   if (profit < 0) return "Below Cost";
   if (profit < Math.max(5, item.averageCost * 0.1)) return "Near Cost";
@@ -19336,24 +19332,24 @@ function MarketPanel({
 }) {
   const [marketSearches, setMarketSearches] = useState<Record<string, { query: string; candidates: MarketMatchCandidateDTO[] }>>({});
   const ownedInventory = dashboard.inventory.filter((item) => item.quantityOwned > 0);
-  const withMarketData = ownedInventory.filter((item) => item.marketCompCount > 0 && item.currentMarketEstimate !== null);
+  const trustedMarketItems = ownedInventory.filter((item) => item.marketCompCount > 0 && item.currentMarketEstimate !== null && isTrustedInventoryMarketPrice(item));
   const reviewItemIds = new Set(dashboard.marketMatchReview.map((match) => match.inventoryItemId));
   const missingMarketData = ownedInventory.filter(
     (item) =>
       !reviewItemIds.has(item.id) &&
       (item.marketCompCount === 0 ||
         item.currentMarketEstimate === null ||
+        !isTrustedInventoryMarketPrice(item) ||
         ["UNMATCHED", "REJECTED", "ERROR"].includes(item.marketProviderMatchStatus))
   );
-  const pricedItems = withMarketData
+  const pricedItems = trustedMarketItems
     .slice()
     .sort((a, b) => (b.marketProfitLoss ?? -999999) - (a.marketProfitLoss ?? -999999));
   const sellSignals = pricedItems
-    .filter((item) => marketFreshnessLabel(item).label !== "Stale" && marketMatchStatusLabel(item) !== "Needs Review" && marketMatchStatusLabel(item) !== "No Match")
     .filter((item) => (item.marketProfitLoss ?? 0) > 0)
     .slice(0, 5);
-  const estimatedNet = withMarketData.reduce((sum, item) => sum + (item.netMarketValue ?? 0), 0);
-  const estimatedProfit = withMarketData.reduce((sum, item) => sum + (item.marketProfitLoss ?? 0), 0);
+  const estimatedNet = trustedMarketItems.reduce((sum, item) => sum + (item.netMarketValue ?? 0), 0);
+  const estimatedProfit = trustedMarketItems.reduce((sum, item) => sum + (item.marketProfitLoss ?? 0), 0);
   const tcgcsvProvider = dashboard.marketProviders.find((provider) => provider.provider === "TCGCSV");
   const reviewCount = dashboard.marketMatchReview.length;
   const unmatchedCount = missingMarketData.length;
@@ -19380,12 +19376,12 @@ function MarketPanel({
         detail="TCGplayer market prices are cached through TCGCSV after product identity, subtype, variant, and release-period checks."
       />
       <section className="inventory-kpi-grid">
-        <InventoryKpiCard label="Items Priced" value={String(withMarketData.length)} detail={`${ownedInventory.length} owned inventory items`} tone={withMarketData.length ? "good" : "watch"} />
+        <InventoryKpiCard label="Items Priced" value={String(trustedMarketItems.length)} detail={`${ownedInventory.length} owned inventory items`} tone={trustedMarketItems.length ? "good" : "watch"} />
         <InventoryKpiCard label="Needs Review" value={String(reviewCount)} detail="TCGCSV candidates need approval" tone={reviewCount ? "watch" : "good"} />
         <InventoryKpiCard label="Unmatched" value={String(unmatchedCount)} detail="no confident cached match yet" tone={unmatchedCount ? "watch" : "good"} />
         <InventoryKpiCard label="Estimated Market Value" value={dashboard.inventorySummary.marketValue === null ? "Not collected" : money(dashboard.inventorySummary.marketValue)} detail="TCGplayer market price only" tone="good" />
-        <InventoryKpiCard label="Estimated Net" value={withMarketData.length ? money(estimatedNet) : "Not collected"} detail="fees estimated; shipping not included unless configured" tone="good" />
-        <InventoryKpiCard label="Estimated Profit" value={withMarketData.length ? money(estimatedProfit) : "Not collected"} detail="unrealized estimate" tone={estimatedProfit >= 0 ? "good" : "bad"} />
+        <InventoryKpiCard label="Estimated Net" value={trustedMarketItems.length ? money(estimatedNet) : "Not collected"} detail="fees estimated; shipping not included unless configured" tone="good" />
+        <InventoryKpiCard label="Estimated Profit" value={trustedMarketItems.length ? money(estimatedProfit) : "Not collected"} detail="unrealized estimate" tone={estimatedProfit >= 0 ? "good" : "bad"} />
       </section>
       <section className="market-status-strip">
         <div>
@@ -19516,7 +19512,9 @@ function MarketPanel({
                         <div>
                           <strong>{match.itemName}</strong>
                           <span>{match.upc || "No UPC"} - {formatStatus(match.category)} - {match.quantityOwned} owned</span>
-                          <small>Your avg cost {money(match.averageCost)} - Status {formatStatus(match.status)}</small>
+                          <small>Your avg cost {money(match.averageCost)} - Stored {formatStatus(match.status)} - Computed {match.matchStatus}</small>
+                          {match.matchWarnings.length ? <small className="profit-bad">{match.matchWarnings.join(" ")}</small> : null}
+                          {match.marketPrice !== null ? <small className="profit-bad">Stored market price {money(match.marketPrice)} is not trusted until identity passes.</small> : null}
                         </div>
                       </div>
                       <div className="market-candidate-list">
@@ -19534,11 +19532,11 @@ function MarketPanel({
                                 {candidate.matchWarnings.length ? <small className="profit-bad">{candidate.matchWarnings.join(" ")}</small> : null}
                               </div>
                               <div className="market-match-actions">
-                                <button className="mini-action" disabled={busy} type="button" onClick={() => candidateAction(match, "accept", candidate.providerProductId)}>
+                                <button className="mini-action" disabled={busy} type="button" onClick={() => candidateAction(match, "lock", candidate.providerProductId)}>
                                   Confirm Exact Match
                                 </button>
-                                <button className="secondary-action compact-action" disabled={busy} type="button" onClick={() => candidateAction(match, "lock", candidate.providerProductId)}>
-                                  Lock Manual Match
+                                <button className="secondary-action compact-action" disabled={busy} type="button" onClick={() => candidateAction(match, "accept", candidate.providerProductId)}>
+                                  Accept Suggested Match
                                 </button>
                                 {candidate.productUrl ? (
                                   <a className="secondary-action compact-action" href={candidate.productUrl} target="_blank" rel="noreferrer">
@@ -19701,6 +19699,8 @@ function MarketInventoryRow({
   const matchLabel = marketMatchStatusLabel(item);
   const freshness = marketFreshnessLabel(item);
   const decisionLabel = marketDecisionLabel(item);
+  const safetyReason = unsafeMarketReason(item);
+  const showPotentialFinancials = safetyReason === "trusted";
   return (
     <article className="market-inventory-row">
       <div className="market-product-cell">
@@ -19724,8 +19724,8 @@ function MarketInventoryRow({
         </span>
         <span>
           <small>Estimated Net</small>
-          <strong>{money(item.netMarketValue)}</strong>
-          <em>Fees estimated; shipping only if configured</em>
+          <strong>{showPotentialFinancials ? money(item.netMarketValue) : "Unavailable"}</strong>
+          <em>{showPotentialFinancials ? "Fees estimated; shipping only if configured" : safetyReason}</em>
         </span>
         <span>
           <small>Match Status</small>
@@ -19735,9 +19735,9 @@ function MarketInventoryRow({
         <span>
           <small>Profit / ROI</small>
           <strong className={tone === "bad" ? "profit-bad" : tone === "muted" ? "" : "profit-good"}>
-            {money(item.marketProfitLoss)} / {percent(item.marketRoiPercent)}
+            {showPotentialFinancials ? `${money(item.marketProfitLoss)} / ${percent(item.marketRoiPercent)}` : "Unavailable"}
           </strong>
-          <em>Cost basis {money(item.averageCost * item.quantityOwned)}</em>
+          <em>{showPotentialFinancials ? `Cost basis ${money(item.averageCost * item.quantityOwned)}` : safetyReason}</em>
         </span>
         <span>
           <small>Freshness</small>

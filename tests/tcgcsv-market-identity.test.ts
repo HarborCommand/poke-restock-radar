@@ -6,6 +6,8 @@ import {
   selectTcgcsvPriceRow,
   tcgcsvMarketPriceFromCachedProduct
 } from "../src/lib/tcgcsv-market";
+import { effectiveMarketIdentityStatus, inventoryMarketFreshness, isTrustedInventoryMarketPrice, unsafeMarketReason } from "../src/lib/market-trust";
+import { summarizeInventory } from "../src/lib/radar-service";
 import type { InventoryItemDTO } from "../src/types/radar";
 
 const benchmarkItem = {
@@ -118,6 +120,267 @@ test("TCGCSV market price remains separate from low listing, mid price, and disp
   );
 });
 
+test("strict Unopened price selection never falls back to another subtype", () => {
+  const normalOnly = selectTcgcsvPriceRow([
+    {
+      productId: "668964",
+      subTypeName: "Normal",
+      marketPrice: 129.13,
+      lowPrice: 120,
+      midPrice: 125,
+      highPrice: 150,
+      directLowPrice: 118
+    }
+  ]);
+
+  assert.equal(normalOnly.marketPrice, null);
+  assert.equal(normalOnly.lowPrice, null);
+  assert.equal(normalOnly.midPrice, null);
+  assert.equal(normalOnly.highPrice, null);
+  assert.equal(normalOnly.directLowPrice, null);
+  assert.match(String(normalOnly.subTypeName), /diagnostic:Normal/);
+
+  const unopenedWithoutMarket = selectTcgcsvPriceRow([
+    {
+      productId: "668964",
+      subTypeName: "Unopened",
+      marketPrice: null,
+      lowPrice: 25.99,
+      midPrice: 28,
+      highPrice: 35
+    }
+  ]);
+  assert.equal(unopenedWithoutMarket.subTypeName, "Unopened");
+  assert.equal(unopenedWithoutMarket.marketPrice, null);
+  assert.equal(unopenedWithoutMarket.lowPrice, 25.99);
+
+  const unopenedWithMarket = selectTcgcsvPriceRow([
+    {
+      productId: "668964",
+      subTypeName: "Unopened",
+      marketPrice: 29.55,
+      lowPrice: 25.99
+    }
+  ]);
+  assert.equal(unopenedWithMarket.marketPrice, 29.55);
+});
+
+function marketItem(overrides: Partial<InventoryItemDTO>): InventoryItemDTO {
+  return {
+    id: overrides.id ?? "item",
+    itemType: "product",
+    itemName: overrides.itemName ?? "PokÃ© Ball Tin (Q4 2025)",
+    category: "Sealed Packs",
+    setName: null,
+    productId: null,
+    linkedProductName: null,
+    linkedProductRetailer: null,
+    linkedProductLivePrice: null,
+    linkedProductLiveStockStatus: null,
+    cardId: null,
+    cost: 14.99,
+    quantity: 1,
+    quantityOwned: overrides.quantityOwned ?? 1,
+    quantitySold: 0,
+    averageCost: overrides.averageCost ?? 14.99,
+    totalCost: overrides.totalCost ?? 14.99,
+    purchaseExtraCost: null,
+    source: "Test",
+    retailer: null,
+    brand: null,
+    description: null,
+    manufacturer: null,
+    model: null,
+    msrp: null,
+    purchasedAt: "2026-07-01T00:00:00.000Z",
+    receiptNumber: null,
+    receiptImageUrl: null,
+    orderNumber: null,
+    transactionId: null,
+    sourceStore: null,
+    paymentMethod: null,
+    exactProductUrl: null,
+    upc: "196214130456",
+    sku: null,
+    taxCategory: null,
+    stripeTaxCode: null,
+    taxableOverride: null,
+    dpci: null,
+    asin: null,
+    imageUrl: null,
+    condition: null,
+    itemStatus: "sealed",
+    targetSellPrice: null,
+    minimumAcceptablePrice: null,
+    listingPlatform: null,
+    listingStatus: "not_listed",
+    soldPrice: null,
+    soldAt: null,
+    buyerPlatform: null,
+    currentMarketEstimate: overrides.currentMarketEstimate ?? null,
+    marketAverageSalePrice: overrides.currentMarketEstimate ?? null,
+    marketLowestRecentComp: overrides.currentMarketEstimate ?? null,
+    marketHighestRecentComp: overrides.currentMarketEstimate ?? null,
+    marketAverageLast3: overrides.currentMarketEstimate ?? null,
+    marketMedianLast3: overrides.currentMarketEstimate ?? null,
+    marketCompCount: overrides.marketCompCount ?? 0,
+    marketLastRefreshedAt: overrides.marketLastRefreshedAt ?? "2026-07-25T00:00:00.000Z",
+    marketConfidence: "HIGH",
+    marketProvider: "TCGCSV",
+    marketProviderProductId: overrides.marketProviderProductId ?? "668964",
+    marketProviderProductName: overrides.marketProviderProductName ?? "Pokemon - Poke Ball Tin - Poke Ball (Q4 2025)",
+    marketProviderMatchStatus: overrides.marketProviderMatchStatus ?? "MATCHED",
+    marketProviderStoredMatchStatus: overrides.marketProviderStoredMatchStatus,
+    marketProviderIdentityStatus: overrides.marketProviderIdentityStatus ?? "Exact Match",
+    marketProviderIdentityValid: overrides.marketProviderIdentityValid ?? true,
+    marketProviderIdentityWarnings: overrides.marketProviderIdentityWarnings ?? [],
+    marketProviderComputedConfidence: overrides.marketProviderComputedConfidence ?? 100,
+    marketProviderConfidenceScore: 100,
+    marketProviderMatchReason: null,
+    marketProviderMatchedAt: null,
+    marketProviderLastPricedAt: overrides.marketProviderLastPricedAt === undefined ? "2026-07-25T00:00:00.000Z" : overrides.marketProviderLastPricedAt,
+    marketProviderLowPrice: overrides.marketProviderLowPrice ?? null,
+    marketProviderMidPrice: null,
+    marketProviderHighPrice: null,
+    marketProviderPriceSubtype: overrides.marketProviderPriceSubtype ?? "Unopened",
+    marketProviderProductUrl: null,
+    marketProviderPriceSyncedAt: overrides.marketProviderPriceSyncedAt === undefined ? "2026-07-25T00:00:00.000Z" : overrides.marketProviderPriceSyncedAt,
+    grossMarketValue: overrides.grossMarketValue ?? null,
+    netMarketValue: overrides.netMarketValue ?? null,
+    marketProfitLoss: overrides.marketProfitLoss ?? null,
+    marketRoiPercent: overrides.marketRoiPercent ?? null,
+    estimatedEbayFee: null,
+    estimatedShippingCost: null,
+    estimatedNetProfit: null,
+    roiPercent: null,
+    recommendedAction: "HOLD",
+    recommendationReason: null,
+    netProfitAfterFees: null,
+    publishToStore: false,
+    publicSlug: null,
+    publicTitle: null,
+    publicDescription: null,
+    publicPrice: null,
+    compareAtPrice: null,
+    publicImages: [],
+    availableForSale: null,
+    maxQuantityPerOrder: 1,
+    purchaseLimitEnabled: false,
+    shippingProfile: "standard",
+    packageWeightOz: null,
+    packageLengthIn: null,
+    packageWidthIn: null,
+    packageHeightIn: null,
+    shippingMetadataSource: null,
+    freeShippingEligible: false,
+    localPickupEligible: true,
+    requiresBox: false,
+    insuranceRecommended: false,
+    needsShippingProfile: false,
+    storeStatus: "draft",
+    localPickupAvailable: true,
+    shippingAvailable: true,
+    storefrontCategory: null,
+    storefrontTags: [],
+    publishedAt: null,
+    authenticityProofStatus: "missing",
+    authenticityReceiptStatus: "missing",
+    authenticityPhotoStatus: "missing",
+    authenticityUpcVerified: false,
+    authenticityNotes: null,
+    totalSalesGross: 0,
+    totalSalesNet: 0,
+    realizedProfitLoss: 0,
+    realizedRoiPercent: null,
+    businessProfitLoss: overrides.businessProfitLoss ?? null,
+    lastThreeComps: [],
+    productImages: [],
+    stockLots: [],
+    stockAdjustments: [],
+    sales: [],
+    expectedPlan: null,
+    notes: null,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
+    ...overrides
+  };
+}
+
+test("stored MATCHED display match computes unsafe and is excluded from trusted totals", () => {
+  const invalidDisplay = product({
+    tcgcsvProductId: "654590",
+    productName: "Poke Ball Tin Display (Q4 2025)",
+    marketPrice: 129.13
+  });
+  const invalidEvaluation = evaluateTcgcsvIdentityMatch({ ...benchmarkItem, marketProviderMatchStatus: "MATCHED" }, invalidDisplay);
+  assert.equal(invalidEvaluation.statusLabel, "No Match");
+  assert.equal(invalidEvaluation.hardRejected, true);
+  assert.match(invalidEvaluation.warnings.join(" "), /Package form is display/);
+
+  const validItem = marketItem({
+    id: "valid",
+    currentMarketEstimate: 29.55,
+    marketCompCount: 1,
+    grossMarketValue: 29.55,
+    netMarketValue: 24.55,
+    marketProfitLoss: 9.56,
+    marketRoiPercent: 63.8
+  });
+  const invalidItem = marketItem({
+    id: "invalid",
+    marketProviderProductId: "654590",
+    marketProviderProductName: "Poke Ball Tin Display (Q4 2025)",
+    currentMarketEstimate: 129.13,
+    marketCompCount: 1,
+    grossMarketValue: 129.13,
+    netMarketValue: 107.02,
+    marketProfitLoss: 92.03,
+    marketRoiPercent: 613.9,
+    marketProviderIdentityStatus: "No Match",
+    marketProviderIdentityValid: false,
+    marketProviderIdentityWarnings: invalidEvaluation.warnings
+  });
+
+  assert.equal(isTrustedInventoryMarketPrice(validItem, new Date("2026-07-26T00:00:00.000Z")), true);
+  assert.equal(isTrustedInventoryMarketPrice(invalidItem, new Date("2026-07-26T00:00:00.000Z")), false);
+  assert.equal(unsafeMarketReason(invalidItem, new Date("2026-07-26T00:00:00.000Z")), "Product identity mismatch");
+
+  const summary = summarizeInventory([validItem, invalidItem]);
+  assert.equal(summary.marketItemsWithDataCount, 1);
+  assert.equal(summary.marketValue, 29.55);
+  assert.notEqual(summary.marketValue, 158.68);
+  assert.equal(summary.unrealizedProfitLoss, 14.56);
+  assert.equal(summary.inventoryCostBasis, 29.98, "FIFO inventory cost value remains separate and unchanged");
+});
+
+test("potential financials are unavailable when identity, freshness, market price, or cost basis is unsafe", () => {
+  const now = new Date("2026-07-26T00:00:00.000Z");
+  assert.equal(unsafeMarketReason(marketItem({ marketProviderIdentityStatus: "Needs Review", marketProviderIdentityValid: false }), now), "Match needs review");
+  assert.equal(unsafeMarketReason(marketItem({ currentMarketEstimate: null, marketCompCount: 0, grossMarketValue: null }), now), "Unopened price unavailable");
+  assert.equal(unsafeMarketReason(marketItem({ marketProviderPriceSubtype: "Normal" }), now), "Unopened price unavailable");
+  assert.equal(unsafeMarketReason(marketItem({ currentMarketEstimate: 29.55, marketCompCount: 1, netMarketValue: 24.55, marketProviderPriceSyncedAt: "2026-07-20T00:00:00.000Z" }), now), "Market data stale");
+  assert.equal(unsafeMarketReason(marketItem({ currentMarketEstimate: 29.55, marketCompCount: 1, netMarketValue: 24.55, averageCost: 0 }), now), "Cost basis unavailable");
+});
+
+test("stored versus computed status mapping does not trust stored MATCHED alone", () => {
+  assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderIdentityStatus: "No Match" })), "No Match");
+  assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderIdentityStatus: "Needs Review" })), "Needs Review");
+  assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "MATCHED", marketProviderIdentityStatus: "Exact Match" })), "Exact Match");
+  assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "LOCKED", marketProviderIdentityStatus: "Manually Confirmed" })), "Manually Confirmed");
+  assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "REVIEW", marketProviderIdentityStatus: "Needs Review" })), "Needs Review");
+  assert.equal(effectiveMarketIdentityStatus(marketItem({ marketProviderMatchStatus: "UNMATCHED", marketProviderIdentityStatus: "No Match" })), "No Match");
+});
+
+test("market freshness boundaries are deterministic", () => {
+  const now = new Date("2026-07-26T12:00:00.000Z");
+  assert.equal(inventoryMarketFreshness(marketItem({ marketProviderPriceSyncedAt: "2026-07-25T00:00:00.000Z" }), now).label, "Fresh");
+  assert.equal(inventoryMarketFreshness(marketItem({ marketProviderPriceSyncedAt: "2026-07-24T23:59:59.000Z" }), now).label, "Aging");
+  assert.equal(inventoryMarketFreshness(marketItem({ marketProviderPriceSyncedAt: "2026-07-22T12:00:00.000Z" }), now).label, "Aging");
+  assert.equal(inventoryMarketFreshness(marketItem({ marketProviderPriceSyncedAt: "2026-07-22T11:59:59.000Z" }), now).label, "Stale");
+  assert.equal(inventoryMarketFreshness(marketItem({ marketProviderPriceSyncedAt: "not-a-date" }), now).label, "Unavailable");
+  assert.equal(inventoryMarketFreshness(marketItem({ marketProviderPriceSyncedAt: null, marketProviderLastPricedAt: null, marketLastRefreshedAt: null }), now).label, "Unavailable");
+});
+
 test("manual TCGCSV locks are labeled as manually confirmed without replacing the product ID", () => {
   const locked = evaluateTcgcsvIdentityMatch({ ...benchmarkItem, marketProviderMatchStatus: "LOCKED" }, product(), {
     manuallyConfirmed: true
@@ -138,4 +401,6 @@ test("market UI copy does not present numeric confidence or sell-now directives 
   assert.doesNotMatch(source, /Provider \/ Confidence/);
   assert.doesNotMatch(source, /TCGCSV Estimate/);
   assert.doesNotMatch(source, /Low Confidence Sell Now/);
+  assert.match(source, /candidateAction\(match, "lock"[\s\S]{0,220}Confirm Exact Match/);
+  assert.match(source, /candidateAction\(match, "accept"[\s\S]{0,220}Accept Suggested Match/);
 });
