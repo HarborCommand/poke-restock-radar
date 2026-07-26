@@ -163,6 +163,12 @@ export type InventoryItemDTO = {
   marketProviderMatchReason: string | null;
   marketProviderMatchedAt: string | null;
   marketProviderLastPricedAt: string | null;
+  marketProviderLowPrice?: number | null;
+  marketProviderMidPrice?: number | null;
+  marketProviderHighPrice?: number | null;
+  marketProviderPriceSubtype?: string | null;
+  marketProviderProductUrl?: string | null;
+  marketProviderPriceSyncedAt?: string | null;
   grossMarketValue: number | null;
   netMarketValue: number | null;
   marketProfitLoss: number | null;
@@ -2010,6 +2016,13 @@ export type MarketMatchCandidateDTO = {
   lowPrice: number | null;
   midPrice: number | null;
   highPrice: number | null;
+  subTypeName: string | null;
+  matchStatus: "Exact Match" | "Manually Confirmed" | "Strong Suggested Match" | "Needs Review" | "No Match";
+  matchReasons: string[];
+  matchWarnings: string[];
+  variant: string | null;
+  releasePeriod: string | null;
+  packageForm: string | null;
   confidence: number;
   reason: string;
 };
@@ -2030,6 +2043,9 @@ export type MarketMatchReviewDTO = {
   providerImageUrl: string | null;
   providerProductUrl: string | null;
   marketPrice: number | null;
+  lowPrice: number | null;
+  subTypeName: string | null;
+  matchStatus: "Exact Match" | "Manually Confirmed" | "Strong Suggested Match" | "Needs Review" | "No Match";
   confidence: number;
   reason: string | null;
   status: string;

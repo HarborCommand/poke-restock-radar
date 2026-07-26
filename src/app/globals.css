@@ -7489,6 +7489,13 @@ font-size: 0.88rem;
 line-height: 1.15;
 overflow-wrap: anywhere;
 }
+.market-money-grid em {
+color: var(--muted);
+font-size: 0.68rem;
+font-style: normal;
+line-height: 1.25;
+overflow-wrap: anywhere;
+}
 .market-proof-cell {
 display: grid;
 gap: 8px;

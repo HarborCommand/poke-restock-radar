@@ -2317,6 +2317,12 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     marketProviderMatchReason: item.marketProviderMatchReason,
     marketProviderMatchedAt: item.marketProviderMatchedAt?.toISOString() ?? null,
     marketProviderLastPricedAt: item.marketProviderLastPricedAt?.toISOString() ?? null,
+    marketProviderLowPrice: null,
+    marketProviderMidPrice: null,
+    marketProviderHighPrice: null,
+    marketProviderPriceSubtype: null,
+    marketProviderProductUrl: null,
+    marketProviderPriceSyncedAt: null,
     grossMarketValue: roundedMoney(grossMarketValue),
     netMarketValue: roundedMoney(netMarketValue),
     marketProfitLoss: roundedMoney(marketProfitLoss),
@@ -2375,6 +2381,33 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString()
   };
+}
+
+async function enrichInventoryWithTcgcsvMarketMetadata(items: InventoryItemDTO[]): Promise<InventoryItemDTO[]> {
+  const productIds = [
+    ...new Set(
+      items
+        .filter((item) => item.marketProvider === "TCGCSV" && item.marketProviderProductId)
+        .map((item) => item.marketProviderProductId)
+        .filter((id): id is string => Boolean(id))
+    )
+  ];
+  if (!productIds.length) return items;
+  const products = await prisma.tcgcsvProduct.findMany({ where: { tcgcsvProductId: { in: productIds } } });
+  const productById = new Map(products.map((product) => [product.tcgcsvProductId, product]));
+  return items.map((item) => {
+    const product = item.marketProviderProductId ? productById.get(item.marketProviderProductId) : null;
+    if (!product) return item;
+    return {
+      ...item,
+      marketProviderLowPrice: product.lowPrice,
+      marketProviderMidPrice: product.midPrice,
+      marketProviderHighPrice: product.highPrice,
+      marketProviderPriceSubtype: product.subTypeName,
+      marketProviderProductUrl: product.productUrl,
+      marketProviderPriceSyncedAt: product.lastSyncedAt.toISOString()
+    };
+  });
 }
 
 export function summarizeInventory(items: InventoryItemDTO[]): InventorySummaryDTO {
@@ -2467,7 +2500,7 @@ function marketSyncLogsFromInventory(items: InventoryItemDTO[]): MarketSyncLogDT
         priceFound: item.marketAverageSalePrice,
         confidence: item.marketProviderConfidenceScore || (item.marketConfidence === "HIGH" ? 100 : item.marketConfidence === "MEDIUM" ? 75 : item.marketConfidence === "LOW" ? 50 : null),
         message: isTcgcsv
-          ? "Market value refreshed from cached TCGCSV Market Estimate. Not a sold comp."
+          ? "Market value refreshed from cached TCGplayer Market Price via TCGCSV. Not a sold comp."
           : item.marketCompCount >= 3
             ? "Market value refreshed from trusted provider data."
             : "Market value refreshed with fewer than 3 accepted price points.",
@@ -2532,7 +2565,7 @@ function gradeLabel(gradeType: GradeType) {
 function sourceQualityLabel(sourceQuality: CompSourceQuality) {
   if (sourceQuality === "PRICECHARTING") return "PriceCharting";
   if (sourceQuality === "TCGPLAYER") return "TCGPlayer";
-  if (sourceQuality === "TCGCSV_ESTIMATE") return "TCGCSV Market Estimate";
+  if (sourceQuality === "TCGCSV_ESTIMATE") return "TCGplayer Market Price";
   if (sourceQuality === "MANUAL_ESTIMATE") return "Manual estimate";
   return "eBay sold";
 }
@@ -3073,7 +3106,7 @@ export async function listDashboard(currentUser: SessionUser): Promise<Dashboard
   });
   const qualityWarnings = dataQualityWarnings({ products: productDTOs, cards: cardDTOs, notificationSettings: notificationSettingsDTO });
   const monitorLogDTOs = monitorLogs.map(monitorLogToDTO);
-  const inventoryDTOs = inventory.map(inventoryItemToDTO);
+  const inventoryDTOs = await enrichInventoryWithTcgcsvMarketMetadata(inventory.map(inventoryItemToDTO));
   const ebayStatus = ebayConnectionStatus();
   const tcgcsvStats = await getTcgcsvProviderStats();
   const marketProviders = marketProviderStatuses(ebayStatus, tcgcsvStats);
