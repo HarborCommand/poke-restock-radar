@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 import {
   evaluateTcgcsvIdentityMatch,
+  selectEligibleTcgcsvPriceRow,
   selectTcgcsvPriceRow,
   tcgcsvMarketPriceFromCachedProduct
 } from "../src/lib/tcgcsv-market";
@@ -31,34 +32,36 @@ const benchmarkItem = {
 
 function product(overrides: Partial<Parameters<typeof evaluateTcgcsvIdentityMatch>[1]> = {}): Parameters<typeof evaluateTcgcsvIdentityMatch>[1] {
   return {
-    tcgcsvProductId: "668964",
+    tcgcsvProductId: "688964",
     productName: "Pokemon - Poke Ball Tin - Poke Ball (Q4 2025)",
     cleanProductName: null,
     normalizedName: "pokemon poke ball tin poke ball q4 2025 miscellaneous cards products",
     groupName: "Miscellaneous Cards & Products",
     imageUrl: "https://example.test/poke-ball-tin.png",
-    productUrl: "https://www.tcgplayer.com/product/668964",
+    productUrl: "https://www.tcgplayer.com/product/688964",
     extendedData: JSON.stringify({ upc: "196214130456" }),
     marketPrice: 29.55,
     lowPrice: 25.99,
     midPrice: 28,
     highPrice: 35,
     directLowPrice: null,
-    subTypeName: "Unopened",
+    subTypeName: "Normal",
     lastSyncedAt: new Date("2026-07-25T00:00:00.000Z"),
     ...overrides
   };
 }
 
-test("TCGCSV identity benchmark selects exact Q4 2025 Poke Ball Tin Unopened product", () => {
+test("TCGCSV identity benchmark selects exact Q4 2025 Poke Ball Tin Normal sealed product", () => {
   const exact = product();
   const evaluation = evaluateTcgcsvIdentityMatch(benchmarkItem, exact);
 
-  assert.equal(exact.tcgcsvProductId, "668964");
+  assert.equal(exact.tcgcsvProductId, "688964");
   assert.equal(exact.groupName, "Miscellaneous Cards & Products");
-  assert.equal(exact.subTypeName, "Unopened");
+  assert.equal(exact.subTypeName, "Normal");
   assert.equal(evaluation.statusLabel, "Exact Match");
   assert.equal(evaluation.hardRejected, false);
+  assert.equal(evaluation.priceContext, "Sealed Product");
+  assert.equal(evaluation.priceEligible, true);
   assert.equal(evaluation.variant, "poke ball");
   assert.equal(evaluation.releasePeriod, "Q4 2025");
   assert.equal(tcgcsvMarketPriceFromCachedProduct(exact), 29.55);
@@ -97,9 +100,9 @@ test("TCGCSV identity benchmark rejects display, wrong release period, and wrong
 });
 
 test("TCGCSV market price remains separate from low listing, mid price, and display price", () => {
-  const selected = selectTcgcsvPriceRow([
+  const selected = selectEligibleTcgcsvPriceRow(product(), [
     {
-      productId: "668964",
+      productId: "688964",
       subTypeName: "Normal",
       marketPrice: 129.13,
       lowPrice: 120,
@@ -107,7 +110,7 @@ test("TCGCSV market price remains separate from low listing, mid price, and disp
       highPrice: 150
     },
     {
-      productId: "668964",
+      productId: "688964",
       subTypeName: "Unopened",
       marketPrice: 29.55,
       lowPrice: 25.99,
@@ -128,29 +131,64 @@ test("TCGCSV market price remains separate from low listing, mid price, and disp
   );
 });
 
-test("strict Unopened price selection never falls back to another subtype", () => {
-  const normalOnly = selectTcgcsvPriceRow([
+test("product-aware sealed price selection accepts Normal only for exact sealed products", () => {
+  const normalOnly = selectEligibleTcgcsvPriceRow(product(), [
     {
-      productId: "668964",
+      productId: "688964",
       subTypeName: "Normal",
-      marketPrice: 129.13,
-      lowPrice: 120,
-      midPrice: 125,
-      highPrice: 150,
-      directLowPrice: 118
+      marketPrice: 29.55,
+      lowPrice: 25.99,
+      midPrice: 28,
+      highPrice: 35,
+      directLowPrice: 25.99
     }
-  ]);
+  ], benchmarkItem);
 
-  assert.equal(normalOnly.marketPrice, null);
-  assert.equal(normalOnly.lowPrice, null);
-  assert.equal(normalOnly.midPrice, null);
-  assert.equal(normalOnly.highPrice, null);
-  assert.equal(normalOnly.directLowPrice, null);
-  assert.match(String(normalOnly.subTypeName), /diagnostic:Normal/);
+  assert.equal(normalOnly.subTypeName, "Normal");
+  assert.equal(normalOnly.priceContext, "Sealed Product");
+  assert.equal(normalOnly.priceEligible, true);
+  assert.equal(normalOnly.marketPrice, 29.55);
+  assert.equal(normalOnly.lowPrice, 25.99);
+
+  const normalWrongProduct = selectEligibleTcgcsvPriceRow(
+    product({ productName: "Pokemon - Poke Ball Tin - Repeat Ball (Q4 2025)" }),
+    [
+      {
+        productId: "688968",
+        subTypeName: "Normal",
+        marketPrice: 22.81,
+        lowPrice: 20
+      }
+    ],
+    benchmarkItem
+  );
+  assert.equal(normalWrongProduct.marketPrice, null);
+  assert.equal(normalWrongProduct.priceEligible, false);
+  assert.equal(evaluateTcgcsvIdentityMatch(benchmarkItem, product({ productName: "Pokemon - Poke Ball Tin - Repeat Ball (Q4 2025)" })).statusLabel, "No Match");
+
+  const cardNormal = selectEligibleTcgcsvPriceRow(
+    product({
+      productName: "Pikachu - 025/165",
+      groupName: "Pokemon 151",
+      extendedData: JSON.stringify({ Rarity: "Rare", "Card Number": "025/165", HP: "70", Stage: "Basic" }),
+      subTypeName: "Normal"
+    }),
+    [
+      {
+        productId: "card-normal",
+        subTypeName: "Normal",
+        marketPrice: 3.25,
+        lowPrice: 2
+      }
+    ],
+    benchmarkItem
+  );
+  assert.equal(cardNormal.marketPrice, null);
+  assert.equal(cardNormal.priceEligible, false);
 
   const unopenedWithoutMarket = selectTcgcsvPriceRow([
     {
-      productId: "668964",
+      productId: "688964",
       subTypeName: "Unopened",
       marketPrice: null,
       lowPrice: 25.99,
@@ -164,7 +202,7 @@ test("strict Unopened price selection never falls back to another subtype", () =
 
   const unopenedWithMarket = selectTcgcsvPriceRow([
     {
-      productId: "668964",
+      productId: "688964",
       subTypeName: "Unopened",
       marketPrice: 29.55,
       lowPrice: 25.99
@@ -235,7 +273,7 @@ function marketItem(overrides: Partial<InventoryItemDTO>): InventoryItemDTO {
     marketLastRefreshedAt: overrides.marketLastRefreshedAt ?? "2026-07-25T00:00:00.000Z",
     marketConfidence: "HIGH",
     marketProvider: "TCGCSV",
-    marketProviderProductId: overrides.marketProviderProductId ?? "668964",
+    marketProviderProductId: overrides.marketProviderProductId ?? "688964",
     marketProviderProductName: overrides.marketProviderProductName ?? "Pokemon - Poke Ball Tin - Poke Ball (Q4 2025)",
     marketProviderMatchStatus: overrides.marketProviderMatchStatus ?? "MATCHED",
     marketProviderStoredMatchStatus: overrides.marketProviderStoredMatchStatus,
@@ -250,7 +288,9 @@ function marketItem(overrides: Partial<InventoryItemDTO>): InventoryItemDTO {
     marketProviderLowPrice: overrides.marketProviderLowPrice ?? null,
     marketProviderMidPrice: null,
     marketProviderHighPrice: null,
-    marketProviderPriceSubtype: overrides.marketProviderPriceSubtype ?? "Unopened",
+    marketProviderPriceSubtype: overrides.marketProviderPriceSubtype ?? "Normal",
+    marketProviderPriceContext: overrides.marketProviderPriceContext ?? "Sealed Product",
+    marketProviderPriceEligible: overrides.marketProviderPriceEligible ?? true,
     marketProviderProductUrl: null,
     marketProviderPriceSyncedAt: overrides.marketProviderPriceSyncedAt === undefined ? "2026-07-25T00:00:00.000Z" : overrides.marketProviderPriceSyncedAt,
     grossMarketValue: overrides.grossMarketValue ?? null,
@@ -406,8 +446,8 @@ test("market eligibility levels separate displayable, current, and projection va
   assert.equal(canCalculatePotentialMarketFinancials(freshProjection, now), true);
 
   assert.equal(potentialMarketProjectionReason(marketItem({ marketProviderIdentityStatus: "Needs Review", marketProviderIdentityValid: false }), now), "Match needs review");
-  assert.equal(marketPriceDisplayReason(marketItem({ currentMarketEstimate: null, marketCompCount: 0, grossMarketValue: null })), "Unopened price unavailable");
-  assert.equal(marketPriceDisplayReason(marketItem({ marketProviderPriceSubtype: "Normal" })), "Unopened price unavailable");
+  assert.equal(marketPriceDisplayReason(marketItem({ currentMarketEstimate: null, marketCompCount: 0, grossMarketValue: null })), "Market price unavailable");
+  assert.equal(marketPriceDisplayReason(marketItem({ marketProviderPriceSubtype: "Normal", marketProviderPriceEligible: false })), "Market price unavailable");
 });
 
 test("stored versus computed status mapping does not trust stored MATCHED alone", () => {
@@ -471,7 +511,7 @@ test("Poke Ball product identity benchmark keeps display rejected and single tin
     marketPrice: 129.13
   });
   const single = product({
-    tcgcsvProductId: "668964",
+    tcgcsvProductId: "688964",
     productName: "Pokemon - Poke Ball Tin - Poke Ball (Q4 2025)",
     marketPrice: 29.55,
     lowPrice: 25.99,

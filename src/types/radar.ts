@@ -172,6 +172,8 @@ export type InventoryItemDTO = {
   marketProviderMidPrice?: number | null;
   marketProviderHighPrice?: number | null;
   marketProviderPriceSubtype?: string | null;
+  marketProviderPriceContext?: string | null;
+  marketProviderPriceEligible?: boolean;
   marketProviderProductUrl?: string | null;
   marketProviderPriceSyncedAt?: string | null;
   grossMarketValue: number | null;
@@ -2023,6 +2025,8 @@ export type MarketMatchCandidateDTO = {
   midPrice: number | null;
   highPrice: number | null;
   subTypeName: string | null;
+  priceContext: string | null;
+  priceEligible: boolean;
   matchStatus: "Exact Match" | "Manually Confirmed" | "Strong Suggested Match" | "Needs Review" | "No Match";
   matchReasons: string[];
   matchWarnings: string[];
@@ -2051,6 +2055,8 @@ export type MarketMatchReviewDTO = {
   marketPrice: number | null;
   lowPrice: number | null;
   subTypeName: string | null;
+  priceContext: string | null;
+  priceEligible: boolean;
   matchStatus: "Exact Match" | "Manually Confirmed" | "Strong Suggested Match" | "Needs Review" | "No Match";
   matchWarnings: string[];
   confidence: number;

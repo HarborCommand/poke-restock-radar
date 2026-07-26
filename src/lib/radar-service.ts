@@ -2328,6 +2328,8 @@ function inventoryItemToDTO(item: Prisma.InventoryItemGetPayload<{ include: type
     marketProviderMidPrice: null,
     marketProviderHighPrice: null,
     marketProviderPriceSubtype: null,
+    marketProviderPriceContext: null,
+    marketProviderPriceEligible: false,
     marketProviderProductUrl: null,
     marketProviderPriceSyncedAt: null,
     grossMarketValue: roundedMoney(grossMarketValue),
@@ -2429,6 +2431,8 @@ async function enrichInventoryWithTcgcsvMarketMetadata(items: InventoryItemDTO[]
       marketProviderMidPrice: product.midPrice,
       marketProviderHighPrice: product.highPrice,
       marketProviderPriceSubtype: product.subTypeName,
+      marketProviderPriceContext: evaluation.priceContext,
+      marketProviderPriceEligible: evaluation.priceEligible,
       marketProviderProductUrl: product.productUrl,
       marketProviderPriceSyncedAt: product.lastSyncedAt.toISOString()
     };
