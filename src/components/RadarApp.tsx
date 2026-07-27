@@ -220,6 +220,19 @@ type Tab =
   | "tax"
   | "settings"
   | "admin";
+type StorefrontReceiptEmailStatusResponse = {
+  delivery: {
+    initial: {
+      status: string;
+      maskedRecipient: string | null;
+      sentAt: string | null;
+      updatedAt: string | null;
+      detail: string | null;
+    };
+    latestDelivery: PosSaleReceiptDTO["receiptEmailDelivery"];
+    configured: boolean;
+  };
+};
 type InventoryDashboardIntent = { id: number; action: "quick-stock" | "add-product" } | null;
 type Toast = { type: "error" | "success"; message: string };
 type SubmitOptions<T> = {
@@ -5214,6 +5227,11 @@ function newPosSaleIdempotencyKey() {
   return `${stamp}-${random}`;
 }
 
+function newReceiptEmailIdempotencyKey(prefix: string) {
+  const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 18);
+  return `${prefix}:${random}`;
+}
+
 function posPaymentReferenceHelp(method: PosPaymentMethodDTO | null) {
   if (method === "zelle" || method === "external_card" || method === "other") {
     return "Add confirmation number, last 4, or note if available.";
@@ -5426,6 +5444,7 @@ function PosPanel({
   const cartInvalid = cartLines.some((line) => !isPosSellableInventoryItem(line.item) || line.quantity > line.item.quantityOwned);
   const cartEmpty = cartLines.length === 0;
   const exemptionQuoteReady = !taxExempt || (taxExemptReason.trim().length >= 4 && taxExemptionReference.trim().length >= 4);
+  const posReceiptEmailReady = Boolean(dashboard.health?.providers.email.configured && dashboard.health.providers.email.posReceiptEmailsEnabled);
   const taxQuoteRequestBody = useMemo(
     () =>
       JSON.stringify({
@@ -5446,7 +5465,7 @@ function PosPanel({
   );
   const taxQuoteReady = taxQuoteStatus === "ready" && Boolean(taxQuote?.canComplete);
   const quotedTotal = taxQuote?.total ?? cartTotals.total;
-  const actionDisabled = busy || submitting || cartEmpty || !paymentMethod || cartInvalid || !taxQuoteReady || (emailReceipt && !validReceiptEmail(receiptEmail));
+  const actionDisabled = busy || submitting || cartEmpty || !paymentMethod || cartInvalid || !taxQuoteReady || (emailReceipt && posReceiptEmailReady && !validReceiptEmail(receiptEmail));
   const completeSaleLabel = cartEmpty
     ? "Add item to complete sale"
     : !paymentMethod
@@ -5771,7 +5790,7 @@ function PosPanel({
       setPosMessage("Review the cart. One or more quantities exceed current on-hand inventory.");
       return false;
     }
-    if (emailReceipt && !validReceiptEmail(receiptEmail)) {
+    if (emailReceipt && posReceiptEmailReady && !validReceiptEmail(receiptEmail)) {
       setPosMessage("Enter a valid email address for the receipt.");
       return false;
     }
@@ -5813,8 +5832,8 @@ function PosPanel({
           paymentMethod,
           paymentReference,
           selectedCustomerAccountId: selectedCustomer?.id,
-          emailReceipt,
-          receiptEmail: emailReceipt ? receiptEmail.trim() : undefined,
+          emailReceipt: posReceiptEmailReady ? emailReceipt : false,
+          receiptEmail: posReceiptEmailReady && emailReceipt ? receiptEmail.trim() : undefined,
           taxExempt,
           taxExemptReason: taxExempt ? taxExemptReason : undefined,
           taxExemptionReference: taxExempt ? taxExemptionReference : undefined,
@@ -6235,13 +6254,17 @@ function PosPanel({
             <label className="checkbox-row">
               <input
                 type="checkbox"
-                checked={emailReceipt}
+                checked={emailReceipt && posReceiptEmailReady}
                 onChange={(event) => setEmailReceipt(event.currentTarget.checked)}
-                disabled={cartEmpty}
+                disabled={cartEmpty || !posReceiptEmailReady}
               />
               Email receipt
             </label>
-            <small>Optional transactional receipt only. No account is required and no marketing subscription is created.</small>
+            <small>
+              {posReceiptEmailReady
+                ? "Optional transactional receipt only. No account is required and no marketing subscription is created."
+                : "Receipt email is not configured."}
+            </small>
             {emailReceipt ? (
               <label className="pos-reference-input">
                 Receipt email
@@ -6466,7 +6489,7 @@ function PosReceipt({ receipt, onNewSale, onReceiptUpdated }: { receipt: PosSale
         method: "POST",
         body: JSON.stringify({
           email: email || undefined,
-          idempotencyKey: `receipt-resend-${receipt.saleReference}-${Date.now()}`
+          idempotencyKey: newReceiptEmailIdempotencyKey(`receipt-resend:${receipt.saleReference}`)
         })
       });
       onReceiptUpdated(result.sale);
@@ -12182,6 +12205,35 @@ function StorefrontOrderDetailsModal({
   const [receiptResendEmail, setReceiptResendEmail] = useState("");
   const [receiptResendMessage, setReceiptResendMessage] = useState<string | null>(null);
   const [receiptResending, setReceiptResending] = useState(false);
+  const [receiptDeliveryStatus, setReceiptDeliveryStatus] = useState<StorefrontReceiptEmailStatusResponse["delivery"] | null>(null);
+  const [receiptDeliveryStatusMessage, setReceiptDeliveryStatusMessage] = useState<string | null>(null);
+  async function loadReceiptDeliveryStatus() {
+    try {
+      const result = await requestJson<StorefrontReceiptEmailStatusResponse>(`/api/radar/storefront/orders/${encodeURIComponent(order.id)}/receipt-email`);
+      setReceiptDeliveryStatus(result.delivery);
+      setReceiptDeliveryStatusMessage(null);
+    } catch (error) {
+      setReceiptDeliveryStatus(null);
+      setReceiptDeliveryStatusMessage(error instanceof Error ? error.message : "Receipt email status could not be loaded.");
+    }
+  }
+  useEffect(() => {
+    let active = true;
+    void requestJson<StorefrontReceiptEmailStatusResponse>(`/api/radar/storefront/orders/${encodeURIComponent(order.id)}/receipt-email`)
+      .then((result) => {
+        if (!active) return;
+        setReceiptDeliveryStatus(result.delivery);
+        setReceiptDeliveryStatusMessage(null);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setReceiptDeliveryStatus(null);
+        setReceiptDeliveryStatusMessage(error instanceof Error ? error.message : "Receipt email status could not be loaded.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [order.id]);
   async function resendStorefrontReceipt() {
     const email = receiptResendEmail.trim();
     if (email && !validReceiptEmail(email)) {
@@ -12195,10 +12247,11 @@ function StorefrontOrderDetailsModal({
         method: "POST",
         body: JSON.stringify({
           email: email || undefined,
-          idempotencyKey: `order-receipt-resend-${order.id}-${Date.now()}`
+          idempotencyKey: newReceiptEmailIdempotencyKey(`order-receipt-resend:${order.id}`)
         })
       });
       setReceiptResendMessage(result.delivery.maskedRecipient ? `Receipt ${result.delivery.status.toLowerCase()} for ${result.delivery.maskedRecipient}.` : `Receipt ${result.delivery.status.toLowerCase()}.`);
+      await loadReceiptDeliveryStatus();
     } catch (error) {
       setReceiptResendMessage(error instanceof Error ? error.message : "Receipt email could not be sent.");
     } finally {
@@ -12760,6 +12813,23 @@ function StorefrontOrderDetailsModal({
                   Pickup notification: {localPickupNotification ? `${emailStatusLabel(localPickupNotification.status)}${localPickupNotification.sentAt ? ` ${dateTime(localPickupNotification.sentAt)}` : ""}` : "Pickup notification not sent"}
                 </small>
               ) : null}
+              <div className="receipt-email-status-summary" aria-live="polite">
+                <small>
+                  Order confirmation/receipt:{" "}
+                  {receiptDeliveryStatus
+                    ? `${emailStatusLabel(receiptDeliveryStatus.initial.status)}${receiptDeliveryStatus.initial.maskedRecipient ? ` for ${receiptDeliveryStatus.initial.maskedRecipient}` : ""}`
+                    : receiptDeliveryStatusMessage || "Loading receipt status..."}
+                </small>
+                {receiptDeliveryStatus?.latestDelivery.status && receiptDeliveryStatus.latestDelivery.status !== "NOT_REQUESTED" ? (
+                  <small>
+                    Latest manual receipt: {receiptEmailDeliveryLabel(receiptDeliveryStatus.latestDelivery)}
+                    {receiptDeliveryStatus.latestDelivery.maskedRecipient ? ` for ${receiptDeliveryStatus.latestDelivery.maskedRecipient}` : ""}
+                    {receiptDeliveryStatus.latestDelivery.attemptCount ? ` - ${receiptDeliveryStatus.latestDelivery.attemptCount} attempt${receiptDeliveryStatus.latestDelivery.attemptCount === 1 ? "" : "s"}` : ""}
+                  </small>
+                ) : (
+                  <small>Latest manual receipt: Not requested</small>
+                )}
+              </div>
               {order.paymentStatus === "paid" ? (
                 <div className="receipt-resend-controls">
                   <label className="pos-reference-input">

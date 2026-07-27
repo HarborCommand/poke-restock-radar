@@ -3,8 +3,11 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   buildReceiptEmail,
+  fallbackReceiptEmailDelivery,
   maskReceiptEmail,
+  notRequestedReceiptEmailDelivery,
   normalizeReceiptEmail,
+  receiptEmailDeliveryAvailable,
   receiptEmailFeatureConfig,
   type ReceiptEmailSnapshot
 } from "../src/lib/receipt-email";
@@ -163,17 +166,23 @@ test("delivery persistence is narrowly scoped, idempotent, and does not store re
   assert.doesNotMatch(schemaSource, /htmlBody|textBody|emailBody|renderedBody/);
   assert.match(receiptEmailSource, /P2002/);
   assert.match(receiptEmailSource, /findUniqueOrThrow\(\{ where: \{ idempotencyKey/);
-  assert.match(receiptEmailSource, /if \(delivery\.status === "SENT" \|\| delivery\.attemptCount > 0\) return deliveryToDTO\(delivery\);/);
+  assert.match(receiptEmailSource, /delivery\.status === "SENT" \|\| delivery\.status === "FAILED" \|\| delivery\.attemptCount > 0/);
 });
 
-test("storefront automatic receipt is wired to the durable paid side effect only", () => {
+test("storefront sends exactly one automatic order-confirmation receipt on the durable paid side effect", () => {
   assert.match(storefrontSource, /async function completePaidCheckoutSideEffects\(order/);
   assert.match(storefrontSource, /if \(order\.paymentStatus !== "paid"\) return;/);
-  assert.match(storefrontSource, /await sendStorefrontOrderConfirmationEmail\(order\);[\s\S]*await sendStorefrontReceiptEmail\(order\);/);
-  assert.match(storefrontSource, /receipt:storefront:initial:\$\{order\.id\}:\$\{recipient\}/);
+  assert.match(storefrontSource, /await sendStorefrontOrderConfirmationEmail\(order\);/);
+  assert.doesNotMatch(storefrontSource, /await sendStorefrontReceiptEmail\(order\);/);
+  assert.doesNotMatch(storefrontSource, /receipt:storefront:initial:\$\{order\.id\}:\$\{recipient\}/);
+  assert.match(storefrontSource, /Your GameDayGrabs order confirmation and receipt/);
+  assert.match(storefrontSource, /customerEmailEventId\("order_confirmation", order\.id\)/);
+  assert.match(storefrontSource, /catch \{\s*\/\/ Customer email delivery\/status persistence is best-effort/);
   assert.match(storefrontSource, /normalizeReceiptEmail\(order\.customerEmail\) \?\? normalizeReceiptEmail\(order\.customer\?\.email\)/);
   assert.doesNotMatch(storefrontSource, /createCheckoutSession[\s\S]{0,1000}sendStorefrontReceiptEmail/);
   assert.match(storefrontSource, /sendStorefrontOrderReceiptEmail/);
+  assert.match(storefrontResendRouteSource, /export async function GET/);
+  assert.match(storefrontResendRouteSource, /getStorefrontOrderReceiptEmailStatus/);
   assert.match(storefrontResendRouteSource, /requireUser/);
   assert.match(storefrontResendRouteSource, /authorizeAdminMutation/);
   assert.match(storefrontResendRouteSource, /checkPublicRateLimit/);
@@ -186,10 +195,12 @@ test("POS checkout keeps email optional, validates when checked, and never creat
   assert.match(validationSource, /Enter an email address for the receipt\./);
   assert.match(radarAppSource, /const \[emailReceipt, setEmailReceipt\] = useState\(false\)/);
   assert.match(radarAppSource, /Email receipt/);
+  assert.match(radarAppSource, /Receipt email is not configured/);
   assert.match(radarAppSource, /No account is required/);
   assert.match(radarAppSource, /setReceiptEmail\(result\.match\.displayEmail\)/);
-  assert.match(radarAppSource, /emailReceipt && !validReceiptEmail\(receiptEmail\)/);
-  assert.match(radarAppSource, /receiptEmail: emailReceipt \? receiptEmail\.trim\(\) : undefined/);
+  assert.match(radarAppSource, /emailReceipt && posReceiptEmailReady && !validReceiptEmail\(receiptEmail\)/);
+  assert.match(radarAppSource, /receiptEmail: posReceiptEmailReady && emailReceipt \? receiptEmail\.trim\(\) : undefined/);
+  assert.match(radarServiceSource, /input\.emailReceipt && posReceiptEmailReady \? normalizeReceiptEmail/);
   assert.match(radarAppSource, /Receipt not emailed/);
   assert.match(radarAppSource, /Change email and send/);
   assert.doesNotMatch(radarServiceSource, /receiptEmail[\s\S]{0,300}createCustomerAccount/);
@@ -201,6 +212,8 @@ test("POS sale integrity is independent from receipt-email delivery failure", ()
   assert.match(radarServiceSource, /emailReceipt\?: boolean/);
   assert.match(radarServiceSource, /requestReceiptEmailDelivery\(/);
   assert.match(radarServiceSource, /return \{ \.\.\.receipt, receiptEmailDelivery: delivery \};/);
+  assert.match(radarServiceSource, /fallbackReceiptEmailDelivery/);
+  assert.match(radarServiceSource, /The sale completed, but the receipt email could not be sent\./);
   assert.match(receiptEmailSource, /sendEmailViaProvider/);
   assert.match(receiptEmailSource, /const status = sendResult\.status === "sent" \? "SENT" : "FAILED";/);
   assert.match(receiptEmailSource, /sanitizedFailureCode/);
@@ -216,6 +229,12 @@ test("manual POS receipt resend is admin-only, rate limited, and constrained to 
   assert.match(rateLimitSource, /"admin_receipt_email"/);
   assert.match(radarServiceSource, /receiptForExistingPosSale/);
   assert.match(radarServiceSource, /posReceiptEmailSnapshot\(receipt/);
+  assert.match(radarServiceSource, /Receipt resend idempotency key is required\./);
+  assert.match(validationSource, /idempotencyKey: z\.string\(\)\.trim\(\)\.min\(8\)\.max\(120\)\.regex/);
+  assert.doesNotMatch(radarServiceSource, /receipt:pos:resend:[\s\S]{0,120}Date\.now/);
+  assert.doesNotMatch(storefrontSource, /receipt:storefront:resend:[\s\S]{0,120}Date\.now/);
+  assert.doesNotMatch(radarAppSource, /receipt-resend[^\\n]*Date\.now/);
+  assert.doesNotMatch(radarAppSource, /order-receipt-resend[^\\n]*Date\.now/);
   assert.doesNotMatch(posResendRouteSource, /html|body|subject/);
 });
 
@@ -225,4 +244,44 @@ test("audit events use masked metadata and never log full receipt bodies", () =>
   assert.match(receiptEmailSource, /maskedEmail: delivery\.recipientEmailMasked/);
   assert.match(receiptEmailSource, /attemptNumber: updated\.attemptCount/);
   assert.doesNotMatch(receiptEmailSource, /metadata:[\s\S]{0,500}(html|text|lineItems|recipientEmailNormalized)/);
+});
+
+test("receipt delivery availability is deterministic and does not create disabled pending attempts", () => {
+  const configured = {
+    POS_RECEIPT_EMAILS_ENABLED: "true",
+    STOREFRONT_RECEIPT_EMAILS_ENABLED: "true",
+    RESEND_API_KEY: "test_resend_key",
+    EMAIL_FROM: "GameDayGrabs <receipts@example.com>"
+  };
+  assert.equal(receiptEmailDeliveryAvailable("POS_SALE", configured), true);
+  assert.equal(receiptEmailDeliveryAvailable("STOREFRONT_ORDER", configured), true);
+  assert.equal(receiptEmailDeliveryAvailable("POS_SALE", { ...configured, POS_RECEIPT_EMAILS_ENABLED: "false" }), false);
+  assert.equal(receiptEmailDeliveryAvailable("POS_SALE", { POS_RECEIPT_EMAILS_ENABLED: "true" }), false);
+  assert.deepEqual(notRequestedReceiptEmailDelivery(), {
+    status: "NOT_REQUESTED",
+    deliveryType: null,
+    maskedRecipient: null,
+    sentAt: null,
+    lastAttemptAt: null,
+    attemptCount: 0,
+    sanitizedFailureCode: null,
+    sanitizedFailureMessage: null
+  });
+  assert.doesNotMatch(receiptEmailSource, /RECEIPT_EMAILS_DISABLED[\s\S]{0,240}status: "PENDING"/);
+});
+
+test("receipt delivery fallback DTOs are sanitized and preserve completed-sale behavior", () => {
+  const delivery = fallbackReceiptEmailDelivery({
+    status: "FAILED",
+    deliveryType: "INITIAL",
+    recipientEmail: "Collector@example.com",
+    sanitizedFailureCode: "RECEIPT_EMAIL_UNAVAILABLE",
+    sanitizedFailureMessage: "The sale completed, but the receipt email could not be sent."
+  });
+  assert.equal(delivery.status, "FAILED");
+  assert.equal(delivery.deliveryType, "INITIAL");
+  assert.equal(delivery.maskedRecipient, "c***@example.com");
+  assert.equal(delivery.attemptCount, 1);
+  assert.equal(delivery.sanitizedFailureCode, "RECEIPT_EMAIL_UNAVAILABLE");
+  assert.equal(delivery.sanitizedFailureMessage, "The sale completed, but the receipt email could not be sent.");
 });

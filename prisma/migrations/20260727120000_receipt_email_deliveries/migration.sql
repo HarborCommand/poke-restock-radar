@@ -1,5 +1,6 @@
 -- Additive receipt-email delivery persistence for storefront and POS receipts.
 -- No existing order, sale, customer, inventory, tax, reward, or payment data is modified.
+-- Automatic paid storefront order-confirmation/receipt idempotency remains on PaymentEvent; this table tracks POS initial sends and manual receipt resends/status.
 
 CREATE TABLE "ReceiptEmailDelivery" (
   "id" TEXT NOT NULL,

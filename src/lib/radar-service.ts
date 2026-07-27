@@ -79,8 +79,10 @@ import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
 import { marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
 import {
+  fallbackReceiptEmailDelivery,
   normalizeReceiptEmail,
   notRequestedReceiptEmailDelivery,
+  receiptEmailDeliveryAvailable,
   requestReceiptEmailDelivery,
   type ReceiptEmailDeliveryDTO,
   type ReceiptEmailSnapshot
@@ -7639,8 +7641,9 @@ export async function createPosSale(
 
   const cartItems = compactPosSaleItems(input.items);
   if (!cartItems.length) throw new Error("Add at least one item before completing a POS sale.");
-  const requestedReceiptEmail = input.emailReceipt ? normalizeReceiptEmail(input.receiptEmail) : null;
-  if (input.emailReceipt && !requestedReceiptEmail) throw new Error("Enter a valid email address for the receipt.");
+  const posReceiptEmailReady = receiptEmailDeliveryAvailable("POS_SALE");
+  const requestedReceiptEmail = input.emailReceipt && posReceiptEmailReady ? normalizeReceiptEmail(input.receiptEmail) : null;
+  if (input.emailReceipt && posReceiptEmailReady && !requestedReceiptEmail) throw new Error("Enter a valid email address for the receipt.");
 
   const soldAt = new Date();
   const saleReference = posSaleReferenceFromIdempotencyKey(currentUser.id, input.idempotencyKey);
@@ -7970,18 +7973,31 @@ export async function createPosSale(
   }
 
   if (!requestedReceiptEmail) return receipt;
-  const supportEmail = (await getStorefrontSettings(currentUser.id)).contactEmail || "gamedaygrabs@outlook.com";
-  const delivery = await requestReceiptEmailDelivery({
-    sourceType: "POS_SALE",
-    sourceId: receipt.saleReference,
-    recipientEmail: requestedReceiptEmail,
-    deliveryType: "INITIAL",
-    idempotencyKey: `receipt:pos:initial:${receipt.saleReference}:${requestedReceiptEmail}`,
-    snapshot: posReceiptEmailSnapshot(receipt, supportEmail),
-    requestedByUserId: currentUser.id,
-    requestId: input.requestId
-  });
-  return { ...receipt, receiptEmailDelivery: delivery };
+  try {
+    const supportEmail = (await getStorefrontSettings(currentUser.id)).contactEmail || "gamedaygrabs@outlook.com";
+    const delivery = await requestReceiptEmailDelivery({
+      sourceType: "POS_SALE",
+      sourceId: receipt.saleReference,
+      recipientEmail: requestedReceiptEmail,
+      deliveryType: "INITIAL",
+      idempotencyKey: `receipt:pos:initial:${receipt.saleReference}:${requestedReceiptEmail}`,
+      snapshot: posReceiptEmailSnapshot(receipt, supportEmail),
+      requestedByUserId: currentUser.id,
+      requestId: input.requestId
+    });
+    return { ...receipt, receiptEmailDelivery: delivery };
+  } catch {
+    return {
+      ...receipt,
+      receiptEmailDelivery: fallbackReceiptEmailDelivery({
+        status: "FAILED",
+        deliveryType: "INITIAL",
+        recipientEmail: requestedReceiptEmail,
+        sanitizedFailureCode: "RECEIPT_EMAIL_UNAVAILABLE",
+        sanitizedFailureMessage: "The sale completed, but the receipt email could not be sent."
+      })
+    };
+  }
 }
 
 export async function sendPosReceiptEmail(
@@ -8001,7 +8017,8 @@ export async function sendPosReceiptEmail(
   const requestedEmail = normalizeReceiptEmail(input.email) ?? normalizeReceiptEmail(sales.find((sale) => sale.customerEmail)?.customerEmail);
   if (!requestedEmail) throw new Error("Enter a valid receipt email address.");
   const supportEmail = (await getStorefrontSettings(currentUser.id)).contactEmail || "gamedaygrabs@outlook.com";
-  const idempotencyKey = input.idempotencyKey?.trim() || `receipt:pos:resend:${normalizedReference}:${requestedEmail}:${Date.now()}`;
+  const idempotencyKey = input.idempotencyKey?.trim();
+  if (!idempotencyKey) throw new Error("Receipt resend idempotency key is required.");
   const delivery = await requestReceiptEmailDelivery({
     sourceType: "POS_SALE",
     sourceId: normalizedReference,

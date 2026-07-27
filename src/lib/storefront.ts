@@ -32,15 +32,19 @@ import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
   buildLocalPickupEmail,
-  buildOrderConfirmationEmail,
   buildRefundCancellationEmail,
   buildShippingConfirmationEmail,
   type StorefrontEmailAddress,
   type StorefrontEmailItem
 } from "@/lib/storefront-email-templates";
 import {
+  buildReceiptEmail,
+  latestReceiptEmailDelivery,
+  maskReceiptEmail,
   normalizeReceiptEmail,
+  receiptEmailDeliveryAvailable,
   requestReceiptEmailDelivery,
+  type ReceiptEmailDeliveryDTO,
   type ReceiptEmailSnapshot
 } from "@/lib/receipt-email";
 import {
@@ -1181,27 +1185,36 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
   const accountFeatures = customerAccountFeatureConfig();
-  const email = buildOrderConfirmationEmail({
-    orderNumber: order.orderNumber,
-    supportEmail: contactEmail,
-    logoUrl: storefrontEmailLogoUrl(),
-    items: orderEmailItems(order),
-    subtotal: order.subtotal,
-    discount: moneyFromCents(order.discountCents ?? 0),
-    shippingCharged: order.shippingCharged,
-    tax: order.taxCents === null ? null : order.tax,
-    totalPaid: order.total,
-    shippingMethod: order.shippingMethodLabel,
-    isLocalPickup: orderIsLocalPickup(order),
-    pickupStatus: order.fulfillmentStatus,
-    accountCtaEnabled: accountFeatures.customerAccountsEnabled,
-    rewardsCtaEnabled: accountFeatures.customerAccountsEnabled && accountFeatures.customerRewardsEnabled
-  });
+  const receiptEmail = buildReceiptEmail(storefrontReceiptEmailSnapshot(order, contactEmail));
+  const accountCtaText = accountFeatures.customerAccountsEnabled
+    ? [
+        "",
+        "Create your GameDayGrabs account to track orders and rewards.",
+        accountFeatures.customerRewardsEnabled ? "Earn points now. Redemption coming soon." : null
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+  const accountCtaHtml = accountFeatures.customerAccountsEnabled
+    ? [
+        '<div style="margin:18px 0 0;padding:16px;border:1px solid #EAECF0;border-radius:14px;background:#F9FAFB;">',
+        '<p style="margin:0;color:#101828;font-size:14px;font-weight:900;">Track this order from your account</p>',
+        `<p style="margin:6px 0 0;color:#475467;font-size:13px;line-height:1.5;font-weight:700;">Create your GameDayGrabs account to track orders and rewards.${accountFeatures.customerRewardsEnabled ? " Earn points now. Redemption coming soon." : ""}</p>`,
+        '</div>'
+      ].join("")
+    : "";
+  const email = {
+    ...receiptEmail,
+    text: `${receiptEmail.text}${accountCtaText}`,
+    html: accountCtaHtml
+      ? receiptEmail.html.replace("</td></tr></table></td></tr></table></body></html>", `${accountCtaHtml}</td></tr></table></td></tr></table></body></html>`)
+      : receiptEmail.html
+  };
   return sendCustomerEmailNotificationOnce({
     order,
     kind: "order_confirmation",
     eventId: customerEmailEventId("order_confirmation", order.id),
-    subject: email.subject,
+    subject: `Your GameDayGrabs order confirmation and receipt — ${order.orderNumber}`,
     text: email.text,
     html: email.html
   });
@@ -1241,26 +1254,10 @@ function storefrontReceiptEmailSnapshot(order: StorefrontOrderWithItems, support
   };
 }
 
-async function sendStorefrontReceiptEmail(order: StorefrontOrderWithItems) {
-  if (order.paymentStatus !== "paid") return null;
-  const recipient = storefrontOrderReceiptRecipient(order);
-  if (!recipient) return null;
-  const settings = await getStorefrontSettings();
-  const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
-  return requestReceiptEmailDelivery({
-    sourceType: "STOREFRONT_ORDER",
-    sourceId: order.id,
-    recipientEmail: recipient,
-    deliveryType: "INITIAL",
-    idempotencyKey: `receipt:storefront:initial:${order.id}:${recipient}`,
-    snapshot: storefrontReceiptEmailSnapshot(order, contactEmail)
-  });
-}
-
 export async function sendStorefrontOrderReceiptEmail(
   currentUser: SessionUser,
   orderId: string,
-  input: { email?: string | null; idempotencyKey?: string | null; requestId?: string | null }
+  input: { email?: string | null; idempotencyKey: string; requestId?: string | null }
 ) {
   const order = await prisma.storefrontOrder.findFirst({
     where: {
@@ -1273,6 +1270,8 @@ export async function sendStorefrontOrderReceiptEmail(
   if (order.paymentStatus !== "paid") throw new Error("Receipts can only be emailed for paid orders.");
   const recipient = normalizeReceiptEmail(input.email) ?? storefrontOrderReceiptRecipient(order);
   if (!recipient) throw new Error("Enter a valid receipt email address.");
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey) throw new Error("Receipt resend idempotency key is required.");
   const settings = await getStorefrontSettings(currentUser.id);
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
   return requestReceiptEmailDelivery({
@@ -1280,11 +1279,71 @@ export async function sendStorefrontOrderReceiptEmail(
     sourceId: order.id,
     recipientEmail: recipient,
     deliveryType: "RESEND",
-    idempotencyKey: input.idempotencyKey?.trim() || `receipt:storefront:resend:${order.id}:${recipient}:${Date.now()}`,
+    idempotencyKey,
     snapshot: storefrontReceiptEmailSnapshot(order, contactEmail),
     requestedByUserId: currentUser.id,
     requestId: input.requestId
   });
+}
+
+export type StorefrontReceiptEmailStatusDTO = {
+  initial: {
+    status: CustomerEmailStatus | "not_requested";
+    maskedRecipient: string | null;
+    sentAt: string | null;
+    updatedAt: string | null;
+    detail: string | null;
+  };
+  latestDelivery: ReceiptEmailDeliveryDTO;
+  configured: boolean;
+};
+
+export async function getStorefrontOrderReceiptEmailStatus(currentUser: SessionUser, orderId: string): Promise<StorefrontReceiptEmailStatusDTO> {
+  const order = await prisma.storefrontOrder.findFirst({
+    where: {
+      id: orderId,
+      OR: [{ userId: null }, { userId: currentUser.id }]
+    },
+    include: storefrontOrderInclude
+  });
+  if (!order) throw new Error("Order not found.");
+  const event = await prisma.paymentEvent.findUnique({ where: { eventId: customerEmailEventId("order_confirmation", order.id) } });
+  const initial = (() => {
+    if (!event) {
+      return {
+        status: "not_requested" as const,
+        maskedRecipient: maskReceiptEmail(order.customerEmail ?? order.customer?.email ?? null),
+        sentAt: null,
+        updatedAt: null,
+        detail: "No automatic order confirmation has been recorded."
+      };
+    }
+    try {
+      const payload = JSON.parse(event.payload || "{}") as { recipient?: unknown; sentAt?: unknown; detail?: unknown };
+      const status = parseCustomerEmailEventStatus(event);
+      return {
+        status,
+        maskedRecipient: maskReceiptEmail(typeof payload.recipient === "string" ? payload.recipient : null),
+        sentAt: typeof payload.sentAt === "string" ? payload.sentAt : status === "sent" ? event.receivedAt.toISOString() : null,
+        updatedAt: event.receivedAt.toISOString(),
+        detail: typeof payload.detail === "string" ? payload.detail : null
+      };
+    } catch {
+      const status = parseCustomerEmailEventStatus(event);
+      return {
+        status,
+        maskedRecipient: maskReceiptEmail(order.customerEmail ?? order.customer?.email ?? null),
+        sentAt: status === "sent" ? event.receivedAt.toISOString() : null,
+        updatedAt: event.receivedAt.toISOString(),
+        detail: null
+      };
+    }
+  })();
+  return {
+    initial,
+    latestDelivery: await latestReceiptEmailDelivery("STOREFRONT_ORDER", order.id),
+    configured: receiptEmailDeliveryAvailable("STOREFRONT_ORDER")
+  };
 }
 
 async function sendStorefrontCheckoutExpiredEmail(order: StorefrontOrderWithItems, reason: string) {
@@ -3382,8 +3441,11 @@ async function persistPaidCheckoutSession(order: StorefrontOrderWithItems, sessi
 async function completePaidCheckoutSideEffects(order: StorefrontOrderWithItems) {
   if (order.paymentStatus !== "paid") return;
   await awardRewardsForPaidOrder(order);
-  await sendStorefrontOrderConfirmationEmail(order);
-  await sendStorefrontReceiptEmail(order);
+  try {
+    await sendStorefrontOrderConfirmationEmail(order);
+  } catch {
+    // Customer email delivery/status persistence is best-effort and must never block completed checkout side effects.
+  }
   const customerEmail = order.customerEmail ?? order.customer?.email ?? null;
   if (order.customer && customerEmail) await syncStorefrontCustomerTotals(order.customer.id, customerEmail);
 }

@@ -1130,7 +1130,7 @@ export const receiptEmailResendSchema = z.object({
     (value) => value === "" || value === null ? undefined : value,
     z.string().trim().email().max(254).optional()
   ),
-  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/).optional()
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/)
 }).strict();
 
 export const rewardAdminAdjustmentSchema = z.object({
