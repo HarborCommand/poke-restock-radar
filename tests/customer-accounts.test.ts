@@ -376,7 +376,7 @@ test("customer password account migration is additive and stores only hashes", (
   assert.match(migration, /"tokenHash" TEXT NOT NULL/);
   assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "CustomerPasswordResetToken_tokenHash_key"/);
   assert.match(schema, /model CustomerPasswordResetToken \{/);
-  assert.match(schema, /passwordResetTokens CustomerPasswordResetToken\[\]/);
+  assert.match(schema, /passwordResetTokens\s+CustomerPasswordResetToken\[\]/);
   assert.match(schema, /passwordHash\s+String\?/);
   assert.match(sqliteInit, /"passwordHash" TEXT/);
   assert.match(sqliteInit, /CREATE TABLE IF NOT EXISTS "CustomerPasswordResetToken"/);

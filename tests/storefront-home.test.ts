@@ -96,6 +96,8 @@ function settings(overrides: Partial<StorefrontSettingsDTO> = {}): StorefrontSet
       features: {
         onlineStripeTaxEnabled: false,
         posSalesTaxEnabled: false,
+        manualTaxFallbackEnabled: false,
+        posTaxModeConflict: false,
         taxExemptSalesEnabled: false,
         taxReportingEnabled: false
       }

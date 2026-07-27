@@ -306,6 +306,10 @@ export type StorefrontSettingsDTO = {
     storeCountry: string;
     storeState: string;
     storeCounty: string | null;
+    storeAddressLine1?: string | null;
+    storeAddressLine2?: string | null;
+    storeCity?: string | null;
+    storePostalCode?: string | null;
     stateRateBasisPoints: number;
     countyRateBasisPoints: number;
     combinedRateBasisPoints: number;
@@ -315,9 +319,12 @@ export type StorefrontSettingsDTO = {
     taxExemptSalesEnabled: boolean;
     defaultTaxCategory: string;
     defaultStripeTaxCode: string;
+    shippingStripeTaxCode?: string;
     features: {
       onlineStripeTaxEnabled: boolean;
       posSalesTaxEnabled: boolean;
+      manualTaxFallbackEnabled: boolean;
+      posTaxModeConflict: boolean;
       taxExemptSalesEnabled: boolean;
       taxReportingEnabled: boolean;
     };
@@ -978,6 +985,7 @@ export type PosTaxQuoteDTO = {
   expiresAt: string;
   merchandiseSubtotal: number;
   discount: number;
+  shipping: number;
   taxableSubtotal: number;
   stateTax: number;
   countySurtax: number;
@@ -985,6 +993,8 @@ export type PosTaxQuoteDTO = {
   total: number;
   combinedRateBasisPoints: number;
   taxStatus: "collected" | "exempt" | "not_recorded" | "misconfigured";
+  providerStatus: "disabled" | "calculated" | "authoritative_zero" | "not_collecting" | "exempt" | "not_taxable";
+  taxabilityReason: string | null;
   canComplete: boolean;
   reason: string;
   jurisdiction: {
@@ -1014,6 +1024,7 @@ export type PosSaleReceiptDTO = {
   total: number;
   taxRate: number;
   discount: number;
+  shipping?: number;
   taxableSubtotal: number;
   stateTax: number;
   countySurtax: number;

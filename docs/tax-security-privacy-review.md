@@ -42,7 +42,7 @@ Boundary: every private record is scoped by the authenticated owner `userId`; an
 
 - Checkout, POS quote, POS finalize, refund, customer-match, and settings schemas are strict. Unknown fields and browser-supplied tax amount/rate/jurisdiction/taxable subtotal/final total/refunded tax/provider reference/provider readiness/live status are rejected.
 - A POS administrator may request exemption only when the dormant environment gate and owner profile are enabled and both reason and reference are present. Public checkout cannot self-exempt.
-- Online tax authority is Stripe Tax. POS tax authority is the server-side owner profile. Refund tax is allocated from the immutable original snapshot behind a row lock; current settings never re-rate history.
+- Stripe Tax is the authority for new online and POS tax. The server supplies authoritative merchandise, shipping price, tax codes, and verified locations; refund tax and provider reversals use the immutable original snapshot and references behind a row lock. Current settings never re-rate history.
 - Webhook signature verification happens before provider-event claim or business processing. Duplicate events are idempotent; failed/stale claims can be safely recovered.
 - Browser same-origin controls do not apply to Stripe or signed jobs. Those routes use distinct signature/secret trust and cannot substitute for one another.
 
@@ -74,7 +74,7 @@ Boundary: every private record is scoped by the authenticated owner `userId`; an
 ## Deferred owner decisions and live blockers
 
 - Live Stripe Tax registration/configuration and the test credential set still require owner confirmation.
-- Legal store address, Florida registration, county/rate source, filing frequency, exemption/evidence policy, Local Pickup treatment, and accountant review are not code defaults.
+- Legal store address, Florida registration, product/shipping tax codes, filing frequency, exemption/evidence policy, Local Pickup treatment, and accountant review are not code defaults.
 - Certificate document storage remains unavailable; no sensitive document is accepted or publicly addressable.
 
 No Production configuration or data was changed during this review.

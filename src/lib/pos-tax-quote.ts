@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
-const POS_TAX_QUOTE_VERSION = 1;
+const POS_TAX_QUOTE_VERSION = 2;
 const POS_TAX_QUOTE_TTL_MS = 5 * 60 * 1000;
 const LOCAL_QUOTE_SECRET = "local-pos-tax-quote-secret-change-before-sharing";
 
@@ -8,6 +8,7 @@ type PosTaxQuoteTokenPayload = {
   version: number;
   userBinding: string;
   fingerprint: string;
+  calculationId: string | null;
   expiresAt: number;
 };
 
@@ -24,7 +25,16 @@ export type PosTaxFingerprintInput = {
   userId: string;
   idempotencyKey: string;
   selectedCustomerAccountId: string | null;
-  fulfillmentMode: "in_person";
+  fulfillmentMode: "in_person" | "delivery";
+  shippingCents?: number;
+  deliveryAddress?: {
+    line1: string;
+    line2: string | null;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+  } | null;
   taxExempt: boolean;
   taxExemptReason: string | null;
   taxExemptionReference: string | null;
@@ -43,10 +53,16 @@ export type PosTaxFingerprintInput = {
     country: string;
     state: string;
     county: string | null;
-    stateRateBasisPoints: number;
-    countyRateBasisPoints: number;
-    effectiveAt: string | null;
-    sourceNote: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    city?: string | null;
+    postalCode?: string | null;
+    productTaxCode?: string;
+    shippingTaxCode?: string;
+    stateRateBasisPoints?: number;
+    countyRateBasisPoints?: number;
+    effectiveAt?: string | null;
+    sourceNote?: string | null;
   };
 };
 
@@ -86,11 +102,16 @@ export function posTaxCartFingerprint(input: PosTaxFingerprintInput) {
   return createHash("sha256").update(JSON.stringify(canonical)).digest("base64url");
 }
 
-export function createPosTaxQuoteToken(userId: string, fingerprint: string, now = Date.now()) {
+export function createPosTaxQuoteToken(userId: string, fingerprint: string, calculationId: string | null | number = null, now = Date.now()) {
+  if (typeof calculationId === "number") {
+    now = calculationId;
+    calculationId = null;
+  }
   const payload: PosTaxQuoteTokenPayload = {
     version: POS_TAX_QUOTE_VERSION,
     userBinding: bindUser(userId),
     fingerprint,
+    calculationId: typeof calculationId === "string" ? calculationId : null,
     expiresAt: now + POS_TAX_QUOTE_TTL_MS
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -121,6 +142,7 @@ export function verifyPosTaxQuoteToken(token: string, userId: string, now = Date
     typeof payload.userBinding !== "string" ||
     !safeEqual(payload.userBinding, bindUser(userId)) ||
     !/^[A-Za-z0-9_-]{40,60}$/.test(payload.fingerprint) ||
+    !(payload.calculationId === null || (typeof payload.calculationId === "string" && /^taxcalc_[A-Za-z0-9_]+$/.test(payload.calculationId))) ||
     !Number.isFinite(payload.expiresAt) ||
     payload.expiresAt > maximumExpiration
   ) {
