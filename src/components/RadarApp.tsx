@@ -139,6 +139,7 @@ import {
   roundPosMoney
 } from "@/lib/pos";
 import { legacyPosReceiptTax } from "@/lib/pos-receipt";
+import { newReceiptEmailIdempotencyKey } from "@/lib/receipt-email-client";
 import { normalizeUPC } from "@/lib/upc";
 import { TaxAdminWorkspace } from "@/components/TaxAdminWorkspace";
 import type {
@@ -5227,11 +5228,6 @@ function newPosSaleIdempotencyKey() {
   return `${stamp}-${random}`;
 }
 
-function newReceiptEmailIdempotencyKey(prefix: string) {
-  const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 18);
-  return `${prefix}:${random}`;
-}
-
 function posPaymentReferenceHelp(method: PosPaymentMethodDTO | null) {
   if (method === "zelle" || method === "external_card" || method === "other") {
     return "Add confirmation number, last 4, or note if available.";
@@ -5260,6 +5256,7 @@ function validReceiptEmail(value: string) {
 function receiptEmailDeliveryLabel(delivery: PosSaleReceiptDTO["receiptEmailDelivery"]) {
   if (delivery.status === "SENT" && delivery.maskedRecipient) return `Receipt sent to ${delivery.maskedRecipient}`;
   if (delivery.status === "FAILED") return "Receipt could not be sent";
+  if (delivery.status === "PENDING" && delivery.sanitizedFailureCode === "RECEIPT_EMAIL_STATUS_UNAVAILABLE") return "Receipt delivery status uncertain";
   if (delivery.status === "PENDING") return "Receipt pending";
   return "Receipt not emailed";
 }
@@ -5912,7 +5909,7 @@ function PosPanel({
         ]}
       />
 
-      {receipt ? <PosReceipt receipt={receipt} onNewSale={clearCart} onReceiptUpdated={setReceipt} /> : null}
+      {receipt ? <PosReceipt receipt={receipt} receiptEmailReady={posReceiptEmailReady} onNewSale={clearCart} onReceiptUpdated={setReceipt} /> : null}
       {posMessage ? <p className="form-error pos-alert" role="alert">{posMessage}</p> : null}
 
       <div className="pos-workspace">
@@ -6456,7 +6453,17 @@ function PosPanel({
   );
 }
 
-function PosReceipt({ receipt, onNewSale, onReceiptUpdated }: { receipt: PosSaleReceiptDTO; onNewSale: () => void; onReceiptUpdated: (receipt: PosSaleReceiptDTO) => void }) {
+function PosReceipt({
+  receipt,
+  receiptEmailReady,
+  onNewSale,
+  onReceiptUpdated
+}: {
+  receipt: PosSaleReceiptDTO;
+  receiptEmailReady: boolean;
+  onNewSale: () => void;
+  onReceiptUpdated: (receipt: PosSaleReceiptDTO) => void;
+}) {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [resendEmail, setResendEmail] = useState("");
   const [sendingReceipt, setSendingReceipt] = useState(false);
@@ -6477,6 +6484,10 @@ function PosReceipt({ receipt, onNewSale, onReceiptUpdated }: { receipt: PosSale
   }
 
   async function sendReceiptEmail() {
+    if (!receiptEmailReady) {
+      setSendMessage("Receipt email is not configured.");
+      return;
+    }
     const email = resendEmail.trim();
     if (email && !validReceiptEmail(email)) {
       setSendMessage("Enter a valid email address.");
@@ -6571,20 +6582,25 @@ function PosReceipt({ receipt, onNewSale, onReceiptUpdated }: { receipt: PosSale
       <div className={`pos-receipt-email-status ${receiptEmailDeliveryTone(receipt.receiptEmailDelivery)}`}>
         <strong>{receiptEmailDeliveryLabel(receipt.receiptEmailDelivery)}</strong>
         {receipt.receiptEmailDelivery.sanitizedFailureMessage ? <span>{receipt.receiptEmailDelivery.sanitizedFailureMessage}</span> : null}
-        <label className="pos-reference-input no-print">
-          Change email and send
-          <input
-            type="email"
-            value={resendEmail}
-            onChange={(event) => setResendEmail(event.currentTarget.value)}
-            placeholder="customer@example.com"
-            autoComplete="email"
-          />
-        </label>
-        <button className="mini-action no-print" type="button" disabled={sendingReceipt} onClick={() => void sendReceiptEmail()}>
-          <Mail size={14} />
-          {receipt.receiptEmailDelivery.status === "NOT_REQUESTED" ? "Send receipt" : "Resend receipt"}
-        </button>
+        {!receiptEmailReady ? <span className="no-print">Receipt email is not configured.</span> : null}
+        {receiptEmailReady ? (
+          <>
+            <label className="pos-reference-input no-print">
+              Change email and send
+              <input
+                type="email"
+                value={resendEmail}
+                onChange={(event) => setResendEmail(event.currentTarget.value)}
+                placeholder="customer@example.com"
+                autoComplete="email"
+              />
+            </label>
+            <button className="mini-action no-print" type="button" disabled={sendingReceipt} onClick={() => void sendReceiptEmail()}>
+              <Mail size={14} />
+              {receipt.receiptEmailDelivery.status === "NOT_REQUESTED" ? "Send receipt" : "Resend receipt"}
+            </button>
+          </>
+        ) : null}
         {sendMessage ? <small className="no-print">{sendMessage}</small> : null}
       </div>
 
@@ -12234,7 +12250,12 @@ function StorefrontOrderDetailsModal({
       active = false;
     };
   }, [order.id]);
+  const storefrontReceiptResendReady = receiptDeliveryStatus?.configured === true;
   async function resendStorefrontReceipt() {
+    if (!storefrontReceiptResendReady) {
+      setReceiptResendMessage("Receipt resend is not configured.");
+      return;
+    }
     const email = receiptResendEmail.trim();
     if (email && !validReceiptEmail(email)) {
       setReceiptResendMessage("Enter a valid email address.");
@@ -12829,6 +12850,7 @@ function StorefrontOrderDetailsModal({
                 ) : (
                   <small>Latest manual receipt: Not requested</small>
                 )}
+                {receiptDeliveryStatus?.configured === false ? <small>Receipt resend is not configured.</small> : null}
               </div>
               {order.paymentStatus === "paid" ? (
                 <div className="receipt-resend-controls">
@@ -12840,9 +12862,10 @@ function StorefrontOrderDetailsModal({
                       onChange={(event) => setReceiptResendEmail(event.currentTarget.value)}
                       placeholder="Use saved checkout email"
                       autoComplete="email"
+                      disabled={!storefrontReceiptResendReady}
                     />
                   </label>
-                  <button className="mini-action" type="button" disabled={receiptResending} onClick={() => void resendStorefrontReceipt()}>
+                  <button className="mini-action" type="button" disabled={receiptResending || !storefrontReceiptResendReady} onClick={() => void resendStorefrontReceipt()}>
                     <Mail size={14} />
                     {receiptResending ? "Sending" : "Send receipt"}
                   </button>

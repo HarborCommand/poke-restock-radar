@@ -9,8 +9,13 @@ import {
   normalizeReceiptEmail,
   receiptEmailDeliveryAvailable,
   receiptEmailFeatureConfig,
+  runReceiptEmailDeliveryAttempt,
+  type ReceiptEmailDeliveryAttemptStore,
+  type ReceiptEmailDeliveryRecord,
   type ReceiptEmailSnapshot
 } from "../src/lib/receipt-email";
+import { stableReceiptEmailIdempotencyKey } from "../src/lib/receipt-email-client";
+import type { EmailSendResult } from "../src/lib/email-provider";
 
 const source = (path: string) => readFileSync(path, "utf8");
 
@@ -28,6 +33,118 @@ const migrationSource = source("prisma/migrations/20260727120000_receipt_email_d
 
 const hiddenInternalPattern =
   /cost basis|costBasis|profit|internal note|admin note|private note|inventory lot|lot id|stripe secret|payment_method_details|card number|cvc|cvv|idempotency key|database id/i;
+
+function makeDeliveryRecord(input: {
+  id?: string;
+  status?: string;
+  deliveryType?: string;
+  recipientEmailMasked?: string;
+  attemptCount?: number;
+  sentAt?: Date | null;
+  lastAttemptAt?: Date | null;
+  sanitizedFailureCode?: string | null;
+  sanitizedFailureMessage?: string | null;
+} = {}): ReceiptEmailDeliveryRecord {
+  return {
+    id: input.id ?? "delivery-1",
+    status: input.status ?? "PENDING",
+    deliveryType: input.deliveryType ?? "RESEND",
+    recipientEmailMasked: input.recipientEmailMasked ?? "c***@example.com",
+    attemptCount: input.attemptCount ?? 0,
+    sentAt: input.sentAt ?? null,
+    lastAttemptAt: input.lastAttemptAt ?? null,
+    sanitizedFailureCode: input.sanitizedFailureCode ?? null,
+    sanitizedFailureMessage: input.sanitizedFailureMessage ?? null
+  };
+}
+
+function makeInMemoryDeliveryStore(options: { failMark?: boolean | "once" } = {}) {
+  const byId = new Map<string, ReceiptEmailDeliveryRecord>();
+  const byKey = new Map<string, string>();
+  let nextId = 1;
+  let failedMark = false;
+  const store: ReceiptEmailDeliveryAttemptStore & { records: () => ReceiptEmailDeliveryRecord[] } = {
+    async createOrGetClaim(input) {
+      const existingId = byKey.get(input.idempotencyKey);
+      if (existingId) return { ...byId.get(existingId)! };
+      const record = makeDeliveryRecord({
+        id: `delivery-${nextId++}`,
+        deliveryType: input.deliveryType,
+        recipientEmailMasked: maskReceiptEmail(input.recipientEmail) ?? "***"
+      });
+      byId.set(record.id, record);
+      byKey.set(input.idempotencyKey, record.id);
+      return { ...record };
+    },
+    async claimAttempt(id) {
+      const record = byId.get(id);
+      if (!record || record.status !== "PENDING" || record.attemptCount !== 0) return 0;
+      byId.set(id, { ...record, attemptCount: 1, lastAttemptAt: new Date("2026-07-27T12:00:00.000Z") });
+      return 1;
+    },
+    async findById(id) {
+      const record = byId.get(id);
+      return record ? { ...record } : null;
+    },
+    async markResult(input) {
+      if (options.failMark === true || (options.failMark === "once" && !failedMark)) {
+        failedMark = true;
+        throw new Error("mark failed");
+      }
+      const current = byId.get(input.id);
+      if (!current) throw new Error("missing");
+      const updated = {
+        ...current,
+        status: input.status,
+        providerMessageId: input.providerMessageId ?? null,
+        sentAt: input.sentAt ?? null,
+        sanitizedFailureCode: input.sanitizedFailureCode ?? null,
+        sanitizedFailureMessage: input.sanitizedFailureMessage ?? null
+      };
+      byId.set(input.id, updated);
+      return { ...updated };
+    },
+    records() {
+      return [...byId.values()].map((record) => ({ ...record }));
+    }
+  };
+  return store;
+}
+
+function successfulSendResult(): EmailSendResult {
+  return {
+    status: "sent",
+    provider: "resend",
+    sentAt: new Date("2026-07-27T12:00:01.000Z"),
+    detail: "accepted",
+    failureReason: null,
+    providerMessageId: "email_123"
+  };
+}
+
+function failedSendResult(): EmailSendResult {
+  return {
+    status: "failed",
+    provider: "resend",
+    sentAt: null,
+    detail: "failed",
+    failureReason: "Provider failed.",
+    providerMessageId: null
+  };
+}
+
+function deliveryAttemptInput(idempotencyKey = "receipt:unit:same-key") {
+  return {
+    sourceType: "POS_SALE" as const,
+    sourceId: "POS-123",
+    recipientEmail: "collector@example.com",
+    deliveryType: "RESEND" as const,
+    idempotencyKey,
+    snapshot: posSnapshot,
+    requestedByUserId: "admin-1",
+    requestId: "req-1"
+  };
+}
 
 const storefrontSnapshot: ReceiptEmailSnapshot = {
   sourceType: "STOREFRONT_ORDER",
@@ -136,6 +253,100 @@ test("receipt renderer produces POS receipt content without exposing internals",
   assert.doesNotMatch(combined, hiddenInternalPattern);
 });
 
+test("receipt delivery atomically claims a same-key resend before provider contact", async () => {
+  const store = makeInMemoryDeliveryStore();
+  let providerCount = 0;
+  const send = async (): Promise<EmailSendResult> => {
+    providerCount += 1;
+    return successfulSendResult();
+  };
+
+  const [first, second] = await Promise.all([
+    runReceiptEmailDeliveryAttempt(deliveryAttemptInput(), { store, render: buildReceiptEmail, send, providerName: "resend" }),
+    runReceiptEmailDeliveryAttempt(deliveryAttemptInput(), { store, render: buildReceiptEmail, send, providerName: "resend" })
+  ]);
+
+  assert.equal(providerCount, 1);
+  assert.equal(store.records().length, 1);
+  assert.equal(store.records()[0].attemptCount, 1);
+  assert.ok([first.status, second.status].includes("SENT"));
+  assert.ok([first.status, second.status].every((status) => status === "SENT" || status === "PENDING"));
+});
+
+test("provider success with final persistence failure stays pending and same key cannot resend", async () => {
+  const store = makeInMemoryDeliveryStore({ failMark: "once" });
+  let providerCount = 0;
+  const send = async (): Promise<EmailSendResult> => {
+    providerCount += 1;
+    return successfulSendResult();
+  };
+
+  const first = await runReceiptEmailDeliveryAttempt(deliveryAttemptInput(), { store, render: buildReceiptEmail, send, providerName: "resend" });
+  const second = await runReceiptEmailDeliveryAttempt(deliveryAttemptInput(), { store, render: buildReceiptEmail, send, providerName: "resend" });
+  const recovery = await runReceiptEmailDeliveryAttempt(deliveryAttemptInput("receipt:unit:new-key"), { store, render: buildReceiptEmail, send, providerName: "resend" });
+
+  assert.equal(providerCount, 2);
+  assert.equal(first.status, "PENDING");
+  assert.equal(first.attemptCount, 1);
+  assert.equal(first.sentAt, null);
+  assert.equal(first.sanitizedFailureCode, "RECEIPT_EMAIL_STATUS_UNAVAILABLE");
+  assert.equal(first.sanitizedFailureMessage, "The email provider accepted the receipt, but final delivery status could not be saved.");
+  assert.equal(second.status, "PENDING");
+  assert.equal(recovery.status, "SENT");
+});
+
+test("provider failure with final persistence failure protects the attempt from same-key retry", async () => {
+  const store = makeInMemoryDeliveryStore({ failMark: true });
+  let providerCount = 0;
+  const send = async (): Promise<EmailSendResult> => {
+    providerCount += 1;
+    return failedSendResult();
+  };
+
+  const first = await runReceiptEmailDeliveryAttempt(deliveryAttemptInput(), { store, render: buildReceiptEmail, send, providerName: "resend" });
+  const second = await runReceiptEmailDeliveryAttempt(deliveryAttemptInput(), { store, render: buildReceiptEmail, send, providerName: "resend" });
+
+  assert.equal(providerCount, 1);
+  assert.equal(store.records()[0].attemptCount, 1);
+  assert.equal(first.status, "PENDING");
+  assert.equal(first.sanitizedFailureCode, "RECEIPT_EMAIL_STATUS_UNAVAILABLE");
+  assert.equal(second.status, "PENDING");
+});
+
+test("receipt audit failure does not escape after authoritative delivery persistence", async () => {
+  const store = makeInMemoryDeliveryStore();
+  let providerCount = 0;
+  const result = await runReceiptEmailDeliveryAttempt(deliveryAttemptInput(), {
+    store,
+    render: buildReceiptEmail,
+    send: async (): Promise<EmailSendResult> => {
+      providerCount += 1;
+      return successfulSendResult();
+    },
+    audit: async () => {
+      throw new Error("audit unavailable");
+    },
+    providerName: "resend"
+  });
+
+  assert.equal(providerCount, 1);
+  assert.equal(result.status, "SENT");
+  assert.equal(store.records()[0].status, "SENT");
+  assert.equal(store.records()[0].attemptCount, 1);
+});
+
+test("client receipt resend keys are generated once per request and reusable for a retry", () => {
+  const firstClickKey = stableReceiptEmailIdempotencyKey("receipt-resend:POS-123", "fixed-random-id");
+  const retryKey = firstClickKey;
+  const nextClickKey = stableReceiptEmailIdempotencyKey("receipt-resend:POS-123", "next-random-id");
+
+  assert.equal(firstClickKey, retryKey);
+  assert.notEqual(firstClickKey, nextClickKey);
+  assert.match(radarAppSource, /disabled=\{sendingReceipt\}/);
+  assert.match(radarAppSource, /disabled=\{receiptResending \|\| !storefrontReceiptResendReady\}/);
+  assert.doesNotMatch(radarAppSource, /requestJson[\s\S]{0,240}retry:\s*true/);
+});
+
 test("receipt email configuration defaults disabled and normalizes recipients safely", () => {
   assert.deepEqual(receiptEmailFeatureConfig({}), {
     storefrontReceiptEmailsEnabled: false,
@@ -166,7 +377,10 @@ test("delivery persistence is narrowly scoped, idempotent, and does not store re
   assert.doesNotMatch(schemaSource, /htmlBody|textBody|emailBody|renderedBody/);
   assert.match(receiptEmailSource, /P2002/);
   assert.match(receiptEmailSource, /findUniqueOrThrow\(\{ where: \{ idempotencyKey/);
-  assert.match(receiptEmailSource, /delivery\.status === "SENT" \|\| delivery\.status === "FAILED" \|\| delivery\.attemptCount > 0/);
+  assert.match(receiptEmailSource, /updateMany\(\{\s*where: \{ id, status: "PENDING", attemptCount: 0 \}/);
+  assert.match(receiptEmailSource, /attemptCount: \{ increment: 1 \}/);
+  assert.match(receiptEmailSource, /if \(delivery\.status === "SENT" \|\| delivery\.status === "FAILED" \|\| delivery\.attemptCount > 0\) return deliveryToDTO\(delivery\)/);
+  assert.doesNotMatch(receiptEmailSource, /markDeliveryResult[\s\S]{0,500}attemptCount: \{ increment: 1 \}/);
 });
 
 test("storefront sends exactly one automatic order-confirmation receipt on the durable paid side effect", () => {
@@ -175,6 +389,9 @@ test("storefront sends exactly one automatic order-confirmation receipt on the d
   assert.match(storefrontSource, /await sendStorefrontOrderConfirmationEmail\(order\);/);
   assert.doesNotMatch(storefrontSource, /await sendStorefrontReceiptEmail\(order\);/);
   assert.doesNotMatch(storefrontSource, /receipt:storefront:initial:\$\{order\.id\}:\$\{recipient\}/);
+  assert.match(storefrontSource, /receiptEmailEnabled\("STOREFRONT_ORDER"\)/);
+  assert.match(storefrontSource, /receiptPresentationEnabled[\s\S]{0,240}buildReceiptEmail\(storefrontReceiptEmailSnapshot\(order, contactEmail\)\)/);
+  assert.match(storefrontSource, /: buildOrderConfirmationEmail\(\{/);
   assert.match(storefrontSource, /Your GameDayGrabs order confirmation and receipt/);
   assert.match(storefrontSource, /customerEmailEventId\("order_confirmation", order\.id\)/);
   assert.match(storefrontSource, /catch \{\s*\/\/ Customer email delivery\/status persistence is best-effort/);
@@ -187,6 +404,9 @@ test("storefront sends exactly one automatic order-confirmation receipt on the d
   assert.match(storefrontResendRouteSource, /authorizeAdminMutation/);
   assert.match(storefrontResendRouteSource, /checkPublicRateLimit/);
   assert.match(storefrontResendRouteSource, /sendStorefrontOrderReceiptEmail/);
+  assert.match(radarAppSource, /Receipt resend is not configured\./);
+  assert.match(radarAppSource, /receiptDeliveryStatus\?\.configured === true/);
+  assert.match(radarAppSource, /disabled=\{receiptResending \|\| !storefrontReceiptResendReady\}/);
 });
 
 test("POS checkout keeps email optional, validates when checked, and never creates accounts from guest receipt email", () => {
@@ -196,11 +416,14 @@ test("POS checkout keeps email optional, validates when checked, and never creat
   assert.match(radarAppSource, /const \[emailReceipt, setEmailReceipt\] = useState\(false\)/);
   assert.match(radarAppSource, /Email receipt/);
   assert.match(radarAppSource, /Receipt email is not configured/);
+  assert.match(radarAppSource, /receiptEmailReady=\{posReceiptEmailReady\}/);
+  assert.match(radarAppSource, /if \(!receiptEmailReady\)[\s\S]{0,120}Receipt email is not configured\./);
   assert.match(radarAppSource, /No account is required/);
   assert.match(radarAppSource, /setReceiptEmail\(result\.match\.displayEmail\)/);
   assert.match(radarAppSource, /emailReceipt && posReceiptEmailReady && !validReceiptEmail\(receiptEmail\)/);
   assert.match(radarAppSource, /receiptEmail: posReceiptEmailReady && emailReceipt \? receiptEmail\.trim\(\) : undefined/);
   assert.match(radarServiceSource, /input\.emailReceipt && posReceiptEmailReady \? normalizeReceiptEmail/);
+  assert.match(radarServiceSource, /receiptEmailDelivery: notRequestedReceiptEmailDelivery\(\)/);
   assert.match(radarAppSource, /Receipt not emailed/);
   assert.match(radarAppSource, /Change email and send/);
   assert.doesNotMatch(radarServiceSource, /receiptEmail[\s\S]{0,300}createCustomerAccount/);

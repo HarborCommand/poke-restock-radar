@@ -4,10 +4,13 @@ This PR prepares customer receipt email delivery but does not activate Productio
 
 ## Current behavior
 
-- Paid storefront orders send exactly one automatic order-confirmation/receipt email through the existing `PaymentEvent` idempotency path.
+- With `STOREFRONT_RECEIPT_EMAILS_ENABLED=false`, paid storefront orders keep the existing legacy order-confirmation email through the established `PaymentEvent` idempotency path.
+- With `STOREFRONT_RECEIPT_EMAILS_ENABLED=true`, the same single `PaymentEvent` email uses the combined order-confirmation/receipt presentation. It does not create a second automatic receipt email.
 - POS initial receipt emails and manual receipt resends use `ReceiptEmailDelivery`.
+- `ReceiptEmailDelivery` rows are claimed before provider contact. A same-key concurrent resend can observe `PENDING`, `SENT`, or `FAILED`, but only the winning claim contacts the provider.
+- If a provider accepts an email but final delivery status cannot be saved, the response stays `PENDING` with `RECEIPT_EMAIL_STATUS_UNAVAILABLE`; the same idempotency key must not resend.
 - Receipt email delivery failures are isolated from completed online checkout and POS sale workflows.
-- POS receipt email controls remain unavailable when the receipt email feature flag or email provider is not configured.
+- POS and storefront manual receipt email controls remain unavailable when the relevant receipt email feature flag or email provider is not configured.
 
 ## Staged activation
 
@@ -21,5 +24,10 @@ This PR prepares customer receipt email delivery but does not activate Productio
 ## Rollback
 
 - Disable `POS_RECEIPT_EMAILS_ENABLED` to hide POS email receipt controls.
-- Disable `STOREFRONT_RECEIPT_EMAILS_ENABLED` to block manual storefront receipt resends.
-- Existing storefront paid order confirmations remain on the established `PaymentEvent` path and continue to be idempotent.
+- Disable `STOREFRONT_RECEIPT_EMAILS_ENABLED` to block manual storefront receipt resends and return paid storefront orders to the legacy confirmation template.
+- Storefront paid order emails remain on the established `PaymentEvent` path and continue to be idempotent in both flag states.
+
+## Manual recovery
+
+- Do not retry an uncertain delivery with the same idempotency key. `PENDING` plus `RECEIPT_EMAIL_STATUS_UNAVAILABLE` means the provider may already have accepted the email.
+- If the owner deliberately wants another send after reviewing the provider/admin evidence, use the normal manual resend control, which generates a new idempotency key.

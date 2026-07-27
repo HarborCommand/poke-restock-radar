@@ -32,6 +32,7 @@ import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
   buildLocalPickupEmail,
+  buildOrderConfirmationEmail,
   buildRefundCancellationEmail,
   buildShippingConfirmationEmail,
   type StorefrontEmailAddress,
@@ -43,6 +44,7 @@ import {
   maskReceiptEmail,
   normalizeReceiptEmail,
   receiptEmailDeliveryAvailable,
+  receiptEmailEnabled,
   requestReceiptEmailDelivery,
   type ReceiptEmailDeliveryDTO,
   type ReceiptEmailSnapshot
@@ -1185,7 +1187,8 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
   const accountFeatures = customerAccountFeatureConfig();
-  const receiptEmail = buildReceiptEmail(storefrontReceiptEmailSnapshot(order, contactEmail));
+  const receiptPresentationEnabled = receiptEmailEnabled("STOREFRONT_ORDER");
+  const receiptEmail = receiptPresentationEnabled ? buildReceiptEmail(storefrontReceiptEmailSnapshot(order, contactEmail)) : null;
   const accountCtaText = accountFeatures.customerAccountsEnabled
     ? [
         "",
@@ -1203,18 +1206,35 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
         '</div>'
       ].join("")
     : "";
-  const email = {
-    ...receiptEmail,
-    text: `${receiptEmail.text}${accountCtaText}`,
-    html: accountCtaHtml
-      ? receiptEmail.html.replace("</td></tr></table></td></tr></table></body></html>", `${accountCtaHtml}</td></tr></table></td></tr></table></body></html>`)
-      : receiptEmail.html
-  };
+  const email = receiptEmail
+    ? {
+        subject: `Your GameDayGrabs order confirmation and receipt — ${order.orderNumber}`,
+        text: `${receiptEmail.text}${accountCtaText}`,
+        html: accountCtaHtml
+          ? receiptEmail.html.replace("</td></tr></table></td></tr></table></body></html>", `${accountCtaHtml}</td></tr></table></td></tr></table></body></html>`)
+          : receiptEmail.html
+      }
+    : buildOrderConfirmationEmail({
+        orderNumber: order.orderNumber,
+        supportEmail: contactEmail,
+        logoUrl: storefrontEmailLogoUrl(),
+        items: orderEmailItems(order),
+        subtotal: order.subtotal,
+        discount: moneyFromCents(order.discountCents ?? 0),
+        shippingCharged: order.shippingCharged,
+        tax: order.taxCents === null ? null : order.tax,
+        totalPaid: order.total,
+        shippingMethod: order.shippingMethodLabel,
+        isLocalPickup: orderIsLocalPickup(order),
+        pickupStatus: order.fulfillmentStatus,
+        accountCtaEnabled: accountFeatures.customerAccountsEnabled,
+        rewardsCtaEnabled: accountFeatures.customerRewardsEnabled
+      });
   return sendCustomerEmailNotificationOnce({
     order,
     kind: "order_confirmation",
     eventId: customerEmailEventId("order_confirmation", order.id),
-    subject: `Your GameDayGrabs order confirmation and receipt — ${order.orderNumber}`,
+    subject: email.subject,
     text: email.text,
     html: email.html
   });

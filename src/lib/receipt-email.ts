@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { emailProviderConfig, emailProviderConfigured, sendEmailViaProvider, type EmailMessage, type EmailSendOptions } from "@/lib/email-provider";
+import { emailProviderConfig, emailProviderConfigured, sendEmailViaProvider, type EmailMessage, type EmailSendOptions, type EmailSendResult } from "@/lib/email-provider";
 import { logAudit } from "@/lib/audit";
 
 export const STOREFRONT_RECEIPT_EMAILS_FLAG = "STOREFRONT_RECEIPT_EMAILS_ENABLED";
@@ -19,6 +19,39 @@ export type ReceiptEmailDeliveryDTO = {
   attemptCount: number;
   sanitizedFailureCode: string | null;
   sanitizedFailureMessage: string | null;
+};
+
+export type ReceiptEmailDeliveryRecord = {
+  id: string;
+  status: string;
+  deliveryType: string;
+  recipientEmailMasked: string;
+  attemptCount: number;
+  sentAt: Date | null;
+  lastAttemptAt: Date | null;
+  sanitizedFailureCode: string | null;
+  sanitizedFailureMessage: string | null;
+};
+
+export type ReceiptEmailDeliveryAttemptStore = {
+  createOrGetClaim(input: {
+    sourceType: ReceiptEmailSourceType;
+    sourceId: string;
+    recipientEmail: string;
+    deliveryType: ReceiptEmailDeliveryType;
+    idempotencyKey: string;
+    requestedByUserId?: string | null;
+  }): Promise<ReceiptEmailDeliveryRecord>;
+  claimAttempt(id: string): Promise<number>;
+  findById(id: string): Promise<ReceiptEmailDeliveryRecord | null>;
+  markResult(input: {
+    id: string;
+    status: "SENT" | "FAILED";
+    providerMessageId?: string | null;
+    sentAt?: Date | null;
+    sanitizedFailureCode?: string | null;
+    sanitizedFailureMessage?: string | null;
+  }): Promise<ReceiptEmailDeliveryRecord>;
 };
 
 export type ReceiptEmailLineItem = {
@@ -280,7 +313,7 @@ async function createDeliveryClaim(input: {
   deliveryType: ReceiptEmailDeliveryType;
   idempotencyKey: string;
   requestedByUserId?: string | null;
-}) {
+}): Promise<ReceiptEmailDeliveryRecord> {
   const normalized = normalizeReceiptEmail(input.recipientEmail);
   if (!normalized) throw new Error("Enter a valid receipt email address.");
   const masked = maskReceiptEmail(normalized) ?? "***";
@@ -304,27 +337,47 @@ async function createDeliveryClaim(input: {
   }
 }
 
-async function markDelivery(input: {
+async function claimDeliveryAttempt(id: string) {
+  const result = await prisma.receiptEmailDelivery.updateMany({
+    where: { id, status: "PENDING", attemptCount: 0 },
+    data: {
+      attemptCount: { increment: 1 },
+      lastAttemptAt: new Date()
+    }
+  });
+  return result.count;
+}
+
+async function findDeliveryById(id: string): Promise<ReceiptEmailDeliveryRecord | null> {
+  return prisma.receiptEmailDelivery.findUnique({ where: { id } });
+}
+
+async function markDeliveryResult(input: {
   id: string;
-  status: "SENT" | "FAILED" | "PENDING";
+  status: "SENT" | "FAILED";
   providerMessageId?: string | null;
   sentAt?: Date | null;
   sanitizedFailureCode?: string | null;
   sanitizedFailureMessage?: string | null;
-}) {
+}): Promise<ReceiptEmailDeliveryRecord> {
   return prisma.receiptEmailDelivery.update({
     where: { id: input.id },
     data: {
       status: input.status,
-      attemptCount: { increment: 1 },
       providerMessageId: input.providerMessageId ?? null,
-      lastAttemptAt: new Date(),
       sentAt: input.sentAt ?? null,
       sanitizedFailureCode: input.sanitizedFailureCode ?? null,
       sanitizedFailureMessage: input.sanitizedFailureMessage ?? null
     }
   });
 }
+
+const prismaReceiptEmailDeliveryStore: ReceiptEmailDeliveryAttemptStore = {
+  createOrGetClaim: createDeliveryClaim,
+  claimAttempt: claimDeliveryAttempt,
+  findById: findDeliveryById,
+  markResult: markDeliveryResult
+};
 
 function receiptEmailHeaders(input: { sourceType: ReceiptEmailSourceType; receiptNumber: string; deliveryType: ReceiptEmailDeliveryType }) {
   return {
@@ -340,6 +393,168 @@ function receiptEmailTags(input: { sourceType: ReceiptEmailSourceType; receiptNu
     { name: "notificationType", value: input.sourceType === "STOREFRONT_ORDER" ? "storefrontReceipt" : "posReceipt" },
     { name: "environment", value: process.env.VERCEL_ENV || process.env.NODE_ENV || "development" }
   ];
+}
+
+export type ReceiptEmailDeliveryAttemptInput = {
+  sourceType: ReceiptEmailSourceType;
+  sourceId: string;
+  recipientEmail: string;
+  deliveryType: ReceiptEmailDeliveryType;
+  idempotencyKey: string;
+  snapshot: ReceiptEmailSnapshot;
+  requestedByUserId?: string | null;
+  requestId?: string | null;
+};
+
+export type ReceiptEmailDeliveryAttemptDeps = {
+  store: ReceiptEmailDeliveryAttemptStore;
+  render: (snapshot: ReceiptEmailSnapshot) => ReturnType<typeof buildReceiptEmail>;
+  send: (message: EmailMessage, options: { idempotencyKey: string }) => Promise<EmailSendResult>;
+  audit?: (input: {
+    userId?: string | null;
+    action: string;
+    entityType: ReceiptEmailSourceType;
+    entityId: string;
+    summary: string;
+    requestId?: string | null;
+    metadata: Record<string, unknown>;
+  }) => Promise<void>;
+  providerName?: string;
+};
+
+function statusUnavailableDelivery(input: {
+  deliveryType: ReceiptEmailDeliveryType;
+  recipientEmail: string;
+  sentAt?: Date | null;
+  message: string;
+}) {
+  return fallbackReceiptEmailDelivery({
+    status: "PENDING",
+    deliveryType: input.deliveryType,
+    recipientEmail: input.recipientEmail,
+    sentAt: input.sentAt ?? null,
+    attemptCount: 1,
+    sanitizedFailureCode: "RECEIPT_EMAIL_STATUS_UNAVAILABLE",
+    sanitizedFailureMessage: input.message
+  });
+}
+
+export async function runReceiptEmailDeliveryAttempt(
+  input: ReceiptEmailDeliveryAttemptInput,
+  deps: ReceiptEmailDeliveryAttemptDeps
+): Promise<ReceiptEmailDeliveryDTO> {
+  const delivery = await deps.store.createOrGetClaim({
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    recipientEmail: input.recipientEmail,
+    deliveryType: input.deliveryType,
+    idempotencyKey: input.idempotencyKey,
+    requestedByUserId: input.requestedByUserId
+  });
+  if (delivery.status === "SENT" || delivery.status === "FAILED" || delivery.attemptCount > 0) return deliveryToDTO(delivery);
+
+  const claimed = await deps.store.claimAttempt(delivery.id);
+  if (claimed !== 1) {
+    const current = await deps.store.findById(delivery.id);
+    return current
+      ? deliveryToDTO(current)
+      : statusUnavailableDelivery({
+          deliveryType: input.deliveryType,
+          recipientEmail: input.recipientEmail,
+          message: "Receipt email delivery status could not be loaded."
+        });
+  }
+
+  const claimedDelivery = (await deps.store.findById(delivery.id)) ?? { ...delivery, attemptCount: 1, lastAttemptAt: new Date() };
+  const prefix = sourcePrefix(input.sourceType);
+  if (input.deliveryType === "INITIAL" && input.sourceType === "POS_SALE") {
+    try {
+      await deps.audit?.({
+        userId: input.requestedByUserId ?? null,
+        action: "pos.receipt_email.requested",
+        entityType: input.sourceType,
+        entityId: input.sourceId,
+        summary: `POS receipt email requested for ${input.snapshot.receiptNumber}.`,
+        requestId: input.requestId,
+        metadata: { receiptNumber: input.snapshot.receiptNumber, maskedEmail: delivery.recipientEmailMasked, deliveryStatus: "PENDING", attemptNumber: 1 }
+      });
+    } catch {
+      // Receipt audit logging is best-effort; it must never fail a completed sale.
+    }
+  }
+
+  let rendered: ReturnType<typeof buildReceiptEmail>;
+  try {
+    rendered = deps.render(input.snapshot);
+  } catch {
+    try {
+      const updated = await deps.store.markResult({
+        id: delivery.id,
+        status: "FAILED",
+        sanitizedFailureCode: "RECEIPT_EMAIL_RENDER_FAILED",
+        sanitizedFailureMessage: "Receipt email could not be prepared."
+      });
+      return deliveryToDTO(updated);
+    } catch {
+      return statusUnavailableDelivery({
+        deliveryType: input.deliveryType,
+        recipientEmail: input.recipientEmail,
+        message: "Receipt email delivery status could not be saved."
+      });
+    }
+  }
+
+  const message: EmailMessage = {
+    to: input.recipientEmail,
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+    headers: receiptEmailHeaders({ sourceType: input.sourceType, receiptNumber: input.snapshot.receiptNumber, deliveryType: input.deliveryType }),
+    tags: receiptEmailTags({ sourceType: input.sourceType, receiptNumber: input.snapshot.receiptNumber, deliveryType: input.deliveryType })
+  };
+  const sendResult = await deps.send(message, { idempotencyKey: input.idempotencyKey });
+  const status = sendResult.status === "sent" ? "SENT" : "FAILED";
+  let updated: ReceiptEmailDeliveryRecord;
+  try {
+    updated = await deps.store.markResult({
+      id: delivery.id,
+      status,
+      providerMessageId: sendResult.providerMessageId,
+      sentAt: sendResult.sentAt,
+      sanitizedFailureCode: sendResult.status === "sent" ? null : sendResult.status === "not_configured" ? "EMAIL_PROVIDER_NOT_CONFIGURED" : "EMAIL_PROVIDER_FAILED",
+      sanitizedFailureMessage: sendResult.status === "sent" ? null : sendResult.failureReason ?? sendResult.detail
+    });
+  } catch {
+    return statusUnavailableDelivery({
+      deliveryType: input.deliveryType,
+      recipientEmail: input.recipientEmail,
+      message:
+        sendResult.status === "sent"
+          ? "The email provider accepted the receipt, but final delivery status could not be saved."
+          : "Receipt email delivery status could not be saved."
+    });
+  }
+
+  try {
+    await deps.audit?.({
+      userId: input.requestedByUserId ?? null,
+      action: `${prefix}.receipt_email.${input.deliveryType === "RESEND" && status === "SENT" ? "resent" : status === "SENT" ? "sent" : "failed"}`,
+      entityType: input.sourceType,
+      entityId: input.sourceId,
+      summary: `${input.sourceType === "STOREFRONT_ORDER" ? "Storefront" : "POS"} receipt email ${status === "SENT" ? "sent" : "failed"} for ${input.snapshot.receiptNumber}.`,
+      requestId: input.requestId,
+      metadata: {
+        receiptNumber: input.snapshot.receiptNumber,
+        deliveryStatus: status,
+        maskedEmail: claimedDelivery.recipientEmailMasked,
+        attemptNumber: updated.attemptCount,
+        provider: deps.providerName ?? "none"
+      }
+    });
+  } catch {
+    // Receipt audit logging is best-effort; delivery result remains authoritative.
+  }
+  return deliveryToDTO(updated);
 }
 
 export async function requestReceiptEmailDelivery(input: {
@@ -360,108 +575,29 @@ export async function requestReceiptEmailDelivery(input: {
     throw new ReceiptEmailConfigurationError();
   }
 
-  const delivery = await createDeliveryClaim({
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    recipientEmail: normalized,
-    deliveryType: input.deliveryType,
-    idempotencyKey: input.idempotencyKey,
-    requestedByUserId: input.requestedByUserId
-  });
-  if (delivery.status === "SENT" || delivery.status === "FAILED" || delivery.attemptCount > 0) return deliveryToDTO(delivery);
-
-  const prefix = sourcePrefix(input.sourceType);
-  if (input.deliveryType === "INITIAL" && input.sourceType === "POS_SALE") {
-    try {
-      await logAudit({
-        userId: input.requestedByUserId ?? null,
-        action: "pos.receipt_email.requested",
-        entityType: input.sourceType,
-        entityId: input.sourceId,
-        summary: `POS receipt email requested for ${input.snapshot.receiptNumber}.`,
-        requestId: input.requestId,
-        metadata: { receiptNumber: input.snapshot.receiptNumber, maskedEmail: delivery.recipientEmailMasked, deliveryStatus: "PENDING", attemptNumber: 0 }
-      });
-    } catch {
-      // Receipt audit logging is best-effort; it must never fail a completed sale.
-    }
-  }
-
   const providerConfig = emailProviderConfig(input.env ?? process.env);
-  let rendered: ReturnType<typeof buildReceiptEmail>;
-  try {
-    rendered = buildReceiptEmail(input.snapshot);
-  } catch {
-    try {
-      const updated = await markDelivery({
-        id: delivery.id,
-        status: "FAILED",
-        sanitizedFailureCode: "RECEIPT_EMAIL_RENDER_FAILED",
-        sanitizedFailureMessage: "Receipt email could not be prepared."
-      });
-      return deliveryToDTO(updated);
-    } catch {
-      return fallbackReceiptEmailDelivery({
-        status: "FAILED",
-        deliveryType: input.deliveryType,
-        recipientEmail: normalized,
-        sanitizedFailureCode: "RECEIPT_EMAIL_RENDER_FAILED",
-        sanitizedFailureMessage: "Receipt email could not be prepared."
-      });
-    }
-  }
-  const message: EmailMessage = {
-    to: normalized,
-    subject: rendered.subject,
-    text: rendered.text,
-    html: rendered.html,
-    headers: receiptEmailHeaders({ sourceType: input.sourceType, receiptNumber: input.snapshot.receiptNumber, deliveryType: input.deliveryType }),
-    tags: receiptEmailTags({ sourceType: input.sourceType, receiptNumber: input.snapshot.receiptNumber, deliveryType: input.deliveryType })
-  };
-  const sendResult = await sendEmailViaProvider(message, {
-    env: input.env,
-    fetchImpl: input.fetchImpl,
-    idempotencyKey: input.idempotencyKey
-  });
-  const status = sendResult.status === "sent" ? "SENT" : "FAILED";
-  let updated: Awaited<ReturnType<typeof markDelivery>>;
-  try {
-    updated = await markDelivery({
-      id: delivery.id,
-      status,
-      providerMessageId: sendResult.providerMessageId,
-      sentAt: sendResult.sentAt,
-      sanitizedFailureCode: sendResult.status === "sent" ? null : sendResult.status === "not_configured" ? "EMAIL_PROVIDER_NOT_CONFIGURED" : "EMAIL_PROVIDER_FAILED",
-      sanitizedFailureMessage: sendResult.status === "sent" ? null : sendResult.failureReason ?? sendResult.detail
-    });
-  } catch {
-    return fallbackReceiptEmailDelivery({
-      status,
-      deliveryType: input.deliveryType,
+  return runReceiptEmailDeliveryAttempt(
+    {
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
       recipientEmail: normalized,
-      sentAt: sendResult.sentAt,
-      sanitizedFailureCode: status === "SENT" ? null : "RECEIPT_EMAIL_STATUS_UNAVAILABLE",
-      sanitizedFailureMessage: status === "SENT" ? null : "Receipt email status could not be persisted."
-    });
-  }
-  try {
-    await logAudit({
-      userId: input.requestedByUserId ?? null,
-      action: `${prefix}.receipt_email.${input.deliveryType === "RESEND" && status === "SENT" ? "resent" : status === "SENT" ? "sent" : "failed"}`,
-      entityType: input.sourceType,
-      entityId: input.sourceId,
-      summary: `${input.sourceType === "STOREFRONT_ORDER" ? "Storefront" : "POS"} receipt email ${status === "SENT" ? "sent" : "failed"} for ${input.snapshot.receiptNumber}.`,
-      requestId: input.requestId,
-      metadata: {
-        receiptNumber: input.snapshot.receiptNumber,
-        deliveryStatus: status,
-        maskedEmail: delivery.recipientEmailMasked,
-        attemptNumber: updated.attemptCount,
-        provider: providerConfig.provider
-      }
-    });
-  } catch {
-    // Receipt audit logging is best-effort; delivery result remains authoritative.
-  }
-  return deliveryToDTO(updated);
+      deliveryType: input.deliveryType,
+      idempotencyKey: input.idempotencyKey,
+      snapshot: input.snapshot,
+      requestedByUserId: input.requestedByUserId,
+      requestId: input.requestId
+    },
+    {
+      store: prismaReceiptEmailDeliveryStore,
+      render: buildReceiptEmail,
+      send: (message, options) =>
+        sendEmailViaProvider(message, {
+          env: input.env,
+          fetchImpl: input.fetchImpl,
+          idempotencyKey: options.idempotencyKey
+        }),
+      audit: logAudit,
+      providerName: providerConfig.provider
+    }
+  );
 }
