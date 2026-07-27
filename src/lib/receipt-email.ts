@@ -601,3 +601,39 @@ export async function requestReceiptEmailDelivery(input: {
     }
   );
 }
+
+export async function attachPosReceiptEmailDeliveryResult<TReceipt extends { saleReference: string; receiptEmailDelivery: ReceiptEmailDeliveryDTO }>(input: {
+  receipt: TReceipt;
+  requestedReceiptEmail: string | null | undefined;
+  snapshot: ReceiptEmailSnapshot;
+  requestedByUserId: string;
+  requestId?: string | null;
+  requestDelivery?: typeof requestReceiptEmailDelivery;
+}): Promise<TReceipt> {
+  if (!input.requestedReceiptEmail) return input.receipt;
+  const requestDelivery = input.requestDelivery ?? requestReceiptEmailDelivery;
+  try {
+    const delivery = await requestDelivery({
+      sourceType: "POS_SALE",
+      sourceId: input.receipt.saleReference,
+      recipientEmail: input.requestedReceiptEmail,
+      deliveryType: "INITIAL",
+      idempotencyKey: `receipt:pos:initial:${input.receipt.saleReference}:${input.requestedReceiptEmail}`,
+      snapshot: input.snapshot,
+      requestedByUserId: input.requestedByUserId,
+      requestId: input.requestId
+    });
+    return { ...input.receipt, receiptEmailDelivery: delivery };
+  } catch {
+    return {
+      ...input.receipt,
+      receiptEmailDelivery: fallbackReceiptEmailDelivery({
+        status: "FAILED",
+        deliveryType: "INITIAL",
+        recipientEmail: input.requestedReceiptEmail,
+        sanitizedFailureCode: "RECEIPT_EMAIL_UNAVAILABLE",
+        sanitizedFailureMessage: "The sale completed, but the receipt email could not be sent."
+      })
+    };
+  }
+}

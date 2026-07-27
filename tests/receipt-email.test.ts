@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildReceiptEmail,
   fallbackReceiptEmailDelivery,
+  attachPosReceiptEmailDeliveryResult,
   maskReceiptEmail,
   notRequestedReceiptEmailDelivery,
   normalizeReceiptEmail,
@@ -335,6 +336,60 @@ test("receipt audit failure does not escape after authoritative delivery persist
   assert.equal(store.records()[0].attemptCount, 1);
 });
 
+test("POS receipt attachment with feature unavailable creates no delivery attempt and stays not requested", async () => {
+  let providerCount = 0;
+  const completedReceipt = {
+    saleReference: "POS-COMPLETE-1",
+    completedMarker: "sale-persisted",
+    receiptEmailDelivery: notRequestedReceiptEmailDelivery()
+  };
+
+  const result = await attachPosReceiptEmailDeliveryResult({
+    receipt: completedReceipt,
+    requestedReceiptEmail: null,
+    snapshot: posSnapshot,
+    requestedByUserId: "admin-1",
+    requestDelivery: async () => {
+      providerCount += 1;
+      throw new Error("should not call");
+    }
+  });
+
+  assert.equal(providerCount, 0);
+  assert.equal(result.saleReference, completedReceipt.saleReference);
+  assert.equal(result.completedMarker, "sale-persisted");
+  assert.equal(result.receiptEmailDelivery.status, "NOT_REQUESTED");
+});
+
+test("POS receipt claim failure after sale completion preserves the sale and reports safe failure", async () => {
+  let providerCount = 0;
+  const completedReceipt = {
+    saleReference: "POS-COMPLETE-2",
+    completedMarker: "sale-persisted",
+    inventoryDeductedOnce: true,
+    receiptEmailDelivery: notRequestedReceiptEmailDelivery()
+  };
+
+  const result = await attachPosReceiptEmailDeliveryResult({
+    receipt: completedReceipt,
+    requestedReceiptEmail: "collector@example.com",
+    snapshot: posSnapshot,
+    requestedByUserId: "admin-1",
+    requestDelivery: async () => {
+      providerCount += 1;
+      throw new Error("claim failed");
+    }
+  });
+
+  assert.equal(providerCount, 1);
+  assert.equal(result.saleReference, completedReceipt.saleReference);
+  assert.equal(result.completedMarker, "sale-persisted");
+  assert.equal(result.inventoryDeductedOnce, true);
+  assert.equal(result.receiptEmailDelivery.status, "FAILED");
+  assert.equal(result.receiptEmailDelivery.sanitizedFailureCode, "RECEIPT_EMAIL_UNAVAILABLE");
+  assert.equal(result.receiptEmailDelivery.sanitizedFailureMessage, "The sale completed, but the receipt email could not be sent.");
+});
+
 test("client receipt resend keys are generated once per request and reusable for a retry", () => {
   const firstClickKey = stableReceiptEmailIdempotencyKey("receipt-resend:POS-123", "fixed-random-id");
   const retryKey = firstClickKey;
@@ -433,10 +488,11 @@ test("POS checkout keeps email optional, validates when checked, and never creat
 test("POS sale integrity is independent from receipt-email delivery failure", () => {
   assert.match(posSaleRouteSource, /requestId/);
   assert.match(radarServiceSource, /emailReceipt\?: boolean/);
-  assert.match(radarServiceSource, /requestReceiptEmailDelivery\(/);
-  assert.match(radarServiceSource, /return \{ \.\.\.receipt, receiptEmailDelivery: delivery \};/);
-  assert.match(radarServiceSource, /fallbackReceiptEmailDelivery/);
-  assert.match(radarServiceSource, /The sale completed, but the receipt email could not be sent\./);
+  assert.match(radarServiceSource, /attachPosReceiptEmailDeliveryResult\(\{/);
+  assert.match(receiptEmailSource, /requestDelivery \?\? requestReceiptEmailDelivery/);
+  assert.match(receiptEmailSource, /return \{ \.\.\.input\.receipt, receiptEmailDelivery: delivery \};/);
+  assert.match(receiptEmailSource, /fallbackReceiptEmailDelivery/);
+  assert.match(receiptEmailSource, /The sale completed, but the receipt email could not be sent\./);
   assert.match(receiptEmailSource, /sendEmailViaProvider/);
   assert.match(receiptEmailSource, /const status = sendResult\.status === "sent" \? "SENT" : "FAILED";/);
   assert.match(receiptEmailSource, /sanitizedFailureCode/);

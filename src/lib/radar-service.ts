@@ -79,7 +79,7 @@ import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
 import { marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
 import {
-  fallbackReceiptEmailDelivery,
+  attachPosReceiptEmailDeliveryResult,
   normalizeReceiptEmail,
   notRequestedReceiptEmailDelivery,
   receiptEmailDeliveryAvailable,
@@ -7972,32 +7972,14 @@ export async function createPosSale(
     await syncInventoryStoreStatusAfterStockChange(item.inventoryItemId);
   }
 
-  if (!requestedReceiptEmail) return receipt;
-  try {
-    const supportEmail = (await getStorefrontSettings(currentUser.id)).contactEmail || "gamedaygrabs@outlook.com";
-    const delivery = await requestReceiptEmailDelivery({
-      sourceType: "POS_SALE",
-      sourceId: receipt.saleReference,
-      recipientEmail: requestedReceiptEmail,
-      deliveryType: "INITIAL",
-      idempotencyKey: `receipt:pos:initial:${receipt.saleReference}:${requestedReceiptEmail}`,
-      snapshot: posReceiptEmailSnapshot(receipt, supportEmail),
-      requestedByUserId: currentUser.id,
-      requestId: input.requestId
-    });
-    return { ...receipt, receiptEmailDelivery: delivery };
-  } catch {
-    return {
-      ...receipt,
-      receiptEmailDelivery: fallbackReceiptEmailDelivery({
-        status: "FAILED",
-        deliveryType: "INITIAL",
-        recipientEmail: requestedReceiptEmail,
-        sanitizedFailureCode: "RECEIPT_EMAIL_UNAVAILABLE",
-        sanitizedFailureMessage: "The sale completed, but the receipt email could not be sent."
-      })
-    };
-  }
+  const supportEmail = requestedReceiptEmail ? (await getStorefrontSettings(currentUser.id)).contactEmail || "gamedaygrabs@outlook.com" : "gamedaygrabs@outlook.com";
+  return attachPosReceiptEmailDeliveryResult({
+    receipt,
+    requestedReceiptEmail,
+    snapshot: posReceiptEmailSnapshot(receipt, supportEmail),
+    requestedByUserId: currentUser.id,
+    requestId: input.requestId
+  });
 }
 
 export async function sendPosReceiptEmail(
