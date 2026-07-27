@@ -1098,11 +1098,19 @@ export const posSaleCreateSchema = z.object({
   selectedCustomerAccountId: z.string().trim().min(2).optional(),
   customerEmail: z.string().trim().email().optional(),
   customerPhone: optionalTrimmed,
+  emailReceipt: checkboxBoolean.optional(),
+  receiptEmail: z.preprocess(
+    (value) => value === "" || value === null ? undefined : value,
+    z.string().trim().email().max(254).optional()
+  ),
   taxExempt: checkboxBoolean.optional(),
   taxExemptReason: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().min(4).max(160).optional()),
   taxExemptionReference: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().min(4).max(120).optional()),
   taxExemptionNote: z.preprocess((value) => value === "" || value === null ? undefined : value, z.string().trim().max(1000).optional())
 }).strict().superRefine((input, context) => {
+  if (input.emailReceipt && !input.receiptEmail) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["receiptEmail"], message: "Enter an email address for the receipt." });
+  }
   if (input.taxExempt && !input.taxExemptReason) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["taxExemptReason"], message: "Tax-exempt sales require a reason." });
   }
@@ -1115,6 +1123,14 @@ export const posCustomerMatchSchema = z.object({
   selectedCustomerAccountId: z.string().trim().min(2).max(128).optional(),
   customerEmail: z.string().trim().email().max(254).optional(),
   customerPhone: z.string().trim().max(32).optional().transform((value) => value || undefined)
+}).strict();
+
+export const receiptEmailResendSchema = z.object({
+  email: z.preprocess(
+    (value) => value === "" || value === null ? undefined : value,
+    z.string().trim().email().max(254).optional()
+  ),
+  idempotencyKey: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9._:-]+$/).optional()
 }).strict();
 
 export const rewardAdminAdjustmentSchema = z.object({

@@ -39,6 +39,11 @@ import {
   type StorefrontEmailItem
 } from "@/lib/storefront-email-templates";
 import {
+  normalizeReceiptEmail,
+  requestReceiptEmailDelivery,
+  type ReceiptEmailSnapshot
+} from "@/lib/receipt-email";
+import {
   DEFAULT_STOREFRONT_PURCHASE_LIMIT,
   storefrontConfiguredPurchaseLimit,
   storefrontEffectiveMaxQuantity
@@ -1199,6 +1204,86 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     subject: email.subject,
     text: email.text,
     html: email.html
+  });
+}
+
+function storefrontOrderReceiptRecipient(order: StorefrontOrderWithItems) {
+  return normalizeReceiptEmail(order.customerEmail) ?? normalizeReceiptEmail(order.customer?.email);
+}
+
+function storefrontOrderStatusLink(order: StorefrontOrderWithItems) {
+  return `${storefrontCheckoutBaseUrl()}/order-status?order=${encodeURIComponent(order.orderNumber)}`;
+}
+
+function storefrontReceiptEmailSnapshot(order: StorefrontOrderWithItems, supportEmail: string): ReceiptEmailSnapshot {
+  const localPickup = orderIsLocalPickup(order);
+  return {
+    sourceType: "STOREFRONT_ORDER",
+    receiptNumber: order.orderNumber,
+    completedAt: order.paidAt ?? order.updatedAt,
+    customerName: order.customerName,
+    lineItems: order.items.map((item) => ({
+      name: item.publicTitle,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal
+    })),
+    subtotal: order.subtotal,
+    discount: moneyFromCents(order.discountCents ?? 0),
+    shipping: order.shippingCharged,
+    tax: order.taxCents === null ? null : order.tax,
+    total: order.total,
+    paymentMethodLabel: "Stripe Checkout",
+    fulfillmentMethod: localPickup ? "Local Pickup" : "Shipping",
+    fulfillmentSummary: localPickup ? "Pickup details will appear in your order updates." : order.shippingMethodLabel,
+    supportEmail,
+    orderStatusUrl: storefrontOrderStatusLink(order)
+  };
+}
+
+async function sendStorefrontReceiptEmail(order: StorefrontOrderWithItems) {
+  if (order.paymentStatus !== "paid") return null;
+  const recipient = storefrontOrderReceiptRecipient(order);
+  if (!recipient) return null;
+  const settings = await getStorefrontSettings();
+  const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
+  return requestReceiptEmailDelivery({
+    sourceType: "STOREFRONT_ORDER",
+    sourceId: order.id,
+    recipientEmail: recipient,
+    deliveryType: "INITIAL",
+    idempotencyKey: `receipt:storefront:initial:${order.id}:${recipient}`,
+    snapshot: storefrontReceiptEmailSnapshot(order, contactEmail)
+  });
+}
+
+export async function sendStorefrontOrderReceiptEmail(
+  currentUser: SessionUser,
+  orderId: string,
+  input: { email?: string | null; idempotencyKey?: string | null; requestId?: string | null }
+) {
+  const order = await prisma.storefrontOrder.findFirst({
+    where: {
+      id: orderId,
+      OR: [{ userId: null }, { userId: currentUser.id }]
+    },
+    include: storefrontOrderInclude
+  });
+  if (!order) throw new Error("Order not found.");
+  if (order.paymentStatus !== "paid") throw new Error("Receipts can only be emailed for paid orders.");
+  const recipient = normalizeReceiptEmail(input.email) ?? storefrontOrderReceiptRecipient(order);
+  if (!recipient) throw new Error("Enter a valid receipt email address.");
+  const settings = await getStorefrontSettings(currentUser.id);
+  const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
+  return requestReceiptEmailDelivery({
+    sourceType: "STOREFRONT_ORDER",
+    sourceId: order.id,
+    recipientEmail: recipient,
+    deliveryType: "RESEND",
+    idempotencyKey: input.idempotencyKey?.trim() || `receipt:storefront:resend:${order.id}:${recipient}:${Date.now()}`,
+    snapshot: storefrontReceiptEmailSnapshot(order, contactEmail),
+    requestedByUserId: currentUser.id,
+    requestId: input.requestId
   });
 }
 
@@ -3298,6 +3383,7 @@ async function completePaidCheckoutSideEffects(order: StorefrontOrderWithItems) 
   if (order.paymentStatus !== "paid") return;
   await awardRewardsForPaidOrder(order);
   await sendStorefrontOrderConfirmationEmail(order);
+  await sendStorefrontReceiptEmail(order);
   const customerEmail = order.customerEmail ?? order.customer?.email ?? null;
   if (order.customer && customerEmail) await syncStorefrontCustomerTotals(order.customer.id, customerEmail);
 }

@@ -1035,6 +1035,16 @@ export type PosSaleReceiptDTO = {
   itemCount: number;
   completedAt: string;
   lines: PosSaleLineDTO[];
+  receiptEmailDelivery: {
+    status: "PENDING" | "SENT" | "FAILED" | "NOT_REQUESTED";
+    deliveryType: "INITIAL" | "RESEND" | null;
+    maskedRecipient: string | null;
+    sentAt: string | null;
+    lastAttemptAt: string | null;
+    attemptCount: number;
+    sanitizedFailureCode: string | null;
+    sanitizedFailureMessage: string | null;
+  };
 };
 
 export type InventoryMarketCompDTO = {
@@ -1801,6 +1811,8 @@ export type AppHealthDTO = {
       smtpConfigured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
+      storefrontReceiptEmailsEnabled: boolean;
+      posReceiptEmailsEnabled: boolean;
       deliverability: {
         domainAuthenticationStatus: "manual_check_required" | "not_applicable";
         dmarcStatus: "unknown_manual";

@@ -19,6 +19,7 @@ export type PublicRateLimitAction =
   | "admin_reset_password"
   | "admin_invite_accept"
   | "admin_customer_lookup"
+  | "admin_receipt_email"
   | "client_error";
 
 type PublicRateLimitScope = "client" | "email" | "order" | "cart" | "zip" | "token";
@@ -123,6 +124,11 @@ export const publicRateLimitRules: Record<PublicRateLimitAction, PublicRateLimit
   admin_customer_lookup: [
     { rule: "client_10m", scope: "client", windowSeconds: 10 * 60, maxAttempts: 120, blockSeconds: 10 * 60 },
     { rule: "email_10m", scope: "email", windowSeconds: 10 * 60, maxAttempts: 60, blockSeconds: 10 * 60 }
+  ],
+  admin_receipt_email: [
+    { rule: "client_10m", scope: "client", windowSeconds: 10 * 60, maxAttempts: 20, blockSeconds: 10 * 60 },
+    { rule: "email_10m", scope: "email", windowSeconds: 10 * 60, maxAttempts: 6, blockSeconds: 10 * 60 },
+    { rule: "order_10m", scope: "order", windowSeconds: 10 * 60, maxAttempts: 8, blockSeconds: 10 * 60 }
   ],
   client_error: [
     { rule: "client_10m", scope: "client", windowSeconds: 10 * 60, maxAttempts: 20, blockSeconds: 10 * 60 }

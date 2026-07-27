@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
   try {
     const input = posSaleCreateSchema.parse(await readJson(request));
-    const sale = await createPosSale(user, input);
+    const sale = await createPosSale(user, { ...input, requestId });
     await logAudit({
       user,
       requestId,

@@ -1591,6 +1591,33 @@ model PaymentEvent {
   @@index([receivedAt])
 }
 
+model ReceiptEmailDelivery {
+  id                      String   @id @default(cuid())
+  sourceType              String
+  sourceId                String
+  recipientEmailNormalized String
+  recipientEmailMasked    String
+  deliveryType            String
+  status                  String   @default("PENDING")
+  idempotencyKey          String   @unique
+  attemptCount            Int      @default(0)
+  providerMessageId       String?
+  lastAttemptAt           DateTime?
+  sentAt                  DateTime?
+  sanitizedFailureCode    String?
+  sanitizedFailureMessage String?
+  requestedByUserId       String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([sourceType, sourceId])
+  @@index([sourceType, sourceId, deliveryType])
+  @@index([status])
+  @@index([recipientEmailNormalized])
+  @@index([requestedByUserId])
+  @@index([createdAt])
+}
+
 model RewardLedgerEntry {
   id                String            @id @default(cuid())
   customerAccountId String

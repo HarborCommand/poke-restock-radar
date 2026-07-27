@@ -3,6 +3,7 @@ import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { shippingLabelWorkflowConfig } from "@/lib/shipping-labels";
 import { shippingRateProviderConfig } from "@/lib/shipping-rate-provider";
 import { taxFeatureConfig } from "@/lib/tax";
+import { receiptEmailFeatureConfig } from "@/lib/receipt-email";
 
 export type ProviderHealthStatus = "configured" | "optional_not_configured" | "misconfigured" | "disabled";
 
@@ -42,6 +43,8 @@ export type EnvironmentReport = {
       smtpConfigured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
+      storefrontReceiptEmailsEnabled: boolean;
+      posReceiptEmailsEnabled: boolean;
       deliverability: {
         domainAuthenticationStatus: "manual_check_required" | "not_applicable";
         dmarcStatus: "unknown_manual";
@@ -189,6 +192,7 @@ export function getEnvironmentReport(): EnvironmentReport {
   const shippingLabelWorkflow = shippingLabelWorkflowConfig();
   const customerAccountFeatures = customerAccountFeatureConfig();
   const taxFeatures = taxFeatureConfig();
+  const receiptEmailFeatures = receiptEmailFeatureConfig();
   const blobEnvVars = ["BLOB_READ_WRITE_TOKEN"];
   const marketEnvVars = [
     "TCGCSV_ENABLED",
@@ -421,6 +425,8 @@ export function getEnvironmentReport(): EnvironmentReport {
         smtpConfigured: emailProvider.smtpConfigured,
         smtpHostConfigured: emailProvider.smtpHostConfigured,
         smtpFromConfigured: emailProvider.smtpFromConfigured,
+        storefrontReceiptEmailsEnabled: receiptEmailFeatures.storefrontReceiptEmailsEnabled,
+        posReceiptEmailsEnabled: receiptEmailFeatures.posReceiptEmailsEnabled,
         deliverability: {
           domainAuthenticationStatus: emailProvider.provider === "resend" ? "manual_check_required" : "not_applicable",
           dmarcStatus: "unknown_manual",
