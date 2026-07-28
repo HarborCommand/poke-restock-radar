@@ -6248,16 +6248,17 @@ function PosPanel({
             </div>
           </div>
           <div className="pos-customer-panel pos-receipt-email-panel" aria-label="Receipt delivery">
-            <label className="checkbox-row">
+            <label className="pos-receipt-email-toggle" htmlFor="pos-email-receipt">
               <input
+                id="pos-email-receipt"
                 type="checkbox"
                 checked={emailReceipt && posReceiptEmailReady}
                 onChange={(event) => setEmailReceipt(event.currentTarget.checked)}
                 disabled={cartEmpty || !posReceiptEmailReady}
               />
-              Email receipt
+              <span>Email receipt</span>
             </label>
-            <small>
+            <small className="pos-receipt-email-helper">
               {posReceiptEmailReady
                 ? "Optional transactional receipt only. No account is required and no marketing subscription is created."
                 : "Receipt email is not configured."}
