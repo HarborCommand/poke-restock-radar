@@ -24,6 +24,7 @@ const receiptEmailSource = source("src/lib/receipt-email.ts");
 const radarServiceSource = source("src/lib/radar-service.ts");
 const storefrontSource = source("src/lib/storefront.ts");
 const radarAppSource = source("src/components/RadarApp.tsx");
+const globalsCssSource = source("src/app/globals.css");
 const validationSource = source("src/lib/validation.ts");
 const rateLimitSource = source("src/lib/rate-limit.ts");
 const posSaleRouteSource = source("src/app/api/radar/pos/sales/route.ts");
@@ -483,6 +484,20 @@ test("POS checkout keeps email optional, validates when checked, and never creat
   assert.match(radarAppSource, /Change email and send/);
   assert.doesNotMatch(radarServiceSource, /receiptEmail[\s\S]{0,300}createCustomerAccount/);
   assert.doesNotMatch(radarServiceSource, /receiptEmail[\s\S]{0,300}connectOrCreate/);
+});
+
+test("POS receipt email control stays compact, semantic, and receipt scoped", () => {
+  assert.match(radarAppSource, /<label className="pos-receipt-email-toggle" htmlFor="pos-email-receipt">/);
+  assert.match(radarAppSource, /id="pos-email-receipt"[\s\S]{0,160}type="checkbox"/);
+  assert.match(radarAppSource, /<span>Email receipt<\/span>/);
+  assert.match(radarAppSource, /className="pos-receipt-email-helper"/);
+  assert.match(globalsCssSource, /\.pos-receipt-email-toggle\s*\{[^}]*display:\s*inline-flex;[^}]*width:\s*fit-content;/);
+  assert.match(globalsCssSource, /\.pos-receipt-email-toggle input\s*\{[^}]*appearance:\s*none;[^}]*width:\s*20px;[^}]*height:\s*20px;/);
+  assert.match(globalsCssSource, /\.pos-receipt-email-toggle input\s*\{[^}]*box-sizing:\s*border-box;[^}]*min-width:\s*20px;[^}]*max-height:\s*20px;[^}]*padding:\s*0;/);
+  assert.match(globalsCssSource, /\.pos-receipt-email-toggle input:focus-visible\s*\{/);
+  assert.match(globalsCssSource, /\.pos-receipt-email-toggle:has\(input:disabled\)\s*\{/);
+  assert.doesNotMatch(globalsCssSource, /\.pos-receipt-email-toggle\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*1fr;/);
+  assert.doesNotMatch(globalsCssSource, /\.pos-receipt-email-toggle input\s*\{[^}]*width:\s*100%;/);
 });
 
 test("POS sale integrity is independent from receipt-email delivery failure", () => {
