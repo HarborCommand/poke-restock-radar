@@ -105,9 +105,13 @@ type TcgcsvIdentityEvaluation = {
   variant: string | null;
   releasePeriod: string | null;
   packageForm: string | null;
+  priceContext: string | null;
+  priceEligible: boolean;
 };
 
 const TCGCSV_UNOPENED_SUBTYPE = "Unopened";
+const SEALED_PRICE_CONTEXT = "Sealed Product";
+const CARD_EXTENDED_DATA_KEYS = ["rarity", "card number", "card type", "hp", "stage"];
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -147,26 +151,37 @@ function isUnopenedSubtype(value: string | null | undefined) {
   return normalizeSubtype(value) === "unopened";
 }
 
-export function selectTcgcsvPriceRow(rows: TcgcsvPricePayload[]) {
-  const unopenedRows = rows.filter((row) => isUnopenedSubtype(toStringValue(row.subTypeName)));
-  const marketRow = unopenedRows.find((row) => toNumber(row.marketPrice) !== null) ?? unopenedRows[0];
-  if (!marketRow) {
-    return {
-      marketPrice: null,
-      lowPrice: null,
-      midPrice: null,
-      highPrice: null,
-      directLowPrice: null,
-      subTypeName: toStringValue(rows[0]?.subTypeName) ? `diagnostic:${toStringValue(rows[0]?.subTypeName)}` : null
-    };
-  }
+function isNormalSubtype(value: string | null | undefined) {
+  return normalizeSubtype(value) === "normal";
+}
+
+function rowMarketPrice(row: TcgcsvPricePayload) {
+  return toNumber(row.marketPrice);
+}
+
+function priceResultFromRow(marketRow: TcgcsvPricePayload, priceContext: string, priceEligible = true) {
   return {
     marketPrice: toNumber(marketRow.marketPrice),
     lowPrice: toNumber(marketRow.lowPrice),
     midPrice: toNumber(marketRow.midPrice),
     highPrice: toNumber(marketRow.highPrice),
     directLowPrice: toNumber(marketRow.directLowPrice),
-    subTypeName: toStringValue(marketRow.subTypeName)
+    subTypeName: toStringValue(marketRow.subTypeName),
+    priceContext,
+    priceEligible
+  };
+}
+
+function unavailablePriceResult(rows: TcgcsvPricePayload[]) {
+  return {
+    marketPrice: null,
+    lowPrice: null,
+    midPrice: null,
+    highPrice: null,
+    directLowPrice: null,
+    subTypeName: toStringValue(rows[0]?.subTypeName),
+    priceContext: null,
+    priceEligible: false
   };
 }
 
@@ -304,6 +319,105 @@ function productIdentityText(product: Pick<CachedTcgcsvProduct, "productName" | 
   return `${product.productName} ${product.cleanProductName || ""} ${product.groupName}`;
 }
 
+function productTextFromPayload(product: TcgcsvProductPayload | CachedTcgcsvProduct) {
+  return `${productNameFromPayload(product as TcgcsvProductPayload)} ${toStringValue((product as CachedTcgcsvProduct).cleanProductName) || ""} ${toStringValue((product as CachedTcgcsvProduct).groupName) || toStringValue((product as Record<string, unknown>).groupName) || ""}`;
+}
+
+export function tcgcsvExtendedDataHasCardIndicators(value: string | null | undefined) {
+  const decoded = decodeProductText(value);
+  const normalized = normalizeText(decoded);
+  if (!normalized) return false;
+  try {
+    const parsed = JSON.parse(decoded) as unknown;
+    const keys: string[] = [];
+    const collectKeys = (entry: unknown) => {
+      if (!entry || typeof entry !== "object") return;
+      for (const [key, nested] of Object.entries(entry)) {
+        keys.push(normalizeText(key));
+        collectKeys(nested);
+      }
+    };
+    collectKeys(parsed);
+    if (keys.some((key) => CARD_EXTENDED_DATA_KEYS.includes(key))) return true;
+  } catch {
+    // Fall through to text-based field checks.
+  }
+  return /\b(rarity|card number|card type|hp|stage)\b/.test(normalized);
+}
+
+function isSealedProductText(value: string | null | undefined) {
+  const normalized = normalizeTcgcsvProductText(value);
+  if (!normalized) return false;
+  if (inferTcgcsvProductType(normalized) === "single_card") return false;
+  return SEALED_KEYWORDS.some((keyword) => normalized.includes(normalizeTcgcsvProductText(keyword)));
+}
+
+function packageFormsMatch(itemText: string | null | undefined, productText: string | null | undefined) {
+  const itemForm = extractPackageForm(itemText);
+  const productForm = extractPackageForm(productText);
+  if (itemForm === "case") return productForm === "case";
+  if (itemForm === "display") return productForm === "display";
+  if (isSingleInventoryUnit(itemText) && isMultiUnitProductForm(productText)) return false;
+  return true;
+}
+
+function eligibleNormalSealedPriceContext(
+  product: TcgcsvProductPayload | CachedTcgcsvProduct,
+  item?: Pick<InventoryItemDTO, "itemName" | "setName" | "category" | "upc" | "sku" | "dpci" | "asin">
+) {
+  const productText = productTextFromPayload(product);
+  if (!isSealedProductText(productText)) return false;
+  if (tcgcsvExtendedDataHasCardIndicators((product as CachedTcgcsvProduct).extendedData ?? toStringValue((product as Record<string, unknown>).extendedData))) return false;
+  if (!item) return true;
+  const itemText = `${item.itemName} ${item.setName || ""} ${item.category || ""}`;
+  const itemType = inferTcgcsvProductType(`${item.itemName} ${item.category}`);
+  const productType = inferTcgcsvProductType(productText);
+  const itemReleasePeriod = extractReleasePeriod(itemText);
+  const productReleasePeriod = extractReleasePeriod(productText);
+  const itemVariant = extractBallVariant(itemText);
+  const productVariant = extractBallVariant(productText);
+  if (productType === "single_card") return false;
+  if (itemType && productType && itemType !== productType) return false;
+  if (itemReleasePeriod && productReleasePeriod !== itemReleasePeriod) return false;
+  if (itemVariant && productVariant !== itemVariant) return false;
+  return packageFormsMatch(itemText, productText);
+}
+
+export function tcgcsvPriceContextForProduct(
+  item: Pick<InventoryItemDTO, "itemName" | "setName" | "category" | "upc" | "sku" | "dpci" | "asin"> | null,
+  product: TcgcsvProductPayload | CachedTcgcsvProduct,
+  subTypeName: string | null | undefined = (product as CachedTcgcsvProduct).subTypeName
+) {
+  if (isUnopenedSubtype(subTypeName)) return { priceContext: TCGCSV_UNOPENED_SUBTYPE, priceEligible: true };
+  if (isNormalSubtype(subTypeName) && eligibleNormalSealedPriceContext(product, item ?? undefined)) {
+    return { priceContext: SEALED_PRICE_CONTEXT, priceEligible: true };
+  }
+  return { priceContext: null, priceEligible: false };
+}
+
+export function selectEligibleTcgcsvPriceRow(
+  product: TcgcsvProductPayload | CachedTcgcsvProduct,
+  rows: TcgcsvPricePayload[],
+  inventoryItem?: Pick<InventoryItemDTO, "itemName" | "setName" | "category" | "upc" | "sku" | "dpci" | "asin">
+) {
+  const unopenedRows = rows.filter((row) => isUnopenedSubtype(toStringValue(row.subTypeName)));
+  const unopenedRow = unopenedRows.find((row) => rowMarketPrice(row) !== null) ?? unopenedRows[0];
+  if (unopenedRow) return priceResultFromRow(unopenedRow, TCGCSV_UNOPENED_SUBTYPE);
+
+  const normalRows = rows.filter((row) => isNormalSubtype(toStringValue(row.subTypeName)));
+  const normalRow = normalRows.find((row) => rowMarketPrice(row) !== null) ?? normalRows[0];
+  if (normalRow && tcgcsvPriceContextForProduct(inventoryItem ?? null, product, toStringValue(normalRow.subTypeName)).priceEligible) {
+    return priceResultFromRow(normalRow, SEALED_PRICE_CONTEXT);
+  }
+
+  return unavailablePriceResult(rows);
+}
+
+export function selectTcgcsvPriceRow(rows: TcgcsvPricePayload[]) {
+  return selectEligibleTcgcsvPriceRow({ name: "" }, rows);
+}
+
+
 export function evaluateTcgcsvIdentityMatch(
   item: Pick<InventoryItemDTO, "itemName" | "setName" | "category" | "upc" | "sku" | "dpci" | "asin" | "marketProviderMatchStatus">,
   product: CachedTcgcsvProduct,
@@ -325,6 +439,7 @@ export function evaluateTcgcsvIdentityMatch(
   const itemVariant = extractBallVariant(itemText);
   const productVariant = extractBallVariant(productText);
   const packageForm = extractPackageForm(productText);
+  const priceContext = tcgcsvPriceContextForProduct(item, product);
   const variants = [...upcVariants(item.upc), ...upcVariants(item.sku), ...upcVariants(item.dpci), ...upcVariants(item.asin)];
   const hasIdentifierMatch = productPayloadHasUpc(product, variants);
   const reasons: string[] = [];
@@ -332,12 +447,15 @@ export function evaluateTcgcsvIdentityMatch(
   let score = 0;
   let hardRejected = false;
 
-  if (!isUnopenedSubtype(product.subTypeName)) {
-    hardRejected = true;
-    warnings.push(`TCGplayer subtype is ${product.subTypeName || "unknown"}, not ${TCGCSV_UNOPENED_SUBTYPE}.`);
-  } else {
+  if (isUnopenedSubtype(product.subTypeName)) {
     reasons.push(`${TCGCSV_UNOPENED_SUBTYPE} subtype`);
     score += 12;
+  } else if (isNormalSubtype(product.subTypeName) && priceContext.priceEligible) {
+    reasons.push("Provider subtype Normal validated as sealed-product pricing");
+    score += 12;
+  } else {
+    hardRejected = true;
+    warnings.push(`TCGplayer subtype ${product.subTypeName || "unknown"} is not eligible sealed-product pricing.`);
   }
 
   if (itemType && productType && itemType !== productType) {
@@ -410,7 +528,7 @@ export function evaluateTcgcsvIdentityMatch(
   const confidence = hardRejected ? Math.min(49, Math.max(0, Math.round(score))) : Math.max(0, Math.min(100, Math.round(score)));
   const exactIdentity =
     !hardRejected &&
-    isUnopenedSubtype(product.subTypeName) &&
+    priceContext.priceEligible &&
     Boolean(itemType && productType === itemType) &&
     (!itemReleasePeriod || productReleasePeriod === itemReleasePeriod) &&
     (!itemVariant || productVariant === itemVariant) &&
@@ -434,7 +552,9 @@ export function evaluateTcgcsvIdentityMatch(
     warnings,
     variant: productVariant,
     releasePeriod: productReleasePeriod,
-    packageForm
+    packageForm,
+    priceContext: priceContext.priceContext,
+    priceEligible: priceContext.priceEligible
   };
 }
 
@@ -586,7 +706,7 @@ export async function syncTcgcsvCatalog(options: { limitGroups?: number } = {}) 
           if (!tcgcsvProductId) return null;
           const productName = productNameFromPayload(product);
           const cleanProductName = toStringValue(product.cleanName ?? product.cleanProductName);
-          const price = selectTcgcsvPriceRow(priceRowsByProduct.get(tcgcsvProductId) ?? []);
+          const price = selectEligibleTcgcsvPriceRow(product, priceRowsByProduct.get(tcgcsvProductId) ?? []);
           return {
             tcgcsvProductId,
             categoryId: POKEMON_CATEGORY_ID,
@@ -875,6 +995,8 @@ function tcgcsvCandidateToDTO(entry: Awaited<ReturnType<typeof findTcgcsvCandida
     midPrice: entry.candidate.midPrice,
     highPrice: entry.candidate.highPrice,
     subTypeName: entry.candidate.subTypeName,
+    priceContext: entry.priceContext,
+    priceEligible: entry.priceEligible,
     matchStatus: entry.statusLabel,
     matchReasons: entry.reasons,
     matchWarnings: entry.warnings,
@@ -923,7 +1045,9 @@ export async function listTcgcsvMatchReview(items: InventoryItemDTO[]): Promise<
                 warnings: evaluation.warnings,
                 variant: evaluation.variant,
                 releasePeriod: evaluation.releasePeriod,
-                packageForm: evaluation.packageForm
+                packageForm: evaluation.packageForm,
+                priceContext: evaluation.priceContext,
+                priceEligible: evaluation.priceEligible
               };
             })()
           ]
@@ -949,6 +1073,8 @@ export async function listTcgcsvMatchReview(items: InventoryItemDTO[]): Promise<
         marketPrice: product ? tcgcsvMarketPriceFromCachedProduct(product) : item.currentMarketEstimate,
         lowPrice: product?.lowPrice ?? null,
         subTypeName: product?.subTypeName ?? null,
+        priceContext: storedEvaluation?.priceContext ?? null,
+        priceEligible: storedEvaluation?.priceEligible ?? false,
         matchStatus: item.marketProviderIdentityStatus ??
           (item.marketProviderMatchStatus === "LOCKED"
             ? "Manually Confirmed"

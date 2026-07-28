@@ -989,7 +989,7 @@ function marketDecisionLabel(item: InventoryItemDTO) {
   if (reason === "Match needs review") return "Match Needs Review";
   if (reason === "Product identity mismatch") return "Product Identity Mismatch";
   if (reason === "Matched product unavailable") return "Matched Product Unavailable";
-  if (reason === "Unopened price unavailable") return "Price Unavailable";
+  if (reason === "Market price unavailable") return "Price Unavailable";
   if (reason === "Market data stale") return "Data Stale";
   if (reason === "Cost basis unavailable") return "Cost Basis Unavailable";
   if (reason === "Estimated net unavailable") return "Estimated Net Unavailable";
@@ -19551,6 +19551,10 @@ function MarketPanel({
                                 <small>
                                   {candidate.matchStatus} - {candidate.subTypeName || "Subtype unknown"} - Market {money(candidate.marketPrice)} - Lowest {money(candidate.lowPrice)}
                                 </small>
+                                <small>
+                                  Provider subtype: {candidate.subTypeName || "Subtype unknown"}
+                                  {candidate.priceContext ? ` - Validated as ${candidate.priceContext.toLowerCase()} pricing` : ""}
+                                </small>
                                 <small>{candidate.reason || "candidate match"}</small>
                                 {candidate.matchWarnings.length ? <small className="profit-bad">{candidate.matchWarnings.join(" ")}</small> : null}
                               </div>
@@ -19746,7 +19750,10 @@ function MarketInventoryRow({
         <span>
           <small>TCGplayer Market Price</small>
           <strong>{money(item.currentMarketEstimate)}</strong>
-          <em>via TCGCSV - {item.marketProviderPriceSubtype || "Subtype unknown"}</em>
+          <em>
+            Provider subtype: {item.marketProviderPriceSubtype || "Subtype unknown"}
+            {item.marketProviderPriceContext ? ` - Validated as ${item.marketProviderPriceContext.toLowerCase()} pricing` : ""}
+          </em>
         </span>
         <span>
           <small>Lowest Listing</small>
