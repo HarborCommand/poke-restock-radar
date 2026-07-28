@@ -23,6 +23,7 @@ export type EmailProviderTag = {
 
 export type EmailMessage = {
   to: string;
+  from?: string;
   subject: string;
   text: string;
   html?: string;
@@ -180,7 +181,7 @@ export function sanitizedEmailFailure(provider: EmailProviderKind = "none") {
 
 async function sendWithResend(message: EmailMessage, env: EmailProviderEnv, fetchImpl: typeof fetch, idempotencyKey?: string) {
   const apiKey = envValue(env, "RESEND_API_KEY");
-  const from = envValue(env, "EMAIL_FROM");
+  const from = message.from?.trim() || envValue(env, "EMAIL_FROM");
   const replyTo = envValue(env, "EMAIL_REPLY_TO");
   if (!apiKey || !from) return { sent: false, providerMessageId: null };
   const apiHeaders: Record<string, string> = {
@@ -217,7 +218,7 @@ async function sendWithResend(message: EmailMessage, env: EmailProviderEnv, fetc
 
 async function sendWithSmtp(message: EmailMessage, env: EmailProviderEnv) {
   const host = envValue(env, "SMTP_HOST");
-  const from = envValue(env, "SMTP_FROM");
+  const from = message.from?.trim() || envValue(env, "SMTP_FROM");
   const replyTo = envValue(env, "EMAIL_REPLY_TO");
   if (!host || !from) return { sent: false, providerMessageId: null };
   const { createTransport } = await import("nodemailer");

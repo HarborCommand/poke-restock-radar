@@ -234,6 +234,39 @@ type StorefrontReceiptEmailStatusResponse = {
     configured: boolean;
   };
 };
+type ReceiptPreviewType = "storefront" | "pos";
+type ReceiptEmailPreviewResponse = {
+  diagnostics: {
+    storefrontEmailFromConfigured: boolean;
+    posReceiptEmailFromConfigured: boolean;
+    emailFromFallbackConfigured: boolean;
+    replyToConfigured: boolean;
+  };
+  previews: Record<
+    ReceiptPreviewType,
+    {
+      previewType: ReceiptPreviewType;
+      subject: string;
+      sender: {
+        displayName: string;
+        address: string | null;
+        from: string | null;
+        configured: boolean;
+        usingEmailFromFallback: boolean;
+      };
+      replyToConfigured: boolean;
+      html: string;
+      text: string;
+      totals: {
+        subtotal: string;
+        discount: string;
+        shipping: string;
+        tax: string;
+        total: string;
+      };
+    }
+  >;
+};
 type InventoryDashboardIntent = { id: number; action: "quick-stock" | "add-product" } | null;
 type Toast = { type: "error" | "success"; message: string };
 type SubmitOptions<T> = {
@@ -27568,6 +27601,7 @@ function NotificationSettingsPanel({
           {busyLabel === "Testing browser push" ? "Testing" : "Test Browser Push"}
         </button>
       </div>
+      <ReceiptEmailPreviewPanel busy={busy} busyLabel={busyLabel} runAction={runAction} />
       <div className="push-panel notification-delivery-log">
         <div className="push-status-grid">
           <div>
@@ -27600,6 +27634,134 @@ function NotificationSettingsPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function ReceiptEmailPreviewPanel({
+  busy,
+  busyLabel,
+  runAction
+}: {
+  busy: boolean;
+  busyLabel: string | null;
+  runAction: ActionHandler;
+}) {
+  const [previewType, setPreviewType] = useState<ReceiptPreviewType>("storefront");
+  const [preview, setPreview] = useState<ReceiptEmailPreviewResponse | null>(null);
+  const [plainTextOpen, setPlainTextOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const activePreview = preview?.previews[previewType] ?? null;
+  const diagnostics = preview?.diagnostics ?? null;
+
+  useEffect(() => {
+    let mounted = true;
+    requestJson<ReceiptEmailPreviewResponse>("/api/radar/receipt-email-preview")
+      .then((result) => {
+        if (!mounted) return;
+        setPreview(result);
+        setLoadError(null);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        setLoadError(error instanceof Error ? error.message : "Receipt preview could not be loaded.");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return (
+    <div className="push-panel receipt-preview-panel">
+      <div className="push-status-grid">
+        <div>
+          <strong>Receipt Email Preview</strong>
+          <span>Administrator-only fixture previews for storefront order confirmations and POS receipts.</span>
+        </div>
+        <span className="chip watch">Fixture only</span>
+      </div>
+
+      {loadError ? <p className="form-error">{loadError}</p> : null}
+      {activePreview && diagnostics ? (
+        <>
+          <div className="receipt-preview-controls" aria-label="Receipt preview type">
+            <button className={previewType === "storefront" ? "segmented active" : "segmented"} type="button" onClick={() => setPreviewType("storefront")}>
+              Storefront order
+            </button>
+            <button className={previewType === "pos" ? "segmented active" : "segmented"} type="button" onClick={() => setPreviewType("pos")}>
+              POS receipt
+            </button>
+          </div>
+          <div className="receipt-preview-meta">
+            <div>
+              <span>Subject</span>
+              <strong>{activePreview.subject}</strong>
+            </div>
+            <div>
+              <span>Sender</span>
+              <strong>{activePreview.sender.from || `${activePreview.sender.displayName} — not configured`}</strong>
+            </div>
+            <div>
+              <span>Reply-To</span>
+              <strong>{activePreview.replyToConfigured ? "Configured" : "Not configured"}</strong>
+            </div>
+          </div>
+          <div className="receipt-preview-diagnostics" aria-label="Sender diagnostics">
+            <span className={`chip ${diagnostics.storefrontEmailFromConfigured ? "good" : "watch"}`}>Storefront sender {diagnostics.storefrontEmailFromConfigured ? "configured" : "uses fallback"}</span>
+            <span className={`chip ${diagnostics.posReceiptEmailFromConfigured ? "good" : "watch"}`}>POS sender {diagnostics.posReceiptEmailFromConfigured ? "configured" : "uses fallback"}</span>
+            <span className={`chip ${diagnostics.emailFromFallbackConfigured ? "good" : "bad"}`}>EMAIL_FROM fallback {diagnostics.emailFromFallbackConfigured ? "configured" : "missing"}</span>
+          </div>
+          <div className="receipt-preview-layout">
+            <div className="receipt-preview-frame desktop" aria-label="Desktop email preview">
+              <span>Desktop preview</span>
+              <iframe title={`${activePreview.subject} desktop preview`} srcDoc={activePreview.html} />
+            </div>
+            <div className="receipt-preview-frame mobile" aria-label="Mobile email preview">
+              <span>Mobile preview</span>
+              <iframe title={`${activePreview.subject} mobile preview`} srcDoc={activePreview.html} />
+            </div>
+          </div>
+          <button className="mini-action" type="button" onClick={() => setPlainTextOpen((open) => !open)}>
+            <FileText size={14} />
+            {plainTextOpen ? "Hide plain text" : "View plain text"}
+          </button>
+          {plainTextOpen ? <pre className="receipt-preview-text">{activePreview.text}</pre> : null}
+          <div className="receipt-preview-total">
+            <span>Total paid</span>
+            <strong>{activePreview.totals.total}</strong>
+          </div>
+          <div className="admin-actions">
+            <button
+              className="mini-action solid"
+              disabled={busy}
+              type="button"
+              onClick={() =>
+                runAction(
+                  `Sending ${previewType} receipt preview`,
+                  () =>
+                    requestJson("/api/radar/receipt-email-preview", {
+                      method: "POST",
+                      body: JSON.stringify({ previewType })
+                    }),
+                  { success: "Receipt preview test handled" }
+                )
+              }
+            >
+              <Mail size={14} />
+              {busyLabel === `Sending ${previewType} receipt preview` ? "Sending" : "Send test to my admin email"}
+            </button>
+          </div>
+          <p className="push-copy">
+            Test sends use sanitized fixture data, a TEST RECEIPT banner, a server-selected sender profile, and the authenticated administrator email only.
+          </p>
+        </>
+      ) : (
+        <div className="empty-state small">
+          <Mail size={20} />
+          <strong>Loading receipt previews</strong>
+          <span>No transaction data is read for this preview.</span>
+        </div>
+      )}
+    </div>
   );
 }
 

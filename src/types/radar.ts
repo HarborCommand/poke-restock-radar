@@ -1811,6 +1811,22 @@ export type AppHealthDTO = {
       smtpConfigured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
+      storefrontEmailFromConfigured: boolean;
+      posReceiptEmailFromConfigured: boolean;
+      emailFromFallbackConfigured: boolean;
+      receiptReplyToConfigured: boolean;
+      storefrontReceiptSenderProfile: {
+        displayName: string;
+        address: string | null;
+        configured: boolean;
+        usingEmailFromFallback: boolean;
+      };
+      posReceiptSenderProfile: {
+        displayName: string;
+        address: string | null;
+        configured: boolean;
+        usingEmailFromFallback: boolean;
+      };
       storefrontReceiptEmailsEnabled: boolean;
       posReceiptEmailsEnabled: boolean;
       deliverability: {

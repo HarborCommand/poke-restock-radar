@@ -1399,7 +1399,7 @@ test("success page and order confirmation include safe optional account rewards 
   assert.match(emailTemplates, /Create your GameDayGrabs account to track orders and rewards/);
   assert.match(emailTemplates, /STOREFRONT_ACCOUNT_LOGIN_URL/);
   assert.match(storefront, /buildReceiptEmail\(storefrontReceiptEmailSnapshot\(order, contactEmail\)\)/);
-  assert.match(storefront, /Your GameDayGrabs order confirmation and receipt/);
+  assert.match(storefront, /subject: receiptEmail\.subject/);
   assert.match(storefront, /customerEmailEventId\("order_confirmation", order\.id\)/);
   assert.doesNotMatch(emailTemplates + client, /stripeCheckoutSessionId|stripePaymentIntentId|payment_method|raw Stripe|webhook body/i);
 });

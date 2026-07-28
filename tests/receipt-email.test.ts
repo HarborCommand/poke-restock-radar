@@ -10,13 +10,21 @@ import {
   normalizeReceiptEmail,
   receiptEmailDeliveryAvailable,
   receiptEmailFeatureConfig,
+  receiptEmailSenderDiagnostics,
+  receiptEmailSenderProfile,
   runReceiptEmailDeliveryAttempt,
   type ReceiptEmailDeliveryAttemptStore,
   type ReceiptEmailDeliveryRecord,
   type ReceiptEmailSnapshot
 } from "../src/lib/receipt-email";
+import {
+  buildReceiptEmailPreview,
+  resetReceiptEmailPreviewDedupForTests,
+  sendReceiptEmailPreviewToAdmin
+} from "../src/lib/receipt-email-preview";
 import { stableReceiptEmailIdempotencyKey } from "../src/lib/receipt-email-client";
 import type { EmailSendResult } from "../src/lib/email-provider";
+import type { SessionUser } from "../src/types/radar";
 
 const source = (path: string) => readFileSync(path, "utf8");
 
@@ -30,6 +38,8 @@ const rateLimitSource = source("src/lib/rate-limit.ts");
 const posSaleRouteSource = source("src/app/api/radar/pos/sales/route.ts");
 const posResendRouteSource = source("src/app/api/radar/pos/sales/[saleReference]/receipt-email/route.ts");
 const storefrontResendRouteSource = source("src/app/api/radar/storefront/orders/[orderId]/receipt-email/route.ts");
+const receiptPreviewRouteSource = source("src/app/api/radar/receipt-email-preview/route.ts");
+const receiptPreviewSource = source("src/lib/receipt-email-preview.ts");
 const schemaSource = source("prisma/schema.prisma");
 const migrationSource = source("prisma/migrations/20260727120000_receipt_email_deliveries/migration.sql");
 
@@ -213,7 +223,9 @@ test("receipt renderer produces branded storefront HTML and text from persisted 
   const email = buildReceiptEmail(storefrontSnapshot);
   const combined = `${email.subject}\n${email.html}\n${email.text}`;
 
-  assert.equal(email.subject, "Your GameDayGrabs receipt GDD-20260727-ABCD");
+  assert.equal(email.subject, "Order confirmed — GDD-20260727-ABCD");
+  assert.match(email.html, /Thanks for your order\./);
+  assert.match(email.html, /We received your GameDayGrabs order and payment\./);
   assert.match(email.html, /GameDay<span style="color:#FF6A00;">Grabs<\/span>/);
   assert.match(combined, /GDD-20260727-ABCD/);
   assert.match(combined, /Guest Collector/);
@@ -239,7 +251,9 @@ test("receipt renderer produces POS receipt content without exposing internals",
   const email = buildReceiptEmail(posSnapshot);
   const combined = `${email.subject}\n${email.html}\n${email.text}`;
 
-  assert.equal(email.subject, "Your GameDayGrabs receipt POS-7F2D19A8");
+  assert.equal(email.subject, "Your GameDayGrabs receipt — POS-7F2D19A8");
+  assert.match(email.html, /Thanks for your purchase\./);
+  assert.match(email.html, /Your receipt from GameDayGrabs\./);
   assert.match(combined, /POS-7F2D19A8/);
   assert.match(combined, /Linked Collector/);
   assert.match(combined, /Pitch Black Elite Trainer Box/);
@@ -420,6 +434,146 @@ test("receipt email configuration defaults disabled and normalizes recipients sa
   assert.equal(maskReceiptEmail("Collector@Example.COM"), "c***@example.com");
 });
 
+test("receipt sender profiles are selected server-side with EMAIL_FROM fallback", () => {
+  const env = {
+    RESEND_API_KEY: "test_resend_key",
+    EMAIL_FROM: "GameDayGrabs <hello@example.com>",
+    STOREFRONT_EMAIL_FROM: "orders@gamedaygrabs.com",
+    POS_RECEIPT_EMAIL_FROM: "GameDayGrabs Register <receipts@gamedaygrabs.com>",
+    EMAIL_REPLY_TO: "support@gamedaygrabs.com"
+  };
+
+  const storefront = receiptEmailSenderProfile("STOREFRONT_ORDER", env);
+  const pos = receiptEmailSenderProfile("POS_SALE", env);
+  const fallback = receiptEmailSenderProfile("POS_SALE", { EMAIL_FROM: "GameDayGrabs <hello@example.com>" });
+  const diagnostics = receiptEmailSenderDiagnostics(env);
+
+  assert.equal(storefront.from, "GameDayGrabs Orders <orders@gamedaygrabs.com>");
+  assert.equal(pos.from, "GameDayGrabs Receipts <receipts@gamedaygrabs.com>");
+  assert.equal(fallback.from, "GameDayGrabs <hello@example.com>");
+  assert.equal(fallback.usingEmailFromFallback, true);
+  assert.equal(diagnostics.storefrontEmailFromConfigured, true);
+  assert.equal(diagnostics.posReceiptEmailFromConfigured, true);
+  assert.equal(diagnostics.emailFromFallbackConfigured, true);
+  assert.equal(diagnostics.replyToConfigured, true);
+});
+
+test("receipt delivery message uses trusted sender profile and no client-supplied from", async () => {
+  const store = makeInMemoryDeliveryStore();
+  const messages: Array<{ from?: string; subject: string }> = [];
+
+  await runReceiptEmailDeliveryAttempt(
+    {
+      ...deliveryAttemptInput("receipt:sender-profile"),
+      sourceType: "STOREFRONT_ORDER",
+      sourceId: "order-1",
+      snapshot: storefrontSnapshot,
+      senderFrom: "GameDayGrabs Orders <orders@gamedaygrabs.com>"
+    },
+    {
+      store,
+      render: buildReceiptEmail,
+      send: async (message): Promise<EmailSendResult> => {
+        messages.push({ from: message.from, subject: message.subject });
+        return successfulSendResult();
+      },
+      providerName: "resend"
+    }
+  );
+
+  assert.equal(messages[0]?.from, "GameDayGrabs Orders <orders@gamedaygrabs.com>");
+  assert.equal(messages[0]?.subject, "Order confirmed — GDD-20260727-ABCD");
+  assert.doesNotMatch(posResendRouteSource, /fromAddress|senderAddress|senderFrom|emailFrom/i);
+  assert.doesNotMatch(storefrontResendRouteSource, /fromAddress|senderAddress|senderFrom|emailFrom/i);
+});
+
+test("receipt preview messages are fixture-only, clearly marked, and hide internals", () => {
+  const storefront = buildReceiptEmailPreview("storefront", {
+    EMAIL_FROM: "GameDayGrabs <hello@example.com>",
+    STOREFRONT_EMAIL_FROM: "orders@gamedaygrabs.com",
+    EMAIL_REPLY_TO: "support@gamedaygrabs.com"
+  });
+  const pos = buildReceiptEmailPreview("pos", {
+    EMAIL_FROM: "GameDayGrabs <hello@example.com>",
+    POS_RECEIPT_EMAIL_FROM: "receipts@gamedaygrabs.com"
+  });
+
+  assert.equal(storefront.subject, "[TEST] GameDayGrabs order confirmation");
+  assert.equal(pos.subject, "[TEST] GameDayGrabs POS receipt");
+  assert.equal(storefront.sender.from, "GameDayGrabs Orders <orders@gamedaygrabs.com>");
+  assert.equal(pos.sender.from, "GameDayGrabs Receipts <receipts@gamedaygrabs.com>");
+  assert.match(storefront.html, /TEST RECEIPT/);
+  assert.match(storefront.text, /No payment was made\./);
+  assert.match(storefront.text, /No order or POS sale was created\./);
+  assert.match(storefront.text, /This message was sent from the GameDayGrabs administrator receipt preview\./);
+  assert.match(pos.html, /Thanks for your purchase\./);
+  assert.doesNotMatch(pos.text, /Shipping:/);
+  assert.doesNotMatch(`${storefront.html}\n${storefront.text}\n${pos.html}\n${pos.text}`, hiddenInternalPattern);
+});
+
+test("admin receipt preview test sends only to the authenticated administrator and dedupes browser retry", async () => {
+  resetReceiptEmailPreviewDedupForTests();
+  const admin: SessionUser = {
+    id: "admin-preview-1",
+    email: "AdminPreview@example.com",
+    name: "Admin Preview",
+    role: "ADMIN",
+    canAddSightings: true,
+    canAddComps: true,
+    canRunChecks: true,
+    canReceivePushAlerts: true,
+    preferredZone: "MIAMI",
+    customZoneName: null,
+    hideDistantStores: false,
+    currentLatitude: null,
+    currentLongitude: null,
+    locationUpdatedAt: null,
+    sessionVersion: 0
+  };
+  const sent: Array<{ to: string; from?: string; subject: string }> = [];
+  let auditCalls = 0;
+  const deps = {
+    now: new Date("2026-07-28T16:31:00.000Z"),
+    env: {
+      EMAIL_FROM: "GameDayGrabs <hello@example.com>",
+      POS_RECEIPT_EMAIL_FROM: "receipts@gamedaygrabs.com"
+    },
+    send: async (message: { to: string; from?: string; subject: string }): Promise<EmailSendResult> => {
+      sent.push({ to: message.to, from: message.from, subject: message.subject });
+      return successfulSendResult();
+    },
+    audit: async () => {
+      auditCalls += 1;
+      throw new Error("audit down");
+    }
+  };
+
+  const first = await sendReceiptEmailPreviewToAdmin({ user: admin, previewType: "pos", requestId: "req-preview" }, deps);
+  const retry = await sendReceiptEmailPreviewToAdmin({ user: admin, previewType: "pos", requestId: "req-preview" }, deps);
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, "adminpreview@example.com");
+  assert.equal(sent[0].from, "GameDayGrabs Receipts <receipts@gamedaygrabs.com>");
+  assert.equal(sent[0].subject, "[TEST] GameDayGrabs POS receipt");
+  assert.equal(first.maskedRecipient, "a***@example.com");
+  assert.equal(first.idempotencyKey, retry.idempotencyKey);
+  assert.equal(retry.reused, true);
+  assert.equal(auditCalls, 1);
+});
+
+test("admin receipt preview route is admin-only, rate limited, and cannot accept arbitrary recipient or sender", () => {
+  assert.match(receiptPreviewRouteSource, /requireUser/);
+  assert.match(receiptPreviewRouteSource, /requireAdmin/);
+  assert.match(receiptPreviewRouteSource, /admin_receipt_preview_test/);
+  assert.match(receiptPreviewRouteSource, /identifiers: \[\{ scope: "email", value: user\.email \}\]/);
+  assert.match(rateLimitSource, /admin_receipt_preview_test[\s\S]{0,260}maxAttempts: 3/);
+  assert.match(receiptPreviewRouteSource, /previewSchema/);
+  assert.match(receiptPreviewRouteSource, /z\.enum\(\["storefront", "pos"\]\)/);
+  assert.doesNotMatch(receiptPreviewRouteSource, /recipient|toEmail|emailTo|fromAddress|senderAddress/);
+  assert.doesNotMatch(receiptPreviewSource, /ReceiptEmailDelivery/);
+  assert.doesNotMatch(receiptPreviewSource, /receiptEmailDelivery\.create|storefrontOrder\.create|inventorySale\.create|customerAccount\.create|paymentEvent\.create|inventoryItem\.update|rewardLedgerEntry\.create/);
+});
+
 test("delivery persistence is narrowly scoped, idempotent, and does not store rendered receipt bodies", () => {
   assert.match(schemaSource, /model ReceiptEmailDelivery/);
   assert.match(schemaSource, /idempotencyKey\s+String\s+@unique/);
@@ -448,7 +602,8 @@ test("storefront sends exactly one automatic order-confirmation receipt on the d
   assert.match(storefrontSource, /receiptEmailEnabled\("STOREFRONT_ORDER"\)/);
   assert.match(storefrontSource, /receiptPresentationEnabled[\s\S]{0,240}buildReceiptEmail\(storefrontReceiptEmailSnapshot\(order, contactEmail\)\)/);
   assert.match(storefrontSource, /: buildOrderConfirmationEmail\(\{/);
-  assert.match(storefrontSource, /Your GameDayGrabs order confirmation and receipt/);
+  assert.match(storefrontSource, /subject: receiptEmail\.subject/);
+  assert.match(storefrontSource, /from: receiptEmail \? receiptEmailSenderProfile\("STOREFRONT_ORDER"\)\.from : null/);
   assert.match(storefrontSource, /customerEmailEventId\("order_confirmation", order\.id\)/);
   assert.match(storefrontSource, /catch \{\s*\/\/ Customer email delivery\/status persistence is best-effort/);
   assert.match(storefrontSource, /normalizeReceiptEmail\(order\.customerEmail\) \?\? normalizeReceiptEmail\(order\.customer\?\.email\)/);

@@ -172,6 +172,7 @@ test("dangerous routes enforce the centralized mutation guard", () => {
     "src/app/api/radar/pos/tax-quote/route.ts",
     "src/app/api/radar/pos/sales/route.ts",
     "src/app/api/radar/pos/sales/[saleReference]/receipt-email/route.ts",
+    "src/app/api/radar/receipt-email-preview/route.ts",
     "src/app/api/radar/pos/sales/[saleReference]/refund/route.ts",
     "src/app/api/radar/rewards/adjustments/route.ts",
     "src/app/api/radar/customers/[customerAccountId]/route.ts",
@@ -212,7 +213,7 @@ test("every radar mutation is authenticated and covered by the centralized origi
     const source = readFileSync(file, "utf8");
     return /export async function (POST|PUT|PATCH|DELETE)/.test(source);
   });
-  assert.equal(mutationRoutes.length, 80);
+  assert.equal(mutationRoutes.length, 81);
   for (const file of mutationRoutes) {
     const source = readFileSync(file, "utf8");
     assert.match(source, /requireUser\(|currentUser\(|cronAuthorized\(|authorizeAdminMutation\(/, path.relative(root, file));
