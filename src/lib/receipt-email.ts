@@ -8,8 +8,8 @@ export const POS_RECEIPT_EMAILS_FLAG = "POS_RECEIPT_EMAILS_ENABLED";
 export const STOREFRONT_EMAIL_FROM_ENV = "STOREFRONT_EMAIL_FROM";
 export const POS_RECEIPT_EMAIL_FROM_ENV = "POS_RECEIPT_EMAIL_FROM";
 
-export type ReceiptEmailSourceType = "STOREFRONT_ORDER" | "POS_SALE";
-export type ReceiptEmailDeliveryType = "INITIAL" | "RESEND";
+export type ReceiptEmailSourceType = "STOREFRONT_ORDER" | "POS_SALE" | "ADMIN_PREVIEW";
+export type ReceiptEmailDeliveryType = "INITIAL" | "RESEND" | "PREVIEW";
 export type ReceiptEmailDeliveryStatus = "PENDING" | "SENT" | "FAILED" | "NOT_REQUESTED";
 export type ReceiptEmailPreviewType = "storefront" | "pos";
 
@@ -123,29 +123,43 @@ function senderConfigForSource(sourceType: ReceiptEmailSourceType) {
 }
 
 function extractEmailAddress(value: string) {
-  const bracketMatch = value.match(/<([^<>\s]+@[^<>\s]+)>/);
+  const trimmed = value.trim();
+  if (/[\r\n]/.test(trimmed)) return null;
+  const bracketMatch = trimmed.match(/^[^<>\r\n]*<([^<>\s]+@[^<>\s]+)>$/);
   if (bracketMatch?.[1]) return bracketMatch[1].trim();
-  const bareMatch = value.match(/[^\s<>,;]+@[^\s<>,;]+/);
-  return bareMatch?.[0]?.trim() ?? value.trim();
+  const bareMatch = trimmed.match(/^[^\s<>,;]+@[^\s<>,;]+$/);
+  return bareMatch?.[0]?.trim() ?? null;
+}
+
+function validMailbox(value: string | null) {
+  if (!value) return null;
+  const email = extractEmailAddress(value);
+  return normalizeReceiptEmail(email) ? email : null;
 }
 
 function formatSender(displayName: string, configuredFrom: string) {
   const email = extractEmailAddress(configuredFrom);
-  return `${displayName} <${email}>`;
+  return email ? `${displayName} <${email}>` : null;
 }
 
 export function receiptEmailSenderProfile(sourceType: ReceiptEmailSourceType, env: Record<string, string | undefined> = process.env) {
   const config = senderConfigForSource(sourceType);
   const configuredFrom = envValue(env, config.envName);
   const fallbackFrom = envValue(env, "EMAIL_FROM");
-  const activeFrom = configuredFrom ? formatSender(config.displayName, configuredFrom) : fallbackFrom;
+  const configuredAddress = configuredFrom ? validMailbox(configuredFrom) : null;
+  const fallbackAddress = fallbackFrom ? validMailbox(fallbackFrom) : null;
+  const activeFrom = configuredAddress ? formatSender(config.displayName, configuredAddress) : fallbackAddress ? fallbackFrom : null;
   return {
     profile: config.profile,
     displayName: config.displayName,
     address: activeFrom ? extractEmailAddress(activeFrom) : null,
     from: activeFrom,
     configured: Boolean(configuredFrom),
-    usingEmailFromFallback: !configuredFrom && Boolean(fallbackFrom)
+    valid: Boolean(activeFrom),
+    profileValueValid: !configuredFrom || Boolean(configuredAddress),
+    profileValueInvalid: Boolean(configuredFrom && !configuredAddress),
+    fallbackValueValid: Boolean(fallbackAddress),
+    usingEmailFromFallback: !configuredAddress && Boolean(fallbackAddress)
   };
 }
 
@@ -329,7 +343,9 @@ export function buildReceiptEmail(snapshot: ReceiptEmailSnapshot, options: { tes
 }
 
 function sourcePrefix(sourceType: ReceiptEmailSourceType) {
-  return sourceType === "STOREFRONT_ORDER" ? "storefront" : "pos";
+  if (sourceType === "STOREFRONT_ORDER") return "storefront";
+  if (sourceType === "POS_SALE") return "pos";
+  return "admin_preview";
 }
 
 function deliveryToDTO(delivery: {
@@ -344,7 +360,7 @@ function deliveryToDTO(delivery: {
 }): ReceiptEmailDeliveryDTO {
   return {
     status: delivery.status === "SENT" || delivery.status === "FAILED" || delivery.status === "PENDING" ? delivery.status : "PENDING",
-    deliveryType: delivery.deliveryType === "RESEND" ? "RESEND" : "INITIAL",
+    deliveryType: delivery.deliveryType === "PREVIEW" ? "PREVIEW" : delivery.deliveryType === "RESEND" ? "RESEND" : "INITIAL",
     maskedRecipient: delivery.recipientEmailMasked,
     sentAt: delivery.sentAt?.toISOString() ?? null,
     lastAttemptAt: delivery.lastAttemptAt?.toISOString() ?? null,
@@ -463,7 +479,7 @@ async function markDeliveryResult(input: {
   });
 }
 
-const prismaReceiptEmailDeliveryStore: ReceiptEmailDeliveryAttemptStore = {
+export const prismaReceiptEmailDeliveryStore: ReceiptEmailDeliveryAttemptStore = {
   createOrGetClaim: createDeliveryClaim,
   claimAttempt: claimDeliveryAttempt,
   findById: findDeliveryById,
@@ -473,7 +489,7 @@ const prismaReceiptEmailDeliveryStore: ReceiptEmailDeliveryAttemptStore = {
 function receiptEmailHeaders(input: { sourceType: ReceiptEmailSourceType; receiptNumber: string; deliveryType: ReceiptEmailDeliveryType }) {
   return {
     "X-Entity-Ref-ID": `gdd:${input.receiptNumber}:receipt`,
-    "X-GDD-Notification-Type": input.sourceType === "STOREFRONT_ORDER" ? "storefront_receipt" : "pos_receipt",
+    "X-GDD-Notification-Type": input.sourceType === "ADMIN_PREVIEW" ? "receipt_preview" : input.sourceType === "STOREFRONT_ORDER" ? "storefront_receipt" : "pos_receipt",
     "X-GDD-Order-Number": input.receiptNumber
   };
 }
@@ -481,7 +497,7 @@ function receiptEmailHeaders(input: { sourceType: ReceiptEmailSourceType; receip
 function receiptEmailTags(input: { sourceType: ReceiptEmailSourceType; receiptNumber: string; deliveryType: ReceiptEmailDeliveryType }) {
   return [
     { name: "orderNumber", value: input.receiptNumber },
-    { name: "notificationType", value: input.sourceType === "STOREFRONT_ORDER" ? "storefrontReceipt" : "posReceipt" },
+    { name: "notificationType", value: input.sourceType === "ADMIN_PREVIEW" ? "receiptPreview" : input.sourceType === "STOREFRONT_ORDER" ? "storefrontReceipt" : "posReceipt" },
     { name: "environment", value: process.env.VERCEL_ENV || process.env.NODE_ENV || "development" }
   ];
 }

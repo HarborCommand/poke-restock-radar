@@ -4,14 +4,15 @@ import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { privateJson, readJson, safeMutationError, withRequestId } from "@/lib/http";
 import { PublicRateLimitExceededError, checkPublicRateLimit, publicRateLimitResponse } from "@/lib/rate-limit";
 import { requestCorrelationId } from "@/lib/observability";
-import { buildReceiptEmailPreview, sendReceiptEmailPreviewToAdmin } from "@/lib/receipt-email-preview";
+import { buildReceiptEmailPreview, existingPreviewDeliveryResult, sendReceiptEmailPreviewToAdmin } from "@/lib/receipt-email-preview";
 import { receiptEmailSenderDiagnostics } from "@/lib/receipt-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const previewSchema = z.object({
-  previewType: z.enum(["storefront", "pos"])
+  previewType: z.enum(["storefront", "pos"]),
+  previewRequestId: z.string().uuid()
 });
 
 export async function GET() {
@@ -23,8 +24,8 @@ export async function GET() {
   return privateJson({
     diagnostics: receiptEmailSenderDiagnostics(),
     previews: {
-      storefront: buildReceiptEmailPreview("storefront"),
-      pos: buildReceiptEmailPreview("pos")
+      storefront: buildReceiptEmailPreview("storefront", process.env, user.email),
+      pos: buildReceiptEmailPreview("pos", process.env, user.email)
     }
   });
 }
@@ -38,12 +39,14 @@ export async function POST(request: Request) {
 
   try {
     const input = previewSchema.parse(await readJson(request));
+    const existing = await existingPreviewDeliveryResult({ user, previewType: input.previewType, previewRequestId: input.previewRequestId });
+    if (existing) return withRequestId(privateJson({ result: existing }), requestId);
     await checkPublicRateLimit({
       request,
       action: "admin_receipt_preview_test",
       identifiers: [{ scope: "email", value: user.email }]
     });
-    const result = await sendReceiptEmailPreviewToAdmin({ user, previewType: input.previewType, requestId });
+    const result = await sendReceiptEmailPreviewToAdmin({ user, previewType: input.previewType, previewRequestId: input.previewRequestId, requestId });
     return withRequestId(privateJson({ result }), requestId);
   } catch (error) {
     if (error instanceof PublicRateLimitExceededError) return withRequestId(publicRateLimitResponse(error), requestId);

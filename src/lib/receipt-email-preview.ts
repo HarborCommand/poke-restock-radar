@@ -1,37 +1,44 @@
 import type { SessionUser } from "@/types/radar";
 import { logAudit } from "@/lib/audit";
+import { prisma } from "@/lib/db";
 import { emailProviderConfig, sendEmailViaProvider, type EmailMessage, type EmailSendOptions, type EmailSendResult } from "@/lib/email-provider";
 import {
   buildReceiptEmail,
   maskReceiptEmail,
   normalizeReceiptEmail,
+  prismaReceiptEmailDeliveryStore,
   receiptEmailSenderDiagnostics,
   receiptEmailSenderProfile,
+  runReceiptEmailDeliveryAttempt,
+  type ReceiptEmailDeliveryAttemptStore,
+  type ReceiptEmailDeliveryDTO,
   type ReceiptEmailPreviewType,
   type ReceiptEmailSnapshot,
   type ReceiptEmailSourceType
 } from "@/lib/receipt-email";
 
-type PreviewSendResult = {
+export type ReceiptPreviewSendStatus = "SENT" | "FAILED" | "NOT_CONFIGURED" | "UNCERTAIN";
+
+export type PreviewSendResult = {
   previewType: ReceiptEmailPreviewType;
-  status: EmailSendResult["status"];
+  status: ReceiptPreviewSendStatus;
   provider: EmailSendResult["provider"];
   maskedRecipient: string;
-  requestId: string | null;
-  idempotencyKey: string;
   reused: boolean;
+  sentAt: string | null;
+  safeFailureCode: string | null;
+  safeFailureMessage: string | null;
 };
 
 type PreviewSendDeps = {
   env?: EmailSendOptions["env"];
   fetchImpl?: EmailSendOptions["fetchImpl"];
-  now?: Date;
   send?: (message: EmailMessage, options: { idempotencyKey: string }) => Promise<EmailSendResult>;
   audit?: typeof logAudit;
+  store?: ReceiptEmailDeliveryAttemptStore;
 };
 
-const previewDedup = new Map<string, { createdAt: number; result: PreviewSendResult }>();
-const previewDedupTtlMs = 5 * 60 * 1000;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function money(value: number) {
   return `$${value.toFixed(2)}`;
@@ -41,15 +48,28 @@ function completedAt() {
   return "2026-07-28T16:30:00.000Z";
 }
 
-function sourceTypeForPreview(previewType: ReceiptEmailPreviewType): ReceiptEmailSourceType {
+function sourceTypeForPreview(previewType: ReceiptEmailPreviewType): Exclude<ReceiptEmailSourceType, "ADMIN_PREVIEW"> {
   return previewType === "storefront" ? "STOREFRONT_ORDER" : "POS_SALE";
+}
+
+function receiptNumberForPreview(previewType: ReceiptEmailPreviewType) {
+  return previewType === "storefront" ? "TEST-GDD-20260728" : "TEST-POS-20260728";
+}
+
+export function previewSourceId(userId: string, previewType: ReceiptEmailPreviewType) {
+  return `admin:${userId}:receipt-preview:${previewType}`;
+}
+
+export function previewTestIdempotencyKey(userId: string, previewType: ReceiptEmailPreviewType, previewRequestId: string) {
+  if (!uuidPattern.test(previewRequestId)) throw new Error("Receipt preview request token must be a valid UUID.");
+  return `receipt-preview:${userId}:${previewType}:${previewRequestId.toLowerCase()}`;
 }
 
 export function receiptEmailPreviewFixtures(): Record<ReceiptEmailPreviewType, ReceiptEmailSnapshot> {
   return {
     storefront: {
       sourceType: "STOREFRONT_ORDER",
-      receiptNumber: "TEST-GDD-20260728",
+      receiptNumber: receiptNumberForPreview("storefront"),
       completedAt: completedAt(),
       customerName: "Preview Customer",
       lineItems: [
@@ -69,7 +89,7 @@ export function receiptEmailPreviewFixtures(): Record<ReceiptEmailPreviewType, R
     },
     pos: {
       sourceType: "POS_SALE",
-      receiptNumber: "TEST-POS-20260728",
+      receiptNumber: receiptNumberForPreview("pos"),
       completedAt: completedAt(),
       customerName: "Preview Guest",
       lineItems: [
@@ -90,7 +110,31 @@ export function receiptEmailPreviewFixtures(): Record<ReceiptEmailPreviewType, R
   };
 }
 
-export function buildReceiptEmailPreview(previewType: ReceiptEmailPreviewType, env: EmailSendOptions["env"] = process.env) {
+function sendReadiness(previewType: ReceiptEmailPreviewType, adminEmail: string | null | undefined, env: EmailSendOptions["env"] = process.env) {
+  const provider = emailProviderConfig(env);
+  const sender = receiptEmailSenderProfile(sourceTypeForPreview(previewType), env);
+  const adminRecipient = normalizeReceiptEmail(adminEmail);
+  const reasons = [
+    !provider.configured ? "Receipt email provider is not configured." : null,
+    !sender.valid ? "No valid sender is configured for this receipt preview." : null,
+    !adminRecipient ? "Your administrator account needs a valid email before sending a test receipt." : null
+  ].filter((reason): reason is string => Boolean(reason));
+  return {
+    ready: reasons.length === 0,
+    reasons,
+    providerConfigured: provider.configured,
+    provider: provider.provider,
+    selectedSenderPresent: Boolean(sender.from),
+    selectedSenderValid: sender.valid,
+    selectedSenderUsesProfile: sender.valid && !sender.usingEmailFromFallback,
+    selectedSenderUsesFallback: sender.usingEmailFromFallback,
+    profileValueInvalid: sender.profileValueInvalid,
+    replyToConfigured: receiptEmailSenderDiagnostics(env).replyToConfigured,
+    domainAuthenticationStatus: provider.provider === "resend" ? "manual_check_required" : "not_applicable"
+  };
+}
+
+export function buildReceiptEmailPreview(previewType: ReceiptEmailPreviewType, env: EmailSendOptions["env"] = process.env, adminEmail?: string | null) {
   const snapshot = receiptEmailPreviewFixtures()[previewType];
   const sourceType = sourceTypeForPreview(previewType);
   const rendered = buildReceiptEmail(snapshot, { testMode: true });
@@ -104,9 +148,12 @@ export function buildReceiptEmailPreview(previewType: ReceiptEmailPreviewType, e
       address: sender.address,
       from: sender.from,
       configured: sender.configured,
+      valid: sender.valid,
+      profileValueInvalid: sender.profileValueInvalid,
       usingEmailFromFallback: sender.usingEmailFromFallback
     },
     replyToConfigured: diagnostics.replyToConfigured,
+    sendReadiness: sendReadiness(previewType, adminEmail, env),
     html: rendered.html,
     text: rendered.text,
     totals: {
@@ -119,88 +166,140 @@ export function buildReceiptEmailPreview(previewType: ReceiptEmailPreviewType, e
   };
 }
 
-function cleanupPreviewDedup(now: Date) {
-  const cutoff = now.getTime() - previewDedupTtlMs;
-  for (const [key, value] of previewDedup.entries()) {
-    if (value.createdAt < cutoff) previewDedup.delete(key);
-  }
+function previewStatusFromDelivery(delivery: ReceiptEmailDeliveryDTO): ReceiptPreviewSendStatus {
+  if (delivery.status === "SENT") return "SENT";
+  if (delivery.status === "FAILED" && delivery.sanitizedFailureCode === "EMAIL_PROVIDER_NOT_CONFIGURED") return "NOT_CONFIGURED";
+  if (delivery.status === "FAILED") return "FAILED";
+  return "UNCERTAIN";
 }
 
-export function previewTestIdempotencyKey(userId: string, previewType: ReceiptEmailPreviewType, now = new Date()) {
-  const bucket = Math.floor(now.getTime() / 60_000);
-  return `receipt-preview:${userId}:${previewType}:${bucket}`;
+function previewResultFromDelivery(input: {
+  previewType: ReceiptEmailPreviewType;
+  delivery: ReceiptEmailDeliveryDTO;
+  provider: EmailSendResult["provider"];
+  recipientEmail: string;
+  reused: boolean;
+}): PreviewSendResult {
+  const status = previewStatusFromDelivery(input.delivery);
+  return {
+    previewType: input.previewType,
+    status,
+    provider: input.provider,
+    maskedRecipient: maskReceiptEmail(input.recipientEmail) ?? "***",
+    reused: input.reused,
+    sentAt: input.delivery.sentAt,
+    safeFailureCode:
+      status === "UNCERTAIN" && input.delivery.sanitizedFailureCode === "RECEIPT_EMAIL_STATUS_UNAVAILABLE"
+        ? "RECEIPT_EMAIL_STATUS_UNAVAILABLE"
+        : input.delivery.sanitizedFailureCode,
+    safeFailureMessage:
+      status === "UNCERTAIN"
+        ? "The provider may have accepted the test email, but final delivery status could not be saved."
+        : input.delivery.sanitizedFailureMessage
+  };
 }
 
-export function resetReceiptEmailPreviewDedupForTests() {
-  previewDedup.clear();
+export async function existingPreviewDeliveryResult(input: {
+  user: SessionUser;
+  previewType: ReceiptEmailPreviewType;
+  previewRequestId: string;
+}, env: EmailSendOptions["env"] = process.env): Promise<PreviewSendResult | null> {
+  const recipient = normalizeReceiptEmail(input.user.email);
+  if (!recipient) return null;
+  const idempotencyKey = previewTestIdempotencyKey(input.user.id, input.previewType, input.previewRequestId);
+  const delivery = await prisma.receiptEmailDelivery.findUnique({ where: { idempotencyKey } });
+  if (!delivery || (delivery.status === "PENDING" && delivery.attemptCount === 0)) return null;
+  return previewResultFromDelivery({
+    previewType: input.previewType,
+    delivery: {
+      status: delivery.status === "SENT" || delivery.status === "FAILED" || delivery.status === "PENDING" ? delivery.status : "PENDING",
+      deliveryType: delivery.deliveryType === "PREVIEW" ? "PREVIEW" : "RESEND",
+      maskedRecipient: delivery.recipientEmailMasked,
+      sentAt: delivery.sentAt?.toISOString() ?? null,
+      lastAttemptAt: delivery.lastAttemptAt?.toISOString() ?? null,
+      attemptCount: delivery.attemptCount,
+      sanitizedFailureCode: delivery.sanitizedFailureCode,
+      sanitizedFailureMessage: delivery.sanitizedFailureMessage
+    },
+    provider: emailProviderConfig(env).provider,
+    recipientEmail: recipient,
+    reused: true
+  });
 }
 
 export async function sendReceiptEmailPreviewToAdmin(input: {
   user: SessionUser;
   previewType: ReceiptEmailPreviewType;
+  previewRequestId: string;
   requestId?: string | null;
 }, deps: PreviewSendDeps = {}): Promise<PreviewSendResult> {
   const recipient = normalizeReceiptEmail(input.user.email);
   if (!recipient) throw new Error("Administrator account must have a valid email address before sending a receipt preview.");
-
-  const now = deps.now ?? new Date();
-  cleanupPreviewDedup(now);
-  const idempotencyKey = previewTestIdempotencyKey(input.user.id, input.previewType, now);
-  const existing = previewDedup.get(idempotencyKey);
-  if (existing) return { ...existing.result, reused: true };
+  const readiness = sendReadiness(input.previewType, recipient, deps.env);
+  if (!readiness.ready) throw new Error(readiness.reasons[0] ?? "Receipt preview email is not ready.");
 
   const sourceType = sourceTypeForPreview(input.previewType);
-  const preview = buildReceiptEmailPreview(input.previewType, deps.env);
-  const message: EmailMessage = {
-    to: recipient,
-    from: preview.sender.from ?? undefined,
-    subject: preview.subject,
-    text: preview.text,
-    html: preview.html,
-    headers: {
-      "X-Entity-Ref-ID": `gdd:receipt-preview:${input.previewType}`,
-      "X-GDD-Notification-Type": "receipt_preview",
-      "X-GDD-Order-Number": input.previewType === "storefront" ? "TEST-GDD-20260728" : "TEST-POS-20260728"
-    },
-    tags: [
-      { name: "notificationType", value: "receiptPreview" },
-      { name: "environment", value: process.env.VERCEL_ENV || process.env.NODE_ENV || "development" },
-      { name: "previewType", value: input.previewType }
-    ]
-  };
+  const preview = buildReceiptEmailPreview(input.previewType, deps.env, recipient);
   const providerConfig = emailProviderConfig(deps.env ?? process.env);
-  const send = deps.send ?? ((emailMessage, options) => sendEmailViaProvider(emailMessage, { env: deps.env, fetchImpl: deps.fetchImpl, idempotencyKey: options.idempotencyKey }));
-  const sendResult = await send(message, { idempotencyKey });
-  const result: PreviewSendResult = {
+  const idempotencyKey = previewTestIdempotencyKey(input.user.id, input.previewType, input.previewRequestId);
+  let providerContacted = false;
+  const send =
+    deps.send ??
+    ((message: EmailMessage, options: { idempotencyKey: string }) =>
+      sendEmailViaProvider(message, {
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
+        idempotencyKey: options.idempotencyKey
+      }));
+  const delivery = await runReceiptEmailDeliveryAttempt(
+    {
+      sourceType: "ADMIN_PREVIEW",
+      sourceId: previewSourceId(input.user.id, input.previewType),
+      recipientEmail: recipient,
+      deliveryType: "PREVIEW",
+      idempotencyKey,
+      snapshot: receiptEmailPreviewFixtures()[input.previewType],
+      senderFrom: preview.sender.from,
+      requestedByUserId: input.user.id,
+      requestId: input.requestId
+    },
+    {
+      store: deps.store ?? prismaReceiptEmailDeliveryStore,
+      render: (snapshot) => buildReceiptEmail(snapshot, { testMode: true }),
+      send: (message, options) => {
+        providerContacted = true;
+        return send(message, options);
+      },
+      audit: async (auditInput) => {
+        try {
+          await (deps.audit ?? logAudit)({
+            user: input.user,
+            action: auditInput.action.replace("admin_preview.receipt_email", "admin.receipt_email_preview"),
+            entityType: "RECEIPT_EMAIL_PREVIEW",
+            entityId: previewSourceId(input.user.id, input.previewType),
+            summary: `Administrator receipt preview ${auditInput.metadata.deliveryStatus === "SENT" ? "sent" : "failed"} for ${input.previewType}.`,
+            requestId: input.requestId,
+            metadata: {
+              previewType: input.previewType,
+              maskedRecipient: maskReceiptEmail(recipient),
+              provider: providerConfig.provider,
+              status: auditInput.metadata.deliveryStatus,
+              sourceType
+            }
+          });
+        } catch {
+          // Preview audit is best-effort and must not affect test-send status.
+        }
+      },
+      providerName: providerConfig.provider
+    }
+  );
+
+  return previewResultFromDelivery({
     previewType: input.previewType,
-    status: sendResult.status,
-    provider: sendResult.provider,
-    maskedRecipient: maskReceiptEmail(recipient) ?? "***",
-    requestId: input.requestId ?? null,
-    idempotencyKey,
-    reused: false
-  };
-  previewDedup.set(idempotencyKey, { createdAt: now.getTime(), result });
-
-  try {
-    await (deps.audit ?? logAudit)({
-      user: input.user,
-      action: `admin.receipt_email_preview.${sendResult.status === "sent" ? "sent" : "failed"}`,
-      entityType: "RECEIPT_EMAIL_PREVIEW",
-      entityId: input.user.id,
-      summary: `Administrator receipt preview ${sendResult.status === "sent" ? "sent" : "failed"} for ${input.previewType}.`,
-      requestId: input.requestId,
-      metadata: {
-        previewType: input.previewType,
-        maskedRecipient: result.maskedRecipient,
-        provider: providerConfig.provider,
-        status: sendResult.status,
-        sourceType
-      }
-    });
-  } catch {
-    // Preview audit is best-effort and must not turn this into an order, sale, or blocking workflow.
-  }
-
-  return result;
+    delivery,
+    provider: providerConfig.provider,
+    recipientEmail: recipient,
+    reused: !providerContacted
+  });
 }

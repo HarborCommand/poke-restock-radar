@@ -1037,7 +1037,7 @@ export type PosSaleReceiptDTO = {
   lines: PosSaleLineDTO[];
   receiptEmailDelivery: {
     status: "PENDING" | "SENT" | "FAILED" | "NOT_REQUESTED";
-    deliveryType: "INITIAL" | "RESEND" | null;
+    deliveryType: "INITIAL" | "RESEND" | "PREVIEW" | null;
     maskedRecipient: string | null;
     sentAt: string | null;
     lastAttemptAt: string | null;

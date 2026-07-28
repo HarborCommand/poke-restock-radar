@@ -19,7 +19,7 @@ import {
 } from "../src/lib/receipt-email";
 import {
   buildReceiptEmailPreview,
-  resetReceiptEmailPreviewDedupForTests,
+  previewTestIdempotencyKey,
   sendReceiptEmailPreviewToAdmin
 } from "../src/lib/receipt-email-preview";
 import { stableReceiptEmailIdempotencyKey } from "../src/lib/receipt-email-client";
@@ -45,6 +45,35 @@ const migrationSource = source("prisma/migrations/20260727120000_receipt_email_d
 
 const hiddenInternalPattern =
   /cost basis|costBasis|profit|internal note|admin note|private note|inventory lot|lot id|stripe secret|payment_method_details|card number|cvc|cvv|idempotency key|database id/i;
+
+const previewAdmin: SessionUser = {
+  id: "admin-preview-1",
+  email: "AdminPreview@example.com",
+  name: "Admin Preview",
+  role: "ADMIN",
+  canAddSightings: true,
+  canAddComps: true,
+  canRunChecks: true,
+  canReceivePushAlerts: true,
+  preferredZone: "MIAMI",
+  customZoneName: null,
+  hideDistantStores: false,
+  currentLatitude: null,
+  currentLongitude: null,
+  locationUpdatedAt: null,
+  sessionVersion: 0
+};
+
+const previewEmailEnv = {
+  RESEND_API_KEY: "test_resend_key",
+  EMAIL_FROM: "GameDayGrabs <hello@example.com>",
+  STOREFRONT_EMAIL_FROM: "orders@gamedaygrabs.com",
+  POS_RECEIPT_EMAIL_FROM: "receipts@gamedaygrabs.com",
+  EMAIL_REPLY_TO: "support@gamedaygrabs.com"
+};
+
+const previewRequestIdA = "11111111-1111-4111-8111-111111111111";
+const previewRequestIdB = "22222222-2222-4222-8222-222222222222";
 
 function makeDeliveryRecord(input: {
   id?: string;
@@ -446,12 +475,19 @@ test("receipt sender profiles are selected server-side with EMAIL_FROM fallback"
   const storefront = receiptEmailSenderProfile("STOREFRONT_ORDER", env);
   const pos = receiptEmailSenderProfile("POS_SALE", env);
   const fallback = receiptEmailSenderProfile("POS_SALE", { EMAIL_FROM: "GameDayGrabs <hello@example.com>" });
+  const invalidProfileFallback = receiptEmailSenderProfile("POS_SALE", {
+    EMAIL_FROM: "GameDayGrabs <hello@example.com>",
+    POS_RECEIPT_EMAIL_FROM: "GameDayGrabs Receipts <receipts@gamedaygrabs.com>\r\nBcc:evil@example.com"
+  });
   const diagnostics = receiptEmailSenderDiagnostics(env);
 
   assert.equal(storefront.from, "GameDayGrabs Orders <orders@gamedaygrabs.com>");
   assert.equal(pos.from, "GameDayGrabs Receipts <receipts@gamedaygrabs.com>");
   assert.equal(fallback.from, "GameDayGrabs <hello@example.com>");
   assert.equal(fallback.usingEmailFromFallback, true);
+  assert.equal(invalidProfileFallback.from, "GameDayGrabs <hello@example.com>");
+  assert.equal(invalidProfileFallback.profileValueInvalid, true);
+  assert.equal(invalidProfileFallback.usingEmailFromFallback, true);
   assert.equal(diagnostics.storefrontEmailFromConfigured, true);
   assert.equal(diagnostics.posReceiptEmailFromConfigured, true);
   assert.equal(diagnostics.emailFromFallbackConfigured, true);
@@ -511,54 +547,199 @@ test("receipt preview messages are fixture-only, clearly marked, and hide intern
   assert.doesNotMatch(`${storefront.html}\n${storefront.text}\n${pos.html}\n${pos.text}`, hiddenInternalPattern);
 });
 
-test("admin receipt preview test sends only to the authenticated administrator and dedupes browser retry", async () => {
-  resetReceiptEmailPreviewDedupForTests();
-  const admin: SessionUser = {
-    id: "admin-preview-1",
-    email: "AdminPreview@example.com",
-    name: "Admin Preview",
-    role: "ADMIN",
-    canAddSightings: true,
-    canAddComps: true,
-    canRunChecks: true,
-    canReceivePushAlerts: true,
-    preferredZone: "MIAMI",
-    customZoneName: null,
-    hideDistantStores: false,
-    currentLatitude: null,
-    currentLongitude: null,
-    locationUpdatedAt: null,
-    sessionVersion: 0
-  };
-  const sent: Array<{ to: string; from?: string; subject: string }> = [];
+test("admin receipt preview same-token retries use one durable ADMIN_PREVIEW claim", async () => {
+  const store = makeInMemoryDeliveryStore();
+  const sent: Array<{ to: string; from?: string; subject: string; idempotencyKey: string }> = [];
   let auditCalls = 0;
-  const deps = {
-    now: new Date("2026-07-28T16:31:00.000Z"),
-    env: {
-      EMAIL_FROM: "GameDayGrabs <hello@example.com>",
-      POS_RECEIPT_EMAIL_FROM: "receipts@gamedaygrabs.com"
-    },
-    send: async (message: { to: string; from?: string; subject: string }): Promise<EmailSendResult> => {
-      sent.push({ to: message.to, from: message.from, subject: message.subject });
-      return successfulSendResult();
-    },
-    audit: async () => {
-      auditCalls += 1;
-      throw new Error("audit down");
-    }
-  };
+  const sendPreview = () =>
+    sendReceiptEmailPreviewToAdmin(
+      { user: previewAdmin, previewType: "pos", previewRequestId: previewRequestIdA, requestId: "req-preview" },
+      {
+        env: previewEmailEnv,
+        store,
+        send: async (message, options): Promise<EmailSendResult> => {
+          sent.push({ to: message.to, from: message.from, subject: message.subject, idempotencyKey: options.idempotencyKey });
+          return successfulSendResult();
+        },
+        audit: async () => {
+          auditCalls += 1;
+          throw new Error("audit down");
+        }
+      }
+    );
 
-  const first = await sendReceiptEmailPreviewToAdmin({ user: admin, previewType: "pos", requestId: "req-preview" }, deps);
-  const retry = await sendReceiptEmailPreviewToAdmin({ user: admin, previewType: "pos", requestId: "req-preview" }, deps);
+  const [first, retry] = await Promise.all([sendPreview(), sendPreview()]);
+  const records = store.records();
 
+  assert.equal(records.length, 1);
+  assert.equal(records[0].deliveryType, "PREVIEW");
+  assert.equal(records[0].attemptCount, 1);
+  assert.equal(records[0].status, "SENT");
   assert.equal(sent.length, 1);
   assert.equal(sent[0].to, "adminpreview@example.com");
   assert.equal(sent[0].from, "GameDayGrabs Receipts <receipts@gamedaygrabs.com>");
   assert.equal(sent[0].subject, "[TEST] GameDayGrabs POS receipt");
+  assert.equal(sent[0].idempotencyKey, previewTestIdempotencyKey(previewAdmin.id, "pos", previewRequestIdA));
+  assert.ok(["SENT", "UNCERTAIN"].includes(first.status));
+  assert.ok(["SENT", "UNCERTAIN"].includes(retry.status));
+  assert.ok([first.status, retry.status].includes("SENT"));
   assert.equal(first.maskedRecipient, "a***@example.com");
-  assert.equal(first.idempotencyKey, retry.idempotencyKey);
-  assert.equal(retry.reused, true);
+  assert.equal([first.reused, retry.reused].filter(Boolean).length, 1);
   assert.equal(auditCalls, 1);
+});
+
+test("admin receipt preview remains idempotent across serverless instances sharing the durable store", async () => {
+  const sharedStore = makeInMemoryDeliveryStore();
+  let providerCount = 0;
+  const makeDeps = () => ({
+    env: previewEmailEnv,
+    store: sharedStore,
+    send: async (): Promise<EmailSendResult> => {
+      providerCount += 1;
+      return successfulSendResult();
+    },
+    audit: async () => {}
+  });
+
+  const first = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "storefront", previewRequestId: previewRequestIdA, requestId: "req-a" },
+    makeDeps()
+  );
+  const second = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "storefront", previewRequestId: previewRequestIdA, requestId: "req-b" },
+    makeDeps()
+  );
+
+  assert.equal(sharedStore.records().length, 1);
+  assert.equal(providerCount, 1);
+  assert.equal(first.status, "SENT");
+  assert.equal(second.status, "SENT");
+  assert.equal(second.reused, true);
+});
+
+test("admin receipt preview reports uncertain after provider success with final persistence failure without resending retry", async () => {
+  const store = makeInMemoryDeliveryStore({ failMark: "once" });
+  let providerCount = 0;
+  const deps = {
+    env: previewEmailEnv,
+    store,
+    send: async (): Promise<EmailSendResult> => {
+      providerCount += 1;
+      return successfulSendResult();
+    },
+    audit: async () => {}
+  };
+
+  const first = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "pos", previewRequestId: previewRequestIdA, requestId: "req-preview" },
+    deps
+  );
+  const retry = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "pos", previewRequestId: previewRequestIdA, requestId: "req-preview-retry" },
+    deps
+  );
+
+  assert.equal(providerCount, 1);
+  assert.equal(store.records().length, 1);
+  assert.equal(store.records()[0].attemptCount, 1);
+  assert.equal(first.status, "UNCERTAIN");
+  assert.equal(first.safeFailureCode, "RECEIPT_EMAIL_STATUS_UNAVAILABLE");
+  assert.match(first.safeFailureMessage ?? "", /provider may have accepted/i);
+  assert.equal(retry.status, "UNCERTAIN");
+  assert.equal(retry.reused, true);
+});
+
+test("admin receipt preview persists provider failures and does not retry the same request token", async () => {
+  const store = makeInMemoryDeliveryStore();
+  let providerCount = 0;
+  const deps = {
+    env: previewEmailEnv,
+    store,
+    send: async (): Promise<EmailSendResult> => {
+      providerCount += 1;
+      return failedSendResult();
+    },
+    audit: async () => {}
+  };
+
+  const first = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "pos", previewRequestId: previewRequestIdA, requestId: "req-preview" },
+    deps
+  );
+  const retry = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "pos", previewRequestId: previewRequestIdA, requestId: "req-preview-retry" },
+    deps
+  );
+
+  assert.equal(providerCount, 1);
+  assert.equal(first.status, "FAILED");
+  assert.equal(first.safeFailureCode, "EMAIL_PROVIDER_FAILED");
+  assert.equal(retry.status, "FAILED");
+  assert.equal(retry.reused, true);
+});
+
+test("admin receipt preview new intentional clicks use distinct request tokens", async () => {
+  const store = makeInMemoryDeliveryStore();
+  let providerCount = 0;
+  const deps = {
+    env: previewEmailEnv,
+    store,
+    send: async (): Promise<EmailSendResult> => {
+      providerCount += 1;
+      return successfulSendResult();
+    },
+    audit: async () => {}
+  };
+
+  const first = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "pos", previewRequestId: previewRequestIdA, requestId: "req-preview-a" },
+    deps
+  );
+  const second = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "pos", previewRequestId: previewRequestIdB, requestId: "req-preview-b" },
+    deps
+  );
+
+  assert.equal(providerCount, 2);
+  assert.equal(store.records().length, 2);
+  assert.equal(first.status, "SENT");
+  assert.equal(second.status, "SENT");
+  assert.equal(first.reused, false);
+  assert.equal(second.reused, false);
+});
+
+test("admin receipt preview validates sender and recipient safety without exposing internal identifiers", async () => {
+  const store = makeInMemoryDeliveryStore();
+  const messages: Array<{ to: string; from?: string; subject: string }> = [];
+  const env = {
+    RESEND_API_KEY: "test_resend_key",
+    EMAIL_FROM: "GameDayGrabs <hello@example.com>",
+    POS_RECEIPT_EMAIL_FROM: "GameDayGrabs Receipts <receipts@gamedaygrabs.com>\r\nBcc:evil@example.com"
+  };
+  const preview = buildReceiptEmailPreview("pos", env, previewAdmin.email);
+
+  const result = await sendReceiptEmailPreviewToAdmin(
+    { user: previewAdmin, previewType: "pos", previewRequestId: previewRequestIdA, requestId: "req-preview" },
+    {
+      env,
+      store,
+      send: async (message): Promise<EmailSendResult> => {
+        messages.push({ to: message.to, from: message.from, subject: message.subject });
+        return successfulSendResult();
+      },
+      audit: async () => {}
+    }
+  );
+  const serializedResult = JSON.stringify(result);
+
+  assert.equal(preview.sender.profileValueInvalid, true);
+  assert.equal(preview.sender.usingEmailFromFallback, true);
+  assert.equal(preview.sender.from, "GameDayGrabs <hello@example.com>");
+  assert.equal(preview.sendReadiness.ready, true);
+  assert.equal(messages[0].to, "adminpreview@example.com");
+  assert.equal(messages[0].from, "GameDayGrabs <hello@example.com>");
+  assert.equal(result.status, "SENT");
+  assert.doesNotMatch(serializedResult, /receipt-preview|admin-preview-1|email_123|AdminPreview@example\.com|adminpreview@example\.com/i);
 });
 
 test("admin receipt preview route is admin-only, rate limited, and cannot accept arbitrary recipient or sender", () => {
@@ -569,9 +750,20 @@ test("admin receipt preview route is admin-only, rate limited, and cannot accept
   assert.match(rateLimitSource, /admin_receipt_preview_test[\s\S]{0,260}maxAttempts: 3/);
   assert.match(receiptPreviewRouteSource, /previewSchema/);
   assert.match(receiptPreviewRouteSource, /z\.enum\(\["storefront", "pos"\]\)/);
+  assert.match(receiptPreviewRouteSource, /previewRequestId: z\.string\(\)\.uuid\(\)/);
+  assert.match(receiptPreviewRouteSource, /existingPreviewDeliveryResult/);
+  assert.match(receiptPreviewSource, /sourceType: "ADMIN_PREVIEW"/);
+  assert.match(receiptPreviewSource, /deliveryType: "PREVIEW"/);
+  assert.match(receiptPreviewSource, /previewTestIdempotencyKey\(input\.user\.id, input\.previewType, input\.previewRequestId\)/);
   assert.doesNotMatch(receiptPreviewRouteSource, /recipient|toEmail|emailTo|fromAddress|senderAddress/);
-  assert.doesNotMatch(receiptPreviewSource, /ReceiptEmailDelivery/);
-  assert.doesNotMatch(receiptPreviewSource, /receiptEmailDelivery\.create|storefrontOrder\.create|inventorySale\.create|customerAccount\.create|paymentEvent\.create|inventoryItem\.update|rewardLedgerEntry\.create/);
+  assert.doesNotMatch(receiptPreviewSource, /new Map|previewDedup|Date\.now|Math\.floor\(.*60_000/);
+  assert.doesNotMatch(receiptPreviewSource, /storefrontOrder\.create|inventorySale\.create|customerAccount\.create|paymentEvent\.create|inventoryItem\.update|rewardLedgerEntry\.create|taxAdjustment\.create|checkout/);
+  assert.match(radarAppSource, /crypto\.randomUUID\(\)/);
+  assert.match(radarAppSource, /body: JSON\.stringify\(\{ previewType, previewRequestId \}\)/);
+  assert.match(radarAppSource, /result\.status === "SENT"/);
+  assert.match(radarAppSource, /result\.status === "NOT_CONFIGURED"/);
+  assert.match(radarAppSource, /result\.status === "UNCERTAIN"/);
+  assert.match(radarAppSource, /disabled=\{busy \|\| !readiness\?\.ready\}/);
 });
 
 test("delivery persistence is narrowly scoped, idempotent, and does not store rendered receipt bodies", () => {
