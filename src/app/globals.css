@@ -10862,6 +10862,17 @@ font-size: 0.78rem;
 line-height: 1.35;
 overflow-wrap: anywhere;
 }
+.receipt-resend-controls {
+display: grid;
+gap: 0.65rem;
+margin-top: 0.8rem;
+min-width: 0;
+}
+.receipt-resend-controls .pos-reference-input,
+.receipt-resend-controls input {
+min-width: 0;
+width: 100%;
+}
 .storefront-order-section-heading {
 display: flex;
 align-items: center;
@@ -29300,6 +29311,7 @@ color: #0f172a;
 font-size: 1.12rem;
 }
 .pos-receipt-customer,
+.pos-receipt-email-status,
 .pos-receipt-refund,
 .pos-receipt-footer {
 display: grid;
@@ -29308,7 +29320,30 @@ border-radius: 12px;
 background: #f8fafc;
 padding: 12px 14px;
 }
+.pos-receipt-email-status {
+border: 1px solid #dbe3ec;
+min-width: 0;
+}
+.pos-receipt-email-status.good {
+background: #ecfdf3;
+border-color: #bbf7d0;
+}
+.pos-receipt-email-status.watch {
+background: #fffbeb;
+border-color: #fde68a;
+}
+.pos-receipt-email-status.bad {
+background: #fef2f2;
+border-color: #fecaca;
+}
+.pos-receipt-email-status .pos-reference-input,
+.pos-receipt-email-status input {
+min-width: 0;
+width: 100%;
+}
 .pos-receipt-customer span,
+.pos-receipt-email-status span,
+.pos-receipt-email-status small,
 .pos-receipt-footer span,
 .pos-receipt-footer small {
 color: #64748b;

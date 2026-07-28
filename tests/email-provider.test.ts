@@ -40,6 +40,7 @@ async function captureStorefrontResendHtml(email: StorefrontRenderedEmail) {
 
   assert.equal(result.status, "sent");
   assert.equal(result.provider, "resend");
+  assert.equal(result.providerMessageId, "email_customer_template_test");
   assert.equal(requests.length, 1);
   const body = JSON.parse(String(requests[0].init?.body)) as Record<string, unknown>;
   return String(body.html);
@@ -98,6 +99,7 @@ test("Resend provider sends through mocked fetch without exposing the API key in
 
   assert.equal(result.status, "sent");
   assert.equal(result.provider, "resend");
+  assert.equal(result.providerMessageId, "email_test_123");
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, "https://api.resend.com/emails");
 
@@ -166,6 +168,7 @@ test("storefront email helper can attach safe customer metadata to Resend payloa
 
   assert.equal(result.status, "sent");
   assert.equal(requests.length, 1);
+  assert.equal(result.providerMessageId, "email_metadata_test");
   const apiHeaders = requests[0].init?.headers as Record<string, string>;
   const body = JSON.parse(String(requests[0].init?.body)) as Record<string, unknown>;
   assert.equal(apiHeaders["Idempotency-Key"], "customer_email.order_confirmation:order_meta:default");
@@ -253,6 +256,7 @@ test("missing Resend and SMTP config reports not_configured without throwing", a
 
   assert.equal(result.status, "not_configured");
   assert.equal(result.provider, "none");
+  assert.equal(result.providerMessageId, null);
   assert.match(result.detail, /RESEND_API_KEY and EMAIL_FROM/);
 });
 
@@ -269,6 +273,7 @@ test("Resend failure is sanitized and does not leak provider response details", 
 
   assert.equal(result.status, "failed");
   assert.equal(result.provider, "resend");
+  assert.equal(result.providerMessageId, null);
   assert.equal(result.failureReason, "Resend send failed.");
   assert.doesNotMatch(JSON.stringify(result), /provider secret detail|test_resend_api_key/);
 });

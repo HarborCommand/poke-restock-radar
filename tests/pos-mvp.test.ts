@@ -353,7 +353,7 @@ test("POS API is private admin-only and delegates to server-side sale creation",
   assert.match(route, /requireUser/);
   assert.match(route, /authorizeAdminMutation/);
   assert.match(route, /posSaleCreateSchema\.parse\(await readJson\(request\)\)/);
-  assert.match(route, /createPosSale\(user, input\)/);
+  assert.match(route, /createPosSale\(user, \{ \.\.\.input, requestId \}\)/);
   assert.match(matchRoute, /requireUser/);
   assert.match(matchRoute, /authorizeAdminMutation\(request, user\)/);
   assert.match(matchRoute, /withPrivateNoStore/);

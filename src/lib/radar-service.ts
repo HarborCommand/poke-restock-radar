@@ -78,6 +78,15 @@ import { retailerTemplates, validateRetailerUrl } from "@/lib/retailer-templates
 import { isLikelyReleaseArticleTitle } from "@/lib/release-sync";
 import { marketProviderStatuses } from "@/lib/market-providers";
 import { getStorefrontSettings, listStorefrontOrders, storefrontSummary } from "@/lib/storefront";
+import {
+  attachPosReceiptEmailDeliveryResult,
+  normalizeReceiptEmail,
+  notRequestedReceiptEmailDelivery,
+  receiptEmailDeliveryAvailable,
+  requestReceiptEmailDelivery,
+  type ReceiptEmailDeliveryDTO,
+  type ReceiptEmailSnapshot
+} from "@/lib/receipt-email";
 import { listShippingProfiles } from "@/lib/shipping-profiles";
 import { evaluateTargetRetailPolicy, isPokemonTcgTargetText } from "@/lib/target-retail-policy";
 import { canonicalProductUPC, compactLookupText, normalizeUPC, upcLookupVariants } from "@/lib/upc";
@@ -7016,6 +7025,53 @@ function maskedPosPaymentReference(value: string | null | undefined) {
   return trimmed.length > 4 ? `••••${trimmed.slice(-4)}` : "••••";
 }
 
+function posReceiptFulfillmentSummary(receipt: Pick<PosSaleReceiptDTO, "cashierName" | "registerLabel">) {
+  return `In-person checkout${receipt.registerLabel ? ` at ${receipt.registerLabel}` : ""} with ${receipt.cashierName}.`;
+}
+
+function posReceiptEmailSnapshot(receipt: PosSaleReceiptDTO, supportEmail: string): ReceiptEmailSnapshot {
+  return {
+    sourceType: "POS_SALE",
+    receiptNumber: receipt.saleReference,
+    completedAt: receipt.completedAt,
+    customerName: null,
+    lineItems: receipt.lines.map((line) => ({
+      name: line.itemName,
+      quantity: line.quantity,
+      unitPrice: line.adjustedUnitPrice,
+      lineTotal: line.lineTotal
+    })),
+    subtotal: receipt.subtotal,
+    discount: receipt.discount,
+    shipping: 0,
+    tax: receipt.taxStatus === "not_recorded" ? null : receipt.tax,
+    total: receipt.total,
+    paymentMethodLabel: receipt.paymentMethodLabel,
+    fulfillmentMethod: "In-person POS",
+    fulfillmentSummary: posReceiptFulfillmentSummary(receipt),
+    supportEmail
+  };
+}
+
+async function receiptDeliveryForPosSale(client: PosSaleClient, saleReference: string): Promise<ReceiptEmailDeliveryDTO> {
+  const delivery = await client.receiptEmailDelivery.findFirst({
+    where: { sourceType: "POS_SALE", sourceId: saleReference },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+  });
+  return delivery
+    ? {
+        status: delivery.status === "SENT" || delivery.status === "FAILED" || delivery.status === "PENDING" ? delivery.status : "PENDING",
+        deliveryType: delivery.deliveryType === "RESEND" ? "RESEND" : "INITIAL",
+        maskedRecipient: delivery.recipientEmailMasked,
+        sentAt: delivery.sentAt?.toISOString() ?? null,
+        lastAttemptAt: delivery.lastAttemptAt?.toISOString() ?? null,
+        attemptCount: delivery.attemptCount,
+        sanitizedFailureCode: delivery.sanitizedFailureCode,
+        sanitizedFailureMessage: delivery.sanitizedFailureMessage
+      }
+    : notRequestedReceiptEmailDelivery();
+}
+
 function posSaleFingerprint(input: {
   currentUserId: string;
   idempotencyKey: string;
@@ -7238,7 +7294,8 @@ async function receiptForExistingPosSale(
     refundedTaxCents: sale.refundedTaxCents,
         lineTotal: roundPosMoney(sale.soldPricePerItem * sale.quantitySold)
       };
-    })
+    }),
+    receiptEmailDelivery: await receiptDeliveryForPosSale(client, saleReference)
   };
 }
 
@@ -7570,10 +7627,13 @@ export async function createPosSale(
     selectedCustomerAccountId?: string | null;
     customerEmail?: string | null;
     customerPhone?: string | null;
+    emailReceipt?: boolean;
+    receiptEmail?: string | null;
     taxExempt?: boolean;
     taxExemptReason?: string | null;
     taxExemptionReference?: string | null;
     taxExemptionNote?: string | null;
+    requestId?: string | null;
   }
 ): Promise<PosSaleReceiptDTO> {
   const paymentMethod = normalizePosPaymentMethod(input.paymentMethod);
@@ -7581,6 +7641,9 @@ export async function createPosSale(
 
   const cartItems = compactPosSaleItems(input.items);
   if (!cartItems.length) throw new Error("Add at least one item before completing a POS sale.");
+  const posReceiptEmailReady = receiptEmailDeliveryAvailable("POS_SALE");
+  const requestedReceiptEmail = input.emailReceipt && posReceiptEmailReady ? normalizeReceiptEmail(input.receiptEmail) : null;
+  if (input.emailReceipt && posReceiptEmailReady && !requestedReceiptEmail) throw new Error("Enter a valid email address for the receipt.");
 
   const soldAt = new Date();
   const saleReference = posSaleReferenceFromIdempotencyKey(currentUser.id, input.idempotencyKey);
@@ -7900,7 +7963,8 @@ export async function createPosSale(
         discountReasonLabel: line.discountReason ? posDiscountReasonLabel(line.discountReason) : null,
         discountNote: line.discountNote,
         lineTotal: line.lineTotal
-      }))
+      })),
+      receiptEmailDelivery: notRequestedReceiptEmailDelivery()
     };
   });
 
@@ -7908,7 +7972,46 @@ export async function createPosSale(
     await syncInventoryStoreStatusAfterStockChange(item.inventoryItemId);
   }
 
-  return receipt;
+  const supportEmail = requestedReceiptEmail ? (await getStorefrontSettings(currentUser.id)).contactEmail || "gamedaygrabs@outlook.com" : "gamedaygrabs@outlook.com";
+  return attachPosReceiptEmailDeliveryResult({
+    receipt,
+    requestedReceiptEmail,
+    snapshot: posReceiptEmailSnapshot(receipt, supportEmail),
+    requestedByUserId: currentUser.id,
+    requestId: input.requestId
+  });
+}
+
+export async function sendPosReceiptEmail(
+  currentUser: SessionUser,
+  saleReference: string,
+  input: { email?: string | null; idempotencyKey?: string | null; requestId?: string | null }
+): Promise<PosSaleReceiptDTO> {
+  const normalizedReference = saleReference.trim();
+  if (!normalizedReference) throw new Error("Sale reference is required.");
+  const receipt = await receiptForExistingPosSale(prisma, currentUser, normalizedReference);
+  if (!receipt) throw new Error("POS sale not found.");
+  const sales = await prisma.inventorySale.findMany({
+    where: { userId: currentUser.id, saleReference: normalizedReference, platform: "pos" },
+    select: { customerEmail: true },
+    orderBy: { createdAt: "asc" }
+  });
+  const requestedEmail = normalizeReceiptEmail(input.email) ?? normalizeReceiptEmail(sales.find((sale) => sale.customerEmail)?.customerEmail);
+  if (!requestedEmail) throw new Error("Enter a valid receipt email address.");
+  const supportEmail = (await getStorefrontSettings(currentUser.id)).contactEmail || "gamedaygrabs@outlook.com";
+  const idempotencyKey = input.idempotencyKey?.trim();
+  if (!idempotencyKey) throw new Error("Receipt resend idempotency key is required.");
+  const delivery = await requestReceiptEmailDelivery({
+    sourceType: "POS_SALE",
+    sourceId: normalizedReference,
+    recipientEmail: requestedEmail,
+    deliveryType: "RESEND",
+    idempotencyKey,
+    snapshot: posReceiptEmailSnapshot(receipt, supportEmail),
+    requestedByUserId: currentUser.id,
+    requestId: input.requestId
+  });
+  return { ...receipt, receiptEmailDelivery: delivery };
 }
 
 function posRefundLineNote(input: {

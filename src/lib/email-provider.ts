@@ -36,6 +36,7 @@ export type EmailSendResult = {
   sentAt: Date | null;
   detail: string;
   failureReason: string | null;
+  providerMessageId: string | null;
 };
 
 export type EmailSendOptions = {
@@ -181,7 +182,7 @@ async function sendWithResend(message: EmailMessage, env: EmailProviderEnv, fetc
   const apiKey = envValue(env, "RESEND_API_KEY");
   const from = envValue(env, "EMAIL_FROM");
   const replyTo = envValue(env, "EMAIL_REPLY_TO");
-  if (!apiKey || !from) return false;
+  if (!apiKey || !from) return { sent: false, providerMessageId: null };
   const apiHeaders: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json"
@@ -206,14 +207,19 @@ async function sendWithResend(message: EmailMessage, env: EmailProviderEnv, fetc
     body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(`Resend send failed with status ${response.status}.`);
-  return true;
+  try {
+    const payload = (await response.json()) as { id?: unknown };
+    return { sent: true, providerMessageId: typeof payload.id === "string" ? payload.id : null };
+  } catch {
+    return { sent: true, providerMessageId: null };
+  }
 }
 
 async function sendWithSmtp(message: EmailMessage, env: EmailProviderEnv) {
   const host = envValue(env, "SMTP_HOST");
   const from = envValue(env, "SMTP_FROM");
   const replyTo = envValue(env, "EMAIL_REPLY_TO");
-  if (!host || !from) return false;
+  if (!host || !from) return { sent: false, providerMessageId: null };
   const { createTransport } = await import("nodemailer");
   const transporter = createTransport({
     host,
@@ -226,7 +232,7 @@ async function sendWithSmtp(message: EmailMessage, env: EmailProviderEnv) {
         }
       : undefined
   });
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from,
     to: message.to,
     subject: message.subject,
@@ -235,7 +241,7 @@ async function sendWithSmtp(message: EmailMessage, env: EmailProviderEnv) {
     replyTo: replyTo || undefined,
     headers: sanitizedMessageHeaders(message.headers)
   });
-  return true;
+  return { sent: true, providerMessageId: typeof info.messageId === "string" ? info.messageId : null };
 }
 
 export async function sendEmailViaProvider(message: EmailMessage, options: EmailSendOptions = {}): Promise<EmailSendResult> {
@@ -247,22 +253,24 @@ export async function sendEmailViaProvider(message: EmailMessage, options: Email
       provider: "none",
       sentAt: null,
       detail: "Email provider is not configured. Set RESEND_API_KEY and EMAIL_FROM, or configure SMTP fallback.",
-      failureReason: null
+      failureReason: null,
+      providerMessageId: null
     };
   }
 
   try {
-    const sent =
+    const result =
       config.provider === "resend"
         ? await sendWithResend(message, env, options.fetchImpl ?? fetch, options.idempotencyKey)
         : await sendWithSmtp(message, env);
-    if (!sent) {
+    if (!result.sent) {
       return {
         status: "not_configured",
         provider: config.provider,
         sentAt: null,
         detail: "Email provider is not configured.",
-        failureReason: null
+        failureReason: null,
+        providerMessageId: null
       };
     }
     return {
@@ -270,7 +278,8 @@ export async function sendEmailViaProvider(message: EmailMessage, options: Email
       provider: config.provider,
       sentAt: new Date(),
       detail: config.provider === "resend" ? "Email sent to customer with Resend." : "Email sent to customer with SMTP.",
-      failureReason: null
+      failureReason: null,
+      providerMessageId: result.providerMessageId
     };
   } catch {
     return {
@@ -278,7 +287,8 @@ export async function sendEmailViaProvider(message: EmailMessage, options: Email
       provider: config.provider,
       sentAt: null,
       detail: "Email delivery failed without blocking the workflow.",
-      failureReason: sanitizedEmailFailure(config.provider)
+      failureReason: sanitizedEmailFailure(config.provider),
+      providerMessageId: null
     };
   }
 }

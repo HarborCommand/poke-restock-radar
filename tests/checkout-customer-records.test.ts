@@ -733,7 +733,8 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(emailHelpers, /No customer email is saved for this order\./);
   assert.match(emailHelpers, /Email provider is not configured\. Set RESEND_API_KEY and EMAIL_FROM, or configure SMTP fallback\./);
   assert.match(emailHelpers, /Email delivery failed without blocking the order workflow\./);
-  assert.match(storefront, /buildOrderConfirmationEmail/);
+  assert.match(storefront, /buildReceiptEmail\(storefrontReceiptEmailSnapshot\(order, contactEmail\)\)/);
+  assert.match(storefront, /Your GameDayGrabs order confirmation and receipt/);
   assert.match(storefront, /buildCheckoutExpiredEmail/);
   assert.match(storefront, /buildRefundCancellationEmail/);
   assert.match(storefront, /buildShippingConfirmationEmail/);
