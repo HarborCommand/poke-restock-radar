@@ -3,7 +3,7 @@ import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { shippingLabelWorkflowConfig } from "@/lib/shipping-labels";
 import { shippingRateProviderConfig } from "@/lib/shipping-rate-provider";
 import { taxFeatureConfig } from "@/lib/tax";
-import { receiptEmailFeatureConfig } from "@/lib/receipt-email";
+import { receiptEmailFeatureConfig, receiptEmailSenderDiagnostics } from "@/lib/receipt-email";
 
 export type ProviderHealthStatus = "configured" | "optional_not_configured" | "misconfigured" | "disabled";
 
@@ -43,6 +43,22 @@ export type EnvironmentReport = {
       smtpConfigured: boolean;
       smtpHostConfigured: boolean;
       smtpFromConfigured: boolean;
+      storefrontEmailFromConfigured: boolean;
+      posReceiptEmailFromConfigured: boolean;
+      emailFromFallbackConfigured: boolean;
+      receiptReplyToConfigured: boolean;
+      storefrontReceiptSenderProfile: {
+        displayName: string;
+        address: string | null;
+        configured: boolean;
+        usingEmailFromFallback: boolean;
+      };
+      posReceiptSenderProfile: {
+        displayName: string;
+        address: string | null;
+        configured: boolean;
+        usingEmailFromFallback: boolean;
+      };
       storefrontReceiptEmailsEnabled: boolean;
       posReceiptEmailsEnabled: boolean;
       deliverability: {
@@ -184,7 +200,19 @@ export function getEnvironmentReport(): EnvironmentReport {
   const isProduction = nodeEnv === "production";
   const isVercel = hasEnv("VERCEL");
   const pushEnvVars = ["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"];
-  const emailEnvVars = ["RESEND_API_KEY", "EMAIL_FROM", "EMAIL_REPLY_TO", "SMTP_HOST", "SMTP_FROM", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS"];
+  const emailEnvVars = [
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+    "STOREFRONT_EMAIL_FROM",
+    "POS_RECEIPT_EMAIL_FROM",
+    "EMAIL_REPLY_TO",
+    "SMTP_HOST",
+    "SMTP_FROM",
+    "SMTP_PORT",
+    "SMTP_SECURE",
+    "SMTP_USER",
+    "SMTP_PASS"
+  ];
   const smsEnvVars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"];
   const searchEnvVars = ["PRODUCT_SEARCH_FALLBACK_ENABLED", "PRODUCT_SEARCH_PROVIDER", "PRODUCT_SEARCH_API_URL", "PRODUCT_SEARCH_API_KEY"];
   const stripeEnvVars = ["STRIPE_CHECKOUT_ENABLED", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STORE_BASE_URL"];
@@ -205,6 +233,7 @@ export function getEnvironmentReport(): EnvironmentReport {
     "EBAY_MARKETPLACE_ID"
   ];
   const emailProvider = emailProviderConfig();
+  const receiptSenderDiagnostics = receiptEmailSenderDiagnostics();
   const accountSidConfigured = hasEnv("TWILIO_ACCOUNT_SID");
   const authTokenConfigured = hasEnv("TWILIO_AUTH_TOKEN");
   const fromNumberConfigured = hasEnv("TWILIO_FROM_NUMBER");
@@ -425,6 +454,22 @@ export function getEnvironmentReport(): EnvironmentReport {
         smtpConfigured: emailProvider.smtpConfigured,
         smtpHostConfigured: emailProvider.smtpHostConfigured,
         smtpFromConfigured: emailProvider.smtpFromConfigured,
+        storefrontEmailFromConfigured: receiptSenderDiagnostics.storefrontEmailFromConfigured,
+        posReceiptEmailFromConfigured: receiptSenderDiagnostics.posReceiptEmailFromConfigured,
+        emailFromFallbackConfigured: receiptSenderDiagnostics.emailFromFallbackConfigured,
+        receiptReplyToConfigured: receiptSenderDiagnostics.replyToConfigured,
+        storefrontReceiptSenderProfile: {
+          displayName: receiptSenderDiagnostics.storefront.displayName,
+          address: null,
+          configured: receiptSenderDiagnostics.storefront.configured,
+          usingEmailFromFallback: receiptSenderDiagnostics.storefront.usingEmailFromFallback
+        },
+        posReceiptSenderProfile: {
+          displayName: receiptSenderDiagnostics.pos.displayName,
+          address: null,
+          configured: receiptSenderDiagnostics.pos.configured,
+          usingEmailFromFallback: receiptSenderDiagnostics.pos.usingEmailFromFallback
+        },
         storefrontReceiptEmailsEnabled: receiptEmailFeatures.storefrontReceiptEmailsEnabled,
         posReceiptEmailsEnabled: receiptEmailFeatures.posReceiptEmailsEnabled,
         deliverability: {

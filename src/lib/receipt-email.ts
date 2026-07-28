@@ -5,10 +5,13 @@ import { logAudit } from "@/lib/audit";
 
 export const STOREFRONT_RECEIPT_EMAILS_FLAG = "STOREFRONT_RECEIPT_EMAILS_ENABLED";
 export const POS_RECEIPT_EMAILS_FLAG = "POS_RECEIPT_EMAILS_ENABLED";
+export const STOREFRONT_EMAIL_FROM_ENV = "STOREFRONT_EMAIL_FROM";
+export const POS_RECEIPT_EMAIL_FROM_ENV = "POS_RECEIPT_EMAIL_FROM";
 
-export type ReceiptEmailSourceType = "STOREFRONT_ORDER" | "POS_SALE";
-export type ReceiptEmailDeliveryType = "INITIAL" | "RESEND";
+export type ReceiptEmailSourceType = "STOREFRONT_ORDER" | "POS_SALE" | "ADMIN_PREVIEW";
+export type ReceiptEmailDeliveryType = "INITIAL" | "RESEND" | "PREVIEW";
 export type ReceiptEmailDeliveryStatus = "PENDING" | "SENT" | "FAILED" | "NOT_REQUESTED";
+export type ReceiptEmailPreviewType = "storefront" | "pos";
 
 export type ReceiptEmailDeliveryDTO = {
   status: ReceiptEmailDeliveryStatus;
@@ -83,6 +86,11 @@ function envEnabled(env: Record<string, string | undefined>, name: string) {
   return env[name]?.trim().toLowerCase() === "true";
 }
 
+function envValue(env: Record<string, string | undefined>, name: string) {
+  const value = env[name]?.trim();
+  return value && value.length > 0 ? value : null;
+}
+
 export function receiptEmailFeatureConfig(env: Record<string, string | undefined> = process.env) {
   return {
     storefrontReceiptEmailsEnabled: envEnabled(env, STOREFRONT_RECEIPT_EMAILS_FLAG),
@@ -106,6 +114,67 @@ export class ReceiptEmailConfigurationError extends Error {
 
 export function receiptEmailDeliveryAvailable(sourceType: ReceiptEmailSourceType, env: Record<string, string | undefined> = process.env) {
   return receiptEmailEnabled(sourceType, env) && emailProviderConfigured(env);
+}
+
+function senderConfigForSource(sourceType: ReceiptEmailSourceType) {
+  return sourceType === "STOREFRONT_ORDER"
+    ? { envName: STOREFRONT_EMAIL_FROM_ENV, displayName: "GameDayGrabs Orders", profile: "STOREFRONT_ORDER" as const }
+    : { envName: POS_RECEIPT_EMAIL_FROM_ENV, displayName: "GameDayGrabs Receipts", profile: "POS_RECEIPT" as const };
+}
+
+function extractEmailAddress(value: string) {
+  const trimmed = value.trim();
+  if (/[\r\n]/.test(trimmed)) return null;
+  const bracketMatch = trimmed.match(/^[^<>\r\n]*<([^<>\s]+@[^<>\s]+)>$/);
+  if (bracketMatch?.[1]) return bracketMatch[1].trim();
+  const bareMatch = trimmed.match(/^[^\s<>,;]+@[^\s<>,;]+$/);
+  return bareMatch?.[0]?.trim() ?? null;
+}
+
+function validMailbox(value: string | null) {
+  if (!value) return null;
+  const email = extractEmailAddress(value);
+  return normalizeReceiptEmail(email) ? email : null;
+}
+
+function formatSender(displayName: string, configuredFrom: string) {
+  const email = extractEmailAddress(configuredFrom);
+  return email ? `${displayName} <${email}>` : null;
+}
+
+export function receiptEmailSenderProfile(sourceType: ReceiptEmailSourceType, env: Record<string, string | undefined> = process.env) {
+  const config = senderConfigForSource(sourceType);
+  const configuredFrom = envValue(env, config.envName);
+  const fallbackFrom = envValue(env, "EMAIL_FROM");
+  const configuredAddress = configuredFrom ? validMailbox(configuredFrom) : null;
+  const fallbackAddress = fallbackFrom ? validMailbox(fallbackFrom) : null;
+  const activeFrom = configuredAddress ? formatSender(config.displayName, configuredAddress) : fallbackAddress ? fallbackFrom : null;
+  return {
+    profile: config.profile,
+    displayName: config.displayName,
+    address: activeFrom ? extractEmailAddress(activeFrom) : null,
+    from: activeFrom,
+    configured: Boolean(configuredFrom),
+    valid: Boolean(activeFrom),
+    profileValueValid: !configuredFrom || Boolean(configuredAddress),
+    profileValueInvalid: Boolean(configuredFrom && !configuredAddress),
+    fallbackValueValid: Boolean(fallbackAddress),
+    usingEmailFromFallback: !configuredAddress && Boolean(fallbackAddress)
+  };
+}
+
+export function receiptEmailSenderDiagnostics(env: Record<string, string | undefined> = process.env) {
+  const storefront = receiptEmailSenderProfile("STOREFRONT_ORDER", env);
+  const pos = receiptEmailSenderProfile("POS_SALE", env);
+  return {
+    storefrontEmailFromConfigured: Boolean(envValue(env, STOREFRONT_EMAIL_FROM_ENV)),
+    posReceiptEmailFromConfigured: Boolean(envValue(env, POS_RECEIPT_EMAIL_FROM_ENV)),
+    emailFromFallbackConfigured: Boolean(envValue(env, "EMAIL_FROM")),
+    replyToConfigured: Boolean(envValue(env, "EMAIL_REPLY_TO")),
+    storefront,
+    pos,
+    domainAuthenticationStatus: emailProviderConfig(env).provider === "resend" ? "manual_check_required" : "not_applicable"
+  };
 }
 
 export function normalizeReceiptEmail(value: string | null | undefined) {
@@ -147,10 +216,36 @@ function compact(lines: Array<string | null | undefined>) {
   return lines.map((line) => line?.trim()).filter((line): line is string => Boolean(line));
 }
 
-function textReceipt(snapshot: ReceiptEmailSnapshot) {
+function receiptCopy(snapshot: ReceiptEmailSnapshot) {
+  return snapshot.sourceType === "STOREFRONT_ORDER"
+    ? {
+        designation: "Order confirmation",
+        subject: `Order confirmed — ${snapshot.receiptNumber}`,
+        preheader: "We received your GameDayGrabs order and payment.",
+        heading: "Thanks for your order.",
+        referenceLabel: "Order number",
+        fulfillmentFallback: "Shipping fulfillment"
+      }
+    : {
+        designation: "POS receipt",
+        subject: `Your GameDayGrabs receipt — ${snapshot.receiptNumber}`,
+        preheader: "Your receipt from GameDayGrabs.",
+        heading: "Thanks for your purchase.",
+        referenceLabel: "Receipt",
+        fulfillmentFallback: "In-person fulfillment"
+      };
+}
+
+function textReceipt(snapshot: ReceiptEmailSnapshot, testMode = false) {
+  const copy = receiptCopy(snapshot);
   return compact([
-    "GameDayGrabs receipt",
-    `Receipt: ${snapshot.receiptNumber}`,
+    testMode ? "TEST RECEIPT" : null,
+    testMode ? "No payment was made." : null,
+    testMode ? "No order or POS sale was created." : null,
+    testMode ? "" : null,
+    `GameDayGrabs ${copy.designation}`,
+    copy.preheader,
+    `${copy.referenceLabel}: ${snapshot.receiptNumber}`,
     `Completed: ${receiptDate(snapshot.completedAt)}`,
     snapshot.customerName ? `Customer: ${snapshot.customerName}` : null,
     "",
@@ -168,7 +263,7 @@ function textReceipt(snapshot: ReceiptEmailSnapshot) {
     snapshot.fulfillmentSummary,
     snapshot.orderStatusUrl ? `Order status: ${snapshot.orderStatusUrl}` : null,
     `Support: ${snapshot.supportEmail}`,
-    "Thank you for collecting with us."
+    testMode ? "This message was sent from the GameDayGrabs administrator receipt preview." : "Thank you for collecting with us."
   ]).join("\n");
 }
 
@@ -194,9 +289,14 @@ function itemRows(snapshot: ReceiptEmailSnapshot) {
     .join("");
 }
 
-export function buildReceiptEmail(snapshot: ReceiptEmailSnapshot) {
-  const subject = `Your GameDayGrabs receipt ${snapshot.receiptNumber}`;
-  const text = textReceipt(snapshot);
+export function buildReceiptEmail(snapshot: ReceiptEmailSnapshot, options: { testMode?: boolean } = {}) {
+  const copy = receiptCopy(snapshot);
+  const subject = options.testMode
+    ? snapshot.sourceType === "STOREFRONT_ORDER"
+      ? "[TEST] GameDayGrabs order confirmation"
+      : "[TEST] GameDayGrabs POS receipt"
+    : copy.subject;
+  const text = textReceipt(snapshot, Boolean(options.testMode));
   const statusLink = snapshot.orderStatusUrl
     ? `<a href="${htmlEscape(snapshot.orderStatusUrl)}" style="color:#FF6A00;font-weight:900;text-decoration:none;">View order status</a>`
     : "";
@@ -207,12 +307,16 @@ export function buildReceiptEmail(snapshot: ReceiptEmailSnapshot) {
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#FFF7EB;border-collapse:collapse;"><tr><td align="center" style="padding:24px 12px;">',
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="card">',
     '<tr><td style="padding:20px 24px;border-bottom:1px solid #EAECF0;background:#fff;">',
-    '<strong style="font-size:20px;color:#101828;">GameDay<span style="color:#FF6A00;">Grabs</span></strong>',
-    '<div style="margin-top:4px;color:#667085;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:900;">Receipt</div>',
+    '<strong style="font-size:20px;color:#101828;" aria-label="GameDayGrabs">GameDay<span style="color:#FF6A00;">Grabs</span></strong>',
+    `<div style="margin-top:4px;color:#667085;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:900;">${htmlEscape(copy.designation)}</div>`,
     '</td></tr>',
     '<tr><td class="content">',
-    `<h1 style="margin:0;color:#101828;font-size:24px;line-height:1.2;">Thanks for your order.</h1>`,
-    `<p style="margin:8px 0 18px;color:#475467;font-size:15px;line-height:1.55;font-weight:650;">Receipt ${htmlEscape(snapshot.receiptNumber)} was completed ${htmlEscape(receiptDate(snapshot.completedAt))}.</p>`,
+    `<div style="display:none;max-height:0;overflow:hidden;color:#fff;opacity:0;">${htmlEscape(copy.preheader)}</div>`,
+    options.testMode
+      ? '<div style="margin:0 0 18px;padding:14px;border:2px solid #FF6A00;border-radius:14px;background:#101828;color:#fff;"><strong style="display:block;font-size:16px;">TEST RECEIPT</strong><span style="display:block;margin-top:4px;font-size:13px;font-weight:800;">No payment was made. No order or POS sale was created.</span></div>'
+      : "",
+    `<h1 style="margin:0;color:#101828;font-size:24px;line-height:1.2;">${htmlEscape(copy.heading)}</h1>`,
+    `<p style="margin:8px 0 18px;color:#475467;font-size:15px;line-height:1.55;font-weight:650;">${htmlEscape(copy.referenceLabel)} ${htmlEscape(snapshot.receiptNumber)} was completed ${htmlEscape(receiptDate(snapshot.completedAt))}.</p>`,
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #EAECF0;border-radius:14px;border-collapse:separate;margin:14px 0 18px;"><tr><td style="padding:16px;">',
     `<p style="margin:0 0 10px;color:#101828;font-size:15px;font-weight:900;">Purchased items</p>`,
     `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${itemRows(snapshot)}</table>`,
@@ -226,10 +330,11 @@ export function buildReceiptEmail(snapshot: ReceiptEmailSnapshot) {
     '</table>',
     '<div style="margin:18px 0;padding:16px;border:1px solid #EAECF0;border-radius:14px;background:#FFF9F0;">',
     `<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:900;">Payment</p><p style="margin:0 0 12px;color:#475467;font-size:14px;font-weight:700;">${htmlEscape(snapshot.paymentMethodLabel)}</p>`,
-    `<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:900;">Fulfillment</p><p style="margin:0;color:#475467;font-size:14px;font-weight:700;">${htmlEscape(snapshot.fulfillmentMethod)}${snapshot.fulfillmentSummary ? ` - ${htmlEscape(snapshot.fulfillmentSummary)}` : ""}</p>`,
+    `<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:900;">Fulfillment</p><p style="margin:0;color:#475467;font-size:14px;font-weight:700;">${htmlEscape(snapshot.fulfillmentMethod || copy.fulfillmentFallback)}${snapshot.fulfillmentSummary ? ` - ${htmlEscape(snapshot.fulfillmentSummary)}` : ""}</p>`,
     '</div>',
     statusLink ? `<p style="margin:18px 0;">${statusLink}</p>` : "",
-    `<p style="margin:20px 0 0;color:#667085;font-size:13px;line-height:1.5;font-weight:700;">Questions? Email <a href="mailto:${htmlEscape(snapshot.supportEmail)}" style="color:#FF6A00;">${htmlEscape(snapshot.supportEmail)}</a>. This receipt contains customer-facing transaction information only.</p>`,
+    `<p style="margin:20px 0 0;color:#667085;font-size:13px;line-height:1.5;font-weight:700;">Questions? Email <a href="mailto:${htmlEscape(snapshot.supportEmail)}" style="color:#FF6A00;">${htmlEscape(snapshot.supportEmail)}</a> or visit <a href="https://www.gamedaygrabs.com" style="color:#FF6A00;">gamedaygrabs.com</a>. This receipt contains customer-facing transaction information only.</p>`,
+    options.testMode ? '<p style="margin:14px 0 0;color:#667085;font-size:12px;line-height:1.5;font-weight:800;">This message was sent from the GameDayGrabs administrator receipt preview.</p>' : "",
     '</td></tr></table>',
     '</td></tr></table>',
     '</body></html>'
@@ -238,7 +343,9 @@ export function buildReceiptEmail(snapshot: ReceiptEmailSnapshot) {
 }
 
 function sourcePrefix(sourceType: ReceiptEmailSourceType) {
-  return sourceType === "STOREFRONT_ORDER" ? "storefront" : "pos";
+  if (sourceType === "STOREFRONT_ORDER") return "storefront";
+  if (sourceType === "POS_SALE") return "pos";
+  return "admin_preview";
 }
 
 function deliveryToDTO(delivery: {
@@ -253,7 +360,7 @@ function deliveryToDTO(delivery: {
 }): ReceiptEmailDeliveryDTO {
   return {
     status: delivery.status === "SENT" || delivery.status === "FAILED" || delivery.status === "PENDING" ? delivery.status : "PENDING",
-    deliveryType: delivery.deliveryType === "RESEND" ? "RESEND" : "INITIAL",
+    deliveryType: delivery.deliveryType === "PREVIEW" ? "PREVIEW" : delivery.deliveryType === "RESEND" ? "RESEND" : "INITIAL",
     maskedRecipient: delivery.recipientEmailMasked,
     sentAt: delivery.sentAt?.toISOString() ?? null,
     lastAttemptAt: delivery.lastAttemptAt?.toISOString() ?? null,
@@ -372,7 +479,7 @@ async function markDeliveryResult(input: {
   });
 }
 
-const prismaReceiptEmailDeliveryStore: ReceiptEmailDeliveryAttemptStore = {
+export const prismaReceiptEmailDeliveryStore: ReceiptEmailDeliveryAttemptStore = {
   createOrGetClaim: createDeliveryClaim,
   claimAttempt: claimDeliveryAttempt,
   findById: findDeliveryById,
@@ -382,7 +489,7 @@ const prismaReceiptEmailDeliveryStore: ReceiptEmailDeliveryAttemptStore = {
 function receiptEmailHeaders(input: { sourceType: ReceiptEmailSourceType; receiptNumber: string; deliveryType: ReceiptEmailDeliveryType }) {
   return {
     "X-Entity-Ref-ID": `gdd:${input.receiptNumber}:receipt`,
-    "X-GDD-Notification-Type": input.sourceType === "STOREFRONT_ORDER" ? "storefront_receipt" : "pos_receipt",
+    "X-GDD-Notification-Type": input.sourceType === "ADMIN_PREVIEW" ? "receipt_preview" : input.sourceType === "STOREFRONT_ORDER" ? "storefront_receipt" : "pos_receipt",
     "X-GDD-Order-Number": input.receiptNumber
   };
 }
@@ -390,7 +497,7 @@ function receiptEmailHeaders(input: { sourceType: ReceiptEmailSourceType; receip
 function receiptEmailTags(input: { sourceType: ReceiptEmailSourceType; receiptNumber: string; deliveryType: ReceiptEmailDeliveryType }) {
   return [
     { name: "orderNumber", value: input.receiptNumber },
-    { name: "notificationType", value: input.sourceType === "STOREFRONT_ORDER" ? "storefrontReceipt" : "posReceipt" },
+    { name: "notificationType", value: input.sourceType === "ADMIN_PREVIEW" ? "receiptPreview" : input.sourceType === "STOREFRONT_ORDER" ? "storefrontReceipt" : "posReceipt" },
     { name: "environment", value: process.env.VERCEL_ENV || process.env.NODE_ENV || "development" }
   ];
 }
@@ -402,6 +509,7 @@ export type ReceiptEmailDeliveryAttemptInput = {
   deliveryType: ReceiptEmailDeliveryType;
   idempotencyKey: string;
   snapshot: ReceiptEmailSnapshot;
+  senderFrom?: string | null;
   requestedByUserId?: string | null;
   requestId?: string | null;
 };
@@ -506,6 +614,7 @@ export async function runReceiptEmailDeliveryAttempt(
 
   const message: EmailMessage = {
     to: input.recipientEmail,
+    from: input.senderFrom ?? receiptEmailSenderProfile(input.sourceType).from ?? undefined,
     subject: rendered.subject,
     text: rendered.text,
     html: rendered.html,
@@ -584,6 +693,7 @@ export async function requestReceiptEmailDelivery(input: {
       deliveryType: input.deliveryType,
       idempotencyKey: input.idempotencyKey,
       snapshot: input.snapshot,
+      senderFrom: receiptEmailSenderProfile(input.sourceType, input.env ?? process.env).from,
       requestedByUserId: input.requestedByUserId,
       requestId: input.requestId
     },

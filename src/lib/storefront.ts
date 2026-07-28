@@ -45,6 +45,7 @@ import {
   normalizeReceiptEmail,
   receiptEmailDeliveryAvailable,
   receiptEmailEnabled,
+  receiptEmailSenderProfile,
   requestReceiptEmailDelivery,
   type ReceiptEmailDeliveryDTO,
   type ReceiptEmailSnapshot
@@ -900,10 +901,10 @@ export async function sendStorefrontEmail(
   text: string,
   idempotencyKey?: string,
   html?: string,
-  options: Omit<EmailSendOptions, "idempotencyKey"> & Pick<EmailMessage, "headers" | "tags"> = {}
+  options: Omit<EmailSendOptions, "idempotencyKey"> & Pick<EmailMessage, "from" | "headers" | "tags"> = {}
 ) {
-  const { headers, tags, ...sendOptions } = options;
-  return sendEmailViaProvider({ to, subject, text, html, headers, tags }, { ...sendOptions, idempotencyKey });
+  const { from, headers, tags, ...sendOptions } = options;
+  return sendEmailViaProvider({ to, from, subject, text, html, headers, tags }, { ...sendOptions, idempotencyKey });
 }
 
 function customerEmailEventType(kind: CustomerEmailKind, status: CustomerEmailStatus) {
@@ -1090,6 +1091,7 @@ async function sendCustomerEmailNotificationOnce(input: {
   subject?: string;
   text?: string;
   html?: string;
+  from?: string | null;
   recipient?: string | null;
   skippedDetail?: string;
 }) {
@@ -1155,7 +1157,7 @@ async function sendCustomerEmailNotificationOnce(input: {
       input.text || "GameDayGrabs order update",
       input.eventId,
       input.html,
-      customerEmailProviderMetadata(input.order, input.kind)
+      { ...customerEmailProviderMetadata(input.order, input.kind), from: input.from ?? undefined }
     );
     const status: CustomerEmailStatus = result.status === "sent" ? "sent" : result.status === "failed" ? "failed" : "not_configured";
     await completeCustomerEmailEvent({
@@ -1208,7 +1210,7 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     : "";
   const email = receiptEmail
     ? {
-        subject: `Your GameDayGrabs order confirmation and receipt — ${order.orderNumber}`,
+        subject: receiptEmail.subject,
         text: `${receiptEmail.text}${accountCtaText}`,
         html: accountCtaHtml
           ? receiptEmail.html.replace("</td></tr></table></td></tr></table></body></html>", `${accountCtaHtml}</td></tr></table></td></tr></table></body></html>`)
@@ -1236,7 +1238,8 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     eventId: customerEmailEventId("order_confirmation", order.id),
     subject: email.subject,
     text: email.text,
-    html: email.html
+    html: email.html,
+    from: receiptEmail ? receiptEmailSenderProfile("STOREFRONT_ORDER").from : null
   });
 }
 
