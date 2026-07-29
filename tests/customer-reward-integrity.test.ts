@@ -147,6 +147,9 @@ async function createPosSale(userId: string, customerAccountId: string | null, o
   refundedAmount: number;
   platform: string;
   rewardsEligible: boolean;
+  grossSale: number;
+  subtotalCents: number | null;
+  soldAt: Date;
 }> = {}) {
   const item = await createInventoryItem(userId);
   const saleReference = Object.prototype.hasOwnProperty.call(overrides, "saleReference") ? overrides.saleReference ?? null : unique("POS");
@@ -159,15 +162,16 @@ async function createPosSale(userId: string, customerAccountId: string | null, o
       saleReference,
       quantitySold: 1,
       soldPricePerItem: 20,
-      grossSale: 20,
+      grossSale: overrides.grossSale ?? 20,
       platform: overrides.platform ?? "pos",
       netSale: 20,
       costBasis: 10,
       profitLoss: 10,
+      subtotalCents: overrides.subtotalCents,
       refundStatus: overrides.refundStatus ?? null,
       refundedAmount: overrides.refundedAmount ?? 0,
       rewardsEligible: overrides.rewardsEligible ?? true,
-      soldAt: new Date("2026-01-02T00:00:00.000Z")
+      soldAt: overrides.soldAt ?? new Date("2026-01-02T00:00:00.000Z")
     }
   });
 }
@@ -239,6 +243,176 @@ test("balanced accounts reconcile using existing ledger math without exposing id
   assert.ok(!payload.includes(customer.email));
   assert.ok(!payload.includes(availableEarn.id));
   assert.ok(!payload.includes("should-not-leak"));
+});
+
+test("authoritative reward lifecycle treats fully reversed canceled earns as valid", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 10,
+      type: "earn",
+      reason: "Pending purchase",
+      status: "pending",
+      source: "stripe_checkout"
+    }
+  });
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 20,
+      type: "earn",
+      reason: "Available purchase",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+  const canceledEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 30,
+      type: "earn",
+      reason: "Canceled purchase",
+      status: "canceled",
+      source: "stripe_checkout"
+    }
+  });
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: -30,
+      type: "reverse",
+      reason: "Complete reversal",
+      status: "reversed",
+      source: "stripe_checkout",
+      reversalOfEntryId: canceledEarn.id,
+      metadataJson: JSON.stringify({ availablePointsReversed: 30 })
+    }
+  });
+  await setBalance(customer.id, 20, 10, 60);
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+
+  assert.equal(report.sections.rewardLedgerIntegrity.classification, "PASS");
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.positiveEarnPending, 1);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.positiveEarnAvailable, 1);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.positiveEarnCanceledWithSupportedReversal, 1);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.positiveEarnCanceledWithoutReversal, 0);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.negativeReverseReversed, 1);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.ledgerEntriesWithInvalidStatusTypeCombinations, 0);
+  assert.equal(report.sections.rewardBalanceReconciliation.classification, "PASS");
+});
+
+test("unsupported reward lifecycle combinations and invalid reversal relationships are blocked", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customerA = await createCustomer(owner.id);
+  const customerB = await createCustomer(owner.id);
+  const orderA = await createPaidOrder(owner.id, customerA.id, { customerEmail: customerA.email });
+  const orderB = await createPaidOrder(owner.id, customerA.id, { customerEmail: customerA.email });
+  const smallEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customerA.id,
+      points: 5,
+      type: "earn",
+      reason: "Original",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+  const accountMismatchEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customerA.id,
+      points: 20,
+      type: "earn",
+      reason: "Original account",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+  const transactionMismatchEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customerA.id,
+      orderId: orderA.id,
+      points: 20,
+      type: "earn",
+      reason: "Original order",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+
+  await prisma.rewardLedgerEntry.createMany({
+    data: [
+      { customerAccountId: customerA.id, points: 5, type: "reverse", reason: "Bad positive reverse", status: "reversed", source: "stripe_checkout" },
+      { customerAccountId: customerA.id, points: -5, type: "earn", reason: "Bad negative earn", status: "reversed", source: "stripe_checkout" },
+      { customerAccountId: customerA.id, points: -5, type: "reverse", reason: "Bad pending reverse", status: "pending", source: "stripe_checkout" },
+      { customerAccountId: customerA.id, points: -5, type: "reverse", reason: "Bad available reverse", status: "available", source: "stripe_checkout" },
+      { customerAccountId: customerA.id, points: 5, type: "earn", reason: "Bad reversed earn", status: "reversed", source: "stripe_checkout" },
+      { customerAccountId: customerA.id, points: 5, type: "earn", reason: "Unsupported cancel", status: "canceled", source: "stripe_checkout" },
+      { customerAccountId: customerA.id, points: -6, type: "reverse", reason: "Excessive reversal", status: "reversed", source: "stripe_checkout", reversalOfEntryId: smallEarn.id },
+      { customerAccountId: customerB.id, points: -5, type: "reverse", reason: "Wrong account", status: "reversed", source: "stripe_checkout", reversalOfEntryId: accountMismatchEarn.id },
+      { customerAccountId: customerA.id, orderId: orderB.id, points: -5, type: "reverse", reason: "Wrong order", status: "reversed", source: "stripe_checkout", reversalOfEntryId: transactionMismatchEarn.id },
+      { customerAccountId: customerA.id, points: -5, type: "reverse", reason: "Missing original", status: "reversed", source: "pos" }
+    ]
+  });
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const ledger = report.sections.rewardLedgerIntegrity;
+
+  assert.equal(ledger.classification, "BLOCKED");
+  assert.ok(ledger.reasons.includes("INVALID_REWARD_LEDGER_STATUS_TYPE"));
+  assert.ok(ledger.reasons.includes("CURRENT_REVERSAL_MISSING_ORIGINAL_REFERENCE"));
+  assert.ok(ledger.reasons.includes("REVERSAL_EXCEEDS_EARNED_POINTS"));
+  assert.ok(ledger.reasons.includes("REVERSAL_ACCOUNT_MISMATCH"));
+  assert.ok(ledger.reasons.includes("REVERSAL_TRANSACTION_MISMATCH"));
+  assert.equal(ledger.metrics.invalidPositiveReverse, 1);
+  assert.equal(ledger.metrics.invalidNegativeEarn, 1);
+  assert.equal(ledger.metrics.invalidNegativePending, 1);
+  assert.equal(ledger.metrics.invalidNegativeAvailable, 1);
+  assert.equal(ledger.metrics.positiveEarnReversed, 1);
+  assert.equal(ledger.metrics.positiveEarnCanceledWithoutReversal, 1);
+  assert.equal(ledger.metrics.currentSystemReversalMissingOriginalReference, 1);
+  assert.equal(ledger.metrics.reversalExceedsOriginalPoints, 1);
+  assert.equal(ledger.metrics.reversalAccountMismatch, 1);
+  assert.equal(ledger.metrics.reversalTransactionMismatch, 1);
+});
+
+test("legacy administrative reversal without original reference is a warning when balances reconcile", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 100,
+      type: "earn",
+      reason: "Historical earn",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: -5,
+      type: "reverse",
+      reason: "Legacy reversal",
+      status: "reversed",
+      source: "admin_adjustment"
+    }
+  });
+  await setBalance(customer.id, 95, 0, 100);
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+
+  assert.equal(report.sections.rewardLedgerIntegrity.classification, "WARNING");
+  assert.ok(report.sections.rewardLedgerIntegrity.reasons.includes("LEGACY_REVERSAL_WITHOUT_ORIGINAL_REFERENCE"));
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.legacyAdministrativeReversal, 1);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.currentSystemReversalMissingOriginalReference, 0);
+  assert.equal(report.sections.rewardBalanceReconciliation.classification, "PASS");
 });
 
 test("clean three-account dataset reports active verified aggregate counts", async () => {
@@ -582,6 +756,128 @@ test("identity comparisons use the authoritative account email normalizer", asyn
   assert.equal(report.sections.customerLinking.metrics.posSalesWithEmailMismatch, 0);
 });
 
+test("account warning breakdown exposes aggregate context only", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id, { normalizedEmail: null });
+  await prisma.storefrontCustomer.create({
+    data: {
+      userId: owner.id,
+      customerAccountId: customer.id,
+      email: `${unique("storefront-link")}@example.test`
+    }
+  });
+  await createPaidOrder(owner.id, customer.id, { customerEmail: customer.email });
+  await createPosSale(owner.id, customer.id, { customerEmail: customer.email });
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const metrics = report.sections.customerAccountIntegrity.metrics;
+  const payload = JSON.stringify(report);
+
+  assert.equal(report.sections.customerAccountIntegrity.classification, "WARNING");
+  assert.equal(metrics.accountsMissingNormalizedEmail, 1);
+  assert.equal(metrics.accountsMissingNormalizedEmailVerified, 1);
+  assert.equal(metrics.accountsMissingNormalizedEmailActive, 1);
+  assert.equal(metrics.accountsMissingNormalizedEmailWithoutRewardBalance, 1);
+  assert.equal(metrics.accountsMissingNormalizedEmailWithoutLedgerEntries, 1);
+  assert.equal(metrics.accountsMissingNormalizedEmailLinkedStorefrontCustomer, 1);
+  assert.equal(metrics.accountsMissingNormalizedEmailLinkedPaidOrder, 1);
+  assert.equal(metrics.accountsMissingNormalizedEmailLinkedPosTransaction, 1);
+  assert.equal(metrics.accountsWithoutRewardBalance, 1);
+  assert.equal(metrics.accountsWithoutRewardBalanceWithoutLedgerEntries, 1);
+  assert.equal(metrics.accountsWithoutRewardBalanceWithOnlyZeroOrNoRewardHistory, 1);
+  assert.equal(metrics.accountsWithoutRewardBalanceVerified, 1);
+  assert.equal(metrics.accountsWithoutRewardBalanceActive, 1);
+  assert.equal(metrics.accountsWithoutRewardBalanceNormalizedEmailMissing, 1);
+  assert.ok(!payload.includes(customer.id));
+  assert.ok(!payload.includes(customer.email));
+});
+
+test("POS missing-earn breakdown distinguishes ineligible historical unknown and actionable cases", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const verifiedCustomer = await createCustomer(owner.id);
+  const unverifiedCustomer = await createCustomer(owner.id, { emailVerifiedAt: null });
+  await setBalance(verifiedCustomer.id, 10, 0, 10);
+  await setBalance(unverifiedCustomer.id, 0, 0, 0);
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: verifiedCustomer.id,
+      points: 10,
+      type: "earn",
+      reason: "First POS earn",
+      status: "available",
+      source: "pos",
+      idempotencyKey: "rewards:pos:earn:POS-FIRST",
+      createdAt: new Date("2026-01-10T00:00:00.000Z")
+    }
+  });
+  await createPosSale(owner.id, verifiedCustomer.id, {
+    saleReference: "POS-FIRST",
+    customerEmail: verifiedCustomer.email,
+    soldAt: new Date("2026-01-10T00:00:00.000Z")
+  });
+  await createPosSale(owner.id, verifiedCustomer.id, {
+    saleReference: "POS-HISTORICAL",
+    customerEmail: verifiedCustomer.email,
+    soldAt: new Date("2026-01-01T00:00:00.000Z")
+  });
+  await createPosSale(owner.id, verifiedCustomer.id, {
+    saleReference: "POS-INELIGIBLE",
+    customerEmail: verifiedCustomer.email,
+    rewardsEligible: false,
+    soldAt: new Date("2026-01-20T00:00:00.000Z")
+  });
+  await createPosSale(owner.id, verifiedCustomer.id, {
+    saleReference: "POS-ZERO",
+    customerEmail: verifiedCustomer.email,
+    subtotalCents: 0,
+    grossSale: 0,
+    soldAt: new Date("2026-01-21T00:00:00.000Z")
+  });
+  await createPosSale(owner.id, verifiedCustomer.id, {
+    saleReference: "POS-REFUND",
+    customerEmail: verifiedCustomer.email,
+    refundStatus: "refunded",
+    refundedAmount: 20,
+    soldAt: new Date("2026-01-22T00:00:00.000Z")
+  });
+  await createPosSale(owner.id, unverifiedCustomer.id, {
+    saleReference: "POS-UNVERIFIED",
+    customerEmail: unverifiedCustomer.email,
+    soldAt: new Date("2026-01-23T00:00:00.000Z")
+  });
+  await createPosSale(owner.id, verifiedCustomer.id, {
+    saleReference: "POS-ACTIONABLE",
+    customerEmail: verifiedCustomer.email,
+    soldAt: new Date("2026-01-24T00:00:00.000Z")
+  });
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const metrics = report.sections.posRewards.metrics;
+  const payload = JSON.stringify(report);
+
+  assert.equal(report.sections.posRewards.classification, "BLOCKED");
+  assert.ok(report.sections.posRewards.reasons.includes("CURRENT_POS_REWARD_EARN_MISSING"));
+  assert.ok(report.sections.posRewards.reasons.includes("LINKED_POS_SALE_WITHOUT_EARN_ENTRY"));
+  assert.equal(metrics.completedEligibleSalesWithEarnEntry, 1);
+  assert.equal(metrics.linkedPosSalesWithoutEarnEntry, 6);
+  assert.equal(metrics.linkedPosSalesWithoutEarnRewardsEligibleTrue, 5);
+  assert.equal(metrics.linkedPosSalesWithoutEarnRewardsEligibleFalse, 1);
+  assert.equal(metrics.linkedPosSalesWithoutEarnBeforeFirstPersistedPosEarn, 1);
+  assert.equal(metrics.linkedPosSalesWithoutEarnAfterFirstPersistedPosEarn, 5);
+  assert.equal(metrics.linkedPosSalesWithoutEarnLinkedAccountVerified, 5);
+  assert.equal(metrics.linkedPosSalesWithoutEarnLinkedAccountUnverified, 1);
+  assert.equal(metrics.linkedPosSalesWithoutEarnZeroEligibleMerchandiseSubtotal, 1);
+  assert.equal(metrics.linkedPosSalesWithoutEarnPositiveEligibleMerchandiseSubtotal, 5);
+  assert.equal(metrics.linkedPosSalesWithoutEarnWithRefundState, 1);
+  assert.equal(metrics.linkedPosSalesWithoutEarnWithoutRefundState, 5);
+  assert.equal(metrics.linkedPosSalesWithoutEarnActionableCurrentSystem, 1);
+  assert.equal(metrics.firstPersistedPosEarnEntryKnown, true);
+  assert.ok(!payload.includes("POS-ACTIONABLE"));
+  assert.ok(!payload.includes(verifiedCustomer.email));
+});
+
 test("schema-enforced integrity checks are not falsely reported as verified zeroes", async () => {
   approvedRuntimeEnv();
   const owner = await createOwner();
@@ -617,6 +913,43 @@ test("report applies bounded scans and returns unavailable instead of an unbound
   assert.ok(report.sections.customerAccountIntegrity.reasons.includes("REPORT_LIMIT_REACHED"));
   assert.equal(report.sections.customerAccountIntegrity.metrics.boundedAccountLimit, 1_000);
   assert.equal(report.sections.customerAccountIntegrity.metrics.boundedSamplePartial, true);
+});
+
+test("bounded ledger relationship checks are unavailable rather than falsely blocked", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  const entries = [
+    {
+      customerAccountId: customer.id,
+      points: -5,
+      type: "reverse",
+      reason: "Potential missing original",
+      status: "reversed",
+      source: "stripe_checkout",
+      reversalOfEntryId: "outside-bounded-scan"
+    },
+    ...Array.from({ length: 10_000 }, () => ({
+      customerAccountId: customer.id,
+      points: 1,
+      type: "earn",
+      reason: "Bounded scan fixture",
+      status: "available",
+      source: "stripe_checkout"
+    }))
+  ];
+  await prisma.rewardLedgerEntry.createMany({ data: entries });
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+
+  assert.equal(report.sections.rewardLedgerIntegrity.classification, "UNAVAILABLE");
+  assert.ok(report.sections.rewardLedgerIntegrity.reasons.includes("REPORT_LIMIT_REACHED"));
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.boundedSamplePartial, true);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalEntriesWithMissingOriginalEntry, null);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalRelationshipVerificationAvailable, false);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalExceedsOriginalPoints, null);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalAccountMismatch, null);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalTransactionMismatch, null);
 });
 
 test("route and UI are admin-only, no-store, GET-only, and mutation-free", () => {
