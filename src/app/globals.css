@@ -4606,6 +4606,55 @@ color: var(--muted);
 font-size: 0.78rem;
 line-height: 1.45;
 }
+.detail-grid {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+gap: 8px;
+margin: 10px 0 0;
+}
+.detail-grid div {
+min-width: 0;
+border: 1px solid rgba(255, 255, 255, 0.06);
+border-radius: 8px;
+padding: 8px;
+background: rgba(255, 255, 255, 0.035);
+}
+.detail-grid dt {
+color: var(--muted);
+font-size: 0.66rem;
+font-weight: 800;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+}
+.detail-grid dd {
+margin: 3px 0 0;
+color: var(--text);
+font-size: 0.86rem;
+font-weight: 800;
+overflow-wrap: anywhere;
+}
+.safe-json-panel {
+border: 1px solid var(--line);
+border-radius: var(--radius);
+padding: 10px 12px;
+background: rgba(255, 255, 255, 0.03);
+}
+.safe-json-panel summary {
+cursor: pointer;
+font-weight: 800;
+}
+.safe-json-panel pre {
+max-height: 320px;
+overflow: auto;
+margin: 10px 0 0;
+padding: 10px;
+border-radius: 8px;
+background: rgba(3, 7, 18, 0.6);
+color: var(--muted);
+font-size: 0.72rem;
+line-height: 1.5;
+white-space: pre-wrap;
+}
 .backup-form p {
 margin: 0;
 line-height: 1.45;
