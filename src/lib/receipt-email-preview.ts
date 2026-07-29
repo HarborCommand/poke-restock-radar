@@ -18,6 +18,13 @@ import {
 } from "@/lib/receipt-email";
 
 export type ReceiptPreviewSendStatus = "SENT" | "FAILED" | "NOT_CONFIGURED" | "UNCERTAIN";
+export type ReceiptPreviewFixtureKey =
+  | "storefront_linked_rewards"
+  | "pos_linked_rewards"
+  | "linked_pending_rewards"
+  | "guest_unlinked"
+  | "pos_recipient_mismatch"
+  | "rewards_disabled";
 
 export type PreviewSendResult = {
   previewType: ReceiptEmailPreviewType;
@@ -56,6 +63,58 @@ function receiptNumberForPreview(previewType: ReceiptEmailPreviewType) {
   return previewType === "storefront" ? "TEST-GDD-20260728" : "TEST-POS-20260728";
 }
 
+export const receiptEmailPreviewFixtureOptions: Array<{
+  key: ReceiptPreviewFixtureKey;
+  previewType: ReceiptEmailPreviewType;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: "storefront_linked_rewards",
+    previewType: "storefront",
+    label: "Storefront linked account with points earned",
+    description: "Verified linked account; receipt recipient matches; persisted storefront reward result exists."
+  },
+  {
+    key: "pos_linked_rewards",
+    previewType: "pos",
+    label: "POS linked account with points earned",
+    description: "Selected POS customer; receipt recipient matches; persisted POS reward result exists."
+  },
+  {
+    key: "linked_pending_rewards",
+    previewType: "storefront",
+    label: "Linked account with pending points",
+    description: "Verified linked account with authoritative pending points greater than zero."
+  },
+  {
+    key: "guest_unlinked",
+    previewType: "storefront",
+    label: "Guest/unlinked receipt with no reward block",
+    description: "Ordinary guest receipt only; no account reward details are displayed."
+  },
+  {
+    key: "pos_recipient_mismatch",
+    previewType: "pos",
+    label: "POS selected customer, different receipt email",
+    description: "Receipt destination differs from the linked account email, so account rewards are omitted."
+  },
+  {
+    key: "rewards_disabled",
+    previewType: "storefront",
+    label: "Rewards earning disabled",
+    description: "Ordinary receipt only; reward earning is disabled."
+  }
+];
+
+function previewFixtureOption(key: ReceiptPreviewFixtureKey) {
+  return receiptEmailPreviewFixtureOptions.find((option) => option.key === key) ?? receiptEmailPreviewFixtureOptions[0];
+}
+
+function defaultFixtureForPreview(previewType: ReceiptEmailPreviewType): ReceiptPreviewFixtureKey {
+  return previewType === "storefront" ? "storefront_linked_rewards" : "pos_linked_rewards";
+}
+
 export function previewSourceId(userId: string, previewType: ReceiptEmailPreviewType) {
   return `admin:${userId}:receipt-preview:${previewType}`;
 }
@@ -65,13 +124,13 @@ export function previewTestIdempotencyKey(userId: string, previewType: ReceiptEm
   return `receipt-preview:${userId}:${previewType}:${previewRequestId.toLowerCase()}`;
 }
 
-export function receiptEmailPreviewFixtures(): Record<ReceiptEmailPreviewType, ReceiptEmailSnapshot> {
+export function receiptEmailPreviewFixtures(): Record<ReceiptPreviewFixtureKey, ReceiptEmailSnapshot> {
   return {
-    storefront: {
+    storefront_linked_rewards: {
       sourceType: "STOREFRONT_ORDER",
       receiptNumber: receiptNumberForPreview("storefront"),
       completedAt: completedAt(),
-      customerName: "Preview Customer",
+      customerName: "Linked Preview Customer",
       lineItems: [
         { name: "Pokémon TCG: Mega Evolution Booster Bundle", quantity: 2, unitPrice: 39.99, lineTotal: 79.98 },
         { name: "Ultra PRO 9-Pocket Trading Card Pages", quantity: 3, unitPrice: 4.99, lineTotal: 14.97 }
@@ -85,13 +144,19 @@ export function receiptEmailPreviewFixtures(): Record<ReceiptEmailPreviewType, R
       fulfillmentMethod: "Shipping",
       fulfillmentSummary: "Ships after fulfillment is prepared.",
       supportEmail: "gamedaygrabs@outlook.com",
-      orderStatusUrl: "https://www.gamedaygrabs.com/order-status"
+      orderStatusUrl: "https://www.gamedaygrabs.com/order-status",
+      rewardSummary: {
+        pointsEarned: 94,
+        availableBalance: 3905,
+        pendingBalance: 94,
+        rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+      }
     },
-    pos: {
+    pos_linked_rewards: {
       sourceType: "POS_SALE",
       receiptNumber: receiptNumberForPreview("pos"),
       completedAt: completedAt(),
-      customerName: "Preview Guest",
+      customerName: "Linked POS Customer",
       lineItems: [
         { name: "Pokémon TCG: Scarlet & Violet Booster Pack", quantity: 4, unitPrice: 4.49, lineTotal: 17.96 },
         { name: "GameDayGrabs Soft Card Sleeves Pack", quantity: 2, unitPrice: 2.99, lineTotal: 5.98 }
@@ -105,7 +170,92 @@ export function receiptEmailPreviewFixtures(): Record<ReceiptEmailPreviewType, R
       fulfillmentMethod: "In-person pickup",
       fulfillmentSummary: "Completed at the register.",
       supportEmail: "gamedaygrabs@outlook.com",
-      orderStatusUrl: null
+      orderStatusUrl: null,
+      rewardSummary: {
+        pointsEarned: 21,
+        availableBalance: 3926,
+        pendingBalance: 0,
+        rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+      }
+    },
+    linked_pending_rewards: {
+      sourceType: "STOREFRONT_ORDER",
+      receiptNumber: "TEST-GDD-PENDING",
+      completedAt: completedAt(),
+      customerName: "Pending Points Customer",
+      lineItems: [
+        { name: "PokÃ©mon TCG: Long Name Collector Bundle With Binder, Sleeves, and Booster Packs", quantity: 1, unitPrice: 124.99, lineTotal: 124.99 }
+      ],
+      subtotal: 124.99,
+      discount: 0,
+      shipping: 0,
+      tax: 8.75,
+      total: 133.74,
+      paymentMethodLabel: "Paid online",
+      fulfillmentMethod: "Local Pickup",
+      fulfillmentSummary: "Pickup details will appear in your order updates.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: "https://www.gamedaygrabs.com/order-status",
+      rewardSummary: {
+        pointsEarned: 124,
+        availableBalance: 8012,
+        pendingBalance: 124,
+        rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+      }
+    },
+    guest_unlinked: {
+      sourceType: "STOREFRONT_ORDER",
+      receiptNumber: "TEST-GDD-GUEST",
+      completedAt: completedAt(),
+      customerName: "Preview Guest",
+      lineItems: [{ name: "PokÃ©mon TCG: Mega Moonlit Tin", quantity: 1, unitPrice: 39.99, lineTotal: 39.99 }],
+      subtotal: 39.99,
+      discount: 0,
+      shipping: 6.99,
+      tax: 3.34,
+      total: 50.32,
+      paymentMethodLabel: "Paid online",
+      fulfillmentMethod: "Shipping",
+      fulfillmentSummary: "Ships after fulfillment is prepared.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: "https://www.gamedaygrabs.com/order-status",
+      rewardSummary: null
+    },
+    pos_recipient_mismatch: {
+      sourceType: "POS_SALE",
+      receiptNumber: "TEST-POS-MISMATCH",
+      completedAt: completedAt(),
+      customerName: "Selected Customer",
+      lineItems: [{ name: "PokÃ©mon TCG: Scarlet & Violet Booster Pack", quantity: 2, unitPrice: 4.49, lineTotal: 8.98 }],
+      subtotal: 8.98,
+      discount: 0,
+      shipping: 0,
+      tax: 0.67,
+      total: 9.65,
+      paymentMethodLabel: "In-person payment",
+      fulfillmentMethod: "In-person pickup",
+      fulfillmentSummary: "Completed at the register.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: null,
+      rewardSummary: null
+    },
+    rewards_disabled: {
+      sourceType: "STOREFRONT_ORDER",
+      receiptNumber: "TEST-GDD-REWARDS-OFF",
+      completedAt: completedAt(),
+      customerName: "Linked Preview Customer",
+      lineItems: [{ name: "Ultra PRO 9-Pocket Trading Card Pages", quantity: 5, unitPrice: 4.99, lineTotal: 24.95 }],
+      subtotal: 24.95,
+      discount: 0,
+      shipping: 0,
+      tax: 1.87,
+      total: 26.82,
+      paymentMethodLabel: "Paid online",
+      fulfillmentMethod: "Local Pickup",
+      fulfillmentSummary: "Pickup details will appear in your order updates.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: "https://www.gamedaygrabs.com/order-status",
+      rewardSummary: null
     }
   };
 }
@@ -134,14 +284,23 @@ function sendReadiness(previewType: ReceiptEmailPreviewType, adminEmail: string 
   };
 }
 
-export function buildReceiptEmailPreview(previewType: ReceiptEmailPreviewType, env: EmailSendOptions["env"] = process.env, adminEmail?: string | null) {
-  const snapshot = receiptEmailPreviewFixtures()[previewType];
+export function buildReceiptEmailPreview(
+  previewType: ReceiptEmailPreviewType,
+  env: EmailSendOptions["env"] = process.env,
+  adminEmail?: string | null,
+  fixtureKey: ReceiptPreviewFixtureKey = defaultFixtureForPreview(previewType)
+) {
+  const option = previewFixtureOption(fixtureKey);
+  const snapshot = receiptEmailPreviewFixtures()[fixtureKey];
   const sourceType = sourceTypeForPreview(previewType);
   const rendered = buildReceiptEmail(snapshot, { testMode: true });
   const sender = receiptEmailSenderProfile(sourceType, env);
   const diagnostics = receiptEmailSenderDiagnostics(env);
   return {
     previewType,
+    fixtureKey,
+    fixtureLabel: option.label,
+    fixtureDescription: option.description,
     subject: rendered.subject,
     sender: {
       displayName: sender.displayName,
@@ -258,7 +417,7 @@ export async function sendReceiptEmailPreviewToAdmin(input: {
       recipientEmail: recipient,
       deliveryType: "PREVIEW",
       idempotencyKey,
-      snapshot: receiptEmailPreviewFixtures()[input.previewType],
+      snapshot: receiptEmailPreviewFixtures()[defaultFixtureForPreview(input.previewType)],
       senderFrom: preview.sender.from,
       requestedByUserId: input.user.id,
       requestId: input.requestId

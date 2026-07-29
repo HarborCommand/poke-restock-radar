@@ -27,7 +27,14 @@ import {
 } from "@/lib/shipping-rate-provider";
 import { applyMerchantShippingPolicyToCarrierQuote } from "@/lib/shipping-policy";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
-import { awardRewardsForPaidOrder, releasePendingRewardsForOrder, reverseRewardsForOrder, rewardSummaryForOrder } from "@/lib/customer-rewards";
+import {
+  awardRewardsForPaidOrder,
+  customerRewardsEnabled,
+  releasePendingRewardsForOrder,
+  reverseRewardsForOrder,
+  rewardReceiptSummaryFromPersistedResult,
+  rewardSummaryForOrder
+} from "@/lib/customer-rewards";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
 import {
   buildCheckoutExpiredEmail,
@@ -156,6 +163,10 @@ const storefrontOrderInclude = {
   customer: true,
   customerAccount: {
     select: {
+      email: true,
+      normalizedEmail: true,
+      status: true,
+      emailVerifiedAt: true,
       rewardBalance: true,
       rewardLedgerEntries: {
         select: {
@@ -1189,9 +1200,12 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
   const settings = await getStorefrontSettings();
   const contactEmail = settings.contactEmail || defaultStorefrontContactEmail;
   const accountFeatures = customerAccountFeatureConfig();
+  const recipient = storefrontOrderReceiptRecipient(order);
+  const receiptSnapshot = storefrontReceiptEmailSnapshot(order, contactEmail, recipient);
+  const receiptHasRewardSummary = Boolean(receiptSnapshot.rewardSummary);
   const receiptPresentationEnabled = receiptEmailEnabled("STOREFRONT_ORDER");
-  const receiptEmail = receiptPresentationEnabled ? buildReceiptEmail(storefrontReceiptEmailSnapshot(order, contactEmail)) : null;
-  const accountCtaText = accountFeatures.customerAccountsEnabled
+  const receiptEmail = receiptPresentationEnabled ? buildReceiptEmail(receiptSnapshot) : null;
+  const accountCtaText = accountFeatures.customerAccountsEnabled && !receiptHasRewardSummary
     ? [
         "",
         "Create your GameDayGrabs account to track orders and rewards.",
@@ -1200,7 +1214,7 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
         .filter(Boolean)
         .join("\n")
     : "";
-  const accountCtaHtml = accountFeatures.customerAccountsEnabled
+  const accountCtaHtml = accountFeatures.customerAccountsEnabled && !receiptHasRewardSummary
     ? [
         '<div style="margin:18px 0 0;padding:16px;border:1px solid #EAECF0;border-radius:14px;background:#F9FAFB;">',
         '<p style="margin:0;color:#101828;font-size:14px;font-weight:900;">Track this order from your account</p>',
@@ -1251,8 +1265,9 @@ function storefrontOrderStatusLink(order: StorefrontOrderWithItems) {
   return `${storefrontCheckoutBaseUrl()}/order-status?order=${encodeURIComponent(order.orderNumber)}`;
 }
 
-function storefrontReceiptEmailSnapshot(order: StorefrontOrderWithItems, supportEmail: string): ReceiptEmailSnapshot {
+function storefrontReceiptEmailSnapshot(order: StorefrontOrderWithItems, supportEmail: string, recipientEmail?: string | null): ReceiptEmailSnapshot {
   const localPickup = orderIsLocalPickup(order);
+  const rewardSummary = rewardSummaryForOrder(order);
   return {
     sourceType: "STOREFRONT_ORDER",
     receiptNumber: order.orderNumber,
@@ -1273,7 +1288,14 @@ function storefrontReceiptEmailSnapshot(order: StorefrontOrderWithItems, support
     fulfillmentMethod: localPickup ? "Local Pickup" : "Shipping",
     fulfillmentSummary: localPickup ? "Pickup details will appear in your order updates." : order.shippingMethodLabel,
     supportEmail,
-    orderStatusUrl: storefrontOrderStatusLink(order)
+    orderStatusUrl: storefrontOrderStatusLink(order),
+    rewardSummary: rewardReceiptSummaryFromPersistedResult({
+      rewardsEnabled: customerRewardsEnabled(),
+      recipientEmail,
+      account: order.customerAccount,
+      pointsEarned: rewardSummary.pointsEarned,
+      ledgerCount: rewardSummary.ledgerCount
+    })
   };
 }
 
@@ -1303,7 +1325,7 @@ export async function sendStorefrontOrderReceiptEmail(
     recipientEmail: recipient,
     deliveryType: "RESEND",
     idempotencyKey,
-    snapshot: storefrontReceiptEmailSnapshot(order, contactEmail),
+    snapshot: storefrontReceiptEmailSnapshot(order, contactEmail, recipient),
     requestedByUserId: currentUser.id,
     requestId: input.requestId
   });
@@ -3465,7 +3487,7 @@ async function completePaidCheckoutSideEffects(order: StorefrontOrderWithItems) 
   if (order.paymentStatus !== "paid") return;
   await awardRewardsForPaidOrder(order);
   try {
-    await sendStorefrontOrderConfirmationEmail(order);
+    await sendStorefrontOrderConfirmationEmail(await loadFreshStorefrontOrder(order.id));
   } catch {
     // Customer email delivery/status persistence is best-effort and must never block completed checkout side effects.
   }

@@ -94,6 +94,7 @@ export type StorefrontOrderRewardSummary = {
   redemptionEnabled: false;
 };
 
+export const accountRewardsUrl = "https://www.gamedaygrabs.com/account/rewards";
 export const maximumRewardEligibleSubtotalCents = 100_000_000;
 
 export function rewardMoneyToCents(value: number | null | undefined) {
@@ -124,6 +125,44 @@ export function customerRewardsEnabled() {
 
 export function customerPosRewardsEnabled() {
   return posRewardFeatureEnabled();
+}
+
+function safeNonnegativeInteger(value: number | null | undefined) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+export function rewardReceiptSummaryFromPersistedResult(input: {
+  rewardsEnabled: boolean;
+  recipientEmail: string | null | undefined;
+  account: {
+    email: string | null;
+    normalizedEmail?: string | null;
+    status?: string | null;
+    emailVerifiedAt?: Date | string | null;
+    rewardBalance?: {
+      availablePoints: number;
+      pendingPoints: number;
+    } | null;
+  } | null | undefined;
+  pointsEarned: number;
+  ledgerCount: number;
+}) {
+  if (!input.rewardsEnabled) return null;
+  if (!input.account || input.account.status !== "active" || !input.account.emailVerifiedAt) return null;
+  if (!safeNonnegativeInteger(input.pointsEarned) || input.pointsEarned <= 0) return null;
+  if (!Number.isSafeInteger(input.ledgerCount) || input.ledgerCount <= 0) return null;
+  const accountEmail = normalizeCustomerAccountEmail(input.account.normalizedEmail ?? input.account.email);
+  const recipientEmail = normalizeCustomerAccountEmail(input.recipientEmail);
+  if (!accountEmail || !recipientEmail || accountEmail !== recipientEmail) return null;
+  const availableBalance = input.account.rewardBalance?.availablePoints ?? 0;
+  const pendingBalance = input.account.rewardBalance?.pendingPoints ?? 0;
+  if (!safeNonnegativeInteger(availableBalance) || !safeNonnegativeInteger(pendingBalance)) return null;
+  return {
+    pointsEarned: input.pointsEarned,
+    availableBalance,
+    pendingBalance,
+    rewardsUrl: accountRewardsUrl
+  };
 }
 
 export function configuredRewardPendingDays(env: Record<string, string | undefined> = process.env) {
@@ -328,6 +367,41 @@ export async function rewardSummaryForPosSaleReference(
     ledgerCount: ledger.length,
     status: pointsEarned <= 0 ? "not_eligible" : netPoints <= 0 ? "reversed" : "available"
   };
+}
+
+export async function rewardReceiptSummaryForPosSaleReference(
+  saleReference: string,
+  recipientEmail: string | null | undefined,
+  client: RewardLedgerTx | typeof prisma = prisma
+) {
+  if (!posRewardFeatureEnabled()) return null;
+  const earnEntry = await client.rewardLedgerEntry.findUnique({
+    where: { idempotencyKey: `rewards:pos:earn:${saleReference}` },
+    select: {
+      points: true,
+      customerAccount: {
+        select: {
+          email: true,
+          normalizedEmail: true,
+          status: true,
+          emailVerifiedAt: true,
+          rewardBalance: {
+            select: {
+              availablePoints: true,
+              pendingPoints: true
+            }
+          }
+        }
+      }
+    }
+  });
+  return rewardReceiptSummaryFromPersistedResult({
+    rewardsEnabled: posRewardFeatureEnabled(),
+    recipientEmail,
+    account: earnEntry?.customerAccount ?? null,
+    pointsEarned: earnEntry?.points ?? 0,
+    ledgerCount: earnEntry ? 1 : 0
+  });
 }
 
 export async function awardRewardsForCompletedPosSale(

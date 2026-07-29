@@ -56,6 +56,7 @@ import {
 import {
   awardRewardsForCompletedPosSale,
   reverseRewardsForPosSale,
+  rewardReceiptSummaryForPosSaleReference,
   rewardSummaryForPosSaleReference
 } from "@/lib/customer-rewards";
 import { runRewardSerializableTransaction } from "@/lib/reward-transaction";
@@ -7029,7 +7030,7 @@ function posReceiptFulfillmentSummary(receipt: Pick<PosSaleReceiptDTO, "cashierN
   return `In-person checkout${receipt.registerLabel ? ` at ${receipt.registerLabel}` : ""} with ${receipt.cashierName}.`;
 }
 
-function posReceiptEmailSnapshot(receipt: PosSaleReceiptDTO, supportEmail: string): ReceiptEmailSnapshot {
+async function posReceiptEmailSnapshot(receipt: PosSaleReceiptDTO, supportEmail: string, recipientEmail?: string | null): Promise<ReceiptEmailSnapshot> {
   return {
     sourceType: "POS_SALE",
     receiptNumber: receipt.saleReference,
@@ -7049,7 +7050,8 @@ function posReceiptEmailSnapshot(receipt: PosSaleReceiptDTO, supportEmail: strin
     paymentMethodLabel: receipt.paymentMethodLabel,
     fulfillmentMethod: "In-person POS",
     fulfillmentSummary: posReceiptFulfillmentSummary(receipt),
-    supportEmail
+    supportEmail,
+    rewardSummary: await rewardReceiptSummaryForPosSaleReference(receipt.saleReference, recipientEmail)
   };
 }
 
@@ -7976,7 +7978,7 @@ export async function createPosSale(
   return attachPosReceiptEmailDeliveryResult({
     receipt,
     requestedReceiptEmail,
-    snapshot: posReceiptEmailSnapshot(receipt, supportEmail),
+    snapshot: await posReceiptEmailSnapshot(receipt, supportEmail, requestedReceiptEmail),
     requestedByUserId: currentUser.id,
     requestId: input.requestId
   });
@@ -8007,7 +8009,7 @@ export async function sendPosReceiptEmail(
     recipientEmail: requestedEmail,
     deliveryType: "RESEND",
     idempotencyKey,
-    snapshot: posReceiptEmailSnapshot(receipt, supportEmail),
+    snapshot: await posReceiptEmailSnapshot(receipt, supportEmail, requestedEmail),
     requestedByUserId: currentUser.id,
     requestId: input.requestId
   });

@@ -1398,7 +1398,10 @@ test("success page and order confirmation include safe optional account rewards 
   assert.match(client, /No account required/);
   assert.match(emailTemplates, /Create your GameDayGrabs account to track orders and rewards/);
   assert.match(emailTemplates, /STOREFRONT_ACCOUNT_LOGIN_URL/);
-  assert.match(storefront, /buildReceiptEmail\(storefrontReceiptEmailSnapshot\(order, contactEmail\)\)/);
+  assert.match(storefront, /const receiptSnapshot = storefrontReceiptEmailSnapshot\(order, contactEmail, recipient\)/);
+  assert.match(storefront, /const receiptHasRewardSummary = Boolean\(receiptSnapshot\.rewardSummary\)/);
+  assert.match(storefront, /buildReceiptEmail\(receiptSnapshot\)/);
+  assert.match(storefront, /accountFeatures\.customerAccountsEnabled && !receiptHasRewardSummary/);
   assert.match(storefront, /subject: receiptEmail\.subject/);
   assert.match(storefront, /customerEmailEventId\("order_confirmation", order\.id\)/);
   assert.doesNotMatch(emailTemplates + client, /stripeCheckoutSessionId|stripePaymentIntentId|payment_method|raw Stripe|webhook body/i);

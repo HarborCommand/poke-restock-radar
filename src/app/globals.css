@@ -29549,6 +29549,30 @@ border-color: rgba(255, 106, 0, 0.42);
 background: #fff7ed;
 color: #b45309;
 }
+body .receipt-preview-fixture {
+display: grid;
+gap: 6px;
+min-width: 0;
+color: var(--muted);
+font-size: 0.78rem;
+font-weight: 900;
+}
+body .receipt-preview-fixture select {
+width: 100%;
+min-width: 0;
+border: 1px solid var(--border);
+border-radius: 12px;
+background: #fff;
+color: var(--ink);
+font: inherit;
+padding: 10px 12px;
+}
+body .receipt-preview-fixture span {
+color: var(--muted);
+font-size: 0.8rem;
+font-weight: 700;
+line-height: 1.45;
+}
 body .receipt-preview-meta {
 display: grid;
 grid-template-columns: repeat(3, minmax(0, 1fr));

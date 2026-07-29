@@ -298,6 +298,85 @@ test("receipt renderer produces POS receipt content without exposing internals",
   assert.doesNotMatch(combined, hiddenInternalPattern);
 });
 
+test("receipt renderer shows supplied persisted reward summary without calculating rewards", () => {
+  const email = buildReceiptEmail({
+    ...storefrontSnapshot,
+    rewardSummary: {
+      pointsEarned: 129,
+      availableBalance: 3905,
+      pendingBalance: 0,
+      rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+    }
+  });
+  const combined = `${email.html}\n${email.text}`;
+
+  assert.match(combined, /You earned 129 points!/);
+  assert.match(combined, /Points earned this purchase[\s\S]*\+129/);
+  assert.match(combined, /Available balance[\s\S]*3905 points/);
+  assert.doesNotMatch(combined, /Pending points/);
+  assert.match(combined, /View My Rewards/);
+  assert.match(combined, /https:\/\/www\.gamedaygrabs\.com\/account\/rewards/);
+  assert.doesNotMatch(combined, /threshold|progress|dollar value|expires/i);
+  assert.doesNotMatch(combined, /customerAccount|ledger|cost basis|profit|private note|internal note/i);
+  assert.doesNotMatch(receiptEmailSource, /rewardPointsForOrderSubtotal|rewardPointsForEligibleSubtotalCents|rewardLedgerEntry\.(create|upsert)|rewardBalance\.(create|update|upsert)/);
+});
+
+test("receipt renderer shows pending points only when supplied persisted pending balance is positive", () => {
+  const pending = buildReceiptEmail({
+    ...storefrontSnapshot,
+    rewardSummary: {
+      pointsEarned: 124,
+      availableBalance: 8012,
+      pendingBalance: 124,
+      rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+    }
+  });
+  const availableOnly = buildReceiptEmail({
+    ...posSnapshot,
+    rewardSummary: {
+      pointsEarned: 21,
+      availableBalance: 3926,
+      pendingBalance: 0,
+      rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+    }
+  });
+
+  assert.match(`${pending.html}\n${pending.text}`, /Pending points[\s\S]*124 points/);
+  assert.match(`${availableOnly.html}\n${availableOnly.text}`, /You earned 21 points!/);
+  assert.doesNotMatch(`${availableOnly.html}\n${availableOnly.text}`, /Pending points/);
+});
+
+test("receipt renderer omits reward block for guests, disabled rewards, missing ledger, malformed values, and unsafe reward links", () => {
+  const cases: ReceiptEmailSnapshot[] = [
+    storefrontSnapshot,
+    { ...storefrontSnapshot, rewardSummary: null },
+    { ...storefrontSnapshot, rewardSummary: { pointsEarned: 0, availableBalance: 10, pendingBalance: 0, rewardsUrl: "https://www.gamedaygrabs.com/account/rewards" } },
+    { ...storefrontSnapshot, rewardSummary: { pointsEarned: -1, availableBalance: 10, pendingBalance: 0, rewardsUrl: "https://www.gamedaygrabs.com/account/rewards" } },
+    { ...storefrontSnapshot, rewardSummary: { pointsEarned: 10, availableBalance: -1, pendingBalance: 0, rewardsUrl: "https://www.gamedaygrabs.com/account/rewards" } },
+    { ...storefrontSnapshot, rewardSummary: { pointsEarned: 10.5, availableBalance: 10, pendingBalance: 0, rewardsUrl: "https://www.gamedaygrabs.com/account/rewards" } },
+    { ...storefrontSnapshot, rewardSummary: { pointsEarned: 10, availableBalance: 10, pendingBalance: 0, rewardsUrl: "https://www.gamedaygrabs.com/account/rewards?customer=abc" } }
+  ];
+
+  for (const snapshot of cases) {
+    const email = buildReceiptEmail(snapshot);
+    const combined = `${email.html}\n${email.text}`;
+    assert.doesNotMatch(combined, /You earned \d+ points!/);
+    assert.doesNotMatch(combined, /View My Rewards/);
+  }
+});
+
+test("receipt footer removes internal customer-facing sentence while keeping support and test-preview footer", () => {
+  const real = buildReceiptEmail(storefrontSnapshot);
+  const testPreview = buildReceiptEmail(storefrontSnapshot, { testMode: true });
+  const combinedReal = `${real.html}\n${real.text}`;
+  const combinedPreview = `${testPreview.html}\n${testPreview.text}`;
+
+  assert.doesNotMatch(`${combinedReal}\n${combinedPreview}`, /This receipt contains customer-facing transaction information only/);
+  assert.match(combinedReal, /gamedaygrabs@outlook\.com/);
+  assert.match(combinedReal, /gamedaygrabs\.com/);
+  assert.match(combinedPreview, /This message was sent from the GameDayGrabs administrator receipt preview\./);
+});
+
 test("receipt delivery atomically claims a same-key resend before provider contact", async () => {
   const store = makeInMemoryDeliveryStore();
   let providerCount = 0;
@@ -461,6 +540,51 @@ test("receipt email configuration defaults disabled and normalizes recipients sa
   assert.equal(normalizeReceiptEmail(" Collector@Example.COM "), "collector@example.com");
   assert.equal(normalizeReceiptEmail("not-an-email"), null);
   assert.equal(maskReceiptEmail("Collector@Example.COM"), "c***@example.com");
+});
+
+test("receipt delivery and retry never create or modify authoritative rewards", async () => {
+  const store = makeInMemoryDeliveryStore();
+  let providerCount = 0;
+  const rewardSnapshot: ReceiptEmailSnapshot = {
+    ...posSnapshot,
+    rewardSummary: {
+      pointsEarned: 21,
+      availableBalance: 3926,
+      pendingBalance: 0,
+      rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+    }
+  };
+
+  const first = await runReceiptEmailDeliveryAttempt(
+    { ...deliveryAttemptInput("receipt:reward-snapshot"), snapshot: rewardSnapshot },
+    {
+      store,
+      render: buildReceiptEmail,
+      send: async (): Promise<EmailSendResult> => {
+        providerCount += 1;
+        return successfulSendResult();
+      },
+      providerName: "resend"
+    }
+  );
+  const retry = await runReceiptEmailDeliveryAttempt(
+    { ...deliveryAttemptInput("receipt:reward-snapshot"), snapshot: rewardSnapshot },
+    {
+      store,
+      render: buildReceiptEmail,
+      send: async (): Promise<EmailSendResult> => {
+        providerCount += 1;
+        return successfulSendResult();
+      },
+      providerName: "resend"
+    }
+  );
+
+  assert.equal(providerCount, 1);
+  assert.equal(first.status, "SENT");
+  assert.equal(retry.status, "SENT");
+  assert.equal(store.records().length, 1);
+  assert.doesNotMatch(receiptEmailSource, /rewardLedgerEntry\.(create|upsert|update|updateMany)|rewardBalance\.(create|upsert|update|updateMany)/);
 });
 
 test("receipt sender profiles are selected server-side with EMAIL_FROM fallback", () => {
@@ -788,11 +912,12 @@ test("delivery persistence is narrowly scoped, idempotent, and does not store re
 test("storefront sends exactly one automatic order-confirmation receipt on the durable paid side effect", () => {
   assert.match(storefrontSource, /async function completePaidCheckoutSideEffects\(order/);
   assert.match(storefrontSource, /if \(order\.paymentStatus !== "paid"\) return;/);
-  assert.match(storefrontSource, /await sendStorefrontOrderConfirmationEmail\(order\);/);
+  assert.match(storefrontSource, /await awardRewardsForPaidOrder\(order\);/);
+  assert.match(storefrontSource, /await sendStorefrontOrderConfirmationEmail\(await loadFreshStorefrontOrder\(order\.id\)\);/);
   assert.doesNotMatch(storefrontSource, /await sendStorefrontReceiptEmail\(order\);/);
   assert.doesNotMatch(storefrontSource, /receipt:storefront:initial:\$\{order\.id\}:\$\{recipient\}/);
   assert.match(storefrontSource, /receiptEmailEnabled\("STOREFRONT_ORDER"\)/);
-  assert.match(storefrontSource, /receiptPresentationEnabled[\s\S]{0,240}buildReceiptEmail\(storefrontReceiptEmailSnapshot\(order, contactEmail\)\)/);
+  assert.match(storefrontSource, /receiptPresentationEnabled[\s\S]{0,240}buildReceiptEmail\(receiptSnapshot\)/);
   assert.match(storefrontSource, /: buildOrderConfirmationEmail\(\{/);
   assert.match(storefrontSource, /subject: receiptEmail\.subject/);
   assert.match(storefrontSource, /from: receiptEmail \? receiptEmailSenderProfile\("STOREFRONT_ORDER"\)\.from : null/);
@@ -810,6 +935,24 @@ test("storefront sends exactly one automatic order-confirmation receipt on the d
   assert.match(radarAppSource, /Receipt resend is not configured\./);
   assert.match(radarAppSource, /receiptDeliveryStatus\?\.configured === true/);
   assert.match(radarAppSource, /disabled=\{receiptResending \|\| !storefrontReceiptResendReady\}/);
+});
+
+test("receipt reward summaries are built only from persisted linked-account rewards and recipient matches", () => {
+  assert.match(storefrontSource, /rewardReceiptSummaryFromPersistedResult/);
+  assert.match(storefrontSource, /recipientEmail/);
+  assert.match(storefrontSource, /account: order\.customerAccount/);
+  assert.match(storefrontSource, /pointsEarned: rewardSummary\.pointsEarned/);
+  assert.match(storefrontSource, /ledgerCount: rewardSummary\.ledgerCount/);
+  assert.match(radarServiceSource, /rewardReceiptSummaryForPosSaleReference\(receipt\.saleReference, recipientEmail\)/);
+  assert.match(radarServiceSource, /snapshot: await posReceiptEmailSnapshot\(receipt, supportEmail, requestedReceiptEmail\)/);
+  assert.match(radarServiceSource, /snapshot: await posReceiptEmailSnapshot\(receipt, supportEmail, requestedEmail\)/);
+  assert.match(receiptPreviewSource, /pos_recipient_mismatch/);
+  assert.match(receiptPreviewSource, /rewards_disabled/);
+  assert.match(receiptPreviewSource, /guest_unlinked/);
+  assert.doesNotMatch(receiptEmailSource, /customerAccountId|ledgerId|rewardLedgerEntryId|metadataJson/);
+  assert.match(receiptEmailSource, /validatedReceiptRewardSummary/);
+  assert.match(receiptEmailSource, new RegExp('url\\.pathname === "/account/rewards"'));
+  assert.match(receiptEmailSource, /url\.search === ""/);
 });
 
 test("POS checkout keeps email optional, validates when checked, and never creates accounts from guest receipt email", () => {
