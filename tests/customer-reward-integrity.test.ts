@@ -11,7 +11,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const testDbDir = mkdtempSync(path.join(tmpdir(), "gdg-customer-reward-integrity-"));
 const testDbPath = path.join(testDbDir, "customer-reward-integrity.sqlite");
 process.env.DATABASE_URL = `file:${testDbPath}`;
-process.env.CUSTOMER_ACCOUNTS_ENABLED = "false";
+process.env.CUSTOMER_ACCOUNTS_ENABLED = "true";
 process.env.CUSTOMER_REWARDS_ENABLED = "false";
 process.env.CUSTOMER_POS_REWARDS_ENABLED = "false";
 process.env.CUSTOMER_REWARD_REDEMPTION_ENABLED = "false";
@@ -40,12 +40,20 @@ function unique(prefix: string) {
   return `${prefix}-${Date.now()}-${uniqueCounter}`;
 }
 
-function disabledRewardEnv() {
-  process.env.CUSTOMER_ACCOUNTS_ENABLED = "false";
+function approvedRuntimeEnv() {
+  process.env.CUSTOMER_ACCOUNTS_ENABLED = "true";
   process.env.CUSTOMER_REWARDS_ENABLED = "false";
   process.env.CUSTOMER_POS_REWARDS_ENABLED = "false";
   process.env.CUSTOMER_REWARD_REDEMPTION_ENABLED = "false";
   process.env.CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED = "false";
+}
+
+function setTestEnv(name: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
 }
 
 async function createOwner() {
@@ -137,43 +145,50 @@ async function createPosSale(userId: string, customerAccountId: string | null, o
   saleReference: string | null;
   refundStatus: string | null;
   refundedAmount: number;
+  platform: string;
+  rewardsEligible: boolean;
 }> = {}) {
   const item = await createInventoryItem(userId);
+  const saleReference = Object.prototype.hasOwnProperty.call(overrides, "saleReference") ? overrides.saleReference ?? null : unique("POS");
   return prisma.inventorySale.create({
     data: {
       userId,
       inventoryItemId: item.id,
       customerAccountId,
       customerEmail: overrides.customerEmail ?? null,
-      saleReference: overrides.saleReference ?? unique("POS"),
+      saleReference,
       quantitySold: 1,
       soldPricePerItem: 20,
       grossSale: 20,
-      platform: "POS",
+      platform: overrides.platform ?? "pos",
       netSale: 20,
       costBasis: 10,
       profitLoss: 10,
       refundStatus: overrides.refundStatus ?? null,
       refundedAmount: overrides.refundedAmount ?? 0,
+      rewardsEligible: overrides.rewardsEligible ?? true,
       soldAt: new Date("2026-01-02T00:00:00.000Z")
     }
   });
 }
 
-test("empty customer and reward report is aggregate, read-only, and passable with disabled flags", async () => {
-  disabledRewardEnv();
+test("empty customer and reward report is aggregate, read-only, and passable with approved runtime flags", async () => {
+  approvedRuntimeEnv();
   const owner = await createOwner();
   const report = await buildCustomerRewardIntegrityReport(owner.id);
 
   assert.equal(report.readOnly, true);
   assert.equal(report.overallClassification, "PASS");
   assert.equal(report.sections.runtimeConfiguration.classification, "PASS");
+  assert.equal(report.sections.runtimeConfiguration.metrics.customerAccountsEnabled, true);
+  assert.equal(report.sections.runtimeConfiguration.metrics.customerAccountsExpectedEnabled, true);
+  assert.equal(report.sections.runtimeConfiguration.metrics.rewardEarningExpectedEnabled, false);
   assert.equal(report.sections.customerAccountIntegrity.metrics.totalCustomerAccounts, 0);
   assert.equal(report.sections.rewardLedgerIntegrity.metrics.allRewardLedgerEntries, 0);
 });
 
 test("balanced accounts reconcile using existing ledger math without exposing identifiers", async () => {
-  disabledRewardEnv();
+  approvedRuntimeEnv();
   const owner = await createOwner();
   const customer = await createCustomer(owner.id, { email: "privacy.fixture@example.test" });
   const availableEarn = await prisma.rewardLedgerEntry.create({
@@ -227,7 +242,7 @@ test("balanced accounts reconcile using existing ledger math without exposing id
 });
 
 test("clean three-account dataset reports active verified aggregate counts", async () => {
-  disabledRewardEnv();
+  approvedRuntimeEnv();
   const owner = await createOwner();
   for (let index = 0; index < 3; index += 1) {
     const customer = await createCustomer(owner.id);
@@ -256,7 +271,7 @@ test("clean three-account dataset reports active verified aggregate counts", asy
 });
 
 test("available pending and lifetime balance mismatches are independently blocked", async () => {
-  disabledRewardEnv();
+  approvedRuntimeEnv();
   const owner = await createOwner();
   const customer = await createCustomer(owner.id, { normalizedEmail: null, emailVerifiedAt: null });
   await prisma.rewardLedgerEntry.create({
@@ -296,7 +311,7 @@ test("available pending and lifetime balance mismatches are independently blocke
 });
 
 test("identity, balance, ledger, order, and POS anomalies are classified without PII", async () => {
-  disabledRewardEnv();
+  approvedRuntimeEnv();
   const owner = await createOwner();
   const duplicateA = await createCustomer(owner.id, {
     email: `${unique("dupe-a")}@example.test`,
@@ -369,7 +384,7 @@ test("identity, balance, ledger, order, and POS anomalies are classified without
 });
 
 test("guest paid orders remain warnings rather than corruption", async () => {
-  disabledRewardEnv();
+  approvedRuntimeEnv();
   const owner = await createOwner();
   await createPaidOrder(owner.id, null, {
     customerEmail: "guest.checkout@example.test",
@@ -384,7 +399,7 @@ test("guest paid orders remain warnings rather than corruption", async () => {
 });
 
 test("elapsed pending rewards warn when no scheduled elapsed-release path exists", async () => {
-  disabledRewardEnv();
+  approvedRuntimeEnv();
   const owner = await createOwner();
   const customer = await createCustomer(owner.id);
   await setBalance(customer.id, 0, 10, 10);
@@ -409,24 +424,182 @@ test("elapsed pending rewards warn when no scheduled elapsed-release path exists
   assert.equal(report.sections.pendingReleaseReadiness.metrics.releaseCurrentlyFulfillmentTriggeredOnly, true);
 });
 
-test("enabled customer or reward runtime flags block production readiness", async () => {
+test("runtime policy blocks disabled accounts and each enabled reward capability independently", async () => {
   const owner = await createOwner();
-  process.env.CUSTOMER_ACCOUNTS_ENABLED = "true";
-  process.env.CUSTOMER_REWARDS_ENABLED = "true";
-  process.env.CUSTOMER_POS_REWARDS_ENABLED = "true";
-  process.env.CUSTOMER_REWARD_REDEMPTION_ENABLED = "true";
-  process.env.CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED = "true";
+
+  const cases: Array<[string, string, string]> = [
+    ["CUSTOMER_ACCOUNTS_ENABLED", "false", "CUSTOMER_ACCOUNTS_DISABLED_WHILE_ACCOUNT_ACCESS_EXPECTED"],
+    ["CUSTOMER_REWARDS_ENABLED", "true", "CUSTOMER_REWARDS_ENABLED_BEFORE_CERTIFICATION"],
+    ["CUSTOMER_POS_REWARDS_ENABLED", "true", "CUSTOMER_POS_REWARDS_ENABLED_BEFORE_CERTIFICATION"],
+    ["CUSTOMER_REWARD_REDEMPTION_ENABLED", "true", "CUSTOMER_REWARD_REDEMPTION_ENABLED_WITHOUT_APPROVAL"],
+    ["CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED", "true", "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED_WITHOUT_APPROVAL"]
+  ];
+
+  for (const [flag, value, reason] of cases) {
+    approvedRuntimeEnv();
+    process.env[flag] = value;
+    const report = await buildCustomerRewardIntegrityReport(owner.id);
+    assert.equal(report.sections.runtimeConfiguration.classification, "BLOCKED", flag);
+    assert.ok(report.sections.runtimeConfiguration.reasons.includes(reason), flag);
+  }
+
+  approvedRuntimeEnv();
+});
+
+test("environment labeling uses Vercel target instead of NODE_ENV", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  const previousNodeEnv = process.env.NODE_ENV;
+
+  setTestEnv("VERCEL_ENV", "production");
+  setTestEnv("NODE_ENV", "test");
+  let report = await buildCustomerRewardIntegrityReport(owner.id);
+  assert.equal(report.environment, "production");
+  assert.equal(report.deploymentTarget, "production");
+  assert.equal(report.sections.runtimeConfiguration.metrics.deploymentTarget, "production");
+
+  setTestEnv("VERCEL_ENV", "preview");
+  setTestEnv("NODE_ENV", "production");
+  report = await buildCustomerRewardIntegrityReport(owner.id);
+  assert.equal(report.environment, "non_production");
+  assert.equal(report.deploymentTarget, "preview");
+
+  setTestEnv("VERCEL_ENV", undefined);
+  setTestEnv("NODE_ENV", "production");
+  report = await buildCustomerRewardIntegrityReport(owner.id);
+  assert.equal(report.environment, "non_production");
+  assert.equal(report.deploymentTarget, "unknown");
+
+  if (previousVercelEnv === undefined) {
+    setTestEnv("VERCEL_ENV", undefined);
+  } else {
+    setTestEnv("VERCEL_ENV", previousVercelEnv);
+  }
+  if (previousNodeEnv === undefined) {
+    setTestEnv("NODE_ENV", undefined);
+  } else {
+    setTestEnv("NODE_ENV", previousNodeEnv);
+  }
+});
+
+test("POS diagnostics count distinct canonical POS transactions and exclude non-POS sales", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  await setBalance(customer.id, 0, 0, 0);
+
+  await createPosSale(owner.id, customer.id, { saleReference: "POS-ONE", customerEmail: customer.email });
+  await createPosSale(owner.id, customer.id, { saleReference: "POS-MULTI", customerEmail: customer.email });
+  await createPosSale(owner.id, customer.id, { saleReference: "POS-MULTI", customerEmail: customer.email });
+  await createPosSale(owner.id, customer.id, { saleReference: "POS-MULTI", customerEmail: customer.email });
+  await createPosSale(owner.id, customer.id, { saleReference: "POS-TWO", customerEmail: customer.email });
+  await createPosSale(owner.id, customer.id, { saleReference: "WEB-IGNORED", customerEmail: customer.email, platform: "website" });
+  await createPosSale(owner.id, customer.id, { saleReference: "LOCAL-IGNORED", customerEmail: customer.email, platform: "local" });
 
   const report = await buildCustomerRewardIntegrityReport(owner.id);
 
-  assert.equal(report.sections.runtimeConfiguration.classification, "BLOCKED");
-  assert.ok(report.sections.runtimeConfiguration.reasons.includes("CUSTOMER_ACCOUNTS_ENABLED_TRUE_DURING_DISABLED_AUDIT"));
-  assert.ok(report.sections.runtimeConfiguration.reasons.includes("CUSTOMER_REWARD_REDEMPTION_ENABLED_TRUE_DURING_DISABLED_AUDIT"));
-  disabledRewardEnv();
+  assert.equal(report.sections.customerLinking.metrics.posSaleLineRecordsEvaluated, 5);
+  assert.equal(report.sections.customerLinking.metrics.posSalesTotal, 3);
+  assert.equal(report.sections.customerLinking.metrics.posSalesLinkedToCustomerAccount, 3);
+  assert.equal(report.sections.customerLinking.metrics.posPlatformFilter, "pos");
+  assert.equal(report.sections.posRewards.metrics.posSaleLineRecordsEvaluated, 5);
+  assert.equal(report.sections.posRewards.metrics.posSaleTransactionsEvaluated, 3);
+});
+
+test("POS transaction anomalies are aggregated once per sale reference without exposing references", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customerA = await createCustomer(owner.id);
+  const customerB = await createCustomer(owner.id);
+
+  await createPosSale(owner.id, customerA.id, {
+    saleReference: "POS-CONFLICT",
+    customerEmail: customerA.email,
+    refundStatus: "refunded",
+    refundedAmount: 20
+  });
+  await createPosSale(owner.id, customerB.id, {
+    saleReference: "POS-CONFLICT",
+    customerEmail: customerB.email,
+    refundStatus: null,
+    refundedAmount: 0
+  });
+  await createPosSale(owner.id, null, { saleReference: null, customerEmail: null });
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const payload = JSON.stringify(report);
+
+  assert.equal(report.sections.customerLinking.metrics.posSaleTransactionsWithConflictingCustomerLinks, 1);
+  assert.equal(report.sections.customerLinking.metrics.posSaleTransactionsWithIncompatibleRefundState, 1);
+  assert.equal(report.sections.customerLinking.metrics.posSaleLineRecordsMissingSaleReference, 1);
+  assert.ok(report.sections.customerLinking.reasons.includes("POS_TRANSACTION_CONFLICTING_CUSTOMER_LINKS"));
+  assert.ok(report.sections.posRewards.reasons.includes("POS_TRANSACTION_INCOMPATIBLE_REFUND_STATE"));
+  assert.ok(report.sections.posRewards.reasons.includes("POS_TRANSACTION_GROUPING_UNAVAILABLE_FOR_MISSING_REFERENCE"));
+  assert.ok(!payload.includes("POS-CONFLICT"));
+});
+
+test("refunded multi-line POS sale produces one unreversed reward finding", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  const saleReference = "POS-REFUNDED-MULTI";
+  await createPosSale(owner.id, customer.id, { saleReference, customerEmail: customer.email, refundStatus: "refunded", refundedAmount: 20 });
+  await createPosSale(owner.id, customer.id, { saleReference, customerEmail: customer.email, refundStatus: "refunded", refundedAmount: 20 });
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 40,
+      type: "earn",
+      reason: "POS purchase",
+      status: "available",
+      idempotencyKey: `rewards:pos:earn:${saleReference}`,
+      source: "pos"
+    }
+  });
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+
+  assert.equal(report.sections.posRewards.metrics.refundedSalesWithUnreversedPoints, 1);
+  assert.ok(report.sections.posRewards.reasons.includes("REFUNDED_POS_SALE_WITH_UNREVERSED_REWARDS"));
+  assert.ok(!JSON.stringify(report).includes(saleReference));
+});
+
+test("identity comparisons use the authoritative account email normalizer", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id, {
+    email: "collector.normalizer@example.test",
+    normalizedEmail: "collector.normalizer@example.test"
+  });
+  await createPaidOrder(owner.id, customer.id, { customerEmail: " Collector.Normalizer@Example.TEST " });
+  await createPosSale(owner.id, customer.id, { customerEmail: " Collector.Normalizer@Example.TEST " });
+  await createPaidOrder(owner.id, customer.id, { customerEmail: "not-an-email" });
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+
+  assert.equal(report.sections.customerLinking.metrics.paidOrdersWithEmailMismatch, 0);
+  assert.equal(report.sections.customerLinking.metrics.posSalesWithEmailMismatch, 0);
+});
+
+test("schema-enforced integrity checks are not falsely reported as verified zeroes", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.entriesWithMissingCustomerAccount, null);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.entriesWithMissingCustomerAccountSchemaEnforced, true);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.orderLinkedEntriesWithMissingStorefrontOrder, null);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.orderLinkedEntriesWithMissingStorefrontOrderSchemaEnforced, true);
+  assert.equal(report.sections.rewardBalanceReconciliation.metrics.balancesWithoutAccounts, null);
+  assert.equal(report.sections.rewardBalanceReconciliation.metrics.balancesWithoutAccountsSchemaEnforced, true);
+  assert.equal(report.sections.rewardBalanceReconciliation.metrics.accountsWithMultipleBalanceRecords, null);
+  assert.equal(report.sections.rewardBalanceReconciliation.metrics.accountsWithMultipleBalanceRecordsSchemaEnforced, true);
 });
 
 test("report applies bounded scans and returns unavailable instead of an unbounded result", async () => {
-  disabledRewardEnv();
+  approvedRuntimeEnv();
   const owner = await createOwner();
   await prisma.customerAccount.createMany({
     data: Array.from({ length: 1_001 }, (_, index) => ({
@@ -442,6 +615,8 @@ test("report applies bounded scans and returns unavailable instead of an unbound
 
   assert.equal(report.sections.customerAccountIntegrity.classification, "UNAVAILABLE");
   assert.ok(report.sections.customerAccountIntegrity.reasons.includes("REPORT_LIMIT_REACHED"));
+  assert.equal(report.sections.customerAccountIntegrity.metrics.boundedAccountLimit, 1_000);
+  assert.equal(report.sections.customerAccountIntegrity.metrics.boundedSamplePartial, true);
 });
 
 test("route and UI are admin-only, no-store, GET-only, and mutation-free", () => {
@@ -456,8 +631,15 @@ test("route and UI are admin-only, no-store, GET-only, and mutation-free", () =>
   assert.match(routeSource, /export async function GET/);
   assert.doesNotMatch(routeSource, /export async function (POST|PUT|PATCH|DELETE)/);
   assert.doesNotMatch(serviceSource, /\bprisma\.[a-zA-Z]+?\.(create|update|upsert|delete|deleteMany|updateMany)\s*\(/);
+  assert.match(serviceSource, /import \{ normalizeCustomerAccountEmail \} from "@\/lib\/customer-account-auth"/);
+  assert.doesNotMatch(serviceSource, /function normalizedEmail/);
   assert.match(serviceSource, /findMany\(\{[\s\S]*take: boundedAccountLimit \+ 1/);
+  assert.match(serviceSource, /env\.VERCEL_ENV === "production" \? "production" : "non_production"/);
   assert.match(uiSource, /Customer &amp; Reward Integrity/);
+  assert.match(
+    uiSource,
+    /Customer accounts are expected to be available\. Reward earning, POS rewards, redemption, and administrative adjustments are[\s\S]*expected to remain disabled until separately certified\./
+  );
   assert.match(uiSource, /This report is read-only and does not modify customer accounts, rewards, orders, or balances\./);
   assert.doesNotMatch(uiSource, /Reconcile rewards|Fix rewards|Repair customer|Adjust points/);
 });

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
+import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
 import { configuredRewardPendingDays } from "@/lib/customer-rewards";
 import { calculateExpectedRewardBalance } from "@/lib/reward-reconciliation";
 import { workspaceCustomerWhereWithLegacy } from "@/lib/customer-workspace";
@@ -13,6 +14,7 @@ const boundedAccountLimit = 1_000;
 const boundedLedgerEntryLimit = 10_000;
 const boundedOrderLimit = 5_000;
 const boundedPosSaleLimit = 5_000;
+const canonicalPosPlatforms = ["pos", "POS"] as const;
 
 const paidOrderWhere = {
   paymentStatus: "paid",
@@ -31,12 +33,13 @@ function section<T extends Record<string, unknown>>(
   metrics: T,
   blockedReasons: string[],
   warningReasons: string[] = [],
-  unavailable = false
+  unavailable: boolean | string[] = false
 ): Section<T> {
-  if (unavailable) {
+  const unavailableReasons = Array.isArray(unavailable) ? unavailable : unavailable ? ["REPORT_LIMIT_REACHED"] : [];
+  if (unavailableReasons.length) {
     return {
       classification: "UNAVAILABLE",
-      reasons: ["REPORT_LIMIT_REACHED", ...blockedReasons, ...warningReasons],
+      reasons: [...unavailableReasons, ...blockedReasons, ...warningReasons],
       metrics
     };
   }
@@ -54,10 +57,6 @@ function statusOf(entry: { points: number; type: string; status: string | null }
   if (entry.points < 0 || entry.type === "reverse") return "reversed";
   if (entry.points > 0) return "available";
   return "canceled";
-}
-
-function normalizedEmail(value: string | null | undefined) {
-  return value?.trim().toLowerCase() || null;
 }
 
 function countWhere<T>(values: T[], predicate: (value: T) => boolean) {
@@ -83,6 +82,100 @@ function hasCanceledOrRefundedOrderState(order: { status: string; paymentStatus:
   );
 }
 
+function deploymentTarget(env: Record<string, string | undefined> = process.env): CustomerRewardIntegrityReportDTO["deploymentTarget"] {
+  if (env.VERCEL_ENV === "production") return "production";
+  if (env.VERCEL_ENV === "preview") return "preview";
+  if (env.VERCEL_ENV === "development") return "development";
+  if (!env.VERCEL_ENV && env.NODE_ENV !== "production") return "local";
+  return "unknown";
+}
+
+function reportEnvironment(env: Record<string, string | undefined> = process.env): CustomerRewardIntegrityReportDTO["environment"] {
+  return env.VERCEL_ENV === "production" ? "production" : "non_production";
+}
+
+function accountEmailMismatch(record: {
+  customerAccountId: string | null;
+  customerEmail?: string | null;
+  email?: string | null;
+  customerAccount: { normalizedEmail: string | null; email: string } | null;
+}) {
+  if (!record.customerAccountId || !record.customerAccount) return false;
+  const sourceEmail = normalizeCustomerAccountEmail(record.customerEmail ?? record.email);
+  const accountEmail = normalizeCustomerAccountEmail(record.customerAccount.normalizedEmail ?? record.customerAccount.email);
+  return Boolean(sourceEmail && accountEmail && sourceEmail !== accountEmail);
+}
+
+type PosSaleRow = {
+  customerAccountId: string | null;
+  customerEmail: string | null;
+  platform: string;
+  saleReference: string | null;
+  rewardsEligible: boolean;
+  refundStatus: string | null;
+  refundedAmount: number;
+  customerAccount: {
+    status: string;
+    normalizedEmail: string | null;
+    email: string;
+    emailVerifiedAt: Date | null;
+  } | null;
+};
+
+function saleReferenceKey(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed || null;
+}
+
+function aggregatePosTransactions(rows: PosSaleRow[]) {
+  const missingReferenceRows = rows.filter((sale) => !saleReferenceKey(sale.saleReference));
+  const grouped = new Map<string, PosSaleRow[]>();
+  for (const sale of rows) {
+    const reference = saleReferenceKey(sale.saleReference);
+    if (!reference) continue;
+    const list = grouped.get(reference) ?? [];
+    list.push(sale);
+    grouped.set(reference, list);
+  }
+
+  const transactions = [...grouped.entries()].map(([reference, lines]) => {
+    const linkedCustomerAccountIds = new Set(lines.map((line) => line.customerAccountId).filter(Boolean) as string[]);
+    const hasLinkedRows = linkedCustomerAccountIds.size > 0;
+    const hasUnlinkedRows = lines.some((line) => !line.customerAccountId);
+    const refundStates = new Set(lines.map((line) => line.refundStatus ?? "none"));
+    const hasRefundedLine = lines.some((line) => line.refundStatus === "refunded");
+    const hasActiveLine = lines.some((line) => line.refundStatus !== "refunded");
+    const customerAccount = lines.find((line) => line.customerAccount)?.customerAccount ?? null;
+    const customerAccountId = linkedCustomerAccountIds.size === 1 ? [...linkedCustomerAccountIds][0] : null;
+    return {
+      saleReference: reference,
+      lineCount: lines.length,
+      customerAccountId,
+      linked: hasLinkedRows,
+      unlinked: !hasLinkedRows,
+      linkedToInactiveAccount: hasLinkedRows && customerAccount?.status !== "active",
+      linkedToUnverifiedAccount: hasLinkedRows && !customerAccount?.emailVerifiedAt,
+      emailMismatch: lines.some(accountEmailMismatch),
+      rewardsEligible: lines.some((line) => line.rewardsEligible),
+      refunded: hasRefundedLine && !hasActiveLine,
+      partiallyRefunded: lines.some((line) => line.refundedAmount > 0) && !hasRefundedLine,
+      aggregateRefundedAmount: safeSum(lines.map((line) => Number(line.refundedAmount) || 0)),
+      conflictingCustomerLinks: linkedCustomerAccountIds.size > 1,
+      contradictoryIdentityRows: hasLinkedRows && hasUnlinkedRows,
+      incompatibleRefundState: refundStates.size > 1 && hasRefundedLine && hasActiveLine
+    };
+  });
+
+  return {
+    transactions,
+    missingReferenceLineCount: missingReferenceRows.length,
+    missingReferenceAffectedRecords: missingReferenceRows.length,
+    conflictingCustomerLinkTransactions: transactions.filter((transaction) => transaction.conflictingCustomerLinks).length,
+    contradictoryIdentityTransactions: transactions.filter((transaction) => transaction.contradictoryIdentityRows).length,
+    incompatibleRefundStateTransactions: transactions.filter((transaction) => transaction.incompatibleRefundState).length
+  };
+}
+
 export async function buildCustomerRewardIntegrityReport(ownerUserId: string): Promise<CustomerRewardIntegrityReportDTO> {
   const generatedAt = new Date();
   const customerScope = await workspaceCustomerWhereWithLegacy(prisma, ownerUserId);
@@ -94,6 +187,12 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     customerPosRewardsEnabled: config.customerPosRewardsEnabled,
     customerRewardRedemptionEnabled: config.customerRewardRedemptionEnabled,
     customerRewardAdminAdjustmentsEnabled: config.customerRewardAdminAdjustmentsEnabled,
+    customerAccountsExpectedEnabled: true,
+    rewardEarningExpectedEnabled: false,
+    posRewardEarningExpectedEnabled: false,
+    redemptionExpectedEnabled: false,
+    adminAdjustmentsExpectedEnabled: false,
+    deploymentTarget: deploymentTarget(),
     accountProvider: config.accountProvider,
     rewardProvider: config.rewardsProvider,
     configuredPendingDays,
@@ -104,11 +203,11 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     refundReversalExists: true
   };
   const runtimeBlocked = [
-    config.customerAccountsEnabled ? "CUSTOMER_ACCOUNTS_ENABLED_TRUE_DURING_DISABLED_AUDIT" : null,
-    config.customerRewardsEnabled ? "CUSTOMER_REWARDS_ENABLED_TRUE_DURING_DISABLED_AUDIT" : null,
-    config.customerPosRewardsEnabled ? "CUSTOMER_POS_REWARDS_ENABLED_TRUE_DURING_DISABLED_AUDIT" : null,
-    config.customerRewardRedemptionEnabled ? "CUSTOMER_REWARD_REDEMPTION_ENABLED_TRUE_DURING_DISABLED_AUDIT" : null,
-    config.customerRewardAdminAdjustmentsEnabled ? "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED_TRUE_DURING_DISABLED_AUDIT" : null
+    !config.customerAccountsEnabled ? "CUSTOMER_ACCOUNTS_DISABLED_WHILE_ACCOUNT_ACCESS_EXPECTED" : null,
+    config.customerRewardsEnabled ? "CUSTOMER_REWARDS_ENABLED_BEFORE_CERTIFICATION" : null,
+    config.customerPosRewardsEnabled ? "CUSTOMER_POS_REWARDS_ENABLED_BEFORE_CERTIFICATION" : null,
+    config.customerRewardRedemptionEnabled ? "CUSTOMER_REWARD_REDEMPTION_ENABLED_WITHOUT_APPROVAL" : null,
+    config.customerRewardAdminAdjustmentsEnabled ? "CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED_WITHOUT_APPROVAL" : null
   ].filter(Boolean) as string[];
 
   const [customerTotal, customers, duplicateGroups, balanceCount, negativeBalanceCount] = await Promise.all([
@@ -178,7 +277,9 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     accountsWithInconsistentStatusVerification: countWhere(
       boundedCustomers,
       (customer) => customer.status !== "active" && Boolean(customer.emailVerifiedAt)
-    )
+    ),
+    boundedAccountLimit,
+    boundedSamplePartial: customerLimitReached
   };
 
   const customerSection = section(
@@ -230,7 +331,7 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
       take: boundedOrderLimit + 1
     }),
     prisma.inventorySale.findMany({
-      where: { userId: ownerUserId },
+      where: { userId: ownerUserId, platform: { in: [...canonicalPosPlatforms] } },
       select: {
         customerAccountId: true,
         customerEmail: true,
@@ -257,18 +358,12 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
   const boundedStorefrontCustomers = storefrontCustomers.slice(0, boundedOrderLimit);
   const boundedPaidOrders = paidOrders.slice(0, boundedOrderLimit);
   const boundedPosSales = posSales.slice(0, boundedPosSaleLimit);
-  const emailMismatch = (record: {
-    customerAccountId: string | null;
-    customerEmail?: string | null;
-    email?: string | null;
-    customerAccount: { normalizedEmail: string | null; email: string } | null;
-  }) => {
-    if (!record.customerAccountId || !record.customerAccount) return false;
-    const sourceEmail = normalizedEmail(record.customerEmail ?? record.email);
-    const accountEmail = normalizedEmail(record.customerAccount.normalizedEmail ?? record.customerAccount.email);
-    return Boolean(sourceEmail && accountEmail && sourceEmail !== accountEmail);
-  };
+  const posTransactionSummary = aggregatePosTransactions(boundedPosSales);
+  const posTransactions = posTransactionSummary.transactions;
   const linkingMetrics = {
+    boundedOrderLimit,
+    boundedPosSaleLimit,
+    boundedSamplePartial: storefrontCustomersLimitReached || paidOrdersLimitReached || posSalesLimitReached,
     storefrontCustomerTotal: boundedStorefrontCustomers.length,
     storefrontCustomerLinkedToCustomerAccount: countWhere(boundedStorefrontCustomers, (customer) => Boolean(customer.customerAccountId)),
     storefrontCustomerUnlinked: countWhere(boundedStorefrontCustomers, (customer) => !customer.customerAccountId),
@@ -288,19 +383,20 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
       boundedPaidOrders,
       (order) => Boolean(order.customerAccountId) && !order.customerAccount?.emailVerifiedAt
     ),
-    paidOrdersWithEmailMismatch: countWhere(boundedPaidOrders, emailMismatch),
-    posSalesTotal: boundedPosSales.length,
-    posSalesLinkedToCustomerAccount: countWhere(boundedPosSales, (sale) => Boolean(sale.customerAccountId)),
-    posSalesUnlinked: countWhere(boundedPosSales, (sale) => !sale.customerAccountId),
-    posSalesLinkedToInactiveAccount: countWhere(
-      boundedPosSales,
-      (sale) => Boolean(sale.customerAccountId) && sale.customerAccount?.status !== "active"
-    ),
-    posSalesLinkedToUnverifiedAccount: countWhere(
-      boundedPosSales,
-      (sale) => Boolean(sale.customerAccountId) && !sale.customerAccount?.emailVerifiedAt
-    ),
-    posSalesWithEmailMismatch: countWhere(boundedPosSales, emailMismatch)
+    paidOrdersWithEmailMismatch: countWhere(boundedPaidOrders, accountEmailMismatch),
+    posSaleLineRecordsEvaluated: boundedPosSales.length,
+    posSalesTotal: posTransactions.length,
+    posSalesLinkedToCustomerAccount: countWhere(posTransactions, (sale) => sale.linked),
+    posSalesUnlinked: countWhere(posTransactions, (sale) => sale.unlinked),
+    posSalesLinkedToInactiveAccount: countWhere(posTransactions, (sale) => sale.linkedToInactiveAccount),
+    posSalesLinkedToUnverifiedAccount: countWhere(posTransactions, (sale) => sale.linkedToUnverifiedAccount),
+    posSalesWithEmailMismatch: countWhere(posTransactions, (sale) => sale.emailMismatch),
+    posSaleLineRecordsMissingSaleReference: posTransactionSummary.missingReferenceLineCount,
+    posSaleMissingReferenceAffectedRecords: posTransactionSummary.missingReferenceAffectedRecords,
+    posSaleTransactionsWithConflictingCustomerLinks: posTransactionSummary.conflictingCustomerLinkTransactions,
+    posSaleTransactionsWithContradictoryIdentityRows: posTransactionSummary.contradictoryIdentityTransactions,
+    posSaleTransactionsWithIncompatibleRefundState: posTransactionSummary.incompatibleRefundStateTransactions,
+    posPlatformFilter: "pos" as const
   };
   const linkingSection = section(
     linkingMetrics,
@@ -309,13 +405,17 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
       linkingMetrics.paidOrdersLinkedToInactiveAccount > 0 ? "PAID_ORDER_LINKED_TO_INACTIVE_ACCOUNT" : null,
       linkingMetrics.paidOrdersWithEmailMismatch > 0 ? "PAID_ORDER_ACCOUNT_EMAIL_MISMATCH" : null,
       linkingMetrics.posSalesLinkedToInactiveAccount > 0 ? "POS_SALE_LINKED_TO_INACTIVE_ACCOUNT" : null,
-      linkingMetrics.posSalesWithEmailMismatch > 0 ? "POS_SALE_ACCOUNT_EMAIL_MISMATCH" : null
+      linkingMetrics.posSalesWithEmailMismatch > 0 ? "POS_SALE_ACCOUNT_EMAIL_MISMATCH" : null,
+      linkingMetrics.posSaleTransactionsWithConflictingCustomerLinks > 0 ? "POS_TRANSACTION_CONFLICTING_CUSTOMER_LINKS" : null,
+      linkingMetrics.posSaleTransactionsWithContradictoryIdentityRows > 0 ? "POS_TRANSACTION_CONTRADICTORY_CUSTOMER_IDENTITY" : null,
+      linkingMetrics.posSaleTransactionsWithIncompatibleRefundState > 0 ? "POS_TRANSACTION_INCOMPATIBLE_REFUND_STATE" : null
     ].filter(Boolean) as string[],
     [
       linkingMetrics.paidOrdersUnlinked > 0 ? "UNLINKED_HISTORICAL_PAID_ORDERS" : null,
       linkingMetrics.posSalesUnlinked > 0 ? "UNLINKED_HISTORICAL_POS_SALES" : null,
       linkingMetrics.paidOrdersLinkedToUnverifiedAccount > 0 ? "PAID_ORDER_LINKED_TO_UNVERIFIED_ACCOUNT" : null,
-      linkingMetrics.posSalesLinkedToUnverifiedAccount > 0 ? "POS_SALE_LINKED_TO_UNVERIFIED_ACCOUNT" : null
+      linkingMetrics.posSalesLinkedToUnverifiedAccount > 0 ? "POS_SALE_LINKED_TO_UNVERIFIED_ACCOUNT" : null,
+      linkingMetrics.posSaleLineRecordsMissingSaleReference > 0 ? "POS_SALE_REFERENCE_MISSING_FOR_TRANSACTION_GROUPING" : null
     ].filter(Boolean) as string[],
     storefrontCustomersLimitReached || paidOrdersLimitReached || posSalesLimitReached
   );
@@ -376,8 +476,13 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     if (entry.points < 0 && (status === "pending" || status === "available")) return true;
     return false;
   };
+  const reversalEntriesWithMissingOriginalEntry = ledgerLimitReached
+    ? null
+    : countWhere(boundedLedger, (entry) => Boolean(entry.reversalOfEntryId) && !ledgerIdSet.has(entry.reversalOfEntryId!));
   const ledgerMetrics = {
     allRewardLedgerEntries: ledgerCount,
+    boundedEntryLimit: boundedLedgerEntryLimit,
+    boundedSamplePartial: ledgerLimitReached,
     positiveEarnEntries: countWhere(boundedLedger, (entry) => entry.points > 0 && entry.type === "earn"),
     negativeReversalEntries: countWhere(boundedLedger, (entry) => entry.points < 0 || entry.type === "reverse"),
     pendingEntries: countWhere(boundedLedger, (entry) => statusOf(entry) === "pending"),
@@ -387,16 +492,19 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     onlineOrderSourceEntries: countWhere(boundedLedger, (entry) => entry.source === "stripe_checkout" || Boolean(entry.orderId)),
     posSourceEntries: countWhere(boundedLedger, (entry) => entry.source === "pos"),
     administrativeAdjustmentEntries: countWhere(boundedLedger, (entry) => entry.source === "admin_adjustment" || entry.source === "admin_backfill"),
-    entriesWithMissingCustomerAccount: countWhere(boundedLedger, (entry) => !entry.customerAccount),
-    orderLinkedEntriesWithMissingStorefrontOrder: countWhere(boundedLedger, (entry) => Boolean(entry.orderId) && !entry.order),
+    entriesWithMissingCustomerAccount: null,
+    entriesWithMissingCustomerAccountSchemaEnforced: true,
+    entriesWithMissingCustomerAccountConstraint: "Reward ledger entries require a customer account relation that cascades on account deletion.",
+    orderLinkedEntriesWithMissingStorefrontOrder: null,
+    orderLinkedEntriesWithMissingStorefrontOrderSchemaEnforced: true,
+    orderLinkedEntriesWithMissingStorefrontOrderConstraint:
+      "Order-linked reward entries use a storefront order relation that is nulled if the order is removed.",
     reversalEntriesMissingReversalOfEntryId: countWhere(
       boundedLedger,
       (entry) => (entry.points < 0 || entry.type === "reverse") && !entry.reversalOfEntryId
     ),
-    reversalEntriesWithMissingOriginalEntry: countWhere(
-      boundedLedger,
-      (entry) => Boolean(entry.reversalOfEntryId) && !ledgerIdSet.has(entry.reversalOfEntryId!)
-    ),
+    reversalEntriesWithMissingOriginalEntry,
+    reversalOriginalEntryCheckAvailable: !ledgerLimitReached,
     duplicateIdempotencyKeyGroups: duplicateLedgerKeyCounts.length,
     duplicateIdempotencyKeyRecords: safeSum(duplicateLedgerKeyCounts),
     ledgerEntriesWithZeroPoints: countWhere(boundedLedger, (entry) => entry.points === 0),
@@ -407,9 +515,9 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
   const ledgerSection = section(
     ledgerMetrics,
     [
-      ledgerMetrics.entriesWithMissingCustomerAccount > 0 ? "ORPHAN_REWARD_ACCOUNT_REFERENCE" : null,
-      ledgerMetrics.orderLinkedEntriesWithMissingStorefrontOrder > 0 ? "ORDER_LINKED_REWARD_MISSING_ORDER" : null,
-      ledgerMetrics.reversalEntriesWithMissingOriginalEntry > 0 ? "REWARD_REVERSAL_MISSING_ORIGINAL_ENTRY" : null,
+      ledgerMetrics.reversalEntriesWithMissingOriginalEntry !== null && ledgerMetrics.reversalEntriesWithMissingOriginalEntry > 0
+        ? "REWARD_REVERSAL_MISSING_ORIGINAL_ENTRY"
+        : null,
       ledgerMetrics.duplicateIdempotencyKeyGroups > 0 ? "DUPLICATE_REWARD_IDEMPOTENCY_KEY" : null,
       ledgerMetrics.ledgerEntriesWithInvalidStatusTypeCombinations > 0 ? "INVALID_REWARD_LEDGER_STATUS_TYPE" : null
     ].filter(Boolean) as string[],
@@ -460,9 +568,14 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     negativeAvailableBalances: countWhere(boundedCustomers, (customer) => (customer.rewardBalance?.availablePoints ?? 0) < 0),
     negativePendingBalances: countWhere(boundedCustomers, (customer) => (customer.rewardBalance?.pendingPoints ?? 0) < 0),
     negativeLifetimeEarnedBalances: countWhere(boundedCustomers, (customer) => (customer.rewardBalance?.lifetimeEarnedPoints ?? 0) < 0),
-    balancesWithoutAccounts: 0,
-    accountsWithMultipleBalanceRecords: 0,
+    balancesWithoutAccounts: null,
+    balancesWithoutAccountsSchemaEnforced: true,
+    balancesWithoutAccountsConstraint: "Reward balances require a customer account relation and cascade on account deletion.",
+    accountsWithMultipleBalanceRecords: null,
+    accountsWithMultipleBalanceRecordsSchemaEnforced: true,
+    accountsWithMultipleBalanceRecordsConstraint: "Reward balances are keyed one-to-one by customer account.",
     boundedEntryLimit: boundedLedgerEntryLimit,
+    boundedSamplePartial: customerLimitReached || ledgerLimitReached,
     truncatedAccounts: ledgerLimitReached ? boundedCustomers.length : 0,
     formula:
       "Expected lifetime is the sum of positive ledger points; pending is positive pending points minus reversal metadata pendingPointsReversed; available is positive available points plus legacy/admin/POS negative reversals or minus reversal metadata availablePointsReversed. Negative expected balances are clamped to zero, matching the existing read-only reward audit helper."
@@ -559,45 +672,52 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     list.push(entry);
     posEarnByReference.set(saleReference, list);
   }
-  const posSaleReferences = new Map(
-    boundedPosSales
-      .filter((sale) => Boolean(sale.customerAccountId))
-      .map((sale) => {
-        const reference = (sale as { saleReference?: string | null }).saleReference ?? null;
-        return [reference, sale] as const;
-      })
-      .filter(([reference]) => Boolean(reference))
-  );
+  const posSaleReferences = new Map(posTransactions.filter((sale) => sale.linked).map((sale) => [sale.saleReference, sale] as const));
+  const completedEligibleSalesWithoutEarnEntry = ledgerLimitReached
+    ? null
+    : countWhere(posTransactions, (sale) => sale.linked && sale.rewardsEligible && !posEarnByReference.has(sale.saleReference));
+  const posEarnEntriesWithoutIdentifiableSale = posSalesLimitReached
+    ? null
+    : countWhere(posEarnEntries, (entry) => {
+        const saleReference = entry.idempotencyKey?.replace(/^rewards:pos:earn:/, "") || null;
+        return !saleReference || saleReference === entry.idempotencyKey || !posSaleReferences.has(saleReference);
+      });
   const posMetrics = {
-    completedEligibleSalesWithEarnEntry: [...posEarnByReference.keys()].filter((reference) => posSaleReferences.has(reference)).length,
-    completedEligibleSalesWithoutEarnEntry: countWhere(
-      boundedPosSales,
-      (sale) => Boolean(sale.customerAccountId) && !posEarnByReference.has(sale.saleReference ?? "")
-    ),
+    posSaleLineRecordsEvaluated: boundedPosSales.length,
+    posSaleTransactionsEvaluated: posTransactions.length,
+    posSaleLineRecordsMissingSaleReference: posTransactionSummary.missingReferenceLineCount,
+    posSaleMissingReferenceAffectedRecords: posTransactionSummary.missingReferenceAffectedRecords,
+    posSaleTransactionsWithConflictingCustomerLinks: posTransactionSummary.conflictingCustomerLinkTransactions,
+    posSaleTransactionsWithContradictoryIdentityRows: posTransactionSummary.contradictoryIdentityTransactions,
+    posSaleTransactionsWithIncompatibleRefundState: posTransactionSummary.incompatibleRefundStateTransactions,
+    boundedPosSaleLimit,
+    boundedEntryLimit: boundedLedgerEntryLimit,
+    boundedSamplePartial: posSalesLimitReached || ledgerLimitReached,
+    completedEligibleSalesWithEarnEntry: [...posEarnByReference.keys()].filter((reference) => posSaleReferences.get(reference)?.rewardsEligible).length,
+    completedEligibleSalesWithoutEarnEntry,
     refundedSalesWithUnreversedPoints: countWhere(
-      boundedPosSales,
+      posTransactions,
       (sale) =>
         Boolean(
-          sale.customerAccountId &&
-            sale.refundStatus === "refunded" &&
-            !boundedLedger.some((entry) => entry.idempotencyKey?.startsWith(`rewards:pos:refund:${sale.saleReference ?? ""}`))
+          sale.linked &&
+            sale.refunded &&
+            posEarnByReference.has(sale.saleReference) &&
+            !boundedLedger.some((entry) => entry.idempotencyKey?.startsWith(`rewards:pos:refund:${sale.saleReference}`))
         )
     ),
     partiallyRefundedSalesWithNoReversal: countWhere(
-      boundedPosSales,
+      posTransactions,
       (sale) =>
         Boolean(
-          sale.customerAccountId &&
-            sale.refundedAmount > 0 &&
-            sale.refundStatus !== "refunded" &&
-            !boundedLedger.some((entry) => entry.idempotencyKey?.startsWith(`rewards:pos:refund:${sale.saleReference ?? ""}`))
+          sale.linked &&
+            sale.aggregateRefundedAmount > 0 &&
+            !sale.refunded &&
+            posEarnByReference.has(sale.saleReference) &&
+            !boundedLedger.some((entry) => entry.idempotencyKey?.startsWith(`rewards:pos:refund:${sale.saleReference}`))
         )
     ),
     duplicatePosEarnEntries: [...posEarnByReference.values()].filter((entries) => entries.length > 1).length,
-    posEarnEntriesWithoutIdentifiableSale: countWhere(posEarnEntries, (entry) => {
-      const saleReference = entry.idempotencyKey?.replace(/^rewards:pos:earn:/, "") || null;
-      return !saleReference || saleReference === entry.idempotencyKey || !posSaleReferences.has(saleReference);
-    }),
+    posEarnEntriesWithoutIdentifiableSale,
     linkedSalesWhoseEarnEntryBelongsToDifferentAccount: [...posEarnByReference.entries()].filter(([reference, entries]) => {
       const sale = posSaleReferences.get(reference);
       return Boolean(sale?.customerAccountId && entries.some((entry) => entry.customerAccountId !== sale.customerAccountId));
@@ -608,14 +728,25 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     [
       posMetrics.refundedSalesWithUnreversedPoints > 0 ? "REFUNDED_POS_SALE_WITH_UNREVERSED_REWARDS" : null,
       posMetrics.duplicatePosEarnEntries > 0 ? "DUPLICATE_POS_EARN_ENTRIES" : null,
-      posMetrics.posEarnEntriesWithoutIdentifiableSale > 0 ? "POS_EARN_ENTRY_WITHOUT_IDENTIFIABLE_SALE" : null,
-      posMetrics.linkedSalesWhoseEarnEntryBelongsToDifferentAccount > 0 ? "POS_REWARD_ACCOUNT_MISMATCH" : null
+      posMetrics.posEarnEntriesWithoutIdentifiableSale !== null && posMetrics.posEarnEntriesWithoutIdentifiableSale > 0
+        ? "POS_EARN_ENTRY_WITHOUT_IDENTIFIABLE_SALE"
+        : null,
+      posMetrics.linkedSalesWhoseEarnEntryBelongsToDifferentAccount > 0 ? "POS_REWARD_ACCOUNT_MISMATCH" : null,
+      posMetrics.posSaleTransactionsWithConflictingCustomerLinks > 0 ? "POS_TRANSACTION_CONFLICTING_CUSTOMER_LINKS" : null,
+      posMetrics.posSaleTransactionsWithContradictoryIdentityRows > 0 ? "POS_TRANSACTION_CONTRADICTORY_CUSTOMER_IDENTITY" : null,
+      posMetrics.posSaleTransactionsWithIncompatibleRefundState > 0 ? "POS_TRANSACTION_INCOMPATIBLE_REFUND_STATE" : null
     ].filter(Boolean) as string[],
     [
-      posMetrics.completedEligibleSalesWithoutEarnEntry > 0 ? "LINKED_POS_SALE_WITHOUT_EARN_ENTRY" : null,
-      posMetrics.partiallyRefundedSalesWithNoReversal > 0 ? "PARTIAL_POS_REFUND_WITHOUT_REWARD_REVERSAL" : null
+      posMetrics.completedEligibleSalesWithoutEarnEntry !== null && posMetrics.completedEligibleSalesWithoutEarnEntry > 0
+        ? "LINKED_POS_SALE_WITHOUT_EARN_ENTRY"
+        : null,
+      posMetrics.partiallyRefundedSalesWithNoReversal > 0 ? "PARTIAL_POS_REFUND_WITHOUT_REWARD_REVERSAL" : null,
+      posMetrics.posSaleLineRecordsMissingSaleReference > 0 ? "POS_SALE_REFERENCE_MISSING_FOR_TRANSACTION_GROUPING" : null
     ].filter(Boolean) as string[],
-    posSalesLimitReached || ledgerLimitReached
+    [
+      ...(posSalesLimitReached || ledgerLimitReached ? ["REPORT_LIMIT_REACHED"] : []),
+      ...(posMetrics.posSaleLineRecordsMissingSaleReference > 0 ? ["POS_TRANSACTION_GROUPING_UNAVAILABLE_FOR_MISSING_REFERENCE"] : [])
+    ]
   );
 
   const pendingEntries = boundedLedger.filter((entry) => statusOf(entry) === "pending" && entry.points > 0);
@@ -673,7 +804,8 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
 
   return {
     generatedAt: generatedAt.toISOString(),
-    environment: process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production" ? "production" : "non_production",
+    environment: reportEnvironment(),
+    deploymentTarget: deploymentTarget(),
     readOnly: true,
     overallClassification,
     summary,

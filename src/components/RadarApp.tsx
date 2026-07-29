@@ -27335,6 +27335,10 @@ function CustomerRewardIntegrityPanel() {
           <p className="eyeline">Diagnostics</p>
           <h2 id="customer-reward-integrity-heading">Customer &amp; Reward Integrity</h2>
           <p className="muted-copy">
+            Customer accounts are expected to be available. Reward earning, POS rewards, redemption, and administrative adjustments are
+            expected to remain disabled until separately certified.
+          </p>
+          <p className="muted-copy">
             This report is read-only and does not modify customer accounts, rewards, orders, or balances.
           </p>
         </div>
@@ -27362,6 +27366,7 @@ function CustomerRewardIntegrityPanel() {
           <div className="monitor-status">
             <span>Generated {dateTime(report.generatedAt)}</span>
             <span>Environment {formatStatus(report.environment)}</span>
+            <span>Deployment target {formatStatus(report.deploymentTarget)}</span>
             <span>Read-only {report.readOnly ? "Yes" : "No"}</span>
             <span>Blocked {report.summary.blockedSections}</span>
             <span>Warnings {report.summary.warningSections}</span>

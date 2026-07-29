@@ -63,6 +63,7 @@ export type CustomerRewardIntegritySectionDTO<T extends Record<string, unknown> 
 export type CustomerRewardIntegrityReportDTO = {
   generatedAt: string;
   environment: "production" | "non_production";
+  deploymentTarget: "production" | "preview" | "development" | "local" | "unknown";
   readOnly: true;
   overallClassification: CustomerRewardIntegrityClassification;
   summary: {
@@ -78,6 +79,12 @@ export type CustomerRewardIntegrityReportDTO = {
       customerPosRewardsEnabled: boolean;
       customerRewardRedemptionEnabled: boolean;
       customerRewardAdminAdjustmentsEnabled: boolean;
+      customerAccountsExpectedEnabled: boolean;
+      rewardEarningExpectedEnabled: boolean;
+      posRewardEarningExpectedEnabled: boolean;
+      redemptionExpectedEnabled: boolean;
+      adminAdjustmentsExpectedEnabled: boolean;
+      deploymentTarget: "production" | "preview" | "development" | "local" | "unknown";
       accountProvider: "password_magic_link";
       rewardProvider: "internal_ledger";
       configuredPendingDays: number;
@@ -102,6 +109,8 @@ export type CustomerRewardIntegrityReportDTO = {
       accountsWithoutRewardBalance: number;
       accountsWithNegativeRewardFields: number;
       accountsWithInconsistentStatusVerification: number;
+      boundedAccountLimit: number;
+      boundedSamplePartial: boolean;
     }>;
     customerLinking: CustomerRewardIntegritySectionDTO<{
       storefrontCustomerTotal: number;
@@ -115,15 +124,27 @@ export type CustomerRewardIntegrityReportDTO = {
       paidOrdersLinkedToInactiveAccount: number;
       paidOrdersLinkedToUnverifiedAccount: number;
       paidOrdersWithEmailMismatch: number;
+      posSaleLineRecordsEvaluated: number;
       posSalesTotal: number;
       posSalesLinkedToCustomerAccount: number;
       posSalesUnlinked: number;
       posSalesLinkedToInactiveAccount: number;
       posSalesLinkedToUnverifiedAccount: number;
       posSalesWithEmailMismatch: number;
+      posSaleLineRecordsMissingSaleReference: number;
+      posSaleMissingReferenceAffectedRecords: number;
+      posSaleTransactionsWithConflictingCustomerLinks: number;
+      posSaleTransactionsWithContradictoryIdentityRows: number;
+      posSaleTransactionsWithIncompatibleRefundState: number;
+      boundedOrderLimit: number;
+      boundedPosSaleLimit: number;
+      boundedSamplePartial: boolean;
+      posPlatformFilter: "pos";
     }>;
     rewardLedgerIntegrity: CustomerRewardIntegritySectionDTO<{
       allRewardLedgerEntries: number;
+      boundedEntryLimit: number;
+      boundedSamplePartial: boolean;
       positiveEarnEntries: number;
       negativeReversalEntries: number;
       pendingEntries: number;
@@ -133,10 +154,15 @@ export type CustomerRewardIntegrityReportDTO = {
       onlineOrderSourceEntries: number;
       posSourceEntries: number;
       administrativeAdjustmentEntries: number;
-      entriesWithMissingCustomerAccount: number;
-      orderLinkedEntriesWithMissingStorefrontOrder: number;
+      entriesWithMissingCustomerAccount: number | null;
+      entriesWithMissingCustomerAccountSchemaEnforced: boolean;
+      entriesWithMissingCustomerAccountConstraint: string;
+      orderLinkedEntriesWithMissingStorefrontOrder: number | null;
+      orderLinkedEntriesWithMissingStorefrontOrderSchemaEnforced: boolean;
+      orderLinkedEntriesWithMissingStorefrontOrderConstraint: string;
       reversalEntriesMissingReversalOfEntryId: number;
-      reversalEntriesWithMissingOriginalEntry: number;
+      reversalEntriesWithMissingOriginalEntry: number | null;
+      reversalOriginalEntryCheckAvailable: boolean;
       duplicateIdempotencyKeyGroups: number;
       duplicateIdempotencyKeyRecords: number;
       ledgerEntriesWithZeroPoints: number;
@@ -156,9 +182,14 @@ export type CustomerRewardIntegrityReportDTO = {
       negativeAvailableBalances: number;
       negativePendingBalances: number;
       negativeLifetimeEarnedBalances: number;
-      balancesWithoutAccounts: number;
-      accountsWithMultipleBalanceRecords: number;
+      balancesWithoutAccounts: number | null;
+      balancesWithoutAccountsSchemaEnforced: boolean;
+      balancesWithoutAccountsConstraint: string;
+      accountsWithMultipleBalanceRecords: number | null;
+      accountsWithMultipleBalanceRecordsSchemaEnforced: boolean;
+      accountsWithMultipleBalanceRecordsConstraint: string;
       boundedEntryLimit: number;
+      boundedSamplePartial: boolean;
       truncatedAccounts: number;
       formula: string;
     }>;
@@ -175,12 +206,22 @@ export type CustomerRewardIntegrityReportDTO = {
       elapsedPendingOrdersFulfilledButNotReleased: number;
     }>;
     posRewards: CustomerRewardIntegritySectionDTO<{
+      posSaleLineRecordsEvaluated: number;
+      posSaleTransactionsEvaluated: number;
+      posSaleLineRecordsMissingSaleReference: number;
+      posSaleMissingReferenceAffectedRecords: number;
+      posSaleTransactionsWithConflictingCustomerLinks: number;
+      posSaleTransactionsWithContradictoryIdentityRows: number;
+      posSaleTransactionsWithIncompatibleRefundState: number;
+      boundedPosSaleLimit: number;
+      boundedEntryLimit: number;
+      boundedSamplePartial: boolean;
       completedEligibleSalesWithEarnEntry: number;
-      completedEligibleSalesWithoutEarnEntry: number;
+      completedEligibleSalesWithoutEarnEntry: number | null;
       refundedSalesWithUnreversedPoints: number;
       partiallyRefundedSalesWithNoReversal: number;
       duplicatePosEarnEntries: number;
-      posEarnEntriesWithoutIdentifiableSale: number;
+      posEarnEntriesWithoutIdentifiableSale: number | null;
       linkedSalesWhoseEarnEntryBelongsToDifferentAccount: number;
     }>;
     pendingReleaseReadiness: CustomerRewardIntegritySectionDTO<{
