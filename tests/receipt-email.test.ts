@@ -22,6 +22,10 @@ import {
   previewTestIdempotencyKey,
   sendReceiptEmailPreviewToAdmin
 } from "../src/lib/receipt-email-preview";
+import {
+  rewardReceiptStateFromPersistedLedger,
+  rewardReceiptSummaryFromPersistedResult
+} from "../src/lib/customer-rewards";
 import { stableReceiptEmailIdempotencyKey } from "../src/lib/receipt-email-client";
 import type { EmailSendResult } from "../src/lib/email-provider";
 import type { SessionUser } from "../src/types/radar";
@@ -29,6 +33,7 @@ import type { SessionUser } from "../src/types/radar";
 const source = (path: string) => readFileSync(path, "utf8");
 
 const receiptEmailSource = source("src/lib/receipt-email.ts");
+const customerRewardsSource = source("src/lib/customer-rewards.ts");
 const radarServiceSource = source("src/lib/radar-service.ts");
 const storefrontSource = source("src/lib/storefront.ts");
 const radarAppSource = source("src/components/RadarApp.tsx");
@@ -312,8 +317,8 @@ test("receipt renderer shows supplied persisted reward summary without calculati
 
   assert.match(combined, /You earned 129 points!/);
   assert.match(combined, /Points earned this purchase[\s\S]*\+129/);
-  assert.match(combined, /Available balance[\s\S]*3905 points/);
-  assert.doesNotMatch(combined, /Pending points/);
+  assert.match(combined, /Current available balance[\s\S]*3905 points/);
+  assert.doesNotMatch(combined, /Current pending points/);
   assert.match(combined, /View My Rewards/);
   assert.match(combined, /https:\/\/www\.gamedaygrabs\.com\/account\/rewards/);
   assert.doesNotMatch(combined, /threshold|progress|dollar value|expires/i);
@@ -341,9 +346,9 @@ test("receipt renderer shows pending points only when supplied persisted pending
     }
   });
 
-  assert.match(`${pending.html}\n${pending.text}`, /Pending points[\s\S]*124 points/);
+  assert.match(`${pending.html}\n${pending.text}`, /Current pending points[\s\S]*124 points/);
   assert.match(`${availableOnly.html}\n${availableOnly.text}`, /You earned 21 points!/);
-  assert.doesNotMatch(`${availableOnly.html}\n${availableOnly.text}`, /Pending points/);
+  assert.doesNotMatch(`${availableOnly.html}\n${availableOnly.text}`, /Current pending points/);
 });
 
 test("receipt renderer omits reward block for guests, disabled rewards, missing ledger, malformed values, and unsafe reward links", () => {
@@ -363,6 +368,189 @@ test("receipt renderer omits reward block for guests, disabled rewards, missing 
     assert.doesNotMatch(combined, /You earned \d+ points!/);
     assert.doesNotMatch(combined, /View My Rewards/);
   }
+});
+
+test("reward receipt gate only allows untouched persisted transaction awards", () => {
+  const account = {
+    email: "collector@example.com",
+    normalizedEmail: "collector@example.com",
+    status: "active",
+    emailVerifiedAt: new Date("2026-07-28T12:00:00.000Z"),
+    rewardBalance: {
+      availablePoints: 3905,
+      pendingPoints: 94
+    }
+  };
+  const untouchedState = rewardReceiptStateFromPersistedLedger([
+    { points: 94, type: "earn", status: "pending", reversalOfEntryId: null }
+  ]);
+  const untouched = rewardReceiptSummaryFromPersistedResult({
+    rewardsEnabled: true,
+    recipientEmail: "collector@example.com",
+    account,
+    rewardState: untouchedState
+  });
+
+  assert.deepEqual(untouched, {
+    pointsEarned: 94,
+    availableBalance: 3905,
+    pendingBalance: 94,
+    rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+  });
+  assert.equal(untouchedState.pointsEarned, 94);
+  assert.equal(untouchedState.pointsReversed, 0);
+  assert.equal(untouchedState.netPoints, 94);
+
+  const reversedCases = [
+    {
+      name: "storefront partial reversal",
+      ledger: [
+        { id: "earn", points: 94, type: "earn", status: "pending", reversalOfEntryId: null },
+        { points: -12, type: "reverse", status: "reversed", reversalOfEntryId: "earn" }
+      ]
+    },
+    {
+      name: "storefront full reversal",
+      ledger: [
+        { id: "earn", points: 94, type: "earn", status: "canceled", reversalOfEntryId: null },
+        { points: -94, type: "reverse", status: "reversed", reversalOfEntryId: "earn" }
+      ]
+    },
+    {
+      name: "storefront cancellation",
+      ledger: [{ points: 94, type: "earn", status: "canceled", reversalOfEntryId: null }]
+    },
+    {
+      name: "POS partial reversal",
+      ledger: [
+        { id: "earn", points: 21, type: "earn", status: "available", reversalOfEntryId: null },
+        { points: -4, type: "reverse", status: "reversed", reversalOfEntryId: "earn" }
+      ]
+    },
+    {
+      name: "POS full reversal",
+      ledger: [
+        { id: "earn", points: 21, type: "earn", status: "available", reversalOfEntryId: null },
+        { points: -21, type: "reverse", status: "reversed", reversalOfEntryId: "earn" }
+      ]
+    }
+  ];
+
+  for (const testCase of reversedCases) {
+    const rewardState = rewardReceiptStateFromPersistedLedger(testCase.ledger);
+    assert.ok(rewardState.hasReversalOrCancellation, testCase.name);
+    assert.equal(
+      rewardReceiptSummaryFromPersistedResult({
+        rewardsEnabled: true,
+        recipientEmail: "collector@example.com",
+        account,
+        rewardState
+      }),
+      null,
+      testCase.name
+    );
+  }
+
+  assert.equal(
+    rewardReceiptSummaryFromPersistedResult({
+      rewardsEnabled: true,
+      recipientEmail: "collector@example.com",
+      account,
+      rewardState: {
+        pointsEarned: 94,
+        pointsReversed: 1,
+        netPoints: 93,
+        ledgerCount: 1,
+        hasReversalOrCancellation: false
+      }
+    }),
+    null,
+    "pointsReversed > 0 prevents the reward block"
+  );
+  assert.equal(
+    rewardReceiptSummaryFromPersistedResult({
+      rewardsEnabled: true,
+      recipientEmail: "collector@example.com",
+      account,
+      rewardState: {
+        pointsEarned: 94,
+        pointsReversed: 0,
+        netPoints: 93,
+        ledgerCount: 1,
+        hasReversalOrCancellation: false
+      }
+    }),
+    null,
+    "netPoints different from pointsEarned prevents the reward block"
+  );
+  assert.equal(
+    rewardReceiptSummaryFromPersistedResult({
+      rewardsEnabled: true,
+      recipientEmail: "collector@example.com",
+      account,
+      rewardState: {
+        pointsEarned: 94,
+        pointsReversed: 0,
+        netPoints: 94,
+        ledgerCount: 0,
+        hasReversalOrCancellation: false
+      }
+    }),
+    null,
+    "ledgerCount alone is insufficient when no persisted award exists"
+  );
+  assert.equal(
+    rewardReceiptSummaryFromPersistedResult({
+      rewardsEnabled: true,
+      recipientEmail: "collector@example.com",
+      account,
+      rewardState: {
+        pointsEarned: 0,
+        pointsReversed: 0,
+        netPoints: 0,
+        ledgerCount: 1,
+        hasReversalOrCancellation: false
+      }
+    }),
+    null,
+    "ledgerCount alone is insufficient without positive earned points"
+  );
+});
+
+test("reward receipt gate preserves feature flags and account privacy requirements", () => {
+  const rewardState = rewardReceiptStateFromPersistedLedger([
+    { points: 21, type: "earn", status: "available", reversalOfEntryId: null }
+  ]);
+  const account = {
+    email: "collector@example.com",
+    normalizedEmail: "collector@example.com",
+    status: "active",
+    emailVerifiedAt: new Date("2026-07-28T12:00:00.000Z"),
+    rewardBalance: {
+      availablePoints: 3926,
+      pendingPoints: 0
+    }
+  };
+  const build = (overrides: Partial<Parameters<typeof rewardReceiptSummaryFromPersistedResult>[0]> = {}) =>
+    rewardReceiptSummaryFromPersistedResult({
+      rewardsEnabled: true,
+      recipientEmail: "collector@example.com",
+      account,
+      rewardState,
+      ...overrides
+    });
+
+  assert.ok(build(), "Storefront/POS enabled flags allow an untouched linked award");
+  assert.equal(build({ rewardsEnabled: false }), null, "Storefront rewards disabled omits the block");
+  assert.equal(build({ account: null }), null, "guest and unlinked transactions omit account rewards");
+  assert.equal(build({ account: { ...account, emailVerifiedAt: null } }), null, "unverified accounts omit account rewards");
+  assert.equal(build({ recipientEmail: "different@example.com" }), null, "recipient mismatch omits account rewards");
+  assert.match(customerRewardsSource, /config\.customerAccountsEnabled && config\.customerRewardsEnabled/);
+  assert.match(customerRewardsSource, /config\.customerAccountsEnabled && config\.customerRewardsEnabled && config\.customerPosRewardsEnabled/);
+  assert.match(customerRewardsSource, /if \(!posRewardFeatureEnabled\(\)\) return null/);
+  assert.match(storefrontSource, /rewardsEnabled: customerRewardsEnabled\(\)/);
+  assert.match(receiptEmailSource, /Earn points now\. Redemption coming soon\./);
+  assert.doesNotMatch(receiptEmailSource, /Redeem points|Apply points|reward discount/i);
 });
 
 test("receipt footer removes internal customer-facing sentence while keeping support and test-preview footer", () => {
@@ -941,11 +1129,15 @@ test("receipt reward summaries are built only from persisted linked-account rewa
   assert.match(storefrontSource, /rewardReceiptSummaryFromPersistedResult/);
   assert.match(storefrontSource, /recipientEmail/);
   assert.match(storefrontSource, /account: order\.customerAccount/);
-  assert.match(storefrontSource, /pointsEarned: rewardSummary\.pointsEarned/);
-  assert.match(storefrontSource, /ledgerCount: rewardSummary\.ledgerCount/);
+  assert.match(storefrontSource, /rewardState: rewardReceiptStateFromPersistedLedger\(order\.rewardLedgerEntries\)/);
   assert.match(radarServiceSource, /rewardReceiptSummaryForPosSaleReference\(receipt\.saleReference, recipientEmail\)/);
   assert.match(radarServiceSource, /snapshot: await posReceiptEmailSnapshot\(receipt, supportEmail, requestedReceiptEmail\)/);
   assert.match(radarServiceSource, /snapshot: await posReceiptEmailSnapshot\(receipt, supportEmail, requestedEmail\)/);
+  assert.match(receiptPreviewSource, /storefront_partial_reversal/);
+  assert.match(receiptPreviewSource, /storefront_full_reversal/);
+  assert.match(receiptPreviewSource, /pos_partial_reversal/);
+  assert.match(receiptPreviewSource, /pos_full_reversal/);
+  assert.match(receiptPreviewSource, /storefront_later_authorized_resend/);
   assert.match(receiptPreviewSource, /pos_recipient_mismatch/);
   assert.match(receiptPreviewSource, /rewards_disabled/);
   assert.match(receiptPreviewSource, /guest_unlinked/);

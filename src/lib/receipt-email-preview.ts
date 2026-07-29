@@ -22,9 +22,14 @@ export type ReceiptPreviewFixtureKey =
   | "storefront_linked_rewards"
   | "pos_linked_rewards"
   | "linked_pending_rewards"
+  | "storefront_later_authorized_resend"
   | "guest_unlinked"
   | "pos_recipient_mismatch"
-  | "rewards_disabled";
+  | "rewards_disabled"
+  | "storefront_partial_reversal"
+  | "storefront_full_reversal"
+  | "pos_partial_reversal"
+  | "pos_full_reversal";
 
 export type PreviewSendResult = {
   previewType: ReceiptEmailPreviewType;
@@ -88,6 +93,12 @@ export const receiptEmailPreviewFixtureOptions: Array<{
     description: "Verified linked account with authoritative pending points greater than zero."
   },
   {
+    key: "storefront_later_authorized_resend",
+    previewType: "storefront",
+    label: "Later authorized resend with current balances",
+    description: "Untouched award remains valid; account-wide balances are labeled as current values."
+  },
+  {
     key: "guest_unlinked",
     previewType: "storefront",
     label: "Guest/unlinked receipt with no reward block",
@@ -104,6 +115,30 @@ export const receiptEmailPreviewFixtureOptions: Array<{
     previewType: "storefront",
     label: "Rewards earning disabled",
     description: "Ordinary receipt only; reward earning is disabled."
+  },
+  {
+    key: "storefront_partial_reversal",
+    previewType: "storefront",
+    label: "Storefront partial refund/reward reversed",
+    description: "Ordinary receipt only; partial reward reversal suppresses stale account reward details."
+  },
+  {
+    key: "storefront_full_reversal",
+    previewType: "storefront",
+    label: "Storefront full refund/reward reversed",
+    description: "Ordinary receipt only; full reward reversal suppresses stale account reward details."
+  },
+  {
+    key: "pos_partial_reversal",
+    previewType: "pos",
+    label: "POS partial refund/reward reversed",
+    description: "Ordinary receipt only; partial POS reward reversal suppresses stale account reward details."
+  },
+  {
+    key: "pos_full_reversal",
+    previewType: "pos",
+    label: "POS full refund/reward reversed",
+    description: "Ordinary receipt only; full POS reward reversal suppresses stale account reward details."
   }
 ];
 
@@ -203,6 +238,31 @@ export function receiptEmailPreviewFixtures(): Record<ReceiptPreviewFixtureKey, 
         rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
       }
     },
+    storefront_later_authorized_resend: {
+      sourceType: "STOREFRONT_ORDER",
+      receiptNumber: "TEST-GDD-RESEND",
+      completedAt: completedAt(),
+      customerName: "Linked Preview Customer",
+      lineItems: [
+        { name: "PokÃ©mon TCG: Booster Bundle", quantity: 1, unitPrice: 39.99, lineTotal: 39.99 }
+      ],
+      subtotal: 39.99,
+      discount: 0,
+      shipping: 6.99,
+      tax: 3.52,
+      total: 50.5,
+      paymentMethodLabel: "Paid online",
+      fulfillmentMethod: "Shipping",
+      fulfillmentSummary: "Ships after fulfillment is prepared.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: "https://www.gamedaygrabs.com/order-status",
+      rewardSummary: {
+        pointsEarned: 39,
+        availableBalance: 4200,
+        pendingBalance: 0,
+        rewardsUrl: "https://www.gamedaygrabs.com/account/rewards"
+      }
+    },
     guest_unlinked: {
       sourceType: "STOREFRONT_ORDER",
       receiptNumber: "TEST-GDD-GUEST",
@@ -255,6 +315,78 @@ export function receiptEmailPreviewFixtures(): Record<ReceiptPreviewFixtureKey, 
       fulfillmentSummary: "Pickup details will appear in your order updates.",
       supportEmail: "gamedaygrabs@outlook.com",
       orderStatusUrl: "https://www.gamedaygrabs.com/order-status",
+      rewardSummary: null
+    },
+    storefront_partial_reversal: {
+      sourceType: "STOREFRONT_ORDER",
+      receiptNumber: "TEST-GDD-PARTIAL-REFUND",
+      completedAt: completedAt(),
+      customerName: "Linked Preview Customer",
+      lineItems: [{ name: "PokÃ©mon TCG: Booster Bundle", quantity: 2, unitPrice: 39.99, lineTotal: 79.98 }],
+      subtotal: 79.98,
+      discount: 0,
+      shipping: 6.99,
+      tax: 6.09,
+      total: 93.06,
+      paymentMethodLabel: "Paid online",
+      fulfillmentMethod: "Shipping",
+      fulfillmentSummary: "Ships after fulfillment is prepared.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: "https://www.gamedaygrabs.com/order-status",
+      rewardSummary: null
+    },
+    storefront_full_reversal: {
+      sourceType: "STOREFRONT_ORDER",
+      receiptNumber: "TEST-GDD-FULL-REFUND",
+      completedAt: completedAt(),
+      customerName: "Linked Preview Customer",
+      lineItems: [{ name: "PokÃ©mon TCG: Mega Moonlit Tin", quantity: 1, unitPrice: 39.99, lineTotal: 39.99 }],
+      subtotal: 39.99,
+      discount: 0,
+      shipping: 6.99,
+      tax: 3.34,
+      total: 50.32,
+      paymentMethodLabel: "Paid online",
+      fulfillmentMethod: "Shipping",
+      fulfillmentSummary: "Order was later refunded; this preview keeps the ordinary receipt only.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: "https://www.gamedaygrabs.com/order-status",
+      rewardSummary: null
+    },
+    pos_partial_reversal: {
+      sourceType: "POS_SALE",
+      receiptNumber: "TEST-POS-PARTIAL-REFUND",
+      completedAt: completedAt(),
+      customerName: "Linked POS Customer",
+      lineItems: [{ name: "PokÃ©mon TCG: Scarlet & Violet Booster Pack", quantity: 4, unitPrice: 4.49, lineTotal: 17.96 }],
+      subtotal: 17.96,
+      discount: 0,
+      shipping: 0,
+      tax: 1.35,
+      total: 19.31,
+      paymentMethodLabel: "In-person payment",
+      fulfillmentMethod: "In-person pickup",
+      fulfillmentSummary: "Completed at the register.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: null,
+      rewardSummary: null
+    },
+    pos_full_reversal: {
+      sourceType: "POS_SALE",
+      receiptNumber: "TEST-POS-FULL-REFUND",
+      completedAt: completedAt(),
+      customerName: "Linked POS Customer",
+      lineItems: [{ name: "GameDayGrabs Soft Card Sleeves Pack", quantity: 2, unitPrice: 2.99, lineTotal: 5.98 }],
+      subtotal: 5.98,
+      discount: 0,
+      shipping: 0,
+      tax: 0.45,
+      total: 6.43,
+      paymentMethodLabel: "In-person payment",
+      fulfillmentMethod: "In-person pickup",
+      fulfillmentSummary: "Completed at the register.",
+      supportEmail: "gamedaygrabs@outlook.com",
+      orderStatusUrl: null,
       rewardSummary: null
     }
   };

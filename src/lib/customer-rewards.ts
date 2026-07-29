@@ -48,12 +48,21 @@ type RewardOrder = {
     points: number;
     type: string;
     status?: string | null;
+    reversalOfEntryId?: string | null;
   }>;
 };
 
 type RewardLedgerTx = Prisma.TransactionClient;
 type RewardLedgerStatus = "pending" | "available" | "reversed" | "canceled";
 type RewardReleaseReason = "shipped" | "picked_up" | "fulfilled" | "delay_elapsed";
+
+export type RewardReceiptTransactionState = {
+  pointsEarned: number;
+  pointsReversed: number;
+  netPoints: number;
+  ledgerCount: number;
+  hasReversalOrCancellation: boolean;
+};
 
 export type PosRewardLedgerSummary = {
   pointsEarned: number;
@@ -131,6 +140,24 @@ function safeNonnegativeInteger(value: number | null | undefined) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+export function rewardReceiptStateFromPersistedLedger(
+  ledger: Array<{ points: number; type: string; status?: string | null; reversalOfEntryId?: string | null }>
+): RewardReceiptTransactionState {
+  const pointsEarned = ledger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
+  const pointsReversed = Math.abs(ledger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
+  const hasReversalOrCancellation = ledger.some((entry) => {
+    const status = normalizedRewardLedgerStatus(entry);
+    return entry.points < 0 || entry.type === "reverse" || status === "reversed" || status === "canceled" || Boolean(entry.reversalOfEntryId);
+  });
+  return {
+    pointsEarned,
+    pointsReversed,
+    netPoints: pointsEarned - pointsReversed,
+    ledgerCount: ledger.length,
+    hasReversalOrCancellation
+  };
+}
+
 export function rewardReceiptSummaryFromPersistedResult(input: {
   rewardsEnabled: boolean;
   recipientEmail: string | null | undefined;
@@ -144,13 +171,15 @@ export function rewardReceiptSummaryFromPersistedResult(input: {
       pendingPoints: number;
     } | null;
   } | null | undefined;
-  pointsEarned: number;
-  ledgerCount: number;
+  rewardState: RewardReceiptTransactionState;
 }) {
   if (!input.rewardsEnabled) return null;
   if (!input.account || input.account.status !== "active" || !input.account.emailVerifiedAt) return null;
-  if (!safeNonnegativeInteger(input.pointsEarned) || input.pointsEarned <= 0) return null;
-  if (!Number.isSafeInteger(input.ledgerCount) || input.ledgerCount <= 0) return null;
+  if (!safeNonnegativeInteger(input.rewardState.pointsEarned) || input.rewardState.pointsEarned <= 0) return null;
+  if (!safeNonnegativeInteger(input.rewardState.pointsReversed) || input.rewardState.pointsReversed !== 0) return null;
+  if (!Number.isSafeInteger(input.rewardState.netPoints) || input.rewardState.netPoints !== input.rewardState.pointsEarned) return null;
+  if (!Number.isSafeInteger(input.rewardState.ledgerCount) || input.rewardState.ledgerCount <= 0) return null;
+  if (input.rewardState.hasReversalOrCancellation) return null;
   const accountEmail = normalizeCustomerAccountEmail(input.account.normalizedEmail ?? input.account.email);
   const recipientEmail = normalizeCustomerAccountEmail(input.recipientEmail);
   if (!accountEmail || !recipientEmail || accountEmail !== recipientEmail) return null;
@@ -158,7 +187,7 @@ export function rewardReceiptSummaryFromPersistedResult(input: {
   const pendingBalance = input.account.rewardBalance?.pendingPoints ?? 0;
   if (!safeNonnegativeInteger(availableBalance) || !safeNonnegativeInteger(pendingBalance)) return null;
   return {
-    pointsEarned: input.pointsEarned,
+    pointsEarned: input.rewardState.pointsEarned,
     availableBalance,
     pendingBalance,
     rewardsUrl: accountRewardsUrl
@@ -354,18 +383,19 @@ export async function rewardSummaryForPosSaleReference(
       ]
     },
     select: {
-      points: true
+      points: true,
+      type: true,
+      status: true,
+      reversalOfEntryId: true
     }
   });
-  const pointsEarned = ledger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
-  const pointsReversed = Math.abs(ledger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
-  const netPoints = pointsEarned - pointsReversed;
+  const receiptState = rewardReceiptStateFromPersistedLedger(ledger);
   return {
-    pointsEarned,
-    pointsReversed,
-    netPoints,
-    ledgerCount: ledger.length,
-    status: pointsEarned <= 0 ? "not_eligible" : netPoints <= 0 ? "reversed" : "available"
+    pointsEarned: receiptState.pointsEarned,
+    pointsReversed: receiptState.pointsReversed,
+    netPoints: receiptState.netPoints,
+    ledgerCount: receiptState.ledgerCount,
+    status: receiptState.pointsEarned <= 0 ? "not_eligible" : receiptState.netPoints <= 0 ? "reversed" : "available"
   };
 }
 
@@ -378,7 +408,11 @@ export async function rewardReceiptSummaryForPosSaleReference(
   const earnEntry = await client.rewardLedgerEntry.findUnique({
     where: { idempotencyKey: `rewards:pos:earn:${saleReference}` },
     select: {
+      id: true,
       points: true,
+      type: true,
+      status: true,
+      reversalOfEntryId: true,
       customerAccount: {
         select: {
           email: true,
@@ -395,12 +429,29 @@ export async function rewardReceiptSummaryForPosSaleReference(
       }
     }
   });
+  const saleLedger = earnEntry
+    ? await client.rewardLedgerEntry.findMany({
+        where: {
+          source: rewardSources.pos,
+          OR: [
+            { idempotencyKey: `rewards:pos:earn:${saleReference}` },
+            { idempotencyKey: { startsWith: `rewards:pos:refund:${saleReference}` } },
+            { reversalOfEntryId: earnEntry.id }
+          ]
+        },
+        select: {
+          points: true,
+          type: true,
+          status: true,
+          reversalOfEntryId: true
+        }
+      })
+    : [];
   return rewardReceiptSummaryFromPersistedResult({
     rewardsEnabled: posRewardFeatureEnabled(),
     recipientEmail,
     account: earnEntry?.customerAccount ?? null,
-    pointsEarned: earnEntry?.points ?? 0,
-    ledgerCount: earnEntry ? 1 : 0
+    rewardState: rewardReceiptStateFromPersistedLedger(saleLedger)
   });
 }
 

@@ -297,8 +297,8 @@ function textReceipt(snapshot: ReceiptEmailSnapshot, testMode = false) {
     rewardSummary ? `You earned ${rewardSummary.pointsEarned} points!` : null,
     rewardSummary ? "Thanks for growing your collection with GameDayGrabs." : null,
     rewardSummary ? `Points earned this purchase: +${rewardSummary.pointsEarned}` : null,
-    rewardSummary ? `Available balance: ${rewardSummary.availableBalance} points` : null,
-    rewardSummary && rewardSummary.pendingBalance > 0 ? `Pending points: ${rewardSummary.pendingBalance} points` : null,
+    rewardSummary ? `Current available balance: ${rewardSummary.availableBalance} points` : null,
+    rewardSummary && rewardSummary.pendingBalance > 0 ? `Current pending points: ${rewardSummary.pendingBalance} points` : null,
     rewardSummary ? `View My Rewards: ${rewardSummary.rewardsUrl}` : null,
     rewardSummary ? "Earn points now. Redemption coming soon." : null,
     rewardSummary ? "" : null,
@@ -336,8 +336,8 @@ function itemRows(snapshot: ReceiptEmailSnapshot) {
 function rewardRows(summary: ReceiptEmailRewardSummary) {
   return [
     summaryRow("Points earned this purchase", `+${summary.pointsEarned}`),
-    summaryRow("Available balance", `${summary.availableBalance} points`),
-    summary.pendingBalance > 0 ? summaryRow("Pending points", `${summary.pendingBalance} points`) : ""
+    summaryRow("Current available balance", `${summary.availableBalance} points`),
+    summary.pendingBalance > 0 ? summaryRow("Current pending points", `${summary.pendingBalance} points`) : ""
   ].join("");
 }
 

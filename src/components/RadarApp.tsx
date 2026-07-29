@@ -239,9 +239,14 @@ type ReceiptPreviewFixtureKey =
   | "storefront_linked_rewards"
   | "pos_linked_rewards"
   | "linked_pending_rewards"
+  | "storefront_later_authorized_resend"
   | "guest_unlinked"
   | "pos_recipient_mismatch"
-  | "rewards_disabled";
+  | "rewards_disabled"
+  | "storefront_partial_reversal"
+  | "storefront_full_reversal"
+  | "pos_partial_reversal"
+  | "pos_full_reversal";
 type ReceiptEmailPreviewDetail = {
   previewType: ReceiptPreviewType;
   fixtureKey?: ReceiptPreviewFixtureKey;

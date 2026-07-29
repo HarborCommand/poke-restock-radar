@@ -33,6 +33,7 @@ import {
   releasePendingRewardsForOrder,
   reverseRewardsForOrder,
   rewardReceiptSummaryFromPersistedResult,
+  rewardReceiptStateFromPersistedLedger,
   rewardSummaryForOrder
 } from "@/lib/customer-rewards";
 import { shippingProfileDefinitionsForCheckout } from "@/lib/shipping-profiles";
@@ -174,6 +175,7 @@ const storefrontOrderInclude = {
           points: true,
           type: true,
           status: true,
+          reversalOfEntryId: true,
           reason: true,
           availableAt: true,
           settledAt: true,
@@ -197,6 +199,7 @@ const storefrontOrderInclude = {
       points: true,
       type: true,
       status: true,
+      reversalOfEntryId: true,
       reason: true,
       availableAt: true,
       settledAt: true,
@@ -1267,7 +1270,6 @@ function storefrontOrderStatusLink(order: StorefrontOrderWithItems) {
 
 function storefrontReceiptEmailSnapshot(order: StorefrontOrderWithItems, supportEmail: string, recipientEmail?: string | null): ReceiptEmailSnapshot {
   const localPickup = orderIsLocalPickup(order);
-  const rewardSummary = rewardSummaryForOrder(order);
   return {
     sourceType: "STOREFRONT_ORDER",
     receiptNumber: order.orderNumber,
@@ -1293,8 +1295,7 @@ function storefrontReceiptEmailSnapshot(order: StorefrontOrderWithItems, support
       rewardsEnabled: customerRewardsEnabled(),
       recipientEmail,
       account: order.customerAccount,
-      pointsEarned: rewardSummary.pointsEarned,
-      ledgerCount: rewardSummary.ledgerCount
+      rewardState: rewardReceiptStateFromPersistedLedger(order.rewardLedgerEntries)
     })
   };
 }
