@@ -52,6 +52,153 @@ export type SessionUser = {
   locationUpdatedAt?: string | null;
 } & UserPermissions;
 
+export type CustomerRewardIntegrityClassification = "PASS" | "WARNING" | "BLOCKED" | "UNAVAILABLE";
+
+export type CustomerRewardIntegritySectionDTO<T extends Record<string, unknown> = Record<string, unknown>> = {
+  classification: CustomerRewardIntegrityClassification;
+  reasons: string[];
+  metrics: T;
+};
+
+export type CustomerRewardIntegrityReportDTO = {
+  generatedAt: string;
+  environment: "production" | "non_production";
+  readOnly: true;
+  overallClassification: CustomerRewardIntegrityClassification;
+  summary: {
+    sectionCount: number;
+    blockedSections: number;
+    warningSections: number;
+    unavailableSections: number;
+  };
+  sections: {
+    runtimeConfiguration: CustomerRewardIntegritySectionDTO<{
+      customerAccountsEnabled: boolean;
+      customerRewardsEnabled: boolean;
+      customerPosRewardsEnabled: boolean;
+      customerRewardRedemptionEnabled: boolean;
+      customerRewardAdminAdjustmentsEnabled: boolean;
+      accountProvider: "password_magic_link";
+      rewardProvider: "internal_ledger";
+      configuredPendingDays: number;
+      storefrontRewardsBeginPending: boolean;
+      posRewardsBeginAvailable: boolean;
+      scheduledElapsedPendingReleaseExists: boolean;
+      fulfillmentReleaseExists: boolean;
+      refundReversalExists: boolean;
+    }>;
+    customerAccountIntegrity: CustomerRewardIntegritySectionDTO<{
+      totalCustomerAccounts: number;
+      activeAccounts: number;
+      inactiveDisabledAccounts: number;
+      verifiedAccounts: number;
+      unverifiedAccounts: number;
+      accountsWithNormalizedEmail: number;
+      accountsMissingNormalizedEmail: number;
+      duplicateNormalizedEmailGroups: number;
+      duplicateNormalizedEmailRecords: number;
+      maximumDuplicateRecordsInOneGroup: number;
+      accountsWithRewardBalance: number;
+      accountsWithoutRewardBalance: number;
+      accountsWithNegativeRewardFields: number;
+      accountsWithInconsistentStatusVerification: number;
+    }>;
+    customerLinking: CustomerRewardIntegritySectionDTO<{
+      storefrontCustomerTotal: number;
+      storefrontCustomerLinkedToCustomerAccount: number;
+      storefrontCustomerUnlinked: number;
+      storefrontCustomerLinkedToMissingCustomerAccount: number;
+      paidStorefrontOrderTotal: number;
+      paidOrdersLinkedToCustomerAccount: number;
+      paidOrdersUnlinked: number;
+      paidGuestOrders: number;
+      paidOrdersLinkedToInactiveAccount: number;
+      paidOrdersLinkedToUnverifiedAccount: number;
+      paidOrdersWithEmailMismatch: number;
+      posSalesTotal: number;
+      posSalesLinkedToCustomerAccount: number;
+      posSalesUnlinked: number;
+      posSalesLinkedToInactiveAccount: number;
+      posSalesLinkedToUnverifiedAccount: number;
+      posSalesWithEmailMismatch: number;
+    }>;
+    rewardLedgerIntegrity: CustomerRewardIntegritySectionDTO<{
+      allRewardLedgerEntries: number;
+      positiveEarnEntries: number;
+      negativeReversalEntries: number;
+      pendingEntries: number;
+      availableEntries: number;
+      reversedEntries: number;
+      canceledEntries: number;
+      onlineOrderSourceEntries: number;
+      posSourceEntries: number;
+      administrativeAdjustmentEntries: number;
+      entriesWithMissingCustomerAccount: number;
+      orderLinkedEntriesWithMissingStorefrontOrder: number;
+      reversalEntriesMissingReversalOfEntryId: number;
+      reversalEntriesWithMissingOriginalEntry: number;
+      duplicateIdempotencyKeyGroups: number;
+      duplicateIdempotencyKeyRecords: number;
+      ledgerEntriesWithZeroPoints: number;
+      ledgerEntriesWithInvalidStatusTypeCombinations: number;
+      totalPositivePoints: number;
+      totalNegativePoints: number;
+    }>;
+    rewardBalanceReconciliation: CustomerRewardIntegritySectionDTO<{
+      totalAccountsEvaluated: number;
+      fullyReconciledAccounts: number;
+      accountsWithAvailableMismatch: number;
+      accountsWithPendingMismatch: number;
+      accountsWithLifetimeEarnedMismatch: number;
+      totalAbsoluteAvailablePointVariance: number;
+      totalAbsolutePendingPointVariance: number;
+      totalAbsoluteLifetimeEarnedVariance: number;
+      negativeAvailableBalances: number;
+      negativePendingBalances: number;
+      negativeLifetimeEarnedBalances: number;
+      balancesWithoutAccounts: number;
+      accountsWithMultipleBalanceRecords: number;
+      boundedEntryLimit: number;
+      truncatedAccounts: number;
+      formula: string;
+    }>;
+    onlineOrderRewards: CustomerRewardIntegritySectionDTO<{
+      paidEligibleOrdersWithEarnEntry: number;
+      paidEligibleOrdersWithoutEarnEntry: number;
+      unpaidOrdersWithEarnEntry: number;
+      canceledOrdersWithUnreversedRewardPoints: number;
+      fullyRefundedOrdersWithUnreversedRewardPoints: number;
+      partiallyRefundedOrdersWithNoReversal: number;
+      ordersWithDuplicateEarnEntries: number;
+      pendingOrdersWhoseAvailableAtElapsed: number;
+      elapsedPendingOrdersNotFulfilled: number;
+      elapsedPendingOrdersFulfilledButNotReleased: number;
+    }>;
+    posRewards: CustomerRewardIntegritySectionDTO<{
+      completedEligibleSalesWithEarnEntry: number;
+      completedEligibleSalesWithoutEarnEntry: number;
+      refundedSalesWithUnreversedPoints: number;
+      partiallyRefundedSalesWithNoReversal: number;
+      duplicatePosEarnEntries: number;
+      posEarnEntriesWithoutIdentifiableSale: number;
+      linkedSalesWhoseEarnEntryBelongsToDifferentAccount: number;
+    }>;
+    pendingReleaseReadiness: CustomerRewardIntegritySectionDTO<{
+      configuredPendingDays: number;
+      totalPendingEntries: number;
+      pendingEntriesWithFutureAvailableAt: number;
+      pendingEntriesWithElapsedAvailableAt: number;
+      pendingEntriesWithNullAvailableAt: number;
+      pendingEntriesForShippedOrders: number;
+      pendingEntriesForPickedUpOrders: number;
+      pendingEntriesForFulfilledOrders: number;
+      pendingEntriesForCanceledRefundedOrders: number;
+      activeScheduledDelayElapsedReleaseExists: boolean;
+      releaseCurrentlyFulfillmentTriggeredOnly: boolean;
+    }>;
+  };
+};
+
 export type FriendUserDTO = SessionUser & {
   disabledAt: string | null;
   lastLoginAt: string | null;

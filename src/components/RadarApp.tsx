@@ -157,6 +157,7 @@ import type {
   CardDTO,
   CardCompSaleDTO,
   CompSourceQuality,
+  CustomerRewardIntegrityReportDTO,
   DashboardDTO,
   Era,
   GradeType,
@@ -2504,6 +2505,7 @@ function AdminControlPanel({
           ) : (
             <EmptyState icon={Activity} title="Health unavailable" detail="Health data will appear after the app loads system status." />
           )}
+          <CustomerRewardIntegrityPanel />
         </AdminSectionCard>
 
         <AdminSectionCard id="admin-storefront-status" icon={ShoppingBag} title="Storefront Status" detail="Custom domain, public shop, and distributor readiness.">
@@ -27283,6 +27285,125 @@ function AdminHealthPanel({ health, onRefreshAppCache }: { health: AppHealthDTO;
           </div>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function customerRewardIntegrityTone(classification: string) {
+  if (classification === "PASS") return "good";
+  if (classification === "WARNING" || classification === "UNAVAILABLE") return "watch";
+  return "bad";
+}
+
+function customerRewardIntegrityMetricLabel(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function customerRewardIntegrityMetricValue(value: unknown) {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return value.toLocaleString();
+  if (typeof value === "string") return value.replaceAll("_", " ");
+  return "Not available";
+}
+
+function CustomerRewardIntegrityPanel() {
+  const [report, setReport] = useState<CustomerRewardIntegrityReportDTO | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sections = report ? Object.entries(report.sections) : [];
+
+  async function refreshReport() {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await requestJson<CustomerRewardIntegrityReportDTO>("/api/radar/customer-reward-integrity");
+      setReport(result);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "Customer and reward integrity report is unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="admin-tools deployment-health" aria-labelledby="customer-reward-integrity-heading">
+      <div className="panel-header">
+        <div>
+          <p className="eyeline">Diagnostics</p>
+          <h2 id="customer-reward-integrity-heading">Customer &amp; Reward Integrity</h2>
+          <p className="muted-copy">
+            This report is read-only and does not modify customer accounts, rewards, orders, or balances.
+          </p>
+        </div>
+        <div className="admin-actions inline-actions">
+          {report ? <span className={`chip ${customerRewardIntegrityTone(report.overallClassification)}`}>{report.overallClassification}</span> : null}
+          <button className="mini-action" type="button" onClick={() => void refreshReport()} disabled={loading}>
+            <RefreshCw size={14} />
+            {loading ? "Refreshing..." : "Refresh report"}
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="health-warning" role="status">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>Report unavailable</strong>
+            <p>{error}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {report ? (
+        <>
+          <div className="monitor-status">
+            <span>Generated {dateTime(report.generatedAt)}</span>
+            <span>Environment {formatStatus(report.environment)}</span>
+            <span>Read-only {report.readOnly ? "Yes" : "No"}</span>
+            <span>Blocked {report.summary.blockedSections}</span>
+            <span>Warnings {report.summary.warningSections}</span>
+            <span>Unavailable {report.summary.unavailableSections}</span>
+          </div>
+          <div className="checklist-grid">
+            {sections.map(([name, item]) => (
+              <article className="system-check-row" key={name}>
+                <div className="avatar">
+                  <ShieldCheck size={15} />
+                </div>
+                <div>
+                  <strong>{customerRewardIntegrityMetricLabel(name)}</strong>
+                  <span>{item.reasons.length ? item.reasons.map(formatStatus).join("; ") : "No integrity findings."}</span>
+                  <dl className="detail-grid">
+                    {Object.entries(item.metrics)
+                      .filter(([metricName]) => metricName !== "formula")
+                      .slice(0, 10)
+                      .map(([metricName, metricValue]) => (
+                        <div key={metricName}>
+                          <dt>{customerRewardIntegrityMetricLabel(metricName)}</dt>
+                          <dd>{customerRewardIntegrityMetricValue(metricValue)}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                </div>
+                <span className={`chip ${customerRewardIntegrityTone(item.classification)}`}>{item.classification}</span>
+              </article>
+            ))}
+          </div>
+          <details className="safe-json-panel">
+            <summary>View sanitized aggregate JSON</summary>
+            <pre>{JSON.stringify(report, null, 2)}</pre>
+          </details>
+        </>
+      ) : (
+        <EmptyState
+          icon={ShieldCheck}
+          title="No report loaded"
+          detail="Refresh the report to review aggregate customer-account and reward integrity checks."
+        />
+      )}
     </section>
   );
 }
