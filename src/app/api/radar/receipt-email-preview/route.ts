@@ -4,7 +4,7 @@ import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { privateJson, readJson, safeMutationError, withRequestId } from "@/lib/http";
 import { PublicRateLimitExceededError, checkPublicRateLimit, publicRateLimitResponse } from "@/lib/rate-limit";
 import { requestCorrelationId } from "@/lib/observability";
-import { buildReceiptEmailPreview, existingPreviewDeliveryResult, sendReceiptEmailPreviewToAdmin } from "@/lib/receipt-email-preview";
+import { buildReceiptEmailPreview, existingPreviewDeliveryResult, receiptEmailPreviewFixtureOptions, sendReceiptEmailPreviewToAdmin } from "@/lib/receipt-email-preview";
 import { receiptEmailSenderDiagnostics } from "@/lib/receipt-email";
 
 export const runtime = "nodejs";
@@ -26,7 +26,14 @@ export async function GET() {
     previews: {
       storefront: buildReceiptEmailPreview("storefront", process.env, user.email),
       pos: buildReceiptEmailPreview("pos", process.env, user.email)
-    }
+    },
+    fixtureStates: receiptEmailPreviewFixtureOptions.map((fixture) => ({
+      key: fixture.key,
+      previewType: fixture.previewType,
+      label: fixture.label,
+      description: fixture.description,
+      preview: buildReceiptEmailPreview(fixture.previewType, process.env, user.email, fixture.key)
+    }))
   });
 }
 

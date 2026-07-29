@@ -235,6 +235,57 @@ type StorefrontReceiptEmailStatusResponse = {
   };
 };
 type ReceiptPreviewType = "storefront" | "pos";
+type ReceiptPreviewFixtureKey =
+  | "storefront_linked_rewards"
+  | "pos_linked_rewards"
+  | "linked_pending_rewards"
+  | "storefront_later_authorized_resend"
+  | "guest_unlinked"
+  | "pos_recipient_mismatch"
+  | "rewards_disabled"
+  | "storefront_partial_reversal"
+  | "storefront_full_reversal"
+  | "pos_partial_reversal"
+  | "pos_full_reversal";
+type ReceiptEmailPreviewDetail = {
+  previewType: ReceiptPreviewType;
+  fixtureKey?: ReceiptPreviewFixtureKey;
+  fixtureLabel?: string;
+  fixtureDescription?: string;
+  subject: string;
+  sender: {
+    displayName: string;
+    address: string | null;
+    from: string | null;
+    configured: boolean;
+    valid: boolean;
+    profileValueInvalid: boolean;
+    usingEmailFromFallback: boolean;
+  };
+  replyToConfigured: boolean;
+  sendReadiness: {
+    ready: boolean;
+    reasons: string[];
+    providerConfigured: boolean;
+    provider: string;
+    selectedSenderPresent: boolean;
+    selectedSenderValid: boolean;
+    selectedSenderUsesProfile: boolean;
+    selectedSenderUsesFallback: boolean;
+    profileValueInvalid: boolean;
+    replyToConfigured: boolean;
+    domainAuthenticationStatus: string;
+  };
+  html: string;
+  text: string;
+  totals: {
+    subtotal: string;
+    discount: string;
+    shipping: string;
+    tax: string;
+    total: string;
+  };
+};
 type ReceiptEmailPreviewResponse = {
   diagnostics: {
     storefrontEmailFromConfigured: boolean;
@@ -244,43 +295,15 @@ type ReceiptEmailPreviewResponse = {
   };
   previews: Record<
     ReceiptPreviewType,
-    {
-      previewType: ReceiptPreviewType;
-      subject: string;
-      sender: {
-        displayName: string;
-        address: string | null;
-        from: string | null;
-        configured: boolean;
-        valid: boolean;
-        profileValueInvalid: boolean;
-        usingEmailFromFallback: boolean;
-      };
-      replyToConfigured: boolean;
-      sendReadiness: {
-        ready: boolean;
-        reasons: string[];
-        providerConfigured: boolean;
-        provider: string;
-        selectedSenderPresent: boolean;
-        selectedSenderValid: boolean;
-        selectedSenderUsesProfile: boolean;
-        selectedSenderUsesFallback: boolean;
-        profileValueInvalid: boolean;
-        replyToConfigured: boolean;
-        domainAuthenticationStatus: string;
-      };
-      html: string;
-      text: string;
-      totals: {
-        subtotal: string;
-        discount: string;
-        shipping: string;
-        tax: string;
-        total: string;
-      };
-    }
+    ReceiptEmailPreviewDetail
   >;
+  fixtureStates?: Array<{
+    key: ReceiptPreviewFixtureKey;
+    previewType: ReceiptPreviewType;
+    label: string;
+    description: string;
+    preview: ReceiptEmailPreviewDetail;
+  }>;
 };
 type ReceiptEmailPreviewSendResponse = {
   result: {
@@ -27674,10 +27697,12 @@ function ReceiptEmailPreviewPanel({
   runAction: ActionHandler;
 }) {
   const [previewType, setPreviewType] = useState<ReceiptPreviewType>("storefront");
+  const [previewFixtureKey, setPreviewFixtureKey] = useState<ReceiptPreviewFixtureKey>("storefront_linked_rewards");
   const [preview, setPreview] = useState<ReceiptEmailPreviewResponse | null>(null);
   const [plainTextOpen, setPlainTextOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const activePreview = preview?.previews[previewType] ?? null;
+  const activeFixture = preview?.fixtureStates?.find((fixture) => fixture.key === previewFixtureKey) ?? null;
+  const activePreview = activeFixture?.preview ?? preview?.previews[previewType] ?? null;
   const diagnostics = preview?.diagnostics ?? null;
   const readiness = activePreview?.sendReadiness ?? null;
 
@@ -27719,6 +27744,27 @@ function ReceiptEmailPreviewPanel({
               POS receipt
             </button>
           </div>
+          {preview?.fixtureStates?.length ? (
+            <label className="receipt-preview-fixture">
+              Fixture state
+              <select
+                value={previewFixtureKey}
+                onChange={(event) => {
+                  const key = event.currentTarget.value as ReceiptPreviewFixtureKey;
+                  const fixture = preview.fixtureStates?.find((entry) => entry.key === key);
+                  setPreviewFixtureKey(key);
+                  if (fixture) setPreviewType(fixture.previewType);
+                }}
+              >
+                {preview.fixtureStates.map((fixture) => (
+                  <option key={fixture.key} value={fixture.key}>
+                    {fixture.label}
+                  </option>
+                ))}
+              </select>
+              <span>{activeFixture?.description ?? activePreview.fixtureDescription ?? "Sanitized receipt preview fixture."}</span>
+            </label>
+          ) : null}
           <div className="receipt-preview-meta">
             <div>
               <span>Subject</span>

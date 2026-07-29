@@ -64,6 +64,13 @@ export type ReceiptEmailLineItem = {
   lineTotal: number;
 };
 
+export type ReceiptEmailRewardSummary = {
+  pointsEarned: number;
+  availableBalance: number;
+  pendingBalance: number;
+  rewardsUrl: string;
+};
+
 export type ReceiptEmailSnapshot = {
   sourceType: ReceiptEmailSourceType;
   receiptNumber: string;
@@ -80,6 +87,7 @@ export type ReceiptEmailSnapshot = {
   fulfillmentSummary?: string | null;
   supportEmail: string;
   orderStatusUrl?: string | null;
+  rewardSummary?: ReceiptEmailRewardSummary | null;
 };
 
 function envEnabled(env: Record<string, string | undefined>, name: string) {
@@ -205,6 +213,33 @@ function money(value: number) {
   return `$${value.toFixed(2)}`;
 }
 
+function nonnegativeInteger(value: number) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function safeRewardsUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      url.hostname === "www.gamedaygrabs.com" &&
+      url.pathname === "/account/rewards" &&
+      url.search === "" &&
+      url.hash === "";
+  } catch {
+    return false;
+  }
+}
+
+export function validatedReceiptRewardSummary(summary: ReceiptEmailRewardSummary | null | undefined) {
+  if (!summary) return null;
+  if (!nonnegativeInteger(summary.pointsEarned)) return null;
+  if (!nonnegativeInteger(summary.availableBalance)) return null;
+  if (!nonnegativeInteger(summary.pendingBalance)) return null;
+  if (!safeRewardsUrl(summary.rewardsUrl)) return null;
+  if (summary.pointsEarned <= 0) return null;
+  return summary;
+}
+
 function receiptDate(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isFinite(date.getTime())
@@ -238,6 +273,7 @@ function receiptCopy(snapshot: ReceiptEmailSnapshot) {
 
 function textReceipt(snapshot: ReceiptEmailSnapshot, testMode = false) {
   const copy = receiptCopy(snapshot);
+  const rewardSummary = validatedReceiptRewardSummary(snapshot.rewardSummary);
   return compact([
     testMode ? "TEST RECEIPT" : null,
     testMode ? "No payment was made." : null,
@@ -258,6 +294,14 @@ function textReceipt(snapshot: ReceiptEmailSnapshot, testMode = false) {
     snapshot.tax === null ? "Tax: Not recorded" : `Tax: ${money(snapshot.tax)}`,
     `Total paid: ${money(snapshot.total)}`,
     "",
+    rewardSummary ? `You earned ${rewardSummary.pointsEarned} points!` : null,
+    rewardSummary ? "Thanks for growing your collection with GameDayGrabs." : null,
+    rewardSummary ? `Points earned this purchase: +${rewardSummary.pointsEarned}` : null,
+    rewardSummary ? `Current available balance: ${rewardSummary.availableBalance} points` : null,
+    rewardSummary && rewardSummary.pendingBalance > 0 ? `Current pending points: ${rewardSummary.pendingBalance} points` : null,
+    rewardSummary ? `View My Rewards: ${rewardSummary.rewardsUrl}` : null,
+    rewardSummary ? "Earn points now. Redemption coming soon." : null,
+    rewardSummary ? "" : null,
     `Payment: ${snapshot.paymentMethodLabel}`,
     `Fulfillment: ${snapshot.fulfillmentMethod}`,
     snapshot.fulfillmentSummary,
@@ -287,6 +331,28 @@ function itemRows(snapshot: ReceiptEmailSnapshot) {
       ].join("")
     )
     .join("");
+}
+
+function rewardRows(summary: ReceiptEmailRewardSummary) {
+  return [
+    summaryRow("Points earned this purchase", `+${summary.pointsEarned}`),
+    summaryRow("Current available balance", `${summary.availableBalance} points`),
+    summary.pendingBalance > 0 ? summaryRow("Current pending points", `${summary.pendingBalance} points`) : ""
+  ].join("");
+}
+
+function rewardSummaryCard(snapshot: ReceiptEmailSnapshot) {
+  const summary = validatedReceiptRewardSummary(snapshot.rewardSummary);
+  if (!summary) return "";
+  return [
+    '<div style="margin:16px 0 18px;padding:18px;border:1px solid #F9DBAF;border-radius:16px;background:#FFF7EB;">',
+    `<p style="margin:0;color:#101828;font-size:19px;line-height:1.25;font-weight:900;">You earned ${summary.pointsEarned} points!</p>`,
+    '<p style="margin:6px 0 14px;color:#475467;font-size:14px;line-height:1.5;font-weight:700;">Thanks for growing your collection with GameDayGrabs.</p>',
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rewardRows(summary)}</table>`,
+    `<p style="margin:16px 0 0;"><a href="${htmlEscape(summary.rewardsUrl)}" style="display:inline-block;padding:11px 16px;border-radius:999px;background:#101828;color:#fff;font-size:13px;font-weight:900;text-decoration:none;">View My Rewards</a></p>`,
+    '<p style="margin:12px 0 0;color:#667085;font-size:13px;line-height:1.45;font-weight:800;">Earn points now. Redemption coming soon.</p>',
+    '</div>'
+  ].join("");
 }
 
 export function buildReceiptEmail(snapshot: ReceiptEmailSnapshot, options: { testMode?: boolean } = {}) {
@@ -328,12 +394,13 @@ export function buildReceiptEmail(snapshot: ReceiptEmailSnapshot, options: { tes
     summaryRow("Tax", snapshot.tax === null ? "Not recorded" : money(snapshot.tax)),
     summaryRow("Total paid", money(snapshot.total), true),
     '</table>',
+    rewardSummaryCard(snapshot),
     '<div style="margin:18px 0;padding:16px;border:1px solid #EAECF0;border-radius:14px;background:#FFF9F0;">',
     `<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:900;">Payment</p><p style="margin:0 0 12px;color:#475467;font-size:14px;font-weight:700;">${htmlEscape(snapshot.paymentMethodLabel)}</p>`,
     `<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:900;">Fulfillment</p><p style="margin:0;color:#475467;font-size:14px;font-weight:700;">${htmlEscape(snapshot.fulfillmentMethod || copy.fulfillmentFallback)}${snapshot.fulfillmentSummary ? ` - ${htmlEscape(snapshot.fulfillmentSummary)}` : ""}</p>`,
     '</div>',
     statusLink ? `<p style="margin:18px 0;">${statusLink}</p>` : "",
-    `<p style="margin:20px 0 0;color:#667085;font-size:13px;line-height:1.5;font-weight:700;">Questions? Email <a href="mailto:${htmlEscape(snapshot.supportEmail)}" style="color:#FF6A00;">${htmlEscape(snapshot.supportEmail)}</a> or visit <a href="https://www.gamedaygrabs.com" style="color:#FF6A00;">gamedaygrabs.com</a>. This receipt contains customer-facing transaction information only.</p>`,
+    `<p style="margin:20px 0 0;color:#667085;font-size:13px;line-height:1.5;font-weight:700;">Questions? Email <a href="mailto:${htmlEscape(snapshot.supportEmail)}" style="color:#FF6A00;">${htmlEscape(snapshot.supportEmail)}</a> or visit <a href="https://www.gamedaygrabs.com" style="color:#FF6A00;">gamedaygrabs.com</a>.</p>`,
     options.testMode ? '<p style="margin:14px 0 0;color:#667085;font-size:12px;line-height:1.5;font-weight:800;">This message was sent from the GameDayGrabs administrator receipt preview.</p>' : "",
     '</td></tr></table>',
     '</td></tr></table>',

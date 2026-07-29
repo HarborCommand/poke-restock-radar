@@ -212,7 +212,7 @@ test("checkout.session.completed reloads fresh paid order state before post-paym
   assert.ok(reloadIndex > createSaleIndex, "order must be reloaded after sale finalization changes paid state in the database");
   assert.ok(sideEffectIndex > reloadIndex, "paid side effects must use the fresh paid order state, not the stale pre-sale object");
   assert.match(paidSideEffects, /await awardRewardsForPaidOrder\(order\)/);
-  assert.match(paidSideEffects, /await sendStorefrontOrderConfirmationEmail\(order\)/);
+  assert.match(paidSideEffects, /await sendStorefrontOrderConfirmationEmail\(await loadFreshStorefrontOrder\(order\.id\)\)/);
   assert.doesNotMatch(handleStripeWebhook, /createStorefrontSale\(order\);\s*if \(!wasPaid && order\.paymentStatus === "paid"\)/);
 });
 
@@ -733,7 +733,10 @@ test("customer lifecycle emails are idempotent and visible without payment detai
   assert.match(emailHelpers, /No customer email is saved for this order\./);
   assert.match(emailHelpers, /Email provider is not configured\. Set RESEND_API_KEY and EMAIL_FROM, or configure SMTP fallback\./);
   assert.match(emailHelpers, /Email delivery failed without blocking the order workflow\./);
-  assert.match(storefront, /buildReceiptEmail\(storefrontReceiptEmailSnapshot\(order, contactEmail\)\)/);
+  assert.match(storefront, /const receiptSnapshot = storefrontReceiptEmailSnapshot\(order, contactEmail, recipient\)/);
+  assert.match(storefront, /const receiptHasRewardSummary = Boolean\(receiptSnapshot\.rewardSummary\)/);
+  assert.match(storefront, /buildReceiptEmail\(receiptSnapshot\)/);
+  assert.match(storefront, /accountFeatures\.customerAccountsEnabled && !receiptHasRewardSummary/);
   assert.match(storefront, /subject: receiptEmail\.subject/);
   assert.match(storefront, /buildCheckoutExpiredEmail/);
   assert.match(storefront, /buildRefundCancellationEmail/);
@@ -766,7 +769,7 @@ test("customer lifecycle emails are idempotent and visible without payment detai
     webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)") < webhook.indexOf("await completePaidCheckoutSideEffects(order)", webhook.indexOf("order = await loadFreshStorefrontOrder(order.id)")),
     "order confirmation email must run after the post-sale fresh order reload"
   );
-  assert.match(storefront, /async function completePaidCheckoutSideEffects[\s\S]*?await sendStorefrontOrderConfirmationEmail\(order\)/);
+  assert.match(storefront, /async function completePaidCheckoutSideEffects[\s\S]*?await awardRewardsForPaidOrder\(order\)[\s\S]*?await sendStorefrontOrderConfirmationEmail\(await loadFreshStorefrontOrder\(order\.id\)\)/);
   assert.match(cancelOrRefund, /customerEmailEventId\("refund_cancellation", updatedOrder\.id, input\.idempotencyKey\)/);
   assert.match(cancelOrRefund, /skippedDetail: "Admin chose not to send a cancellation email\."/);
   assert.match(storefront, /await sendStorefrontCheckoutExpiredEmail\(order, "Stripe Checkout expired before payment completed\."\)/);
