@@ -252,7 +252,7 @@ function twoColumnInfoCard(left: { title: string; body: string }, right: { title
 
 function accountRewardsCtaCard(input: { rewardsCtaEnabled?: boolean }) {
   const body = input.rewardsCtaEnabled
-    ? "Create your GameDayGrabs account to track orders and rewards. Earn points now. Redemption coming soon."
+    ? "Create your GameDayGrabs account to track orders and reward status. Reward earning is currently paused. Redemption coming soon."
     : "Create your GameDayGrabs account to track orders. Guest checkout remains available.";
   return card(
     [
@@ -437,7 +437,7 @@ export function buildOrderConfirmationEmail(input: OrderConfirmationEmailInput):
         ? `Create your GameDayGrabs account to track orders and rewards: ${STOREFRONT_ACCOUNT_LOGIN_URL}`
         : `Create your GameDayGrabs account to track orders: ${STOREFRONT_ACCOUNT_LOGIN_URL}`
       : null,
-    input.accountCtaEnabled && input.rewardsCtaEnabled ? "Earn points now. Redemption coming soon." : null,
+    input.accountCtaEnabled && input.rewardsCtaEnabled ? "Reward earning is currently paused. Redemption coming soon." : null,
     textFooter(input.supportEmail)
   ]
     .filter((line): line is string => line !== null)

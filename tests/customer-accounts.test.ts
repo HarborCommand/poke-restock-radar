@@ -527,8 +527,8 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.doesNotMatch(accountLogin, /GameDayGrabs Account/);
   assert.match(accountLogin, /Hey there! I'm Grabby\./);
   assert.match(accountLogin, /Let's get you signed in so we can keep the good pulls coming!/);
-  assert.match(accountLogin, /Earn Rewards/);
-  assert.match(accountLogin, /Collect points on eligible purchases/);
+  assert.match(accountLogin, /Future Rewards/);
+  assert.match(accountLogin, /Be ready when rewards reopen/);
   assert.match(accountLogin, /Track Orders/);
   assert.match(accountLogin, /Check status and view order history/);
   assert.match(accountLogin, /Secure & Easy/);
@@ -540,9 +540,9 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   assert.match(accountLogin, /No password\? We'll send a secure one-time sign-in link\./);
   assert.match(accountLogin, /New rewards account\? Create or verify it first\./);
   assert.match(accountLogin, /Guest checkout is always available\./);
-  assert.match(accountLogin, /Use your checkout email for rewards\./);
+  assert.match(accountLogin, /Use your checkout email to keep orders together\./);
   assert.doesNotMatch(accountLogin, /Create an account to track orders and rewards\. Guest checkout is still available/);
-  assert.match(accountLogin, /Earn points now\. Redemption coming soon\./);
+  assert.match(accountLogin, /Reward earning is currently paused\./);
   assert.match(accountLogin, /Your session expired\. Sign in again to continue\./);
   assert.match(accountLogin, /action="\/api\/account\/login"/);
   assert.match(accountLogin, /action="\/api\/account\/register"/);
@@ -584,9 +584,9 @@ test("customer account UI polish keeps account creation optional and mobile-safe
   for (const label of ["Purchase History", "Points", "Saved Addresses", "Support / Order Status"]) {
     assert.match(accountDashboard, new RegExp(label));
   }
-  assert.match(accountDashboard, /Earn 1 point per \$1 on eligible product purchases/);
+  assert.match(accountDashboard, /Reward earning is not currently active/);
   assert.match(accountDashboard, /Redemption coming soon/);
-  assert.match(accountDashboard, /Earn points now\. Redemption coming soon/);
+  assert.doesNotMatch(accountDashboard, /Earn points now\. Redemption coming soon/);
   assert.match(accountDashboard, /Display only/);
   assert.match(accountComponents, /const availablePoints = balance\?\.availablePoints \?\? 0/);
   assert.match(accountComponents, /const lifetimeEarnedPoints = balance\?\.lifetimeEarnedPoints \?\? 0/);
@@ -868,7 +868,7 @@ test("customer password login register and reset are hashed token-based and gues
   assert.doesNotMatch(resetRoute, /searchParams\.set\("token"/);
   assert.match(registerRoute, /registerCustomerAccountWithPassword/);
   assert.match(forgotRoute, /sent_if_eligible/);
-  assert.match(accountComponents, /Use your checkout email for rewards/);
+  assert.match(accountComponents, /Use your checkout email to keep orders together/);
   assert.match(accountComponents, /No password\? We'll send a secure one-time sign-in link/);
   assert.match(accountComponents, /If points were earned before you created a password/);
   assert.match(accountComponents, /Guest checkout is always available/);
@@ -1069,7 +1069,7 @@ test("customer purchase history combines verified-email orders and linked POS sa
   assert.match(accountComponents, /Pickup status/);
   assert.match(accountComponents, /Receipt/);
   assert.match(accountComponents, /Purchase type/);
-  assert.match(accountComponents, /Rewards earned/);
+  assert.match(accountComponents, /Reward points recorded/);
   assert.match(accountComponents, /Refund\/cancel status/);
   assert.match(accountComponents, /orderHistoryFilters/);
   assert.match(accountComponents, /Online/);
@@ -1130,7 +1130,7 @@ test("customer account purchase detail is verified scoped and customer safe", ()
   assert.match(detailComponent, /Payment method/);
   assert.match(detailComponent, /Receipt reference/);
   assert.match(detailComponent, /Purchase Summary/);
-  assert.match(detailComponent, /Rewards earned/);
+  assert.match(detailComponent, /Reward points recorded/);
   assert.match(detailComponent, /order\.tax === null \? "Not recorded" : money\(order\.tax\)/);
   assert.match(detailComponent, /Carrier \/ service/);
   assert.match(detailComponent, /Tracking number/);
@@ -1346,11 +1346,11 @@ test("customer rewards page shows balance activity and redemption coming soon", 
   assert.match(accountRewards, /rewardTierState\(index, progress\.currentIndex\)/);
   assert.match(accountRewards, /RewardTierBadge tier=\{progress\.currentTier\}/);
   assert.match(accountRewards, /\{pointsLabel\(progress\.points\)\} \/ \{pointsLabel\(progressMax\)\} points/);
-  assert.match(accountRewards, /Earn 1 point per \$1 spent on eligible product purchases/);
-  assert.match(accountRewards, /Earn 1 point per \$1 on eligible product purchases/);
+  assert.match(accountRewards, /Reward earning is not currently active/);
+  assert.match(accountRewards, /When earning resumes, eligible product purchases may receive points/);
   assert.match(accountRewards, /Points may remain pending until shipped, picked up, or cleared/);
-  assert.match(accountRewards, /Shipping, tax, discounts, canceled\/refunded items, and test\/smoke orders do not earn points/);
-  assert.match(accountRewards, /Refunds\/cancellations may reverse points/);
+  assert.match(accountRewards, /Shipping, tax, discounts, canceled\/refunded items, and test\/smoke orders will not count toward points/);
+  assert.match(accountRewards, /Refunds\/cancellations may reverse previously recorded points/);
   assert.match(accountRewards, /Points have no cash value/);
   assert.match(accountRewards, /Open only what you need/);
   assert.match(accountRewards, /Activity, rules, and help/);
@@ -1359,8 +1359,8 @@ test("customer rewards page shows balance activity and redemption coming soon", 
   assert.match(accountRewards, /entry\.orderNumber/);
   assert.match(components, /entry\.status === "pending"/);
   assert.match(accountRewards, /rewardActivityView\(entry\)/);
-  assert.match(accountRewards, /Start earning points on your next eligible purchase/);
-  assert.match(accountRewards, /Eligible paid orders and matched POS sales will appear here after points are recorded/);
+  assert.match(accountRewards, /No reward activity is recorded yet/);
+  assert.match(accountRewards, /Reward earning is currently paused/);
   assert.match(accountRewards, /View orders/);
   assert.match(accountRewards, /Rewards rules/);
   assert.match(accountRewards, /Contact support/);
@@ -1394,7 +1394,7 @@ test("success page and order confirmation include safe optional account rewards 
   assert.match(successPage, /customerAccountFeatureConfig/);
   assert.match(successPage, /accountCtaEnabled=\{customerAccountFeatures\.customerAccountsEnabled\}/);
   assert.match(client, /Create an account to track this order/);
-  assert.match(client, /Earn points now\. Redemption coming soon/);
+  assert.match(client, /Reward earning is currently paused\. Redemption coming soon/);
   assert.match(client, /No account required/);
   assert.match(emailTemplates, /Create your GameDayGrabs account to track orders and rewards/);
   assert.match(emailTemplates, /STOREFRONT_ACCOUNT_LOGIN_URL/);

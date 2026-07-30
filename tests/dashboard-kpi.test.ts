@@ -1159,12 +1159,13 @@ test("GameDayGrabs About and Policies pages use current customer policy copy", (
   assert.match(policiesPage, /No account required to checkout/);
   assert.match(policiesPage, /Customer accounts are optional/);
   assert.match(policiesPage, /guest checkout remains available/);
-  assert.match(policiesPage, /Earn 1 point per \$1 on eligible product purchases/);
-  assert.match(policiesPage, /Points start pending after payment/);
+  assert.match(policiesPage, /Reward earning is not currently active/);
+  assert.match(policiesPage, /eligible product purchases may receive points/);
+  assert.match(policiesPage, /Points may start pending after payment/);
   assert.match(policiesPage, /may become available after fulfillment, pickup, or the configured pending period/);
-  assert.match(policiesPage, /Shipping, taxes, refunds, discounts, canceled orders, and test\/smoke orders do not earn points/);
+  assert.match(policiesPage, /Shipping, taxes, refunds, discounts, canceled orders, and test\/smoke orders will not count toward points/);
   assert.match(policiesPage, /Refunded or canceled orders can reverse points/);
-  assert.match(policiesPage, /Earn points now\. Redemption coming soon/);
+  assert.match(policiesPage, /Redemption is coming soon/);
   assert.match(policiesPage, /Points cannot be used at checkout yet/);
   assert.match(policiesPage, /Points have no cash value/);
   assert.match(policiesPage, /GameDayGrabs may adjust or reverse points for fraud, abuse, refunds, cancellations, or errors/);

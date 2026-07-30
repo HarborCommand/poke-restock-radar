@@ -154,8 +154,8 @@ test("order confirmation can include a safe optional account and rewards CTA", (
     rewardsCtaEnabled: true
   });
 
-  assert.match(email.html + email.text, /Create your GameDayGrabs account to track orders and rewards/);
-  assert.match(email.html + email.text, /Earn points now\. Redemption coming soon/);
+  assert.match(email.html + email.text, /Create your GameDayGrabs account to track orders and reward status/);
+  assert.match(email.html + email.text, /Reward earning is currently paused\. Redemption coming soon/);
   assert.match(email.html, /https:\/\/www\.gamedaygrabs\.com\/account\/login/);
   assert.doesNotMatch(email.html + email.text, /redeem points|apply points|coupon/i);
   assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);

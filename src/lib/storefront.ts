@@ -1212,7 +1212,7 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     ? [
         "",
         "Create your GameDayGrabs account to track orders and rewards.",
-        accountFeatures.customerRewardsEnabled ? "Earn points now. Redemption coming soon." : null
+        accountFeatures.customerRewardsEnabled ? "Reward earning is currently paused. Redemption coming soon." : null
       ]
         .filter(Boolean)
         .join("\n")
@@ -1221,7 +1221,7 @@ async function sendStorefrontOrderConfirmationEmail(order: StorefrontOrderWithIt
     ? [
         '<div style="margin:18px 0 0;padding:16px;border:1px solid #EAECF0;border-radius:14px;background:#F9FAFB;">',
         '<p style="margin:0;color:#101828;font-size:14px;font-weight:900;">Track this order from your account</p>',
-        `<p style="margin:6px 0 0;color:#475467;font-size:13px;line-height:1.5;font-weight:700;">Create your GameDayGrabs account to track orders and rewards.${accountFeatures.customerRewardsEnabled ? " Earn points now. Redemption coming soon." : ""}</p>`,
+        `<p style="margin:6px 0 0;color:#475467;font-size:13px;line-height:1.5;font-weight:700;">Create your GameDayGrabs account to track orders and rewards.${accountFeatures.customerRewardsEnabled ? " Reward earning is currently paused. Redemption coming soon." : ""}</p>`,
         '</div>'
       ].join("")
     : "";

@@ -141,10 +141,11 @@ export default async function PoliciesPage() {
         <article>
           <h2>GameDayGrabs Rewards</h2>
           <p>No account required to checkout. Customer accounts are optional, and guest checkout remains available.</p>
-          <p>Earn 1 point per $1 on eligible product purchases when GameDayGrabs Rewards are enabled. Points start pending after payment and may become available after fulfillment, pickup, or the configured pending period.</p>
-          <p>Shipping, taxes, refunds, discounts, canceled orders, and test/smoke orders do not earn points.</p>
+          <p>Reward earning is not currently active. When GameDayGrabs Rewards are enabled, eligible product purchases may receive points.</p>
+          <p>Points may start pending after payment and may become available after fulfillment, pickup, or the configured pending period.</p>
+          <p>Shipping, taxes, refunds, discounts, canceled orders, and test/smoke orders will not count toward points.</p>
           <p>Refunded or canceled orders can reverse points that were previously awarded.</p>
-          <p>Earn points now. Redemption coming soon. Points cannot be used at checkout yet.</p>
+          <p>Redemption is coming soon. Points cannot be used at checkout yet.</p>
           <p>Points have no cash value and are not transferable.</p>
           <p>GameDayGrabs may adjust or reverse points for fraud, abuse, refunds, cancellations, or errors.</p>
         </article>

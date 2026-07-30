@@ -300,7 +300,7 @@ function textReceipt(snapshot: ReceiptEmailSnapshot, testMode = false) {
     rewardSummary ? `Current available balance: ${rewardSummary.availableBalance} points` : null,
     rewardSummary && rewardSummary.pendingBalance > 0 ? `Current pending points: ${rewardSummary.pendingBalance} points` : null,
     rewardSummary ? `View My Rewards: ${rewardSummary.rewardsUrl}` : null,
-    rewardSummary ? "Earn points now. Redemption coming soon." : null,
+    rewardSummary ? "Reward earning is currently paused. Redemption coming soon." : null,
     rewardSummary ? "" : null,
     `Payment: ${snapshot.paymentMethodLabel}`,
     `Fulfillment: ${snapshot.fulfillmentMethod}`,
@@ -350,7 +350,7 @@ function rewardSummaryCard(snapshot: ReceiptEmailSnapshot) {
     '<p style="margin:6px 0 14px;color:#475467;font-size:14px;line-height:1.5;font-weight:700;">Thanks for growing your collection with GameDayGrabs.</p>',
     `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rewardRows(summary)}</table>`,
     `<p style="margin:16px 0 0;"><a href="${htmlEscape(summary.rewardsUrl)}" style="display:inline-block;padding:11px 16px;border-radius:999px;background:#101828;color:#fff;font-size:13px;font-weight:900;text-decoration:none;">View My Rewards</a></p>`,
-    '<p style="margin:12px 0 0;color:#667085;font-size:13px;line-height:1.45;font-weight:800;">Earn points now. Redemption coming soon.</p>',
+    '<p style="margin:12px 0 0;color:#667085;font-size:13px;line-height:1.45;font-weight:800;">Reward earning is currently paused. Redemption coming soon.</p>',
     '</div>'
   ].join("");
 }

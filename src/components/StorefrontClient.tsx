@@ -225,7 +225,7 @@ function storefrontRewardsProgramCopy(settings: StorefrontSettingsDTO) {
   if (!settings.customerAccounts.enabled || !settings.customerAccounts.rewardsEnabled) return null;
   return settings.customerAccounts.redemptionEnabled
     ? "Earn points on eligible purchases."
-    : "Earn points now. Redemption coming soon.";
+    : "Reward earning is currently paused. Redemption coming soon.";
 }
 
 function storefrontRewardEstimateLabel(product: PublicStoreProductDTO, settings: StorefrontSettingsDTO) {
@@ -1138,7 +1138,7 @@ function HomepageAccountCta({ settings, signedIn }: { settings: StorefrontSettin
         <div>
           <h2>{headline}</h2>
           <p>{detail}</p>
-          <small>{signedIn ? "Earn points now. Redemption coming soon." : "No account required to buy. Earn points now. Redemption coming soon."}</small>
+          <small>{signedIn ? "Reward earning is currently paused. Redemption coming soon." : "No account required to buy. Rewards are being prepared."}</small>
         </div>
       </div>
       <div className="gdg-home-account-actions">
@@ -2799,8 +2799,8 @@ export function CheckoutSuccessClient({
       <p>Your confirmation email and order detail show merchandise, shipping, sales tax, and total separately.</p>
       {accountCtaEnabled ? (
         <div className="gdg-success-account-cta">
-          <strong>Create an account to track this order{rewardsCtaEnabled ? " and earn rewards" : ""}.</strong>
-          <span>{rewardsCtaEnabled ? "Track points in your account. Earn points now. Redemption coming soon." : "Account creation is optional and guest checkout remains available."}</span>
+          <strong>Create an account to track this order{rewardsCtaEnabled ? " and view reward status" : ""}.</strong>
+          <span>{rewardsCtaEnabled ? "Track points in your account. Reward earning is currently paused. Redemption coming soon." : "Account creation is optional and guest checkout remains available."}</span>
           <Link href="/account/login" className="gdg-secondary-button compact" onClick={() => trackStorefrontEvent("account_login_requested", { source: "checkout_success" })}>
             Create or Sign In
           </Link>

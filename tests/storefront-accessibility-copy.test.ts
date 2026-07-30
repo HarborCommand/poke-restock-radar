@@ -38,13 +38,14 @@ test("customer-facing tax copy is plain and keeps historical unknown display unc
 test("rewards messaging is flag-driven and does not imply redemption while disabled", () => {
   assert.match(rewardHelper, /!settings\.customerAccounts\.enabled \|\| !settings\.customerAccounts\.rewardsEnabled\) return null/);
   assert.match(rewardHelper, /settings\.customerAccounts\.redemptionEnabled[\s\S]*?"Earn points on eligible purchases\."/);
-  assert.match(rewardHelper, /"Earn points now\. Redemption coming soon\."/);
+  assert.match(rewardHelper, /"Reward earning is currently paused\. Redemption coming soon\."/);
   assert.match(rewardEstimateHelper, /if \(isSoldOutProduct\(product\)\) return null/);
   assert.match(productCard, /const rewardProgramCopy = storefrontRewardsProgramCopy\(settings\)/);
   assert.match(productDetail, /Estimated from merchandise subtotal only; excludes shipping and tax\./);
   assert.match(cartClient, /const estimatedRewardPoints = settings\.customerAccounts\.enabled && settings\.customerAccounts\.rewardsEnabled \? Math\.floor\(Math\.max\(0, subtotal\)\) : 0/);
   assert.match(cartClient, /on merchandise only\. \{rewardProgramCopy\}/);
-  assert.match([storefrontClient, accountPages, policiesPage, rewardsPage, emails].join("\n"), /Earn points now\. Redemption coming soon\./);
+  assert.match([storefrontClient, accountPages, policiesPage, rewardsPage, emails].join("\n"), /Reward earning is currently paused\. Redemption coming soon\./);
+  assert.doesNotMatch([storefrontClient, accountPages, policiesPage, rewardsPage, emails].join("\n"), /Earn points now\. Redemption coming soon\./);
   assert.match(policiesPage, /Points have no cash value/);
   assert.doesNotMatch([storefrontClient, accountPages, policiesPage, rewardsPage, emails].join("\n"), /redeem points|apply points|cash equivalent|launch date|use points at checkout/i);
 });

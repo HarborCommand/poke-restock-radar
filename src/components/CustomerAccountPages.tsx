@@ -212,9 +212,9 @@ function AccountHeroGrabby() {
 
 function RewardsInfoStrip({ className = "" }: { className?: string }) {
   const infoItems: Array<{ label: string; copy: string; icon: LucideIcon; tone: "gold" | "violet" | "green" | "blue" }> = [
-    { label: "Earn points", copy: "per eligible product dollar.", icon: Trophy, tone: "gold" },
-    { label: "Points pending", copy: "until shipped, picked up, or cleared.", icon: Gift, tone: "violet" },
-    { label: "Refunds may", copy: "reverse points.", icon: ShieldCheck, tone: "green" },
+    { label: "Future rewards", copy: "are being prepared.", icon: Trophy, tone: "gold" },
+    { label: "Points shown", copy: "are display-only for now.", icon: Gift, tone: "violet" },
+    { label: "Refunds may", copy: "reverse prior points.", icon: ShieldCheck, tone: "green" },
     { label: "No cash value", copy: "or exchange.", icon: ShieldCheck, tone: "blue" }
   ];
 
@@ -450,7 +450,7 @@ export function AccountDashboard({
               <AccountIconBadge icon={Trophy} tone="gold" />
             </div>
             <strong className="gdg-account-points-display">{availablePoints} points</strong>
-            <p>Earn 1 point per $1 on eligible product purchases. Earn points now. Redemption coming soon.</p>
+            <p>Reward earning is not currently active. Your account is ready for future rewards.</p>
             <div className="gdg-account-progress" aria-label={`${progressPercent}% toward collector milestone`}>
               <span style={{ width: `${progressPercent}%` }} />
             </div>
@@ -488,7 +488,7 @@ export function AccountSecurityUnavailable() {
 }
 
 const loginBenefits: Array<{ title: string; copy: string; icon: LucideIcon; tone: "gold" | "green" | "blue" }> = [
-  { title: "Earn Rewards", copy: "Collect points on eligible purchases.", icon: Trophy, tone: "gold" },
+  { title: "Future Rewards", copy: "Be ready when rewards reopen.", icon: Trophy, tone: "gold" },
   { title: "Track Orders", copy: "Check status and view order history.", icon: PackageCheck, tone: "green" },
   { title: "Secure & Easy", copy: "Your account is protected.", icon: ShieldCheck, tone: "gold" }
 ];
@@ -498,7 +498,7 @@ function CustomerAuthWelcomePanel() {
     <section className="gdg-login-welcome" aria-labelledby="gdg-login-title">
       <h1 id="gdg-login-title">Welcome back, Collector!</h1>
       <p className="gdg-login-lede">
-        Sign in to manage your orders, earn rewards, and keep your collection growing.
+        Sign in to manage your orders, view reward status, and keep your collection growing.
       </p>
       <div className="gdg-login-benefits" aria-label="Account benefits">
         {loginBenefits.map((benefit) => {
@@ -616,8 +616,8 @@ export function CustomerLoginPageContent({
         </div>
         <div className="gdg-login-pill-row" aria-label="Account reminders">
           <span>Guest checkout is always available.</span>
-          <span>Use your checkout email for rewards.</span>
-          <span>Earn points now. Redemption coming soon.</span>
+          <span>Use your checkout email to keep orders together.</span>
+          <span>Reward earning is currently paused.</span>
         </div>
         <div className="gdg-login-notices">
           {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
@@ -945,7 +945,7 @@ export function AccountOrders({
                 ))}
               </section>
               {order.rewardsEarned ? (
-                <p className="gdg-account-notice">Rewards earned: {order.rewardsEarned.toLocaleString()} point{order.rewardsEarned === 1 ? "" : "s"}.</p>
+                <p className="gdg-account-notice">Reward points recorded: {order.rewardsEarned.toLocaleString()} point{order.rewardsEarned === 1 ? "" : "s"}.</p>
               ) : null}
               {order.refundStatus ? (
                 <p className="gdg-account-notice">
@@ -1110,7 +1110,7 @@ export function AccountOrderDetail({ account, order }: { account: CurrentCustome
             </div>
             {order.rewardsEarned ? (
               <div>
-                <span>Rewards earned</span>
+                <span>Reward points recorded</span>
                 <strong>{order.rewardsEarned.toLocaleString()} pts</strong>
               </div>
             ) : null}
@@ -1237,8 +1237,8 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
         <div className="gdg-rewards-spotlight-copy">
           <p className="gdg-overline">Collector rewards</p>
           <h1 id="gdg-rewards-title">Your collection. Your level.</h1>
-          <p>Earn 1 point per $1 spent on eligible product purchases. Keep earning, keep opening, keep leveling up.</p>
-          <p>Earn points now. Redemption coming soon. Points are display-only and do not affect checkout totals yet.</p>
+          <p>Reward earning is not currently active. Existing points remain visible while rewards are prepared.</p>
+          <p>Points are display-only and do not affect checkout totals yet. Redemption is coming soon.</p>
           <div className="gdg-rewards-spotlight-actions">
             <Link href="/policies" className="gdg-primary-button">
               Rewards rules
@@ -1253,7 +1253,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
         <div className="gdg-rewards-spotlight-rules" aria-label="Rewards quick rules">
           <div>
             <AccountIconBadge tone="gold" icon={Trophy} />
-            <p><strong>Earn points</strong><span>1 pt per $1 spent</span></p>
+            <p><strong>Future rewards</strong><span>Prepared for account holders</span></p>
           </div>
           <div>
             <AccountIconBadge tone="violet" icon={Gift} />
@@ -1334,10 +1334,10 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
             <p>
               <strong>
                 {progress.nextTier
-                  ? `Earn ${pointsLabel(progress.pointsToNext)} more points to reach ${progress.nextTier.name}`
+                  ? `${pointsLabel(progress.pointsToNext)} more points to reach ${progress.nextTier.name}`
                   : "You have reached the current top rewards level"}
               </strong>
-              <span>More points unlock more rewards when redemption launches.</span>
+              <span>More points can unlock more rewards after reward earning resumes and redemption launches.</span>
             </p>
           </div>
         </section>
@@ -1385,7 +1385,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
               <span className="gdg-rewards-panel-icon"><RefreshCcw size={18} aria-hidden="true" /></span>
               <span>
                 <strong>Activity</strong>
-                <small>Recent earned, pending, and reversed points</small>
+                <small>Recent recorded, pending, and reversed points</small>
               </span>
               <ChevronRight size={17} aria-hidden="true" />
             </summary>
@@ -1419,8 +1419,8 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
               ) : (
                 <div className="gdg-rewards-empty-state">
                   <Gift size={24} aria-hidden="true" />
-                  <strong>Start earning points on your next eligible purchase.</strong>
-                  <p>Eligible paid orders and matched POS sales will appear here after points are recorded.</p>
+                  <strong>No reward activity is recorded yet.</strong>
+                  <p>Reward earning is currently paused. Eligible activity will appear here when earning resumes.</p>
                 </div>
               )}
             </div>
@@ -1431,17 +1431,18 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
               <span className="gdg-rewards-panel-icon"><ShieldCheck size={18} aria-hidden="true" /></span>
               <span>
                 <strong>Rules</strong>
-                <small>How earning and reversals work</small>
+                <small>How future earning and reversals work</small>
               </span>
               <ChevronRight size={17} aria-hidden="true" />
             </summary>
             <div className="gdg-rewards-panel-body">
               <ul className="gdg-rewards-rules-list">
                 {[
-                  "Earn 1 point per $1 on eligible product purchases.",
+                  "Reward earning is not currently active.",
+                  "When earning resumes, eligible product purchases may receive points.",
                   "Points may remain pending until shipped, picked up, or cleared.",
-                  "Shipping, tax, discounts, canceled/refunded items, and test/smoke orders do not earn points.",
-                  "Refunds/cancellations may reverse points.",
+                  "Shipping, tax, discounts, canceled/refunded items, and test/smoke orders will not count toward points.",
+                  "Refunds/cancellations may reverse previously recorded points.",
                   "Points have no cash value.",
                   "Redemption coming soon."
                 ].map((copy) => (

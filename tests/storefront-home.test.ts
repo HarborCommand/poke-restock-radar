@@ -295,7 +295,7 @@ test("homepage merchandising UI renders category links and safe product-card lin
   assert.match(client, /Your account is ready/);
   assert.match(client, /Track orders, saved addresses, and rewards from your dashboard/);
   assert.match(client, /Shop New Arrivals/);
-  assert.match(client, /Earn points now\. Redemption coming soon/);
+  assert.match(client, /Reward earning is currently paused\. Redemption coming soon/);
   assert.match(client, /primaryHref = signedIn \? "\/account" : accountsEnabled \? "\/account\/login" : "\/order-status"/);
   assert.match(client, /gdg-home-account-badge-shell/);
   assert.match(client, /gdg-home-account-badge-mark/);

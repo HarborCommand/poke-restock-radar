@@ -549,7 +549,7 @@ test("reward receipt gate preserves feature flags and account privacy requiremen
   assert.match(customerRewardsSource, /config\.customerAccountsEnabled && config\.customerRewardsEnabled && config\.customerPosRewardsEnabled/);
   assert.match(customerRewardsSource, /if \(!posRewardFeatureEnabled\(\)\) return null/);
   assert.match(storefrontSource, /rewardsEnabled: customerRewardsEnabled\(\)/);
-  assert.match(receiptEmailSource, /Earn points now\. Redemption coming soon\./);
+  assert.match(receiptEmailSource, /Reward earning is currently paused\. Redemption coming soon\./);
   assert.doesNotMatch(receiptEmailSource, /Redeem points|Apply points|reward discount/i);
 });
 
