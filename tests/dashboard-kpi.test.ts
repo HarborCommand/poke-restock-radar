@@ -1056,7 +1056,7 @@ test("storefront publishing and distributor readiness workflow is wired", () => 
   assert.match(client, /HomepageAccountCta/);
   assert.match(home, /Shop Pokémon Cards/);
   assert.match(home, /Products Under \$25/);
-  assert.match(client, /Guest checkout stays available\. Sign in anytime to view orders, saved addresses, and points/);
+  assert.match(client, /Guest checkout stays available\. Sign in anytime to view orders, saved addresses\$\{rewardsEnabled \? ", and points" : ", and future rewards"\}/);
   assert.match(client, /Your account is ready/);
   assert.match(client, /Shop as Guest/);
   assert.match(client, /Shop New Arrivals/);

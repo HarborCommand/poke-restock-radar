@@ -154,10 +154,39 @@ test("order confirmation can include a safe optional account and rewards CTA", (
     rewardsCtaEnabled: true
   });
 
-  assert.match(email.html + email.text, /Create your GameDayGrabs account to track orders and reward status/);
-  assert.match(email.html + email.text, /Reward earning is currently paused\. Redemption coming soon/);
+  assert.match(email.html + email.text, /Create your GameDayGrabs account to track orders and rewards/);
+  assert.match(email.html + email.text, /Earn points on eligible purchases\. Redemption coming soon/);
+  assert.doesNotMatch(email.html + email.text, /Reward earning is currently paused/);
   assert.match(email.html, /https:\/\/www\.gamedaygrabs\.com\/account\/login/);
   assert.doesNotMatch(email.html + email.text, /redeem points|apply points|coupon/i);
+  assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
+});
+
+test("order confirmation account CTA stays order-only when rewards are disabled", () => {
+  const email = buildOrderConfirmationEmail({
+    orderNumber: "PR-ACCOUNT-ONLY",
+    supportEmail,
+    logoUrl,
+    items: [
+      {
+        name: "Mega Evolution Perfect Order Booster Bundle",
+        quantity: 1,
+        lineTotal: 44.99,
+        imageUrl: null
+      }
+    ],
+    subtotal: 44.99,
+    shippingCharged: 5.7,
+    totalPaid: 50.69,
+    shippingMethod: "USPS Ground Advantage",
+    accountCtaEnabled: true,
+    rewardsCtaEnabled: false
+  });
+
+  assert.match(email.html + email.text, /Create your GameDayGrabs account to track orders/);
+  assert.match(email.html + email.text, /Guest checkout remains available/);
+  assert.doesNotMatch(email.html + email.text, /Earn points on eligible purchases|Reward earning is currently paused|track orders and rewards/i);
+  assert.match(email.html, /https:\/\/www\.gamedaygrabs\.com\/account\/login/);
   assert.doesNotMatch(email.html + email.text, sensitivePaymentPattern);
 });
 

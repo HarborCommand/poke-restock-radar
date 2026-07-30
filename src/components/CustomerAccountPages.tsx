@@ -35,6 +35,7 @@ import {
   type CustomerAccountOrderDetail,
   type CustomerAccountOrderHistoryItem
 } from "@/lib/customer-account-auth";
+import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 import { GrabbyMascot } from "@/components/brand/GrabbyMascot";
 import type { CustomerRewardActivityItem } from "@/lib/customer-rewards";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
@@ -201,6 +202,81 @@ function purchaseDetailHref(order: CustomerAccountOrderHistoryItem) {
   return `/account/orders/${encodeURIComponent(order.detailKey)}`;
 }
 
+function accountRewardsCopy() {
+  const config = customerAccountFeatureConfig();
+  const rewardsEnabled = config.customerAccountsEnabled && config.customerRewardsEnabled;
+  const redemptionEnabled = rewardsEnabled && config.customerRewardRedemptionEnabled;
+  return {
+    rewardsEnabled,
+    redemptionEnabled,
+    accountScope: rewardsEnabled ? "rewards" : "future rewards",
+    signedInScope: rewardsEnabled ? "orders, rewards, saved addresses, and support" : "orders, future rewards, saved addresses, and support",
+    signInRequiredScope: rewardsEnabled ? "order history, rewards, saved addresses, and support links" : "order history, future rewards, saved addresses, and support links",
+    loginFeatureLabel: rewardsEnabled ? "Rewards" : "Future Rewards",
+    loginFeatureCopy: rewardsEnabled
+      ? redemptionEnabled
+        ? "Earn points on eligible purchases."
+        : "Earn points on eligible purchases. Redemption coming soon."
+      : "Be ready when rewards reopen.",
+    loginPillCopy: rewardsEnabled
+      ? redemptionEnabled
+        ? "Earn points on eligible purchases."
+        : "Earn points on eligible purchases. Redemption coming soon."
+      : "Reward earning is currently paused.",
+    dashboardPointsCopy: rewardsEnabled
+      ? redemptionEnabled
+        ? "Manage rewards from your account"
+        : "Earning active. Redemption coming soon"
+      : "Redemption coming soon",
+    dashboardPanelCopy: rewardsEnabled
+      ? redemptionEnabled
+        ? "Earn points on eligible purchases. Manage rewards from your account."
+        : "Earn points on eligible purchases. Redemption coming soon."
+      : "Reward earning is not currently active. Your account is ready for future rewards.",
+    infoPrimaryLabel: rewardsEnabled ? "Eligible purchases" : "Future rewards",
+    infoPrimaryCopy: rewardsEnabled ? "can earn points." : "are being prepared.",
+    pointsDisplayCopy: redemptionEnabled ? "Available for approved reward use" : "Display-only until redemption launches",
+    spotlightCopy: rewardsEnabled
+      ? redemptionEnabled
+        ? "Earn points on eligible purchases. Existing points remain visible in your account."
+        : "Earn points on eligible purchases. Existing points remain visible while redemption is prepared."
+      : "Reward earning is not currently active. Existing points remain visible while rewards are prepared.",
+    checkoutImpactCopy: redemptionEnabled
+      ? "Reward use is managed from your account and never changes the itemized order record."
+      : "Points are display-only and do not affect checkout totals yet. Redemption is coming soon.",
+    spotlightStatus: redemptionEnabled ? "Rewards active" : "Redemption coming soon",
+    quickRuleLabel: rewardsEnabled ? "Eligible purchases" : "Future rewards",
+    quickRuleCopy: rewardsEnabled ? "Can earn points" : "Prepared for account holders",
+    nextCalloutCopy: rewardsEnabled
+      ? redemptionEnabled
+        ? "Eligible purchases can unlock more rewards as your lifetime points grow."
+        : "More points can unlock more rewards while redemption is being prepared."
+      : "More points can unlock more rewards after reward earning resumes and redemption launches.",
+    emptyActivityCopy: rewardsEnabled
+      ? "Eligible reward activity will appear here after qualifying purchases."
+      : "Reward earning is currently paused. Eligible activity will appear here when earning resumes.",
+    rulesIntro: rewardsEnabled ? "How earning and reversals work" : "How future earning and reversals work",
+    rules: rewardsEnabled
+      ? [
+          "Eligible product purchases may receive points.",
+          "Points may remain pending until shipped, picked up, or cleared.",
+          "Shipping, tax, discounts, canceled/refunded items, and test/smoke orders will not count toward points.",
+          "Refunds/cancellations may reverse previously recorded points.",
+          "Points have no cash value.",
+          redemptionEnabled ? "Reward use is managed from your account." : "Redemption coming soon."
+        ]
+      : [
+          "Reward earning is not currently active.",
+          "When earning resumes, eligible product purchases may receive points.",
+          "Points may remain pending until shipped, picked up, or cleared.",
+          "Shipping, tax, discounts, canceled/refunded items, and test/smoke orders will not count toward points.",
+          "Refunds/cancellations may reverse previously recorded points.",
+          "Points have no cash value.",
+          "Redemption coming soon."
+        ]
+  };
+}
+
 function AccountHeroGrabby() {
   return (
     <div className="gdg-account-hero-grabby">
@@ -211,9 +287,10 @@ function AccountHeroGrabby() {
 }
 
 function RewardsInfoStrip({ className = "" }: { className?: string }) {
+  const copy = accountRewardsCopy();
   const infoItems: Array<{ label: string; copy: string; icon: LucideIcon; tone: "gold" | "violet" | "green" | "blue" }> = [
-    { label: "Future rewards", copy: "are being prepared.", icon: Trophy, tone: "gold" },
-    { label: "Points shown", copy: "are display-only for now.", icon: Gift, tone: "violet" },
+    { label: copy.infoPrimaryLabel, copy: copy.infoPrimaryCopy, icon: Trophy, tone: "gold" },
+    { label: "Points shown", copy: copy.redemptionEnabled ? "stay visible in account." : "are display-only for now.", icon: Gift, tone: "violet" },
     { label: "Refunds may", copy: "reverse prior points.", icon: ShieldCheck, tone: "green" },
     { label: "No cash value", copy: "or exchange.", icon: ShieldCheck, tone: "blue" }
   ];
@@ -268,13 +345,14 @@ export function CustomerAccountsComingSoon() {
 }
 
 export function AccountSignInRequired({ title = "Sign in to view your account." }: { title?: string }) {
+  const copy = accountRewardsCopy();
   return (
     <div className="gdg-account-card hero">
       <p className="gdg-overline">Optional Account</p>
       <h1>{title}</h1>
       <p>
-        Sign in with your password or a secure email link to view your order history, rewards, saved addresses, and
-        support links. Guest checkout remains available.
+        Sign in with your password or a secure email link to view your {copy.signInRequiredScope}. Guest checkout
+        remains available.
       </p>
       <div className="gdg-account-actions">
         <Link href="/account/login" className="gdg-primary-button">Sign In</Link>
@@ -291,6 +369,7 @@ export function AccountDashboard({
   account: CurrentCustomerAccount;
   recentOrders?: CustomerAccountOrderHistoryItem[];
 }) {
+  const copy = accountRewardsCopy();
   const rewardBalance = account.rewardBalance;
   const availablePoints = rewardBalance?.availablePoints ?? 0;
   const lifetimePoints = rewardBalance?.lifetimeEarnedPoints ?? 0;
@@ -322,7 +401,7 @@ export function AccountDashboard({
       href: "/account/rewards",
       label: "Points",
       value: `${availablePoints}`,
-      copy: "Redemption coming soon",
+      copy: copy.dashboardPointsCopy,
       icon: Gift,
       tone: "violet"
     },
@@ -353,7 +432,7 @@ export function AccountDashboard({
           <p className="gdg-overline">Account Overview</p>
           <h1>Welcome back.</h1>
           <p>
-            Signed in as <strong>{account.email}</strong>. Track orders, rewards, saved addresses, and support in one
+            Signed in as <strong>{account.email}</strong>. Track {copy.signedInScope} in one
             place.
           </p>
           <div className="gdg-account-hero-actions">
@@ -385,7 +464,7 @@ export function AccountDashboard({
         <section className="gdg-account-panel gdg-account-orders-preview">
           <div className={recentOrderImageUrl ? "gdg-account-orders-preview-visual has-image" : "gdg-account-orders-preview-visual"}>
             {recentOrderImageUrl ? (
-              <img src={recentOrderImageUrl} alt={recentOrderImageAlt} />
+              <Image src={recentOrderImageUrl} alt={recentOrderImageAlt} width={192} height={192} unoptimized />
             ) : (
               <>
                 <PackageCheck size={28} aria-hidden="true" />
@@ -414,7 +493,7 @@ export function AccountDashboard({
                       <div className="gdg-account-preview-thumb">
                         {previewItem?.imageUrl ? (
                           // Safe public order snapshot image.
-                          <img src={previewItem.imageUrl} alt={`${previewItem.title} thumbnail`} />
+                          <Image src={previewItem.imageUrl} alt={`${previewItem.title} thumbnail`} width={72} height={72} unoptimized />
                         ) : (
                           <PackageCheck size={18} aria-hidden="true" />
                         )}
@@ -450,7 +529,7 @@ export function AccountDashboard({
               <AccountIconBadge icon={Trophy} tone="gold" />
             </div>
             <strong className="gdg-account-points-display">{availablePoints} points</strong>
-            <p>Reward earning is not currently active. Your account is ready for future rewards.</p>
+            <p>{copy.dashboardPanelCopy}</p>
             <div className="gdg-account-progress" aria-label={`${progressPercent}% toward collector milestone`}>
               <span style={{ width: `${progressPercent}%` }} />
             </div>
@@ -487,18 +566,19 @@ export function AccountSecurityUnavailable() {
   );
 }
 
-const loginBenefits: Array<{ title: string; copy: string; icon: LucideIcon; tone: "gold" | "green" | "blue" }> = [
-  { title: "Future Rewards", copy: "Be ready when rewards reopen.", icon: Trophy, tone: "gold" },
-  { title: "Track Orders", copy: "Check status and view order history.", icon: PackageCheck, tone: "green" },
-  { title: "Secure & Easy", copy: "Your account is protected.", icon: ShieldCheck, tone: "gold" }
-];
-
 function CustomerAuthWelcomePanel() {
+  const copy = accountRewardsCopy();
+  const loginBenefits: Array<{ title: string; copy: string; icon: LucideIcon; tone: "gold" | "green" | "blue" }> = [
+    { title: copy.loginFeatureLabel, copy: copy.loginFeatureCopy, icon: Trophy, tone: "gold" },
+    { title: "Track Orders", copy: "Check status and view order history.", icon: PackageCheck, tone: "green" },
+    { title: "Secure & Easy", copy: "Your account is protected.", icon: ShieldCheck, tone: "gold" }
+  ];
+
   return (
     <section className="gdg-login-welcome" aria-labelledby="gdg-login-title">
       <h1 id="gdg-login-title">Welcome back, Collector!</h1>
       <p className="gdg-login-lede">
-        Sign in to manage your orders, view reward status, and keep your collection growing.
+        Sign in to manage your orders, view {copy.accountScope}, and keep your collection growing.
       </p>
       <div className="gdg-login-benefits" aria-label="Account benefits">
         {loginBenefits.map((benefit) => {
@@ -596,6 +676,7 @@ export function CustomerLoginPageContent({
   const loginRateLimitMessage = customerAuthAttemptMessage(loginError);
   const registerRateLimitMessage = customerAuthAttemptMessage(registerError);
   const magicLinkErrorMessage = customerAuthAttemptMessage(error);
+  const copy = accountRewardsCopy();
 
   return (
     <div className="gdg-login-page">
@@ -611,13 +692,13 @@ export function CustomerLoginPageContent({
           <p>
             {activeMode === "signin"
               ? "Password login stays primary. Email sign-in is optional."
-              : "Create an account to track orders and rewards."}
+              : `Create an account to track orders and ${copy.accountScope}.`}
           </p>
         </div>
         <div className="gdg-login-pill-row" aria-label="Account reminders">
           <span>Guest checkout is always available.</span>
           <span>Use your checkout email to keep orders together.</span>
-          <span>Reward earning is currently paused.</span>
+          <span>{copy.loginPillCopy}</span>
         </div>
         <div className="gdg-login-notices">
           {statusMessage ? <p className="gdg-account-notice good">{statusMessage}</p> : null}
@@ -1179,6 +1260,7 @@ function rewardActivityView(entry: CustomerRewardActivityItem) {
 }
 
 export function AccountRewards({ account, activity = [] }: { account: CurrentCustomerAccount; activity?: CustomerRewardActivityItem[] }) {
+  const copy = accountRewardsCopy();
   const balance = account.rewardBalance;
   const availablePoints = balance?.availablePoints ?? 0;
   const lifetimeEarnedPoints = balance?.lifetimeEarnedPoints ?? 0;
@@ -1193,7 +1275,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
     {
       label: "Available points",
       value: availablePoints,
-      detail: "Display-only until redemption launches",
+      detail: copy.pointsDisplayCopy,
       tone: "gold",
       icon: Star
     },
@@ -1237,8 +1319,8 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
         <div className="gdg-rewards-spotlight-copy">
           <p className="gdg-overline">Collector rewards</p>
           <h1 id="gdg-rewards-title">Your collection. Your level.</h1>
-          <p>Reward earning is not currently active. Existing points remain visible while rewards are prepared.</p>
-          <p>Points are display-only and do not affect checkout totals yet. Redemption is coming soon.</p>
+          <p>{copy.spotlightCopy}</p>
+          <p>{copy.checkoutImpactCopy}</p>
           <div className="gdg-rewards-spotlight-actions">
             <Link href="/policies" className="gdg-primary-button">
               Rewards rules
@@ -1246,14 +1328,14 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
             </Link>
             <span className="gdg-rewards-coming-soon">
               <Gift size={15} aria-hidden="true" />
-              Redemption coming soon
+              {copy.spotlightStatus}
             </span>
           </div>
         </div>
         <div className="gdg-rewards-spotlight-rules" aria-label="Rewards quick rules">
           <div>
             <AccountIconBadge tone="gold" icon={Trophy} />
-            <p><strong>Future rewards</strong><span>Prepared for account holders</span></p>
+            <p><strong>{copy.quickRuleLabel}</strong><span>{copy.quickRuleCopy}</span></p>
           </div>
           <div>
             <AccountIconBadge tone="violet" icon={Gift} />
@@ -1337,7 +1419,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
                   ? `${pointsLabel(progress.pointsToNext)} more points to reach ${progress.nextTier.name}`
                   : "You have reached the current top rewards level"}
               </strong>
-              <span>More points can unlock more rewards after reward earning resumes and redemption launches.</span>
+              <span>{copy.nextCalloutCopy}</span>
             </p>
           </div>
         </section>
@@ -1420,7 +1502,7 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
                 <div className="gdg-rewards-empty-state">
                   <Gift size={24} aria-hidden="true" />
                   <strong>No reward activity is recorded yet.</strong>
-                  <p>Reward earning is currently paused. Eligible activity will appear here when earning resumes.</p>
+                  <p>{copy.emptyActivityCopy}</p>
                 </div>
               )}
             </div>
@@ -1431,24 +1513,16 @@ export function AccountRewards({ account, activity = [] }: { account: CurrentCus
               <span className="gdg-rewards-panel-icon"><ShieldCheck size={18} aria-hidden="true" /></span>
               <span>
                 <strong>Rules</strong>
-                <small>How future earning and reversals work</small>
+                <small>{copy.rulesIntro}</small>
               </span>
               <ChevronRight size={17} aria-hidden="true" />
             </summary>
             <div className="gdg-rewards-panel-body">
               <ul className="gdg-rewards-rules-list">
-                {[
-                  "Reward earning is not currently active.",
-                  "When earning resumes, eligible product purchases may receive points.",
-                  "Points may remain pending until shipped, picked up, or cleared.",
-                  "Shipping, tax, discounts, canceled/refunded items, and test/smoke orders will not count toward points.",
-                  "Refunds/cancellations may reverse previously recorded points.",
-                  "Points have no cash value.",
-                  "Redemption coming soon."
-                ].map((copy) => (
-                  <li key={copy}>
+                {copy.rules.map((rule) => (
+                  <li key={rule}>
                     <CheckCircle2 size={17} aria-hidden="true" />
-                    <span>{copy}</span>
+                    <span>{rule}</span>
                   </li>
                 ))}
               </ul>
