@@ -395,7 +395,10 @@ export async function executeCustomerAccountHygieneRepair(
         id: writeReadyCandidate.account.id,
         userId: user.id,
         updatedAt: writeReadyCandidate.account.updatedAt,
-        normalizedEmail: writeReadyCandidate.account.normalizedEmail
+        normalizedEmail: writeReadyCandidate.account.normalizedEmail,
+        status: "active",
+        emailVerifiedAt: { not: null },
+        highestAcknowledgedRewardTier: 0
       },
       data: { normalizedEmail: writeReadyNormalizedEmail }
     });

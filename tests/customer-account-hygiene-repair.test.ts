@@ -505,6 +505,24 @@ test("candidate selection is workspace scoped", async () => {
   assert.equal(result.candidateCount, 0);
 });
 
+test("unowned legacy account without owner-proving relationship is not adopted as a repair candidate", async () => {
+  const owner = await createOwner();
+  await prisma.customerAccount.create({
+    data: {
+      userId: null,
+      email: `${unique("legacy-orphan")}@example.test`,
+      normalizedEmail: null,
+      status: "active",
+      emailVerifiedAt: new Date("2026-01-01T00:00:00.000Z"),
+      highestAcknowledgedRewardTier: 0
+    }
+  });
+  const result = await dryRunCustomerAccountHygieneRepair(owner.id);
+  assert.equal(result.classification, "NO_ELIGIBLE_CANDIDATE");
+  assert.equal(result.candidateCount, 0);
+  assert.deepEqual(result.reasonCodes, ["NO_ELIGIBLE_CANDIDATE"]);
+});
+
 test("successful repair normalizes email, creates zero balance, records non-PII audit, and creates no ledger", async () => {
   process.env.CUSTOMER_ACCOUNT_HYGIENE_REPAIR_ENABLED = "true";
   const owner = await createOwner();
@@ -939,6 +957,9 @@ test("POST mutation surface is limited and leaves legacy/POS reward history unto
   assert.ok(executeStart > 0 && executeEnd > executeStart);
   const executeSource = serviceSource.slice(executeStart, executeEnd);
   assert.match(executeSource, /tx\.customerAccount\.updateMany/);
+  assert.match(executeSource, /status: "active"/);
+  assert.match(executeSource, /emailVerifiedAt: \{ not: null \}/);
+  assert.match(executeSource, /highestAcknowledgedRewardTier: 0/);
   assert.match(executeSource, /tx\.rewardBalance\.create/);
   assert.match(executeSource, /tx\.auditLog\.create/);
   assert.doesNotMatch(executeSource, /rewardLedgerEntry\.(create|update|updateMany|upsert|delete|deleteMany)/);
