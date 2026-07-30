@@ -12,7 +12,7 @@ import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@
 
 const rewardsUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/account/rewards`;
 const rewardsTitle = "Customer Rewards | GameDayGrabs LLC";
-const rewardsDescription = "View optional GameDayGrabs customer rewards points. Earn points now; redemption is coming soon.";
+const rewardsDescription = "View optional GameDayGrabs customer rewards points, activity, and account reward status.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

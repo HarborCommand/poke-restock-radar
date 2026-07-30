@@ -34,7 +34,7 @@ test("Grabby mascot copy covers every safe reusable variant", () => {
   assert.match(grabbyCopy.welcome.message, /collection sidekick/);
   assert.match(grabbyCopy["empty-cart"].title, /waiting for a new pull/);
   assert.match(grabbyCopy["empty-cart"].ctaLabel ?? "", /Shop New Arrivals/);
-  assert.match(grabbyCopy.rewards.message, /Earn points now\. Redemption coming soon/);
+  assert.match(grabbyCopy.rewards.message, /Reward earning is currently paused/);
   assert.match(grabbyCopy["order-status"].message, /order number and email/);
   assert.match(grabbyCopy.shipping.message, /USPS calculated rates/);
   assert.match(grabbyCopy.support.message, /order status, policies, and support/);
@@ -98,7 +98,7 @@ test("Grabby is integrated into the first useful storefront and account surfaces
   assert.doesNotMatch(account, /className="gdg-account-grabby-card"/);
   assert.match(account, /variant="rewards"/);
   assert.match(account, /className="gdg-rewards-spotlight-mascot"/);
-  assert.match(account, /Earn points now\. Redemption coming soon/);
+  assert.match(account, /Reward earning is currently paused/);
   assert.doesNotMatch(account, /redeem points|apply points|points discount|reward discount|coupon/i);
 
   assert.match(orderStatus, /variant="order-status"/);

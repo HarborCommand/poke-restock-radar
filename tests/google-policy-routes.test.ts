@@ -81,7 +81,7 @@ test("storefront trust copy links customers to policies without unsupported comm
   assert.match(storefrontClient, /<Link href="\/policies\/returns">Review returns policy<\/Link>/);
   assert.match(storefrontClient, /Guest checkout is available\./);
   assert.match(storefrontClient, /Any required taxes are shown before payment\./);
-  assert.match(storefrontClient, /Earn points now\. Redemption coming soon\./);
+  assert.match(storefrontClient, /Reward earning is currently paused\. Redemption coming soon\./);
   assert.doesNotMatch(combined, /official retailer|authorized retailer|certified authentic|guaranteed genuine|100% authentic/i);
 });
 

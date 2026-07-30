@@ -224,8 +224,8 @@ const STOREFRONT_TAX_PAYMENT_COPY = "Any required taxes are shown before payment
 function storefrontRewardsProgramCopy(settings: StorefrontSettingsDTO) {
   if (!settings.customerAccounts.enabled || !settings.customerAccounts.rewardsEnabled) return null;
   return settings.customerAccounts.redemptionEnabled
-    ? "Earn points on eligible purchases."
-    : "Earn points now. Redemption coming soon.";
+    ? "Earn points on eligible purchases. Manage rewards from your account."
+    : "Earn points on eligible purchases. Redemption coming soon.";
 }
 
 function storefrontRewardEstimateLabel(product: PublicStoreProductDTO, settings: StorefrontSettingsDTO) {
@@ -1119,10 +1119,22 @@ function HomepageSupportStrip() {
 
 function HomepageAccountCta({ settings, signedIn }: { settings: StorefrontSettingsDTO; signedIn: boolean }) {
   const accountsEnabled = settings.customerAccounts.enabled;
-  const headline = signedIn ? "Your account is ready." : "Create an account to track orders and rewards.";
+  const rewardsEnabled = accountsEnabled && settings.customerAccounts.rewardsEnabled;
+  const rewardStatusCopy = rewardsEnabled
+    ? storefrontRewardsProgramCopy(settings)
+    : accountsEnabled
+      ? "Reward earning is currently paused. Redemption coming soon."
+      : null;
+  const headline = signedIn
+    ? "Your account is ready."
+    : accountsEnabled
+      ? `Create an account to track orders${rewardsEnabled ? " and rewards" : " and future rewards"}.`
+      : "Track your order anytime.";
   const detail = signedIn
-    ? "Track orders, saved addresses, and rewards from your dashboard."
-    : "Guest checkout stays available. Sign in anytime to view orders, saved addresses, and points.";
+    ? `Track orders, saved addresses${rewardsEnabled ? ", and rewards" : ", and future rewards"} from your dashboard.`
+    : accountsEnabled
+      ? `Guest checkout stays available. Sign in anytime to view orders, saved addresses${rewardsEnabled ? ", and points" : ", and future rewards"}.`
+      : "Guest checkout stays available. Use order status to follow your purchase.";
   const primaryHref = signedIn ? "/account" : accountsEnabled ? "/account/login" : "/order-status";
   const primaryLabel = signedIn ? "My Account" : accountsEnabled ? "Sign In / Create Account" : "Check Order Status";
   const secondaryHref = signedIn ? storefrontCollectionPath("new-arrivals") : "/shop";
@@ -1138,7 +1150,7 @@ function HomepageAccountCta({ settings, signedIn }: { settings: StorefrontSettin
         <div>
           <h2>{headline}</h2>
           <p>{detail}</p>
-          <small>{signedIn ? "Earn points now. Redemption coming soon." : "No account required to buy. Earn points now. Redemption coming soon."}</small>
+          <small>{rewardStatusCopy ?? "No account required to buy."}</small>
         </div>
       </div>
       <div className="gdg-home-account-actions">
@@ -2799,8 +2811,8 @@ export function CheckoutSuccessClient({
       <p>Your confirmation email and order detail show merchandise, shipping, sales tax, and total separately.</p>
       {accountCtaEnabled ? (
         <div className="gdg-success-account-cta">
-          <strong>Create an account to track this order{rewardsCtaEnabled ? " and earn rewards" : ""}.</strong>
-          <span>{rewardsCtaEnabled ? "Track points in your account. Earn points now. Redemption coming soon." : "Account creation is optional and guest checkout remains available."}</span>
+          <strong>Create an account to track this order{rewardsCtaEnabled ? " and rewards" : ""}.</strong>
+          <span>{rewardsCtaEnabled ? "Track earned and pending points in your account. Earn points on eligible purchases. Redemption coming soon." : "Account creation is optional and guest checkout remains available."}</span>
           <Link href="/account/login" className="gdg-secondary-button compact" onClick={() => trackStorefrontEvent("account_login_requested", { source: "checkout_success" })}>
             Create or Sign In
           </Link>

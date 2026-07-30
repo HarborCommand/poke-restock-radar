@@ -10,6 +10,7 @@ import {
 import { getStorefrontHomeHref } from "@/lib/storefront-navigation";
 import { GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL } from "@/lib/storefront-routing";
 import { GAMEDAYGRABS_CANONICAL_ORIGIN, GAMEDAYGRABS_OG_FALLBACK_IMAGE } from "@/lib/storefront-seo";
+import { customerAccountFeatureConfig } from "@/lib/customer-accounts";
 
 const policiesUrl = `${GAMEDAYGRABS_CANONICAL_ORIGIN}/policies`;
 const policiesTitle = "GameDayGrabs Policies | Shipping, Pickup, Payment & Returns";
@@ -46,6 +47,28 @@ export const metadata = {
 export default async function PoliciesPage() {
   const [settings, homeHref] = await Promise.all([getStorefrontSettings(), getStorefrontHomeHref()]);
   const contactEmail = settings.contactEmail || GAMEDAYGRABS_PUBLIC_CONTACT_EMAIL;
+  const accountFeatures = customerAccountFeatureConfig();
+  const rewardsEnabled = accountFeatures.customerAccountsEnabled && accountFeatures.customerRewardsEnabled;
+  const redemptionEnabled = rewardsEnabled && accountFeatures.customerRewardRedemptionEnabled;
+  const rewardsPolicyCopy = rewardsEnabled
+    ? [
+        "Eligible product purchases may receive points.",
+        "Points may start pending after payment and may become available after fulfillment, pickup, or the configured pending period.",
+        "Shipping, taxes, refunds, discounts, canceled orders, and test/smoke orders will not count toward points.",
+        "Refunded or canceled orders can reverse points that were previously awarded.",
+        redemptionEnabled ? "Reward use is managed from your account." : "Redemption is coming soon. Points cannot be used at checkout yet.",
+        "Points have no cash value and are not transferable.",
+        "GameDayGrabs may adjust or reverse points for fraud, abuse, refunds, cancellations, or errors."
+      ]
+    : [
+        "Reward earning is not currently active. When GameDayGrabs Rewards are enabled, eligible product purchases may receive points.",
+        "Points may start pending after payment and may become available after fulfillment, pickup, or the configured pending period.",
+        "Shipping, taxes, refunds, discounts, canceled orders, and test/smoke orders will not count toward points.",
+        "Refunded or canceled orders can reverse points that were previously awarded.",
+        "Redemption is coming soon. Points cannot be used at checkout yet.",
+        "Points have no cash value and are not transferable.",
+        "GameDayGrabs may adjust or reverse points for fraud, abuse, refunds, cancellations, or errors."
+      ];
 
   return (
     <main className="shop-shell">
@@ -141,12 +164,7 @@ export default async function PoliciesPage() {
         <article>
           <h2>GameDayGrabs Rewards</h2>
           <p>No account required to checkout. Customer accounts are optional, and guest checkout remains available.</p>
-          <p>Earn 1 point per $1 on eligible product purchases when GameDayGrabs Rewards are enabled. Points start pending after payment and may become available after fulfillment, pickup, or the configured pending period.</p>
-          <p>Shipping, taxes, refunds, discounts, canceled orders, and test/smoke orders do not earn points.</p>
-          <p>Refunded or canceled orders can reverse points that were previously awarded.</p>
-          <p>Earn points now. Redemption coming soon. Points cannot be used at checkout yet.</p>
-          <p>Points have no cash value and are not transferable.</p>
-          <p>GameDayGrabs may adjust or reverse points for fraud, abuse, refunds, cancellations, or errors.</p>
+          {rewardsPolicyCopy.map((copy) => <p key={copy}>{copy}</p>)}
         </article>
         <article>
           <h2>Product Availability / Preorders</h2>

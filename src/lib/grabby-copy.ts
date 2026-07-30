@@ -33,8 +33,8 @@ export const grabbyCopy: Record<GrabbyVariant, GrabbyCopy> = {
     ctaLabel: "Shop New Arrivals"
   },
   rewards: {
-    title: "Keep earning with Grabby.",
-    message: "Earn 1 point per eligible product dollar. Earn points now. Redemption coming soon."
+    title: "Rewards are being prepared.",
+    message: "Reward earning is currently paused. Your account is ready for future rewards and redemption is coming soon."
   },
   "order-status": {
     title: "Tracking your order?",
