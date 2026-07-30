@@ -206,9 +206,9 @@ function posRefundKeyMatchesSaleReference(idempotencyKey: string | null | undefi
 }
 
 function rewardSourceFamily(entry: { source: string | null; type: string; orderId?: string | null; idempotencyKey?: string | null }) {
+  if (entry.source === "admin_adjustment" || entry.source === "admin_backfill" || entry.type === "adjustment") return "admin" as const;
   if (entry.source === "pos" || entry.idempotencyKey?.startsWith("rewards:pos:")) return "pos" as const;
   if (entry.source === "stripe_checkout" || entry.orderId) return "online" as const;
-  if (entry.source === "admin_adjustment" || entry.source === "admin_backfill" || entry.type === "adjustment") return "admin" as const;
   return "unknown" as const;
 }
 
@@ -571,11 +571,10 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
         const original = ledgerById.get(entry.reversalOfEntryId!)!;
         const originalFamily = rewardSourceFamily(original);
         const reversalFamily = rewardSourceFamily(entry);
-        const sourceMismatch =
-          (originalFamily === "online" && reversalFamily !== "online") ||
-          (originalFamily === "pos" && reversalFamily !== "pos") ||
-          (reversalFamily === "online" && originalFamily !== "online") ||
-          (reversalFamily === "pos" && originalFamily !== "pos");
+        // Supported referenced reversal matrix:
+        // online -> online, POS -> POS, administrative -> administrative.
+        // Unknown-family originals or reversals are never valid referenced reversal evidence.
+        const sourceMismatch = originalFamily === "unknown" || reversalFamily === "unknown" || originalFamily !== reversalFamily;
         let transactionMismatch = false;
         if (originalFamily === "online" || reversalFamily === "online") {
           transactionMismatch = !original.orderId || !entry.orderId || original.orderId !== entry.orderId;
@@ -604,19 +603,6 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     const originalId = result.original.id;
     referencedValidReversalPointsByOriginal.set(originalId, (referencedValidReversalPointsByOriginal.get(originalId) ?? 0) + reversalPointMagnitude(result.entry));
   }
-  const orderScopedLegacyReversalPoints = new Map<string, number>();
-  for (const entry of boundedLedger) {
-    if (!entry.orderId || entry.reversalOfEntryId || entry.points >= 0 || !isLegacyAdministrativeReversal(entry)) continue;
-    const key = `${entry.customerAccountId}:${entry.orderId}`;
-    orderScopedLegacyReversalPoints.set(key, (orderScopedLegacyReversalPoints.get(key) ?? 0) + reversalPointMagnitude(entry));
-  }
-  const supportedCanceledEarn = (entry: { id: string; customerAccountId: string; orderId: string | null; points: number }) => {
-    const referencedReversalPoints = referencedValidReversalPointsByOriginal.get(entry.id) ?? 0;
-    if (referencedReversalPoints >= entry.points) return true;
-    if (!entry.orderId) return false;
-    const orderLegacyReversalPoints = orderScopedLegacyReversalPoints.get(`${entry.customerAccountId}:${entry.orderId}`) ?? 0;
-    return orderLegacyReversalPoints >= entry.points;
-  };
   const reversalPointsByOriginal = new Map<string, number>();
   for (const entry of reversalEntriesWithOriginal) {
     const originalId = entry.reversalOfEntryId!;
@@ -635,6 +621,49 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
   const reversalTransactionMismatch = ledgerLimitReached
     ? null
     : countWhere(reversalRelationshipResults, (result) => result.transactionMismatch);
+  const positivePointsByCustomer = new Map<string, number>();
+  const referencedReversalPointsByCustomer = new Map<string, number>();
+  const legacyReversalPointsByCustomer = new Map<string, number>();
+  for (const entry of boundedLedger) {
+    if (entry.points > 0) positivePointsByCustomer.set(entry.customerAccountId, (positivePointsByCustomer.get(entry.customerAccountId) ?? 0) + entry.points);
+    if (isLegacyAdministrativeReversal(entry)) {
+      legacyReversalPointsByCustomer.set(entry.customerAccountId, (legacyReversalPointsByCustomer.get(entry.customerAccountId) ?? 0) + reversalPointMagnitude(entry));
+    }
+  }
+  for (const result of reversalRelationshipResults) {
+    if (!result.validReversalEvidence) continue;
+    referencedReversalPointsByCustomer.set(
+      result.entry.customerAccountId,
+      (referencedReversalPointsByCustomer.get(result.entry.customerAccountId) ?? 0) + reversalPointMagnitude(result.entry)
+    );
+  }
+  const cumulativeRewardAccountIds = new Set([
+    ...positivePointsByCustomer.keys(),
+    ...referencedReversalPointsByCustomer.keys(),
+    ...legacyReversalPointsByCustomer.keys()
+  ]);
+  const cumulativeOverReversalCustomerIds = new Set<string>();
+  let totalCumulativeOverReversalPointsValue = 0;
+  for (const customerAccountId of cumulativeRewardAccountIds) {
+    const positivePoints = positivePointsByCustomer.get(customerAccountId) ?? 0;
+    const referencedReversalPoints = referencedReversalPointsByCustomer.get(customerAccountId) ?? 0;
+    const legacyReversalPoints = legacyReversalPointsByCustomer.get(customerAccountId) ?? 0;
+    const allReversalPoints = referencedReversalPoints + legacyReversalPoints;
+    if (allReversalPoints > positivePoints) {
+      cumulativeOverReversalCustomerIds.add(customerAccountId);
+      totalCumulativeOverReversalPointsValue += allReversalPoints - positivePoints;
+    }
+  }
+  const cumulativeOverReversalByAccountAvailable = !ledgerLimitReached;
+  const accountsWhereAllReversalsExceedPositiveEarned = cumulativeOverReversalByAccountAvailable
+    ? cumulativeOverReversalCustomerIds.size
+    : null;
+  const totalCumulativeOverReversalPoints = cumulativeOverReversalByAccountAvailable ? totalCumulativeOverReversalPointsValue : null;
+  const accountHasCumulativeOverReversal = (customerAccountId: string) => cumulativeOverReversalCustomerIds.has(customerAccountId);
+  const supportedCanceledEarn = (entry: { id: string; customerAccountId: string; points: number }) => {
+    const referencedReversalPoints = referencedValidReversalPointsByOriginal.get(entry.id) ?? 0;
+    return referencedReversalPoints === entry.points && !accountHasCumulativeOverReversal(entry.customerAccountId);
+  };
   const positiveEarnCanceledWithSupportedReversal = countWhere(
     boundedLedger,
     (entry) => entry.points > 0 && entry.type === "earn" && statusOf(entry) === "canceled" && supportedCanceledEarn(entry)
@@ -646,14 +675,6 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     boundedLedger,
     (entry) => (entry.points < 0 || entry.type === "reverse") && !entry.reversalOfEntryId
   );
-  const positivePointsByCustomer = new Map<string, number>();
-  const legacyReversalPointsByCustomer = new Map<string, number>();
-  for (const entry of boundedLedger) {
-    if (entry.points > 0) positivePointsByCustomer.set(entry.customerAccountId, (positivePointsByCustomer.get(entry.customerAccountId) ?? 0) + entry.points);
-    if (isLegacyAdministrativeReversal(entry)) {
-      legacyReversalPointsByCustomer.set(entry.customerAccountId, (legacyReversalPointsByCustomer.get(entry.customerAccountId) ?? 0) + reversalPointMagnitude(entry));
-    }
-  }
   const legacyAdministrativeReversalExceedsAccountEarnedPoints = ledgerLimitReached
     ? null
     : [...legacyReversalPointsByCustomer.entries()].filter(([customerAccountId, reversedPoints]) => reversedPoints > (positivePointsByCustomer.get(customerAccountId) ?? 0))
@@ -738,6 +759,14 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     reversalAccountMismatch,
     reversalSourceMismatch,
     reversalTransactionMismatch,
+    totalPositiveEarnedPoints: cumulativeOverReversalByAccountAvailable ? safeSum([...positivePointsByCustomer.values()]) : null,
+    totalReferencedReversalPoints: cumulativeOverReversalByAccountAvailable ? safeSum([...referencedReversalPointsByCustomer.values()]) : null,
+    totalLegacyAdministrativeReversalPoints: cumulativeOverReversalByAccountAvailable ? safeSum([...legacyReversalPointsByCustomer.values()]) : null,
+    totalAllReversalPoints: cumulativeOverReversalByAccountAvailable
+      ? safeSum([...referencedReversalPointsByCustomer.values()]) + safeSum([...legacyReversalPointsByCustomer.values()])
+      : null,
+    accountsWhereAllReversalsExceedPositiveEarned,
+    totalCumulativeOverReversalPoints,
     totalPositivePoints: safeSum(boundedLedger.filter((entry) => entry.points > 0).map((entry) => entry.points)),
     totalNegativePoints: safeSum(boundedLedger.filter((entry) => entry.points < 0).map((entry) => entry.points))
   };
@@ -875,11 +904,18 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
   );
   const legacyReversalWarningAllowed =
     ledgerMetrics.legacyAdministrativeReversal > 0 &&
+    !ledgerLimitReached &&
     balanceSection.classification === "PASS" &&
     ledgerMetrics.duplicateIdempotencyKeyGroups === 0 &&
     customerMetrics.accountsWithNegativeRewardFields === 0 &&
+    ledgerMetrics.reversalExceedsOriginalPoints !== null &&
+    ledgerMetrics.reversalExceedsOriginalPoints === 0 &&
     ledgerMetrics.legacyAdministrativeReversalExceedsAccountEarnedPoints !== null &&
     ledgerMetrics.legacyAdministrativeReversalExceedsAccountEarnedPoints === 0 &&
+    ledgerMetrics.accountsWhereAllReversalsExceedPositiveEarned !== null &&
+    ledgerMetrics.accountsWhereAllReversalsExceedPositiveEarned === 0 &&
+    (ledgerMetrics.reversalAccountMismatch ?? 0) === 0 &&
+    (ledgerMetrics.reversalSourceMismatch ?? 0) === 0 &&
     (ledgerMetrics.reversalTransactionMismatch ?? 0) === 0;
   const ledgerSection = section(
     ledgerMetrics,
@@ -894,6 +930,9 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
       ledgerMetrics.legacyAdministrativeReversalExceedsAccountEarnedPoints !== null &&
       ledgerMetrics.legacyAdministrativeReversalExceedsAccountEarnedPoints > 0
         ? "REVERSAL_EXCEEDS_EARNED_POINTS"
+        : null,
+      ledgerMetrics.accountsWhereAllReversalsExceedPositiveEarned !== null && ledgerMetrics.accountsWhereAllReversalsExceedPositiveEarned > 0
+        ? "ACCOUNT_REVERSALS_EXCEED_EARNED_POINTS"
         : null,
       ledgerMetrics.reversalAccountMismatch !== null && ledgerMetrics.reversalAccountMismatch > 0 ? "REVERSAL_ACCOUNT_MISMATCH" : null,
       ledgerMetrics.reversalSourceMismatch !== null && ledgerMetrics.reversalSourceMismatch > 0 ? "REVERSAL_SOURCE_MISMATCH" : null,

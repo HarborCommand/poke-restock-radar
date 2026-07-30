@@ -210,6 +210,12 @@ export type CustomerRewardIntegrityReportDTO = {
       reversalAccountMismatch: number | null;
       reversalSourceMismatch: number | null;
       reversalTransactionMismatch: number | null;
+      totalPositiveEarnedPoints: number | null;
+      totalReferencedReversalPoints: number | null;
+      totalLegacyAdministrativeReversalPoints: number | null;
+      totalAllReversalPoints: number | null;
+      accountsWhereAllReversalsExceedPositiveEarned: number | null;
+      totalCumulativeOverReversalPoints: number | null;
       totalPositivePoints: number;
       totalNegativePoints: number;
     }>;
