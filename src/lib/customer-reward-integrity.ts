@@ -168,12 +168,48 @@ function isLegacyAdministrativeReversal(entry: { points: number; type: string; s
   );
 }
 
-function posLedgerReference(entry: { idempotencyKey: string | null }) {
+function posEarnReference(entry: { idempotencyKey: string | null }) {
   const value = entry.idempotencyKey?.trim();
   if (!value) return null;
   if (value.startsWith("rewards:pos:earn:")) return value.replace(/^rewards:pos:earn:/, "") || null;
-  if (value.startsWith("rewards:pos:refund:")) return value.replace(/^rewards:pos:refund:/, "") || null;
   return null;
+}
+
+function posRefundKeyMatchesOriginalReference(
+  original: { idempotencyKey: string | null },
+  reversal: { idempotencyKey: string | null; metadataJson: string | null }
+) {
+  const originalSaleReference = posEarnReference(original);
+  const reversalKey = reversal.idempotencyKey?.trim();
+  const metadata = safeMetadataObject(reversal.metadataJson);
+  const metadataSaleReference = typeof metadata?.saleReference === "string" ? metadata.saleReference.trim() : null;
+  if (!originalSaleReference || !reversalKey) {
+    return {
+      referenceKnown: Boolean(originalSaleReference),
+      matches: false,
+      metadataContradiction: Boolean(metadataSaleReference && originalSaleReference && metadataSaleReference !== originalSaleReference)
+    };
+  }
+  const expectedPrefix = `rewards:pos:refund:${originalSaleReference}`;
+  return {
+    referenceKnown: true,
+    matches: reversalKey === expectedPrefix || reversalKey.startsWith(`${expectedPrefix}:`),
+    metadataContradiction: Boolean(metadataSaleReference && metadataSaleReference !== originalSaleReference)
+  };
+}
+
+function posRefundKeyMatchesSaleReference(idempotencyKey: string | null | undefined, saleReference: string) {
+  const value = idempotencyKey?.trim();
+  if (!value) return false;
+  const expectedPrefix = `rewards:pos:refund:${saleReference}`;
+  return value === expectedPrefix || value.startsWith(`${expectedPrefix}:`);
+}
+
+function rewardSourceFamily(entry: { source: string | null; type: string; orderId?: string | null; idempotencyKey?: string | null }) {
+  if (entry.source === "pos" || entry.idempotencyKey?.startsWith("rewards:pos:")) return "pos" as const;
+  if (entry.source === "stripe_checkout" || entry.orderId) return "online" as const;
+  if (entry.source === "admin_adjustment" || entry.source === "admin_backfill" || entry.type === "adjustment") return "admin" as const;
+  return "unknown" as const;
 }
 
 function aggregatePosTransactions(rows: PosSaleRow[]) {
@@ -528,24 +564,59 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
   const reversalEntriesWithMissingOriginalEntry = ledgerLimitReached
     ? null
     : countWhere(boundedLedger, (entry) => Boolean(entry.reversalOfEntryId) && !ledgerIdSet.has(entry.reversalOfEntryId!));
-  const referencedReversalPointsByOriginal = new Map<string, number>();
-  for (const [originalId, entries] of reversalsByOriginal) {
-    referencedReversalPointsByOriginal.set(originalId, safeSum(entries.map(reversalPointMagnitude)));
+  const reversalEntriesWithOriginal = boundedLedger.filter((entry) => Boolean(entry.reversalOfEntryId && ledgerById.has(entry.reversalOfEntryId)));
+  const reversalRelationshipResults = ledgerLimitReached
+    ? []
+    : reversalEntriesWithOriginal.map((entry) => {
+        const original = ledgerById.get(entry.reversalOfEntryId!)!;
+        const originalFamily = rewardSourceFamily(original);
+        const reversalFamily = rewardSourceFamily(entry);
+        const sourceMismatch =
+          (originalFamily === "online" && reversalFamily !== "online") ||
+          (originalFamily === "pos" && reversalFamily !== "pos") ||
+          (reversalFamily === "online" && originalFamily !== "online") ||
+          (reversalFamily === "pos" && originalFamily !== "pos");
+        let transactionMismatch = false;
+        if (originalFamily === "online" || reversalFamily === "online") {
+          transactionMismatch = !original.orderId || !entry.orderId || original.orderId !== entry.orderId;
+        }
+        if (originalFamily === "pos" || reversalFamily === "pos") {
+          const posMatch = posRefundKeyMatchesOriginalReference(original, entry);
+          transactionMismatch = transactionMismatch || !posMatch.referenceKnown || !posMatch.matches || posMatch.metadataContradiction;
+        }
+        return {
+          entry,
+          original,
+          validReversalEvidence:
+            entry.points < 0 &&
+            (entry.type === "reverse" || entry.type === "adjustment") &&
+            statusOf(entry) === "reversed" &&
+            entry.customerAccountId === original.customerAccountId &&
+            !sourceMismatch &&
+            !transactionMismatch,
+          sourceMismatch,
+          transactionMismatch
+        };
+      });
+  const referencedValidReversalPointsByOriginal = new Map<string, number>();
+  for (const result of reversalRelationshipResults) {
+    if (!result.validReversalEvidence) continue;
+    const originalId = result.original.id;
+    referencedValidReversalPointsByOriginal.set(originalId, (referencedValidReversalPointsByOriginal.get(originalId) ?? 0) + reversalPointMagnitude(result.entry));
   }
   const orderScopedLegacyReversalPoints = new Map<string, number>();
   for (const entry of boundedLedger) {
-    if (!entry.orderId || entry.reversalOfEntryId || entry.points >= 0) continue;
+    if (!entry.orderId || entry.reversalOfEntryId || entry.points >= 0 || !isLegacyAdministrativeReversal(entry)) continue;
     const key = `${entry.customerAccountId}:${entry.orderId}`;
     orderScopedLegacyReversalPoints.set(key, (orderScopedLegacyReversalPoints.get(key) ?? 0) + reversalPointMagnitude(entry));
   }
   const supportedCanceledEarn = (entry: { id: string; customerAccountId: string; orderId: string | null; points: number }) => {
-    const referencedReversalPoints = referencedReversalPointsByOriginal.get(entry.id) ?? 0;
+    const referencedReversalPoints = referencedValidReversalPointsByOriginal.get(entry.id) ?? 0;
     if (referencedReversalPoints >= entry.points) return true;
     if (!entry.orderId) return false;
     const orderLegacyReversalPoints = orderScopedLegacyReversalPoints.get(`${entry.customerAccountId}:${entry.orderId}`) ?? 0;
     return orderLegacyReversalPoints >= entry.points;
   };
-  const reversalEntriesWithOriginal = boundedLedger.filter((entry) => Boolean(entry.reversalOfEntryId && ledgerById.has(entry.reversalOfEntryId)));
   const reversalPointsByOriginal = new Map<string, number>();
   for (const entry of reversalEntriesWithOriginal) {
     const originalId = entry.reversalOfEntryId!;
@@ -560,19 +631,10 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
   const reversalAccountMismatch = ledgerLimitReached
     ? null
     : countWhere(reversalEntriesWithOriginal, (entry) => ledgerById.get(entry.reversalOfEntryId!)?.customerAccountId !== entry.customerAccountId);
+  const reversalSourceMismatch = ledgerLimitReached ? null : countWhere(reversalRelationshipResults, (result) => result.sourceMismatch);
   const reversalTransactionMismatch = ledgerLimitReached
     ? null
-    : countWhere(reversalEntriesWithOriginal, (entry) => {
-        const original = ledgerById.get(entry.reversalOfEntryId!);
-        if (!original) return false;
-        if (original.orderId && entry.orderId && original.orderId !== entry.orderId) return true;
-        if (original.source === "pos" && entry.source === "pos") {
-          const originalReference = posLedgerReference(original);
-          const reversalReference = posLedgerReference(entry);
-          return Boolean(originalReference && reversalReference && originalReference !== reversalReference);
-        }
-        return false;
-      });
+    : countWhere(reversalRelationshipResults, (result) => result.transactionMismatch);
   const positiveEarnCanceledWithSupportedReversal = countWhere(
     boundedLedger,
     (entry) => entry.points > 0 && entry.type === "earn" && statusOf(entry) === "canceled" && supportedCanceledEarn(entry)
@@ -584,6 +646,18 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     boundedLedger,
     (entry) => (entry.points < 0 || entry.type === "reverse") && !entry.reversalOfEntryId
   );
+  const positivePointsByCustomer = new Map<string, number>();
+  const legacyReversalPointsByCustomer = new Map<string, number>();
+  for (const entry of boundedLedger) {
+    if (entry.points > 0) positivePointsByCustomer.set(entry.customerAccountId, (positivePointsByCustomer.get(entry.customerAccountId) ?? 0) + entry.points);
+    if (isLegacyAdministrativeReversal(entry)) {
+      legacyReversalPointsByCustomer.set(entry.customerAccountId, (legacyReversalPointsByCustomer.get(entry.customerAccountId) ?? 0) + reversalPointMagnitude(entry));
+    }
+  }
+  const legacyAdministrativeReversalExceedsAccountEarnedPoints = ledgerLimitReached
+    ? null
+    : [...legacyReversalPointsByCustomer.entries()].filter(([customerAccountId, reversedPoints]) => reversedPoints > (positivePointsByCustomer.get(customerAccountId) ?? 0))
+        .length;
   const currentSystemReversalMissingOriginalReference = countWhere(boundedLedger, (entry) => isCurrentSystemReversal(entry) && !entry.reversalOfEntryId);
   const legacyAdministrativeReversal = countWhere(boundedLedger, isLegacyAdministrativeReversal);
   const invalidPositiveReverse = countWhere(boundedLedger, (entry) => entry.points > 0 && entry.type === "reverse");
@@ -647,6 +721,7 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     negativeReverseMissingOriginalReference: negativeReversalMissingOriginalReference,
     currentSystemReversalMissingOriginalReference,
     legacyAdministrativeReversal,
+    legacyAdministrativeReversalExceedsAccountEarnedPoints,
     administrativeAdjustmentPositiveAvailable: countWhere(
       boundedLedger,
       (entry) => entry.points > 0 && isAdministrativeRewardSource(entry) && statusOf(entry) === "available"
@@ -661,30 +736,11 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     invalidNegativeAvailable,
     reversalExceedsOriginalPoints,
     reversalAccountMismatch,
+    reversalSourceMismatch,
     reversalTransactionMismatch,
     totalPositivePoints: safeSum(boundedLedger.filter((entry) => entry.points > 0).map((entry) => entry.points)),
     totalNegativePoints: safeSum(boundedLedger.filter((entry) => entry.points < 0).map((entry) => entry.points))
   };
-  const ledgerSection = section(
-    ledgerMetrics,
-    [
-      ledgerMetrics.reversalEntriesWithMissingOriginalEntry !== null && ledgerMetrics.reversalEntriesWithMissingOriginalEntry > 0
-        ? "REWARD_REVERSAL_MISSING_ORIGINAL_ENTRY"
-        : null,
-      ledgerMetrics.duplicateIdempotencyKeyGroups > 0 ? "DUPLICATE_REWARD_IDEMPOTENCY_KEY" : null,
-      ledgerMetrics.ledgerEntriesWithInvalidStatusTypeCombinations > 0 ? "INVALID_REWARD_LEDGER_STATUS_TYPE" : null,
-      ledgerMetrics.currentSystemReversalMissingOriginalReference > 0 ? "CURRENT_REVERSAL_MISSING_ORIGINAL_REFERENCE" : null,
-      ledgerMetrics.reversalExceedsOriginalPoints !== null && ledgerMetrics.reversalExceedsOriginalPoints > 0 ? "REVERSAL_EXCEEDS_EARNED_POINTS" : null,
-      ledgerMetrics.reversalAccountMismatch !== null && ledgerMetrics.reversalAccountMismatch > 0 ? "REVERSAL_ACCOUNT_MISMATCH" : null,
-      ledgerMetrics.reversalTransactionMismatch !== null && ledgerMetrics.reversalTransactionMismatch > 0 ? "REVERSAL_TRANSACTION_MISMATCH" : null
-    ].filter(Boolean) as string[],
-    [
-      ledgerMetrics.ledgerEntriesWithZeroPoints > 0 ? "ZERO_POINT_LEDGER_ENTRIES" : null,
-      ledgerMetrics.legacyAdministrativeReversal > 0 ? "LEGACY_REVERSAL_WITHOUT_ORIGINAL_REFERENCE" : null
-    ].filter(Boolean) as string[],
-    ledgerLimitReached
-  );
-
   const ledgerByCustomer = new Map<string, typeof boundedLedger>();
   for (const entry of boundedLedger) {
     const list = ledgerByCustomer.get(entry.customerAccountId) ?? [];
@@ -817,6 +873,39 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     [],
     customerLimitReached || ledgerLimitReached
   );
+  const legacyReversalWarningAllowed =
+    ledgerMetrics.legacyAdministrativeReversal > 0 &&
+    balanceSection.classification === "PASS" &&
+    ledgerMetrics.duplicateIdempotencyKeyGroups === 0 &&
+    customerMetrics.accountsWithNegativeRewardFields === 0 &&
+    ledgerMetrics.legacyAdministrativeReversalExceedsAccountEarnedPoints !== null &&
+    ledgerMetrics.legacyAdministrativeReversalExceedsAccountEarnedPoints === 0 &&
+    (ledgerMetrics.reversalTransactionMismatch ?? 0) === 0;
+  const ledgerSection = section(
+    ledgerMetrics,
+    [
+      ledgerMetrics.reversalEntriesWithMissingOriginalEntry !== null && ledgerMetrics.reversalEntriesWithMissingOriginalEntry > 0
+        ? "REWARD_REVERSAL_MISSING_ORIGINAL_ENTRY"
+        : null,
+      ledgerMetrics.duplicateIdempotencyKeyGroups > 0 ? "DUPLICATE_REWARD_IDEMPOTENCY_KEY" : null,
+      ledgerMetrics.ledgerEntriesWithInvalidStatusTypeCombinations > 0 ? "INVALID_REWARD_LEDGER_STATUS_TYPE" : null,
+      ledgerMetrics.currentSystemReversalMissingOriginalReference > 0 ? "CURRENT_REVERSAL_MISSING_ORIGINAL_REFERENCE" : null,
+      ledgerMetrics.reversalExceedsOriginalPoints !== null && ledgerMetrics.reversalExceedsOriginalPoints > 0 ? "REVERSAL_EXCEEDS_EARNED_POINTS" : null,
+      ledgerMetrics.legacyAdministrativeReversalExceedsAccountEarnedPoints !== null &&
+      ledgerMetrics.legacyAdministrativeReversalExceedsAccountEarnedPoints > 0
+        ? "REVERSAL_EXCEEDS_EARNED_POINTS"
+        : null,
+      ledgerMetrics.reversalAccountMismatch !== null && ledgerMetrics.reversalAccountMismatch > 0 ? "REVERSAL_ACCOUNT_MISMATCH" : null,
+      ledgerMetrics.reversalSourceMismatch !== null && ledgerMetrics.reversalSourceMismatch > 0 ? "REVERSAL_SOURCE_MISMATCH" : null,
+      ledgerMetrics.reversalTransactionMismatch !== null && ledgerMetrics.reversalTransactionMismatch > 0 ? "REVERSAL_TRANSACTION_MISMATCH" : null,
+      ledgerMetrics.legacyAdministrativeReversal > 0 && !legacyReversalWarningAllowed ? "LEGACY_REVERSAL_REQUIRES_RECONCILED_BALANCE" : null
+    ].filter(Boolean) as string[],
+    [
+      ledgerMetrics.ledgerEntriesWithZeroPoints > 0 ? "ZERO_POINT_LEDGER_ENTRIES" : null,
+      legacyReversalWarningAllowed ? "LEGACY_REVERSAL_WITHOUT_ORIGINAL_REFERENCE" : null
+    ].filter(Boolean) as string[],
+    ledgerLimitReached
+  );
 
   const orderEarnCounts = new Map<string, number>();
   const orderReversalCounts = new Map<string, number>();
@@ -890,7 +979,7 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
   const posEarnEntries = boundedLedger.filter((entry) => entry.source === "pos" && entry.points > 0);
   const posEarnByReference = new Map<string, typeof posEarnEntries>();
   for (const entry of posEarnEntries) {
-    const saleReference = posLedgerReference(entry);
+    const saleReference = posEarnReference(entry);
     if (!saleReference) continue;
     const list = posEarnByReference.get(saleReference) ?? [];
     list.push(entry);
@@ -905,22 +994,14 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
   const completedEligibleSalesWithoutEarnEntry = ledgerLimitReached
     ? null
     : countWhere(linkedSalesWithoutEarn, (sale) => sale.rewardsEligible && sale.eligibleSubtotalCents > 0);
-  const actionableMissingPosEarnEntries = ledgerLimitReached
+  const missingEarnWithUnknownActivationHistory = ledgerLimitReached
     ? null
-    : countWhere(
-        linkedSalesWithoutEarn,
-        (sale) =>
-          Boolean(firstPersistedPosEarnAt) &&
-          Boolean(sale.soldAt && sale.soldAt >= firstPersistedPosEarnAt!) &&
-          sale.rewardsEligible &&
-          sale.eligibleSubtotalCents > 0 &&
-          !sale.hasRefundState &&
-          !sale.linkedToUnverifiedAccount
-      );
+    : countWhere(linkedSalesWithoutEarn, (sale) => sale.rewardsEligible && sale.eligibleSubtotalCents > 0 && !sale.hasRefundState && !sale.linkedToUnverifiedAccount);
+  const actionableMissingPosEarnEntries = ledgerLimitReached ? null : 0;
   const posEarnEntriesWithoutIdentifiableSale = posSalesLimitReached
     ? null
     : countWhere(posEarnEntries, (entry) => {
-        const saleReference = posLedgerReference(entry);
+        const saleReference = posEarnReference(entry);
         return !saleReference || !posSaleReferences.has(saleReference);
       });
   const posMetrics = {
@@ -969,16 +1050,18 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
       : countWhere(linkedSalesWithoutEarn, (sale) => sale.eligibleSubtotalCents > 0),
     linkedPosSalesWithoutEarnWithRefundState: ledgerLimitReached ? null : countWhere(linkedSalesWithoutEarn, (sale) => sale.hasRefundState),
     linkedPosSalesWithoutEarnWithoutRefundState: ledgerLimitReached ? null : countWhere(linkedSalesWithoutEarn, (sale) => !sale.hasRefundState),
+    linkedPosSalesWithoutEarnActivationHistoryUnknown: missingEarnWithUnknownActivationHistory,
     linkedPosSalesWithoutEarnActionableCurrentSystem: actionableMissingPosEarnEntries,
+    perTransactionRewardActivationEvidenceAvailable: false,
     firstPersistedPosEarnEntryKnown: Boolean(firstPersistedPosEarnAt),
     refundedSalesWithUnreversedPoints: countWhere(
       posTransactions,
       (sale) =>
         Boolean(
-          sale.linked &&
+            sale.linked &&
             sale.refunded &&
             posEarnByReference.has(sale.saleReference) &&
-            !boundedLedger.some((entry) => entry.idempotencyKey?.startsWith(`rewards:pos:refund:${sale.saleReference}`))
+            !boundedLedger.some((entry) => posRefundKeyMatchesSaleReference(entry.idempotencyKey, sale.saleReference))
         )
     ),
     partiallyRefundedSalesWithNoReversal: countWhere(
@@ -989,7 +1072,7 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
             sale.aggregateRefundedAmount > 0 &&
             !sale.refunded &&
             posEarnByReference.has(sale.saleReference) &&
-            !boundedLedger.some((entry) => entry.idempotencyKey?.startsWith(`rewards:pos:refund:${sale.saleReference}`))
+            !boundedLedger.some((entry) => posRefundKeyMatchesSaleReference(entry.idempotencyKey, sale.saleReference))
         )
     ),
     duplicatePosEarnEntries: [...posEarnByReference.values()].filter((entries) => entries.length > 1).length,
@@ -1018,6 +1101,9 @@ export async function buildCustomerRewardIntegrityReport(ownerUserId: string): P
     [
       posMetrics.completedEligibleSalesWithoutEarnEntry !== null && posMetrics.completedEligibleSalesWithoutEarnEntry > 0
         ? "LINKED_POS_SALE_WITHOUT_EARN_ENTRY"
+        : null,
+      posMetrics.linkedPosSalesWithoutEarnActivationHistoryUnknown !== null && posMetrics.linkedPosSalesWithoutEarnActivationHistoryUnknown > 0
+        ? "POS_REWARD_ACTIVATION_HISTORY_UNKNOWN"
         : null,
       posMetrics.partiallyRefundedSalesWithNoReversal > 0 ? "PARTIAL_POS_REFUND_WITHOUT_REWARD_REVERSAL" : null,
       posMetrics.posSaleLineRecordsMissingSaleReference > 0 ? "POS_SALE_REFERENCE_MISSING_FOR_TRANSACTION_GROUPING" : null

@@ -199,6 +199,7 @@ export type CustomerRewardIntegrityReportDTO = {
       negativeReverseMissingOriginalReference: number;
       currentSystemReversalMissingOriginalReference: number;
       legacyAdministrativeReversal: number;
+      legacyAdministrativeReversalExceedsAccountEarnedPoints: number | null;
       administrativeAdjustmentPositiveAvailable: number;
       administrativeAdjustmentNegativeAvailable: number;
       invalidPositiveReverse: number;
@@ -207,6 +208,7 @@ export type CustomerRewardIntegrityReportDTO = {
       invalidNegativeAvailable: number;
       reversalExceedsOriginalPoints: number | null;
       reversalAccountMismatch: number | null;
+      reversalSourceMismatch: number | null;
       reversalTransactionMismatch: number | null;
       totalPositivePoints: number;
       totalNegativePoints: number;
@@ -272,7 +274,9 @@ export type CustomerRewardIntegrityReportDTO = {
       linkedPosSalesWithoutEarnPositiveEligibleMerchandiseSubtotal: number | null;
       linkedPosSalesWithoutEarnWithRefundState: number | null;
       linkedPosSalesWithoutEarnWithoutRefundState: number | null;
+      linkedPosSalesWithoutEarnActivationHistoryUnknown: number | null;
       linkedPosSalesWithoutEarnActionableCurrentSystem: number | null;
+      perTransactionRewardActivationEvidenceAvailable: boolean;
       firstPersistedPosEarnEntryKnown: boolean;
       refundedSalesWithUnreversedPoints: number;
       partiallyRefundedSalesWithNoReversal: number;

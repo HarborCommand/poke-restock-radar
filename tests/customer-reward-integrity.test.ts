@@ -195,9 +195,11 @@ test("balanced accounts reconcile using existing ledger math without exposing id
   approvedRuntimeEnv();
   const owner = await createOwner();
   const customer = await createCustomer(owner.id, { email: "privacy.fixture@example.test" });
+  const order = await createPaidOrder(owner.id, customer.id, { customerEmail: customer.email });
   const availableEarn = await prisma.rewardLedgerEntry.create({
     data: {
       customerAccountId: customer.id,
+      orderId: order.id,
       points: 100,
       type: "earn",
       reason: "Purchase",
@@ -227,6 +229,7 @@ test("balanced accounts reconcile using existing ledger math without exposing id
       status: "reversed",
       idempotencyKey: `reward:${unique("reverse")}`,
       source: "stripe_checkout",
+      orderId: order.id,
       reversalOfEntryId: availableEarn.id,
       metadataJson: JSON.stringify({ availablePointsReversed: 5 })
     }
@@ -249,6 +252,7 @@ test("authoritative reward lifecycle treats fully reversed canceled earns as val
   approvedRuntimeEnv();
   const owner = await createOwner();
   const customer = await createCustomer(owner.id);
+  const order = await createPaidOrder(owner.id, customer.id, { customerEmail: customer.email });
   await prisma.rewardLedgerEntry.create({
     data: {
       customerAccountId: customer.id,
@@ -272,6 +276,7 @@ test("authoritative reward lifecycle treats fully reversed canceled earns as val
   const canceledEarn = await prisma.rewardLedgerEntry.create({
     data: {
       customerAccountId: customer.id,
+      orderId: order.id,
       points: 30,
       type: "earn",
       reason: "Canceled purchase",
@@ -287,6 +292,7 @@ test("authoritative reward lifecycle treats fully reversed canceled earns as val
       reason: "Complete reversal",
       status: "reversed",
       source: "stripe_checkout",
+      orderId: order.id,
       reversalOfEntryId: canceledEarn.id,
       metadataJson: JSON.stringify({ availablePointsReversed: 30 })
     }
@@ -315,6 +321,7 @@ test("unsupported reward lifecycle combinations and invalid reversal relationshi
   const smallEarn = await prisma.rewardLedgerEntry.create({
     data: {
       customerAccountId: customerA.id,
+      orderId: orderA.id,
       points: 5,
       type: "earn",
       reason: "Original",
@@ -325,6 +332,7 @@ test("unsupported reward lifecycle combinations and invalid reversal relationshi
   const accountMismatchEarn = await prisma.rewardLedgerEntry.create({
     data: {
       customerAccountId: customerA.id,
+      orderId: orderA.id,
       points: 20,
       type: "earn",
       reason: "Original account",
@@ -352,8 +360,8 @@ test("unsupported reward lifecycle combinations and invalid reversal relationshi
       { customerAccountId: customerA.id, points: -5, type: "reverse", reason: "Bad available reverse", status: "available", source: "stripe_checkout" },
       { customerAccountId: customerA.id, points: 5, type: "earn", reason: "Bad reversed earn", status: "reversed", source: "stripe_checkout" },
       { customerAccountId: customerA.id, points: 5, type: "earn", reason: "Unsupported cancel", status: "canceled", source: "stripe_checkout" },
-      { customerAccountId: customerA.id, points: -6, type: "reverse", reason: "Excessive reversal", status: "reversed", source: "stripe_checkout", reversalOfEntryId: smallEarn.id },
-      { customerAccountId: customerB.id, points: -5, type: "reverse", reason: "Wrong account", status: "reversed", source: "stripe_checkout", reversalOfEntryId: accountMismatchEarn.id },
+      { customerAccountId: customerA.id, orderId: orderA.id, points: -6, type: "reverse", reason: "Excessive reversal", status: "reversed", source: "stripe_checkout", reversalOfEntryId: smallEarn.id },
+      { customerAccountId: customerB.id, orderId: orderA.id, points: -5, type: "reverse", reason: "Wrong account", status: "reversed", source: "stripe_checkout", reversalOfEntryId: accountMismatchEarn.id },
       { customerAccountId: customerA.id, orderId: orderB.id, points: -5, type: "reverse", reason: "Wrong order", status: "reversed", source: "stripe_checkout", reversalOfEntryId: transactionMismatchEarn.id },
       { customerAccountId: customerA.id, points: -5, type: "reverse", reason: "Missing original", status: "reversed", source: "pos" }
     ]
@@ -378,6 +386,308 @@ test("unsupported reward lifecycle combinations and invalid reversal relationshi
   assert.equal(ledger.metrics.reversalExceedsOriginalPoints, 1);
   assert.equal(ledger.metrics.reversalAccountMismatch, 1);
   assert.equal(ledger.metrics.reversalTransactionMismatch, 1);
+});
+
+test("POS refund reversals match full keys and partial idempotency suffixes without splitting sale identity", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  const fullReference = "POS-FULL-REFUND";
+  const partialReference = "POS:WITH-HYPHENS-001";
+  await createPosSale(owner.id, customer.id, {
+    saleReference: fullReference,
+    customerEmail: customer.email,
+    refundStatus: "refunded",
+    refundedAmount: 20
+  });
+  await createPosSale(owner.id, customer.id, {
+    saleReference: partialReference,
+    customerEmail: customer.email,
+    refundStatus: "refunded",
+    refundedAmount: 20
+  });
+  const fullEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 5,
+      type: "earn",
+      reason: "POS earn",
+      status: "canceled",
+      source: "pos",
+      idempotencyKey: `rewards:pos:earn:${fullReference}`
+    }
+  });
+  const partialEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 10,
+      type: "earn",
+      reason: "POS earn",
+      status: "canceled",
+      source: "pos",
+      idempotencyKey: `rewards:pos:earn:${partialReference}`
+    }
+  });
+  await prisma.rewardLedgerEntry.createMany({
+    data: [
+      {
+        customerAccountId: customer.id,
+        points: -5,
+        type: "reverse",
+        reason: "Full POS refund",
+        status: "reversed",
+        source: "pos",
+        idempotencyKey: `rewards:pos:refund:${fullReference}`,
+        reversalOfEntryId: fullEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 5 })
+      },
+      {
+        customerAccountId: customer.id,
+        points: -4,
+        type: "reverse",
+        reason: "Partial POS refund",
+        status: "reversed",
+        source: "pos",
+        idempotencyKey: `rewards:pos:refund:${partialReference}:partial-1`,
+        reversalOfEntryId: partialEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 4 })
+      },
+      {
+        customerAccountId: customer.id,
+        points: -6,
+        type: "reverse",
+        reason: "Partial POS refund",
+        status: "reversed",
+        source: "pos",
+        idempotencyKey: `rewards:pos:refund:${partialReference}:partial-2`,
+        reversalOfEntryId: partialEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 6 })
+      }
+    ]
+  });
+  await setBalance(customer.id, 0, 0, 15);
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const ledger = report.sections.rewardLedgerIntegrity;
+
+  assert.equal(ledger.classification, "PASS");
+  assert.equal(ledger.metrics.positiveEarnCanceledWithSupportedReversal, 2);
+  assert.equal(ledger.metrics.positiveEarnCanceledWithoutReversal, 0);
+  assert.equal(ledger.metrics.reversalTransactionMismatch, 0);
+  assert.ok(!ledger.reasons.includes("REVERSAL_TRANSACTION_MISMATCH"));
+  assert.equal(report.sections.posRewards.metrics.refundedSalesWithUnreversedPoints, 0);
+});
+
+test("POS refund relationship blocks another sale reference or contradictory metadata", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  const wrongKeyEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 10,
+      type: "earn",
+      reason: "POS earn",
+      status: "available",
+      source: "pos",
+      idempotencyKey: "rewards:pos:earn:POS-ORIGINAL"
+    }
+  });
+  const contradictoryMetadataEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 10,
+      type: "earn",
+      reason: "POS earn",
+      status: "available",
+      source: "pos",
+      idempotencyKey: "rewards:pos:earn:POS-METADATA"
+    }
+  });
+  await prisma.rewardLedgerEntry.createMany({
+    data: [
+      {
+        customerAccountId: customer.id,
+        points: -5,
+        type: "reverse",
+        reason: "Wrong sale reversal",
+        status: "reversed",
+        source: "pos",
+        idempotencyKey: "rewards:pos:refund:POS-OTHER",
+        reversalOfEntryId: wrongKeyEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 5 })
+      },
+      {
+        customerAccountId: customer.id,
+        points: -5,
+        type: "reverse",
+        reason: "Contradictory metadata reversal",
+        status: "reversed",
+        source: "pos",
+        idempotencyKey: "rewards:pos:refund:POS-METADATA:partial-1",
+        reversalOfEntryId: contradictoryMetadataEarn.id,
+        metadataJson: JSON.stringify({ saleReference: "POS-CONTRADICTION", availablePointsReversed: 5 })
+      }
+    ]
+  });
+  await setBalance(customer.id, 10, 0, 20);
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const ledger = report.sections.rewardLedgerIntegrity;
+
+  assert.equal(ledger.classification, "BLOCKED");
+  assert.ok(ledger.reasons.includes("REVERSAL_TRANSACTION_MISMATCH"));
+  assert.equal(ledger.metrics.reversalTransactionMismatch, 2);
+});
+
+test("online and POS reversal source and transaction relationships must match the original earn", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  const orderA = await createPaidOrder(owner.id, customer.id, { customerEmail: customer.email });
+  const orderB = await createPaidOrder(owner.id, customer.id, { customerEmail: customer.email });
+  const missingOrderEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      orderId: orderA.id,
+      points: 10,
+      type: "earn",
+      reason: "Online earn",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+  const differentOrderEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      orderId: orderA.id,
+      points: 10,
+      type: "earn",
+      reason: "Online earn",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+  const posEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 10,
+      type: "earn",
+      reason: "POS earn",
+      status: "available",
+      source: "pos",
+      idempotencyKey: "rewards:pos:earn:POS-SOURCE"
+    }
+  });
+  const onlineEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      orderId: orderA.id,
+      points: 10,
+      type: "earn",
+      reason: "Online earn",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+  await prisma.rewardLedgerEntry.createMany({
+    data: [
+      {
+        customerAccountId: customer.id,
+        points: -5,
+        type: "reverse",
+        reason: "Online reversal missing order",
+        status: "reversed",
+        source: "stripe_checkout",
+        reversalOfEntryId: missingOrderEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 5 })
+      },
+      {
+        customerAccountId: customer.id,
+        orderId: orderB.id,
+        points: -5,
+        type: "reverse",
+        reason: "Online reversal wrong order",
+        status: "reversed",
+        source: "stripe_checkout",
+        reversalOfEntryId: differentOrderEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 5 })
+      },
+      {
+        customerAccountId: customer.id,
+        orderId: orderA.id,
+        points: -5,
+        type: "reverse",
+        reason: "Online reversal for POS earn",
+        status: "reversed",
+        source: "stripe_checkout",
+        reversalOfEntryId: posEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 5 })
+      },
+      {
+        customerAccountId: customer.id,
+        points: -5,
+        type: "reverse",
+        reason: "POS reversal for online earn",
+        status: "reversed",
+        source: "pos",
+        idempotencyKey: "rewards:pos:refund:POS-SOURCE",
+        reversalOfEntryId: onlineEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 5 })
+      }
+    ]
+  });
+  await setBalance(customer.id, 20, 0, 40);
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const ledger = report.sections.rewardLedgerIntegrity;
+
+  assert.equal(ledger.classification, "BLOCKED");
+  assert.ok(ledger.reasons.includes("REVERSAL_SOURCE_MISMATCH"));
+  assert.ok(ledger.reasons.includes("REVERSAL_TRANSACTION_MISMATCH"));
+  assert.equal(ledger.metrics.reversalSourceMismatch, 2);
+  assert.equal(ledger.metrics.reversalTransactionMismatch, 4);
+});
+
+test("malformed cross-account reversal cannot validate a canceled earn", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customerA = await createCustomer(owner.id);
+  const customerB = await createCustomer(owner.id);
+  const canceledEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customerA.id,
+      points: 10,
+      type: "earn",
+      reason: "Canceled POS earn",
+      status: "canceled",
+      source: "pos",
+      idempotencyKey: "rewards:pos:earn:POS-CROSS-ACCOUNT"
+    }
+  });
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customerB.id,
+      points: -10,
+      type: "reverse",
+      reason: "Wrong account reversal",
+      status: "reversed",
+      source: "pos",
+      idempotencyKey: "rewards:pos:refund:POS-CROSS-ACCOUNT",
+      reversalOfEntryId: canceledEarn.id,
+      metadataJson: JSON.stringify({ availablePointsReversed: 10 })
+    }
+  });
+  await setBalance(customerA.id, 0, 0, 10);
+  await setBalance(customerB.id, 0, 0, 0);
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const ledger = report.sections.rewardLedgerIntegrity;
+
+  assert.equal(ledger.classification, "BLOCKED");
+  assert.ok(ledger.reasons.includes("REVERSAL_ACCOUNT_MISMATCH"));
+  assert.ok(ledger.reasons.includes("INVALID_REWARD_LEDGER_STATUS_TYPE"));
+  assert.equal(ledger.metrics.positiveEarnCanceledWithoutReversal, 1);
 });
 
 test("legacy administrative reversal without original reference is a warning when balances reconcile", async () => {
@@ -413,6 +723,114 @@ test("legacy administrative reversal without original reference is a warning whe
   assert.equal(report.sections.rewardLedgerIntegrity.metrics.legacyAdministrativeReversal, 1);
   assert.equal(report.sections.rewardLedgerIntegrity.metrics.currentSystemReversalMissingOriginalReference, 0);
   assert.equal(report.sections.rewardBalanceReconciliation.classification, "PASS");
+});
+
+test("legacy administrative reversal without original is blocked when balances do not reconcile", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id);
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: 100,
+      type: "earn",
+      reason: "Historical earn",
+      status: "available",
+      source: "stripe_checkout"
+    }
+  });
+  await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      points: -5,
+      type: "reverse",
+      reason: "Legacy reversal",
+      status: "reversed",
+      source: "admin_adjustment"
+    }
+  });
+  await setBalance(customer.id, 100, 0, 100);
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+
+  assert.equal(report.sections.rewardLedgerIntegrity.classification, "BLOCKED");
+  assert.ok(report.sections.rewardLedgerIntegrity.reasons.includes("LEGACY_REVERSAL_REQUIRES_RECONCILED_BALANCE"));
+  assert.equal(report.sections.rewardBalanceReconciliation.classification, "BLOCKED");
+});
+
+test("sanitized production-like reward fixture reports legacy and historical gaps as warnings only when balances reconcile", async () => {
+  approvedRuntimeEnv();
+  const owner = await createOwner();
+  const customer = await createCustomer(owner.id, { email: "production-like-customer@example.test" });
+  const canceledOrder = await createPaidOrder(owner.id, customer.id, {
+    customerEmail: customer.email,
+    status: "canceled",
+    paymentStatus: "paid",
+    refundStatus: "refunded",
+    refundedAmount: 40
+  });
+  const completedOrder = await createPaidOrder(owner.id, customer.id, { customerEmail: customer.email });
+  const canceledEarn = await prisma.rewardLedgerEntry.create({
+    data: {
+      customerAccountId: customer.id,
+      orderId: canceledOrder.id,
+      points: 20,
+      type: "earn",
+      reason: "Canceled online earn",
+      status: "canceled",
+      source: "stripe_checkout"
+    }
+  });
+  await prisma.rewardLedgerEntry.createMany({
+    data: [
+      {
+        customerAccountId: customer.id,
+        orderId: canceledOrder.id,
+        points: -20,
+        type: "reverse",
+        reason: "Canceled order reversal",
+        status: "reversed",
+        source: "stripe_checkout",
+        reversalOfEntryId: canceledEarn.id,
+        metadataJson: JSON.stringify({ availablePointsReversed: 20 })
+      },
+      {
+        customerAccountId: customer.id,
+        orderId: completedOrder.id,
+        points: 30,
+        type: "earn",
+        reason: "Completed online earn",
+        status: "available",
+        source: "stripe_checkout"
+      },
+      {
+        customerAccountId: customer.id,
+        points: -5,
+        type: "reverse",
+        reason: "Sanitized legacy admin reversal",
+        status: "reversed",
+        source: "admin_adjustment"
+      }
+    ]
+  });
+  await createPosSale(owner.id, customer.id, {
+    saleReference: "POS-SANITIZED-HISTORICAL",
+    customerEmail: customer.email,
+    soldAt: new Date("2026-01-15T00:00:00.000Z")
+  });
+  await setBalance(customer.id, 25, 0, 50);
+
+  const report = await buildCustomerRewardIntegrityReport(owner.id);
+  const payload = JSON.stringify(report);
+
+  assert.equal(report.overallClassification, "WARNING");
+  assert.equal(report.sections.rewardLedgerIntegrity.classification, "WARNING");
+  assert.ok(report.sections.rewardLedgerIntegrity.reasons.includes("LEGACY_REVERSAL_WITHOUT_ORIGINAL_REFERENCE"));
+  assert.equal(report.sections.posRewards.classification, "WARNING");
+  assert.ok(report.sections.posRewards.reasons.includes("POS_REWARD_ACTIVATION_HISTORY_UNKNOWN"));
+  assert.equal(report.sections.rewardBalanceReconciliation.classification, "PASS");
+  assert.ok(!payload.includes(customer.id));
+  assert.ok(!payload.includes(customer.email));
 });
 
 test("clean three-account dataset reports active verified aggregate counts", async () => {
@@ -793,7 +1211,7 @@ test("account warning breakdown exposes aggregate context only", async () => {
   assert.ok(!payload.includes(customer.email));
 });
 
-test("POS missing-earn breakdown distinguishes ineligible historical unknown and actionable cases", async () => {
+test("POS missing-earn breakdown keeps historical activation unknown as warning-only", async () => {
   approvedRuntimeEnv();
   const owner = await createOwner();
   const verifiedCustomer = await createCustomer(owner.id);
@@ -857,8 +1275,9 @@ test("POS missing-earn breakdown distinguishes ineligible historical unknown and
   const metrics = report.sections.posRewards.metrics;
   const payload = JSON.stringify(report);
 
-  assert.equal(report.sections.posRewards.classification, "BLOCKED");
-  assert.ok(report.sections.posRewards.reasons.includes("CURRENT_POS_REWARD_EARN_MISSING"));
+  assert.equal(report.sections.posRewards.classification, "WARNING");
+  assert.ok(!report.sections.posRewards.reasons.includes("CURRENT_POS_REWARD_EARN_MISSING"));
+  assert.ok(report.sections.posRewards.reasons.includes("POS_REWARD_ACTIVATION_HISTORY_UNKNOWN"));
   assert.ok(report.sections.posRewards.reasons.includes("LINKED_POS_SALE_WITHOUT_EARN_ENTRY"));
   assert.equal(metrics.completedEligibleSalesWithEarnEntry, 1);
   assert.equal(metrics.linkedPosSalesWithoutEarnEntry, 6);
@@ -872,7 +1291,9 @@ test("POS missing-earn breakdown distinguishes ineligible historical unknown and
   assert.equal(metrics.linkedPosSalesWithoutEarnPositiveEligibleMerchandiseSubtotal, 5);
   assert.equal(metrics.linkedPosSalesWithoutEarnWithRefundState, 1);
   assert.equal(metrics.linkedPosSalesWithoutEarnWithoutRefundState, 5);
-  assert.equal(metrics.linkedPosSalesWithoutEarnActionableCurrentSystem, 1);
+  assert.equal(metrics.linkedPosSalesWithoutEarnActivationHistoryUnknown, 2);
+  assert.equal(metrics.linkedPosSalesWithoutEarnActionableCurrentSystem, 0);
+  assert.equal(metrics.perTransactionRewardActivationEvidenceAvailable, false);
   assert.equal(metrics.firstPersistedPosEarnEntryKnown, true);
   assert.ok(!payload.includes("POS-ACTIONABLE"));
   assert.ok(!payload.includes(verifiedCustomer.email));
@@ -949,7 +1370,9 @@ test("bounded ledger relationship checks are unavailable rather than falsely blo
   assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalRelationshipVerificationAvailable, false);
   assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalExceedsOriginalPoints, null);
   assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalAccountMismatch, null);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalSourceMismatch, null);
   assert.equal(report.sections.rewardLedgerIntegrity.metrics.reversalTransactionMismatch, null);
+  assert.equal(report.sections.rewardLedgerIntegrity.metrics.legacyAdministrativeReversalExceedsAccountEarnedPoints, null);
 });
 
 test("route and UI are admin-only, no-store, GET-only, and mutation-free", () => {
