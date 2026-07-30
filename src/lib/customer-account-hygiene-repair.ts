@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
 import { privateNoStoreHeaders } from "@/lib/http";
+import { canonicalPosPlatformWhere } from "@/lib/pos-platform";
 import { workspaceCustomerWhere } from "@/lib/customer-workspace";
 import type { SessionUser } from "@/types/radar";
 
@@ -14,19 +15,13 @@ const zeroBalance = {
   lifetimeEarnedPoints: 0
 } as const;
 
-const paidOrderWhere = {
-  paymentStatus: "paid",
-  isTestOrder: false
-} as const;
-
-const posPlatforms = ["pos", "POS"] as const;
-
 export type CustomerAccountHygieneRepairClassification =
   | "NO_ELIGIBLE_CANDIDATE"
   | "READY_FOR_DETERMINISTIC_REPAIR"
   | "MULTIPLE_ELIGIBLE_CANDIDATES"
   | "BLOCKED"
-  | "ALREADY_CLEAN_OR_NO_ELIGIBLE_CANDIDATE";
+  | "ALREADY_CLEAN_OR_NO_ELIGIBLE_CANDIDATE"
+  | "EXECUTION_DISABLED";
 
 export type CustomerAccountHygieneRepairReason =
   | "NO_ELIGIBLE_CANDIDATE"
@@ -39,15 +34,17 @@ export type CustomerAccountHygieneRepairReason =
   | "REWARD_BALANCE_EXISTS"
   | "REWARD_LEDGER_HISTORY_EXISTS"
   | "POSITIVE_REWARD_HISTORY_EXISTS"
+  | "REWARD_TIER_HISTORY_EXISTS"
   | "STOREFRONT_CUSTOMER_LINK_EXISTS"
-  | "PAID_ORDER_LINK_EXISTS"
+  | "STOREFRONT_ORDER_LINK_EXISTS"
   | "POS_TRANSACTION_LINK_EXISTS"
   | "DUPLICATE_NORMALIZED_ACCOUNT_IDENTITY"
-  | "EXPECTED_BALANCE_NONZERO"
   | "NEGATIVE_REWARD_FIELDS"
   | "STALE_CUSTOMER_ACCOUNT"
   | "CONCURRENT_REWARD_BALANCE_CONFLICT"
-  | "AUDIT_WRITE_FAILED";
+  | "AUDIT_WRITE_FAILED"
+  | "EXECUTION_DISABLED"
+  | "POST_REPAIR_VERIFICATION_FAILED";
 
 export type CustomerAccountHygieneRepairDryRun = {
   readOnly: true;
@@ -61,7 +58,7 @@ export type CustomerAccountHygieneRepairDryRun = {
   candidateWithoutLedgerCount: number;
   candidateWithoutPositiveHistoryCount: number;
   candidateWithoutStorefrontLinkCount: number;
-  candidateWithoutPaidOrderLinkCount: number;
+  candidateWithoutOrderLinkCount: number;
   candidateWithoutPosLinkCount: number;
   validNormalizedEmailCount: number;
   uniqueNormalizedIdentityCount: number;
@@ -107,11 +104,26 @@ type CandidateEvaluation = {
   normalizedEmail: string | null;
   reasons: CustomerAccountHygieneRepairReason[];
   storefrontLinkCount: number;
-  paidOrderLinkCount: number;
+  orderLinkCount: number;
   posLinkCount: number;
   ledgerCount: number;
   positiveLedgerCount: number;
   identityMatchCount: number;
+};
+
+export type CustomerAccountHygieneRepairExecutionOptions = {
+  client?: typeof prisma;
+  beforeConditionalUpdate?: (context: CustomerAccountHygieneRepairExecutionHookContext) => Promise<void> | void;
+  afterWriteRevalidation?: (context: CustomerAccountHygieneRepairExecutionHookContext) => Promise<void> | void;
+  beforeRewardBalanceCreate?: (context: CustomerAccountHygieneRepairExecutionHookContext) => Promise<void> | void;
+  beforeAuditCreate?: (context: CustomerAccountHygieneRepairExecutionHookContext) => Promise<void> | void;
+};
+
+export type CustomerAccountHygieneRepairExecutionHookContext = {
+  tx: Prisma.TransactionClient;
+  ownerUserId: string;
+  customerAccountId: string;
+  normalizedEmail: string;
 };
 
 function isLiteralTrue(value: string | undefined) {
@@ -130,15 +142,12 @@ function missingNormalizedEmail(value: string | null) {
   return !value?.trim();
 }
 
-async function normalizedIdentityMatches(client: HygieneClient, ownerUserId: string, normalizedEmail: string) {
+async function normalizedIdentityMatches(client: HygieneClient, normalizedEmail: string) {
   const rows = await client.$queryRaw<Array<{ id: string }>>`
     SELECT "id"
     FROM "CustomerAccount"
-    WHERE "userId" = ${ownerUserId}
-      AND (
-        "normalizedEmail" = ${normalizedEmail}
-        OR lower(trim("email")) = ${normalizedEmail}
-      )
+    WHERE "normalizedEmail" = ${normalizedEmail}
+      OR lower(trim("email")) = ${normalizedEmail}
     LIMIT 3
   `;
   return Array.from(new Set(rows.map((row) => row.id).filter(Boolean)));
@@ -146,17 +155,16 @@ async function normalizedIdentityMatches(client: HygieneClient, ownerUserId: str
 
 async function evaluateCandidate(client: HygieneClient, ownerUserId: string, account: CandidateAccount): Promise<CandidateEvaluation> {
   const normalizedEmail = normalizeCustomerAccountEmail(account.email);
-  const [balance, ledgerCount, positiveLedgerCount, storefrontLinkCount, paidOrderLinkCount, posLinkCount, identityMatches] =
+  const [balance, ledgerCount, positiveLedgerCount, storefrontLinkCount, orderLinkCount, posLinkCount, identityMatches] =
     await Promise.all([
       client.rewardBalance.findUnique({ where: { customerAccountId: account.id }, select: { availablePoints: true, pendingPoints: true, lifetimeEarnedPoints: true } }),
       client.rewardLedgerEntry.count({ where: { customerAccountId: account.id } }),
       client.rewardLedgerEntry.count({ where: { customerAccountId: account.id, points: { gt: 0 } } }),
-      client.storefrontCustomer.count({ where: { userId: ownerUserId, customerAccountId: account.id } }),
-      client.storefrontOrder.count({ where: { userId: ownerUserId, customerAccountId: account.id, ...paidOrderWhere } }),
-      client.inventorySale.count({ where: { userId: ownerUserId, customerAccountId: account.id, platform: { in: [...posPlatforms] } } }),
-      normalizedEmail ? normalizedIdentityMatches(client, ownerUserId, normalizedEmail) : Promise.resolve([])
+      client.storefrontCustomer.count({ where: { customerAccountId: account.id } }),
+      client.storefrontOrder.count({ where: { customerAccountId: account.id } }),
+      client.inventorySale.count({ where: { customerAccountId: account.id, platform: canonicalPosPlatformWhere() } }),
+      normalizedEmail ? normalizedIdentityMatches(client, normalizedEmail) : Promise.resolve([])
     ]);
-  const expected = zeroBalance;
   const reasons: CustomerAccountHygieneRepairReason[] = [];
   addReason(reasons, account.status !== "active", "INACTIVE_ACCOUNT");
   addReason(reasons, !account.emailVerifiedAt, "UNVERIFIED_ACCOUNT");
@@ -167,15 +175,11 @@ async function evaluateCandidate(client: HygieneClient, ownerUserId: string, acc
   addReason(reasons, ledgerCount > 0, "REWARD_LEDGER_HISTORY_EXISTS");
   addReason(reasons, positiveLedgerCount > 0, "POSITIVE_REWARD_HISTORY_EXISTS");
   addReason(reasons, storefrontLinkCount > 0, "STOREFRONT_CUSTOMER_LINK_EXISTS");
-  addReason(reasons, paidOrderLinkCount > 0, "PAID_ORDER_LINK_EXISTS");
+  addReason(reasons, orderLinkCount > 0, "STOREFRONT_ORDER_LINK_EXISTS");
   addReason(reasons, posLinkCount > 0, "POS_TRANSACTION_LINK_EXISTS");
   addReason(reasons, identityMatches.length !== 1 || identityMatches[0] !== account.id, "DUPLICATE_NORMALIZED_ACCOUNT_IDENTITY");
-  addReason(
-    reasons,
-    expected.availablePoints !== 0 || expected.pendingPoints !== 0 || expected.lifetimeEarnedPoints !== 0,
-    "EXPECTED_BALANCE_NONZERO"
-  );
   addReason(reasons, account.highestAcknowledgedRewardTier < 0, "NEGATIVE_REWARD_FIELDS");
+  addReason(reasons, account.highestAcknowledgedRewardTier > 0, "REWARD_TIER_HISTORY_EXISTS");
   if (balance) {
     addReason(
       reasons,
@@ -188,7 +192,7 @@ async function evaluateCandidate(client: HygieneClient, ownerUserId: string, acc
     normalizedEmail,
     reasons,
     storefrontLinkCount,
-    paidOrderLinkCount,
+    orderLinkCount,
     posLinkCount,
     ledgerCount,
     positiveLedgerCount,
@@ -249,7 +253,7 @@ function dryRunFromEvaluations(
     candidateWithoutLedgerCount: evaluations.filter((candidate) => candidate.ledgerCount === 0).length,
     candidateWithoutPositiveHistoryCount: evaluations.filter((candidate) => candidate.positiveLedgerCount === 0).length,
     candidateWithoutStorefrontLinkCount: evaluations.filter((candidate) => candidate.storefrontLinkCount === 0).length,
-    candidateWithoutPaidOrderLinkCount: evaluations.filter((candidate) => candidate.paidOrderLinkCount === 0).length,
+    candidateWithoutOrderLinkCount: evaluations.filter((candidate) => candidate.orderLinkCount === 0).length,
     candidateWithoutPosLinkCount: evaluations.filter((candidate) => candidate.posLinkCount === 0).length,
     validNormalizedEmailCount: evaluations.filter((candidate) => Boolean(candidate.normalizedEmail)).length,
     uniqueNormalizedIdentityCount: evaluations.filter((candidate) => candidate.identityMatchCount === 1).length,
@@ -263,11 +267,19 @@ export async function dryRunCustomerAccountHygieneRepair(ownerUserId: string, cl
   return dryRunFromEvaluations(await candidateEvaluations(client, ownerUserId));
 }
 
-function safeConflict(reasonCodes: CustomerAccountHygieneRepairReason[]): CustomerAccountHygieneRepairResult {
+function alreadyClean(): CustomerAccountHygieneRepairResult {
   return {
     repaired: false,
-    classification: reasonCodes.includes("NO_ELIGIBLE_CANDIDATE") ? "ALREADY_CLEAN_OR_NO_ELIGIBLE_CANDIDATE" : "BLOCKED",
-    reasonCodes
+    classification: "ALREADY_CLEAN_OR_NO_ELIGIBLE_CANDIDATE",
+    reasonCodes: ["NO_ELIGIBLE_CANDIDATE"]
+  };
+}
+
+function disabledResult(): CustomerAccountHygieneRepairResult {
+  return {
+    repaired: false,
+    classification: "EXECUTION_DISABLED",
+    reasonCodes: ["EXECUTION_DISABLED"]
   };
 }
 
@@ -277,30 +289,129 @@ function transactionOptions() {
     : { isolationLevel: Prisma.TransactionIsolationLevel.Serializable };
 }
 
-export async function executeCustomerAccountHygieneRepair(user: SessionUser): Promise<CustomerAccountHygieneRepairResult> {
-  return prisma.$transaction(async (tx) => {
+async function revalidateCandidateOrThrow(tx: Prisma.TransactionClient, ownerUserId: string, account: CandidateAccount) {
+  const fresh = await tx.customerAccount.findFirst({
+    where: { id: account.id, ...workspaceCustomerWhere(ownerUserId) },
+    select: {
+      id: true,
+      email: true,
+      normalizedEmail: true,
+      status: true,
+      emailVerifiedAt: true,
+      updatedAt: true,
+      highestAcknowledgedRewardTier: true
+    }
+  });
+  if (!fresh) throw new CustomerAccountHygieneRepairRollbackError(["STALE_CUSTOMER_ACCOUNT"]);
+  const reevaluated = await evaluateCandidate(tx, ownerUserId, fresh);
+  if (reevaluated.reasons.length > 0) throw new CustomerAccountHygieneRepairRollbackError(reevaluated.reasons);
+  if (!reevaluated.normalizedEmail) throw new CustomerAccountHygieneRepairRollbackError(["INVALID_NORMALIZED_EMAIL"]);
+  return reevaluated;
+}
+
+async function verifyRepairedStateOrThrow(
+  tx: Prisma.TransactionClient,
+  ownerUserId: string,
+  customerAccountId: string,
+  normalizedEmail: string,
+  auditLogId: string
+) {
+  const [account, balance, ledgerCount, storefrontLinkCount, orderLinkCount, posLinkCount, identityMatches, auditCount] = await Promise.all([
+    tx.customerAccount.findFirst({
+      where: { id: customerAccountId, ...workspaceCustomerWhere(ownerUserId) },
+      select: { normalizedEmail: true }
+    }),
+    tx.rewardBalance.findUnique({ where: { customerAccountId }, select: { availablePoints: true, pendingPoints: true, lifetimeEarnedPoints: true } }),
+    tx.rewardLedgerEntry.count({ where: { customerAccountId } }),
+    tx.storefrontCustomer.count({ where: { customerAccountId } }),
+    tx.storefrontOrder.count({ where: { customerAccountId } }),
+    tx.inventorySale.count({ where: { customerAccountId, platform: canonicalPosPlatformWhere() } }),
+    normalizedIdentityMatches(tx, normalizedEmail),
+    tx.auditLog.count({
+      where: {
+        id: auditLogId,
+        userId: ownerUserId,
+        actorEmail: null,
+        action: "customer_account.hygiene_repair",
+        entityType: "CustomerAccount",
+        entityId: null
+      }
+    })
+  ]);
+  if (
+    account?.normalizedEmail !== normalizedEmail ||
+    !balance ||
+    balance.availablePoints !== 0 ||
+    balance.pendingPoints !== 0 ||
+    balance.lifetimeEarnedPoints !== 0 ||
+    ledgerCount !== 0 ||
+    storefrontLinkCount !== 0 ||
+    orderLinkCount !== 0 ||
+    posLinkCount !== 0 ||
+    identityMatches.length !== 1 ||
+    identityMatches[0] !== customerAccountId ||
+    auditCount !== 1
+  ) {
+    throw new CustomerAccountHygieneRepairRollbackError(["POST_REPAIR_VERIFICATION_FAILED"]);
+  }
+}
+
+export async function executeCustomerAccountHygieneRepair(
+  user: SessionUser,
+  options: CustomerAccountHygieneRepairExecutionOptions = {}
+): Promise<CustomerAccountHygieneRepairResult> {
+  if (!customerAccountHygieneRepairEnabled()) return disabledResult();
+  const rootClient = options.client ?? prisma;
+  return rootClient.$transaction(async (tx) => {
     const evaluations = await candidateEvaluations(tx, user.id);
     const dryRun = dryRunFromEvaluations(evaluations, true);
-    if (dryRun.candidateCount === 0) return safeConflict(["NO_ELIGIBLE_CANDIDATE"]);
-    if (dryRun.classification !== "READY_FOR_DETERMINISTIC_REPAIR") return safeConflict(dryRun.reasonCodes);
+    if (dryRun.classification === "NO_ELIGIBLE_CANDIDATE") return alreadyClean();
+    if (dryRun.classification !== "READY_FOR_DETERMINISTIC_REPAIR" || dryRun.candidateCount !== 1) {
+      throw new CustomerAccountHygieneRepairRollbackError(dryRun.reasonCodes.length ? dryRun.reasonCodes : ["MULTIPLE_ELIGIBLE_CANDIDATES"]);
+    }
     const candidate = evaluations.find((item) => item.reasons.length === 0);
-    if (!candidate?.normalizedEmail) return safeConflict(["INVALID_NORMALIZED_EMAIL"]);
+    if (!candidate?.normalizedEmail) throw new CustomerAccountHygieneRepairRollbackError(["INVALID_NORMALIZED_EMAIL"]);
+    const revalidatedCandidate = await revalidateCandidateOrThrow(tx, user.id, candidate.account);
+    const revalidatedNormalizedEmail = revalidatedCandidate.normalizedEmail;
+    if (!revalidatedNormalizedEmail) throw new CustomerAccountHygieneRepairRollbackError(["INVALID_NORMALIZED_EMAIL"]);
+    await options.beforeConditionalUpdate?.({
+      tx,
+      ownerUserId: user.id,
+      customerAccountId: revalidatedCandidate.account.id,
+      normalizedEmail: revalidatedNormalizedEmail
+    });
+    const writeReadyCandidate = await revalidateCandidateOrThrow(tx, user.id, revalidatedCandidate.account);
+    const writeReadyNormalizedEmail = writeReadyCandidate.normalizedEmail;
+    if (!writeReadyNormalizedEmail) throw new CustomerAccountHygieneRepairRollbackError(["INVALID_NORMALIZED_EMAIL"]);
+    await options.afterWriteRevalidation?.({
+      tx,
+      ownerUserId: user.id,
+      customerAccountId: writeReadyCandidate.account.id,
+      normalizedEmail: writeReadyNormalizedEmail
+    });
 
     const updated = await tx.customerAccount.updateMany({
       where: {
-        id: candidate.account.id,
+        id: writeReadyCandidate.account.id,
         userId: user.id,
-        updatedAt: candidate.account.updatedAt,
-        normalizedEmail: candidate.account.normalizedEmail
+        updatedAt: writeReadyCandidate.account.updatedAt,
+        normalizedEmail: writeReadyCandidate.account.normalizedEmail
       },
-      data: { normalizedEmail: candidate.normalizedEmail }
+      data: { normalizedEmail: writeReadyNormalizedEmail }
     });
-    if (updated.count !== 1) return safeConflict(["STALE_CUSTOMER_ACCOUNT"]);
+    if (updated.count !== 1) throw new CustomerAccountHygieneRepairRollbackError(["STALE_CUSTOMER_ACCOUNT"]);
 
+    let auditLogId: string;
     try {
+      await options.beforeRewardBalanceCreate?.({
+        tx,
+        ownerUserId: user.id,
+        customerAccountId: writeReadyCandidate.account.id,
+        normalizedEmail: writeReadyNormalizedEmail
+      });
       await tx.rewardBalance.create({
         data: {
-          customerAccountId: candidate.account.id,
+          customerAccountId: writeReadyCandidate.account.id,
           ...zeroBalance
         }
       });
@@ -312,7 +423,13 @@ export async function executeCustomerAccountHygieneRepair(user: SessionUser): Pr
     }
 
     try {
-      await tx.auditLog.create({
+      await options.beforeAuditCreate?.({
+        tx,
+        ownerUserId: user.id,
+        customerAccountId: writeReadyCandidate.account.id,
+        normalizedEmail: writeReadyNormalizedEmail
+      });
+      const auditLog = await tx.auditLog.create({
         data: {
           userId: user.id,
           actorEmail: null,
@@ -329,10 +446,12 @@ export async function executeCustomerAccountHygieneRepair(user: SessionUser): Pr
           })
         }
       });
+      auditLogId = auditLog.id;
     } catch {
       throw new CustomerAccountHygieneRepairRollbackError(["AUDIT_WRITE_FAILED"]);
     }
 
+    await verifyRepairedStateOrThrow(tx, user.id, writeReadyCandidate.account.id, writeReadyNormalizedEmail, auditLogId);
     const remaining = dryRunFromEvaluations(await candidateEvaluations(tx, user.id), true);
     if (remaining.candidateCount !== 0) throw new CustomerAccountHygieneRepairRollbackError(["MULTIPLE_ELIGIBLE_CANDIDATES"]);
     return {

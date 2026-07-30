@@ -4,6 +4,7 @@ import { normalizeCustomerAccountEmail } from "@/lib/customer-account-auth";
 import { configuredRewardPendingDays } from "@/lib/customer-rewards";
 import { calculateExpectedRewardBalance } from "@/lib/reward-reconciliation";
 import { workspaceCustomerWhereWithLegacy } from "@/lib/customer-workspace";
+import { canonicalPosPlatforms } from "@/lib/pos-platform";
 import type {
   CustomerRewardIntegrityClassification,
   CustomerRewardIntegrityReportDTO,
@@ -14,8 +15,6 @@ const boundedAccountLimit = 1_000;
 const boundedLedgerEntryLimit = 10_000;
 const boundedOrderLimit = 5_000;
 const boundedPosSaleLimit = 5_000;
-const canonicalPosPlatforms = ["pos", "POS"] as const;
-
 const paidOrderWhere = {
   paymentStatus: "paid",
   isTestOrder: false
