@@ -2873,20 +2873,20 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                     ) : null}
                     {shippingQuoteMessage ? <small>{shippingQuoteMessage}</small> : null}
                     <small>Calculated using packed product weight and package size.</small>
-                    <div className="gdg-cart-grabby-tip" aria-label="Grabby shipping tip">
-                      <span className="gdg-cart-grabby-mark" aria-hidden="true">
-                        <span>G</span>
-                      </span>
-                      <span className="gdg-cart-grabby-copy">
-                        <strong>Grabby tip</strong>
-                        <span>{grabbyShippingTipMessage}</span>
-                      </span>
-                    </div>
                   </div>
                 ) : null}
                 {onlineTaxEnabled && fulfillmentMethod === "pickup" ? (
                   <p className="gdg-checkout-tax-note">Any required Local Pickup taxes are shown before payment.</p>
                 ) : null}
+                <div className="gdg-cart-grabby-tip" aria-label="Grabby shipping tip">
+                  <span className="gdg-cart-grabby-mark" aria-hidden="true">
+                    <span>G</span>
+                  </span>
+                  <span className="gdg-cart-grabby-copy">
+                    <strong>Grabby tip</strong>
+                    <span>{grabbyShippingTipMessage}</span>
+                  </span>
+                </div>
               </div>
             ) : null}
             {hasBlockingStockIssue ? <p className="gdg-summary-warning compact">Please remove sold-out items or update changed quantities before checkout.</p> : null}
