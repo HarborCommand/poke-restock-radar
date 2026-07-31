@@ -637,7 +637,7 @@ function StorefrontCartConfirmation() {
     ? confirmation.quantityAdded > 1
       ? `${confirmation.quantityAdded.toLocaleString()} items were added to your cart.`
       : `${confirmation.productName} was added to your cart.`
-    : "You already have the maximum available quantity.";
+    : "Maximum quantity already in your cart.";
 
   return (
     <aside
@@ -657,7 +657,7 @@ function StorefrontCartConfirmation() {
           {isSuccess ? <Check size={16} /> : <ShoppingCart size={16} />}
         </span>
       </div>
-      {confirmation.productImageUrl && !imageFailed ? (
+      {isSuccess && confirmation.productImageUrl && !imageFailed ? (
         <Image
           src={confirmation.productImageUrl}
           alt=""

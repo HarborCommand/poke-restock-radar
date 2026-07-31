@@ -15631,6 +15631,8 @@ animation: gdg-cart-confirmation-in 220ms ease-out;
 backdrop-filter: blur(18px);
 }
 .gdg-cart-confirmation.limit {
+grid-template-columns: auto minmax(0, 1fr) auto;
+width: min(500px, calc(100vw - 32px));
 border-color: rgba(245, 158, 11, 0.42);
 background:
 radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.94), transparent 28%),
@@ -15664,6 +15666,9 @@ box-shadow: 0 8px 20px rgba(34, 197, 94, 0.3);
 .gdg-cart-confirmation.limit .gdg-cart-confirmation-icon {
 background: linear-gradient(135deg, #f59e0b, #f97316);
 box-shadow: 0 8px 20px rgba(249, 115, 22, 0.26);
+}
+.gdg-cart-confirmation.limit .gdg-cart-confirmation-thumb {
+display: none;
 }
 .gdg-cart-confirmation-thumb {
 width: 58px;
@@ -15709,6 +15714,19 @@ font-weight: 800;
 line-height: 1.3;
 text-overflow: ellipsis;
 white-space: nowrap;
+}
+.gdg-cart-confirmation.limit .gdg-cart-confirmation-copy .gdg-overline,
+.gdg-cart-confirmation.limit .gdg-cart-confirmation-copy strong {
+overflow: visible;
+text-overflow: clip;
+white-space: normal;
+}
+.gdg-cart-confirmation.limit .gdg-cart-confirmation-copy .gdg-overline {
+line-height: 1.25;
+}
+.gdg-cart-confirmation.limit .gdg-cart-confirmation-copy strong {
+font-size: 0.95rem;
+line-height: 1.28;
 }
 .gdg-cart-confirmation-actions {
 display: flex;
@@ -28008,6 +28026,42 @@ grid-template-columns: 36px minmax(0, 1fr);
 }
 body .empty-state-action {
 grid-column: 1 / -1;
+}
+}
+@media (max-width: 600px) {
+.gdg-cart-confirmation.limit {
+left: max(12px, env(safe-area-inset-left));
+right: max(12px, env(safe-area-inset-right));
+grid-template-columns: auto minmax(0, 1fr) auto;
+width: calc(100vw - 24px);
+gap: 10px;
+align-items: start;
+}
+.gdg-cart-confirmation.limit .gdg-cart-confirmation-grabby {
+grid-column: 1;
+grid-row: 1;
+}
+.gdg-cart-confirmation.limit .gdg-cart-confirmation-copy {
+grid-column: 2;
+grid-row: 1;
+align-self: center;
+padding-right: 2px;
+}
+.gdg-cart-confirmation.limit .gdg-cart-confirmation-actions {
+display: contents;
+}
+.gdg-cart-confirmation.limit .gdg-secondary-button.compact {
+grid-column: 1 / -1;
+grid-row: 2;
+justify-content: center;
+width: 100%;
+min-height: 38px;
+}
+.gdg-cart-confirmation.limit .gdg-icon-button {
+grid-column: 3;
+grid-row: 1;
+justify-self: end;
+align-self: start;
 }
 }
 @media (max-width: 430px) {
