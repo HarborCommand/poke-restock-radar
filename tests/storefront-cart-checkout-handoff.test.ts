@@ -22,17 +22,38 @@ const checkoutFunction = sourceSlice(cartClient, "async function checkout", "ret
 
 test("cart summary separates merchandise rewards shipping pickup and tax without browser-authoritative tax", () => {
   assert.match(cartClient, /const subtotal = products\.reduce\(\(sum, product\) => sum \+ product\.price \* product\.requestedQuantity, 0\)/);
-  assert.match(cartClient, /const estimatedRewardPoints = settings\.customerAccounts\.enabled && settings\.customerAccounts\.rewardsEnabled \? Math\.floor\(Math\.max\(0, subtotal\)\) : 0/);
+  assert.match(cartClient, /const customerRewardsEnabled = settings\.customerAccounts\.enabled && settings\.customerAccounts\.rewardsEnabled/);
+  assert.match(cartClient, /const estimatedRewardPoints = customerRewardsEnabled \? Math\.floor\(Math\.max\(0, subtotal\)\) : 0/);
+  assert.match(cartClient, /const total = subtotal \+ shipping/);
   assert.match(cartClient, /Merchandise subtotal/);
   assert.match(cartClient, /Estimated rewards/);
-  assert.match(cartClient, /on merchandise only/);
-  assert.match(cartClient, /const rewardProgramCopy = storefrontRewardsProgramCopy\(settings\)/);
-  assert.match(cartClient, /on merchandise only\. \{rewardProgramCopy\}/);
-  assert.match(cartClient, /Shipping calculated at checkout \/ pickup/);
-  assert.match(cartClient, /STOREFRONT_TAX_PAYMENT_COPY/);
-  assert.match(cartClient, /Shipping stays separate from any required taxes\./);
-  assert.match(cartClient, /Cart estimate/);
+  assert.match(cartClient, /Shipping/);
+  assert.match(cartClient, /Estimated tax/);
+  assert.match(cartClient, /Calculated at checkout/);
+  assert.match(cartClient, /Estimated total before tax/);
+  assert.match(cartClient, /Taxes are shown before payment\. Local pickup is free\./);
+  assert.match(cartClient, /Rewards apply to eligible merchandise\. Redemption coming soon\./);
+  assert.doesNotMatch(cartClient, /Cart estimate/);
+  assert.doesNotMatch(cartClient, /Shipping calculated at checkout \/ pickup/);
+  assert.doesNotMatch(cartClient, /on merchandise only\. \{rewardProgramCopy\}/);
   assert.doesNotMatch(cartClient, /taxEstimate|estimatedTax|browserTax|clientTax|Tax is not estimated from the browser cart/i);
+});
+
+test("cart summary values and Grabby shipping tip are state-aware without changing quote behavior", () => {
+  assert.match(cartClient, /const summaryShippingValue =[\s\S]*fulfillmentMethod === "pickup"[\s\S]*\? "Free"/);
+  assert.match(cartClient, /quoteBusy[\s\S]*\? "Calculating…"/);
+  assert.match(cartClient, /hasFreshShippingQuote && shippingQuote[\s\S]*\? money\(shippingQuote\.amount\)/);
+  assert.match(cartClient, /quoteNeedsRecalculation[\s\S]*\? "Recalculate below"/);
+  assert.match(cartClient, /calculatedShippingEnabled[\s\S]*\? "Enter ZIP below"/);
+  assert.match(cartClient, /const grabbyShippingTipMessage =[\s\S]*"Local pickup selected\. No shipping charge\."/);
+  assert.match(cartClient, /"Calculating USPS shipping…"/);
+  assert.match(cartClient, /"Shipping calculated! You’re ready to continue to checkout\."/);
+  assert.match(cartClient, /"Check your ZIP and try calculating shipping again\."/);
+  assert.match(cartClient, /"Enter your ZIP to see USPS shipping\."/);
+  assert.match(cartClient, /updateDestinationZip\(value: string\)[\s\S]*setShippingQuote\(null\)[\s\S]*setShippingQuoteMessage\(""\)/);
+  assert.match(cartClient, /setShippingQuoteMessage\(hadQuote && fulfillmentMethod === "shipping" \? "Cart changed\. Recalculate shipping\." : ""\)/);
+  assert.match(cartClient, /fetch\("\/api\/storefront\/shipping\/quote"/);
+  assert.doesNotMatch(cartClient, /setQuoteBusy\(true\)[\s\S]*useEffect\(/);
 });
 
 test("cart rows expose compact fulfillment badges and preserve quantity controls", () => {

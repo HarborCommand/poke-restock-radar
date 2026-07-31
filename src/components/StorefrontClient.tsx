@@ -2427,7 +2427,8 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   }
 
   const subtotal = products.reduce((sum, product) => sum + product.price * product.requestedQuantity, 0);
-  const estimatedRewardPoints = settings.customerAccounts.enabled && settings.customerAccounts.rewardsEnabled ? Math.floor(Math.max(0, subtotal)) : 0;
+  const customerRewardsEnabled = settings.customerAccounts.enabled && settings.customerAccounts.rewardsEnabled;
+  const estimatedRewardPoints = customerRewardsEnabled ? Math.floor(Math.max(0, subtotal)) : 0;
   const shippingEstimate = calculateCartShipping(products, { subtotal, freeShippingThreshold: settings.freeShippingThreshold });
   const localPickupAvailable = shippingEstimate.localPickupEligible;
   const calculatedShippingEnabled = Boolean(settings.calculatedUspsShipping?.enabled);
@@ -2435,26 +2436,41 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
   const quotedShipping = fulfillmentMethod === "shipping" && shippingQuote ? shippingQuote.amount : null;
   const shipping = fulfillmentMethod === "pickup" ? 0 : quotedShipping ?? shippingOption?.amount ?? 0;
   const total = subtotal + shipping;
-  const shippingSummary =
-    fulfillmentMethod === "pickup"
-      ? "Local Pickup - Free"
-      : shippingQuote
-        ? `${shippingQuote.service} - ${money(shippingQuote.amount)}`
-        : shippingOption
-          ? calculatedShippingEnabled
-            ? "Enter ZIP for USPS quote"
-            : `Estimated ${money(shipping)}`
-          : "Final shipping shown before payment";
   const contactEmail = settings.contactEmail || "gamedaygrabs@outlook.com";
   const isStripeCheckout = settings.checkoutConfigured;
   const onlineTaxEnabled = settings.tax.features.onlineStripeTaxEnabled;
-  const rewardProgramCopy = storefrontRewardsProgramCopy(settings);
   const hasBlockingStockIssue = cartHasBlockingStockIssue(products);
   const soldOutProducts = products.filter((product) => isSoldOutProduct(product) || product.publicMaxQuantity <= 0);
   const overQuantityProducts = products.filter((product) => product.requestedQuantity > storefrontEffectiveMaxQuantity(product) && product.publicMaxQuantity > 0);
   const quoteRequired = isStripeCheckout && calculatedShippingEnabled && fulfillmentMethod === "shipping";
   const quoteExpired = shippingQuote ? Date.parse(shippingQuote.expiresAt) <= quoteNow : false;
   const missingShippingQuote = quoteRequired && fulfillmentMethod === "shipping" && !hasBlockingStockIssue && (!shippingQuote || quoteExpired);
+  const hasFreshShippingQuote = fulfillmentMethod === "shipping" && Boolean(shippingQuote) && !quoteExpired;
+  const quoteNeedsRecalculation = fulfillmentMethod === "shipping" && (quoteExpired || (Boolean(shippingQuoteMessage) && !shippingQuote && shippingQuoteMessage !== "Cart changed. Recalculate shipping."));
+  const summaryShippingValue =
+    fulfillmentMethod === "pickup"
+      ? "Free"
+      : quoteBusy
+        ? "Calculating…"
+        : hasFreshShippingQuote && shippingQuote
+          ? money(shippingQuote.amount)
+          : quoteNeedsRecalculation
+            ? "Recalculate below"
+            : calculatedShippingEnabled
+              ? "Enter ZIP below"
+              : shippingOption
+                ? money(shipping)
+                : "Calculated at checkout";
+  const grabbyShippingTipMessage =
+    fulfillmentMethod === "pickup"
+      ? "Local pickup selected. No shipping charge."
+      : quoteBusy
+        ? "Calculating USPS shipping…"
+        : hasFreshShippingQuote
+          ? "Shipping calculated! You’re ready to continue to checkout."
+          : quoteNeedsRecalculation
+            ? "Check your ZIP and try calculating shipping again."
+            : "Enter your ZIP to see USPS shipping.";
   const quoteResetKey = JSON.stringify({ items, fulfillmentMethod });
   const previousQuoteResetKey = useRef(quoteResetKey);
   const checkoutDisabled =
@@ -2776,29 +2792,33 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
               <ShieldCheck size={20} />
               <h2>Order Summary</h2>
             </div>
-            <div className="gdg-summary-rows">
-              <span>
-                <b>Merchandise subtotal</b>
-                {money(subtotal)}
-              </span>
-              {estimatedRewardPoints > 0 ? (
-                <span>
-                  <b>Estimated rewards</b>
-                  <em>{estimatedRewardPoints.toLocaleString()} point{estimatedRewardPoints === 1 ? "" : "s"} on merchandise only. {rewardProgramCopy}</em>
-                </span>
+            <dl className="gdg-summary-rows" aria-label="Cart totals">
+              <div>
+                <dt>Merchandise subtotal</dt>
+                <dd>{money(subtotal)}</dd>
+              </div>
+              {customerRewardsEnabled ? (
+                <div>
+                  <dt>Estimated rewards</dt>
+                  <dd>{estimatedRewardPoints.toLocaleString()} point{estimatedRewardPoints === 1 ? "" : "s"}</dd>
+                </div>
               ) : null}
-              <span>
-                <b>Shipping calculated at checkout / pickup</b>
-                <em>{shippingSummary}</em>
-              </span>
-              <span>
-                <b>{STOREFRONT_TAX_PAYMENT_COPY}</b>
-                <em>Shipping stays separate from any required taxes.</em>
-              </span>
-              <strong>
-                <b>Cart estimate</b>
-                {money(total)}
-              </strong>
+              <div>
+                <dt>Shipping</dt>
+                <dd>{summaryShippingValue}</dd>
+              </div>
+              <div>
+                <dt>Estimated tax</dt>
+                <dd>Calculated at checkout</dd>
+              </div>
+              <div className="gdg-summary-total-row">
+                <dt>Estimated total before tax</dt>
+                <dd>{money(total)}</dd>
+              </div>
+            </dl>
+            <div className="gdg-summary-support-copy">
+              <p>Taxes are shown before payment. Local pickup is free.</p>
+              {customerRewardsEnabled ? <p>Rewards apply to eligible merchandise. Redemption coming soon.</p> : null}
             </div>
             {isStripeCheckout && (calculatedShippingEnabled || localPickupAvailable) ? (
               <div className="gdg-shipping-quote-card">
@@ -2859,7 +2879,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
                       </span>
                       <span className="gdg-cart-grabby-copy">
                         <strong>Grabby tip</strong>
-                        <span>Enter your ZIP to see USPS shipping.</span>
+                        <span>{grabbyShippingTipMessage}</span>
                       </span>
                     </div>
                   </div>

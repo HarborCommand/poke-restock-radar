@@ -47,8 +47,9 @@ test("rewards messaging is flag-driven and does not imply redemption while disab
   assert.match(rewardEstimateHelper, /if \(isSoldOutProduct\(product\)\) return null/);
   assert.match(productCard, /const rewardProgramCopy = storefrontRewardsProgramCopy\(settings\)/);
   assert.match(productDetail, /Estimated from merchandise subtotal only; excludes shipping and tax\./);
-  assert.match(cartClient, /const estimatedRewardPoints = settings\.customerAccounts\.enabled && settings\.customerAccounts\.rewardsEnabled \? Math\.floor\(Math\.max\(0, subtotal\)\) : 0/);
-  assert.match(cartClient, /on merchandise only\. \{rewardProgramCopy\}/);
+  assert.match(cartClient, /const customerRewardsEnabled = settings\.customerAccounts\.enabled && settings\.customerAccounts\.rewardsEnabled/);
+  assert.match(cartClient, /const estimatedRewardPoints = customerRewardsEnabled \? Math\.floor\(Math\.max\(0, subtotal\)\) : 0/);
+  assert.match(cartClient, /Rewards apply to eligible merchandise\. Redemption coming soon\./);
   assert.match([storefrontClient, accountPages, policiesPage, rewardsPage, emails].join("\n"), /Reward earning is currently paused\. Redemption coming soon\./);
   assert.doesNotMatch([storefrontClient, accountPages, policiesPage, rewardsPage, emails].join("\n"), /Earn points now\. Redemption coming soon\./);
   assert.match(accountRewardsCopy, /const rewardsEnabled = config\.customerAccountsEnabled && config\.customerRewardsEnabled/);
