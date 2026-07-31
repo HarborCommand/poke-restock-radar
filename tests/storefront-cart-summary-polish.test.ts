@@ -51,6 +51,10 @@ test("Grabby shipping guidance covers pre quote loading success pickup error and
   assert.match(cartClient, /updateDestinationZip\(value: string\)[\s\S]*setShippingQuote\(null\)[\s\S]*setShippingQuoteMessage\(""\)/);
   assert.match(cartClient, /const quoteResetKey = JSON\.stringify\(\{ items, fulfillmentMethod \}\)/);
   assert.match(cartClient, /setShippingQuote\(null\);\s*setShippingQuoteMessage\(hadQuote && fulfillmentMethod === "shipping" \? "Cart changed\. Recalculate shipping\." : ""\)/);
+  assert.ok(
+    cartClient.indexOf('className="gdg-cart-grabby-tip"') > cartClient.indexOf('onlineTaxEnabled && fulfillmentMethod === "pickup"'),
+    "Grabby shipping tip must stay outside the shipping-only form so pickup can show its state"
+  );
 });
 
 test("summary CSS preserves readable two column rows on mobile", () => {
