@@ -1358,7 +1358,9 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.doesNotMatch(client, /100% Authentic/);
   assert.match(client, /Proceed to Secure Checkout/);
   assert.match(client, /Powered by Stripe/);
-  assert.match(client, /Shipping calculated at checkout/);
+  assert.match(client, /Estimated total before tax/);
+  assert.match(client, /Taxes are shown before payment\. Local pickup is free\./);
+  assert.doesNotMatch(client, /Cart estimate/);
   assert.match(client, /Secure checkout by Stripe\. Guest checkout available\./);
   assert.match(client, /<details className="gdg-checkout-notes">/);
   assert.match(client, /<summary>Checkout notes<\/summary>/);
