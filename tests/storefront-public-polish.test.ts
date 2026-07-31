@@ -45,7 +45,7 @@ test("storefront product actions have product-specific accessible labels", () =>
   assert.match(productCard, /<span className="gdg-product-action-label-full">\{actionText\}<\/span>/);
   assert.match(productCard, /<span className="gdg-product-action-label-short" aria-hidden="true">\{compactActionText\}<\/span>/);
   assert.match(productCard, /href=\{`\/product\/\$\{product\.slug\}`\}/);
-  assert.match(productCard, /onClick=\{\(\) => \{\s*\r?\n\s*addToCart\(product\);/);
+  assert.match(productCard, /onClick=\{\(\) => \{\s*\r?\n\s*const result = addToCart\(product\);\s*\r?\n\s*if \(result\?\.state === "success"\) onAdded\?\.\(product\);/);
   assert.match(productDetail, /aria-label=\{`Decrease \$\{productTitle\} quantity`\}/);
   assert.match(productDetail, /aria-label=\{`Increase \$\{productTitle\} quantity`\}/);
   assert.match(productDetail, /aria-label=\{`\$\{soldOutActionLabel\} \$\{productTitle\}`\}/);

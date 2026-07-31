@@ -76,9 +76,20 @@ import {
   type StorefrontShopSort
 } from "@/lib/storefront-shop-query";
 import { trackStorefrontEvent } from "@/lib/storefront-analytics";
+import { GrabbyMascot } from "@/components/brand/GrabbyMascot";
 import type { PublicStoreProductDTO, StorefrontSettingsDTO } from "@/types/radar";
 
 type CartItem = { id: string; quantity: number };
+type CartConfirmationState = "success" | "limit";
+type CartConfirmationDetail = {
+  state: CartConfirmationState;
+  productName: string;
+  productSlug: string;
+  productImageUrl: string | null;
+  quantityAdded: number;
+  resultingProductQuantity: number;
+};
+type AddToCartResult = CartConfirmationDetail;
 
 type ShippingQuoteResult = {
   quoteId: string;
@@ -109,6 +120,8 @@ type CustomerAccountSession = {
 };
 
 const cartKey = "poke-radar-cart";
+const cartConfirmationEventName = "gdg-cart-confirmation";
+const cartConfirmationDismissMs = 3800;
 const customerSessionEventKey = "gdg-customer-session-event";
 const customerSessionEventName = "gdg-customer-session";
 const emptyCartSnapshot: CartItem[] = [];
@@ -525,12 +538,40 @@ function writeCart(items: CartItem[]) {
   window.dispatchEvent(new CustomEvent("poke-radar-cart", { detail: items }));
 }
 
-function addToCart(product: PublicStoreProductDTO, quantity = 1) {
+function cartConfirmationPayload(
+  product: PublicStoreProductDTO,
+  state: CartConfirmationState,
+  quantityAdded: number,
+  resultingProductQuantity: number
+): CartConfirmationDetail {
+  return {
+    state,
+    productName: cleanStorefrontTitle(product.title),
+    productSlug: product.slug,
+    productImageUrl: productImageUrl(product),
+    quantityAdded,
+    resultingProductQuantity
+  };
+}
+
+function dispatchCartConfirmation(detail: CartConfirmationDetail) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<CartConfirmationDetail>(cartConfirmationEventName, { detail }));
+}
+
+function addToCart(product: PublicStoreProductDTO, quantity = 1): AddToCartResult | null {
   const cart = readCart();
   const existing = cart.find((item) => item.id === product.id);
   const effectiveMaxQuantity = storefrontEffectiveMaxQuantity(product);
-  if (effectiveMaxQuantity <= 0) return;
-  const nextQuantity = Math.min(effectiveMaxQuantity, Math.max(1, (existing?.quantity ?? 0) + quantity));
+  const currentQuantity = existing?.quantity ?? 0;
+  const requestedQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+  if (effectiveMaxQuantity <= 0 || currentQuantity >= effectiveMaxQuantity) {
+    const limit = cartConfirmationPayload(product, "limit", 0, currentQuantity);
+    dispatchCartConfirmation(limit);
+    return limit;
+  }
+  const quantityAdded = Math.min(requestedQuantity, effectiveMaxQuantity - currentQuantity);
+  const nextQuantity = currentQuantity + quantityAdded;
   const next = existing
     ? cart.map((item) => (item.id === product.id ? { ...item, quantity: nextQuantity } : item))
     : [...cart, { id: product.id, quantity: nextQuantity }];
@@ -539,8 +580,111 @@ function addToCart(product: PublicStoreProductDTO, quantity = 1) {
     productSlug: product.slug,
     productCategory: displayStorefrontCategory(product),
     productStatus: product.status,
-    quantity
+    quantity: quantityAdded
   });
+  const success = cartConfirmationPayload(product, "success", quantityAdded, nextQuantity);
+  dispatchCartConfirmation(success);
+  return success;
+}
+
+function StorefrontCartConfirmation() {
+  const [confirmation, setConfirmation] = useState<(CartConfirmationDetail & { id: number }) | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    function handleCartConfirmation(event: Event) {
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail as Partial<CartConfirmationDetail> | undefined;
+      if (!detail || (detail.state !== "success" && detail.state !== "limit") || !detail.productName || !detail.productSlug) return;
+      setImageFailed(false);
+      setPaused(false);
+      setConfirmation({
+        state: detail.state,
+        productName: detail.productName,
+        productSlug: detail.productSlug,
+        productImageUrl: detail.productImageUrl && isStorefrontDisplayImageUrl(detail.productImageUrl) ? detail.productImageUrl : null,
+        quantityAdded: Math.max(0, Number(detail.quantityAdded) || 0),
+        resultingProductQuantity: Math.max(0, Number(detail.resultingProductQuantity) || 0),
+        id: Date.now()
+      });
+    }
+
+    window.addEventListener(cartConfirmationEventName, handleCartConfirmation);
+    return () => window.removeEventListener(cartConfirmationEventName, handleCartConfirmation);
+  }, []);
+
+  useEffect(() => {
+    if (!confirmation || paused) return;
+    const timer = window.setTimeout(() => setConfirmation(null), cartConfirmationDismissMs);
+    return () => window.clearTimeout(timer);
+  }, [confirmation, paused]);
+
+  useEffect(() => {
+    if (!confirmation) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setConfirmation(null);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [confirmation]);
+
+  if (!confirmation) return null;
+
+  const isSuccess = confirmation.state === "success";
+  const title = isSuccess ? "Grabby got it!" : "Cart limit reached";
+  const message = isSuccess
+    ? confirmation.quantityAdded > 1
+      ? `${confirmation.quantityAdded.toLocaleString()} items were added to your cart.`
+      : `${confirmation.productName} was added to your cart.`
+    : "You already have the maximum available quantity.";
+
+  return (
+    <aside
+      key={confirmation.id}
+      className={`gdg-cart-confirmation ${isSuccess ? "success" : "limit"}`}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+    >
+      <div className="gdg-cart-confirmation-grabby">
+        <GrabbyMascot variant="empty-cart" size="small" decorative />
+        <span className="gdg-cart-confirmation-icon" aria-hidden="true">
+          {isSuccess ? <Check size={16} /> : <ShoppingCart size={16} />}
+        </span>
+      </div>
+      {confirmation.productImageUrl && !imageFailed ? (
+        <Image
+          src={confirmation.productImageUrl}
+          alt=""
+          width={64}
+          height={64}
+          sizes="64px"
+          className="gdg-cart-confirmation-thumb"
+          unoptimized
+          onError={() => setImageFailed(true)}
+        />
+      ) : null}
+      <div className="gdg-cart-confirmation-copy">
+        <p className="gdg-overline">{title}</p>
+        <strong title={confirmation.productName}>{message}</strong>
+        {confirmation.quantityAdded > 1 ? <span>{confirmation.productName}</span> : null}
+        <small>Cart quantity: {confirmation.resultingProductQuantity.toLocaleString()}</small>
+      </div>
+      <div className="gdg-cart-confirmation-actions">
+        <Link href="/cart" className="gdg-secondary-button compact">
+          View Cart
+        </Link>
+        <button type="button" className="gdg-icon-button" aria-label="Dismiss cart confirmation" onClick={() => setConfirmation(null)}>
+          <X size={16} aria-hidden="true" />
+        </button>
+      </div>
+    </aside>
+  );
 }
 
 function categoryPreviewCards(products: PublicStoreProductDTO[], categories: string[]) {
@@ -808,6 +952,7 @@ export function StorefrontHeader({ settings, homeHref = "/shop" }: { settings: S
         </button>
       </div>
     </header>
+    <StorefrontCartConfirmation />
     <CustomerSessionExpiryController
       session={accountSession}
       setSession={accountSessionState.setSession}
@@ -1036,8 +1181,8 @@ function ProductCard({
             disabled={actionDisabled}
             aria-label={`${actionText} ${productTitle}`}
             onClick={() => {
-              addToCart(product);
-              onAdded?.(product);
+              const result = addToCart(product);
+              if (result?.state === "success") onAdded?.(product);
             }}
           >
             <span className="gdg-product-action-label-full">{actionText}</span>
@@ -1944,9 +2089,15 @@ export function ProductDetail({
 
   function addProductToCart(redirect = false) {
     if (isSoldOut || effectiveMaxQuantity <= 0) return;
-    addToCart(product, quantity);
-    setNotice(settings.checkoutConfigured ? "Added to cart." : "Added to invoice request.");
-    if (redirect) window.location.href = "/cart";
+    const result = addToCart(product, quantity);
+    if (result?.state === "success") {
+      setLimitFeedback("");
+      setNotice(settings.checkoutConfigured ? "Added to cart." : "Added to invoice request.");
+      if (redirect) window.location.href = "/cart";
+      return;
+    }
+    setNotice("");
+    setLimitFeedback("You already have the maximum available quantity.");
   }
 
   return (
