@@ -20,6 +20,7 @@ const addToCartSource = sourceSlice(client, "function addToCart", "function Stor
 const confirmationSource = sourceSlice(client, "function StorefrontCartConfirmation", "function categoryPreviewCards");
 const payloadTypeSource = sourceSlice(client, "type CartConfirmationDetail", "type AddToCartResult");
 const payloadFunctionSource = sourceSlice(client, "function cartConfirmationPayload", "function dispatchCartConfirmation");
+const cartConfirmationCss = sourceSlice(css, ".gdg-cart-confirmation {", "@keyframes gdg-cart-confirmation-in");
 
 test("shared add-to-cart emits one safe Grabby confirmation after successful cart writes", () => {
   assert.match(client, /const cartConfirmationEventName = "gdg-cart-confirmation"/);
@@ -38,7 +39,7 @@ test("confirmation copy covers first add, multiple units, updated cart quantity,
   assert.match(confirmationSource, /\$\{confirmation\.quantityAdded\.toLocaleString\(\)\} items were added to your cart\./);
   assert.match(confirmationSource, /Cart quantity: \{confirmation\.resultingProductQuantity\.toLocaleString\(\)\}/);
   assert.match(confirmationSource, /<Link href="\/cart" className="gdg-secondary-button compact">\s*\r?\n\s*View Cart/);
-  assert.match(confirmationSource, /productImageUrl && !imageFailed/);
+  assert.match(confirmationSource, /isSuccess && confirmation\.productImageUrl && !imageFailed/);
   assert.match(confirmationSource, /onError=\{\(\) => setImageFailed\(true\)\}/);
 });
 
@@ -67,7 +68,17 @@ test("purchase-limit no-op uses truthful non-success messaging and skips analyti
   const beforeWrite = addToCartSource.slice(0, addToCartSource.indexOf("writeCart(next);"));
   assert.doesNotMatch(beforeWrite, /trackStorefrontEvent\("product_added_to_cart"/);
   assert.match(confirmationSource, /Cart limit reached/);
-  assert.match(confirmationSource, /You already have the maximum available quantity\./);
+  assert.match(confirmationSource, /Maximum quantity already in your cart\./);
+});
+
+test("limit confirmation keeps full copy readable and omits the product thumbnail", () => {
+  assert.match(confirmationSource, /const title = isSuccess \? "Grabby got it!" : "Cart limit reached"/);
+  assert.match(confirmationSource, /: "Maximum quantity already in your cart\."/);
+  assert.match(confirmationSource, /isSuccess && confirmation\.productImageUrl && !imageFailed/);
+  assert.match(css, /\.gdg-cart-confirmation\.limit\s*\{[\s\S]*?width: min\(500px, calc\(100vw - 32px\)\);/);
+  assert.match(css, /\.gdg-cart-confirmation\.limit \.gdg-cart-confirmation-thumb\s*\{\s*\r?\n\s*display: none;/);
+  assert.match(css, /\.gdg-cart-confirmation\.limit \.gdg-cart-confirmation-copy \.gdg-overline,[\s\S]*?\.gdg-cart-confirmation\.limit \.gdg-cart-confirmation-copy strong\s*\{[\s\S]*?overflow: visible;[\s\S]*?text-overflow: clip;[\s\S]*?white-space: normal;/);
+  assert.doesNotMatch(cartConfirmationCss, /-webkit-line-clamp|line-clamp/);
 });
 
 test("confirmation event payload contains only public presentation data", () => {
@@ -92,6 +103,8 @@ test("responsive and reduced-motion styles keep the confirmation contained", () 
   assert.match(css, /\.gdg-cart-confirmation\s*\{[\s\S]*?position: fixed;[\s\S]*?right: max\(22px, env\(safe-area-inset-right\)\);[\s\S]*?bottom: calc\(22px \+ env\(safe-area-inset-bottom\)\);/);
   assert.match(css, /\.gdg-cart-confirmation\s*\{[\s\S]*?width: min\(424px, calc\(100vw - 32px\)\);/);
   assert.match(css, /@media \(max-width: 768px\)\s*\{[\s\S]*?\.gdg-cart-confirmation\s*\{[\s\S]*?left: max\(12px, env\(safe-area-inset-left\)\);[\s\S]*?bottom: calc\(88px \+ env\(safe-area-inset-bottom\)\);[\s\S]*?width: auto;/);
+  assert.match(css, /@media \(max-width: 600px\)\s*\{[\s\S]*?\.gdg-cart-confirmation\.limit\s*\{[\s\S]*?grid-template-columns: auto minmax\(0, 1fr\) auto;[\s\S]*?width: calc\(100vw - 24px\);/);
+  assert.match(css, /@media \(max-width: 600px\)\s*\{[\s\S]*?\.gdg-cart-confirmation\.limit \.gdg-secondary-button\.compact\s*\{[\s\S]*?grid-row: 2;[\s\S]*?width: 100%;/);
   assert.match(css, /@media \(max-width: 430px\)\s*\{[\s\S]*?\.gdg-cart-confirmation\s*\{[\s\S]*?bottom: calc\(82px \+ env\(safe-area-inset-bottom\)\);/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.gdg-cart-confirmation,[\s\S]*?\.gdg-cart-confirmation-grabby \.grabby-mascot\.small\s*\{[\s\S]*?animation: none !important;[\s\S]*?transform: none !important;/);
 });
