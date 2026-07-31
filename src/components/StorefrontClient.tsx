@@ -2465,6 +2465,7 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     (!isStripeCheckout && (!customerEmail.trim() || !customerName.trim()));
   const successMessage = message.toLowerCase().includes("received");
   const cartIsLoading = items.length > 0 && !products.length && !message;
+  const isEmptyCart = !cartIsLoading && products.length === 0;
 
   useEffect(() => {
     if (previousQuoteResetKey.current === quoteResetKey) return;
@@ -2600,50 +2601,63 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
     <section className="gdg-cart-page">
       <div className="gdg-cart-header">
         <div>
-          <h1>Review your cart <Sparkles size={28} aria-hidden="true" /></h1>
-          <p>Confirm your items, choose shipping or pickup, then continue to secure checkout.</p>
+          {isEmptyCart ? (
+            <>
+              <h1>Your cart is empty</h1>
+              <p>Grabby can help you find your next pull.</p>
+            </>
+          ) : (
+            <>
+              <h1>Review your cart <Sparkles size={28} aria-hidden="true" /></h1>
+              <p>Confirm your items, choose shipping or pickup, then continue to secure checkout.</p>
+            </>
+          )}
         </div>
-        <Link href="/shop" className="gdg-secondary-button">
-          Continue Shopping
-        </Link>
+        {!isEmptyCart ? (
+          <Link href="/shop" className="gdg-secondary-button">
+            Continue Shopping
+          </Link>
+        ) : null}
       </div>
-      <div className="gdg-checkout-hero">
-        <div className="gdg-checkout-trust-row" aria-label="Checkout trust points">
-          <article>
-            <ShieldCheck size={24} />
-            <div>
-              <strong>Secure Checkout</strong>
-              <small>Your info is protected</small>
-            </div>
-          </article>
-          <article>
-            <Truck size={24} />
-            <div>
-              <strong>Fast Shipping</strong>
-              <small>Packed and shipped quickly</small>
-            </div>
-          </article>
-          <article>
-            <Package size={24} />
-            <div>
-              <strong>Carefully Packaged</strong>
-              <small>Handled like a collection</small>
-            </div>
-          </article>
-          <article>
-            <BadgeCheck size={24} />
-            <div>
-              <strong>Sealed products</strong>
-              <small>Independent reseller</small>
-            </div>
-          </article>
+      {!isEmptyCart ? (
+        <div className="gdg-checkout-hero">
+          <div className="gdg-checkout-trust-row" aria-label="Checkout trust points">
+            <article>
+              <ShieldCheck size={24} />
+              <div>
+                <strong>Secure Checkout</strong>
+                <small>Your info is protected</small>
+              </div>
+            </article>
+            <article>
+              <Truck size={24} />
+              <div>
+                <strong>Fast Shipping</strong>
+                <small>Packed and shipped quickly</small>
+              </div>
+            </article>
+            <article>
+              <Package size={24} />
+              <div>
+                <strong>Carefully Packaged</strong>
+                <small>Handled like a collection</small>
+              </div>
+            </article>
+            <article>
+              <BadgeCheck size={24} />
+              <div>
+                <strong>Sealed products</strong>
+                <small>Independent reseller</small>
+              </div>
+            </article>
+          </div>
+          <div className="gdg-cart-hero-visual" aria-hidden="true">
+            <Sparkles size={22} />
+            <ShoppingBag size={54} />
+            <Star size={18} />
+          </div>
         </div>
-        <div className="gdg-cart-hero-visual" aria-hidden="true">
-          <Sparkles size={22} />
-          <ShoppingBag size={54} />
-          <Star size={18} />
-        </div>
-      </div>
+      ) : null}
       {message ? <p className={successMessage ? "gdg-toast" : "gdg-error"}>{message}</p> : null}
       {cartIsLoading ? (
         <div className="gdg-empty gdg-cart-empty compact">
@@ -2911,23 +2925,25 @@ export function CartClient({ settings }: { settings: StorefrontSettingsDTO }) {
           </aside>
         </div>
       ) : (
-        <div className="gdg-empty gdg-cart-empty">
-          <GrabbyCard
-            variant="empty-cart"
-            ctaHref={storefrontCollectionPath("new-arrivals")}
-            ctaLabel="Shop New Arrivals"
-            className="gdg-cart-grabby-card"
-          />
-          <p className="gdg-cart-empty-support-copy">Guest checkout stays available when you are ready to buy.</p>
-          <div className="gdg-card-actions">
-            <Link href={storefrontCollectionPath("pokemon-sealed-products")} className="gdg-primary-button">
-              Shop Pok&eacute;mon
-            </Link>
-            <Link href={storefrontCollectionPath("new-arrivals")} className="gdg-secondary-button">
-              View New Arrivals
-            </Link>
+        <section className="gdg-cart-empty-hero" aria-labelledby="gdg-empty-cart-title">
+          <div className="gdg-cart-empty-mascot">
+            <GrabbyMascot variant="empty-cart" size="large" />
           </div>
-        </div>
+          <div className="gdg-cart-empty-copy">
+            <span className="gdg-section-kicker">GRABBY &mdash; YOUR COLLECTION SIDEKICK</span>
+            <h2 id="gdg-empty-cart-title">Ready for your next pull?</h2>
+            <p>Explore fresh Pok&eacute;mon drops, sealed products, tins, blisters, and collector favorites.</p>
+            <div className="gdg-cart-empty-actions" aria-label="Empty cart shopping choices">
+              <Link href={storefrontCollectionPath("new-arrivals")} className="gdg-primary-button">
+                Shop New Arrivals
+              </Link>
+              <Link href={storefrontCollectionPath("pokemon-sealed-products")} className="gdg-secondary-button">
+                Shop All Pok&eacute;mon
+              </Link>
+            </div>
+            <p className="gdg-cart-empty-reassurance">Secure checkout &bull; Guest checkout available &bull; Carefully packed</p>
+          </div>
+        </section>
       )}
     </section>
   );

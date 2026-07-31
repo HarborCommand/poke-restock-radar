@@ -1380,8 +1380,8 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /gdg-invoice-form-card/);
   assert.match(client, /requestPayload/);
   assert.match(client, /if \(customerEmail\.trim\(\)\) requestPayload\.customerEmail/);
-  assert.match(client, /variant="empty-cart"/);
-  assert.match(client, /gdg-cart-grabby-card/);
+  assert.match(client, /variant="empty-cart" size="large"/);
+  assert.match(client, /gdg-cart-empty-hero/);
   assert.match(client, /className="gdg-cart-grabby-tip"/);
   assert.match(client, /className="gdg-usps-quote-controls"/);
   assert.match(client, /className="gdg-cart-grabby-mark"/);
@@ -1389,9 +1389,11 @@ test("GameDayGrabs cart checkout is polished while preserving server-side guards
   assert.match(client, /<strong>Grabby tip<\/strong>/);
   assert.match(client, /Enter your ZIP to see USPS shipping\./);
   assert.doesNotMatch(client, /variant="shipping"\s+title="Grabby tip"/);
-  assert.match(client, /Guest checkout stays available when you are ready to buy/);
+  assert.match(client, /Your cart is empty/);
+  assert.match(client, /Ready for your next pull\?/);
+  assert.match(client, /Secure checkout &bull; Guest checkout available &bull; Carefully packed/);
   assert.match(client, /Shop New Arrivals/);
-  assert.match(client, /Shop Pok&eacute;mon/);
+  assert.match(client, /Shop All Pok&eacute;mon/);
   assert.match(client, /Remove sold-out item/);
   assert.match(client, /Remove sold-out items/);
   assert.match(client, /Cart availability changed\./);
