@@ -93,7 +93,9 @@ test("Grabby is integrated into the first useful storefront and account surfaces
   assert.match(storefront, /className="gdg-cart-grabby-tip"/);
   assert.match(storefront, /variant="empty-cart"/);
   assert.match(storefront, /Shop New Arrivals/);
-  assert.match(storefront, /Guest checkout stays available when you are ready to buy/);
+  assert.match(storefront, /Ready for your next pull\?/);
+  assert.match(storefront, /Shop All Pok&eacute;mon/);
+  assert.match(storefront, /Secure checkout &bull; Guest checkout available &bull; Carefully packed/);
 
   assert.doesNotMatch(account, /className="gdg-account-grabby-card"/);
   assert.match(account, /variant="rewards"/);
