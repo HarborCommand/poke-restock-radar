@@ -1,22 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run vercel-build",
-  "crons": [
-    {
-      "path": "/api/radar/storefront/reservations/expire",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/radar/releases/sync/cron",
-      "schedule": "0 10 * * *"
-    },
-    {
-      "path": "/api/radar/inventory/market-sync/cron",
-      "schedule": "0 11 * * *"
-    },
-    {
-      "path": "/api/radar/rewards/audit/cron",
-      "schedule": "30 11 * * *"
-    }
-  ]
+  "buildCommand": "npm run test:guardrails && npm run vercel-build"
 }
