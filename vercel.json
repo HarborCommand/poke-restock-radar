@@ -4,7 +4,7 @@
   "crons": [
     {
       "path": "/api/radar/storefront/reservations/expire",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/radar/releases/sync/cron",

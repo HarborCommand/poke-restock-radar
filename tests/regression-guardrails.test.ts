@@ -48,3 +48,19 @@ test("core safety regression suites remain part of the default test command", ()
   assert.match(packageJson.scripts.test ?? "", /tests\/\*\.test/);
   assert.equal(packageJson.scripts["test:guardrails"], "tsx --test tests/regression-guardrails.test.ts");
 });
+
+test("reservation cleanup cron leaves Neon enough idle time to scale to zero", () => {
+  const vercel = JSON.parse(readFileSync(path.join(root, "vercel.json"), "utf8")) as {
+    crons?: Array<{ path?: string; schedule?: string }>;
+  };
+  const reservationCleanup = vercel.crons?.find(
+    (cron) => cron.path === "/api/radar/storefront/reservations/expire"
+  );
+
+  assert.ok(reservationCleanup, "Reservation cleanup cron must remain configured as a safety net.");
+  assert.equal(
+    reservationCleanup.schedule,
+    "*/30 * * * *",
+    "Do not run the database-backed reservation cleanup more frequently; it prevents Neon from scaling to zero."
+  );
+});

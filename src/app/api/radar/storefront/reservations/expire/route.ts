@@ -5,7 +5,9 @@ import { expireOpenStripeSessionsForExpiredReservations } from "@/lib/storefront
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Vercel Cron is configured in vercel.json to call this route every five minutes.
+// This is a thirty-minute safety-net job. Checkout already releases expired holds before
+// validating inventory, and Stripe expiration webhooks handle normal session expiration.
+// Keeping this cadence above Neon's idle timeout prevents the cron from holding compute awake all month.
 // Production calls must include CRON_SECRET or MONITOR_JOB_SECRET as a bearer token or x-monitor-secret header.
 function cronAuthorized(request: Request) {
   const secrets = [process.env.MONITOR_JOB_SECRET, process.env.CRON_SECRET].filter(
