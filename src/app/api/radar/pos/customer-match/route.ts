@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { authorizePosMutation } from "@/lib/pos-authorization";
+import { authorizePosMutation, resolvePosStoreUser } from "@/lib/pos-authorization";
 import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import { requestCorrelationId } from "@/lib/observability";
 import { resolvePosCustomerMatch } from "@/lib/pos-customer";
@@ -23,7 +23,8 @@ export async function POST(request: Request) {
       action: "admin_customer_lookup",
       identifiers: [{ scope: "email", value: input.customerEmail }]
     });
-    const match = await resolvePosCustomerMatch(input, user.id);
+    const storeUser = await resolvePosStoreUser(user);
+    const match = await resolvePosCustomerMatch(input, storeUser.id);
     return withRequestId(privateOk({ match }), requestId);
   } catch (error) {
     if (error instanceof PublicRateLimitExceededError) return withRequestId(publicRateLimitResponse(error), requestId);
