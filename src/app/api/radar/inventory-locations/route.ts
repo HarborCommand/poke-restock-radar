@@ -1,7 +1,9 @@
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { prisma } from "@/lib/db";
 import { badRequest, ok, readJson } from "@/lib/http";
+import { hasPosRole, resolvePosStoreUser } from "@/lib/pos-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,13 +45,16 @@ function normalizeLocation(value: unknown): InventoryLocation | null {
 }
 
 export async function GET() {
-  const { response } = await requireUser();
+  const { user, response } = await requireUser();
   if (response) return response;
+  if (!hasPosRole(user)) return NextResponse.json({ error: "POS access required" }, { status: 403 });
 
   await ensureInventoryLocationTable();
+  const storeUser = await resolvePosStoreUser(user);
 
   const [items, rows] = await Promise.all([
     prisma.inventoryItem.findMany({
+      where: { OR: [{ userId: null }, { userId: storeUser.id }] },
       select: {
         id: true,
         itemName: true,
@@ -96,8 +101,8 @@ export async function POST(request: Request) {
     if (!inventoryItemId) throw new Error("Inventory item is required.");
     if (!location) throw new Error("Choose In Store or Warehouse.");
 
-    const item = await prisma.inventoryItem.findUnique({
-      where: { id: inventoryItemId },
+    const item = await prisma.inventoryItem.findFirst({
+      where: { id: inventoryItemId, OR: [{ userId: null }, { userId: user.id }] },
       select: { id: true, itemName: true }
     });
     if (!item) throw new Error("Inventory item was not found.");
