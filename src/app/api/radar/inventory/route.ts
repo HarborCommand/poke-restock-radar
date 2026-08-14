@@ -4,6 +4,7 @@ import { logAudit } from "@/lib/audit";
 import { badRequest, ok, readJson } from "@/lib/http";
 import { createInventoryItem, listDashboard } from "@/lib/radar-service";
 import { inventoryCreateSchema, inventoryImageSanitizationMessage, sanitizeInventoryImagePayload } from "@/lib/validation";
+import { normalizeInventoryPhysicalLocation, setInventoryPhysicalLocation } from "@/lib/inventory-physical-location";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -290,9 +291,16 @@ export async function POST(request: Request) {
   if (authorizationResponse) return authorizationResponse;
 
   try {
-    const { payload, warnings } = sanitizeInventoryImagePayload(await readJson(request));
+    const rawPayload = await readJson(request);
+    const { payload, warnings } = sanitizeInventoryImagePayload(rawPayload);
+    const inventoryLocation = normalizeInventoryPhysicalLocation(
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).inventoryLocation
+        : null
+    );
     const input = inventoryCreateSchema.parse(payload);
     const item = await createInventoryItem(user, input);
+    if (inventoryLocation) await setInventoryPhysicalLocation(item.id, inventoryLocation);
     const stockAddedToExistingItem = Boolean(input.existingInventoryItemId);
     await logAudit({
       user,
@@ -308,9 +316,12 @@ export async function POST(request: Request) {
             quantityAdded: input.quantity,
             newOnHand: item.quantityOwned,
             source: input.source,
-            note: input.notes ?? null
+            note: input.notes ?? null,
+            inventoryLocation: inventoryLocation ?? undefined
           }
-        : null
+        : inventoryLocation
+          ? { inventoryLocation }
+          : null
     });
     const warning = [
       inventoryImageSanitizationMessage(warnings),
