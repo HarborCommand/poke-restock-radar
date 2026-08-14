@@ -48,10 +48,10 @@
   align-self: start;
 }
 
-.exitButton {
+.exitButton,
+.locationsButton {
   position: fixed;
   top: max(12px, env(safe-area-inset-top));
-  right: max(14px, env(safe-area-inset-right));
   z-index: 1000;
   display: inline-flex;
   min-height: 40px;
@@ -69,6 +69,15 @@
   backdrop-filter: blur(10px);
 }
 
+.exitButton {
+  right: max(14px, env(safe-area-inset-right));
+}
+
+.locationsButton {
+  right: max(132px, calc(env(safe-area-inset-right) + 118px));
+  cursor: pointer;
+}
+
 .loading {
   display: grid;
   min-height: 100dvh;
@@ -76,6 +85,149 @@
   color: #64748b;
   font-size: 14px;
   font-weight: 800;
+}
+
+.locationOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.locationPanel {
+  display: flex;
+  width: min(780px, 96vw);
+  max-height: min(760px, 90dvh);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d8dee8;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+
+.locationHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid #e7ebf0;
+}
+
+.locationHeader h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 22px;
+}
+
+.locationHeader p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.locationHeader button {
+  min-height: 40px;
+  border: 1px solid #d8dee8;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0 14px;
+  color: #334155;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.locationToolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 10px;
+  padding: 14px 22px;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.locationToolbar input,
+.locationToolbar select,
+.locationRow select {
+  min-height: 46px;
+  border: 1px solid #cfd7e3;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0 12px;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.locationError {
+  margin: 12px 22px 0;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  padding: 10px 12px;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.locationList {
+  overflow: auto;
+  padding: 8px 22px 16px;
+  overscroll-behavior: contain;
+}
+
+.locationRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.locationItemInfo {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.locationItemInfo strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationItemInfo span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationEmpty {
+  padding: 34px 12px;
+  color: #64748b;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.locationNote {
+  border-top: 1px solid #e7ebf0;
+  background: #f8fafc;
+  padding: 12px 22px 14px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 @media (max-width: 1100px) {
@@ -87,6 +239,39 @@
   .storeMode :global(.pos-workspace input),
   .storeMode :global(.pos-workspace select) {
     min-height: 48px;
+  }
+}
+
+@media (max-width: 700px) {
+  .locationsButton {
+    right: max(126px, calc(env(safe-area-inset-right) + 112px));
+  }
+
+  .locationOverlay {
+    padding: 8px;
+  }
+
+  .locationPanel {
+    width: 100%;
+    max-height: 94dvh;
+    border-radius: 14px;
+  }
+
+  .locationHeader,
+  .locationToolbar,
+  .locationList,
+  .locationNote {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .locationToolbar,
+  .locationRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .locationRow {
+    gap: 8px;
   }
 }
 
