@@ -207,7 +207,11 @@ export default function PosStoreModePage() {
         const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
 
         let fetchInput: RequestInfo | URL = input;
-        if (isCashier && method === "GET" && pathname === "/api/radar/customers") {
+        if (isCashier && method === "GET" && pathname === "/api/radar/dashboard") {
+          const replacement = new URL("/api/radar/pos/dashboard", window.location.origin);
+          replacement.search = requestedUrl.search;
+          fetchInput = replacement;
+        } else if (isCashier && method === "GET" && pathname === "/api/radar/customers") {
           const replacement = new URL("/api/radar/pos/customer-search", window.location.origin);
           replacement.search = requestedUrl.search;
           fetchInput = replacement;
@@ -355,18 +359,16 @@ export default function PosStoreModePage() {
           setControlledInputValue(searchInput, query);
           await sleep(140);
 
-          const card = findProductCard(item);
-          if (!card) continue;
-          const addButton = Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => {
-            const text = button.textContent?.trim() || "";
-            return text === "Add" || text.startsWith("Added");
-          });
-          if (!addButton) continue;
-
           for (let count = 0; count < savedLine.quantity; count += 1) {
-            if (addButton.disabled) break;
+            const currentCard = findProductCard(item);
+            if (!currentCard) break;
+            const addButton = Array.from(currentCard.querySelectorAll<HTMLButtonElement>("button")).find((button) => {
+              const text = button.textContent?.trim() || "";
+              return text === "Add" || text.startsWith("Added");
+            });
+            if (!addButton || addButton.disabled) break;
             addButton.click();
-            await sleep(55);
+            await sleep(65);
           }
         }
       } finally {
