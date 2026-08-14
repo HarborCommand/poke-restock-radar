@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { privateOk } from "@/lib/http";
+import { hasPosRole, resolvePosStoreUser } from "@/lib/pos-authorization";
 import { listAdminCustomerRewards } from "@/lib/rewards-admin";
 
 export const runtime = "nodejs";
@@ -15,13 +16,13 @@ function numberParam(value: string | null) {
 export async function GET(request: Request) {
   const { user, response } = await requireUser();
   if (response) return response;
-  const role = String(user.role);
-  if (role !== "ADMIN" && role !== "CASHIER") {
+  if (!hasPosRole(user)) {
     return NextResponse.json({ error: "POS access required" }, { status: 403 });
   }
 
+  const storeUser = await resolvePosStoreUser(user);
   const url = new URL(request.url);
-  const result = await listAdminCustomerRewards(user.id, {
+  const result = await listAdminCustomerRewards(storeUser.id, {
     search: url.searchParams.get("search"),
     status: url.searchParams.get("status"),
     sort: url.searchParams.get("sort"),
