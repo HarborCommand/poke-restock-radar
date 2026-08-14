@@ -1,0 +1,97 @@
+.storeMode {
+  min-height: 100dvh;
+  width: 100%;
+  background: #f7f9fb;
+}
+
+.storeMode :global(.app-shell) {
+  grid-template-columns: minmax(0, 1fr) !important;
+  min-height: 100dvh !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.storeMode :global(.app-sidebar),
+.storeMode :global(.sidebar-scrim),
+.storeMode :global(.topbar) {
+  display: none !important;
+}
+
+.storeMode :global(.app-main) {
+  grid-column: 1 !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  min-height: 100dvh !important;
+  padding: 20px 24px 36px !important;
+}
+
+.storeMode :global(.pos-workspace) {
+  width: 100%;
+  min-height: calc(100dvh - 150px);
+}
+
+.storeMode :global(.pos-workspace button),
+.storeMode :global(.pos-workspace input),
+.storeMode :global(.pos-workspace select),
+.storeMode :global(.pos-workspace textarea) {
+  min-height: 44px;
+}
+
+.storeMode :global(.pos-search-input input) {
+  font-size: 16px;
+}
+
+.storeMode :global(.pos-cart-panel) {
+  align-self: start;
+}
+
+.exitButton {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  z-index: 1000;
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8dee8;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0 12px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+.loading {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+@media (max-width: 1100px) {
+  .storeMode :global(.app-main) {
+    padding: 14px 14px 28px !important;
+  }
+
+  .storeMode :global(.pos-workspace button),
+  .storeMode :global(.pos-workspace input),
+  .storeMode :global(.pos-workspace select) {
+    min-height: 48px;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  .storeMode :global(.app-main) {
+    padding: 12px 10px 24px !important;
+  }
+}
