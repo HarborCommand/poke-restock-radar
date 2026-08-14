@@ -640,6 +640,7 @@ test("POS product list does not silently cap results and exposes excluded reason
 
 test("POS confirmation modal shows server tax quote, payment, reference, and warning before final submit", () => {
   const app = readSource("../src/components/RadarApp.tsx");
+  const css = readSource("../src/app/globals.css");
   const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
   assert.match(posPanel, /aria-label="Confirm POS sale"/);
   assert.match(posPanel, /pos-confirm-lines/);
@@ -655,6 +656,12 @@ test("POS confirmation modal shows server tax quote, payment, reference, and war
   assert.match(posPanel, /This will record the sale and deduct inventory/);
   assert.match(posPanel, /Close or cancel does not save anything/);
   assert.match(posPanel, /Confirming/);
+  assert.match(css, /body \.inventory-modal\.pos-confirm-modal \{\s*width: min\(680px, calc\(100vw - 32px\)\);\s*max-width: 680px;/);
+  assert.match(css, /\.pos-confirm-lines > span \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\) max-content;/);
+  assert.match(css, /\.pos-confirm-summary > span \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\) minmax\(132px, 0\.42fr\);/);
+  assert.match(css, /\.pos-confirm-lines > span > span \{[\s\S]*overflow-wrap: break-word;[\s\S]*word-break: normal;/);
+  assert.match(css, /\.pos-confirm-summary > span > strong \{[\s\S]*overflow-wrap: break-word;[\s\S]*word-break: normal;/);
+  assert.match(css, /@media \(max-width: 520px\) \{[\s\S]*\.pos-confirm-lines > span,[\s\S]*\.pos-confirm-summary > span \{[\s\S]*grid-template-columns: 1fr;/);
 });
 test("POS receipt success state includes operational, tax, refund, and copy metadata", () => {
   const app = readSource("../src/components/RadarApp.tsx");
