@@ -53,6 +53,7 @@ export async function GET() {
       select: {
         id: true,
         itemName: true,
+        publicTitle: true,
         quantity: true,
         category: true,
         setName: true,
