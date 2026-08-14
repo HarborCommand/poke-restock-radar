@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { authorizePosMutation } from "@/lib/pos-authorization";
+import { authorizePosMutation, resolvePosStoreUser } from "@/lib/pos-authorization";
 import { logAudit } from "@/lib/audit";
 import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import { requestCorrelationId } from "@/lib/observability";
@@ -18,7 +18,8 @@ export async function POST(request: Request) {
 
   try {
     const input = posSaleCreateSchema.parse(await readJson(request));
-    const sale = await createPosSale(user, { ...input, requestId });
+    const storeUser = await resolvePosStoreUser(user);
+    const sale = await createPosSale(storeUser, { ...input, requestId });
     const actorLabel = String(user.role) === "CASHIER" ? "cashier" : "admin";
     await logAudit({
       user,
@@ -34,7 +35,8 @@ export async function POST(request: Request) {
         tax: sale.tax,
         total: sale.total,
         itemCount: sale.itemCount,
-        actorRole: String(user.role)
+        actorRole: String(user.role),
+        storeOwnerUserId: storeUser.id
       }
     });
     if (sale.taxExempt) {
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
         entityType: "POS_SALE",
         entityId: sale.saleReference,
         summary: `Authenticated ${actorLabel} applied an approved tax exemption to POS sale ${sale.saleReference}.`,
-        metadata: { saleReference: sale.saleReference, taxStatus: sale.taxStatus, actorRole: String(user.role) }
+        metadata: { saleReference: sale.saleReference, taxStatus: sale.taxStatus, actorRole: String(user.role), storeOwnerUserId: storeUser.id }
       });
     }
     return withRequestId(privateOk({ sale }, 201), requestId);
