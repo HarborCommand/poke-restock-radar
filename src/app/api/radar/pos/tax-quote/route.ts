@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { authorizeAdminMutation } from "@/lib/admin-authorization";
+import { authorizePosMutation } from "@/lib/pos-authorization";
 import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import { requestCorrelationId } from "@/lib/observability";
 import { quotePosSaleTax } from "@/lib/radar-service";
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   const requestId = requestCorrelationId(request);
   const { user, response } = await requireUser();
   if (response) return withPrivateNoStore(withRequestId(response, requestId));
-  const authorizationResponse = authorizeAdminMutation(request, user);
+  const authorizationResponse = authorizePosMutation(request, user);
   if (authorizationResponse) return withPrivateNoStore(withRequestId(authorizationResponse, requestId));
   try {
     const input = posTaxQuoteSchema.parse(await readJson(request));
