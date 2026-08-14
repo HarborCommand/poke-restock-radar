@@ -48,11 +48,18 @@
   align-self: start;
 }
 
-.exitButton,
-.locationsButton {
+.storeActions {
   position: fixed;
   top: max(12px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
   z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.storeActionButton,
+.cashierBadge {
   display: inline-flex;
   min-height: 40px;
   align-items: center;
@@ -69,22 +76,112 @@
   backdrop-filter: blur(10px);
 }
 
-.exitButton {
-  right: max(14px, env(safe-area-inset-right));
+.storeActionButton {
+  cursor: pointer;
 }
 
-.locationsButton {
-  right: max(132px, calc(env(safe-area-inset-right) + 118px));
-  cursor: pointer;
+.cashierBadge {
+  color: #0f172a;
 }
 
 .loading {
   display: grid;
   min-height: 100dvh;
   place-items: center;
+  background: #f7f9fb;
   color: #64748b;
   font-size: 14px;
   font-weight: 800;
+}
+
+.loginPage {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  background: #f7f9fb;
+  padding: 20px;
+}
+
+.loginCard {
+  display: flex;
+  width: min(430px, 100%);
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 28px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.1);
+}
+
+.loginEyebrow {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.loginCard h1 {
+  margin: -2px 0 0;
+  color: #0f172a;
+  font-size: 30px;
+  letter-spacing: -0.03em;
+}
+
+.loginCard p {
+  margin: -4px 0 4px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.loginCard label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.loginCard label span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.loginCard input {
+  min-height: 50px;
+  border: 1px solid #cbd5e1;
+  border-radius: 11px;
+  background: #ffffff;
+  padding: 0 13px;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.loginCard > button {
+  min-height: 50px;
+  border: 0;
+  border-radius: 11px;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.loginCard > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.loginError {
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  padding: 10px 12px;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .locationOverlay {
@@ -242,9 +339,18 @@
   }
 }
 
-@media (max-width: 700px) {
-  .locationsButton {
-    right: max(126px, calc(env(safe-area-inset-right) + 112px));
+@media (max-width: 760px) {
+  .storeActions {
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .storeActionButton,
+  .cashierBadge {
+    min-height: 38px;
+    padding: 0 10px;
   }
 
   .locationOverlay {
