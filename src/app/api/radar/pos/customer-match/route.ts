@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { authorizeAdminMutation } from "@/lib/admin-authorization";
+import { authorizePosMutation, resolvePosStoreUser } from "@/lib/pos-authorization";
 import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import { requestCorrelationId } from "@/lib/observability";
 import { resolvePosCustomerMatch } from "@/lib/pos-customer";
@@ -13,8 +13,8 @@ export async function POST(request: Request) {
   const requestId = requestCorrelationId(request);
   const { user, response } = await requireUser();
   if (response) return withPrivateNoStore(withRequestId(response, requestId));
-  const adminResponse = authorizeAdminMutation(request, user);
-  if (adminResponse) return withPrivateNoStore(withRequestId(adminResponse, requestId));
+  const authorizationResponse = authorizePosMutation(request, user);
+  if (authorizationResponse) return withPrivateNoStore(withRequestId(authorizationResponse, requestId));
 
   try {
     const input = posCustomerMatchSchema.parse(await readJson(request));
@@ -23,7 +23,8 @@ export async function POST(request: Request) {
       action: "admin_customer_lookup",
       identifiers: [{ scope: "email", value: input.customerEmail }]
     });
-    const match = await resolvePosCustomerMatch(input, user.id);
+    const storeUser = await resolvePosStoreUser(user);
+    const match = await resolvePosCustomerMatch(input, storeUser.id);
     return withRequestId(privateOk({ match }), requestId);
   } catch (error) {
     if (error instanceof PublicRateLimitExceededError) return withRequestId(publicRateLimitResponse(error), requestId);
