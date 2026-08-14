@@ -1,0 +1,24 @@
+.posShell :global(a[href="/admin/cashiers"] + button) {
+  display: none !important;
+}
+
+.posShell :global(.pos-cart-line .inventory-image-frame),
+.posShell :global(.pos-cart-line .inventory-image-frame.has-image) {
+  display: grid !important;
+  overflow: hidden !important;
+  place-items: center !important;
+  background: #f8fafc !important;
+}
+
+.posShell :global(.pos-cart-line .inventory-image-frame img),
+.posShell :global(.pos-cart-line .inventory-image-frame.has-image img) {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  object-fit: contain !important;
+  object-position: center !important;
+}
