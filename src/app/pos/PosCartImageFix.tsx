@@ -27,7 +27,7 @@ export function PosCartImageFix() {
 
     scheduleFix();
     const observer = new MutationObserver(scheduleFix);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    observer.observe(document.body, { childList: true, subtree: true });
 
     return () => observer.disconnect();
   }, []);
