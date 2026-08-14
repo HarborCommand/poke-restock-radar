@@ -26780,8 +26780,10 @@ flex-wrap: wrap;
 gap: 8px;
 min-width: 0;
 }
-.pos-confirm-modal {
-max-width: 440px;
+.pos-confirm-modal,
+body .inventory-modal.pos-confirm-modal {
+width: min(680px, calc(100vw - 32px));
+max-width: 680px;
 }
 .pos-price-adjust-modal {
 max-width: 460px;
@@ -26821,12 +26823,19 @@ font: inherit;
 }
 .pos-confirm-lines {
 display: grid;
-gap: 8px;
+gap: 10px;
 min-width: 0;
 border: 1px solid #e2e8f0;
 border-radius: 8px;
 background: #f8fafc;
-padding: 10px;
+padding: 12px;
+}
+.pos-confirm-lines > span {
+display: grid;
+grid-template-columns: minmax(0, 1fr) max-content;
+align-items: start;
+gap: 8px 18px;
+min-width: 0;
 }
 .pos-confirm-lines span span,
 .pos-receipt-lines span span {
@@ -26834,12 +26843,56 @@ display: grid;
 gap: 2px;
 min-width: 0;
 }
+.pos-confirm-lines > span > span {
+line-height: 1.35;
+overflow-wrap: break-word;
+word-break: normal;
+}
+.pos-confirm-lines > span > strong {
+justify-self: end;
+white-space: nowrap;
+font-variant-numeric: tabular-nums;
+}
 .pos-confirm-lines small,
 .pos-receipt-lines small {
 color: #64748b;
 font-size: 0.76rem;
 font-weight: 800;
 line-height: 1.3;
+}
+.pos-confirm-lines small {
+overflow-wrap: break-word;
+word-break: normal;
+}
+.pos-confirm-summary {
+gap: 10px;
+}
+.pos-confirm-summary > span {
+display: grid;
+grid-template-columns: minmax(0, 1fr) minmax(132px, 0.42fr);
+align-items: start;
+gap: 8px 18px;
+min-width: 0;
+}
+.pos-confirm-summary > span > strong {
+min-width: 0;
+justify-self: end;
+text-align: right;
+overflow-wrap: break-word;
+word-break: normal;
+font-variant-numeric: tabular-nums;
+}
+@media (max-width: 520px) {
+.pos-confirm-lines > span,
+.pos-confirm-summary > span {
+grid-template-columns: 1fr;
+gap: 4px;
+}
+.pos-confirm-lines > span > strong,
+.pos-confirm-summary > span > strong {
+justify-self: start;
+text-align: left;
+}
 }
 @media (max-width: 1100px) {
 .pos-workspace {
@@ -26965,8 +27018,6 @@ flex-basis: 100%;
 .gdg-account-panel,
 .gdg-account-stat-card,
 .pos-total-box span,
-.pos-confirm-summary span,
-.pos-confirm-lines span,
 .pos-receipt-lines span {
 overflow-wrap: anywhere;
 }
