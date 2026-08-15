@@ -2,6 +2,36 @@
   min-height: 100dvh;
 }
 
+.registerShell :global(.pos-scanner-focus-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid rgba(96, 165, 250, 0.38);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.96), rgba(30, 64, 175, 0.96));
+  color: #f8fafc;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.22);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.registerShell :global(.pos-scanner-focus-button:active) {
+  transform: scale(0.97);
+}
+
+.registerShell :global(.pos-scanner-focus-button:focus-visible) {
+  outline: 2px solid rgba(147, 197, 253, 0.95);
+  outline-offset: 2px;
+}
+
 /* iPad register refinement: the catalog scrolls while checkout stays parked. */
 @media (min-width: 780px) and (max-width: 1180px) {
   .registerShell :global(.app-main) {
@@ -43,9 +73,9 @@
 
   /* Keep barcode scanning and typed search in one compact register field. */
   .registerShell :global(.pos-scan-row) {
-    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
     align-items: stretch !important;
-    gap: 0 !important;
+    gap: 8px !important;
     min-width: 0 !important;
   }
 
@@ -67,6 +97,12 @@
     min-width: 0 !important;
     min-height: 28px !important;
     font-size: 0.9rem !important;
+  }
+
+  .registerShell :global(.pos-scanner-focus-button) {
+    min-width: 64px;
+    min-height: 44px;
+    padding: 0 9px;
   }
 
   .registerShell :global(.pos-cart-panel) {
