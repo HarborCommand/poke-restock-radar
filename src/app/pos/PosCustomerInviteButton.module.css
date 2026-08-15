@@ -5,22 +5,22 @@
   gap: 5px;
   min-height: 40px;
   padding: 0 10px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.78);
-  color: #e2e8f0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #1d1d1f;
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 800;
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  transition: background 140ms ease, transform 110ms ease;
 }
 
 .trigger:hover {
-  border-color: rgba(148, 163, 184, 0.5);
-  background: rgba(30, 41, 59, 0.9);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .trigger:active {
@@ -28,7 +28,7 @@
 }
 
 .trigger:focus-visible {
-  outline: 2px solid rgba(147, 197, 253, 0.95);
+  outline: 3px solid rgba(0, 122, 255, 0.2);
   outline-offset: 2px;
 }
 
@@ -39,19 +39,19 @@
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(2, 6, 23, 0.7);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(28, 28, 30, 0.34);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
 }
 
 .dialog {
-  width: min(420px, 100%);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.99), rgba(8, 15, 30, 0.99));
-  color: #f8fafc;
-  padding: 20px;
-  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.5);
+  width: min(430px, 100%);
+  border: 1px solid rgba(60, 60, 67, 0.12);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #1d1d1f;
+  padding: 22px;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.18), 0 3px 12px rgba(15, 23, 42, 0.08);
 }
 
 .header {
@@ -63,15 +63,18 @@
 
 .header h2 {
   margin: 3px 0 0;
-  font-size: 1.2rem;
-  line-height: 1.2;
+  color: #1d1d1f;
+  font-size: 1.28rem;
+  font-weight: 850;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
 }
 
 .eyebrow {
   margin: 0;
-  color: #93c5fd;
-  font-size: 0.72rem;
-  font-weight: 800;
+  color: #8e8e93;
+  font-size: 0.7rem;
+  font-weight: 850;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -80,14 +83,23 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   flex: 0 0 auto;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 10px;
-  background: rgba(30, 41, 59, 0.65);
-  color: #cbd5e1;
+  border: 0;
+  border-radius: 999px;
+  background: #f2f2f7;
+  color: #636366;
   cursor: pointer;
+  transition: background 140ms ease, transform 110ms ease;
+}
+
+.closeButton:hover {
+  background: #e8e8ed;
+}
+
+.closeButton:active {
+  transform: scale(0.96);
 }
 
 .closeButton:disabled {
@@ -96,8 +108,8 @@
 }
 
 .copy {
-  margin: 14px 0 16px;
-  color: #cbd5e1;
+  margin: 14px 0 18px;
+  color: #636366;
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -108,87 +120,105 @@
 }
 
 .label {
-  color: #e2e8f0;
-  font-size: 0.8rem;
-  font-weight: 700;
+  color: #3a3a3c;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .input {
   width: 100%;
-  min-height: 46px;
+  min-height: 50px;
   box-sizing: border-box;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 11px;
-  background: rgba(2, 6, 23, 0.7);
-  color: #f8fafc;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: #f2f2f7;
+  color: #1d1d1f;
   font: inherit;
   font-size: 16px;
-  padding: 10px 12px;
+  font-weight: 650;
+  padding: 10px 13px;
   outline: none;
+  box-shadow: inset 0 0 0 1px rgba(60, 60, 67, 0.05);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .input::placeholder {
-  color: #64748b;
+  color: #8e8e93;
 }
 
 .input:focus {
-  border-color: rgba(96, 165, 250, 0.85);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.13);
+  border-color: rgba(0, 122, 255, 0.36);
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.11);
 }
 
 .input:disabled {
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .submitButton {
-  min-height: 46px;
-  margin-top: 3px;
-  border: 1px solid rgba(96, 165, 250, 0.42);
-  border-radius: 11px;
-  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+  min-height: 50px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 14px;
+  background: #007aff;
   color: #ffffff;
   font: inherit;
-  font-size: 0.88rem;
-  font-weight: 800;
+  font-size: 0.9rem;
+  font-weight: 850;
   cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 122, 255, 0.18);
+  transition: background 140ms ease, transform 110ms ease, opacity 140ms ease;
+}
+
+.submitButton:hover {
+  background: #006ee6;
+}
+
+.submitButton:active {
+  transform: scale(0.99);
 }
 
 .submitButton:disabled {
   cursor: default;
-  opacity: 0.55;
+  background: #d1d1d6;
+  color: #8e8e93;
+  box-shadow: none;
+  opacity: 1;
 }
 
 .error,
 .success {
-  margin: 1px 0 0;
-  border-radius: 9px;
-  padding: 9px 10px;
+  margin: 2px 0 0;
+  border-radius: 12px;
+  padding: 10px 11px;
   font-size: 0.8rem;
-  line-height: 1.35;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .error {
-  border: 1px solid rgba(248, 113, 113, 0.26);
-  background: rgba(127, 29, 29, 0.2);
-  color: #fecaca;
+  border: 1px solid rgba(255, 59, 48, 0.14);
+  background: #fff2f1;
+  color: #b42318;
 }
 
 .success {
-  border: 1px solid rgba(74, 222, 128, 0.24);
-  background: rgba(20, 83, 45, 0.22);
-  color: #bbf7d0;
+  border: 1px solid rgba(52, 199, 89, 0.18);
+  background: #f0fbf3;
+  color: #1f7a38;
 }
 
 .privacy {
-  margin: 12px 0 0;
-  color: #64748b;
+  margin: 13px 0 0;
+  color: #8e8e93;
   font-size: 0.72rem;
   line-height: 1.4;
 }
 
 @media (min-width: 780px) and (max-width: 1180px) {
   .trigger {
-    min-height: 44px;
+    min-height: 42px;
   }
 }
 
@@ -207,11 +237,20 @@
 @media (max-width: 520px) {
   .backdrop {
     align-items: end;
-    padding: 12px;
+    padding: 10px;
   }
 
   .dialog {
-    border-radius: 18px;
-    padding: 18px;
+    width: 100%;
+    border-radius: 24px;
+    padding: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trigger,
+  .closeButton,
+  .submitButton {
+    transition: none;
   }
 }
