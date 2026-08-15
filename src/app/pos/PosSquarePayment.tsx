@@ -143,6 +143,7 @@ export function PosSquarePayment() {
   const [mountPoint, setMountPoint] = useState<HTMLElement | null>(null);
   const [squareActive, setSquareActive] = useState(false);
   const [totalCents, setTotalCents] = useState(0);
+  const [cartSignature, setCartSignature] = useState("");
   const [pending, setPending] = useState<PendingSquarePayment | null>(null);
   const [approved, setApproved] = useState<ApprovedSquarePayment | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -211,9 +212,11 @@ export function PosSquarePayment() {
       const panel = document.querySelector<HTMLElement>(".pos-payment-panel");
       const nextActive = squarePaymentActive();
       const nextTotal = currentTotalCents();
+      const nextCartSignature = currentCartSignature();
       setMountPoint((current) => (current === panel ? current : panel));
       setSquareActive(nextActive);
       setTotalCents((current) => (current === nextTotal ? current : nextTotal));
+      setCartSignature((current) => (current === nextCartSignature ? current : nextCartSignature));
 
       if (approved && !selectedReturnCard) {
         const button = squarePaymentButton();
@@ -235,15 +238,21 @@ export function PosSquarePayment() {
       subtree: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["class", "disabled", "aria-busy"]
+      attributeFilter: ["class", "disabled", "aria-busy", "value"]
     });
-    return () => observer.disconnect();
+    document.addEventListener("input", schedule, true);
+    document.addEventListener("change", schedule, true);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("input", schedule, true);
+      document.removeEventListener("change", schedule, true);
+    };
   }, [approved, pending]);
 
   const cartMatchesApprovedPayment = useMemo(() => {
     if (!approved || !pending || totalCents <= 0 || totalCents !== pending.totalCents) return false;
-    return currentCartSignature() === pending.cartSignature;
-  }, [approved, pending, totalCents]);
+    return cartSignature === pending.cartSignature;
+  }, [approved, cartSignature, pending, totalCents]);
 
   useEffect(() => {
     const referenceLabel = document.querySelector<HTMLElement>(".pos-reference-input");
