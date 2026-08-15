@@ -45,7 +45,7 @@ function locationSummary(item: LocationItem) {
 
 function findLeafByExactText(text: string, root: ParentNode = document) {
   const target = normalizedText(text);
-  return Array.from(root.querySelectorAll<HTMLElement>("span,strong,b,small,p,div,button,a,th,td"))
+  return Array.from(root.querySelectorAll<HTMLElement>("*"))
     .filter((element) => element.children.length === 0)
     .find((element) => normalizedText(element.textContent) === target) ?? null;
 }
