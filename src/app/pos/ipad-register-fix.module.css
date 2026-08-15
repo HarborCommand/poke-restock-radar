@@ -41,6 +41,34 @@
     padding: 14px !important;
   }
 
+  /* Keep barcode scanning and typed search in one compact register field. */
+  .registerShell :global(.pos-scan-row) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+    min-width: 0 !important;
+  }
+
+  /* The desktop scanner helper is too wide for the iPad register and was covering search. */
+  .registerShell :global(.scan-hint) {
+    display: none !important;
+  }
+
+  .registerShell :global(.pos-search-input) {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    box-sizing: border-box !important;
+    gap: 7px !important;
+    padding: 8px 10px !important;
+  }
+
+  .registerShell :global(.pos-search-input input) {
+    min-width: 0 !important;
+    min-height: 28px !important;
+    font-size: 0.9rem !important;
+  }
+
   .registerShell :global(.pos-cart-panel) {
     position: relative !important;
     top: auto !important;
@@ -131,6 +159,7 @@
 
   .registerShell :global(.pos-filter-row) {
     gap: 8px !important;
+    margin-top: 8px !important;
   }
 
   .registerShell :global(.pos-filter-row button) {
