@@ -171,6 +171,12 @@
   font-size: 0.88rem;
 }
 
+:global(.pos-complete-button[data-cash-disabled="true"]) {
+  cursor: not-allowed !important;
+  opacity: 0.48 !important;
+  filter: saturate(0.45);
+}
+
 @media (min-width: 780px) and (max-width: 1180px) {
   .tender {
     gap: 10px;
