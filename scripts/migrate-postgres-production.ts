@@ -202,7 +202,21 @@ END $$;
 `;
 
 async function main() {
-  console.log("Running production Prisma migration deploy.");
+  console.log("Checking production Prisma migration status.");
+  const status = runPrisma(["migrate", "status", "--schema", schemaPath], {
+    allowFailure: true,
+    printOutput: false
+  });
+
+  if (status.status === 0) {
+    if (status.output.trim()) {
+      console.log(redact(status.output.trim()));
+    }
+    console.log("Production migration history is current; skipping migrate deploy.");
+    return;
+  }
+
+  console.log("Production migration status requires deploy or repair; running migrate deploy.");
   const deploy = runPrisma(["migrate", "deploy", "--schema", schemaPath], {
     allowFailure: true,
     printOutput: false
