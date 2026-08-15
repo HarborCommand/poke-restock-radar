@@ -1,47 +1,21 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { authorizeAdminMutation } from "@/lib/admin-authorization";
-import { prisma } from "@/lib/db";
 import { badRequest, ok, readJson } from "@/lib/http";
+import {
+  getInventoryPhysicalLocationBalance,
+  listInventoryPhysicalLocationBalances,
+  normalizeInventoryPhysicalLocation,
+  transferInventoryPhysicalQuantity
+} from "@/lib/inventory-physical-location";
 import { hasPosRole, resolvePosStoreUser } from "@/lib/pos-authorization";
+import { listDashboard } from "@/lib/radar-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type InventoryLocation = "IN_STORE" | "WAREHOUSE";
-
-type LocationRow = {
-  inventoryItemId: string;
-  location: string;
-};
-
-let locationTableReady: Promise<void> | null = null;
-
-async function ensureInventoryLocationTable() {
-  locationTableReady ??= (async () => {
-    const databaseUrl = process.env.DATABASE_URL || "";
-    const timestampType = databaseUrl.startsWith("file:") ? "DATETIME" : "TIMESTAMP(3)";
-
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "InventoryPhysicalLocation" (
-        "inventoryItemId" TEXT NOT NULL PRIMARY KEY,
-        "location" TEXT NOT NULL DEFAULT 'IN_STORE',
-        "updatedAt" ${timestampType} NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    await prisma.$executeRawUnsafe(
-      `CREATE INDEX IF NOT EXISTS "InventoryPhysicalLocation_location_idx" ON "InventoryPhysicalLocation"("location")`
-    );
-  })().catch((error) => {
-    locationTableReady = null;
-    throw error;
-  });
-
-  await locationTableReady;
-}
-
-function normalizeLocation(value: unknown): InventoryLocation | null {
-  return value === "IN_STORE" || value === "WAREHOUSE" ? value : null;
+function locationFromBalance(inStoreQuantity: number, warehouseQuantity: number) {
+  return warehouseQuantity > 0 && inStoreQuantity <= 0 ? "WAREHOUSE" : "IN_STORE";
 }
 
 export async function GET() {
@@ -49,37 +23,39 @@ export async function GET() {
   if (response) return response;
   if (!hasPosRole(user)) return NextResponse.json({ error: "POS access required" }, { status: 403 });
 
-  await ensureInventoryLocationTable();
   const storeUser = await resolvePosStoreUser(user);
-
-  const [items, rows] = await Promise.all([
-    prisma.inventoryItem.findMany({
-      where: { OR: [{ userId: null }, { userId: storeUser.id }] },
-      select: {
-        id: true,
-        itemName: true,
-        publicTitle: true,
-        quantity: true,
-        category: true,
-        setName: true,
-        imageUrl: true,
-        upc: true,
-        sku: true
-      },
-      orderBy: [{ itemName: "asc" }, { createdAt: "desc" }]
-    }),
-    prisma.$queryRawUnsafe<LocationRow[]>(
-      `SELECT "inventoryItemId", "location" FROM "InventoryPhysicalLocation"`
-    )
-  ]);
-
-  const locationById = new Map(rows.map((row) => [row.inventoryItemId, normalizeLocation(row.location) ?? "IN_STORE"]));
+  const dashboard = await listDashboard(storeUser);
+  const balances = await listInventoryPhysicalLocationBalances(
+    dashboard.inventory.map((item) => ({ id: item.id, onHandQuantity: item.quantityOwned }))
+  );
+  const balanceById = new Map(balances.map((balance) => [balance.inventoryItemId, balance]));
 
   return ok({
-    items: items.map((item) => ({
-      ...item,
-      location: locationById.get(item.id) ?? "IN_STORE"
-    }))
+    items: dashboard.inventory
+      .map((item) => {
+        const balance = balanceById.get(item.id) ?? {
+          inventoryItemId: item.id,
+          onHandQuantity: item.quantityOwned,
+          inStoreQuantity: item.quantityOwned,
+          warehouseQuantity: 0
+        };
+        return {
+          id: item.id,
+          itemName: item.itemName,
+          publicTitle: item.publicTitle,
+          quantity: item.quantityOwned,
+          onHandQuantity: item.quantityOwned,
+          inStoreQuantity: balance.inStoreQuantity,
+          warehouseQuantity: balance.warehouseQuantity,
+          category: item.category,
+          setName: item.setName,
+          imageUrl: item.imageUrl,
+          upc: item.upc,
+          sku: item.sku,
+          location: locationFromBalance(balance.inStoreQuantity, balance.warehouseQuantity)
+        };
+      })
+      .sort((a, b) => a.itemName.localeCompare(b.itemName))
   });
 }
 
@@ -90,35 +66,52 @@ export async function POST(request: Request) {
   if (authorizationResponse) return authorizationResponse;
 
   try {
-    await ensureInventoryLocationTable();
     const payload = await readJson(request);
     const body = payload && typeof payload === "object" && !Array.isArray(payload)
       ? (payload as Record<string, unknown>)
       : {};
     const inventoryItemId = String(body.inventoryItemId || "").trim();
-    const location = normalizeLocation(body.location);
-
     if (!inventoryItemId) throw new Error("Inventory item is required.");
-    if (!location) throw new Error("Choose In Store or Warehouse.");
 
-    const item = await prisma.inventoryItem.findFirst({
-      where: { id: inventoryItemId, OR: [{ userId: null }, { userId: user.id }] },
-      select: { id: true, itemName: true }
-    });
+    const storeUser = await resolvePosStoreUser(user);
+    const dashboard = await listDashboard(storeUser);
+    const item = dashboard.inventory.find((candidate) => candidate.id === inventoryItemId);
     if (!item) throw new Error("Inventory item was not found.");
 
-    await prisma.$executeRaw`
-      INSERT INTO "InventoryPhysicalLocation" ("inventoryItemId", "location", "updatedAt")
-      VALUES (${inventoryItemId}, ${location}, CURRENT_TIMESTAMP)
-      ON CONFLICT ("inventoryItemId")
-      DO UPDATE SET "location" = EXCLUDED."location", "updatedAt" = CURRENT_TIMESTAMP
-    `;
+    const requestedFrom = normalizeInventoryPhysicalLocation(body.fromLocation);
+    const requestedTo = normalizeInventoryPhysicalLocation(body.toLocation);
+    const requestedQuantity = Math.floor(Number(body.quantity) || 0);
+
+    let balance;
+    if (requestedFrom && requestedTo) {
+      balance = await transferInventoryPhysicalQuantity(
+        item.id,
+        requestedFrom,
+        requestedTo,
+        requestedQuantity,
+        item.quantityOwned
+      );
+    } else {
+      const legacyLocation = normalizeInventoryPhysicalLocation(body.location);
+      if (!legacyLocation) throw new Error("Choose where the inventory should be moved.");
+      const current = await getInventoryPhysicalLocationBalance(item.id, item.quantityOwned);
+      const fromLocation = legacyLocation === "IN_STORE" ? "WAREHOUSE" : "IN_STORE";
+      const quantityToMove = fromLocation === "IN_STORE" ? current.inStoreQuantity : current.warehouseQuantity;
+      balance = quantityToMove > 0
+        ? await transferInventoryPhysicalQuantity(item.id, fromLocation, legacyLocation, quantityToMove, item.quantityOwned)
+        : current;
+    }
 
     return ok({
       item: {
         id: item.id,
         itemName: item.itemName,
-        location
+        publicTitle: item.publicTitle,
+        onHandQuantity: item.quantityOwned,
+        quantity: item.quantityOwned,
+        inStoreQuantity: balance.inStoreQuantity,
+        warehouseQuantity: balance.warehouseQuantity,
+        location: locationFromBalance(balance.inStoreQuantity, balance.warehouseQuantity)
       }
     });
   } catch (error) {
