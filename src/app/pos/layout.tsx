@@ -2,10 +2,11 @@ import type { ReactNode } from "react";
 import { PrivateSignOutButton } from "@/components/PrivateSignOutButton";
 import { PosCartImageFix } from "./PosCartImageFix";
 import styles from "./pos-admin-separation.module.css";
+import registerStyles from "./ipad-register-fix.module.css";
 
 export default function PosLayout({ children }: { children: ReactNode }) {
   return (
-    <div className={styles.posShell}>
+    <div className={`${styles.posShell} ${registerStyles.registerShell}`}>
       {children}
       <PosCartImageFix />
       <PrivateSignOutButton adminOnly redirectTo="/pos" />
