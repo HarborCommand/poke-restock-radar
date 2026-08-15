@@ -1,0 +1,114 @@
+.registerShell {
+  min-height: 100dvh;
+}
+
+/* iPad register refinement: the catalog scrolls while checkout stays parked. */
+@media (min-width: 780px) and (max-width: 1180px) {
+  .registerShell :global(.app-main) {
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    overflow: hidden !important;
+    padding: 10px 12px 12px !important;
+  }
+
+  .registerShell :global(.pos-page) {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .registerShell :global(.pos-workspace) {
+    grid-template-columns: minmax(0, 0.98fr) minmax(430px, 1.02fr) !important;
+    height: calc(100dvh - 122px) !important;
+    min-height: 0 !important;
+    align-items: stretch !important;
+    gap: 16px !important;
+    overflow: hidden !important;
+  }
+
+  .registerShell :global(.pos-search-panel),
+  .registerShell :global(.pos-cart-panel) {
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  .registerShell :global(.pos-search-panel) {
+    height: 100%;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding: 14px !important;
+  }
+
+  .registerShell :global(.pos-cart-panel) {
+    position: relative !important;
+    top: auto !important;
+    height: 100%;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding: 16px !important;
+  }
+
+  /* Portrait iPad does not have enough width for two readable catalog cards. */
+  .registerShell :global(.pos-product-grid) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .registerShell :global(.pos-product-card) {
+    min-width: 0 !important;
+    padding: 12px !important;
+  }
+
+  .registerShell :global(.pos-product-card .product-image-preview) {
+    width: 88px !important;
+    height: 88px !important;
+    flex-basis: 88px !important;
+  }
+
+  .registerShell :global(.pos-product-card strong),
+  .registerShell :global(.pos-product-card span),
+  .registerShell :global(.pos-product-card small) {
+    overflow-wrap: anywhere;
+  }
+
+  .registerShell :global(.pos-filter-row) {
+    gap: 8px !important;
+  }
+
+  .registerShell :global(.pos-filter-row button) {
+    min-height: 42px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .registerShell :global(.pos-payment-options) {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .registerShell :global(.pos-payment-options button) {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (min-width: 1000px) and (max-width: 1180px) and (orientation: landscape) {
+  .registerShell :global(.pos-workspace) {
+    grid-template-columns: minmax(0, 1.12fr) minmax(420px, 0.88fr) !important;
+    height: calc(100dvh - 112px) !important;
+  }
+
+  .registerShell :global(.pos-product-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .registerShell :global(.pos-product-card .product-image-preview) {
+    width: 72px !important;
+    height: 72px !important;
+    flex-basis: 72px !important;
+  }
+}
