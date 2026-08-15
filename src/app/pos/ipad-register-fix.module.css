@@ -1,5 +1,7 @@
 .registerShell {
   min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .registerShell :global(.pos-scanner-focus-button) {
@@ -250,5 +252,413 @@
 @media (max-height: 720px) and (min-width: 780px) {
   .registerShell :global(.pos-workspace) {
     height: calc(100dvh - 96px) !important;
+  }
+}
+
+/*
+ * Apple-like iPad POS polish.
+ * Keep the existing POS DOM and business logic intact; this layer only improves hierarchy,
+ * touch affordances, visual grouping and focus behavior inside /pos.
+ */
+.registerShell :global(.pos-page) {
+  color: #1d1d1f;
+}
+
+.registerShell :global(.pos-search-panel),
+.registerShell :global(.pos-cart-panel),
+.registerShell :global(.pos-receipt) {
+  border: 1px solid rgba(60, 60, 67, 0.12) !important;
+  border-radius: 22px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.055) !important;
+}
+
+.registerShell :global(.pos-search-panel),
+.registerShell :global(.pos-cart-panel) {
+  gap: 12px !important;
+}
+
+.registerShell :global(.pos-search-input) {
+  min-height: 50px !important;
+  border: 1px solid transparent !important;
+  border-radius: 15px !important;
+  background: #f2f2f7 !important;
+  padding: 9px 12px !important;
+  box-shadow: inset 0 0 0 1px rgba(60, 60, 67, 0.05) !important;
+  transition: background 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+}
+
+.registerShell :global(.pos-search-input:focus-within) {
+  border-color: rgba(0, 122, 255, 0.34) !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.12) !important;
+}
+
+.registerShell :global(.pos-search-input input) {
+  color: #1d1d1f !important;
+  font-size: 16px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.01em;
+}
+
+.registerShell :global(.pos-register-toolbar-actions) {
+  gap: 5px !important;
+  border: 0;
+  border-radius: 15px;
+  background: #f2f2f7;
+  padding: 4px;
+}
+
+.registerShell :global(.pos-scanner-focus-button),
+.registerShell :global(.pos-customer-invite-button) {
+  min-height: 42px !important;
+  border: 0 !important;
+  border-radius: 11px !important;
+  padding: 0 12px !important;
+  font-size: 0.8rem !important;
+  font-weight: 800 !important;
+  box-shadow: none !important;
+  transition: transform 110ms ease, background 140ms ease, color 140ms ease !important;
+}
+
+.registerShell :global(.pos-scanner-focus-button) {
+  background: #007aff !important;
+  color: #ffffff !important;
+}
+
+.registerShell :global(.pos-customer-invite-button) {
+  background: transparent !important;
+  color: #1d1d1f !important;
+}
+
+.registerShell :global(.pos-customer-invite-button:hover) {
+  background: rgba(255, 255, 255, 0.88) !important;
+}
+
+.registerShell :global(.pos-scanner-focus-button:active),
+.registerShell :global(.pos-customer-invite-button:active) {
+  transform: scale(0.97) !important;
+}
+
+.registerShell :global(.pos-filter-row) {
+  width: fit-content;
+  max-width: 100%;
+  gap: 3px !important;
+  border-radius: 14px;
+  background: #f2f2f7;
+  padding: 4px !important;
+}
+
+.registerShell :global(.pos-filter) {
+  min-height: 38px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: #636366 !important;
+  padding: 0 12px !important;
+  font-size: 0.78rem !important;
+  font-weight: 800 !important;
+  box-shadow: none !important;
+}
+
+.registerShell :global(.pos-filter.active) {
+  background: #ffffff !important;
+  color: #1d1d1f !important;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12) !important;
+}
+
+.registerShell :global(.pos-results-heading) {
+  align-items: center;
+  min-height: 34px;
+}
+
+.registerShell :global(.pos-results-heading strong),
+.registerShell :global(.pos-cart-header h2),
+.registerShell :global(.pos-payment-panel h3) {
+  color: #1d1d1f !important;
+  letter-spacing: -0.02em;
+}
+
+.registerShell :global(.pos-product-card) {
+  border: 1px solid rgba(60, 60, 67, 0.11) !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.045) !important;
+  transition: transform 130ms ease, box-shadow 150ms ease, border-color 150ms ease !important;
+}
+
+.registerShell :global(.pos-product-card:hover) {
+  border-color: rgba(0, 122, 255, 0.2) !important;
+  box-shadow: 0 9px 24px rgba(15, 23, 42, 0.07) !important;
+}
+
+.registerShell :global(.pos-product-card:active) {
+  transform: scale(0.995);
+}
+
+.registerShell :global(.pos-product-card.just-added) {
+  border-color: rgba(52, 199, 89, 0.62) !important;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.1) !important;
+}
+
+.registerShell :global(.pos-product-card .inventory-image-frame),
+.registerShell :global(.pos-cart-line .inventory-image-frame) {
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 14px !important;
+  background: #f5f5f7 !important;
+}
+
+.registerShell :global(.pos-product-copy strong),
+.registerShell :global(.pos-cart-line-copy strong) {
+  color: #1d1d1f !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.012em;
+}
+
+.registerShell :global(.pos-product-copy span),
+.registerShell :global(.pos-cart-line-copy span),
+.registerShell :global(.pos-cart-line-copy small) {
+  color: #8e8e93 !important;
+}
+
+.registerShell :global(.pos-product-copy em),
+.registerShell :global(.pos-cart-line-copy em) {
+  color: #248a3d !important;
+}
+
+.registerShell :global(.pos-add-button) {
+  min-height: 44px !important;
+  border: 0 !important;
+  border-radius: 13px !important;
+  background: #f2f2f7 !important;
+  color: #1d1d1f !important;
+  font-size: 0.82rem !important;
+  font-weight: 850 !important;
+  box-shadow: none !important;
+}
+
+.registerShell :global(.pos-add-button:hover) {
+  background: #e8e8ed !important;
+}
+
+.registerShell :global(.pos-add-button:active) {
+  transform: scale(0.985);
+}
+
+.registerShell :global(.pos-cart-lines) {
+  gap: 8px !important;
+}
+
+.registerShell :global(.pos-cart-line) {
+  border: 1px solid rgba(60, 60, 67, 0.09) !important;
+  border-radius: 16px !important;
+  background: #fbfbfd !important;
+  padding: 10px !important;
+}
+
+.registerShell :global(.pos-cart-line.unavailable) {
+  border-color: rgba(255, 59, 48, 0.28) !important;
+  background: #fff7f6 !important;
+}
+
+.registerShell :global(.pos-cart-quantity) {
+  gap: 4px !important;
+  border-radius: 12px;
+  background: #f2f2f7;
+  padding: 3px;
+}
+
+.registerShell :global(.pos-cart-quantity button) {
+  min-width: 38px !important;
+  min-height: 38px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: #007aff !important;
+  box-shadow: none !important;
+}
+
+.registerShell :global(.pos-cart-quantity input) {
+  min-height: 38px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: #ffffff !important;
+  color: #1d1d1f !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+}
+
+.registerShell :global(.pos-total-box),
+.registerShell :global(.pos-payment-panel),
+.registerShell :global(.pos-customer-panel),
+.registerShell :global(.pos-tax-profile-card),
+.registerShell :global(.pos-confirm-lines) {
+  border: 1px solid rgba(60, 60, 67, 0.08) !important;
+  border-radius: 16px !important;
+  background: #f7f7fa !important;
+  padding: 11px 12px !important;
+}
+
+.registerShell :global(.pos-total-box) {
+  border-top: 1px solid rgba(60, 60, 67, 0.08) !important;
+}
+
+.registerShell :global(.pos-total-box span) {
+  color: #636366 !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.registerShell :global(.pos-total-box .total) {
+  color: #1d1d1f !important;
+  font-size: 1.18rem !important;
+  letter-spacing: -0.02em;
+}
+
+.registerShell :global(.pos-reference-input input),
+.registerShell :global(.pos-customer-panel input),
+.registerShell :global(.pos-customer-panel select) {
+  min-height: 44px !important;
+  border: 1px solid rgba(60, 60, 67, 0.12) !important;
+  border-radius: 12px !important;
+  background: #ffffff !important;
+  color: #1d1d1f !important;
+  font-size: 16px !important;
+  box-shadow: none !important;
+}
+
+.registerShell :global(.pos-reference-input input:focus),
+.registerShell :global(.pos-customer-panel input:focus),
+.registerShell :global(.pos-customer-panel select:focus) {
+  outline: none !important;
+  border-color: rgba(0, 122, 255, 0.36) !important;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.11) !important;
+}
+
+.registerShell :global(.pos-payment-options) {
+  gap: 5px !important;
+  border-radius: 14px;
+  background: #eaeaef;
+  padding: 4px;
+}
+
+.registerShell :global(.pos-payment) {
+  min-height: 42px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: #636366 !important;
+  font-size: 0.8rem !important;
+  font-weight: 850 !important;
+  box-shadow: none !important;
+}
+
+.registerShell :global(.pos-payment.active) {
+  background: #ffffff !important;
+  color: #1d1d1f !important;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12) !important;
+}
+
+.registerShell :global(.pos-payment-panel.inactive) {
+  border-style: solid !important;
+  opacity: 0.64 !important;
+}
+
+.registerShell :global(.pos-complete-button) {
+  min-height: 52px !important;
+  border: 0 !important;
+  border-radius: 15px !important;
+  background: #007aff !important;
+  color: #ffffff !important;
+  font-size: 0.94rem !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.01em;
+  box-shadow: 0 8px 20px rgba(0, 122, 255, 0.2) !important;
+  transition: transform 110ms ease, background 140ms ease, opacity 140ms ease !important;
+}
+
+.registerShell :global(.pos-complete-button:hover) {
+  background: #006ee6 !important;
+}
+
+.registerShell :global(.pos-complete-button:active) {
+  transform: scale(0.99);
+}
+
+.registerShell :global(.pos-complete-button:disabled),
+.registerShell :global(.pos-complete-button.inactive) {
+  background: #d1d1d6 !important;
+  color: #8e8e93 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+.registerShell :global(.pos-search-panel),
+.registerShell :global(.pos-cart-panel) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(60, 60, 67, 0.18) transparent;
+}
+
+.registerShell :global(.pos-search-panel::-webkit-scrollbar),
+.registerShell :global(.pos-cart-panel::-webkit-scrollbar),
+.registerShell :global(.pos-cart-lines::-webkit-scrollbar) {
+  width: 5px;
+}
+
+.registerShell :global(.pos-search-panel::-webkit-scrollbar-thumb),
+.registerShell :global(.pos-cart-panel::-webkit-scrollbar-thumb),
+.registerShell :global(.pos-cart-lines::-webkit-scrollbar-thumb) {
+  border-radius: 999px;
+  background: rgba(60, 60, 67, 0.18);
+}
+
+@media (min-width: 780px) and (max-width: 1180px) {
+  .registerShell :global(.app-main) {
+    padding: 12px !important;
+  }
+
+  .registerShell :global(.pos-workspace) {
+    gap: 12px !important;
+  }
+
+  .registerShell :global(.pos-search-panel),
+  .registerShell :global(.pos-cart-panel) {
+    padding: 14px !important;
+  }
+
+  .registerShell :global(.pos-scan-row) {
+    gap: 7px !important;
+  }
+
+  .registerShell :global(.pos-customer-results) {
+    max-height: 220px !important;
+  }
+}
+
+@media (min-width: 780px) and (max-width: 900px) {
+  .registerShell :global(.pos-register-toolbar-actions) {
+    background: transparent;
+    padding: 0;
+  }
+
+  .registerShell :global(.pos-scanner-focus-button),
+  .registerShell :global(.pos-customer-invite-button) {
+    width: 44px !important;
+    min-width: 44px !important;
+    padding: 0 !important;
+  }
+
+  .registerShell :global(.pos-scanner-focus-button span),
+  .registerShell :global(.pos-customer-invite-button span) {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .registerShell :global(.pos-product-card),
+  .registerShell :global(.pos-add-button),
+  .registerShell :global(.pos-complete-button),
+  .registerShell :global(.pos-scanner-focus-button),
+  .registerShell :global(.pos-customer-invite-button) {
+    transition: none !important;
   }
 }
