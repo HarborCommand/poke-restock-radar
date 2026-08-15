@@ -138,6 +138,10 @@ function newStateToken() {
   return `gdg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function moneyFromCents(cents: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Math.max(0, cents) / 100);
+}
+
 export function PosSquarePayment() {
   const [config, setConfig] = useState<SquareConfig | null>(null);
   const [mountPoint, setMountPoint] = useState<HTMLElement | null>(null);
@@ -277,7 +281,7 @@ export function PosSquarePayment() {
     if (!squareActive) return;
     const completeButton = document.querySelector<HTMLButtonElement>(".pos-complete-button");
     if (!completeButton) return;
-    if (approved && !cartMatchesApprovedPayment) {
+    if (!approved || !cartMatchesApprovedPayment) {
       completeButton.setAttribute("data-square-disabled", "true");
       completeButton.setAttribute("aria-disabled", "true");
     } else {
@@ -287,51 +291,28 @@ export function PosSquarePayment() {
   }, [approved, cartMatchesApprovedPayment, squareActive, totalCents]);
 
   useEffect(() => {
-    const handleComplete = (event: MouseEvent) => {
+    const blockUnpaidSquareCompletion = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest(".pos-complete-button") : null;
       if (!target || !squarePaymentActive()) return;
 
       const currentTotal = currentTotalCents();
       const signature = currentCartSignature();
-
-      if (approved) {
-        if (pending && currentTotal === pending.totalCents && signature === pending.cartSignature) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        setReturnError("The cart changed after Square approved the payment. Do not charge the card again; restore the paid cart before completing the sale.");
-        return;
-      }
+      if (approved && pending && currentTotal === pending.totalCents && signature === pending.cartSignature) return;
 
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      setReturnError(null);
-
-      if (!config?.enabled || !config.applicationId || !config.locationId) {
-        setMessage("Square is ready in GameDayGrabs, but your Square account still needs to be connected before card checkout can start.");
-        return;
+      if (approved) {
+        setReturnError("The cart changed after Square approved the payment. Do not charge the card again; restore the paid cart before completing the sale.");
+      } else {
+        setReturnError(null);
+        setMessage("Pay with Square first. Complete Sale unlocks after Square approves the card.");
       }
-      if (currentTotal <= 0 || !signature) {
-        setMessage("Add an item and wait for the final total before starting Square.");
-        return;
-      }
-
-      const nextPending: PendingSquarePayment = {
-        state: newStateToken(),
-        totalCents: currentTotal,
-        cartSignature: signature,
-        startedAt: Date.now()
-      };
-      savePendingPayment(nextPending);
-      setPending(nextPending);
-      setMessage("Opening Square…");
-      window.location.href = buildSquareUrl(config, nextPending);
     };
 
-    document.addEventListener("click", handleComplete, true);
-    return () => document.removeEventListener("click", handleComplete, true);
-  }, [approved, config, pending]);
+    document.addEventListener("click", blockUnpaidSquareCompletion, true);
+    return () => document.removeEventListener("click", blockUnpaidSquareCompletion, true);
+  }, [approved, pending]);
 
   useEffect(() => {
     if (!approved || !cartMatchesApprovedPayment) return;
@@ -347,10 +328,38 @@ export function PosSquarePayment() {
     return () => observer.disconnect();
   }, [approved, cartMatchesApprovedPayment]);
 
+  const startSquarePayment = () => {
+    setReturnError(null);
+    if (!config?.enabled || !config.applicationId || !config.locationId) {
+      setMessage("Square still needs to be connected before card checkout can start.");
+      return;
+    }
+
+    const currentTotal = currentTotalCents();
+    const signature = currentCartSignature();
+    if (currentTotal <= 0 || !signature) {
+      setMessage("Add an item and wait for the final total before starting Square.");
+      return;
+    }
+
+    const nextPending: PendingSquarePayment = {
+      state: newStateToken(),
+      totalCents: currentTotal,
+      cartSignature: signature,
+      startedAt: Date.now()
+    };
+    savePendingPayment(nextPending);
+    setPending(nextPending);
+    setApproved(null);
+    setMessage("Opening Square…");
+    window.location.href = buildSquareUrl(config, nextPending);
+  };
+
   if (!mountPoint || !squareActive) return null;
 
   const configured = Boolean(config?.enabled);
   const waitingForReturn = Boolean(pending && !approved && !returnError);
+  const canStartPayment = configured && totalCents > 0 && Boolean(cartSignature) && !waitingForReturn;
 
   return createPortal(
     <section className={styles.card} aria-label="Square card payment">
@@ -382,10 +391,22 @@ export function PosSquarePayment() {
           {configured ? <CreditCard size={20} aria-hidden="true" /> : <TriangleAlert size={20} aria-hidden="true" />}
           <div>
             <strong>{configured ? "Ready for Square" : "Connect Square to enable cards"}</strong>
-            <small>{configured ? "Complete Sale will open Square for the exact POS total." : "Cash checkout remains available while Square is being connected."}</small>
+            <small>{configured ? "Tap Pay with Square to send the exact POS total to the Square app." : "Cash checkout remains available while Square is being connected."}</small>
           </div>
         </div>
       )}
+
+      {!approved && !waitingForReturn && configured ? (
+        <button
+          type="button"
+          className={styles.payButton}
+          onClick={startSquarePayment}
+          disabled={!canStartPayment}
+        >
+          <CreditCard size={18} aria-hidden="true" />
+          <span>Pay {moneyFromCents(totalCents)} with Square</span>
+        </button>
+      ) : null}
 
       {returnError ? <p className={styles.error}>{returnError}</p> : null}
       {!returnError && message ? <p className={styles.message}>{message}</p> : null}
