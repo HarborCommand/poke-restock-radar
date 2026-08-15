@@ -240,8 +240,27 @@ export function AdminInventoryLocationTools() {
     function syncQuickAction() {
       if (document.querySelector(`[${QUICK_ACTION_ATTRIBUTE}]`)) return;
       const soldItemsLabel = findLeafByExactText("Sold Items");
-      const action = soldItemsLabel?.closest<HTMLElement>("button,a,[role='button']");
-      if (!action?.parentElement) return;
+      if (!soldItemsLabel) return;
+
+      let action: HTMLElement = soldItemsLabel;
+      let current = soldItemsLabel.parentElement;
+      while (current) {
+        const text = normalizedText(current.textContent);
+        const isSoldItemsBlock =
+          text.includes("sold items") &&
+          text.includes("items sold") &&
+          !text.includes("record sale") &&
+          !text.includes("add stock") &&
+          !text.includes("manual product") &&
+          !text.includes("scan upc") &&
+          !text.includes("quick actions");
+
+        if (!isSoldItemsBlock) break;
+        action = current;
+        current = current.parentElement;
+      }
+
+      if (action === soldItemsLabel || !action.parentElement) return;
       action.insertAdjacentElement("afterend", createQuickActionFrom(action));
     }
 
