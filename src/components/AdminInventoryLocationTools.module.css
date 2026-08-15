@@ -1,0 +1,64 @@
+.shortcut {
+  position: fixed;
+  top: max(76px, calc(env(safe-area-inset-top) + 64px));
+  right: max(20px, env(safe-area-inset-right));
+  z-index: 4200;
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 0 14px;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.shortcut:hover {
+  border-color: #94a3b8;
+  background: #ffffff;
+}
+
+.purchaseLocationField {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.purchaseLocationField > span {
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.purchaseLocationField select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  padding: 0 10px;
+  color: #0f172a;
+  font: inherit;
+}
+
+.purchaseLocationField small {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .shortcut {
+    top: max(68px, calc(env(safe-area-inset-top) + 58px));
+    right: max(12px, env(safe-area-inset-right));
+    min-height: 40px;
+    padding: 0 11px;
+  }
+}

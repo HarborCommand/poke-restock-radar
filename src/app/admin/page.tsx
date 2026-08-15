@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { RadarApp } from "@/components/RadarApp";
+import { AdminInventoryLocationTools } from "@/components/AdminInventoryLocationTools";
 import { currentUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -14,5 +15,10 @@ export const metadata = {
 export default async function PrivateAdminPage() {
   const user = await currentUser();
   if (user && String(user.role) === "CASHIER") redirect("/pos");
-  return <RadarApp />;
+  return (
+    <>
+      {user && String(user.role) === "ADMIN" ? <AdminInventoryLocationTools /> : null}
+      <RadarApp />
+    </>
+  );
 }
