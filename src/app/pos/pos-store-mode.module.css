@@ -327,6 +327,109 @@
   line-height: 1.5;
 }
 
+/* Dedicated iPad register layout. Keep all POS logic intact while reducing checkout scrolling. */
+@media (min-width: 780px) {
+  .storeMode :global(.pos-workspace) {
+    grid-template-columns: minmax(0, 1.28fr) minmax(390px, 0.82fr) !important;
+    align-items: start !important;
+    gap: 12px !important;
+  }
+
+  .storeMode :global(.pos-search-panel),
+  .storeMode :global(.pos-cart-panel) {
+    padding: 12px !important;
+  }
+
+  .storeMode :global(.pos-cart-panel) {
+    position: sticky !important;
+    top: 10px !important;
+    max-height: calc(100dvh - 20px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .storeMode :global(.pos-view-row) {
+    display: none !important;
+  }
+
+  .storeMode :global(.pos-tax-profile-card a) {
+    display: none !important;
+  }
+
+  .storeMode :global(.pos-tax-profile-card) {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    padding: 9px 10px !important;
+  }
+
+  .storeMode :global(.pos-customer-panel) {
+    gap: 7px !important;
+    padding: 9px 10px !important;
+  }
+
+  .storeMode :global(.pos-customer-heading p) {
+    display: none !important;
+  }
+
+  .storeMode :global(.pos-customer-results) {
+    max-height: 260px !important;
+  }
+
+  .storeMode :global(.pos-customer-panel .customer-search-profile-stats) {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 5px !important;
+  }
+
+  .storeMode :global(.pos-customer-panel .customer-profile-summary-grid) {
+    display: none !important;
+  }
+
+  .storeMode :global(.pos-customer-panel .customer-profile-summary-card),
+  .storeMode :global(.pos-customer-panel .customer-search-profile-card) {
+    gap: 8px !important;
+    padding: 9px !important;
+  }
+
+  .storeMode :global(.pos-payment-panel) {
+    gap: 7px !important;
+  }
+
+  .storeMode :global(.pos-payment-options) {
+    gap: 6px !important;
+  }
+
+  .storeMode :global(.pos-payment-options button) {
+    min-height: 42px !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+}
+
+@media (min-width: 780px) and (max-width: 1180px) {
+  .storeMode :global(.app-main) {
+    padding: 10px 10px 22px !important;
+  }
+
+  .storeMode :global(.pos-product-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .storeMode :global(.pos-product-card) {
+    padding: 9px !important;
+  }
+
+  .storeMode :global(.pos-filter-row) {
+    gap: 5px !important;
+  }
+
+  .storeMode :global(.pos-filter-row button) {
+    min-height: 40px !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+}
+
 @media (max-width: 1100px) {
   .storeMode :global(.app-main) {
     padding: 14px 14px 28px !important;
@@ -384,5 +487,12 @@
 @media (orientation: portrait) and (max-width: 900px) {
   .storeMode :global(.app-main) {
     padding: 12px 10px 24px !important;
+  }
+}
+
+/* Store identity controls belong to the POS header, not on top of checkout content while scrolling. */
+@media (min-width: 761px) {
+  .storeActions {
+    position: absolute;
   }
 }
