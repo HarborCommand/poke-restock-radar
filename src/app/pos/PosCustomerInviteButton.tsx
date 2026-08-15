@@ -20,6 +20,11 @@ function currentPosCustomerEmail() {
   return "";
 }
 
+type InviteResponse = {
+  error?: string;
+  status?: "invite_sent" | "existing_account";
+};
+
 export function PosCustomerInviteButton() {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -64,26 +69,30 @@ export function PosCustomerInviteButton() {
     setSuccess("");
 
     try {
-      const response = await fetch("/api/account/magic-link/request", {
+      const response = await fetch("/api/radar/pos/customer-invite", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: normalizedEmail })
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as InviteResponse | null;
 
       if (!response.ok) {
         throw new Error(
           payload?.error ||
             (response.status === 429
-              ? "Too many account emails were requested. Try again shortly."
-              : "Could not send the account email.")
+              ? "Too many account invitations were requested. Try again shortly."
+              : "Could not send the account invitation.")
         );
       }
 
       setEmail(normalizedEmail);
-      setSuccess("Account link sent. They can finish on their phone.");
+      setSuccess(
+        payload?.status === "existing_account"
+          ? "Existing customer account found. They can sign in on the website."
+          : "Account invitation sent. They can finish creating it on their phone."
+      );
     } catch (inviteError) {
-      setError(inviteError instanceof Error ? inviteError.message : "Could not send the account email.");
+      setError(inviteError instanceof Error ? inviteError.message : "Could not send the account invitation.");
     } finally {
       setSubmitting(false);
     }
@@ -94,7 +103,7 @@ export function PosCustomerInviteButton() {
       <button
         className={`${styles.trigger} pos-customer-invite-button`}
         type="button"
-        aria-label="Create or open customer account"
+        aria-label="Create customer account"
         title="Customer account"
         onClick={openDialog}
       >
@@ -119,7 +128,7 @@ export function PosCustomerInviteButton() {
               <div className={styles.header}>
                 <div>
                   <p className={styles.eyebrow}>Quick customer setup</p>
-                  <h2 id="pos-customer-account-title">Customer account</h2>
+                  <h2 id="pos-customer-account-title">Create customer account</h2>
                 </div>
                 <button
                   className={styles.closeButton}
@@ -133,7 +142,7 @@ export function PosCustomerInviteButton() {
               </div>
 
               <p className={styles.copy}>
-                Enter the customer&apos;s email. We&apos;ll send a secure link to create or open their GameDayGrabs account.
+                Enter the customer&apos;s email. We&apos;ll send an invitation that opens the Create Account page on the GameDayGrabs website.
               </p>
 
               <form className={styles.form} onSubmit={sendInvite}>
@@ -166,7 +175,7 @@ export function PosCustomerInviteButton() {
                 )}
 
                 <button className={styles.submitButton} type="submit" disabled={submitting || !email.trim()}>
-                  {submitting ? "Sending…" : success ? "Send again" : "Send account link"}
+                  {submitting ? "Sending…" : success ? "Send again" : "Send account invite"}
                 </button>
               </form>
 
