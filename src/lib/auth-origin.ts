@@ -1,8 +1,32 @@
 import { NextResponse } from "next/server";
 import { privateNoStoreHeaders } from "@/lib/http";
 
+function firstForwardedValue(value: string | null) {
+  return value?.split(",")[0]?.trim() || null;
+}
+
+function publicRequestOrigin(request: Request) {
+  const host = firstForwardedValue(request.headers.get("x-forwarded-host"))
+    || firstForwardedValue(request.headers.get("host"));
+  if (!host) return null;
+
+  const forwardedProto = firstForwardedValue(request.headers.get("x-forwarded-proto"))?.toLowerCase();
+  const requestProtocol = new URL(request.url).protocol.replace(/:$/, "").toLowerCase();
+  const protocol = forwardedProto || requestProtocol;
+  if (protocol !== "https" && protocol !== "http") return null;
+
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return null;
+  }
+}
+
 function configuredOrigins(request: Request) {
   const origins = new Set<string>([new URL(request.url).origin]);
+  const forwardedOrigin = publicRequestOrigin(request);
+  if (forwardedOrigin) origins.add(forwardedOrigin);
+
   for (const name of ["STORE_BASE_URL", "APP_URL"] as const) {
     const value = process.env[name]?.trim();
     if (!value) continue;
