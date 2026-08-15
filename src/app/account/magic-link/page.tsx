@@ -1,9 +1,6 @@
 import Link from "next/link";
 import { unstable_noStore as noStore } from "next/cache";
-import { redirect } from "next/navigation";
 import { ArrowRight, Mail, ShieldCheck } from "lucide-react";
-import { CustomerAccountShell } from "@/components/CustomerAccountPages";
-import { currentCustomerAccount } from "@/lib/customer-account-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,20 +20,17 @@ function firstParam(value: string | string[] | undefined) {
 
 export default async function CustomerMagicLinkPage({ searchParams }: MagicLinkPageProps) {
   noStore();
-  const [params, account] = await Promise.all([
-    searchParams ? searchParams : Promise.resolve({} as Record<string, string | string[] | undefined>),
-    currentCustomerAccount()
-  ]);
-
-  if (account) redirect("/account");
-
+  const params = searchParams
+    ? await searchParams
+    : ({} as Record<string, string | string[] | undefined>);
   const token = firstParam(params.token)?.trim() || null;
   const missing = !token || firstParam(params.error) === "missing";
 
   return (
-    <CustomerAccountShell focusedAuth>
+    <main className="gdg-account-shell auth-focused">
       <div className="gdg-login-page">
         <section className="gdg-login-welcome" aria-labelledby="gdg-magic-link-welcome-title">
+          <p className="gdg-overline">GameDayGrabs Account</p>
           <h1 id="gdg-magic-link-welcome-title">Secure account sign-in.</h1>
           <p className="gdg-login-lede">
             One last tap protects your one-time link and gets you into your GameDayGrabs account.
@@ -94,6 +88,6 @@ export default async function CustomerMagicLinkPage({ searchParams }: MagicLinkP
           </p>
         </section>
       </div>
-    </CustomerAccountShell>
+    </main>
   );
 }
