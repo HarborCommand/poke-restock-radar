@@ -72,11 +72,17 @@ export function assertSameOriginRequest(request: Request) {
   const fetchSite = request.headers.get("sec-fetch-site")?.trim().toLowerCase();
   if (fetchSite === "cross-site") throw new AuthOriginError();
 
+  // Sec-Fetch-Site is a browser-controlled Fetch Metadata header. When Chrome,
+  // Safari, or another supporting browser reports same-origin, the request came
+  // from the same public origin even if a reverse proxy rewrites the internal
+  // request host before the application sees it.
+  if (fetchSite === "same-origin") return;
+
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
   const sourceUrl = origin || referer;
   if (!sourceUrl) {
-    if (fetchSite === "same-origin" || fetchSite === "same-site" || fetchSite === "none") return;
+    if (fetchSite === "same-site" || fetchSite === "none") return;
     throw new AuthOriginError();
   }
 
