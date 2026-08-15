@@ -94,6 +94,32 @@ test("POS customer invitations open account creation instead of magic-link login
   assert.doesNotMatch(route, /magic-link\/verify/);
 });
 
+test("POS Square card flow requires a verified completed Square payment", () => {
+  const client = readFileSync(path.join(root, "src/app/pos/PosSquarePayment.tsx"), "utf8");
+  const saleRoute = readFileSync(path.join(root, "src/app/api/radar/pos/sales/route.ts"), "utf8");
+  const squareService = readFileSync(path.join(root, "src/lib/square-pos.ts"), "utf8");
+
+  assert.match(client, /square-commerce-v1:\/\/payment\/create/);
+  assert.match(client, /supported_tender_types: \["CREDIT_CARD"\]/);
+  assert.match(client, /clear_default_fees: true/);
+  assert.match(client, /auto_return: true/);
+  assert.match(client, /skip_receipt: true/);
+  assert.match(client, /setCartSignature/);
+  assert.match(client, /cartSignature === pending\.cartSignature/);
+  assert.match(client, /document\.addEventListener\("input", schedule, true\)/);
+  assert.doesNotMatch(client, /SQUARE_ACCESS_TOKEN/);
+  assert.match(saleRoute, /input\.paymentMethod === "external_card"/);
+  assert.match(saleRoute, /verifySquarePosPayment/);
+  assert.match(saleRoute, /paymentReference: squareReference/);
+  assert.match(saleRoute, /existingSquareUse/);
+  assert.match(saleRoute, /existingSquareUse\.saleReference !== intendedSaleReference/);
+  assert.match(squareService, /\/v2\/orders\//);
+  assert.match(squareService, /\/v2\/payments\//);
+  assert.match(squareService, /payment\.status !== "COMPLETED"/);
+  assert.match(squareService, /amountCents !== expectedAmountCents/);
+  assert.match(squareService, /payment\.location_id !== config\.locationId/);
+});
+
 test("core safety regression suites remain part of the default test command", () => {
   const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
   assert.match(packageJson.scripts.test ?? "", /tests\/\*\.test/);

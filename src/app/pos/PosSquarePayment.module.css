@@ -1,0 +1,160 @@
+.card {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  border: 1px solid rgba(60, 60, 67, 0.1);
+  border-radius: 16px;
+  background: #f5f5f7;
+  padding: 12px;
+  color: #1d1d1f;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.heading > div,
+.status > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.heading strong,
+.status strong {
+  font-size: 0.84rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.heading small,
+.status small {
+  color: #636366;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #1d1d1f;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  border-radius: 13px;
+  padding: 9px 10px;
+}
+
+.ready {
+  background: rgba(0, 122, 255, 0.08);
+  color: #0066cc;
+}
+
+.waiting {
+  background: rgba(0, 122, 255, 0.08);
+  color: #0066cc;
+}
+
+.success {
+  background: rgba(52, 199, 89, 0.1);
+  color: #248a3d;
+}
+
+.warning {
+  background: rgba(255, 159, 10, 0.12);
+  color: #9a5b00;
+}
+
+.status small {
+  color: inherit;
+  opacity: 0.76;
+}
+
+.payButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 50px;
+  border: 0;
+  border-radius: 14px;
+  background: #111111;
+  color: #ffffff;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 110ms ease, opacity 140ms ease;
+}
+
+.payButton:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.payButton:focus-visible {
+  outline: 3px solid rgba(0, 122, 255, 0.28);
+  outline-offset: 2px;
+}
+
+.payButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+  box-shadow: none;
+}
+
+.message,
+.error {
+  margin: 0;
+  border-radius: 11px;
+  padding: 8px 10px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.message {
+  background: rgba(0, 122, 255, 0.06);
+  color: #3a3a3c;
+}
+
+.error {
+  background: rgba(255, 59, 48, 0.09);
+  color: #b42318;
+}
+
+:global(.pos-complete-button[data-square-disabled="true"]) {
+  opacity: 0.42 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
+.spin {
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+  .payButton { transition: none; }
+}
