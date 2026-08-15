@@ -3,6 +3,7 @@ import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { assertSameOriginRequest, AuthOriginError } from "../src/lib/auth-origin";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -41,6 +42,34 @@ test("customer workspace tabs expose complete keyboard semantics", () => {
   assert.match(panel, /role="tabpanel"/);
   assert.match(panel, /event\.key === "ArrowRight"/);
   assert.match(panel, /event\.key === "Home"/);
+});
+
+test("customer auth accepts the public forwarded origin behind Vercel", () => {
+  const request = new Request("https://internal-deployment.vercel.app/api/account/magic-link/verify", {
+    method: "POST",
+    headers: {
+      origin: "https://gamedaygrabs.com",
+      "sec-fetch-site": "same-origin",
+      "x-forwarded-host": "gamedaygrabs.com",
+      "x-forwarded-proto": "https"
+    }
+  });
+
+  assert.doesNotThrow(() => assertSameOriginRequest(request));
+});
+
+test("customer auth still rejects cross-site POSTs", () => {
+  const request = new Request("https://internal-deployment.vercel.app/api/account/magic-link/verify", {
+    method: "POST",
+    headers: {
+      origin: "https://evil.example",
+      "sec-fetch-site": "cross-site",
+      "x-forwarded-host": "gamedaygrabs.com",
+      "x-forwarded-proto": "https"
+    }
+  });
+
+  assert.throws(() => assertSameOriginRequest(request), AuthOriginError);
 });
 
 test("core safety regression suites remain part of the default test command", () => {
