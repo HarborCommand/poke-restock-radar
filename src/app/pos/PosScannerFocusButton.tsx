@@ -48,7 +48,10 @@ export function PosScannerFocusButton() {
   };
 
   return createPortal(
-    <div className="pos-register-toolbar-actions">
+    <div
+      className="pos-register-toolbar-actions"
+      style={{ display: "inline-flex", alignItems: "stretch", gap: 6 }}
+    >
       <button
         className="pos-scanner-focus-button"
         type="button"
