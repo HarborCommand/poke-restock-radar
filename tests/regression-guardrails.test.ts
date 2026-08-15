@@ -104,9 +104,15 @@ test("POS Square card flow requires a verified completed Square payment", () => 
   assert.match(client, /clear_default_fees: true/);
   assert.match(client, /auto_return: true/);
   assert.match(client, /skip_receipt: true/);
+  assert.match(client, /setCartSignature/);
+  assert.match(client, /cartSignature === pending\.cartSignature/);
+  assert.match(client, /document\.addEventListener\("input", schedule, true\)/);
   assert.doesNotMatch(client, /SQUARE_ACCESS_TOKEN/);
   assert.match(saleRoute, /input\.paymentMethod === "external_card"/);
   assert.match(saleRoute, /verifySquarePosPayment/);
+  assert.match(saleRoute, /paymentReference: squareReference/);
+  assert.match(saleRoute, /existingSquareUse/);
+  assert.match(saleRoute, /existingSquareUse\.saleReference !== intendedSaleReference/);
   assert.match(squareService, /\/v2\/orders\//);
   assert.match(squareService, /\/v2\/payments\//);
   assert.match(squareService, /payment\.status !== "COMPLETED"/);
