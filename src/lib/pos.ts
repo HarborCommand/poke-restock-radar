@@ -11,7 +11,7 @@ export type PosRefundReason = (typeof POS_REFUND_REASON_VALUES)[number];
 export const POS_PAYMENT_METHOD_LABELS: Record<PosPaymentMethod, string> = {
   cash: "Cash",
   zelle: "Zelle",
-  external_card: "External card/manual",
+  external_card: "Card · Square",
   other: "Other/manual"
 };
 
