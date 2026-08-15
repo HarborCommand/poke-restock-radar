@@ -83,6 +83,17 @@ test("customer auth still rejects cross-site POSTs", () => {
   assert.throws(() => assertSameOriginRequest(request), AuthOriginError);
 });
 
+test("POS customer invitations open account creation instead of magic-link login", () => {
+  const button = readFileSync(path.join(root, "src/app/pos/PosCustomerInviteButton.tsx"), "utf8");
+  const route = readFileSync(path.join(root, "src/app/api/radar/pos/customer-invite/route.ts"), "utf8");
+
+  assert.match(button, /\/api\/radar\/pos\/customer-invite/);
+  assert.doesNotMatch(button, /\/api\/account\/magic-link\/request/);
+  assert.match(route, /searchParams\.set\("mode", "create"\)/);
+  assert.match(route, /subject: "Create your GameDayGrabs account"/);
+  assert.doesNotMatch(route, /magic-link\/verify/);
+});
+
 test("core safety regression suites remain part of the default test command", () => {
   const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
   assert.match(packageJson.scripts.test ?? "", /tests\/\*\.test/);
