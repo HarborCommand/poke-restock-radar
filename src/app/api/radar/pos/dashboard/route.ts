@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { getAppHealth } from "@/lib/health";
 import { ok } from "@/lib/http";
 import { listInventoryPhysicalLocationBalances } from "@/lib/inventory-physical-location";
 import { hasPosRole, resolvePosStoreUser } from "@/lib/pos-authorization";
@@ -14,8 +15,14 @@ export async function GET() {
   if (!hasPosRole(user)) return NextResponse.json({ error: "POS access required" }, { status: 403 });
 
   const storeUser = await resolvePosStoreUser(user);
-  const scopedUser = String(user.role) === "CASHIER" ? { ...storeUser, role: user.role } : storeUser;
+  const isCashier = String(user.role) === "CASHIER";
+  const scopedUser = isCashier ? { ...storeUser, role: user.role } : storeUser;
   const dashboard = await listDashboard(scopedUser);
+
+  // Cashier dashboards intentionally omit Admin-only access/audit data, but the POS still
+  // needs provider readiness so it can accurately enable transactional email receipts.
+  const health = isCashier ? await getAppHealth(storeUser) : dashboard.health;
+
   const balances = await listInventoryPhysicalLocationBalances(
     dashboard.inventory.map((item) => ({ id: item.id, onHandQuantity: item.quantityOwned }))
   );
@@ -31,5 +38,5 @@ export async function GET() {
     })
     .filter((item) => item.quantityOwned > 0);
 
-  return ok({ ...dashboard, inventory, currentUser: user });
+  return ok({ ...dashboard, health, inventory, currentUser: user });
 }
