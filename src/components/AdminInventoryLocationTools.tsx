@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import styles from "./AdminInventoryLocationTools.module.css";
 
 type InventoryLocation = "IN_STORE" | "WAREHOUSE";
@@ -22,7 +23,6 @@ type LocationResponse = {
 };
 
 const LOCATION_CONTROL_ATTRIBUTE = "data-admin-inventory-location-control";
-const QUICK_ACTION_ATTRIBUTE = "data-admin-inventory-location-quick-action";
 const CATALOG_LOCATION_ATTRIBUTE = "data-admin-inventory-location-catalog";
 
 function normalizedText(value: string | null | undefined) {
@@ -48,20 +48,6 @@ function findLeafByExactText(text: string, root: ParentNode = document) {
   return Array.from(root.querySelectorAll<HTMLElement>("*"))
     .filter((element) => element.children.length === 0)
     .find((element) => normalizedText(element.textContent) === target) ?? null;
-}
-
-function replaceText(root: HTMLElement, matcher: (text: string) => string | null) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes: Text[] = [];
-  let node = walker.nextNode();
-  while (node) {
-    nodes.push(node as Text);
-    node = walker.nextNode();
-  }
-  nodes.forEach((textNode) => {
-    const replacement = matcher(textNode.textContent || "");
-    if (replacement !== null) textNode.textContent = replacement;
-  });
 }
 
 function createLocationControl(location: InventoryLocation) {
@@ -94,23 +80,48 @@ function createLocationControl(location: InventoryLocation) {
   return label;
 }
 
-function createQuickActionFrom(action: HTMLElement) {
-  const link = document.createElement("a");
-  link.href = "/admin/inventory-locations";
-  link.className = `${action.className || ""} ${styles.quickAction}`.trim();
-  link.setAttribute(QUICK_ACTION_ATTRIBUTE, "true");
-  link.setAttribute("aria-label", "Inventory Locations");
+function findQuickActionsTarget() {
+  const quickActionsLabel = findLeafByExactText("Quick Actions");
+  if (!quickActionsLabel) return null;
 
-  Array.from(action.childNodes).forEach((child) => link.append(child.cloneNode(true)));
-  replaceText(link, (text) => {
-    const normalized = normalizedText(text);
-    if (normalized === "sold items") return "Inventory Locations";
-    if (/^\d+\s+items?\s+sold$/i.test(text.trim())) return "Move store & warehouse stock";
-    return null;
-  });
+  let card: HTMLElement | null = quickActionsLabel.parentElement;
+  while (card && card !== document.body) {
+    const text = normalizedText(card.textContent);
+    const isQuickActionsCard =
+      text.includes("quick actions") &&
+      text.includes("scan upc") &&
+      text.includes("manual product") &&
+      text.includes("add stock") &&
+      text.includes("record sale") &&
+      text.includes("sold items");
 
-  link.querySelectorAll<HTMLElement>("[disabled]").forEach((element) => element.removeAttribute("disabled"));
-  return link;
+    if (isQuickActionsCard) break;
+    card = card.parentElement;
+  }
+
+  if (!card || card === document.body) return null;
+
+  const soldItemsLabel = findLeafByExactText("Sold Items", card);
+  if (!soldItemsLabel) return card;
+
+  let current: HTMLElement | null = soldItemsLabel.parentElement;
+  while (current && current !== card) {
+    const parent = current.parentElement;
+    if (!parent) break;
+
+    const parentText = normalizedText(parent.textContent);
+    if (
+      parentText.includes("record sale") &&
+      parentText.includes("sold items") &&
+      (parentText.includes("add stock") || parentText.includes("manual product"))
+    ) {
+      return parent;
+    }
+
+    current = parent;
+  }
+
+  return card;
 }
 
 function findCatalogRowForItem(item: LocationItem) {
@@ -182,6 +193,7 @@ function attachCatalogLocation(item: LocationItem) {
 
 export function AdminInventoryLocationTools() {
   const [items, setItems] = useState<LocationItem[]>([]);
+  const [quickActionsTarget, setQuickActionsTarget] = useState<HTMLElement | null>(null);
 
   const locationById = useMemo(
     () => new Map(items.map((item) => [item.id, item.location])),
@@ -237,31 +249,9 @@ export function AdminInventoryLocationTools() {
       if (select) select.dataset.inventoryItemId = existingItemId;
     }
 
-    function syncQuickAction() {
-      if (document.querySelector(`[${QUICK_ACTION_ATTRIBUTE}]`)) return;
-      const soldItemsLabel = findLeafByExactText("Sold Items");
-      if (!soldItemsLabel) return;
-
-      let action: HTMLElement = soldItemsLabel;
-      let current = soldItemsLabel.parentElement;
-      while (current) {
-        const text = normalizedText(current.textContent);
-        const isSoldItemsBlock =
-          text.includes("sold items") &&
-          text.includes("items sold") &&
-          !text.includes("record sale") &&
-          !text.includes("add stock") &&
-          !text.includes("manual product") &&
-          !text.includes("scan upc") &&
-          !text.includes("quick actions");
-
-        if (!isSoldItemsBlock) break;
-        action = current;
-        current = current.parentElement;
-      }
-
-      if (action === soldItemsLabel || !action.parentElement) return;
-      action.insertAdjacentElement("afterend", createQuickActionFrom(action));
+    function syncQuickActionsTarget() {
+      const target = findQuickActionsTarget();
+      setQuickActionsTarget((current) => (current === target ? current : target));
     }
 
     function syncCatalogLocations() {
@@ -271,7 +261,7 @@ export function AdminInventoryLocationTools() {
     function syncAll() {
       scheduled = false;
       document.querySelectorAll<HTMLFormElement>("form.purchase-flow").forEach(syncForm);
-      syncQuickAction();
+      syncQuickActionsTarget();
       syncCatalogLocations();
     }
 
@@ -300,5 +290,17 @@ export function AdminInventoryLocationTools() {
     };
   }, [items, locationById]);
 
-  return null;
+  if (!quickActionsTarget) return null;
+
+  return createPortal(
+    <a className={styles.quickActionButton} href="/admin/inventory-locations" aria-label="Inventory Locations">
+      <span className={styles.quickActionIcon} aria-hidden="true">↔</span>
+      <span className={styles.quickActionCopy}>
+        <strong>Inventory Locations</strong>
+        <small>Move store & warehouse stock</small>
+      </span>
+      <span className={styles.quickActionArrow} aria-hidden="true">›</span>
+    </a>,
+    quickActionsTarget
+  );
 }
