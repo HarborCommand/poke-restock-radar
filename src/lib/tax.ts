@@ -17,7 +17,7 @@ export const TAX_REPORTING_FLAG = "TAX_REPORTING_ENABLED";
 export function taxFeatureConfig(env: Record<string, string | undefined> = process.env) {
   return {
     onlineStripeTaxEnabled: env[ONLINE_STRIPE_TAX_FLAG]?.trim().toLowerCase() === "true",
-    posSalesTaxEnabled: env[POS_SALES_TAX_FLAG]?.trim().toLowerCase() === "true",
+    posSalesTaxEnabled: env[POS_SALES_TAX_FLAG]?.trim().toLowerCase() !== "false",
     taxExemptSalesEnabled: env[TAX_EXEMPT_SALES_FLAG]?.trim().toLowerCase() === "true",
     taxReportingEnabled: env[TAX_REPORTING_FLAG]?.trim().toLowerCase() === "true"
   };
