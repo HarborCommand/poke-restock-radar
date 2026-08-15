@@ -119,7 +119,7 @@ function reconcileRow(row: LocationRow | undefined, onHandQuantity: number) {
   const allocated = inStoreQuantity + warehouseQuantity;
   if (allocated < onHand) {
     const missing = onHand - allocated;
-    if (legacyLocation === "WAREHOUSE" && inStoreQuantity === 0) warehouseQuantity += missing;
+    if (legacyLocation === "WAREHOUSE") warehouseQuantity += missing;
     else inStoreQuantity += missing;
   } else if (allocated > onHand) {
     let excess = allocated - onHand;
@@ -142,18 +142,11 @@ export async function getInventoryPhysicalLocationBalance(
   onHandQuantity: number
 ): Promise<InventoryPhysicalLocationBalance> {
   await ensureInventoryPhysicalLocationTable();
-  const rows = await prisma.$queryRawUnsafe<LocationRow[]>(
-    `SELECT "inventoryItemId", "location", "inStoreQuantity", "warehouseQuantity"
-     FROM "InventoryPhysicalLocation"
-     WHERE "inventoryItemId" = $1`,
-    inventoryItemId
-  ).catch(async () => {
-    return prisma.$queryRaw<LocationRow[]>`
-      SELECT "inventoryItemId", "location", "inStoreQuantity", "warehouseQuantity"
-      FROM "InventoryPhysicalLocation"
-      WHERE "inventoryItemId" = ${inventoryItemId}
-    `;
-  });
+  const rows = await prisma.$queryRaw<LocationRow[]>`
+    SELECT "inventoryItemId", "location", "inStoreQuantity", "warehouseQuantity"
+    FROM "InventoryPhysicalLocation"
+    WHERE "inventoryItemId" = ${inventoryItemId}
+  `;
 
   const row = rows[0];
   const balance = reconcileRow(row, onHandQuantity);
