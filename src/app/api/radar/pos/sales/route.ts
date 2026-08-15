@@ -2,8 +2,12 @@ import { requireUser } from "@/lib/auth";
 import { authorizePosMutation, resolvePosStoreUser } from "@/lib/pos-authorization";
 import { logAudit } from "@/lib/audit";
 import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
+import {
+  consumeInventoryPhysicalQuantity,
+  listInventoryPhysicalLocationBalances
+} from "@/lib/inventory-physical-location";
 import { requestCorrelationId } from "@/lib/observability";
-import { createPosSale } from "@/lib/radar-service";
+import { createPosSale, listDashboard } from "@/lib/radar-service";
 import { posSaleCreateSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -19,7 +23,44 @@ export async function POST(request: Request) {
   try {
     const input = posSaleCreateSchema.parse(await readJson(request));
     const storeUser = await resolvePosStoreUser(user);
+    const beforeDashboard = await listDashboard(storeUser);
+    const beforeById = new Map(beforeDashboard.inventory.map((item) => [item.id, item]));
+    const balances = await listInventoryPhysicalLocationBalances(
+      beforeDashboard.inventory.map((item) => ({ id: item.id, onHandQuantity: item.quantityOwned }))
+    );
+    const balanceById = new Map(balances.map((balance) => [balance.inventoryItemId, balance]));
+
+    for (const line of input.items) {
+      const inventoryItem = beforeById.get(line.inventoryItemId);
+      if (!inventoryItem) throw new Error("One or more POS cart items could not be found.");
+      const inStoreQuantity = balanceById.get(line.inventoryItemId)?.inStoreQuantity ?? inventoryItem.quantityOwned;
+      if (line.quantity > inStoreQuantity) {
+        throw new Error(
+          `${inventoryItem.publicTitle || inventoryItem.itemName} only has ${inStoreQuantity} unit${inStoreQuantity === 1 ? "" : "s"} assigned In Store. Move more stock to In Store before completing this sale.`
+        );
+      }
+    }
+
     const sale = await createPosSale(storeUser, { ...input, requestId });
+
+    const afterDashboard = await listDashboard(storeUser);
+    const afterById = new Map(afterDashboard.inventory.map((item) => [item.id, item]));
+    for (const line of input.items) {
+      const beforeItem = beforeById.get(line.inventoryItemId);
+      if (!beforeItem) continue;
+      const afterOnHand = afterById.get(line.inventoryItemId)?.quantityOwned ?? 0;
+      const actualInventoryReduction = Math.max(0, beforeItem.quantityOwned - afterOnHand);
+      const locationReduction = Math.min(line.quantity, actualInventoryReduction);
+      if (locationReduction > 0) {
+        await consumeInventoryPhysicalQuantity(
+          line.inventoryItemId,
+          "IN_STORE",
+          locationReduction,
+          beforeItem.quantityOwned
+        );
+      }
+    }
+
     const actorLabel = String(user.role) === "CASHIER" ? "cashier" : "admin";
     await logAudit({
       user,
