@@ -52,21 +52,75 @@
     padding: 16px !important;
   }
 
-  /* Portrait iPad does not have enough width for two readable catalog cards. */
-  .registerShell :global(.pos-product-grid) {
+  /* The actual catalog grid is .pos-result-grid. One wide card prevents price/stock collisions. */
+  .registerShell :global(.pos-result-grid) {
     grid-template-columns: minmax(0, 1fr) !important;
-    gap: 12px !important;
+    gap: 10px !important;
   }
 
   .registerShell :global(.pos-product-card) {
+    grid-template-columns: 76px minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-items: start !important;
+    gap: 8px 12px !important;
     min-width: 0 !important;
-    padding: 12px !important;
+    padding: 11px !important;
+  }
+
+  /* Match the real image frame to the reserved grid column so it cannot push into product copy. */
+  .registerShell :global(.pos-product-card .inventory-image-frame) {
+    width: 76px !important;
+    height: 76px !important;
+    min-width: 76px !important;
   }
 
   .registerShell :global(.pos-product-card .product-image-preview) {
-    width: 88px !important;
-    height: 88px !important;
-    flex-basis: 88px !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    flex-basis: auto !important;
+  }
+
+  .registerShell :global(.pos-product-copy) {
+    min-width: 0 !important;
+    align-content: start !important;
+  }
+
+  .registerShell :global(.pos-product-copy strong) {
+    min-height: 0 !important;
+    display: -webkit-box !important;
+    overflow: hidden !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    line-height: 1.2 !important;
+  }
+
+  .registerShell :global(.pos-product-price-row) {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 10px !important;
+    min-width: 0 !important;
+  }
+
+  .registerShell :global(.pos-product-price-row > *) {
+    min-width: 0 !important;
+  }
+
+  .registerShell :global(.pos-product-price-row b) {
+    white-space: nowrap !important;
+  }
+
+  .registerShell :global(.pos-product-price-row em) {
+    justify-self: end !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+  }
+
+  .registerShell :global(.pos-add-button) {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    margin-top: 0 !important;
   }
 
   .registerShell :global(.pos-product-card strong),
@@ -102,13 +156,34 @@
     height: calc(100dvh - 112px) !important;
   }
 
-  .registerShell :global(.pos-product-grid) {
+  .registerShell :global(.pos-result-grid) {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .registerShell :global(.pos-product-card .product-image-preview) {
-    width: 72px !important;
-    height: 72px !important;
-    flex-basis: 72px !important;
+  .registerShell :global(.pos-product-card) {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+    gap: 8px 10px !important;
+  }
+
+  .registerShell :global(.pos-product-card .inventory-image-frame) {
+    width: 64px !important;
+    height: 64px !important;
+    min-width: 64px !important;
+  }
+
+  .registerShell :global(.pos-product-price-row) {
+    grid-template-columns: 1fr !important;
+    gap: 2px !important;
+  }
+
+  .registerShell :global(.pos-product-price-row em) {
+    justify-self: start !important;
+    text-align: left !important;
+  }
+}
+
+@media (max-height: 720px) and (min-width: 780px) {
+  .registerShell :global(.pos-workspace) {
+    height: calc(100dvh - 96px) !important;
   }
 }
