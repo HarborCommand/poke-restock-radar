@@ -4,6 +4,7 @@ import { PrivateSignOutButton } from "@/components/PrivateSignOutButton";
 import { PosCartImageFix } from "./PosCartImageFix";
 import { PosCashTender } from "./PosCashTender";
 import { PosScannerFocusButton } from "./PosScannerFocusButton";
+import { PosSquarePayment } from "./PosSquarePayment";
 import { PosTaxDisplaySimplifier } from "./PosTaxDisplaySimplifier";
 import styles from "./pos-admin-separation.module.css";
 import registerStyles from "./ipad-register-fix.module.css";
@@ -27,6 +28,7 @@ export default function PosLayout({ children }: { children: ReactNode }) {
       <PosCartImageFix />
       <PosScannerFocusButton />
       <PosCashTender />
+      <PosSquarePayment />
       <PosTaxDisplaySimplifier />
       <PrivateSignOutButton adminOnly redirectTo="/pos" />
     </div>
