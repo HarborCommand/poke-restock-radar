@@ -3,6 +3,7 @@
 import { ScanBarcode } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
+import { PosCustomerInviteButton } from "./PosCustomerInviteButton";
 
 function setControlledInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -47,16 +48,19 @@ export function PosScannerFocusButton() {
   };
 
   return createPortal(
-    <button
-      className="pos-scanner-focus-button"
-      type="button"
-      aria-label="Ready barcode scanner"
-      title="Ready barcode scanner"
-      onClick={activateScanner}
-    >
-      <ScanBarcode size={18} aria-hidden="true" />
-      <span>Scan</span>
-    </button>,
+    <div className="pos-register-toolbar-actions">
+      <button
+        className="pos-scanner-focus-button"
+        type="button"
+        aria-label="Ready barcode scanner"
+        title="Ready barcode scanner"
+        onClick={activateScanner}
+      >
+        <ScanBarcode size={18} aria-hidden="true" />
+        <span>Scan</span>
+      </button>
+      <PosCustomerInviteButton />
+    </div>,
     mountPoint
   );
 }
