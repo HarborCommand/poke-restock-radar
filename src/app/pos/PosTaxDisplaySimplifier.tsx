@@ -25,6 +25,12 @@ function hide(element: HTMLElement) {
   element.style.display = "none";
 }
 
+function show(element: HTMLElement) {
+  if (element.dataset.posTaxSimplifiedHidden !== "true" && element.style.display !== "none") return;
+  delete element.dataset.posTaxSimplifiedHidden;
+  element.style.removeProperty("display");
+}
+
 function simplifyTaxContainer(container: HTMLElement) {
   const rows = Array.from(container.children).filter(
     (child): child is HTMLElement => child instanceof HTMLElement && child.tagName === "SPAN"
@@ -32,19 +38,26 @@ function simplifyTaxContainer(container: HTMLElement) {
 
   const labels = rows.map((row) => ({ row, label: directTextLabel(row).toLowerCase() }));
   const totalSalesTax = labels.find(({ label }) => label === "total sales tax");
+  const existingSalesTax = labels.find(({ label }) => label === "sales tax");
 
   for (const { row, label } of labels) {
     if (label.includes("surtax")) hide(row);
   }
 
-  if (!totalSalesTax) return;
+  if (totalSalesTax) {
+    for (const { row, label } of labels) {
+      const isStateBreakdown = label.endsWith(" tax") && label !== "sales tax" && label !== "total sales tax";
+      if (isStateBreakdown) hide(row);
+    }
 
-  for (const { row, label } of labels) {
-    const isStateBreakdown = label.endsWith(" tax") && label !== "sales tax" && label !== "total sales tax";
-    if (isStateBreakdown) hide(row);
+    show(totalSalesTax.row);
+    setDirectTextLabel(totalSalesTax.row, "Sales tax");
+    return;
   }
 
-  setDirectTextLabel(totalSalesTax.row, "Sales tax");
+  // React may reuse a previously hidden tax-breakdown DOM node when the server quote refreshes.
+  // If that reused node now represents the single cashier-facing Sales tax row, restore it.
+  if (existingSalesTax) show(existingSalesTax.row);
 }
 
 function simplifyTaxDisplay() {
