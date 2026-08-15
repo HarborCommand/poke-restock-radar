@@ -44,12 +44,23 @@ test("customer workspace tabs expose complete keyboard semantics", () => {
   assert.match(panel, /event\.key === "Home"/);
 });
 
-test("customer auth accepts the public forwarded origin behind Vercel", () => {
+test("customer auth trusts a browser same-origin POST behind a reverse proxy", () => {
   const request = new Request("https://internal-deployment.vercel.app/api/account/magic-link/verify", {
     method: "POST",
     headers: {
       origin: "https://gamedaygrabs.com",
-      "sec-fetch-site": "same-origin",
+      "sec-fetch-site": "same-origin"
+    }
+  });
+
+  assert.doesNotThrow(() => assertSameOriginRequest(request));
+});
+
+test("customer auth accepts the public forwarded origin behind Vercel when fetch metadata is unavailable", () => {
+  const request = new Request("https://internal-deployment.vercel.app/api/account/magic-link/verify", {
+    method: "POST",
+    headers: {
+      origin: "https://gamedaygrabs.com",
       "x-forwarded-host": "gamedaygrabs.com",
       "x-forwarded-proto": "https"
     }
