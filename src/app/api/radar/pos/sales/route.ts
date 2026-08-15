@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { requireUser } from "@/lib/auth";
 import { authorizePosMutation, resolvePosStoreUser } from "@/lib/pos-authorization";
 import { logAudit } from "@/lib/audit";
+import { prisma } from "@/lib/db";
 import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import {
   consumeInventoryPhysicalQuantity,
@@ -14,6 +16,11 @@ import { posSaleCreateSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function saleReferenceForIdempotencyKey(userId: string, idempotencyKey: string) {
+  const hash = createHash("sha256").update(`${userId}:${idempotencyKey.trim()}`).digest("hex").slice(0, 12).toUpperCase();
+  return `POS-${hash}`;
+}
 
 export async function POST(request: Request) {
   const requestId = requestCorrelationId(request);
@@ -31,6 +38,20 @@ export async function POST(request: Request) {
       const transactionId = parseSquarePaymentReference(input.paymentReference);
       if (!transactionId) {
         throw new Error("Square card payments require a completed Square transaction before the POS sale can be completed.");
+      }
+
+      const squareReference = `square:${transactionId}`;
+      input.paymentReference = squareReference;
+      const intendedSaleReference = saleReferenceForIdempotencyKey(storeUser.id, input.idempotencyKey);
+      const existingSquareUse = await prisma.inventorySale.findFirst({
+        where: {
+          userId: storeUser.id,
+          paymentReference: squareReference
+        },
+        select: { saleReference: true }
+      });
+      if (existingSquareUse?.saleReference && existingSquareUse.saleReference !== intendedSaleReference) {
+        throw new Error("This Square payment is already attached to another POS sale.");
       }
 
       // Recalculate the same cart on the server before trusting the Square callback.
