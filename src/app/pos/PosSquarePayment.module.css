@@ -83,6 +83,43 @@
   opacity: 0.76;
 }
 
+.payButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 50px;
+  border: 0;
+  border-radius: 14px;
+  background: #111111;
+  color: #ffffff;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 110ms ease, opacity 140ms ease;
+}
+
+.payButton:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.payButton:focus-visible {
+  outline: 3px solid rgba(0, 122, 255, 0.28);
+  outline-offset: 2px;
+}
+
+.payButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+  box-shadow: none;
+}
+
 .message,
 .error {
   margin: 0;
@@ -103,6 +140,12 @@
   color: #b42318;
 }
 
+:global(.pos-complete-button[data-square-disabled="true"]) {
+  opacity: 0.42 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
 .spin {
   animation: spin 900ms linear infinite;
 }
@@ -113,4 +156,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
+  .payButton { transition: none; }
 }
