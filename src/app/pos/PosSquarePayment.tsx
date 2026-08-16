@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, CreditCard, LoaderCircle, TriangleAlert } from "lucide-react";
+import { CheckCircle2, CreditCard, LoaderCircle, RotateCcw, TriangleAlert } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./PosSquarePayment.module.css";
@@ -355,6 +355,29 @@ export function PosSquarePayment() {
     window.location.href = buildSquareUrl(config, nextPending);
   };
 
+  const resumePendingSquarePayment = () => {
+    setReturnError(null);
+    if (!config?.enabled || !config.applicationId || !config.locationId || !pending) {
+      setMessage("The pending Square checkout could not be reopened.");
+      return;
+    }
+    setMessage("Reopening Square…");
+    window.location.href = buildSquareUrl(config, pending);
+  };
+
+  const resetPendingSquarePayment = () => {
+    if (!pending || approved) return;
+    const confirmed = window.confirm(
+      "Only reset this checkout if no Square card payment was completed. Check Square Activity first if you are unsure. Reset the pending checkout?"
+    );
+    if (!confirmed) return;
+    clearPendingPayment();
+    setPending(null);
+    setApproved(null);
+    setReturnError(null);
+    setMessage("Pending Square checkout cleared. You can start the payment again.");
+  };
+
   if (!mountPoint || !squareActive) return null;
 
   const configured = Boolean(config?.enabled);
@@ -384,7 +407,7 @@ export function PosSquarePayment() {
       ) : waitingForReturn ? (
         <div className={`${styles.status} ${styles.waiting}`}>
           <LoaderCircle className={styles.spin} size={20} aria-hidden="true" />
-          <div><strong>Square checkout pending</strong><small>Finish or cancel the payment in Square.</small></div>
+          <div><strong>Square checkout pending</strong><small>Finish or cancel the payment in Square. If Square was closed, use the recovery buttons below.</small></div>
         </div>
       ) : (
         <div className={`${styles.status} ${configured ? styles.ready : styles.warning}`}>
@@ -395,6 +418,19 @@ export function PosSquarePayment() {
           </div>
         </div>
       )}
+
+      {waitingForReturn && configured ? (
+        <div className={styles.recoveryActions}>
+          <button type="button" className={styles.payButton} onClick={resumePendingSquarePayment}>
+            <CreditCard size={18} aria-hidden="true" />
+            <span>Return to Square</span>
+          </button>
+          <button type="button" className={styles.resetButton} onClick={resetPendingSquarePayment}>
+            <RotateCcw size={17} aria-hidden="true" />
+            <span>Payment not completed · Start over</span>
+          </button>
+        </div>
+      ) : null}
 
       {!approved && !waitingForReturn && configured ? (
         <button
