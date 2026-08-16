@@ -1,0 +1,74 @@
+.saleContainmentFix {
+  min-width: 0;
+}
+
+/*
+ * The legacy iPad checkout stylesheet intentionally made the whole cart panel
+ * one scroll surface. The Square-style checkout has a different contract:
+ * Current Sale is a fixed-height column, only the basket scrolls, and Charge
+ * remains a non-scrolling footer. These selectors carry one extra local-class
+ * specificity level so they reliably win over the legacy !important rules.
+ */
+.saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-workspace) {
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel) {
+  position: relative !important;
+  display: flex !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  flex-direction: column !important;
+  align-self: stretch !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  box-sizing: border-box !important;
+  padding-bottom: 14px !important;
+  scroll-padding: 0 !important;
+}
+
+.saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-header) {
+  position: relative !important;
+  top: auto !important;
+  z-index: 8 !important;
+  flex: 0 0 auto !important;
+  margin: 0 0 4px !important;
+  border-bottom: 1px solid #f0efed !important;
+  background: #ffffff !important;
+  padding: 0 0 12px !important;
+}
+
+.saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
+.saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines:not(.is-empty)) {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding-right: 4px !important;
+  padding-bottom: 12px !important;
+  scroll-padding-bottom: 16px !important;
+  scrollbar-gutter: stable;
+}
+
+.saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines.is-empty) {
+  flex: 1 1 90px !important;
+  min-height: 0 !important;
+}
+
+/* PosSquareLikeFlow portals this footer directly into .pos-cart-panel. */
+.saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel > [aria-label="Checkout action"]) {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 20 !important;
+  display: grid !important;
+  width: 100% !important;
+  flex: 0 0 auto !important;
+  margin-top: 8px !important;
+}
