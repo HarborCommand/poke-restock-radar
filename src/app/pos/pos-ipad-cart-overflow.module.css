@@ -16,7 +16,8 @@
  * controls below the customer card feel frozen. Let every sale section flow
  * naturally so a single swipe can always reach payment and Complete Sale.
  */
-.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines) {
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines),
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
   flex: 0 0 auto !important;
   min-height: 0 !important;
   max-height: none !important;
