@@ -118,7 +118,7 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
         return text === "exit store mode" || text === "cashier accounts" || text === "sign out";
       });
       const actionRow = marker?.parentElement;
-      if (actionRow) actionRow.setAttribute("data-pos-legacy-actions", "true");
+      if (actionRow) actionRow.classList.add("pos-legacy-actions");
     };
 
     markLegacyActions();
@@ -236,7 +236,7 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
 
       <div
         ref={checkoutRef}
-        className={user && view !== "checkout" ? `${styles.checkoutHost} ${styles.checkoutHidden}` : user ? styles.checkoutHost : styles.unauthenticatedHost}
+        className={user && view !== "checkout" ? `${styles.checkoutHost} ${styles.checkoutHidden}` : user ? styles.checkoutHost : undefined}
         aria-hidden={Boolean(user && view !== "checkout")}
       >
         {children}
