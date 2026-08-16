@@ -38,11 +38,8 @@ function simplifyCartHeader(cartPanel: HTMLElement) {
     copy.prepend(eyebrow);
   }
 
-  // The presentation layer rewrites the original "Cart (N)" heading. Count
-  // rendered rows instead so the label follows the live cart without touching
-  // checkout state or sale mutation logic.
   const lines = cartPanel.querySelector<HTMLElement>(".pos-cart-lines");
-  const count = lines?.querySelectorAll(":scope > .pos-cart-line").length ?? 0;
+  const count = cartPanel.querySelectorAll(".pos-cart-lines > .pos-cart-line").length;
   const density = cartDensity(count);
 
   heading.textContent = `${count} ${count === 1 ? "item" : "items"}`;
